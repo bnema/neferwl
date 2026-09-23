@@ -20,3 +20,5 @@ gaps = 8
 ```
 
 See `examples/config.toml` for all defaults.
+
+Building requires a sibling checkout of purego-libwayland until it is published.
