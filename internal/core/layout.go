@@ -2,14 +2,15 @@ package core
 
 import (
 	"fmt"
+	"github.com/bnema/nefertty/internal/ports"
 	"math/bits"
 	"strconv"
 	"strings"
 )
 
-type WindowID uint64
+type WindowID = ports.WindowID
 
-type Rect struct{ X, Y, W, H int }
+type Rect = ports.Rect
 
 type Width struct{ Num, Den, Pixels int }
 
@@ -205,6 +206,25 @@ func (w *Workspace) ToggleFullscreen() {
 		w.fullscreen = id
 	}
 	w.scroll()
+}
+
+// SetFullscreen focuses an existing window and applies the requested state.
+func (w *Workspace) SetFullscreen(id WindowID, on bool) {
+	for i := range w.Columns {
+		for j, v := range w.Columns[i].Windows {
+			if v == id {
+				w.Focus = i
+				w.Columns[i].Focus = j
+				if on {
+					w.fullscreen = id
+				} else if w.fullscreen == id {
+					w.fullscreen = 0
+				}
+				w.scroll()
+				return
+			}
+		}
+	}
 }
 func (w *Workspace) SetOutput(width, height int) {
 	if width < 0 {

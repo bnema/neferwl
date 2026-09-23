@@ -134,6 +134,36 @@ func normalize(s string) (string, error) {
 	sort.Strings(mods)
 	return strings.Join(append(mods, p[len(p)-1]), "+"), nil
 }
+
+// resolvedCombo canonicalizes modifiers after resolving Cmd, so aliases collide.
+func resolvedCombo(s, cmd string) (string, error) {
+	parts := strings.Split(s, "+")
+	mods := map[string]bool{}
+	for _, m := range parts[:len(parts)-1] {
+		if m == "Cmd" {
+			switch cmd {
+			case "super":
+				m = "Super"
+			case "alt":
+				m = "Alt"
+			case "ctrl":
+				m = "Ctrl"
+			default:
+				return "", fmt.Errorf("invalid cmd key")
+			}
+		}
+		if mods[m] {
+			return "", fmt.Errorf("duplicate resolved modifier")
+		}
+		mods[m] = true
+	}
+	ordered := make([]string, 0, len(mods))
+	for m := range mods {
+		ordered = append(ordered, m)
+	}
+	sort.Strings(ordered)
+	return strings.Join(append(ordered, parts[len(parts)-1]), "+"), nil
+}
 func Validate(c ports.Config) error {
 	var errs []error
 	add := func(path, msg string) { errs = append(errs, fmt.Errorf("%s: %s", path, msg)) }
@@ -189,13 +219,17 @@ func Validate(c ports.Config) error {
 	combos := map[string]string{}
 	for _, k := range keys {
 		v := c.Binds[k]
-		n, e := normalize(k)
-		if e != nil {
+		if _, e := normalize(k); e != nil {
 			add("binds."+k, e.Error())
-		} else if old, ok := combos[n]; ok {
-			add("binds."+k, "duplicates "+old)
 		} else {
-			combos[n] = k
+			n, e := resolvedCombo(k, c.Keyboard.CmdKey)
+			if e != nil {
+				add("binds."+k, e.Error())
+			} else if old, ok := combos[n]; ok {
+				add("binds."+k, "duplicates "+old)
+			} else {
+				combos[n] = k
+			}
 		}
 		if !actions[v] {
 			add("binds."+k, "invalid action")

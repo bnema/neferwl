@@ -1,9 +1,9 @@
-# No interfaces exist yet; Mockery v3 treats this package as a clean no-op.
+# Sealed message interfaces are not mockable; channel ports are tested with messages.
 all: false
 packages:
   github.com/bnema/nefertty/internal/ports:
     config:
-      all: true
+      all: false
       dir: internal/mocks/{{.SrcPackageName}}
       pkgname: '{{.SrcPackageName}}'
       filename: '{{.InterfaceName}}.go'

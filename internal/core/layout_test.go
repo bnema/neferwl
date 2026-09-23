@@ -82,7 +82,7 @@ func TestStackAndLayout(t *testing.T) {
 	}
 	w.FocusWindow(-1)
 	p := w.Layout()
-	if p[0].Rect != (Rect{5, 5, 43, 33}) || p[1].Rect != (Rect{5, 43, 43, 33}) {
+	if p[0].Rect != (Rect{X: 5, Y: 5, W: 43, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 43, H: 33}) {
 		t.Fatal(p)
 	}
 	w.ToggleFullscreen()
@@ -93,7 +93,7 @@ func TestStackAndLayout(t *testing.T) {
 	if w.Layout()[0].Fullscreen {
 		t.Fatal("toggle")
 	}
-	w.SetUsable(Rect{10, 10, 60, 50})
+	w.SetUsable(Rect{X: 10, Y: 10, W: 60, H: 50})
 	w.SetGaps(2)
 	if w.Layout()[0].Rect.X != 12 {
 		t.Fatal(w.Layout())
@@ -328,6 +328,20 @@ func TestFullscreenPersistsAndScrolls(t *testing.T) {
 	}
 	w.RemoveWindow(2)
 	if w.Layout()[0].Fullscreen {
+		t.Fatal(w.Layout())
+	}
+}
+
+func TestSetFullscreenStackDeactivation(t *testing.T) {
+	w := workspace()
+	w.Columns = []Column{{Windows: []WindowID{1, 2}, Width: w.DefaultWidth, Focus: 0}}
+	w.SetFullscreen(2, true)
+	p := w.Layout()
+	if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused {
+		t.Fatal(p)
+	}
+	w.SetFullscreen(2, false)
+	if w.Layout()[0].Hidden {
 		t.Fatal(w.Layout())
 	}
 }

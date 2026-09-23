@@ -11,3 +11,11 @@ rules:
   no-infra-imports-in-usecase: error
   no-framework-types-in-core: error
   no-infra-types-in-ports: error
+  missing-generated-mock-for-port: error
+mocking:
+  generatedMockPaths: [internal/mocks/**]
+  generatedMockNamePatterns: ['Mock{{Interface}}', '{{Interface}}Mock']
+ruleSettings:
+  missing-generated-mock-for-port:
+    # Sealed message unions are channel data, not ports; tested by sending messages (ADR 005).
+    excludePaths: [internal/ports/messages.go]

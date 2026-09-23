@@ -49,6 +49,8 @@ func TestValidation(t *testing.T) {
 		{"debug", "[log]\ndebug=['nope']", "log.debug[0]"},
 		{"combo", "[binds]\n'Cmd+'='quit'", "binds.Cmd+"},
 		{"action", "[binds]\n'Cmd+X'='bogus'", "binds.Cmd+X"},
+		{"resolved duplicate", "[keyboard]\ncmd_key='ctrl'\n[binds]\n'Cmd+X'='quit'\n'Ctrl+X'='quit'", "duplicates"},
+		{"duplicate modifier", "[keyboard]\ncmd_key='ctrl'\n[binds]\n'Cmd+Ctrl+X'='quit'", "duplicate resolved modifier"},
 		{"duplicate", "[binds]\n'Cmd+Shift+X'='quit'\n'Shift+Cmd+X'='quit'", "duplicates"},
 		{"unknown", "[layout]\nnope=1", "layout.nope"},
 	}
