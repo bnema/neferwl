@@ -1,7 +1,9 @@
 package wayland
 
 import (
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 )
 
@@ -11,11 +13,13 @@ const (
 	roleNone roleKind = iota
 	roleXDG
 	roleSubsurface
+	roleLayer
 )
 
 type surface struct {
 	kind             roleKind
 	xdg              *xdgSurface
+	layer            *layerSurface
 	server           *Server
 	current, pending *wayland.Buffer
 	attached         bool
@@ -48,6 +52,10 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 }
 func (s *surface) Commit(*wayland.Surface) {
 	fresh := s.attached && s.pending != nil
+	if s.layer != nil && s.attached && s.pending != nil && !s.layer.acked {
+		s.layer.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "buffer before configure ack")
+		return
+	}
 	if s.xdg != nil && s.attached && s.pending != nil && !s.xdg.acked {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
@@ -68,10 +76,17 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.role != nil {
 		s.role(s.current != nil)
 	}
-	if fresh && s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped && s.server.channels.Contents != nil {
+	id := ports.WindowID(0)
+	if s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped {
+		id = s.xdg.window.id
+	}
+	if s.layer != nil && s.layer.mapped {
+		id = s.layer.id
+	}
+	if fresh && id != 0 && s.server.channels.Contents != nil {
 		b := s.current
 		if state, ok := s.server.buffers[b.Resource]; ok {
-			if c, ok := state.content(s.xdg.window.id); ok {
+			if c, ok := state.content(id); ok {
 				s.server.emitContent(c)
 			} else {
 				state.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
