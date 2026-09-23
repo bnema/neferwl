@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/bnema/nefertty/internal/ports"
+
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -24,6 +26,9 @@ type Renderer struct {
 	imageMemory   vk.DeviceMemory
 	buffer        vk.Buffer
 	bufferMemory  vk.DeviceMemory
+	staging       vk.Buffer
+	stagingMemory vk.DeviceMemory
+	stagingMapped unsafe.Pointer
 	mapped        unsafe.Pointer
 	pool          vk.CommandPool
 	command       vk.CommandBuffer
@@ -169,6 +174,27 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkMapMemory", r.dd.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
 		return
 	}
+	// Two frame-sized regions accommodate non-overlapping window bodies and their overlapping borders.
+	stagingSize := size * 2
+	stagingInfo := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: stagingSize, Usage: vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
+	if err = checked("vkCreateBuffer(staging)", r.dd.CreateBuffer(r.device, &stagingInfo, nil, &r.staging)); err != nil {
+		return
+	}
+	r.dd.GetBufferMemoryRequirements(r.device, r.staging, &req)
+	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	if err != nil {
+		return
+	}
+	alloc = vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err = checked("vkAllocateMemory(staging)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.stagingMemory)); err != nil {
+		return
+	}
+	if err = checked("vkBindBufferMemory(staging)", r.dd.BindBufferMemory(r.device, r.staging, r.stagingMemory, 0)); err != nil {
+		return
+	}
+	if err = checked("vkMapMemory(staging)", r.dd.MapMemory(r.device, r.stagingMemory, 0, stagingSize, 0, &r.stagingMapped)); err != nil {
+		return
+	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
 	if err = checked("vkCreateCommandPool", r.dd.CreateCommandPool(r.device, &pi, nil, &r.pool)); err != nil {
 		return
@@ -194,7 +220,93 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 	return 0, fmt.Errorf("no Vulkan memory type for bits %#x and properties %#x", bits, props)
 }
 
+func parseColor(s string) [3]uint8 {
+	var c [3]uint8
+	if len(s) != 7 || s[0] != '#' {
+		return c
+	}
+	for i := range c {
+		v, e := strconv.ParseUint(s[1+i*2:3+i*2], 16, 8)
+		if e != nil {
+			return [3]uint8{}
+		}
+		c[i] = uint8(v)
+	}
+	return c
+}
+
+func windowColor(id ports.WindowID) [3]uint8 {
+	h := math.Mod(float64(id)*0.618034, 1) * 6
+	sector := int(h)
+	f := h - float64(sector)
+	p, q, t := 0.4, 0.8*(1-0.5*f), 0.8*(1-0.5*(1-f))
+	var a, b, c float64
+	switch sector {
+	case 0:
+		a, b, c = 0.8, t, p
+	case 1:
+		a, b, c = q, 0.8, p
+	case 2:
+		a, b, c = p, 0.8, t
+	case 3:
+		a, b, c = p, q, 0.8
+	case 4:
+		a, b, c = t, p, 0.8
+	default:
+		a, b, c = 0.8, p, q
+	}
+	return [3]uint8{uint8(a * 255), uint8(b * 255), uint8(c * 255)}
+}
+
 func (r *Renderer) Clear(rgb [3]uint8) error {
+	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])})
+}
+
+func (r *Renderer) Render(s ports.Scene) error {
+	// Stage before recording: a full buffer is an error, not a partial submission.
+	type fill struct {
+		rect   image.Rectangle
+		color  [3]uint8
+		offset int
+	}
+	var fills []fill
+	used := 0
+	add := func(rect image.Rectangle, c [3]uint8) error {
+		rect = rect.Intersect(image.Rect(0, 0, r.width, r.height))
+		if rect.Empty() {
+			return nil
+		}
+		n := rect.Dx() * rect.Dy() * 4
+		if n > r.width*r.height*8-used {
+			return fmt.Errorf("staging buffer full")
+		}
+		data := unsafe.Slice((*byte)(r.stagingMapped), r.width*r.height*8)[used : used+n]
+		for i := 0; i < n; i += 4 {
+			data[i], data[i+1], data[i+2], data[i+3] = c[2], c[1], c[0], 255
+		}
+		fills = append(fills, fill{rect, c, used})
+		used += n
+		return nil
+	}
+	for _, w := range s.Windows {
+		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
+			continue
+		}
+		x, y := w.Rect.X, w.Rect.Y
+		// Clip before converting coordinates to Vulkan's signed 32-bit offsets.
+		body := image.Rect(x, y, x+w.Rect.W, y+w.Rect.H)
+		if err := add(body, windowColor(w.ID)); err != nil {
+			return err
+		}
+		if w.Focused {
+			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+4), image.Rect(x, y+w.Rect.H-4, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+4, x+4, y+w.Rect.H-4), image.Rect(x+w.Rect.W-4, y+4, x+w.Rect.W, y+w.Rect.H-4)} {
+				if err := add(strip, [3]uint8{255, 255, 255}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	rgb := parseColor(s.Background)
 	d := r.dd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
 		return err
@@ -217,6 +329,15 @@ func (r *Renderer) Clear(rgb [3]uint8) error {
 	color := vk.ClearColorValue{unorm(rgb[0]), unorm(rgb[1]), unorm(rgb[2]), math.Float32bits(1)}
 	d.CmdClearColorImage(r.command, r.image, vk.ImageLayoutTransferDstOptimal, &color, 1, &rangeInfo)
 	barrier.SrcAccessMask = vk.AccessTransferWriteBit
+	barrier.DstAccessMask = vk.AccessTransferWriteBit
+	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
+	barrier.NewLayout = vk.ImageLayoutTransferDstOptimal
+	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+	for _, f := range fills {
+		rect := f.rect
+		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
+		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
+	}
 	barrier.DstAccessMask = vk.AccessTransferReadBit
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
@@ -269,6 +390,18 @@ func (r *Renderer) Close() {
 		if r.pool != 0 {
 			d.DestroyCommandPool(r.device, r.pool, nil)
 			r.pool = 0
+		}
+		if r.stagingMapped != nil {
+			d.UnmapMemory(r.device, r.stagingMemory)
+			r.stagingMapped = nil
+		}
+		if r.staging != 0 {
+			d.DestroyBuffer(r.device, r.staging, nil)
+			r.staging = 0
+		}
+		if r.stagingMemory != 0 {
+			d.FreeMemory(r.device, r.stagingMemory, nil)
+			r.stagingMemory = 0
 		}
 		if r.mapped != nil {
 			d.UnmapMemory(r.device, r.bufferMemory)
