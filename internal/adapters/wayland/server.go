@@ -209,6 +209,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), states)
 		s.serial++
 		w.xdg.resource.SendConfigure(s.serial)
+		w.xdg.serials = append(w.xdg.serials, s.serial)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() {

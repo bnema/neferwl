@@ -1,8 +1,21 @@
 package wayland
 
-import "github.com/bnema/purego-libwayland/protocol/wayland"
+import (
+	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+)
+
+type roleKind uint8
+
+const (
+	roleNone roleKind = iota
+	roleXDG
+	roleSubsurface
+)
 
 type surface struct {
+	kind             roleKind
+	xdg              *xdgSurface
 	server           *Server
 	current, pending *wayland.Buffer
 	attached         bool
@@ -13,7 +26,11 @@ type surface struct {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	for _, cb := range s.callbacks {
+		cb.Destroy()
+	}
 	s.callbacks = nil
+	s.current, s.pending = nil, nil
 	if s.role != nil {
 		s.role(false)
 	}
@@ -29,6 +46,10 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
+	if s.xdg != nil && s.attached && s.pending != nil && !s.xdg.acked {
+		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
+		return
+	}
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
 			s.current.SendRelease()

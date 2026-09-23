@@ -93,11 +93,12 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	if state == nil {
 		return
 	}
-	if state.role != nil {
+	if state.kind != roleNone {
 		r.PostError(uint32(wayland.SubcompositorErrorBadSurface), "surface already has role")
 		return
 	}
 	if sub, err := wayland.NewSubsurface(r.Client(), 1, id, subsurface{state}); err == nil {
+		state.kind = roleSubsurface
 		state.role = func(bool) {}
 		sub.OnDestroy = func() { state.role = nil }
 	}

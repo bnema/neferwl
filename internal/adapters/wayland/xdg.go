@@ -26,14 +26,17 @@ func (m wm) GetXdgSurface(r *xdgshell.WmBase, id uint32, w *wayland.Surface) {
 	if state == nil {
 		return
 	}
-	if state.role != nil {
-		r.PostError(0, "surface already has role")
+	if state.kind != roleNone && state.kind != roleXDG || state.xdg != nil {
+		r.PostError(uint32(xdgshell.WmBaseErrorRole), "surface already has role")
 		return
 	}
 	x := &xdgSurface{server: m.server, surface: state}
 	resource, err := xdgshell.NewSurface(r.Client(), r.Version(), id, x)
 	if err == nil {
 		x.resource = resource
+		state.kind = roleXDG
+		state.xdg = x
+		resource.OnDestroy = func() { state.xdg = nil; state.role = nil }
 	}
 
 }
@@ -58,10 +61,14 @@ type xdgSurface struct {
 	configured bool
 	acked      bool
 	window     *window
-	serial     uint32
+	serials    []uint32
 }
 
-func (x *xdgSurface) Destroy(*xdgshell.Surface) {}
+func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
+	if x.window != nil {
+		r.PostError(uint32(xdgshell.SurfaceErrorDefunctRoleObject), "toplevel still exists")
+	}
+}
 
 type window struct {
 	id           ports.WindowID
@@ -78,6 +85,7 @@ func (w *window) unmap() {
 	w.mapped = false
 	w.xdg.configured = false
 	w.xdg.acked = false
+	w.xdg.serials = nil
 	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
@@ -104,6 +112,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.server.serial++
 			t.SendConfigure(0, 0, nil)
 			r.SendConfigure(x.server.serial)
+			x.serials = append(x.serials, x.server.serial)
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID})
@@ -112,7 +121,15 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			w.unmap()
 		}
 	}
-	t.OnDestroy = func() { w.unmap(); delete(x.server.windows, w.id); x.window = nil; x.surface.role = nil }
+	t.OnDestroy = func() {
+		w.unmap()
+		delete(x.server.windows, w.id)
+		x.window = nil
+		x.surface.role = nil
+		x.configured = false
+		x.acked = false
+		x.serials = nil
+	}
 }
 func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surface, _ *xdgshell.Positioner) {
 	if p, e := xdgshell.NewPopup(r.Client(), r.Version(), id, popup{}); e == nil {
@@ -120,9 +137,15 @@ func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surfac
 	}
 }
 func (x *xdgSurface) SetWindowGeometry(*xdgshell.Surface, int32, int32, int32, int32) {}
-func (x *xdgSurface) AckConfigure(_ *xdgshell.Surface, serial uint32) {
-	x.serial = serial
-	x.acked = true
+func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
+	for i, issued := range x.serials {
+		if issued == serial {
+			x.serials = x.serials[i+1:]
+			x.acked = true
+			return
+		}
+	}
+	r.PostError(uint32(xdgshell.SurfaceErrorInvalidSerial), "unknown configure serial")
 }
 
 type top struct{ w *window }
