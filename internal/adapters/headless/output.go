@@ -95,7 +95,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := writePNG(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), r.Pixels()); err != nil {
 				return fmt.Errorf("screenshot: %w", err)
 			}
-			if err := writeLatest(opts.ScreenshotDir, r.Pixels()); err != nil {
+			if err := writePNG(filepath.Join(opts.ScreenshotDir, "latest.png"), r.Pixels()); err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
 		}
@@ -104,19 +104,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 }
 
 func writePNG(path string, img *image.RGBA) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	if err := png.Encode(f, img); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
-}
-
-func writeLatest(dir string, img *image.RGBA) error {
-	f, err := os.CreateTemp(dir, ".latest-*.png")
+	f, err := os.CreateTemp(filepath.Dir(path), ".frame-*.png")
 	if err != nil {
 		return err
 	}
@@ -128,5 +116,5 @@ func writeLatest(dir string, img *image.RGBA) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), filepath.Join(dir, "latest.png"))
+	return os.Rename(f.Name(), path)
 }

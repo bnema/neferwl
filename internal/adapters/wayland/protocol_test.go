@@ -280,3 +280,56 @@ func TestSHMInvalidStride(t *testing.T) {
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, c.AllocateID(), int32(0), int32(2), int32(1), int32(4), uint32(wayland.ShmFormatArgb8888))
 	expectProtocolError(t, c, shm, uint32(wayland.ShmErrorInvalidStride))
 }
+
+func TestSHMUnpaddedLastRow(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		size  int32
+		valid bool
+	}{{"exact", 28, true}, {"short", 27, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, dir := lifecycleServer(t)
+			c := protocolClient(t, s, dir)
+			shm := bindProtocol(t, c, "wl_shm")
+			fd, err := unix.MemfdCreate("unpadded-last-row", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(fd)
+			if err := unix.Ftruncate(fd, int64(tc.size)); err != nil {
+				t.Fatal(err)
+			}
+			pool := c.AllocateID()
+			registerProtocol(t, c, shm)
+			registerProtocol(t, c, pool)
+			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, tc.size); err != nil {
+				t.Fatal(err)
+			}
+			buffer := c.AllocateID()
+			registerProtocol(t, c, buffer)
+			requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(4), int32(2), int32(2), int32(16), uint32(wayland.ShmFormatXrgb8888))
+			if !tc.valid {
+				expectProtocolError(t, c, shm, uint32(wayland.ShmErrorInvalidStride))
+				return
+			}
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestBufferContentUnpaddedLastRow(t *testing.T) {
+	p := &pool{data: make([]byte, 28)}
+	b := &buffer{pool: p, offset: 4, width: 2, height: 2, stride: 16}
+	copy(p.data[20:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
+	content, ok := b.content(1)
+	if !ok || len(content.Pixels) != 24 {
+		t.Fatalf("content ok=%v size=%d", ok, len(content.Pixels))
+	}
+	for i, v := range []byte{1, 2, 3, 4, 5, 6, 7, 8} {
+		if content.Pixels[16+i] != v {
+			t.Fatalf("last row byte %d = %d, want %d", i, content.Pixels[16+i], v)
+		}
+	}
+}

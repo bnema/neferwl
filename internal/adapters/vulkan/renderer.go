@@ -317,6 +317,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		pixels                   []byte
 		stride, sourceX, sourceY int
 		color                    [3]uint8
+		opaque                   bool
 	}
 	var uploads []upload
 	used := 0
@@ -329,7 +330,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		n := rect.Dx() * rect.Dy() * 4
 		u := upload{rect: rect, offset: used, color: c}
 		if content != nil {
-			u.pixels, u.stride = content.Pixels, content.Stride
+			u.pixels, u.stride, u.opaque = content.Pixels, content.Stride, content.Opaque
 			u.sourceX, u.sourceY = rect.Min.X-origin.X, rect.Min.Y-origin.Y
 		}
 		uploads = append(uploads, u)
@@ -368,6 +369,11 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			if u.pixels != nil {
 				start := (u.sourceY+row)*u.stride + u.sourceX*4
 				copy(line, u.pixels[start:start+len(line)])
+				if u.opaque {
+					for i := 3; i < len(line); i += 4 {
+						line[i] = 255
+					}
+				}
 			} else {
 				for i := 0; i < len(line); i += 4 {
 					line[i], line[i+1], line[i+2], line[i+3] = u.color[2], u.color[1], u.color[0], 255
@@ -403,7 +409,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferDstOptimal
 	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	for _, f := range uploads {
+	for i, f := range uploads {
+		if i > 0 {
+			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+		}
 		rect := f.rect
 		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
 		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
