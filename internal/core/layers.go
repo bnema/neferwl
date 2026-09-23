@@ -20,18 +20,33 @@ func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.
 				bounds = full
 			}
 			top, right, bottom, left := int(s.Margin[0]), int(s.Margin[1]), int(s.Margin[2]), int(s.Margin[3])
-			x, y := bounds.X+(bounds.W-s.Width)/2, bounds.Y+(bounds.H-s.Height)/2
-			if s.Anchor&ports.AnchorLeft != 0 {
+			w, h := s.Width, s.Height
+			x, y := bounds.X+(bounds.W-w)/2, bounds.Y+(bounds.H-h)/2
+			switch s.Anchor & (ports.AnchorLeft | ports.AnchorRight) {
+			case ports.AnchorLeft | ports.AnchorRight:
+				span := bounds.W - left - right
+				if w == 0 {
+					w = span
+				}
+				x = bounds.X + left + (span-w)/2
+			case ports.AnchorLeft:
 				x = bounds.X + left
-			} else if s.Anchor&ports.AnchorRight != 0 {
-				x = bounds.X + bounds.W - s.Width - right
+			case ports.AnchorRight:
+				x = bounds.X + bounds.W - w - right
 			}
-			if s.Anchor&ports.AnchorTop != 0 {
+			switch s.Anchor & (ports.AnchorTop | ports.AnchorBottom) {
+			case ports.AnchorTop | ports.AnchorBottom:
+				span := bounds.H - top - bottom
+				if h == 0 {
+					h = span
+				}
+				y = bounds.Y + top + (span-h)/2
+			case ports.AnchorTop:
 				y = bounds.Y + top
-			} else if s.Anchor&ports.AnchorBottom != 0 {
-				y = bounds.Y + bounds.H - s.Height - bottom
+			case ports.AnchorBottom:
+				y = bounds.Y + bounds.H - h - bottom
 			}
-			placed = append(placed, ports.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: ports.Rect{X: x, Y: y, W: s.Width, H: s.Height}})
+			placed = append(placed, ports.SceneLayer{ID: s.ID, Layer: s.Layer, Rect: ports.Rect{X: x, Y: y, W: w, H: h}})
 			if s.ExclusiveZone <= 0 {
 				continue
 			}

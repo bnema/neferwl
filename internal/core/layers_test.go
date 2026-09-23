@@ -20,6 +20,10 @@ func TestArrangeLayers(t *testing.T) {
 		{"bottom margin", []ports.LayerSurface{{Anchor: ports.AnchorBottom, Width: 100, Height: 20, ExclusiveZone: 20, Margin: [4]int32{0, 0, 5, 0}}}, []ports.Rect{{X: 910, Y: 1055, W: 100, H: 20}}, ports.Rect{W: 1920, H: 1055}},
 		{"left dock", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorTop | ports.AnchorBottom, Width: 40, Height: 1080, ExclusiveZone: 40}}, []ports.Rect{{W: 40, H: 1080}}, ports.Rect{X: 40, W: 1880, H: 1080}},
 		{"center", []ports.LayerSurface{{Width: 100, Height: 40, Layer: ports.LayerOverlay}}, []ports.Rect{{X: 910, Y: 520, W: 100, H: 40}}, ports.Rect{W: 1920, H: 1080}},
+		{"opposing horizontal anchors with margins", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight, Width: 100, Height: 20, Margin: [4]int32{0, 30, 0, 10}}}, []ports.Rect{{X: 900, Y: 530, W: 100, H: 20}}, ports.Rect{W: 1920, H: 1080}},
+		{"top only", []ports.LayerSurface{{Anchor: ports.AnchorTop, Width: 100, Height: 20, Margin: [4]int32{7, 0, 0, 0}}}, []ports.Rect{{X: 910, Y: 7, W: 100, H: 20}}, ports.Rect{W: 1920, H: 1080}},
+		{"full span between margins", []ports.LayerSurface{{Anchor: ports.AnchorLeft | ports.AnchorRight | ports.AnchorTop, Height: 20, Margin: [4]int32{7, 30, 0, 10}}}, []ports.Rect{{X: 10, Y: 7, W: 1880, H: 20}}, ports.Rect{W: 1920, H: 1080}},
+		{"opposing vertical anchors with margins", []ports.LayerSurface{{Anchor: ports.AnchorTop | ports.AnchorBottom, Width: 100, Height: 20, Margin: [4]int32{10, 0, 30, 0}}}, []ports.Rect{{X: 910, Y: 520, W: 100, H: 20}}, ports.Rect{W: 1920, H: 1080}},
 		{"minus one", []ports.LayerSurface{bar, {Layer: ports.LayerTop, Anchor: ports.AnchorTop, Width: 100, Height: 20, ExclusiveZone: -1}}, []ports.Rect{{W: 1920, H: 30}, {X: 910, W: 100, H: 20}}, ports.Rect{Y: 30, W: 1920, H: 1050}},
 		{"stack", []ports.LayerSurface{bar, {Layer: ports.LayerTop, Anchor: bar.Anchor, Width: 1920, Height: 20, ExclusiveZone: 20}}, []ports.Rect{{W: 1920, H: 30}, {Y: 30, W: 1920, H: 20}}, ports.Rect{Y: 50, W: 1920, H: 1030}},
 	}
