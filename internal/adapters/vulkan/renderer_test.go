@@ -145,3 +145,41 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		}
 	}
 }
+
+func TestRendererLayers(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	red := make([]byte, 64*8*4)
+	for i := 0; i < len(red); i += 4 {
+		copy(red[i:i+4], []byte{0, 0, 255, 0})
+	}
+	contents := map[ports.WindowID]ports.SurfaceContent{2: {ID: 2, Width: 64, Height: 8, Stride: 64 * 4, Opaque: true, Pixels: red}}
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}, Layers: []ports.SceneLayer{{ID: 2, Layer: ports.LayerTop, Rect: ports.Rect{W: 64, H: 8}}}}
+	wc := windowColor(1)
+	window := color.RGBA{wc[0], wc[1], wc[2], 255}
+	check := func(want color.RGBA) {
+		t.Helper()
+		if err := r.Render(scene, contents); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.Pixels().RGBAAt(5, 2); got != want {
+			t.Errorf("pixel = %v, want %v", got, want)
+		}
+	}
+	check(color.RGBA{255, 0, 0, 255})
+	scene.Layers[0].Layer = ports.LayerBottom
+	check(window)
+	scene.Windows[0].Fullscreen = true
+	scene.Layers[0].Layer = ports.LayerTop
+	check(window)
+	scene.Layers[0].Layer = ports.LayerOverlay
+	check(color.RGBA{255, 0, 0, 255})
+	scene.Windows[0].Hidden = true
+	scene.Layers[0].Layer = ports.LayerBottom
+	check(color.RGBA{255, 0, 0, 255})
+	delete(contents, 2)
+	check(color.RGBA{16, 32, 48, 255})
+}

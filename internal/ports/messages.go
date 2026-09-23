@@ -24,6 +24,43 @@ type WindowFullscreenRequest struct {
 
 func (WindowFullscreenRequest) clientEvent() {}
 
+// Layer is a wlr-layer-shell stacking layer.
+type Layer uint32
+
+const (
+	LayerBackground Layer = iota
+	LayerBottom
+	LayerTop
+	LayerOverlay
+)
+
+// Anchor edges, as in zwlr_layer_surface_v1.anchor.
+const (
+	AnchorTop    uint32 = 1
+	AnchorBottom uint32 = 2
+	AnchorLeft   uint32 = 4
+	AnchorRight  uint32 = 8
+)
+
+// LayerSurface is the committed state of one mapped layer surface. Width and
+// Height are the committed buffer size. Margin is top, right, bottom, left.
+// IDs share the WindowID space with windows and never collide.
+type LayerSurface struct {
+	ID            WindowID
+	Layer         Layer
+	Anchor        uint32
+	ExclusiveZone int32
+	Margin        [4]int32
+	Width, Height int
+	Namespace     string
+}
+
+// LayerChanged carries wayland → core the full list of mapped layer surfaces,
+// sent whenever a layer surface maps, unmaps or commits new layer state.
+type LayerChanged struct{ Layers []LayerSurface }
+
+func (LayerChanged) clientEvent() {}
+
 // Mods carries input → core modifier flags.
 type Mods uint8
 
@@ -151,6 +188,16 @@ type Scene struct {
 	OutputWidth, OutputHeight int
 	Background                string
 	Windows                   []SceneWindow
+	// Layers are drawn in slice order: background and bottom before windows,
+	// top and overlay after. A fullscreen window covers bottom and top.
+	Layers []SceneLayer
+}
+
+// SceneLayer carries core → renderer layer surface placement.
+type SceneLayer struct {
+	ID    WindowID
+	Layer Layer
+	Rect  Rect
 }
 
 // SurfaceContent carries wayland → output the latest committed pixels of a
