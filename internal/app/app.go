@@ -2,17 +2,21 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/headless"
+	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
 	"github.com/bnema/nefertty/internal/adapters/vulkan"
 	"github.com/bnema/nefertty/internal/adapters/wayland"
+	"github.com/bnema/nefertty/internal/adapters/xkb"
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
@@ -24,6 +28,7 @@ type Options struct {
 	Timeout       time.Duration
 	NoTerminal    bool
 	ScreenshotDir string
+	Script        io.Reader
 	testScenes    chan<- ports.Scene
 }
 
@@ -58,9 +63,15 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		return err
 	}
 	output <- ports.OutputMode{Width: 1920, Height: 1080}
-	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	km, err := xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options})
 	if err != nil {
+		return err
+	}
+	keymap := km.String()
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	if err != nil {
+		km.Close()
 		return err
 	}
 	log.Info().Str("WAYLAND_DISPLAY", server.SocketName()).Msg("listening")
@@ -72,8 +83,33 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		inject(input)
 	}
 	var workers sync.WaitGroup
-	workers.Add(5)
-	done := make(chan error, 4)
+	workers.Add(6)
+	done := make(chan error, 6)
+	script := make(chan string)
+	go func() {
+		defer workers.Done()
+		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
+	}()
+	if opts.Script != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			defer close(script)
+			scanner := bufio.NewScanner(opts.Script)
+			for scanner.Scan() {
+				select {
+				case <-ctx.Done():
+					return
+				case script <- scanner.Text():
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Warn().Err(err).Msg("reading input script")
+			}
+		}()
+	} else {
+		close(script)
+	}
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()

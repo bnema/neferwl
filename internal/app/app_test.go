@@ -4,7 +4,11 @@ import (
 	"context"
 	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/ports"
+	"image/png"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,4 +87,56 @@ func TestHeadlessSpawnClose(t *testing.T) {
 	waitScene(1, 10*time.Second)
 	input <- ports.KeyEvent{Keysym: "q", Mods: ports.ModSuper, Pressed: true}
 	waitScene(0, 5*time.Second)
+}
+
+func TestHeadlessTyping(t *testing.T) {
+	if _, err := exec.LookPath("foot"); err != nil {
+		t.Skip("foot unavailable")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cfg := config.Defaults()
+	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
+	dir := t.TempDir()
+	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, ScreenshotDir: dir, Script: strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n"), Timeout: 6 * time.Second})
+	if err != nil {
+		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
+			t.Skipf("Vulkan unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "latest.png")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The default column occupies the central portion of the 1920x1080 output.
+	first := img.At(600, 300)
+	varied := false
+	for y := 200; y < 850 && !varied; y += 4 {
+		for x := 500; x < 1400; x += 4 {
+			if img.At(x, y) != first {
+				varied = true
+				break
+			}
+		}
+	}
+	if !varied {
+		t.Fatal("window image is uniform")
+	}
+	if os.Getenv("NEFERTTY_KEEP_SHOTS") == "1" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile("/tmp/nefertty-typing.png", data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

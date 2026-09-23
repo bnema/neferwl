@@ -79,6 +79,7 @@ func run() error {
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
 	backend := flags.String("backend", "drm", "drm or headless")
 	screenshot := flags.String("screenshot", "", "write PNG frames to directory")
+	inputPath := flags.String("input", "", "headless input script path (- for stdin)")
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
@@ -96,6 +97,11 @@ func run() error {
 	}
 	if *screenshot != "" && *backend != "headless" {
 		err := usageError{fmt.Errorf("--screenshot requires --backend=headless")}
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	if *inputPath != "" && *backend != "headless" {
+		err := usageError{fmt.Errorf("--input requires --backend=headless")}
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
@@ -128,6 +134,19 @@ func run() error {
 		fmt.Fprintln(os.Stderr, cfgErr)
 		return cfgErr
 	}
+	var script *os.File
+	if *inputPath != "" {
+		if *inputPath == "-" {
+			script = os.Stdin
+		} else {
+			var err error
+			script, err = os.Open(*inputPath)
+			if err != nil {
+				return err
+			}
+			defer script.Close()
+		}
+	}
 	selected := mergeDebug(cfg.Log.Debug, *debugFlag)
 	if _, err := logging.ParseDebug(selected); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -144,7 +163,7 @@ func run() error {
 	log := logging.For(ctx, "app")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot}); err != nil {
+	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script}); err != nil {
 		// SIGINT and SIGTERM cancel the context and are clean exits.
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return nil
