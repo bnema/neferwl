@@ -163,7 +163,7 @@ func run() error {
 	log := logging.For(ctx, "app")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script}); err != nil {
+	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script}); err != nil {
 		// SIGINT and SIGTERM cancel the context and are clean exits.
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return nil

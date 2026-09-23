@@ -2,8 +2,7 @@ package app
 
 import (
 	"context"
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/ports"
+	"image/color"
 	"image/png"
 	"os"
 	"os/exec"
@@ -11,7 +10,75 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bnema/nefertty/internal/adapters/config"
+	"github.com/bnema/nefertty/internal/ports"
 )
+
+func TestHeadlessConfigReload(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[background]\ncolor='#000000'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shots := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Backend: "headless", Config: cfg, ConfigPath: path, NoTerminal: true, ScreenshotDir: shots})
+	}()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("Run did not stop")
+		}
+	}()
+	latest := filepath.Join(shots, "latest.png")
+	waitColor := func(want color.RGBA, deadline time.Time) bool {
+		for time.Now().Before(deadline) {
+			f, err := os.Open(latest)
+			if err == nil {
+				img, decodeErr := png.Decode(f)
+				f.Close()
+				if decodeErr == nil {
+					r, g, b, _ := img.At(1900, 10).RGBA()
+					if uint8(r>>8) == want.R && uint8(g>>8) == want.G && uint8(b>>8) == want.B {
+						return true
+					}
+				}
+			}
+			select {
+			case err := <-done:
+				if err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan") {
+					t.Skipf("Vulkan unavailable: %v", err)
+				}
+				t.Fatalf("app exited early: %v", err)
+			default:
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		return false
+	}
+	if !waitColor(color.RGBA{A: 255}, time.Now().Add(10*time.Second)) {
+		t.Fatal("first black frame missing")
+	}
+	if err := os.WriteFile(path, []byte("[background]\ncolor='#ff0000'\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !waitColor(color.RGBA{R: 255, A: 255}, time.Now().Add(10*time.Second)) {
+		t.Fatal("red frame missing after reload")
+	}
+}
 
 func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
