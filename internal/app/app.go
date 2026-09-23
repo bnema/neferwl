@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/adapters/headless"
 	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
@@ -25,6 +26,7 @@ import (
 type Options struct {
 	Backend       string
 	Config        ports.Config
+	ConfigPath    string
 	Timeout       time.Duration
 	NoTerminal    bool
 	ScreenshotDir string
@@ -50,14 +52,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	client := make(chan ports.ClientEvent, 32)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 32)
-	config := make(chan ports.ConfigChanged, 8)
+	configChanges := make(chan ports.ConfigChanged, 8)
 	commands := make(chan ports.ClientCommand, 32)
 	spawn := make(chan ports.SpawnRequest, 32)
 	scenes := make(chan ports.Scene, 1)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: config, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: configErrors}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: configErrors}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -83,8 +85,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		inject(input)
 	}
 	var workers sync.WaitGroup
-	workers.Add(6)
-	done := make(chan error, 6)
+	workers.Add(7)
+	done := make(chan error, 7)
+	path := opts.ConfigPath
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	go func() {
+		defer workers.Done()
+		done <- config.Watch(ctx, path, configChanges, logging.For(ctx, "config"))
+	}()
 	script := make(chan string)
 	go func() {
 		defer workers.Done()
@@ -147,6 +157,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene, renderScenes chan ports.Scene) {
 	log := logging.For(ctx, "core")
+	configLog := logging.For(ctx, "config")
 	for {
 		select {
 		case <-ctx.Done():
@@ -172,7 +183,7 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 			}
 			log.Debug().Uint64("seq", s.Seq).Int("windows", len(s.Windows)).Msg("scene")
 		case err := <-configErrors:
-			log.Debug().Err(err).Msg("config rejected")
+			configLog.Warn().Err(err).Msg("config rejected")
 		}
 	}
 }

@@ -19,7 +19,7 @@ command = ["foot"]
 gaps = 8
 ```
 
-See `examples/config.toml` for all defaults.
+See `examples/config.toml` for all defaults. Configuration reloads automatically when the file changes (including atomic replacements). Layout gaps, widths and presets, binds, background, and terminal command apply live; `keyboard.*` requires a restart for now. Invalid or removed files leave the current configuration in place.
 
 Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 
