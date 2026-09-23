@@ -52,9 +52,9 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 			return wayland.NewSeatGlobal(d, 7, func(c server.Client, v, id uint32) {
 				r, e := wayland.NewSeat(c, int32(v), id, seat{s})
 				if e == nil {
-					capabilities := uint32(0)
+					capabilities := uint32(wayland.SeatCapabilityPointer)
 					if s.keymapFD >= 0 {
-						capabilities = uint32(wayland.SeatCapabilityKeyboard)
+						capabilities |= uint32(wayland.SeatCapabilityKeyboard)
 					}
 					r.SendCapabilities(capabilities)
 					if v >= 2 {
@@ -243,8 +243,32 @@ func (output) Release(*wayland.Output) {}
 
 type seat struct{ server *Server }
 
-func (seat) GetPointer(r *wayland.Seat, id uint32) {
-	wayland.NewPointer(r.Client(), r.Version(), id, pointer{})
+func (h seat) GetPointer(r *wayland.Seat, id uint32) {
+	p, err := wayland.NewPointer(r.Client(), r.Version(), id, pointer{})
+	if err != nil {
+		return
+	}
+	s := h.server
+	s.pointers[r.Client()] = append(s.pointers[r.Client()], p)
+	p.OnDestroy = func() {
+		list := s.pointers[r.Client()]
+		for i, item := range list {
+			if item == p {
+				list = append(list[:i], list[i+1:]...)
+				break
+			}
+		}
+		if len(list) == 0 {
+			delete(s.pointers, r.Client())
+		} else {
+			s.pointers[r.Client()] = list
+		}
+	}
+	if w := s.windows[s.pointerFocus]; w != nil && w.mapped && w.xdg.resource.Client() == r.Client() {
+		s.serial++
+		p.SendEnter(s.serial, w.xdg.surfaceResource(), server.FixedFromFloat(s.pointerX), server.FixedFromFloat(s.pointerY))
+		pointerFrame(p)
+	}
 }
 func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 	k, err := wayland.NewKeyboard(r.Client(), r.Version(), id, keyboard{})
@@ -286,6 +310,8 @@ func (seat) GetTouch(r *wayland.Seat, id uint32) {
 func (seat) Release(*wayland.Seat) {}
 
 type pointer struct{}
+
+// Cursor surfaces are accepted but rendering cursors is not implemented yet.
 
 func (pointer) SetCursor(*wayland.Pointer, uint32, *wayland.Surface, int32, int32) {}
 func (pointer) Release(*wayland.Pointer)                                           {}

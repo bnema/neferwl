@@ -28,4 +28,6 @@ Building requires sibling checkouts of purego-libwayland and purego-vulkan until
 Run `nefertty --backend=headless --screenshot /tmp/nefertty-shots`, then connect with
 `WAYLAND_DISPLAY=<logged name> foot`. `/tmp/nefertty-shots/latest.png` shows the current frame.
 Use `--input path` (or `--input -` for stdin) to inject a headless script. Each line is
-`type text`, `key Super+Return` (also Shift, Ctrl, Alt or a bare key), or `sleep 1s`.
+`type text`, `key Super+Return` (also Shift, Ctrl, Alt or a bare key), `sleep 1s`, `move x y` (absolute output coordinates), `click [left|right|middle]`,
+`down button`, or `up button`. Cursor rendering is not implemented yet; pointer
+focus after layout changes is updated on the next move.

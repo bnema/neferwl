@@ -65,7 +65,7 @@ func TestKeyboardInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wayland-info: %v: %s", err, out)
 	}
-	for _, want := range []string{"capabilities: keyboard", "keyboard repeat rate: 25", "keyboard repeat delay: 600"} {
+	for _, want := range []string{"capabilities: pointer keyboard", "keyboard repeat rate: 25", "keyboard repeat delay: 600"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("missing %q: %s", want, out)
 		}

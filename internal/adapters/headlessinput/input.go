@@ -3,6 +3,8 @@ package headlessinput
 
 import (
 	"context"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -66,6 +68,63 @@ func Run(ctx context.Context, km *xkb.Keymap, script <-chan string, input chan<-
 		case line, ok := <-script:
 			if !ok {
 				return nil
+			}
+			fields := strings.Fields(line)
+			sendPointer := func(ev ports.InputEvent) error {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case input <- ev:
+					return nil
+				}
+			}
+			buttonCode := func(name string) uint32 {
+				switch name {
+				case "left":
+					return 0x110
+				case "right":
+					return 0x111
+				case "middle":
+					return 0x112
+				}
+				return 0
+			}
+			now := uint32(time.Now().UnixMilli())
+			if len(fields) > 0 && fields[0] == "move" {
+				if len(fields) == 3 {
+					x, ex := strconv.ParseFloat(fields[1], 64)
+					y, ey := strconv.ParseFloat(fields[2], 64)
+					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
+						if err := sendPointer(ports.PointerMotion{X: x, Y: y, TimeMsec: now}); err != nil {
+							return err
+						}
+						continue
+					}
+				}
+				log.Warn().Str("line", line).Msg("invalid move")
+				continue
+			}
+			if len(fields) > 0 && (fields[0] == "click" || fields[0] == "down" || fields[0] == "up") {
+				name := "left"
+				if len(fields) == 2 {
+					name = fields[1]
+				}
+				code := buttonCode(name)
+				if len(fields) > 2 || (len(fields) != 2 && fields[0] != "click") || code == 0 {
+					log.Warn().Str("line", line).Msg("invalid button")
+					continue
+				}
+				if fields[0] != "up" {
+					if err := sendPointer(ports.PointerButton{Button: code, Pressed: true, TimeMsec: now}); err != nil {
+						return err
+					}
+				}
+				if fields[0] != "down" {
+					if err := sendPointer(ports.PointerButton{Button: code, TimeMsec: now}); err != nil {
+						return err
+					}
+				}
+				continue
 			}
 			switch {
 			case strings.HasPrefix(line, "type "):

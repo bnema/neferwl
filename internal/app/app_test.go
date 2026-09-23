@@ -140,3 +140,37 @@ func TestHeadlessTyping(t *testing.T) {
 		}
 	}
 }
+
+func TestHeadlessPointerClickFocus(t *testing.T) {
+	if _, err := exec.LookPath("foot"); err != nil {
+		t.Skip("foot unavailable")
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	cfg := config.Defaults()
+	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
+	scenes := make(chan ports.Scene, 128)
+	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, Script: strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n"), Timeout: 5 * time.Second, testScenes: scenes})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
+			t.Skipf("Vulkan unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	two, focused := false, false
+	for len(scenes) > 0 {
+		s := <-scenes
+		if len(s.Windows) == 2 {
+			two = true
+			for _, w := range s.Windows {
+				if w.ID == 1 && w.Focused {
+					focused = true
+				}
+			}
+		}
+	}
+	if !two || !focused {
+		t.Fatalf("two columns=%v first focused=%v", two, focused)
+	}
+}
