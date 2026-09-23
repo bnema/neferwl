@@ -50,12 +50,16 @@ func Defaults() ports.Config {
 	c.Log.Debug = []string{}
 	return c
 }
+func LoadDefault() (ports.Config, error) {
+	c, err := Load(DefaultPath())
+	if os.IsNotExist(err) {
+		return Defaults(), nil
+	}
+	return c, err
+}
 func Load(path string) (ports.Config, error) {
 	c := Defaults()
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return c, nil
-	}
 	if err != nil {
 		return c, err
 	}

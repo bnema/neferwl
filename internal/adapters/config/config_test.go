@@ -17,7 +17,12 @@ func TestDefaultsAndLoad(t *testing.T) {
 		t.Fatalf("defaults: %+v", d)
 	}
 	path := filepath.Join(t.TempDir(), "missing")
-	got, err := Load(path)
+	_, err := Load(path)
+	if !os.IsNotExist(err) {
+		t.Fatalf("explicit missing: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	got, err := LoadDefault()
 	if err != nil || !reflect.DeepEqual(got, d) {
 		t.Fatalf("missing: %v %+v", err, got)
 	}

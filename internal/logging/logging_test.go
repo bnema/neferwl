@@ -34,7 +34,7 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	path := filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "nefertty.log")
 	for run := 0; run < 2; run++ {
-		ctx, closeLog, err := Open(context.Background(), "core")
+		ctx, closeLog, err := Open(context.Background(), "info", "core")
 		if err != nil {
 			t.Fatal(err)
 		}
