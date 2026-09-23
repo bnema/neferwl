@@ -87,7 +87,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			if err != nil {
 				return nil, err
 			}
-			return vkRenderer{r}, nil
+			return r, nil
 		}}, renderScenes, contents)
 	}()
 
@@ -142,9 +142,3 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 	}
 }
 
-// TODO(merge): drop once vulkan.Render takes contents.
-type vkRenderer struct{ *vulkan.Renderer }
-
-func (r vkRenderer) Render(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) error {
-	return r.Renderer.Render(s)
-}
