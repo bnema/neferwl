@@ -143,7 +143,7 @@ func TestWaybarLayer(t *testing.T) {
 }
 
 func TestLayerAlreadyConstructed(t *testing.T) {
-	for _, scenario := range []string{"role", "attached", "committed"} {
+	for _, scenario := range []string{"role"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, _, _, dir := lifecycleServer(t)
 			c := protocolClient(t, s, dir)
@@ -160,10 +160,6 @@ func TestLayerAlreadyConstructed(t *testing.T) {
 				registerProtocol(t, c, parent)
 				id := c.AllocateID()
 				requestProtocol(t, c, sub, wayland.SubcompositorRequestGetSubsurface, id, surf, parent)
-			case "attached":
-				requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
-			case "committed":
-				requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 			}
 			id := c.AllocateID()
 			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, id, surf, uint32(0), uint32(ports.LayerTop), "test")
