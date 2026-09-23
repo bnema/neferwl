@@ -40,7 +40,15 @@ func Run(ctx context.Context, km *xkb.Keymap, script <-chan string, input chan<-
 			return nil
 		}
 		if shift {
-			mods = append(mods, 42)
+			found := false
+			for _, m := range mods {
+				if m == 42 || m == 54 {
+					found = true
+				}
+			}
+			if !found {
+				mods = append(mods, 42)
+			}
 		}
 		for _, m := range mods {
 			if err := emit(m, true); err != nil {

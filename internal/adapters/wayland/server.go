@@ -50,6 +50,7 @@ type Server struct {
 	pointers                map[server.Client][]*wayland.Pointer
 	modState                ports.ModState
 	keyboards               map[server.Client][]*wayland.Keyboard
+	heldKeys                map[uint32]bool
 	keymapFD                int
 	keymapSize              uint32
 	repeatRate, repeatDelay int
@@ -327,6 +328,14 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
 			return
 		}
+		if s.heldKeys == nil {
+			s.heldKeys = make(map[uint32]bool)
+		}
+		if c.Key.Pressed {
+			s.heldKeys[c.Key.Keycode] = true
+		} else {
+			delete(s.heldKeys, c.Key.Keycode)
+		}
 		s.serial++
 		state := uint32(0)
 		if c.Key.Pressed {
@@ -399,7 +408,11 @@ func (s *Server) changeFocus(id ports.WindowID) {
 		s.focused = id
 		for _, k := range s.windowKeyboards(w) {
 			s.serial++
-			k.SendEnter(s.serial, w.xdg.surfaceResource(), []byte{})
+			var keys []byte
+			for code := range s.heldKeys {
+				keys = binary.LittleEndian.AppendUint32(keys, code)
+			}
+			k.SendEnter(s.serial, w.xdg.surfaceResource(), keys)
 			s.sendModifiers(k)
 		}
 	}
