@@ -45,7 +45,7 @@ func TestRendererRender(t *testing.T) {
 	bg := color.RGBA{16, 32, 48, 255}
 	check := func(s ports.Scene, expected map[image.Point]color.RGBA) {
 		t.Helper()
-		if err := r.Render(s); err != nil {
+		if err := r.Render(s, nil); err != nil {
 			t.Fatal(err)
 		}
 		for p, want := range expected {
@@ -66,4 +66,47 @@ func TestRendererRender(t *testing.T) {
 	check(s, map[image.Point]color.RGBA{{5, 5}: {c[0], c[1], c[2], 255}, {15, 5}: bg})
 	s.Windows[0].Hidden = true
 	check(s, map[image.Point]color.RGBA{{5, 5}: bg})
+}
+
+func TestRendererContents(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	bg := color.RGBA{16, 32, 48, 255}
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 20, H: 10}}}}
+	pixels := make([]byte, 4*2*4)
+	for i := 0; i < len(pixels); i += 4 {
+		copy(pixels[i:i+4], []byte{0, 0, 255, 255})
+	}
+	render := func(c *ports.SurfaceContent) {
+		t.Helper()
+		var contents map[ports.WindowID]ports.SurfaceContent
+		if c != nil {
+			contents = map[ports.WindowID]ports.SurfaceContent{1: *c}
+		}
+		if err := r.Render(scene, contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(x, y int, want color.RGBA) {
+		t.Helper()
+		if got := r.Pixels().At(x, y); got != want {
+			t.Errorf("At(%d,%d)=%v want %v", x, y, got, want)
+		}
+	}
+	render(&ports.SurfaceContent{Width: 4, Height: 2, Stride: 16, Pixels: pixels})
+	check(8, 8, color.RGBA{255, 0, 0, 255})
+	check(11, 9, color.RGBA{255, 0, 0, 255})
+	check(12, 8, bg)
+	check(0, 0, bg)
+	scene.Windows[0].Rect = ports.Rect{X: -2, Y: 0, W: 10, H: 10}
+	padded := make([]byte, 4*20)
+	copy(padded[8:12], []byte{7, 11, 23, 255})
+	render(&ports.SurfaceContent{Width: 4, Height: 4, Stride: 20, Pixels: padded})
+	check(0, 0, color.RGBA{23, 11, 7, 255})
+	render(nil)
+	c := windowColor(1)
+	check(0, 0, color.RGBA{c[0], c[1], c[2], 255})
 }
