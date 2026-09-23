@@ -104,6 +104,18 @@ type Scene struct {
 	Windows                   []SceneWindow
 }
 
+// SurfaceContent carries wayland → output the latest committed pixels of a
+// window. Pixels is a private copy in B8G8R8A8 (wl_shm argb8888/xrgb8888
+// little-endian) with Stride bytes per row; receivers never modify it.
+// Pixels == nil means the window has no content.
+type SurfaceContent struct {
+	ID            WindowID
+	Width, Height int
+	Stride        int
+	Opaque        bool // xrgb8888: ignore the alpha byte
+	Pixels        []byte
+}
+
 // SceneWindow carries core → renderer window placement.
 type SceneWindow struct {
 	ID                          WindowID
