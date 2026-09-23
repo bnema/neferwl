@@ -50,9 +50,13 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		},
 		func() error {
 			return wayland.NewSeatGlobal(d, 7, func(c server.Client, v, id uint32) {
-				r, e := wayland.NewSeat(c, int32(v), id, seat{})
+				r, e := wayland.NewSeat(c, int32(v), id, seat{s})
 				if e == nil {
-					r.SendCapabilities(0)
+					capabilities := uint32(0)
+					if s.keymapFD >= 0 {
+						capabilities = uint32(wayland.SeatCapabilityKeyboard)
+					}
+					r.SendCapabilities(capabilities)
 					if v >= 2 {
 						r.SendName("seat0")
 					}
@@ -237,13 +241,44 @@ type output struct{}
 
 func (output) Release(*wayland.Output) {}
 
-type seat struct{}
+type seat struct{ server *Server }
 
 func (seat) GetPointer(r *wayland.Seat, id uint32) {
 	wayland.NewPointer(r.Client(), r.Version(), id, pointer{})
 }
-func (seat) GetKeyboard(r *wayland.Seat, id uint32) {
-	wayland.NewKeyboard(r.Client(), r.Version(), id, keyboard{})
+func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
+	k, err := wayland.NewKeyboard(r.Client(), r.Version(), id, keyboard{})
+	if err != nil {
+		return
+	}
+	s := h.server
+	k.OnDestroy = func() {
+		list := s.keyboards[r.Client()]
+		for i, item := range list {
+			if item == k {
+				list = append(list[:i], list[i+1:]...)
+				break
+			}
+		}
+		if len(list) == 0 {
+			delete(s.keyboards, r.Client())
+		} else {
+			s.keyboards[r.Client()] = list
+		}
+	}
+	if s.keymapFD < 0 {
+		return
+	}
+	s.keyboards[r.Client()] = append(s.keyboards[r.Client()], k)
+	k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.keymapFD, s.keymapSize)
+	if r.Version() >= 4 {
+		k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+	}
+	if w := s.windows[s.focused]; w != nil && w.mapped && w.xdg.resource.Client() == r.Client() {
+		s.serial++
+		k.SendEnter(s.serial, w.xdg.surfaceResource(), []byte{})
+		s.sendModifiers(k)
+	}
 }
 func (seat) GetTouch(r *wayland.Seat, id uint32) {
 	wayland.NewTouch(r.Client(), r.Version(), id, touch{})

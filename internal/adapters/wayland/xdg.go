@@ -80,6 +80,9 @@ type window struct {
 }
 
 func (w *window) unmap() {
+	if w.xdg.server.focused == w.id {
+		w.xdg.server.changeFocus(0)
+	}
 	if !w.mapped {
 		return
 	}
@@ -188,3 +191,12 @@ type popup struct{}
 func (popup) Destroy(*xdgshell.Popup)                                  {}
 func (popup) Grab(*xdgshell.Popup, *wayland.Seat, uint32)              {}
 func (popup) Reposition(*xdgshell.Popup, *xdgshell.Positioner, uint32) {}
+
+func (x *xdgSurface) surfaceResource() *wayland.Surface {
+	for resource, state := range x.server.surfaces {
+		if state == x.surface && resource.Alive() {
+			return wayland.WrapSurface(resource)
+		}
+	}
+	return nil
+}
