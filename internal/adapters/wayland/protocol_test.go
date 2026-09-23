@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"bytes"
 	"errors"
 	"github.com/bnema/nefertty/internal/ports"
 	"path/filepath"
@@ -49,7 +50,14 @@ func requestProtocol(t *testing.T, c *wlturbo.Display, id uint32, op uint32, arg
 func expectProtocolError(t *testing.T, c *wlturbo.Display, object, code uint32) {
 	t.Helper()
 	done := make(chan error, 1)
-	go func() { done <- c.Roundtrip() }()
+	go func() {
+		for {
+			if err := c.Dispatch(); err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
 	select {
 	case err := <-done:
 		var displayErr *wlturbo.DisplayError
@@ -332,4 +340,218 @@ func TestBufferContentUnpaddedLastRow(t *testing.T) {
 			t.Fatalf("last row byte %d = %d, want %d", i, content.Pixels[16+i], v)
 		}
 	}
+}
+
+type pointerEvents struct {
+	wlturbo.BaseProxy
+	enters  chan [2]float64
+	buttons chan uint32
+}
+
+func (p *pointerEvents) Dispatch(e *wlturbo.Event) {
+	switch e.Opcode {
+	case uint16(wayland.PointerEventEnter):
+		_ = e.Uint32()
+		_ = e.Uint32()
+		p.enters <- [2]float64{e.Fixed().Float64(), e.Fixed().Float64()}
+	case uint16(wayland.PointerEventButton):
+		_ = e.Uint32()
+		_ = e.Uint32()
+		p.buttons <- e.Uint32()
+	}
+}
+
+func TestPointerProtocol(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	pointer := c.AllocateID()
+	p := &pointerEvents{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 1)}
+	p.SetID(pointer)
+	c.Context().Register(p)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	registerProtocol(t, c, shm)
+	surf, xdg := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	registerProtocol(t, c, surf)
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+	serials := make(chan uint32, 1)
+	xp := &configureProxy{serial: serials}
+	xp.SetID(xdg)
+	c.Context().Register(xp)
+	top := c.AllocateID()
+	registerProtocol(t, c, top)
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, <-serials)
+	fd, err := unix.MemfdCreate("pointer-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	pool, buffer := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buffer)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	w := mapped(t, events, 2*time.Second)
+	commands <- ports.PointerFocus{ID: w.ID, X: 10, Y: 20}
+	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, TimeMsec: 1}
+	deadline := time.After(2 * time.Second)
+	dispatched := make(chan error, 1)
+	go func() {
+		for {
+			if err := c.Dispatch(); err != nil {
+				dispatched <- err
+				return
+			}
+		}
+	}()
+	for len(p.enters) == 0 || len(p.buttons) == 0 {
+		select {
+		case err := <-dispatched:
+			t.Fatal(err)
+		case <-deadline:
+			t.Fatal("pointer events timeout")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	select {
+	case coords := <-p.enters:
+		if coords != [2]float64{10, 20} {
+			t.Fatalf("enter: %v", coords)
+		}
+	default:
+		t.Fatal("missing pointer enter")
+	}
+	select {
+	case button := <-p.buttons:
+		if button != 0x110 {
+			t.Fatalf("button: %d", button)
+		}
+	default:
+		t.Fatal("missing pointer button")
+	}
+}
+
+type heldKeyProxy struct {
+	wlturbo.BaseProxy
+	enters chan []byte
+}
+
+func (p *heldKeyProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == uint16(wayland.KeyboardEventEnter) {
+		_ = e.Uint32()
+		_ = e.Uint32()
+		p.enters <- e.Array()
+	}
+}
+
+func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	keyboard := c.AllocateID()
+	kp := &heldKeyProxy{enters: make(chan []byte, 4)}
+	kp.SetID(keyboard)
+	c.Context().Register(kp)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, keyboard)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	registerProtocol(t, c, shm)
+	fd, err := unix.MemfdCreate("held-key-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	pool, buffer := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buffer)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	mapWindow := func() ports.WindowID {
+		surf, xdg, top := c.AllocateID(), c.AllocateID(), c.AllocateID()
+		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+		registerProtocol(t, c, surf)
+		requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+		serials := make(chan uint32, 1)
+		xp := &configureProxy{serial: serials}
+		xp.SetID(xdg)
+		c.Context().Register(xp)
+		registerProtocol(t, c, top)
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case serial := <-serials:
+			requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+		default:
+			t.Fatal("missing configure")
+		}
+		requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		return mapped(t, events, 2*time.Second).ID
+	}
+	a := mapWindow()
+	b := mapWindow()
+	// Dispatch without sending a new request after focus changes.
+	dispatched := make(chan error, 1)
+	go func() {
+		for {
+			if err := c.Dispatch(); err != nil {
+				dispatched <- err
+				return
+			}
+		}
+	}()
+	enter := func(want []byte) {
+		t.Helper()
+		select {
+		case got := <-kp.enters:
+			if !bytes.Equal(got, want) {
+				t.Fatalf("keyboard enter keys = %v, want %v", got, want)
+			}
+		case err := <-dispatched:
+			t.Fatal(err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("keyboard enter timeout")
+		}
+	}
+	commands <- ports.FocusWindow{ID: a}
+	enter(nil)
+	commands <- ports.ForwardKey{ID: a, Key: ports.KeyEvent{Keycode: 30, Pressed: true, TimeMsec: 1}}
+	commands <- ports.FocusWindow{ID: b}
+	enter([]byte{30, 0, 0, 0})
+	commands <- ports.ForwardKey{ID: b, Key: ports.KeyEvent{Keycode: 30, TimeMsec: 2}}
+	commands <- ports.FocusWindow{ID: a}
+	enter(nil)
 }

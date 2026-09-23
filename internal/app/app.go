@@ -101,9 +101,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
-		workers.Add(1)
+		// A reader without Close may remain blocked in Scan after shutdown.
+		// It must not be joined with the application workers.
+		if closer, ok := opts.Script.(io.Closer); ok {
+			go func() { <-ctx.Done(); _ = closer.Close() }()
+		}
 		go func() {
-			defer workers.Done()
 			defer close(script)
 			scanner := bufio.NewScanner(opts.Script)
 			for scanner.Scan() {

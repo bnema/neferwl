@@ -16,6 +16,7 @@ func TestScript(t *testing.T) {
 		codes []uint32
 	}{
 		{"type Hi!", []string{"Shift_L", "H", "H", "Shift_L", "i", "i", "Shift_L", "exclam", "exclam", "Shift_L"}, nil},
+		{"key Shift+A", []string{"Shift_L", "A", "A", "Shift_L"}, []uint32{42, 30, 30, 42}},
 		{"key Super+Return", []string{"Super_L", "Return", "Return", "Super_L"}, []uint32{125, 28, 28, 125}},
 	} {
 		t.Run(tt.line, func(t *testing.T) {
@@ -44,10 +45,10 @@ func TestScript(t *testing.T) {
 				if tt.codes != nil && ev.Keycode != tt.codes[i] {
 					t.Errorf("code %d: %d", i, ev.Keycode)
 				}
-				if tt.codes != nil && i == 1 && ev.Mods&ports.ModSuper == 0 {
+				if tt.line == "key Super+Return" && i == 1 && ev.Mods&ports.ModSuper == 0 {
 					t.Error("Return missing Super")
 				}
-				if tt.codes != nil && i == 3 && ev.Mods&ports.ModSuper != 0 {
+				if tt.line == "key Super+Return" && i == 3 && ev.Mods&ports.ModSuper != 0 {
 					t.Error("Super not released")
 				}
 			}

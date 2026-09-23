@@ -4,6 +4,7 @@ import (
 	"context"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -239,5 +240,20 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	}
 	if !two || !focused {
 		t.Fatalf("two columns=%v first focused=%v", two, focused)
+	}
+}
+
+func TestBlockedScriptShutdown(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	r, w := io.Pipe()
+	defer w.Close()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), Options{Backend: "headless", Config: config.Defaults(), NoTerminal: true, Script: r, Timeout: 300 * time.Millisecond})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked script prevented shutdown")
 	}
 }
