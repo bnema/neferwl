@@ -167,7 +167,7 @@ func TestHeadlessTyping(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	dir := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, ScreenshotDir: dir, Script: strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n"), Timeout: 6 * time.Second})
+	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
 	if err != nil {
 		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -219,7 +219,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	scenes := make(chan ports.Scene, 128)
-	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, Script: strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n"), Timeout: 5 * time.Second, testScenes: scenes})
+	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)

@@ -30,8 +30,9 @@ type Options struct {
 	Timeout       time.Duration
 	NoTerminal    bool
 	ScreenshotDir string
-	Script        io.Reader
-	testScenes    chan<- ports.Scene
+	// Run closes Script on shutdown; the reader goroutine exits after Close.
+	Script     io.ReadCloser
+	testScenes chan<- ports.Scene
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
@@ -101,11 +102,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
-		// A reader without Close may remain blocked in Scan after shutdown.
-		// It must not be joined with the application workers.
-		if closer, ok := opts.Script.(io.Closer); ok {
-			go func() { <-ctx.Done(); _ = closer.Close() }()
-		}
+		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
 		go func() {
 			defer close(script)
 			scanner := bufio.NewScanner(opts.Script)
