@@ -336,6 +336,27 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		uploads = append(uploads, u)
 		used += n
 	}
+	fullscreen := false
+	for _, w := range s.Windows {
+		fullscreen = fullscreen || (!w.Hidden && w.Fullscreen)
+	}
+	addLayers := func(afterWindows bool) {
+		for _, layer := range s.Layers {
+			if (layer.Layer >= ports.LayerTop) != afterWindows ||
+				(fullscreen && (layer.Layer == ports.LayerBottom || layer.Layer == ports.LayerTop)) ||
+				layer.Rect.W <= 0 || layer.Rect.H <= 0 {
+				continue
+			}
+			content := contents[layer.ID]
+			width, height := min(content.Width, layer.Rect.W), min(content.Height, layer.Rect.H)
+			if content.Pixels == nil || width <= 0 || height <= 0 || content.Stride < width*4 || len(content.Pixels) < (height-1)*content.Stride+width*4 {
+				continue
+			}
+			x, y := layer.Rect.X, layer.Rect.Y
+			add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
+		}
+	}
+	addLayers(false)
 	for _, w := range s.Windows {
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
@@ -358,6 +379,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			}
 		}
 	}
+	addLayers(true)
 	if err := r.ensureStaging(used); err != nil {
 		return err
 	}

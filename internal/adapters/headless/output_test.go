@@ -141,3 +141,37 @@ func TestWritePNGAtomic(t *testing.T) {
 		t.Fatalf("unexpected files: %v", entries)
 	}
 }
+
+func TestRunPassesLayerContent(t *testing.T) {
+	scenes := make(chan ports.Scene, 1)
+	contents := make(chan ports.SurfaceContent, 1)
+	layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
+	scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
+	contents <- ports.SurfaceContent{ID: 42, Width: 1, Height: 1, Stride: 4, Pixels: []byte{0, 0, 255, 255}}
+	r := new(fakeRenderer)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (Renderer, error) { return r, nil }}, scenes, contents)
+	}()
+	deadline := time.After(3 * time.Second)
+	for {
+		r.mu.Lock()
+		passed := len(r.contents) > 0 && len(r.frames[0].Layers) == 1 && r.contents[0][42].Pixels != nil
+		r.mu.Unlock()
+		if passed {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			<-done
+			t.Fatal("layer content not passed to renderer")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
