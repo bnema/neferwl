@@ -45,6 +45,9 @@ type Server struct {
 	windows                 map[ports.WindowID]*window
 	nextWindow              ports.WindowID
 	focused                 ports.WindowID
+	pointerFocus            ports.WindowID
+	pointerX, pointerY      float64
+	pointers                map[server.Client][]*wayland.Pointer
 	modState                ports.ModState
 	keyboards               map[server.Client][]*wayland.Keyboard
 	keymapFD                int
@@ -87,7 +90,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	if opts.Keymap != "" {
 		if uint64(len(opts.Keymap))+1 > uint64(^uint32(0)) {
 			cleanup()
@@ -292,6 +295,28 @@ func (s *Server) forwardContents(ctx context.Context) {
 
 func (s *Server) apply(cmd ports.ClientCommand) {
 	switch c := cmd.(type) {
+	case ports.PointerFocus:
+		s.changePointerFocus(c.ID, c.X, c.Y)
+	case ports.PointerMotionTo:
+		if c.ID == s.pointerFocus {
+			for _, p := range s.windowPointers(s.windows[c.ID]) {
+				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				pointerFrame(p)
+			}
+		}
+	case ports.PointerButtonTo:
+		// Releases may target the implicit-grab window after focus has moved.
+		if w := s.windows[c.ID]; w != nil {
+			for _, p := range s.windowPointers(w) {
+				s.serial++
+				state := uint32(0)
+				if c.Pressed {
+					state = 1
+				}
+				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
+				pointerFrame(p)
+			}
+		}
 	case ports.FocusWindow:
 		if s.focused != c.ID {
 			s.changeFocus(c.ID)
@@ -376,6 +401,49 @@ func (s *Server) changeFocus(id ports.WindowID) {
 			s.serial++
 			k.SendEnter(s.serial, w.xdg.surfaceResource(), []byte{})
 			s.sendModifiers(k)
+		}
+	}
+}
+
+func pointerFrame(p *wayland.Pointer) {
+	if p.Version() >= 5 {
+		p.SendFrame()
+	}
+}
+func (s *Server) windowPointers(w *window) []*wayland.Pointer {
+	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
+		return nil
+	}
+	var result []*wayland.Pointer
+	for _, p := range s.pointers[w.xdg.resource.Client()] {
+		if p.Resource.Alive() {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
+	if id == s.pointerFocus {
+		return
+	}
+	if old := s.windows[s.pointerFocus]; old != nil {
+		if surface := old.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
+			for _, p := range s.windowPointers(old) {
+				s.serial++
+				p.SendLeave(s.serial, surface)
+				pointerFrame(p)
+			}
+		}
+	}
+	s.pointerFocus = 0
+	if w := s.windows[id]; w != nil {
+		if surface := w.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
+			s.pointerFocus, s.pointerX, s.pointerY = id, x, y
+			for _, p := range s.windowPointers(w) {
+				s.serial++
+				p.SendEnter(s.serial, surface, server.FixedFromFloat(x), server.FixedFromFloat(y))
+				pointerFrame(p)
+			}
 		}
 	}
 }

@@ -156,6 +156,21 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 		}
 	}
 }
+
+// FocusID selects a window and scrolls its column into view.
+func (w *Workspace) FocusID(id WindowID) bool {
+	for i := range w.Columns {
+		for j, v := range w.Columns[i].Windows {
+			if v == id {
+				w.Focus = i
+				w.Columns[i].Focus = j
+				w.scroll()
+				return true
+			}
+		}
+	}
+	return false
+}
 func (w *Workspace) FocusColumn(dir int) {
 	if len(w.Columns) > 0 && (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
 		w.Focus += dir

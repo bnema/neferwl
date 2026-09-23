@@ -54,6 +54,23 @@ type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 
 func (KeyEvent) inputEvent() {}
 
+// PointerMotion uses absolute output coordinates.
+type PointerMotion struct {
+	X, Y     float64
+	TimeMsec uint32
+}
+
+func (PointerMotion) inputEvent() {}
+
+// PointerButton uses evdev button codes (BTN_LEFT is 0x110).
+type PointerButton struct {
+	Button   uint32
+	Pressed  bool
+	TimeMsec uint32
+}
+
+func (PointerButton) inputEvent() {}
+
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
 
@@ -91,6 +108,31 @@ func (CloseWindow) clientCommand() {}
 type FocusWindow struct{ ID WindowID }
 
 func (FocusWindow) clientCommand() {}
+
+// PointerFocus changes the pointer surface; ID 0 clears focus. Coordinates are surface-local.
+type PointerFocus struct {
+	ID   WindowID
+	X, Y float64
+}
+
+func (PointerFocus) clientCommand() {}
+
+type PointerMotionTo struct {
+	ID       WindowID
+	X, Y     float64
+	TimeMsec uint32
+}
+
+func (PointerMotionTo) clientCommand() {}
+
+type PointerButtonTo struct {
+	ID       WindowID
+	Button   uint32
+	Pressed  bool
+	TimeMsec uint32
+}
+
+func (PointerButtonTo) clientCommand() {}
 
 // ForwardKey carries core → wayland unbound keys.
 type ForwardKey struct {

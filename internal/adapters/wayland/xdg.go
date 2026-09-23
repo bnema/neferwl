@@ -80,6 +80,9 @@ type window struct {
 }
 
 func (w *window) unmap() {
+	if w.xdg.server.pointerFocus == w.id {
+		w.xdg.server.changePointerFocus(0, 0, 0)
+	}
 	if w.xdg.server.focused == w.id {
 		w.xdg.server.changeFocus(0)
 	}

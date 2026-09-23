@@ -54,3 +54,32 @@ func TestScript(t *testing.T) {
 		})
 	}
 }
+
+func TestPointerScript(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Skip(err)
+	}
+	script := make(chan string, 4)
+	for _, line := range []string{"move 12.5 45", "click", "down right", "up right"} {
+		script <- line
+	}
+	close(script)
+	input := make(chan ports.InputEvent, 8)
+	if err := Run(context.Background(), km, script, input, logging.For(context.Background(), "input")); err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != 5 {
+		t.Fatalf("events: %d", len(input))
+	}
+	m := (<-input).(ports.PointerMotion)
+	if m.X != 12.5 || m.Y != 45 {
+		t.Fatal(m)
+	}
+	for _, want := range []ports.PointerButton{{Button: 0x110, Pressed: true}, {Button: 0x110}, {Button: 0x111, Pressed: true}, {Button: 0x111}} {
+		got := (<-input).(ports.PointerButton)
+		if got.Button != want.Button || got.Pressed != want.Pressed {
+			t.Fatalf("got %+v want %+v", got, want)
+		}
+	}
+}

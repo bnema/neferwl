@@ -28,14 +28,18 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	ch      Channels
-	cfg     ports.Config
-	ws      Workspace
-	binds   map[binding]Action
-	pressed map[string]bool
-	sent    map[WindowID]ports.ConfigureWindow
-	focus   WindowID
-	seq     uint64
+	ch               Channels
+	cfg              ports.Config
+	ws               Workspace
+	binds            map[binding]Action
+	pressed          map[string]bool
+	sent             map[WindowID]ports.ConfigureWindow
+	focus            WindowID
+	pointer          WindowID
+	grab             WindowID
+	buttons          map[uint32]bool
+	cursorX, cursorY float64
+	seq              uint64
 }
 
 func keyName(s string) string {
@@ -124,7 +128,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	if cap(ch.Scenes) != 1 {
 		return nil, fmt.Errorf("scenes must have capacity 1")
 	}
-	c := &Core{ch: ch, pressed: map[string]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -205,6 +209,12 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ws.AddWindow(v.ID)
 			case ports.WindowUnmapped:
 				c.ws.RemoveWindow(v.ID)
+				if c.pointer == v.ID {
+					c.pointer = 0
+					if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+						return nil
+					}
+				}
 			case ports.WindowFullscreenRequest:
 				c.ws.SetFullscreen(v.ID, v.Fullscreen)
 			}
@@ -243,6 +253,65 @@ func (c *Core) Run(ctx context.Context) error {
 		case ev, ok := <-c.ch.Input:
 			if !ok {
 				c.ch.Input = nil
+				continue
+			}
+			switch v := ev.(type) {
+			case ports.PointerMotion:
+				c.cursorX = min(max(v.X, 0), float64(max(c.ws.Output.W-1, 0)))
+				c.cursorY = min(max(v.Y, 0), float64(max(c.ws.Output.H-1, 0)))
+				var id WindowID
+				var x, y float64
+				// Fullscreen wins; otherwise the last visible placement is topmost.
+				for _, p := range c.ws.Layout() {
+					r := p.Rect
+					if !p.Hidden && r.W > 0 && r.H > 0 && c.cursorX >= float64(r.X) && c.cursorX < float64(r.X+r.W) && c.cursorY >= float64(r.Y) && c.cursorY < float64(r.Y+r.H) {
+						if id == 0 || p.Fullscreen {
+							id, x, y = p.ID, c.cursorX-float64(r.X), c.cursorY-float64(r.Y)
+						}
+						if p.Fullscreen {
+							break
+						}
+					}
+				}
+				// Layout changes are intentionally re-hit-tested only on motion.
+				if id != c.pointer {
+					c.pointer = id
+					if err := c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
+						return nil
+					}
+				}
+				if id != 0 {
+					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, TimeMsec: v.TimeMsec}); err != nil {
+						return nil
+					}
+				}
+				continue
+			case ports.PointerButton:
+				id := c.pointer
+				if c.grab != 0 {
+					id = c.grab
+				}
+				if v.Pressed {
+					if len(c.buttons) == 0 {
+						c.grab = id
+					}
+					c.buttons[v.Button] = true
+				} else {
+					delete(c.buttons, v.Button)
+				}
+				if id != 0 {
+					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
+						return nil
+					}
+					if v.Pressed && c.focus != id && c.ws.FocusID(id) {
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					}
+				}
+				if len(c.buttons) == 0 {
+					c.grab = 0
+				}
 				continue
 			}
 			key, ok := ev.(ports.KeyEvent)
