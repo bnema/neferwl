@@ -38,12 +38,19 @@ const (
 type InputEvent interface{ inputEvent() }
 
 // KeyEvent carries input → core key transitions; Keysym is an xkb keysym name.
+// Keycode is the evdev code (xkb keycode - 8) and State the xkb modifier state
+// after this transition; wayland forwards both to clients unchanged.
 type KeyEvent struct {
 	Keysym   string
 	Mods     Mods
 	Pressed  bool
 	TimeMsec uint32
+	Keycode  uint32
+	State    ModState
 }
+
+// ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
+type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 
 func (KeyEvent) inputEvent() {}
 
