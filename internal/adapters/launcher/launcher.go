@@ -2,7 +2,10 @@ package launcher
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"syscall"
@@ -61,7 +64,7 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 				l.log.Warn().Msg("empty spawn argv")
 				continue
 			}
-			path, err := exec.LookPath(req.Argv[0])
+			path, err := childLookPath(req.Argv[0], l.env)
 			if err != nil {
 				l.log.Warn().Err(err).Str("binary", req.Argv[0]).Msg("spawn failed")
 				continue
@@ -76,7 +79,31 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 				l.log.Warn().Err(err).Str("binary", req.Argv[0]).Msg("spawn failed")
 				continue
 			}
+			// Children have independent sessions and can outlive Run; reaping continues until process exit.
 			go func() { l.log.Debug().Err(cmd.Wait()).Str("binary", req.Argv[0]).Msg("child exited") }()
 		}
 	}
+}
+
+func childLookPath(name string, env []string) (string, error) {
+	if strings.Contains(name, "/") {
+		return name, nil
+	}
+	path := ""
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "PATH=") {
+			path = strings.TrimPrefix(entry, "PATH=")
+		}
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			dir = "."
+		}
+		candidate := filepath.Join(dir, name)
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() && info.Mode().Perm()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("executable %q not found in child PATH", name)
 }

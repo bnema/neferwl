@@ -21,7 +21,7 @@ type Options struct {
 	OutputWidth, OutputHeight int
 }
 
-// Channels carries client notifications and commands. Events must be buffered.
+// Channels carries client notifications and commands. Events may be unbuffered.
 type Channels struct {
 	Events   chan<- ports.ClientEvent
 	Commands <-chan ports.ClientCommand
@@ -41,6 +41,10 @@ type Server struct {
 	windows    map[ports.WindowID]*window
 	nextWindow ports.WindowID
 	focused    ports.WindowID
+	// eventMu protects only the notification queue, not display-owned window state.
+	eventMu    sync.Mutex
+	events     []ports.ClientEvent
+	eventReady chan struct{}
 }
 
 func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
@@ -56,16 +60,19 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	name, fd, cleanup, err := listen(opts.RuntimeDir)
 	if err != nil {
+		d.Close()
 		return nil, err
 	}
 	if err = d.AddSocketFD(fd); err != nil {
 		unix.Close(fd)
 		cleanup()
+		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), windows: make(map[ports.WindowID]*window), nextWindow: 1}
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1)}
 	if err = registerGlobals(d, opts, s); err != nil {
 		cleanup()
+		d.Close()
 		return nil, err
 	}
 	return s, nil
@@ -77,7 +84,8 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
+	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() {
 		defer wg.Done()
 		for {
@@ -146,9 +154,36 @@ func (s *Server) emit(ev ports.ClientEvent) {
 	if s.channels.Events == nil {
 		return
 	}
+	s.eventMu.Lock()
+	s.events = append(s.events, ev)
+	s.eventMu.Unlock()
 	select {
-	case s.channels.Events <- ev:
-	case <-s.ctx.Done():
+	case s.eventReady <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) forward(ctx context.Context) {
+	for {
+		s.eventMu.Lock()
+		if len(s.events) == 0 {
+			s.eventMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.eventReady:
+				continue
+			}
+		}
+		ev := s.events[0]
+		s.events[0] = nil
+		s.events = s.events[1:]
+		s.eventMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case s.channels.Events <- ev:
+		}
 	}
 }
 

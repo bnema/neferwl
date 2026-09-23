@@ -289,3 +289,78 @@ func TestFootWindow(t *testing.T) {
 		t.Fatalf("foot did not map: %s", output.String())
 	}
 }
+
+func TestNewMissingRuntimeDirClosesDisplay(t *testing.T) {
+	before, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Skip(err)
+	}
+	dir := filepath.Join(t.TempDir(), "missing")
+	if _, err := New(Options{RuntimeDir: dir}, Channels{}, logging.For(context.Background(), "wayland")); err == nil {
+		t.Fatal("expected error")
+	}
+	after, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("fd leak: %d -> %d", len(before), len(after))
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("unexpected directory: %v", err)
+	}
+}
+
+func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	dir := t.TempDir()
+	events := make(chan ports.ClientEvent)
+	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("Run hung")
+		}
+	})
+	lifecycleClient(t, tool, s, dir, nil)
+	deadline := time.After(5 * time.Second)
+	for {
+		ready := make(chan bool, 1)
+		go func() { ready <- s.display.Do(func() {}) }()
+		select {
+		case ok := <-ready:
+			if !ok {
+				t.Fatal("display stopped")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("display blocked on event")
+		}
+		mappedOnDisplay := false
+		if !s.display.Do(func() { mappedOnDisplay = len(s.windows) > 0 }) {
+			t.Fatal("display stopped")
+		}
+		if mappedOnDisplay {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("no mapping event")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	mapped(t, events, time.Second)
+}

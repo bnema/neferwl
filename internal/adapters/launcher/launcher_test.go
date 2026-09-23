@@ -57,3 +57,38 @@ func TestRun(t *testing.T) {
 		t.Fatal("launcher did not stop")
 	}
 }
+
+func TestChildPath(t *testing.T) {
+	dir := t.TempDir()
+	name := "nefertty-child-only-script"
+	result := filepath.Join(dir, "result")
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf ok > \"$1\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reqs := make(chan ports.SpawnRequest, 1)
+	done := make(chan error, 1)
+	go func() { done <- New([]string{"PATH=" + dir}, logging.For(ctx, "launcher")).Run(ctx, reqs) }()
+	reqs <- ports.SpawnRequest{Argv: []string{name, result}}
+	deadline := time.After(3 * time.Second)
+	for {
+		if data, err := os.ReadFile(result); err == nil {
+			if string(data) != "ok" {
+				t.Fatalf("result: %q", data)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("child not started")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("launcher hung")
+	}
+}
