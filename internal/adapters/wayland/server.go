@@ -42,6 +42,10 @@ type Server struct {
 	nextWindow ports.WindowID
 	focused    ports.WindowID
 	// eventMu protects only the notification queue, not display-owned window state.
+	// The event queue is unbounded by design: it grows only if core stops draining
+	// Events, which happens only at shutdown (core owns the receiving end). A
+	// stalled core is a bug surfaced by ctx cancellation, not a reason to block
+	// the display goroutine.
 	eventMu    sync.Mutex
 	events     []ports.ClientEvent
 	eventReady chan struct{}

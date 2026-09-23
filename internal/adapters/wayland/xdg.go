@@ -61,12 +61,13 @@ type xdgSurface struct {
 	configured bool
 	acked      bool
 	window     *window
+	popup      *xdgshell.Popup
 	serials    []uint32
 }
 
 func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
-	if x.window != nil {
-		r.PostError(uint32(xdgshell.SurfaceErrorDefunctRoleObject), "toplevel still exists")
+	if x.window != nil || x.popup != nil {
+		r.PostError(uint32(xdgshell.SurfaceErrorDefunctRoleObject), "role object still exists")
 	}
 }
 
@@ -89,8 +90,8 @@ func (w *window) unmap() {
 	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
-	if x.window != nil {
-		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "toplevel already constructed")
+	if x.window != nil || x.popup != nil {
+		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "role object already constructed")
 		return
 	}
 	w := &window{id: x.server.nextWindow, xdg: x}
@@ -123,6 +124,8 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	}
 	t.OnDestroy = func() {
 		w.unmap()
+		x.surface.current, x.surface.pending = nil, nil
+		x.surface.attached = false
 		delete(x.server.windows, w.id)
 		x.window = nil
 		x.surface.role = nil
@@ -132,7 +135,13 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	}
 }
 func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surface, _ *xdgshell.Positioner) {
+	if x.window != nil || x.popup != nil {
+		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "role object already constructed")
+		return
+	}
 	if p, e := xdgshell.NewPopup(r.Client(), r.Version(), id, popup{}); e == nil {
+		x.popup = p
+		p.OnDestroy = func() { x.popup = nil }
 		p.SendPopupDone()
 	}
 }

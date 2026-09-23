@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"errors"
+	"github.com/bnema/nefertty/internal/ports"
 	"path/filepath"
 	"testing"
 	"time"
@@ -103,10 +104,6 @@ func TestXDGProtocolErrors(t *testing.T) {
 			requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
 			switch scenario {
 			case "bogus ack":
-				requestProtocol(t, c, surface, wayland.SurfaceRequestCommit)
-				if err := c.Roundtrip(); err != nil {
-					t.Fatal(err)
-				}
 				requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, uint32(0))
 				expectProtocolError(t, c, xdg, uint32(xdgshell.SurfaceErrorInvalidSerial))
 			case "buffer before ack":
@@ -137,4 +134,127 @@ func TestXDGProtocolErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPopupBlocksSecondRole(t *testing.T) {
+	s, _, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	surf, xdg := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+	registerProtocol(t, c, xdg)
+	registerProtocol(t, c, surf)
+	positioner := c.AllocateID()
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestCreatePositioner, positioner)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	popup := c.AllocateID()
+	registerProtocol(t, c, popup)
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetPopup, popup, uint32(0), positioner)
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, c.AllocateID())
+	expectProtocolError(t, c, xdg, uint32(xdgshell.SurfaceErrorAlreadyConstructed))
+}
+
+type configureProxy struct {
+	wlturbo.BaseProxy
+	serial chan uint32
+}
+
+func (p *configureProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == uint16(xdgshell.SurfaceEventConfigure) {
+		p.serial <- e.Uint32()
+	}
+}
+
+func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
+	s, events, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	surf, xdg := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+	serials := make(chan uint32, 4)
+	proxy := &configureProxy{serial: serials}
+	proxy.SetID(xdg)
+	c.Context().Register(proxy)
+	fd, err := unix.MemfdCreate("recreated-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	registerProtocol(t, c, shm)
+	pool, buffer := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buffer)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, uint32(0), int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	top := c.AllocateID()
+	registerProtocol(t, c, top)
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case serial := <-serials:
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+	case <-time.After(2 * time.Second):
+		t.Fatal("initial configure timeout")
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	mapped(t, events, 2*time.Second)
+	requestProtocol(t, c, top, xdgshell.ToplevelRequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-events:
+		if _, ok := ev.(ports.WindowUnmapped); !ok {
+			t.Fatalf("expected unmap, got %T", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("unmap timeout")
+	}
+	top = c.AllocateID()
+	registerProtocol(t, c, top)
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case serial := <-serials:
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+	case <-time.After(2 * time.Second):
+		t.Fatal("recreated configure timeout")
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("mapped without new buffer: %T", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	mapped(t, events, 2*time.Second)
 }
