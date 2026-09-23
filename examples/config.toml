@@ -1,0 +1,38 @@
+[keyboard]
+layout = ""
+variant = ""
+options = ""
+repeat_rate = 25
+repeat_delay = 600
+cmd_key = "super"
+
+[terminal]
+command = ["foot"]
+
+[background]
+color = "#1e1e2e"
+
+[layout]
+gaps = 8
+default_column_width = "1/2"
+presets = ["1/3", "1/2", "2/3", "1"]
+
+[render]
+direct_scanout = true
+
+[log]
+level = "info"
+debug = []
+
+[binds]
+"Cmd+Return" = "spawn-terminal"
+"Cmd+Left" = "focus-column-left"
+"Cmd+Right" = "focus-column-right"
+"Cmd+Up" = "focus-window-up"
+"Cmd+Down" = "focus-window-down"
+"Cmd+Shift+Left" = "move-column-left"
+"Cmd+Shift+Right" = "move-column-right"
+"Cmd+R" = "cycle-column-width"
+"Cmd+Shift+F" = "toggle-fullscreen"
+"Cmd+Q" = "close-window"
+"Ctrl+Alt+BackSpace" = "quit"

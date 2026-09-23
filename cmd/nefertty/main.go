@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/app"
 	"github.com/bnema/nefertty/internal/logging"
 )
@@ -20,6 +21,23 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "validate-config" {
+		if len(os.Args) > 3 {
+			err := fmt.Errorf("usage: validate-config [path]")
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+		path := config.DefaultPath()
+		if len(os.Args) == 3 {
+			path = os.Args[2]
+		}
+		if _, err := config.Load(path); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+		fmt.Println("ok: " + path)
+		return nil
+	}
 	if len(os.Args) == 2 && os.Args[1] == "version" {
 		info, ok := debug.ReadBuildInfo()
 		if !ok {
@@ -37,7 +55,7 @@ func run() error {
 	backend := flags.String("backend", "drm", "drm or headless")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
-	config := flags.String("config", "", "config path (empty uses XDG default later)")
+	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -65,7 +83,18 @@ func run() error {
 		log.Error().Err(err).Msg("invalid options")
 		return err
 	}
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: *config, Timeout: *timeout}); err != nil {
+	path := *configFlag
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	configLog := logging.For(ctx, "config")
+	configLog.Info().Str("path", path).Msg("loaded config")
+	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout}); err != nil {
 		log.Error().Err(err).Msg("application failed")
 		return err
 	}

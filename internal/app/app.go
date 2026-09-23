@@ -6,11 +6,12 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/logging"
+	"github.com/bnema/nefertty/internal/ports"
 )
 
 type Options struct {
 	Backend string
-	Config  string
+	Config  ports.Config
 	Timeout time.Duration
 }
 

@@ -7,3 +7,16 @@ Requires Linux and Go 1.27.
 Build: `make build`
 
 Run: `nefertty --backend=headless --timeout 5s`
+
+## Configuration
+
+Configuration lives at `$XDG_CONFIG_HOME/nefertty/config.toml` (or `~/.config/nefertty/config.toml`). Use `nefertty --config path` to select another file; `nefertty validate-config [path]` checks it without starting the compositor.
+
+```toml
+[terminal]
+command = ["foot"]
+[layout]
+gaps = 8
+```
+
+See `examples/config.toml` for all defaults.
