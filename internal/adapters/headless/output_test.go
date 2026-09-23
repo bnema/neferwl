@@ -115,3 +115,29 @@ func TestErrors(t *testing.T) {
 		t.Fatal("not closed")
 	}
 }
+
+func TestWritePNGAtomic(t *testing.T) {
+	dir := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	for _, name := range []string{"frame-000001.png", "latest.png"} {
+		path := filepath.Join(dir, name)
+		if err := writePNG(path, img); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := png.Decode(f); err != nil {
+			t.Fatal(err)
+		}
+		_ = f.Close()
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("unexpected files: %v", entries)
+	}
+}

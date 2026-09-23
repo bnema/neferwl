@@ -110,3 +110,38 @@ func TestRendererContents(t *testing.T) {
 	c := windowColor(1)
 	check(0, 0, color.RGBA{c[0], c[1], c[2], 255})
 }
+
+func TestRendererUploadOrderAndOpaque(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{
+		{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}},
+		{ID: 2, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}},
+	}}
+	if err := r.Render(scene, nil); err != nil {
+		t.Fatal(err)
+	}
+	c := windowColor(2)
+	if got, want := r.Pixels().RGBAAt(10, 10), (color.RGBA{c[0], c[1], c[2], 255}); got != want {
+		t.Errorf("overlap = %v, want %v", got, want)
+	}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true}}
+	contents := map[ports.WindowID]ports.SurfaceContent{1: {Width: 16, Height: 16, Stride: 64, Opaque: true, Pixels: make([]byte, 16*16*4)}}
+	for i := 0; i < len(contents[1].Pixels); i += 4 {
+		copy(contents[1].Pixels[i:i+4], []byte{3, 5, 7, 0})
+	}
+	if err := r.Render(scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{{3, 3, color.RGBA{255, 255, 255, 255}}, {10, 10, color.RGBA{7, 5, 3, 255}}} {
+		if got := r.Pixels().RGBAAt(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}

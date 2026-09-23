@@ -176,7 +176,7 @@ func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, offset, width, height
 		p.shm.PostError(uint32(wayland.ShmErrorInvalidFormat), "unsupported format")
 		return
 	}
-	if width <= 0 || height <= 0 || int64(stride) < int64(width)*4 || offset < 0 || stride <= 0 || int64(offset)+int64(stride)*int64(height) > int64(p.size) {
+	if width <= 0 || height <= 0 || int64(stride) < int64(width)*4 || offset < 0 || stride <= 0 || int64(offset)+int64(height-1)*int64(stride)+int64(width)*4 > int64(p.size) {
 		p.shm.PostError(uint32(wayland.ShmErrorInvalidStride), "invalid buffer dimensions")
 		return
 	}
@@ -228,11 +228,11 @@ func (b *buffer) content(id ports.WindowID) (content ports.SurfaceContent, ok bo
 			ok = false
 		}
 	}()
-	size := b.stride * b.height
+	size := (b.height-1)*b.stride + b.width*4
 	pixels := make([]byte, size)
 	for y := 0; y < b.height; y++ {
 		start := b.offset + y*b.stride
-		copy(pixels[y*b.stride:(y+1)*b.stride], b.pool.data[start:start+b.stride])
+		copy(pixels[y*b.stride:y*b.stride+b.width*4], b.pool.data[start:start+b.width*4])
 	}
 	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Stride: b.stride, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), Pixels: pixels}, true
 }
