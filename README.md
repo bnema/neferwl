@@ -25,5 +25,5 @@ Building requires sibling checkouts of purego-libwayland and purego-vulkan until
 
 ## Try it (headless)
 
-Run `nefertty --backend=headless`, then connect with
-`WAYLAND_DISPLAY=<logged name> foot`. The headless backend does not render yet.
+Run `nefertty --backend=headless --screenshot /tmp/nefertty-shots`, then connect with
+`WAYLAND_DISPLAY=<logged name> foot`. `/tmp/nefertty-shots/latest.png` shows the current frame.

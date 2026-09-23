@@ -21,6 +21,7 @@ func TestExitCodes(t *testing.T) {
 	}{
 		{[]string{"nefertty", "--help"}, 0},
 		{[]string{"nefertty", "--backend=invalid"}, 2},
+		{[]string{"nefertty", "--backend=drm", "--screenshot=/tmp/shots"}, 2},
 		{[]string{"nefertty", "--timeout=-1s"}, 2},
 		{[]string{"nefertty", "extra"}, 2},
 		{[]string{"nefertty", "--config=/nonexistent/nefertty.toml"}, 1},

@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/nefertty/internal/adapters/headless"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
+	"github.com/bnema/nefertty/internal/adapters/vulkan"
 	"github.com/bnema/nefertty/internal/adapters/wayland"
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/logging"
@@ -17,11 +19,12 @@ import (
 )
 
 type Options struct {
-	Backend    string
-	Config     ports.Config
-	Timeout    time.Duration
-	NoTerminal bool
-	testScenes chan<- ports.Scene
+	Backend       string
+	Config        ports.Config
+	Timeout       time.Duration
+	NoTerminal    bool
+	ScreenshotDir string
+	testScenes    chan<- ports.Scene
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
@@ -47,6 +50,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	spawn := make(chan ports.SpawnRequest, 32)
 	scenes := make(chan ports.Scene, 1)
 	configErrors := make(chan error, 8)
+	renderScenes := make(chan ports.Scene, 1)
+	contents := make(chan ports.SurfaceContent, 64)
+	// TODO(merge): wire wayland Contents to contents.
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: config, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: configErrors}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -67,12 +73,23 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		inject(input)
 	}
 	var workers sync.WaitGroup
-	workers.Add(4)
-	done := make(chan error, 3)
+	workers.Add(5)
+	done := make(chan error, 4)
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
-	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes) }()
+	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes, renderScenes) }()
+
+	go func() {
+		defer workers.Done()
+		done <- headless.Run(ctx, headless.Options{Width: 1920, Height: 1080, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
+			r, err := vulkan.New(w, h)
+			if err != nil {
+				return nil, err
+			}
+			return vkRenderer{r}, nil
+		}}, renderScenes, contents)
+	}()
 
 	var result error
 	select {
@@ -93,7 +110,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	return result
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene, renderScenes chan ports.Scene) {
 	log := logging.For(ctx, "core")
 	for {
 		select {
@@ -106,9 +123,28 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 				default:
 				}
 			}
+			select {
+			case renderScenes <- s:
+			default:
+				select {
+				case <-renderScenes:
+				default:
+				}
+				select {
+				case renderScenes <- s:
+				default:
+				}
+			}
 			log.Debug().Uint64("seq", s.Seq).Int("windows", len(s.Windows)).Msg("scene")
 		case err := <-configErrors:
 			log.Debug().Err(err).Msg("config rejected")
 		}
 	}
+}
+
+// TODO(merge): drop once vulkan.Render takes contents.
+type vkRenderer struct{ *vulkan.Renderer }
+
+func (r vkRenderer) Render(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) error {
+	return r.Renderer.Render(s)
 }
