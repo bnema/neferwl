@@ -284,8 +284,8 @@ func TestFootWindow(t *testing.T) {
 			t.Fatalf("app ID: %q", w.AppID)
 		}
 	case err := <-done:
-		t.Skipf("foot unavailable: %v: %s", err, output.String())
+		t.Fatalf("foot exited: %v: %s", err, output.String())
 	case <-time.After(10 * time.Second):
-		t.Skipf("foot did not map: %s", output.String())
+		t.Fatalf("foot did not map: %s", output.String())
 	}
 }

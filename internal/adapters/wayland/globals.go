@@ -13,6 +13,11 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
 		func() error {
+			return wayland.NewSubcompositorGlobal(d, 1, func(c server.Client, v, id uint32) {
+				wayland.NewSubcompositor(c, int32(v), id, subcompositor{s})
+			})
+		},
+		func() error {
 			return wayland.NewShmGlobal(d, 1, func(c server.Client, v, id uint32) {
 				r, e := wayland.NewShm(c, int32(v), id, shm{})
 				if e == nil {
@@ -76,6 +81,36 @@ func (compositor) CreateRegion(r *wayland.Compositor, id uint32) {
 	wayland.NewRegion(r.Client(), r.Version(), id, region{})
 }
 func (compositor) Release(*wayland.Compositor) {}
+
+type subcompositor struct{ server *Server }
+
+func (subcompositor) Destroy(*wayland.Subcompositor) {}
+func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, parent *wayland.Surface) {
+	if w == nil || parent == nil {
+		return
+	}
+	state := c.server.surfaces[w.Resource]
+	if state == nil {
+		return
+	}
+	if state.role != nil {
+		r.PostError(uint32(wayland.SubcompositorErrorBadSurface), "surface already has role")
+		return
+	}
+	if sub, err := wayland.NewSubsurface(r.Client(), 1, id, subsurface{state}); err == nil {
+		state.role = func(bool) {}
+		sub.OnDestroy = func() { state.role = nil }
+	}
+}
+
+type subsurface struct{ surface *surface }
+
+func (subsurface) Destroy(*wayland.Subsurface)                      {}
+func (subsurface) SetPosition(*wayland.Subsurface, int32, int32)    {}
+func (subsurface) PlaceAbove(*wayland.Subsurface, *wayland.Surface) {}
+func (subsurface) PlaceBelow(*wayland.Subsurface, *wayland.Surface) {}
+func (subsurface) SetSync(*wayland.Subsurface)                      {}
+func (subsurface) SetDesync(*wayland.Subsurface)                    {}
 
 type region struct{}
 
