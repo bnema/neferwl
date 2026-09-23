@@ -22,6 +22,7 @@ type surface struct {
 	callbacks        []*wayland.Callback
 	role             func(bool)
 	destroyed        bool
+	released         bool
 }
 
 func (s *surface) Destroy(*wayland.Surface) {
@@ -46,15 +47,19 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
+	fresh := s.attached && s.pending != nil
 	if s.xdg != nil && s.attached && s.pending != nil && !s.xdg.acked {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
 	}
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
-			s.current.SendRelease()
+			if !s.released && s.current.Resource.Alive() {
+				s.current.SendRelease()
+			}
 		}
 		s.current = s.pending
+		s.released = false
 		s.pending = nil
 		s.attached = false
 	}
@@ -62,6 +67,20 @@ func (s *surface) Commit(*wayland.Surface) {
 	s.callbacks = nil
 	if s.role != nil {
 		s.role(s.current != nil)
+	}
+	if fresh && s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped && s.server.channels.Contents != nil {
+		b := s.current
+		if state, ok := s.server.buffers[b.Resource]; ok {
+			if c, ok := state.content(s.xdg.window.id); ok {
+				s.server.emitContent(c)
+			} else {
+				state.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
+			}
+			if b.Resource.Alive() {
+				b.SendRelease()
+			}
+			s.released = true
+		}
 	}
 }
 func (*surface) Damage(*wayland.Surface, int32, int32, int32, int32)       {}

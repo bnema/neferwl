@@ -118,7 +118,7 @@ func TestXDGProtocolErrors(t *testing.T) {
 				}
 				pool := c.AllocateID()
 				registerProtocol(t, c, shm)
-				if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, uint32(0), int32(4)); err != nil {
+				if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 					t.Fatal(err)
 				}
 				buffer := c.AllocateID()
@@ -194,7 +194,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, uint32(0), int32(4)); err != nil {
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -257,4 +257,26 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	mapped(t, events, 2*time.Second)
+}
+
+func TestSHMInvalidStride(t *testing.T) {
+	s, _, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	shm := bindProtocol(t, c, "wl_shm")
+	fd, err := unix.MemfdCreate("invalid-stride", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 16); err != nil {
+		t.Fatal(err)
+	}
+	pool := c.AllocateID()
+	registerProtocol(t, c, shm)
+	registerProtocol(t, c, pool)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, c.AllocateID(), int32(0), int32(2), int32(1), int32(4), uint32(wayland.ShmFormatArgb8888))
+	expectProtocolError(t, c, shm, uint32(wayland.ShmErrorInvalidStride))
 }

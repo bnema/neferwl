@@ -1,9 +1,11 @@
 package wayland
 
 import (
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
+	"runtime/debug"
 )
 
 func registerGlobals(d *server.Display, o Options, s *Server) error {
@@ -19,7 +21,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		},
 		func() error {
 			return wayland.NewShmGlobal(d, 1, func(c server.Client, v, id uint32) {
-				r, e := wayland.NewShm(c, int32(v), id, shm{})
+				r, e := wayland.NewShm(c, int32(v), id, shm{s})
 				if e == nil {
 					r.SendFormat(0)
 					r.SendFormat(1)
@@ -119,32 +121,117 @@ func (region) Destroy(*wayland.Region)                              {}
 func (region) Add(*wayland.Region, int32, int32, int32, int32)      {}
 func (region) Subtract(*wayland.Region, int32, int32, int32, int32) {}
 
-type shm struct{}
+type shm struct{ server *Server }
 
-func (shm) CreatePool(r *wayland.Shm, id uint32, fd int, size int32) {
-	p, e := wayland.NewShmPool(r.Client(), 1, id, &pool{fd: fd, size: size})
-	if e != nil {
+func (h shm) CreatePool(r *wayland.Shm, id uint32, fd int, size int32) {
+	if size <= 0 {
 		unix.Close(fd)
-	} else {
-		p.OnDestroy = func() { unix.Close(fd) }
+		r.PostError(uint32(wayland.ShmErrorInvalidFd), "invalid pool size")
+		return
+	}
+	data, err := unix.Mmap(fd, 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
+	if err != nil {
+		unix.Close(fd)
+		r.PostError(uint32(wayland.ShmErrorInvalidFd), "cannot map pool")
+		return
+	}
+	state := &pool{fd: fd, size: size, data: data, shm: r, server: h.server}
+	p, err := wayland.NewShmPool(r.Client(), 1, id, state)
+	if err != nil {
+		state.close()
+		return
+	}
+	p.OnDestroy = func() {
+		state.destroyed = true
+		if state.refs == 0 {
+			state.close()
+		}
 	}
 }
 func (shm) Release(*wayland.Shm) {}
 
 type pool struct {
-	fd   int
-	size int32
+	fd        int
+	size      int32
+	data      []byte
+	shm       *wayland.Shm
+	server    *Server
+	refs      int
+	destroyed bool
 }
 
-func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, _ int32, _ int32, _ int32, _ int32, _ uint32) {
-	wayland.NewBuffer(r.Client(), 1, id, buffer{})
+func (p *pool) close() {
+	if p.data != nil {
+		_ = unix.Munmap(p.data)
+		p.data = nil
+	}
+	_ = unix.Close(p.fd)
 }
-func (p *pool) Destroy(*wayland.ShmPool)              {}
-func (p *pool) Resize(_ *wayland.ShmPool, size int32) { p.size = size }
+func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, offset, width, height, stride int32, format uint32) {
+	if format != uint32(wayland.ShmFormatArgb8888) && format != uint32(wayland.ShmFormatXrgb8888) {
+		p.shm.PostError(uint32(wayland.ShmErrorInvalidFormat), "unsupported format")
+		return
+	}
+	if width <= 0 || height <= 0 || int64(stride) < int64(width)*4 || offset < 0 || stride <= 0 || int64(offset)+int64(stride)*int64(height) > int64(p.size) {
+		p.shm.PostError(uint32(wayland.ShmErrorInvalidStride), "invalid buffer dimensions")
+		return
+	}
+	state := &buffer{pool: p, offset: int(offset), width: int(width), height: int(height), stride: int(stride), format: format}
+	b, err := wayland.NewBuffer(r.Client(), 1, id, state)
+	if err != nil {
+		return
+	}
+	p.refs++
+	p.server.buffers[b.Resource] = state
+	b.OnDestroy = func() {
+		delete(p.server.buffers, b.Resource)
+		p.refs--
+		if p.destroyed && p.refs == 0 {
+			p.close()
+		}
+	}
+}
+func (p *pool) Destroy(*wayland.ShmPool) {}
+func (p *pool) Resize(r *wayland.ShmPool, size int32) {
+	if size <= p.size {
+		p.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "pool must grow")
+		return
+	}
+	data, err := unix.Mmap(p.fd, 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
+	if err != nil {
+		p.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "cannot resize pool")
+		return
+	}
+	_ = unix.Munmap(p.data)
+	p.data, p.size = data, size
+}
 
-type buffer struct{}
+type buffer struct {
+	pool                          *pool
+	offset, width, height, stride int
+	format                        uint32
+}
 
-func (buffer) Destroy(*wayland.Buffer) {}
+func (*buffer) Destroy(*wayland.Buffer) {}
+
+// A malicious client may truncate its fd after mmap; SetPanicOnFault converts
+// the resulting SIGBUS on this goroutine to a recoverable panic.
+func (b *buffer) content(id ports.WindowID) (content ports.SurfaceContent, ok bool) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() {
+		if recover() != nil {
+			content = ports.SurfaceContent{}
+			ok = false
+		}
+	}()
+	size := b.stride * b.height
+	pixels := make([]byte, size)
+	for y := 0; y < b.height; y++ {
+		start := b.offset + y*b.stride
+		copy(pixels[y*b.stride:(y+1)*b.stride], b.pool.data[start:start+b.stride])
+	}
+	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Stride: b.stride, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), Pixels: pixels}, true
+}
 
 type output struct{}
 

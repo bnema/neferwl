@@ -364,3 +364,59 @@ func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
 	}
 	mapped(t, events, time.Second)
 }
+
+func TestWestonContents(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	dir := t.TempDir()
+	events := make(chan ports.ClientEvent, 16)
+	contents := make(chan ports.SurfaceContent, 16)
+	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events, Contents: contents}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("Run hung")
+		}
+	})
+	_, _, output := lifecycleClient(t, tool, s, dir, nil)
+	w := mapped(t, events, 5*time.Second)
+	first := time.After(5 * time.Second)
+	count := 0
+	for count < 2 {
+		select {
+		case c := <-contents:
+			if c.ID != w.ID || c.Width <= 0 || c.Height <= 0 || c.Stride < c.Width*4 || len(c.Pixels) != c.Stride*c.Height {
+				t.Fatalf("invalid content: id=%d dimensions=%dx%d stride=%d length=%d", c.ID, c.Width, c.Height, c.Stride, len(c.Pixels))
+			}
+			nonzero := false
+			for _, b := range c.Pixels {
+				if b != 0 {
+					nonzero = true
+					break
+				}
+			}
+			if !nonzero {
+				t.Fatal("empty pixels")
+			}
+			if count == 0 {
+				first = time.After(2 * time.Second)
+			}
+			count++
+		case <-first:
+			t.Fatalf("only %d contents: %s", count, output.String())
+		}
+	}
+}

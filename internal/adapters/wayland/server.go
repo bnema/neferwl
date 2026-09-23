@@ -24,6 +24,7 @@ type Options struct {
 // Channels carries client notifications and commands. Events may be unbuffered.
 type Channels struct {
 	Events   chan<- ports.ClientEvent
+	Contents chan<- ports.SurfaceContent
 	Commands <-chan ports.ClientCommand
 }
 type Server struct {
@@ -36,6 +37,7 @@ type Server struct {
 	frames     uint64
 	started    time.Time
 	surfaces   map[*server.Resource]*surface
+	buffers    map[*server.Resource]*buffer
 	serial     uint32
 	ctx        context.Context
 	windows    map[ports.WindowID]*window
@@ -46,9 +48,14 @@ type Server struct {
 	// Events, which happens only at shutdown (core owns the receiving end). A
 	// stalled core is a bug surfaced by ctx cancellation, not a reason to block
 	// the display goroutine.
-	eventMu    sync.Mutex
-	events     []ports.ClientEvent
-	eventReady chan struct{}
+	eventMu       sync.Mutex
+	events        []ports.ClientEvent
+	eventReady    chan struct{}
+	contentMu     sync.Mutex
+	contents      map[ports.WindowID]ports.SurfaceContent
+	contentSeq    map[ports.WindowID]uint64
+	contentNotify chan struct{}
+	contentReady  chan struct{}
 }
 
 func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
@@ -73,7 +80,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1)}
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{})}
 	if err = registerGlobals(d, opts, s); err != nil {
 		cleanup()
 		d.Close()
@@ -88,8 +95,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() { defer wg.Done(); s.forward(ctx) }()
+	go func() { defer wg.Done(); s.forwardContents(ctx) }()
 	go func() {
 		defer wg.Done()
 		for {
@@ -187,6 +195,61 @@ func (s *Server) forward(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case s.channels.Events <- ev:
+		}
+	}
+}
+
+func (s *Server) emitContent(c ports.SurfaceContent) {
+	if s.channels.Contents == nil {
+		return
+	}
+	s.contentMu.Lock()
+	s.contents[c.ID] = c
+	s.contentSeq[c.ID]++
+	close(s.contentNotify)
+	s.contentNotify = make(chan struct{})
+	s.contentMu.Unlock()
+	select {
+	case s.contentReady <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) forwardContents(ctx context.Context) {
+	for {
+		s.contentMu.Lock()
+		var id ports.WindowID
+		var c ports.SurfaceContent
+		found := false
+		var seq uint64
+		var notify <-chan struct{}
+		for id, c = range s.contents {
+			found = true
+			seq = s.contentSeq[id]
+			break
+		}
+		notify = s.contentNotify
+		s.contentMu.Unlock()
+		if !found {
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.contentReady:
+				continue
+			}
+		}
+		// Do not hold a stale frame while the receiver is busy: wake on newer data.
+		select {
+		case <-ctx.Done():
+			return
+		case <-notify:
+			continue
+		case s.channels.Contents <- c:
+			s.contentMu.Lock()
+			if s.contentSeq[id] == seq {
+				delete(s.contents, id)
+			}
+			s.contentMu.Unlock()
 		}
 	}
 }
