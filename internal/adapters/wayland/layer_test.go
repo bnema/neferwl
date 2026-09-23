@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
@@ -138,5 +139,90 @@ func TestWaybarLayer(t *testing.T) {
 		t.Fatalf("waybar exited: %v stderr: %s", err, output.String())
 	case <-time.After(10 * time.Second):
 		t.Fatalf("waybar timeout stderr: %s", output.String())
+	}
+}
+
+func TestLayerAlreadyConstructed(t *testing.T) {
+	for _, scenario := range []string{"role", "attached", "committed"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, _, _, dir := lifecycleServer(t)
+			c := protocolClient(t, s, dir)
+			comp := bindProtocol(t, c, "wl_compositor")
+			shell := bindProtocol(t, c, "zwlr_layer_shell_v1")
+			surf := c.AllocateID()
+			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+			registerProtocol(t, c, surf)
+			switch scenario {
+			case "role":
+				sub := bindProtocol(t, c, "wl_subcompositor")
+				parent := c.AllocateID()
+				requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, parent)
+				registerProtocol(t, c, parent)
+				id := c.AllocateID()
+				requestProtocol(t, c, sub, wayland.SubcompositorRequestGetSubsurface, id, surf, parent)
+			case "attached":
+				requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+			case "committed":
+				requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+			}
+			id := c.AllocateID()
+			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, id, surf, uint32(0), uint32(ports.LayerTop), "test")
+			expectProtocolError(t, c, shell, uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed))
+		})
+	}
+}
+
+type doneProxy struct {
+	wlturbo.BaseProxy
+	done   int
+	opcode uint16
+}
+
+func (p *doneProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == p.opcode {
+		p.done++
+	}
+}
+func TestXDGOutputDone(t *testing.T) {
+	for _, version := range []uint32{1, 2} {
+		t.Run(fmt.Sprintf("wl_output_v%d", version), func(t *testing.T) {
+			s, _, _, dir := lifecycleServer(t)
+			c := protocolClient(t, s, dir)
+			global, ok := c.Registry().FindGlobal("wl_output")
+			if !ok {
+				t.Fatal("missing wl_output")
+			}
+			output, err := c.Registry().BindID(global.Name, global.Interface, version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			op := &doneProxy{opcode: uint16(wayland.OutputEventDone)}
+			op.SetID(output)
+			c.Context().Register(op)
+			global, ok = c.Registry().FindGlobal("zxdg_output_manager_v1")
+			if !ok {
+				t.Fatal("missing xdg output manager")
+			}
+			manager, err := c.Registry().BindID(global.Name, global.Interface, 3)
+			if err != nil {
+				t.Fatal(err)
+			}
+			registerProtocol(t, c, manager)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			op.done = 0
+			xdg := c.AllocateID()
+			xp := &doneProxy{opcode: 2}
+			xp.SetID(xdg)
+			c.Context().Register(xp)
+			requestProtocol(t, c, manager, 1, xdg, output)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			if version == 1 && (xp.done != 1 || op.done != 0) || version == 2 && (xp.done != 0 || op.done != 1) {
+				t.Fatalf("wl_output v%d: xdg done=%d, wl_output done=%d", version, xp.done, op.done)
+			}
+		})
 	}
 }

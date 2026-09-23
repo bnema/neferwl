@@ -43,6 +43,7 @@ type Server struct {
 	serial                  uint32
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
+	layers                  map[ports.WindowID]*layerSurface
 	nextWindow              ports.WindowID
 	focused                 ports.WindowID
 	pointerFocus            ports.WindowID
@@ -90,7 +91,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	if opts.Keymap != "" {
 		if uint64(len(opts.Keymap))+1 > uint64(^uint32(0)) {
 			cleanup()

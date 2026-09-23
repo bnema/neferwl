@@ -25,9 +25,9 @@ func (m xdgOutputManager) GetXdgOutput(r *xdgoutput.ZxdgOutputManagerV1, id uint
 		x.SendName("HEADLESS-1")
 		x.SendDescription("NeferTTY headless output")
 	}
-	if r.Version() < 3 {
+	if r.Version() < 3 || output == nil || output.Version() < 2 {
 		x.SendDone()
-	} else if output != nil && output.Version() >= 2 {
+	} else {
 		output.SendDone()
 	}
 }

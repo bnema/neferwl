@@ -23,6 +23,7 @@ type surface struct {
 	server           *Server
 	current, pending *wayland.Buffer
 	attached         bool
+	committed        bool
 	callbacks        []*wayland.Callback
 	role             func(bool)
 	destroyed        bool
@@ -51,6 +52,7 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
+	s.committed = true
 	fresh := s.attached && s.pending != nil
 	if s.layer != nil && s.attached && s.pending != nil && !s.layer.acked {
 		s.layer.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "buffer before configure ack")

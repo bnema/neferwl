@@ -31,11 +31,7 @@ type layerSurface struct {
 	serials                   []uint32
 }
 
-// Layer objects belong to the display goroutine, like xdg windows.
-var layerSets = map[*Server]map[ports.WindowID]*layerSurface{}
-
 func registerLayer(d *server.Display, o Options, s *Server) error {
-	layerSets[s] = make(map[ports.WindowID]*layerSurface)
 	return wlrlayershell.NewZwlrLayerShellV1Global(d, 4, func(c server.Client, v, id uint32) {
 		_, _ = wlrlayershell.NewZwlrLayerShellV1(c, int32(v), id, layerShell{s, uint32(o.OutputWidth), uint32(o.OutputHeight)})
 	})
@@ -46,8 +42,8 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		return
 	}
 	state := h.server.surfaces[w.Resource]
-	if state.kind != roleNone {
-		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorRole), "surface already has role")
+	if state.kind != roleNone || state.attached || state.current != nil || state.committed {
+		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed), "surface already constructed")
 		return
 	}
 	if layer > 3 {
@@ -65,10 +61,10 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 	state.kind = roleLayer
 	state.layer = l
 	state.role = l.commit
-	layerSets[h.server][l.id] = l
+	h.server.layers[l.id] = l
 	resource.OnDestroy = func() {
 		l.unmap()
-		delete(layerSets[h.server], l.id)
+		delete(h.server.layers, l.id)
 		state.layer = nil
 		state.role = nil
 		state.current, state.pending = nil, nil
@@ -91,6 +87,8 @@ func (l *layerSurface) SetExclusiveZone(_ *wlrlayershell.ZwlrLayerSurfaceV1, z i
 func (l *layerSurface) SetMargin(_ *wlrlayershell.ZwlrLayerSurfaceV1, t, r, b, left int32) {
 	l.pending.margin = [4]int32{t, r, b, left}
 }
+
+// Keyboard interactivity is deferred; layer-shell is capped at v4.
 func (l *layerSurface) SetKeyboardInteractivity(r *wlrlayershell.ZwlrLayerSurfaceV1, k uint32) {
 	if k > 2 {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidKeyboardInteractivity), "invalid keyboard interactivity")
@@ -98,6 +96,8 @@ func (l *layerSurface) SetKeyboardInteractivity(r *wlrlayershell.ZwlrLayerSurfac
 	}
 	l.pending.keyboard = k
 }
+
+// Layer popups are deferred; layer-shell is capped at v4.
 func (*layerSurface) GetPopup(*wlrlayershell.ZwlrLayerSurfaceV1, *xdgshell.Popup) {}
 func (l *layerSurface) AckConfigure(r *wlrlayershell.ZwlrLayerSurfaceV1, serial uint32) {
 	for i, v := range l.serials {
@@ -117,6 +117,8 @@ func (l *layerSurface) SetLayer(r *wlrlayershell.ZwlrLayerSurfaceV1, v uint32) {
 	}
 	l.pending.layer = ports.Layer(v)
 }
+
+// Exclusive edge is not implemented; layer-shell is capped at v4.
 func (*layerSurface) SetExclusiveEdge(*wlrlayershell.ZwlrLayerSurfaceV1, uint32) {}
 func (l *layerSurface) unmap() {
 	if !l.mapped {
@@ -131,7 +133,7 @@ func (l *layerSurface) unmap() {
 }
 func (s *Server) layerChanged() {
 	list := make([]ports.LayerSurface, 0)
-	for _, l := range layerSets[s] {
+	for _, l := range s.layers {
 		if !l.mapped {
 			continue
 		}
@@ -149,7 +151,7 @@ func (s *Server) layerChanged() {
 func (l *layerSurface) commit(buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
-		delete(layerSets[l.shell.server], l.id)
+		delete(l.shell.server.layers, l.id)
 		return
 	}
 	p := l.pending
