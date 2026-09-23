@@ -22,3 +22,8 @@ gaps = 8
 See `examples/config.toml` for all defaults.
 
 Building requires a sibling checkout of purego-libwayland until it is published.
+
+## Try it (headless)
+
+Run `nefertty --backend=headless`, then connect with
+`WAYLAND_DISPLAY=<logged name> foot`. The headless backend does not render yet.

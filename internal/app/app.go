@@ -4,24 +4,33 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/bnema/nefertty/internal/adapters/launcher"
+	"github.com/bnema/nefertty/internal/adapters/wayland"
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
 )
 
 type Options struct {
-	Backend string
-	Config  ports.Config
-	Timeout time.Duration
+	Backend    string
+	Config     ports.Config
+	Timeout    time.Duration
+	NoTerminal bool
+	testScenes chan<- ports.Scene
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
 
 func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)) error {
 	log := logging.For(ctx, "app")
+	if opts.Backend != "headless" {
+		return fmt.Errorf("drm backend not implemented yet")
+	}
 	log.Info().Str("backend", opts.Backend).Msg("starting nefertty")
 	var cancel context.CancelFunc
 	if opts.Timeout > 0 {
@@ -43,34 +52,28 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if err != nil {
 		return err
 	}
-	if opts.Backend == "headless" {
-		output <- ports.OutputMode{Width: 1920, Height: 1080}
+	output <- ports.OutputMode{Width: 1920, Height: 1080}
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080}, wayland.Channels{Events: client, Commands: commands}, logging.For(ctx, "wayland"))
+	if err != nil {
+		return err
+	}
+	log.Info().Str("WAYLAND_DISPLAY", server.SocketName()).Msg("listening")
+	child := launcher.New(launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir), logging.For(ctx, "launcher"))
+	if !opts.NoTerminal {
+		spawn <- ports.SpawnRequest{Argv: append([]string(nil), opts.Config.Terminal.Command...)}
 	}
 	if inject != nil {
 		inject(input)
 	}
 	var workers sync.WaitGroup
-	workers.Add(2)
-	done := make(chan error, 1)
+	workers.Add(4)
+	done := make(chan error, 3)
+	go func() { defer workers.Done(); done <- server.Run(ctx) }()
+	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
-	go func() {
-		defer workers.Done()
-		log := logging.For(ctx, "core")
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case s := <-scenes:
-				log.Debug().Uint64("seq", s.Seq).Int("windows", len(s.Windows)).Msg("scene")
-			case v := <-commands:
-				log.Debug().Interface("command", v).Msg("command")
-			case v := <-spawn:
-				log.Debug().Interface("spawn", v).Msg("spawn")
-			case e := <-configErrors:
-				log.Debug().Err(e).Msg("config rejected")
-			}
-		}
-	}()
+	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes) }()
+
 	var result error
 	select {
 	case <-ctx.Done():
@@ -78,8 +81,34 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	cancel()
 	workers.Wait()
+	for len(done) > 0 {
+		err := <-done
+		if result == nil && err != nil {
+			result = err
+		}
+	}
 	if errors.Is(result, core.ErrQuit) {
 		return nil
 	}
 	return result
+}
+
+func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene) {
+	log := logging.For(ctx, "core")
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case s := <-scenes:
+			if tap != nil {
+				select {
+				case tap <- s:
+				default:
+				}
+			}
+			log.Debug().Uint64("seq", s.Seq).Int("windows", len(s.Windows)).Msg("scene")
+		case err := <-configErrors:
+			log.Debug().Err(err).Msg("config rejected")
+		}
+	}
 }

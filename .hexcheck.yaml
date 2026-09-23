@@ -19,3 +19,6 @@ ruleSettings:
   missing-generated-mock-for-port:
     # Sealed message unions are channel data, not ports; tested by sending messages (ADR 005).
     excludePaths: [internal/ports/messages.go]
+  suspicious-business-logic-in-adapter:
+    # app is the composition root; starting core and wiring channels is its job.
+    excludePaths: [internal/app/app.go]

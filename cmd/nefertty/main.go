@@ -78,6 +78,7 @@ func run() error {
 	}
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
 	backend := flags.String("backend", "drm", "drm or headless")
+	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
@@ -131,7 +132,7 @@ func run() error {
 	log := logging.For(ctx, "app")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout}); err != nil {
+	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, Timeout: *timeout, NoTerminal: *noTerminal}); err != nil {
 		// SIGINT and SIGTERM cancel the context and are clean exits.
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return nil
