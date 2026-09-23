@@ -4,7 +4,7 @@ NeferTTY is a minimal Wayland compositor in Go with Niri-style scrollable column
 
 Requires Linux and Go 1.27.
 
-Build: `make build`
+Build: `make build` (requires sibling checkouts of purego-libwayland and purego-vulkan).
 
 Run: `nefertty --backend=headless --timeout 5s`
 
@@ -21,7 +21,7 @@ gaps = 8
 
 See `examples/config.toml` for all defaults.
 
-Building requires a sibling checkout of purego-libwayland until it is published.
+Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 
 ## Try it (headless)
 
