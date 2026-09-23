@@ -52,7 +52,6 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
-	// TODO(merge): wire wayland Contents to contents.
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: config, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: configErrors}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -60,7 +59,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	output <- ports.OutputMode{Width: 1920, Height: 1080}
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080}, wayland.Channels{Events: client, Commands: commands}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
 	if err != nil {
 		return err
 	}
