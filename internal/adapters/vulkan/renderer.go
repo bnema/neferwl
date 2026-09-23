@@ -29,6 +29,7 @@ type Renderer struct {
 	staging       vk.Buffer
 	stagingMemory vk.DeviceMemory
 	stagingMapped unsafe.Pointer
+	stagingSize   int
 	mapped        unsafe.Pointer
 	pool          vk.CommandPool
 	command       vk.CommandBuffer
@@ -174,8 +175,9 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkMapMemory", r.dd.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
 		return
 	}
-	// Two frame-sized regions accommodate non-overlapping window bodies and their overlapping borders.
+	// Start with two frame-sized regions; later frames grow staging on demand.
 	stagingSize := size * 2
+	r.stagingSize = int(stagingSize)
 	stagingInfo := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: stagingSize, Usage: vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
 	if err = checked("vkCreateBuffer(staging)", r.dd.CreateBuffer(r.device, &stagingInfo, nil, &r.staging)); err != nil {
 		return
@@ -258,54 +260,122 @@ func windowColor(id ports.WindowID) [3]uint8 {
 	return [3]uint8{uint8(a * 255), uint8(b * 255), uint8(c * 255)}
 }
 
-func (r *Renderer) Clear(rgb [3]uint8) error {
-	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])})
+// ensureStaging grows the mapped transfer buffer before recording any commands.
+func (r *Renderer) ensureStaging(size int) error {
+	if size <= r.stagingSize {
+		return nil
+	}
+	d := r.dd
+	capacity := size
+	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(capacity), Usage: vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
+	var buffer vk.Buffer
+	if err := checked("vkCreateBuffer(staging)", d.CreateBuffer(r.device, &info, nil, &buffer)); err != nil {
+		return err
+	}
+	var memory vk.DeviceMemory
+	defer func() {
+		if buffer != 0 {
+			d.DestroyBuffer(r.device, buffer, nil)
+		}
+		if memory != 0 {
+			d.FreeMemory(r.device, memory, nil)
+		}
+	}()
+	var req vk.MemoryRequirements
+	d.GetBufferMemoryRequirements(r.device, buffer, &req)
+	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	if err != nil {
+		return err
+	}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(staging)", d.AllocateMemory(r.device, &alloc, nil, &memory)); err != nil {
+		return err
+	}
+	if err := checked("vkBindBufferMemory(staging)", d.BindBufferMemory(r.device, buffer, memory, 0)); err != nil {
+		return err
+	}
+	var mapped unsafe.Pointer
+	if err := checked("vkMapMemory(staging)", d.MapMemory(r.device, memory, 0, vk.DeviceSize(capacity), 0, &mapped)); err != nil {
+		return err
+	}
+	d.UnmapMemory(r.device, r.stagingMemory)
+	d.DestroyBuffer(r.device, r.staging, nil)
+	d.FreeMemory(r.device, r.stagingMemory, nil)
+	r.staging, r.stagingMemory, r.stagingMapped, r.stagingSize = buffer, memory, mapped, capacity
+	buffer, memory = 0, 0
+	return nil
 }
 
-func (r *Renderer) Render(s ports.Scene) error {
-	// Stage before recording: a full buffer is an error, not a partial submission.
-	type fill struct {
-		rect   image.Rectangle
-		color  [3]uint8
-		offset int
+func (r *Renderer) Clear(rgb [3]uint8) error {
+	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
+}
+
+func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
+	type upload struct {
+		rect                     image.Rectangle
+		offset                   int
+		pixels                   []byte
+		stride, sourceX, sourceY int
+		color                    [3]uint8
 	}
-	var fills []fill
+	var uploads []upload
 	used := 0
-	add := func(rect image.Rectangle, c [3]uint8) error {
-		rect = rect.Intersect(image.Rect(0, 0, r.width, r.height))
+	bounds := image.Rect(0, 0, r.width, r.height)
+	add := func(rect image.Rectangle, c [3]uint8, content *ports.SurfaceContent, origin image.Point) {
+		rect = rect.Intersect(bounds)
 		if rect.Empty() {
-			return nil
+			return
 		}
 		n := rect.Dx() * rect.Dy() * 4
-		if n > r.width*r.height*8-used {
-			return fmt.Errorf("staging buffer full")
+		u := upload{rect: rect, offset: used, color: c}
+		if content != nil {
+			u.pixels, u.stride = content.Pixels, content.Stride
+			u.sourceX, u.sourceY = rect.Min.X-origin.X, rect.Min.Y-origin.Y
 		}
-		data := unsafe.Slice((*byte)(r.stagingMapped), r.width*r.height*8)[used : used+n]
-		for i := 0; i < n; i += 4 {
-			data[i], data[i+1], data[i+2], data[i+3] = c[2], c[1], c[0], 255
-		}
-		fills = append(fills, fill{rect, c, used})
+		uploads = append(uploads, u)
 		used += n
-		return nil
 	}
 	for _, w := range s.Windows {
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
 		}
 		x, y := w.Rect.X, w.Rect.Y
-		// Clip before converting coordinates to Vulkan's signed 32-bit offsets.
 		body := image.Rect(x, y, x+w.Rect.W, y+w.Rect.H)
-		if err := add(body, windowColor(w.ID)); err != nil {
-			return err
+		content := contents[w.ID]
+		if content.Pixels == nil {
+			add(body, windowColor(w.ID), nil, image.Point{})
+		} else {
+			add(body, parseColor(s.Background), nil, image.Point{})
+			width, height := min(content.Width, w.Rect.W), min(content.Height, w.Rect.H)
+			if width > 0 && height > 0 && content.Stride >= width*4 && len(content.Pixels) >= (height-1)*content.Stride+width*4 {
+				add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
+			}
 		}
 		if w.Focused {
 			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+4), image.Rect(x, y+w.Rect.H-4, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+4, x+4, y+w.Rect.H-4), image.Rect(x+w.Rect.W-4, y+4, x+w.Rect.W, y+w.Rect.H-4)} {
-				if err := add(strip, [3]uint8{255, 255, 255}); err != nil {
-					return err
+				add(strip, [3]uint8{255, 255, 255}, nil, image.Point{})
+			}
+		}
+	}
+	if err := r.ensureStaging(used); err != nil {
+		return err
+	}
+	data := unsafe.Slice((*byte)(r.stagingMapped), r.stagingSize)
+	for _, u := range uploads {
+		dst := data[u.offset : u.offset+u.rect.Dx()*u.rect.Dy()*4]
+		for row := 0; row < u.rect.Dy(); row++ {
+			line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
+			if u.pixels != nil {
+				start := (u.sourceY+row)*u.stride + u.sourceX*4
+				copy(line, u.pixels[start:start+len(line)])
+			} else {
+				for i := 0; i < len(line); i += 4 {
+					line[i], line[i+1], line[i+2], line[i+3] = u.color[2], u.color[1], u.color[0], 255
 				}
 			}
 		}
 	}
+	// B8G8R8A8 pixels are copied unchanged; blending belongs to the compositing pipeline.
 	rgb := parseColor(s.Background)
 	d := r.dd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
@@ -333,7 +403,7 @@ func (r *Renderer) Render(s ports.Scene) error {
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferDstOptimal
 	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	for _, f := range fills {
+	for _, f := range uploads {
 		rect := f.rect
 		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
 		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
