@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/purego-libwayland/server"
@@ -55,24 +56,63 @@ type xdgSurface struct {
 	server     *Server
 	surface    *surface
 	configured bool
+	acked      bool
+	window     *window
 	serial     uint32
 }
 
 func (x *xdgSurface) Destroy(*xdgshell.Surface) {}
+
+type window struct {
+	id           ports.WindowID
+	toplevel     *xdgshell.Toplevel
+	xdg          *xdgSurface
+	appID, title string
+	mapped       bool
+}
+
+func (w *window) unmap() {
+	if !w.mapped {
+		return
+	}
+	w.mapped = false
+	w.xdg.configured = false
+	w.xdg.acked = false
+	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
+}
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
-	t, err := xdgshell.NewToplevel(r.Client(), r.Version(), id, &top{x})
+	if x.window != nil {
+		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "toplevel already constructed")
+		return
+	}
+	w := &window{id: x.server.nextWindow, xdg: x}
+	t, err := xdgshell.NewToplevel(r.Client(), r.Version(), id, &top{w})
 	if err != nil {
 		return
 	}
+	w.toplevel = t
+	x.window = w
+	x.server.nextWindow++
+	x.server.windows[w.id] = w
 	x.surface.role = func(buffer bool) {
-		if !buffer && !x.configured {
+		if x.surface.destroyed {
+			w.unmap()
+			return
+		}
+		if !buffer && !w.mapped && !x.configured {
 			x.configured = true
 			x.server.serial++
 			t.SendConfigure(0, 0, nil)
 			r.SendConfigure(x.server.serial)
+		} else if buffer && !w.mapped && x.acked {
+			w.mapped = true
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID})
+			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Msg("window mapped")
+		} else if !buffer && w.mapped {
+			w.unmap()
 		}
 	}
-	t.OnDestroy = func() { x.surface.role = nil }
+	t.OnDestroy = func() { w.unmap(); delete(x.server.windows, w.id); x.window = nil; x.surface.role = nil }
 }
 func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surface, _ *xdgshell.Positioner) {
 	if p, e := xdgshell.NewPopup(r.Client(), r.Version(), id, popup{}); e == nil {
@@ -80,14 +120,17 @@ func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surfac
 	}
 }
 func (x *xdgSurface) SetWindowGeometry(*xdgshell.Surface, int32, int32, int32, int32) {}
-func (x *xdgSurface) AckConfigure(_ *xdgshell.Surface, serial uint32)                 { x.serial = serial }
+func (x *xdgSurface) AckConfigure(_ *xdgshell.Surface, serial uint32) {
+	x.serial = serial
+	x.acked = true
+}
 
-type top struct{ x *xdgSurface }
+type top struct{ w *window }
 
 func (top) Destroy(*xdgshell.Toplevel)                                             {}
 func (top) SetParent(*xdgshell.Toplevel, *xdgshell.Toplevel)                       {}
-func (top) SetTitle(*xdgshell.Toplevel, string)                                    {}
-func (top) SetAppId(*xdgshell.Toplevel, string)                                    {}
+func (t top) SetTitle(_ *xdgshell.Toplevel, title string)                          { t.w.title = title }
+func (t top) SetAppId(_ *xdgshell.Toplevel, appID string)                          { t.w.appID = appID }
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}
 func (top) Move(*xdgshell.Toplevel, *wayland.Seat, uint32)                         {}
 func (top) Resize(*xdgshell.Toplevel, *wayland.Seat, uint32, uint32)               {}
@@ -95,9 +138,17 @@ func (top) SetMaxSize(*xdgshell.Toplevel, int32, int32)                         
 func (top) SetMinSize(*xdgshell.Toplevel, int32, int32)                            {}
 func (top) SetMaximized(*xdgshell.Toplevel)                                        {}
 func (top) UnsetMaximized(*xdgshell.Toplevel)                                      {}
-func (top) SetFullscreen(*xdgshell.Toplevel, *wayland.Output)                      {}
-func (top) UnsetFullscreen(*xdgshell.Toplevel)                                     {}
-func (top) SetMinimized(*xdgshell.Toplevel)                                        {}
+func (t top) SetFullscreen(*xdgshell.Toplevel, *wayland.Output) {
+	if t.w.mapped {
+		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id, Fullscreen: true})
+	}
+}
+func (t top) UnsetFullscreen(*xdgshell.Toplevel) {
+	if t.w.mapped {
+		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id})
+	}
+}
+func (top) SetMinimized(*xdgshell.Toplevel) {}
 
 type popup struct{}
 

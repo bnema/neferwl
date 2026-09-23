@@ -1,11 +1,14 @@
 package wayland
 
 import (
+	"bytes"
 	"context"
+	"github.com/bnema/nefertty/internal/ports"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,5 +116,176 @@ func TestWestonFrames(t *testing.T) {
 				return
 			}
 		}
+	}
+}
+
+// lifecycleServer starts a display with buffered command and event channels.
+func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
+	t.Helper()
+	dir := t.TempDir()
+	events := make(chan ports.ClientEvent, 16)
+	commands := make(chan ports.ClientCommand, 16)
+	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("Run hung")
+		}
+	})
+	return s, events, commands, dir
+}
+
+func lifecycleClient(t *testing.T, tool string, s *Server, dir string, extra []string, args ...string) (*exec.Cmd, <-chan error, *lockedBuffer) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, tool, args...)
+	cmd.Env = append(append(os.Environ(), "XDG_RUNTIME_DIR="+dir, "WAYLAND_DISPLAY="+s.SocketName()), extra...)
+	output := &lockedBuffer{}
+	cmd.Stderr = output
+	if err := cmd.Start(); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	finished := make(chan struct{})
+	go func() { done <- cmd.Wait(); close(finished) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = cmd.Process.Kill()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("client hung")
+		}
+	})
+	return cmd, done, output
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.b.String() }
+
+func waitEvent(t *testing.T, events <-chan ports.ClientEvent, duration time.Duration) ports.ClientEvent {
+	t.Helper()
+	select {
+	case ev := <-events:
+		return ev
+	case <-time.After(duration):
+		t.Fatal("event timeout")
+		return nil
+	}
+}
+func mapped(t *testing.T, events <-chan ports.ClientEvent, duration time.Duration) ports.WindowMapped {
+	t.Helper()
+	ev := waitEvent(t, events, duration)
+	w, ok := ev.(ports.WindowMapped)
+	if !ok {
+		t.Fatalf("expected mapped, got %T", ev)
+	}
+	return w
+}
+func unmapped(t *testing.T, events <-chan ports.ClientEvent, id ports.WindowID) {
+	t.Helper()
+	ev := waitEvent(t, events, 3*time.Second)
+	w, ok := ev.(ports.WindowUnmapped)
+	if !ok || w.ID != id {
+		t.Fatalf("expected unmapped %d, got %#v", id, ev)
+	}
+}
+
+func TestWindowClose(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	s, events, commands, dir := lifecycleServer(t)
+	_, done, output := lifecycleClient(t, tool, s, dir, nil)
+	w := mapped(t, events, 5*time.Second)
+	commands <- ports.CloseWindow{ID: w.ID}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("client: %v: %s", err, output.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("client did not close")
+	}
+	unmapped(t, events, w.ID)
+}
+func TestWindowConfigure(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	s, events, commands, dir := lifecycleServer(t)
+	_, _, output := lifecycleClient(t, tool, s, dir, []string{"WAYLAND_DEBUG=client"})
+	w := mapped(t, events, 5*time.Second)
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 640, Height: 480, Activated: true}
+	deadline := time.After(3 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("missing configure(640, 480: %s", output.String())
+		case <-tick.C:
+			if strings.Contains(output.String(), "configure(640, 480") {
+				return
+			}
+		}
+	}
+}
+func TestWindowKilled(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	s, events, _, dir := lifecycleServer(t)
+	cmd, _, _ := lifecycleClient(t, tool, s, dir, nil)
+	w := mapped(t, events, 5*time.Second)
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	unmapped(t, events, w.ID)
+}
+func TestFootWindow(t *testing.T) {
+	tool, err := exec.LookPath("foot")
+	if err != nil {
+		t.Skip("foot not installed")
+	}
+	s, events, _, dir := lifecycleServer(t)
+	_, done, output := lifecycleClient(t, tool, s, dir, []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}, "-c", "/dev/null", "sh", "-c", "sleep 3")
+	select {
+	case ev := <-events:
+		w, ok := ev.(ports.WindowMapped)
+		if !ok {
+			t.Fatalf("expected mapped, got %T", ev)
+		}
+		if w.AppID != "foot" {
+			t.Fatalf("app ID: %q", w.AppID)
+		}
+	case err := <-done:
+		t.Skipf("foot unavailable: %v: %s", err, output.String())
+	case <-time.After(10 * time.Second):
+		t.Skipf("foot did not map: %s", output.String())
 	}
 }
