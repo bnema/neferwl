@@ -40,6 +40,9 @@ type Core struct {
 	buttons          map[uint32]bool
 	cursorX, cursorY float64
 	seq              uint64
+	layers           []ports.LayerSurface
+	placed           []ports.SceneLayer
+	layerChanged     bool
 }
 
 func keyName(s string) string {
@@ -144,7 +147,7 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 }
 func (c *Core) publish(ctx context.Context) error {
 	c.seq++
-	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Windows: make([]ports.SceneWindow, 0)}
+	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
 	focus, _ := c.ws.Focused()
 	for _, p := range c.ws.Layout() {
@@ -205,6 +208,12 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			}
 			switch v := ev.(type) {
+			case ports.LayerChanged:
+				c.layers = append([]ports.LayerSurface(nil), v.Layers...)
+				c.layerChanged = true
+				var usable ports.Rect
+				c.placed, usable = arrangeLayers(c.ws.Output.W, c.ws.Output.H, c.layers)
+				c.ws.SetUsable(usable)
 			case ports.WindowMapped:
 				c.ws.AddWindow(v.ID)
 			case ports.WindowUnmapped:
@@ -229,8 +238,16 @@ func (c *Core) Run(ctx context.Context) error {
 			switch v := ev.(type) {
 			case ports.OutputMode:
 				c.ws.SetOutput(v.Width, v.Height)
+				if c.layerChanged {
+					var usable ports.Rect
+					c.placed, usable = arrangeLayers(c.ws.Output.W, c.ws.Output.H, c.layers)
+					c.ws.SetUsable(usable)
+				}
 			case ports.OutputUsable:
-				c.ws.SetUsable(v.Rect)
+				// Once layer state arrives, its exclusive zones take precedence.
+				if !c.layerChanged {
+					c.ws.SetUsable(v.Rect)
+				}
 			}
 			if err := c.publish(ctx); err != nil {
 				return nil
