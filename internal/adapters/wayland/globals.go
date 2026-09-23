@@ -6,10 +6,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func registerGlobals(d *server.Display, o Options) error {
+func registerGlobals(d *server.Display, o Options, s *Server) error {
 	for _, register := range []func() error{
+		func() error { return registerXDG(d, s) },
 		func() error {
-			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{}) })
+			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
 		func() error {
 			return wayland.NewShmGlobal(d, 1, func(c server.Client, v, id uint32) {
@@ -62,30 +63,19 @@ func registerGlobals(d *server.Display, o Options) error {
 	return nil
 }
 
-type compositor struct{}
+type compositor struct{ server *Server }
 
-func (compositor) CreateSurface(r *wayland.Compositor, id uint32) {
-	wayland.NewSurface(r.Client(), r.Version(), id, surface{})
+func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
+	state := &surface{server: c.server}
+	if w, err := wayland.NewSurface(r.Client(), r.Version(), id, state); err == nil {
+		c.server.surfaces[w.Resource] = state
+		w.OnDestroy = func() { delete(c.server.surfaces, w.Resource); state.Destroy(w) }
+	}
 }
 func (compositor) CreateRegion(r *wayland.Compositor, id uint32) {
 	wayland.NewRegion(r.Client(), r.Version(), id, region{})
 }
 func (compositor) Release(*wayland.Compositor) {}
-
-type surface struct{}
-
-func (surface) Destroy(*wayland.Surface)                                  {}
-func (surface) Attach(*wayland.Surface, *wayland.Buffer, int32, int32)    {}
-func (surface) Damage(*wayland.Surface, int32, int32, int32, int32)       {}
-func (surface) Frame(*wayland.Surface, uint32)                            {}
-func (surface) SetOpaqueRegion(*wayland.Surface, *wayland.Region)         {}
-func (surface) SetInputRegion(*wayland.Surface, *wayland.Region)          {}
-func (surface) Commit(*wayland.Surface)                                   {}
-func (surface) SetBufferTransform(*wayland.Surface, int32)                {}
-func (surface) SetBufferScale(*wayland.Surface, int32)                    {}
-func (surface) DamageBuffer(*wayland.Surface, int32, int32, int32, int32) {}
-func (surface) Offset(*wayland.Surface, int32, int32)                     {}
-func (surface) GetRelease(*wayland.Surface, uint32)                       {}
 
 type region struct{}
 

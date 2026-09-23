@@ -3,7 +3,10 @@ package wayland
 import (
 	"context"
 	"fmt"
+	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"os"
+		"time"
+ "sync"
 
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -25,6 +28,11 @@ type Server struct {
 	cleanup  func()
 	log      zerowrap.Logger
 	channels Channels
+	awaiting []*wayland.Callback
+	frames uint64
+	started  time.Time
+	surfaces map[*server.Resource]*surface
+	serial   uint32
 }
 
 func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
@@ -47,15 +55,51 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		cleanup()
 		return nil, err
 	}
-	if err = registerGlobals(d, opts); err != nil {
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface)}
+	if err = registerGlobals(d, opts, s); err != nil {
 		cleanup()
 		return nil, err
 	}
-	return &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch}, nil
+	return s, nil
 }
 func (s *Server) SocketName() string { return s.name }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.cleanup()
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
-	return s.display.Run(ctx)
+	s.started = time.Now()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(16 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if ctx.Err() != nil {
+					return
+				}
+				s.display.Do(func() {
+					if ctx.Err() != nil {
+						return
+					}
+					callbacks := s.awaiting
+					s.awaiting = nil
+					for _, cb := range callbacks {
+						if !cb.Resource.Alive() {
+							continue
+						}
+						cb.SendDone(uint32(time.Since(s.started).Milliseconds()))
+						cb.Destroy()
+						s.frames++
+					}
+				})
+			}
+		}
+	}()
+	err := s.display.Run(ctx)
+	wg.Wait()
+	return err
 }

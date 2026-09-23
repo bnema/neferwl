@@ -53,3 +53,65 @@ func TestWaylandInfo(t *testing.T) {
 		}
 	}
 }
+
+func TestWestonFrames(t *testing.T) {
+	tool, err := exec.LookPath("weston-simple-shm")
+	if err != nil {
+		t.Skip("weston-simple-shm not installed")
+	}
+	dir := t.TempDir()
+	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("Run: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Error("Run hung")
+		}
+	})
+	clientCtx, stop := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(clientCtx, tool)
+	cmd.Env = append(os.Environ(), "XDG_RUNTIME_DIR="+dir, "WAYLAND_DISPLAY="+s.SocketName())
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		stop()
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	t.Cleanup(func() {
+		stop()
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			t.Error("client did not exit")
+		}
+	})
+	deadline := time.After(2 * time.Second)
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-exited:
+			t.Fatalf("client exited: %v: %s", err, stderr.String())
+		case <-deadline:
+			t.Fatalf("only %d frames; stderr: %s", s.frames, stderr.String())
+		case <-tick.C:
+			var n uint64
+			s.display.Do(func() { n = s.frames })
+			if n >= 10 {
+				return
+			}
+		}
+	}
+}
