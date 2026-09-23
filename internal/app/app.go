@@ -141,4 +141,3 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 		}
 	}
 }
-
