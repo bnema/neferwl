@@ -19,6 +19,8 @@ import (
 type Options struct {
 	RuntimeDir                string
 	OutputWidth, OutputHeight int
+	Keymap                    string
+	RepeatRate, RepeatDelay   int
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -28,21 +30,26 @@ type Channels struct {
 	Commands <-chan ports.ClientCommand
 }
 type Server struct {
-	display    *server.Display
-	name       string
-	cleanup    func()
-	log        zerowrap.Logger
-	channels   Channels
-	awaiting   []*wayland.Callback
-	frames     uint64
-	started    time.Time
-	surfaces   map[*server.Resource]*surface
-	buffers    map[*server.Resource]*buffer
-	serial     uint32
-	ctx        context.Context
-	windows    map[ports.WindowID]*window
-	nextWindow ports.WindowID
-	focused    ports.WindowID
+	display                 *server.Display
+	name                    string
+	cleanup                 func()
+	log                     zerowrap.Logger
+	channels                Channels
+	awaiting                []*wayland.Callback
+	frames                  uint64
+	started                 time.Time
+	surfaces                map[*server.Resource]*surface
+	buffers                 map[*server.Resource]*buffer
+	serial                  uint32
+	ctx                     context.Context
+	windows                 map[ports.WindowID]*window
+	nextWindow              ports.WindowID
+	focused                 ports.WindowID
+	modState                ports.ModState
+	keyboards               map[server.Client][]*wayland.Keyboard
+	keymapFD                int
+	keymapSize              uint32
+	repeatRate, repeatDelay int
 	// eventMu protects only the notification queue, not display-owned window state.
 	// The event queue is unbounded by design: it grows only if core stops draining
 	// Events, which happens only at shutdown (core owns the receiving end). A
@@ -80,9 +87,38 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{})}
+	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	if opts.Keymap != "" {
+		if uint64(len(opts.Keymap))+1 > uint64(^uint32(0)) {
+			cleanup()
+			d.Close()
+			return nil, fmt.Errorf("keymap too large")
+		}
+		fd, e := unix.MemfdCreate("nefertty-keymap", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+		if e == nil {
+			var n int
+			n, e = unix.Write(fd, append([]byte(opts.Keymap), 0))
+			if e == nil && n != len(opts.Keymap)+1 {
+				e = fmt.Errorf("short keymap write")
+			}
+			if e == nil {
+				_, e = unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE|unix.F_SEAL_SEAL)
+			}
+			if e != nil {
+				unix.Close(fd)
+			} else {
+				s.keymapFD, s.keymapSize = fd, uint32(n)
+			}
+		}
+		if e != nil {
+			cleanup()
+			d.Close()
+			return nil, e
+		}
+		s.cleanup = func() { unix.Close(fd); cleanup() }
+	}
 	if err = registerGlobals(d, opts, s); err != nil {
-		cleanup()
+		s.cleanup()
 		d.Close()
 		return nil, err
 	}
@@ -257,9 +293,30 @@ func (s *Server) forwardContents(ctx context.Context) {
 func (s *Server) apply(cmd ports.ClientCommand) {
 	switch c := cmd.(type) {
 	case ports.FocusWindow:
-		s.focused = c.ID
+		if s.focused != c.ID {
+			s.changeFocus(c.ID)
+		}
 	case ports.ForwardKey:
-		s.log.Debug().Uint64("id", uint64(c.ID)).Msg("forward key")
+		w := s.windows[c.ID]
+		if c.ID != s.focused || w == nil || !w.mapped || len(s.windowKeyboards(w)) == 0 {
+			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
+			return
+		}
+		s.serial++
+		state := uint32(0)
+		if c.Key.Pressed {
+			state = 1
+		}
+		for _, k := range s.windowKeyboards(w) {
+			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
+		}
+		if c.Key.State != s.modState {
+			s.modState = c.Key.State
+			s.serial++
+			for _, k := range s.windowKeyboards(w) {
+				s.sendModifiers(k)
+			}
+		}
 	case ports.ConfigureWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() || !w.xdg.resource.Resource.Alive() {
@@ -284,5 +341,41 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		w.toplevel.SendClose()
+	}
+}
+
+func (s *Server) windowKeyboards(w *window) []*wayland.Keyboard {
+	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
+		return nil
+	}
+	var alive []*wayland.Keyboard
+	for _, k := range s.keyboards[w.xdg.resource.Client()] {
+		if k.Resource.Alive() {
+			alive = append(alive, k)
+		}
+	}
+	return alive
+}
+
+func (s *Server) sendModifiers(k *wayland.Keyboard) {
+	m := s.modState
+	k.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
+}
+
+func (s *Server) changeFocus(id ports.WindowID) {
+	if old := s.windows[s.focused]; old != nil && old.xdg.surfaceResource() != nil {
+		for _, k := range s.windowKeyboards(old) {
+			s.serial++
+			k.SendLeave(s.serial, old.xdg.surfaceResource())
+		}
+	}
+	s.focused = 0
+	if w := s.windows[id]; w != nil && w.mapped && w.xdg.surfaceResource() != nil {
+		s.focused = id
+		for _, k := range s.windowKeyboards(w) {
+			s.serial++
+			k.SendEnter(s.serial, w.xdg.surfaceResource(), []byte{})
+			s.sendModifiers(k)
+		}
 	}
 }
