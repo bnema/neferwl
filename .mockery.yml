@@ -1,0 +1,9 @@
+# No interfaces exist yet; Mockery v3 treats this package as a clean no-op.
+all: false
+packages:
+  github.com/bnema/nefertty/internal/ports:
+    config:
+      all: true
+      dir: internal/mocks/{{.SrcPackageName}}
+      pkgname: '{{.SrcPackageName}}'
+      filename: '{{.InterfaceName}}.go'

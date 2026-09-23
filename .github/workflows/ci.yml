@@ -1,0 +1,15 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - run: go install github.com/bnema/hexcheck@latest
+      - run: go install github.com/vektra/mockery/v3@v3.7.4
+      - run: make check
+      - run: make race
+      - run: make mocks-check
