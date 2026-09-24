@@ -31,12 +31,24 @@ type waitVblank struct {
 	sec, usec     int64
 }
 
-// vblankWaiter blocks until the next vblank of the CRTC at index pipe.
-func vblankWaiter(fd, pipe int) func() error {
-	return func() error {
-		v := waitVblank{typ: vblankRel | uint32(pipe<<vblankCrtcSh)&vblankCrtcMk, sequence: 1}
-		return ioctl(fd, ioctlVblank, unsafe.Pointer(&v))
-	}
+// cursorPlane is the kernel side of the hardware cursor.
+type cursorPlane interface {
+	// Set issues DRM_IOCTL_MODE_CURSOR2.
+	Set(v *modeCursor2) error
+	// WaitVblank blocks until the next vblank of the cursor's CRTC.
+	WaitVblank() error
+}
+
+// kmsCursorPlane drives the cursor of the CRTC at index pipe.
+type kmsCursorPlane struct{ fd, pipe int }
+
+func (p kmsCursorPlane) Set(v *modeCursor2) error {
+	return ioctl(p.fd, ioctlCursor2, unsafe.Pointer(v))
+}
+
+func (p kmsCursorPlane) WaitVblank() error {
+	v := waitVblank{typ: vblankRel | uint32(p.pipe<<vblankCrtcSh)&vblankCrtcMk, sequence: 1}
+	return ioctl(p.fd, ioctlVblank, unsafe.Pointer(&v))
 }
 
 type modeCursor2 struct {
@@ -62,8 +74,7 @@ type Cursor struct {
 	size       int // buffer side
 	hotX, hotY int
 	shown      bool
-	ioctl      func(*modeCursor2) error
-	vblank     func() error // waits for the next vblank; nil moves at once
+	plane      cursorPlane
 
 	mu    sync.Mutex // guards x, y and stats; never held across an ioctl
 	x, y  int        // physical position of the hotspot
@@ -115,9 +126,7 @@ func newCursor(fd int, crtc uint32, pipe int) (*Cursor, error) {
 		buf.destroy(fd)
 		return nil, fmt.Errorf("cursor buffer pitch %d, want %d", buf.pitch, size*4)
 	}
-	c := &Cursor{fd: fd, crtc: crtc, buf: buf, size: size}
-	c.ioctl = func(v *modeCursor2) error { return ioctl(c.fd, ioctlCursor2, unsafe.Pointer(v)) }
-	c.vblank = vblankWaiter(fd, pipe)
+	c := &Cursor{fd: fd, crtc: crtc, buf: buf, size: size, plane: kmsCursorPlane{fd: fd, pipe: pipe}}
 	c.start()
 	return c, nil
 }
@@ -136,9 +145,7 @@ func (c *Cursor) start() {
 			case <-c.wake:
 				// Errors (VT switched away) fall through: the move
 				// fails too and Reapply restores the cursor.
-				if c.vblank != nil {
-					_ = c.vblank()
-				}
+				_ = c.plane.WaitVblank()
 				c.io.Lock()
 				if c.shown && c.buf != nil {
 					x, y := c.position()
@@ -146,7 +153,7 @@ func (c *Cursor) start() {
 					// Errors while another session owns the card (VT switched
 					// away) are ignored; Reapply restores the cursor.
 					start := time.Now()
-					_ = c.ioctl(&v)
+					_ = c.plane.Set(&v)
 					d := time.Since(start)
 					c.mu.Lock()
 					c.stats.Ioctls++
@@ -193,7 +200,7 @@ func (c *Cursor) apply() error {
 	}
 	x, y := c.position()
 	v := modeCursor2{flags: cursorBO | cursorMove, crtcID: c.crtc, x: int32(x - c.hotX), y: int32(y - c.hotY), width: uint32(c.size), height: uint32(c.size), handle: c.buf.handle, hotX: int32(c.hotX), hotY: int32(c.hotY)}
-	return c.ioctl(&v)
+	return c.plane.Set(&v)
 }
 
 // Move places the hotspot at physical (x, y). It never blocks on the GPU:
@@ -230,7 +237,7 @@ func (c *Cursor) close() {
 	}
 	// Best effort: at exit the card may already belong to another session.
 	v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
-	_ = c.ioctl(&v)
+	_ = c.plane.Set(&v)
 	c.buf.destroy(c.fd)
 	c.buf, c.shown = nil, false
 }

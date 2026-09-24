@@ -13,12 +13,6 @@ import (
 	"github.com/bnema/zerowrap"
 )
 
-type Renderer interface {
-	Render(ports.Scene, map[ports.WindowID]ports.SurfaceContent) error
-	Pixels() *image.RGBA
-	Close()
-}
-
 type Options struct {
 	// Cursor, when set, is drawn into screenshots with the image from
 	// LoadCursor at the scene scale.
@@ -27,7 +21,7 @@ type Options struct {
 	Width, Height int
 	ScreenshotDir string
 	Log           zerowrap.Logger
-	NewRenderer   func(w, h int) (Renderer, error)
+	NewRenderer   func(w, h int) (ports.Renderer, error)
 }
 
 func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/drm"
 	"github.com/bnema/nefertty/internal/adapters/headless"
 	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
@@ -171,7 +170,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer workers.Done()
 		if hw != nil {
 			done <- safe("output", func() error {
-				return hw.out.Run(ctx, func(w, h int) (drm.Renderer, error) {
+				return hw.out.Run(ctx, func(w, h int) (ports.Renderer, error) {
 					r, err := vulkan.New(w, h)
 					if err != nil {
 						return nil, err
@@ -181,7 +180,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		done <- headless.Run(ctx, headless.Options{Cursor: softCursor, LoadCursor: loadCursor, Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
+		done <- headless.Run(ctx, headless.Options{Cursor: softCursor, LoadCursor: loadCursor, Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
 				return nil, err
