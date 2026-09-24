@@ -126,15 +126,22 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		relayConfig(ctx, opts.Config, watched, configChanges, keymaps, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
+	// The software cursor starts centred, like libinput's pointer.
+	softCursor := &headless.Cursor{}
+	softCursor.Move(float64(width)/2, float64(height)/2)
 	go func() {
 		defer workers.Done()
 		if hw != nil {
 			done <- safe("input", func() error {
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Width: width, Height: height, Active: hw.inputActive, Log: logging.For(ctx, "input")}, input)
+				var move func(x, y float64)
+				if cur := hw.out.Cursor(); cur != nil {
+					move = cur.Move
+				}
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Width: width, Height: height, Active: hw.inputActive, MoveCursor: move, Log: logging.For(ctx, "input")}, input)
 			})
 			return
 		}
-		_ = headlessinput.Run(ctx, km, keymaps, script, input, logging.For(ctx, "input"))
+		_ = headlessinput.Run(ctx, km, keymaps, script, input, softCursor.Move, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
 		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
@@ -170,11 +177,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						return nil, err
 					}
 					return r, nil
-				}, hw.outputActive, renderScenes, contents)
+				}, loadCursor, hw.outputActive, renderScenes, contents)
 			})
 			return
 		}
-		done <- headless.Run(ctx, headless.Options{Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
+		done <- headless.Run(ctx, headless.Options{Cursor: softCursor, LoadCursor: loadCursor, Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
 				return nil, err

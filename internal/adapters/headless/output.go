@@ -20,6 +20,10 @@ type Renderer interface {
 }
 
 type Options struct {
+	// Cursor, when set, is drawn into screenshots with the image from
+	// LoadCursor at the scene scale.
+	Cursor        *Cursor
+	LoadCursor    func(scale float64, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
 	Log           zerowrap.Logger
@@ -36,6 +40,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene := false
 	frame := 0
+	cursorScale := -1.0 // not loaded yet
 	update := func(c ports.SurfaceContent) {
 		if c.Pixels == nil {
 			delete(surfaces, c.ID)
@@ -86,16 +91,28 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if !haveScene {
 			continue
 		}
+		if opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
+			cursorScale = scene.Scale
+			if img, err := opts.LoadCursor(scene.Scale, 256); err == nil {
+				opts.Cursor.set(img)
+			} else {
+				opts.Log.Warn().Err(err).Msg("cursor")
+			}
+		}
 		start := time.Now()
 		if err := r.Render(scene, surfaces); err != nil {
 			return fmt.Errorf("render frame: %w", err)
 		}
 		frame++
 		if opts.ScreenshotDir != "" {
-			if err := writePNG(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), r.Pixels()); err != nil {
+			shot := r.Pixels()
+			if opts.Cursor != nil {
+				opts.Cursor.draw(shot)
+			}
+			if err := writePNG(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), shot); err != nil {
 				return fmt.Errorf("screenshot: %w", err)
 			}
-			if err := writePNG(filepath.Join(opts.ScreenshotDir, "latest.png"), r.Pixels()); err != nil {
+			if err := writePNG(filepath.Join(opts.ScreenshotDir, "latest.png"), shot); err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
 		}

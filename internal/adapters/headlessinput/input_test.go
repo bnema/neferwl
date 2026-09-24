@@ -31,7 +31,7 @@ func TestScript(t *testing.T) {
 			script <- tt.line
 			close(script)
 			input := make(chan ports.InputEvent, 32)
-			if err := Run(context.Background(), km, nil, script, input, logging.For(context.Background(), "input")); err != nil {
+			if err := Run(context.Background(), km, nil, script, input, nil, logging.For(context.Background(), "input")); err != nil {
 				t.Fatal(err)
 			}
 			if len(input) != len(tt.names) {
@@ -67,7 +67,7 @@ func TestPointerScript(t *testing.T) {
 	}
 	close(script)
 	input := make(chan ports.InputEvent, 8)
-	if err := Run(context.Background(), km, nil, script, input, logging.For(context.Background(), "input")); err != nil {
+	if err := Run(context.Background(), km, nil, script, input, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
 	if len(input) != 5 {

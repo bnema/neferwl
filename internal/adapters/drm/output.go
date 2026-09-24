@@ -33,8 +33,13 @@ type Output struct {
 	flipStart time.Time
 	flips     int
 	monitor   Monitor
+	cursor    *Cursor
 	log       zerowrap.Logger
 }
+
+// CursorLoader returns the cursor image for an output scale, at most limit
+// pixels on a side.
+type CursorLoader func(scale float64, limit int) (ports.CursorImage, error)
 
 // Info describes the chosen output for clients (wl_output, xdg-output).
 type Info struct {
@@ -91,9 +96,15 @@ func Open(fd int, card string, want Want, log zerowrap.Logger) (*Output, error) 
 			return nil, err
 		}
 	}
+	if o.cursor, err = newCursor(fd, crtc); err != nil {
+		log.Warn().Err(err).Msg("no hardware cursor")
+	}
 	log.Info().Str("card", card).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")
 	return o, nil
 }
+
+// Cursor is the hardware cursor, or nil when the driver has none.
+func (o *Output) Cursor() *Cursor { return o.cursor }
 
 // Info returns the chosen connector, monitor and mode.
 func (o *Output) Info() Info {
@@ -128,6 +139,9 @@ func (o *Output) present(r Renderer) error {
 
 // Close restores the CRTC state found at startup and frees buffers.
 func (o *Output) Close() {
+	if o.cursor != nil {
+		o.cursor.close()
+	}
 	if o.saved.crtcID != 0 {
 		ids := []uint32{o.conn.id}
 		s := o.saved
@@ -143,7 +157,7 @@ func (o *Output) Close() {
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, error), active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -162,6 +176,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
 	haveScene, dirty, enabled := false, false, true
+	cursorScale := -1.0 // not loaded yet
 	frame := 0
 	stats := time.NewTicker(10 * time.Second)
 	defer stats.Stop()
@@ -179,6 +194,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 					return err
 				}
 				dirty = haveScene
+				if o.cursor != nil {
+					if err := o.cursor.Reapply(); err != nil {
+						o.log.Warn().Err(err).Msg("cursor")
+					}
+				}
 			}
 			enabled = on
 			o.log.Info().Bool("enabled", on).Msg("output")
@@ -192,6 +212,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 				o.log.Info().Dur("flip_ms", d).Msg("slow flip")
 			}
 		case s := <-scenes:
+			if o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
+				cursorScale = s.Scale
+				o.setCursor(loadCursor, s.Scale)
+			}
 			scene, haveScene, dirty = s, true, true
 		case c := <-contents:
 			if c.Pixels == nil {
@@ -230,6 +254,19 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 		frame++
 		o.log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("render", time.Since(start)).Dur("copy", time.Since(copyStart)).Msg("frame")
 	}
+}
+
+// setCursor loads the theme cursor for scale onto the cursor plane.
+func (o *Output) setCursor(load CursorLoader, scale float64) {
+	img, err := load(scale, o.cursor.Limit())
+	if err == nil {
+		err = o.cursor.SetImage(img.Pixels, img.W, img.H, img.HotX, img.HotY)
+	}
+	if err != nil {
+		o.log.Warn().Err(err).Msg("cursor")
+		return
+	}
+	o.log.Info().Float64("scale", scale).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }
 
 func (o *Output) readEvents(ctx context.Context, events chan<- int, errs chan<- error) {

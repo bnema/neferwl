@@ -142,7 +142,10 @@ type Options struct {
 	Keymaps       <-chan *xkb.Keymap
 	Width, Height int
 	Active        <-chan bool
-	Log           zerowrap.Logger
+	// MoveCursor, when set, places the hardware cursor at the new physical
+	// position as soon as motion is read, before core sees the event.
+	MoveCursor func(x, y float64)
+	Log        zerowrap.Logger
 }
 
 // Run owns libinput and the keymap, converting device events into input events.
@@ -171,6 +174,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := pointer{w: float64(opts.Width), h: float64(opts.Height)}
 	p.x, p.y = p.w/2, p.h/2
+	if opts.MoveCursor != nil {
+		opts.MoveCursor(p.x, p.y)
+	}
 	fd := getFD(li)
 	for ctx.Err() == nil {
 		select {
@@ -242,11 +248,17 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 	case evPointerMotion:
 		pe := pointerEvent(ev)
 		x, y := p.move(pointerDX(pe), pointerDY(pe))
+		if opts.MoveCursor != nil {
+			opts.MoveCursor(x, y)
+		}
 		log.Debug().Float64("x", x).Float64("y", y).Msg("pointer")
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
 	case evPointerAbs:
 		pe := pointerEvent(ev)
 		x, y := p.set(pointerAbsX(pe, uint32(p.w)), pointerAbsY(pe, uint32(p.h)))
+		if opts.MoveCursor != nil {
+			opts.MoveCursor(x, y)
+		}
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
 	case evPointerButton:
 		pe := pointerEvent(ev)
