@@ -113,6 +113,10 @@ func (c *Core) apply(cfg ports.Config) error {
 		if _, ok := binds[b]; ok {
 			return fmt.Errorf("duplicate bind %q", combo)
 		}
+		if _, ok := SpawnArgv(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit:
 		default:
@@ -157,11 +161,28 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
+// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
+// interactivity and the highest ID, else the focused window. On-demand layers
+// never take focus automatically. When the layer unmaps, focus returns to the window.
+func (c *Core) keyboardFocus() WindowID {
+	var layer WindowID
+	for _, l := range c.layers {
+		if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
+			layer = l.ID
+		}
+	}
+	if layer != 0 {
+		return layer
+	}
+	id, _ := c.ws.Focused()
+	return id
+}
+
 func (c *Core) publish(ctx context.Context) error {
 	c.seq++
 	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
-	focus, _ := c.ws.Focused()
+	focus := c.keyboardFocus()
 	for _, p := range c.ws.Layout() {
 		alive[p.ID] = true
 		scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: p.Focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden})
@@ -364,10 +385,14 @@ func (c *Core) Run(ctx context.Context) error {
 						return ErrQuit
 					}
 					if effect.Spawn {
+						argv := effect.Argv
+						if argv == nil {
+							argv = append([]string(nil), c.cfg.Terminal.Command...)
+						}
 						select {
 						case <-ctx.Done():
 							return nil
-						case c.ch.Spawn <- ports.SpawnRequest{Argv: append([]string(nil), c.cfg.Terminal.Command...)}:
+						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
 					}
 					if effect.Close != 0 {
@@ -382,7 +407,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[name] = false
 			}
-			if id, ok := c.ws.Focused(); ok {
+			if id := c.keyboardFocus(); id != 0 {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}

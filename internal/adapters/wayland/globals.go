@@ -302,9 +302,9 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 	if r.Version() >= 4 {
 		k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
 	}
-	if w := s.windows[s.focused]; w != nil && w.mapped && w.xdg.resource.Client() == r.Client() {
+	if surf, _ := s.focusTarget(s.focused); surf != nil && surf.Client() == r.Client() {
 		s.serial++
-		k.SendEnter(s.serial, w.xdg.surfaceResource(), []byte{})
+		k.SendEnter(s.serial, surf, []byte{})
 		s.sendModifiers(k)
 	}
 }

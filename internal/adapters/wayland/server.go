@@ -346,8 +346,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.changeFocus(c.ID)
 		}
 	case ports.ForwardKey:
-		w := s.windows[c.ID]
-		if c.ID != s.focused || w == nil || !w.mapped || len(s.windowKeyboards(w)) == 0 {
+		_, keyboards := s.focusTarget(c.ID)
+		if c.ID != s.focused || len(keyboards) == 0 {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
 			return
 		}
@@ -364,13 +364,13 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if c.Key.Pressed {
 			state = 1
 		}
-		for _, k := range s.windowKeyboards(w) {
+		for _, k := range keyboards {
 			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
 		}
 		if c.Key.State != s.modState {
 			s.modState = c.Key.State
 			s.serial++
-			for _, k := range s.windowKeyboards(w) {
+			for _, k := range keyboards {
 				s.sendModifiers(k)
 			}
 		}
@@ -397,13 +397,34 @@ func (s *Server) windowKeyboards(w *window) []*wayland.Keyboard {
 	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
 		return nil
 	}
+	return s.clientKeyboards(w.xdg.resource.Client())
+}
+
+func (s *Server) clientKeyboards(c server.Client) []*wayland.Keyboard {
 	var alive []*wayland.Keyboard
-	for _, k := range s.keyboards[w.xdg.resource.Client()] {
+	for _, k := range s.keyboards[c] {
 		if k.Resource.Alive() {
 			alive = append(alive, k)
 		}
 	}
 	return alive
+}
+
+// focusTarget resolves a window or layer ID to its wl_surface and keyboards.
+func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Keyboard) {
+	if w := s.windows[id]; w != nil && w.mapped {
+		if surf := w.xdg.surfaceResource(); surf != nil {
+			return surf, s.windowKeyboards(w)
+		}
+	}
+	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
+		for resource, state := range s.surfaces {
+			if state == l.surface && resource.Alive() {
+				return wayland.WrapSurface(resource), s.clientKeyboards(l.resource.Client())
+			}
+		}
+	}
+	return nil, nil
 }
 
 func (s *Server) sendModifiers(k *wayland.Keyboard) {
@@ -412,25 +433,26 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
-	if old := s.windows[s.focused]; old != nil && old.xdg.surfaceResource() != nil {
-		for _, k := range s.windowKeyboards(old) {
+	if surf, keyboards := s.focusTarget(s.focused); surf != nil {
+		for _, k := range keyboards {
 			s.serial++
-			k.SendLeave(s.serial, old.xdg.surfaceResource())
+			k.SendLeave(s.serial, surf)
 		}
 	}
 	s.focused = 0
-	if w := s.windows[id]; w != nil && w.mapped && w.xdg.surfaceResource() != nil {
+	if surf, keyboards := s.focusTarget(id); surf != nil {
 		s.focused = id
-		for _, k := range s.windowKeyboards(w) {
+		for _, k := range keyboards {
 			s.serial++
 			var keys []byte
 			for code := range s.heldKeys {
 				keys = binary.LittleEndian.AppendUint32(keys, code)
 			}
-			k.SendEnter(s.serial, w.xdg.surfaceResource(), keys)
+			k.SendEnter(s.serial, surf, keys)
 			s.sendModifiers(k)
 		}
 	}
+	s.log.Debug().Uint64("id", uint64(s.focused)).Msg("keyboard focus")
 }
 
 func pointerFrame(p *wayland.Pointer) {

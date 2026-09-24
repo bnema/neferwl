@@ -54,3 +54,5 @@ debug = []
 "Cmd+Shift+F" = "toggle-fullscreen"
 "Cmd+Q" = "close-window"
 "Ctrl+Alt+BackSpace" = "quit"
+# "spawn <command>" runs a program; arguments split on spaces, no shell.
+"Ctrl+Cmd+space" = "spawn fuzzel"

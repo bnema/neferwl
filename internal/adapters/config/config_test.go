@@ -13,7 +13,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 	if err := Validate(d); err != nil {
 		t.Fatal(err)
 	}
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.RepeatDelay != 600 || d.Keyboard.CmdKey != "super" || d.Render.DirectScanout != true || len(d.Binds) != 11 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.RepeatDelay != 600 || d.Keyboard.CmdKey != "super" || d.Render.DirectScanout != true || len(d.Binds) != 12 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	path := filepath.Join(t.TempDir(), "missing")
@@ -111,5 +111,19 @@ func TestOutputs(t *testing.T) {
 	w, h, hz, err := ParseMode("3440x1440")
 	if err != nil || w != 3440 || h != 1440 || hz != 0 {
 		t.Fatalf("ParseMode: %d %d %v %v", w, h, hz, err)
+	}
+}
+
+func TestSpawnBind(t *testing.T) {
+	c := Defaults()
+	c.Binds = map[string]string{"Cmd+D": "spawn fuzzel --prompt >"}
+	if err := Validate(c); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"spawn", "spawn   ", "spawnfuzzel"} {
+		c.Binds = map[string]string{"Cmd+D": bad}
+		if Validate(c) == nil {
+			t.Errorf("accepted %q", bad)
+		}
 	}
 }

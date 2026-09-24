@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"reflect"
 	"testing"
 )
 
@@ -124,8 +125,8 @@ func TestPresetsAndActions(t *testing.T) {
 	for _, tc := range []struct {
 		a    Action
 		want Effect
-	}{{ActionSpawnTerminal, Effect{Spawn: true}}, {ActionCloseWindow, Effect{Close: 1}}, {ActionQuit, Effect{Quit: true}}, {ActionFocusColumnLeft, Effect{}}, {ActionFocusColumnRight, Effect{}}, {ActionFocusWindowUp, Effect{}}, {ActionFocusWindowDown, Effect{}}, {ActionMoveColumnLeft, Effect{}}, {ActionMoveColumnRight, Effect{}}, {ActionToggleFullscreen, Effect{}}, {ActionCycleColumnWidth, Effect{}}} {
-		if got := w.Apply(tc.a); got != tc.want {
+	}{{ActionSpawnTerminal, Effect{Spawn: true}}, {ActionCloseWindow, Effect{Close: 1}}, {ActionQuit, Effect{Quit: true}}, {ActionFocusColumnLeft, Effect{}}, {ActionFocusColumnRight, Effect{}}, {ActionFocusWindowUp, Effect{}}, {ActionFocusWindowDown, Effect{}}, {ActionMoveColumnLeft, Effect{}}, {ActionMoveColumnRight, Effect{}}, {ActionToggleFullscreen, Effect{}}, {ActionCycleColumnWidth, Effect{}}, {"spawn fuzzel --prompt x", Effect{Spawn: true, Argv: []string{"fuzzel", "--prompt", "x"}}}, {"spawn   ", Effect{}}} {
+		if got := w.Apply(tc.a); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: %+v", tc.a, got)
 		}
 	}

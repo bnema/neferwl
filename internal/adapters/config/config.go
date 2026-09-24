@@ -15,7 +15,7 @@ import (
 )
 
 var defaultBinds = map[string]string{
-	"Cmd+Return": "spawn-terminal", "Cmd+Left": "focus-column-left", "Cmd+Right": "focus-column-right", "Cmd+Up": "focus-window-up", "Cmd+Down": "focus-window-down", "Cmd+Shift+Left": "move-column-left", "Cmd+Shift+Right": "move-column-right", "Cmd+R": "cycle-column-width", "Cmd+Shift+F": "toggle-fullscreen", "Cmd+Q": "close-window", "Ctrl+Alt+BackSpace": "quit",
+	"Cmd+Return": "spawn-terminal", "Cmd+Left": "focus-column-left", "Cmd+Right": "focus-column-right", "Cmd+Up": "focus-window-up", "Cmd+Down": "focus-window-down", "Cmd+Shift+Left": "move-column-left", "Cmd+Shift+Right": "move-column-right", "Cmd+R": "cycle-column-width", "Cmd+Shift+F": "toggle-fullscreen", "Cmd+Q": "close-window", "Ctrl+Alt+BackSpace": "quit", "Ctrl+Cmd+space": "spawn fuzzel",
 }
 var actions = map[string]bool{"none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
@@ -270,8 +270,12 @@ func Validate(c ports.Config) error {
 				combos[n] = k
 			}
 		}
-		if !actions[v] {
-			add("binds."+k, "invalid action")
+		if rest, ok := strings.CutPrefix(v, "spawn "); ok {
+			if len(strings.Fields(rest)) == 0 {
+				add("binds."+k, "spawn needs a command")
+			}
+		} else if !actions[v] {
+			add("binds."+k, `invalid action (or "spawn <command>")`)
 		}
 	}
 	return errors.Join(errs...)

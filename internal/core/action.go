@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 type Action string
 
 const (
@@ -16,13 +18,28 @@ const (
 	ActionQuit             Action = "quit"
 )
 
+// spawnPrefix starts a bind action that runs a command: "spawn fuzzel --flag".
+// Arguments are split on whitespace; there is no shell (use "spawn sh -c ...").
+const spawnPrefix = "spawn "
+
+// SpawnArgv returns the command of a "spawn <cmd>" action.
+func SpawnArgv(a Action) ([]string, bool) {
+	rest, ok := strings.CutPrefix(string(a), spawnPrefix)
+	argv := strings.Fields(rest)
+	return argv, ok && len(argv) > 0
+}
+
 type Effect struct {
 	Spawn bool
+	Argv  []string // command to run; nil means the configured terminal
 	Close WindowID
 	Quit  bool
 }
 
 func (w *Workspace) Apply(a Action) Effect {
+	if argv, ok := SpawnArgv(a); ok {
+		return Effect{Spawn: true, Argv: argv}
+	}
 	switch a {
 	case ActionSpawnTerminal:
 		return Effect{Spawn: true}
