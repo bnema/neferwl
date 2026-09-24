@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -31,6 +32,8 @@ type Options struct {
 	Timeout       time.Duration
 	NoTerminal    bool
 	ScreenshotDir string
+	// Width and Height size the headless output; 0 means 1920x1080.
+	Width, Height int
 	// Run closes Script on shutdown; the reader goroutine exits after Close.
 	Script     io.ReadCloser
 	testScenes chan<- ports.Scene
@@ -48,7 +51,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		ctx, cancel = context.WithCancel(ctx)
 	}
 	defer cancel()
-	width, height := 1920, 1080
+	width, height := opts.Width, opts.Height
+	if width <= 0 || height <= 0 {
+		width, height = 1920, 1080
+	}
 	var outInfo wayland.OutputInfo
 	var hw *drmBackend
 	if opts.Backend == "drm" {
@@ -156,7 +162,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		done <- headless.Run(ctx, headless.Options{Width: 1920, Height: 1080, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
+		done <- headless.Run(ctx, headless.Options{Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
 				return nil, err
@@ -218,7 +224,12 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 				default:
 				}
 			}
-			log.Debug().Uint64("seq", s.Seq).Int("windows", len(s.Windows)).Msg("scene")
+			ev := log.Debug().Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight)
+			rects := make([]string, 0, len(s.Windows))
+			for _, w := range s.Windows {
+				rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+			}
+			ev.Strs("windows", rects).Msg("scene")
 		case err := <-configErrors:
 			configLog.Warn().Err(err).Msg("config rejected")
 		}

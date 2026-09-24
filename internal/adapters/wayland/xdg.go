@@ -152,7 +152,15 @@ func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surfac
 		p.SendPopupDone()
 	}
 }
-func (x *xdgSurface) SetWindowGeometry(*xdgshell.Surface, int32, int32, int32, int32) {}
+
+// SetWindowGeometry is logged only: placement uses the full buffer for now.
+func (x *xdgSurface) SetWindowGeometry(_ *xdgshell.Surface, gx, gy, gw, gh int32) {
+	id := uint64(0)
+	if x.window != nil {
+		id = uint64(x.window.id)
+	}
+	x.server.log.Info().Uint64("id", id).Int32("x", gx).Int32("y", gy).Int32("w", gw).Int32("h", gh).Msg("window geometry")
+}
 func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 	for i, issued := range x.serials {
 		if issued == serial {

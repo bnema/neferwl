@@ -366,22 +366,28 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			continue
 		}
 		x, y := w.Rect.X, w.Rect.Y
-		body := image.Rect(x, y, x+w.Rect.W, y+w.Rect.H)
+		// Content sits inside the border; core sized the client to match.
+		b := 0
+		if !w.Fullscreen {
+			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
+		}
+		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
+		body := image.Rect(cx, cy, cx+cw, cy+ch)
 		content := contents[w.ID]
 		if content.Pixels == nil {
 			add(body, windowColor(w.ID), nil, image.Point{})
 		} else {
 			add(body, parseColor(s.Background), nil, image.Point{})
-			width, height := min(content.Width, w.Rect.W), min(content.Height, w.Rect.H)
+			width, height := min(content.Width, cw), min(content.Height, ch)
 			if width > 0 && height > 0 && content.Stride >= width*4 && len(content.Pixels) >= (height-1)*content.Stride+width*4 {
-				add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
+				add(image.Rect(cx, cy, cx+width, cy+height), [3]uint8{}, &content, image.Pt(cx, cy))
 			}
 		}
 		borderColor := s.Border.Inactive
 		if w.Focused {
 			borderColor = s.Border.Active
 		}
-		if b := s.Border.Width; b > 0 && borderColor != "" && !w.Fullscreen && w.Rect.W > 2*b && w.Rect.H > 2*b {
+		if b > 0 && borderColor != "" {
 			rgb := parseColor(borderColor)
 			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+b), image.Rect(x, y+w.Rect.H-b, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+b, x+b, y+w.Rect.H-b), image.Rect(x+w.Rect.W-b, y+b, x+w.Rect.W, y+w.Rect.H-b)} {
 				add(strip, rgb, nil, image.Point{})

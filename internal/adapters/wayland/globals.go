@@ -13,6 +13,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerXDG(d, s) },
 		func() error { return registerLayer(d, o, s) },
 		func() error { return registerXDGOutput(d, o) },
+		func() error { return registerDecoration(d) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},

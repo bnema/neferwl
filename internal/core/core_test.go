@@ -24,6 +24,7 @@ func receive[T any](t *testing.T, ch <-chan T) T {
 func TestOwner(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Keyboard.CmdKey = "alt"
+	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 128)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 8)
@@ -195,6 +196,7 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 
 func TestPointerFocusAndGrab(t *testing.T) {
 	cfg := config.Defaults()
+	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -243,6 +245,38 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	}
 	input <- ports.PointerButton{Button: 0x110}
 	if v := receive(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
+		t.Fatal(v)
+	}
+}
+
+func TestBorderInset(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 2
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputMode{Width: 100, Height: 80}
+	receive(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	r := receive(t, scenes).Windows[0].Rect
+	// The scene keeps the outer rect; the client is configured 2px smaller on each side.
+	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W - 4, Height: r.H - 4, Activated: true}) {
+		t.Fatalf("%v for outer %v", v, r)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), TimeMsec: 1}
+	if v := receive(t, commands); v != (ports.PointerFocus{ID: 1, X: 0, Y: 3}) {
 		t.Fatal(v)
 	}
 }

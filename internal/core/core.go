@@ -145,6 +145,17 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 		return nil
 	}
 }
+// clientRect is the placement minus the border drawn around the client.
+// The renderer applies the same inset (ports.Border).
+func (c *Core) clientRect(p Placement) Rect {
+	r := p.Rect
+	if p.Fullscreen {
+		return r
+	}
+	b := min(max(c.cfg.Border.Width, 0), r.W/2, r.H/2)
+	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
+}
+
 func (c *Core) publish(ctx context.Context) error {
 	c.seq++
 	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
@@ -163,7 +174,8 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 			continue
 		}
-		v := ports.ConfigureWindow{ID: p.ID, Width: p.Rect.W, Height: p.Rect.H, Fullscreen: p.Fullscreen, Activated: p.Focused}
+		r := c.clientRect(p)
+		v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: p.Focused}
 		if old, ok := c.sent[p.ID]; !ok || old != v {
 			if err := c.command(ctx, v); err != nil {
 				return err
@@ -280,7 +292,7 @@ func (c *Core) Run(ctx context.Context) error {
 				var x, y float64
 				// Fullscreen wins; otherwise the last visible placement is topmost.
 				for _, p := range c.ws.Layout() {
-					r := p.Rect
+					r := c.clientRect(p)
 					if !p.Hidden && r.W > 0 && r.H > 0 && c.cursorX >= float64(r.X) && c.cursorX < float64(r.X+r.W) && c.cursorY >= float64(r.Y) && c.cursorY < float64(r.Y+r.H) {
 						if id == 0 || p.Fullscreen {
 							id, x, y = p.ID, c.cursorX-float64(r.X), c.cursorY-float64(r.Y)

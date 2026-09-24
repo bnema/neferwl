@@ -23,6 +23,7 @@ type surface struct {
 	server           *Server
 	current, pending *wayland.Buffer
 	attached         bool
+	lastW, lastH     int // last logged buffer size
 	callbacks        []*wayland.Callback
 	role             func(bool)
 	destroyed        bool
@@ -87,6 +88,10 @@ func (s *surface) Commit(*wayland.Surface) {
 		b := s.current
 		if state, ok := s.server.buffers[b.Resource]; ok {
 			if c, ok := state.content(id); ok {
+				if c.Width != s.lastW || c.Height != s.lastH {
+					s.lastW, s.lastH = c.Width, c.Height
+					s.server.log.Info().Uint64("id", uint64(id)).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
+				}
 				s.server.emitContent(c)
 			} else {
 				state.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")

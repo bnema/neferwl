@@ -388,6 +388,15 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if c.Activated {
 			states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateActivated))
 		}
+		if !c.Fullscreen {
+			// Tiled: the client must use exactly this size (no CSD shadows or rounding).
+			for _, st := range []xdgshell.ToplevelState{xdgshell.ToplevelStateTiledLeft, xdgshell.ToplevelStateTiledRight, xdgshell.ToplevelStateTiledTop, xdgshell.ToplevelStateTiledBottom} {
+				if w.toplevel.Version() >= 2 {
+					states = binary.LittleEndian.AppendUint32(states, uint32(st))
+				}
+			}
+		}
+		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
 		w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), states)
 		s.serial++
 		w.xdg.resource.SendConfigure(s.serial)
