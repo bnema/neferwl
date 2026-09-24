@@ -225,7 +225,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 			}
 			dirty = true
 		case <-stats.C:
-			o.log.Info().Int("frames", frame).Int("flips", o.flips).Msg("stats")
+			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
+			if o.cursor != nil {
+				cs := o.cursor.TakeStats()
+				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_ioctls", cs.Ioctls).Dur("cursor_max_ioctl_ms", cs.MaxIoctl)
+			}
+			ev.Msg("stats")
 		}
 		if !dirty || !haveScene || !enabled || o.pending {
 			continue

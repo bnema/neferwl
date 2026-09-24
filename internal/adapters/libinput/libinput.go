@@ -148,6 +148,9 @@ type Options struct {
 	Log        zerowrap.Logger
 }
 
+// statsEvery is how often Run logs input throughput.
+const statsEvery = 10 * time.Second
+
 // Run owns libinput and the keymap, converting device events into input events.
 func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error {
 	defer func() { opts.Keymap.Close() }()
@@ -178,7 +181,19 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		opts.MoveCursor(p.x, p.y)
 	}
 	fd := getFD(li)
+	fwd := newForwarder()
+	fwdCtx, stopFwd := context.WithCancel(ctx)
+	var fwdDone sync.WaitGroup
+	fwdDone.Go(func() { fwd.run(fwdCtx, input) })
+	defer func() { stopFwd(); fwdDone.Wait() }()
+	lastStats := time.Now()
 	for ctx.Err() == nil {
+		if time.Since(lastStats) >= statsEvery {
+			lastStats = time.Now()
+			if s := fwd.take(); s.Motions > 0 || s.Sent > 0 {
+				opts.Log.Info().Int("motions", s.Motions).Int("coalesced", s.Coalesced).Int("sent", s.Sent).Dur("max_block_ms", s.MaxBlock).Msg("input stats")
+			}
+		}
 		select {
 		case on := <-opts.Active:
 			if on {
@@ -210,13 +225,8 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			if err != nil {
 				return err
 			}
-			if out == nil {
-				continue
-			}
-			select {
-			case input <- out:
-			case <-ctx.Done():
-				return nil
+			if out != nil {
+				fwd.push(out)
 			}
 		}
 	}

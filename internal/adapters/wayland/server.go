@@ -174,11 +174,18 @@ func (s *Server) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return
 				}
+				// One display round trip per batch: Do waits for the event
+				// loop, so a round trip per motion capped pointer events at
+				// ~150/s and let a backlog of stale motions build up.
+				batch, open := drainCommands(cmd, s.channels.Commands)
 				if !s.display.Do(func() {
-					if ctx.Err() == nil {
-						s.apply(cmd)
+					for _, c := range batch {
+						if ctx.Err() != nil {
+							return
+						}
+						s.apply(c)
 					}
-				}) {
+				}) || !open {
 					return
 				}
 			}
@@ -313,6 +320,34 @@ func (s *Server) forwardContents(ctx context.Context) {
 			s.contentMu.Unlock()
 		}
 	}
+}
+
+// maxCommandBatch bounds how many queued commands one display round trip applies.
+const maxCommandBatch = 256
+
+// drainCommands returns first plus the commands already queued, with runs of
+// pointer motion for the same window collapsed into the latest one. open is
+// false once the channel is closed.
+func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (batch []ports.ClientCommand, open bool) {
+	batch = append(batch, first)
+	for len(batch) < maxCommandBatch {
+		select {
+		case c, ok := <-cmds:
+			if !ok {
+				return batch, false
+			}
+			if m, isMotion := c.(ports.PointerMotionTo); isMotion {
+				if last, lastMotion := batch[len(batch)-1].(ports.PointerMotionTo); lastMotion && last.ID == m.ID {
+					batch[len(batch)-1] = m
+					continue
+				}
+			}
+			batch = append(batch, c)
+		default:
+			return batch, true
+		}
+	}
+	return batch, true
 }
 
 func (s *Server) apply(cmd ports.ClientCommand) {

@@ -68,3 +68,22 @@ func TestCursorCloseStopsWorker(t *testing.T) {
 	c.close()    // idempotent
 	c.Move(3, 4) // after close: no worker, must not block or panic
 }
+
+func TestCursorStats(t *testing.T) {
+	applied := make(chan struct{}, 16)
+	c := &Cursor{fd: -1, buf: &dumbBuffer{}, size: 64, shown: true}
+	c.ioctl = func(*modeCursor2) error { applied <- struct{}{}; return nil }
+	c.start()
+	defer c.close()
+	c.Move(1, 1)
+	<-applied
+	c.Move(2, 2)
+	<-applied
+	s := c.TakeStats()
+	if s.Moves != 2 || s.Ioctls < 1 || s.Ioctls > 2 {
+		t.Fatalf("stats %+v", s)
+	}
+	if s := c.TakeStats(); s.Moves != 0 {
+		t.Fatalf("not reset: %+v", s)
+	}
+}

@@ -3,6 +3,7 @@ package drm
 import (
 	"fmt"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -44,12 +45,29 @@ type Cursor struct {
 	shown      bool
 	ioctl      func(*modeCursor2) error
 
-	mu   sync.Mutex // guards x, y; never held across an ioctl
-	x, y int        // physical position of the hotspot
+	mu    sync.Mutex // guards x, y and stats; never held across an ioctl
+	x, y  int        // physical position of the hotspot
+	stats CursorStats
 
 	wake chan struct{}
 	stop chan struct{}
 	done chan struct{}
+}
+
+// CursorStats counts cursor work since the last TakeStats.
+type CursorStats struct {
+	Moves    int           // Move calls
+	Ioctls   int           // move ioctls issued by the worker
+	MaxIoctl time.Duration // slowest move ioctl
+}
+
+// TakeStats returns and resets the counters.
+func (c *Cursor) TakeStats() CursorStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.stats
+	c.stats = CursorStats{}
+	return s
 }
 
 // newCursor allocates a cursor buffer at the driver's preferred size (64 when
@@ -101,7 +119,13 @@ func (c *Cursor) start() {
 					v := modeCursor2{flags: cursorMove, crtcID: c.crtc, x: int32(x - c.hotX), y: int32(y - c.hotY)}
 					// Errors while another session owns the card (VT switched
 					// away) are ignored; Reapply restores the cursor.
+					start := time.Now()
 					_ = c.ioctl(&v)
+					d := time.Since(start)
+					c.mu.Lock()
+					c.stats.Ioctls++
+					c.stats.MaxIoctl = max(c.stats.MaxIoctl, d)
+					c.mu.Unlock()
 				}
 				c.io.Unlock()
 			}
@@ -151,6 +175,7 @@ func (c *Cursor) apply() error {
 func (c *Cursor) Move(x, y float64) {
 	c.mu.Lock()
 	c.x, c.y = int(x), int(y)
+	c.stats.Moves++
 	c.mu.Unlock()
 	select {
 	case c.wake <- struct{}{}:
