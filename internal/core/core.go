@@ -161,11 +161,28 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
+// keyboardFocus is the newest mapped top/overlay layer that asks for the keyboard
+// (exclusive or on-demand), else the focused window. When the layer unmaps,
+// focus returns to the window.
+func (c *Core) keyboardFocus() WindowID {
+	var layer WindowID
+	for _, l := range c.layers {
+		if l.Keyboard != 0 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
+			layer = l.ID
+		}
+	}
+	if layer != 0 {
+		return layer
+	}
+	id, _ := c.ws.Focused()
+	return id
+}
+
 func (c *Core) publish(ctx context.Context) error {
 	c.seq++
 	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
-	focus, _ := c.ws.Focused()
+	focus := c.keyboardFocus()
 	for _, p := range c.ws.Layout() {
 		alive[p.ID] = true
 		scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: p.Focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden})
@@ -390,7 +407,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[name] = false
 			}
-			if id, ok := c.ws.Focused(); ok {
+			if id := c.keyboardFocus(); id != 0 {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}

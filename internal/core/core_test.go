@@ -282,3 +282,56 @@ func TestBorderInset(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestLayerKeyboardFocus(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputMode{Width: 100, Height: 80}
+	receive(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	receive(t, scenes)
+	focusOf := func() ports.WindowID {
+		t.Helper()
+		for {
+			if v, ok := receive(t, commands).(ports.FocusWindow); ok {
+				return v.ID
+			}
+		}
+	}
+	if id := focusOf(); id != 1 {
+		t.Fatalf("window focus %d", id)
+	}
+	// A bar without keyboard interactivity does not steal focus; a launcher does.
+	launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
+	bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5}
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
+	receive(t, scenes)
+	if id := focusOf(); id != 7 {
+		t.Fatalf("layer focus %d", id)
+	}
+	input <- ports.KeyEvent{Keysym: "a", Keycode: 30, Pressed: true}
+	for {
+		if v, ok := receive(t, commands).(ports.ForwardKey); ok {
+			if v.ID != 7 {
+				t.Fatalf("key went to %d", v.ID)
+			}
+			break
+		}
+	}
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+	receive(t, scenes)
+	if id := focusOf(); id != 1 {
+		t.Fatalf("focus not restored: %d", id)
+	}
+}

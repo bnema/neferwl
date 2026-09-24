@@ -53,6 +53,8 @@ type LayerSurface struct {
 	Margin        [4]int32
 	Width, Height int
 	Namespace     string
+	// Keyboard is the requested interactivity: 0 none, 1 exclusive, 2 on-demand.
+	Keyboard uint32
 }
 
 // LayerChanged carries wayland → core the full list of mapped layer surfaces,

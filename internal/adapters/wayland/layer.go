@@ -88,7 +88,6 @@ func (l *layerSurface) SetMargin(_ *wlrlayershell.ZwlrLayerSurfaceV1, t, r, b, l
 	l.pending.margin = [4]int32{t, r, b, left}
 }
 
-// Keyboard interactivity is deferred; layer-shell is capped at v4.
 func (l *layerSurface) SetKeyboardInteractivity(r *wlrlayershell.ZwlrLayerSurfaceV1, k uint32) {
 	if k > 2 {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidKeyboardInteractivity), "invalid keyboard interactivity")
@@ -137,7 +136,7 @@ func (s *Server) layerChanged() {
 		if !l.mapped {
 			continue
 		}
-		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace}
+		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
 		if l.surface.current != nil {
 			if b := s.buffers[l.surface.current.Resource]; b != nil {
 				v.Width, v.Height = b.width, b.height
