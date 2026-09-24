@@ -63,6 +63,10 @@ func Decode(data []byte, size int) (Image, error) {
 		return Image{}, errors.New("truncated image header")
 	}
 	h := data[best:]
+	// The chunk header must repeat its table-of-contents entry.
+	if le.Uint32(h) != 36 || le.Uint32(h[4:]) != chunkImage || le.Uint32(h[8:]) != bestSize {
+		return Image{}, errors.New("image chunk does not match its table entry")
+	}
 	w, ht := le.Uint32(h[16:]), le.Uint32(h[20:])
 	if w == 0 || ht == 0 || w > maxSide || ht > maxSide {
 		return Image{}, fmt.Errorf("bad image size %dx%d", w, ht)
@@ -170,10 +174,8 @@ func inherits(dirs []string, theme string) []string {
 		defer f.Close()
 		s := bufio.NewScanner(f)
 		for s.Scan() {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(s.Text()), "Inherits"); ok {
-				if v, ok := strings.CutPrefix(strings.TrimSpace(v), "="); ok {
-					return strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == ' ' })
-				}
+			if k, v, ok := strings.Cut(s.Text(), "="); ok && strings.TrimSpace(k) == "Inherits" {
+				return strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ';' || r == ' ' })
 			}
 		}
 		return nil

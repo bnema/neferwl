@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"fmt"
 	"sync"
 	"unsafe"
 )
@@ -43,16 +44,27 @@ type Cursor struct {
 // newCursor allocates a cursor buffer at the driver's preferred size (64 when
 // the driver does not say).
 func newCursor(fd int, crtc uint32) (*Cursor, error) {
-	size := 64
+	// The plane is square: the smaller of the width and height caps.
+	size := 0
 	for _, c := range []uint64{capCursorW, capCursorH} {
 		v := getCap{capability: c}
-		if ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value >= 32 && v.value <= 512 {
-			size = max(size, int(v.value))
+		if ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value >= 16 && v.value <= 512 {
+			if size == 0 || int(v.value) < size {
+				size = int(v.value)
+			}
 		}
+	}
+	if size == 0 {
+		size = 64
 	}
 	buf, err := newDumb(fd, size, size)
 	if err != nil {
 		return nil, err
+	}
+	// The cursor ioctl passes no pitch: drivers assume width*4.
+	if int(buf.pitch) != size*4 {
+		buf.destroy(fd)
+		return nil, fmt.Errorf("cursor buffer pitch %d, want %d", buf.pitch, size*4)
 	}
 	return &Cursor{fd: fd, crtc: crtc, buf: buf, size: size}, nil
 }
@@ -65,6 +77,9 @@ func (c *Cursor) Limit() int { return c.size }
 func (c *Cursor) SetImage(pixels []byte, w, h, hotX, hotY int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.buf == nil {
+		return nil
+	}
 	pitch := int(c.buf.pitch)
 	clear(c.buf.mem)
 	for y := range min(h, c.size) {
@@ -77,7 +92,7 @@ func (c *Cursor) SetImage(pixels []byte, w, h, hotX, hotY int) error {
 
 // apply (re)attaches the buffer at the current position.
 func (c *Cursor) apply() error {
-	if !c.shown {
+	if !c.shown || c.buf == nil {
 		return nil
 	}
 	v := modeCursor2{flags: cursorBO | cursorMove, crtcID: c.crtc, x: int32(c.x - c.hotX), y: int32(c.y - c.hotY), width: uint32(c.size), height: uint32(c.size), handle: c.buf.handle, hotX: int32(c.hotX), hotY: int32(c.hotY)}
@@ -90,7 +105,7 @@ func (c *Cursor) Move(x, y float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.x, c.y = int(x), int(y)
-	if !c.shown {
+	if !c.shown || c.buf == nil {
 		return
 	}
 	v := modeCursor2{flags: cursorMove, crtcID: c.crtc, x: int32(c.x - c.hotX), y: int32(c.y - c.hotY)}
@@ -108,9 +123,12 @@ func (c *Cursor) Reapply() error {
 func (c *Cursor) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.buf == nil {
+		return
+	}
 	// Best effort: at exit the card may already belong to another session.
 	v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
 	_ = ioctl(c.fd, ioctlCursor2, unsafe.Pointer(&v))
 	c.buf.destroy(c.fd)
-	c.shown = false
+	c.buf, c.shown = nil, false
 }

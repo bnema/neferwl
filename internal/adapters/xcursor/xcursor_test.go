@@ -101,3 +101,29 @@ func TestSystemTheme(t *testing.T) {
 		t.Fatal(img.W)
 	}
 }
+
+func FuzzDecode(f *testing.F) {
+	f.Add(file(24, 48), 24)
+	f.Add(file(32), 64)
+	f.Fuzz(func(t *testing.T, data []byte, size int) {
+		img, err := Decode(data, size)
+		if err == nil && (len(img.Pixels) != img.W*img.H*4 || img.HotX >= img.W || img.HotY >= img.H) {
+			t.Fatalf("%dx%d hot %d,%d len %d", img.W, img.H, img.HotX, img.HotY, len(img.Pixels))
+		}
+	})
+}
+
+func TestLoadInheritsCycle(t *testing.T) {
+	dir := t.TempDir()
+	for theme, parent := range map[string]string{"a": "b", "b": "a"} {
+		if err := os.MkdirAll(filepath.Join(dir, theme), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, theme, "index.theme"), []byte("[Icon Theme]\nInherits="+parent+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Load([]string{dir}, "a", []string{"default"}, 24); err == nil {
+		t.Fatal("found a cursor in an empty cycle")
+	}
+}

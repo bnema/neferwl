@@ -176,7 +176,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
 	haveScene, dirty, enabled := false, false, true
-	cursorScale := 0.0
+	cursorScale := -1.0 // not loaded yet
 	frame := 0
 	stats := time.NewTicker(10 * time.Second)
 	defer stats.Stop()

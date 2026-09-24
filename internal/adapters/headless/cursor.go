@@ -47,9 +47,10 @@ func (c *Cursor) draw(dst *image.RGBA) {
 			}
 			d := dst.Pix[dst.PixOffset(dx, dy):]
 			// Source is premultiplied B,G,R,A; dst is straight R,G,B,A (opaque).
-			d[0] = byte(int(s[2]) + int(d[0])*(255-a)/255)
-			d[1] = byte(int(s[1]) + int(d[1])*(255-a)/255)
-			d[2] = byte(int(s[0]) + int(d[2])*(255-a)/255)
+			// min guards against themes that are not really premultiplied.
+			d[0] = byte(min(255, int(s[2])+int(d[0])*(255-a)/255))
+			d[1] = byte(min(255, int(s[1])+int(d[1])*(255-a)/255))
+			d[2] = byte(min(255, int(s[0])+int(d[2])*(255-a)/255))
 		}
 	}
 }
