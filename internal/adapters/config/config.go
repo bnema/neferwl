@@ -73,7 +73,7 @@ func Defaults() ports.Config {
 	c.Keyboard.RepeatDelay = 600
 	c.Keyboard.CmdKey = "super"
 	c.Terminal.Command = []string{"foot"}
-	c.Background.Color = "#1e1e2e"
+	c.Background.Color = "#111111"
 	c.Border.Width = 2
 	c.Border.Active = "#b4befe"
 	c.Layout.MaxColumns = 2
