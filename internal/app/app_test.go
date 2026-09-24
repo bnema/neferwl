@@ -13,17 +13,19 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
+	"github.com/bnema/nefertty/internal/adapters/xkb"
+	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
 )
 
 func TestHeadlessConfigReload(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("[background]\ncolor='#000000'\n"), 0600); err != nil {
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte("background = #000000\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := config.Load(path)
+	cfg, _, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +75,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 	if !waitColor(color.RGBA{A: 255}, time.Now().Add(10*time.Second)) {
 		t.Fatal("first black frame missing")
 	}
-	if err := os.WriteFile(path, []byte("[background]\ncolor='#ff0000'\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("background = #ff0000\nkeyboard.layout = fr\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if !waitColor(color.RGBA{R: 255, A: 255}, time.Now().Add(10*time.Second)) {
@@ -256,5 +258,43 @@ func TestBlockedScriptShutdown(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("blocked script prevented shutdown")
+	}
+}
+
+func TestRelayConfigKeyboard(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cur := config.Defaults()
+	in := make(chan ports.ConfigChanged, 1)
+	out := make(chan ports.ConfigChanged, 1)
+	keymaps := make(chan *xkb.Keymap, 1)
+	commands := make(chan ports.ClientCommand, 1)
+	go relayConfig(ctx, cur, in, out, keymaps, commands, logging.For(ctx, "config"))
+
+	next := config.Defaults()
+	next.Background.Color = "#000000"
+	in <- ports.ConfigChanged{Config: next}
+	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 {
+		t.Fatalf("non-keyboard change rebuilt keymap: %+v", got)
+	}
+
+	next.Keyboard.Layout, next.Keyboard.RepeatRate = "fr", 40
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	km := <-keymaps
+	defer km.Close()
+	cmd := (<-commands).(ports.SetKeymap)
+	if cmd.RepeatRate != 40 || !strings.Contains(cmd.Keymap, "fr") {
+		t.Fatalf("keymap command: rate=%d", cmd.RepeatRate)
+	}
+	if code, _, ok := km.KeycodeFor("a"); !ok || code != 16 {
+		t.Fatalf("fr keymap: a at %d", code)
+	}
+
+	bad := next
+	bad.Keyboard.Layout = "no-such-layout"
+	in <- ports.ConfigChanged{Config: bad}
+	if got := <-out; got.Config.Keyboard.Layout != "fr" || len(keymaps) != 0 {
+		t.Fatalf("bad layout applied: %+v", got.Config.Keyboard)
 	}
 }

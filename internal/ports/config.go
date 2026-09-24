@@ -11,35 +11,35 @@ type OutputConfig struct {
 	Off  bool
 }
 
-// Config is the parsed compositor configuration.
+// Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
 		Layout, Variant, Options string
-		RepeatRate               int    `toml:"repeat_rate"`
-		RepeatDelay              int    `toml:"repeat_delay"`
-		CmdKey                   string `toml:"cmd_key"`
-	} `toml:"keyboard"`
-	Terminal   struct{ Command []string } `toml:"terminal"`
-	Background struct{ Color string }     `toml:"background"`
+		RepeatRate               int
+		RepeatDelay              int
+		CmdKey                   string
+	}
+	Terminal   struct{ Command []string }
+	Background struct{ Color string }
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {
 		Width    int
 		Active   string
 		Inactive string
-	} `toml:"border"`
+	}
 	Layout struct {
 		Gaps               int
-		DefaultColumnWidth string `toml:"default_column_width"`
+		DefaultColumnWidth string
 		Presets            []string
-	} `toml:"layout"`
+	}
 	// Outputs selects and configures physical displays (drm backend).
-	Outputs []OutputConfig    `toml:"output"`
-	Binds   map[string]string `toml:"binds"`
+	Outputs []OutputConfig
+	Binds   map[string]string
 	Render  struct {
-		DirectScanout bool `toml:"direct_scanout"`
-	} `toml:"render"`
+		DirectScanout bool
+	}
 	Log struct {
 		Level string
 		Debug []string
-	} `toml:"log"`
+	}
 }

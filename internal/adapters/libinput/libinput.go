@@ -135,9 +135,11 @@ func goString(p *byte) string {
 
 // Options configures the input adapter.
 type Options struct {
-	Seat          Seat
-	SeatName      string
-	Keymap        *xkb.Keymap
+	Seat     Seat
+	SeatName string
+	Keymap   *xkb.Keymap
+	// Keymaps replaces Keymap live; Run takes ownership and closes the old one.
+	Keymaps       <-chan *xkb.Keymap
 	Width, Height int
 	Active        <-chan bool
 	Log           zerowrap.Logger
@@ -145,7 +147,7 @@ type Options struct {
 
 // Run owns libinput and the keymap, converting device events into input events.
 func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error {
-	defer opts.Keymap.Close()
+	defer func() { opts.Keymap.Close() }()
 	if err := load(); err != nil {
 		return err
 	}
@@ -179,6 +181,10 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 				suspend(li)
 			}
 			opts.Log.Info().Bool("active", on).Msg("input")
+		case km := <-opts.Keymaps:
+			opts.Keymap.Close()
+			opts.Keymap = km
+			opts.Log.Info().Msg("keymap replaced")
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}

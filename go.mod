@@ -3,7 +3,7 @@ module github.com/bnema/nefertty
 go 1.27
 
 require (
-	github.com/BurntSushi/toml v1.5.0
+	github.com/bnema/purego v0.11.0-bnema.4
 	github.com/bnema/purego-libwayland v0.0.0
 	github.com/bnema/purego-vulkan v0.0.0
 	github.com/bnema/wlturbo v0.2.0
@@ -14,7 +14,6 @@ require (
 )
 
 require (
-	github.com/bnema/purego v0.11.0-bnema.4 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

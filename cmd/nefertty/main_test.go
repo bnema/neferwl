@@ -24,8 +24,8 @@ func TestExitCodes(t *testing.T) {
 		{[]string{"nefertty", "--backend=drm", "--screenshot=/tmp/shots"}, 2},
 		{[]string{"nefertty", "--timeout=-1s"}, 2},
 		{[]string{"nefertty", "extra"}, 2},
-		{[]string{"nefertty", "--config=/nonexistent/nefertty.toml"}, 1},
-		{[]string{"nefertty", "validate-config", "/nonexistent/nefertty.toml"}, 1},
+		{[]string{"nefertty", "--config=/nonexistent/nefertty.conf"}, 1},
+		{[]string{"nefertty", "validate-config", "/nonexistent/nefertty.conf"}, 1},
 	} {
 		old := os.Args
 		os.Args = tc.args

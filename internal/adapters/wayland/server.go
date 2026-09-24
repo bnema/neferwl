@@ -116,33 +116,19 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	if opts.Keymap != "" {
-		if uint64(len(opts.Keymap))+1 > uint64(^uint32(0)) {
-			cleanup()
-			d.Close()
-			return nil, fmt.Errorf("keymap too large")
-		}
-		fd, e := unix.MemfdCreate("nefertty-keymap", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
-		if e == nil {
-			var n int
-			n, e = unix.Write(fd, append([]byte(opts.Keymap), 0))
-			if e == nil && n != len(opts.Keymap)+1 {
-				e = fmt.Errorf("short keymap write")
-			}
-			if e == nil {
-				_, e = unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE|unix.F_SEAL_SEAL)
-			}
-			if e != nil {
-				unix.Close(fd)
-			} else {
-				s.keymapFD, s.keymapSize = fd, uint32(n)
-			}
-		}
+		fd, size, e := keymapFile(opts.Keymap)
 		if e != nil {
 			cleanup()
 			d.Close()
 			return nil, e
 		}
-		s.cleanup = func() { unix.Close(fd); cleanup() }
+		s.keymapFD, s.keymapSize = fd, size
+	}
+	s.cleanup = func() {
+		if s.keymapFD >= 0 {
+			unix.Close(s.keymapFD)
+		}
+		cleanup()
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
 		s.cleanup()
@@ -341,6 +327,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 				pointerFrame(p)
 			}
 		}
+	case ports.SetKeymap:
+		s.setKeymap(c)
 	case ports.FocusWindow:
 		if s.focused != c.ID {
 			s.changeFocus(c.ID)
@@ -425,6 +413,58 @@ func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Ke
 		}
 	}
 	return nil, nil
+}
+
+// keymapFile writes a sealed memfd holding the NUL-terminated keymap.
+func keymapFile(keymap string) (int, uint32, error) {
+	if uint64(len(keymap))+1 > uint64(^uint32(0)) {
+		return -1, 0, fmt.Errorf("keymap too large")
+	}
+	fd, err := unix.MemfdCreate("nefertty-keymap", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	if err != nil {
+		return -1, 0, err
+	}
+	n, err := unix.Write(fd, append([]byte(keymap), 0))
+	if err == nil && n != len(keymap)+1 {
+		err = fmt.Errorf("short keymap write")
+	}
+	if err == nil {
+		_, err = unix.FcntlInt(uintptr(fd), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK|unix.F_SEAL_GROW|unix.F_SEAL_WRITE|unix.F_SEAL_SEAL)
+	}
+	if err != nil {
+		unix.Close(fd)
+		return -1, 0, err
+	}
+	return fd, uint32(n), nil
+}
+
+// setKeymap sends a new keymap and repeat info to every keyboard. Held keys and
+// modifiers are reset: the focused client gets leave, then enter with no keys.
+func (s *Server) setKeymap(c ports.SetKeymap) {
+	fd, size, err := keymapFile(c.Keymap)
+	if err != nil {
+		s.log.Warn().Err(err).Msg("keymap update failed")
+		return
+	}
+	if s.keymapFD >= 0 {
+		unix.Close(s.keymapFD)
+	}
+	s.keymapFD, s.keymapSize = fd, size
+	s.repeatRate, s.repeatDelay = c.RepeatRate, c.RepeatDelay
+	focused := s.focused
+	s.changeFocus(0)
+	s.heldKeys = nil
+	s.modState = ports.ModState{}
+	for _, list := range s.keyboards {
+		for _, k := range list {
+			k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.keymapFD, s.keymapSize)
+			if k.Version() >= 4 {
+				k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+			}
+		}
+	}
+	s.changeFocus(focused)
+	s.log.Info().Uint32("size", size).Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("keymap updated")
 }
 
 func (s *Server) sendModifiers(k *wayland.Keyboard) {

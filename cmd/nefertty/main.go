@@ -50,16 +50,19 @@ func run() error {
 			return err
 		}
 		path := config.DefaultPath()
-		var err error
 		if len(os.Args) == 3 {
 			path = os.Args[2]
-			_, err = config.Load(path)
-		} else {
-			_, err = config.LoadDefault()
 		}
+		_, warnings, err := config.Load(path)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return err
+		}
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "%s:%s\n", path, w)
+		}
+		if len(warnings) > 0 {
+			return fmt.Errorf("%d warning(s)", len(warnings))
 		}
 		fmt.Println("ok: " + path)
 		return nil
@@ -132,11 +135,12 @@ func run() error {
 	path := *configFlag
 	var cfgErr error
 	var cfg = config.Defaults()
+	var warnings []config.Warning
 	if path == "" {
 		path = config.DefaultPath()
-		cfg, cfgErr = config.LoadDefault()
+		cfg, warnings, cfgErr = config.LoadDefault()
 	} else {
-		cfg, cfgErr = config.Load(path)
+		cfg, warnings, cfgErr = config.Load(path)
 	}
 	if cfgErr != nil {
 		fmt.Fprintln(os.Stderr, cfgErr)
@@ -180,6 +184,9 @@ func run() error {
 	log.Info().Strs("args", os.Args[1:]).Str("backend", *backend).Str("tty", os.Getenv("XDG_VTNR")).Str("session_type", os.Getenv("XDG_SESSION_TYPE")).Msg("run")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
+	for _, w := range warnings {
+		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
+	}
 	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Width: outW, Height: outH, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {

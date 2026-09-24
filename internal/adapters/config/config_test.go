@@ -6,124 +6,179 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/bnema/nefertty/internal/ports"
 )
+
+func parseString(t *testing.T, s string) (ports.Config, []Warning) {
+	t.Helper()
+	c, w, err := Parse(strings.NewReader(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, w
+}
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if err := Validate(d); err != nil {
-		t.Fatal(err)
-	}
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.RepeatDelay != 600 || d.Keyboard.CmdKey != "super" || d.Render.DirectScanout != true || len(d.Binds) != 12 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 12 {
 		t.Fatalf("defaults: %+v", d)
 	}
-	path := filepath.Join(t.TempDir(), "missing")
-	_, err := Load(path)
-	if !os.IsNotExist(err) {
+	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
+		t.Fatal(d.Binds)
+	}
+	if _, _, err := Load(filepath.Join(t.TempDir(), "missing")); !os.IsNotExist(err) {
 		t.Fatalf("explicit missing: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	got, err := LoadDefault()
-	if err != nil || !reflect.DeepEqual(got, d) {
-		t.Fatalf("missing: %v %+v", err, got)
-	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if DefaultPath() != filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "nefertty", "config.toml") {
+	if DefaultPath() != filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "nefertty", "config") {
 		t.Fatal(DefaultPath())
 	}
-	example, err := Load("../../../examples/config.toml")
-	if err != nil || !reflect.DeepEqual(example, d) {
-		t.Fatalf("example: %v %+v", err, example)
+	got, w, err := LoadDefault()
+	if err != nil || len(w) != 0 || !reflect.DeepEqual(got, d) {
+		t.Fatalf("missing: %v %v %+v", err, w, got)
+	}
+	example, w, err := Load("../../../examples/config")
+	if err != nil || len(w) != 0 || !reflect.DeepEqual(example, d) {
+		t.Fatalf("example: %v %v\n%+v\n%+v", err, w, example, d)
 	}
 }
-func TestValidation(t *testing.T) {
-	cases := []struct{ name, content, want string }{
-		{"rate", "[keyboard]\nrepeat_rate=0", "keyboard.repeat_rate"},
-		{"delay", "[keyboard]\nrepeat_delay=0", "keyboard.repeat_delay"},
-		{"cmd", "[keyboard]\ncmd_key='meta'", "keyboard.cmd_key"},
-		{"terminal", "[terminal]\ncommand=[]", "terminal.command"},
-		{"color", "[background]\ncolor='red'", "background.color"},
-		{"gaps", "[layout]\ngaps=201", "layout.gaps"},
-		{"width", "[layout]\ndefault_column_width='2/1'", "layout.default_column_width"},
-		{"preset", "[layout]\npresets=['0px']", "layout.presets[0]"},
-		{"level", "[log]\nlevel='trace'", "log.level"},
-		{"debug", "[log]\ndebug=['nope']", "log.debug[0]"},
-		{"combo", "[binds]\n'Cmd+'='quit'", "binds.Cmd+"},
-		{"action", "[binds]\n'Cmd+X'='bogus'", "binds.Cmd+X"},
-		{"resolved duplicate", "[keyboard]\ncmd_key='ctrl'\n[binds]\n'Cmd+X'='quit'\n'Ctrl+X'='quit'", "duplicates"},
-		{"duplicate modifier", "[keyboard]\ncmd_key='ctrl'\n[binds]\n'Cmd+Ctrl+X'='quit'", "duplicate resolved modifier"},
-		{"duplicate", "[binds]\n'Cmd+Shift+X'='quit'\n'Shift+Cmd+X'='quit'", "duplicates"},
-		{"unknown", "[layout]\nnope=1", "layout.nope"},
+
+func TestParse(t *testing.T) {
+	c, w := parseString(t, `
+# comment
+keyboard.layout = fr
+keyboard.repeat-rate = 40   # inline comment
+terminal = foot --server
+background = #000000
+border.inactive =
+layout.presets = 1/3, 1/2 ,1
+log.debug = core, input
+output.DP-2 = 5120x2160@165.058
+output.HDMI-A-1 = off
+output.DP-1 = preferred
+render.direct-scanout = off
+`)
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout {
+		t.Fatalf("%+v", c)
+	}
+	if !reflect.DeepEqual(c.Layout.Presets, []string{"1/3", "1/2", "1"}) || !reflect.DeepEqual(c.Log.Debug, []string{"core", "input"}) {
+		t.Fatalf("%+v", c)
+	}
+	if len(c.Outputs) != 3 || c.Outputs[0].Mode != "5120x2160@165.058" || !c.Outputs[1].Off || c.Outputs[2].Mode != "" || c.Outputs[2].Off {
+		t.Fatalf("%+v", c.Outputs)
+	}
+}
+
+func TestWarningsKeepDefaults(t *testing.T) {
+	cases := []struct{ line, want string }{
+		{"keyboard.repeat-rate = 0", "keyboard.repeat-rate"},
+		{"keyboard.cmd = meta", "keyboard.cmd"},
+		{"terminal =", "terminal"},
+		{"background = red", "background"},
+		{"layout.gaps = 201", "layout.gaps"},
+		{"layout.default-width = 2/1", "layout.default-width"},
+		{"layout.presets = 0px", "layout.presets"},
+		{"log.level = trace", "log.level"},
+		{"log.debug = nope", "log.debug"},
+		{"output.DP-2 = big", "output.DP-2"},
+		{"output.DP-2 = 1920x1080@0", "output.DP-2"},
+		{"nope = 1", "nope"},
+		{"just text", "expected key = value"},
+		{"bind.cmd+ = quit", "missing key"},
+		{"bind.hyper+x = quit", "unknown modifier"},
+		{"bind.cmd+x = bogus", "unknown action"},
+		{"bind.cmd+x = spawn   ", "unknown action"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
-				t.Fatal(err)
+		t.Run(tc.line, func(t *testing.T) {
+			c, w := parseString(t, tc.line)
+			if len(w) != 1 || w[0].Line != 1 || !strings.Contains(w[0].Msg, tc.want) {
+				t.Fatalf("warnings %v, want %q", w, tc.want)
 			}
-			_, err := Load(path)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("got %v, want %s", err, tc.want)
+			if !reflect.DeepEqual(c, Defaults()) {
+				t.Fatalf("config changed: %+v", c)
 			}
 		})
 	}
 }
-func TestBindMerge(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("[binds]\n'Cmd+Return'='none'\n'Shift+Cmd+Left'='quit'\n'Alt+X'='spawn-terminal'\n"), 0600); err != nil {
-		t.Fatal(err)
+
+func TestDuplicateKeyLastWins(t *testing.T) {
+	c, w := parseString(t, "background = #000000\nbackground = #111111\n")
+	if c.Background.Color != "#111111" || len(w) != 1 || w[0].Line != 2 {
+		t.Fatal(c.Background, w)
 	}
-	c, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestBinds(t *testing.T) {
+	c, w := parseString(t, `
+bind.CTRL+Cmd+E = spawn foo --bar
+bind.cmd+; = close-window
+bind.cmd+é = quit
+bind.cmd+semicolon = quit
+bind.cmd+equal = spawn-terminal
+bind.cmd+# = none
+bind.cmd++ = quit
+bind.alt+f5 = quit
+bind.cmd+return = none
+`)
+	want := map[string]string{
+		"Cmd+Ctrl+e":    "spawn foo --bar",
+		"Cmd+semicolon": "quit",
+		"Cmd+eacute":    "quit",
+		"Cmd+equal":     "spawn-terminal",
+		"Cmd+plus":      "quit",
+		"Alt+F5":        "quit",
+	}
+	for combo, action := range want {
+		if c.Binds[combo] != action {
+			t.Errorf("%s = %q, want %q", combo, c.Binds[combo], action)
+		}
 	}
 	if _, ok := c.Binds["Cmd+Return"]; ok {
-		t.Fatal(c.Binds)
+		t.Error("none did not remove the default")
 	}
-	if _, ok := c.Binds["Cmd+Shift+Left"]; ok {
-		t.Fatal(c.Binds)
+	if _, ok := c.Binds["Cmd+numbersign"]; ok {
+		t.Error("none kept")
 	}
-	if c.Binds["Shift+Cmd+Left"] != "quit" || c.Binds["Alt+X"] != "spawn-terminal" {
-		t.Fatal(c.Binds)
+	// cmd+; then cmd+semicolon is the same key: warn and keep the last.
+	if len(w) != 1 || w[0].Line != 5 || !strings.Contains(w[0].Msg, "overrides line 3") {
+		t.Fatal(w)
 	}
 }
 
-func TestOutputs(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "c.toml")
-	good := "[[output]]\nname = \"DP-2\"\nmode = \"5120x2160@165.058\"\n\n[[output]]\nname = \"HDMI-A-1\"\noff = true\n"
-	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
-		t.Fatal(err)
+func TestBindReservedCharacter(t *testing.T) {
+	_, w := parseString(t, "bind.cmd+= = quit\n")
+	if len(w) != 1 || !strings.Contains(w[0].Msg, "cmd+equal") {
+		t.Fatal(w)
 	}
-	c, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestBindResolvedCollision(t *testing.T) {
+	c, w := parseString(t, "keyboard.cmd = ctrl\nbind.ctrl+x = quit\nbind.cmd+x = close-window\nbind.cmd+ctrl+y = quit\n")
+	if c.Binds["Ctrl+x"] != "quit" {
+		t.Fatal(c.Binds)
 	}
-	if len(c.Outputs) != 2 || c.Outputs[0].Name != "DP-2" || !c.Outputs[1].Off {
-		t.Fatalf("%+v", c.Outputs)
+	if _, ok := c.Binds["Cmd+x"]; ok {
+		t.Fatal(c.Binds)
 	}
-	for _, bad := range []string{"[[output]]\nmode = \"1x1\"\n", "[[output]]\nname = \"DP-2\"\nmode = \"big\"\n", "[[output]]\nname = \"DP-2\"\nmode = \"1920x1080@0\"\n", "[[output]]\nname = \"DP-2\"\nscale = 2\n"} {
-		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := Load(path); err == nil {
-			t.Errorf("accepted %q", bad)
-		}
+	if _, ok := c.Binds["Cmd+Ctrl+y"]; ok {
+		t.Fatal(c.Binds)
 	}
+	if len(w) != 2 || w[0].Line != 3 || w[1].Line != 4 {
+		t.Fatal(w)
+	}
+}
+
+func TestParseMode(t *testing.T) {
 	w, h, hz, err := ParseMode("3440x1440")
 	if err != nil || w != 3440 || h != 1440 || hz != 0 {
-		t.Fatalf("ParseMode: %d %d %v %v", w, h, hz, err)
+		t.Fatalf("%d %d %v %v", w, h, hz, err)
 	}
-}
-
-func TestSpawnBind(t *testing.T) {
-	c := Defaults()
-	c.Binds = map[string]string{"Cmd+D": "spawn fuzzel --prompt >"}
-	if err := Validate(c); err != nil {
-		t.Fatal(err)
-	}
-	for _, bad := range []string{"spawn", "spawn   ", "spawnfuzzel"} {
-		c.Binds = map[string]string{"Cmd+D": bad}
-		if Validate(c) == nil {
-			t.Errorf("accepted %q", bad)
-		}
+	if _, _, hz, err := ParseMode("1920x1080@59.94"); err != nil || hz != 59.94 {
+		t.Fatal(hz, err)
 	}
 }
