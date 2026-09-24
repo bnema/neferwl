@@ -2,7 +2,6 @@ package drm
 
 import (
 	"encoding/binary"
-	"image"
 	"testing"
 	"unsafe"
 )
@@ -49,20 +48,6 @@ func TestPickConnector(t *testing.T) {
 		c, m, err := pickConnector(tc.conns)
 		if (err != nil) != tc.err || c.name != tc.want || m.HDisplay != tc.mode {
 			t.Errorf("%s: got %q %d %v", tc.name, c.name, m.HDisplay, err)
-		}
-	}
-}
-
-func TestCopyXRGB(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	copy(img.Pix, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
-	pitch := 12
-	dst := make([]byte, pitch*2)
-	copyXRGB(dst, pitch, img)
-	want := []byte{3, 2, 1, 255, 7, 6, 5, 255, 0, 0, 0, 0, 11, 10, 9, 255, 15, 14, 13, 255, 0, 0, 0, 0}
-	for i := range want {
-		if dst[i] != want[i] {
-			t.Fatalf("byte %d = %d, want %d (%v)", i, dst[i], want[i], dst)
 		}
 	}
 }

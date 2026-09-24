@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"image"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -245,18 +244,6 @@ func (b *dumbBuffer) destroy(fd int) {
 	}
 	h := b.handle
 	_ = ioctl(fd, ioctlDestroyDumb, unsafe.Pointer(&h))
-}
-
-// copyXRGB writes RGBA pixels into an XRGB8888 (little-endian BGRX) buffer.
-func copyXRGB(dst []byte, pitch int, img *image.RGBA) {
-	w, h := img.Rect.Dx(), img.Rect.Dy()
-	for y := 0; y < h; y++ {
-		src := img.Pix[y*img.Stride : y*img.Stride+w*4]
-		row := dst[y*pitch : y*pitch+w*4]
-		for x := 0; x < w*4; x += 4 {
-			row[x], row[x+1], row[x+2], row[x+3] = src[x+2], src[x+1], src[x], 0xff
-		}
-	}
 }
 
 func setCrtc(fd int, crtc, conn, fb uint32, mode *modeInfo) error {

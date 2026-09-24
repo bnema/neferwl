@@ -161,7 +161,11 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	// The CPU reads this buffer every frame: uncached memory makes that ~100x slower.
+	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
+	if err != nil {
+		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	}
 	if err != nil {
 		return
 	}
@@ -469,6 +473,19 @@ func (r *Renderer) Pixels() *image.RGBA {
 		out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = src[i+2], src[i+1], src[i], src[i+3]
 	}
 	return out
+}
+
+// CopyBGRX writes the last frame into an XRGB8888 buffer with the given pitch.
+// The image is B8G8R8A8, which is already XRGB8888 in memory.
+func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
+	if r.mapped == nil {
+		return
+	}
+	row := r.width * 4
+	src := unsafe.Slice((*byte)(r.mapped), row*r.height)
+	for y := 0; y < r.height; y++ {
+		copy(dst[y*pitch:y*pitch+row], src[y*row:(y+1)*row])
+	}
 }
 
 func (r *Renderer) Close() {

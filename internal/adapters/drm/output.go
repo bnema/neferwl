@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
 	"sync"
 	"time"
 
@@ -16,7 +15,8 @@ import (
 // Renderer draws a scene into an RGBA image of the output size.
 type Renderer interface {
 	Render(ports.Scene, map[ports.WindowID]ports.SurfaceContent) error
-	Pixels() *image.RGBA
+	// CopyBGRX writes the last frame as XRGB8888 rows of the given pitch.
+	CopyBGRX(dst []byte, pitch int)
 	Close()
 }
 
@@ -88,9 +88,9 @@ func (o *Output) modeset() error {
 }
 
 // present copies img into the back buffer and queues a page flip.
-func (o *Output) present(img *image.RGBA) error {
+func (o *Output) present(r Renderer) error {
 	b := o.bufs[o.back]
-	copyXRGB(b.mem, int(b.pitch), img)
+	r.CopyBGRX(b.mem, int(b.pitch))
 	if err := flip(o.fd, o.crtc, b.fbID); err != nil {
 		return err
 	}
@@ -183,7 +183,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 		if err := r.Render(scene, surfaces); err != nil {
 			return fmt.Errorf("render frame: %w", err)
 		}
-		if err := o.present(r.Pixels()); err != nil {
+		copyStart := time.Now()
+		if err := o.present(r); err != nil {
 			if errors.Is(err, unix.EBUSY) {
 				// A flip is still in flight; retry after its event.
 				o.pending, o.flipStart = true, time.Now()
@@ -200,7 +201,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 		}
 		dirty = false
 		frame++
-		o.log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("render", time.Since(start)).Msg("frame")
+		o.log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("render", time.Since(start)).Dur("copy", time.Since(copyStart)).Msg("frame")
 	}
 }
 
