@@ -17,17 +17,21 @@ const (
 )
 
 type surface struct {
-	kind             roleKind
-	xdg              *xdgSurface
-	layer            *layerSurface
-	server           *Server
-	current, pending *wayland.Buffer
-	attached         bool
-	lastW, lastH     int // last logged buffer size
-	callbacks        []*wayland.Callback
-	role             func(bool)
-	destroyed        bool
-	released         bool
+	wl       *wayland.Surface
+	viewport *viewport
+	// bufferScale is committed state; pendingScale is set by set_buffer_scale.
+	bufferScale, pendingScale int
+	kind                      roleKind
+	xdg                       *xdgSurface
+	layer                     *layerSurface
+	server                    *Server
+	current, pending          *wayland.Buffer
+	attached                  bool
+	lastW, lastH              int // last logged buffer size
+	callbacks                 []*wayland.Callback
+	role                      func(bool)
+	destroyed                 bool
+	released                  bool
 }
 
 func (s *surface) Destroy(*wayland.Surface) {
@@ -61,6 +65,12 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
 	}
+	if s.pendingScale > 0 {
+		s.bufferScale = s.pendingScale
+	}
+	if s.viewport != nil {
+		s.viewport.commit()
+	}
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
 			if !s.released && s.current.Resource.Alive() {
@@ -88,6 +98,7 @@ func (s *surface) Commit(*wayland.Surface) {
 		b := s.current
 		if state, ok := s.server.buffers[b.Resource]; ok {
 			if c, ok := state.content(id); ok {
+				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				if c.Width != s.lastW || c.Height != s.lastH {
 					s.lastW, s.lastH = c.Width, c.Height
 					s.server.log.Info().Uint64("id", uint64(id)).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
@@ -108,6 +119,12 @@ func (*surface) DamageBuffer(*wayland.Surface, int32, int32, int32, int32) {}
 func (*surface) SetOpaqueRegion(*wayland.Surface, *wayland.Region)         {}
 func (*surface) SetInputRegion(*wayland.Surface, *wayland.Region)          {}
 func (*surface) SetBufferTransform(*wayland.Surface, int32)                {}
-func (*surface) SetBufferScale(*wayland.Surface, int32)                    {}
-func (*surface) Offset(*wayland.Surface, int32, int32)                     {}
-func (*surface) GetRelease(*wayland.Surface, uint32)                       {}
+func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
+	if v < 1 {
+		r.PostError(uint32(wayland.SurfaceErrorInvalidScale), "buffer scale must be positive")
+		return
+	}
+	s.pendingScale = int(v)
+}
+func (*surface) Offset(*wayland.Surface, int32, int32) {}
+func (*surface) GetRelease(*wayland.Surface, uint32)   {}

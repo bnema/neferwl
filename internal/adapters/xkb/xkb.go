@@ -141,7 +141,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 	event := ports.KeyEvent{Keysym: name, Pressed: pressed, TimeMsec: timeMsec, Keycode: evdevCode}
 	if pressed {
 		layout := k.serializeLayout(k.state, layoutEffective)
-		event.Base, event.Shifted = k.levelName(code, layout, 0), k.levelName(code, layout, 1)
+		event.Base = k.levelName(code, layout, 0)
 	}
 	event.State = ports.ModState{
 		Depressed: k.serializeMods(k.state, modsDepressed), Latched: k.serializeMods(k.state, modsLatched),

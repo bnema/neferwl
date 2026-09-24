@@ -32,6 +32,9 @@ layout.presets = 1/3, 1/2, 2/3, 1
 # The first listed display that is connected and not off is used.
 # output.DP-2 = 5120x2160@165.058
 # output.HDMI-A-1 = off
+# Scale (HiDPI), 1 to 4, like 1.5 or 4/3. Default 1. scale-up and scale-down
+# step through the scales where the display divides into whole pixels.
+# output.DP-2.scale = 4/3
 
 render.direct-scanout = on
 
@@ -40,6 +43,9 @@ log.level = info
 log.debug =
 
 # Binds: bind.<keys> = <action>. Modifiers: cmd, shift, ctrl, alt, super.
+# code:N is a physical key (evdev code), the same key on every layout:
+# code:2 to code:10 are the digit row 1 to 9, code:12 and code:13 the two
+# keys right of 0 (- and = on US).
 # Keys are what your layout prints (cmd+é on AZERTY). Write = # and space
 # by name: cmd+equal, cmd+numbersign, cmd+space. `none` removes a default.
 # `spawn <command>` runs a program; arguments split on spaces, no shell.
@@ -62,21 +68,25 @@ bind.cmd+pageup = focus-workspace-up
 bind.cmd+pagedown = focus-workspace-down
 bind.cmd+shift+pageup = move-to-workspace-up
 bind.cmd+shift+pagedown = move-to-workspace-down
-bind.cmd+1 = focus-workspace 1
-bind.cmd+2 = focus-workspace 2
-bind.cmd+3 = focus-workspace 3
-bind.cmd+4 = focus-workspace 4
-bind.cmd+5 = focus-workspace 5
-bind.cmd+6 = focus-workspace 6
-bind.cmd+7 = focus-workspace 7
-bind.cmd+8 = focus-workspace 8
-bind.cmd+9 = focus-workspace 9
-bind.cmd+shift+1 = move-to-workspace 1
-bind.cmd+shift+2 = move-to-workspace 2
-bind.cmd+shift+3 = move-to-workspace 3
-bind.cmd+shift+4 = move-to-workspace 4
-bind.cmd+shift+5 = move-to-workspace 5
-bind.cmd+shift+6 = move-to-workspace 6
-bind.cmd+shift+7 = move-to-workspace 7
-bind.cmd+shift+8 = move-to-workspace 8
-bind.cmd+shift+9 = move-to-workspace 9
+bind.cmd+code:2 = focus-workspace 1
+bind.cmd+code:3 = focus-workspace 2
+bind.cmd+code:4 = focus-workspace 3
+bind.cmd+code:5 = focus-workspace 4
+bind.cmd+code:6 = focus-workspace 5
+bind.cmd+code:7 = focus-workspace 6
+bind.cmd+code:8 = focus-workspace 7
+bind.cmd+code:9 = focus-workspace 8
+bind.cmd+code:10 = focus-workspace 9
+bind.cmd+shift+code:2 = move-to-workspace 1
+bind.cmd+shift+code:3 = move-to-workspace 2
+bind.cmd+shift+code:4 = move-to-workspace 3
+bind.cmd+shift+code:5 = move-to-workspace 4
+bind.cmd+shift+code:6 = move-to-workspace 5
+bind.cmd+shift+code:7 = move-to-workspace 6
+bind.cmd+shift+code:8 = move-to-workspace 7
+bind.cmd+shift+code:9 = move-to-workspace 8
+bind.cmd+shift+code:10 = move-to-workspace 9
+
+# Zoom: the whole display, live.
+bind.cmd+code:13 = scale-up
+bind.cmd+code:12 = scale-down

@@ -5,10 +5,16 @@ package ports
 // monitor's preferred mode. Off disables the connector.
 // The first listed, connected, enabled output is used; without a match, the first
 // connected output that is not off.
+// Scale is the output scale (0 means 1); layout works in logical pixels,
+// physical = logical × Scale.
+// ScaleOnly marks an entry set by output.<name>.scale alone: it does not
+// select the connector.
 type OutputConfig struct {
-	Name string
-	Mode string
-	Off  bool
+	Name      string
+	Mode      string
+	Off       bool
+	Scale     float64
+	ScaleOnly bool
 }
 
 // Config is the parsed compositor configuration (see the config adapter for keys).

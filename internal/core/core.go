@@ -44,6 +44,12 @@ type Core struct {
 	layers           []ports.LayerSurface
 	placed           []ports.SceneLayer
 	layerChanged     bool
+	// Output in physical pixels. scale comes from output.<name>.scale and
+	// changes live with scale-up/scale-down until the config value changes.
+	outName         string
+	physW, physH    int
+	scale, cfgScale float64
+	sentScale       ports.SetOutputScale
 }
 
 func keyName(s string) string {
@@ -117,6 +123,10 @@ func (c *Core) apply(cfg ports.Config) error {
 			binds[b] = Action(a)
 			continue
 		}
+		if Action(a) == ActionScaleUp || Action(a) == ActionScaleDown {
+			binds[b] = Action(a)
+			continue
+		}
 		if _, _, ok := WorkspaceArg(Action(a)); ok {
 			binds[b] = Action(a)
 			continue
@@ -130,6 +140,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
+	c.applyConfigScale()
 	c.ws.SetMaxColumns(cfg.Layout.MaxColumns)
 	c.ws.SetPresets(presets)
 	c.ws.SetGaps(cfg.Layout.Gaps)
@@ -139,7 +150,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	if cap(ch.Scenes) != 1 {
 		return nil, fmt.Errorf("scenes must have capacity 1")
 	}
-	c := &Core{ws: NewMonitor(), ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{scale: 1, ws: NewMonitor(), ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -151,6 +162,33 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 		return ctx.Err()
 	case c.ch.Commands <- v:
 		return nil
+	}
+}
+
+// applyConfigScale picks up output.<name>.scale when it changed in the config,
+// replacing any live scale-up/scale-down adjustment.
+func (c *Core) applyConfigScale() {
+	s := 1.0
+	for _, o := range c.cfg.Outputs {
+		if o.Name == c.outName && o.Scale != 0 {
+			s = o.Scale
+		}
+	}
+	s = SnapScale(s)
+	if s != c.cfgScale {
+		c.cfgScale = s
+		c.setScale(s)
+	}
+}
+
+// setScale resizes the logical output; layer placement follows.
+func (c *Core) setScale(s float64) {
+	c.scale = SnapScale(s)
+	c.ws.SetOutput(logical(c.physW, c.scale), logical(c.physH, c.scale))
+	if c.layerChanged {
+		var usable ports.Rect
+		c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
+		c.ws.SetUsable(usable)
 	}
 }
 
@@ -193,8 +231,15 @@ func (c *Core) keyboardFocus() WindowID {
 }
 
 func (c *Core) publish(ctx context.Context) error {
+	// Clients learn the new scale before the configures sized for it.
+	if v := (ports.SetOutputScale{Scale: c.scale, Width: c.ws.Output().W, Height: c.ws.Output().H}); v != c.sentScale {
+		if err := c.command(ctx, v); err != nil {
+			return err
+		}
+		c.sentScale = v
+	}
 	c.seq++
-	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output().W, OutputHeight: c.ws.Output().H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
+	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output().W, OutputHeight: c.ws.Output().H, Scale: c.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
 	for _, p := range c.ws.Layout() {
@@ -295,12 +340,12 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.OutputMode:
-				c.ws.SetOutput(v.Width, v.Height)
-				if c.layerChanged {
-					var usable ports.Rect
-					c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
-					c.ws.SetUsable(usable)
+				c.physW, c.physH = v.Width, v.Height
+				if v.Name != c.outName {
+					c.outName, c.cfgScale = v.Name, 0
 				}
+				c.applyConfigScale()
+				c.setScale(c.scale)
 			case ports.OutputUsable:
 				// Once layer state arrives, its exclusive zones take precedence.
 				if !c.layerChanged {
@@ -332,8 +377,9 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
-				c.cursorX = min(max(v.X, 0), float64(max(c.ws.Output().W-1, 0)))
-				c.cursorY = min(max(v.Y, 0), float64(max(c.ws.Output().H-1, 0)))
+				// Input reports physical pixels; hit-testing is logical.
+				c.cursorX = min(max(v.X/c.scale, 0), float64(max(c.ws.Output().W-1, 0)))
+				c.cursorY = min(max(v.Y/c.scale, 0), float64(max(c.ws.Output().H-1, 0)))
 				var id WindowID
 				var x, y float64
 				// Fullscreen wins; otherwise the last visible placement is topmost.
@@ -394,15 +440,14 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			}
 			name := keyName(key.Keysym)
+			// A bind on the keysym wins; then the unshifted keysym (Cmd+Shift+1
+			// prints exclam on US); then the physical key (code:N).
 			action, bound := c.binds[binding{key: name, mods: key.Mods}]
-			// Cmd+Shift+1 on US prints exclam: match the unshifted keysym.
 			if !bound && key.Base != "" {
 				action, bound = c.binds[binding{key: keyName(key.Base), mods: key.Mods}]
 			}
-			// AZERTY puts digits on the shifted level: Cmd+1 is Super+ampersand.
-			// Only digits fall back this way, so cmd+plus stays off Cmd+=.
-			if !bound && len(key.Shifted) == 1 && key.Shifted[0] >= '0' && key.Shifted[0] <= '9' {
-				action, bound = c.binds[binding{key: key.Shifted, mods: key.Mods}]
+			if !bound && key.Keycode != 0 {
+				action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
 			}
 			// Track presses by physical key: Shift may be released before the key.
 			held := name
@@ -419,6 +464,17 @@ func (c *Core) Run(ctx context.Context) error {
 			if key.Pressed {
 				if bound {
 					c.pressed[held] = true
+					if action == ActionScaleUp || action == ActionScaleDown {
+						dir := 1
+						if action == ActionScaleDown {
+							dir = -1
+						}
+						c.setScale(StepScale(c.physW, c.physH, c.scale, dir))
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+						continue
+					}
 					effect := c.ws.Apply(action)
 					if effect.Quit {
 						return ErrQuit

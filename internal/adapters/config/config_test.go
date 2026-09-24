@@ -21,7 +21,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 34 || d.Layout.MaxColumns != 2 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 36 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -54,9 +54,12 @@ background = #000000
 border.inactive =
 layout.presets = 1/3, 1/2 ,1
 log.debug = core, input
+output.DP-2.scale = 4/3
 output.DP-2 = 5120x2160@165.058
 output.HDMI-A-1 = off
 output.DP-1 = preferred
+output.DP-1.scale = 1.5
+bind.cmd+code:30 = quit
 render.direct-scanout = off
 `)
 	if len(w) != 0 {
@@ -68,8 +71,12 @@ render.direct-scanout = off
 	if !reflect.DeepEqual(c.Layout.Presets, []string{"1/3", "1/2", "1"}) || !reflect.DeepEqual(c.Log.Debug, []string{"core", "input"}) {
 		t.Fatalf("%+v", c)
 	}
-	if len(c.Outputs) != 3 || c.Outputs[0].Mode != "5120x2160@165.058" || !c.Outputs[1].Off || c.Outputs[2].Mode != "" || c.Outputs[2].Off {
+	// Scale and mode lines combine in either order.
+	if len(c.Outputs) != 3 || c.Outputs[0].Mode != "5120x2160@165.058" || c.Outputs[0].Scale != 4.0/3 || !c.Outputs[1].Off || c.Outputs[2].Mode != "" || c.Outputs[2].Off || c.Outputs[2].Scale != 1.5 {
 		t.Fatalf("%+v", c.Outputs)
+	}
+	if c.Binds["Cmd+code:30"] != "quit" {
+		t.Fatal(c.Binds)
 	}
 }
 
@@ -87,6 +94,9 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"log.debug = nope", "log.debug"},
 		{"output.DP-2 = big", "output.DP-2"},
 		{"output.DP-2 = 1920x1080@0", "output.DP-2"},
+		{"output.DP-2.scale = 0.5", "between 1 and 4"},
+		{"output.DP-2.scale = 3/0", "between 1 and 4"},
+		{"bind.cmd+code:x = quit", "evdev key code"},
 		{"nope = 1", "nope"},
 		{"just text", "expected key = value"},
 		{"bind.cmd+ = quit", "missing key"},
@@ -205,5 +215,21 @@ func TestParseMode(t *testing.T) {
 	}
 	if _, _, hz, err := ParseMode("1920x1080@59.94"); err != nil || hz != 59.94 {
 		t.Fatal(hz, err)
+	}
+}
+
+func TestDigitBindReplacesPhysicalDefault(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+1 = none\nbind.cmd+shift+2 = quit\n")
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	if _, ok := c.Binds["Cmd+code:2"]; ok {
+		t.Fatal("default cmd+code:2 kept")
+	}
+	if _, ok := c.Binds["Cmd+Shift+code:3"]; ok || c.Binds["Cmd+Shift+2"] != "quit" {
+		t.Fatal(c.Binds)
+	}
+	if c.Binds["Cmd+code:4"] != "focus-workspace 3" {
+		t.Fatal("other defaults must stay")
 	}
 }

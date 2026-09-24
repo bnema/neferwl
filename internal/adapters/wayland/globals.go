@@ -12,8 +12,9 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 	for _, register := range []func() error{
 		func() error { return registerXDG(d, s) },
 		func() error { return registerLayer(d, o, s) },
-		func() error { return registerXDGOutput(d, o) },
+		func() error { return registerXDGOutput(d, o, s) },
 		func() error { return registerDecoration(d, s) },
+		func() error { return registerScale(d, s) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
@@ -37,11 +38,14 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				if e != nil {
 					return
 				}
+				s.scale.outputs = append(s.scale.outputs, r)
+				r.OnDestroy = func() { s.scale.outputs = removeItem(s.scale.outputs, r) }
 				info := o.output()
 				r.SendGeometry(0, 0, int32(info.PhysicalW), int32(info.PhysicalH), 0, info.Make, info.Model, 0)
+				// The mode stays physical; the scale tells clients how to divide it.
 				r.SendMode(3, int32(o.OutputWidth), int32(o.OutputHeight), int32(info.RefreshMilli))
 				if v >= 2 {
-					r.SendScale(1)
+					r.SendScale(s.scale.integerScale())
 				}
 				if v >= 4 {
 					r.SendName(info.Name)
@@ -81,9 +85,11 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 type compositor struct{ server *Server }
 
 func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
-	state := &surface{server: c.server}
+	state := &surface{server: c.server, bufferScale: 1}
 	if w, err := wayland.NewSurface(r.Client(), r.Version(), id, state); err == nil {
+		state.wl = w
 		c.server.surfaces[w.Resource] = state
+		c.server.sendSurfaceScale(w)
 		w.OnDestroy = func() { delete(c.server.surfaces, w.Resource); state.Destroy(w) }
 	}
 }

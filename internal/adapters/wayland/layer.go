@@ -9,10 +9,7 @@ import (
 	"sort"
 )
 
-type layerShell struct {
-	server        *Server
-	width, height uint32
-}
+type layerShell struct{ server *Server }
 type layerState struct {
 	width, height, anchor uint32
 	zone                  int32
@@ -33,7 +30,7 @@ type layerSurface struct {
 
 func registerLayer(d *server.Display, o Options, s *Server) error {
 	return wlrlayershell.NewZwlrLayerShellV1Global(d, 4, func(c server.Client, v, id uint32) {
-		_, _ = wlrlayershell.NewZwlrLayerShellV1(c, int32(v), id, layerShell{s, uint32(o.OutputWidth), uint32(o.OutputHeight)})
+		_, _ = wlrlayershell.NewZwlrLayerShellV1(c, int32(v), id, layerShell{s})
 	})
 }
 func (h layerShell) Destroy(*wlrlayershell.ZwlrLayerShellV1) {}
@@ -142,7 +139,7 @@ func (s *Server) layerChanged() {
 		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
 		if l.surface.current != nil {
 			if b := s.buffers[l.surface.current.Resource]; b != nil {
-				v.Width, v.Height = b.width, b.height
+				v.Width, v.Height = l.surface.logicalSize(b.width, b.height)
 			}
 		}
 		list = append(list, v)
@@ -150,6 +147,23 @@ func (s *Server) layerChanged() {
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	s.emit(ports.LayerChanged{Layers: list})
 }
+
+// sendConfigure sizes the surface from committed state; zero means "fill",
+// the logical output size.
+func (l *layerSurface) sendConfigure() {
+	w, h := l.current.width, l.current.height
+	if w == 0 {
+		w = uint32(l.shell.server.scale.width)
+	}
+	if h == 0 {
+		h = uint32(l.shell.server.scale.height)
+	}
+	l.shell.server.serial++
+	l.resource.SendConfigure(l.shell.server.serial, w, h)
+	l.serials = append(l.serials, l.shell.server.serial)
+	l.configured = true
+}
+
 func (l *layerSurface) commit(buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
@@ -165,18 +179,7 @@ func (l *layerSurface) commit(buffer bool) {
 	sizeChanged := p.width != l.current.width || p.height != l.current.height
 	l.current = p
 	if !l.configured || sizeChanged {
-		w, h := p.width, p.height
-		if w == 0 {
-			w = l.shell.width
-		}
-		if h == 0 {
-			h = l.shell.height
-		}
-		l.shell.server.serial++
-		l.resource.SendConfigure(l.shell.server.serial, w, h)
-		l.serials = append(l.serials, l.shell.server.serial)
-		l.configured = true
-
+		l.sendConfigure()
 	}
 	if !buffer {
 		if l.mapped {

@@ -83,7 +83,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if err != nil {
 		return err
 	}
-	output <- ports.OutputMode{Width: width, Height: height}
+	outName := outInfo.Name
+	if outName == "" {
+		outName = "HEADLESS-1"
+	}
+	output <- ports.OutputMode{Width: width, Height: height, Name: outName}
 	km, err := xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options})
 	if err != nil {
 		return err
@@ -296,7 +300,7 @@ func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors 
 				default:
 				}
 			}
-			ev := log.Debug().Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight)
+			ev := log.Debug().Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
 			rects := make([]string, 0, len(s.Windows))
 			for _, w := range s.Windows {
 				rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))

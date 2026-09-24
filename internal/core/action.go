@@ -24,8 +24,11 @@ const (
 	ActionFocusWorkspaceDown  Action = "focus-workspace-down"
 	ActionMoveToWorkspaceUp   Action = "move-to-workspace-up"
 	ActionMoveToWorkspaceDown Action = "move-to-workspace-down"
-	actionFocusWorkspace             = "focus-workspace "
-	actionMoveToWorkspace            = "move-to-workspace "
+	// Scale steps through the clean scales of the output (see CleanScales).
+	ActionScaleUp         Action = "scale-up"
+	ActionScaleDown       Action = "scale-down"
+	actionFocusWorkspace         = "focus-workspace "
+	actionMoveToWorkspace        = "move-to-workspace "
 )
 
 // WorkspaceArg parses "focus-workspace N" and "move-to-workspace N" (N from 1).

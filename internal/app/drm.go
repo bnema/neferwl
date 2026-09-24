@@ -89,7 +89,7 @@ func wantFromConfig(outputs []ports.OutputConfig) drm.Want {
 			want.Disabled[o.Name] = true
 			continue
 		}
-		if want.Name != "" {
+		if want.Name != "" || o.ScaleOnly {
 			continue
 		}
 		want.Name = o.Name

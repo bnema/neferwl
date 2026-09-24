@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
@@ -90,6 +91,16 @@ type Server struct {
 	contentSeq    map[ports.WindowID]uint64
 	contentNotify chan struct{}
 	contentReady  chan struct{}
+	scale         scaleState
+}
+
+func removeItem[T comparable](list []T, v T) []T {
+	for i, x := range list {
+		if x == v {
+			return append(list[:i], list[i+1:]...)
+		}
+	}
+	return list
 }
 
 func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
@@ -115,6 +126,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s.scale = scaleState{scale: 1, width: opts.OutputWidth, height: opts.OutputHeight, fractions: map[*surface]*fractionalscale.WpFractionalScaleV1{}}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
 		if e != nil {
@@ -371,6 +383,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
+	case ports.SetOutputScale:
+		s.setOutputScale(c)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() {
