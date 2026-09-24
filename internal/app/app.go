@@ -5,16 +5,17 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
+	"github.com/bnema/nefertty/internal/adapters/drm"
 	"github.com/bnema/nefertty/internal/adapters/headless"
 	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
+	"github.com/bnema/nefertty/internal/adapters/libinput"
 	"github.com/bnema/nefertty/internal/adapters/vulkan"
 	"github.com/bnema/nefertty/internal/adapters/wayland"
 	"github.com/bnema/nefertty/internal/adapters/xkb"
@@ -39,17 +40,24 @@ func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
 
 func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)) error {
 	log := logging.For(ctx, "app")
-	if opts.Backend != "headless" {
-		return fmt.Errorf("drm backend not implemented yet")
-	}
 	log.Info().Str("backend", opts.Backend).Msg("starting nefertty")
 	var cancel context.CancelFunc
 	if opts.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		ctx, cancel = context.WithTimeoutCause(ctx, opts.Timeout, errTimeout)
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
 	}
 	defer cancel()
+	width, height := 1920, 1080
+	var hw *drmBackend
+	if opts.Backend == "drm" {
+		var err error
+		if hw, err = openDRM(ctx); err != nil {
+			return err
+		}
+		defer hw.close()
+		width, height = hw.out.Width(), hw.out.Height()
+	}
 	client := make(chan ports.ClientEvent, 32)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 32)
@@ -65,14 +73,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if err != nil {
 		return err
 	}
-	output <- ports.OutputMode{Width: 1920, Height: 1080}
+	output <- ports.OutputMode{Width: width, Height: height}
 	km, err := xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options})
 	if err != nil {
 		return err
 	}
 	keymap := km.String()
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: 1920, OutputHeight: 1080, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: width, OutputHeight: height, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -87,7 +95,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	var workers sync.WaitGroup
 	workers.Add(7)
-	done := make(chan error, 7)
+	done := make(chan error, 8)
 	path := opts.ConfigPath
 	if path == "" {
 		path = config.DefaultPath()
@@ -99,6 +107,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	script := make(chan string)
 	go func() {
 		defer workers.Done()
+		if hw != nil {
+			done <- libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Width: width, Height: height, Active: hw.seat.Subscribe(), Log: logging.For(ctx, "input")}, input)
+			return
+		}
 		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
@@ -127,6 +139,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
+		if hw != nil {
+			done <- hw.out.Run(ctx, func(w, h int) (drm.Renderer, error) {
+				r, err := vulkan.New(w, h)
+				if err != nil {
+					return nil, err
+				}
+				return r, nil
+			}, hw.seat.Subscribe(), renderScenes, contents)
+			return
+		}
 		done <- headless.Run(ctx, headless.Options{Width: 1920, Height: 1080, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
@@ -136,10 +158,18 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}}, renderScenes, contents)
 	}()
 
+	if hw != nil {
+		workers.Add(1)
+		go func() { defer workers.Done(); done <- hw.seat.Run(ctx) }()
+	}
 	var result error
 	select {
 	case <-ctx.Done():
+		if errors.Is(context.Cause(ctx), errTimeout) {
+			log.Info().Str("reason", "timeout").Dur("after", opts.Timeout).Msg("stopping")
+		}
 	case result = <-done:
+		log.Info().AnErr("cause", result).Msg("stopping")
 	}
 	cancel()
 	workers.Wait()
@@ -149,7 +179,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			result = err
 		}
 	}
-	if errors.Is(result, core.ErrQuit) {
+	if errors.Is(result, core.ErrQuit) || errors.Is(result, libinput.ErrEmergencyQuit) {
 		return nil
 	}
 	return result

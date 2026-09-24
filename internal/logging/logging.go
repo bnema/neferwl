@@ -16,7 +16,7 @@ import (
 )
 
 var components = map[string]bool{
-	"core": true, "wayland": true, "input": true, "drm": true,
+	"core": true, "wayland": true, "input": true, "drm": true, "seat": true,
 	"render": true, "sync": true, "config": true, "app": true,
 }
 
