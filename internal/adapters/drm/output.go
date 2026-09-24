@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -96,7 +97,7 @@ func Open(fd int, card string, want Want, log zerowrap.Logger) (*Output, error) 
 			return nil, err
 		}
 	}
-	if o.cursor, err = newCursor(fd, crtc); err != nil {
+	if o.cursor, err = newCursor(fd, crtc, slices.Index(crtcs, crtc)); err != nil {
 		log.Warn().Err(err).Msg("no hardware cursor")
 	}
 	log.Info().Str("card", card).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")

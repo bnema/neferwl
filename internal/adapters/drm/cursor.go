@@ -13,6 +13,10 @@ import (
 const (
 	ioctlGetCap  = 0xC010640C // DRM_IOWR('d', 0x0C, struct drm_get_cap)
 	ioctlCursor2 = 0xC02464BB // DRM_IOWR('d', 0xBB, struct drm_mode_cursor2)
+	ioctlVblank  = 0xC018643A // DRM_IOWR('d', 0x3A, union drm_wait_vblank)
+	vblankRel    = 0x1        // _DRM_VBLANK_RELATIVE
+	vblankCrtcSh = 1          // _DRM_VBLANK_HIGH_CRTC_SHIFT
+	vblankCrtcMk = 0x3e       // _DRM_VBLANK_HIGH_CRTC_MASK
 	capCursorW   = 0x8
 	capCursorH   = 0x9
 	cursorBO     = 0x01
@@ -20,6 +24,20 @@ const (
 )
 
 type getCap struct{ capability, value uint64 }
+
+// waitVblank is union drm_wait_vblank (request and reply share 24 bytes).
+type waitVblank struct {
+	typ, sequence uint32
+	sec, usec     int64
+}
+
+// vblankWaiter blocks until the next vblank of the CRTC at index pipe.
+func vblankWaiter(fd, pipe int) func() error {
+	return func() error {
+		v := waitVblank{typ: vblankRel | uint32(pipe<<vblankCrtcSh)&vblankCrtcMk, sequence: 1}
+		return ioctl(fd, ioctlVblank, unsafe.Pointer(&v))
+	}
+}
 
 type modeCursor2 struct {
 	flags, crtcID uint32
@@ -32,9 +50,10 @@ type modeCursor2 struct {
 // Cursor is the hardware cursor of one output. Move is safe to call from the
 // input goroutine while the output goroutine changes the image.
 //
-// The legacy cursor ioctl can block until the next vblank (amdgpu does), so
-// Move only records the position and a worker goroutine applies the latest
-// one: input is never throttled to the refresh rate and motion is coalesced.
+// Move only records the position. A worker waits for the next vblank and then
+// applies the latest one, so the cursor moves at most once per frame, between
+// scanouts: moving it mid-scanout tears it into doubled images, and input is
+// never throttled by the ioctl.
 type Cursor struct {
 	io         sync.Mutex // serialises cursor ioctls and guards the fields below
 	fd         int
@@ -44,6 +63,7 @@ type Cursor struct {
 	hotX, hotY int
 	shown      bool
 	ioctl      func(*modeCursor2) error
+	vblank     func() error // waits for the next vblank; nil moves at once
 
 	mu    sync.Mutex // guards x, y and stats; never held across an ioctl
 	x, y  int        // physical position of the hotspot
@@ -72,7 +92,7 @@ func (c *Cursor) TakeStats() CursorStats {
 
 // newCursor allocates a cursor buffer at the driver's preferred size (64 when
 // the driver does not say).
-func newCursor(fd int, crtc uint32) (*Cursor, error) {
+func newCursor(fd int, crtc uint32, pipe int) (*Cursor, error) {
 	// The plane is square: the smaller of the width and height caps.
 	size := 0
 	for _, c := range []uint64{capCursorW, capCursorH} {
@@ -97,6 +117,7 @@ func newCursor(fd int, crtc uint32) (*Cursor, error) {
 	}
 	c := &Cursor{fd: fd, crtc: crtc, buf: buf, size: size}
 	c.ioctl = func(v *modeCursor2) error { return ioctl(c.fd, ioctlCursor2, unsafe.Pointer(v)) }
+	c.vblank = vblankWaiter(fd, pipe)
 	c.start()
 	return c, nil
 }
@@ -113,6 +134,11 @@ func (c *Cursor) start() {
 			case <-c.stop:
 				return
 			case <-c.wake:
+				// Errors (VT switched away) fall through: the move
+				// fails too and Reapply restores the cursor.
+				if c.vblank != nil {
+					_ = c.vblank()
+				}
 				c.io.Lock()
 				if c.shown && c.buf != nil {
 					x, y := c.position()
