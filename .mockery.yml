@@ -23,3 +23,10 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: cursor_plane_mock_test.go
+  github.com/bnema/nefertty/internal/adapters/wayland:
+    interfaces:
+      procEnv:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: proc_env_mock_test.go

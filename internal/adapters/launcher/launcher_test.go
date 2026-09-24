@@ -31,12 +31,13 @@ func TestRun(t *testing.T) {
 	}()
 	reqs <- ports.SpawnRequest{}
 	reqs <- ports.SpawnRequest{Argv: []string{"nonexistent-nefertty-binary"}}
-	reqs <- ports.SpawnRequest{Argv: []string{"sh", "-c", "echo ok > $FILE"}}
+	// Env adds to the child environment (slot tokens).
+	reqs <- ports.SpawnRequest{Argv: []string{"sh", "-c", "echo ok$NEFERTTY_SLOT > $FILE"}, Env: []string{"NEFERTTY_SLOT=7"}}
 	deadline := time.After(3 * time.Second)
 	for {
 		data, err := os.ReadFile(file)
 		if err == nil {
-			if string(data) != "ok\n" {
+			if string(data) != "ok7\n" {
 				t.Fatalf("output: %q", data)
 			}
 			break

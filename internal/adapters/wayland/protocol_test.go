@@ -474,55 +474,9 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 	kp.SetID(keyboard)
 	c.Context().Register(kp)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, keyboard)
-	comp := bindProtocol(t, c, "wl_compositor")
-	wm := bindProtocol(t, c, "xdg_wm_base")
-	shm := bindProtocol(t, c, "wl_shm")
-	registerProtocol(t, c, shm)
-	fd, err := unix.MemfdCreate("held-key-buffer", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unix.Close(fd)
-	if err := unix.Ftruncate(fd, 4); err != nil {
-		t.Fatal(err)
-	}
-	pool, buffer := c.AllocateID(), c.AllocateID()
-	registerProtocol(t, c, pool)
-	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
-		t.Fatal(err)
-	}
-	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
-	mapWindow := func() ports.WindowID {
-		surf, xdg, top := c.AllocateID(), c.AllocateID(), c.AllocateID()
-		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
-		registerProtocol(t, c, surf)
-		requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
-		serials := make(chan uint32, 1)
-		xp := &configureProxy{serial: serials}
-		xp.SetID(xdg)
-		c.Context().Register(xp)
-		registerProtocol(t, c, top)
-		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
-		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case serial := <-serials:
-			requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
-		default:
-			t.Fatal("missing configure")
-		}
-		requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
-		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		return mapped(t, events, 2*time.Second).ID
-	}
-	a := mapWindow()
-	b := mapWindow()
+	mapWindow := toplevelMapper(t, c, events)
+	a := mapWindow().ID
+	b := mapWindow().ID
 	// Dispatch without sending a new request after focus changes.
 	dispatched := make(chan error, 1)
 	go func() {
@@ -554,4 +508,57 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 	commands <- ports.ForwardKey{ID: b, Key: ports.KeyEvent{Keycode: 30, TimeMsec: 2}}
 	commands <- ports.FocusWindow{ID: a}
 	enter(nil)
+}
+
+// toplevelMapper returns a function that maps a new 1x1 xdg toplevel on c and
+// returns the WindowMapped event it produced.
+func toplevelMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent) func() ports.WindowMapped {
+	t.Helper()
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	registerProtocol(t, c, shm)
+	fd, err := unix.MemfdCreate("held-key-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	pool, buffer := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buffer)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	return func() ports.WindowMapped {
+		surf, xdg, top := c.AllocateID(), c.AllocateID(), c.AllocateID()
+		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+		registerProtocol(t, c, surf)
+		requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+		serials := make(chan uint32, 1)
+		xp := &configureProxy{serial: serials}
+		xp.SetID(xdg)
+		c.Context().Register(xp)
+		registerProtocol(t, c, top)
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case serial := <-serials:
+			requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+		default:
+			t.Fatal("missing configure")
+		}
+		requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		return mapped(t, events, 2*time.Second)
+	}
 }

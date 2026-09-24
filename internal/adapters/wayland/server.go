@@ -54,6 +54,8 @@ type Channels struct {
 }
 type Server struct {
 	display                 *server.Display
+	env                     procEnv
+	slotsPending            bool // core waits for a slot window
 	name                    string
 	cleanup                 func()
 	log                     zerowrap.Logger
@@ -125,7 +127,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.scale = scaleState{scale: 1, width: opts.OutputWidth, height: opts.OutputHeight, fractions: map[*surface]*fractionalscale.WpFractionalScaleV1{}}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -420,6 +422,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		w.sendConfigure()
 	case ports.SetOutputScale:
 		s.setOutputScale(c)
+	case ports.SlotsPending:
+		s.slotsPending = c.Pending
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() {

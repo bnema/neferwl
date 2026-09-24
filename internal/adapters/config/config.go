@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -404,7 +405,7 @@ func set(c *ports.Config, key, v string) error {
 		}
 		for _, s := range list {
 			if !width(s) {
-				return fmt.Errorf("%q: must be a fraction like 1/2, 1, or pixels like 800px", s)
+				return fmt.Errorf("%q: must be a fraction like 1/2, a percentage like 50%%, 1, or pixels like 800px", s)
 			}
 		}
 		c.Layout.Presets = list
@@ -455,6 +456,14 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 		}
 	}
 	for _, w := range c.Workspaces {
+		overflow := w.Overflow
+		if overflow == "" {
+			overflow = c.Layout.Overflow
+		}
+		if overflow == "fixed" && len(w.Slots) > 0 {
+			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
+			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
+		}
 		if w.Hidden && !bound[w.Name] {
 			warnings = append(warnings, Warning{Line: seen["workspace."+w.Name+".hidden"], Msg: fmt.Sprintf("workspace.%s.hidden: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
 		}
@@ -482,7 +491,27 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		}
 		w.Overflow = v
 	default:
-		return fmt.Errorf("unknown key (hidden, max-columns, overflow)")
+		n, ok := strings.CutPrefix(field, "column.")
+		if !ok {
+			return fmt.Errorf("unknown key (hidden, max-columns, overflow, column.N)")
+		}
+		index, err := strconv.Atoi(n)
+		if err != nil || index < 1 || index > 16 {
+			return fmt.Errorf("column number must be between 1 and 16")
+		}
+		size, cmd, _ := strings.Cut(v, ",")
+		size = strings.TrimSpace(size)
+		argv := strings.Fields(cmd)
+		if !width(size) || len(argv) == 0 {
+			return fmt.Errorf("must be <width>, <command> like 67%%, foot")
+		}
+		slot := ports.SlotConfig{Index: index, Width: size, Argv: argv}
+		i := sort.Search(len(w.Slots), func(i int) bool { return w.Slots[i].Index >= index })
+		if i < len(w.Slots) && w.Slots[i].Index == index {
+			w.Slots[i] = slot
+		} else {
+			w.Slots = slices.Insert(w.Slots, i, slot)
+		}
 	}
 	return nil
 }
@@ -679,6 +708,10 @@ func ParseMode(s string) (w, h int, hz float64, err error) {
 func width(s string) bool {
 	if s == "1" {
 		return true
+	}
+	if n, ok := strings.CutSuffix(s, "%"); ok {
+		v, e := strconv.Atoi(n)
+		return e == nil && v > 0 && v <= 100
 	}
 	if strings.HasSuffix(s, "px") {
 		n, e := strconv.Atoi(strings.TrimSuffix(s, "px"))

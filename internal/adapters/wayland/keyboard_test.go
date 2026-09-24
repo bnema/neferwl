@@ -26,7 +26,8 @@ func keymapText(t *testing.T) string {
 	return string(data)
 }
 
-func keyboardServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
+// keyboardServer runs a server; setup, if any, runs before Run starts.
+func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
@@ -34,6 +35,9 @@ func keyboardServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.C
 	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080, Keymap: keymapText(t), RepeatRate: 25, RepeatDelay: 600}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, f := range setup {
+		f(s)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

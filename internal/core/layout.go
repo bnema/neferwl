@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
 	"math/bits"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -22,6 +23,11 @@ func ParseWidth(s string) (Width, error) {
 		n, e := strconv.Atoi(strings.TrimSuffix(s, "px"))
 		if e == nil && n > 0 {
 			return Width{Pixels: n}, nil
+		}
+	} else if strings.HasSuffix(s, "%") {
+		n, e := strconv.Atoi(strings.TrimSuffix(s, "%"))
+		if e == nil && n > 0 && n <= 100 {
+			return Width{Num: n, Den: 100}, nil
 		}
 	} else {
 		p := strings.Split(s, "/")
@@ -76,6 +82,9 @@ type Column struct {
 	Windows []WindowID
 	Width   Width
 	Focus   int
+	// Slot is the declared column number (workspace.<name>.column.N) of a
+	// slot window; 0 for normal columns.
+	Slot int
 }
 type Placement struct {
 	ID                          WindowID
@@ -154,6 +163,57 @@ func (w *Workspace) AddWindow(id WindowID) {
 	w.Focus = at
 	w.scroll()
 }
+
+// AddSlotWindow places a slot window in its own column, ordered by slot
+// number before the other columns. Focus stays on the focused window: slot
+// windows are automatic events (ADR 011 golden rule).
+func (w *Workspace) AddSlotWindow(id WindowID, slot int, width Width) {
+	if id == 0 || w.has(id) {
+		return
+	}
+	// Right after the last slot column with a lower number, else first.
+	at := 0
+	for i, c := range w.Columns {
+		if c.Slot > 0 && c.Slot < slot {
+			at = i + 1
+		}
+	}
+	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Width: width, Slot: slot})
+	if len(w.Columns) > 1 && at <= w.Focus {
+		w.Focus++
+	}
+	w.scroll()
+}
+
+// setSlotWidth updates the width of slot column n, if present.
+func (w *Workspace) setSlotWidth(n int, width Width) {
+	for i := range w.Columns {
+		if w.Columns[i].Slot == n {
+			w.Columns[i].Width = width
+		}
+	}
+	w.scroll()
+}
+
+// inSlot reports whether window id is in slot column n.
+func (w *Workspace) inSlot(id WindowID, n int) bool {
+	for _, c := range w.Columns {
+		if c.Slot == n && slices.Contains(c.Windows, id) {
+			return true
+		}
+	}
+	return false
+}
+
+// unslot turns slot column n into a normal column.
+func (w *Workspace) unslot(n int) {
+	for i := range w.Columns {
+		if w.Columns[i].Slot == n {
+			w.Columns[i].Slot = 0
+		}
+	}
+}
+
 func (w *Workspace) RemoveWindow(id WindowID) {
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {

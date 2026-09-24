@@ -59,8 +59,19 @@ type Config struct {
 // only reachable through a `workspace <name>` bind, which toggles them.
 // Zero MaxColumns and an empty Overflow use the layout.* defaults.
 type WorkspaceConfig struct {
-	Name       string
+	Name string
+	// Slots are the declared columns (workspace.<name>.column.N), by N.
+	Slots      []SlotConfig
 	Hidden     bool
 	MaxColumns int
 	Overflow   string
+}
+
+// SlotConfig reserves column N of a workspace for the window of one command.
+// nefertty spawns the command at startup; the window it opens goes to the
+// slot. Width is a layout width (fraction, percentage or pixels).
+type SlotConfig struct {
+	Index int
+	Width string
+	Argv  []string
 }

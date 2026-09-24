@@ -70,7 +70,7 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 				continue
 			}
 			cmd := exec.Command(path, req.Argv[1:]...)
-			cmd.Env = l.env
+			cmd.Env = append(append([]string(nil), l.env...), req.Env...)
 			cmd.Stdin = nil
 			cmd.Stdout = nil
 			cmd.Stderr = nil
