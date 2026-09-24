@@ -56,7 +56,7 @@ func TestLayerChangedChannels(t *testing.T) {
 	scenes := make(chan ports.Scene, 1)
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
-	cfg.Layout.DefaultColumnWidth = "1/2"
+	cfg.Layout.MaxColumns = 2
 	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes})
 	if err != nil {
 		t.Fatal(err)

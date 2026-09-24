@@ -49,10 +49,11 @@ func TestOwner(t *testing.T) {
 	}
 	client <- ports.WindowMapped{ID: 1}
 	s = receive(t, scenes)
-	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 38 {
+	// A single column fills the usable width.
+	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || !s.Windows[0].Borderless {
 		t.Fatal(s)
 	}
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 38, Height: 64, Activated: true}) {
+	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true}) {
 		t.Fatal(v)
 	}
 	receive(t, commands)
@@ -93,13 +94,13 @@ func TestOwner(t *testing.T) {
 	cfg.Layout.Gaps = 4
 	reload <- ports.ConfigChanged{Config: cfg}
 	s = receive(t, scenes)
-	if s.Windows[0].Rect.W != 44 {
+	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
 	}
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 44, Height: 72, Activated: true}) {
+	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true}) {
 		t.Fatal(v)
 	}
-	cfg.Layout.DefaultColumnWidth = "bad"
+	cfg.Layout.MaxColumns = 0
 	reload <- ports.ConfigChanged{Config: cfg}
 	receive(t, errs)
 	for i := 0; i < 100; i++ {
@@ -268,17 +269,32 @@ func TestBorderInset(t *testing.T) {
 	go c.Run(ctx)
 	output <- ports.OutputMode{Width: 100, Height: 80}
 	receive(t, scenes)
+	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
 	r := receive(t, scenes).Windows[0].Rect
-	// The scene keeps the outer rect; the client is configured 2px smaller on each side.
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W - 4, Height: r.H - 4, Activated: true}) {
+	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
+	// With a second column, the scene keeps the outer rect and the client is
+	// configured 2px smaller on each side.
+	client <- ports.WindowMapped{ID: 2}
+	s := receive(t, scenes)
+	r = s.Windows[1].Rect
+	if s.Windows[1].ID != 2 || s.Windows[1].Borderless {
+		t.Fatal(s)
+	}
+	want := ports.ConfigureWindow{ID: 2, Width: r.W - 4, Height: r.H - 4, Activated: true}
+	found := false
 	for len(commands) > 0 {
-		<-commands
+		if v := <-commands; v == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no %v for outer %v", want, r)
 	}
 	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), TimeMsec: 1}
-	if v := receive(t, commands); v != (ports.PointerFocus{ID: 1, X: 0, Y: 3}) {
+	if v := receive(t, commands); v != (ports.PointerFocus{ID: 2, X: 0, Y: 3}) {
 		t.Fatal(v)
 	}
 }
@@ -333,5 +349,53 @@ func TestLayerKeyboardFocus(t *testing.T) {
 	receive(t, scenes)
 	if id := focusOf(); id != 1 {
 		t.Fatalf("focus not restored: %d", id)
+	}
+}
+
+func TestWorkspaceSwitch(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputMode{Width: 100, Height: 80}
+	receive(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	receive(t, scenes)
+	for len(commands) > 0 {
+		<-commands
+	}
+	// AZERTY: the 2 key is eacute unshifted; Cmd+2 still matches through its shifted level.
+	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Shifted: "2", Mods: ports.ModSuper, Pressed: true}
+	s := receive(t, scenes)
+	if len(s.Windows) != 1 || !s.Windows[0].Hidden {
+		t.Fatal(s)
+	}
+	// Window 1 is deactivated and loses keyboard focus.
+	var sawDeactivate, sawFocus bool
+	for len(commands) > 0 {
+		switch v := (<-commands).(type) {
+		case ports.ConfigureWindow:
+			sawDeactivate = sawDeactivate || (v.ID == 1 && !v.Activated)
+		case ports.FocusWindow:
+			sawFocus = sawFocus || v.ID == 0
+		}
+	}
+	if !sawDeactivate || !sawFocus {
+		t.Fatal(sawDeactivate, sawFocus)
+	}
+	// A new window opens on workspace 2, alone and borderless.
+	client <- ports.WindowMapped{ID: 2}
+	s = receive(t, scenes)
+	if len(s.Windows) != 2 || s.Windows[1].ID != 2 || s.Windows[1].Hidden || !s.Windows[1].Borderless {
+		t.Fatal(s)
 	}
 }

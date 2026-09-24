@@ -31,8 +31,12 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+q", "close-window"},
 	{"ctrl+alt+backspace", "quit"},
 	{"ctrl+cmd+space", "spawn fuzzel"},
+	{"cmd+pageup", "focus-workspace-up"},
+	{"cmd+pagedown", "focus-workspace-down"},
+	{"cmd+shift+pageup", "move-to-workspace-up"},
+	{"cmd+shift+pagedown", "move-to-workspace-down"},
 }
-var actions = map[string]bool{"none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -72,7 +76,7 @@ func Defaults() ports.Config {
 	c.Background.Color = "#1e1e2e"
 	c.Border.Width = 2
 	c.Border.Active = "#b4befe"
-	c.Layout.DefaultColumnWidth = "1/2"
+	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
@@ -81,6 +85,10 @@ func Defaults() ports.Config {
 			panic(err)
 		}
 		c.Binds[combo] = b.action
+	}
+	for n := 1; n <= 9; n++ {
+		c.Binds[fmt.Sprintf("Cmd+%d", n)] = fmt.Sprintf("focus-workspace %d", n)
+		c.Binds[fmt.Sprintf("Cmd+Shift+%d", n)] = fmt.Sprintf("move-to-workspace %d", n)
 	}
 	c.Render.DirectScanout = true
 	c.Log.Level = "info"
@@ -309,11 +317,8 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be between 0 and 200")
 		}
 		c.Layout.Gaps = n
-	case "layout.default-width":
-		if !width(v) {
-			return fmt.Errorf("must be a fraction like 1/2, 1, or pixels like 800px")
-		}
-		c.Layout.DefaultColumnWidth = v
+	case "layout.max-columns":
+		return positive(&c.Layout.MaxColumns, v, 16)
 	case "layout.presets":
 		list := splitList(v)
 		if len(list) == 0 {
@@ -396,6 +401,14 @@ func checkAction(v string) error {
 			return fmt.Errorf("spawn needs a command")
 		}
 		return nil
+	}
+	for _, prefix := range []string{"focus-workspace ", "move-to-workspace "} {
+		if rest, ok := strings.CutPrefix(v, prefix); ok {
+			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err != nil || n < 1 || n > 99 {
+				return fmt.Errorf("%snumber must be between 1 and 99", prefix)
+			}
+			return nil
+		}
 	}
 	if !actions[v] {
 		return fmt.Errorf(`unknown action %q (or "spawn <command>")`, v)

@@ -139,6 +139,10 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 	}
 	k.updateKey(k.state, code, direction)
 	event := ports.KeyEvent{Keysym: name, Pressed: pressed, TimeMsec: timeMsec, Keycode: evdevCode}
+	if pressed {
+		layout := k.serializeLayout(k.state, layoutEffective)
+		event.Base, event.Shifted = k.levelName(code, layout, 0), k.levelName(code, layout, 1)
+	}
 	event.State = ports.ModState{
 		Depressed: k.serializeMods(k.state, modsDepressed), Latched: k.serializeMods(k.state, modsLatched),
 		Locked: k.serializeMods(k.state, modsLocked), Group: k.serializeLayout(k.state, layoutEffective),
@@ -154,6 +158,20 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 		runtime.KeepAlive(b)
 	}
 	return event
+}
+
+// levelName is the first keysym name of a key at one shift level, or "".
+func (k *Keymap) levelName(code, layout, level uint32) string {
+	var ptr unsafe.Pointer
+	if k.symsLevel(k.mapPtr, code, layout, level, &ptr) < 1 {
+		return ""
+	}
+	var buf [64]byte
+	n := k.symName(*(*uint32)(ptr), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n <= 0 || n >= int32(len(buf)) {
+		return ""
+	}
+	return string(buf[:n])
 }
 
 func (k *Keymap) KeycodeFor(keysymName string) (evdev uint32, shift bool, ok bool) {

@@ -142,9 +142,9 @@ func TestHeadlessSpawnClose(t *testing.T) {
 			select {
 			case s := <-scenes:
 				if len(s.Windows) == count {
-					// Half of 1920 with the default zero gaps.
-					if count == 1 && s.Windows[0].Rect.W != 960 {
-						t.Errorf("width = %d, want 960", s.Windows[0].Rect.W)
+					// A lone column fills the 1920 output (default zero gaps).
+					if count == 1 && s.Windows[0].Rect.W != 1920 {
+						t.Errorf("width = %d, want 1920", s.Windows[0].Rect.W)
 					}
 					return
 				}
@@ -187,11 +187,11 @@ func TestHeadlessTyping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The default column occupies the central portion of the 1920x1080 output.
-	first := img.At(600, 300)
+	// The lone column fills the output; the typed text sits in its top-left area.
+	first := img.At(1500, 600)
 	varied := false
-	for y := 200; y < 850 && !varied; y += 4 {
-		for x := 500; x < 1400; x += 4 {
+	for y := 0; y < 400 && !varied; y += 2 {
+		for x := 0; x < 900; x += 2 {
 			if img.At(x, y) != first {
 				varied = true
 				break

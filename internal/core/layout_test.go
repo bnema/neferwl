@@ -10,7 +10,7 @@ func workspace() *Workspace {
 	w := &Workspace{}
 	w.SetOutput(100, 81)
 	w.SetGaps(5)
-	w.SetDefaultWidth(Width{Num: 1, Den: 2})
+	w.SetMaxColumns(2)
 	return w
 }
 func TestWidths(t *testing.T) {
@@ -45,11 +45,12 @@ func TestOperations(t *testing.T) {
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.AddWindow(3)
-	if w.Focus != 2 || w.ViewX != 49 {
+	// Three auto columns, two visible: each (100-3*5)/2 = 42 wide.
+	if w.Focus != 2 || w.ViewX != 46 || w.columnWidth(0) != 42 {
 		t.Fatalf("scroll: %+v", w)
 	}
 	w.FocusColumn(-1)
-	if w.ViewX != 48 {
+	if w.ViewX != 46 {
 		t.Fatal(w.ViewX)
 	}
 	w.FocusColumn(-1)
@@ -83,7 +84,7 @@ func TestStackAndLayout(t *testing.T) {
 	}
 	w.FocusWindow(-1)
 	p := w.Layout()
-	if p[0].Rect != (Rect{X: 5, Y: 5, W: 43, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 43, H: 33}) {
+	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || !p[0].Borderless {
 		t.Fatal(p)
 	}
 	w.ToggleFullscreen()
@@ -110,18 +111,21 @@ func TestPresetsAndActions(t *testing.T) {
 	p := []Width{{Pixels: 30}, {Pixels: 40}}
 	w.SetPresets(p)
 	p[0].Pixels = 99
+	w.AddWindow(2)
 	w.Apply(ActionCycleColumnWidth)
-	if w.Columns[0].Width.Pixels != 30 {
+	if w.Columns[1].Width.Pixels != 30 {
 		t.Fatal(w.Columns)
 	}
 	w.CycleWidth()
-	if w.Columns[0].Width.Pixels != 40 {
+	if w.Columns[1].Width.Pixels != 40 {
 		t.Fatal(w.Columns)
 	}
+	// After the last preset, back to the automatic share.
 	w.CycleWidth()
-	if w.Columns[0].Width.Pixels != 30 {
+	if w.Columns[1].Width != (Width{}) {
 		t.Fatal(w.Columns)
 	}
+	w.RemoveWindow(2)
 	for _, tc := range []struct {
 		a    Action
 		want Effect
@@ -181,9 +185,8 @@ func FuzzWorkspaceOps(f *testing.F) {
 					stackFocused(w)
 				}
 			case 15:
-				w.SetDefaultWidth(Width{Num: math.MaxInt, Den: math.MaxInt})
 				if len(w.Columns) > 0 {
-					w.Columns[w.Focus].Width = w.DefaultWidth
+					w.Columns[w.Focus].Width = Width{Num: math.MaxInt, Den: math.MaxInt}
 					w.scroll()
 				}
 			case 16:
@@ -335,7 +338,7 @@ func TestFullscreenPersistsAndScrolls(t *testing.T) {
 
 func TestSetFullscreenStackDeactivation(t *testing.T) {
 	w := workspace()
-	w.Columns = []Column{{Windows: []WindowID{1, 2}, Width: w.DefaultWidth, Focus: 0}}
+	w.Columns = []Column{{Windows: []WindowID{1, 2}, Focus: 0}}
 	w.SetFullscreen(2, true)
 	p := w.Layout()
 	if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused {

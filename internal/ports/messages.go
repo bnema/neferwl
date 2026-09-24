@@ -80,12 +80,15 @@ type InputEvent interface{ inputEvent() }
 // Keycode is the evdev code (xkb keycode - 8) and State the xkb modifier state
 // after this transition; wayland forwards both to clients unchanged.
 type KeyEvent struct {
-	Keysym   string
-	Mods     Mods
-	Pressed  bool
-	TimeMsec uint32
-	Keycode  uint32
-	State    ModState
+	Keysym string
+	// Base and Shifted are the key's level 1 and 2 keysyms in the active layout,
+	// so binds like Cmd+1 also match on layouts where 1 needs Shift (AZERTY).
+	Base, Shifted string
+	Mods          Mods
+	Pressed       bool
+	TimeMsec      uint32
+	Keycode       uint32
+	State         ModState
 }
 
 // ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
@@ -235,4 +238,6 @@ type SceneWindow struct {
 	ID                          WindowID
 	Rect                        Rect
 	Focused, Fullscreen, Hidden bool
+	// Borderless windows fill the usable width alone; no border is drawn.
+	Borderless bool
 }
