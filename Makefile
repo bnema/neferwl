@@ -1,13 +1,14 @@
 .PHONY: build test vet race mocks mocks-check arch check bin tty logs
 
-TTY_TIMEOUT ?= 60s
+# 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
+TTY_TIMEOUT ?= 0
 RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/nefertty/runs
 
 # Build a fresh binary with the git revision embedded.
 bin:
 	CGO_ENABLED=0 go build -o bin/nefertty ./cmd/nefertty
 
-# Run on the current TTY. Quit: Ctrl+Alt+Backspace, or wait TTY_TIMEOUT.
+# Run on the current TTY. Quit: Ctrl+Alt+Backspace (or the quit bind).
 tty: bin
 	./bin/nefertty --backend=drm --debug=all --timeout=$(TTY_TIMEOUT); \
 	echo "exit $$? - log: $(RUNS)/latest.log"
