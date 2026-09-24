@@ -20,13 +20,6 @@ import (
 // ErrEmergencyQuit is returned when Ctrl+Alt+Backspace is pressed.
 var ErrEmergencyQuit = errors.New("emergency quit key")
 
-// Seat is the device broker libinput opens devices through.
-type Seat interface {
-	OpenDevice(path string) (int, error)
-	CloseDevice(fd int)
-	SwitchVT(vt int)
-}
-
 const (
 	evDeviceAdded   = 1
 	evDeviceRemoved = 2
@@ -65,7 +58,7 @@ var (
 	pointerButton   func(pev uintptr) uint32
 	pointerBtnState func(pev uintptr) int32
 	iface           [2]uintptr
-	active          Seat
+	active          ports.Seat
 )
 
 func load() error {
@@ -135,7 +128,7 @@ func goString(p *byte) string {
 
 // Options configures the input adapter.
 type Options struct {
-	Seat     Seat
+	Seat     ports.Seat
 	SeatName string
 	Keymap   *xkb.Keymap
 	// Keymaps replaces Keymap live; Run takes ownership and closes the old one.

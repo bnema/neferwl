@@ -1,9 +1,25 @@
 # Sealed message interfaces are not mockable; channel ports are tested with messages.
 all: false
+formatter: goimports
+force-file-write: true
+structname: '{{.Mock}}{{.InterfaceName}}'
+template: testify
+template-schema: '{{.Template}}.schema.json'
+require-template-schema-exists: true
 packages:
   github.com/bnema/nefertty/internal/ports:
     config:
-      all: false
-      dir: internal/mocks/{{.SrcPackageName}}
-      pkgname: '{{.SrcPackageName}}'
-      filename: '{{.InterfaceName}}.go'
+      dir: internal/mocks/ports
+      pkgname: portsmocks
+      filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
+    interfaces:
+      Renderer:
+      Seat:
+  # Unexported adapter seams: mocks live next to the code, in test files.
+  github.com/bnema/nefertty/internal/adapters/drm:
+    interfaces:
+      cursorPlane:
+        config:
+          dir: internal/adapters/drm
+          pkgname: drm
+          filename: cursor_plane_mock_test.go

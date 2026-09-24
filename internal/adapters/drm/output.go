@@ -13,14 +13,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Renderer draws a scene into an RGBA image of the output size.
-type Renderer interface {
-	Render(ports.Scene, map[ports.WindowID]ports.SurfaceContent) error
-	// CopyBGRX writes the last frame as XRGB8888 rows of the given pitch.
-	CopyBGRX(dst []byte, pitch int)
-	Close()
-}
-
 // Output is one KMS connector driven with two dumb buffers.
 type Output struct {
 	fd        int
@@ -127,7 +119,7 @@ func (o *Output) modeset() error {
 }
 
 // present copies img into the back buffer and queues a page flip.
-func (o *Output) present(r Renderer) error {
+func (o *Output) present(r ports.Renderer) error {
 	b := o.bufs[o.back]
 	r.CopyBGRX(b.mem, int(b.pitch))
 	if err := flip(o.fd, o.crtc, b.fbID); err != nil {
@@ -158,7 +150,7 @@ func (o *Output) Close() {
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)

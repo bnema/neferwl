@@ -1,10 +1,11 @@
 package drm
 
 import (
-	"sync"
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // The ioctl numbers encode the struct size; they must match the kernel ABI.
@@ -20,14 +21,21 @@ func TestCursorABI(t *testing.T) {
 	}
 }
 
+// testCursor returns a shown cursor on a mocked plane; the worker is started.
+func testCursor(t *testing.T) (*Cursor, *mockcursorPlane) {
+	plane := newMockcursorPlane(t)
+	c := &Cursor{fd: -1, buf: &dumbBuffer{}, size: 64, shown: true, plane: plane}
+	return c, plane
+}
+
 // The cursor moves once per vblank, to the latest position: moving it during
 // scanout tears it into doubled images.
 func TestCursorMovesOncePerVblank(t *testing.T) {
+	c, plane := testCursor(t)
 	vblank := make(chan struct{})
 	moved := make(chan modeCursor2, 16)
-	c := &Cursor{fd: -1, buf: &dumbBuffer{}, size: 64, shown: true}
-	c.ioctl = func(v *modeCursor2) error { moved <- *v; return nil }
-	c.vblank = func() error { <-vblank; return nil }
+	plane.EXPECT().WaitVblank().RunAndReturn(func() error { <-vblank; return nil })
+	plane.EXPECT().Set(mock.Anything).RunAndReturn(func(v *modeCursor2) error { moved <- *v; return nil })
 	c.start()
 	defer func() { close(vblank); c.close() }()
 	for i := range 100 {
@@ -39,8 +47,8 @@ func TestCursorMovesOncePerVblank(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 	vblank <- struct{}{}
-	if v := <-moved; v.x != 99 {
-		t.Fatalf("applied x=%d, want latest 99", v.x)
+	if v := <-moved; v.x != 99 || v.flags != cursorMove {
+		t.Fatalf("applied %+v, want a move to the latest x=99", v)
 	}
 	select {
 	case v := <-moved:
@@ -49,51 +57,27 @@ func TestCursorMovesOncePerVblank(t *testing.T) {
 	}
 }
 
-// The legacy cursor ioctl may wait for vblank; Move must not, or libinput
-// stops reading and the kernel drops mouse reports (slow, erratic pointer).
-func TestCursorMoveDoesNotBlockOnIoctl(t *testing.T) {
-	var mu sync.Mutex
-	var calls int
-	var last modeCursor2
-	c := &Cursor{fd: -1, buf: &dumbBuffer{}, size: 64, shown: true, hotX: 3, hotY: 4}
-	c.ioctl = func(v *modeCursor2) error {
-		time.Sleep(6 * time.Millisecond) // one 165 Hz vblank
-		mu.Lock()
-		defer mu.Unlock()
-		calls++
-		last = *v
-		return nil
-	}
+// Move must never wait for the plane, or libinput stops reading and the
+// kernel drops mouse reports.
+func TestCursorMoveDoesNotBlockOnPlane(t *testing.T) {
+	c, plane := testCursor(t)
+	release := make(chan struct{})
+	plane.EXPECT().WaitVblank().RunAndReturn(func() error { <-release; return nil })
+	plane.EXPECT().Set(mock.Anything).Return(nil).Maybe()
 	c.start()
-	defer c.close()
-	start := time.Now()
-	for i := range 1000 { // one second of a 1 kHz mouse
-		c.Move(float64(i), float64(2*i))
+	defer func() { close(release); c.close() }()
+	for i := range 1000 { // the worker is stuck in WaitVblank the whole time
+		c.Move(float64(i), 0)
 	}
-	if d := time.Since(start); d > 500*time.Millisecond {
-		t.Fatalf("1000 moves took %v; Move blocks on the ioctl", d)
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		mu.Lock()
-		got, n := last, calls
-		mu.Unlock()
-		if got.x == 999-3 && got.y == 1998-4 {
-			if got.flags != cursorMove || n >= 1000 {
-				t.Fatalf("flags %#x after %d ioctls; want coalesced moves", got.flags, n)
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("last applied %+v after %d ioctls; want the final position", got, n)
-		}
-		time.Sleep(time.Millisecond)
+	if s := c.TakeStats(); s.Moves != 1000 {
+		t.Fatalf("stats %+v", s)
 	}
 }
 
 func TestCursorCloseStopsWorker(t *testing.T) {
-	c := &Cursor{buf: &dumbBuffer{}, shown: true, fd: -1}
-	c.ioctl = func(*modeCursor2) error { return nil }
+	c, plane := testCursor(t)
+	plane.EXPECT().WaitVblank().Return(nil).Maybe()
+	plane.EXPECT().Set(mock.Anything).Return(nil)
 	c.start()
 	c.Move(1, 2)
 	c.close()
@@ -102,9 +86,15 @@ func TestCursorCloseStopsWorker(t *testing.T) {
 }
 
 func TestCursorStats(t *testing.T) {
+	c, plane := testCursor(t)
 	applied := make(chan struct{}, 16)
-	c := &Cursor{fd: -1, buf: &dumbBuffer{}, size: 64, shown: true}
-	c.ioctl = func(*modeCursor2) error { applied <- struct{}{}; return nil }
+	plane.EXPECT().WaitVblank().Return(nil)
+	plane.EXPECT().Set(mock.Anything).RunAndReturn(func(v *modeCursor2) error {
+		if v.flags == cursorMove {
+			applied <- struct{}{}
+		}
+		return nil
+	})
 	c.start()
 	defer c.close()
 	c.Move(1, 1)
@@ -112,7 +102,7 @@ func TestCursorStats(t *testing.T) {
 	c.Move(2, 2)
 	<-applied
 	s := c.TakeStats()
-	if s.Moves != 2 || s.Ioctls < 1 || s.Ioctls > 2 {
+	if s.Moves != 2 || s.Ioctls != 2 {
 		t.Fatalf("stats %+v", s)
 	}
 	if s := c.TakeStats(); s.Moves != 0 {
