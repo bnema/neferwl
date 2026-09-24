@@ -41,7 +41,7 @@ func TestDrainCommandsCollapsesMotion(t *testing.T) {
 // must be absorbed without core blocking.
 func TestCommandThroughput(t *testing.T) {
 	cmds := make(chan ports.ClientCommand, 32)
-	s, err := New(Options{RuntimeDir: t.TempDir(), OutputWidth: 1920, OutputHeight: 1080}, Channels{Commands: cmds}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: t.TempDir(), Outputs: testOutputs}, Channels{Commands: cmds}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}

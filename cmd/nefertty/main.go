@@ -86,7 +86,7 @@ func run() error {
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
 	backend := flags.String("backend", "drm", "drm or headless")
 	screenshot := flags.String("screenshot", "", "write PNG frames to directory")
-	size := flags.String("size", "1920x1080", "headless output size WxH")
+	size := flags.String("size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
 	inputPath := flags.String("input", "", "headless input script path (- for stdin)")
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
@@ -108,11 +108,18 @@ func run() error {
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
-	outW, outH, _, sizeErr := config.ParseMode(*size)
-	if sizeErr != nil {
-		err := usageError{fmt.Errorf("--size: %w", sizeErr)}
-		fmt.Fprintln(os.Stderr, err)
-		return err
+	var sizes [][2]int
+	for _, s := range strings.Split(*size, ",") {
+		w, h, _, sizeErr := config.ParseMode(strings.TrimSpace(s))
+		if sizeErr != nil || w == 0 {
+			err := usageError{fmt.Errorf("--size: %w", sizeErr)}
+			if sizeErr == nil {
+				err = usageError{fmt.Errorf("--size: need WxH, got %q", s)}
+			}
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+		sizes = append(sizes, [2]int{w, h})
 	}
 	if *inputPath != "" && *backend != "headless" {
 		err := usageError{fmt.Errorf("--input requires --backend=headless")}
@@ -190,7 +197,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Width: outW, Height: outH, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil

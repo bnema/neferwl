@@ -30,7 +30,7 @@ func TestStructSizesMatchIoctls(t *testing.T) {
 	}
 }
 
-func TestPickConnector(t *testing.T) {
+func TestWantPicksMode(t *testing.T) {
 	mode := func(w, h uint16, hz uint32, pref bool) modeInfo {
 		// htotal*vtotal = w*h keeps refreshMilli = clock*1000/(w*h).
 		m := modeInfo{HDisplay: w, VDisplay: h, HTotal: w, VTotal: h, Clock: uint32(uint64(w) * uint64(h) * uint64(hz) / 1000), VRefresh: hz}
@@ -40,32 +40,23 @@ func TestPickConnector(t *testing.T) {
 		return m
 	}
 	lg := connector{name: "DP-2", connected: true, modes: []modeInfo{mode(5120, 2160, 165, true), mode(3440, 1440, 100, true), mode(5120, 2160, 100, false), mode(5120, 2160, 60, false)}}
-	tv := connector{name: "HDMI-A-1", connected: true, modes: []modeInfo{mode(3840, 2160, 60, true), mode(3840, 2160, 120, false)}}
 	off := connector{name: "DP-1", modes: []modeInfo{mode(1920, 1080, 60, true)}}
 	for _, tc := range []struct {
-		name  string
-		conns []connector
-		want  Want
-		conn  string
-		mode  string
-		err   bool
+		name string
+		want Want
+		mode string
 	}{
-		{"none", nil, Want{}, "", "", true},
-		{"first connected, first preferred", []connector{off, tv, lg}, Want{}, "HDMI-A-1", "3840x2160@60.000", false},
-		{"named", []connector{tv, lg}, Want{Name: "DP-2"}, "DP-2", "5120x2160@165.000", false},
-		{"named mode closest refresh", []connector{tv, lg}, Want{Name: "DP-2", W: 5120, H: 2160, Hz: 99}, "DP-2", "5120x2160@100.000", false},
-		{"named mode highest refresh", []connector{lg}, Want{Name: "DP-2", W: 5120, H: 2160}, "DP-2", "5120x2160@165.000", false},
-		{"unknown mode falls back to preferred", []connector{lg}, Want{Name: "DP-2", W: 800, H: 600}, "DP-2", "5120x2160@165.000", false},
-		{"missing name falls back", []connector{tv}, Want{Name: "DP-2"}, "HDMI-A-1", "3840x2160@60.000", false},
-		{"disabled skipped", []connector{tv, lg}, Want{Disabled: map[string]bool{"HDMI-A-1": true}}, "DP-2", "5120x2160@165.000", false},
-		{"strict finds named", []connector{tv, lg}, Want{Name: "DP-2", Strict: true}, "DP-2", "5120x2160@165.000", false},
-		{"strict without named", []connector{tv}, Want{Name: "DP-2", Strict: true}, "", "", true},
-		{"all disabled", []connector{tv}, Want{Disabled: map[string]bool{"HDMI-A-1": true}}, "", "", true},
+		{"first preferred", Want{}, "5120x2160@165.000"},
+		{"closest refresh", Want{Modes: map[string][3]float64{"DP-2": {5120, 2160, 99}}}, "5120x2160@100.000"},
+		{"highest refresh", Want{Modes: map[string][3]float64{"DP-2": {5120, 2160, 0}}}, "5120x2160@165.000"},
+		{"unknown mode falls back to preferred", Want{Modes: map[string][3]float64{"DP-2": {800, 600, 0}}}, "5120x2160@165.000"},
 	} {
-		c, m, err := pickConnector(tc.conns, tc.want)
-		if (err != nil) != tc.err || c.name != tc.conn || (err == nil && m.String() != tc.mode) {
-			t.Errorf("%s: got %q %s %v", tc.name, c.name, m, err)
+		if m := tc.want.pickMode(lg); m.String() != tc.mode {
+			t.Errorf("%s: got %s", tc.name, m)
 		}
+	}
+	if (Want{}).usable(off) || !(Want{}).usable(lg) || (Want{Disabled: map[string]bool{"DP-2": true}}).usable(lg) {
+		t.Fatal("usable")
 	}
 }
 
@@ -91,18 +82,19 @@ func TestParseEDID(t *testing.T) {
 	}
 }
 
-func TestCountFlipEvents(t *testing.T) {
-	ev := func(typ uint32, n int) []byte {
-		b := make([]byte, n)
+func TestFlipCrtcs(t *testing.T) {
+	ev := func(typ, crtc uint32) []byte {
+		b := make([]byte, 32)
 		binary.LittleEndian.PutUint32(b, typ)
-		binary.LittleEndian.PutUint32(b[4:], uint32(n))
+		binary.LittleEndian.PutUint32(b[4:], 32)
+		binary.LittleEndian.PutUint32(b[28:], crtc)
 		return b
 	}
-	buf := append(append(ev(eventFlipDone, 32), ev(1, 32)...), ev(eventFlipDone, 32)...)
-	if n := countFlipEvents(buf); n != 2 {
-		t.Fatalf("got %d flips", n)
+	buf := append(append(ev(eventFlipDone, 41), ev(1, 7)...), ev(eventFlipDone, 42)...)
+	if got := flipCrtcs(buf); len(got) != 2 || got[0] != 41 || got[1] != 42 {
+		t.Fatalf("got %v", got)
 	}
-	if n := countFlipEvents(buf[:20]); n != 0 {
-		t.Fatalf("truncated: got %d", n)
+	if got := flipCrtcs(buf[:20]); len(got) != 0 {
+		t.Fatalf("truncated: got %v", got)
 	}
 }

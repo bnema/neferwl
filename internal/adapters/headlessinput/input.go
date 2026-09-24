@@ -15,9 +15,12 @@ import (
 )
 
 // Run owns the keymap and converts script lines into input events. A keymap
-// received on keymaps replaces the current one, which is closed.
-// moveCursor, when set, places the software cursor on every scripted move.
-func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, moveCursor func(x, y float64), log zerowrap.Logger) error {
+// received on keymaps replaces the current one, which is closed. Scripted
+// moves are global logical coordinates; moveCursor, when set, places the
+// software cursor of the output under them (physical position on it), using
+// the latest layout from layouts.
+func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger) error {
+	var layout ports.Layout
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
 		ev := km.Key(code, down, uint32(time.Now().UnixMilli()))
@@ -79,6 +82,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 			km.Close()
 			km = next
 			log.Info().Msg("keymap replaced")
+		case layout = <-layouts:
 		case line, ok := <-script:
 			if !ok {
 				return nil
@@ -109,8 +113,8 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					x, ex := strconv.ParseFloat(fields[1], 64)
 					y, ey := strconv.ParseFloat(fields[2], 64)
 					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
-						if moveCursor != nil {
-							moveCursor(x, y)
+						if o, ok := layout.At(x, y); ok && moveCursor != nil {
+							moveCursor(o.Info.Name, (x-float64(o.X))*o.Scale, (y-float64(o.Y))*o.Scale)
 						}
 						if err := sendPointer(ports.PointerMotion{X: x, Y: y, TimeMsec: now}); err != nil {
 							return err

@@ -132,12 +132,15 @@ type Options struct {
 	SeatName string
 	Keymap   *xkb.Keymap
 	// Keymaps replaces Keymap live; Run takes ownership and closes the old one.
-	Keymaps       <-chan *xkb.Keymap
-	Width, Height int
-	Active        <-chan bool
-	// MoveCursor, when set, places the hardware cursor at the new physical
-	// position as soon as motion is read, before core sees the event.
-	MoveCursor func(x, y float64)
+	Keymaps <-chan *xkb.Keymap
+	// Layout is the initial output layout; Layouts replaces it live.
+	Layout  ports.Layout
+	Layouts <-chan ports.Layout
+	Active  <-chan bool
+	// MoveCursor, when set, places the hardware cursor as soon as motion is
+	// read, before core sees the event: the output under the pointer and
+	// the physical position on it.
+	MoveCursor func(output string, x, y float64)
 	Log        zerowrap.Logger
 }
 
@@ -168,11 +171,8 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	if assignSeat(li, name) != 0 {
 		return fmt.Errorf("libinput_udev_assign_seat %s failed", name)
 	}
-	p := pointer{w: float64(opts.Width), h: float64(opts.Height)}
-	p.x, p.y = p.w/2, p.h/2
-	if opts.MoveCursor != nil {
-		opts.MoveCursor(p.x, p.y)
-	}
+	p := newPointer(opts.Layout)
+	p.moved(opts.MoveCursor)
 	fd := getFD(li)
 	fwd := newForwarder()
 	fwdCtx, stopFwd := context.WithCancel(ctx)
@@ -199,6 +199,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			opts.Keymap.Close()
 			opts.Keymap = km
 			opts.Log.Info().Msg("keymap replaced")
+		case l := <-opts.Layouts:
+			p.setLayout(l)
+			p.moved(opts.MoveCursor)
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -213,7 +216,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			opts.Log.Warn().Msg("libinput_dispatch failed")
 		}
 		for ev := getEvent(li); ev != 0; ev = getEvent(li) {
-			out, err := translate(ev, opts, &p)
+			out, err := translate(ev, opts, p)
 			eventDestroy(ev)
 			if err != nil {
 				return err
@@ -251,17 +254,15 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 	case evPointerMotion:
 		pe := pointerEvent(ev)
 		x, y := p.move(pointerDX(pe), pointerDY(pe))
-		if opts.MoveCursor != nil {
-			opts.MoveCursor(x, y)
-		}
+		p.moved(opts.MoveCursor)
 		log.Debug().Float64("x", x).Float64("y", y).Msg("pointer")
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
 	case evPointerAbs:
+		// Absolute devices (tablets, VMs) map to the whole layout.
 		pe := pointerEvent(ev)
-		x, y := p.set(pointerAbsX(pe, uint32(p.w)), pointerAbsY(pe, uint32(p.h)))
-		if opts.MoveCursor != nil {
-			opts.MoveCursor(x, y)
-		}
+		b := p.bounds()
+		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
+		p.moved(opts.MoveCursor)
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
 	case evPointerButton:
 		pe := pointerEvent(ev)
@@ -305,12 +306,59 @@ func hotkey(ke ports.KeyEvent) (hotkeyAction, int) {
 	return hotkeyNone, 0
 }
 
-type pointer struct{ x, y, w, h float64 }
+// pointer tracks the cursor in global logical coordinates. Relative motion
+// is divided by the scale of the output under the pointer, so it moves the
+// same number of physical pixels on every output.
+type pointer struct {
+	x, y   float64
+	layout ports.Layout
+}
 
-func (p *pointer) move(dx, dy float64) (float64, float64) { return p.set(p.x+dx, p.y+dy) }
+// newPointer starts at the centre of the first output.
+func newPointer(l ports.Layout) *pointer {
+	p := &pointer{layout: l}
+	if len(l) > 0 {
+		p.x, p.y = float64(l[0].X)+float64(l[0].Width)/2, float64(l[0].Y)+float64(l[0].Height)/2
+	}
+	return p
+}
+
+// setLayout keeps the pointer where it is, or clamps it onto an output.
+func (p *pointer) setLayout(l ports.Layout) {
+	p.layout = l
+	p.x, p.y = l.Clamp(p.x, p.y, p.x, p.y)
+}
+
+func (p *pointer) scale() float64 {
+	if o, ok := p.layout.At(p.x, p.y); ok && o.Scale > 0 {
+		return o.Scale
+	}
+	return 1
+}
+
+func (p *pointer) move(dx, dy float64) (float64, float64) {
+	s := p.scale()
+	return p.set(p.x+dx/s, p.y+dy/s)
+}
 
 func (p *pointer) set(x, y float64) (float64, float64) {
-	p.x = min(max(x, 0), p.w-1)
-	p.y = min(max(y, 0), p.h-1)
+	p.x, p.y = p.layout.Clamp(p.x, p.y, x, y)
 	return p.x, p.y
+}
+
+// bounds is the rectangle holding every output.
+func (p *pointer) bounds() ports.Rect {
+	var r ports.Rect
+	for _, o := range p.layout {
+		r.W = max(r.W, o.X+o.Width)
+		r.H = max(r.H, o.Y+o.Height)
+	}
+	return r
+}
+
+// moved reports the physical position on the output under the pointer.
+func (p *pointer) moved(move func(output string, x, y float64)) {
+	if o, ok := p.layout.At(p.x, p.y); ok && move != nil {
+		move(o.Info.Name, (p.x-float64(o.X))*o.Scale, (p.y-float64(o.Y))*o.Scale)
+	}
 }

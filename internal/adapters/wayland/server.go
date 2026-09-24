@@ -16,34 +16,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Options configures the server. Outputs is the initial layout; core
+// replaces it with ports.SetOutputs.
 type Options struct {
-	RuntimeDir                string
-	OutputWidth, OutputHeight int
-	Output                    OutputInfo
-	Keymap                    string
-	RepeatRate, RepeatDelay   int
-}
-
-// OutputInfo describes the advertised wl_output. Zero values fall back to the headless output.
-type OutputInfo struct {
-	Name, Description    string
-	Make, Model          string
-	RefreshMilli         int
-	PhysicalW, PhysicalH int
-}
-
-func (o Options) output() OutputInfo {
-	i := o.Output
-	if i.Name == "" {
-		i.Name, i.Description = "HEADLESS-1", "NeferTTY headless output"
-	}
-	if i.Make == "" {
-		i.Make, i.Model = "nefertty", "headless"
-	}
-	if i.RefreshMilli == 0 {
-		i.RefreshMilli = 60000
-	}
-	return i
+	RuntimeDir              string
+	Outputs                 ports.Layout
+	Keymap                  string
+	RepeatRate, RepeatDelay int
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -93,7 +72,9 @@ type Server struct {
 	contentSeq    map[ports.WindowID]uint64
 	contentNotify chan struct{}
 	contentReady  chan struct{}
-	scale         scaleState
+	outputs       []*output
+	focusedOutput string
+	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
 }
 
 func removeItem[T comparable](list []T, v T) []T {
@@ -128,7 +109,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
-	s.scale = scaleState{scale: 1, width: opts.OutputWidth, height: opts.OutputHeight, fractions: map[*surface]*fractionalscale.WpFractionalScaleV1{}}
+	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
 		if e != nil {
@@ -148,6 +129,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.cleanup()
 		d.Close()
 		return nil, err
+	}
+	for _, p := range opts.Outputs {
+		s.addOutput(p)
 	}
 	return s, nil
 }
@@ -420,8 +404,11 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
-	case ports.SetOutputScale:
-		s.setOutputScale(c)
+		if surf := w.xdg.surface; surf != nil && c.Output != "" {
+			surf.sendScale()
+		}
+	case ports.SetOutputs:
+		s.setOutputs(c)
 	case ports.SlotsPending:
 		s.slotsPending = c.Pending
 	case ports.CloseWindow:

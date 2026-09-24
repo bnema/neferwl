@@ -44,7 +44,7 @@ func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cl
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
 	contents := make(chan ports.SurfaceContent, 16)
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events, Commands: commands, Contents: contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands, Contents: contents}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 		t.Fatalf("initial scale %d", v)
 	}
 	// Core switches to 1.5: the surface gets 180/120.
-	commands <- ports.SetOutputScale{Scale: 1.5, Width: 1280, Height: 720}
+	commands <- ports.SetOutputs{Outputs: ports.Layout{{Info: testOutputs[0].Info, Width: 1280, Height: 720, Scale: 1.5}}}
 	// Events are read by Roundtrip; the command is applied asynchronously.
 	var got uint32
 	for deadline := time.Now().Add(2 * time.Second); got == 0 && time.Now().Before(deadline); {

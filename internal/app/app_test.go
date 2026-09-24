@@ -108,7 +108,7 @@ func TestHeadlessSpawnClose(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"weston-simple-shm"}
-	scenes := make(chan ports.Scene, 64)
+	scenes := make(chan []ports.Scene, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inputReady := make(chan chan<- ports.InputEvent, 1)
@@ -140,7 +140,8 @@ func TestHeadlessSpawnClose(t *testing.T) {
 		defer timer.Stop()
 		for {
 			select {
-			case s := <-scenes:
+			case set := <-scenes:
+				s := set[0]
 				if len(s.Windows) == count {
 					// A lone column fills the 1920 output (default zero gaps).
 					if count == 1 && s.Windows[0].Rect.W != 1920 {
@@ -221,7 +222,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
-	scenes := make(chan ports.Scene, 128)
+	scenes := make(chan []ports.Scene, 128)
 	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
@@ -231,7 +232,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	}
 	two, focused := false, false
 	for len(scenes) > 0 {
-		s := <-scenes
+		s := (<-scenes)[0]
 		if len(s.Windows) == 2 {
 			two = true
 			for _, w := range s.Windows {
@@ -308,5 +309,30 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	}
 	if cmd := (<-commands).(ports.SetKeymap); cmd.Keymap != "" || cmd.RepeatRate != 50 {
 		t.Fatalf("bad layout command: keymap=%t rate=%d", cmd.Keymap != "", cmd.RepeatRate)
+	}
+}
+
+func TestHeadlessTwoOutputs(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	scenes := make(chan []ports.Scene, 64)
+	shots := t.TempDir()
+	err := Run(context.Background(), Options{Backend: "headless", Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
+			t.Skipf("Vulkan unavailable: %v", err)
+		}
+		t.Fatal(err)
+	}
+	var last []ports.Scene
+	for len(scenes) > 0 {
+		last = <-scenes
+	}
+	if len(last) != 2 || last[0].Output != "HEADLESS-1" || last[1].OutputWidth != 320 {
+		t.Fatalf("%+v", last)
+	}
+	for _, name := range []string{"HEADLESS-1", "HEADLESS-2"} {
+		if _, err := os.Stat(filepath.Join(shots, name, "latest.png")); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

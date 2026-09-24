@@ -3,72 +3,79 @@ package wayland
 import (
 	"math"
 
-	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
 	"github.com/bnema/purego-libwayland/protocol/viewporter"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/xdgoutput"
 	"github.com/bnema/purego-libwayland/server"
 )
 
-// Output scale (HiDPI). Clients that bind wp_fractional_scale_v1 get the exact
-// scale in 1/120 steps and draw at physical size through wp_viewporter. Others
-// get wl_output.scale rounded up, draw at that integer, and the renderer
-// downscales. Every size sent to clients (configures, xdg-output, layer
-// configures, pointer coordinates) stays logical.
+// Surfaces follow the output of their window or layer (the focused output
+// until they are shown): wl_surface.enter/leave, preferred buffer scale and
+// fractional scale all come from it.
 
-// scaleState is what clients were last told about the output.
-type scaleState struct {
-	scale         float64
-	width, height int // logical
-	outputs       []*wayland.Output
-	xdgOutputs    []*xdgoutput.ZxdgOutputV1
-	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
+// outputOfSurface is the output a surface is on: its window's configured
+// output, its layer output, or the focused one.
+func (s *Server) outputOfSurface(surf *surface) *output {
+	name := ""
+	switch {
+	case surf.xdg != nil && surf.xdg.window != nil:
+		name = surf.xdg.window.last.Output
+	case surf.layer != nil && surf.layer.output != nil:
+		return surf.layer.output
+	}
+	return s.outputByName(name)
 }
 
-// integerScale is wl_output.scale: the fractional scale rounded up.
-func (st *scaleState) integerScale() int32 { return int32(math.Ceil(st.scale - 1e-9)) }
-
-func (s *Server) setOutputScale(c ports.SetOutputScale) {
-	st := &s.scale
-	scaleChanged := c.Scale != st.scale
-	st.scale, st.width, st.height = c.Scale, c.Width, c.Height
-	s.log.Info().Float64("scale", c.Scale).Int("w", c.Width).Int("h", c.Height).Msg("output scale")
-	for _, x := range st.xdgOutputs {
-		x.SendLogicalSize(int32(c.Width), int32(c.Height))
-		if x.Version() < 3 {
-			x.SendDone()
-		}
+// sendScale tells the surface about its output: enter/leave, the integer
+// buffer scale (wl_surface v6+) and the fractional scale.
+func (surf *surface) sendScale() {
+	s := surf.server
+	if surf.destroyed || surf.wl == nil || !surf.wl.Resource.Alive() {
+		return
 	}
-	for _, o := range st.outputs {
-		if o.Version() >= 2 {
-			o.SendScale(st.integerScale())
-			o.SendDone()
+	o := s.outputOfSurface(surf)
+	if o != surf.on {
+		if surf.on != nil {
+			surf.leave(surf.on)
 		}
-	}
-	if scaleChanged {
-		for _, surf := range s.surfaces {
-			s.sendSurfaceScale(surf.wl)
-		}
-		for surf, f := range st.fractions {
-			if !surf.destroyed {
-				f.SendPreferredScale(uint32(math.Round(st.scale * 120)))
+		surf.on = o
+		if o != nil {
+			for _, r := range o.resources {
+				if r.Client() == surf.wl.Client() {
+					surf.wl.SendEnter(r)
+				}
 			}
 		}
 	}
-	// Layer surfaces sized from the output follow its new logical size.
-	for _, l := range s.layers {
-		// Uses committed state only: pending requests wait for the client's commit.
-		if l.configured && (l.current.width == 0 || l.current.height == 0) {
-			l.sendConfigure()
-		}
+	scale := 1.0
+	if o != nil {
+		scale = o.place.Scale
+	}
+	if scale == surf.scale {
+		return
+	}
+	surf.scale = scale
+	if surf.wl.Version() >= 6 {
+		surf.wl.SendPreferredBufferScale(integerScale(scale))
+	}
+	if f := s.fractions[surf]; f != nil {
+		f.SendPreferredScale(uint32(math.Round(scale * 120)))
 	}
 }
 
-// sendSurfaceScale tells a wl_surface v6+ which integer buffer scale to use.
-func (s *Server) sendSurfaceScale(w *wayland.Surface) {
-	if w != nil && w.Version() >= 6 {
-		w.SendPreferredBufferScale(s.scale.integerScale())
+// leave sends wl_surface.leave for o when the surface is on it.
+func (surf *surface) leave(o *output) {
+	if surf.on != o || o == nil {
+		return
+	}
+	surf.on = nil
+	if surf.destroyed || !surf.wl.Resource.Alive() {
+		return
+	}
+	for _, r := range o.resources {
+		if r.Client() == surf.wl.Client() && r.Resource.Alive() {
+			surf.wl.SendLeave(r)
+		}
 	}
 }
 
@@ -92,7 +99,7 @@ func (m fractionManager) GetFractionalScale(r *fractionalscale.WpFractionalScale
 	if surf == nil {
 		return
 	}
-	if _, dup := s.scale.fractions[surf]; dup {
+	if _, dup := s.fractions[surf]; dup {
 		r.PostError(uint32(fractionalscale.WpFractionalScaleManagerV1ErrorFractionalScaleExists), "fractional scale already exists")
 		return
 	}
@@ -100,9 +107,13 @@ func (m fractionManager) GetFractionalScale(r *fractionalscale.WpFractionalScale
 	if err != nil {
 		return
 	}
-	s.scale.fractions[surf] = f
-	f.OnDestroy = func() { delete(s.scale.fractions, surf) }
-	f.SendPreferredScale(uint32(math.Round(s.scale.scale * 120)))
+	s.fractions[surf] = f
+	f.OnDestroy = func() { delete(s.fractions, surf) }
+	scale := 1.0
+	if o := s.outputOfSurface(surf); o != nil {
+		scale = o.place.Scale
+	}
+	f.SendPreferredScale(uint32(math.Round(scale * 120)))
 }
 
 type fraction struct{}

@@ -26,15 +26,19 @@ type layerSurface struct {
 	pending, current          layerState
 	configured, acked, mapped bool
 	serials                   []uint32
+	// output is the output the client asked for, else the focused one at
+	// creation. The surface is closed when it is unplugged.
+	output *output
+	closed bool // output gone: commits are ignored until destroy
 }
 
-func registerLayer(d *server.Display, o Options, s *Server) error {
+func registerLayer(d *server.Display, s *Server) error {
 	return wlrlayershell.NewZwlrLayerShellV1Global(d, 4, func(c server.Client, v, id uint32) {
 		_, _ = wlrlayershell.NewZwlrLayerShellV1(c, int32(v), id, layerShell{s})
 	})
 }
 func (h layerShell) Destroy(*wlrlayershell.ZwlrLayerShellV1) {}
-func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32, w *wayland.Surface, _ *wayland.Output, layer uint32, namespace string) {
+func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32, w *wayland.Surface, wl *wayland.Output, layer uint32, namespace string) {
 	if w == nil || h.server.surfaces[w.Resource] == nil {
 		return
 	}
@@ -47,7 +51,12 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorInvalidLayer), "invalid layer")
 		return
 	}
-	l := &layerSurface{shell: h, surface: state, id: h.server.nextWindow, namespace: namespace}
+	out := h.server.outputOf(wl)
+	gone := wl != nil && out == nil // its output was unplugged
+	if wl == nil {
+		out = h.server.outputByName("")
+	}
+	l := &layerSurface{shell: h, surface: state, id: h.server.nextWindow, namespace: namespace, output: out}
 	l.pending.layer = ports.Layer(layer)
 	resource, err := wlrlayershell.NewZwlrLayerSurfaceV1(r.Client(), r.Version(), id, l)
 	if err != nil {
@@ -59,6 +68,9 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 	state.layer = l
 	state.role = l.commit
 	h.server.layers[l.id] = l
+	if gone {
+		l.close()
+	}
 	resource.OnDestroy = func() {
 		l.unmap()
 		delete(h.server.layers, l.id)
@@ -130,6 +142,18 @@ func (l *layerSurface) unmap() {
 	l.shell.server.layerChanged()
 	l.shell.server.emitContent(ports.SurfaceContent{ID: l.id})
 }
+
+// close tells the client its output is gone; the surface stays unmapped
+// until the client destroys it.
+func (l *layerSurface) close() {
+	l.unmap()
+	l.output = nil
+	l.closed = true
+	if l.resource.Resource.Alive() {
+		l.resource.SendClosed()
+	}
+}
+
 func (s *Server) layerChanged() {
 	list := make([]ports.LayerSurface, 0)
 	for _, l := range s.layers {
@@ -137,6 +161,9 @@ func (s *Server) layerChanged() {
 			continue
 		}
 		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
+		if l.output != nil {
+			v.Output = l.output.name()
+		}
 		if l.surface.current != nil {
 			if b := s.buffers[l.surface.current.Resource]; b != nil {
 				v.Width, v.Height = l.surface.logicalSize(b.width, b.height)
@@ -152,11 +179,15 @@ func (s *Server) layerChanged() {
 // the logical output size.
 func (l *layerSurface) sendConfigure() {
 	w, h := l.current.width, l.current.height
+	var ow, oh int
+	if l.output != nil {
+		ow, oh = l.output.place.Width, l.output.place.Height
+	}
 	if w == 0 {
-		w = uint32(l.shell.server.scale.width)
+		w = uint32(ow)
 	}
 	if h == 0 {
-		h = uint32(l.shell.server.scale.height)
+		h = uint32(oh)
 	}
 	l.shell.server.serial++
 	l.resource.SendConfigure(l.shell.server.serial, w, h)
@@ -168,6 +199,9 @@ func (l *layerSurface) commit(buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
 		delete(l.shell.server.layers, l.id)
+		return
+	}
+	if l.closed {
 		return
 	}
 	p := l.pending

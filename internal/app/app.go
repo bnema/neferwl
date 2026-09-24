@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/headless"
+	"github.com/bnema/nefertty/internal/adapters/drm"
 	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
 	"github.com/bnema/nefertty/internal/adapters/libinput"
@@ -32,11 +32,13 @@ type Options struct {
 	Timeout       time.Duration
 	NoTerminal    bool
 	ScreenshotDir string
-	// Width and Height size the headless output; 0 means 1920x1080.
-	Width, Height int
+	// Sizes are the headless outputs (width, height), left to right; empty
+	// means one 1920x1080 output. With several outputs, screenshots go to
+	// one subdirectory per output (HEADLESS-1, HEADLESS-2, ...).
+	Sizes [][2]int
 	// Run closes Script on shutdown; the reader goroutine exits after Close.
 	Script     io.ReadCloser
-	testScenes chan<- ports.Scene
+	testScenes chan<- []ports.Scene
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
@@ -51,11 +53,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		ctx, cancel = context.WithCancel(ctx)
 	}
 	defer cancel()
-	width, height := opts.Width, opts.Height
-	if width <= 0 || height <= 0 {
-		width, height = 1920, 1080
+	sizes := opts.Sizes
+	if len(sizes) == 0 {
+		sizes = [][2]int{{1920, 1080}}
 	}
-	var outInfo wayland.OutputInfo
 	var hw *drmBackend
 	if opts.Backend == "drm" {
 		var err error
@@ -63,9 +64,6 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			return err
 		}
 		defer hw.close()
-		width, height = hw.out.Width(), hw.out.Height()
-		outInfo = hw.outputInfo()
-		hw.inputActive, hw.outputActive = hw.seat.Subscribe(), hw.seat.Subscribe()
 	}
 	client := make(chan ports.ClientEvent, 32)
 	input := make(chan ports.InputEvent, 32)
@@ -73,27 +71,23 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	configChanges := make(chan ports.ConfigChanged, 8)
 	commands := make(chan ports.ClientCommand, 32)
 	spawn := make(chan ports.SpawnRequest, 32)
-	scenes := make(chan ports.Scene, 1)
+	scenes := make(chan []ports.Scene, 1)
+	layouts := make(chan ports.Layout, 1)
 	configErrors := make(chan error, 8)
-	renderScenes := make(chan ports.Scene, 1)
+	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: configErrors}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, ConfigErrors: configErrors}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
 	}
-	outName := outInfo.Name
-	if outName == "" {
-		outName = "HEADLESS-1"
-	}
-	output <- ports.OutputMode{Width: width, Height: height, Name: outName}
 	km, err := xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options})
 	if err != nil {
 		return err
 	}
 	keymap := km.String()
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: width, OutputHeight: height, Output: outInfo, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -125,22 +119,24 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		relayConfig(ctx, opts.Config, watched, configChanges, keymaps, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
-	// The software cursor starts centred, like libinput's pointer.
-	softCursor := &headless.Cursor{}
-	softCursor.Move(float64(width)/2, float64(height)/2)
+	curs := newCursors()
 	go func() {
 		defer workers.Done()
 		if hw != nil {
+			// Core sends the first layout once DRM reports the outputs.
+			var layout ports.Layout
+			select {
+			case layout = <-layouts:
+			case <-ctx.Done():
+				km.Close()
+				return
+			}
 			done <- safe("input", func() error {
-				var move func(x, y float64)
-				if cur := hw.out.Cursor(); cur != nil {
-					move = cur.Move
-				}
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Width: width, Height: height, Active: hw.inputActive, MoveCursor: move, Log: logging.For(ctx, "input")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input")}, input)
 			})
 			return
 		}
-		_ = headlessinput.Run(ctx, km, keymaps, script, input, softCursor.Move, logging.For(ctx, "input"))
+		_ = headlessinput.Run(ctx, km, keymaps, script, input, layouts, curs.move, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
 		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
@@ -168,25 +164,21 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
-		if hw != nil {
-			done <- safe("output", func() error {
-				return hw.out.Run(ctx, func(w, h int) (ports.Renderer, error) {
-					r, err := vulkan.New(w, h)
-					if err != nil {
-						return nil, err
-					}
-					return r, nil
-				}, loadCursor, hw.outputActive, renderScenes, contents)
-			})
-			return
-		}
-		done <- headless.Run(ctx, headless.Options{Cursor: softCursor, LoadCursor: loadCursor, Width: width, Height: height, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (ports.Renderer, error) {
+		newRenderer := func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
 				return nil, err
 			}
 			return r, nil
-		}}, renderScenes, contents)
+		}
+		if hw != nil {
+			done <- safe("output", func() error {
+				want := func() drm.Want { return wantFromConfig(opts.Config.Outputs) }
+				return hw.runOutputs(ctx, want, output, renderScenes, contents, curs, newRenderer, logging.For(ctx, "drm"))
+			})
+			return
+		}
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
@@ -280,38 +272,40 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 	}
 }
 
-func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene, renderScenes chan ports.Scene) {
+func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configErrors <-chan error, tap chan<- []ports.Scene, renderScenes chan []ports.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case s := <-scenes:
+		case set := <-scenes:
 			if tap != nil {
 				select {
-				case tap <- s:
+				case tap <- set:
 				default:
 				}
 			}
 			select {
-			case renderScenes <- s:
+			case renderScenes <- set:
 			default:
 				select {
 				case <-renderScenes:
 				default:
 				}
 				select {
-				case renderScenes <- s:
+				case renderScenes <- set:
 				default:
 				}
 			}
-			ev := log.Debug().Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
-			rects := make([]string, 0, len(s.Windows))
-			for _, w := range s.Windows {
-				rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+			for _, s := range set {
+				ev := log.Debug().Str("output", s.Output).Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
+				rects := make([]string, 0, len(s.Windows))
+				for _, w := range s.Windows {
+					rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+				}
+				ev.Strs("windows", rects).Msg("scene")
 			}
-			ev.Strs("windows", rects).Msg("scene")
 		case err := <-configErrors:
 			configLog.Warn().Err(err).Msg("config rejected")
 		}

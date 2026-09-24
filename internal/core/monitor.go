@@ -1,5 +1,7 @@
 package core
 
+import "slices"
+
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
 // are positions: Cmd+N targets Workspaces[N-1]. An empty workspace always sits
 // below the last one, and an empty unnamed workspace is removed once left,
@@ -9,6 +11,10 @@ package core
 // A hidden one is not numbered and not reachable by up/down: only its
 // `workspace <name>` bind shows it.
 type Monitor struct {
+	// Name is the connector; Key identifies the physical monitor (make,
+	// model and serial, else the connector). Workspaces remember the Key of
+	// their home monitor.
+	Name, Key  string
 	Workspaces []*Workspace
 	Active     int
 	hidden     []*Workspace
@@ -21,16 +27,82 @@ type Monitor struct {
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
 // Overflow follow the monitor defaults.
 type NamedWorkspace struct {
-	Name       string
+	Name string
+	// Monitor is the home monitor (connector or key); "" for the first one.
+	Monitor    string
 	Hidden     bool
 	MaxColumns int
 	Overflow   Overflow
 }
 
-func NewMonitor() *Monitor {
-	m := &Monitor{}
+func NewMonitor() *Monitor { return newMonitor("", "") }
+
+func newMonitor(name, key string) *Monitor {
+	m := &Monitor{Name: name, Key: key}
 	m.normalize()
 	return m
+}
+
+// matches reports whether home designates this monitor, by key or connector.
+func (m *Monitor) matches(home string) bool {
+	return home != "" && (home == m.Key || home == m.Name)
+}
+
+// all lists every workspace, numbered then hidden.
+func (m *Monitor) all() []*Workspace {
+	return append(append([]*Workspace(nil), m.Workspaces...), m.hidden...)
+}
+
+// isHidden reports whether w is in the hidden list.
+func (m *Monitor) isHidden(w *Workspace) bool { return indexOf(m.hidden, w) >= 0 }
+
+// take removes w from the monitor. The monitor keeps a workspace on screen:
+// the one at the same position, or the numbered active one.
+func (m *Monitor) take(w *Workspace) {
+	if m.back == w {
+		m.back = nil
+	}
+	if i := indexOf(m.hidden, w); i >= 0 {
+		m.hidden = append(m.hidden[:i], m.hidden[i+1:]...)
+		if m.shown == w {
+			m.shown = nil
+		}
+		m.normalize()
+		return
+	}
+	if i := indexOf(m.Workspaces, w); i >= 0 {
+		m.removeNumbered(i)
+		m.normalize()
+	}
+}
+
+// adopt adds a workspace from another monitor: hidden, or numbered at pos
+// (clamped above the trailing empty workspace). It takes this monitor's
+// output-wide settings and does not change what is on screen.
+func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
+	w.presets = append([]Width(nil), m.template.presets...)
+	w.Gaps = m.template.Gaps
+	w.SetOutput(m.template.Output.W, m.template.Output.H)
+	w.SetUsable(m.template.Usable)
+	if hidden {
+		m.hidden = append(m.hidden, w)
+	} else {
+		// normalize keeps a trailing empty workspace: stay above it.
+		at := min(max(pos, 0), len(m.Workspaces)-1)
+		m.Workspaces = slices.Insert(m.Workspaces, at, w)
+		if at <= m.Active {
+			m.Active++
+		}
+	}
+	m.applyNamed()
+	m.normalize()
+}
+
+// useSpecs sets the overrides of every named workspace, including those
+// that live on other monitors and may move here.
+func (m *Monitor) useSpecs(all []NamedWorkspace) {
+	m.named = append([]NamedWorkspace(nil), all...)
+	m.applyNamed()
 }
 
 // Current is the workspace on screen.
@@ -44,6 +116,7 @@ func (m *Monitor) Current() *Workspace {
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
+	w.Columns, w.home = nil, ""
 	return &w
 }
 

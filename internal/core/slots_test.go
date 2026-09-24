@@ -17,7 +17,7 @@ type slotRig struct {
 	input  chan ports.InputEvent
 	reload chan ports.ConfigChanged
 	spawn  chan ports.SpawnRequest
-	scenes chan ports.Scene
+	scenes chan []ports.Scene
 	errs   chan error
 	cfg    ports.Config
 }
@@ -37,7 +37,7 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	r := &slotRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		reload: make(chan ports.ConfigChanged, 4), spawn: make(chan ports.SpawnRequest, 16),
-		scenes: make(chan ports.Scene, 1), errs: make(chan error, 4), cfg: cfg,
+		scenes: make(chan []ports.Scene, 1), errs: make(chan error, 4), cfg: cfg,
 	}
 	output := make(chan ports.OutputEvent, 1)
 	commands := make(chan ports.ClientCommand, 1024)
@@ -53,8 +53,8 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 		for range commands {
 		}
 	}()
-	output <- ports.OutputMode{Width: 100, Height: 80}
-	receive(t, r.scenes)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, r.scenes)
 	return r
 }
 
@@ -86,7 +86,7 @@ func (r *slotRig) press(t *testing.T, key string) ports.Scene {
 	t.Helper()
 	r.input <- ports.KeyEvent{Keysym: key, Mods: ports.ModAlt, Pressed: true}
 	r.input <- ports.KeyEvent{Keysym: key, Mods: ports.ModAlt}
-	return receive(t, r.scenes)
+	return scene(t, r.scenes)
 }
 
 // sync waits for core to handle everything sent so far.
@@ -102,19 +102,19 @@ func (r *slotRig) fill(t *testing.T) (code, foot ports.SpawnRequest) {
 	code, foot = receive(t, r.spawn), receive(t, r.spawn)
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
 	r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
-	scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
 	return code, foot
 }
 
-// scene waits for a scene matching ok.
-func scene(t *testing.T, ch <-chan ports.Scene, ok func(ports.Scene) bool) ports.Scene {
+// sceneMatch waits for a first-output scene matching ok.
+func sceneMatch(t *testing.T, ch <-chan []ports.Scene, ok func(ports.Scene) bool) ports.Scene {
 	t.Helper()
 	deadline := time.After(time.Second)
 	for {
 		select {
 		case s := <-ch:
-			if ok(s) {
-				return s
+			if ok(s[0]) {
+				return s[0]
 			}
 		case <-deadline:
 			t.Fatal("no matching scene")
@@ -143,7 +143,7 @@ func TestSlotsSpawnAtStartAndFillInOrder(t *testing.T) {
 	// foot maps first; code's window still goes left of it.
 	r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
 	for _, w := range s.Windows {
 		if w.ID != 1 && !w.Hidden || w.ID == 1 && !w.Focused {
 			t.Fatalf("slot window on screen or focus moved: %+v", s.Windows)
@@ -163,7 +163,7 @@ func TestSlotRefilledOnlyWhenShown(t *testing.T) {
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
 	r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
 	r.client <- ports.WindowUnmapped{ID: 3} // foot exits
-	scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	noSpawn(t, r.spawn) // nothing relaunches on its own
 	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt, Pressed: true}
 	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt}
@@ -172,7 +172,7 @@ func TestSlotRefilledOnlyWhenShown(t *testing.T) {
 		t.Fatal(again)
 	}
 	r.client <- ports.WindowMapped{ID: 4, Slot: token(t, again)}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 2 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 2 })
 	if got := visible(s); got[4].X != 70 {
 		t.Fatal(got)
 	}
@@ -190,7 +190,7 @@ func TestSlotExtraWindowsAreNormal(t *testing.T) {
 	// A second window of the same process: the slot is taken, normal rules.
 	r.client <- ports.WindowMapped{ID: 5, Slot: token(t, code)}
 	r.client <- ports.WindowMapped{ID: 6, Slot: "unknown"}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
 	if got := visible(s); len(got) != 2 || got[5] == (ports.Rect{}) || got[6] == (ports.Rect{}) {
 		t.Fatalf("extra windows not on the workspace on screen: %v", got)
 	}
@@ -200,7 +200,7 @@ func TestSlotReload(t *testing.T) {
 	r := startSlots(t)
 	code, foot := receive(t, r.spawn), receive(t, r.spawn)
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
-	scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	cfg := r.cfg
 	ws := cfg.Workspaces[0]
 	ws.Slots = []ports.SlotConfig{
@@ -218,18 +218,18 @@ func TestSlotReload(t *testing.T) {
 	if !slices.Equal(argv, []string{"btop", "kitty"}) {
 		t.Fatal(argv)
 	}
-	receive(t, r.scenes)
+	scene(t, r.scenes)
 	noSpawn(t, r.spawn)
 	// The old foot spawn no longer fills slot 2 (its command changed): it
 	// opens as a normal window on workspace 1, on screen.
 	r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
 	if got := visible(s); len(got) != 1 || got[3] == (ports.Rect{}) {
 		t.Fatal(got)
 	}
 	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt, Pressed: true}
 	r.input <- ports.KeyEvent{Keysym: "d", Mods: ports.ModAlt}
-	s = scene(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
+	s = sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
 	if got := visible(s); got[2].W != 50 {
 		t.Fatal(got)
 	}
@@ -238,7 +238,7 @@ func TestSlotReload(t *testing.T) {
 	ws.Slots = nil
 	cfg.Workspaces = []ports.WorkspaceConfig{ws}
 	r.reload <- ports.ConfigChanged{Config: cfg}
-	receive(t, r.scenes)
+	scene(t, r.scenes)
 	noSpawn(t, r.spawn)
 }
 
@@ -271,7 +271,7 @@ func TestSlotReloadWhileShownSpawnsOnce(t *testing.T) {
 	if v := receive(t, r.spawn); v.Argv[0] != "btop" {
 		t.Fatal(v)
 	}
-	receive(t, r.scenes)
+	scene(t, r.scenes)
 	noSpawn(t, r.spawn)
 }
 
@@ -282,7 +282,7 @@ func TestSlotNotRefilledByOtherBinds(t *testing.T) {
 	r.fill(t)
 	r.press(t, "d")
 	r.client <- ports.WindowUnmapped{ID: 3}
-	scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	r.sync(t)
 	noSpawn(t, r.spawn)
 	r.press(t, "d")
@@ -299,7 +299,7 @@ func TestSlotOldTokenIsNormal(t *testing.T) {
 	_, foot := r.fill(t)
 	r.client <- ports.WindowUnmapped{ID: 3}
 	r.client <- ports.WindowMapped{ID: 9, Slot: token(t, foot)}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 1 })
 	if got := visible(s); got[9] == (ports.Rect{}) {
 		t.Fatalf("old-token window hidden in the slot: %v", got)
 	}
@@ -311,7 +311,7 @@ func TestPendingSlotRespawnedOnSecondShow(t *testing.T) {
 	r := startSlots(t)
 	code, foot := receive(t, r.spawn), receive(t, r.spawn)
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
-	scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	r.press(t, "d") // foot still starting: not respawned
 	noSpawn(t, r.spawn)
 	r.press(t, "d")
@@ -321,12 +321,12 @@ func TestPendingSlotRespawnedOnSecondShow(t *testing.T) {
 		t.Fatal(again)
 	}
 	r.client <- ports.WindowMapped{ID: 7, Slot: token(t, foot)}
-	s := scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
 	if got := visible(s); got[7] == (ports.Rect{}) {
 		t.Fatalf("stale-token window not placed as a normal one: %v", got)
 	}
 	r.client <- ports.WindowMapped{ID: 8, Slot: token(t, again)}
-	s = scene(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
+	s = sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
 	if got := visible(s); got[8].W != 30 {
 		t.Fatalf("respawned window not in its slot: %v", got)
 	}
@@ -339,7 +339,7 @@ func TestSlotReleasedWhenWindowMoved(t *testing.T) {
 	r.fill(t)
 	r.press(t, "d") // on dev, focus on code (slot 1)
 	r.input <- ports.KeyEvent{Keysym: "Prior", Mods: ports.ModAlt | ports.ModShift, Pressed: true}
-	receive(t, r.scenes) // move-to-workspace-up: code goes to workspace 1
+	scene(t, r.scenes) // move-to-workspace-up: code goes to workspace 1
 	noSpawn(t, r.spawn)
 	r.press(t, "d") // back to workspace 1
 	r.press(t, "d") // dev again: slot 1 is empty

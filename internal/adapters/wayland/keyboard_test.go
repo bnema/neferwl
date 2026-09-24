@@ -32,7 +32,7 @@ func keyboardServer(t *testing.T, setup ...func(*Server)) (*Server, chan ports.C
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 32)
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080, Keymap: keymapText(t), RepeatRate: 25, RepeatDelay: 600}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Keymap: keymapText(t), RepeatRate: 25, RepeatDelay: 600}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}

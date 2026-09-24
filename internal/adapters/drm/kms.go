@@ -1,8 +1,8 @@
-// Package drm drives one KMS output with raw ioctls and dumb buffers.
+// Package drm drives KMS outputs with raw ioctls and dumb buffers.
 package drm
 
 import (
-	"errors"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"unsafe"
@@ -114,14 +114,16 @@ type connector struct {
 
 var connectorTypes = map[uint32]string{1: "VGA", 2: "DVI-I", 3: "DVI-D", 10: "DP", 11: "HDMI-A", 12: "HDMI-B", 7: "LVDS", 14: "eDP", 15: "Virtual", 16: "DSI", 17: "DPI", 20: "USB"}
 
-// Want selects a connector and mode; see ports.OutputConfig.
+// Want configures connectors; see ports.OutputConfig.
 type Want struct {
-	Name     string
-	W, H     int
-	Hz       float64 // 0: highest refresh at W x H
 	Disabled map[string]bool
-	// Strict accepts only the connector named Name (used to search every card first).
-	Strict bool
+	// Modes maps a connector to W, H and Hz (0: highest refresh at W x H).
+	Modes map[string][3]float64
+}
+
+// usable reports whether a connector should be driven.
+func (w Want) usable(c connector) bool {
+	return c.connected && len(c.modes) > 0 && !w.Disabled[c.name]
 }
 
 // refreshMilli is the exact refresh in mHz, computed from the timings like wlroots.
@@ -142,37 +144,20 @@ func (m modeInfo) refreshMilli() int {
 	return int(r)
 }
 
-// pickConnector applies want: the named connector if connected, else the first
-// connected one that is not disabled. The mode is the requested one, else preferred.
-func pickConnector(conns []connector, want Want) (connector, modeInfo, error) {
-	var chosen *connector
-	for i := range conns {
-		c := &conns[i]
-		if !c.connected || len(c.modes) == 0 || want.Disabled[c.name] {
-			continue
-		}
-		if c.name == want.Name {
-			chosen = c
-			break
-		}
-		if chosen == nil && !want.Strict {
-			chosen = c
+// pickMode returns the configured mode of the connector, else its preferred
+// one, else the first.
+func (w Want) pickMode(c connector) modeInfo {
+	if m, ok := w.Modes[c.name]; ok {
+		if mode, ok := pickMode(c.modes, int(m[0]), int(m[1]), m[2]); ok {
+			return mode
 		}
 	}
-	if chosen == nil {
-		return connector{}, modeInfo{}, errors.New("no connected display")
-	}
-	if chosen.name == want.Name && want.W > 0 {
-		if m, ok := pickMode(chosen.modes, want.W, want.H, want.Hz); ok {
-			return *chosen, m, nil
-		}
-	}
-	for _, m := range chosen.modes {
+	for _, m := range c.modes {
 		if m.Type&modeTypePrefered != 0 {
-			return *chosen, m, nil
+			return m
 		}
 	}
-	return *chosen, chosen.modes[0], nil
+	return c.modes[0]
 }
 
 // pickMode finds W x H with the refresh closest to hz, or the highest when hz is 0.
@@ -245,8 +230,9 @@ func readConnector(fd int, id uint32) (connector, error) {
 	}, nil
 }
 
-// pickCrtc prefers the connector's current encoder CRTC, else any CRTC an encoder allows.
-func pickCrtc(fd int, c connector, crtcs []uint32) (uint32, error) {
+// pickCrtc prefers the connector's current encoder CRTC, else any free CRTC
+// an encoder allows. used holds CRTCs already driving other outputs.
+func pickCrtc(fd int, c connector, crtcs []uint32, used map[uint32]bool) (uint32, error) {
 	encs := c.encoders
 	if c.encoderID != 0 {
 		encs = append([]uint32{c.encoderID}, encs...)
@@ -256,16 +242,16 @@ func pickCrtc(fd int, c connector, crtcs []uint32) (uint32, error) {
 		if ioctl(fd, ioctlGetEncoder, unsafe.Pointer(&e)) != nil {
 			continue
 		}
-		if id == c.encoderID && e.crtcID != 0 {
+		if id == c.encoderID && e.crtcID != 0 && !used[e.crtcID] {
 			return e.crtcID, nil
 		}
 		for i, crtc := range crtcs {
-			if e.possibleCrtcs&(1<<i) != 0 {
+			if e.possibleCrtcs&(1<<i) != 0 && !used[crtc] {
 				return crtc, nil
 			}
 		}
 	}
-	return 0, fmt.Errorf("no CRTC for %s", c.name)
+	return 0, fmt.Errorf("no free CRTC for %s", c.name)
 }
 
 type dumbBuffer struct {
@@ -333,19 +319,21 @@ func flip(fd int, crtc, fb uint32) error {
 	return ioctl(fd, ioctlPageFlip, unsafe.Pointer(&p))
 }
 
-// countFlipEvents parses DRM events read from the card fd.
-func countFlipEvents(buf []byte) int {
-	n := 0
+// flipCrtcs parses DRM events read from the card fd and returns the CRTC of
+// each completed page flip.
+func flipCrtcs(buf []byte) []uint32 {
+	var out []uint32
 	for len(buf) >= 8 {
-		typ := uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24
-		length := int(uint32(buf[4]) | uint32(buf[5])<<8 | uint32(buf[6])<<16 | uint32(buf[7])<<24)
+		typ := binary.LittleEndian.Uint32(buf)
+		length := int(binary.LittleEndian.Uint32(buf[4:]))
 		if length < 8 || length > len(buf) {
 			break
 		}
-		if typ == eventFlipDone {
-			n++
+		// struct drm_event_vblank: base(8) user_data(8) sec usec sequence crtc_id.
+		if typ == eventFlipDone && length >= 32 {
+			out = append(out, binary.LittleEndian.Uint32(buf[28:]))
 		}
 		buf = buf[length:]
 	}
-	return n
+	return out
 }

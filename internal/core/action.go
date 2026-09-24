@@ -24,6 +24,11 @@ const (
 	ActionFocusWorkspaceDown  Action = "focus-workspace-down"
 	ActionMoveToWorkspaceUp   Action = "move-to-workspace-up"
 	ActionMoveToWorkspaceDown Action = "move-to-workspace-down"
+	// Monitors are ordered left to right (ADR 011).
+	ActionFocusMonitorLeft   Action = "focus-monitor-left"
+	ActionFocusMonitorRight  Action = "focus-monitor-right"
+	ActionMoveWorkspaceLeft  Action = "move-workspace-to-monitor-left"
+	ActionMoveWorkspaceRight Action = "move-workspace-to-monitor-right"
 	// Scale steps through the clean scales of the output (see CleanScales).
 	ActionScaleUp         Action = "scale-up"
 	ActionScaleDown       Action = "scale-down"
@@ -75,6 +80,42 @@ type Effect struct {
 	Argv  []string // command to run; nil means the configured terminal
 	Close WindowID
 	Quit  bool
+}
+
+// applyAction runs a bind action. Monitor actions change the focused
+// screen; column focus past the edge column moves to the neighbor screen;
+// everything else applies to the focused screen's monitor.
+func (c *Core) applyAction(a Action) Effect {
+	dir := 0
+	switch a {
+	case ActionFocusMonitorLeft, ActionMoveWorkspaceLeft:
+		dir = -1
+	case ActionFocusMonitorRight, ActionMoveWorkspaceRight:
+		dir = 1
+	}
+	switch a {
+	case ActionFocusMonitorLeft, ActionFocusMonitorRight:
+		if i := c.neighbor(dir); i >= 0 {
+			c.focusScreen = i
+		}
+		return Effect{}
+	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+		c.moveWorkspace(dir)
+		return Effect{}
+	case ActionFocusColumnLeft, ActionFocusColumnRight:
+		w := c.cur().mon.Current()
+		edge := len(w.Columns) == 0 || (a == ActionFocusColumnLeft && w.Focus == 0) || (a == ActionFocusColumnRight && w.Focus == len(w.Columns)-1)
+		if a == ActionFocusColumnLeft {
+			dir = -1
+		} else {
+			dir = 1
+		}
+		if i := c.neighbor(dir); edge && i >= 0 {
+			c.focusScreen = i
+			return Effect{}
+		}
+	}
+	return c.cur().mon.Apply(a)
 }
 
 // Apply runs a bind action on the monitor.

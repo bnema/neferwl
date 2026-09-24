@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
@@ -13,9 +12,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Output is one KMS connector driven with two dumb buffers.
+// Output is one KMS connector driven with two dumb buffers. One goroutine
+// runs it (Run) and closes it.
 type Output struct {
 	fd        int
+	flipped   <-chan int // page flips of this CRTC, from Card.ReadEvents
 	crtc      uint32
 	conn      connector
 	mode      modeInfo
@@ -34,74 +35,39 @@ type Output struct {
 // pixels on a side.
 type CursorLoader func(scale float64, limit int) (ports.CursorImage, error)
 
-// Info describes the chosen output for clients (wl_output, xdg-output).
-type Info struct {
-	Name                 string
-	Monitor              Monitor
-	Width, Height        int
-	RefreshMilli         int
-	PhysicalW, PhysicalH int // millimetres
-}
-
-// Open picks a connector on the card fd according to want and allocates buffers.
-func Open(fd int, card string, want Want, log zerowrap.Logger) (*Output, error) {
-	crtcs, ids, err := resources(fd)
-	if err != nil {
-		return nil, err
-	}
-	var conns []connector
-	for _, id := range ids {
-		c, err := readConnector(fd, id)
-		if err != nil {
-			log.Warn().Err(err).Uint32("connector", id).Msg("read connector")
-			continue
-		}
-		ev := log.Info().Str("connector", c.name).Bool("connected", c.connected)
-		if c.connected {
-			mon := readMonitor(card, c.name)
-			modes := make([]string, 0, len(c.modes))
-			for _, m := range c.modes {
-				modes = append(modes, m.String())
-			}
-			ev = ev.Str("make", mon.Make).Str("model", mon.Model).Int("mm_w", c.mmW).Int("mm_h", c.mmH).Strs("modes", modes)
-		}
-		ev.Msg("connector")
-		conns = append(conns, c)
-	}
-	c, mode, err := pickConnector(conns, want)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", card, err)
-	}
-	crtc, err := pickCrtc(fd, c, crtcs)
-	if err != nil {
-		return nil, err
-	}
-	o := &Output{fd: fd, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card, c.name)}
-	if want.Name != "" && want.Name != c.name {
-		log.Warn().Str("wanted", want.Name).Str("using", c.name).Msg("configured output not connected")
-	}
-	if o.saved, err = getCrtc(fd, crtc); err != nil {
+// newOutput allocates buffers and the cursor for a connector on crtc.
+func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
+	log := card.log
+	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name)}
+	var err error
+	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
 	}
 	for i := range o.bufs {
-		if o.bufs[i], err = newDumb(fd, o.Width(), o.Height()); err != nil {
+		if o.bufs[i], err = newDumb(card.fd, o.Width(), o.Height()); err != nil {
 			o.Close()
 			return nil, err
 		}
 	}
-	if o.cursor, err = newCursor(fd, crtc, slices.Index(crtcs, crtc)); err != nil {
-		log.Warn().Err(err).Msg("no hardware cursor")
+	if o.cursor, err = newCursor(card.fd, crtc, slices.Index(card.crtcs, crtc)); err != nil {
+		log.Warn().Err(err).Str("connector", c.name).Msg("no hardware cursor")
 	}
-	log.Info().Str("card", card).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")
+	log.Info().Str("card", card.path).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")
 	return o, nil
 }
 
 // Cursor is the hardware cursor, or nil when the driver has none.
 func (o *Output) Cursor() *Cursor { return o.cursor }
 
-// Info returns the chosen connector, monitor and mode.
-func (o *Output) Info() Info {
-	return Info{Name: o.conn.name, Monitor: o.monitor, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
+// Info describes the output for core and clients. Unknown EDID fields are empty.
+func (o *Output) Info() ports.OutputInfo {
+	known := func(v string) string {
+		if v == "Unknown" {
+			return ""
+		}
+		return v
+	}
+	return ports.OutputInfo{Name: o.conn.name, Make: known(o.monitor.Make), Model: known(o.monitor.Model), Serial: o.monitor.Serial, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
 }
 
 func (o *Output) Width() int  { return int(o.mode.HDisplay) }
@@ -130,7 +96,8 @@ func (o *Output) present(r ports.Renderer) error {
 	return nil
 }
 
-// Close restores the CRTC state found at startup and frees buffers.
+// Close restores the CRTC state found at startup, when it had a mode, and
+// frees buffers.
 func (o *Output) Close() {
 	if o.cursor != nil {
 		o.cursor.close()
@@ -156,19 +123,21 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
-	if err := o.modeset(); err != nil {
-		return err
+	// The seat sends its state first; while switched away (e.g. a monitor
+	// plugged in on another VT) the modeset waits for the enable.
+	enabled := true
+	select {
+	case enabled = <-active:
+	default:
 	}
-	events := make(chan int, 4)
-	evErr := make(chan error, 1)
-	evCtx, stop := context.WithCancel(ctx)
-	var reader sync.WaitGroup
-	reader.Go(func() { o.readEvents(evCtx, events, evErr) })
-	// Join the reader before the card fd can be closed by the caller.
-	defer func() { stop(); reader.Wait() }()
+	if enabled {
+		if err := o.modeset(); err != nil {
+			return err
+		}
+	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
-	haveScene, dirty, enabled := false, false, true
+	haveScene, dirty := false, false
 	cursorScale := -1.0 // not loaded yet
 	frame := 0
 	stats := time.NewTicker(10 * time.Second)
@@ -177,8 +146,6 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		select {
 		case <-ctx.Done():
 			return nil
-		case err := <-evErr:
-			return err
 		case on := <-active:
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
@@ -195,7 +162,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			enabled = on
 			o.log.Info().Bool("enabled", on).Msg("output")
-		case n := <-events:
+		case n := <-o.flipped:
 			if !o.pending {
 				continue // stale event from before a modeset
 			}
@@ -265,34 +232,4 @@ func (o *Output) setCursor(load CursorLoader, scale float64) {
 		return
 	}
 	o.log.Info().Float64("scale", scale).Int("w", img.W).Int("h", img.H).Msg("cursor image")
-}
-
-func (o *Output) readEvents(ctx context.Context, events chan<- int, errs chan<- error) {
-	buf := make([]byte, 1024)
-	for ctx.Err() == nil {
-		fds := []unix.PollFd{{Fd: int32(o.fd), Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, 100)
-		if err != nil && !errors.Is(err, unix.EINTR) {
-			errs <- fmt.Errorf("drm poll: %w", err)
-			return
-		}
-		if n <= 0 {
-			continue
-		}
-		m, err := unix.Read(o.fd, buf)
-		if err != nil {
-			if errors.Is(err, unix.EINTR) || errors.Is(err, unix.EAGAIN) {
-				continue
-			}
-			errs <- fmt.Errorf("drm read: %w", err)
-			return
-		}
-		if c := countFlipEvents(buf[:m]); c > 0 {
-			select {
-			case events <- c:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}
 }
