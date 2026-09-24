@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"sync"
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
@@ -59,7 +60,9 @@ func Open(fd int, card string, log zerowrap.Logger) (*Output, error) {
 		return nil, err
 	}
 	o := &Output{fd: fd, crtc: crtc, conn: c, mode: mode, log: log}
-	o.saved, _ = getCrtc(fd, crtc)
+	if o.saved, err = getCrtc(fd, crtc); err != nil {
+		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
+	}
 	for i := range o.bufs {
 		if o.bufs[i], err = newDumb(fd, o.Width(), o.Height()); err != nil {
 			o.Close()
@@ -124,7 +127,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 	}
 	events := make(chan int, 4)
 	evErr := make(chan error, 1)
-	go o.readEvents(ctx, events, evErr)
+	evCtx, stop := context.WithCancel(ctx)
+	var reader sync.WaitGroup
+	reader.Go(func() { o.readEvents(evCtx, events, evErr) })
+	// Join the reader before the card fd can be closed by the caller.
+	defer func() { stop(); reader.Wait() }()
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
 	haveScene, dirty, enabled := false, false, true
@@ -138,7 +145,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 		case err := <-evErr:
 			return err
 		case on := <-active:
-			if on && !enabled {
+			// Modeset on every enable: a fast disable+enable can coalesce to one true.
+			if on {
 				if err := o.modeset(); err != nil {
 					o.log.Error().Err(err).Msg("resume")
 					return err
@@ -148,6 +156,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 			enabled = on
 			o.log.Info().Bool("enabled", on).Msg("output")
 		case n := <-events:
+			if !o.pending {
+				continue // stale event from before a modeset
+			}
 			o.pending = false
 			o.flips += n
 			if d := time.Since(o.flipStart); d > 20*time.Millisecond {
@@ -173,6 +184,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (Renderer, 
 			return fmt.Errorf("render frame: %w", err)
 		}
 		if err := o.present(r.Pixels()); err != nil {
+			if errors.Is(err, unix.EBUSY) {
+				// A flip is still in flight; retry after its event.
+				o.pending, o.flipStart = true, time.Now()
+				continue // dirty stays true
+			}
 			if errors.Is(err, unix.EACCES) || errors.Is(err, unix.EPERM) {
 				// Lost DRM master mid-switch; the seat disable follows.
 				o.log.Warn().Err(err).Msg("flip refused")

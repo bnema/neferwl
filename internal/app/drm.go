@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 
 	"github.com/bnema/nefertty/internal/adapters/drm"
@@ -18,6 +19,18 @@ type drmBackend struct {
 	seat *seat.Seat
 	out  *drm.Output
 	fd   int
+
+	inputActive, outputActive <-chan bool
+}
+
+// safe turns a panic in a hardware goroutine into an error, so the TTY is still restored.
+func safe(name string, fn func() error) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("%s panic: %v\n%s", name, p, debug.Stack())
+		}
+	}()
+	return fn()
 }
 
 // openDRM opens the seat and the first card with a connected display.

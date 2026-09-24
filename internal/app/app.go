@@ -57,6 +57,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		defer hw.close()
 		width, height = hw.out.Width(), hw.out.Height()
+		hw.inputActive, hw.outputActive = hw.seat.Subscribe(), hw.seat.Subscribe()
 	}
 	client := make(chan ports.ClientEvent, 32)
 	input := make(chan ports.InputEvent, 32)
@@ -108,7 +109,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	go func() {
 		defer workers.Done()
 		if hw != nil {
-			done <- libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Width: width, Height: height, Active: hw.seat.Subscribe(), Log: logging.For(ctx, "input")}, input)
+			done <- safe("input", func() error {
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Width: width, Height: height, Active: hw.inputActive, Log: logging.For(ctx, "input")}, input)
+			})
 			return
 		}
 		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
@@ -140,13 +143,15 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	go func() {
 		defer workers.Done()
 		if hw != nil {
-			done <- hw.out.Run(ctx, func(w, h int) (drm.Renderer, error) {
-				r, err := vulkan.New(w, h)
-				if err != nil {
-					return nil, err
-				}
-				return r, nil
-			}, hw.seat.Subscribe(), renderScenes, contents)
+			done <- safe("output", func() error {
+				return hw.out.Run(ctx, func(w, h int) (drm.Renderer, error) {
+					r, err := vulkan.New(w, h)
+					if err != nil {
+						return nil, err
+					}
+					return r, nil
+				}, hw.outputActive, renderScenes, contents)
+			})
 			return
 		}
 		done <- headless.Run(ctx, headless.Options{Width: 1920, Height: 1080, ScreenshotDir: opts.ScreenshotDir, Log: logging.For(ctx, "render"), NewRenderer: func(w, h int) (headless.Renderer, error) {
@@ -160,7 +165,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	if hw != nil {
 		workers.Add(1)
-		go func() { defer workers.Done(); done <- hw.seat.Run(ctx) }()
+		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.seat.Run(ctx) }) }()
 	}
 	var result error
 	select {

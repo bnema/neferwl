@@ -184,6 +184,8 @@ func run() error {
 		reason = "error"
 	case ctx.Err() != nil:
 		reason = "signal"
+	case *timeout > 0 && time.Since(start) >= *timeout:
+		reason = "timeout"
 	}
 	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
 	return err

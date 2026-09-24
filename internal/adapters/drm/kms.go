@@ -62,7 +62,8 @@ type getConnector struct {
 type getEncoder struct{ encoderID, encoderType, crtcID, possibleCrtcs, possibleClones uint32 }
 
 type modeCrtc struct {
-	setConnectors   uint64
+	// unsafe.Pointer (not uint64) so the GC keeps it valid if the stack moves.
+	setConnectors   unsafe.Pointer
 	countConnectors uint32
 	crtcID, fbID    uint32
 	x, y            uint32
@@ -111,7 +112,7 @@ type connector struct {
 	encoders      []uint32
 }
 
-var connectorTypes = map[uint32]string{1: "VGA", 2: "DVI-I", 3: "DVI-D", 10: "DP", 11: "HDMI-A", 12: "HDMI-B", 14: "eDP", 15: "Virtual", 16: "DSI"}
+var connectorTypes = map[uint32]string{1: "VGA", 2: "DVI-I", 3: "DVI-D", 10: "DP", 11: "HDMI-A", 12: "HDMI-B", 7: "LVDS", 14: "eDP", 15: "Virtual", 16: "DSI", 17: "DPI", 20: "USB"}
 
 // pickConnector returns the first connected connector and its preferred (else first) mode.
 func pickConnector(conns []connector) (connector, modeInfo, error) {
@@ -146,7 +147,7 @@ func resources(fd int) (crtcs, conns []uint32, err error) {
 	if err := ioctl(fd, ioctlGetResources, unsafe.Pointer(&r)); err != nil {
 		return nil, nil, fmt.Errorf("get resources: %w", err)
 	}
-	return crtcs[:r.countCrtcs], conns[:r.countConns], nil
+	return crtcs[:min(int(r.countCrtcs), len(crtcs))], conns[:min(int(r.countConns), len(conns))], nil
 }
 
 func readConnector(fd int, id uint32) (connector, error) {
@@ -260,7 +261,7 @@ func copyXRGB(dst []byte, pitch int, img *image.RGBA) {
 
 func setCrtc(fd int, crtc, conn, fb uint32, mode *modeInfo) error {
 	ids := []uint32{conn}
-	c := modeCrtc{crtcID: crtc, fbID: fb, countConnectors: 1, setConnectors: uint64(uintptr(unsafe.Pointer(&ids[0])))}
+	c := modeCrtc{crtcID: crtc, fbID: fb, countConnectors: 1, setConnectors: unsafe.Pointer(&ids[0])}
 	if mode != nil {
 		c.mode, c.modeValid = *mode, 1
 	}

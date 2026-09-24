@@ -128,9 +128,11 @@ func (s *Seat) Name() string {
 }
 
 // Subscribe returns a channel that receives the seat state after every enable/disable.
+// The current state is sent first.
 func (s *Seat) Subscribe() <-chan bool {
 	c := make(chan bool, 1)
 	s.mu.Lock()
+	c <- s.active
 	s.subs = append(s.subs, c)
 	s.mu.Unlock()
 	return c
@@ -155,13 +157,10 @@ func (s *Seat) dispatchLocked(ctx context.Context, timeoutMs int) error {
 func (s *Seat) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		fds := []unix.PollFd{{Fd: getFD(s.handle), Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, 100)
-		if err != nil && !errors.Is(err, unix.EINTR) {
+		if _, err := unix.Poll(fds, 100); err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("seat poll: %w", err)
 		}
-		if n <= 0 {
-			continue
-		}
+		// Dispatch every tick: libseat may queue events without the fd becoming readable.
 		s.mu.Lock()
 		r := dispatch(s.handle, 0)
 		s.mu.Unlock()
