@@ -206,6 +206,13 @@ type SetKeymap struct {
 
 func (SetKeymap) clientCommand() {}
 
+// CursorImage is a cursor frame in premultiplied B8G8R8A8, W*4 bytes per
+// row; (HotX, HotY) is the click point. Sizes are physical pixels.
+type CursorImage struct {
+	W, H, HotX, HotY int
+	Pixels           []byte
+}
+
 // SpawnRequest carries core → launcher process arguments.
 type SpawnRequest struct{ Argv []string }
 

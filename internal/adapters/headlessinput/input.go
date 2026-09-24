@@ -16,7 +16,8 @@ import (
 
 // Run owns the keymap and converts script lines into input events. A keymap
 // received on keymaps replaces the current one, which is closed.
-func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, log zerowrap.Logger) error {
+// moveCursor, when set, places the software cursor on every scripted move.
+func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, moveCursor func(x, y float64), log zerowrap.Logger) error {
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
 		ev := km.Key(code, down, uint32(time.Now().UnixMilli()))
@@ -108,6 +109,9 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					x, ex := strconv.ParseFloat(fields[1], 64)
 					y, ey := strconv.ParseFloat(fields[2], 64)
 					if ex == nil && ey == nil && !math.IsNaN(x) && !math.IsNaN(y) && !math.IsInf(x, 0) && !math.IsInf(y, 0) {
+						if moveCursor != nil {
+							moveCursor(x, y)
+						}
 						if err := sendPointer(ports.PointerMotion{X: x, Y: y, TimeMsec: now}); err != nil {
 							return err
 						}
