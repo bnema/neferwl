@@ -21,7 +21,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 12 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 34 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -80,7 +80,8 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"terminal =", "terminal"},
 		{"background = red", "background"},
 		{"layout.gaps = 201", "layout.gaps"},
-		{"layout.default-width = 2/1", "layout.default-width"},
+		{"layout.max-columns = 0", "layout.max-columns"},
+		{"bind.cmd+x = focus-workspace 0", "focus-workspace"},
 		{"layout.presets = 0px", "layout.presets"},
 		{"log.level = trace", "log.level"},
 		{"log.debug = nope", "log.debug"},
@@ -124,6 +125,7 @@ bind.cmd+# = none
 bind.cmd++ = quit
 bind.alt+f5 = quit
 bind.cmd+return = none
+bind.cmd+w = focus-workspace 12
 `)
 	want := map[string]string{
 		"Cmd+Ctrl+e":    "spawn foo --bar",

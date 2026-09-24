@@ -28,9 +28,10 @@ type Config struct {
 		Inactive string
 	}
 	Layout struct {
-		Gaps               int
-		DefaultColumnWidth string
-		Presets            []string
+		Gaps int
+		// MaxColumns is how many columns share the screen before scrolling.
+		MaxColumns int
+		Presets    []string
 	}
 	// Outputs selects and configures physical displays (drm backend).
 	Outputs []OutputConfig

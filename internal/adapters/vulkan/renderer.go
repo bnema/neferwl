@@ -368,7 +368,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		x, y := w.Rect.X, w.Rect.Y
 		// Content sits inside the border; core sized the client to match.
 		b := 0
-		if !w.Fullscreen {
+		if !w.Fullscreen && !w.Borderless {
 			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
 		}
 		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b

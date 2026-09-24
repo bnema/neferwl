@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -30,7 +31,7 @@ type binding struct {
 type Core struct {
 	ch               Channels
 	cfg              ports.Config
-	ws               Workspace
+	ws               *Monitor
 	binds            map[binding]Action
 	pressed          map[string]bool
 	sent             map[WindowID]ports.ConfigureWindow
@@ -86,9 +87,8 @@ func parseBind(s, cmd string) (binding, error) {
 	return b, nil
 }
 func (c *Core) apply(cfg ports.Config) error {
-	width, err := ParseWidth(cfg.Layout.DefaultColumnWidth)
-	if err != nil {
-		return err
+	if cfg.Layout.MaxColumns < 1 {
+		return fmt.Errorf("invalid max columns")
 	}
 	presets := make([]Width, 0, len(cfg.Layout.Presets))
 	for _, s := range cfg.Layout.Presets {
@@ -117,8 +117,12 @@ func (c *Core) apply(cfg ports.Config) error {
 			binds[b] = Action(a)
 			continue
 		}
+		if _, _, ok := WorkspaceArg(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveToWorkspaceUp, ActionMoveToWorkspaceDown:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -126,7 +130,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
-	c.ws.SetDefaultWidth(width)
+	c.ws.SetMaxColumns(cfg.Layout.MaxColumns)
 	c.ws.SetPresets(presets)
 	c.ws.SetGaps(cfg.Layout.Gaps)
 	return nil
@@ -135,7 +139,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	if cap(ch.Scenes) != 1 {
 		return nil, fmt.Errorf("scenes must have capacity 1")
 	}
-	c := &Core{ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{ws: NewMonitor(), ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -154,11 +158,21 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 // The renderer applies the same inset (ports.Border).
 func (c *Core) clientRect(p Placement) Rect {
 	r := p.Rect
-	if p.Fullscreen {
+	if p.Fullscreen || p.Borderless {
 		return r
 	}
 	b := min(max(c.cfg.Border.Width, 0), r.W/2, r.H/2)
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
+}
+
+// visible reports whether the window is on screen on the active workspace.
+func (c *Core) visible(id WindowID) bool {
+	for _, p := range c.ws.Layout() {
+		if p.ID == id {
+			return !p.Hidden
+		}
+	}
+	return false
 }
 
 // keyboardFocus is the mapped top/overlay layer with exclusive keyboard
@@ -180,12 +194,12 @@ func (c *Core) keyboardFocus() WindowID {
 
 func (c *Core) publish(ctx context.Context) error {
 	c.seq++
-	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output.W, OutputHeight: c.ws.Output.H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
+	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output().W, OutputHeight: c.ws.Output().H, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
 	for _, p := range c.ws.Layout() {
 		alive[p.ID] = true
-		scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: p.Focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden})
+		scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: p.Focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Borderless: p.Borderless})
 		if p.Hidden {
 			if old, ok := c.sent[p.ID]; ok && old.Activated {
 				old.Activated = false
@@ -208,6 +222,16 @@ func (c *Core) publish(ctx context.Context) error {
 	for id := range c.sent {
 		if !alive[id] {
 			delete(c.sent, id)
+		}
+	}
+	// A workspace switch can hide the window under the pointer; it must not get
+	// clicks. The next motion re-runs hit-testing.
+	if c.pointer != 0 && !c.visible(c.pointer) {
+		c.pointer = 0
+		if c.grab == 0 {
+			if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+				return err
+			}
 		}
 	}
 	if focus != c.focus {
@@ -246,7 +270,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.layers = append([]ports.LayerSurface(nil), v.Layers...)
 				c.layerChanged = true
 				var usable ports.Rect
-				c.placed, usable = arrangeLayers(c.ws.Output.W, c.ws.Output.H, c.layers)
+				c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
 				c.ws.SetUsable(usable)
 			case ports.WindowMapped:
 				c.ws.AddWindow(v.ID)
@@ -274,7 +298,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ws.SetOutput(v.Width, v.Height)
 				if c.layerChanged {
 					var usable ports.Rect
-					c.placed, usable = arrangeLayers(c.ws.Output.W, c.ws.Output.H, c.layers)
+					c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
 					c.ws.SetUsable(usable)
 				}
 			case ports.OutputUsable:
@@ -308,8 +332,8 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
-				c.cursorX = min(max(v.X, 0), float64(max(c.ws.Output.W-1, 0)))
-				c.cursorY = min(max(v.Y, 0), float64(max(c.ws.Output.H-1, 0)))
+				c.cursorX = min(max(v.X, 0), float64(max(c.ws.Output().W-1, 0)))
+				c.cursorY = min(max(v.Y, 0), float64(max(c.ws.Output().H-1, 0)))
 				var id WindowID
 				var x, y float64
 				// Fullscreen wins; otherwise the last visible placement is topmost.
@@ -354,7 +378,7 @@ func (c *Core) Run(ctx context.Context) error {
 					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
 						return nil
 					}
-					if v.Pressed && c.focus != id && c.ws.FocusID(id) {
+					if v.Pressed && c.focus != id && c.ws.Current().FocusID(id) {
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
@@ -370,16 +394,31 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			}
 			name := keyName(key.Keysym)
+			action, bound := c.binds[binding{key: name, mods: key.Mods}]
+			// Cmd+Shift+1 on US prints exclam: match the unshifted keysym.
+			if !bound && key.Base != "" {
+				action, bound = c.binds[binding{key: keyName(key.Base), mods: key.Mods}]
+			}
+			// AZERTY puts digits on the shifted level: Cmd+1 is Super+ampersand.
+			// Only digits fall back this way, so cmd+plus stays off Cmd+=.
+			if !bound && len(key.Shifted) == 1 && key.Shifted[0] >= '0' && key.Shifted[0] <= '9' {
+				action, bound = c.binds[binding{key: key.Shifted, mods: key.Mods}]
+			}
+			// Track presses by physical key: Shift may be released before the key.
+			held := name
+			if key.Keycode != 0 {
+				held = "#" + strconv.FormatUint(uint64(key.Keycode), 10)
+			}
 			if !key.Pressed {
-				consumed := c.pressed[name]
-				delete(c.pressed, name)
+				consumed := c.pressed[held]
+				delete(c.pressed, held)
 				if consumed {
 					continue
 				}
 			}
 			if key.Pressed {
-				if action, ok := c.binds[binding{key: name, mods: key.Mods}]; ok {
-					c.pressed[name] = true
+				if bound {
+					c.pressed[held] = true
 					effect := c.ws.Apply(action)
 					if effect.Quit {
 						return ErrQuit
@@ -405,7 +444,7 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 					continue
 				}
-				c.pressed[name] = false
+				c.pressed[held] = false
 			}
 			if id := c.keyboardFocus(); id != 0 {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {

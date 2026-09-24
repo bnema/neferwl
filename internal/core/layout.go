@@ -70,6 +70,8 @@ func (v Width) Resolve(usableW, gaps int) int {
 	return int(min(rounded-uint64(gaps), uint64(limit)))
 }
 
+// Column.Width is zero (auto) until the user picks a preset: auto columns share
+// the usable width equally, up to MaxColumns visible at once.
 type Column struct {
 	Windows []WindowID
 	Width   Width
@@ -79,17 +81,34 @@ type Placement struct {
 	ID                          WindowID
 	Rect                        Rect
 	Fullscreen, Focused, Hidden bool
+	// Borderless is set when the column fills the usable width: it is the only
+	// column on screen, so no border marks focus.
+	Borderless bool
 }
 type Workspace struct {
-	Columns      []Column
-	Focus        int
-	ViewX        int
-	Output       Rect
-	Usable       Rect
-	Gaps         int
-	DefaultWidth Width
-	presets      []Width
-	fullscreen   WindowID
+	Columns    []Column
+	Focus      int
+	ViewX      int
+	Output     Rect
+	Usable     Rect
+	Gaps       int
+	MaxColumns int
+	presets    []Width
+	fullscreen WindowID
+}
+
+func (w *Workspace) empty() bool { return len(w.Columns) == 0 }
+
+// has reports whether the workspace holds the window.
+func (w *Workspace) has(id WindowID) bool {
+	for _, c := range w.Columns {
+		for _, v := range c.Windows {
+			if v == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (w *Workspace) Focused() (WindowID, bool) {
@@ -103,15 +122,8 @@ func (w *Workspace) Focused() (WindowID, bool) {
 	return c.Windows[c.Focus], true
 }
 func (w *Workspace) AddWindow(id WindowID) {
-	if id == 0 {
+	if id == 0 || w.has(id) {
 		return
-	}
-	for _, c := range w.Columns {
-		for _, v := range c.Windows {
-			if v == id {
-				return
-			}
-		}
 	}
 	at := 0
 	if len(w.Columns) > 0 {
@@ -119,7 +131,7 @@ func (w *Workspace) AddWindow(id WindowID) {
 	}
 	w.Columns = append(w.Columns, Column{})
 	copy(w.Columns[at+1:], w.Columns[at:])
-	w.Columns[at] = Column{Windows: []WindowID{id}, Width: w.DefaultWidth}
+	w.Columns[at] = Column{Windows: []WindowID{id}}
 	w.Focus = at
 	w.scroll()
 }
@@ -177,15 +189,19 @@ func (w *Workspace) FocusColumn(dir int) {
 		w.scroll()
 	}
 }
-func (w *Workspace) FocusWindow(dir int) {
+
+// FocusWindow moves focus inside the column; false means it was already at the edge.
+func (w *Workspace) FocusWindow(dir int) bool {
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
-		return
+		return false
 	}
 	c := &w.Columns[w.Focus]
 	if c.Focus+dir >= 0 && c.Focus+dir < len(c.Windows) {
 		c.Focus += dir
 		w.scroll()
+		return true
 	}
+	return false
 }
 func (w *Workspace) MoveColumn(dir int) {
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
@@ -199,15 +215,19 @@ func (w *Workspace) CycleWidth() {
 	if len(w.Columns) == 0 || len(w.presets) == 0 {
 		return
 	}
+	// auto → presets in order → auto.
 	c := &w.Columns[w.Focus]
-	next := 0
+	next := Width{}
+	if c.Width == next {
+		next = w.presets[0]
+	}
 	for i, v := range w.presets {
-		if v == c.Width {
-			next = (i + 1) % len(w.presets)
+		if v == c.Width && i+1 < len(w.presets) {
+			next = w.presets[i+1]
 			break
 		}
 	}
-	c.Width = w.presets[next]
+	c.Width = next
 	w.scroll()
 }
 func (w *Workspace) ToggleFullscreen() {
@@ -223,13 +243,12 @@ func (w *Workspace) ToggleFullscreen() {
 	w.scroll()
 }
 
-// SetFullscreen focuses an existing window and applies the requested state.
+// SetFullscreen applies a client request. It never moves focus: client
+// requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	for i := range w.Columns {
-		for j, v := range w.Columns[i].Windows {
+		for _, v := range w.Columns[i].Windows {
 			if v == id {
-				w.Focus = i
-				w.Columns[i].Focus = j
 				if on {
 					w.fullscreen = id
 				} else if w.fullscreen == id {
@@ -273,9 +292,12 @@ func (w *Workspace) SetGaps(g int) {
 	w.Gaps = g
 	w.scroll()
 }
-func (w *Workspace) SetDefaultWidth(v Width) { w.DefaultWidth = v }
-func (w *Workspace) SetPresets(v []Width)    { w.presets = append([]Width(nil), v...) }
-func (w *Workspace) gap() int                { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+func (w *Workspace) SetPresets(v []Width) { w.presets = append([]Width(nil), v...) }
+func (w *Workspace) SetMaxColumns(n int) {
+	w.MaxColumns = n
+	w.scroll()
+}
+func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 func (w *Workspace) fullscreenColumn(i int) bool {
 	for _, id := range w.Columns[i].Windows {
 		if id == w.fullscreen && id != 0 {
@@ -288,7 +310,16 @@ func (w *Workspace) columnWidth(i int) int {
 	if w.fullscreenColumn(i) {
 		return w.Output.W
 	}
-	return w.Columns[i].Width.Resolve(w.Usable.W, w.gap())
+	g := w.gap()
+	if w.Columns[i].Width == (Width{}) {
+		if len(w.Columns) == 1 {
+			return max(w.Usable.W-2*g, 0)
+		}
+		// Equal shares of the width left after gaps; a remainder under k pixels stays empty.
+		k := min(len(w.Columns), max(w.MaxColumns, 1))
+		return max((w.Usable.W-g*(k+1))/k, 0)
+	}
+	return w.Columns[i].Width.Resolve(w.Usable.W, g)
 }
 func (w *Workspace) columnX(i int) int {
 	x := w.Usable.X + w.gap()
@@ -347,7 +378,7 @@ func (w *Workspace) Layout() []Placement {
 			if hidden {
 				r = Rect{}
 			}
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden})
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: width >= w.Usable.W-2*gap})
 			y += h + gap
 		}
 	}

@@ -52,3 +52,14 @@ func TestKeymap(t *testing.T) {
 		t.Errorf("fr a: %d %v", code, ok)
 	}
 }
+
+func TestKeyLevels(t *testing.T) {
+	// On AZERTY the digit row prints & é " ... unshifted and 1 2 3 with Shift.
+	k := newTest(t, "fr")
+	if ev := k.Key(2, true, 0); ev.Keysym != "ampersand" || ev.Base != "ampersand" || ev.Shifted != "1" {
+		t.Fatalf("fr 1 key: %+v", ev)
+	}
+	if ev := k.Key(2, false, 0); ev.Base != "" {
+		t.Fatalf("release carries levels: %+v", ev)
+	}
+}
