@@ -350,3 +350,40 @@ func TestSetFullscreenStackDeactivation(t *testing.T) {
 		t.Fatal(w.Layout())
 	}
 }
+
+// Fixed overflow keeps every window on screen: past max-columns, new columns
+// split the newest one, alternating top/bottom and left/right.
+func TestFixedOverflowSpiral(t *testing.T) {
+	w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+	w.SetOutput(100, 80)
+	for id := WindowID(1); id <= 5; id++ {
+		w.AddWindow(id)
+		// New columns open after the focused one; keep order by focusing the last.
+		w.Focus = len(w.Columns) - 1
+	}
+	got := map[WindowID]Rect{}
+	for _, p := range w.Layout() {
+		got[p.ID] = p.Rect
+	}
+	want := map[WindowID]Rect{
+		1: {X: 0, Y: 0, W: 50, H: 80},
+		2: {X: 50, Y: 0, W: 50, H: 40},  // top half of slot 2
+		3: {X: 50, Y: 40, W: 25, H: 40}, // left of the bottom half
+		4: {X: 75, Y: 40, W: 25, H: 20},
+		5: {X: 75, Y: 60, W: 25, H: 20},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+	if w.ViewX != 0 {
+		t.Fatal("fixed overflow scrolled", w.ViewX)
+	}
+	// Up to max-columns it is the plain equal split.
+	w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+	w2.SetOutput(100, 80)
+	w2.AddWindow(1)
+	w2.AddWindow(2)
+	if p := w2.Layout(); p[0].Rect.W != 50 || p[1].Rect != (Rect{X: 50, Y: 0, W: 50, H: 80}) {
+		t.Fatal(p)
+	}
+}

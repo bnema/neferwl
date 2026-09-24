@@ -49,6 +49,16 @@ func WorkspaceArg(a Action) (n int, move bool, ok bool) {
 	return n, move, true
 }
 
+// namedPrefix toggles a named workspace: "workspace dev".
+const namedPrefix = "workspace "
+
+// NamedArg returns the name of a "workspace <name>" action.
+func NamedArg(a Action) (string, bool) {
+	rest, ok := strings.CutPrefix(string(a), namedPrefix)
+	name := strings.TrimSpace(rest)
+	return name, ok && name != "" && !strings.ContainsAny(name, " \t")
+}
+
 // spawnPrefix starts a bind action that runs a command: "spawn fuzzel --flag".
 // Arguments are split on whitespace; there is no shell (use "spawn sh -c ...").
 const spawnPrefix = "spawn "
@@ -77,6 +87,10 @@ func (m *Monitor) Apply(a Action) Effect {
 		}
 		return Effect{}
 	}
+	if name, ok := NamedArg(a); ok {
+		m.ToggleNamed(name)
+		return Effect{}
+	}
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		// Past the top or bottom window of the column, move to the next workspace.
@@ -84,15 +98,17 @@ func (m *Monitor) Apply(a Action) Effect {
 		if a == ActionFocusWindowUp {
 			dir = -1
 		}
-		if !m.Current().FocusWindow(dir) {
+		// A hidden workspace is outside the vertical list.
+		if !m.Current().FocusWindow(dir) && m.shown == nil {
 			m.Focus(m.Active + dir)
 		}
 		return Effect{}
-	case ActionFocusWorkspaceUp:
-		m.Focus(m.Active - 1)
-		return Effect{}
-	case ActionFocusWorkspaceDown:
-		m.Focus(m.Active + 1)
+	case ActionFocusWorkspaceUp, ActionFocusWorkspaceDown:
+		if m.shown == nil && a == ActionFocusWorkspaceUp {
+			m.Focus(m.Active - 1)
+		} else if m.shown == nil {
+			m.Focus(m.Active + 1)
+		}
 		return Effect{}
 	case ActionMoveToWorkspaceUp:
 		if m.Active > 0 {
