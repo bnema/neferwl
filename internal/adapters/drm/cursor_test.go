@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
@@ -58,19 +59,47 @@ func TestCursorMovesOncePerVblank(t *testing.T) {
 }
 
 // Move must never wait for the plane, or libinput stops reading and the
-// kernel drops mouse reports.
+// kernel drops mouse reports. Moves made meanwhile are coalesced.
 func TestCursorMoveDoesNotBlockOnPlane(t *testing.T) {
 	c, plane := testCursor(t)
-	release := make(chan struct{})
-	plane.EXPECT().WaitVblank().RunAndReturn(func() error { <-release; return nil })
-	plane.EXPECT().Set(mock.Anything).Return(nil).Maybe()
+	c.hotX, c.hotY = 3, 4
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	moved := make(chan modeCursor2, 1000)
+	plane.EXPECT().WaitVblank().RunAndReturn(func() error {
+		once.Do(func() { close(started) })
+		<-release
+		return nil
+	})
+	plane.EXPECT().Set(mock.Anything).RunAndReturn(func(v *modeCursor2) error { moved <- *v; return nil })
 	c.start()
-	defer func() { close(release); c.close() }()
-	for i := range 1000 { // the worker is stuck in WaitVblank the whole time
-		c.Move(float64(i), 0)
+	defer c.close()
+	c.Move(0, 0)
+	<-started // the worker is now held in WaitVblank
+	done := make(chan struct{})
+	go func() {
+		for i := range 1000 {
+			c.Move(float64(i), float64(2*i))
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Move blocks while the plane waits for vblank")
 	}
-	if s := c.TakeStats(); s.Moves != 1000 {
-		t.Fatalf("stats %+v", s)
+	close(release)
+	for n := 1; ; n++ {
+		v := <-moved
+		if v.flags != cursorMove {
+			t.Fatalf("flags %#x", v.flags)
+		}
+		if v.x == 999-3 && v.y == 1998-4 {
+			if n >= 1000 {
+				t.Fatalf("%d moves applied; want coalesced", n)
+			}
+			return
+		}
 	}
 }
 
@@ -101,8 +130,9 @@ func TestCursorStats(t *testing.T) {
 	<-applied
 	c.Move(2, 2)
 	<-applied
+	// Set signals before the worker counts the ioctl.
 	s := c.TakeStats()
-	if s.Moves != 2 || s.Ioctls != 2 {
+	if s.Moves != 2 || s.Ioctls < 1 || s.Ioctls > 2 {
 		t.Fatalf("stats %+v", s)
 	}
 	if s := c.TakeStats(); s.Moves != 0 {

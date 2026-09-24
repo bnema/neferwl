@@ -83,7 +83,9 @@ func TestRun(t *testing.T) {
 	}
 	contents <- ports.SurfaceContent{ID: 1}
 	waitFrames(t, f, 2)
-	if _, c := f.snapshot(); c[1][1].Pixels != nil {
+	if _, c := f.snapshot(); len(c) < 2 {
+		t.Fatal("no second frame")
+	} else if _, ok := c[1][1]; ok {
 		t.Error("content not deleted")
 	}
 	cancel()
