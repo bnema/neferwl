@@ -368,7 +368,24 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		// Buffer pixels per logical pixel on each axis.
 		src := image.Rect(0, 0, vw*content.Width/lw, vh*content.Height/lh)
-		addContent(physRect(x, y, vw, vh), src, content)
+		dst := physRect(x, y, vw, vh)
+		// A buffer drawn at the physical size (fractional-scale clients round
+		// w*scale, we round per edge) is copied 1:1, never resampled for 1px.
+		near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
+		if near(src.Dx(), dst.Dx()) && near(src.Dy(), dst.Dy()) {
+			dst.Max = dst.Min.Add(src.Size())
+			// Clip to the body: the buffer may be 1px wider than the slot.
+			clip := physRect(x, y, w, h)
+			if dst.Max.X > clip.Max.X {
+				src.Max.X -= dst.Max.X - clip.Max.X
+				dst.Max.X = clip.Max.X
+			}
+			if dst.Max.Y > clip.Max.Y {
+				src.Max.Y -= dst.Max.Y - clip.Max.Y
+				dst.Max.Y = clip.Max.Y
+			}
+		}
+		addContent(dst, src, content)
 	}
 	fullscreen := false
 	for _, w := range s.Windows {

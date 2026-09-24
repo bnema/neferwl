@@ -217,3 +217,19 @@ func TestParseMode(t *testing.T) {
 		t.Fatal(hz, err)
 	}
 }
+
+func TestDigitBindReplacesPhysicalDefault(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+1 = none\nbind.cmd+shift+2 = quit\n")
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	if _, ok := c.Binds["Cmd+code:2"]; ok {
+		t.Fatal("default cmd+code:2 kept")
+	}
+	if _, ok := c.Binds["Cmd+Shift+code:3"]; ok || c.Binds["Cmd+Shift+2"] != "quit" {
+		t.Fatal(c.Binds)
+	}
+	if c.Binds["Cmd+code:4"] != "focus-workspace 3" {
+		t.Fatal("other defaults must stay")
+	}
+}

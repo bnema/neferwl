@@ -187,3 +187,63 @@ func TestRendererLayers(t *testing.T) {
 	delete(contents, 2)
 	check(color.RGBA{16, 32, 48, 255})
 }
+
+// solid returns a w×h B8G8R8A8 buffer of one color.
+func solid(w, h int, c [3]uint8) []byte {
+	p := make([]byte, w*h*4)
+	for i := 0; i < len(p); i += 4 {
+		p[i], p[i+1], p[i+2], p[i+3] = c[2], c[1], c[0], 255
+	}
+	return p
+}
+
+func TestRendererScale(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	red := [3]uint8{200, 0, 0}
+	// Scale 2: a 10x10 logical window at (4,4) covers physical (8,8)-(28,28);
+	// its 20x20 buffer (fractional client) is copied 1:1.
+	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 10, H: 10}, Borderless: true}}}
+	content := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 20, Height: 20, LogicalW: 10, LogicalH: 10, Stride: 80, Pixels: solid(20, 20, red)}}
+	if err := r.Render(s, content); err != nil {
+		t.Fatal(err)
+	}
+	px := r.Pixels()
+	want := color.RGBA{200, 0, 0, 255}
+	for _, p := range []image.Point{{8, 8}, {27, 27}} {
+		if got := px.At(p.X, p.Y); got != want {
+			t.Errorf("%v = %v", p, got)
+		}
+	}
+	for _, p := range []image.Point{{7, 7}, {28, 28}} {
+		if got := px.At(p.X, p.Y); got != (color.RGBA{0, 0, 0, 255}) {
+			t.Errorf("outside %v = %v", p, got)
+		}
+	}
+	// Scale 1.5 with an integer-scale client (buffer scale 2): the 20x20
+	// buffer is 10x10 logical and downscaled to 15x15 physical at (6,6).
+	s.Scale = 1.5
+	if err := r.Render(s, content); err != nil {
+		t.Fatal(err)
+	}
+	px = r.Pixels()
+	for _, p := range []image.Point{{6, 6}, {20, 20}} {
+		if got := px.At(p.X, p.Y); got != want {
+			t.Errorf("1.5 %v = %v", p, got)
+		}
+	}
+	if got := px.At(21, 21); got != (color.RGBA{0, 0, 0, 255}) {
+		t.Errorf("1.5 outside = %v", got)
+	}
+	// A buffer 1px wider than its slot is clipped, not resampled.
+	content[1] = ports.SurfaceContent{ID: 1, Width: 16, Height: 15, LogicalW: 10, LogicalH: 10, Stride: 64, Pixels: solid(16, 15, red)}
+	if err := r.Render(s, content); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Pixels().At(21, 10); got != (color.RGBA{0, 0, 0, 255}) {
+		t.Errorf("clipped column = %v", got)
+	}
+}

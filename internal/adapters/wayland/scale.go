@@ -58,9 +58,9 @@ func (s *Server) setOutputScale(c ports.SetOutputScale) {
 	}
 	// Layer surfaces sized from the output follow its new logical size.
 	for _, l := range s.layers {
+		// Uses committed state only: pending requests wait for the client's commit.
 		if l.configured && (l.current.width == 0 || l.current.height == 0) {
-			l.configured = false
-			l.commit(l.surface.current != nil)
+			l.sendConfigure()
 		}
 	}
 }

@@ -187,7 +187,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 					return &c.Outputs[i]
 				}
 				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name})
+				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
 			if base, ok := strings.CutSuffix(name, ".scale"); ok {
@@ -224,6 +224,26 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return c, raw, warnings, err
+	}
+	// A user bind on a digit (cmd+1, even "none") replaces the default bound
+	// to the same physical key (cmd+code:2), so older configs keep working.
+	for combo := range c.Binds {
+		if seen["bind."+combo] == 0 {
+			continue
+		}
+		parts := strings.Split(combo, "+")
+		key := parts[len(parts)-1]
+		if len(key) != 1 || key[0] < '0' || key[0] > '9' {
+			continue
+		}
+		code := int(key[0]-'0') + 1
+		if key == "0" {
+			code = 11
+		}
+		parts[len(parts)-1] = "code:" + strconv.Itoa(code)
+		if physical := strings.Join(parts, "+"); seen["bind."+physical] == 0 {
+			delete(c.Binds, physical)
+		}
 	}
 	// "none" only removes a default bind.
 	for combo, a := range c.Binds {

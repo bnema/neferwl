@@ -147,6 +147,23 @@ func (s *Server) layerChanged() {
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	s.emit(ports.LayerChanged{Layers: list})
 }
+
+// sendConfigure sizes the surface from committed state; zero means "fill",
+// the logical output size.
+func (l *layerSurface) sendConfigure() {
+	w, h := l.current.width, l.current.height
+	if w == 0 {
+		w = uint32(l.shell.server.scale.width)
+	}
+	if h == 0 {
+		h = uint32(l.shell.server.scale.height)
+	}
+	l.shell.server.serial++
+	l.resource.SendConfigure(l.shell.server.serial, w, h)
+	l.serials = append(l.serials, l.shell.server.serial)
+	l.configured = true
+}
+
 func (l *layerSurface) commit(buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
@@ -162,19 +179,7 @@ func (l *layerSurface) commit(buffer bool) {
 	sizeChanged := p.width != l.current.width || p.height != l.current.height
 	l.current = p
 	if !l.configured || sizeChanged {
-		// Zero means "fill": the logical output size.
-		w, h := p.width, p.height
-		if w == 0 {
-			w = uint32(l.shell.server.scale.width)
-		}
-		if h == 0 {
-			h = uint32(l.shell.server.scale.height)
-		}
-		l.shell.server.serial++
-		l.resource.SendConfigure(l.shell.server.serial, w, h)
-		l.serials = append(l.serials, l.shell.server.serial)
-		l.configured = true
-
+		l.sendConfigure()
 	}
 	if !buffer {
 		if l.mapped {
