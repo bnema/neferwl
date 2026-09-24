@@ -158,17 +158,40 @@ func TestBindReservedCharacter(t *testing.T) {
 }
 
 func TestBindResolvedCollision(t *testing.T) {
+	// The later line wins, like any duplicate key.
 	c, w := parseString(t, "keyboard.cmd = ctrl\nbind.ctrl+x = quit\nbind.cmd+x = close-window\nbind.cmd+ctrl+y = quit\n")
-	if c.Binds["Ctrl+x"] != "quit" {
+	if c.Binds["Cmd+x"] != "close-window" {
 		t.Fatal(c.Binds)
 	}
-	if _, ok := c.Binds["Cmd+x"]; ok {
+	if _, ok := c.Binds["Ctrl+x"]; ok {
 		t.Fatal(c.Binds)
 	}
 	if _, ok := c.Binds["Cmd+Ctrl+y"]; ok {
 		t.Fatal(c.Binds)
 	}
-	if len(w) != 2 || w[0].Line != 3 || w[1].Line != 4 {
+	if len(w) != 2 || w[0].Line != 4 || w[1].Line != 2 || !strings.Contains(w[1].Msg, "overridden by bind.Cmd+x") {
+		t.Fatal(w)
+	}
+	// A user bind replaces a default with the same resolved keys, without a warning.
+	c, w = parseString(t, "bind.super+q = quit\n")
+	if c.Binds["Super+q"] != "quit" || c.Binds["Cmd+q"] != "" || len(w) != 0 {
+		t.Fatal(c.Binds, w)
+	}
+}
+
+func TestInvalidDuplicateKeepsEarlierValue(t *testing.T) {
+	c, w := parseString(t, "background = #000000\nbackground = red\nbackground = #111111\n")
+	if c.Background.Color != "#111111" || len(w) != 2 || w[0].Line != 2 || w[1].Line != 3 || !strings.Contains(w[1].Msg, "overrides line 1") {
+		t.Fatal(c.Background, w)
+	}
+}
+
+func TestBindCharacters(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+É = quit\nbind.cmd+ж = quit\n")
+	if c.Binds["Cmd+eacute"] != "quit" {
+		t.Fatal(c.Binds)
+	}
+	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "keysym name") {
 		t.Fatal(w)
 	}
 }

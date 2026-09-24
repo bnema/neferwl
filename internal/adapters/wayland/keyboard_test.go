@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,97 @@ func TestKeyboardKeymapProtocol(t *testing.T) {
 		t.Fatal("missing keymap event")
 	}
 }
+
+// events records keyboard event opcodes; a keymap event also checks its content.
+type eventsProxy struct {
+	wlturbo.BaseProxy
+	opcodes []uint16
+	keymaps []string
+}
+
+func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
+	p.opcodes = append(p.opcodes, e.Opcode)
+	if e.Opcode != uint16(wayland.KeyboardEventKeymap) {
+		return
+	}
+	e.Uint32()
+	fd := int(e.Fd())
+	size := e.Uint32()
+	defer unix.Close(fd)
+	data := make([]byte, size)
+	if _, err := unix.Pread(fd, data, 0); err == nil {
+		p.keymaps = append(p.keymaps, strings.TrimRight(string(data), "\x00"))
+	}
+}
+
+func TestSetKeymap(t *testing.T) {
+	s, _, commands, dir := keyboardServer(t)
+	c := protocolClient(t, s, dir)
+	// Version 4 so the keyboard receives repeat_info.
+	g, ok := c.Registry().FindGlobal("wl_seat")
+	if !ok {
+		t.Fatal("missing wl_seat")
+	}
+	seat, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerProtocol(t, c, seat)
+	id := c.AllocateID()
+	proxy := &eventsProxy{}
+	proxy.SetID(id)
+	c.Context().Register(proxy)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.opcodes, proxy.keymaps = nil, nil
+	sync := func() {
+		t.Helper()
+		// Commands apply on the display goroutine; wait until it has run them.
+		deadline := time.Now().Add(time.Second)
+		for len(commands) > 0 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Repeat-only: one repeat_info, no keymap.
+	commands <- ports.SetKeymap{RepeatRate: 40, RepeatDelay: 300}
+	sync()
+	if len(proxy.opcodes) != 1 || proxy.opcodes[0] != uint16(wayland.KeyboardEventRepeatInfo) {
+		t.Fatalf("repeat-only events %v", proxy.opcodes)
+	}
+
+	// New keymap: keymap then repeat_info, and the new content.
+	proxy.opcodes = nil
+	next := strings.Replace(keymapText(t), "xkb_keymap", "xkb_keymap ", 1)
+	commands <- ports.SetKeymap{Keymap: next, RepeatRate: 40, RepeatDelay: 300}
+	sync()
+	want := []uint16{uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventRepeatInfo)}
+	if !slices.Equal(proxy.opcodes, want) {
+		t.Fatalf("keymap events %v, want %v", proxy.opcodes, want)
+	}
+	if len(proxy.keymaps) != 1 || proxy.keymaps[0] != next {
+		t.Fatalf("keymap content not replaced (%d keymaps)", len(proxy.keymaps))
+	}
+	// A keyboard created afterwards gets the new keymap.
+	id2 := c.AllocateID()
+	late := &eventsProxy{}
+	late.SetID(id2)
+	c.Context().Register(late)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id2)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(late.keymaps) != 1 || late.keymaps[0] != next {
+		t.Fatal("late keyboard got the old keymap")
+	}
+}
+
 func TestFootKeyboard(t *testing.T) {
 	tool, err := exec.LookPath("foot")
 	if err != nil {

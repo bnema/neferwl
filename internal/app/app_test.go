@@ -284,17 +284,29 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	km := <-keymaps
 	defer km.Close()
 	cmd := (<-commands).(ports.SetKeymap)
-	if cmd.RepeatRate != 40 || !strings.Contains(cmd.Keymap, "fr") {
+	if cmd.RepeatRate != 40 || !strings.Contains(cmd.Keymap, "xkb_keymap") {
 		t.Fatalf("keymap command: rate=%d", cmd.RepeatRate)
 	}
 	if code, _, ok := km.KeycodeFor("a"); !ok || code != 16 {
 		t.Fatalf("fr keymap: a at %d", code)
 	}
 
+	// Repeat-only changes update clients without a new keymap.
+	next.Keyboard.RepeatDelay = 300
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	if cmd := (<-commands).(ports.SetKeymap); cmd.Keymap != "" || cmd.RepeatDelay != 300 || len(keymaps) != 0 {
+		t.Fatalf("repeat-only: keymap=%t delay=%d", cmd.Keymap != "", cmd.RepeatDelay)
+	}
+
+	// A bad layout keeps the previous one; its repeat change still applies.
 	bad := next
-	bad.Keyboard.Layout = "no-such-layout"
+	bad.Keyboard.Layout, bad.Keyboard.RepeatRate = "no-such-layout", 50
 	in <- ports.ConfigChanged{Config: bad}
-	if got := <-out; got.Config.Keyboard.Layout != "fr" || len(keymaps) != 0 {
+	if got := <-out; got.Config.Keyboard.Layout != "fr" || got.Config.Keyboard.RepeatRate != 50 || len(keymaps) != 0 {
 		t.Fatalf("bad layout applied: %+v", got.Config.Keyboard)
+	}
+	if cmd := (<-commands).(ports.SetKeymap); cmd.Keymap != "" || cmd.RepeatRate != 50 {
+		t.Fatalf("bad layout command: keymap=%t rate=%d", cmd.Keymap != "", cmd.RepeatRate)
 	}
 }

@@ -181,7 +181,8 @@ type ForwardKey struct {
 
 func (ForwardKey) clientCommand() {}
 
-// SetKeymap carries app → wayland a new xkb keymap (text format) and repeat info.
+// SetKeymap carries app → wayland repeat info and, unless Keymap is empty, a new
+// xkb keymap in text format.
 type SetKeymap struct {
 	Keymap                  string
 	RepeatRate, RepeatDelay int

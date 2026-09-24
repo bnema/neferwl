@@ -15,6 +15,7 @@ import (
 	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/app"
 	"github.com/bnema/nefertty/internal/logging"
+	"github.com/bnema/nefertty/internal/ports"
 )
 
 type usageError struct{ error }
@@ -50,10 +51,12 @@ func run() error {
 			return err
 		}
 		path := config.DefaultPath()
+		load := config.LoadDefault
 		if len(os.Args) == 3 {
 			path = os.Args[2]
+			load = func() (ports.Config, []config.Warning, error) { return config.Load(path) }
 		}
-		_, warnings, err := config.Load(path)
+		_, warnings, err := load()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return err

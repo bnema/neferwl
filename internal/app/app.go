@@ -194,6 +194,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	cancel()
 	workers.Wait()
+	// A keymap the input goroutine never took is still ours to free.
+	select {
+	case km := <-keymaps:
+		km.Close()
+	default:
+	}
 	for len(done) > 0 {
 		err := <-done
 		if result == nil && err != nil {
@@ -206,9 +212,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	return result
 }
 
-// relayConfig forwards reloads to core. When keyboard settings change it builds the
-// new keymap, hands it to the input goroutine and sends it to clients, so layout and
-// repeat changes apply live. A keymap that fails to build keeps the previous one.
+// relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
+// to the input goroutine and sends it to clients; a repeat-only change just updates
+// clients. A keymap that fails to build keeps the previous layout.
 func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	for {
@@ -219,13 +225,17 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 		case ev = <-in:
 		}
 		next := ev.Config.Keyboard
-		if next.Layout != kb.Layout || next.Variant != kb.Variant || next.Options != kb.Options || next.RepeatRate != kb.RepeatRate || next.RepeatDelay != kb.RepeatDelay {
+		layoutChanged := next.Layout != kb.Layout || next.Variant != kb.Variant || next.Options != kb.Options
+		repeatChanged := next.RepeatRate != kb.RepeatRate || next.RepeatDelay != kb.RepeatDelay
+		cmd := ports.SetKeymap{RepeatRate: next.RepeatRate, RepeatDelay: next.RepeatDelay}
+		if layoutChanged {
 			km, err := xkb.New(xkb.RMLVO{Layout: next.Layout, Variant: next.Variant, Options: next.Options})
 			if err != nil {
-				log.Warn().Err(err).Str("layout", next.Layout).Str("variant", next.Variant).Msg("keymap rejected; keeping previous keyboard")
+				log.Warn().Err(err).Str("layout", next.Layout).Str("variant", next.Variant).Msg("keymap rejected; keeping previous layout")
 				ev.Config.Keyboard.Layout, ev.Config.Keyboard.Variant, ev.Config.Keyboard.Options = kb.Layout, kb.Variant, kb.Options
+				layoutChanged = false
 			} else {
-				text := km.String()
+				cmd.Keymap = km.String()
 				// Drop a keymap the input goroutine has not taken yet; the newest wins.
 				select {
 				case old := <-keymaps:
@@ -238,14 +248,19 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 					km.Close()
 					return
 				}
-				select {
-				case commands <- ports.SetKeymap{Keymap: text, RepeatRate: next.RepeatRate, RepeatDelay: next.RepeatDelay}:
-				case <-ctx.Done():
-					return
-				}
-				kb = next
-				log.Info().Str("layout", next.Layout).Str("variant", next.Variant).Str("options", next.Options).Msg("keyboard reloaded")
 			}
+		}
+		if layoutChanged || repeatChanged {
+			select {
+			case commands <- cmd:
+			case <-ctx.Done():
+				return
+			}
+			if layoutChanged {
+				kb.Layout, kb.Variant, kb.Options = next.Layout, next.Variant, next.Options
+			}
+			kb.RepeatRate, kb.RepeatDelay = next.RepeatRate, next.RepeatDelay
+			log.Info().Str("layout", kb.Layout).Str("variant", kb.Variant).Str("options", kb.Options).Int("rate", kb.RepeatRate).Int("delay", kb.RepeatDelay).Bool("keymap", layoutChanged).Msg("keyboard reloaded")
 		}
 		select {
 		case out <- ev:

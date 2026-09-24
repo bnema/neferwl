@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bnema/nefertty/internal/ports"
 )
@@ -157,10 +158,13 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			c.Binds[canon] = value
 			continue
 		}
-		if prev, dup := seen[key]; dup {
-			warn("%s: overrides line %d", key, prev)
+		override := func() {
+			if prev, dup := seen[key]; dup {
+				warn("%s: overrides line %d", key, prev)
+			}
+			seen[key] = n
+			raw[key] = value
 		}
-		seen[key] = n
 		if name, ok := strings.CutPrefix(key, "output."); ok {
 			o := ports.OutputConfig{Name: name}
 			if value == "off" {
@@ -171,7 +175,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			} else if value != "preferred" {
 				o.Mode = value
 			}
-			raw[key] = value
+			override()
 			if i, ok := outputs[name]; ok {
 				c.Outputs[i] = o
 			} else {
@@ -184,7 +188,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			warn("%s: %v", key, err)
 			continue
 		}
-		raw[key] = value
+		override()
 	}
 	if err := scanner.Err(); err != nil {
 		return c, raw, warnings, err
@@ -195,15 +199,15 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			delete(c.Binds, combo)
 		}
 	}
-	// Cmd resolves to a real modifier; drop binds that then collide. User lines win over
-	// defaults (line 0), then the earliest line wins.
+	// Cmd resolves to a real modifier; drop binds that then collide. As for any key,
+	// the later line wins; defaults (no line) lose to every user line.
 	combos := make([]string, 0, len(c.Binds))
 	for combo := range c.Binds {
 		combos = append(combos, combo)
 	}
 	order := func(combo string) int {
 		if n := seen["bind."+combo]; n > 0 {
-			return n
+			return -n
 		}
 		return math.MaxInt
 	}
@@ -215,7 +219,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	for _, combo := range combos {
 		r, err := expandCmd(combo, c.Keyboard.CmdKey)
 		if prev, dup := resolved[r]; err == nil && dup {
-			err = fmt.Errorf("same keys as %s with keyboard.cmd = %s", prev, c.Keyboard.CmdKey)
+			err = fmt.Errorf("overridden by bind.%s (same keys with keyboard.cmd = %s)", prev, c.Keyboard.CmdKey)
 		}
 		if err != nil {
 			if n := seen["bind."+combo]; n > 0 {
@@ -442,26 +446,34 @@ func parseCombo(s string) (string, error) {
 		mods = append(mods, m)
 	}
 	sort.Strings(mods)
-	return strings.Join(append(mods, keysym(key)), "+"), nil
+	name, err := keysym(key)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(append(mods, name), "+"), nil
 }
 
 // keysym maps a written key to its xkb keysym name.
-func keysym(k string) string {
+func keysym(k string) (string, error) {
 	if r := []rune(k); len(r) == 1 {
-		if name, ok := runeKeysyms[r[0]]; ok {
-			return name
+		// Binds match the unshifted keysym, so É means é.
+		if name, ok := runeKeysyms[unicode.ToLower(r[0])]; ok {
+			return name, nil
 		}
-		return strings.ToLower(k)
+		if r[0] > unicode.MaxASCII {
+			return "", fmt.Errorf("write %q by its xkb keysym name", k)
+		}
+		return strings.ToLower(k), nil
 	}
 	if name, ok := namedKeys[strings.ToLower(k)]; ok {
-		return name
+		return name, nil
 	}
 	if len(k) <= 3 && (k[0] == 'f' || k[0] == 'F') {
 		if n, err := strconv.Atoi(k[1:]); err == nil && n >= 1 && n <= 24 {
-			return "F" + k[1:]
+			return "F" + k[1:], nil
 		}
 	}
-	return k
+	return k, nil
 }
 
 // ParseMode parses "WxH" or "WxH@Hz" ("preferred" is accepted); hz is 0 when omitted.

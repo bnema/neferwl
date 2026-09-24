@@ -438,9 +438,22 @@ func keymapFile(keymap string) (int, uint32, error) {
 	return fd, uint32(n), nil
 }
 
-// setKeymap sends a new keymap and repeat info to every keyboard. Held keys and
-// modifiers are reset: the focused client gets leave, then enter with no keys.
+// setKeymap sends repeat info, and a new keymap when one is given, to every keyboard.
+// A new keymap resets held keys and modifiers: the focused client gets leave, then
+// enter with no keys.
 func (s *Server) setKeymap(c ports.SetKeymap) {
+	s.repeatRate, s.repeatDelay = c.RepeatRate, c.RepeatDelay
+	if c.Keymap == "" {
+		for _, list := range s.keyboards {
+			for _, k := range list {
+				if k.Version() >= 4 {
+					k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+				}
+			}
+		}
+		s.log.Info().Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("repeat updated")
+		return
+	}
 	fd, size, err := keymapFile(c.Keymap)
 	if err != nil {
 		s.log.Warn().Err(err).Msg("keymap update failed")
@@ -450,7 +463,6 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 		unix.Close(s.keymapFD)
 	}
 	s.keymapFD, s.keymapSize = fd, size
-	s.repeatRate, s.repeatDelay = c.RepeatRate, c.RepeatDelay
 	focused := s.focused
 	s.changeFocus(0)
 	s.heldKeys = nil
