@@ -23,6 +23,7 @@ import (
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 type Options struct {
@@ -109,20 +110,27 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if path == "" {
 		path = config.DefaultPath()
 	}
+	watched := make(chan ports.ConfigChanged, 8)
+	keymaps := make(chan *xkb.Keymap, 1)
 	go func() {
 		defer workers.Done()
-		done <- config.Watch(ctx, path, configChanges, logging.For(ctx, "config"))
+		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
+	}()
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		relayConfig(ctx, opts.Config, watched, configChanges, keymaps, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
 	go func() {
 		defer workers.Done()
 		if hw != nil {
 			done <- safe("input", func() error {
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Width: width, Height: height, Active: hw.inputActive, Log: logging.For(ctx, "input")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Width: width, Height: height, Active: hw.inputActive, Log: logging.For(ctx, "input")}, input)
 			})
 			return
 		}
-		_ = headlessinput.Run(ctx, km, script, input, logging.For(ctx, "input"))
+		_ = headlessinput.Run(ctx, km, keymaps, script, input, logging.For(ctx, "input"))
 	}()
 	if opts.Script != nil {
 		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
@@ -186,6 +194,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	cancel()
 	workers.Wait()
+	// A keymap the input goroutine never took is still ours to free.
+	select {
+	case km := <-keymaps:
+		km.Close()
+	default:
+	}
 	for len(done) > 0 {
 		err := <-done
 		if result == nil && err != nil {
@@ -196,6 +210,64 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		return nil
 	}
 	return result
+}
+
+// relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
+// to the input goroutine and sends it to clients; a repeat-only change just updates
+// clients. A keymap that fails to build keeps the previous layout.
+func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+	kb := cur.Keyboard
+	for {
+		var ev ports.ConfigChanged
+		select {
+		case <-ctx.Done():
+			return
+		case ev = <-in:
+		}
+		next := ev.Config.Keyboard
+		layoutChanged := next.Layout != kb.Layout || next.Variant != kb.Variant || next.Options != kb.Options
+		repeatChanged := next.RepeatRate != kb.RepeatRate || next.RepeatDelay != kb.RepeatDelay
+		cmd := ports.SetKeymap{RepeatRate: next.RepeatRate, RepeatDelay: next.RepeatDelay}
+		if layoutChanged {
+			km, err := xkb.New(xkb.RMLVO{Layout: next.Layout, Variant: next.Variant, Options: next.Options})
+			if err != nil {
+				log.Warn().Err(err).Str("layout", next.Layout).Str("variant", next.Variant).Msg("keymap rejected; keeping previous layout")
+				ev.Config.Keyboard.Layout, ev.Config.Keyboard.Variant, ev.Config.Keyboard.Options = kb.Layout, kb.Variant, kb.Options
+				layoutChanged = false
+			} else {
+				cmd.Keymap = km.String()
+				// Drop a keymap the input goroutine has not taken yet; the newest wins.
+				select {
+				case old := <-keymaps:
+					old.Close()
+				default:
+				}
+				select {
+				case keymaps <- km:
+				case <-ctx.Done():
+					km.Close()
+					return
+				}
+			}
+		}
+		if layoutChanged || repeatChanged {
+			select {
+			case commands <- cmd:
+			case <-ctx.Done():
+				return
+			}
+			if layoutChanged {
+				kb.Layout, kb.Variant, kb.Options = next.Layout, next.Variant, next.Options
+			}
+			kb.RepeatRate, kb.RepeatDelay = next.RepeatRate, next.RepeatDelay
+			log.Info().Str("layout", kb.Layout).Str("variant", kb.Variant).Str("options", kb.Options).Int("rate", kb.RepeatRate).Int("delay", kb.RepeatDelay).Bool("keymap", layoutChanged).Msg("keyboard reloaded")
+		}
+		select {
+		case out <- ev:
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func consumeScenes(ctx context.Context, scenes <-chan ports.Scene, configErrors <-chan error, tap chan<- ports.Scene, renderScenes chan ports.Scene) {

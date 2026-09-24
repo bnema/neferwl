@@ -14,9 +14,10 @@ import (
 	"github.com/bnema/zerowrap"
 )
 
-// Run owns the keymap and converts script lines into input events.
-func Run(ctx context.Context, km *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, log zerowrap.Logger) error {
-	defer km.Close()
+// Run owns the keymap and converts script lines into input events. A keymap
+// received on keymaps replaces the current one, which is closed.
+func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, log zerowrap.Logger) error {
+	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
 		ev := km.Key(code, down, uint32(time.Now().UnixMilli()))
 		select {
@@ -73,6 +74,10 @@ func Run(ctx context.Context, km *xkb.Keymap, script <-chan string, input chan<-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case next := <-keymaps:
+			km.Close()
+			km = next
+			log.Info().Msg("keymap replaced")
 		case line, ok := <-script:
 			if !ok {
 				return nil

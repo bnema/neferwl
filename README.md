@@ -10,16 +10,18 @@ Run: `nefertty --backend=headless --timeout 5s`
 
 ## Configuration
 
-Configuration lives at `$XDG_CONFIG_HOME/nefertty/config.toml` (or `~/.config/nefertty/config.toml`). Use `nefertty --config path` to select another file; `nefertty validate-config [path]` checks it without starting the compositor.
+Configuration lives at `$XDG_CONFIG_HOME/nefertty/config` (or `~/.config/nefertty/config`). Use `nefertty --config path` to select another file; `nefertty validate-config [path]` checks it without starting the compositor.
 
-```toml
-[terminal]
-command = ["foot"]
-[layout]
-gaps = 0
+One `key = value` per line; `#` starts a comment:
+
+```text
+keyboard.layout = fr
+terminal = foot
+bind.cmd+return = spawn-terminal
+bind.ctrl+cmd+space = spawn fuzzel
 ```
 
-See `examples/config.toml` for all defaults. Configuration reloads automatically when the file changes (including atomic replacements). Layout gaps, widths and presets, binds, background, and terminal command apply live; `keyboard.*` requires a restart for now. Invalid or removed files leave the current configuration in place.
+See `examples/config` for every key and its default. A missing file means defaults. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Every key applies live when the file changes, including the keyboard layout; each reload logs the keys that changed.
 
 Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 

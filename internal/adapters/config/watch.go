@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 	"unsafe"
 
@@ -14,6 +15,41 @@ import (
 )
 
 var directoryPollInterval = 2 * time.Second
+
+func loadFile(path string) (ports.Config, map[string]string, []Warning, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return ports.Config{}, nil, nil, err
+	}
+	defer f.Close()
+	return parse(f)
+}
+
+// loadRaw returns the effective keys of the file at startup; missing means none.
+func loadRaw(path string) map[string]string {
+	_, raw, _, err := loadFile(path)
+	if err != nil {
+		return map[string]string{}
+	}
+	return raw
+}
+
+// diff lists keys added, removed or changed, sorted.
+func diff(old, cur map[string]string) []string {
+	var keys []string
+	for k, v := range cur {
+		if o, ok := old[k]; !ok || o != v {
+			keys = append(keys, k)
+		}
+	}
+	for k := range old {
+		if _, ok := cur[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 // Watch observes the parent directory so atomic file replacements are detected.
 // If the directory is absent, it retries every two seconds until it appears.
@@ -27,6 +63,7 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 	const mask = unix.IN_CLOSE_WRITE | unix.IN_MOVED_TO | unix.IN_CREATE | unix.IN_DELETE | unix.IN_MOVED_FROM
 	wd := -1
 	var pending time.Time
+	last := loadRaw(path)
 	buf := make([]byte, 4096)
 	for {
 		if ctx.Err() != nil {
@@ -51,19 +88,28 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 			remaining := time.Until(pending)
 			if remaining <= 0 {
 				pending = time.Time{}
-				cfg, loadErr := Load(path)
+				cfg, raw, warnings, loadErr := loadFile(path)
 				switch {
 				case os.IsNotExist(loadErr):
 					log.Warn().Msg("config file removed; keeping current config")
 				case loadErr != nil:
-					log.Warn().Err(loadErr).Msg("config reload rejected")
+					log.Warn().Err(loadErr).Msg("config reload failed")
 				default:
+					for _, w := range warnings {
+						log.Warn().Int("line", w.Line).Msg(w.Msg)
+					}
+					changed := diff(last, raw)
+					last = raw
+					if len(changed) == 0 {
+						log.Debug().Msg("config unchanged")
+						continue
+					}
 					select {
 					case <-ctx.Done():
 						return nil
 					case out <- ports.ConfigChanged{Config: cfg}:
 					}
-					log.Info().Msg("config reloaded")
+					log.Info().Strs("changed", changed).Msg("config reloaded")
 				}
 				continue
 			}
