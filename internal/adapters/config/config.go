@@ -78,6 +78,7 @@ func Defaults() ports.Config {
 	c.Border.Active = "#b4befe"
 	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
+	c.Layout.Overflow = "scroll"
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combo, err := parseCombo(b.combo)
@@ -136,6 +137,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	raw := map[string]string{}
 	seen := map[string]int{}
 	outputs := map[string]int{}
+	workspaces := map[string]int{}
 	scanner := bufio.NewScanner(r)
 	for n := 1; scanner.Scan(); n++ {
 		line := strings.TrimSpace(scanner.Text())
@@ -216,6 +218,30 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			*e = o
 			continue
 		}
+		if rest, ok := strings.CutPrefix(key, "workspace."); ok {
+			name, field, _ := strings.Cut(rest, ".")
+			if !workspaceName.MatchString(name) {
+				warn("%s: workspace name must be letters, digits, - or _", key)
+				continue
+			}
+			var ws ports.WorkspaceConfig
+			if i, ok := workspaces[name]; ok {
+				ws = c.Workspaces[i]
+			}
+			if err := setWorkspace(&ws, field, value); err != nil {
+				warn("%s: %v", key, err)
+				continue
+			}
+			override()
+			if i, ok := workspaces[name]; ok {
+				c.Workspaces[i] = ws
+			} else {
+				ws.Name = name
+				workspaces[name] = len(c.Workspaces)
+				c.Workspaces = append(c.Workspaces, ws)
+			}
+			continue
+		}
 		if err := set(&c, key, value); err != nil {
 			warn("%s: %v", key, err)
 			continue
@@ -225,6 +251,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	if err := scanner.Err(); err != nil {
 		return c, raw, warnings, err
 	}
+	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
 	for combo := range c.Binds {
@@ -365,6 +392,11 @@ func set(c *ports.Config, key, v string) error {
 		return fmt.Errorf("replaced by layout.max-columns (columns share the width equally)")
 	case "layout.max-columns":
 		return positive(&c.Layout.MaxColumns, v, 16)
+	case "layout.overflow":
+		if v != "scroll" && v != "fixed" {
+			return fmt.Errorf("must be scroll or fixed")
+		}
+		c.Layout.Overflow = v
 	case "layout.presets":
 		list := splitList(v)
 		if len(list) == 0 {
@@ -397,6 +429,60 @@ func set(c *ports.Config, key, v string) error {
 		c.Log.Debug = list
 	default:
 		return fmt.Errorf("unknown key")
+	}
+	return nil
+}
+
+// checkWorkspaceBinds warns about a `workspace <name>` bind to an undeclared
+// workspace (it does nothing) and a hidden workspace no bind reaches (its
+// windows could only come back by editing the config).
+func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
+	declared := map[string]bool{}
+	for _, w := range c.Workspaces {
+		declared[w.Name] = true
+	}
+	bound := map[string]bool{}
+	var warnings []Warning
+	for combo, a := range c.Binds {
+		name, ok := strings.CutPrefix(a, "workspace ")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		bound[name] = true
+		if !declared[name] {
+			warnings = append(warnings, Warning{Line: seen["bind."+combo], Msg: fmt.Sprintf("bind.%s: no workspace.%s.* declared", combo, name)})
+		}
+	}
+	for _, w := range c.Workspaces {
+		if w.Hidden && !bound[w.Name] {
+			warnings = append(warnings, Warning{Line: seen["workspace."+w.Name+".hidden"], Msg: fmt.Sprintf("workspace.%s.hidden: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
+		}
+	}
+	sort.Slice(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
+	return warnings
+}
+
+var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// setWorkspace applies one workspace.<name>.<field> key.
+func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
+	switch field {
+	case "hidden":
+		b, err := onOff(v)
+		w.Hidden = b
+		return err
+	case "monitor":
+		return fmt.Errorf("not supported yet: one monitor only")
+	case "max-columns":
+		return positive(&w.MaxColumns, v, 16)
+	case "overflow":
+		if v != "scroll" && v != "fixed" {
+			return fmt.Errorf("must be scroll or fixed")
+		}
+		w.Overflow = v
+	default:
+		return fmt.Errorf("unknown key (hidden, max-columns, overflow)")
 	}
 	return nil
 }
@@ -448,6 +534,12 @@ func checkAction(v string) error {
 		}
 		return nil
 	}
+	if rest, ok := strings.CutPrefix(v, "workspace "); ok {
+		if !workspaceName.MatchString(strings.TrimSpace(rest)) {
+			return fmt.Errorf("workspace needs a name (letters, digits, - or _)")
+		}
+		return nil
+	}
 	for _, prefix := range []string{"focus-workspace ", "move-to-workspace "} {
 		if rest, ok := strings.CutPrefix(v, prefix); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err != nil || n < 1 || n > 99 {
@@ -457,7 +549,7 @@ func checkAction(v string) error {
 		}
 	}
 	if !actions[v] {
-		return fmt.Errorf(`unknown action %q (or "spawn <command>")`, v)
+		return fmt.Errorf(`unknown action %q (or "spawn <command>", "workspace <name>")`, v)
 	}
 	return nil
 }

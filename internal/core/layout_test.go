@@ -350,3 +350,102 @@ func TestSetFullscreenStackDeactivation(t *testing.T) {
 		t.Fatal(w.Layout())
 	}
 }
+
+// Fixed overflow keeps every window on screen: past max-columns, new columns
+// split the newest one, alternating top/bottom and left/right.
+func TestFixedOverflowSpiral(t *testing.T) {
+	w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+	w.SetOutput(100, 80)
+	for id := WindowID(1); id <= 5; id++ {
+		w.AddWindow(id)
+	}
+	got := map[WindowID]Rect{}
+	for _, p := range w.Layout() {
+		got[p.ID] = p.Rect
+	}
+	want := map[WindowID]Rect{
+		1: {X: 0, Y: 0, W: 50, H: 80},
+		2: {X: 50, Y: 0, W: 50, H: 40},  // top half of slot 2
+		3: {X: 50, Y: 40, W: 25, H: 40}, // left of the bottom half
+		4: {X: 75, Y: 40, W: 25, H: 20},
+		5: {X: 75, Y: 60, W: 25, H: 20},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+	if w.ViewX != 0 {
+		t.Fatal("fixed overflow scrolled", w.ViewX)
+	}
+	// Up to max-columns it is the plain equal split.
+	w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+	w2.SetOutput(100, 80)
+	w2.AddWindow(1)
+	w2.AddWindow(2)
+	if p := w2.Layout(); p[0].Rect.W != 50 || p[1].Rect != (Rect{X: 50, Y: 0, W: 50, H: 80}) {
+		t.Fatal(p)
+	}
+}
+
+func fixedWorkspace(maxCols, gaps, n int) *Workspace {
+	w := &Workspace{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}
+	w.SetOutput(100, 80)
+	for id := 1; id <= n; id++ {
+		w.AddWindow(WindowID(id))
+	}
+	return w
+}
+
+func placements(w *Workspace) map[WindowID]Placement {
+	got := map[WindowID]Placement{}
+	for _, p := range w.Layout() {
+		got[p.ID] = p
+	}
+	return got
+}
+
+func TestFixedOverflowEdgeCases(t *testing.T) {
+	t.Run("new windows go last whatever the focus", func(t *testing.T) {
+		w := fixedWorkspace(2, 0, 3)
+		w.FocusID(1)
+		w.AddWindow(4)
+		if got := w.Columns[len(w.Columns)-1].Windows[0]; got != 4 {
+			t.Fatal(got)
+		}
+	})
+	for _, col := range []WindowID{1, 4} { // a plain column and a spiral slot
+		t.Run("fullscreen covers the output", func(t *testing.T) {
+			w := fixedWorkspace(2, 4, 4)
+			w.FocusID(col)
+			w.ToggleFullscreen()
+			for id, p := range placements(w) {
+				if id == col && (p.Rect != Rect{W: 100, H: 80} || !p.Fullscreen) {
+					t.Fatal(p)
+				}
+				if id != col && !p.Hidden {
+					t.Fatalf("window %d visible over fullscreen: %+v", id, p)
+				}
+			}
+		})
+	}
+	t.Run("presets ignored", func(t *testing.T) {
+		w := fixedWorkspace(2, 0, 2)
+		w.SetPresets([]Width{{Num: 2, Den: 3}})
+		w.CycleWidth()
+		w.FocusColumn(-1)
+		w.CycleWidth()
+		for id, p := range placements(w) {
+			if p.Rect.X+p.Rect.W > 100 || p.Rect.W != 50 {
+				t.Fatal(id, p)
+			}
+		}
+	})
+	t.Run("gaps between spiral halves", func(t *testing.T) {
+		got := placements(fixedWorkspace(1, 4, 2))
+		if got[1].Rect != (Rect{X: 4, Y: 4, W: 92, H: 34}) || got[2].Rect != (Rect{X: 4, Y: 42, W: 92, H: 34}) {
+			t.Fatal(got[1].Rect, got[2].Rect)
+		}
+		if got[1].Borderless || got[2].Borderless {
+			t.Fatal("spiral windows must keep borders to show focus")
+		}
+	})
+}

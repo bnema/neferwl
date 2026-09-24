@@ -85,7 +85,23 @@ type Placement struct {
 	// column on screen, so no border marks focus.
 	Borderless bool
 }
+
+// Overflow says what happens past MaxColumns columns.
+type Overflow string
+
+const (
+	// OverflowScroll opens further columns to the right; the view scrolls.
+	OverflowScroll Overflow = "scroll"
+	// OverflowFixed keeps every column on screen: past the max, each new
+	// column splits the newest one, alternating top/bottom and left/right
+	// (dwindle spiral).
+	OverflowFixed Overflow = "fixed"
+)
+
 type Workspace struct {
+	// Name is set for workspaces declared in config; empty for dynamic ones.
+	Name       string
+	Overflow   Overflow
 	Columns    []Column
 	Focus      int
 	ViewX      int
@@ -126,7 +142,10 @@ func (w *Workspace) AddWindow(id WindowID) {
 		return
 	}
 	at := 0
-	if len(w.Columns) > 0 {
+	if w.Overflow == OverflowFixed {
+		// The spiral depends only on window order: new windows go last.
+		at = len(w.Columns)
+	} else if len(w.Columns) > 0 {
 		at = w.Focus + 1
 	}
 	w.Columns = append(w.Columns, Column{})
@@ -311,7 +330,8 @@ func (w *Workspace) columnWidth(i int) int {
 		return w.Output.W
 	}
 	g := w.gap()
-	if w.Columns[i].Width == (Width{}) {
+	// Fixed overflow never scrolls, so presets would push columns off screen.
+	if w.Columns[i].Width == (Width{}) || w.Overflow == OverflowFixed {
 		if len(w.Columns) == 1 {
 			return max(w.Usable.W-2*g, 0)
 		}
@@ -329,6 +349,10 @@ func (w *Workspace) columnX(i int) int {
 	return x
 }
 func (w *Workspace) scroll() {
+	if w.Overflow == OverflowFixed {
+		w.ViewX = 0
+		return
+	}
 	if len(w.Columns) == 0 {
 		return
 	}
@@ -346,39 +370,79 @@ func (w *Workspace) scroll() {
 		w.ViewX += left + width - maxX
 	}
 }
+
+// columnRects returns each column's area on screen, before stacking windows.
+func (w *Workspace) columnRects() []Rect {
+	g := w.gap()
+	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
+	rects := make([]Rect, len(w.Columns))
+	for i := range w.Columns {
+		rects[i] = Rect{X: w.columnX(i) - w.ViewX, Y: y, W: w.columnWidth(i), H: h}
+	}
+	k := max(w.MaxColumns, 1)
+	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
+		return rects
+	}
+	// The last slot holds the spiral; the columns before it keep their place.
+	area := rects[k-1]
+	for i := k - 1; i < len(w.Columns)-1; i++ {
+		rects[i], area = split(area, g, (i-k+1)%2 == 0)
+	}
+	rects[len(rects)-1] = area
+	return rects
+}
+
+// split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
+func split(r Rect, gap int, vertical bool) (Rect, Rect) {
+	if vertical {
+		h := max((r.H-gap)/2, 0)
+		return Rect{X: r.X, Y: r.Y, W: r.W, H: h}, Rect{X: r.X, Y: r.Y + h + gap, W: r.W, H: max(r.H-gap-h, 0)}
+	}
+	w := max((r.W-gap)/2, 0)
+	return Rect{X: r.X, Y: r.Y, W: w, H: r.H}, Rect{X: r.X + w + gap, Y: r.Y, W: max(r.W-gap-w, 0), H: r.H}
+}
+
 func (w *Workspace) Layout() []Placement {
 	var result []Placement
 	gap := w.gap()
+	cols := w.columnRects()
 	for i, c := range w.Columns {
-		x := w.columnX(i) - w.ViewX
-		width := w.columnWidth(i)
+		col := cols[i]
 		n := len(c.Windows)
 		if n == 0 {
 			continue
 		}
 		fullColumn := w.fullscreenColumn(i)
-		available := max(w.Usable.H-(n+1)*gap, 0)
+		if fullColumn {
+			col.W = w.Output.W
+		}
+		available := max(col.H-(n-1)*gap, 0)
 		height := available / n
-		y := w.Usable.Y + gap
+		y := col.Y
+		bottom := col.Y + col.H
 		for j, id := range c.Windows {
 			h := height
 			if j == n-1 {
 				h = available - height*(n-1)
 			}
-			if y > w.Usable.Y+w.Usable.H {
-				y = w.Usable.Y + w.Usable.H
-			}
-			h = min(h, w.Usable.Y+w.Usable.H-y)
-			r := Rect{X: x, Y: y, W: width, H: h}
+			y = min(y, bottom)
+			h = min(h, bottom-y)
+			r := Rect{X: col.X, Y: y, W: col.W, H: h}
 			full := w.fullscreen == id && id != 0
-			hidden := fullColumn && !full
+			// Fixed overflow keeps every column on screen: hide them all
+			// behind a fullscreen window.
+			hidden := (fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full
 			if full {
-				r = Rect{X: x, Y: 0, W: w.Output.W, H: w.Output.H}
+				// Scroll mode aligns the view on the column; fixed never scrolls.
+				r = Rect{X: col.X, Y: 0, W: w.Output.W, H: w.Output.H}
+				if w.Overflow == OverflowFixed {
+					r.X = 0
+				}
 			}
 			if hidden {
 				r = Rect{}
 			}
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: width >= w.Usable.W-2*gap})
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
 			y += h + gap
 		}
 	}

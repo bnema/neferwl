@@ -131,6 +131,10 @@ func (c *Core) apply(cfg ports.Config) error {
 			binds[b] = Action(a)
 			continue
 		}
+		if _, ok := NamedArg(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveToWorkspaceUp, ActionMoveToWorkspaceDown:
 		default:
@@ -138,9 +142,38 @@ func (c *Core) apply(cfg ports.Config) error {
 		}
 		binds[b] = Action(a)
 	}
+	overflow := func(v string) (Overflow, error) {
+		switch o := Overflow(v); o {
+		case "", OverflowScroll, OverflowFixed:
+			return o, nil
+		}
+		return "", fmt.Errorf("invalid overflow %q", v)
+	}
+	defOverflow, err := overflow(cfg.Layout.Overflow)
+	if err != nil {
+		return err
+	}
+	if defOverflow == "" {
+		defOverflow = OverflowScroll
+	}
+	named := make([]NamedWorkspace, 0, len(cfg.Workspaces))
+	seen := map[string]bool{}
+	for _, ws := range cfg.Workspaces {
+		o, err := overflow(ws.Overflow)
+		if err != nil {
+			return err
+		}
+		if ws.Name == "" || seen[ws.Name] || ws.MaxColumns < 0 {
+			return fmt.Errorf("invalid workspace %q", ws.Name)
+		}
+		seen[ws.Name] = true
+		named = append(named, NamedWorkspace{Name: ws.Name, Hidden: ws.Hidden, MaxColumns: ws.MaxColumns, Overflow: o})
+	}
 	c.cfg = cfg
 	c.binds = binds
 	c.applyConfigScale()
+	c.ws.SetNamed(named)
+	c.ws.SetOverflow(defOverflow)
 	c.ws.SetMaxColumns(cfg.Layout.MaxColumns)
 	c.ws.SetPresets(presets)
 	c.ws.SetGaps(cfg.Layout.Gaps)

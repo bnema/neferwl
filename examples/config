@@ -25,8 +25,20 @@ layout.gaps = 0
 # Columns sharing the screen equally before new ones scroll off to the right.
 # A lone column fills the screen without a border.
 layout.max-columns = 2
+# Past max-columns: scroll opens columns to the right; fixed keeps everything
+# on screen, each new window splitting the newest one (spiral).
+layout.overflow = scroll
 # cycle-column-width steps through these, then back to the equal share.
 layout.presets = 1/3, 1/2, 2/3, 1
+
+# Named workspaces. Numbered at their place like any other and never removed
+# when empty. hidden = on keeps one out of the numbers and of up/down: only its
+# bind shows it, and pressing the bind again returns to the previous workspace.
+# max-columns and overflow override the layout.* values.
+# workspace.dev.hidden = on
+# workspace.dev.max-columns = 3
+# workspace.dev.overflow = fixed
+# bind.cmd+d = workspace dev
 
 # Displays (drm backend): WxH, WxH@Hz, preferred or off.
 # The first listed display that is connected and not off is used.

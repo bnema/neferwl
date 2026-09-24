@@ -38,7 +38,11 @@ type Config struct {
 		// MaxColumns is how many columns share the screen before scrolling.
 		MaxColumns int
 		Presets    []string
+		// Overflow is "scroll" or "fixed" (see WorkspaceConfig).
+		Overflow string
 	}
+	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
+	Workspaces []WorkspaceConfig
 	// Outputs selects and configures physical displays (drm backend).
 	Outputs []OutputConfig
 	Binds   map[string]string
@@ -49,4 +53,14 @@ type Config struct {
 		Level string
 		Debug []string
 	}
+}
+
+// WorkspaceConfig declares a named workspace. Hidden ones are not numbered and
+// only reachable through a `workspace <name>` bind, which toggles them.
+// Zero MaxColumns and an empty Overflow use the layout.* defaults.
+type WorkspaceConfig struct {
+	Name       string
+	Hidden     bool
+	MaxColumns int
+	Overflow   string
 }

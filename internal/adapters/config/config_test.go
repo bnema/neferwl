@@ -233,3 +233,37 @@ func TestDigitBindReplacesPhysicalDefault(t *testing.T) {
 		t.Fatal("other defaults must stay")
 	}
 }
+
+func TestWorkspaces(t *testing.T) {
+	c, w := parseString(t, `layout.overflow = fixed
+workspace.dev.hidden = on
+workspace.dev.max-columns = 3
+workspace.web.overflow = scroll
+workspace.dev.monitor = DP-2
+workspace.bad name.hidden = on
+workspace.dev.color = red
+workspace.web.overflow = spiral
+bind.cmd+d = workspace dev
+bind.cmd+w = workspace
+bind.cmd+x = workspace typo
+workspace.lost.hidden = on
+`)
+	want := []ports.WorkspaceConfig{
+		{Name: "dev", Hidden: true, MaxColumns: 3},
+		{Name: "web", Overflow: "scroll"},
+		{Name: "lost", Hidden: true},
+	}
+	if c.Layout.Overflow != "fixed" || !reflect.DeepEqual(c.Workspaces, want) {
+		t.Fatalf("%q %+v", c.Layout.Overflow, c.Workspaces)
+	}
+	if c.Binds["Cmd+d"] != "workspace dev" {
+		t.Fatal(c.Binds["Cmd+d"])
+	}
+	lines := []int{}
+	for _, x := range w {
+		lines = append(lines, x.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8, 10, 11, 12}) {
+		t.Fatal(w)
+	}
+}
