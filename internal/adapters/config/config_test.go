@@ -245,10 +245,13 @@ workspace.dev.color = red
 workspace.web.overflow = spiral
 bind.cmd+d = workspace dev
 bind.cmd+w = workspace
+bind.cmd+x = workspace typo
+workspace.lost.hidden = on
 `)
 	want := []ports.WorkspaceConfig{
-		{Name: "dev", Hidden: true, MaxColumns: 3, Monitor: "DP-2"},
+		{Name: "dev", Hidden: true, MaxColumns: 3},
 		{Name: "web", Overflow: "scroll"},
+		{Name: "lost", Hidden: true},
 	}
 	if c.Layout.Overflow != "fixed" || !reflect.DeepEqual(c.Workspaces, want) {
 		t.Fatalf("%q %+v", c.Layout.Overflow, c.Workspaces)
@@ -260,7 +263,7 @@ bind.cmd+w = workspace
 	for _, x := range w {
 		lines = append(lines, x.Line)
 	}
-	if !reflect.DeepEqual(lines, []int{6, 7, 8, 10}) {
+	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8, 10, 11, 12}) {
 		t.Fatal(w)
 	}
 }

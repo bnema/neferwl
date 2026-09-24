@@ -142,7 +142,10 @@ func (w *Workspace) AddWindow(id WindowID) {
 		return
 	}
 	at := 0
-	if len(w.Columns) > 0 {
+	if w.Overflow == OverflowFixed {
+		// The spiral depends only on window order: new windows go last.
+		at = len(w.Columns)
+	} else if len(w.Columns) > 0 {
 		at = w.Focus + 1
 	}
 	w.Columns = append(w.Columns, Column{})
@@ -327,7 +330,8 @@ func (w *Workspace) columnWidth(i int) int {
 		return w.Output.W
 	}
 	g := w.gap()
-	if w.Columns[i].Width == (Width{}) {
+	// Fixed overflow never scrolls, so presets would push columns off screen.
+	if w.Columns[i].Width == (Width{}) || w.Overflow == OverflowFixed {
 		if len(w.Columns) == 1 {
 			return max(w.Usable.W-2*g, 0)
 		}
@@ -425,14 +429,20 @@ func (w *Workspace) Layout() []Placement {
 			h = min(h, bottom-y)
 			r := Rect{X: col.X, Y: y, W: col.W, H: h}
 			full := w.fullscreen == id && id != 0
-			hidden := fullColumn && !full
+			// Fixed overflow keeps every column on screen: hide them all
+			// behind a fullscreen window.
+			hidden := (fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full
 			if full {
+				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = Rect{X: col.X, Y: 0, W: w.Output.W, H: w.Output.H}
+				if w.Overflow == OverflowFixed {
+					r.X = 0
+				}
 			}
 			if hidden {
 				r = Rect{}
 			}
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap})
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
 			y += h + gap
 		}
 	}

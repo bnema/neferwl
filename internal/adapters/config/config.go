@@ -251,6 +251,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	if err := scanner.Err(); err != nil {
 		return c, raw, warnings, err
 	}
+	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
 	for combo := range c.Binds {
@@ -432,6 +433,36 @@ func set(c *ports.Config, key, v string) error {
 	return nil
 }
 
+// checkWorkspaceBinds warns about a `workspace <name>` bind to an undeclared
+// workspace (it does nothing) and a hidden workspace no bind reaches (its
+// windows could only come back by editing the config).
+func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
+	declared := map[string]bool{}
+	for _, w := range c.Workspaces {
+		declared[w.Name] = true
+	}
+	bound := map[string]bool{}
+	var warnings []Warning
+	for combo, a := range c.Binds {
+		name, ok := strings.CutPrefix(a, "workspace ")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		bound[name] = true
+		if !declared[name] {
+			warnings = append(warnings, Warning{Line: seen["bind."+combo], Msg: fmt.Sprintf("bind.%s: no workspace.%s.* declared", combo, name)})
+		}
+	}
+	for _, w := range c.Workspaces {
+		if w.Hidden && !bound[w.Name] {
+			warnings = append(warnings, Warning{Line: seen["workspace."+w.Name+".hidden"], Msg: fmt.Sprintf("workspace.%s.hidden: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
+		}
+	}
+	sort.Slice(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
+	return warnings
+}
+
 var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // setWorkspace applies one workspace.<name>.<field> key.
@@ -442,10 +473,7 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		w.Hidden = b
 		return err
 	case "monitor":
-		if v == "" {
-			return fmt.Errorf("must not be empty")
-		}
-		w.Monitor = v
+		return fmt.Errorf("not supported yet: one monitor only")
 	case "max-columns":
 		return positive(&w.MaxColumns, v, 16)
 	case "overflow":
@@ -454,7 +482,7 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		}
 		w.Overflow = v
 	default:
-		return fmt.Errorf("unknown key (hidden, monitor, max-columns, overflow)")
+		return fmt.Errorf("unknown key (hidden, max-columns, overflow)")
 	}
 	return nil
 }

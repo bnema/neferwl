@@ -160,17 +160,6 @@ func (m *Monitor) RemoveWindow(id WindowID) {
 	}
 }
 
-// FocusID shows the window's workspace and focuses it.
-func (m *Monitor) FocusID(id WindowID) bool {
-	w, _ := m.find(id)
-	if w == nil {
-		return false
-	}
-	m.show(w)
-	w.FocusID(id)
-	return true
-}
-
 // SetFullscreen applies a client request on the window's own workspace. It does
 // not switch workspaces: client requests never move the user.
 func (m *Monitor) SetFullscreen(id WindowID, on bool) {
@@ -274,7 +263,6 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		want[s.Name] = s
 	}
 	byName := map[string]*Workspace{}
-	var keep []*Workspace
 	for _, w := range m.Workspaces {
 		if _, ok := want[w.Name]; w.Name != "" && !ok {
 			w.Name = ""
@@ -282,9 +270,7 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		if w.Name != "" {
 			byName[w.Name] = w
 		}
-		keep = append(keep, w)
 	}
-	m.Workspaces = keep
 	var hidden []*Workspace
 	for _, w := range m.hidden {
 		if _, ok := want[w.Name]; ok {

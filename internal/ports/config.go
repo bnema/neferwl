@@ -58,10 +58,8 @@ type Config struct {
 // WorkspaceConfig declares a named workspace. Hidden ones are not numbered and
 // only reachable through a `workspace <name>` bind, which toggles them.
 // Zero MaxColumns and an empty Overflow use the layout.* defaults.
-// Monitor names the connector it belongs to (one monitor is supported so far).
 type WorkspaceConfig struct {
 	Name       string
-	Monitor    string
 	Hidden     bool
 	MaxColumns int
 	Overflow   string

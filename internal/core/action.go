@@ -111,12 +111,14 @@ func (m *Monitor) Apply(a Action) Effect {
 		}
 		return Effect{}
 	case ActionMoveToWorkspaceUp:
-		if m.Active > 0 {
+		if m.shown == nil && m.Active > 0 {
 			m.MoveToWorkspace(m.Active - 1)
 		}
 		return Effect{}
 	case ActionMoveToWorkspaceDown:
-		m.MoveToWorkspace(m.Active + 1)
+		if m.shown == nil {
+			m.MoveToWorkspace(m.Active + 1)
+		}
 		return Effect{}
 	}
 	return m.Current().Apply(a)
