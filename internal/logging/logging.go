@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/bnema/zerowrap"
 	"github.com/rs/zerolog"
@@ -40,7 +42,11 @@ func ParseDebug(value string) (map[string]bool, error) {
 	return selected, nil
 }
 
-// Open rotates the previous run's log, opens a fresh JSON log and attaches the logger to ctx.
+// keepRuns is how many per-run log files Open retains.
+const keepRuns = 20
+
+// Open creates runs/<timestamp>.log, points runs/latest.log at it, prunes old runs
+// and attaches the logger to ctx.
 // The caller must invoke close after all logging is complete.
 func Open(ctx context.Context, level, debug string) (context.Context, func() error, error) {
 	selected, err := ParseDebug(debug)
@@ -55,18 +61,22 @@ func Open(ctx context.Context, level, debug string) (context.Context, func() err
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	dir := filepath.Join(state, "nefertty")
+	dir := filepath.Join(state, "nefertty", "runs")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
-	path := filepath.Join(dir, "nefertty.log")
-	if err := os.Rename(path, path+".1"); err != nil && !os.IsNotExist(err) {
-		return nil, nil, err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	name := time.Now().Format("20060102-150405.000") + ".log"
+	file, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}
+	latest := filepath.Join(dir, "latest.log")
+	_ = os.Remove(latest)
+	if err := os.Symlink(name, latest); err != nil {
+		_ = file.Close()
+		return nil, nil, err
+	}
+	pruneRuns(dir)
 	var output = zerowrap.Config{Level: level, Format: "json", Output: file}
 	if term.IsTerminal(int(os.Stderr.Fd())) {
 		output.Output = &consoleAndFile{file: file}
@@ -75,6 +85,15 @@ func Open(ctx context.Context, level, debug string) (context.Context, func() err
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
 	return ctx, file.Close, nil
+}
+
+func pruneRuns(dir string) {
+	runs, _ := filepath.Glob(filepath.Join(dir, "2*.log"))
+	sort.Strings(runs)
+	for len(runs) > keepRuns {
+		_ = os.Remove(runs[0])
+		runs = runs[1:]
+	}
 }
 
 type consoleAndFile struct{ file *os.File }

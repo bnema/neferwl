@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/app"
@@ -161,15 +162,29 @@ func run() error {
 	}
 	defer closeLog()
 	log := logging.For(ctx, "app")
+	defer func() {
+		if p := recover(); p != nil {
+			log.Error().Interface("panic", p).Str("stack", string(debug.Stack())).Msg("exit")
+			_ = closeLog()
+			panic(p)
+		}
+	}()
+	start := time.Now()
+	log.Info().Strs("args", os.Args[1:]).Str("backend", *backend).Str("tty", os.Getenv("XDG_VTNR")).Str("session_type", os.Getenv("XDG_SESSION_TYPE")).Msg("run")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script}); err != nil {
-		// SIGINT and SIGTERM cancel the context and are clean exits.
-		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			return nil
-		}
-		log.Error().Err(err).Msg("application failed")
-		return err
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script})
+	// SIGINT and SIGTERM cancel the context and are clean exits.
+	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		err = nil
 	}
-	return nil
+	reason := "clean"
+	switch {
+	case err != nil:
+		reason = "error"
+	case ctx.Err() != nil:
+		reason = "signal"
+	}
+	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
+	return err
 }
