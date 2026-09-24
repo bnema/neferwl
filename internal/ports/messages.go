@@ -7,7 +7,13 @@ type ClientEvent interface{ clientEvent() }
 type WindowMapped struct {
 	ID    WindowID
 	AppID string
+	// Slot is the SlotEnv value of the client process, empty if none.
+	Slot string
 }
+
+// SlotEnv is the environment variable nefertty sets on processes it spawns
+// for a slot. The client's value maps its windows to the slot.
+const SlotEnv = "NEFERTTY_SLOT"
 
 func (WindowMapped) clientEvent() {}
 
@@ -214,7 +220,11 @@ type CursorImage struct {
 }
 
 // SpawnRequest carries core → launcher process arguments.
-type SpawnRequest struct{ Argv []string }
+type SpawnRequest struct {
+	Argv []string
+	// Env adds KEY=value entries to the child environment.
+	Env []string
+}
 
 // Scene carries core → renderer immutable snapshots with fresh Windows slices.
 // Rects and the output size are logical; the renderer multiplies by Scale.

@@ -92,12 +92,7 @@ func (m *Monitor) show(w *Workspace) {
 // ToggleNamed shows the named workspace, or returns to the previous one when
 // it is already on screen. Unknown names do nothing.
 func (m *Monitor) ToggleNamed(name string) {
-	var target *Workspace
-	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {
-		if w.Name == name {
-			target = w
-		}
-	}
+	target := m.byName(name)
 	switch cur := m.Current(); {
 	case target == nil:
 	case target != cur:
@@ -112,6 +107,16 @@ func (m *Monitor) ToggleNamed(name string) {
 		m.shown = nil
 		m.normalize()
 	}
+}
+
+// byName returns the configured workspace with that name, or nil.
+func (m *Monitor) byName(name string) *Workspace {
+	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {
+		if w.Name == name {
+			return w
+		}
+	}
+	return nil
 }
 
 func indexOf(list []*Workspace, w *Workspace) int {

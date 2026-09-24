@@ -267,3 +267,29 @@ workspace.lost.hidden = on
 		t.Fatal(w)
 	}
 }
+
+func TestWorkspaceSlots(t *testing.T) {
+	c, w := parseString(t, `workspace.dev.hidden = on
+workspace.dev.column.2 = 33%, foot --title x
+workspace.dev.column.1 = 67%, code --new-window
+workspace.dev.column.2 = 1/3, kitty
+workspace.dev.column.0 = 50%, foot
+workspace.dev.column.3 = 50%
+workspace.dev.column.4 = huge, foot
+bind.cmd+d = workspace dev
+`)
+	want := []ports.SlotConfig{
+		{Index: 1, Width: "67%", Argv: []string{"code", "--new-window"}},
+		{Index: 2, Width: "1/3", Argv: []string{"kitty"}},
+	}
+	if len(c.Workspaces) != 1 || !reflect.DeepEqual(c.Workspaces[0].Slots, want) {
+		t.Fatalf("%+v", c.Workspaces)
+	}
+	lines := []int{}
+	for _, x := range w {
+		lines = append(lines, x.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{4, 5, 6, 7}) {
+		t.Fatal(w)
+	}
+}
