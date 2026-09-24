@@ -399,3 +399,84 @@ func TestWorkspaceSwitch(t *testing.T) {
 		t.Fatal(s)
 	}
 }
+
+func TestClickAfterWorkspaceSwitch(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputMode{Width: 100, Height: 80}
+	receive(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	receive(t, scenes)
+	input <- ports.PointerMotion{X: 50, Y: 40}
+	for len(commands) < 3 {
+		time.Sleep(time.Millisecond)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	// Cmd+2 hides window 1; the pointer must leave it.
+	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+	receive(t, scenes)
+	var cleared bool
+	for len(commands) > 0 {
+		if v, ok := (<-commands).(ports.PointerFocus); ok && v.ID == 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("pointer focus kept on hidden window")
+	}
+	// A click without moving does not reach window 1 nor switch back.
+	input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	input <- ports.PointerButton{Button: 0x110}
+	client <- ports.WindowMapped{ID: 2}
+	s := receive(t, scenes)
+	if s.Windows[0].ID != 1 || !s.Windows[0].Hidden || s.Windows[1].Hidden {
+		t.Fatal(s)
+	}
+	for len(commands) > 0 {
+		if v, ok := (<-commands).(ports.PointerButtonTo); ok {
+			t.Fatal(v)
+		}
+	}
+}
+
+func TestShiftReleasedFirst(t *testing.T) {
+	cfg := config.Defaults()
+	input := make(chan ports.InputEvent, 8)
+	client := make(chan ports.ClientEvent, 2)
+	commands := make(chan ports.ClientCommand, 16)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	client <- ports.WindowMapped{ID: 1}
+	receive(t, scenes)
+	for len(commands) > 0 {
+		<-commands
+	}
+	// US Cmd+Shift+1 prints exclam; its base level 1 matches move-to-workspace 1.
+	input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Shifted: "exclam", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
+	receive(t, scenes)
+	// Shift goes up first, so the release reports "1": still swallowed.
+	input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper}
+	input <- ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}
+	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
+		t.Fatal(v)
+	}
+}

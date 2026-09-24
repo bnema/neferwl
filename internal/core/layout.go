@@ -243,13 +243,12 @@ func (w *Workspace) ToggleFullscreen() {
 	w.scroll()
 }
 
-// SetFullscreen focuses an existing window and applies the requested state.
+// SetFullscreen applies a client request. It never moves focus: client
+// requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	for i := range w.Columns {
-		for j, v := range w.Columns[i].Windows {
+		for _, v := range w.Columns[i].Windows {
 			if v == id {
-				w.Focus = i
-				w.Columns[i].Focus = j
 				if on {
 					w.fullscreen = id
 				} else if w.fullscreen == id {
@@ -312,10 +311,10 @@ func (w *Workspace) columnWidth(i int) int {
 		return w.Output.W
 	}
 	g := w.gap()
-	if len(w.Columns) == 1 {
-		return max(w.Usable.W-2*g, 0)
-	}
 	if w.Columns[i].Width == (Width{}) {
+		if len(w.Columns) == 1 {
+			return max(w.Usable.W-2*g, 0)
+		}
 		// Equal shares of the width left after gaps; a remainder under k pixels stays empty.
 		k := min(len(w.Columns), max(w.MaxColumns, 1))
 		return max((w.Usable.W-g*(k+1))/k, 0)

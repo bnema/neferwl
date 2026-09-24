@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -164,6 +165,16 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
+// visible reports whether the window is on screen on the active workspace.
+func (c *Core) visible(id WindowID) bool {
+	for _, p := range c.ws.Layout() {
+		if p.ID == id {
+			return !p.Hidden
+		}
+	}
+	return false
+}
+
 // keyboardFocus is the mapped top/overlay layer with exclusive keyboard
 // interactivity and the highest ID, else the focused window. On-demand layers
 // never take focus automatically. When the layer unmaps, focus returns to the window.
@@ -211,6 +222,16 @@ func (c *Core) publish(ctx context.Context) error {
 	for id := range c.sent {
 		if !alive[id] {
 			delete(c.sent, id)
+		}
+	}
+	// A workspace switch can hide the window under the pointer; it must not get
+	// clicks. The next motion re-runs hit-testing.
+	if c.pointer != 0 && !c.visible(c.pointer) {
+		c.pointer = 0
+		if c.grab == 0 {
+			if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+				return err
+			}
 		}
 	}
 	if focus != c.focus {
@@ -357,7 +378,7 @@ func (c *Core) Run(ctx context.Context) error {
 					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
 						return nil
 					}
-					if v.Pressed && c.focus != id && c.ws.FocusID(id) {
+					if v.Pressed && c.focus != id && c.ws.Current().FocusID(id) {
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
@@ -374,25 +395,30 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			name := keyName(key.Keysym)
 			action, bound := c.binds[binding{key: name, mods: key.Mods}]
-			// Layouts like AZERTY put digits on the shifted level: Cmd+1 there
-			// is Super+ampersand, so also try the key's other levels.
-			for _, alt := range []string{key.Base, key.Shifted} {
-				if !bound && alt != "" {
-					if a, ok := c.binds[binding{key: keyName(alt), mods: key.Mods}]; ok {
-						action, bound = a, true
-					}
-				}
+			// Cmd+Shift+1 on US prints exclam: match the unshifted keysym.
+			if !bound && key.Base != "" {
+				action, bound = c.binds[binding{key: keyName(key.Base), mods: key.Mods}]
+			}
+			// AZERTY puts digits on the shifted level: Cmd+1 is Super+ampersand.
+			// Only digits fall back this way, so cmd+plus stays off Cmd+=.
+			if !bound && len(key.Shifted) == 1 && key.Shifted[0] >= '0' && key.Shifted[0] <= '9' {
+				action, bound = c.binds[binding{key: key.Shifted, mods: key.Mods}]
+			}
+			// Track presses by physical key: Shift may be released before the key.
+			held := name
+			if key.Keycode != 0 {
+				held = "#" + strconv.FormatUint(uint64(key.Keycode), 10)
 			}
 			if !key.Pressed {
-				consumed := c.pressed[name]
-				delete(c.pressed, name)
+				consumed := c.pressed[held]
+				delete(c.pressed, held)
 				if consumed {
 					continue
 				}
 			}
 			if key.Pressed {
 				if bound {
-					c.pressed[name] = true
+					c.pressed[held] = true
 					effect := c.ws.Apply(action)
 					if effect.Quit {
 						return ErrQuit
@@ -418,7 +444,7 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 					continue
 				}
-				c.pressed[name] = false
+				c.pressed[held] = false
 			}
 			if id := c.keyboardFocus(); id != 0 {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {

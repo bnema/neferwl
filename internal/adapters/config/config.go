@@ -87,8 +87,10 @@ func Defaults() ports.Config {
 		c.Binds[combo] = b.action
 	}
 	for n := 1; n <= 9; n++ {
-		c.Binds[fmt.Sprintf("Cmd+%d", n)] = fmt.Sprintf("focus-workspace %d", n)
-		c.Binds[fmt.Sprintf("Cmd+Shift+%d", n)] = fmt.Sprintf("move-to-workspace %d", n)
+		focus, _ := parseCombo(fmt.Sprintf("cmd+%d", n))
+		move, _ := parseCombo(fmt.Sprintf("cmd+shift+%d", n))
+		c.Binds[focus] = fmt.Sprintf("focus-workspace %d", n)
+		c.Binds[move] = fmt.Sprintf("move-to-workspace %d", n)
 	}
 	c.Render.DirectScanout = true
 	c.Log.Level = "info"
@@ -317,6 +319,8 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be between 0 and 200")
 		}
 		c.Layout.Gaps = n
+	case "layout.default-width":
+		return fmt.Errorf("replaced by layout.max-columns (columns share the width equally)")
 	case "layout.max-columns":
 		return positive(&c.Layout.MaxColumns, v, 16)
 	case "layout.presets":

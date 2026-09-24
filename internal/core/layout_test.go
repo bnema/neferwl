@@ -73,7 +73,7 @@ func TestOperations(t *testing.T) {
 }
 func TestStackAndLayout(t *testing.T) {
 	w := workspace()
-	w.Columns = []Column{{Windows: []WindowID{1, 2, 3}, Width: Width{Num: 1, Den: 2}, Focus: 1}}
+	w.Columns = []Column{{Windows: []WindowID{1, 2, 3}, Focus: 1}}
 	w.RemoveWindow(2)
 	if id, _ := w.Focused(); id != 1 {
 		t.Fatal(id)
@@ -339,9 +339,10 @@ func TestFullscreenPersistsAndScrolls(t *testing.T) {
 func TestSetFullscreenStackDeactivation(t *testing.T) {
 	w := workspace()
 	w.Columns = []Column{{Windows: []WindowID{1, 2}, Focus: 0}}
+	// A client request does not take focus; window 1 keeps it but is covered.
 	w.SetFullscreen(2, true)
 	p := w.Layout()
-	if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused {
+	if !p[0].Hidden || !p[1].Fullscreen || p[1].Focused || !p[0].Focused {
 		t.Fatal(p)
 	}
 	w.SetFullscreen(2, false)

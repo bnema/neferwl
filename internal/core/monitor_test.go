@@ -216,3 +216,26 @@ func TestWorkspaceArg(t *testing.T) {
 		}
 	}
 }
+
+func TestFullscreenRequestKeepsFocus(t *testing.T) {
+	m := monitor()
+	m.AddWindow(1)
+	m.AddWindow(2)
+	m.SetFullscreen(1, true)
+	if id, _ := m.Focused(); id != 2 {
+		t.Fatal(id)
+	}
+	if m.Current().fullscreen != 1 {
+		t.Fatal("not fullscreen")
+	}
+}
+
+func TestLonePresetColumnKeepsWidth(t *testing.T) {
+	m := monitor()
+	m.SetPresets([]Width{{Num: 1, Den: 2}})
+	m.AddWindow(1)
+	m.Apply(ActionCycleColumnWidth)
+	if p := m.Layout()[0]; p.Rect.W != 50 || p.Borderless {
+		t.Fatal(p)
+	}
+}
