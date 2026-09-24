@@ -113,6 +113,10 @@ func (c *Core) apply(cfg ports.Config) error {
 		if _, ok := binds[b]; ok {
 			return fmt.Errorf("duplicate bind %q", combo)
 		}
+		if _, ok := SpawnArgv(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit:
 		default:
@@ -364,10 +368,14 @@ func (c *Core) Run(ctx context.Context) error {
 						return ErrQuit
 					}
 					if effect.Spawn {
+						argv := effect.Argv
+						if argv == nil {
+							argv = append([]string(nil), c.cfg.Terminal.Command...)
+						}
 						select {
 						case <-ctx.Done():
 							return nil
-						case c.ch.Spawn <- ports.SpawnRequest{Argv: append([]string(nil), c.cfg.Terminal.Command...)}:
+						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
 					}
 					if effect.Close != 0 {
