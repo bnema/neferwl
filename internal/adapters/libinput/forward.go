@@ -13,11 +13,10 @@ import (
 // motions still waiting to be sent collapse into the latest one, while keys
 // and buttons keep their order relative to motion.
 type forwarder struct {
-	mu     sync.Mutex
-	queue  []ports.InputEvent
-	wake   chan struct{}
-	stats  forwardStats
-	notify func() // test hook: called after each send
+	mu    sync.Mutex
+	queue []ports.InputEvent
+	wake  chan struct{}
+	stats forwardStats
 }
 
 // forwardStats is reset by take.
@@ -96,8 +95,5 @@ func (f *forwarder) run(ctx context.Context, input chan<- ports.InputEvent) {
 		f.stats.Sent++
 		f.stats.MaxBlock = max(f.stats.MaxBlock, d)
 		f.mu.Unlock()
-		if f.notify != nil {
-			f.notify()
-		}
 	}
 }
