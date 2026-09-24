@@ -13,6 +13,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerXDG(d, s) },
 		func() error { return registerLayer(d, o, s) },
 		func() error { return registerXDGOutput(d, o) },
+		func() error { return registerDecoration(d, s) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
@@ -36,14 +37,15 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				if e != nil {
 					return
 				}
-				r.SendGeometry(0, 0, 0, 0, 0, "nefertty", "headless", 0)
-				r.SendMode(3, int32(o.OutputWidth), int32(o.OutputHeight), 60000)
+				info := o.output()
+				r.SendGeometry(0, 0, int32(info.PhysicalW), int32(info.PhysicalH), 0, info.Make, info.Model, 0)
+				r.SendMode(3, int32(o.OutputWidth), int32(o.OutputHeight), int32(info.RefreshMilli))
 				if v >= 2 {
 					r.SendScale(1)
 				}
 				if v >= 4 {
-					r.SendName("HEADLESS-1")
-					r.SendDescription("NeferTTY headless output")
+					r.SendName(info.Name)
+					r.SendDescription(info.Description)
 				}
 				if v >= 2 {
 					r.SendDone()

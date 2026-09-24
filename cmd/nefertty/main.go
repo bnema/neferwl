@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/app"
@@ -79,6 +80,7 @@ func run() error {
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
 	backend := flags.String("backend", "drm", "drm or headless")
 	screenshot := flags.String("screenshot", "", "write PNG frames to directory")
+	size := flags.String("size", "1920x1080", "headless output size WxH")
 	inputPath := flags.String("input", "", "headless input script path (- for stdin)")
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
@@ -97,6 +99,12 @@ func run() error {
 	}
 	if *screenshot != "" && *backend != "headless" {
 		err := usageError{fmt.Errorf("--screenshot requires --backend=headless")}
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	outW, outH, _, sizeErr := config.ParseMode(*size)
+	if sizeErr != nil {
+		err := usageError{fmt.Errorf("--size: %w", sizeErr)}
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
@@ -161,15 +169,31 @@ func run() error {
 	}
 	defer closeLog()
 	log := logging.For(ctx, "app")
+	defer func() {
+		if p := recover(); p != nil {
+			log.Error().Interface("panic", p).Str("stack", string(debug.Stack())).Msg("exit")
+			_ = closeLog()
+			panic(p)
+		}
+	}()
+	start := time.Now()
+	log.Info().Strs("args", os.Args[1:]).Str("backend", *backend).Str("tty", os.Getenv("XDG_VTNR")).Str("session_type", os.Getenv("XDG_SESSION_TYPE")).Msg("run")
 	configLog := logging.For(ctx, "config")
 	configLog.Info().Str("path", path).Msg("loaded config")
-	if err := app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Script: script}); err != nil {
-		// SIGINT and SIGTERM cancel the context and are clean exits.
-		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
-			return nil
-		}
-		log.Error().Err(err).Msg("application failed")
-		return err
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Width: outW, Height: outH, Script: script})
+	// SIGINT and SIGTERM cancel the context and are clean exits.
+	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
+		err = nil
 	}
-	return nil
+	reason := "clean"
+	switch {
+	case err != nil:
+		reason = "error"
+	case ctx.Err() != nil:
+		reason = "signal"
+	case *timeout > 0 && time.Since(start) >= *timeout:
+		reason = "timeout"
+	}
+	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
+	return err
 }

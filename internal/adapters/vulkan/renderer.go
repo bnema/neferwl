@@ -161,7 +161,11 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	// The CPU reads this buffer every frame: uncached memory makes that ~100x slower.
+	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
+	if err != nil {
+		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	}
 	if err != nil {
 		return
 	}
@@ -362,20 +366,31 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			continue
 		}
 		x, y := w.Rect.X, w.Rect.Y
-		body := image.Rect(x, y, x+w.Rect.W, y+w.Rect.H)
+		// Content sits inside the border; core sized the client to match.
+		b := 0
+		if !w.Fullscreen {
+			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
+		}
+		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
+		body := image.Rect(cx, cy, cx+cw, cy+ch)
 		content := contents[w.ID]
 		if content.Pixels == nil {
 			add(body, windowColor(w.ID), nil, image.Point{})
 		} else {
 			add(body, parseColor(s.Background), nil, image.Point{})
-			width, height := min(content.Width, w.Rect.W), min(content.Height, w.Rect.H)
+			width, height := min(content.Width, cw), min(content.Height, ch)
 			if width > 0 && height > 0 && content.Stride >= width*4 && len(content.Pixels) >= (height-1)*content.Stride+width*4 {
-				add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
+				add(image.Rect(cx, cy, cx+width, cy+height), [3]uint8{}, &content, image.Pt(cx, cy))
 			}
 		}
+		borderColor := s.Border.Inactive
 		if w.Focused {
-			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+4), image.Rect(x, y+w.Rect.H-4, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+4, x+4, y+w.Rect.H-4), image.Rect(x+w.Rect.W-4, y+4, x+w.Rect.W, y+w.Rect.H-4)} {
-				add(strip, [3]uint8{255, 255, 255}, nil, image.Point{})
+			borderColor = s.Border.Active
+		}
+		if b > 0 && borderColor != "" {
+			rgb := parseColor(borderColor)
+			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+b), image.Rect(x, y+w.Rect.H-b, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+b, x+b, y+w.Rect.H-b), image.Rect(x+w.Rect.W-b, y+b, x+w.Rect.W, y+w.Rect.H-b)} {
+				add(strip, rgb, nil, image.Point{})
 			}
 		}
 	}
@@ -469,6 +484,19 @@ func (r *Renderer) Pixels() *image.RGBA {
 		out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = src[i+2], src[i+1], src[i], src[i+3]
 	}
 	return out
+}
+
+// CopyBGRX writes the last frame into an XRGB8888 buffer with the given pitch.
+// The image is B8G8R8A8, which is already XRGB8888 in memory.
+func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
+	if r.mapped == nil {
+		return
+	}
+	row := r.width * 4
+	src := unsafe.Slice((*byte)(r.mapped), row*r.height)
+	for y := 0; y < r.height; y++ {
+		copy(dst[y*pitch:y*pitch+row], src[y*row:(y+1)*row])
+	}
 }
 
 func (r *Renderer) Close() {

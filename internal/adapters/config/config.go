@@ -18,7 +18,7 @@ var defaultBinds = map[string]string{
 	"Cmd+Return": "spawn-terminal", "Cmd+Left": "focus-column-left", "Cmd+Right": "focus-column-right", "Cmd+Up": "focus-window-up", "Cmd+Down": "focus-window-down", "Cmd+Shift+Left": "move-column-left", "Cmd+Shift+Right": "move-column-right", "Cmd+R": "cycle-column-width", "Cmd+Shift+F": "toggle-fullscreen", "Cmd+Q": "close-window", "Ctrl+Alt+BackSpace": "quit",
 }
 var actions = map[string]bool{"none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
-var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "render": true, "sync": true, "config": true, "app": true}
+var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 func DefaultPath() string {
@@ -38,7 +38,10 @@ func Defaults() ports.Config {
 	c.Keyboard.CmdKey = "super"
 	c.Terminal.Command = []string{"foot"}
 	c.Background.Color = "#1e1e2e"
-	c.Layout.Gaps = 8
+	c.Border.Width = 2
+	c.Border.Active = "#b4befe"
+	c.Border.Inactive = ""
+	c.Layout.Gaps = 0
 	c.Layout.DefaultColumnWidth = "1/2"
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Binds = make(map[string]string, len(defaultBinds))
@@ -99,6 +102,24 @@ func Load(path string) (ports.Config, error) {
 	}
 	return c, nil
 }
+
+// ParseMode parses "WxH" or "WxH@Hz"; hz is 0 when omitted.
+func ParseMode(s string) (w, h int, hz float64, err error) {
+	size, rate, hasRate := strings.Cut(s, "@")
+	ws, hs, ok := strings.Cut(size, "x")
+	w, e1 := strconv.Atoi(ws)
+	h, e2 := strconv.Atoi(hs)
+	if !ok || e1 != nil || e2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, 0, fmt.Errorf("must be WxH or WxH@Hz, got %q", s)
+	}
+	if hasRate {
+		if hz, err = strconv.ParseFloat(rate, 64); err != nil || hz <= 0 {
+			return 0, 0, 0, fmt.Errorf("invalid refresh rate in %q", s)
+		}
+	}
+	return w, h, hz, nil
+}
+
 func width(s string) bool {
 	if s == "1" {
 		return true
@@ -188,6 +209,24 @@ func Validate(c ports.Config) error {
 	}
 	if !color.MatchString(c.Background.Color) {
 		add("background.color", "must be #rrggbb")
+	}
+	if c.Border.Width < 0 || c.Border.Width > 32 {
+		add("border.width", "must be between 0 and 32")
+	}
+	if !color.MatchString(c.Border.Active) {
+		add("border.active", "must be #rrggbb")
+	}
+	if c.Border.Inactive != "" && !color.MatchString(c.Border.Inactive) {
+		add("border.inactive", `must be #rrggbb or "" (none)`)
+	}
+	for i, o := range c.Outputs {
+		path := fmt.Sprintf("output[%d]", i)
+		if o.Name == "" {
+			add(path+".name", "must not be empty")
+		}
+		if _, _, _, err := ParseMode(o.Mode); o.Mode != "" && err != nil {
+			add(path+".mode", err.Error())
+		}
 	}
 	if c.Layout.Gaps < 0 || c.Layout.Gaps > 200 {
 		add("layout.gaps", "must be between 0 and 200")

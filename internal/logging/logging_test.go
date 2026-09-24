@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseDebug(t *testing.T) {
@@ -32,8 +33,10 @@ func TestParseDebug(t *testing.T) {
 
 func TestComponentLevelsAndRotation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	path := filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "nefertty.log")
-	for run := 0; run < 2; run++ {
+	dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "runs")
+	path := filepath.Join(dir, "latest.log")
+	for run := 0; run < keepRuns+2; run++ {
+		time.Sleep(2 * time.Millisecond) // distinct millisecond timestamps
 		ctx, closeLog, err := Open(context.Background(), "info", "core")
 		if err != nil {
 			t.Fatal(err)
@@ -64,8 +67,9 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 			}
 		}
 	}
-	if _, err := os.Stat(path + ".1"); err != nil {
-		t.Fatal(err)
+	runs, _ := filepath.Glob(filepath.Join(dir, "2*.log"))
+	if len(runs) != keepRuns {
+		t.Fatalf("kept %d runs, want %d", len(runs), keepRuns)
 	}
 }
 

@@ -57,10 +57,13 @@ func TestRendererRender(t *testing.T) {
 	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}}
 	c := windowColor(1)
 	wc := color.RGBA{c[0], c[1], c[2], 255}
-	s := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{win}}
-	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {16, 16}: wc})
+	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
+	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc})
 	s.Windows[0].Focused = true
-	check(s, map[image.Point]color.RGBA{{9, 9}: {255, 255, 255, 255}, {16, 16}: wc})
+	check(s, map[image.Point]color.RGBA{{9, 9}: {0xb4, 0xbe, 0xfe, 255}, {10, 10}: wc, {16, 16}: wc})
+	s.Windows[0].Fullscreen = true
+	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
+	s.Windows[0].Fullscreen = false
 	s.Windows[0] = ports.SceneWindow{ID: 2, Rect: ports.Rect{X: -10, Y: 0, W: 20, H: 10}}
 	c = windowColor(2)
 	check(s, map[image.Point]color.RGBA{{5, 5}: {c[0], c[1], c[2], 255}, {15, 5}: bg})
@@ -128,6 +131,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	if got, want := r.Pixels().RGBAAt(10, 10), (color.RGBA{c[0], c[1], c[2], 255}); got != want {
 		t.Errorf("overlap = %v, want %v", got, want)
 	}
+	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
 	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: {Width: 16, Height: 16, Stride: 64, Opaque: true, Pixels: make([]byte, 16*16*4)}}
 	for i := 0; i < len(contents[1].Pixels); i += 4 {

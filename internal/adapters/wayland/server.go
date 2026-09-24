@@ -10,7 +10,6 @@ import (
 
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -19,8 +18,31 @@ import (
 type Options struct {
 	RuntimeDir                string
 	OutputWidth, OutputHeight int
+	Output                    OutputInfo
 	Keymap                    string
 	RepeatRate, RepeatDelay   int
+}
+
+// OutputInfo describes the advertised wl_output. Zero values fall back to the headless output.
+type OutputInfo struct {
+	Name, Description    string
+	Make, Model          string
+	RefreshMilli         int
+	PhysicalW, PhysicalH int
+}
+
+func (o Options) output() OutputInfo {
+	i := o.Output
+	if i.Name == "" {
+		i.Name, i.Description = "HEADLESS-1", "NeferTTY headless output"
+	}
+	if i.Make == "" {
+		i.Make, i.Model = "nefertty", "headless"
+	}
+	if i.RefreshMilli == 0 {
+		i.RefreshMilli = 60000
+	}
+	return i
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -358,17 +380,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("configure missing window")
 			return
 		}
-		var states []byte
-		if c.Fullscreen {
-			states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateFullscreen))
-		}
-		if c.Activated {
-			states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateActivated))
-		}
-		w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), states)
-		s.serial++
-		w.xdg.resource.SendConfigure(s.serial)
-		w.xdg.serials = append(w.xdg.serials, s.serial)
+		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
+		w.last, w.hasLast = c, true
+		w.sendConfigure()
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() {

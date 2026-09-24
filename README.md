@@ -16,7 +16,7 @@ Configuration lives at `$XDG_CONFIG_HOME/nefertty/config.toml` (or `~/.config/ne
 [terminal]
 command = ["foot"]
 [layout]
-gaps = 8
+gaps = 0
 ```
 
 See `examples/config.toml` for all defaults. Configuration reloads automatically when the file changes (including atomic replacements). Layout gaps, widths and presets, binds, background, and terminal command apply live; `keyboard.*` requires a restart for now. Invalid or removed files leave the current configuration in place.
