@@ -120,6 +120,8 @@ type Want struct {
 	W, H     int
 	Hz       float64 // 0: highest refresh at W x H
 	Disabled map[string]bool
+	// Strict accepts only the connector named Name (used to search every card first).
+	Strict bool
 }
 
 // refreshMilli is the exact refresh in mHz, computed from the timings like wlroots.
@@ -153,7 +155,7 @@ func pickConnector(conns []connector, want Want) (connector, modeInfo, error) {
 			chosen = c
 			break
 		}
-		if chosen == nil {
+		if chosen == nil && !want.Strict {
 			chosen = c
 		}
 	}

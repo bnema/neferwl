@@ -145,6 +145,7 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 		return nil
 	}
 }
+
 // clientRect is the placement minus the border drawn around the client.
 // The renderer applies the same inset (ports.Border).
 func (c *Core) clientRect(p Placement) Rect {

@@ -49,20 +49,31 @@ func openDRM(ctx context.Context, outputs []ports.OutputConfig) (*drmBackend, er
 	cards, _ := filepath.Glob("/dev/dri/card[0-9]*")
 	sort.Strings(cards)
 	var errs []error
-	for _, card := range cards {
-		fd, err := s.OpenDevice(card)
-		if err != nil {
-			errs = append(errs, err)
-			continue
+	// First pass: the configured output on any card; second: any usable output.
+	passes := []drm.Want{want}
+	if want.Name != "" {
+		strict := want
+		strict.Strict = true
+		passes = []drm.Want{strict, want}
+	}
+	for _, w := range passes {
+		for _, card := range cards {
+			fd, err := s.OpenDevice(card)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			out, err := drm.Open(fd, card, w, log)
+			if err != nil {
+				if !w.Strict {
+					log.Warn().Err(err).Str("card", card).Msg("card unusable")
+					errs = append(errs, err)
+				}
+				s.CloseDevice(fd)
+				continue
+			}
+			return &drmBackend{seat: s, out: out, fd: fd}, nil
 		}
-		out, err := drm.Open(fd, card, want, log)
-		if err != nil {
-			log.Warn().Err(err).Str("card", card).Msg("card unusable")
-			errs = append(errs, err)
-			s.CloseDevice(fd)
-			continue
-		}
-		return &drmBackend{seat: s, out: out, fd: fd}, nil
 	}
 	s.Close()
 	err = fmt.Errorf("no usable DRM card in %v: %w", cards, errors.Join(errs...))

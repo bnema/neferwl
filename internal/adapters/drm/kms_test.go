@@ -58,6 +58,8 @@ func TestPickConnector(t *testing.T) {
 		{"unknown mode falls back to preferred", []connector{lg}, Want{Name: "DP-2", W: 800, H: 600}, "DP-2", "5120x2160@165.000", false},
 		{"missing name falls back", []connector{tv}, Want{Name: "DP-2"}, "HDMI-A-1", "3840x2160@60.000", false},
 		{"disabled skipped", []connector{tv, lg}, Want{Disabled: map[string]bool{"HDMI-A-1": true}}, "DP-2", "5120x2160@165.000", false},
+		{"strict finds named", []connector{tv, lg}, Want{Name: "DP-2", Strict: true}, "DP-2", "5120x2160@165.000", false},
+		{"strict without named", []connector{tv}, Want{Name: "DP-2", Strict: true}, "", "", true},
 		{"all disabled", []connector{tv}, Want{Disabled: map[string]bool{"HDMI-A-1": true}}, "", "", true},
 	} {
 		c, m, err := pickConnector(tc.conns, tc.want)

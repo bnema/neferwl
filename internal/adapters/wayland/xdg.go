@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"encoding/binary"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
@@ -77,6 +78,32 @@ type window struct {
 	xdg          *xdgSurface
 	appID, title string
 	mapped       bool
+	// last is the most recent core configure, resent when decoration mode changes.
+	last    ports.ConfigureWindow
+	hasLast bool
+}
+
+// sendConfigure sends w.last as xdg_toplevel + xdg_surface configure.
+func (w *window) sendConfigure() {
+	c := w.last
+	var states []byte
+	if c.Fullscreen {
+		states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateFullscreen))
+	}
+	if c.Activated {
+		states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateActivated))
+	}
+	if !c.Fullscreen && w.toplevel.Version() >= 2 {
+		// Tiled: the client must use exactly this size (no CSD shadows or rounding).
+		for _, st := range []xdgshell.ToplevelState{xdgshell.ToplevelStateTiledLeft, xdgshell.ToplevelStateTiledRight, xdgshell.ToplevelStateTiledTop, xdgshell.ToplevelStateTiledBottom} {
+			states = binary.LittleEndian.AppendUint32(states, uint32(st))
+		}
+	}
+	w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), states)
+	s := w.xdg.server
+	s.serial++
+	w.xdg.resource.SendConfigure(s.serial)
+	w.xdg.serials = append(w.xdg.serials, s.serial)
 }
 
 func (w *window) unmap() {
