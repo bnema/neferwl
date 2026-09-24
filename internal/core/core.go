@@ -161,13 +161,13 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
-// keyboardFocus is the newest mapped top/overlay layer that asks for the keyboard
-// (exclusive or on-demand), else the focused window. When the layer unmaps,
-// focus returns to the window.
+// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
+// interactivity and the highest ID, else the focused window. On-demand layers
+// never take focus automatically. When the layer unmaps, focus returns to the window.
 func (c *Core) keyboardFocus() WindowID {
 	var layer WindowID
 	for _, l := range c.layers {
-		if l.Keyboard != 0 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
+		if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
 			layer = l.ID
 		}
 	}

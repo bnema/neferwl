@@ -312,9 +312,9 @@ func TestLayerKeyboardFocus(t *testing.T) {
 	if id := focusOf(); id != 1 {
 		t.Fatalf("window focus %d", id)
 	}
-	// A bar without keyboard interactivity does not steal focus; a launcher does.
+	// An on-demand bar does not steal focus; an exclusive launcher does.
 	launcher := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Width: 40, Height: 20, Keyboard: 1}
-	bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5}
+	bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 5, Keyboard: 2}
 	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar, launcher}}
 	receive(t, scenes)
 	if id := focusOf(); id != 7 {

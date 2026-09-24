@@ -123,6 +123,9 @@ func (l *layerSurface) unmap() {
 	if !l.mapped {
 		return
 	}
+	if s := l.shell.server; s.focused == l.id {
+		s.changeFocus(0)
+	}
 	l.mapped = false
 	l.configured = false
 	l.acked = false
