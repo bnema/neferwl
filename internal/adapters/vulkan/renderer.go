@@ -377,9 +377,14 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
 			}
 		}
+		borderColor := s.Border.Inactive
 		if w.Focused {
-			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+4), image.Rect(x, y+w.Rect.H-4, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+4, x+4, y+w.Rect.H-4), image.Rect(x+w.Rect.W-4, y+4, x+w.Rect.W, y+w.Rect.H-4)} {
-				add(strip, [3]uint8{255, 255, 255}, nil, image.Point{})
+			borderColor = s.Border.Active
+		}
+		if b := s.Border.Width; b > 0 && borderColor != "" && !w.Fullscreen && w.Rect.W > 2*b && w.Rect.H > 2*b {
+			rgb := parseColor(borderColor)
+			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+b), image.Rect(x, y+w.Rect.H-b, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+b, x+b, y+w.Rect.H-b), image.Rect(x+w.Rect.W-b, y+b, x+w.Rect.W, y+w.Rect.H-b)} {
+				add(strip, rgb, nil, image.Point{})
 			}
 		}
 	}

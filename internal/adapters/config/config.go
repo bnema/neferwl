@@ -38,6 +38,9 @@ func Defaults() ports.Config {
 	c.Keyboard.CmdKey = "super"
 	c.Terminal.Command = []string{"foot"}
 	c.Background.Color = "#1e1e2e"
+	c.Border.Width = 2
+	c.Border.Active = "#b4befe"
+	c.Border.Inactive = ""
 	c.Layout.Gaps = 8
 	c.Layout.DefaultColumnWidth = "1/2"
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
@@ -206,6 +209,15 @@ func Validate(c ports.Config) error {
 	}
 	if !color.MatchString(c.Background.Color) {
 		add("background.color", "must be #rrggbb")
+	}
+	if c.Border.Width < 0 || c.Border.Width > 32 {
+		add("border.width", "must be between 0 and 32")
+	}
+	if !color.MatchString(c.Border.Active) {
+		add("border.active", "must be #rrggbb")
+	}
+	if c.Border.Inactive != "" && !color.MatchString(c.Border.Inactive) {
+		add("border.inactive", `must be #rrggbb or "" (none)`)
 	}
 	for i, o := range c.Outputs {
 		path := fmt.Sprintf("output[%d]", i)

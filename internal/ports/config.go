@@ -21,7 +21,13 @@ type Config struct {
 	} `toml:"keyboard"`
 	Terminal   struct{ Command []string } `toml:"terminal"`
 	Background struct{ Color string }     `toml:"background"`
-	Layout     struct {
+	// Border is drawn inside the window edge; Width 0 disables it.
+	Border struct {
+		Width    int
+		Active   string
+		Inactive string
+	} `toml:"border"`
+	Layout struct {
 		Gaps               int
 		DefaultColumnWidth string `toml:"default_column_width"`
 		Presets            []string

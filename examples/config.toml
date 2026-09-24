@@ -12,6 +12,12 @@ command = ["foot"]
 [background]
 color = "#1e1e2e"
 
+[border]
+# Drawn inside the window edge; width = 0 disables it. inactive = "" draws nothing.
+width = 2
+active = "#b4befe"
+inactive = ""
+
 [layout]
 gaps = 8
 default_column_width = "1/2"

@@ -187,10 +187,17 @@ type Scene struct {
 	Seq                       uint64
 	OutputWidth, OutputHeight int
 	Background                string
+	Border                    Border
 	Windows                   []SceneWindow
 	// Layers are drawn in slice order: background and bottom before windows,
 	// top and overlay after. A fullscreen window covers bottom and top.
 	Layers []SceneLayer
+}
+
+// Border carries the window border style; colors are #rrggbb, "" skips drawing.
+type Border struct {
+	Width            int
+	Active, Inactive string
 }
 
 // SceneLayer carries core → renderer layer surface placement.
