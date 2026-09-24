@@ -49,14 +49,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	defer cancel()
 	width, height := 1920, 1080
+	var outInfo wayland.OutputInfo
 	var hw *drmBackend
 	if opts.Backend == "drm" {
 		var err error
-		if hw, err = openDRM(ctx); err != nil {
+		if hw, err = openDRM(ctx, opts.Config.Outputs); err != nil {
 			return err
 		}
 		defer hw.close()
 		width, height = hw.out.Width(), hw.out.Height()
+		outInfo = hw.outputInfo()
 		hw.inputActive, hw.outputActive = hw.seat.Subscribe(), hw.seat.Subscribe()
 	}
 	client := make(chan ports.ClientEvent, 32)
@@ -81,7 +83,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	keymap := km.String()
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: width, OutputHeight: height, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, OutputWidth: width, OutputHeight: height, Output: outInfo, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err

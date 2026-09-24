@@ -2,9 +2,9 @@
 package drm
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -47,7 +47,7 @@ type modeInfo struct {
 }
 
 func (m modeInfo) String() string {
-	return fmt.Sprintf("%dx%d@%d", m.HDisplay, m.VDisplay, m.VRefresh)
+	return fmt.Sprintf("%dx%d@%.3f", m.HDisplay, m.VDisplay, float64(m.refreshMilli())/1000)
 }
 
 type getConnector struct {
@@ -107,26 +107,91 @@ type connector struct {
 	id, encoderID uint32
 	name          string
 	connected     bool
+	mmW, mmH      int
 	modes         []modeInfo
 	encoders      []uint32
 }
 
 var connectorTypes = map[uint32]string{1: "VGA", 2: "DVI-I", 3: "DVI-D", 10: "DP", 11: "HDMI-A", 12: "HDMI-B", 7: "LVDS", 14: "eDP", 15: "Virtual", 16: "DSI", 17: "DPI", 20: "USB"}
 
-// pickConnector returns the first connected connector and its preferred (else first) mode.
-func pickConnector(conns []connector) (connector, modeInfo, error) {
-	for _, c := range conns {
-		if !c.connected || len(c.modes) == 0 {
+// Want selects a connector and mode; see ports.OutputConfig.
+type Want struct {
+	Name     string
+	W, H     int
+	Hz       float64 // 0: highest refresh at W x H
+	Disabled map[string]bool
+}
+
+// refreshMilli is the exact refresh in mHz, computed from the timings like wlroots.
+func (m modeInfo) refreshMilli() int {
+	if m.HTotal == 0 || m.VTotal == 0 {
+		return int(m.VRefresh) * 1000
+	}
+	r := (int64(m.Clock)*1_000_000/int64(m.HTotal) + int64(m.VTotal)/2) / int64(m.VTotal)
+	if m.Flags&(1<<4) != 0 { // interlace
+		r *= 2
+	}
+	if m.Flags&(1<<5) != 0 { // doublescan
+		r /= 2
+	}
+	if m.VScan > 1 {
+		r /= int64(m.VScan)
+	}
+	return int(r)
+}
+
+// pickConnector applies want: the named connector if connected, else the first
+// connected one that is not disabled. The mode is the requested one, else preferred.
+func pickConnector(conns []connector, want Want) (connector, modeInfo, error) {
+	var chosen *connector
+	for i := range conns {
+		c := &conns[i]
+		if !c.connected || len(c.modes) == 0 || want.Disabled[c.name] {
 			continue
 		}
-		for _, m := range c.modes {
-			if m.Type&modeTypePrefered != 0 {
-				return c, m, nil
-			}
+		if c.name == want.Name {
+			chosen = c
+			break
 		}
-		return c, c.modes[0], nil
+		if chosen == nil {
+			chosen = c
+		}
 	}
-	return connector{}, modeInfo{}, errors.New("no connected display")
+	if chosen == nil {
+		return connector{}, modeInfo{}, errors.New("no connected display")
+	}
+	if chosen.name == want.Name && want.W > 0 {
+		if m, ok := pickMode(chosen.modes, want.W, want.H, want.Hz); ok {
+			return *chosen, m, nil
+		}
+	}
+	for _, m := range chosen.modes {
+		if m.Type&modeTypePrefered != 0 {
+			return *chosen, m, nil
+		}
+	}
+	return *chosen, chosen.modes[0], nil
+}
+
+// pickMode finds W x H with the refresh closest to hz, or the highest when hz is 0.
+func pickMode(modes []modeInfo, w, h int, hz float64) (modeInfo, bool) {
+	best, found := modeInfo{}, false
+	score := func(m modeInfo) float64 {
+		r := float64(m.refreshMilli()) / 1000
+		if hz == 0 {
+			return -r
+		}
+		return math.Abs(r - hz)
+	}
+	for _, m := range modes {
+		if int(m.HDisplay) != w || int(m.VDisplay) != h || m.Flags&(1<<4) != 0 {
+			continue
+		}
+		if !found || score(m) < score(best) {
+			best, found = m, true
+		}
+	}
+	return best, found
 }
 
 func resources(fd int) (crtcs, conns []uint32, err error) {
@@ -172,9 +237,9 @@ func readConnector(fd int, id uint32) (connector, error) {
 	}
 	return connector{
 		id: id, encoderID: g2.encoderID, name: fmt.Sprintf("%s-%d", name, g2.typeID),
-		connected: g2.connection == connected,
-		modes:     modes[:min(int(g2.countModes), len(modes))],
-		encoders:  encs[:min(int(g2.countEncoders), len(encs))],
+		connected: g2.connection == connected, mmW: int(g2.mmW), mmH: int(g2.mmH),
+		modes:    modes[:min(int(g2.countModes), len(modes))],
+		encoders: encs[:min(int(g2.countEncoders), len(encs))],
 	}, nil
 }
 
@@ -281,11 +346,4 @@ func countFlipEvents(buf []byte) int {
 		buf = buf[length:]
 	}
 	return n
-}
-
-func cstr(b []byte) string {
-	if i := bytes.IndexByte(b, 0); i >= 0 {
-		return string(b[:i])
-	}
-	return string(b)
 }

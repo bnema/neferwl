@@ -32,11 +32,21 @@ type Output struct {
 	pending   bool
 	flipStart time.Time
 	flips     int
+	monitor   Monitor
 	log       zerowrap.Logger
 }
 
-// Open picks the first connected connector on the card fd and allocates buffers.
-func Open(fd int, card string, log zerowrap.Logger) (*Output, error) {
+// Info describes the chosen output for clients (wl_output, xdg-output).
+type Info struct {
+	Name                 string
+	Monitor              Monitor
+	Width, Height        int
+	RefreshMilli         int
+	PhysicalW, PhysicalH int // millimetres
+}
+
+// Open picks a connector on the card fd according to want and allocates buffers.
+func Open(fd int, card string, want Want, log zerowrap.Logger) (*Output, error) {
 	crtcs, ids, err := resources(fd)
 	if err != nil {
 		return nil, err
@@ -48,10 +58,19 @@ func Open(fd int, card string, log zerowrap.Logger) (*Output, error) {
 			log.Warn().Err(err).Uint32("connector", id).Msg("read connector")
 			continue
 		}
-		log.Info().Str("connector", c.name).Bool("connected", c.connected).Int("modes", len(c.modes)).Msg("connector")
+		ev := log.Info().Str("connector", c.name).Bool("connected", c.connected)
+		if c.connected {
+			mon := readMonitor(card, c.name)
+			modes := make([]string, 0, len(c.modes))
+			for _, m := range c.modes {
+				modes = append(modes, m.String())
+			}
+			ev = ev.Str("make", mon.Make).Str("model", mon.Model).Int("mm_w", c.mmW).Int("mm_h", c.mmH).Strs("modes", modes)
+		}
+		ev.Msg("connector")
 		conns = append(conns, c)
 	}
-	c, mode, err := pickConnector(conns)
+	c, mode, err := pickConnector(conns, want)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", card, err)
 	}
@@ -59,7 +78,10 @@ func Open(fd int, card string, log zerowrap.Logger) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := &Output{fd: fd, crtc: crtc, conn: c, mode: mode, log: log}
+	o := &Output{fd: fd, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card, c.name)}
+	if want.Name != "" && want.Name != c.name {
+		log.Warn().Str("wanted", want.Name).Str("using", c.name).Msg("configured output not connected")
+	}
 	if o.saved, err = getCrtc(fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
 	}
@@ -69,8 +91,13 @@ func Open(fd int, card string, log zerowrap.Logger) (*Output, error) {
 			return nil, err
 		}
 	}
-	log.Info().Str("card", card).Str("connector", c.name).Str("mode", mode.String()).Str("mode_name", cstr(mode.Name[:])).Uint32("crtc", crtc).Msg("output")
+	log.Info().Str("card", card).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")
 	return o, nil
+}
+
+// Info returns the chosen connector, monitor and mode.
+func (o *Output) Info() Info {
+	return Info{Name: o.conn.name, Monitor: o.monitor, Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli(), PhysicalW: o.conn.mmW, PhysicalH: o.conn.mmH}
 }
 
 func (o *Output) Width() int  { return int(o.mode.HDisplay) }

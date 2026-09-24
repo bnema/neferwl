@@ -99,6 +99,24 @@ func Load(path string) (ports.Config, error) {
 	}
 	return c, nil
 }
+
+// ParseMode parses "WxH" or "WxH@Hz"; hz is 0 when omitted.
+func ParseMode(s string) (w, h int, hz float64, err error) {
+	size, rate, hasRate := strings.Cut(s, "@")
+	ws, hs, ok := strings.Cut(size, "x")
+	w, e1 := strconv.Atoi(ws)
+	h, e2 := strconv.Atoi(hs)
+	if !ok || e1 != nil || e2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, 0, fmt.Errorf("must be WxH or WxH@Hz, got %q", s)
+	}
+	if hasRate {
+		if hz, err = strconv.ParseFloat(rate, 64); err != nil || hz <= 0 {
+			return 0, 0, 0, fmt.Errorf("invalid refresh rate in %q", s)
+		}
+	}
+	return w, h, hz, nil
+}
+
 func width(s string) bool {
 	if s == "1" {
 		return true
@@ -188,6 +206,15 @@ func Validate(c ports.Config) error {
 	}
 	if !color.MatchString(c.Background.Color) {
 		add("background.color", "must be #rrggbb")
+	}
+	for i, o := range c.Outputs {
+		path := fmt.Sprintf("output[%d]", i)
+		if o.Name == "" {
+			add(path+".name", "must not be empty")
+		}
+		if _, _, _, err := ParseMode(o.Mode); o.Mode != "" && err != nil {
+			add(path+".mode", err.Error())
+		}
 	}
 	if c.Layout.Gaps < 0 || c.Layout.Gaps > 200 {
 		add("layout.gaps", "must be between 0 and 200")

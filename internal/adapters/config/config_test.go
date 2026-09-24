@@ -86,3 +86,30 @@ func TestBindMerge(t *testing.T) {
 		t.Fatal(c.Binds)
 	}
 }
+
+func TestOutputs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.toml")
+	good := "[[output]]\nname = \"DP-2\"\nmode = \"5120x2160@165.058\"\n\n[[output]]\nname = \"HDMI-A-1\"\noff = true\n"
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Outputs) != 2 || c.Outputs[0].Name != "DP-2" || !c.Outputs[1].Off {
+		t.Fatalf("%+v", c.Outputs)
+	}
+	for _, bad := range []string{"[[output]]\nmode = \"1x1\"\n", "[[output]]\nname = \"DP-2\"\nmode = \"big\"\n", "[[output]]\nname = \"DP-2\"\nmode = \"1920x1080@0\"\n", "[[output]]\nname = \"DP-2\"\nscale = 2\n"} {
+		if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	w, h, hz, err := ParseMode("3440x1440")
+	if err != nil || w != 3440 || h != 1440 || hz != 0 {
+		t.Fatalf("ParseMode: %d %d %v %v", w, h, hz, err)
+	}
+}

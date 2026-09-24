@@ -36,14 +36,15 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				if e != nil {
 					return
 				}
-				r.SendGeometry(0, 0, 0, 0, 0, "nefertty", "headless", 0)
-				r.SendMode(3, int32(o.OutputWidth), int32(o.OutputHeight), 60000)
+				info := o.output()
+				r.SendGeometry(0, 0, int32(info.PhysicalW), int32(info.PhysicalH), 0, info.Make, info.Model, 0)
+				r.SendMode(3, int32(o.OutputWidth), int32(o.OutputHeight), int32(info.RefreshMilli))
 				if v >= 2 {
 					r.SendScale(1)
 				}
 				if v >= 4 {
-					r.SendName("HEADLESS-1")
-					r.SendDescription("NeferTTY headless output")
+					r.SendName(info.Name)
+					r.SendDescription(info.Description)
 				}
 				if v >= 2 {
 					r.SendDone()

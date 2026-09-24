@@ -17,6 +17,18 @@ gaps = 8
 default_column_width = "1/2"
 presets = ["1/3", "1/2", "2/3", "1"]
 
+# Physical displays (drm backend). The first connected, enabled entry is used;
+# without one, the first connected display that is not off. List names with
+# `make tty` logs ("connector" lines) or wlr-randr.
+# mode: "WxH" picks the highest refresh, "WxH@Hz" the closest; omit for preferred.
+# [[output]]
+# name = "DP-2"
+# mode = "5120x2160@165.058"
+#
+# [[output]]
+# name = "HDMI-A-1"
+# off = true
+
 [render]
 direct_scanout = true
 

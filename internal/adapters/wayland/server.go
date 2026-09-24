@@ -19,8 +19,31 @@ import (
 type Options struct {
 	RuntimeDir                string
 	OutputWidth, OutputHeight int
+	Output                    OutputInfo
 	Keymap                    string
 	RepeatRate, RepeatDelay   int
+}
+
+// OutputInfo describes the advertised wl_output. Zero values fall back to the headless output.
+type OutputInfo struct {
+	Name, Description    string
+	Make, Model          string
+	RefreshMilli         int
+	PhysicalW, PhysicalH int
+}
+
+func (o Options) output() OutputInfo {
+	i := o.Output
+	if i.Name == "" {
+		i.Name, i.Description = "HEADLESS-1", "NeferTTY headless output"
+	}
+	if i.Make == "" {
+		i.Make, i.Model = "nefertty", "headless"
+	}
+	if i.RefreshMilli == 0 {
+		i.RefreshMilli = 60000
+	}
+	return i
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
