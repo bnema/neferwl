@@ -82,7 +82,7 @@ func TestWatch(t *testing.T) {
 			write(path, "background = bad\nborder.width = 5\n")
 			select {
 			case c := <-out:
-				if c.Config.Background.Color != "#1e1e2e" || c.Config.Border.Width != 5 {
+				if c.Config.Background.Color != "#111111" || c.Config.Border.Width != 5 {
 					t.Fatalf("partial reload: %+v", c.Config)
 				}
 			case <-time.After(time.Second):

@@ -14,7 +14,7 @@ keyboard.cmd = super
 # Command for spawn-terminal and the terminal opened at startup.
 terminal = foot
 
-background = #1e1e2e
+background = #111111
 
 # Drawn inside the window edge; width 0 disables it, empty inactive draws nothing.
 border.width = 2
