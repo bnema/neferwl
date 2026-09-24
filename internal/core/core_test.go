@@ -25,6 +25,7 @@ func TestOwner(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Border.Width = 0
+	cfg.Layout.Gaps = 8
 	client := make(chan ports.ClientEvent, 128)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 8)
@@ -197,6 +198,7 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 func TestPointerFocusAndGrab(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
+	cfg.Layout.Gaps = 8
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)

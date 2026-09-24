@@ -140,8 +140,9 @@ func TestHeadlessSpawnClose(t *testing.T) {
 			select {
 			case s := <-scenes:
 				if len(s.Windows) == count {
-					if count == 1 && s.Windows[0].Rect.W != 948 {
-						t.Errorf("width = %d, want 948", s.Windows[0].Rect.W)
+					// Half of 1920 with the default zero gaps.
+					if count == 1 && s.Windows[0].Rect.W != 960 {
+						t.Errorf("width = %d, want 960", s.Windows[0].Rect.W)
 					}
 					return
 				}

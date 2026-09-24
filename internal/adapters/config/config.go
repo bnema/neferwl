@@ -41,7 +41,7 @@ func Defaults() ports.Config {
 	c.Border.Width = 2
 	c.Border.Active = "#b4befe"
 	c.Border.Inactive = ""
-	c.Layout.Gaps = 8
+	c.Layout.Gaps = 0
 	c.Layout.DefaultColumnWidth = "1/2"
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Binds = make(map[string]string, len(defaultBinds))
