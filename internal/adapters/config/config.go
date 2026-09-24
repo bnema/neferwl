@@ -36,7 +36,7 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+shift+pageup", "move-to-workspace-up"},
 	{"cmd+shift+pagedown", "move-to-workspace-down"},
 }
-var actions = map[string]bool{"focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -86,9 +86,15 @@ func Defaults() ports.Config {
 		}
 		c.Binds[combo] = b.action
 	}
+	// Digits and zoom use physical keys (evdev codes 2-10, 12, 13), so they
+	// work the same on AZERTY, QWERTZ or Dvorak.
+	for combo, action := range map[string]string{"cmd+code:13": "scale-up", "cmd+code:12": "scale-down"} {
+		canon, _ := parseCombo(combo)
+		c.Binds[canon] = action
+	}
 	for n := 1; n <= 9; n++ {
-		focus, _ := parseCombo(fmt.Sprintf("cmd+%d", n))
-		move, _ := parseCombo(fmt.Sprintf("cmd+shift+%d", n))
+		focus, _ := parseCombo(fmt.Sprintf("cmd+code:%d", n+1))
+		move, _ := parseCombo(fmt.Sprintf("cmd+shift+code:%d", n+1))
 		c.Binds[focus] = fmt.Sprintf("focus-workspace %d", n)
 		c.Binds[move] = fmt.Sprintf("move-to-workspace %d", n)
 	}
@@ -176,6 +182,25 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			raw[key] = value
 		}
 		if name, ok := strings.CutPrefix(key, "output."); ok {
+			entry := func() *ports.OutputConfig {
+				if i, ok := outputs[name]; ok {
+					return &c.Outputs[i]
+				}
+				outputs[name] = len(c.Outputs)
+				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name})
+				return &c.Outputs[len(c.Outputs)-1]
+			}
+			if base, ok := strings.CutSuffix(name, ".scale"); ok {
+				name = base
+				s, err := parseScale(value)
+				if err != nil {
+					warn("%s: %v", key, err)
+					continue
+				}
+				override()
+				entry().Scale = s
+				continue
+			}
 			o := ports.OutputConfig{Name: name}
 			if value == "off" {
 				o.Off = true
@@ -186,12 +211,9 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				o.Mode = value
 			}
 			override()
-			if i, ok := outputs[name]; ok {
-				c.Outputs[i] = o
-			} else {
-				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, o)
-			}
+			e := entry()
+			o.Scale = e.Scale
+			*e = o
 			continue
 		}
 		if err := set(&c, key, value); err != nil {
@@ -472,6 +494,13 @@ func parseCombo(s string) (string, error) {
 
 // keysym maps a written key to its xkb keysym name.
 func keysym(k string) (string, error) {
+	// code:N is the physical key (evdev code), the same on every layout.
+	if rest, ok := strings.CutPrefix(strings.ToLower(k), "code:"); ok {
+		if n, err := strconv.Atoi(rest); err == nil && n > 0 && n < 768 {
+			return "code:" + rest, nil
+		}
+		return "", fmt.Errorf("code must be an evdev key code like code:2")
+	}
 	if r := []rune(k); len(r) == 1 {
 		// Binds match the unshifted keysym, so É means é.
 		if name, ok := runeKeysyms[unicode.ToLower(r[0])]; ok {
@@ -491,6 +520,28 @@ func keysym(k string) (string, error) {
 		}
 	}
 	return k, nil
+}
+
+// parseScale accepts a decimal (1.5) or a fraction (4/3) between 1 and 4.
+func parseScale(v string) (float64, error) {
+	var s float64
+	var err error
+	if num, den, ok := strings.Cut(v, "/"); ok {
+		var n, d float64
+		n, err = strconv.ParseFloat(strings.TrimSpace(num), 64)
+		if err == nil {
+			d, err = strconv.ParseFloat(strings.TrimSpace(den), 64)
+		}
+		if err == nil && d != 0 {
+			s = n / d
+		}
+	} else {
+		s, err = strconv.ParseFloat(v, 64)
+	}
+	if err != nil || !(s >= 1 && s <= 4) {
+		return 0, fmt.Errorf("must be between 1 and 4, like 1.5 or 4/3")
+	}
+	return s, nil
 }
 
 // ParseMode parses "WxH" or "WxH@Hz" ("preferred" is accepted); hz is 0 when omitted.

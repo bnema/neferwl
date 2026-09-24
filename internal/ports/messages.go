@@ -43,7 +43,7 @@ const (
 )
 
 // LayerSurface is the committed state of one mapped layer surface. Width and
-// Height are the committed buffer size. Margin is top, right, bottom, left.
+// Height are the committed surface size in logical pixels. Margin is top, right, bottom, left.
 // IDs share the WindowID space with windows and never collide.
 type LayerSurface struct {
 	ID            WindowID
@@ -81,14 +81,14 @@ type InputEvent interface{ inputEvent() }
 // after this transition; wayland forwards both to clients unchanged.
 type KeyEvent struct {
 	Keysym string
-	// Base and Shifted are the key's level 1 and 2 keysyms in the active layout,
-	// so binds like Cmd+1 also match on layouts where 1 needs Shift (AZERTY).
-	Base, Shifted string
-	Mods          Mods
-	Pressed       bool
-	TimeMsec      uint32
-	Keycode       uint32
-	State         ModState
+	// Base is the key's unshifted keysym in the active layout, so Cmd+Shift+1
+	// still matches a cmd+shift+1 bind although it prints exclam.
+	Base     string
+	Mods     Mods
+	Pressed  bool
+	TimeMsec uint32
+	Keycode  uint32
+	State    ModState
 }
 
 // ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
@@ -96,7 +96,7 @@ type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 
 func (KeyEvent) inputEvent() {}
 
-// PointerMotion uses absolute output coordinates.
+// PointerMotion uses absolute output coordinates in physical pixels.
 type PointerMotion struct {
 	X, Y     float64
 	TimeMsec uint32
@@ -116,8 +116,12 @@ func (PointerButton) inputEvent() {}
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
 
-// OutputMode carries output → core resolution changes.
-type OutputMode struct{ Width, Height int }
+// OutputMode carries output → core resolution changes in physical pixels.
+// Name is the connector, matched against output.<name>.scale.
+type OutputMode struct {
+	Width, Height int
+	Name          string
+}
 
 func (OutputMode) outputEvent() {}
 
@@ -140,6 +144,15 @@ type ConfigureWindow struct {
 }
 
 func (ConfigureWindow) clientCommand() {}
+
+// SetOutputScale carries core → wayland the output scale and its logical size.
+// Window and pointer coordinates in other commands are logical.
+type SetOutputScale struct {
+	Scale         float64
+	Width, Height int
+}
+
+func (SetOutputScale) clientCommand() {}
 
 // CloseWindow carries core → wayland close requests.
 type CloseWindow struct{ ID WindowID }
@@ -197,9 +210,11 @@ func (SetKeymap) clientCommand() {}
 type SpawnRequest struct{ Argv []string }
 
 // Scene carries core → renderer immutable snapshots with fresh Windows slices.
+// Rects and the output size are logical; the renderer multiplies by Scale.
 type Scene struct {
 	Seq                       uint64
 	OutputWidth, OutputHeight int
+	Scale                     float64
 	Background                string
 	Border                    Border
 	Windows                   []SceneWindow
@@ -224,13 +239,15 @@ type SceneLayer struct {
 // SurfaceContent carries wayland → output the latest committed pixels of a
 // window. Pixels is a private copy in B8G8R8A8 (wl_shm argb8888/xrgb8888
 // little-endian) with Stride bytes per row; receivers never modify it.
-// Pixels == nil means the window has no content.
+// Pixels == nil means the window has no content. LogicalW and LogicalH are
+// the surface size in logical pixels (buffer scale and viewport applied).
 type SurfaceContent struct {
-	ID            WindowID
-	Width, Height int
-	Stride        int
-	Opaque        bool // xrgb8888: ignore the alpha byte
-	Pixels        []byte
+	ID                 WindowID
+	Width, Height      int
+	LogicalW, LogicalH int
+	Stride             int
+	Opaque             bool // xrgb8888: ignore the alpha byte
+	Pixels             []byte
 }
 
 // SceneWindow carries core → renderer window placement.

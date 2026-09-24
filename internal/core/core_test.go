@@ -21,6 +21,19 @@ func receive[T any](t *testing.T, ch <-chan T) T {
 		return zero
 	}
 }
+
+// command receives the next client command, skipping output scale updates.
+func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
+	t.Helper()
+	for {
+		if v := receive(t, ch); v != nil {
+			if _, ok := v.(ports.SetOutputScale); !ok {
+				return v
+			}
+		}
+	}
+}
+
 func TestOwner(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Keyboard.CmdKey = "alt"
@@ -53,10 +66,10 @@ func TestOwner(t *testing.T) {
 	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || !s.Windows[0].Borderless {
 		t.Fatal(s)
 	}
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true}) {
 		t.Fatal(v)
 	}
-	receive(t, commands)
+	command(t, commands)
 	client <- ports.WindowMapped{ID: 2}
 	s = receive(t, scenes)
 	if len(s.Windows) != 2 {
@@ -78,12 +91,12 @@ func TestOwner(t *testing.T) {
 	}
 	input <- ports.KeyEvent{Keysym: "Return", Mods: ports.ModAlt}
 	input <- ports.KeyEvent{Keysym: "x", Pressed: true}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 2, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 2, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
 		t.Fatal(v)
 	}
 	input <- ports.KeyEvent{Keysym: "Q", Mods: ports.ModAlt, Pressed: true}
 	receive(t, scenes)
-	if v := receive(t, commands); v != (ports.CloseWindow{ID: 2}) {
+	if v := command(t, commands); v != (ports.CloseWindow{ID: 2}) {
 		t.Fatal(v)
 	}
 	client <- ports.WindowUnmapped{ID: 2}
@@ -97,7 +110,7 @@ func TestOwner(t *testing.T) {
 	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
 	}
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true}) {
 		t.Fatal(v)
 	}
 	cfg.Layout.MaxColumns = 0
@@ -145,26 +158,26 @@ func TestKeyPressState(t *testing.T) {
 	defer func() { cancel(); receive(t, done) }()
 	client <- ports.WindowMapped{ID: 1}
 	receive(t, scenes)
-	receive(t, commands)
-	receive(t, commands)
+	command(t, commands)
+	command(t, commands)
 	press := ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
 	input <- press
 	receive(t, scenes)
 	input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper}
 	input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left", Pressed: true}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left", Pressed: true}}) {
 		t.Fatal(v)
 	}
 	input <- ports.KeyEvent{Keysym: "Left"}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
 		t.Fatal(v)
 	}
 	input <- press
 	receive(t, scenes)
 	input <- ports.KeyEvent{Keysym: "Left", Pressed: true}
-	receive(t, commands)
+	command(t, commands)
 	input <- ports.KeyEvent{Keysym: "Left"}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "Left"}}) {
 		t.Fatal(v)
 	}
 }
@@ -185,13 +198,13 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 	defer func() { cancel(); receive(t, done) }()
 	client <- ports.WindowMapped{ID: 1}
 	receive(t, scenes)
-	receive(t, commands)
-	receive(t, commands)
+	command(t, commands)
+	command(t, commands)
 	input <- ports.KeyEvent{Keysym: "Left", Mods: ports.ModSuper, Pressed: true}
 	receive(t, scenes)
 	input <- ports.KeyEvent{Keysym: "Left"}
 	input <- ports.KeyEvent{Keysym: "x", Pressed: true}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Pressed: true}}) {
 		t.Fatal(v)
 	}
 }
@@ -222,14 +235,14 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		<-commands
 	}
 	input <- ports.PointerMotion{X: float64(first.X + 2), Y: float64(first.Y + 3), TimeMsec: 1}
-	if v := receive(t, commands); v != (ports.PointerFocus{ID: 1, X: 2, Y: 3}) {
+	if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 2, Y: 3}) {
 		t.Fatal(v)
 	}
-	if v := receive(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, TimeMsec: 1}) {
+	if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, TimeMsec: 1}) {
 		t.Fatal(v)
 	}
 	input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	if v := receive(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true}) {
+	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true}) {
 		t.Fatal(v)
 	}
 	receive(t, scenes)
@@ -243,11 +256,11 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		t.Fatal("missing keyboard focus")
 	}
 	input <- ports.PointerMotion{X: 0, Y: 0}
-	if v := receive(t, commands); v != (ports.PointerFocus{}) {
+	if v := command(t, commands); v != (ports.PointerFocus{}) {
 		t.Fatal(v)
 	}
 	input <- ports.PointerButton{Button: 0x110}
-	if v := receive(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
+	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
 		t.Fatal(v)
 	}
 }
@@ -272,7 +285,7 @@ func TestBorderInset(t *testing.T) {
 	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
 	r := receive(t, scenes).Windows[0].Rect
-	if v := receive(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
 	// With a second column, the scene keeps the outer rect and the client is
@@ -294,7 +307,7 @@ func TestBorderInset(t *testing.T) {
 		t.Fatalf("no %v for outer %v", want, r)
 	}
 	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), TimeMsec: 1}
-	if v := receive(t, commands); v != (ports.PointerFocus{ID: 2, X: 0, Y: 3}) {
+	if v := command(t, commands); v != (ports.PointerFocus{ID: 2, X: 0, Y: 3}) {
 		t.Fatal(v)
 	}
 }
@@ -320,7 +333,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 	focusOf := func() ports.WindowID {
 		t.Helper()
 		for {
-			if v, ok := receive(t, commands).(ports.FocusWindow); ok {
+			if v, ok := command(t, commands).(ports.FocusWindow); ok {
 				return v.ID
 			}
 		}
@@ -338,7 +351,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 	}
 	input <- ports.KeyEvent{Keysym: "a", Keycode: 30, Pressed: true}
 	for {
-		if v, ok := receive(t, commands).(ports.ForwardKey); ok {
+		if v, ok := command(t, commands).(ports.ForwardKey); ok {
 			if v.ID != 7 {
 				t.Fatalf("key went to %d", v.ID)
 			}
@@ -373,8 +386,8 @@ func TestWorkspaceSwitch(t *testing.T) {
 	for len(commands) > 0 {
 		<-commands
 	}
-	// AZERTY: the 2 key is eacute unshifted; Cmd+2 still matches through its shifted level.
-	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Shifted: "2", Mods: ports.ModSuper, Pressed: true}
+	// AZERTY: the 2 key prints eacute; the default bind is on its physical key (code 3).
+	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
 	s := receive(t, scenes)
 	if len(s.Windows) != 1 || !s.Windows[0].Hidden {
 		t.Fatal(s)
@@ -470,13 +483,84 @@ func TestShiftReleasedFirst(t *testing.T) {
 	for len(commands) > 0 {
 		<-commands
 	}
-	// US Cmd+Shift+1 prints exclam; its base level 1 matches move-to-workspace 1.
-	input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Shifted: "exclam", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
+	// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-to-workspace 1.
+	input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
 	receive(t, scenes)
 	// Shift goes up first, so the release reports "1": still swallowed.
 	input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper}
 	input <- ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}
-	if v := receive(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
+	if v := command(t, commands); v != (ports.ForwardKey{ID: 1, Key: ports.KeyEvent{Keysym: "x", Keycode: 45, Pressed: true}}) {
 		t.Fatal(v)
+	}
+}
+
+func TestOutputScale(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}}
+	cfg.Binds["Cmd+equal"] = "scale-up"
+	cfg.Binds["Cmd+minus"] = "scale-down"
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	reload := make(chan ports.ConfigChanged, 1)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	// 5120x2160 at scale 2 is 2560x1080 logical.
+	output <- ports.OutputMode{Width: 5120, Height: 2160, Name: "DP-2"}
+	s := receive(t, scenes)
+	if s.Scale != 2 || s.OutputWidth != 2560 || s.OutputHeight != 1080 {
+		t.Fatal(s.Scale, s.OutputWidth, s.OutputHeight)
+	}
+	if v := receive(t, commands); v != (ports.SetOutputScale{Scale: 2, Width: 2560, Height: 1080}) {
+		t.Fatal(v)
+	}
+	client <- ports.WindowMapped{ID: 1}
+	receive(t, scenes)
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 2560, Height: 1080, Activated: true}) {
+		t.Fatal(v)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	// The pointer arrives in physical pixels; the client sees logical ones.
+	input <- ports.PointerMotion{X: 1000, Y: 400}
+	if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 500, Y: 200}) {
+		t.Fatal(v)
+	}
+	// Cmd+- steps down through the clean scales of 5120x2160: 2 → 5/3.
+	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: ports.ModSuper, Pressed: true}
+	s = receive(t, scenes)
+	if s.Scale != 5.0/3 || s.OutputWidth != 3072 || s.OutputHeight != 1296 {
+		t.Fatal(s.Scale, s.OutputWidth, s.OutputHeight)
+	}
+	input <- ports.KeyEvent{Keysym: "minus", Keycode: 12, Mods: ports.ModSuper}
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper, Pressed: true}
+	if s = receive(t, scenes); s.Scale != 2 {
+		t.Fatal(s.Scale)
+	}
+	// A reload that keeps the config scale keeps the live one too.
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper}
+	input <- ports.KeyEvent{Keysym: "equal", Keycode: 13, Mods: ports.ModSuper, Pressed: true}
+	if s = receive(t, scenes); s.Scale != 2.5 {
+		t.Fatal(s.Scale)
+	}
+	cfg.Layout.Gaps = 1
+	reload <- ports.ConfigChanged{Config: cfg}
+	if s = receive(t, scenes); s.Scale != 2.5 {
+		t.Fatal(s.Scale)
+	}
+	// Changing the config scale wins.
+	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 1.25}}
+	reload <- ports.ConfigChanged{Config: cfg}
+	if s = receive(t, scenes); s.Scale != 1.25 || s.OutputWidth != 4096 {
+		t.Fatal(s.Scale, s.OutputWidth)
 	}
 }

@@ -315,30 +315,60 @@ func (r *Renderer) Clear(rgb [3]uint8) error {
 }
 
 func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
+	// Scene rects are logical; everything below works in physical pixels.
+	scale := s.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	phys := func(v int) int { return int(math.Round(float64(v) * scale)) }
+	physRect := func(x, y, w, h int) image.Rectangle { return image.Rect(phys(x), phys(y), phys(x+w), phys(y+h)) }
 	type upload struct {
-		rect                     image.Rectangle
-		offset                   int
-		pixels                   []byte
-		stride, sourceX, sourceY int
-		color                    [3]uint8
-		opaque                   bool
+		rect   image.Rectangle
+		offset int
+		pixels []byte
+		stride int
+		// dst covers src; they differ in size when the buffer is not drawn at
+		// the physical size (integer-scale clients, rounding).
+		dst, src image.Rectangle
+		color    [3]uint8
+		opaque   bool
 	}
 	var uploads []upload
 	used := 0
 	bounds := image.Rect(0, 0, r.width, r.height)
-	add := func(rect image.Rectangle, c [3]uint8, content *ports.SurfaceContent, origin image.Point) {
+	add := func(rect image.Rectangle, c [3]uint8) {
 		rect = rect.Intersect(bounds)
 		if rect.Empty() {
 			return
 		}
-		n := rect.Dx() * rect.Dy() * 4
-		u := upload{rect: rect, offset: used, color: c}
-		if content != nil {
-			u.pixels, u.stride, u.opaque = content.Pixels, content.Stride, content.Opaque
-			u.sourceX, u.sourceY = rect.Min.X-origin.X, rect.Min.Y-origin.Y
+		uploads = append(uploads, upload{rect: rect, offset: used, color: c})
+		used += rect.Dx() * rect.Dy() * 4
+	}
+	// addContent maps src (buffer pixels) onto dst (physical pixels).
+	addContent := func(dst, src image.Rectangle, content *ports.SurfaceContent) {
+		rect := dst.Intersect(bounds)
+		if rect.Empty() || src.Empty() {
+			return
 		}
-		uploads = append(uploads, u)
-		used += n
+		uploads = append(uploads, upload{rect: rect, offset: used, pixels: content.Pixels, stride: content.Stride, opaque: content.Opaque, dst: dst, src: src})
+		used += rect.Dx() * rect.Dy() * 4
+	}
+	// place draws content with its top-left at (x, y) logical, clipped to w×h logical.
+	place := func(content *ports.SurfaceContent, x, y, w, h int) {
+		lw, lh := content.LogicalW, content.LogicalH
+		if lw <= 0 || lh <= 0 {
+			lw, lh = content.Width, content.Height
+		}
+		if content.Pixels == nil || lw <= 0 || lh <= 0 || content.Stride < content.Width*4 || len(content.Pixels) < (content.Height-1)*content.Stride+content.Width*4 {
+			return
+		}
+		vw, vh := min(lw, w), min(lh, h)
+		if vw <= 0 || vh <= 0 {
+			return
+		}
+		// Buffer pixels per logical pixel on each axis.
+		src := image.Rect(0, 0, vw*content.Width/lw, vh*content.Height/lh)
+		addContent(physRect(x, y, vw, vh), src, content)
 	}
 	fullscreen := false
 	for _, w := range s.Windows {
@@ -352,12 +382,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				continue
 			}
 			content := contents[layer.ID]
-			width, height := min(content.Width, layer.Rect.W), min(content.Height, layer.Rect.H)
-			if content.Pixels == nil || width <= 0 || height <= 0 || content.Stride < width*4 || len(content.Pixels) < (height-1)*content.Stride+width*4 {
-				continue
-			}
-			x, y := layer.Rect.X, layer.Rect.Y
-			add(image.Rect(x, y, x+width, y+height), [3]uint8{}, &content, image.Pt(x, y))
+			place(&content, layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H)
 		}
 	}
 	addLayers(false)
@@ -372,16 +397,13 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
 		}
 		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
-		body := image.Rect(cx, cy, cx+cw, cy+ch)
+		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
 		if content.Pixels == nil {
-			add(body, windowColor(w.ID), nil, image.Point{})
+			add(body, windowColor(w.ID))
 		} else {
-			add(body, parseColor(s.Background), nil, image.Point{})
-			width, height := min(content.Width, cw), min(content.Height, ch)
-			if width > 0 && height > 0 && content.Stride >= width*4 && len(content.Pixels) >= (height-1)*content.Stride+width*4 {
-				add(image.Rect(cx, cy, cx+width, cy+height), [3]uint8{}, &content, image.Pt(cx, cy))
-			}
+			add(body, parseColor(s.Background))
+			place(&content, cx, cy, cw, ch)
 		}
 		borderColor := s.Border.Inactive
 		if w.Focused {
@@ -389,8 +411,14 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		if b > 0 && borderColor != "" {
 			rgb := parseColor(borderColor)
-			for _, strip := range []image.Rectangle{image.Rect(x, y, x+w.Rect.W, y+b), image.Rect(x, y+w.Rect.H-b, x+w.Rect.W, y+w.Rect.H), image.Rect(x, y+b, x+b, y+w.Rect.H-b), image.Rect(x+w.Rect.W-b, y+b, x+w.Rect.W, y+w.Rect.H-b)} {
-				add(strip, rgb, nil, image.Point{})
+			outer, inner := physRect(x, y, w.Rect.W, w.Rect.H), physRect(cx, cy, cw, ch)
+			for _, strip := range []image.Rectangle{
+				image.Rect(outer.Min.X, outer.Min.Y, outer.Max.X, inner.Min.Y),
+				image.Rect(outer.Min.X, inner.Max.Y, outer.Max.X, outer.Max.Y),
+				image.Rect(outer.Min.X, inner.Min.Y, inner.Min.X, inner.Max.Y),
+				image.Rect(inner.Max.X, inner.Min.Y, outer.Max.X, inner.Max.Y),
+			} {
+				add(strip, rgb)
 			}
 		}
 	}
@@ -404,8 +432,19 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		for row := 0; row < u.rect.Dy(); row++ {
 			line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
 			if u.pixels != nil {
-				start := (u.sourceY+row)*u.stride + u.sourceX*4
-				copy(line, u.pixels[start:start+len(line)])
+				y := u.rect.Min.Y + row
+				if u.dst.Size() == u.src.Size() {
+					start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
+					copy(line, u.pixels[start:start+len(line)])
+				} else {
+					// Nearest-neighbour resample, sampling pixel centres.
+					sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
+					src := u.pixels[sy*u.stride:]
+					for i := 0; i < u.rect.Dx(); i++ {
+						sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
+						copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
+					}
+				}
 				if u.opaque {
 					for i := 3; i < len(line); i += 4 {
 						line[i] = 255
