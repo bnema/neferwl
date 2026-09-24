@@ -456,6 +456,14 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 		}
 	}
 	for _, w := range c.Workspaces {
+		overflow := w.Overflow
+		if overflow == "" {
+			overflow = c.Layout.Overflow
+		}
+		if overflow == "fixed" && len(w.Slots) > 0 {
+			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
+			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
+		}
 		if w.Hidden && !bound[w.Name] {
 			warnings = append(warnings, Warning{Line: seen["workspace."+w.Name+".hidden"], Msg: fmt.Sprintf("workspace.%s.hidden: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
 		}

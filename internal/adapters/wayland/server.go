@@ -55,6 +55,7 @@ type Channels struct {
 type Server struct {
 	display                 *server.Display
 	env                     procEnv
+	slotsPending            bool // core waits for a slot window
 	name                    string
 	cleanup                 func()
 	log                     zerowrap.Logger
@@ -421,6 +422,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		w.sendConfigure()
 	case ports.SetOutputScale:
 		s.setOutputScale(c)
+	case ports.SlotsPending:
+		s.slotsPending = c.Pending
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevel.Resource.Alive() {

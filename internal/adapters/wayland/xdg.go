@@ -150,7 +150,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.serials = append(x.serials, x.server.serial)
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
-			slot := x.server.slotToken(r.Client().PID())
+			slot := x.server.slotToken(r.Client())
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot})
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Msg("window mapped")
 		} else if !buffer && w.mapped {

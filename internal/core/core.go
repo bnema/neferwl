@@ -50,9 +50,10 @@ type Core struct {
 	physW, physH    int
 	scale, cfgScale float64
 	sentScale       ports.SetOutputScale
-	slots           slots
+	slots           map[slotKey]*slotState
 	// toSpawn holds slots to start; Run sends them (apply has no context).
-	toSpawn []slotKey
+	toSpawn     []slotKey
+	sentPending bool
 }
 
 func keyName(s string) string {
@@ -179,28 +180,53 @@ func (c *Core) apply(cfg ports.Config) error {
 	c.cfg = cfg
 	c.binds = binds
 	c.applyConfigScale()
+	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.ws.SetNamed(named)
 	c.ws.SetOverflow(defOverflow)
 	c.ws.SetMaxColumns(cfg.Layout.MaxColumns)
 	c.ws.SetPresets(presets)
 	c.ws.SetGaps(cfg.Layout.Gaps)
-	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	return nil
 }
 
-// spawnSlots starts pending slot commands, then the empty slots of the
-// workspace on screen.
-func (c *Core) spawnSlots(ctx context.Context) error {
-	keys := append(c.toSpawn, c.refill()...)
+// publishPending tells wayland at once when slots start waiting, before
+// their windows can map.
+func (c *Core) publishPending(ctx context.Context) error {
+	if p := c.anyPending(); p != c.sentPending {
+		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
+			return err
+		}
+		c.sentPending = p
+	}
+	return nil
+}
+
+// spawnSlots starts the slots queued by config. With shown set (the user
+// just switched to another workspace), it also refills the empty slots of
+// the workspace now on screen.
+func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
+	keys := c.toSpawn
 	c.toSpawn = nil
+	if shown {
+		keys = append(keys, c.refill()...)
+	}
+	started := map[slotKey]bool{}
 	for _, key := range keys {
-		if _, ok := c.slots.byKey[key]; !ok {
+		st, ok := c.slots[key]
+		// A key can be queued twice (new slot on the workspace on screen).
+		if !ok || started[key] || st.window != 0 {
 			continue
+		}
+		started[key] = true
+		req := c.spawnSlot(key)
+		// Wayland must read slot tokens before this window can map.
+		if err := c.publishPending(ctx); err != nil {
+			return err
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case c.ch.Spawn <- c.spawnSlot(key):
+		case c.ch.Spawn <- req:
 		}
 	}
 	return nil
@@ -209,7 +235,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	if cap(ch.Scenes) != 1 {
 		return nil, fmt.Errorf("scenes must have capacity 1")
 	}
-	c := &Core{scale: 1, ws: NewMonitor(), slots: newSlots(), ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{scale: 1, ws: NewMonitor(), slots: map[slotKey]*slotState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -297,6 +323,9 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.sentScale = v
 	}
+	if err := c.publishPending(ctx); err != nil {
+		return err
+	}
 	c.seq++
 	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output().W, OutputHeight: c.ws.Output().H, Scale: c.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
@@ -360,7 +389,7 @@ func (c *Core) publish(ctx context.Context) error {
 	return nil
 }
 func (c *Core) Run(ctx context.Context) error {
-	if c.spawnSlots(ctx) != nil {
+	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
 		return nil
 	}
 	for {
@@ -385,7 +414,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 			case ports.WindowUnmapped:
 				c.ws.RemoveWindow(v.ID)
-				c.slotWindowGone(v.ID)
+				c.releaseSlots()
 				if c.pointer == v.ID {
 					c.pointer = 0
 					if err := c.command(ctx, ports.PointerFocus{}); err != nil {
@@ -432,7 +461,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
-			if c.spawnSlots(ctx) != nil {
+			if c.spawnSlots(ctx, false) != nil {
 				return nil
 			}
 			if err := c.publish(ctx); err != nil {
@@ -543,6 +572,7 @@ func (c *Core) Run(ctx context.Context) error {
 						}
 						continue
 					}
+					before := c.ws.Current()
 					effect := c.ws.Apply(action)
 					if effect.Quit {
 						return ErrQuit
@@ -559,7 +589,8 @@ func (c *Core) Run(ctx context.Context) error {
 						}
 					}
 					// Showing a declared workspace refills its empty slots.
-					if c.spawnSlots(ctx) != nil {
+					c.releaseSlots()
+					if c.spawnSlots(ctx, c.ws.Current() != before) != nil {
 						return nil
 					}
 					if effect.Close != 0 {

@@ -35,17 +35,18 @@ layout.presets = 1/3, 1/2, 2/3, 1
 # when empty. hidden = on keeps one out of the numbers and of up/down: only its
 # bind shows it, and pressing the bind again returns to the previous workspace.
 # max-columns and overflow override the layout.* values.
-# workspace.dev.hidden = on
-# workspace.dev.max-columns = 3
-# workspace.dev.overflow = fixed
-# bind.cmd+d = workspace dev
+# workspace.web.max-columns = 3
+# workspace.web.overflow = fixed
 #
 # Slots: column.N = <width>, <command>. nefertty starts each command in the
 # background and puts its first window in column N, without taking focus.
 # A closed slot stays empty until the workspace is shown again. Apps that
-# reuse a running instance need a new-instance flag.
+# reuse a running instance need a new-instance flag. Widths need
+# overflow = scroll.
+# workspace.dev.hidden = on
 # workspace.dev.column.1 = 67%, code --new-window
 # workspace.dev.column.2 = 33%, foot
+# bind.cmd+d = workspace dev
 
 # Displays (drm backend): WxH, WxH@Hz, preferred or off.
 # The first listed display that is connected and not off is used.

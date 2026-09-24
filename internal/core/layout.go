@@ -171,9 +171,12 @@ func (w *Workspace) AddSlotWindow(id WindowID, slot int, width Width) {
 	if id == 0 || w.has(id) {
 		return
 	}
+	// Right after the last slot column with a lower number, else first.
 	at := 0
-	for at < len(w.Columns) && w.Columns[at].Slot > 0 && w.Columns[at].Slot < slot {
-		at++
+	for i, c := range w.Columns {
+		if c.Slot > 0 && c.Slot < slot {
+			at = i + 1
+		}
 	}
 	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Width: width, Slot: slot})
 	if len(w.Columns) > 1 && at <= w.Focus {
@@ -190,6 +193,16 @@ func (w *Workspace) setSlotWidth(n int, width Width) {
 		}
 	}
 	w.scroll()
+}
+
+// inSlot reports whether window id is in slot column n.
+func (w *Workspace) inSlot(id WindowID, n int) bool {
+	for _, c := range w.Columns {
+		if c.Slot == n && slices.Contains(c.Windows, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // unslot turns slot column n into a normal column.

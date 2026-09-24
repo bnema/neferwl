@@ -293,3 +293,12 @@ bind.cmd+d = workspace dev
 		t.Fatal(w)
 	}
 }
+
+func TestSlotWidthsIgnoredWithFixedOverflow(t *testing.T) {
+	_, w := parseString(t, `workspace.dev.overflow = fixed
+workspace.dev.column.1 = 67%, foot
+`)
+	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "ignored") {
+		t.Fatal(w)
+	}
+}
