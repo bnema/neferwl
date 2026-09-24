@@ -53,7 +53,7 @@ func TestLayerChangedChannels(t *testing.T) {
 	client := make(chan ports.ClientEvent)
 	output := make(chan ports.OutputEvent)
 	commands := make(chan ports.ClientCommand, 16)
-	scenes := make(chan ports.Scene, 1)
+	scenes := make(chan []ports.Scene, 1)
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
@@ -69,13 +69,13 @@ func TestLayerChangedChannels(t *testing.T) {
 		t.Helper()
 		select {
 		case s := <-scenes:
-			return s
+			return s[0]
 		case <-time.After(time.Second):
 			t.Fatal("scene timeout")
 			return ports.Scene{}
 		}
 	}
-	output <- ports.OutputMode{Width: 1920, Height: 1080}
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 1920, Height: 1080}}
 	recv()
 	client <- ports.WindowMapped{ID: 1}
 	before := recv()

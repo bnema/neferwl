@@ -29,12 +29,33 @@ func TestHotkey(t *testing.T) {
 	}
 }
 
-func TestPointerClamp(t *testing.T) {
-	p := pointer{x: 10, y: 10, w: 100, h: 50}
-	if x, y := p.move(-20, 100); x != 0 || y != 49 {
+func TestPointerAcrossOutputs(t *testing.T) {
+	layout := ports.Layout{
+		{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
+		{Info: ports.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 2},
+	}
+	p := newPointer(layout)
+	if p.x != 50 || p.y != 25 {
+		t.Fatal(p.x, p.y)
+	}
+	// Off the bottom of A: clamped to A.
+	if x, y := p.move(-80, 100); x != 0 || y != 49 {
 		t.Fatalf("got %v %v", x, y)
 	}
-	if x, y := p.move(30.5, -5); x != 30.5 || y != 44 {
+	// Into B, where deltas count in physical pixels (scale 2).
+	p.set(150, 20)
+	if x, y := p.move(20, 10); x != 160 || y != 25 {
 		t.Fatalf("got %v %v", x, y)
+	}
+	var out string
+	var px, py float64
+	p.moved(func(o string, x, y float64) { out, px, py = o, x, y })
+	if out != "B" || px != 120 || py != 50 {
+		t.Fatal(out, px, py)
+	}
+	// B unplugged: the pointer lands on A.
+	p.setLayout(layout[:1])
+	if p.x != 99 || p.y != 25 {
+		t.Fatal(p.x, p.y)
 	}
 }

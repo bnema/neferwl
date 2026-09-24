@@ -120,6 +120,11 @@ type Workspace struct {
 	MaxColumns int
 	presets    []Width
 	fullscreen WindowID
+	// home is the monitor (key or connector) the workspace belongs to; ""
+	// means the one it is on. On another monitor it is a guest; homePos is
+	// its position there, where it returns.
+	home    string
+	homePos int
 }
 
 func (w *Workspace) empty() bool { return len(w.Columns) == 0 }

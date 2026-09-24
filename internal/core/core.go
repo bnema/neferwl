@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -12,16 +13,20 @@ import (
 
 var ErrQuit = errors.New("quit requested")
 
-// Channels connects the owner to adapters. scenes must have capacity 1: core is
-// its only sender and may drain a stale scene; consumers only receive.
+// Channels connects the owner to adapters. Scenes must have capacity 1: core is
+// its only sender and may drain a stale set; consumers only receive. Each
+// send holds one scene per output.
 type Channels struct {
-	Client       <-chan ports.ClientEvent
-	Input        <-chan ports.InputEvent
-	Output       <-chan ports.OutputEvent
-	Config       <-chan ports.ConfigChanged
-	Commands     chan<- ports.ClientCommand
-	Spawn        chan<- ports.SpawnRequest
-	Scenes       chan ports.Scene
+	Client   <-chan ports.ClientEvent
+	Input    <-chan ports.InputEvent
+	Output   <-chan ports.OutputEvent
+	Config   <-chan ports.ConfigChanged
+	Commands chan<- ports.ClientCommand
+	Spawn    chan<- ports.SpawnRequest
+	Scenes   chan []ports.Scene
+	// Layouts, when set, receives the output layout whenever it changes,
+	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
+	Layouts      chan ports.Layout
 	ConfigErrors chan<- error
 }
 type binding struct {
@@ -31,7 +36,8 @@ type binding struct {
 type Core struct {
 	ch               Channels
 	cfg              ports.Config
-	ws               *Monitor
+	screens          []*screen
+	focusScreen      int
 	binds            map[binding]Action
 	pressed          map[string]bool
 	sent             map[WindowID]ports.ConfigureWindow
@@ -39,18 +45,15 @@ type Core struct {
 	pointer          WindowID
 	grab             WindowID
 	buttons          map[uint32]bool
-	cursorX, cursorY float64
+	cursorX, cursorY float64 // global, logical
 	seq              uint64
-	layers           []ports.LayerSurface
-	placed           []ports.SceneLayer
-	layerChanged     bool
-	// Output in physical pixels. scale comes from output.<name>.scale and
-	// changes live with scale-up/scale-down until the config value changes.
-	outName         string
-	physW, physH    int
-	scale, cfgScale float64
-	sentScale       ports.SetOutputScale
-	slots           map[slotKey]*slotState
+	// layerChanged is set once layer state arrives from wayland.
+	layerChanged bool
+	sentOutputs  ports.SetOutputs
+	specs        []NamedWorkspace
+	presets      []Width
+	overflow     Overflow
+	slots        map[slotKey]*slotState
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn     []slotKey
 	sentPending bool
@@ -140,7 +143,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			continue
 		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveToWorkspaceUp, ActionMoveToWorkspaceDown:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveToWorkspaceUp, ActionMoveToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -171,7 +174,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			return fmt.Errorf("invalid workspace %q", ws.Name)
 		}
 		seen[ws.Name] = true
-		named = append(named, NamedWorkspace{Name: ws.Name, Hidden: ws.Hidden, MaxColumns: ws.MaxColumns, Overflow: o})
+		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, Hidden: ws.Hidden, MaxColumns: ws.MaxColumns, Overflow: o})
 	}
 	specs, err := parseSlots(cfg.Workspaces)
 	if err != nil {
@@ -179,13 +182,13 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
-	c.applyConfigScale()
+	c.specs, c.presets, c.overflow = named, presets, defOverflow
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
-	c.ws.SetNamed(named)
-	c.ws.SetOverflow(defOverflow)
-	c.ws.SetMaxColumns(cfg.Layout.MaxColumns)
-	c.ws.SetPresets(presets)
-	c.ws.SetGaps(cfg.Layout.Gaps)
+	c.named()
+	for _, s := range c.screens {
+		c.settings(s.mon)
+	}
+	c.applyConfigScales()
 	return nil
 }
 
@@ -232,10 +235,11 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	return nil
 }
 func New(cfg ports.Config, ch Channels) (*Core, error) {
-	if cap(ch.Scenes) != 1 {
-		return nil, fmt.Errorf("scenes must have capacity 1")
+	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) {
+		return nil, fmt.Errorf("scenes and layouts must have capacity 1")
 	}
-	c := &Core{scale: 1, ws: NewMonitor(), slots: map[slotKey]*slotState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	// A placeholder screen holds windows until the first output arrives.
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -250,33 +254,6 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	}
 }
 
-// applyConfigScale picks up output.<name>.scale when it changed in the config,
-// replacing any live scale-up/scale-down adjustment.
-func (c *Core) applyConfigScale() {
-	s := 1.0
-	for _, o := range c.cfg.Outputs {
-		if o.Name == c.outName && o.Scale != 0 {
-			s = o.Scale
-		}
-	}
-	s = SnapScale(s)
-	if s != c.cfgScale {
-		c.cfgScale = s
-		c.setScale(s)
-	}
-}
-
-// setScale resizes the logical output; layer placement follows.
-func (c *Core) setScale(s float64) {
-	c.scale = SnapScale(s)
-	c.ws.SetOutput(logical(c.physW, c.scale), logical(c.physH, c.scale))
-	if c.layerChanged {
-		var usable ports.Rect
-		c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
-		c.ws.SetUsable(usable)
-	}
-}
-
 // clientRect is the placement minus the border drawn around the client.
 // The renderer applies the same inset (ports.Border).
 func (c *Core) clientRect(p Placement) Rect {
@@ -288,69 +265,104 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
-// visible reports whether the window is on screen on the active workspace.
+// visible reports whether the window is on screen on any output.
 func (c *Core) visible(id WindowID) bool {
-	for _, p := range c.ws.Layout() {
-		if p.ID == id {
-			return !p.Hidden
+	for _, sc := range c.screens {
+		for _, p := range sc.mon.Layout() {
+			if p.ID == id {
+				return !p.Hidden
+			}
 		}
 	}
 	return false
 }
 
 // keyboardFocus is the mapped top/overlay layer with exclusive keyboard
-// interactivity and the highest ID, else the focused window. On-demand layers
-// never take focus automatically. When the layer unmaps, focus returns to the window.
+// interactivity and the highest ID on any output, else the focused window of
+// the focused output. On-demand layers never take focus automatically. When
+// the layer unmaps, focus returns to the window.
 func (c *Core) keyboardFocus() WindowID {
 	var layer WindowID
-	for _, l := range c.layers {
-		if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
-			layer = l.ID
+	for _, sc := range c.screens {
+		for _, l := range sc.layers {
+			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
+				layer = l.ID
+			}
 		}
 	}
 	if layer != 0 {
 		return layer
 	}
-	id, _ := c.ws.Focused()
+	id, _ := c.cur().mon.Focused()
 	return id
 }
 
+// setLayers splits the mapped layer surfaces by output. A surface without an
+// output, or on an unknown one, goes to the focused output.
+func (c *Core) setLayers(all []ports.LayerSurface) {
+	for _, sc := range c.screens {
+		sc.layers = nil
+	}
+	for _, l := range all {
+		sc := c.cur()
+		if i := c.screenIndex(l.Output); i >= 0 {
+			sc = c.screens[i]
+		}
+		sc.layers = append(sc.layers, l)
+	}
+	for _, sc := range c.screens {
+		sc.arrange()
+	}
+}
+
 func (c *Core) publish(ctx context.Context) error {
-	// Clients learn the new scale before the configures sized for it.
-	if v := (ports.SetOutputScale{Scale: c.scale, Width: c.ws.Output().W, Height: c.ws.Output().H}); v != c.sentScale {
+	// Clients learn outputs and scales before the configures sized for them.
+	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name()}); !sameOutputs(v, c.sentOutputs) {
 		if err := c.command(ctx, v); err != nil {
 			return err
 		}
-		c.sentScale = v
+		if !slices.Equal(v.Outputs, c.sentOutputs.Outputs) && c.ch.Layouts != nil {
+			latest(c.ch.Layouts, v.Outputs)
+		}
+		c.sentOutputs = v
 	}
 	if err := c.publishPending(ctx); err != nil {
 		return err
 	}
-	c.seq++
-	scene := ports.Scene{Seq: c.seq, OutputWidth: c.ws.Output().W, OutputHeight: c.ws.Output().H, Scale: c.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), c.placed...)}
 	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
-	for _, p := range c.ws.Layout() {
-		alive[p.ID] = true
-		scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: p.Focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Borderless: p.Borderless})
-		if p.Hidden {
-			if old, ok := c.sent[p.ID]; ok && old.Activated {
-				old.Activated = false
-				if err := c.command(ctx, old); err != nil {
+	scenes := make([]ports.Scene, 0, len(c.screens))
+	// Before the first output (and after the last is unplugged) the
+	// placeholder's scene has no output name: no renderer draws it.
+	for i, sc := range c.screens {
+		c.seq++
+		o := sc.mon.Output()
+		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
+		for _, p := range sc.mon.Layout() {
+			alive[p.ID] = true
+			// Only the focused output shows the focused border.
+			focused := p.Focused && i == c.focusScreen
+			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Borderless: p.Borderless})
+			if p.Hidden {
+				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {
+					old.Activated, old.Output = false, ""
+					if err := c.command(ctx, old); err != nil {
+						return err
+					}
+					c.sent[p.ID] = old
+				}
+				continue
+			}
+			r := c.clientRect(p)
+			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Output: sc.name()}
+			if old, ok := c.sent[p.ID]; !ok || old != v {
+				if err := c.command(ctx, v); err != nil {
 					return err
 				}
-				c.sent[p.ID] = old
+				c.sent[p.ID] = v
 			}
-			continue
 		}
-		r := c.clientRect(p)
-		v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: p.Focused}
-		if old, ok := c.sent[p.ID]; !ok || old != v {
-			if err := c.command(ctx, v); err != nil {
-				return err
-			}
-			c.sent[p.ID] = v
-		}
+		scenes = append(scenes, scene)
 	}
 	for id := range c.sent {
 		if !alive[id] {
@@ -373,21 +385,65 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.focus = focus
 	}
-	// Only the owner sends and drains; a renderer only receives.
+	latest(c.ch.Scenes, scenes)
+	return nil
+}
+
+// latest replaces any unread value: only the owner sends and drains;
+// consumers only receive.
+func latest[T any](ch chan T, v T) {
 	select {
-	case c.ch.Scenes <- scene:
+	case ch <- v:
 	default:
 		select {
-		case <-c.ch.Scenes:
+		case <-ch:
 		default:
 		}
 		select {
-		case c.ch.Scenes <- scene:
+		case ch <- v:
 		default:
 		}
 	}
-	return nil
 }
+
+func sameOutputs(a, b ports.SetOutputs) bool {
+	return a.Focused == b.Focused && slices.Equal(a.Outputs, b.Outputs)
+}
+
+// allLayers lists the layer surfaces of every output.
+func (c *Core) allLayers() []ports.LayerSurface {
+	var all []ports.LayerSurface
+	for _, sc := range c.screens {
+		all = append(all, sc.layers...)
+	}
+	return all
+}
+
+// hit returns the window under the global logical point and the point in
+// its surface coordinates. Fullscreen wins; otherwise the last visible
+// placement is topmost.
+func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
+	o, ok := c.layout().At(x, y)
+	if !ok {
+		return 0, 0, 0
+	}
+	lx, ly := x-float64(o.X), y-float64(o.Y)
+	var id WindowID
+	var sx, sy float64
+	for _, p := range c.screens[c.screenIndex(o.Info.Name)].mon.Layout() {
+		r := c.clientRect(p)
+		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
+			if id == 0 || p.Fullscreen {
+				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
+			}
+			if p.Fullscreen {
+				break
+			}
+		}
+	}
+	return id, sx, sy
+}
+
 func (c *Core) Run(ctx context.Context) error {
 	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
 		return nil
@@ -403,17 +459,18 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.LayerChanged:
-				c.layers = append([]ports.LayerSurface(nil), v.Layers...)
 				c.layerChanged = true
-				var usable ports.Rect
-				c.placed, usable = arrangeLayers(c.ws.Output().W, c.ws.Output().H, c.layers)
-				c.ws.SetUsable(usable)
+				c.setLayers(v.Layers)
 			case ports.WindowMapped:
 				if v.Slot == "" || !c.placeSlotWindow(v.ID, v.Slot) {
-					c.ws.AddWindow(v.ID)
+					if s, _ := c.screenOf(v.ID); s == nil {
+						c.cur().mon.AddWindow(v.ID)
+					}
 				}
 			case ports.WindowUnmapped:
-				c.ws.RemoveWindow(v.ID)
+				if s, _ := c.screenOf(v.ID); s != nil {
+					s.mon.RemoveWindow(v.ID)
+				}
 				c.releaseSlots()
 				if c.pointer == v.ID {
 					c.pointer = 0
@@ -422,7 +479,9 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 				}
 			case ports.WindowFullscreenRequest:
-				c.ws.SetFullscreen(v.ID, v.Fullscreen)
+				if s, _ := c.screenOf(v.ID); s != nil {
+					s.mon.SetFullscreen(v.ID, v.Fullscreen)
+				}
 			}
 			if err := c.publish(ctx); err != nil {
 				return nil
@@ -433,18 +492,17 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			}
 			switch v := ev.(type) {
-			case ports.OutputMode:
-				c.physW, c.physH = v.Width, v.Height
-				if v.Name != c.outName {
-					c.outName, c.cfgScale = v.Name, 0
+			case ports.OutputAdded:
+				c.addScreen(v.Info)
+				if c.layerChanged {
+					c.setLayers(c.allLayers())
 				}
-				c.applyConfigScale()
-				c.setScale(c.scale)
-			case ports.OutputUsable:
-				// Once layer state arrives, its exclusive zones take precedence.
-				if !c.layerChanged {
-					c.ws.SetUsable(v.Rect)
+			case ports.OutputRemoved:
+				c.removeScreen(v.Name)
+				if c.layerChanged {
+					c.setLayers(c.allLayers())
 				}
+				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			}
 			if err := c.publish(ctx); err != nil {
 				return nil
@@ -474,23 +532,8 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
-				// Input reports physical pixels; hit-testing is logical.
-				c.cursorX = min(max(v.X/c.scale, 0), float64(max(c.ws.Output().W-1, 0)))
-				c.cursorY = min(max(v.Y/c.scale, 0), float64(max(c.ws.Output().H-1, 0)))
-				var id WindowID
-				var x, y float64
-				// Fullscreen wins; otherwise the last visible placement is topmost.
-				for _, p := range c.ws.Layout() {
-					r := c.clientRect(p)
-					if !p.Hidden && r.W > 0 && r.H > 0 && c.cursorX >= float64(r.X) && c.cursorX < float64(r.X+r.W) && c.cursorY >= float64(r.Y) && c.cursorY < float64(r.Y+r.H) {
-						if id == 0 || p.Fullscreen {
-							id, x, y = p.ID, c.cursorX-float64(r.X), c.cursorY-float64(r.Y)
-						}
-						if p.Fullscreen {
-							break
-						}
-					}
-				}
+				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y)
+				id, x, y := c.hit(c.cursorX, c.cursorY)
 				// Layout changes are intentionally re-hit-tested only on motion.
 				if id != c.pointer {
 					c.pointer = id
@@ -521,7 +564,10 @@ func (c *Core) Run(ctx context.Context) error {
 					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
 						return nil
 					}
-					if v.Pressed && c.focus != id && c.ws.Current().FocusID(id) {
+					// A click focuses the window and its output.
+					if s, w := c.screenOf(id); v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
+						w.FocusID(id)
+						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
@@ -566,14 +612,16 @@ func (c *Core) Run(ctx context.Context) error {
 						if action == ActionScaleDown {
 							dir = -1
 						}
-						c.setScale(StepScale(c.physW, c.physH, c.scale, dir))
+						sc := c.cur()
+						sc.setScale(StepScale(sc.info.Width, sc.info.Height, sc.scale, dir))
+						c.order()
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
 						continue
 					}
-					before := c.ws.Current()
-					effect := c.ws.Apply(action)
+					before := c.cur().mon.Current()
+					effect := c.applyAction(action)
 					if effect.Quit {
 						return ErrQuit
 					}
@@ -590,7 +638,8 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 					// Showing a declared workspace refills its empty slots.
 					c.releaseSlots()
-					if c.spawnSlots(ctx, c.ws.Current() != before) != nil {
+					c.settleGuests()
+					if c.spawnSlots(ctx, c.cur().mon.Current() != before) != nil {
 						return nil
 					}
 					if effect.Close != 0 {

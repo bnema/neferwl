@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -136,6 +137,13 @@ func (s *Seat) Subscribe() <-chan bool {
 	s.subs = append(s.subs, c)
 	s.mu.Unlock()
 	return c
+}
+
+// Unsubscribe stops sending to a channel from Subscribe.
+func (s *Seat) Unsubscribe(c <-chan bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subs = slices.DeleteFunc(s.subs, func(x chan bool) bool { return x == c })
 }
 
 func (s *Seat) dispatchLocked(ctx context.Context, timeoutMs int) error {

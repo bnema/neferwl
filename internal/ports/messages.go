@@ -61,6 +61,8 @@ type LayerSurface struct {
 	Namespace     string
 	// Keyboard is the requested interactivity: 0 none, 1 exclusive, 2 on-demand.
 	Keyboard uint32
+	// Output is the connector the surface is on.
+	Output string
 }
 
 // LayerChanged carries wayland → core the full list of mapped layer surfaces,
@@ -102,7 +104,7 @@ type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 
 func (KeyEvent) inputEvent() {}
 
-// PointerMotion uses absolute output coordinates in physical pixels.
+// PointerMotion uses global layout coordinates in logical pixels (see OutputPlacement).
 type PointerMotion struct {
 	X, Y     float64
 	TimeMsec uint32
@@ -122,19 +124,36 @@ func (PointerButton) inputEvent() {}
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
 
-// OutputMode carries output → core resolution changes in physical pixels.
-// Name is the connector, matched against output.<name>.scale.
-type OutputMode struct {
-	Width, Height int
-	Name          string
+// OutputInfo describes a connected display. Sizes are physical pixels.
+type OutputInfo struct {
+	// Name is the connector (e.g. DP-2), matched against output.<name>.* config.
+	Name string
+	// Make, Model and Serial come from EDID; empty when unknown.
+	Make, Model, Serial  string
+	Width, Height        int
+	RefreshMilli         int
+	PhysicalW, PhysicalH int // millimetres
 }
 
-func (OutputMode) outputEvent() {}
+// Key identifies the monitor across connectors: make, model and serial, or
+// the connector name when EDID has no serial.
+func (i OutputInfo) Key() string {
+	if i.Serial == "" {
+		return i.Name
+	}
+	return i.Make + " " + i.Model + " " + i.Serial
+}
 
-// OutputUsable carries output → core usable area after layer-shell exclusive zones.
-type OutputUsable struct{ Rect Rect }
+// OutputAdded carries output → core a new display, or a new mode for a known
+// connector.
+type OutputAdded struct{ Info OutputInfo }
 
-func (OutputUsable) outputEvent() {}
+func (OutputAdded) outputEvent() {}
+
+// OutputRemoved carries output → core an unplugged display.
+type OutputRemoved struct{ Name string }
+
+func (OutputRemoved) outputEvent() {}
 
 // ConfigChanged carries config → core reloads.
 type ConfigChanged struct{ Config Config }
@@ -142,23 +161,69 @@ type ConfigChanged struct{ Config Config }
 // ClientCommand carries core → wayland commands.
 type ClientCommand interface{ clientCommand() }
 
-// ConfigureWindow carries core → wayland geometry and state.
+// ConfigureWindow carries core → wayland geometry and state. Output is the
+// connector showing the window, empty while it is hidden.
 type ConfigureWindow struct {
 	ID                    WindowID
 	Width, Height         int
 	Fullscreen, Activated bool
+	Output                string
 }
 
 func (ConfigureWindow) clientCommand() {}
 
-// SetOutputScale carries core → wayland the output scale and its logical size.
-// Window and pointer coordinates in other commands are logical.
-type SetOutputScale struct {
-	Scale         float64
-	Width, Height int
+// OutputPlacement is one output in the global layout. X, Y, Width and
+// Height are logical; physical = logical × Scale.
+type OutputPlacement struct {
+	Info                OutputInfo
+	X, Y, Width, Height int
+	Scale               float64
 }
 
-func (SetOutputScale) clientCommand() {}
+// Contains reports whether the logical point is on the output.
+func (o OutputPlacement) Contains(x, y float64) bool {
+	return x >= float64(o.X) && x < float64(o.X+o.Width) && y >= float64(o.Y) && y < float64(o.Y+o.Height)
+}
+
+// Layout is the global arrangement of outputs, left to right.
+type Layout []OutputPlacement
+
+// At returns the output under the logical point.
+func (l Layout) At(x, y float64) (OutputPlacement, bool) {
+	for _, o := range l {
+		if o.Contains(x, y) {
+			return o, true
+		}
+	}
+	return OutputPlacement{}, false
+}
+
+// Clamp keeps the pointer on an output: a point outside every output stays
+// on the output under (fromX, fromY), or the first one, clamped to its edges.
+func (l Layout) Clamp(fromX, fromY, x, y float64) (float64, float64) {
+	if len(l) == 0 {
+		return x, y
+	}
+	if _, ok := l.At(x, y); ok {
+		return x, y
+	}
+	o, ok := l.At(fromX, fromY)
+	if !ok {
+		o = l[0]
+	}
+	x = min(max(x, float64(o.X)), float64(o.X+o.Width)-1)
+	y = min(max(y, float64(o.Y)), float64(o.Y+o.Height)-1)
+	return x, y
+}
+
+// SetOutputs carries core → wayland every output and the focused one (where
+// new surfaces start). It is sent when the list, a placement or the focus changes.
+type SetOutputs struct {
+	Outputs Layout
+	Focused string
+}
+
+func (SetOutputs) clientCommand() {}
 
 // SlotsPending tells wayland whether a slot waits for its window. Only then
 // does it read the SlotEnv of mapping clients.
@@ -232,9 +297,11 @@ type SpawnRequest struct {
 	Env []string
 }
 
-// Scene carries core → renderer immutable snapshots with fresh Windows slices.
-// Rects and the output size are logical; the renderer multiplies by Scale.
+// Scene carries core → renderer immutable snapshots with fresh Windows slices,
+// one per output. Rects and the output size are logical and local to the
+// output; the renderer multiplies by Scale.
 type Scene struct {
+	Output                    string
 	Seq                       uint64
 	OutputWidth, OutputHeight int
 	Scale                     float64

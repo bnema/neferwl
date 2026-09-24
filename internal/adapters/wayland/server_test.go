@@ -21,7 +21,7 @@ func TestWaylandInfo(t *testing.T) {
 		t.Skip("wayland-info not installed")
 	}
 	dir := t.TempDir()
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestWestonFrames(t *testing.T) {
 		t.Skip("weston-simple-shm not installed")
 	}
 	dir := t.TempDir()
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func lifecycleServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestUnbufferedEventsDoNotBlockDisplay(t *testing.T) {
 	}
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent)
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestWestonContents(t *testing.T) {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	contents := make(chan ports.SurfaceContent, 16)
-	s, err := New(Options{RuntimeDir: dir, OutputWidth: 1920, OutputHeight: 1080}, Channels{Events: events, Contents: contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Contents: contents}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,3 +420,6 @@ func TestWestonContents(t *testing.T) {
 		}
 	}
 }
+
+// testOutputs is the 1920x1080 output tests start with.
+var testOutputs = ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, Width: 1920, Height: 1080, Scale: 1}}

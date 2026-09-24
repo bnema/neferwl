@@ -64,8 +64,8 @@ func parseSlots(ws []ports.WorkspaceConfig) ([]slotSpec, error) {
 
 // updateSlots applies the config and returns the slots to spawn: new ones,
 // and empty ones whose command changed. A slot dropped from config keeps its
-// window as a normal column. Call before Monitor.SetNamed, so a renamed or
-// dropped workspace can still be found.
+// window as a normal column. Call before named workspaces are applied, so a
+// renamed or dropped workspace can still be found.
 func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 	want := map[slotKey]slotSpec{}
 	for _, s := range specs {
@@ -75,7 +75,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 		if _, ok := want[key]; ok {
 			continue
 		}
-		if w := c.ws.byName(key.workspace); w != nil {
+		if _, w := c.byName(key.workspace); w != nil {
 			w.unslot(key.index)
 		}
 		delete(c.slots, key)
@@ -90,7 +90,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 		}
 		if st.width != s.width {
 			st.width = s.width
-			if w := c.ws.byName(s.key.workspace); w != nil {
+			if _, w := c.byName(s.key.workspace); w != nil {
 				w.setSlotWidth(s.key.index, s.width)
 			}
 		}
@@ -122,13 +122,13 @@ func (c *Core) placeSlotWindow(id WindowID, token string) bool {
 		if !st.pending() || st.token != token || st.window != 0 {
 			continue
 		}
-		w := c.ws.byName(key.workspace)
+		sc, w := c.byName(key.workspace)
 		if w == nil {
 			return false
 		}
 		st.window, st.token = id, ""
 		w.AddSlotWindow(id, key.index, st.width)
-		c.ws.normalize()
+		sc.mon.normalize()
 		return true
 	}
 	return false
@@ -141,7 +141,7 @@ func (c *Core) releaseSlots() {
 		if st.window == 0 {
 			continue
 		}
-		w := c.ws.byName(key.workspace)
+		_, w := c.byName(key.workspace)
 		if w == nil || !w.inSlot(st.window, key.index) {
 			st.window = 0
 		}
@@ -152,7 +152,7 @@ func (c *Core) releaseSlots() {
 // still pending for the second show in a row is respawned: its command
 // failed, exited or handed off to another instance without a window.
 func (c *Core) refill() []slotKey {
-	name := c.ws.Current().Name
+	name := c.cur().mon.Current().Name
 	if name == "" {
 		return nil
 	}

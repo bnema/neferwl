@@ -74,6 +74,7 @@ type Cursor struct {
 	size       int // buffer side
 	hotX, hotY int
 	shown      bool
+	hidden     bool // Hide was called; the next move shows it again
 	plane      cursorPlane
 
 	mu    sync.Mutex // guards x, y and stats; never held across an ioctl
@@ -147,7 +148,11 @@ func (c *Cursor) start() {
 				// fails too and Reapply restores the cursor.
 				_ = c.plane.WaitVblank()
 				c.io.Lock()
-				if c.shown && c.buf != nil {
+				if c.hidden {
+					// A move shows it again, even before its first image.
+					c.hidden = false
+					_ = c.apply()
+				} else if c.shown && c.buf != nil {
 					x, y := c.position()
 					v := modeCursor2{flags: cursorMove, crtcID: c.crtc, x: int32(x - c.hotX), y: int32(y - c.hotY)}
 					// Errors while another session owns the card (VT switched
@@ -195,7 +200,7 @@ func (c *Cursor) SetImage(pixels []byte, w, h, hotX, hotY int) error {
 
 // apply (re)attaches the buffer at the current position. Callers hold c.io.
 func (c *Cursor) apply() error {
-	if !c.shown || c.buf == nil {
+	if !c.shown || c.hidden || c.buf == nil {
 		return nil
 	}
 	x, y := c.position()
@@ -214,6 +219,19 @@ func (c *Cursor) Move(x, y float64) {
 	case c.wake <- struct{}{}:
 	default: // a move is already queued; it will read this position
 	}
+}
+
+// Hide removes the cursor from the output until the next move (the pointer
+// is on another output).
+func (c *Cursor) Hide() {
+	c.io.Lock()
+	defer c.io.Unlock()
+	if c.buf == nil || c.hidden {
+		return
+	}
+	c.hidden = true
+	v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
+	_ = c.plane.Set(&v)
 }
 
 // Reapply shows the cursor again after a modeset (VT switch back).

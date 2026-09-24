@@ -32,6 +32,9 @@ type surface struct {
 	role                      func(bool)
 	destroyed                 bool
 	released                  bool
+	// on is the output the surface entered; scale is the last scale sent.
+	on    *output
+	scale float64
 }
 
 func (s *surface) Destroy(*wayland.Surface) {

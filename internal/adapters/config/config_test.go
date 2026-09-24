@@ -21,7 +21,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 36 || d.Layout.MaxColumns != 2 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 40 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -249,7 +249,7 @@ bind.cmd+x = workspace typo
 workspace.lost.hidden = on
 `)
 	want := []ports.WorkspaceConfig{
-		{Name: "dev", Hidden: true, MaxColumns: 3},
+		{Name: "dev", Monitor: "DP-2", Hidden: true, MaxColumns: 3},
 		{Name: "web", Overflow: "scroll"},
 		{Name: "lost", Hidden: true},
 	}
@@ -263,7 +263,7 @@ workspace.lost.hidden = on
 	for _, x := range w {
 		lines = append(lines, x.Line)
 	}
-	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8, 10, 11, 12}) {
+	if !reflect.DeepEqual(lines, []int{6, 7, 8, 10, 11, 12}) {
 		t.Fatal(w)
 	}
 }

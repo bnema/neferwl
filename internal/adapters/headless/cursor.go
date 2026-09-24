@@ -10,14 +10,22 @@ import (
 // Cursor is the software cursor drawn into screenshots; it plays the role of
 // the DRM cursor plane. Move is called from the input goroutine.
 type Cursor struct {
-	mu   sync.Mutex
-	x, y float64
-	img  ports.CursorImage
+	mu     sync.Mutex
+	x, y   float64
+	img    ports.CursorImage
+	hidden bool
 }
 
 func (c *Cursor) Move(x, y float64) {
 	c.mu.Lock()
-	c.x, c.y = x, y
+	c.x, c.y, c.hidden = x, y, false
+	c.mu.Unlock()
+}
+
+// Hide stops drawing the cursor until the next move.
+func (c *Cursor) Hide() {
+	c.mu.Lock()
+	c.hidden = true
 	c.mu.Unlock()
 }
 
@@ -31,6 +39,9 @@ func (c *Cursor) set(img ports.CursorImage) {
 func (c *Cursor) draw(dst *image.RGBA) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.hidden {
+		return
+	}
 	img := c.img
 	ox, oy := int(c.x)-img.HotX, int(c.y)-img.HotY
 	b := dst.Bounds()

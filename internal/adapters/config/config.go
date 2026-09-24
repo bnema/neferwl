@@ -36,8 +36,12 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+pagedown", "focus-workspace-down"},
 	{"cmd+shift+pageup", "move-to-workspace-up"},
 	{"cmd+shift+pagedown", "move-to-workspace-down"},
+	{"cmd+ctrl+left", "focus-monitor-left"},
+	{"cmd+ctrl+right", "focus-monitor-right"},
+	{"cmd+ctrl+shift+left", "move-workspace-to-monitor-left"},
+	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
 }
-var actions = map[string]bool{"scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -482,7 +486,10 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		w.Hidden = b
 		return err
 	case "monitor":
-		return fmt.Errorf("not supported yet: one monitor only")
+		if v == "" {
+			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
+		}
+		w.Monitor = v
 	case "max-columns":
 		return positive(&w.MaxColumns, v, 16)
 	case "overflow":
