@@ -137,9 +137,18 @@ type Workspace struct {
 	// termAt is when core last spawned a terminal for this workspace.
 	termAt time.Time
 	// origin is set on the workspace a fixed-overflow fullscreen window
-	// moved to; the window returns to column originCol there.
-	origin    *Workspace
-	originCol int
+	// moved to; back is where it returns there (Monitor.fullscreenHome).
+	origin *Workspace
+	back   origPlace
+}
+
+// origPlace remembers where a window was: its column, its row in a stacked
+// column, the column's width and slot, or its floating size.
+type origPlace struct {
+	col, row, slot int
+	stacked        bool
+	width          Width
+	float          *Float
 }
 
 // Float is a floating window and its client size, logical.

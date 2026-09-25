@@ -222,6 +222,8 @@ func (w *Workspace) Apply(a Action) Effect {
 	case ActionCycleColumnWidth:
 		w.CycleWidth()
 	case ActionToggleFullscreen:
+		// In place only: binds go through Monitor.Apply, which gives a
+		// fixed-overflow fullscreen its own workspace.
 		w.ToggleFullscreen()
 	case ActionCloseWindow:
 		id, _ := w.Focused()
