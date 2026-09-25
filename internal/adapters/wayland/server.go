@@ -82,7 +82,8 @@ type Server struct {
 	nextPool                uint64
 	focused                 ports.WindowID
 	pointerFocus            ports.WindowID
-	wheelRest               [2]int32 // v120 not yet sent as axis_discrete, per axis
+	wheelRest               [2]int32   // v120 not yet sent as axis_discrete, per axis
+	wheelHeld               [2]float64 // axis value held back with it for pre-v8 clients
 	pointerX, pointerY      float64
 	pointers                map[server.Client][]*wayland.Pointer
 	modState                ports.ModState
@@ -402,9 +403,10 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if c.ID != s.pointerFocus {
 			return
 		}
+		held := s.wheelHeld
 		steps := s.wheelSteps(c.Axis)
 		for _, p := range s.windowPointers(s.windows[c.ID]) {
-			sendAxis(p, c.Axis, steps)
+			sendAxis(p, c.Axis, steps, held)
 		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
@@ -619,6 +621,7 @@ func (s *Server) changeFocus(id ports.WindowID) {
 // wheelSteps adds wheel v120 to the rest per axis and returns the whole
 // detents for axis_discrete (seat before v8). High-resolution wheels send
 // fractions of 120; a direction change drops the rest, as wlroots does.
+// wheelHeld keeps the axis value of the frames without a step.
 func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32) {
 	if a.Source != ports.AxisWheel {
 		return steps
@@ -628,18 +631,24 @@ func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32) {
 			continue
 		}
 		if (s.wheelRest[i] < 0) != (ax.V120 < 0) {
-			s.wheelRest[i] = 0
+			s.wheelRest[i], s.wheelHeld[i] = 0, 0
 		}
 		s.wheelRest[i] += ax.V120
+		s.wheelHeld[i] += ax.Value
 		steps[i] = s.wheelRest[i] / 120
 		s.wheelRest[i] -= steps[i] * 120
+		if steps[i] != 0 {
+			s.wheelHeld[i] = 0
+		}
 	}
 	return steps
 }
 
 // sendAxis sends one scroll frame, each event gated by the pointer version.
-// steps are whole wheel detents for axis_discrete.
-func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32) {
+// steps are whole wheel detents for axis_discrete. A pre-v8 client gets a
+// wheel frame only with a step, carrying the value held since the last one
+// (held, before this frame), so it never counts smooth and discrete scroll.
+func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, held [2]float64) {
 	v := p.Version()
 	if v >= 5 {
 		p.SendAxisSource(uint32(a.Source))
@@ -654,14 +663,21 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32) {
 			}
 			continue
 		}
+		value := s.Value
 		if a.Source == ports.AxisWheel && s.V120 != 0 {
-			if v >= 8 {
+			switch {
+			case v >= 8:
 				p.SendAxisValue120(uint32(axis), s.V120)
-			} else if v >= 5 && steps[axis] != 0 {
-				p.SendAxisDiscrete(uint32(axis), steps[axis])
+			case steps[axis] == 0:
+				continue
+			default:
+				value += held[axis]
+				if v >= 5 {
+					p.SendAxisDiscrete(uint32(axis), steps[axis])
+				}
 			}
 		}
-		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(s.Value))
+		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(value))
 	}
 	pointerFrame(p)
 }
@@ -687,7 +703,7 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if id == s.pointerFocus {
 		return
 	}
-	s.wheelRest = [2]int32{}
+	s.wheelRest, s.wheelHeld = [2]int32{}, [2]float64{}
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
 	s.setCursor(ports.CursorChange{})

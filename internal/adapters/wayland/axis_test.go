@@ -12,7 +12,7 @@ func TestWheelSteps(t *testing.T) {
 	s := &Server{}
 	wheel := func(v, h int32) [2]int32 {
 		return s.wheelSteps(ports.PointerAxis{
-			Vertical:   ports.ScrollAxis{Set: v != 0, V120: v},
+			Vertical:   ports.ScrollAxis{Set: v != 0, V120: v, Value: float64(v) / 8},
 			Horizontal: ports.ScrollAxis{Set: h != 0, V120: h},
 		})
 	}
@@ -31,6 +31,15 @@ func TestWheelSteps(t *testing.T) {
 		if got := wheel(tc.v, tc.h); got != tc.want {
 			t.Fatalf("step %d: got %v, want %v", i, got, tc.want)
 		}
+	}
+	// The held value sums the frames since the last step.
+	*s = Server{}
+	wheel(60, 0)
+	if s.wheelHeld[0] != 7.5 {
+		t.Fatal("held", s.wheelHeld[0])
+	}
+	if wheel(60, 0) != [2]int32{1, 0} || s.wheelHeld[0] != 0 {
+		t.Fatal("held after step", s.wheelHeld[0])
 	}
 	if s.wheelSteps(ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}) != [2]int32{} {
 		t.Fatal("finger scroll made discrete steps")
