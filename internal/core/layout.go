@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type WindowID = ports.WindowID
@@ -125,6 +126,8 @@ type Workspace struct {
 	// its position there, where it returns.
 	home    string
 	homePos int
+	// termAt is when core last spawned a terminal for this workspace.
+	termAt time.Time
 }
 
 func (w *Workspace) empty() bool { return len(w.Columns) == 0 }

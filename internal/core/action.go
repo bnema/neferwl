@@ -126,7 +126,7 @@ func (c *Core) applyAction(a Action) Effect {
 		if i := c.neighbor(dir); edge && i >= 0 {
 			// The last column stays: a workspace on screen is never
 			// empty, and moving it would only spawn a new terminal.
-			if len(w.Columns) < 2 {
+			if len(w.Columns) < 2 && c.keepsTerminal() {
 				return Effect{}
 			}
 			col, ok := w.takeColumn()
