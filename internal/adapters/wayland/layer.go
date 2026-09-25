@@ -166,7 +166,7 @@ func (s *Server) layerChanged() {
 		}
 		if l.surface.current != nil {
 			if b := s.buffers[l.surface.current.Resource]; b != nil {
-				v.Width, v.Height = l.surface.logicalSize(b.width, b.height)
+				v.Width, v.Height = l.surface.logicalSize(b.size())
 			}
 		}
 		list = append(list, v)

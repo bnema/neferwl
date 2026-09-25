@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"unsafe"
 
@@ -36,6 +37,11 @@ type Renderer struct {
 	fence         vk.Fence
 	layout        vk.ImageLayout
 	memory        vk.PhysicalDeviceMemoryProperties
+	family        uint32
+	// dmabuf is what clients may send; imports are their buffers by ID.
+	dmabuf  ports.DMABufSupport
+	imports map[uint64]*imported
+	frame   uint64
 }
 
 func checked(name string, result vk.Result) error {
@@ -49,7 +55,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, layout: vk.ImageLayoutUndefined}
+	r = &Renderer{width: width, height: height, layout: vk.ImageLayoutUndefined, imports: map[uint64]*imported{}}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -123,10 +129,22 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.id.GetPhysicalDeviceMemoryProperties(physical, &r.memory)
+	r.family = family
 	priority := float32(1)
 	qi := vk.DeviceQueueCreateInfo{SType: vk.StructureTypeDeviceQueueCreateInfo, QueueFamilyIndex: family, QueueCount: 1, QueuePriorities: &priority}
 	dynamicRendering := vk.PhysicalDeviceDynamicRenderingFeatures{SType: vk.StructureTypePhysicalDeviceDynamicRenderingFeatures, DynamicRendering: 1}
 	di := vk.DeviceCreateInfo{SType: vk.StructureTypeDeviceCreateInfo, Next: unsafe.Pointer(&dynamicRendering), QueueCreateInfoCount: 1, QueueCreateInfos: &qi}
+	// dmabuf import needs every extension; without them clients use wl_shm.
+	var extNames [][]byte
+	var extPtrs []*byte
+	if r.hasExtensions(physical) {
+		for _, e := range deviceExtensions {
+			extNames = append(extNames, append([]byte(e), 0))
+			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
+		}
+		di.EnabledExtensionCount = uint32(len(extPtrs))
+		di.PpEnabledExtensionNames = &extPtrs[0]
+	}
 	if err = checked("vkCreateDevice", r.id.CreateDevice(physical, &di, nil, &r.device)); err != nil {
 		return
 	}
@@ -134,6 +152,14 @@ func New(width, height int) (r *Renderer, err error) {
 	if err != nil {
 		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
 		return
+	}
+	runtime.KeepAlive(extNames)
+	runtime.KeepAlive(extPtrs)
+	if len(extPtrs) > 0 {
+		// Clients need the render node to allocate on the right GPU.
+		if sup := r.probeDMABuf(physical); sup.Device != 0 {
+			r.dmabuf = sup
+		}
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
@@ -332,6 +358,8 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		dst, src image.Rectangle
 		color    [3]uint8
 		opaque   bool
+		// dma is a client GPU buffer, blitted instead of copied from staging.
+		dma *imported
 	}
 	var uploads []upload
 	used := 0
@@ -350,6 +378,15 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if rect.Empty() || src.Empty() {
 			return
 		}
+		if content.DMABuf != nil {
+			im, err := r.importDMABuf(content.DMABuf)
+			if err != nil {
+				// The window shows its background until a buffer imports.
+				return
+			}
+			uploads = append(uploads, upload{rect: rect, dst: dst, src: src, dma: im})
+			return
+		}
 		uploads = append(uploads, upload{rect: rect, offset: used, pixels: content.Pixels, stride: content.Stride, opaque: content.Opaque, dst: dst, src: src})
 		used += rect.Dx() * rect.Dy() * 4
 	}
@@ -359,7 +396,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if lw <= 0 || lh <= 0 {
 			lw, lh = content.Width, content.Height
 		}
-		if content.Pixels == nil || lw <= 0 || lh <= 0 || content.Stride < content.Width*4 || len(content.Pixels) < (content.Height-1)*content.Stride+content.Width*4 {
+		if content.Empty() || lw <= 0 || lh <= 0 {
+			return
+		}
+		if content.DMABuf == nil && (content.Stride < content.Width*4 || len(content.Pixels) < (content.Height-1)*content.Stride+content.Width*4) {
 			return
 		}
 		vw, vh := min(lw, w), min(lh, h)
@@ -416,7 +456,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
 		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
-		if content.Pixels == nil {
+		if content.Empty() {
 			add(body, windowColor(w.ID))
 		} else {
 			add(body, parseColor(s.Background))
@@ -445,6 +485,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	data := unsafe.Slice((*byte)(r.stagingMapped), r.stagingSize)
 	for _, u := range uploads {
+		if u.dma != nil {
+			continue
+		}
 		dst := data[u.offset : u.offset+u.rect.Dx()*u.rect.Dy()*4]
 		for row := 0; row < u.rect.Dy(); row++ {
 			line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
@@ -502,14 +545,54 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferDstOptimal
 	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+	// Client buffers come from the foreign queue family (their driver) and
+	// go back to it after the frame, so the next frame acquires them again.
+	var dmas []*imported
+	for _, u := range uploads {
+		if u.dma != nil && !slices.Contains(dmas, u.dma) {
+			dmas = append(dmas, u.dma)
+		}
+	}
+	ownership := func(acquire bool) {
+		for _, im := range dmas {
+			b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: rangeInfo}
+			if acquire {
+				// GENERAL, never UNDEFINED: the client's contents must survive.
+				b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutTransferSrcOptimal
+				b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+				b.DstAccessMask = vk.AccessTransferReadBit
+			} else {
+				b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
+				b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+				b.SrcAccessMask = vk.AccessTransferReadBit
+			}
+			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+		}
+	}
+	ownership(true)
 	for i, f := range uploads {
 		if i > 0 {
 			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
 		}
 		rect := f.rect
+		if f.dma != nil {
+			// Map the visible part of dst back onto the buffer.
+			sx := func(x int) int32 { return int32(f.src.Min.X + (x-f.dst.Min.X)*f.src.Dx()/f.dst.Dx()) }
+			sy := func(y int) int32 { return int32(f.src.Min.Y + (y-f.dst.Min.Y)*f.src.Dy()/f.dst.Dy()) }
+			layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
+			blit := vk.ImageBlit{
+				SrcSubresource: layers,
+				SrcOffsets:     [2]vk.Offset3D{{X: sx(rect.Min.X), Y: sy(rect.Min.Y)}, {X: sx(rect.Max.X), Y: sy(rect.Max.Y), Z: 1}},
+				DstSubresource: layers,
+				DstOffsets:     [2]vk.Offset3D{{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, {X: int32(rect.Max.X), Y: int32(rect.Max.Y), Z: 1}},
+			}
+			d.CmdBlitImage(r.command, f.dma.image, vk.ImageLayoutTransferSrcOptimal, r.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
+			continue
+		}
 		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
 		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
 	}
+	ownership(false)
 	barrier.DstAccessMask = vk.AccessTransferReadBit
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
@@ -519,14 +602,35 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(r.command)); err != nil {
 		return err
 	}
+	// Implicit sync: wait for the client's GPU writes to each buffer.
+	var waits []vk.Semaphore
+	for _, im := range dmas {
+		if sem := r.readFence(im); sem != 0 {
+			waits = append(waits, sem)
+		}
+	}
+	defer func() {
+		for _, sem := range waits {
+			d.DestroySemaphore(r.device, sem, nil)
+		}
+	}()
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &r.command}
+	stages := make([]vk.PipelineStageFlags, len(waits))
+	if len(waits) > 0 {
+		for i := range stages {
+			stages[i] = vk.PipelineStageTransferBit
+		}
+		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = uint32(len(waits)), &waits[0], &stages[0]
+	}
 	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, r.fence)); err != nil {
 		return err
 	}
+	runtime.KeepAlive(stages)
 	r.layout = vk.ImageLayoutTransferSrcOptimal
 	if err := checked("vkWaitForFences", d.WaitForFences(r.device, 1, &r.fence, 1, math.MaxUint64)); err != nil {
 		return err
 	}
+	r.dropUnused()
 	return checked("vkResetFences", d.ResetFences(r.device, 1, &r.fence))
 }
 
@@ -537,7 +641,8 @@ func (r *Renderer) Pixels() *image.RGBA {
 	}
 	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
 	for i := 0; i < len(src); i += 4 {
-		out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = src[i+2], src[i+1], src[i], src[i+3]
+		// The output is opaque: x-format client buffers leave alpha undefined.
+		out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = src[i+2], src[i+1], src[i], 255
 	}
 	return out
 }
@@ -563,6 +668,10 @@ func (r *Renderer) Close() {
 		d := r.dd
 		if r.device != 0 {
 			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.device))
+		}
+		for id, im := range r.imports {
+			r.release(im)
+			delete(r.imports, id)
 		}
 		if r.fence != 0 {
 			d.DestroyFence(r.device, r.fence, nil)
