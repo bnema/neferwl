@@ -175,6 +175,9 @@ func (m *Monitor) Apply(a Action) Effect {
 			m.Focus(m.Active + dir)
 		}
 		return Effect{}
+	case ActionToggleFullscreen:
+		m.ToggleFullscreen()
+		return Effect{}
 	case ActionFocusWorkspaceUp, ActionFocusWorkspaceDown:
 		if m.shown == nil && a == ActionFocusWorkspaceUp {
 			m.Focus(m.Active - 1)
@@ -219,6 +222,8 @@ func (w *Workspace) Apply(a Action) Effect {
 	case ActionCycleColumnWidth:
 		w.CycleWidth()
 	case ActionToggleFullscreen:
+		// In place only: binds go through Monitor.Apply, which gives a
+		// fixed-overflow fullscreen its own workspace.
 		w.ToggleFullscreen()
 	case ActionCloseWindow:
 		id, _ := w.Focused()
