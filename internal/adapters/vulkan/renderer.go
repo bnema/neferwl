@@ -42,7 +42,13 @@ type Renderer struct {
 	dmabuf  ports.DMABufSupport
 	imports map[uint64]*imported
 	frame   uint64
+	// fillRegions is reused by Render for the bands of solid fills.
+	fillRegions []vk.BufferImageCopy
 }
+
+// fillRows is the height of the strip staged for a solid fill: the CPU
+// writes it once, the GPU copies it down the rect.
+const fillRows = 64
 
 func checked(name string, result vk.Result) error {
 	if err := vk.Check(result); err != nil {
@@ -360,6 +366,8 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		opaque   bool
 		// dma is a client GPU buffer, blitted instead of copied from staging.
 		dma *imported
+		// fill is a solid color: staging holds one strip of rows.
+		fill bool
 	}
 	var uploads []upload
 	used := 0
@@ -369,8 +377,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if rect.Empty() {
 			return
 		}
-		uploads = append(uploads, upload{rect: rect, offset: used, color: c})
-		used += rect.Dx() * rect.Dy() * 4
+		// A fill stages a strip of up to fillRows rows; the GPU copies the
+		// strip down the rect.
+		uploads = append(uploads, upload{rect: rect, offset: used, color: c, fill: true})
+		used += rect.Dx() * min(rect.Dy(), fillRows) * 4
 	}
 	// addContent maps src (buffer pixels) onto dst (physical pixels).
 	addContent := func(dst, src image.Rectangle, content *ports.SurfaceContent) {
@@ -498,31 +508,32 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if u.dma != nil {
 			continue
 		}
+		if u.fill {
+			line := data[u.offset : u.offset+u.rect.Dx()*min(u.rect.Dy(), fillRows)*4]
+			for i := 0; i < len(line); i += 4 {
+				line[i], line[i+1], line[i+2], line[i+3] = u.color[2], u.color[1], u.color[0], 255
+			}
+			continue
+		}
 		dst := data[u.offset : u.offset+u.rect.Dx()*u.rect.Dy()*4]
 		for row := 0; row < u.rect.Dy(); row++ {
 			line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
-			if u.pixels != nil {
-				y := u.rect.Min.Y + row
-				if u.dst.Size() == u.src.Size() {
-					start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
-					copy(line, u.pixels[start:start+len(line)])
-				} else {
-					// Nearest-neighbour resample, sampling pixel centres.
-					sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
-					src := u.pixels[sy*u.stride:]
-					for i := 0; i < u.rect.Dx(); i++ {
-						sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
-						copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
-					}
-				}
-				if u.opaque {
-					for i := 3; i < len(line); i += 4 {
-						line[i] = 255
-					}
-				}
+			y := u.rect.Min.Y + row
+			if u.dst.Size() == u.src.Size() {
+				start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
+				copy(line, u.pixels[start:start+len(line)])
 			} else {
-				for i := 0; i < len(line); i += 4 {
-					line[i], line[i+1], line[i+2], line[i+3] = u.color[2], u.color[1], u.color[0], 255
+				// Nearest-neighbour resample, sampling pixel centres.
+				sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
+				src := u.pixels[sy*u.stride:]
+				for i := 0; i < u.rect.Dx(); i++ {
+					sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
+					copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
+				}
+			}
+			if u.opaque {
+				for i := 3; i < len(line); i += 4 {
+					line[i] = 255
 				}
 			}
 		}
@@ -599,7 +610,18 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			d.CmdBlitImage(r.command, f.dma.image, vk.ImageLayoutTransferSrcOptimal, r.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
 			continue
 		}
-		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
+		layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
+		if f.fill {
+			// Every band reads the same staged strip.
+			r.fillRegions = r.fillRegions[:0]
+			for y := rect.Min.Y; y < rect.Max.Y; y += fillRows {
+				h := min(fillRows, rect.Max.Y-y)
+				r.fillRegions = append(r.fillRegions, vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(h), Depth: 1}})
+			}
+			d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, uint32(len(r.fillRegions)), &r.fillRegions[0])
+			continue
+		}
+		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
 		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
 	}
 	ownership(false)
