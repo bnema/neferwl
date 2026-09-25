@@ -25,6 +25,17 @@ See `examples/config` for every key and its default. A missing file means defaul
 
 Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 
+## State for scripts
+
+While it runs, NeferTTY keeps its state in `$XDG_RUNTIME_DIR/nefertty/<wayland socket>.json` and passes that path to the programs it starts as `NEFERTTY_STATE`. The file lists every output (active numbered workspace, workspace count, name of the workspace on screen), the focused output and window, and every window with its app ID, PID, output and workspace.
+
+```sh
+nefertty state                        # the whole state as JSON
+nefertty state output-of "$PID"       # the output of that process's window, or its nearest parent's
+```
+
+`output-of` finds application windows only; bars have no single output.
+
 ## Try it (headless)
 
 Run `nefertty --backend=headless --screenshot /tmp/nefertty-shots`, then connect with

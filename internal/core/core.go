@@ -28,6 +28,9 @@ type Channels struct {
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts      chan ports.Layout
 	ConfigErrors chan<- error
+	// State, when set, receives a snapshot for scripts whenever it changes,
+	// latest first (capacity 1, drained like Scenes).
+	State chan ports.State
 	// Terminal, when set, keeps a window on every workspace on screen: an
 	// empty one gets the configured terminal (the terminal is the desktop).
 	Terminal bool
@@ -64,6 +67,9 @@ type Core struct {
 	// terms are the terminals spawned for empty workspaces, by SlotEnv
 	// token, until their window maps.
 	terms map[string]*termSpawn
+	// clients holds the app ID and PID of mapped windows, for State.
+	clients   map[WindowID]ports.WindowMapped
+	sentState ports.State
 }
 
 func keyName(s string) string {
@@ -242,11 +248,11 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	return nil
 }
 func New(cfg ports.Config, ch Channels) (*Core, error) {
-	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) {
-		return nil, fmt.Errorf("scenes and layouts must have capacity 1")
+	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.State != nil && cap(ch.State) != 1) {
+		return nil, fmt.Errorf("scenes, layouts and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -401,6 +407,7 @@ func (c *Core) publish(ctx context.Context) error {
 		c.focus = focus
 	}
 	latest(c.ch.Scenes, scenes)
+	c.publishState()
 	return nil
 }
 
@@ -463,6 +470,7 @@ func (c *Core) Run(ctx context.Context) error {
 	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
 		return nil
 	}
+	c.publishState()
 	for {
 		select {
 		case <-ctx.Done():
@@ -477,12 +485,19 @@ func (c *Core) Run(ctx context.Context) error {
 				c.layerChanged = true
 				c.setLayers(v.Layers)
 			case ports.WindowMapped:
+				c.clients[v.ID] = v
 				if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
 					if s, _ := c.screenOf(v.ID); s == nil {
 						c.cur().mon.AddWindow(v.ID)
 					}
 				}
+			case ports.WindowAppID:
+				if info, ok := c.clients[v.ID]; ok {
+					info.AppID = v.AppID
+					c.clients[v.ID] = info
+				}
 			case ports.WindowUnmapped:
+				delete(c.clients, v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
 				}

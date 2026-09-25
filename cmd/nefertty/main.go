@@ -2,17 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
+	"github.com/bnema/nefertty/internal/adapters/statefile"
 	"github.com/bnema/nefertty/internal/app"
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
@@ -69,6 +72,9 @@ func run() error {
 		}
 		fmt.Println("ok: " + path)
 		return nil
+	}
+	if len(os.Args) > 1 && os.Args[1] == "state" {
+		return runState(os.Args[2:])
 	}
 	if len(os.Args) == 2 && os.Args[1] == "version" {
 		info, ok := debug.ReadBuildInfo()
@@ -213,4 +219,54 @@ func run() error {
 	}
 	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
 	return err
+}
+
+// runState prints the session state for scripts:
+//
+//	nefertty state                 the whole state
+//	nefertty state output-of <pid> the output showing that process's window
+//
+// The file is $NEFERTTY_STATE, else the one of $WAYLAND_DISPLAY.
+func runState(args []string) error {
+	usage := usageError{fmt.Errorf("usage: state [output-of <pid>]")}
+	pid := 0
+	switch {
+	case len(args) == 0:
+	case len(args) == 2 && args[0] == "output-of":
+		n, err := strconv.Atoi(args[1])
+		if err != nil || n <= 0 {
+			fmt.Fprintln(os.Stderr, usage)
+			return usage
+		}
+		pid = n
+	default:
+		fmt.Fprintln(os.Stderr, usage)
+		return usage
+	}
+	path := os.Getenv(statefile.Env)
+	if path == "" {
+		var err error
+		if path, err = statefile.Path(os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("WAYLAND_DISPLAY")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+	}
+	st, err := statefile.Read(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	var out any = st
+	if pid != 0 {
+		if out, err = statefile.OutputOf(st, pid); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }

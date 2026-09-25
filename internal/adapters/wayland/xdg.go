@@ -151,7 +151,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
 			slot := x.server.slotToken(r.Client())
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot})
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID()})
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Msg("window mapped")
 		} else if !buffer && w.mapped {
 			w.unmap()
@@ -202,10 +202,18 @@ func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 
 type top struct{ w *window }
 
-func (top) Destroy(*xdgshell.Toplevel)                                             {}
-func (top) SetParent(*xdgshell.Toplevel, *xdgshell.Toplevel)                       {}
-func (t top) SetTitle(_ *xdgshell.Toplevel, title string)                          { t.w.title = title }
-func (t top) SetAppId(_ *xdgshell.Toplevel, appID string)                          { t.w.appID = appID }
+func (top) Destroy(*xdgshell.Toplevel)                       {}
+func (top) SetParent(*xdgshell.Toplevel, *xdgshell.Toplevel) {}
+func (t top) SetTitle(_ *xdgshell.Toplevel, title string)    { t.w.title = title }
+func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
+	if appID == t.w.appID {
+		return
+	}
+	t.w.appID = appID
+	if t.w.mapped {
+		t.w.xdg.server.emit(ports.WindowAppID{ID: t.w.id, AppID: appID})
+	}
+}
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}
 func (top) Move(*xdgshell.Toplevel, *wayland.Seat, uint32)                         {}
 func (top) Resize(*xdgshell.Toplevel, *wayland.Seat, uint32, uint32)               {}

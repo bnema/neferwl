@@ -30,3 +30,10 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: proc_env_mock_test.go
+  github.com/bnema/nefertty/internal/adapters/statefile:
+    interfaces:
+      procTree:
+        config:
+          dir: internal/adapters/statefile
+          pkgname: statefile
+          filename: proc_tree_mock_test.go
