@@ -114,7 +114,7 @@ focus after layout changes is updated on the next move.
 
 ## Why not Rust?
 
-Most Wayland compositors today are written in Rust or C. NeferTTY is written in Go, by choice:
+Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). NeferTTY is written in Go, by choice:
 
 - **Simple and readable.** Go is small and explicit. Goroutines and channels fit a compositor where each part (input, outputs, clients) owns its own state.
 - **Fast builds, easy tooling.** A full build takes seconds; tests, the race detector, profiling and formatting come with the language.
