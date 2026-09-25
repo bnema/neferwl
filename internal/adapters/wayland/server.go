@@ -403,10 +403,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if c.ID != s.pointerFocus {
 			return
 		}
-		held := s.wheelHeld
-		steps := s.wheelSteps(c.Axis)
+		steps, values := s.wheelSteps(c.Axis)
 		for _, p := range s.windowPointers(s.windows[c.ID]) {
-			sendAxis(p, c.Axis, steps, held)
+			sendAxis(p, c.Axis, steps, values)
 		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
@@ -621,10 +620,11 @@ func (s *Server) changeFocus(id ports.WindowID) {
 // wheelSteps adds wheel v120 to the rest per axis and returns the whole
 // detents for axis_discrete (seat before v8). High-resolution wheels send
 // fractions of 120; a direction change drops the rest, as wlroots does.
-// wheelHeld keeps the axis value of the frames without a step.
-func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32) {
+// wheelHeld keeps the axis value of the frames without a step; values is
+// what a pre-v8 client gets with a step: the held value plus this frame's.
+func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]float64) {
 	if a.Source != ports.AxisWheel {
-		return steps
+		return steps, values
 	}
 	for i, ax := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
 		if !ax.Set || ax.V120 == 0 {
@@ -638,22 +638,31 @@ func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32) {
 		steps[i] = s.wheelRest[i] / 120
 		s.wheelRest[i] -= steps[i] * 120
 		if steps[i] != 0 {
-			s.wheelHeld[i] = 0
+			values[i], s.wheelHeld[i] = s.wheelHeld[i], 0
 		}
 	}
-	return steps
+	return steps, values
 }
 
 // sendAxis sends one scroll frame, each event gated by the pointer version.
 // steps are whole wheel detents for axis_discrete. A pre-v8 client gets a
-// wheel frame only with a step, carrying the value held since the last one
-// (held, before this frame), so it never counts smooth and discrete scroll.
-func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, held [2]float64) {
+// wheel axis only with a step, carrying values (all the value since the
+// last step), so it never counts smooth and discrete scroll.
+func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
 	v := p.Version()
+	axes := [2]ports.ScrollAxis{a.Vertical, a.Horizontal}
+	for i := range axes {
+		if v < 8 && a.Source == ports.AxisWheel && axes[i].V120 != 0 && steps[i] == 0 {
+			axes[i].Set = false
+		}
+	}
+	if !axes[0].Set && !axes[1].Set {
+		return
+	}
 	if v >= 5 {
 		p.SendAxisSource(uint32(a.Source))
 	}
-	for axis, s := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
+	for axis, s := range axes {
 		if !s.Set {
 			continue
 		}
@@ -668,10 +677,8 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, held [2]f
 			switch {
 			case v >= 8:
 				p.SendAxisValue120(uint32(axis), s.V120)
-			case steps[axis] == 0:
-				continue
 			default:
-				value += held[axis]
+				value = values[axis]
 				if v >= 5 {
 					p.SendAxisDiscrete(uint32(axis), steps[axis])
 				}

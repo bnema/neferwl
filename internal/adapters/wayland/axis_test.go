@@ -10,11 +10,13 @@ import (
 // discrete step once 120 builds up; a direction change drops the rest.
 func TestWheelSteps(t *testing.T) {
 	s := &Server{}
-	wheel := func(v, h int32) [2]int32 {
-		return s.wheelSteps(ports.PointerAxis{
+	var values [2]float64
+	wheel := func(v, h int32) (steps [2]int32) {
+		steps, values = s.wheelSteps(ports.PointerAxis{
 			Vertical:   ports.ScrollAxis{Set: v != 0, V120: v, Value: float64(v) / 8},
 			Horizontal: ports.ScrollAxis{Set: h != 0, V120: h},
 		})
+		return steps
 	}
 	for i, tc := range []struct {
 		v, h int32
@@ -38,10 +40,15 @@ func TestWheelSteps(t *testing.T) {
 	if s.wheelHeld[0] != 7.5 {
 		t.Fatal("held", s.wheelHeld[0])
 	}
-	if wheel(60, 0) != [2]int32{1, 0} || s.wheelHeld[0] != 0 {
+	if wheel(60, 0) != [2]int32{1, 0} || s.wheelHeld[0] != 0 || values[0] != 15 {
 		t.Fatal("held after step", s.wheelHeld[0])
 	}
-	if s.wheelSteps(ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}) != [2]int32{} {
+	// A direction change drops what was held the other way.
+	wheel(60, 0)
+	if wheel(-180, 0) != [2]int32{-1, 0} || values[0] != -22.5 {
+		t.Fatal("after reversal", values)
+	}
+	if steps, _ := s.wheelSteps(ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, V120: 240}}); steps != [2]int32{} {
 		t.Fatal("finger scroll made discrete steps")
 	}
 }
