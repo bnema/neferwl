@@ -618,6 +618,15 @@ func (c *Core) Run(ctx context.Context) error {
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
+			case ports.WindowActivate:
+				// Wayland checked the token: bring the window forward.
+				if s, w := c.screenOf(v.ID); s != nil && c.popups[v.ID] == nil {
+					if w != s.mon.Current() {
+						s.mon.show(w)
+					}
+					w.FocusID(v.ID)
+					c.focusScreen = c.screenIndex(s.name())
+				}
 			}
 			if err := c.publish(ctx); err != nil {
 				return nil

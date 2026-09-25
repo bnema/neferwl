@@ -722,3 +722,49 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 		t.Fatalf("pointer went to %v, want the dialog", v)
 	}
 }
+
+// An activated window on another workspace comes on screen with focus.
+func TestWindowActivateShowsAndFocuses(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	// Window 2 opens on workspace 2, then the user goes back to 1.
+	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 2}
+	scene(t, scenes)
+	input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModSuper, Pressed: true}
+	visible := func(sc ports.Scene) (shown []ports.SceneWindow) {
+		for _, w := range sc.Windows {
+			if !w.Hidden {
+				shown = append(shown, w)
+			}
+		}
+		return shown
+	}
+	if v := visible(scene(t, scenes)); len(v) != 1 || v[0].ID != 1 {
+		t.Fatalf("workspace 1: %+v", v)
+	}
+	client <- ports.WindowActivate{ID: 2}
+	v := visible(scene(t, scenes))
+	for len(v) != 1 || v[0].ID != 2 {
+		v = visible(scene(t, scenes))
+	}
+	if !v[0].Focused {
+		t.Fatalf("after activate: %+v", v)
+	}
+}
