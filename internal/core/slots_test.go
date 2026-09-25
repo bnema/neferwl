@@ -384,4 +384,10 @@ func TestSlotKeptWhileFullscreenAway(t *testing.T) {
 	r.press(t, "d") // leave and show dev while code is away
 	r.press(t, "d")
 	noSpawn(t, r.spawn)
+	// code opens a second window while fullscreen: the slot stays.
+	r.client <- ports.WindowMapped{ID: 9}
+	scene(t, r.scenes)
+	r.press(t, "d")
+	r.press(t, "d")
+	noSpawn(t, r.spawn)
 }

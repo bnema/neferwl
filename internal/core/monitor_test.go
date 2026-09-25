@@ -487,14 +487,27 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 		return m
 	}
-	t.Run("another window opened there unlinks it", func(t *testing.T) {
+	t.Run("a window opened there stays when it returns", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
 		m.AddWindow(4)
+		m.Current().MoveColumn(-1)
 		m.SetFullscreen(2, false)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3}, {2, 4}, {}}) {
-			t.Fatal(got)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {4}, {}}) || m.Active != 0 {
+			t.Fatal(got, m.Active)
+		}
+	})
+	t.Run("stack of three keeps its column", func(t *testing.T) {
+		m := fixed()
+		w := m.Current()
+		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3, 5}}}
+		w.FocusID(3)
+		m.ToggleFullscreen()
+		m.RemoveWindow(2)
+		m.ToggleFullscreen()
+		if len(w.Columns) != 2 || !slices.Equal(w.Columns[1].Windows, []WindowID{3, 5}) {
+			t.Fatal(w.Columns)
 		}
 	})
 	t.Run("client exit keeps the user's focus", func(t *testing.T) {

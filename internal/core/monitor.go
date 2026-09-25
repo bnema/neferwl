@@ -320,8 +320,10 @@ func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 		col := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, id) })
 		c := w.Columns[col]
 		fs.back = origPlace{col: col, row: slices.Index(c.Windows, id), slot: c.Slot, width: c.Width}
-		if i := slices.IndexFunc(c.Windows, func(v WindowID) bool { return v != id }); i >= 0 {
-			fs.back.stacked = c.Windows[i]
+		for _, v := range c.Windows {
+			if v != id {
+				fs.back.stacked = append(fs.back.stacked, v)
+			}
 		}
 		w.RemoveWindow(id)
 		fs.AddWindow(id)
@@ -358,10 +360,17 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	case back.float != nil:
 		// At the bottom: the top float, maybe focused, stays on top.
 		origin.Floats = slices.Insert(origin.Floats, 0, Float{ID: id, W: back.float.W, H: back.float.H})
-	case back.stacked != 0 && slices.ContainsFunc(origin.Columns, func(c Column) bool { return slices.Contains(c.Windows, back.stacked) }):
-		back.col = slices.IndexFunc(origin.Columns, func(c Column) bool { return slices.Contains(c.Windows, back.stacked) })
+	case slices.ContainsFunc(origin.Columns, back.holdsStack):
+		back.col = slices.IndexFunc(origin.Columns, back.holdsStack)
 		c := &origin.Columns[back.col]
-		row := min(back.row, len(c.Windows))
+		// Below the windows that were above it and are still there.
+		row := 0
+		for _, v := range back.stacked[:back.row] {
+			if slices.Contains(c.Windows, v) {
+				row++
+			}
+		}
+		row = min(row, len(c.Windows))
 		c.Windows = slices.Insert(c.Windows, row, id)
 		if focus {
 			origin.Focus, c.Focus, origin.floatFocus = back.col, row, false
@@ -381,10 +390,11 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		}
 	}
 	origin.scroll()
-	shown := m.Current() == fs
-	m.take(fs)
-	if shown {
+	if m.Current() == fs && (focus || fs.empty()) {
 		m.show(origin)
+	}
+	if fs.empty() {
+		m.take(fs)
 	}
 }
 
@@ -399,17 +409,22 @@ func (m *Monitor) awayInSlot(w *Workspace, id WindowID, n int) bool {
 	return false
 }
 
+// holdsStack reports whether c holds a window of the stack left behind.
+func (p origPlace) holdsStack(c Column) bool {
+	return slices.ContainsFunc(c.Windows, func(v WindowID) bool { return slices.Contains(p.stacked, v) })
+}
+
 // fullscreenHome keeps each fullscreen workspace linked to its origin only
-// while it holds just its fullscreen window and the origin is still here.
-// Anything else (another window opened or moved in, the window activated
-// away from fullscreen, the origin gone to another monitor) makes it a
-// normal workspace, so a later exit never moves the wrong window.
+// while its window is still there and fullscreen, and the origin is still
+// on this monitor. Otherwise (the window moved out or activated away from
+// fullscreen, the origin gone to another monitor) it is a normal workspace.
+// Other windows opened there (a dialog) stay when the window returns.
 func (m *Monitor) fullscreenHome() {
 	for _, w := range m.all() {
 		if w.origin == nil {
 			continue
 		}
-		if !m.has(w.origin) || w.fullscreen == 0 || len(w.windows()) != 1 || w.windows()[0] != w.fullscreen {
+		if !m.has(w.origin) || w.fullscreen == 0 || !w.has(w.fullscreen) {
 			w.origin, w.back = nil, origPlace{}
 		}
 	}
