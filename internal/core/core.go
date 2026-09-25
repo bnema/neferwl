@@ -739,6 +739,18 @@ func (c *Core) Run(ctx context.Context) error {
 					c.grab = 0
 				}
 				continue
+			case ports.PointerAxis:
+				// Scroll goes where a button would: the grab, else under the pointer.
+				id := c.pointer
+				if c.grab != 0 {
+					id = c.grab
+				}
+				if id != 0 {
+					if err := c.command(ctx, ports.PointerAxisTo{ID: id, Axis: v}); err != nil {
+						return nil
+					}
+				}
+				continue
 			}
 			key, ok := ev.(ports.KeyEvent)
 			if !ok {

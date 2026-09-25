@@ -396,6 +396,10 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 				pointerFrame(p)
 			}
 		}
+	case ports.PointerAxisTo:
+		for _, p := range s.windowPointers(s.windows[c.ID]) {
+			sendAxis(p, c.Axis)
+		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
 	case ports.FocusWindow:
@@ -604,6 +608,34 @@ func (s *Server) changeFocus(id ports.WindowID) {
 	}
 	s.log.Debug().Uint64("id", uint64(s.focused)).Msg("keyboard focus")
 	s.updateConstraint()
+}
+
+// sendAxis sends one scroll frame, each event gated by the pointer version.
+func sendAxis(p *wayland.Pointer, a ports.PointerAxis) {
+	v := p.Version()
+	if v >= 5 {
+		p.SendAxisSource(uint32(a.Source))
+	}
+	for axis, s := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
+		if !s.Set {
+			continue
+		}
+		if s.Stop {
+			if v >= 5 {
+				p.SendAxisStop(a.TimeMsec, uint32(axis))
+			}
+			continue
+		}
+		if a.Source == ports.AxisWheel && s.V120 != 0 {
+			if v >= 8 {
+				p.SendAxisValue120(uint32(axis), s.V120)
+			} else if v >= 5 && s.V120/120 != 0 {
+				p.SendAxisDiscrete(uint32(axis), s.V120/120)
+			}
+		}
+		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(s.Value))
+	}
+	pointerFrame(p)
 }
 
 func pointerFrame(p *wayland.Pointer) {

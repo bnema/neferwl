@@ -3,6 +3,7 @@ package wayland
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
 	"os"
 	"path/filepath"
@@ -30,11 +31,16 @@ func protocolClient(t *testing.T, s *Server, dir string) *wlturbo.Display {
 
 func bindProtocol(t *testing.T, c *wlturbo.Display, iface string) uint32 {
 	t.Helper()
+	return bindVersion(t, c, iface, 1)
+}
+
+func bindVersion(t *testing.T, c *wlturbo.Display, iface string, version uint32) uint32 {
+	t.Helper()
 	g, ok := c.Registry().FindGlobal(iface)
 	if !ok {
 		t.Fatalf("missing %s", iface)
 	}
-	id, err := c.Registry().BindID(g.Name, g.Interface, 1)
+	id, err := c.Registry().BindID(g.Name, g.Interface, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,6 +431,7 @@ type pointerEvents struct {
 	wlturbo.BaseProxy
 	enters  chan [2]float64
 	buttons chan uint32
+	axes    chan string
 }
 
 func (p *pointerEvents) Dispatch(e *wlturbo.Event) {
@@ -437,16 +444,26 @@ func (p *pointerEvents) Dispatch(e *wlturbo.Event) {
 		_ = e.Uint32()
 		_ = e.Uint32()
 		p.buttons <- e.Uint32()
+	case uint16(wayland.PointerEventAxisSource):
+		p.axes <- fmt.Sprint("source ", e.Uint32())
+	case uint16(wayland.PointerEventAxisValue120):
+		p.axes <- fmt.Sprint("v120 ", e.Uint32(), " ", e.Int32())
+	case uint16(wayland.PointerEventAxis):
+		_ = e.Uint32()
+		p.axes <- fmt.Sprint("axis ", e.Uint32(), " ", e.Fixed().Float64())
+	case uint16(wayland.PointerEventAxisStop):
+		_ = e.Uint32()
+		p.axes <- fmt.Sprint("stop ", e.Uint32())
 	}
 }
 
 func TestPointerProtocol(t *testing.T) {
 	s, events, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
-	seat := bindProtocol(t, c, "wl_seat")
+	seat := bindVersion(t, c, "wl_seat", 8)
 	registerProtocol(t, c, seat)
 	pointer := c.AllocateID()
-	p := &pointerEvents{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 1)}
+	p := &pointerEvents{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 8), axes: make(chan string, 16)}
 	p.SetID(pointer)
 	c.Context().Register(p)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
@@ -493,6 +510,12 @@ func TestPointerProtocol(t *testing.T) {
 	w := mapped(t, events, 2*time.Second)
 	commands <- ports.PointerFocus{ID: w.ID, X: 10, Y: 20}
 	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, TimeMsec: 1}
+	// Middle, side and extra buttons pass through as evdev codes.
+	for _, b := range []uint32{0x112, 0x113, 0x114} {
+		commands <- ports.PointerButtonTo{ID: w.ID, Button: b, Pressed: true, TimeMsec: 1}
+	}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}, TimeMsec: 2}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, TimeMsec: 3}}
 	deadline := time.After(2 * time.Second)
 	dispatched := make(chan error, 1)
 	go func() {
@@ -503,7 +526,7 @@ func TestPointerProtocol(t *testing.T) {
 			}
 		}
 	}()
-	for len(p.enters) == 0 || len(p.buttons) == 0 {
+	for len(p.enters) == 0 || len(p.buttons) < 4 || len(p.axes) < 5 {
 		select {
 		case err := <-dispatched:
 			t.Fatal(err)
@@ -520,13 +543,15 @@ func TestPointerProtocol(t *testing.T) {
 	default:
 		t.Fatal("missing pointer enter")
 	}
-	select {
-	case button := <-p.buttons:
-		if button != 0x110 {
-			t.Fatalf("button: %d", button)
+	for _, want := range []uint32{0x110, 0x112, 0x113, 0x114} {
+		if b := <-p.buttons; b != want {
+			t.Fatalf("button: %#x, want %#x", b, want)
 		}
-	default:
-		t.Fatal("missing pointer button")
+	}
+	for _, want := range []string{"source 0", "v120 0 120", "axis 0 15", "source 1", "stop 1"} {
+		if got := <-p.axes; got != want {
+			t.Fatalf("axis event %q, want %q", got, want)
+		}
 	}
 }
 

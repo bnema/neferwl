@@ -255,6 +255,34 @@ type PointerButton struct {
 
 func (PointerButton) inputEvent() {}
 
+// AxisSource tells how a scroll was made; values match wl_pointer.axis_source.
+type AxisSource uint8
+
+const (
+	AxisWheel AxisSource = iota
+	AxisFinger
+	AxisContinuous
+)
+
+// ScrollAxis is one scroll direction in a pointer frame. Value is in
+// surface pixels; V120 counts wheel detents in 1/120 steps (wheel only).
+// Stop ends a finger or continuous scroll on this axis.
+type ScrollAxis struct {
+	Set   bool
+	Value float64
+	V120  int32
+	Stop  bool
+}
+
+// PointerAxis is one scroll frame: Vertical, then Horizontal.
+type PointerAxis struct {
+	Source               AxisSource
+	Vertical, Horizontal ScrollAxis
+	TimeMsec             uint32
+}
+
+func (PointerAxis) inputEvent() {}
+
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
 
@@ -439,6 +467,14 @@ type PointerButtonTo struct {
 }
 
 func (PointerButtonTo) clientCommand() {}
+
+// PointerAxisTo sends a scroll frame to a window.
+type PointerAxisTo struct {
+	ID   WindowID
+	Axis PointerAxis
+}
+
+func (PointerAxisTo) clientCommand() {}
 
 // ForwardKey carries core → wayland unbound keys.
 type ForwardKey struct {
