@@ -16,6 +16,7 @@ import (
 	"github.com/bnema/nefertty/internal/adapters/headlessinput"
 	"github.com/bnema/nefertty/internal/adapters/launcher"
 	"github.com/bnema/nefertty/internal/adapters/libinput"
+	"github.com/bnema/nefertty/internal/adapters/statefile"
 	"github.com/bnema/nefertty/internal/adapters/vulkan"
 	"github.com/bnema/nefertty/internal/adapters/wayland"
 	"github.com/bnema/nefertty/internal/adapters/xkb"
@@ -73,10 +74,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	spawn := make(chan ports.SpawnRequest, 32)
 	scenes := make(chan []ports.Scene, 1)
 	layouts := make(chan ports.Layout, 1)
+	states := make(chan ports.State, 1)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -93,7 +95,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		return err
 	}
 	log.Info().Str("WAYLAND_DISPLAY", server.SocketName()).Msg("listening")
-	child := launcher.New(launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir), logging.For(ctx, "launcher"))
+	childEnv := launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir)
+	statePath, err := statefile.Path(runtimeDir, server.SocketName())
+	if err != nil {
+		log.Warn().Err(err).Msg("state file disabled")
+	} else {
+		childEnv = append(childEnv, statefile.Env+"="+statePath)
+	}
+	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
 	if inject != nil {
 		inject(input)
 	}
@@ -157,6 +166,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
+	if statePath != "" {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			if err := statefile.Run(ctx, statePath, states, logging.For(ctx, "statefile")); err != nil {
+				// Scripts lose their state; the session goes on.
+				log.Warn().Err(err).Msg("state file disabled")
+			}
+		}()
+	}
 	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes, renderScenes) }()
 
 	go func() {

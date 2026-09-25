@@ -9,6 +9,8 @@ type WindowMapped struct {
 	AppID string
 	// Slot is the SlotEnv value of the client process, empty if none.
 	Slot string
+	// PID is the client process, 0 when unknown.
+	PID int
 }
 
 // SlotEnv is the environment variable nefertty sets on processes it spawns
@@ -29,6 +31,14 @@ type WindowFullscreenRequest struct {
 }
 
 func (WindowFullscreenRequest) clientEvent() {}
+
+// WindowAppID carries wayland → core an app ID set after the window mapped.
+type WindowAppID struct {
+	ID    WindowID
+	AppID string
+}
+
+func (WindowAppID) clientEvent() {}
 
 // Layer is a wlr-layer-shell stacking layer.
 type Layer uint32
@@ -349,4 +359,37 @@ type SceneWindow struct {
 	Focused, Fullscreen, Hidden bool
 	// Borderless windows fill the usable width alone; no border is drawn.
 	Borderless bool
+}
+
+// State carries core → state publisher a snapshot of what is on screen, for
+// scripts (bars, status lines). Workspace numbers count from 1.
+type State struct {
+	// Output is the focused output; "" before the first one.
+	Output  string
+	Outputs []OutputState
+	// Window is the focused window, nil when none.
+	Window  *WindowState
+	Windows []WindowState
+}
+
+// OutputState is one output: its workspace on screen and how many numbered
+// workspaces it has. Active is 0 while a hidden (named) workspace is shown.
+type OutputState struct {
+	Name      string
+	Active    int
+	Count     int
+	Workspace string // name of the workspace on screen, "" if unnamed
+}
+
+// WindowState is one mapped window and where it is.
+type WindowState struct {
+	ID     WindowID
+	AppID  string
+	PID    int
+	Output string
+	// Workspace is the window's numbered workspace, 0 for a hidden one.
+	Workspace int
+	// Visible means on the workspace on screen (it may be behind a
+	// fullscreen window).
+	Visible bool
 }

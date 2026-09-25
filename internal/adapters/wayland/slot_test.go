@@ -15,8 +15,8 @@ func TestWindowMappedCarriesSlot(t *testing.T) {
 	s, events, commands, dir := keyboardServer(t, func(s *Server) { s.env = env })
 	mapWindow := toplevelMapper(t, protocolClient(t, s, dir), events)
 	// No slot pending: /proc is not read (the mock would fail on a call).
-	if w := mapWindow(); w.Slot != "" {
-		t.Fatalf("slot %q", w.Slot)
+	if w := mapWindow(); w.Slot != "" || w.PID != os.Getpid() {
+		t.Fatalf("slot %q pid %d", w.Slot, w.PID)
 	}
 	commands <- ports.SlotsPending{Pending: true}
 	if w := mapWindow(); w.Slot != "7" {

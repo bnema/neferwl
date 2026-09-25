@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
@@ -17,6 +18,7 @@ type multiRig struct {
 	commands chan ports.ClientCommand
 	scenes   chan []ports.Scene
 	spawn    chan ports.SpawnRequest
+	state    chan ports.State
 	cfg      ports.Config
 }
 
@@ -45,9 +47,9 @@ func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...por
 	r := &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, Terminal: terminal})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Terminal: terminal})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,5 +446,57 @@ func TestKeyboardScreenFocusSticksUntilPointerLeaves(t *testing.T) {
 	receive(t, r.scenes)
 	if got := shown(r.mapWindow(t, 3)); len(got["DP-1"]) != 2 {
 		t.Fatal(got)
+	}
+}
+
+func TestStateSnapshot(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
+	receive(t, r.scenes)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	<-r.state // the channel holds the latest snapshot only
+	r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
+	receive(t, r.scenes)
+	st := receive(t, r.state)
+	want := ports.State{
+		Output:  "DP-2",
+		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1}, {Name: "DP-2", Active: 1, Count: 1}},
+		Windows: []ports.WindowState{
+			{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, Visible: true},
+			{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, Visible: true},
+		},
+	}
+	want.Window = &want.Windows[1]
+	if !reflect.DeepEqual(st, want) {
+		t.Fatalf("got  %+v\nwant %+v", st, want)
+	}
+	// Moving to workspace 2 of DP-2: two workspaces there, window 2 off screen.
+	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+	receive(t, r.scenes)
+	st = receive(t, r.state)
+	if st.Outputs[1] != (ports.OutputState{Name: "DP-2", Active: 2, Count: 2}) || st.Windows[1].Visible || st.Window != nil {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "notes", Hidden: true}}
+		c.Binds["Alt+n"] = "workspace notes"
+	}, left)
+	r.client <- ports.WindowMapped{ID: 1, PID: 100}
+	receive(t, r.scenes)
+	<-r.state
+	// An app ID set after map reaches the state.
+	r.client <- ports.WindowAppID{ID: 1, AppID: "foot"}
+	receive(t, r.scenes)
+	if st := receive(t, r.state); st.Windows[0].AppID != "foot" {
+		t.Fatalf("%+v", st)
+	}
+	// A hidden workspace on screen: no active number, its name, window 1 off screen.
+	r.key(t, "n", ports.ModAlt)
+	st := receive(t, r.state)
+	if st.Outputs[0].Active != 0 || st.Outputs[0].Workspace != "notes" || st.Windows[0].Visible {
+		t.Fatalf("%+v", st)
 	}
 }
