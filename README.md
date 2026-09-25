@@ -1,8 +1,14 @@
 # NeferTTY
 
-NeferTTY is a minimal Wayland compositor in Go with Niri-style scrollable columns. This repository currently contains only the skeleton and logging.
+NeferTTY is a minimal Wayland compositor in Go with Niri-style scrollable columns. It runs on a TTY (DRM/KMS, libinput, Vulkan) or headless.
 
 Requires Linux and Go 1.27.
+
+## Hardware support
+
+- **AMD GPUs:** developed and tested on AMD (radv).
+- **NVIDIA GPUs:** untested. NVIDIA drivers need explicit sync (`linux-drm-syncobj`), which NeferTTY does not implement yet. Testers with NVIDIA hardware are welcome to report issues or contribute.
+- **Intel GPUs:** untested.
 
 Build: `make build` (requires sibling checkouts of purego-libwayland and purego-vulkan).
 
