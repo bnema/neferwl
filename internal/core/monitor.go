@@ -367,7 +367,8 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	origin, back, id := fs.origin, fs.back, fs.back.id
 	fs.origin, fs.back = nil, origPlace{}
 	fs.RemoveWindow(id)
-	defer m.foldInto(fs, origin, back.col+1, focus, back.tiled)
+	// A closure: back.col is where the window lands, known after the switch.
+	defer func() { m.foldInto(fs, origin, back.col+1, focus, back.tiled) }()
 	switch prev := origin.Focus; {
 	case back.float != nil && focus:
 		origin.AddFloating(id, back.float.W, back.float.H)

@@ -500,6 +500,19 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 			t.Fatal(got, m.Active)
 		}
 	})
+	t.Run("a joined window lands after its stack when columns shifted", func(t *testing.T) {
+		m := fixed()
+		w := m.Current()
+		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{5}}, {Windows: []WindowID{2, 3}}, {Windows: []WindowID{6}}}
+		w.FocusID(3)
+		m.ToggleFullscreen()
+		m.AddWindow(7)
+		m.RemoveWindow(1)
+		m.ToggleFullscreen()
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{5, 2, 3, 7, 6}, {}}) {
+			t.Fatal(got)
+		}
+	})
 	t.Run("the bind from a dialog returns the fullscreen window", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
