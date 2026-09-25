@@ -591,6 +591,13 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 // returns the WindowMapped event it produced.
 func toplevelMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent) func() ports.WindowMapped {
 	t.Helper()
+	m := surfaceMapper(t, c, events)
+	return func() ports.WindowMapped { w, _ := m(); return w }
+}
+
+// surfaceMapper is toplevelMapper also returning the wl_surface ID.
+func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent) func() (ports.WindowMapped, uint32) {
+	t.Helper()
 	comp := bindProtocol(t, c, "wl_compositor")
 	wm := bindProtocol(t, c, "xdg_wm_base")
 	shm := bindProtocol(t, c, "wl_shm")
@@ -610,7 +617,7 @@ func toplevelMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.Client
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
-	return func() ports.WindowMapped {
+	return func() (ports.WindowMapped, uint32) {
 		surf, xdg, top := c.AllocateID(), c.AllocateID(), c.AllocateID()
 		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
 		registerProtocol(t, c, surf)
@@ -636,6 +643,6 @@ func toplevelMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.Client
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
-		return mapped(t, events, 2*time.Second)
+		return mapped(t, events, 2*time.Second), surf
 	}
 }

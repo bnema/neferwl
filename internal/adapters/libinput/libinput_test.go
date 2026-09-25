@@ -39,13 +39,13 @@ func TestPointerAcrossOutputs(t *testing.T) {
 		t.Fatal(p.x, p.y)
 	}
 	// Off the bottom of A: clamped to A.
-	if x, y := p.move(-80, 100); x != 0 || y != 49 {
-		t.Fatalf("got %v %v", x, y)
+	if m := p.move(-80, 100); m.X != 0 || m.Y != 49 {
+		t.Fatalf("got %v %v", m.X, m.Y)
 	}
 	// Into B, where deltas count in physical pixels (scale 2).
 	p.set(150, 20)
-	if x, y := p.move(20, 10); x != 160 || y != 25 {
-		t.Fatalf("got %v %v", x, y)
+	if m := p.move(20, 10); m.X != 160 || m.Y != 25 || m.DX != 10 || m.DY != 5 {
+		t.Fatalf("got %+v", m)
 	}
 	var out string
 	var px, py float64
@@ -67,5 +67,25 @@ func TestPointerStartsOnPrimary(t *testing.T) {
 	})
 	if p.x != 200 || p.y != 50 {
 		t.Fatal(p.x, p.y)
+	}
+}
+
+func TestPointerConstraints(t *testing.T) {
+	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 100, Scale: 1}})
+	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock})
+	if m := p.move(10, -5); m.X != 50 || m.Y != 50 || m.DX != 10 || m.DY != -5 {
+		t.Fatalf("locked: %+v", m)
+	}
+	// Confining moves the pointer inside, then keeps it there.
+	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 60, Y: 10, W: 20, H: 20}})
+	if p.x != 60 || p.y != 29 {
+		t.Fatal(p.x, p.y)
+	}
+	if m := p.move(100, 0); m.X != 79 || m.DX != 100 {
+		t.Fatalf("confined: %+v", m)
+	}
+	p.constrain(ports.PointerConstraint{})
+	if m := p.move(10, 0); m.X != 89 {
+		t.Fatalf("free: %+v", m)
 	}
 }

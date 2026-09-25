@@ -157,6 +157,9 @@ func (s *surface) Destroy(*wayland.Surface) {
 	if s.role != nil {
 		s.role(false)
 	}
+	if c := s.server.constraints[s]; c != nil {
+		s.server.dropConstraint(c)
+	}
 }
 func (s *surface) Attach(_ *wayland.Surface, b *wayland.Buffer, _, _ int32) {
 	s.pending = b
@@ -194,6 +197,7 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.pending = nil
 		s.attached = false
 	}
+	s.commitConstraint()
 	s.server.awaiting = append(s.server.awaiting, s.callbacks...)
 	s.callbacks = nil
 	if s.role != nil {

@@ -68,3 +68,14 @@ func TestForwarderStopsOnCancel(t *testing.T) {
 		t.Fatal("run did not stop while blocked on send")
 	}
 }
+
+// Coalesced motions keep the sum of their relative deltas.
+func TestForwarderSumsDeltas(t *testing.T) {
+	f := newForwarder()
+	f.push(ports.PointerMotion{X: 1, DX: 1, DY: 2, UnaccelDX: 3, UnaccelDY: 4})
+	f.push(ports.PointerMotion{X: 2, DX: 10, DY: 20, UnaccelDX: 30, UnaccelDY: 40})
+	ev, _ := f.pop()
+	if want := (ports.PointerMotion{X: 2, DX: 11, DY: 22, UnaccelDX: 33, UnaccelDY: 44}); ev != want {
+		t.Fatalf("got %+v, want %+v", ev, want)
+	}
+}
