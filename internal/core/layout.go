@@ -441,6 +441,15 @@ func (w *Workspace) ToggleFullscreen() {
 	w.scroll()
 }
 
+// Activate focuses a window and makes it visible: a tiled window leaves
+// another window's fullscreen, which would hide it.
+func (w *Workspace) Activate(id WindowID) {
+	if w.fullscreen != 0 && w.fullscreen != id && w.floatIndex(id) < 0 {
+		w.fullscreen = 0
+	}
+	w.FocusID(id)
+}
+
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {

@@ -619,13 +619,8 @@ func (c *Core) Run(ctx context.Context) error {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
 			case ports.WindowActivate:
-				// Wayland checked the token: bring the window forward.
-				if s, w := c.screenOf(v.ID); s != nil && c.popups[v.ID] == nil {
-					if w != s.mon.Current() {
-						s.mon.show(w)
-					}
-					w.FocusID(v.ID)
-					c.focusScreen = c.screenIndex(s.name())
+				if c.activate(ctx, v.ID) != nil {
+					return nil
 				}
 			}
 			if err := c.publish(ctx); err != nil {
@@ -803,10 +798,7 @@ func (c *Core) Run(ctx context.Context) error {
 						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
 					}
-					// Showing a declared workspace refills its empty slots.
-					c.releaseSlots()
-					c.settleGuests()
-					if c.spawnSlots(ctx, c.cur().mon.Current() != before) != nil {
+					if c.afterShow(ctx, before) != nil {
 						return nil
 					}
 					if effect.Close != 0 {
@@ -828,4 +820,31 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// afterShow keeps slots and guests right once a workspace came on screen;
+// before is the focused screen's workspace before the change.
+func (c *Core) afterShow(ctx context.Context, before *Workspace) error {
+	// Showing a declared workspace refills its empty slots.
+	c.releaseSlots()
+	c.settleGuests()
+	return c.spawnSlots(ctx, c.cur().mon.Current() != before)
+}
+
+// activate brings a window forward for a valid xdg-activation token. The
+// token proves a user action in the requesting client (a click on a link,
+// a notification), so unlike other client requests it may move the user
+// (the exception to the ADR 011 golden rule).
+func (c *Core) activate(ctx context.Context, id WindowID) error {
+	s, w := c.screenOf(id)
+	if s == nil || c.popups[id] != nil {
+		return nil
+	}
+	before := c.cur().mon.Current()
+	if w != s.mon.Current() {
+		s.mon.show(w)
+	}
+	w.Activate(id)
+	c.focusScreen = c.screenIndex(s.name())
+	return c.afterShow(ctx, before)
 }

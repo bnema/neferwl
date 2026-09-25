@@ -70,8 +70,11 @@ type Server struct {
 	serial   uint32
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
-	press                   uint32
-	pressClient             server.Client
+	press       uint32
+	pressClient server.Client
+	// pressAt and focusAt date the last press and keyboard focus change,
+	// for xdg-activation tokens.
+	pressAt, focusAt        time.Time
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
@@ -386,7 +389,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			state := uint32(0)
 			if c.Pressed {
 				state = 1
-				s.press, s.pressClient = s.serial, w.xdg.resource.Client()
+				s.press, s.pressClient, s.pressAt = s.serial, w.xdg.resource.Client(), time.Now()
 			}
 			for _, p := range s.windowPointers(w) {
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
@@ -420,7 +423,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 		if c.Key.Pressed {
 			if surf, _ := s.focusTarget(c.ID); surf != nil {
-				s.press, s.pressClient = s.serial, surf.Client()
+				s.press, s.pressClient, s.pressAt = s.serial, surf.Client(), time.Now()
 			}
 		}
 		for _, k := range keyboards {
@@ -571,6 +574,14 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
+	old := s.focusClient()
+	defer func() {
+		// Tokens of a client losing the focus die with it.
+		if now := s.focusClient(); now != old {
+			s.dropTokens(old)
+			s.focusAt = time.Now()
+		}
+	}()
 	if surf, keyboards := s.focusTarget(s.focused); surf != nil {
 		for _, k := range keyboards {
 			s.serial++

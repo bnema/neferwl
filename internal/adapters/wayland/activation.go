@@ -16,13 +16,18 @@ import (
 // bring its window forward with it. Other tokens are issued but inert, so
 // a background app cannot steal the focus.
 
-// tokenLifetime is how long a token can activate a window.
+// tokenLifetime is how long a token can activate a window, and how recent
+// a press must be to earn one.
 const tokenLifetime = 10 * time.Second
 
-// activationToken is an issued token; valid ones may activate a window.
+// maxTokens bounds the valid tokens kept; the oldest goes first.
+const maxTokens = 32
+
+// activationToken is an issued valid token. Tokens of a client die when
+// the user moves the focus away from it.
 type activationToken struct {
-	valid bool
-	at    time.Time
+	client server.Client
+	at     time.Time
 }
 
 func registerActivation(d *server.Display, s *Server) error {
@@ -46,12 +51,23 @@ func (a activation) Activate(_ *xdgactivation.ActivationV1, token string, surf *
 	t, ok := s.tokens[token]
 	delete(s.tokens, token)
 	state := s.surfaceOf(surf)
-	if !ok || !t.valid || time.Since(t.at) > tokenLifetime || state == nil {
-		s.log.Debug().Bool("known", ok).Msg("activation refused")
-		return
+	reason := ""
+	switch {
+	case !ok:
+		reason = "unknown_token"
+	case time.Since(t.at) > tokenLifetime:
+		reason = "expired"
+	case state == nil:
+		reason = "no_surface"
 	}
-	w := s.windows[state.root().windowID()]
-	if w == nil || w.toplevel == nil || !w.mapped {
+	var w *window
+	if reason == "" {
+		if w = s.windows[state.root().windowID()]; w == nil || w.toplevel == nil || !w.mapped {
+			reason = "not_toplevel"
+		}
+	}
+	if reason != "" {
+		s.log.Debug().Str("reason", reason).Msg("activation refused")
 		return
 	}
 	s.log.Info().Uint64("id", uint64(w.id)).Msg("activation")
@@ -74,7 +90,8 @@ func (*tokenRequest) SetSurface(*xdgactivation.ActivationTokenV1, *wayland.Surfa
 func (*tokenRequest) Destroy(*xdgactivation.ActivationTokenV1)                      {}
 
 // Commit issues the token. It is valid when the requesting client has the
-// keyboard focus or made the last press it names by serial.
+// keyboard focus, or made the last press, recent and not followed by a
+// focus change, that it names by serial. Invalid tokens are not kept.
 func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 	if t.used {
 		r.PostError(uint32(xdgactivation.ActivationTokenV1ErrorAlreadyUsed), "token already committed")
@@ -83,10 +100,13 @@ func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 	t.used = true
 	s := t.server
 	c := r.Client()
-	valid := s.focusClient() == c || (t.hasSerial && t.serial == s.press && s.pressClient == c)
-	s.pruneTokens()
+	fresh := time.Since(s.pressAt) <= tokenLifetime && !s.pressAt.Before(s.focusAt)
+	valid := s.focusClient() == c || (t.hasSerial && t.serial == s.press && s.pressClient == c && fresh)
 	token := rand.Text()
-	s.tokens[token] = activationToken{valid: valid, at: time.Now()}
+	if valid {
+		s.pruneTokens()
+		s.tokens[token] = activationToken{client: c, at: time.Now()}
+	}
 	r.SendDone(token)
 }
 
@@ -101,10 +121,25 @@ func (s *Server) focusClient() server.Client {
 	return server.Client{}
 }
 
-// pruneTokens forgets expired tokens.
+// pruneTokens forgets expired tokens and, past maxTokens, the oldest.
 func (s *Server) pruneTokens() {
+	oldest := ""
 	for k, t := range s.tokens {
 		if time.Since(t.at) > tokenLifetime {
+			delete(s.tokens, k)
+		} else if oldest == "" || t.at.Before(s.tokens[oldest].at) {
+			oldest = k
+		}
+	}
+	if len(s.tokens) >= maxTokens {
+		delete(s.tokens, oldest)
+	}
+}
+
+// dropTokens forgets the tokens of a client that lost the focus.
+func (s *Server) dropTokens(c server.Client) {
+	for k, t := range s.tokens {
+		if t.client == c {
 			delete(s.tokens, k)
 		}
 	}
