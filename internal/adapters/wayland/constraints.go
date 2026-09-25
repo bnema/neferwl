@@ -44,18 +44,22 @@ func (relativeHandler) Destroy(*relativepointer.ZwpRelativePointerV1) {}
 
 // relativeMotion sends the motion deltas to the window client's relative
 // pointers. Absolute devices have no deltas and send nothing.
-func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) {
+// It reports whether any event was sent.
+func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) bool {
 	if c.DX == 0 && c.DY == 0 && c.UnaccelDX == 0 && c.UnaccelDY == 0 {
-		return
+		return false
 	}
 	if !w.mapped || !w.xdg.resource.Resource.Alive() {
-		return
+		return false
 	}
+	sent := false
 	for _, rel := range s.relatives[w.xdg.resource.Client()] {
 		if rel.Resource.Alive() {
 			rel.SendRelativeMotion(uint32(c.TimeUsec>>32), uint32(c.TimeUsec), server.FixedFromFloat(c.DX), server.FixedFromFloat(c.DY), server.FixedFromFloat(c.UnaccelDX), server.FixedFromFloat(c.UnaccelDY))
+			sent = true
 		}
 	}
+	return sent
 }
 
 // constraint is a zwp_locked_pointer_v1 or zwp_confined_pointer_v1 on a
@@ -77,6 +81,8 @@ func (constraintManager) Destroy(*pointerconstraints.ZwpPointerConstraintsV1) {}
 func (m constraintManager) LockPointer(r *pointerconstraints.ZwpPointerConstraintsV1, id uint32, surf *wayland.Surface, _ *wayland.Pointer, reg *wayland.Region, lifetime uint32) {
 	c := m.create(r, surf, reg, lifetime)
 	if c == nil {
+		// An unknown surface: an inert object the client can destroy.
+		_, _ = pointerconstraints.NewZwpLockedPointerV1(r.Client(), r.Version(), id, lockHandler{&constraint{}})
 		return
 	}
 	lock, err := pointerconstraints.NewZwpLockedPointerV1(r.Client(), r.Version(), id, lockHandler{c})
@@ -91,6 +97,7 @@ func (m constraintManager) LockPointer(r *pointerconstraints.ZwpPointerConstrain
 func (m constraintManager) ConfinePointer(r *pointerconstraints.ZwpPointerConstraintsV1, id uint32, surf *wayland.Surface, _ *wayland.Pointer, reg *wayland.Region, lifetime uint32) {
 	c := m.create(r, surf, reg, lifetime)
 	if c == nil {
+		_, _ = pointerconstraints.NewZwpConfinedPointerV1(r.Client(), r.Version(), id, confineHandler{&constraint{}})
 		return
 	}
 	confine, err := pointerconstraints.NewZwpConfinedPointerV1(r.Client(), r.Version(), id, confineHandler{c})
@@ -117,6 +124,9 @@ func (m constraintManager) create(r *pointerconstraints.ZwpPointerConstraintsV1,
 		r.PostError(uint32(pointerconstraints.ZwpPointerConstraintsV1ErrorAlreadyConstrained), "surface already constrained")
 		return nil
 	}
+	if state.kind == roleCursor {
+		return nil
+	}
 	c := &constraint{surface: state, region: s.regionBox(reg), persistent: lifetime == uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent)}
 	s.constraints[state] = c
 	return c
@@ -141,6 +151,9 @@ func (lockHandler) Destroy(*pointerconstraints.ZwpLockedPointerV1) {}
 func (lockHandler) SetCursorPositionHint(*pointerconstraints.ZwpLockedPointerV1, server.Fixed, server.Fixed) {
 }
 func (h lockHandler) SetRegion(_ *pointerconstraints.ZwpLockedPointerV1, reg *wayland.Region) {
+	if h.c.surface == nil {
+		return
+	}
 	r := h.c.surface.server.regionBox(reg)
 	h.c.pending = &r
 }
@@ -149,19 +162,27 @@ type confineHandler struct{ c *constraint }
 
 func (confineHandler) Destroy(*pointerconstraints.ZwpConfinedPointerV1) {}
 func (h confineHandler) SetRegion(_ *pointerconstraints.ZwpConfinedPointerV1, reg *wayland.Region) {
+	if h.c.surface == nil {
+		return
+	}
 	r := h.c.surface.server.regionBox(reg)
 	h.c.pending = &r
 }
 
-// commitConstraint applies a pending region on the surface commit.
-func (s *surface) commitConstraint() {
+// commitConstraint applies a pending region on the surface commit, after
+// the new window geometry: core receives the region window-local.
+func (s *surface) commitConstraint(geometry bool) {
 	c := s.server.constraints[s]
-	if c == nil || c.pending == nil {
+	if c == nil || (c.pending == nil && !geometry) {
 		return
 	}
-	c.region, c.pending = *c.pending, nil
+	if c.pending != nil {
+		c.region, c.pending = *c.pending, nil
+	}
 	if c.active {
 		s.server.emitConstraint(c)
+	} else {
+		s.server.updateConstraint()
 	}
 }
 
@@ -189,7 +210,7 @@ func (s *Server) dropConstraint(c *constraint) {
 func (s *Server) updateConstraint() {
 	var want *constraint
 	if w := s.windows[s.pointerFocus]; w != nil && w.mapped && s.pointerFocus == s.focused {
-		if c := s.constraints[w.xdg.surface]; c != nil && !c.defunct {
+		if c := s.constraints[w.xdg.surface]; c != nil && !c.defunct && (c.active || c.contains(w)) {
 			want = c
 		}
 	}
@@ -238,6 +259,17 @@ func (s *Server) emitConstraint(c *constraint) {
 		r.Y -= x.geometry.Y
 	}
 	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}})
+}
+
+// contains reports whether the pointer is in the region: a constraint
+// activates only there, so it never warps the pointer.
+func (c *constraint) contains(w *window) bool {
+	r := c.region
+	if r.W <= 0 || r.H <= 0 {
+		return true
+	}
+	x, y := w.surfacePoint(w.xdg.server.pointerX, w.xdg.server.pointerY)
+	return x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H)
 }
 
 // locked reports whether the window's pointer is locked.

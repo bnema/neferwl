@@ -367,16 +367,21 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.changePointerFocus(c.ID, c.X, c.Y)
 	case ports.PointerMotionTo:
 		if w := s.windows[c.ID]; w != nil && c.ID == s.pointerFocus {
-			s.relativeMotion(w, c)
-			if s.locked(w) {
-				// Only relative motion reaches a locked pointer.
+			if s.relativeMotion(w, c) && s.locked(w) {
 				for _, p := range s.windowPointers(w) {
 					pointerFrame(p)
 				}
+			}
+			if s.locked(w) {
+				// Only relative motion reaches a locked pointer.
 				return
 			}
 			x, y := w.surfacePoint(c.X, c.Y)
 			s.pointerX, s.pointerY = c.X, c.Y
+			// A constraint waits for the pointer to enter its region.
+			if s.constraint == nil {
+				s.updateConstraint()
+			}
 			for _, p := range s.windowPointers(w) {
 				p.SendMotion(c.TimeMsec, server.FixedFromFloat(x), server.FixedFromFloat(y))
 				pointerFrame(p)

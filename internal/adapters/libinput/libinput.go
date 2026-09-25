@@ -275,6 +275,9 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 		// Absolute devices (tablets, VMs) map to the whole layout.
 		pe := pointerEvent(ev)
 		b := p.bounds()
+		if p.constraint.Mode == ports.ConstraintLock {
+			return ports.PointerMotion{X: p.x, Y: p.y, TimeMsec: now}, nil
+		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
 		p.moved(opts.MoveCursor)
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
@@ -379,8 +382,13 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 	return p.x, p.y
 }
 
-// constrain applies a new constraint; a confined pointer moves inside.
+// constrain applies a new constraint. Entering or leaving a lock resyncs
+// the pointer to core's cursor, which stood still meanwhile; a confined
+// pointer moves inside.
 func (p *pointer) constrain(c ports.PointerConstraint) {
+	if c.Mode == ports.ConstraintLock || p.constraint.Mode == ports.ConstraintLock {
+		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
+	}
 	p.constraint = c
 	p.x, p.y = c.Clamp(p.x, p.y)
 }

@@ -151,8 +151,16 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	requestProtocol(t, c, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestConfinePointer, confine, surf, pointer, region, uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimeOneshot))
 	// The region is copied: changing it later has no effect.
 	requestProtocol(t, c, region, wayland.RegionRequestAdd, int32(0), int32(0), int32(100), int32(100))
+	// Outside the region the constraint waits for the pointer.
 	commands <- ports.FocusWindow{ID: w.ID}
 	commands <- ports.PointerFocus{ID: w.ID}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(confineEvents) > 0 {
+		t.Fatal("confined outside the region")
+	}
+	commands <- ports.PointerMotionTo{ID: w.ID, X: 5, Y: 5}
 	if ev := next(t, c, confineEvents); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventConfined) {
 		t.Fatalf("confine event %v", ev)
 	}
@@ -173,7 +181,7 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	if ev := next(t, c, confineEvents); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventUnconfined) {
 		t.Fatalf("unconfine event %v", ev)
 	}
-	commands <- ports.PointerFocus{ID: w.ID}
+	commands <- ports.PointerFocus{ID: w.ID, X: 5, Y: 5}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -188,4 +196,30 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	registerProtocol(t, c, again)
 	requestProtocol(t, c, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, again, surf, pointer, uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimeOneshot))
 	expectProtocolError(t, c, constraints, uint32(pointerconstraints.ZwpPointerConstraintsV1ErrorAlreadyConstrained))
+}
+
+// Destroying an active lock unlocks the pointer in core.
+func TestPointerLockDestroyed(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	pointer := c.AllocateID()
+	registerProtocol(t, c, pointer)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+	w, surf := surfaceMapper(t, c, events)()
+	constraints := bindProtocol(t, c, "zwp_pointer_constraints_v1")
+	lock := c.AllocateID()
+	lockEvents := logProxy(t, c, lock)
+	requestProtocol(t, c, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, lock, surf, pointer, uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	commands <- ports.PointerFocus{ID: w.ID}
+	commands <- ports.FocusWindow{ID: w.ID}
+	next(t, c, lockEvents)
+	if got := constrained(t, events); got.Mode != ports.ConstraintLock {
+		t.Fatalf("constrained %+v", got)
+	}
+	requestProtocol(t, c, lock, pointerconstraints.ZwpLockedPointerV1RequestDestroy)
+	if got := constrained(t, events); got.ID != 0 {
+		t.Fatalf("after destroy %+v", got)
+	}
 }

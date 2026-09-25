@@ -72,12 +72,12 @@ func TestPointerStartsOnPrimary(t *testing.T) {
 
 func TestPointerConstraints(t *testing.T) {
 	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 100, Scale: 1}})
-	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock})
+	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock, X: 50, Y: 50})
 	if m := p.move(10, -5); m.X != 50 || m.Y != 50 || m.DX != 10 || m.DY != -5 {
 		t.Fatalf("locked: %+v", m)
 	}
 	// Confining moves the pointer inside, then keeps it there.
-	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 60, Y: 10, W: 20, H: 20}})
+	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 60, Y: 10, W: 20, H: 20}, X: 50, Y: 50})
 	if p.x != 60 || p.y != 29 {
 		t.Fatal(p.x, p.y)
 	}
@@ -87,5 +87,15 @@ func TestPointerConstraints(t *testing.T) {
 	p.constrain(ports.PointerConstraint{})
 	if m := p.move(10, 0); m.X != 89 {
 		t.Fatalf("free: %+v", m)
+	}
+	// A lock takes core's cursor position, and so does its release.
+	p.constrain(ports.PointerConstraint{Mode: ports.ConstraintLock, X: 20, Y: 30})
+	if p.x != 20 || p.y != 30 {
+		t.Fatal(p.x, p.y)
+	}
+	p.move(40, 40)
+	p.constrain(ports.PointerConstraint{X: 21, Y: 31})
+	if p.x != 21 || p.y != 31 {
+		t.Fatal(p.x, p.y)
 	}
 }

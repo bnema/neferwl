@@ -600,7 +600,8 @@ func TestPointerConstraint(t *testing.T) {
 	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
 	scene(t, scenes)
 	want := ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
-	if got := receive(t, constraints); got != want {
+	// Input gets core's cursor, clamped into the region.
+	if got := receive(t, constraints); got.Mode != want.Mode || got.Rect != want.Rect || got.X != 150 || got.Y != 29 {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 	for len(commands) > 0 {
@@ -636,7 +637,7 @@ func TestPointerConstraint(t *testing.T) {
 	}
 	client <- ports.PointerConstrained{}
 	scene(t, scenes)
-	if got := receive(t, constraints); got != (ports.PointerConstraint{}) {
+	if got := receive(t, constraints); got.Mode != ports.ConstraintNone {
 		t.Fatalf("release %+v", got)
 	}
 }

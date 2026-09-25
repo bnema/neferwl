@@ -444,11 +444,14 @@ func (c *Core) resolveConstraint() {
 			}
 		}
 	}
-	if g == c.constraint {
+	// The cursor follows core; input resyncs to it only on a change.
+	if g.Mode == c.constraint.Mode && g.Rect == c.constraint.Rect {
 		return
 	}
-	c.constraint = g
+	// A layout change must not leave a locked cursor off its window.
 	c.cursorX, c.cursorY = g.Clamp(c.cursorX, c.cursorY)
+	g.X, g.Y = c.cursorX, c.cursorY
+	c.constraint = g
 	if c.ch.Constraints != nil {
 		latest(c.ch.Constraints, g)
 	}

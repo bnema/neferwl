@@ -197,7 +197,6 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.pending = nil
 		s.attached = false
 	}
-	s.commitConstraint()
 	s.server.awaiting = append(s.server.awaiting, s.callbacks...)
 	s.callbacks = nil
 	if s.role != nil {
@@ -234,6 +233,7 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
 	}
+	s.commitConstraint(geometry)
 	if fresh || moved || geometry || s.sub.parent != nil {
 		s.redraw()
 	}
