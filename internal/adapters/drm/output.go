@@ -183,7 +183,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			} else {
 				surfaces[c.ID] = c
 			}
-			dirty = true
+			// Windows on other outputs or workspaces do not need a frame.
+			dirty = dirty || scene.Shows(c.ID)
 		case <-stats.C:
 			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
 			if o.cursor != nil {

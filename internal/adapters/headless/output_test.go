@@ -69,8 +69,9 @@ func TestRun(t *testing.T) {
 	contents := make(chan ports.SurfaceContent, 8)
 	r, f := recordingRenderer(t, nil)
 	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
-	scenes <- ports.Scene{Seq: 1}
-	scenes <- ports.Scene{Seq: 2}
+	shown := []ports.SceneWindow{{ID: 1}, {ID: 2}}
+	scenes <- ports.Scene{Seq: 1, Windows: shown}
+	scenes <- ports.Scene{Seq: 2, Windows: shown}
 	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -102,6 +103,35 @@ func TestRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// Content of a window the output does not show draws no frame.
+func TestRunSkipsContentNotShown(t *testing.T) {
+	scenes := make(chan ports.Scene, 1)
+	contents := make(chan ports.SurfaceContent, 2)
+	scenes <- ports.Scene{Seq: 1, Windows: []ports.SceneWindow{{ID: 1}, {ID: 3, Hidden: true}}}
+	r, f := recordingRenderer(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents)
+	}()
+	waitFrames(t, f, 1)
+	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
+	contents <- ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}}
+	time.Sleep(50 * time.Millisecond)
+	if s, _ := f.snapshot(); len(s) != 1 {
+		t.Fatalf("%d frames for content not shown", len(s))
+	}
+	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
+	waitFrames(t, f, 2)
+	if _, c := f.snapshot(); c[1][2].SHM == nil {
+		t.Error("content not shown was dropped")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
