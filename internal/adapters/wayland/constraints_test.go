@@ -8,6 +8,7 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/wlturbo"
 )
 
@@ -76,7 +77,7 @@ func TestPointerLockAndRelativeMotion(t *testing.T) {
 	rel := c.AllocateID()
 	relEvents := logProxy(t, c, rel)
 	requestProtocol(t, c, relManager, relativepointer.ZwpRelativePointerManagerV1RequestGetRelativePointer, rel, pointer)
-	w, surf := surfaceMapper(t, c, events)()
+	w, surf, _ := surfaceMapper(t, c, events)()
 
 	constraints := bindProtocol(t, c, "zwp_pointer_constraints_v1")
 	lock := c.AllocateID()
@@ -135,10 +136,10 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	seat := bindProtocol(t, c, "wl_seat")
 	registerProtocol(t, c, seat)
 	pointer := c.AllocateID()
-	registerProtocol(t, c, pointer)
+	pointerEvents := logProxy(t, c, pointer)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
 	comp := bindProtocol(t, c, "wl_compositor")
-	w, surf := surfaceMapper(t, c, events)()
+	w, surf, xdgID := surfaceMapper(t, c, events)()
 	region := c.AllocateID()
 	registerProtocol(t, c, region)
 	requestProtocol(t, c, comp, wayland.CompositorRequestCreateRegion, region)
@@ -154,8 +155,9 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	// Outside the region the constraint waits for the pointer.
 	commands <- ports.FocusWindow{ID: w.ID}
 	commands <- ports.PointerFocus{ID: w.ID}
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
+	commands <- ports.PointerMotionTo{ID: w.ID, X: 50, Y: 50}
+	// Sync on the motion reaching the client before checking.
+	for ev := next(t, c, pointerEvents); ev[0] != float64(wayland.PointerEventMotion); ev = next(t, c, pointerEvents) {
 	}
 	if len(confineEvents) > 0 {
 		t.Fatal("confined outside the region")
@@ -167,6 +169,13 @@ func TestPointerConfineOneshotRegion(t *testing.T) {
 	want := ports.PointerConstrained{ID: w.ID, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 2, Y: 3, W: 23, H: 20}}}
 	if got := constrained(t, events); got != want {
 		t.Fatalf("constrained %+v, want %+v", got, want)
+	}
+
+	// A geometry change moves the window-local region.
+	requestProtocol(t, c, xdgID, xdgshell.SurfaceRequestSetWindowGeometry, int32(1), int32(1), int32(1), int32(1))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if got := constrained(t, events); got.Rect != (ports.Rect{X: 1, Y: 2, W: 23, H: 20}) {
+		t.Fatalf("after geometry %+v", got)
 	}
 
 	// A new region applies on commit.
@@ -207,7 +216,7 @@ func TestPointerLockDestroyed(t *testing.T) {
 	pointer := c.AllocateID()
 	registerProtocol(t, c, pointer)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
-	w, surf := surfaceMapper(t, c, events)()
+	w, surf, _ := surfaceMapper(t, c, events)()
 	constraints := bindProtocol(t, c, "zwp_pointer_constraints_v1")
 	lock := c.AllocateID()
 	lockEvents := logProxy(t, c, lock)
