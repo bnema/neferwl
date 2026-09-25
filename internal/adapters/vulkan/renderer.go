@@ -390,42 +390,52 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		uploads = append(uploads, upload{rect: rect, offset: used, pixels: content.Pixels, stride: content.Stride, opaque: content.Opaque, dst: dst, src: src})
 		used += rect.Dx() * rect.Dy() * 4
 	}
-	// place draws content with its top-left at (x, y) logical, clipped to w×h logical.
-	place := func(content *ports.SurfaceContent, x, y, w, h int) {
+	// drawSurface draws one surface buffer with its origin at (x, y)
+	// logical, clipped to clip (logical).
+	drawSurface := func(content *ports.SurfaceContent, x, y int, clip image.Rectangle) {
 		lw, lh := content.LogicalW, content.LogicalH
 		if lw <= 0 || lh <= 0 {
 			lw, lh = content.Width, content.Height
 		}
-		if content.Empty() || lw <= 0 || lh <= 0 {
+		if content.Pixels == nil && content.DMABuf == nil || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
 			return
 		}
 		if content.DMABuf == nil && (content.Stride < content.Width*4 || len(content.Pixels) < (content.Height-1)*content.Stride+content.Width*4) {
 			return
 		}
-		vw, vh := min(lw, w), min(lh, h)
-		if vw <= 0 || vh <= 0 {
-			return
-		}
-		// Buffer pixels per logical pixel on each axis.
-		src := image.Rect(0, 0, vw*content.Width/lw, vh*content.Height/lh)
-		dst := physRect(x, y, vw, vh)
+		full := physRect(x, y, lw, lh)
 		// A buffer drawn at the physical size (fractional-scale clients round
 		// w*scale, we round per edge) is copied 1:1, never resampled for 1px.
 		near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
-		if near(src.Dx(), dst.Dx()) && near(src.Dy(), dst.Dy()) {
-			dst.Max = dst.Min.Add(src.Size())
-			// Clip to the body: the buffer may be 1px wider than the slot.
-			clip := physRect(x, y, w, h)
-			if dst.Max.X > clip.Max.X {
-				src.Max.X -= dst.Max.X - clip.Max.X
-				dst.Max.X = clip.Max.X
-			}
-			if dst.Max.Y > clip.Max.Y {
-				src.Max.Y -= dst.Max.Y - clip.Max.Y
-				dst.Max.Y = clip.Max.Y
+		if near(full.Dx(), content.Width) && near(full.Dy(), content.Height) {
+			full.Max = full.Min.Add(image.Pt(content.Width, content.Height))
+		}
+		dst := full.Intersect(physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy()))
+		if dst.Empty() {
+			return
+		}
+		// The visible part of dst in buffer pixels.
+		bx := func(v int) int { return (v - full.Min.X) * content.Width / full.Dx() }
+		by := func(v int) int { return (v - full.Min.Y) * content.Height / full.Dy() }
+		src := image.Rect(bx(dst.Min.X), by(dst.Min.Y), bx(dst.Max.X), by(dst.Max.Y))
+		addContent(dst, src, content)
+	}
+	// place draws a surface tree with its window geometry at (x, y)
+	// logical, clipped to w×h logical: client shadows fall outside.
+	place := func(content *ports.SurfaceContent, x, y, w, h int) {
+		clip := image.Rect(x, y, x+w, y+h)
+		ox, oy := x-content.Geometry.X, y-content.Geometry.Y
+		for i := range content.Children {
+			if ch := &content.Children[i]; ch.Below {
+				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
 			}
 		}
-		addContent(dst, src, content)
+		drawSurface(content, ox, oy, clip)
+		for i := range content.Children {
+			if ch := &content.Children[i]; !ch.Below {
+				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
+			}
+		}
 	}
 	fullscreen := false
 	for _, w := range s.Windows {

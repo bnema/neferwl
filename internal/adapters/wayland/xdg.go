@@ -64,6 +64,9 @@ type xdgSurface struct {
 	window     *window
 	popup      *xdgshell.Popup
 	serials    []uint32
+	// geometry is the committed window geometry: the visible window inside
+	// client shadows. Empty means the whole surface.
+	geometry, pendingGeometry ports.Rect
 }
 
 func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
@@ -167,6 +170,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		x.configured = false
 		x.acked = false
 		x.serials = nil
+		x.geometry, x.pendingGeometry = ports.Rect{}, ports.Rect{}
 	}
 }
 func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surface, _ *xdgshell.Positioner) {
@@ -181,13 +185,19 @@ func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surfac
 	}
 }
 
-// SetWindowGeometry is logged only: placement uses the full buffer for now.
-func (x *xdgSurface) SetWindowGeometry(_ *xdgshell.Surface, gx, gy, gw, gh int32) {
+// SetWindowGeometry sets the visible window inside the surface; it
+// applies on the next commit.
+func (x *xdgSurface) SetWindowGeometry(r *xdgshell.Surface, gx, gy, gw, gh int32) {
+	if gw <= 0 || gh <= 0 {
+		r.PostError(uint32(xdgshell.SurfaceErrorInvalidSize), "invalid window geometry")
+		return
+	}
+	x.pendingGeometry = ports.Rect{X: int(gx), Y: int(gy), W: int(gw), H: int(gh)}
 	id := uint64(0)
 	if x.window != nil {
 		id = uint64(x.window.id)
 	}
-	x.server.log.Info().Uint64("id", id).Int32("x", gx).Int32("y", gy).Int32("w", gw).Int32("h", gh).Msg("window geometry")
+	x.server.log.Debug().Uint64("id", id).Int32("x", gx).Int32("y", gy).Int32("w", gw).Int32("h", gh).Msg("window geometry")
 }
 func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 	for i, issued := range x.serials {
@@ -238,6 +248,13 @@ type popup struct{}
 func (popup) Destroy(*xdgshell.Popup)                                  {}
 func (popup) Grab(*xdgshell.Popup, *wayland.Seat, uint32)              {}
 func (popup) Reposition(*xdgshell.Popup, *xdgshell.Positioner, uint32) {}
+
+// surfacePoint turns window coordinates (core's, from the geometry origin)
+// into surface coordinates.
+func (w *window) surfacePoint(x, y float64) (float64, float64) {
+	g := w.xdg.geometry
+	return x + float64(g.X), y + float64(g.Y)
+}
 
 func (x *xdgSurface) surfaceResource() *wayland.Surface {
 	for resource, state := range x.server.surfaces {

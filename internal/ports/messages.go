@@ -346,6 +346,8 @@ type SceneLayer struct {
 // GPU buffer the renderer reads in place. Receivers never modify either.
 // Empty means the window has no content. LogicalW and LogicalH are the
 // surface size in logical pixels (buffer scale and viewport applied).
+// Subsurfaces come in Children; Geometry is the part of the surface that
+// is the window (xdg window geometry), the rest being client shadows.
 type SurfaceContent struct {
 	ID                 WindowID
 	Width, Height      int
@@ -354,10 +356,25 @@ type SurfaceContent struct {
 	Opaque             bool // x formats: ignore the alpha byte
 	Pixels             []byte
 	DMABuf             *DMABuf
+	// Children are the subsurfaces, bottom to top, flattened.
+	Children []Subsurface
+	// Geometry is in logical pixels from the surface origin; empty means
+	// the whole surface.
+	Geometry Rect
+}
+
+// Subsurface is a child surface at X, Y logical pixels from the root
+// surface origin. Below children are drawn under the root surface.
+type Subsurface struct {
+	X, Y  int
+	Below bool
+	SurfaceContent
 }
 
 // Empty reports whether the content has nothing to draw.
-func (c SurfaceContent) Empty() bool { return c.Pixels == nil && c.DMABuf == nil }
+func (c SurfaceContent) Empty() bool {
+	return c.Pixels == nil && c.DMABuf == nil && len(c.Children) == 0
+}
 
 // DMABuf is a client GPU buffer (linux-dmabuf). Its files stay open while
 // the client's buffer exists; a renderer that keeps it must duplicate the

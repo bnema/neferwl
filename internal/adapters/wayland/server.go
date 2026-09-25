@@ -345,9 +345,10 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 	case ports.PointerFocus:
 		s.changePointerFocus(c.ID, c.X, c.Y)
 	case ports.PointerMotionTo:
-		if c.ID == s.pointerFocus {
-			for _, p := range s.windowPointers(s.windows[c.ID]) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+		if w := s.windows[c.ID]; w != nil && c.ID == s.pointerFocus {
+			x, y := w.surfacePoint(c.X, c.Y)
+			for _, p := range s.windowPointers(w) {
+				p.SendMotion(c.TimeMsec, server.FixedFromFloat(x), server.FixedFromFloat(y))
 				pointerFrame(p)
 			}
 		}
@@ -409,7 +410,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
 		if surf := w.xdg.surface; surf != nil && c.Output != "" {
-			surf.sendScale()
+			surf.sendTreeScale()
 		}
 	case ports.SetOutputs:
 		s.setOutputs(c)
@@ -585,6 +586,7 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if w := s.windows[id]; w != nil {
 		if surface := w.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
 			s.pointerFocus, s.pointerX, s.pointerY = id, x, y
+			x, y := w.surfacePoint(x, y)
 			for _, p := range s.windowPointers(w) {
 				s.serial++
 				p.SendEnter(s.serial, surface, server.FixedFromFloat(x), server.FixedFromFloat(y))

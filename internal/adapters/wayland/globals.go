@@ -82,29 +82,120 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	if w == nil || parent == nil {
 		return
 	}
-	state := c.server.surfaces[w.Resource]
-	if state == nil {
+	state, up := c.server.surfaces[w.Resource], c.server.surfaces[parent.Resource]
+	if state == nil || up == nil {
 		return
 	}
-	if state.kind != roleNone {
+	if state.kind != roleNone && state.kind != roleSubsurface || state.sub.role != nil {
 		r.PostError(uint32(wayland.SubcompositorErrorBadSurface), "surface already has role")
 		return
 	}
-	if sub, err := wayland.NewSubsurface(r.Client(), 1, id, subsurface{state}); err == nil {
-		state.kind = roleSubsurface
-		state.role = func(bool) {}
-		sub.OnDestroy = func() { state.role = nil }
+	// A surface cannot be its own ancestor.
+	for p := up; p != nil; p = p.sub.parent {
+		if p == state {
+			r.PostError(uint32(wayland.SubcompositorErrorBadParent), "parent is a descendant")
+			return
+		}
+	}
+	sub, err := wayland.NewSubsurface(r.Client(), 1, id, subsurface{state})
+	if err != nil {
+		return
+	}
+	state.kind = roleSubsurface
+	state.role = func(bool) {}
+	state.sub = subState{role: sub, parent: up, children: state.sub.children}
+	up.sub.children = append(up.sub.children, state)
+	// The child follows its root window's output and scale.
+	state.sendScale()
+	sub.OnDestroy = func() {
+		if state.sub.role != sub {
+			return
+		}
+		state.sub.role = nil
+		state.role = nil
+		state.detach()
 	}
 }
 
+// Subsurfaces are drawn as their own commits arrive (desynchronized): the
+// synchronized mode's cached state is not implemented.
 type subsurface struct{ surface *surface }
 
-func (subsurface) Destroy(*wayland.Subsurface)                      {}
-func (subsurface) SetPosition(*wayland.Subsurface, int32, int32)    {}
-func (subsurface) PlaceAbove(*wayland.Subsurface, *wayland.Surface) {}
-func (subsurface) PlaceBelow(*wayland.Subsurface, *wayland.Surface) {}
-func (subsurface) SetSync(*wayland.Subsurface)                      {}
-func (subsurface) SetDesync(*wayland.Subsurface)                    {}
+func (subsurface) Destroy(*wayland.Subsurface) {}
+func (s subsurface) SetPosition(_ *wayland.Subsurface, x, y int32) {
+	s.surface.sub.pendX, s.surface.sub.pendY, s.surface.sub.moved = int(x), int(y), true
+}
+func (s subsurface) PlaceAbove(r *wayland.Subsurface, sibling *wayland.Surface) {
+	s.restack(r, sibling, true)
+}
+func (s subsurface) PlaceBelow(r *wayland.Subsurface, sibling *wayland.Surface) {
+	s.restack(r, sibling, false)
+}
+func (subsurface) SetSync(*wayland.Subsurface)   {}
+func (subsurface) SetDesync(*wayland.Subsurface) {}
+
+// restack moves the surface next to a sibling or its parent. The order
+// applies at once rather than on the parent commit.
+func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, above bool) {
+	me := s.surface
+	p := me.sub.parent
+	if p == nil || sibling == nil {
+		return
+	}
+	other := me.server.surfaces[sibling.Resource]
+	if other == me || other == nil || other != p && other.sub.parent != p {
+		r.PostError(uint32(wayland.SubsurfaceErrorBadSurface), "not a sibling or the parent")
+		return
+	}
+	list := p.sub.children
+	for i, ch := range list {
+		if ch == me {
+			list = append(list[:i:i], list[i+1:]...)
+			break
+		}
+	}
+	if other == p {
+		// Relative to the parent: just above it or just below it.
+		me.sub.below = !above
+		if above {
+			list = append([]*surface{me}, list...)
+		} else {
+			list = append(list, me)
+		}
+		// Keep below children first so the flattening stays ordered.
+		sortBelowFirst(list)
+	} else {
+		me.sub.below = other.sub.below
+		at := len(list)
+		for i, ch := range list {
+			if ch == other {
+				at = i
+				if above {
+					at++
+				}
+				break
+			}
+		}
+		list = append(list[:at:at], append([]*surface{me}, list[at:]...)...)
+	}
+	p.sub.children = list
+	me.redraw()
+}
+
+// sortBelowFirst moves children below their parent ahead of those above,
+// keeping each group's order.
+func sortBelowFirst(list []*surface) {
+	below := make([]*surface, 0, len(list))
+	above := make([]*surface, 0, len(list))
+	for _, ch := range list {
+		if ch.sub.below {
+			below = append(below, ch)
+		} else {
+			above = append(above, ch)
+		}
+	}
+	copy(list, append(below, above...))
+}
 
 type region struct{}
 
@@ -268,7 +359,8 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 	}
 	if w := s.windows[s.pointerFocus]; w != nil && w.mapped && w.xdg.resource.Client() == r.Client() {
 		s.serial++
-		p.SendEnter(s.serial, w.xdg.surfaceResource(), server.FixedFromFloat(s.pointerX), server.FixedFromFloat(s.pointerY))
+		x, y := w.surfacePoint(s.pointerX, s.pointerY)
+		p.SendEnter(s.serial, w.xdg.surfaceResource(), server.FixedFromFloat(x), server.FixedFromFloat(y))
 		pointerFrame(p)
 	}
 }
