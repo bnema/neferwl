@@ -146,9 +146,11 @@ type Workspace struct {
 // column, the column's width and slot, or its floating size.
 type origPlace struct {
 	col, row, slot int
-	stacked        bool
-	width          Width
-	float          *Float
+	// stacked holds a window left in the column: the window returns to its
+	// row only while that window still marks the column.
+	stacked WindowID
+	width   Width
+	float   *Float
 }
 
 // Float is a floating window and its client size, logical.

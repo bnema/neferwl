@@ -534,6 +534,27 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 			t.Fatal("view jumped to", m.Active)
 		}
 	})
+	t.Run("client exit on screen keeps the window focused", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(1)
+		m.ToggleFullscreen()
+		m.SetFullscreen(1, false)
+		if id, _ := m.Focused(); id != 1 || m.Active != 0 {
+			t.Fatal("focus", id, m.Active)
+		}
+	})
+	t.Run("stack gone: back as a column", func(t *testing.T) {
+		m := fixed()
+		w := m.Current()
+		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3}}, {Windows: []WindowID{4}}}
+		w.FocusID(3)
+		m.ToggleFullscreen()
+		m.RemoveWindow(2)
+		m.ToggleFullscreen()
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3, 4}, {}}) || len(m.Current().Columns) != 3 {
+			t.Fatal(got, m.Current().Columns)
+		}
+	})
 	t.Run("floating window", func(t *testing.T) {
 		m := fixed()
 		m.AddFloating(4, 10, 10)

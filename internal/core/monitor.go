@@ -270,7 +270,8 @@ func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 		focused, _ := w.Focused()
 		m.enterFullscreen(w, id, w == m.Current() && focused == id)
 	case !on && w.origin != nil && w.fullscreen == id:
-		m.leaveFullscreen(w, false)
+		// The user was on that window: they stay on it, back home.
+		m.leaveFullscreen(w, m.Current() == w)
 	default:
 		w.SetFullscreen(id, on)
 	}
@@ -318,7 +319,10 @@ func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 	} else {
 		col := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, id) })
 		c := w.Columns[col]
-		fs.back = origPlace{col: col, row: slices.Index(c.Windows, id), slot: c.Slot, stacked: len(c.Windows) > 1, width: c.Width}
+		fs.back = origPlace{col: col, row: slices.Index(c.Windows, id), slot: c.Slot, width: c.Width}
+		if i := slices.IndexFunc(c.Windows, func(v WindowID) bool { return v != id }); i >= 0 {
+			fs.back.stacked = c.Windows[i]
+		}
 		w.RemoveWindow(id)
 		fs.AddWindow(id)
 		fs.Columns[0].Width = c.Width
@@ -354,7 +358,8 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	case back.float != nil:
 		// At the bottom: the top float, maybe focused, stays on top.
 		origin.Floats = slices.Insert(origin.Floats, 0, Float{ID: id, W: back.float.W, H: back.float.H})
-	case back.stacked && back.col < len(origin.Columns):
+	case back.stacked != 0 && slices.ContainsFunc(origin.Columns, func(c Column) bool { return slices.Contains(c.Windows, back.stacked) }):
+		back.col = slices.IndexFunc(origin.Columns, func(c Column) bool { return slices.Contains(c.Windows, back.stacked) })
 		c := &origin.Columns[back.col]
 		row := min(back.row, len(c.Windows))
 		c.Windows = slices.Insert(c.Windows, row, id)
@@ -381,6 +386,17 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	if shown {
 		m.show(origin)
 	}
+}
+
+// awayInSlot reports whether id is away from slot n of w, fullscreen in a
+// workspace that returns it there.
+func (m *Monitor) awayInSlot(w *Workspace, id WindowID, n int) bool {
+	for _, fs := range m.all() {
+		if fs.origin == w && fs.fullscreen == id && fs.back.slot == n {
+			return true
+		}
+	}
+	return false
 }
 
 // fullscreenHome keeps each fullscreen workspace linked to its origin only

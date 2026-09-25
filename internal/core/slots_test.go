@@ -23,7 +23,8 @@ type slotRig struct {
 }
 
 // startSlots runs core with a hidden "dev" workspace of two slots, toggled
-// by Alt+d, on a 100x80 output.
+// by Alt+d, on a 100x80 output. One flag makes dev numbered, two also set
+// fixed overflow.
 func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	t.Helper()
 	cfg := config.Defaults()
@@ -34,6 +35,9 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 		{Index: 2, Width: "30%", Argv: []string{"foot"}},
 	}}}
 	cfg.Binds["Alt+d"] = "workspace dev"
+	if len(numbered) > 1 {
+		cfg.Layout.Overflow = "fixed"
+	}
 	r := &slotRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		reload: make(chan ports.ConfigChanged, 4), spawn: make(chan ports.SpawnRequest, 16),
@@ -366,4 +370,18 @@ func TestStartupCommands(t *testing.T) {
 			t.Fatalf("spawned %q, want %q", got.Argv, want)
 		}
 	}
+}
+
+// A slot window in its own fullscreen workspace (fixed overflow) keeps its
+// slot: coming back to dev spawns no duplicate.
+func TestSlotKeptWhileFullscreenAway(t *testing.T) {
+	r := startSlots(t, true, true)
+	r.fill(t)
+	r.press(t, "d") // on dev, focus on code (slot 1)
+	r.input <- ports.KeyEvent{Keysym: "f", Mods: ports.ModAlt | ports.ModShift, Pressed: true}
+	r.input <- ports.KeyEvent{Keysym: "f", Mods: ports.ModAlt | ports.ModShift}
+	scene(t, r.scenes)
+	r.press(t, "d") // leave and show dev while code is away
+	r.press(t, "d")
+	noSpawn(t, r.spawn)
 }
