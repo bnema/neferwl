@@ -23,6 +23,7 @@ const (
 
 	fbModifiers        = 1 << 1
 	capAddFB2Modifiers = 0x10
+	capAsyncPageFlip   = 0x7
 	modInvalid         = 0x00ffffffffffffff
 	scanoutIdleTTL     = 5 * time.Second // a cached framebuffer survives unused
 )

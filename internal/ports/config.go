@@ -55,6 +55,9 @@ type Config struct {
 	Binds   map[string]string
 	Render  struct {
 		DirectScanout bool
+		// Tearing honours wp_tearing_control_v1 in direct scanout; VRR
+		// turns variable refresh on while a buffer is scanned out.
+		Tearing, VRR bool
 	}
 	Log struct {
 		Level string

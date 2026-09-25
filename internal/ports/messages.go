@@ -543,6 +543,9 @@ type SurfaceContent struct {
 	// Geometry is in logical pixels from the surface origin; empty means
 	// the whole surface.
 	Geometry Rect
+	// Async asks for tearing presentation (wp_tearing_control_v1); outputs
+	// honour it only in direct scanout.
+	Async bool
 }
 
 // Subsurface is a child surface at X, Y logical pixels from the root

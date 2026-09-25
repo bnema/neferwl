@@ -106,6 +106,8 @@ func Defaults() ports.Config {
 		c.Binds[move] = fmt.Sprintf("move-to-workspace %d", n)
 	}
 	c.Render.DirectScanout = true
+	c.Render.Tearing = true
+	c.Render.VRR = true
 	c.Log.Level = "info"
 	c.Log.Debug = []string{}
 	return c
@@ -451,6 +453,18 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Render.DirectScanout = b
+	case "render.tearing":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Render.Tearing = b
+	case "render.vrr":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Render.VRR = b
 	case "log.level":
 		if v != "debug" && v != "info" && v != "warn" && v != "error" {
 			return fmt.Errorf("must be debug, info, warn or error")
