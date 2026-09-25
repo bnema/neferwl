@@ -41,6 +41,10 @@ type Renderer struct {
 	// dmabuf is what clients may send; imports are their buffers by ID.
 	dmabuf  ports.DMABufSupport
 	imports map[uint64]*imported
+	// pools are client wl_shm pools mapped by pool ID.
+	pools map[uint64]*mapping
+	// retired are pool mappings replaced this frame, unmapped after staging.
+	retired [][]byte
 	frame   uint64
 	// fillRegions is reused by Render for the bands of solid fills.
 	fillRegions []vk.BufferImageCopy
@@ -61,7 +65,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, layout: vk.ImageLayoutUndefined, imports: map[uint64]*imported{}}
+	r = &Renderer{width: width, height: height, layout: vk.ImageLayoutUndefined, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -346,6 +350,50 @@ func (r *Renderer) Clear(rgb [3]uint8) error {
 	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
 }
 
+// upload is one piece of a frame: a solid fill, client pixels staged from
+// a wl_shm pool, or a dmabuf blitted in place.
+type upload struct {
+	rect   image.Rectangle
+	offset int
+	pixels []byte
+	stride int
+	// dst covers src; they differ in size when the buffer is not drawn at
+	// the physical size (integer-scale clients, rounding).
+	dst, src image.Rectangle
+	color    [3]uint8
+	opaque   bool
+	// dma is a client GPU buffer, blitted instead of copied from staging.
+	dma *imported
+	// fill is a solid color: staging holds one strip of rows.
+	fill bool
+}
+
+// stage copies the visible pixels of a client buffer into dst, resampling
+// when the buffer is not drawn at its size.
+func (u *upload) stage(dst []byte) {
+	for row := 0; row < u.rect.Dy(); row++ {
+		line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
+		y := u.rect.Min.Y + row
+		if u.dst.Size() == u.src.Size() {
+			start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
+			copy(line, u.pixels[start:start+len(line)])
+		} else {
+			// Nearest-neighbour resample, sampling pixel centres.
+			sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
+			src := u.pixels[sy*u.stride:]
+			for i := 0; i < u.rect.Dx(); i++ {
+				sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
+				copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
+			}
+		}
+		if u.opaque {
+			for i := 3; i < len(line); i += 4 {
+				line[i] = 255
+			}
+		}
+	}
+}
+
 func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
 	// Scene rects are logical; everything below works in physical pixels.
 	scale := s.Scale
@@ -354,21 +402,6 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	phys := func(v int) int { return int(math.Round(float64(v) * scale)) }
 	physRect := func(x, y, w, h int) image.Rectangle { return image.Rect(phys(x), phys(y), phys(x+w), phys(y+h)) }
-	type upload struct {
-		rect   image.Rectangle
-		offset int
-		pixels []byte
-		stride int
-		// dst covers src; they differ in size when the buffer is not drawn at
-		// the physical size (integer-scale clients, rounding).
-		dst, src image.Rectangle
-		color    [3]uint8
-		opaque   bool
-		// dma is a client GPU buffer, blitted instead of copied from staging.
-		dma *imported
-		// fill is a solid color: staging holds one strip of rows.
-		fill bool
-	}
 	var uploads []upload
 	used := 0
 	bounds := image.Rect(0, 0, r.width, r.height)
@@ -397,7 +430,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			uploads = append(uploads, upload{rect: rect, dst: dst, src: src, dma: im})
 			return
 		}
-		uploads = append(uploads, upload{rect: rect, offset: used, pixels: content.Pixels, stride: content.Stride, opaque: content.Opaque, dst: dst, src: src})
+		b := content.SHM
+		pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
+		if err != nil {
+			return
+		}
+		uploads = append(uploads, upload{rect: rect, offset: used, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, dst: dst, src: src})
 		used += rect.Dx() * rect.Dy() * 4
 	}
 	// drawSurface draws one surface buffer with its origin at (x, y)
@@ -407,10 +445,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if lw <= 0 || lh <= 0 {
 			lw, lh = content.Width, content.Height
 		}
-		if content.Pixels == nil && content.DMABuf == nil || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
+		if content.SHM == nil && content.DMABuf == nil || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
 			return
 		}
-		if content.DMABuf == nil && (content.Stride < content.Width*4 || len(content.Pixels) < (content.Height-1)*content.Stride+content.Width*4) {
+		if content.DMABuf == nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
 			return
 		}
 		full := physRect(x, y, lw, lh)
@@ -516,27 +554,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			continue
 		}
 		dst := data[u.offset : u.offset+u.rect.Dx()*u.rect.Dy()*4]
-		for row := 0; row < u.rect.Dy(); row++ {
-			line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
-			y := u.rect.Min.Y + row
-			if u.dst.Size() == u.src.Size() {
-				start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
-				copy(line, u.pixels[start:start+len(line)])
-			} else {
-				// Nearest-neighbour resample, sampling pixel centres.
-				sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
-				src := u.pixels[sy*u.stride:]
-				for i := 0; i < u.rect.Dx(); i++ {
-					sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
-					copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
-				}
-			}
-			if u.opaque {
-				for i := 3; i < len(line); i += 4 {
-					line[i] = 255
-				}
-			}
-		}
+		// The client may shrink its pool under the mapping: its window
+		// then shows garbage for this frame, never a crash.
+		copyGuarded(func() { u.stage(dst) })
 	}
 	// B8G8R8A8 pixels are copied unchanged; blending belongs to the compositing pipeline.
 	rgb := parseColor(s.Background)
@@ -663,6 +683,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		return err
 	}
 	r.dropUnused()
+	r.dropPools()
 	return checked("vkResetFences", d.ResetFences(r.device, 1, &r.fence))
 }
 
@@ -705,6 +726,8 @@ func (r *Renderer) Close() {
 			r.release(im)
 			delete(r.imports, id)
 		}
+		r.frame += importTTL + 1
+		r.dropPools()
 		if r.fence != 0 {
 			d.DestroyFence(r.device, r.fence, nil)
 			r.fence = 0

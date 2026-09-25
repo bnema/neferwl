@@ -4,8 +4,7 @@ import (
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
-	"golang.org/x/sys/unix"
-	"runtime/debug"
+	"os"
 )
 
 func registerGlobals(d *server.Display, o Options, s *Server) error {
@@ -206,49 +205,46 @@ func (region) Subtract(*wayland.Region, int32, int32, int32, int32) {}
 type shm struct{ server *Server }
 
 func (h shm) CreatePool(r *wayland.Shm, id uint32, fd int, size int32) {
-	if size <= 0 {
-		unix.Close(fd)
+	file := os.NewFile(uintptr(fd), "wl_shm_pool")
+	if size <= 0 || !fileHolds(file, int64(size)) {
+		file.Close()
 		r.PostError(uint32(wayland.ShmErrorInvalidFd), "invalid pool size")
 		return
 	}
-	data, err := unix.Mmap(fd, 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
-	if err != nil {
-		unix.Close(fd)
-		r.PostError(uint32(wayland.ShmErrorInvalidFd), "cannot map pool")
-		return
-	}
-	state := &pool{fd: fd, size: size, data: data, shm: r, server: h.server}
+	h.server.nextPool++
+	state := &pool{id: h.server.nextPool, file: file, size: size, shm: r, server: h.server}
 	p, err := wayland.NewShmPool(r.Client(), 1, id, state)
 	if err != nil {
-		state.close()
+		file.Close()
 		return
 	}
 	p.OnDestroy = func() {
 		state.destroyed = true
 		if state.refs == 0 {
-			state.close()
+			state.file.Close()
 		}
 	}
 }
 func (shm) Release(*wayland.Shm) {}
 
+// fileHolds reports whether the file has at least size bytes.
+func fileHolds(f *os.File, size int64) bool {
+	st, err := f.Stat()
+	return err == nil && st.Size() >= size
+}
+
+// pool is a wl_shm pool. nefertty never maps it: renderers map the file
+// and read the pixels when they draw (ports.SHMBuffer).
 type pool struct {
-	fd        int
+	id        uint64
+	file      *os.File
 	size      int32
-	data      []byte
 	shm       *wayland.Shm
 	server    *Server
 	refs      int
 	destroyed bool
 }
 
-func (p *pool) close() {
-	if p.data != nil {
-		_ = unix.Munmap(p.data)
-		p.data = nil
-	}
-	_ = unix.Close(p.fd)
-}
 func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, offset, width, height, stride int32, format uint32) {
 	if format != uint32(wayland.ShmFormatArgb8888) && format != uint32(wayland.ShmFormatXrgb8888) {
 		p.shm.PostError(uint32(wayland.ShmErrorInvalidFormat), "unsupported format")
@@ -269,7 +265,7 @@ func (p *pool) CreateBuffer(r *wayland.ShmPool, id uint32, offset, width, height
 		delete(p.server.buffers, b.Resource)
 		p.refs--
 		if p.destroyed && p.refs == 0 {
-			p.close()
+			p.file.Close()
 		}
 	}
 }
@@ -279,13 +275,11 @@ func (p *pool) Resize(r *wayland.ShmPool, size int32) {
 		p.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "pool must grow")
 		return
 	}
-	data, err := unix.Mmap(p.fd, 0, int(size), unix.PROT_READ, unix.MAP_SHARED)
-	if err != nil {
+	if !fileHolds(p.file, int64(size)) {
 		p.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "cannot resize pool")
 		return
 	}
-	_ = unix.Munmap(p.data)
-	p.data, p.size = data, size
+	p.size = size
 }
 
 type buffer struct {
@@ -315,23 +309,14 @@ func (s *Server) addBuffer(r *wayland.Buffer, b *dmabufBuffer) {
 	}
 }
 
-// A malicious client may truncate its fd after mmap; SetPanicOnFault converts
-// the resulting SIGBUS on this goroutine to a recoverable panic.
-func (b *buffer) content(id ports.WindowID) (content ports.SurfaceContent, ok bool) {
-	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
-	defer func() {
-		if recover() != nil {
-			content = ports.SurfaceContent{}
-			ok = false
-		}
-	}()
-	size := (b.height-1)*b.stride + b.width*4
-	pixels := make([]byte, size)
-	for y := 0; y < b.height; y++ {
-		start := b.offset + y*b.stride
-		copy(pixels[y*b.stride:y*b.stride+b.width*4], b.pool.data[start:start+b.width*4])
+// content points the renderer at the pool; a file shrunk below the buffer
+// is refused.
+func (b *buffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
+	if !fileHolds(b.pool.file, int64(b.offset+(b.height-1)*b.stride+b.width*4)) {
+		return ports.SurfaceContent{}, false
 	}
-	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Stride: b.stride, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), Pixels: pixels}, true
+	shm := &ports.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
+	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), SHM: shm}, true
 }
 
 type seat struct{ server *Server }

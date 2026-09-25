@@ -341,20 +341,18 @@ type SceneLayer struct {
 }
 
 // SurfaceContent carries wayland → output the latest committed content of a
-// window: either Pixels, a private copy in B8G8R8A8 (wl_shm
-// argb8888/xrgb8888 little-endian) with Stride bytes per row, or DMABuf, a
-// GPU buffer the renderer reads in place. Receivers never modify either.
-// Empty means the window has no content. LogicalW and LogicalH are the
-// surface size in logical pixels (buffer scale and viewport applied).
-// Subsurfaces come in Children; Geometry is the part of the surface that
-// is the window (xdg window geometry), the rest being client shadows.
+// window: SHM, a client shared-memory buffer, or DMABuf, a GPU buffer.
+// Renderers read both in place and never modify them. Empty means the window
+// has no content. LogicalW and LogicalH are the surface size in logical
+// pixels (buffer scale and viewport applied). Subsurfaces come in Children;
+// Geometry is the part of the surface that is the window (xdg window
+// geometry), the rest being client shadows.
 type SurfaceContent struct {
 	ID                 WindowID
 	Width, Height      int
 	LogicalW, LogicalH int
-	Stride             int
 	Opaque             bool // x formats: ignore the alpha byte
-	Pixels             []byte
+	SHM                *SHMBuffer
 	DMABuf             *DMABuf
 	// Children are the subsurfaces, bottom to top, flattened.
 	Children []Subsurface
@@ -373,7 +371,20 @@ type Subsurface struct {
 
 // Empty reports whether the content has nothing to draw.
 func (c SurfaceContent) Empty() bool {
-	return c.Pixels == nil && c.DMABuf == nil && len(c.Children) == 0
+	return c.SHM == nil && c.DMABuf == nil && len(c.Children) == 0
+}
+
+// SHMBuffer is a client wl_shm buffer: B8G8R8A8 pixels (argb8888/xrgb8888
+// little-endian) at Offset in the pool File, Stride bytes per row. The
+// client keeps writing the file, so renderers copy from it when they draw.
+// Pool is unique per wl_shm pool for the session: renderers map a pool
+// once. File stays open while the client's buffer exists and follows the
+// DMABuf rules: duplicate it under File.SyscallConn before keeping it. A
+// client may shrink the file at any time, so readers must survive faults.
+type SHMBuffer struct {
+	Pool           uint64
+	File           *os.File
+	Offset, Stride int
 }
 
 // DMABuf is a client GPU buffer (linux-dmabuf). Its files stay open while

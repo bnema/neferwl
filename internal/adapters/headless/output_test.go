@@ -68,10 +68,10 @@ func TestRun(t *testing.T) {
 	scenes := make(chan ports.Scene, 8)
 	contents := make(chan ports.SurfaceContent, 8)
 	r, f := recordingRenderer(t, nil)
-	contents <- ports.SurfaceContent{ID: 1, Pixels: []byte{1}}
+	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
 	scenes <- ports.Scene{Seq: 1}
 	scenes <- ports.Scene{Seq: 2}
-	contents <- ports.SurfaceContent{ID: 2, Pixels: []byte{2}}
+	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -149,7 +149,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 	contents := make(chan ports.SurfaceContent, 1)
 	layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
 	scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
-	contents <- ports.SurfaceContent{ID: 42, Width: 1, Height: 1, Stride: 4, Pixels: []byte{0, 0, 255, 255}}
+	contents <- ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}}
 	r, f := recordingRenderer(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -159,7 +159,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 	deadline := time.After(3 * time.Second)
 	for {
 		s, c := f.snapshot()
-		if len(c) > 0 && len(s[0].Layers) == 1 && c[0][42].Pixels != nil {
+		if len(c) > 0 && len(s[0].Layers) == 1 && c[0][42].SHM != nil {
 			break
 		}
 		select {

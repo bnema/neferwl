@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"github.com/bnema/nefertty/internal/ports"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -327,19 +328,95 @@ func TestSHMUnpaddedLastRow(t *testing.T) {
 	}
 }
 
-func TestBufferContentUnpaddedLastRow(t *testing.T) {
-	p := &pool{data: make([]byte, 28)}
-	b := &buffer{pool: p, offset: 4, width: 2, height: 2, stride: 16}
-	copy(p.data[20:], []byte{1, 2, 3, 4, 5, 6, 7, 8})
-	content, ok := b.content(1)
-	if !ok || len(content.Pixels) != 24 {
-		t.Fatalf("content ok=%v size=%d", ok, len(content.Pixels))
+// A buffer whose pool file was shrunk below it has no content.
+func TestBufferContentTruncatedPool(t *testing.T) {
+	fd, err := unix.MemfdCreate("truncated-pool", unix.MFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for i, v := range []byte{1, 2, 3, 4, 5, 6, 7, 8} {
-		if content.Pixels[16+i] != v {
-			t.Fatalf("last row byte %d = %d, want %d", i, content.Pixels[16+i], v)
+	f := os.NewFile(uintptr(fd), "truncated-pool")
+	defer f.Close()
+	if err := f.Truncate(28); err != nil {
+		t.Fatal(err)
+	}
+	b := &buffer{pool: &pool{id: 3, file: f, size: 28}, offset: 4, width: 2, height: 2, stride: 16}
+	c, ok := b.content(1)
+	if !ok || c.SHM == nil || c.SHM.Pool != 3 || c.SHM.Offset != 4 || c.SHM.Stride != 16 {
+		t.Fatalf("content ok=%v %+v", ok, c.SHM)
+	}
+	if err := f.Truncate(27); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.content(1); ok {
+		t.Fatal("content from a truncated pool")
+	}
+}
+
+type releaseProxy struct {
+	wlturbo.BaseProxy
+	released chan uint32
+}
+
+func (p *releaseProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == uint16(wayland.BufferEventRelease) {
+		p.released <- p.ID()
+	}
+}
+
+// wl_shm buffers are read in place: released when replaced or when their
+// surface is destroyed, never on commit.
+func TestSHMBufferReleasedOnReplaceAndDestroy(t *testing.T) {
+	s, _, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	shm := bindProtocol(t, c, "wl_shm")
+	fd, err := unix.MemfdCreate("release", unix.MFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 64); err != nil {
+		t.Fatal(err)
+	}
+	pool := c.AllocateID()
+	registerProtocol(t, c, shm)
+	registerProtocol(t, c, pool)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan uint32, 4)
+	bufs := make([]uint32, 2)
+	for i := range bufs {
+		bufs[i] = c.AllocateID()
+		p := &releaseProxy{released: released}
+		p.SetID(bufs[i])
+		c.Context().Register(p)
+		requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, bufs[i], int32(i*32), int32(2), int32(2), int32(8), uint32(wayland.ShmFormatXrgb8888))
+	}
+	surf := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	registerProtocol(t, c, surf)
+	expect := func(want []uint32) {
+		t.Helper()
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		var got []uint32
+		for len(released) > 0 {
+			got = append(got, <-released)
+		}
+		if len(got) != len(want) || (len(want) == 1 && got[0] != want[0]) {
+			t.Fatalf("released %v, want %v", got, want)
 		}
 	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[0], int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	expect(nil)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[1], int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	expect([]uint32{bufs[0]})
+	requestProtocol(t, c, surf, wayland.SurfaceRequestDestroy)
+	expect([]uint32{bufs[1]})
 }
 
 type pointerEvents struct {

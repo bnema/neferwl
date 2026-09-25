@@ -1,10 +1,13 @@
 package vulkan
 
 import (
-	"github.com/bnema/nefertty/internal/ports"
 	"image"
 	"image/color"
+	"os"
 	"testing"
+
+	"github.com/bnema/nefertty/internal/ports"
+	"golang.org/x/sys/unix"
 )
 
 func TestRendererClear(t *testing.T) {
@@ -99,7 +102,7 @@ func TestRendererContents(t *testing.T) {
 			t.Errorf("At(%d,%d)=%v want %v", x, y, got, want)
 		}
 	}
-	render(&ports.SurfaceContent{Width: 4, Height: 2, Stride: 16, Pixels: pixels})
+	render(shmContent(t, 4, 2, 16, pixels))
 	check(8, 8, color.RGBA{255, 0, 0, 255})
 	check(11, 9, color.RGBA{255, 0, 0, 255})
 	check(12, 8, bg)
@@ -107,7 +110,7 @@ func TestRendererContents(t *testing.T) {
 	scene.Windows[0].Rect = ports.Rect{X: -2, Y: 0, W: 10, H: 10}
 	padded := make([]byte, 4*20)
 	copy(padded[8:12], []byte{7, 11, 23, 255})
-	render(&ports.SurfaceContent{Width: 4, Height: 4, Stride: 20, Pixels: padded})
+	render(shmContent(t, 4, 4, 20, padded))
 	check(0, 0, color.RGBA{23, 11, 7, 255})
 	render(nil)
 	c := windowColor(1)
@@ -133,10 +136,13 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	}
 	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
 	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: {Width: 16, Height: 16, Stride: 64, Opaque: true, Pixels: make([]byte, 16*16*4)}}
-	for i := 0; i < len(contents[1].Pixels); i += 4 {
-		copy(contents[1].Pixels[i:i+4], []byte{3, 5, 7, 0})
+	px := make([]byte, 16*16*4)
+	for i := 0; i < len(px); i += 4 {
+		copy(px[i:i+4], []byte{3, 5, 7, 0})
 	}
+	opaque := shmContent(t, 16, 16, 64, px)
+	opaque.Opaque = true
+	contents := map[ports.WindowID]ports.SurfaceContent{1: *opaque}
 	if err := r.Render(scene, contents); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +166,9 @@ func TestRendererLayers(t *testing.T) {
 	for i := 0; i < len(red); i += 4 {
 		copy(red[i:i+4], []byte{0, 0, 255, 0})
 	}
-	contents := map[ports.WindowID]ports.SurfaceContent{2: {ID: 2, Width: 64, Height: 8, Stride: 64 * 4, Opaque: true, Pixels: red}}
+	layer := shmContent(t, 64, 8, 64*4, red)
+	layer.ID, layer.Opaque = 2, true
+	contents := map[ports.WindowID]ports.SurfaceContent{2: *layer}
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}, Layers: []ports.SceneLayer{{ID: 2, Layer: ports.LayerTop, Rect: ports.Rect{W: 64, H: 8}}}}
 	wc := windowColor(1)
 	window := color.RGBA{wc[0], wc[1], wc[2], 255}
@@ -207,7 +215,9 @@ func TestRendererScale(t *testing.T) {
 	// Scale 2: a 10x10 logical window at (4,4) covers physical (8,8)-(28,28);
 	// its 20x20 buffer (fractional client) is copied 1:1.
 	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 10, H: 10}, Borderless: true}}}
-	content := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 20, Height: 20, LogicalW: 10, LogicalH: 10, Stride: 80, Pixels: solid(20, 20, red)}}
+	scaled := shmContent(t, 20, 20, 80, solid(20, 20, red))
+	scaled.ID, scaled.LogicalW, scaled.LogicalH = 1, 10, 10
+	content := map[ports.WindowID]ports.SurfaceContent{1: *scaled}
 	if err := r.Render(s, content); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +249,9 @@ func TestRendererScale(t *testing.T) {
 		t.Errorf("1.5 outside = %v", got)
 	}
 	// A buffer 1px wider than its slot is clipped, not resampled.
-	content[1] = ports.SurfaceContent{ID: 1, Width: 16, Height: 15, LogicalW: 10, LogicalH: 10, Stride: 64, Pixels: solid(16, 15, red)}
+	odd := shmContent(t, 16, 15, 64, solid(16, 15, red))
+	odd.ID, odd.LogicalW, odd.LogicalH = 1, 10, 10
+	content[1] = *odd
 	if err := r.Render(s, content); err != nil {
 		t.Fatal(err)
 	}
@@ -249,13 +261,32 @@ func TestRendererScale(t *testing.T) {
 }
 
 // solidContent is a w×h B8G8R8A8 buffer of one color.
-func solidContent(w, h int, c color.RGBA) ports.SurfaceContent {
+func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
 	px := make([]byte, w*h*4)
 	for i := 0; i < len(px); i += 4 {
 		px[i], px[i+1], px[i+2], px[i+3] = c.B, c.G, c.R, 255
 	}
-	return ports.SurfaceContent{Width: w, Height: h, Stride: w * 4, Pixels: px}
+	return *shmContent(t, w, h, w*4, px)
 }
+
+// shmContent puts pixels in a memfd pool, like a wl_shm client.
+func shmContent(t *testing.T, w, h, stride int, pixels []byte) *ports.SurfaceContent {
+	t.Helper()
+	fd, err := unix.MemfdCreate("shm-test", unix.MFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := os.NewFile(uintptr(fd), "shm-test")
+	t.Cleanup(func() { f.Close() })
+	if _, err := f.Write(pixels); err != nil {
+		t.Fatal(err)
+	}
+	shmPools++
+	return &ports.SurfaceContent{Width: w, Height: h, SHM: &ports.SHMBuffer{Pool: shmPools, File: f, Stride: stride}}
+}
+
+// shmPools numbers test pools: a renderer maps each pool ID once.
+var shmPools uint64
 
 // The window geometry lands on the window rect and the client shadow
 // around it is clipped; subsurfaces draw from the root origin, above or
@@ -270,13 +301,13 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	bg := color.RGBA{16, 32, 48, 255}
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 10}, Borderless: true}}}
 	// A 30×20 surface whose window is the 20×10 at (5, 5): a 5px shadow.
-	root := solidContent(30, 20, red)
+	root := solidContent(t, 30, 20, red)
 	root.Geometry = ports.Rect{X: 5, Y: 5, W: 20, H: 10}
 	// Green covers the window's top-left 4×4 corner; blue sits below the
 	// root, hidden by it.
 	root.Children = []ports.Subsurface{
-		{X: 3, Y: 3, Below: true, SurfaceContent: solidContent(30, 20, blue)},
-		{X: 5, Y: 5, SurfaceContent: solidContent(4, 4, green)},
+		{X: 3, Y: 3, Below: true, SurfaceContent: solidContent(t, 30, 20, blue)},
+		{X: 5, Y: 5, SurfaceContent: solidContent(t, 4, 4, green)},
 	}
 	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
@@ -295,7 +326,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 		}
 	}
 	// A root with no buffer of its own still shows its children.
-	only := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: solidContent(20, 10, blue)}}}
+	only := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: solidContent(t, 20, 10, blue)}}}
 	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: only}); err != nil {
 		t.Fatal(err)
 	}
