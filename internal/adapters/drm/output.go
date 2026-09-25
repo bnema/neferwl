@@ -295,14 +295,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		// A composed screen that stopped changing still drops VRR on time.
 		var vrrOff <-chan time.Time
-		if o.vrrOn && !o.composedSince.IsZero() {
+		if enabled && o.vrrOn && !o.composedSince.IsZero() {
 			vrrOff = time.After(max(0, vrrHold-time.Since(o.composedSince)))
 		}
 		select {
 		case <-retry:
 			continue
 		case <-vrrOff:
-			o.setVRR(false)
+			if o.setVRR(false); o.vrrOn {
+				o.composedSince = time.Now() // failed: retry later, not in a loop
+			}
 			continue
 		case <-ctx.Done():
 			return nil
