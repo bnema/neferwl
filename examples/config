@@ -14,8 +14,8 @@ keyboard.cmd = super
 # Command for spawn-terminal and the terminal opened at startup.
 terminal = foot
 
-# Commands run once when the session starts, one line each. Arguments are
-# split on spaces and there is no shell: put pipes in a script.
+# Commands run once when the session starts, one line each. Like spawn, a
+# command runs without a shell: see "Running commands" in the README.
 # Programs get WAYLAND_DISPLAY and NEFERTTY_STATE.
 # startup = waybar
 # startup = wl-paste --watch cliphist store
@@ -74,7 +74,8 @@ log.debug =
 # keys right of 0 (- and = on US).
 # Keys are what your layout prints (cmd+é on AZERTY). Write = # and space
 # by name: cmd+equal, cmd+numbersign, cmd+space. `none` removes a default.
-# `spawn <command>` runs a program; arguments split on spaces, no shell.
+# `spawn <command>` runs a program; arguments split on spaces, no shell
+# (pipes and variables go in a script: see "Running commands" in the README).
 bind.cmd+return = spawn-terminal
 bind.cmd+left = focus-column-left
 bind.cmd+right = focus-column-right
