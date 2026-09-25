@@ -745,13 +745,13 @@ func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
 	}
 }
 
-// readback copies the last frame into the host buffer, once per frame.
 // Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
 const (
 	queueFamilyIgnored = ^uint32(0)
 	wholeSize          = ^vk.DeviceSize(0)
 )
 
+// readback copies the last frame into the host buffer, once per frame.
 func (r *Renderer) readback() error {
 	if r.readBack || r.last == nil || r.last.image == 0 {
 		return nil

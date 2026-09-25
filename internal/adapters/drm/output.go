@@ -227,7 +227,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
 				err := o.modeset()
-				if err != nil && !o.validated && o.kind < imagesDumb {
+				if lostMaster(err) {
+					// The seat took DRM master back: wait for the next enable.
+					o.log.Warn().Err(err).Msg("resume")
+					continue
+				}
+				if refused(err) && !o.validated && o.kind < imagesDumb {
 					o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(o.kind)).Msg("modeset refused the output images")
 					o.freeImages()
 					err = o.showImages(r, o.kind+1, err)
@@ -386,6 +391,9 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 			o.validated = true
 			return nil
 		}
+		if !refused(err) {
+			return err
+		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
 		o.freeImages()
 		if got == imagesDumb {
@@ -393,6 +401,16 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 		}
 		kind, cause = got+1, err
 	}
+}
+
+// refused reports a modeset error meaning KMS rejects the images.
+func refused(err error) bool {
+	return errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)
+}
+
+// lostMaster reports a modeset error meaning the seat is switched away.
+func lostMaster(err error) bool {
+	return errors.Is(err, unix.EACCES) || errors.Is(err, unix.EPERM)
 }
 
 // setupImages gives the output the two images it flips between: renderer
