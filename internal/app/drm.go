@@ -108,7 +108,7 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -180,7 +180,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 					defer b.seat.Unsubscribe(active)
 					return safe("output "+name, func() error {
 						defer o.Close()
-						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu)
+						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, presented)
 					})
 				})
 				send(ports.OutputAdded{Info: o.Info()})

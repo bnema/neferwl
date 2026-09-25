@@ -117,7 +117,8 @@ func (o *Output) Close() {
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
+// Each completed page flip is reported on presented (dropped when full).
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented) error {
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -169,6 +170,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			o.pending = false
 			o.flips += n
+			select {
+			case presented <- ports.OutputPresented{Output: o.conn.name}:
+			default:
+			}
 			if d := time.Since(o.flipStart); d > 20*time.Millisecond {
 				o.log.Info().Dur("flip_ms", d).Msg("slow flip")
 			}

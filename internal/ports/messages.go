@@ -278,6 +278,10 @@ type OutputAdded struct{ Info OutputInfo }
 
 func (OutputAdded) outputEvent() {}
 
+// OutputPresented carries output → wayland that a frame reached the screen
+// (a page flip completed): frame callbacks of the surfaces on it are due.
+type OutputPresented struct{ Output string }
+
 // OutputRemoved carries output → core an unplugged display.
 type OutputRemoved struct{ Name string }
 
