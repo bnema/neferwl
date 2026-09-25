@@ -61,7 +61,7 @@ bind.cmd+shift+s = spawn screenshot-area
 
 Make it executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. The script can use any shell, including fish (`#!/usr/bin/env fish`).
 
-Programs started by NeferTTY get `WAYLAND_DISPLAY` and `NEFERTTY_STATE` (see below). `startup` commands run once when the session starts; editing them takes effect at the next start.
+Programs started by NeferTTY get `WAYLAND_DISPLAY`, `DISPLAY` (see [X11 apps](#x11-apps)) and `NEFERTTY_STATE` (see below). `startup` commands run once when the session starts; editing them takes effect at the next start.
 
 ## Clipboard
 
@@ -80,6 +80,17 @@ cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
 ```
 
 Drag and drop is not supported yet.
+
+## X11 apps
+
+X11 apps such as Steam and Wine run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, found in `PATH`. NeferTTY opens an X11 display, sets `DISPLAY` for the programs it starts, and runs xwayland-satellite when the first X11 app connects. If xwayland-satellite exits, the next X11 app starts it again.
+
+```text
+xwayland = xwayland-satellite   # the default; a path also works
+xwayland = off                  # no X11 display
+```
+
+Do not start xwayland-satellite yourself with `startup`.
 
 ## State for scripts
 

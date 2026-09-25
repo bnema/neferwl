@@ -78,6 +78,7 @@ func Defaults() ports.Config {
 	c.Keyboard.RepeatDelay = 600
 	c.Keyboard.CmdKey = "super"
 	c.Terminal.Command = []string{"foot"}
+	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Border.Width = 2
 	c.Border.Active = "#b4befe"
@@ -388,6 +389,15 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must not be empty")
 		}
 		c.Terminal.Command = argv
+	case "xwayland":
+		switch {
+		case v == "off":
+			c.Xwayland = ""
+		case v == "" || strings.ContainsAny(v, " \t"):
+			return fmt.Errorf("must be off or the xwayland-satellite program")
+		default:
+			c.Xwayland = v
+		}
 	case "background":
 		if !color.MatchString(v) {
 			return fmt.Errorf("must be #rrggbb")
