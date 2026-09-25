@@ -31,9 +31,9 @@ type Output struct {
 	log       zerowrap.Logger
 }
 
-// CursorLoader returns the cursor image for an output scale, at most limit
-// pixels on a side.
-type CursorLoader func(scale float64, limit int) (ports.CursorImage, error)
+// CursorLoader returns the image of a cursor at an output scale, at most
+// limit pixels on a side; an empty image hides the cursor.
+type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
 
 // newOutput allocates buffers and the cursor for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
@@ -117,7 +117,7 @@ func (o *Output) Close() {
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -138,6 +138,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
 	haveScene, dirty := false, false
+	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	frame := 0
 	stats := time.NewTicker(10 * time.Second)
@@ -174,9 +175,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case s := <-scenes:
 			if o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
 				cursorScale = s.Scale
-				o.setCursor(loadCursor, s.Scale)
+				o.setCursor(loadCursor, want, s.Scale)
 			}
 			scene, haveScene, dirty = s, true, true
+		case c := <-cursor:
+			want = c
+			// Before the first scene the scale is unknown: loaded then.
+			if o.cursor != nil && loadCursor != nil && cursorScale > 0 {
+				o.setCursor(loadCursor, want, cursorScale)
+			}
+			continue
 		case c := <-contents:
 			if c.Empty() {
 				delete(surfaces, c.ID)
@@ -222,9 +230,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 }
 
-// setCursor loads the theme cursor for scale onto the cursor plane.
-func (o *Output) setCursor(load CursorLoader, scale float64) {
-	img, err := load(scale, o.cursor.Limit())
+// setCursor loads a cursor for scale onto the cursor plane.
+func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float64) {
+	img, err := load(c, scale, o.cursor.Limit())
 	if err == nil {
 		err = o.cursor.SetImage(img.Pixels, img.W, img.H, img.HotX, img.HotY)
 	}
@@ -232,5 +240,5 @@ func (o *Output) setCursor(load CursorLoader, scale float64) {
 		o.log.Warn().Err(err).Msg("cursor")
 		return
 	}
-	o.log.Info().Float64("scale", scale).Int("w", img.W).Int("h", img.H).Msg("cursor image")
+	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Bool("client", c.Image != nil).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }

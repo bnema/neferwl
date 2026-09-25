@@ -14,6 +14,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerXDGOutput(d, s) },
 		func() error { return registerDecoration(d, s) },
 		func() error { return registerScale(d, s) },
+		func() error { return registerCursorShape(d, s) },
 		func() error { return registerDMABuf(d, s, o.DMABuf) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
@@ -322,7 +323,7 @@ func (b *buffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
 type seat struct{ server *Server }
 
 func (h seat) GetPointer(r *wayland.Seat, id uint32) {
-	p, err := wayland.NewPointer(r.Client(), r.Version(), id, pointer{})
+	p, err := wayland.NewPointer(r.Client(), r.Version(), id, pointer(h))
 	if err != nil {
 		return
 	}
@@ -387,13 +388,6 @@ func (seat) GetTouch(r *wayland.Seat, id uint32) {
 	wayland.NewTouch(r.Client(), r.Version(), id, touch{})
 }
 func (seat) Release(*wayland.Seat) {}
-
-type pointer struct{}
-
-// Cursor surfaces are accepted but rendering cursors is not implemented yet.
-
-func (pointer) SetCursor(*wayland.Pointer, uint32, *wayland.Surface, int32, int32) {}
-func (pointer) Release(*wayland.Pointer)                                           {}
 
 type keyboard struct{}
 

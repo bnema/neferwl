@@ -14,6 +14,7 @@ const (
 	roleXDG
 	roleSubsurface
 	roleLayer
+	roleCursor
 )
 
 type surface struct {
@@ -31,6 +32,8 @@ type surface struct {
 	callbacks                 []*wayland.Callback
 	role                      func(bool)
 	destroyed                 bool
+	// hotX, hotY is the click point of a cursor surface (logical).
+	hotX, hotY int
 	// on is the output the surface entered; scale is the last scale sent.
 	on    *output
 	scale float64
@@ -132,6 +135,11 @@ func (s *surface) detach() {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	if s.server.cursorSurface == s {
+		// The pointer keeps no cursor until the client sets another.
+		s.server.cursorSurface = nil
+		s.server.setCursor(ports.CursorChange{Hidden: true})
+	}
 	s.detach()
 	for _, ch := range s.sub.children {
 		ch.sub.parent = nil

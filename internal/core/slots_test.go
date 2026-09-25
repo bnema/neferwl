@@ -159,9 +159,9 @@ func TestSlotsSpawnAtStartAndFillInOrder(t *testing.T) {
 
 func TestSlotRefilledOnlyWhenShown(t *testing.T) {
 	r := startSlots(t)
-	code, foot := receive(t, r.spawn), receive(t, r.spawn)
-	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
-	r.client <- ports.WindowMapped{ID: 3, Slot: token(t, foot)}
+	// Wait for both windows: a one-window scene from before the unmap
+	// would let the key below race it.
+	_, foot := r.fill(t)
 	r.client <- ports.WindowUnmapped{ID: 3} // foot exits
 	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
 	noSpawn(t, r.spawn) // nothing relaunches on its own

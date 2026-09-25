@@ -32,6 +32,8 @@ type Channels struct {
 	Events   chan<- ports.ClientEvent
 	Contents chan<- ports.SurfaceContent
 	Commands <-chan ports.ClientCommand
+	// Cursors receives the cursor the client under the pointer asks for.
+	Cursors chan<- ports.CursorChange
 }
 type Server struct {
 	display                 *server.Display
@@ -79,6 +81,13 @@ type Server struct {
 	outputs       []*output
 	focusedOutput string
 	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
+	// cursorSurface is the wl_pointer.set_cursor surface in use.
+	cursorSurface *surface
+	// cursorMu guards only the latest cursor change for forwardCursors.
+	cursorMu     sync.Mutex
+	cursorLatest ports.CursorChange
+	cursorQueued bool
+	cursorReady  chan struct{}
 }
 
 func removeItem[T comparable](list []T, v T) []T {
@@ -112,7 +121,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -147,8 +156,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); s.forward(ctx) }()
+	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()
 	go func() {
 		defer wg.Done()
@@ -574,6 +584,9 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if id == s.pointerFocus {
 		return
 	}
+	// The new client sets its own cursor on enter; until then, the arrow.
+	s.cursorSurface = nil
+	s.setCursor(ports.CursorChange{})
 	if old := s.windows[s.pointerFocus]; old != nil {
 		if surface := old.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
 			for _, p := range s.windowPointers(old) {

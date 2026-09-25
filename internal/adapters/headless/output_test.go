@@ -76,7 +76,7 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents)
+		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil)
 	}()
 	waitFrames(t, f, 1)
 	if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
@@ -115,7 +115,7 @@ func TestRunSkipsContentNotShown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil)
 	}()
 	waitFrames(t, f, 1)
 	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
@@ -139,11 +139,11 @@ func TestErrors(t *testing.T) {
 	expected := errors.New("failure")
 	scenes := make(chan ports.Scene, 1)
 	scenes <- ports.Scene{}
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil); !errors.Is(err, expected) {
+	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 	r, _ := recordingRenderer(t, expected)
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil); !errors.Is(err, expected) {
+	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 }
@@ -184,7 +184,7 @@ func TestRunPassesLayerContent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil)
 	}()
 	deadline := time.After(3 * time.Second)
 	for {

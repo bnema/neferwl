@@ -17,14 +17,14 @@ type Options struct {
 	// Cursor, when set, is drawn into screenshots with the image from
 	// LoadCursor at the scene scale.
 	Cursor        *Cursor
-	LoadCursor    func(scale float64, limit int) (ports.CursorImage, error)
+	LoadCursor    func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
 }
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -34,6 +34,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
+	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	update := func(c ports.SurfaceContent) {
 		dirty = dirty || scene.Shows(c.ID)
@@ -62,6 +63,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				continue
 			}
 			update(c)
+		case c := <-cursor:
+			// The cursor is only drawn into screenshots: no new frame.
+			want, cursorScale = c, -1
 		}
 		// Drain all queued updates before presenting one frame.
 	drain:
@@ -89,7 +93,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		dirty = false
 		if opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
 			cursorScale = scene.Scale
-			if img, err := opts.LoadCursor(scene.Scale, 256); err == nil {
+			if img, err := opts.LoadCursor(want, scene.Scale, 256); err == nil {
 				opts.Cursor.set(img)
 			} else {
 				opts.Log.Warn().Err(err).Msg("cursor")
