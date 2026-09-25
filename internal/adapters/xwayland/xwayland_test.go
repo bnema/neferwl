@@ -2,6 +2,7 @@ package xwayland
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -61,7 +62,6 @@ func TestOpenPicksFreeDisplay(t *testing.T) {
 		}
 	}
 }
-
 
 // A satellite that exits without accepting drops the waiting client and is
 // not respawned until another client connects.
@@ -123,8 +123,8 @@ func readRuns(t *testing.T, path string, want int) []string {
 // Each connection starts the satellite once, with both sockets handed over.
 func TestRunStartsSatelliteOnConnect(t *testing.T) {
 	opts := testOptions(t, "")
-	opts.Binary, _ = satelliteScript(t, opts.TmpDir)
-	_, runs := satelliteScript(t, opts.TmpDir)
+	var runs string
+	opts.Binary, runs = satelliteScript(t, opts.TmpDir)
 	opts.Abstract = true
 	d, err := Open(opts)
 	if err != nil {
@@ -176,6 +176,9 @@ func TestStaleLockReclaimed(t *testing.T) {
 	if d.Name() != ":0" {
 		t.Fatalf("display %s", d.Name())
 	}
+	if b, _ := os.ReadFile(d.lock); strings.TrimSpace(string(b)) != strconv.Itoa(os.Getpid()) {
+		t.Fatalf("lock holds %q", b)
+	}
 }
 
 func TestDirChecks(t *testing.T) {
@@ -210,8 +213,55 @@ func TestSupported(t *testing.T) {
 	if !Supported(context.Background(), "true") || Supported(context.Background(), "false") {
 		t.Fatal("exit status not honoured")
 	}
+	hang := filepath.Join(t.TempDir(), "hang")
+	if err := os.WriteFile(hang, []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now()
-	if Supported(context.Background(), "sleep") && time.Since(start) > 3*time.Second {
-		t.Fatal("hang")
+	if Supported(context.Background(), hang) || time.Since(start) > 3*time.Second {
+		t.Fatalf("hanging binary: %v", time.Since(start))
+	}
+}
+
+// Stopping kills the satellite's whole process group, even when a child
+// keeps its stderr open.
+func TestRunKillsSatelliteGroup(t *testing.T) {
+	opts := testOptions(t, "")
+	pidfile := filepath.Join(opts.TmpDir, "pid")
+	opts.Binary = filepath.Join(opts.TmpDir, "satellite")
+	script := "#!/bin/sh\ntrap '' TERM\nsleep 30 &\necho $! > " + pidfile + "\nwait\n"
+	if err := os.WriteFile(opts.Binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Open(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	unix.Close(dial(t, d.socket))
+	var pid int
+	for deadline := time.Now().Add(3 * time.Second); pid == 0 && time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		b, _ := os.ReadFile(pidfile)
+		pid, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+	}
+	if pid == 0 {
+		t.Fatal("satellite did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+	for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if errors.Is(unix.Kill(pid, 0), unix.ESRCH) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("child %d survived", pid)
+		}
 	}
 }

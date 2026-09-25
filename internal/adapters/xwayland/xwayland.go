@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,12 +212,13 @@ func (d *Display) Run(ctx context.Context) error {
 			return err
 		}
 		start := time.Now()
-		err := d.serve(ctx)
+		stderr := &logWriter{log: d.opts.Log}
+		err := d.serve(ctx, stderr)
 		if ctx.Err() != nil {
 			return nil
 		}
 		if err != nil {
-			d.opts.Log.Warn().Err(err).Str("display", d.Name()).Msg("xwayland-satellite exited")
+			d.opts.Log.Warn().Err(err).Strs("stderr", stderr.tail()).Str("display", d.Name()).Msg("xwayland-satellite exited")
 		} else {
 			d.opts.Log.Info().Str("display", d.Name()).Msg("xwayland-satellite exited")
 		}
@@ -260,7 +262,7 @@ func (d *Display) waitClient(ctx context.Context, wake int) error {
 }
 
 // serve runs the satellite on the sockets until it exits or ctx ends.
-func (d *Display) serve(ctx context.Context) error {
+func (d *Display) serve(ctx context.Context, stderr *logWriter) error {
 	args := []string{d.Name()}
 	for i := range d.sockets {
 		args = append(args, "-listenfd", strconv.Itoa(3+i))
@@ -268,7 +270,9 @@ func (d *Display) serve(ctx context.Context) error {
 	cmd := exec.Command(d.opts.Binary, args...)
 	cmd.Env = d.opts.Env
 	cmd.ExtraFiles = d.sockets
-	cmd.Stderr = &logWriter{log: d.opts.Log}
+	cmd.Stderr = stderr
+	// Xwayland inherits the stderr pipe: Wait must not wait for it.
+	cmd.WaitDelay = 2 * time.Second
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
@@ -311,12 +315,20 @@ func (d *Display) dropPending() {
 	}
 }
 
-// logWriter logs the satellite's stderr line by line; exec copies it from
-// a pipe on its own goroutine.
+// logWriter logs the satellite's stderr line by line and keeps the last
+// lines for the exit log; exec copies it from a pipe on its own goroutine.
 type logWriter struct {
 	mu   sync.Mutex
 	log  zerowrap.Logger
 	line []byte
+	last []string
+}
+
+// tail is the last lines written.
+func (w *logWriter) tail() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.last)
 }
 
 func (w *logWriter) Write(p []byte) (int, error) {
@@ -329,7 +341,11 @@ func (w *logWriter) Write(p []byte) (int, error) {
 			break
 		}
 		if i > 0 {
-			w.log.Debug().Str("line", string(w.line[:i])).Msg("xwayland-satellite")
+			line := string(w.line[:i])
+			w.log.Debug().Str("line", line).Msg("xwayland-satellite")
+			if w.last = append(w.last, line); len(w.last) > 5 {
+				w.last = w.last[1:]
+			}
 		}
 		w.line = w.line[i+1:]
 	}
