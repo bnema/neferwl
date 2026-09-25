@@ -5,6 +5,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bnema/nefertty/internal/ports"
+
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
@@ -25,13 +27,15 @@ func (s *Server) pace(ctx context.Context) {
 	presented := s.channels.Presented
 	for {
 		flipped := map[string]bool{}
+		var reports []ports.OutputPresented
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.display.Stopped():
 			return
 		case p := <-presented:
-			flipped[p.Output] = true
+			flipped[p.Output] = flipped[p.Output] || p.Flip
+			reports = append(reports, p)
 		case <-s.frameReady:
 		case <-timer.C:
 		}
@@ -41,7 +45,8 @@ func (s *Server) pace(ctx context.Context) {
 		for {
 			select {
 			case p := <-presented:
-				flipped[p.Output] = true
+				flipped[p.Output] = flipped[p.Output] || p.Flip
+				reports = append(reports, p)
 			default:
 				break drain
 			}
@@ -53,6 +58,10 @@ func (s *Server) pace(ctx context.Context) {
 				due, wait, idle = s.dueFrames(time.Now(), flipped)
 				for _, name := range due {
 					s.sendFrames(name)
+				}
+				if s.releaseHeld(time.Now(), reports) && idle {
+					// Held buffers wait for a flip or heldTimeout.
+					wait, idle = heldTimeout, false
 				}
 			}
 		}) {

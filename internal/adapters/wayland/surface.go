@@ -150,8 +150,8 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 	s.callbacks = nil
 	// The client may reuse the buffer on another surface.
-	if s.current != nil && s.current.Resource.Alive() {
-		s.current.SendRelease()
+	if s.current != nil {
+		s.server.releaseBuffer(s, s.current)
 	}
 	s.current, s.pending = nil, nil
 	if s.role != nil {
@@ -189,9 +189,7 @@ func (s *surface) Commit(*wayland.Surface) {
 	}
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
-			if s.current.Resource.Alive() {
-				s.current.SendRelease()
-			}
+			s.server.releaseBuffer(s, s.current)
 		}
 		s.current = s.pending
 		s.pending = nil

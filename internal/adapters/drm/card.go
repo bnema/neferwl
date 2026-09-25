@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
+	"unsafe"
 
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -23,6 +25,10 @@ type Card struct {
 	// outputs by connector name; owned by the goroutine that calls Scan.
 	outputs map[string]*Output
 	flips   map[uint32]chan int // by CRTC; set before the reader starts
+	// gemMu serialises GEM handle import and close on fd (outputs run on
+	// their own goroutines); modifiers is DRM_CAP_ADDFB2_MODIFIERS.
+	gemMu     sync.Mutex
+	modifiers bool
 }
 
 // OpenCard reads the card's CRTCs. fd stays owned by the caller.
@@ -35,7 +41,9 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 	for _, c := range crtcs {
 		flips[c] = make(chan int, 4)
 	}
-	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips}, nil
+	cp := getCap{capability: capAddFB2Modifiers}
+	mods := ioctl(fd, ioctlGetCap, unsafe.Pointer(&cp)) == nil && cp.value == 1
+	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, modifiers: mods}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.

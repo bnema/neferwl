@@ -64,7 +64,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	var hw *drmBackend
 	if opts.Backend == "drm" {
 		var err error
-		if hw, err = openDRM(ctx, opts.Config.Outputs); err != nil {
+		if hw, err = openDRM(ctx, opts.Config.Outputs, opts.Config.Render.DirectScanout); err != nil {
 			return err
 		}
 		defer hw.close()
@@ -83,7 +83,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
-	presented := make(chan ports.OutputPresented, 8)
+	presented := make(chan ports.OutputPresented, 64)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -208,12 +208,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func() drm.Want { return wantFromConfig(opts.Config.Outputs) }
+				want := func() drm.Want { return wantFromConfig(opts.Config.Outputs, opts.Config.Render.DirectScanout) }
 				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,6 +23,10 @@ type Options struct {
 	ScreenshotDir string
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
+	// Name and Presented report what the output has read after each
+	// frame, so wayland can release client buffers (nil: no reports).
+	Name      string
+	Presented chan<- ports.OutputPresented
 }
 
 func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
@@ -36,7 +41,11 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	frame := 0
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
+	seen := map[ports.WindowID]uint64{}
+	// pending is a report the channel could not take, retried soon.
+	var pending *ports.OutputPresented
 	update := func(c ports.SurfaceContent) {
+		seen[c.ID] = max(seen[c.ID], c.Seq)
 		dirty = dirty || scene.Shows(c.ID)
 		if c.Empty() {
 			delete(surfaces, c.ID)
@@ -48,9 +57,16 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if ctx.Err() != nil {
 			return nil
 		}
+		var retry <-chan time.Time
+		if pending != nil {
+			retry = time.After(time.Millisecond)
+		}
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-retry:
+			pending = opts.send(pending)
+			continue
 		case s, ok := <-scenes:
 			if !ok {
 				scenes = nil
@@ -88,6 +104,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		if !haveScene || !dirty {
+			// Contents not drawn are still read: report them.
+			pending = opts.report(pending, seen)
 			continue
 		}
 		dirty = false
@@ -104,6 +122,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return fmt.Errorf("render frame: %w", err)
 		}
 		frame++
+		pending = opts.report(pending, seen)
 		if opts.ScreenshotDir != "" {
 			shot := r.Pixels()
 			if opts.Cursor != nil {
@@ -134,4 +153,24 @@ func writePNG(path string, img *image.RGBA) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+// report sends what the output read; a full channel drops it.
+// report sends what the output read, or returns it to retry when the
+// channel is full. Headless frames are not paced by a screen: Flip stays
+// false and frame callbacks follow the refresh timer.
+func (opts Options) report(_ *ports.OutputPresented, seen map[ports.WindowID]uint64) *ports.OutputPresented {
+	if opts.Presented == nil {
+		return nil
+	}
+	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen)})
+}
+
+func (opts Options) send(r *ports.OutputPresented) *ports.OutputPresented {
+	select {
+	case opts.Presented <- *r:
+		return nil
+	default:
+		return r
+	}
 }

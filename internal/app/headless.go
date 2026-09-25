@@ -13,7 +13,7 @@ import (
 
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output.
-func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet()
 	for i, size := range sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
@@ -26,7 +26,7 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<
 		}
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, Log: log, NewRenderer: newRenderer}
+		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, Log: log, NewRenderer: newRenderer, Name: name, Presented: presented}
 		set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange) error {
 			return headless.Run(octx, opts, sc, cc, cu)
 		})
