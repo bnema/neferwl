@@ -63,6 +63,10 @@ func (s *Server) pace(ctx context.Context) {
 					// Held buffers wait for a flip or heldTimeout.
 					wait, idle = heldTimeout, false
 				}
+				// Fifo barriers and queued commits wait for a refresh.
+				if fw, waiting := s.tickFifo(time.Now(), flipped); waiting {
+					wait, idle = min(wait, fw), false
+				}
 			}
 		}) {
 			return
