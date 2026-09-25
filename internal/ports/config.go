@@ -28,6 +28,9 @@ type Config struct {
 		CmdKey                   string
 	}
 	Terminal struct{ Command []string }
+	// Xwayland is the xwayland-satellite binary serving X11 clients; empty
+	// disables X11.
+	Xwayland string
 	// Startup are commands run once when the session starts, in order.
 	Startup    [][]string
 	Background struct{ Color string }

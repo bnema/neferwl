@@ -91,6 +91,7 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"keyboard.repeat-rate = 0", "keyboard.repeat-rate"},
 		{"keyboard.cmd = meta", "keyboard.cmd"},
 		{"terminal =", "terminal"},
+		{"xwayland = a b", "xwayland"},
 		{"background = red", "background"},
 		{"layout.gaps = 201", "layout.gaps"},
 		{"layout.max-columns = 0", "layout.max-columns"},
@@ -121,6 +122,18 @@ func TestWarningsKeepDefaults(t *testing.T) {
 				t.Fatalf("config changed: %+v", c)
 			}
 		})
+	}
+}
+
+func TestXwayland(t *testing.T) {
+	if Defaults().Xwayland != "xwayland-satellite" {
+		t.Fatal(Defaults().Xwayland)
+	}
+	if c, w := parseString(t, "xwayland = off"); c.Xwayland != "" || len(w) != 0 {
+		t.Fatal(c.Xwayland, w)
+	}
+	if c, w := parseString(t, "xwayland = /opt/xwls"); c.Xwayland != "/opt/xwls" || len(w) != 0 {
+		t.Fatal(c.Xwayland, w)
 	}
 }
 

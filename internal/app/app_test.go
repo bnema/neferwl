@@ -33,7 +33,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", Config: cfg, ConfigPath: path, NoTerminal: true, ScreenshotDir: shots})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: cfg, ConfigPath: path, NoTerminal: true, ScreenshotDir: shots})
 	}()
 	defer func() {
 		cancel()
@@ -86,7 +86,7 @@ func TestHeadlessConfigReload(t *testing.T) {
 func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
-		done <- run(context.Background(), Options{Backend: "headless", Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
+		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
 			input <- ports.KeyEvent{Keysym: "BackSpace", Mods: ports.ModCtrl | ports.ModAlt, Pressed: true}
 		})
 	}()
@@ -114,7 +114,7 @@ func TestHeadlessSpawnClose(t *testing.T) {
 	inputReady := make(chan chan<- ports.InputEvent, 1)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, Options{Backend: "headless", NoTerminal: true, Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
+		done <- run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: cfg, testScenes: scenes}, func(input chan<- ports.InputEvent) { inputReady <- input })
 	}()
 	var input chan<- ports.InputEvent
 	select {
@@ -171,7 +171,7 @@ func TestHeadlessTyping(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	dir := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
 	if err != nil {
 		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -223,7 +223,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	scenes := make(chan []ports.Scene, 128)
-	err := Run(context.Background(), Options{Backend: "headless", Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -253,7 +253,7 @@ func TestBlockedScriptShutdown(t *testing.T) {
 	defer w.Close()
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(context.Background(), Options{Backend: "headless", Config: config.Defaults(), NoTerminal: true, Script: r, Timeout: 300 * time.Millisecond})
+		done <- Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Script: r, Timeout: 300 * time.Millisecond})
 	}()
 	select {
 	case <-done:
@@ -316,7 +316,7 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	scenes := make(chan []ports.Scene, 64)
 	shots := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, ScreenshotDir: shots, Sizes: [][2]int{{640, 480}, {320, 240}}, Timeout: 2 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)

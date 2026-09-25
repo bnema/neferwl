@@ -112,6 +112,7 @@ func run() error {
 	size := flags.String("size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
 	inputPath := flags.String("input", "", "headless input script path (- for stdin)")
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
+	noXwayland := flags.Bool("no-xwayland", false, "no X11 display for X11 apps")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
@@ -220,7 +221,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil

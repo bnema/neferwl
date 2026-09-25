@@ -20,6 +20,7 @@ import (
 	"github.com/bnema/nefertty/internal/adapters/vulkan"
 	"github.com/bnema/nefertty/internal/adapters/wayland"
 	"github.com/bnema/nefertty/internal/adapters/xkb"
+	"github.com/bnema/nefertty/internal/adapters/xwayland"
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
@@ -27,11 +28,13 @@ import (
 )
 
 type Options struct {
-	Backend       string
-	Config        ports.Config
-	ConfigPath    string
-	Timeout       time.Duration
-	NoTerminal    bool
+	Backend    string
+	Config     ports.Config
+	ConfigPath string
+	Timeout    time.Duration
+	NoTerminal bool
+	// NoXwayland skips the X11 display even when the config enables it.
+	NoXwayland    bool
 	ScreenshotDir string
 	// Sizes are the headless outputs (width, height), left to right; empty
 	// means one 1920x1080 output. With several outputs, screenshots go to
@@ -107,6 +110,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	} else {
 		childEnv = append(childEnv, statefile.Env+"="+statePath)
 	}
+	xdisplay := openXwayland(ctx, opts, childEnv, logging.For(ctx, "xwayland"))
+	if xdisplay != nil {
+		defer xdisplay.Close()
+		childEnv = append(childEnv, "DISPLAY="+xdisplay.Name())
+	}
 	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
 	if inject != nil {
 		inject(input)
@@ -171,6 +179,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
 	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
+	if xdisplay != nil {
+		workers.Add(1)
+		// X11 failing leaves the Wayland session running; Run logs why.
+		go func() { defer workers.Done(); _ = xdisplay.Run(ctx) }()
+	}
 	if statePath != "" {
 		workers.Add(1)
 		go func() {
@@ -331,4 +344,24 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 			configLog.Warn().Err(err).Msg("config rejected")
 		}
 	}
+}
+
+// openXwayland reserves an X11 display for xwayland-satellite, or returns
+// nil when X11 is off or unavailable: the session runs without it.
+func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.Logger) *xwayland.Display {
+	bin := opts.Config.Xwayland
+	if bin == "" || opts.NoXwayland {
+		return nil
+	}
+	if !xwayland.Supported(ctx, bin) {
+		log.Warn().Str("binary", bin).Msg("xwayland-satellite 0.7 or later not found: X11 apps disabled")
+		return nil
+	}
+	d, err := xwayland.Open(xwayland.Options{Binary: bin, Env: env, Dir: "/tmp/.X11-unix", TmpDir: "/tmp", Abstract: true, Log: log})
+	if err != nil {
+		log.Warn().Err(err).Msg("X11 display disabled")
+		return nil
+	}
+	log.Info().Str("DISPLAY", d.Name()).Msg("listening on X11 display")
+	return d
 }
