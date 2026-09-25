@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,9 +44,11 @@ type Display struct {
 }
 
 // Supported reports whether the binary can take over listening sockets
-// (xwayland-satellite 0.7 and later).
-func Supported(binary string) bool {
-	cmd := exec.Command(binary, ":0", "--test-listenfd-support")
+// (xwayland-satellite 0.7 and later). A binary that hangs is unsupported.
+func Supported(ctx context.Context, binary string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, ":0", "--test-listenfd-support")
 	cmd.Env = []string{}
 	return cmd.Run() == nil
 }
@@ -54,10 +58,20 @@ func Open(opts Options) (*Display, error) {
 	if err := ensureDir(opts.Dir, opts.TmpDir); err != nil {
 		return nil, err
 	}
+	var last error
 	for n := 0; n < 50; n++ {
 		lock := filepath.Join(opts.TmpDir, fmt.Sprintf(".X%d-lock", n))
 		fd, err := unix.Open(lock, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC, 0o444)
+		if errors.Is(err, unix.EEXIST) && staleLock(lock) {
+			// A crashed session left it: take the display over.
+			opts.Log.Info().Str("lock", lock).Msg("removing stale X11 lock")
+			_ = os.Remove(lock)
+			fd, err = unix.Open(lock, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC, 0o444)
+		}
 		if err != nil {
+			if !errors.Is(err, unix.EEXIST) {
+				last = fmt.Errorf("create %s: %w", lock, err)
+			}
 			continue
 		}
 		_, err = unix.Write(fd, fmt.Appendf(nil, "%10d\n", os.Getpid()))
@@ -68,12 +82,29 @@ func Open(opts Options) (*Display, error) {
 		}
 		d := &Display{opts: opts, n: n, lock: lock, socket: filepath.Join(opts.Dir, fmt.Sprintf("X%d", n))}
 		if err := d.listen(); err != nil {
+			last = err
 			d.Close()
 			continue
 		}
 		return d, nil
 	}
+	if last != nil {
+		return nil, fmt.Errorf("no free X11 display: %w", last)
+	}
 	return nil, errors.New("no free X11 display")
+}
+
+// staleLock reports whether a lock file names a process that is gone.
+func staleLock(path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 {
+		return false
+	}
+	return errors.Is(unix.Kill(pid, 0), unix.ESRCH)
 }
 
 // ensureDir creates the X11 socket directory, or checks an existing one is
@@ -93,6 +124,9 @@ func ensureDir(dir, tmp string) error {
 	}
 	if err := unix.Lstat(tmp, &tst); err != nil {
 		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("%s is not a directory", dir)
 	}
 	if st.Uid != tst.Uid && st.Uid != uint32(os.Getuid()) {
 		return fmt.Errorf("%s has the wrong owner", dir)
@@ -152,16 +186,40 @@ func (d *Display) Close() {
 // running, until ctx ends. The satellite takes over the sockets and accepts
 // the waiting clients itself.
 func (d *Display) Run(ctx context.Context) error {
+	// The eventfd wakes waitClient when ctx ends; the waker is joined
+	// before the fd closes.
+	wake, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
+	if err != nil {
+		return err
+	}
+	stopWaker := make(chan struct{})
+	var waker sync.WaitGroup
+	waker.Go(func() {
+		select {
+		case <-ctx.Done():
+			_, _ = unix.Write(wake, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		case <-stopWaker:
+		}
+	})
+	defer func() { close(stopWaker); waker.Wait(); unix.Close(wake) }()
 	for {
-		if err := d.waitClient(ctx); err != nil {
-			return nil
+		if err := d.waitClient(ctx, wake); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			d.opts.Log.Warn().Err(err).Str("display", d.Name()).Msg("X11 display stopped")
+			return err
 		}
 		start := time.Now()
 		err := d.serve(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		d.opts.Log.Info().Err(err).Str("display", d.Name()).Msg("xwayland-satellite exited")
+		if err != nil {
+			d.opts.Log.Warn().Err(err).Str("display", d.Name()).Msg("xwayland-satellite exited")
+		} else {
+			d.opts.Log.Info().Str("display", d.Name()).Msg("xwayland-satellite exited")
+		}
 		// Clients the satellite never accepted would wake us at once: a
 		// satellite that cannot start must not respawn in a loop.
 		d.dropPending()
@@ -175,19 +233,27 @@ func (d *Display) Run(ctx context.Context) error {
 	}
 }
 
-// waitClient blocks until a socket has a pending connection.
-func (d *Display) waitClient(ctx context.Context) error {
-	fds := make([]unix.PollFd, len(d.sockets))
-	for i, f := range d.sockets {
-		fds[i] = unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN}
+// waitClient blocks until a socket has a pending connection or ctx ends.
+func (d *Display) waitClient(ctx context.Context, wake int) error {
+	fds := []unix.PollFd{{Fd: int32(wake), Events: unix.POLLIN}}
+	for _, f := range d.sockets {
+		fds = append(fds, unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN})
 	}
 	for ctx.Err() == nil {
-		n, err := unix.Poll(fds, 200)
-		if err != nil && !errors.Is(err, unix.EINTR) {
-			return err
+		_, err := unix.Poll(fds, -1)
+		if errors.Is(err, unix.EINTR) {
+			continue
 		}
-		if n > 0 {
-			return nil
+		if err != nil {
+			return fmt.Errorf("poll X11 sockets: %w", err)
+		}
+		for _, p := range fds[1:] {
+			if p.Revents&(unix.POLLERR|unix.POLLNVAL|unix.POLLHUP) != 0 {
+				return fmt.Errorf("X11 socket error (revents %#x)", p.Revents)
+			}
+			if p.Revents&unix.POLLIN != 0 {
+				return nil
+			}
 		}
 	}
 	return ctx.Err()
@@ -202,6 +268,7 @@ func (d *Display) serve(ctx context.Context) error {
 	cmd := exec.Command(d.opts.Binary, args...)
 	cmd.Env = d.opts.Env
 	cmd.ExtraFiles = d.sockets
+	cmd.Stderr = &logWriter{log: d.opts.Log}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
@@ -213,11 +280,13 @@ func (d *Display) serve(ctx context.Context) error {
 	case err := <-done:
 		return err
 	case <-ctx.Done():
-		_ = cmd.Process.Signal(syscall.SIGTERM)
+		// The satellite leads its session's process group, Xwayland included.
+		pgid := -cmd.Process.Pid
+		_ = unix.Kill(pgid, unix.SIGTERM)
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
-			_ = cmd.Process.Kill()
+			_ = unix.Kill(pgid, unix.SIGKILL)
 			<-done
 		}
 		return ctx.Err()
@@ -240,4 +309,32 @@ func (d *Display) dropPending() {
 		}
 		_ = unix.SetNonblock(fd, false)
 	}
+}
+
+// logWriter logs the satellite's stderr line by line; exec copies it from
+// a pipe on its own goroutine.
+type logWriter struct {
+	mu   sync.Mutex
+	log  zerowrap.Logger
+	line []byte
+}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.line = append(w.line, p...)
+	for {
+		i := strings.IndexByte(string(w.line), '\n')
+		if i < 0 {
+			break
+		}
+		if i > 0 {
+			w.log.Debug().Str("line", string(w.line[:i])).Msg("xwayland-satellite")
+		}
+		w.line = w.line[i+1:]
+	}
+	if len(w.line) > 4096 {
+		w.line = w.line[:0]
+	}
+	return len(p), nil
 }

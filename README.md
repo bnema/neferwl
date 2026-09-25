@@ -90,7 +90,7 @@ xwayland = xwayland-satellite   # the default; a path also works
 xwayland = off                  # no X11 display
 ```
 
-Do not start xwayland-satellite yourself with `startup`.
+Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` takes effect at the next start.
 
 ## State for scripts
 

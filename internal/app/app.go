@@ -110,7 +110,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	} else {
 		childEnv = append(childEnv, statefile.Env+"="+statePath)
 	}
-	xdisplay := openXwayland(opts, childEnv, logging.For(ctx, "xwayland"))
+	xdisplay := openXwayland(ctx, opts, childEnv, logging.For(ctx, "xwayland"))
 	if xdisplay != nil {
 		defer xdisplay.Close()
 		childEnv = append(childEnv, "DISPLAY="+xdisplay.Name())
@@ -181,6 +181,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
 	if xdisplay != nil {
 		workers.Add(1)
+		// X11 failing leaves the Wayland session running; Run logs why.
 		go func() { defer workers.Done(); _ = xdisplay.Run(ctx) }()
 	}
 	if statePath != "" {
@@ -347,12 +348,12 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 
 // openXwayland reserves an X11 display for xwayland-satellite, or returns
 // nil when X11 is off or unavailable: the session runs without it.
-func openXwayland(opts Options, env []string, log zerowrap.Logger) *xwayland.Display {
+func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.Logger) *xwayland.Display {
 	bin := opts.Config.Xwayland
 	if bin == "" || opts.NoXwayland {
 		return nil
 	}
-	if !xwayland.Supported(bin) {
+	if !xwayland.Supported(ctx, bin) {
 		log.Warn().Str("binary", bin).Msg("xwayland-satellite 0.7 or later not found: X11 apps disabled")
 		return nil
 	}
