@@ -41,9 +41,16 @@ type kdeDecoration struct{}
 
 func (kdeDecoration) Release(*kdedecoration.OrgKdeKwinServerDecoration) {}
 
-// Any requested mode is answered with server-side, like xdg-decoration.
-func (kdeDecoration) RequestMode(r *kdedecoration.OrgKdeKwinServerDecoration, _ uint32) {
-	r.SendMode(uint32(kdedecoration.OrgKdeKwinServerDecorationModeServer))
+// A requested mode is acknowledged as is: the protocol has no way to
+// refuse, and answering server to a client that insists on client-side
+// (Firefox) makes it ask again forever. The server default already makes
+// GTK drop its title bar.
+// Unknown modes are ignored: replacing them would restart the loop.
+func (kdeDecoration) RequestMode(r *kdedecoration.OrgKdeKwinServerDecoration, mode uint32) {
+	if mode > uint32(kdedecoration.OrgKdeKwinServerDecorationModeServer) {
+		return
+	}
+	r.SendMode(mode)
 }
 
 func (decorationManager) Destroy(*xdgdecoration.ZxdgDecorationManagerV1) {}
