@@ -32,16 +32,45 @@ See `examples/config` for every key and its default. A missing file means defaul
 
 Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 
+## Running commands
+
+`spawn <command>` binds, `startup = <command>` lines and `terminal = <command>` run one program directly, without a shell. The line is split on spaces: the first word is the program (looked up in `PATH`, or a path such as `/opt/tool/run`), the other words are its arguments.
+
+```text
+bind.ctrl+cmd+space = spawn fuzzel
+startup = waybar
+startup = wl-paste --watch cliphist store
+```
+
+There is no shell, so pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no special meaning: they reach the program as plain arguments. What you write is what runs.
+
+For anything more complex, write a script and run the script:
+
+```sh
+#!/bin/sh
+# ~/.local/bin/screenshot-area: select an area, save it and copy it.
+file="$HOME/Pictures/$(date +%F-%T).png"
+grim -g "$(slurp)" "$file" && wl-copy < "$file"
+```
+
+```text
+bind.cmd+shift+s = spawn screenshot-area
+```
+
+Make it executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. The script can use any shell, including fish (`#!/usr/bin/env fish`).
+
+Programs started by NeferTTY get `WAYLAND_DISPLAY` and `NEFERTTY_STATE` (see below). `startup` commands run once when the session starts; editing them takes effect at the next start.
+
 ## Clipboard
 
-NeferTTY supports the clipboard (`wl_data_device`), the primary selection (middle-click paste) and `ext_data_control_v1` for clipboard managers. With [cliphist](https://github.com/sentriz/cliphist):
+NeferTTY supports the clipboard (`wl_data_device`), the primary selection (middle-click paste) and `ext_data_control_v1` for clipboard managers. With [cliphist](https://github.com/sentriz/cliphist), store every copy at startup and bind a picker script (see [Running commands](#running-commands)):
 
 ```text
 startup = wl-paste --watch cliphist store
 bind.cmd+v = spawn cliphist-pick
 ```
 
-Commands are split on spaces and run without a shell, so the picker is a script on your `PATH`, for example `cliphist-pick`:
+`~/.local/bin/cliphist-pick`:
 
 ```sh
 #!/bin/sh
