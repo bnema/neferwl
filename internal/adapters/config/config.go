@@ -262,6 +262,11 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			warn("%s: %v", key, err)
 			continue
 		}
+		if key == "startup" {
+			// Repeatable: each line adds a command.
+			raw[fmt.Sprintf("startup.%d", len(c.Startup))] = value
+			continue
+		}
 		override()
 	}
 	if err := scanner.Err(); err != nil {
@@ -371,6 +376,12 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be super, alt or ctrl")
 		}
 		c.Keyboard.CmdKey = v
+	case "startup":
+		argv := strings.Fields(v)
+		if len(argv) == 0 {
+			return fmt.Errorf("must not be empty")
+		}
+		c.Startup = append(c.Startup, argv)
 	case "terminal":
 		argv := strings.Fields(v)
 		if len(argv) == 0 {

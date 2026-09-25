@@ -14,6 +14,12 @@ keyboard.cmd = super
 # Command for spawn-terminal and the terminal opened at startup.
 terminal = foot
 
+# Commands run once when the session starts, one line each. Arguments are
+# split on spaces and there is no shell: put pipes in a script.
+# Programs get WAYLAND_DISPLAY and NEFERTTY_STATE.
+# startup = waybar
+# startup = wl-paste --watch cliphist store
+
 background = #111111
 
 # Drawn inside the window edge; width 0 disables it, empty inactive draws nothing.

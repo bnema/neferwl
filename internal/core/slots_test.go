@@ -347,3 +347,23 @@ func TestSlotReleasedWhenWindowMoved(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+// Startup commands are spawned once, before the slots.
+func TestStartupCommands(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Startup = [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"waybar"}}
+	spawn := make(chan ports.SpawnRequest, 4)
+	c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []ports.Scene, 1), ConfigErrors: make(chan error, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	for _, want := range cfg.Startup {
+		if got := receive(t, spawn); !slices.Equal(got.Argv, want) {
+			t.Fatalf("spawned %q, want %q", got.Argv, want)
+		}
+	}
+}

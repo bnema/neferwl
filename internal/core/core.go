@@ -467,6 +467,15 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 }
 
 func (c *Core) Run(ctx context.Context) error {
+	// Startup commands run once per session; a config reload does not
+	// run them again.
+	for _, argv := range c.cfg.Startup {
+		select {
+		case <-ctx.Done():
+			return nil
+		case c.ch.Spawn <- ports.SpawnRequest{Argv: slices.Clone(argv)}:
+		}
+	}
 	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
 		return nil
 	}

@@ -25,11 +25,30 @@ keyboard.layout = fr
 terminal = foot
 bind.cmd+return = spawn-terminal
 bind.ctrl+cmd+space = spawn fuzzel
+startup = wl-paste --watch cliphist store
 ```
 
 See `examples/config` for every key and its default. A missing file means defaults. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Every key applies live when the file changes, including the keyboard layout; each reload logs the keys that changed.
 
 Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
+
+## Clipboard
+
+NeferTTY supports the clipboard (`wl_data_device`), the primary selection (middle-click paste) and `ext_data_control_v1` for clipboard managers. With [cliphist](https://github.com/sentriz/cliphist):
+
+```text
+startup = wl-paste --watch cliphist store
+bind.cmd+v = spawn cliphist-pick
+```
+
+Commands are split on spaces and run without a shell, so the picker is a script on your `PATH`, for example `cliphist-pick`:
+
+```sh
+#!/bin/sh
+cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
+```
+
+Drag and drop is not supported yet.
 
 ## State for scripts
 

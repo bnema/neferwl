@@ -62,9 +62,14 @@ output.DP-1.scale = 1.5
 output.DP-1.primary = on
 bind.cmd+code:30 = quit
 render.direct-scanout = off
+startup = wl-paste --watch cliphist store
+startup = wl-paste --primary --watch cliphist store
 `)
 	if len(w) != 0 {
 		t.Fatal(w)
+	}
+	if !reflect.DeepEqual(c.Startup, [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"wl-paste", "--primary", "--watch", "cliphist", "store"}}) {
+		t.Fatalf("startup: %q", c.Startup)
 	}
 	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout {
 		t.Fatalf("%+v", c)
