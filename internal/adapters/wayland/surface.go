@@ -1,6 +1,8 @@
 package wayland
 
 import (
+	"time"
+
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
@@ -46,6 +48,18 @@ type surface struct {
 	// committed hint, pendingAsync the requested one.
 	tearing             *tearingHandler
 	async, pendingAsync bool
+	// Presentation constraints (fifo.go): pending fifo requests and commit
+	// timestamp, the barrier, and the commits waiting to apply.
+	fifo                        *fifoHandler
+	timer                       *timerHandler
+	pendingBarrier, pendingWait bool
+	pendingTime                 time.Time
+	barrier                     bool
+	barrierAt                   time.Time
+	queue                       []update
+	// contentType is the wp_content_type_v1; contentKind the committed type.
+	contentType              *contentTypeHandler
+	contentKind, pendingKind uint32
 }
 
 // subState is the subsurface tree: parent is set on subsurfaces, children
@@ -141,6 +155,7 @@ func (s *surface) detach() {
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
 	s.tearing = nil // the control becomes inert
+	s.dropQueue()
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
 		s.server.cursorSurface = nil
@@ -178,7 +193,6 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
-	fresh := s.attached && s.pending != nil
 	if s.layer != nil && s.attached && s.pending != nil && !s.layer.acked {
 		s.layer.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "buffer before configure ack")
 		return
@@ -186,6 +200,26 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.xdg != nil && s.attached && s.pending != nil && !s.xdg.acked {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
+	}
+	// A commit behind a fifo barrier or a future timestamp waits (fifo.go).
+	if s.mustWait(time.Now()) {
+		s.queueUpdate()
+		return
+	}
+	s.applyCommit()
+}
+
+// applyCommit makes the pending state current.
+func (s *surface) applyCommit() {
+	fresh := s.attached && s.pending != nil
+	if s.pendingBarrier {
+		s.pendingBarrier = false
+		s.setBarrier(time.Now())
+	}
+	s.pendingWait, s.pendingTime = false, time.Time{}
+	if s.contentKind != s.pendingKind {
+		s.contentKind = s.pendingKind
+		s.server.log.Info().Uint64("id", uint64(s.root().windowID())).Uint32("content_type", s.contentKind).Msg("content type")
 	}
 	if s.pendingScale > 0 {
 		s.bufferScale = s.pendingScale

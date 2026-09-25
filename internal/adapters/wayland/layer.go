@@ -76,6 +76,7 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		delete(h.server.layers, l.id)
 		state.layer = nil
 		state.role = nil
+		state.dropQueue()
 		state.current, state.pending = nil, nil
 		state.attached = false
 	}
