@@ -38,11 +38,9 @@ func (c *Core) state() ports.State {
 		st.Outputs = append(st.Outputs, o)
 		for _, w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1
-			for _, col := range w.Columns {
-				for _, id := range col.Windows {
-					info := c.clients[id]
-					st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: w == cur})
-				}
+			for _, id := range w.windows() {
+				info := c.clients[id]
+				st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: w == cur})
 			}
 		}
 	}

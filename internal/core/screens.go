@@ -303,6 +303,7 @@ func (c *Core) settings(m *Monitor) {
 	m.SetMaxColumns(c.cfg.Layout.MaxColumns)
 	m.SetPresets(c.presets)
 	m.SetGaps(c.cfg.Layout.Gaps)
+	m.SetBorder(c.cfg.Border.Width)
 }
 
 // neighbor returns the screen index left (-1) or right (+1) of the focused

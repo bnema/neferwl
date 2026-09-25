@@ -1,0 +1,140 @@
+package wayland
+
+import (
+	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+)
+
+// popup is the xdg_popup role of a window. Core places it (PopupRequest →
+// ConfigurePopup); it maps on the first buffer after its configure is
+// acked, and is drawn over its parent like a window without border.
+type popup struct {
+	w        *window
+	resource *xdgshell.Popup
+	parent   *window
+	pos      ports.Positioner
+	grab     bool
+	// sent is set once core got the PopupRequest; done once dismissed.
+	sent, done bool
+}
+
+func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentXDG *xdgshell.Surface, pos *xdgshell.Positioner) {
+	p, ok := s.positionerOf(x.wm, pos)
+	if !ok {
+		return
+	}
+	var parent *window
+	if parentXDG != nil {
+		for _, w := range s.windows {
+			if w.xdg.resource != nil && w.xdg.resource.Resource == parentXDG.Resource {
+				parent = w
+			}
+		}
+	}
+	w := &window{id: s.nextWindow, xdg: x}
+	pp := &popup{w: w, parent: parent, pos: p}
+	res, err := xdgshell.NewPopup(r.Client(), r.Version(), id, pp)
+	if err != nil {
+		return
+	}
+	pp.resource, w.popup = res, pp
+	s.nextWindow++
+	s.windows[w.id] = w
+	x.window = w
+	// Without a parent (xdg-shell lets clients set it through another
+	// protocol, such as layer-shell) the popup has nowhere to go.
+	if parent == nil {
+		pp.dismiss()
+	}
+	x.surface.role = func(buffer bool) {
+		if x.surface.destroyed {
+			w.unmap()
+			return
+		}
+		switch {
+		case !buffer && !w.mapped && !x.configured && !pp.done:
+			if !pp.sent {
+				pp.sent = true
+				s.emit(ports.PopupRequest{ID: w.id, Parent: parent.id, Positioner: pp.pos, Grab: pp.grab})
+			}
+		case buffer && !w.mapped && x.acked && !pp.done:
+			w.mapped = true
+			s.emit(ports.PopupMapped{ID: w.id})
+			s.log.Debug().Uint64("id", uint64(w.id)).Uint64("parent", uint64(parent.id)).Msg("popup mapped")
+		case !buffer && w.mapped:
+			w.unmap()
+		}
+	}
+	res.OnDestroy = func() {
+		// Core forgets the popup, placed or mapped.
+		if !w.mapped && pp.sent {
+			s.emit(ports.WindowUnmapped{ID: w.id})
+		}
+		w.unmap()
+		pp.done = true
+		x.surface.current, x.surface.pending = nil, nil
+		x.surface.attached = false
+		delete(s.windows, w.id)
+		x.window = nil
+		x.surface.role = nil
+		x.configured, x.acked, x.serials = false, false, nil
+		x.geometry, x.pendingGeometry = ports.Rect{}, ports.Rect{}
+	}
+}
+
+func (*popup) Destroy(*xdgshell.Popup) {}
+
+// Grab is only valid before the first commit; core then gives the popup the
+// keyboard and closes it on a click outside its popup chain.
+func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, _ uint32) {
+	if p.sent || p.w.mapped {
+		r.PostError(uint32(xdgshell.PopupErrorInvalidGrab), "grab after the popup was committed")
+		return
+	}
+	p.grab = true
+}
+
+func (p *popup) Reposition(r *xdgshell.Popup, pos *xdgshell.Positioner, token uint32) {
+	s := p.w.xdg.server
+	next, ok := s.positionerOf(p.w.xdg.wm, pos)
+	if !ok || p.done {
+		return
+	}
+	p.pos = next
+	if p.sent {
+		s.emit(ports.PopupRequest{ID: p.w.id, Parent: p.parent.id, Positioner: next, Grab: p.grab, Reposition: true, Token: token})
+	}
+}
+
+// configure sends core's placement: xdg_popup.configure then
+// xdg_surface.configure.
+func (p *popup) configure(c ports.ConfigurePopup) {
+	if p.done || !p.resource.Resource.Alive() || !p.w.xdg.resource.Resource.Alive() {
+		return
+	}
+	if c.Reposition && p.resource.Version() >= 3 {
+		p.resource.SendRepositioned(c.Token)
+	}
+	p.resource.SendConfigure(int32(c.Rect.X), int32(c.Rect.Y), int32(c.Rect.W), int32(c.Rect.H))
+	s := p.w.xdg.server
+	s.serial++
+	p.w.xdg.resource.SendConfigure(s.serial)
+	p.w.xdg.serials = append(p.w.xdg.serials, s.serial)
+	p.w.xdg.configured = true
+	if surf := p.w.xdg.surface; surf != nil {
+		surf.sendTreeScale()
+	}
+}
+
+// dismiss sends popup_done once; the client then destroys the popup.
+func (p *popup) dismiss() {
+	if p.done {
+		return
+	}
+	p.done = true
+	if p.resource.Resource.Alive() {
+		p.resource.SendPopupDone()
+	}
+	p.w.unmap()
+}

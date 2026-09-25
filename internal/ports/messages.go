@@ -13,6 +13,11 @@ type WindowMapped struct {
 	Slot string
 	// PID is the client process, 0 when unknown.
 	PID int
+	// Floating windows are dialogs (a parent) or fixed-size windows such
+	// as splash screens: core shows them over the columns at their own
+	// size, Width×Height logical (0 when unknown).
+	Floating      bool
+	Width, Height int
 }
 
 // SlotEnv is the environment variable nefertty sets on processes it spawns
@@ -41,6 +46,68 @@ type WindowAppID struct {
 }
 
 func (WindowAppID) clientEvent() {}
+
+// WindowResized carries wayland → core the new size of a floating window.
+type WindowResized struct {
+	ID            WindowID
+	Width, Height int
+}
+
+func (WindowResized) clientEvent() {}
+
+// Popup anchors and gravities, as xdg_positioner values.
+const (
+	EdgeNone uint32 = iota
+	EdgeTop
+	EdgeBottom
+	EdgeLeft
+	EdgeRight
+	EdgeTopLeft
+	EdgeBottomLeft
+	EdgeTopRight
+	EdgeBottomRight
+)
+
+// Popup constraint adjustments, as xdg_positioner values.
+const (
+	AdjustSlideX uint32 = 1 << iota
+	AdjustSlideY
+	AdjustFlipX
+	AdjustFlipY
+	AdjustResizeX
+	AdjustResizeY
+)
+
+// Positioner places a popup relative to its parent's window geometry:
+// the Anchor point of AnchorRect, moved by Offset, with the popup extending
+// towards Gravity. Adjust says how core may move it to stay on screen.
+type Positioner struct {
+	Width, Height    int
+	AnchorRect       Rect
+	Anchor, Gravity  uint32
+	OffsetX, OffsetY int
+	Adjust           uint32
+}
+
+// PopupRequest carries wayland → core a popup to place (xdg_popup), on
+// its first commit and on reposition (Reposition, with the client's
+// Token). Parent is a window or popup. Grab popups take the keyboard and
+// close on a click elsewhere.
+type PopupRequest struct {
+	ID, Parent WindowID
+	Positioner Positioner
+	Grab       bool
+	Reposition bool
+	Token      uint32
+}
+
+func (PopupRequest) clientEvent() {}
+
+// PopupMapped carries wayland → core a placed popup that now has content.
+// It ends with WindowUnmapped.
+type PopupMapped struct{ ID WindowID }
+
+func (PopupMapped) clientEvent() {}
 
 // Layer is a wlr-layer-shell stacking layer.
 type Layer uint32
@@ -228,7 +295,9 @@ type ConfigureWindow struct {
 	ID                    WindowID
 	Width, Height         int
 	Fullscreen, Activated bool
-	Output                string
+	// Floating windows are not tiled: no tiled states.
+	Floating bool
+	Output   string
 }
 
 func (ConfigureWindow) clientCommand() {}
@@ -303,6 +372,22 @@ func (CloseWindow) clientCommand() {}
 type FocusWindow struct{ ID WindowID }
 
 func (FocusWindow) clientCommand() {}
+
+// ConfigurePopup carries core → wayland a popup's place, relative to its
+// parent's window geometry. Reposition answers a reposition request.
+type ConfigurePopup struct {
+	ID         WindowID
+	Rect       Rect
+	Reposition bool
+	Token      uint32
+}
+
+func (ConfigurePopup) clientCommand() {}
+
+// ClosePopup carries core → wayland a popup to dismiss (popup_done).
+type ClosePopup struct{ ID WindowID }
+
+func (ClosePopup) clientCommand() {}
 
 // PointerFocus changes the pointer surface; ID 0 clears focus. Coordinates are surface-local.
 type PointerFocus struct {
@@ -509,6 +594,8 @@ type SceneWindow struct {
 	Focused, Fullscreen, Hidden bool
 	// Borderless windows fill the usable width alone; no border is drawn.
 	Borderless bool
+	// Popups are drawn from their content only: no border, no background.
+	Popup bool
 }
 
 // State carries core → state publisher a snapshot of what is on screen, for

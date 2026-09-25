@@ -16,8 +16,12 @@ type wm struct{ server *Server }
 
 func (wm) Destroy(*xdgshell.WmBase)      {}
 func (wm) Pong(*xdgshell.WmBase, uint32) {}
-func (wm) CreatePositioner(r *xdgshell.WmBase, id uint32) {
-	xdgshell.NewPositioner(r.Client(), r.Version(), id, positioner{})
+func (m wm) CreatePositioner(r *xdgshell.WmBase, id uint32) {
+	p := &positioner{}
+	if res, err := xdgshell.NewPositioner(r.Client(), r.Version(), id, p); err == nil {
+		m.server.positioners[res.Resource] = p
+		res.OnDestroy = func() { delete(m.server.positioners, res.Resource) }
+	}
 }
 func (m wm) GetXdgSurface(r *xdgshell.WmBase, id uint32, w *wayland.Surface) {
 	if w == nil {
@@ -31,7 +35,7 @@ func (m wm) GetXdgSurface(r *xdgshell.WmBase, id uint32, w *wayland.Surface) {
 		r.PostError(uint32(xdgshell.WmBaseErrorRole), "surface already has role")
 		return
 	}
-	x := &xdgSurface{server: m.server, surface: state}
+	x := &xdgSurface{wm: r, server: m.server, surface: state}
 	resource, err := xdgshell.NewSurface(r.Client(), r.Version(), id, x)
 	if err == nil {
 		x.resource = resource
@@ -42,27 +46,73 @@ func (m wm) GetXdgSurface(r *xdgshell.WmBase, id uint32, w *wayland.Surface) {
 
 }
 
-type positioner struct{}
+// positioner is an xdg_positioner: popups copy it when they use it.
+type positioner struct {
+	p                  ports.Positioner
+	sizeSet, anchorSet bool
+}
 
-func (positioner) Destroy(*xdgshell.Positioner)                                   {}
-func (positioner) SetSize(*xdgshell.Positioner, int32, int32)                     {}
-func (positioner) SetAnchorRect(*xdgshell.Positioner, int32, int32, int32, int32) {}
-func (positioner) SetAnchor(*xdgshell.Positioner, uint32)                         {}
-func (positioner) SetGravity(*xdgshell.Positioner, uint32)                        {}
-func (positioner) SetConstraintAdjustment(*xdgshell.Positioner, uint32)           {}
-func (positioner) SetOffset(*xdgshell.Positioner, int32, int32)                   {}
-func (positioner) SetReactive(*xdgshell.Positioner)                               {}
-func (positioner) SetParentSize(*xdgshell.Positioner, int32, int32)               {}
-func (positioner) SetParentConfigure(*xdgshell.Positioner, uint32)                {}
+func (*positioner) Destroy(*xdgshell.Positioner) {}
+func (p *positioner) SetSize(r *xdgshell.Positioner, w, h int32) {
+	if w <= 0 || h <= 0 {
+		r.PostError(uint32(xdgshell.PositionerErrorInvalidInput), "size must be positive")
+		return
+	}
+	p.p.Width, p.p.Height, p.sizeSet = int(w), int(h), true
+}
+func (p *positioner) SetAnchorRect(r *xdgshell.Positioner, x, y, w, h int32) {
+	if w < 0 || h < 0 {
+		r.PostError(uint32(xdgshell.PositionerErrorInvalidInput), "anchor rect size must not be negative")
+		return
+	}
+	p.p.AnchorRect, p.anchorSet = ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}, true
+}
+func (p *positioner) SetAnchor(r *xdgshell.Positioner, v uint32) {
+	if v > ports.EdgeBottomRight {
+		r.PostError(uint32(xdgshell.PositionerErrorInvalidInput), "invalid anchor")
+		return
+	}
+	p.p.Anchor = v
+}
+func (p *positioner) SetGravity(r *xdgshell.Positioner, v uint32) {
+	if v > ports.EdgeBottomRight {
+		r.PostError(uint32(xdgshell.PositionerErrorInvalidInput), "invalid gravity")
+		return
+	}
+	p.p.Gravity = v
+}
+func (p *positioner) SetConstraintAdjustment(_ *xdgshell.Positioner, v uint32) { p.p.Adjust = v }
+func (p *positioner) SetOffset(_ *xdgshell.Positioner, x, y int32) {
+	p.p.OffsetX, p.p.OffsetY = int(x), int(y)
+}
+
+// Reactive popups, parent size and parent configure hints are not used:
+// core places popups when they are created or repositioned.
+func (*positioner) SetReactive(*xdgshell.Positioner)                 {}
+func (*positioner) SetParentSize(*xdgshell.Positioner, int32, int32) {}
+func (*positioner) SetParentConfigure(*xdgshell.Positioner, uint32)  {}
+
+// positionerOf returns a complete positioner, or posts invalid_positioner.
+func (s *Server) positionerOf(wm *xdgshell.WmBase, p *xdgshell.Positioner) (ports.Positioner, bool) {
+	if p != nil && p.Resource != nil {
+		if state := s.positioners[p.Resource]; state != nil && state.sizeSet && state.anchorSet {
+			return state.p, true
+		}
+	}
+	if wm != nil {
+		wm.PostError(uint32(xdgshell.WmBaseErrorInvalidPositioner), "incomplete positioner")
+	}
+	return ports.Positioner{}, false
+}
 
 type xdgSurface struct {
+	wm         *xdgshell.WmBase
 	resource   *xdgshell.Surface
 	server     *Server
 	surface    *surface
 	configured bool
 	acked      bool
 	window     *window
-	popup      *xdgshell.Popup
 	serials    []uint32
 	// geometry is the committed window geometry: the visible window inside
 	// client shadows. Empty means the whole surface.
@@ -70,17 +120,25 @@ type xdgSurface struct {
 }
 
 func (x *xdgSurface) Destroy(r *xdgshell.Surface) {
-	if x.window != nil || x.popup != nil {
+	if x.window != nil {
 		r.PostError(uint32(xdgshell.SurfaceErrorDefunctRoleObject), "role object still exists")
 	}
 }
 
+// window is an xdg_toplevel, or an xdg_popup when popup is set.
 type window struct {
 	id           ports.WindowID
 	toplevel     *xdgshell.Toplevel
+	popup        *popup
 	xdg          *xdgSurface
 	appID, title string
 	mapped       bool
+	// parent is set_parent (dialogs); min and max are the size hints.
+	parent         *window
+	minW, minH     int32
+	maxW, maxH     int32
+	floating       bool
+	floatW, floatH int // size last sent to core
 	// last is the most recent core configure, resent when decoration mode changes.
 	last    ports.ConfigureWindow
 	hasLast bool
@@ -96,7 +154,7 @@ func (w *window) sendConfigure() {
 	if c.Activated {
 		states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateActivated))
 	}
-	if !c.Fullscreen && w.toplevel.Version() >= 2 {
+	if !c.Fullscreen && !c.Floating && w.toplevel.Version() >= 2 {
 		// Tiled: the client must use exactly this size (no CSD shadows or rounding).
 		for _, st := range []xdgshell.ToplevelState{xdgshell.ToplevelStateTiledLeft, xdgshell.ToplevelStateTiledRight, xdgshell.ToplevelStateTiledTop, xdgshell.ToplevelStateTiledBottom} {
 			states = binary.LittleEndian.AppendUint32(states, uint32(st))
@@ -127,7 +185,7 @@ func (w *window) unmap() {
 	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
-	if x.window != nil || x.popup != nil {
+	if x.window != nil {
 		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "role object already constructed")
 		return
 	}
@@ -154,8 +212,10 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
 			slot := x.server.slotToken(r.Client())
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID()})
-			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Msg("window mapped")
+			// Its size comes with the commit, in WindowResized (afterCommit).
+			w.floating = w.floats()
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH})
+			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
 		} else if !buffer && w.mapped {
 			w.unmap()
 		}
@@ -173,16 +233,12 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		x.geometry, x.pendingGeometry = ports.Rect{}, ports.Rect{}
 	}
 }
-func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, _ *xdgshell.Surface, _ *xdgshell.Positioner) {
-	if x.window != nil || x.popup != nil {
+func (x *xdgSurface) GetPopup(r *xdgshell.Surface, id uint32, parent *xdgshell.Surface, pos *xdgshell.Positioner) {
+	if x.window != nil {
 		r.PostError(uint32(xdgshell.SurfaceErrorAlreadyConstructed), "role object already constructed")
 		return
 	}
-	if p, e := xdgshell.NewPopup(r.Client(), r.Version(), id, popup{}); e == nil {
-		x.popup = p
-		p.OnDestroy = func() { x.popup = nil }
-		p.SendPopupDone()
-	}
+	x.server.newPopup(x, r, id, parent, pos)
 }
 
 // SetWindowGeometry sets the visible window inside the surface; it
@@ -212,9 +268,19 @@ func (x *xdgSurface) AckConfigure(r *xdgshell.Surface, serial uint32) {
 
 type top struct{ w *window }
 
-func (top) Destroy(*xdgshell.Toplevel)                       {}
-func (top) SetParent(*xdgshell.Toplevel, *xdgshell.Toplevel) {}
-func (t top) SetTitle(_ *xdgshell.Toplevel, title string)    { t.w.title = title }
+func (top) Destroy(*xdgshell.Toplevel) {}
+func (t top) SetParent(_ *xdgshell.Toplevel, parent *xdgshell.Toplevel) {
+	t.w.parent = nil
+	if parent == nil {
+		return
+	}
+	for _, w := range t.w.xdg.server.windows {
+		if w.toplevel != nil && w.toplevel.Resource == parent.Resource && w != t.w {
+			t.w.parent = w
+		}
+	}
+}
+func (t top) SetTitle(_ *xdgshell.Toplevel, title string) { t.w.title = title }
 func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	if appID == t.w.appID {
 		return
@@ -227,10 +293,22 @@ func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}
 func (top) Move(*xdgshell.Toplevel, *wayland.Seat, uint32)                         {}
 func (top) Resize(*xdgshell.Toplevel, *wayland.Seat, uint32, uint32)               {}
-func (top) SetMaxSize(*xdgshell.Toplevel, int32, int32)                            {}
-func (top) SetMinSize(*xdgshell.Toplevel, int32, int32)                            {}
-func (top) SetMaximized(*xdgshell.Toplevel)                                        {}
-func (top) UnsetMaximized(*xdgshell.Toplevel)                                      {}
+func (t top) SetMaxSize(r *xdgshell.Toplevel, w, h int32) {
+	if w < 0 || h < 0 {
+		r.PostError(uint32(xdgshell.ToplevelErrorInvalidSize), "negative max size")
+		return
+	}
+	t.w.maxW, t.w.maxH = w, h
+}
+func (t top) SetMinSize(r *xdgshell.Toplevel, w, h int32) {
+	if w < 0 || h < 0 {
+		r.PostError(uint32(xdgshell.ToplevelErrorInvalidSize), "negative min size")
+		return
+	}
+	t.w.minW, t.w.minH = w, h
+}
+func (top) SetMaximized(*xdgshell.Toplevel)   {}
+func (top) UnsetMaximized(*xdgshell.Toplevel) {}
 func (t top) SetFullscreen(*xdgshell.Toplevel, *wayland.Output) {
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowFullscreenRequest{ID: t.w.id, Fullscreen: true})
@@ -243,11 +321,34 @@ func (t top) UnsetFullscreen(*xdgshell.Toplevel) {
 }
 func (top) SetMinimized(*xdgshell.Toplevel) {}
 
-type popup struct{}
+// afterCommit runs once the commit applied content and geometry: a
+// floating window keeps the size it draws.
+func (w *window) afterCommit() {
+	if !w.mapped || !w.floating {
+		return
+	}
+	if fw, fh := w.size(); fw > 0 && fh > 0 && (fw != w.floatW || fh != w.floatH) {
+		w.floatW, w.floatH = fw, fh
+		w.xdg.server.emit(ports.WindowResized{ID: w.id, Width: fw, Height: fh})
+	}
+}
 
-func (popup) Destroy(*xdgshell.Popup)                                  {}
-func (popup) Grab(*xdgshell.Popup, *wayland.Seat, uint32)              {}
-func (popup) Reposition(*xdgshell.Popup, *xdgshell.Positioner, uint32) {}
+// floats reports whether the toplevel should float over the columns, as
+// on niri: dialogs (a parent) and fixed-size windows such as splash
+// screens.
+func (w *window) floats() bool {
+	fixed := w.minW > 0 && w.minH > 0 && w.minW == w.maxW && w.minH == w.maxH
+	return w.parent != nil || fixed
+}
+
+// size is the window geometry size, else the surface size, in logical pixels.
+func (w *window) size() (int, int) {
+	if g := w.xdg.geometry; g.W > 0 && g.H > 0 {
+		return g.W, g.H
+	}
+	c := w.xdg.surface.content
+	return c.LogicalW, c.LogicalH
+}
 
 // surfacePoint turns window coordinates (core's, from the geometry origin)
 // into surface coordinates.

@@ -234,6 +234,9 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
 	}
 	s.commitConstraint(geometry)
+	if s.xdg != nil && s.xdg.window != nil {
+		s.xdg.window.afterCommit()
+	}
 	if fresh || moved || geometry || s.sub.parent != nil {
 		s.redraw()
 	}

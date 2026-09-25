@@ -78,6 +78,9 @@ type Core struct {
 	// clients holds the app ID and PID of mapped windows, for State.
 	clients   map[WindowID]ports.WindowMapped
 	sentState ports.State
+	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
+	popups     map[WindowID]*popupState
+	popupOrder []WindowID
 }
 
 func keyName(s string) string {
@@ -260,7 +263,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -314,6 +317,10 @@ func (c *Core) keyboardFocus() WindowID {
 	if layer != 0 {
 		return layer
 	}
+	// A menu with a grab takes the keyboard until it closes.
+	if g := c.grabFocus(); g != 0 {
+		return g
+	}
 	id, _ := c.cur().mon.Focused()
 	return id
 }
@@ -337,6 +344,9 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 }
 
 func (c *Core) publish(ctx context.Context) error {
+	if err := c.closeHiddenPopups(ctx); err != nil {
+		return err
+	}
 	// Clients learn outputs and scales before the configures sized for them.
 	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name()}); !sameOutputs(v, c.sentOutputs) {
 		if err := c.command(ctx, v); err != nil {
@@ -372,6 +382,7 @@ func (c *Core) publish(ctx context.Context) error {
 			// Only the focused output shows the focused border.
 			focused := p.Focused && i == c.focusScreen
 			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Borderless: p.Borderless})
+			floating := p.Floating
 			if p.Hidden {
 				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {
 					old.Activated, old.Output = false, ""
@@ -383,7 +394,11 @@ func (c *Core) publish(ctx context.Context) error {
 				continue
 			}
 			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Output: sc.name()}
+			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name()}
+			if v.Floating {
+				// A floating window picks its own size.
+				v.Width, v.Height = 0, 0
+			}
 			if old, ok := c.sent[p.ID]; !ok || old != v {
 				if err := c.command(ctx, v); err != nil {
 					return err
@@ -391,6 +406,7 @@ func (c *Core) publish(ctx context.Context) error {
 				c.sent[p.ID] = v
 			}
 		}
+		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scenes = append(scenes, scene)
 	}
 	for id := range c.sent {
@@ -496,12 +512,18 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 		return 0, 0, 0
 	}
 	lx, ly := x-float64(o.X), y-float64(o.Y)
+	sc := c.screens[c.screenIndex(o.Info.Name)]
+	// Popups are above everything but fullscreen covers nothing of them.
+	if id, px, py := c.popupAt(sc, lx, ly); id != 0 {
+		return id, px, py
+	}
 	var id WindowID
 	var sx, sy float64
-	for _, p := range c.screens[c.screenIndex(o.Info.Name)].mon.Layout() {
+	for _, p := range sc.mon.Layout() {
 		r := c.clientRect(p)
 		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
-			if id == 0 || p.Fullscreen {
+			// Floating windows come last in the layout and are on top.
+			if id == 0 || p.Fullscreen || p.Floating {
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
 			if p.Fullscreen {
@@ -541,10 +563,26 @@ func (c *Core) Run(ctx context.Context) error {
 				c.setLayers(v.Layers)
 			case ports.WindowMapped:
 				c.clients[v.ID] = v
-				if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
+				if v.Floating {
+					if s, _ := c.screenOf(v.ID); s == nil {
+						c.cur().mon.Current().AddFloating(v.ID, v.Width, v.Height)
+					}
+				} else if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
 					if s, _ := c.screenOf(v.ID); s == nil {
 						c.cur().mon.AddWindow(v.ID)
 					}
+				}
+			case ports.WindowResized:
+				if _, w := c.screenOf(v.ID); w != nil {
+					w.ResizeFloating(v.ID, v.Width, v.Height)
+				}
+			case ports.PopupRequest:
+				if err := c.placePopup(ctx, v); err != nil {
+					return nil
+				}
+			case ports.PopupMapped:
+				if p := c.popups[v.ID]; p != nil {
+					p.mapped = true
 				}
 			case ports.WindowAppID:
 				if info, ok := c.clients[v.ID]; ok {
@@ -552,6 +590,14 @@ func (c *Core) Run(ctx context.Context) error {
 					c.clients[v.ID] = info
 				}
 			case ports.WindowUnmapped:
+				if c.popups[v.ID] != nil {
+					if err := c.dropPopup(ctx, v.ID); err != nil {
+						return nil
+					}
+				}
+				if err := c.dropPopupsOf(ctx, v.ID); err != nil {
+					return nil
+				}
 				delete(c.clients, v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
@@ -654,6 +700,12 @@ func (c *Core) Run(ctx context.Context) error {
 				id := c.pointer
 				if c.grab != 0 {
 					id = c.grab
+				}
+				if v.Pressed && len(c.buttons) == 0 {
+					// A click outside an open menu closes it.
+					if err := c.dismissGrabs(ctx, id); err != nil {
+						return nil
+					}
 				}
 				if v.Pressed {
 					if len(c.buttons) == 0 {
