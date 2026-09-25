@@ -175,6 +175,9 @@ func (m *Monitor) Apply(a Action) Effect {
 			m.Focus(m.Active + dir)
 		}
 		return Effect{}
+	case ActionToggleFullscreen:
+		m.ToggleFullscreen()
+		return Effect{}
 	case ActionFocusWorkspaceUp, ActionFocusWorkspaceDown:
 		if m.shown == nil && a == ActionFocusWorkspaceUp {
 			m.Focus(m.Active - 1)

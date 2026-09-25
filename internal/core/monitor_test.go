@@ -2,6 +2,7 @@ package core
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -415,5 +416,62 @@ func TestSetNamedTransitions(t *testing.T) {
 				t.Fatalf("focus moved to %d", id)
 			}
 		})
+	}
+}
+
+// Under fixed overflow, fullscreen moves the window to its own workspace
+// below; workspace up/down still work and leaving brings it back in place.
+func TestMonitorFixedFullscreenOwnWorkspace(t *testing.T) {
+	m := monitor()
+	m.SetOverflow(OverflowFixed)
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	m.Current().FocusID(2)
+	m.ToggleFullscreen()
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3}, {2}, {}}) || m.Active != 1 {
+		t.Fatal(got, m.Active)
+	}
+	if p := m.Layout(); !slices.ContainsFunc(p, func(p Placement) bool { return p.ID == 2 && p.Fullscreen && !p.Hidden }) {
+		t.Fatal(p)
+	}
+	m.Apply(ActionFocusWorkspaceUp)
+	if m.Active != 0 {
+		t.Fatal("stuck on the fullscreen workspace")
+	}
+	m.Apply(ActionFocusWorkspaceDown)
+	m.ToggleFullscreen()
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) || m.Active != 0 {
+		t.Fatal(got, m.Active)
+	}
+	if id, _ := m.Focused(); id != 2 {
+		t.Fatal("focus", id)
+	}
+
+	// A client request moves it too, without taking the user along
+	// unless the window is the focused one on screen.
+	m.Current().FocusID(1)
+	m.SetFullscreen(3, true)
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {3}, {}}) || m.Active != 0 {
+		t.Fatal(got, m.Active)
+	}
+	m.SetFullscreen(3, false)
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) {
+		t.Fatal(got)
+	}
+
+	// Closing the fullscreen window drops its workspace and returns.
+	m.Current().FocusID(3)
+	m.ToggleFullscreen()
+	m.RemoveWindow(3)
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {}}) || m.Active != 0 {
+		t.Fatal(got, m.Active)
+	}
+
+	// Scroll overflow keeps the niri behaviour: same workspace.
+	m.SetOverflow(OverflowScroll)
+	m.ToggleFullscreen()
+	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {}}) {
+		t.Fatal(got)
 	}
 }
