@@ -269,6 +269,9 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	if v := command(t, commands); v != (ports.PointerFocus{}) {
 		t.Fatal(v)
 	}
+	// Mid-drag off the window, scroll goes to what is under the pointer:
+	// nothing here, not the grab window that got a leave.
+	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
 	input <- ports.PointerButton{Button: 0x110}
 	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
 		t.Fatal(v)

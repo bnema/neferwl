@@ -740,13 +740,10 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.PointerAxis:
-				// Scroll goes where a button would: the grab, else under the pointer.
-				id := c.pointer
-				if c.grab != 0 {
-					id = c.grab
-				}
-				if id != 0 {
-					if err := c.command(ctx, ports.PointerAxisTo{ID: id, Axis: v}); err != nil {
+				// Scroll goes to the window under the pointer, which has the
+				// pointer focus even mid-drag.
+				if c.pointer != 0 {
+					if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 						return nil
 					}
 				}

@@ -82,6 +82,7 @@ type Server struct {
 	nextPool                uint64
 	focused                 ports.WindowID
 	pointerFocus            ports.WindowID
+	wheelRest               [2]int32 // v120 not yet sent as axis_discrete, per axis
 	pointerX, pointerY      float64
 	pointers                map[server.Client][]*wayland.Pointer
 	modState                ports.ModState
@@ -397,8 +398,13 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			}
 		}
 	case ports.PointerAxisTo:
+		// Scroll applies to the entered surface only.
+		if c.ID != s.pointerFocus {
+			return
+		}
+		steps := s.wheelSteps(c.Axis)
 		for _, p := range s.windowPointers(s.windows[c.ID]) {
-			sendAxis(p, c.Axis)
+			sendAxis(p, c.Axis, steps)
 		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
@@ -610,8 +616,30 @@ func (s *Server) changeFocus(id ports.WindowID) {
 	s.updateConstraint()
 }
 
+// wheelSteps adds wheel v120 to the rest per axis and returns the whole
+// detents for axis_discrete (seat before v8). High-resolution wheels send
+// fractions of 120; a direction change drops the rest, as wlroots does.
+func (s *Server) wheelSteps(a ports.PointerAxis) (steps [2]int32) {
+	if a.Source != ports.AxisWheel {
+		return steps
+	}
+	for i, ax := range [2]ports.ScrollAxis{a.Vertical, a.Horizontal} {
+		if !ax.Set || ax.V120 == 0 {
+			continue
+		}
+		if (s.wheelRest[i] < 0) != (ax.V120 < 0) {
+			s.wheelRest[i] = 0
+		}
+		s.wheelRest[i] += ax.V120
+		steps[i] = s.wheelRest[i] / 120
+		s.wheelRest[i] -= steps[i] * 120
+	}
+	return steps
+}
+
 // sendAxis sends one scroll frame, each event gated by the pointer version.
-func sendAxis(p *wayland.Pointer, a ports.PointerAxis) {
+// steps are whole wheel detents for axis_discrete.
+func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32) {
 	v := p.Version()
 	if v >= 5 {
 		p.SendAxisSource(uint32(a.Source))
@@ -629,8 +657,8 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis) {
 		if a.Source == ports.AxisWheel && s.V120 != 0 {
 			if v >= 8 {
 				p.SendAxisValue120(uint32(axis), s.V120)
-			} else if v >= 5 && s.V120/120 != 0 {
-				p.SendAxisDiscrete(uint32(axis), s.V120/120)
+			} else if v >= 5 && steps[axis] != 0 {
+				p.SendAxisDiscrete(uint32(axis), steps[axis])
 			}
 		}
 		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(s.Value))
@@ -659,6 +687,7 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if id == s.pointerFocus {
 		return
 	}
+	s.wheelRest = [2]int32{}
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
 	s.setCursor(ports.CursorChange{})

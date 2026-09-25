@@ -312,7 +312,7 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 				s.Stop = s.Value == 0
 			}
 		}
-		log.Debug().Float64("v", a.Vertical.Value).Float64("h", a.Horizontal.Value).Int32("v120", a.Vertical.V120).Msg("scroll")
+		log.Debug().Float64("v", a.Vertical.Value).Float64("h", a.Horizontal.Value).Int32("v120", a.Vertical.V120).Int32("hv120", a.Horizontal.V120).Uint8("source", uint8(a.Source)).Msg("scroll")
 		return a, nil
 	}
 	return nil, nil
