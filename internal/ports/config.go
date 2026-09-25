@@ -7,13 +7,15 @@ package ports
 // right in config order, then in connection order.
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
-// ScaleOnly marks an entry set by output.<name>.scale alone: it does not
-// select the connector.
+// Primary gets the focus and the pointer at startup, wherever it is placed.
+// ScaleOnly marks an entry set by output.<name>.scale or .primary alone: it
+// does not select the connector.
 type OutputConfig struct {
 	Name      string
 	Mode      string
 	Off       bool
 	Scale     float64
+	Primary   bool
 	ScaleOnly bool
 }
 

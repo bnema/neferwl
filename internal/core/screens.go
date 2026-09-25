@@ -13,6 +13,7 @@ type screen struct {
 	info            ports.OutputInfo
 	mon             *Monitor
 	scale, cfgScale float64
+	primary         bool
 	x               int // logical left edge in the global layout
 	layers          []ports.LayerSurface
 	placed          []ports.SceneLayer
@@ -22,7 +23,7 @@ func (s *screen) name() string { return s.info.Name }
 
 func (s *screen) placement() ports.OutputPlacement {
 	o := s.mon.Output()
-	return ports.OutputPlacement{Info: s.info, X: s.x, Width: o.W, Height: o.H, Scale: s.scale}
+	return ports.OutputPlacement{Info: s.info, X: s.x, Width: o.W, Height: o.H, Scale: s.scale, Primary: s.primary}
 }
 
 // setScale resizes the logical output; layer placement follows.
@@ -99,6 +100,27 @@ func (c *Core) byName(name string) (*screen, *Workspace) {
 }
 
 // configScale is output.<name>.scale, else 1.
+func (c *Core) isPrimary(name string) bool {
+	for _, o := range c.cfg.Outputs {
+		if o.Name == name && o.Primary {
+			return true
+		}
+	}
+	return false
+}
+
+// anyWindow reports whether any workspace holds a window.
+func (c *Core) anyWindow() bool {
+	for _, s := range c.screens {
+		for _, w := range s.mon.all() {
+			if !w.empty() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Core) configScale(name string) float64 {
 	v := 1.0
 	for _, o := range c.cfg.Outputs {
@@ -144,7 +166,13 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
 	s.cfgScale = c.configScale(info.Name)
 	s.setScale(s.cfgScale)
+	s.primary = c.isPrimary(info.Name)
 	c.order()
+	// The primary output takes the focus while nothing is open yet
+	// (startup). Later, plugging it in never moves the user.
+	if s.primary && !c.anyWindow() {
+		c.focusScreen = slices.Index(c.screens, s)
+	}
 	c.named()
 	c.settleGuests()
 }

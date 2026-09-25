@@ -324,3 +324,18 @@ func TestModeChangeKeepsScreen(t *testing.T) {
 		t.Fatalf("%+v", out)
 	}
 }
+
+func TestPrimaryOutputGetsFocusAtStartup(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Primary: true}}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	// Placed right of DP-1, but focused.
+	if out.Focused != "DP-2" || out.Outputs[1].Info.Name != "DP-2" || !out.Outputs[1].Primary || out.Outputs[0].Primary {
+		t.Fatalf("%+v", out)
+	}
+	set := r.mapWindow(t, 1)
+	if got := shown(set); len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+}
