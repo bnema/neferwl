@@ -127,7 +127,8 @@ func (h *timerHandler) SetTimestamp(r *committiming.WpCommitTimerV1, secHi, secL
 }
 func (*timerHandler) Destroy(*committiming.WpCommitTimerV1) {}
 
-// maxTimestampAhead bounds how far a commit timestamp can hold a commit.
+// maxTimestampAhead bounds how far a commit timestamp can hold a commit;
+// a later one applies early (a deviation from "not before").
 const maxTimestampAhead = time.Second
 
 // monotonicTime converts a CLOCK_MONOTONIC time to wall time, at most
@@ -294,9 +295,10 @@ func (s *surface) queueUpdate() {
 
 // applyUpdate applies a queued update, keeping the requests made since.
 func (s *surface) applyUpdate(u update) {
-	// A buffer destroyed while queued (a swapchain resize) shows nothing.
+	// A buffer destroyed while queued (a swapchain resize) is skipped: the
+	// surface keeps its content, and is not unmapped behind the client.
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
-		u.buffer = nil
+		u.buffer, u.attached = nil, false
 	}
 	later := s.takePending()
 	s.putPending(u)
@@ -305,11 +307,16 @@ func (s *surface) applyUpdate(u update) {
 }
 
 // dropQueue discards the queued updates of a destroyed surface or role.
+// A live surface still gets its queued frame callbacks.
 func (s *surface) dropQueue() {
 	released := map[*server.Resource]bool{}
 	for _, u := range s.queue {
-		for _, cb := range u.callbacks {
-			cb.Destroy()
+		if s.destroyed {
+			for _, cb := range u.callbacks {
+				cb.Destroy()
+			}
+		} else if len(u.callbacks) > 0 {
+			s.server.queueFrames(s.server.frameOutput(s), u.callbacks)
 		}
 		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() {
 			released[u.buffer.Resource] = true

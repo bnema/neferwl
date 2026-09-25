@@ -170,3 +170,36 @@ func TestTickFifoClearsBarrierOnFlip(t *testing.T) {
 		t.Fatal("barrier kept after the flip")
 	}
 }
+
+// A queued commit whose buffer is destroyed (a swapchain resize) is skipped
+// without unmapping the window.
+func TestFifoQueuedBufferDestroyed(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, surf, _ := surfaceMapper(t, c, events)()
+	manager := bindProtocol(t, c, "wp_fifo_manager_v1")
+	f := c.AllocateID()
+	registerProtocol(t, c, f)
+	requestProtocol(t, c, manager, fifo.WpFifoManagerV1RequestGetFifo, f, surf)
+	buf := shmBuffer(t, c)
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestSetBarrier)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	// Queued behind the barrier, then its buffer goes away.
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestWaitBarrier)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, buf, wayland.BufferRequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	drainContents(contents)
+	time.Sleep(3 * defaultFramePeriod)
+	select {
+	case ev := <-events:
+		if _, ok := ev.(ports.WindowUnmapped); ok {
+			t.Fatal("window unmapped by a dead queued buffer")
+		}
+	default:
+	}
+}
