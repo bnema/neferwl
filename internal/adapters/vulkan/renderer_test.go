@@ -58,7 +58,7 @@ func TestRendererRender(t *testing.T) {
 	c := windowColor(1)
 	wc := color.RGBA{c[0], c[1], c[2], 255}
 	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
-	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc})
+	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 21}: {0x31, 0x32, 0x44, 255}, {21, 22}: {0x31, 0x32, 0x44, 255}, {23, 23}: {0x31, 0x32, 0x44, 255}, {24, 24}: bg})
 	s.Windows[0].Focused = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: {0xb4, 0xbe, 0xfe, 255}, {10, 10}: wc, {16, 16}: wc})
 	s.Windows[0].Fullscreen = true
@@ -301,5 +301,35 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	}
 	if got := r.Pixels().At(20, 15); got != blue {
 		t.Errorf("child only: %v", got)
+	}
+}
+
+// A fill taller than one staged strip is copied down in bands: every row
+// through the last one gets the color.
+func TestRendererTallFill(t *testing.T) {
+	h := fillRows*2 + 7
+	r, err := New(8, h)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 1, Y: 0, W: 6, H: h}}}}
+	if err := r.Render(scene, nil); err != nil {
+		t.Fatal(err)
+	}
+	c := windowColor(1)
+	wc := color.RGBA{c[0], c[1], c[2], 255}
+	bg := color.RGBA{16, 32, 48, 255}
+	px := r.Pixels()
+	for y := 0; y < h; y++ {
+		if got := px.At(1, y); got != wc {
+			t.Fatalf("At(1,%d)=%v want %v", y, got, wc)
+		}
+		if got := px.At(6, y); got != wc {
+			t.Fatalf("At(6,%d)=%v want %v", y, got, wc)
+		}
+		if got := px.At(7, y); got != bg {
+			t.Fatalf("At(7,%d)=%v want background", y, got)
+		}
 	}
 }
