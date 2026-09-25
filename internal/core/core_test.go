@@ -570,3 +570,74 @@ func TestOutputScale(t *testing.T) {
 		t.Fatal(s.Scale, s.OutputWidth)
 	}
 }
+
+func TestPointerConstraint(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	cfg.Layout.Gaps = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	constraints := make(chan ports.PointerConstraint, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+	scene(t, scenes)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "B", Width: 100, Height: 80}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 150, Y: 40}
+	scene(t, scenes) // the pointer moves the focus to B
+	client <- ports.WindowMapped{ID: 1}
+	r := receive(t, scenes)[1].Windows[0].Rect
+	// The confine region is window-local and clipped to the window.
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
+	scene(t, scenes)
+	want := ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 100 + r.X + 10, Y: r.Y + 10, W: r.W - 10, H: 20}}
+	// Input gets core's cursor, clamped into the region.
+	if got := receive(t, constraints); got.Mode != want.Mode || got.Rect != want.Rect || got.X != 150 || got.Y != 29 {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	// Motion is clamped into the region; deltas pass through.
+	input <- ports.PointerMotion{X: 199, Y: 79, DX: 5, DY: 6}
+	for {
+		if v, ok := command(t, commands).(ports.PointerMotionTo); ok {
+			if v.X != float64(want.Rect.X+want.Rect.W-1-100-r.X) || v.Y != float64(want.Rect.Y+want.Rect.H-1-r.Y) || v.DX != 5 || v.DY != 6 {
+				t.Fatalf("motion %+v", v)
+			}
+			break
+		}
+	}
+	// A lock keeps the pointer still.
+	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintLock}}
+	scene(t, scenes)
+	if got := receive(t, constraints); got.Mode != ports.ConstraintLock {
+		t.Fatalf("lock %+v", got)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: 101, Y: 1, DX: -50}
+	for {
+		if v, ok := command(t, commands).(ports.PointerMotionTo); ok {
+			if v.X != float64(want.Rect.X+want.Rect.W-1-100-r.X) || v.DX != -50 {
+				t.Fatalf("locked motion %+v", v)
+			}
+			break
+		}
+	}
+	client <- ports.PointerConstrained{}
+	scene(t, scenes)
+	if got := receive(t, constraints); got.Mode != ports.ConstraintNone {
+		t.Fatalf("release %+v", got)
+	}
+}

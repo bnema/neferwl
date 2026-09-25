@@ -26,7 +26,11 @@ type Channels struct {
 	Scenes   chan []ports.Scene
 	// Layouts, when set, receives the output layout whenever it changes,
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
-	Layouts      chan ports.Layout
+	Layouts chan ports.Layout
+	// Constraints, when set, receives the active pointer constraint in
+	// global logical coordinates whenever it changes (capacity 1, drained
+	// like Scenes). Input applies it to the pointer.
+	Constraints  chan ports.PointerConstraint
 	ConfigErrors chan<- error
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
@@ -53,7 +57,11 @@ type Core struct {
 	buttons          map[uint32]bool
 	cursorX, cursorY float64 // global, logical
 	pointerOutput    string  // output under the pointer at the last motion
-	seq              uint64
+	// constrained is the constraint wayland activated; constraint is it
+	// resolved to global coordinates, as last sent to input.
+	constrained ports.PointerConstrained
+	constraint  ports.PointerConstraint
+	seq         uint64
 	// layerChanged is set once layer state arrives from wayland.
 	layerChanged bool
 	sentOutputs  ports.SetOutputs
@@ -248,8 +256,8 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	return nil
 }
 func New(cfg ports.Config, ch Channels) (*Core, error) {
-	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.State != nil && cap(ch.State) != 1) {
-		return nil, fmt.Errorf("scenes, layouts and state must have capacity 1")
+	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) {
+		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
 	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
@@ -406,9 +414,47 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.focus = focus
 	}
+	c.resolveConstraint()
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	return nil
+}
+
+// resolveConstraint turns the active constraint into global coordinates
+// and sends it to input when it changed. A hidden window holds nothing.
+func (c *Core) resolveConstraint() {
+	var g ports.PointerConstraint
+	if id := c.constrained.ID; id != 0 {
+		if s, _ := c.screenOf(id); s != nil {
+			for _, p := range s.mon.Layout() {
+				if p.ID != id || p.Hidden {
+					continue
+				}
+				r := c.clientRect(p)
+				r.X += s.x
+				if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
+					// The region is clipped to the window.
+					x0, y0 := max(r.X, r.X+w.X), max(r.Y, r.Y+w.Y)
+					x1, y1 := min(r.X+r.W, r.X+w.X+w.W), min(r.Y+r.H, r.Y+w.Y+w.H)
+					if x1 > x0 && y1 > y0 {
+						r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+					}
+				}
+				g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
+			}
+		}
+	}
+	// The cursor follows core; input resyncs to it only on a change.
+	if g.Mode == c.constraint.Mode && g.Rect == c.constraint.Rect {
+		return
+	}
+	// A layout change must not leave a locked cursor off its window.
+	c.cursorX, c.cursorY = g.Clamp(c.cursorX, c.cursorY)
+	g.X, g.Y = c.cursorX, c.cursorY
+	c.constraint = g
+	if c.ch.Constraints != nil {
+		latest(c.ch.Constraints, g)
+	}
 }
 
 // latest replaces any unread value: only the owner sends and drains;
@@ -517,6 +563,8 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 				}
+			case ports.PointerConstrained:
+				c.constrained = v
 			case ports.WindowFullscreenRequest:
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
@@ -571,7 +619,10 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
-				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y)
+				// A locked pointer stays still; relative motion still flows.
+				if c.constraint.Mode != ports.ConstraintLock {
+					c.cursorX, c.cursorY = c.constraint.Clamp(c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y))
+				}
 				// The focused screen follows the pointer, so new windows
 				// and launchers open where the user is.
 				// Only a pointer entering another output switches: keyboard
@@ -594,7 +645,7 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 				}
 				if id != 0 {
-					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, TimeMsec: v.TimeMsec}); err != nil {
+					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec}); err != nil {
 						return nil
 					}
 				}

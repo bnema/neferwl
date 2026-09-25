@@ -16,6 +16,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerScale(d, s) },
 		func() error { return registerCursorShape(d, s) },
 		func() error { return registerDMABuf(d, s, o.DMABuf) },
+		func() error { return registerPointerConstraints(d, s) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
@@ -68,8 +69,12 @@ func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
 		w.OnDestroy = func() { delete(c.server.surfaces, w.Resource); state.Destroy(w) }
 	}
 }
-func (compositor) CreateRegion(r *wayland.Compositor, id uint32) {
-	wayland.NewRegion(r.Client(), r.Version(), id, region{})
+func (c compositor) CreateRegion(r *wayland.Compositor, id uint32) {
+	state := &region{}
+	if w, err := wayland.NewRegion(r.Client(), r.Version(), id, state); err == nil {
+		c.server.regions[w.Resource] = state
+		w.OnDestroy = func() { delete(c.server.regions, w.Resource) }
+	}
 }
 func (compositor) Release(*wayland.Compositor) {}
 
@@ -195,11 +200,23 @@ func sortBelowFirst(list []*surface) {
 	copy(list, append(below, above...))
 }
 
-type region struct{}
+// region keeps the bounding box of the rectangles added: pointer
+// confinement is the only user, and subtracted areas are ignored.
+type region struct{ box ports.Rect }
 
-func (region) Destroy(*wayland.Region)                              {}
-func (region) Add(*wayland.Region, int32, int32, int32, int32)      {}
-func (region) Subtract(*wayland.Region, int32, int32, int32, int32) {}
+func (*region) Destroy(*wayland.Region) {}
+func (g *region) Add(_ *wayland.Region, x, y, w, h int32) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	r := ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}
+	if g.box.W > 0 {
+		x0, y0 := min(g.box.X, r.X), min(g.box.Y, r.Y)
+		r = ports.Rect{X: x0, Y: y0, W: max(g.box.X+g.box.W, r.X+r.W) - x0, H: max(g.box.Y+g.box.H, r.Y+r.H) - y0}
+	}
+	g.box = r
+}
+func (*region) Subtract(*wayland.Region, int32, int32, int32, int32) {}
 
 type shm struct{ server *Server }
 

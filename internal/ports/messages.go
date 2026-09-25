@@ -83,6 +83,49 @@ type LayerChanged struct{ Layers []LayerSurface }
 
 func (LayerChanged) clientEvent() {}
 
+// ConstraintMode is how a pointer constraint holds the pointer.
+type ConstraintMode uint8
+
+const (
+	ConstraintNone ConstraintMode = iota
+	// ConstraintLock keeps the pointer still: only relative motion flows.
+	ConstraintLock
+	// ConstraintConfine keeps the pointer inside Rect.
+	ConstraintConfine
+)
+
+// PointerConstraint is an active pointer constraint. Rect is logical: in
+// PointerConstrained it is window-local and empty means the whole window;
+// core sends input the resolved global rectangle, and in X, Y its cursor
+// position, where input holds a locked pointer.
+type PointerConstraint struct {
+	Mode ConstraintMode
+	Rect Rect
+	X, Y float64
+}
+
+// Clamp keeps a global point inside the rectangle of a lock or confine;
+// no constraint and an empty rectangle leave it unchanged.
+func (c PointerConstraint) Clamp(x, y float64) (float64, float64) {
+	if c.Mode == ConstraintNone || c.Rect.W <= 0 || c.Rect.H <= 0 {
+		return x, y
+	}
+	x = min(max(x, float64(c.Rect.X)), float64(c.Rect.X+c.Rect.W-1))
+	y = min(max(y, float64(c.Rect.Y)), float64(c.Rect.Y+c.Rect.H-1))
+	return x, y
+}
+
+// PointerConstrained carries wayland → core the constraint active on a
+// window (zwp_pointer_constraints_v1); ID 0 means none is active. A
+// constraint is active only on the window with both pointer and keyboard
+// focus.
+type PointerConstrained struct {
+	ID WindowID
+	PointerConstraint
+}
+
+func (PointerConstrained) clientEvent() {}
+
 // Mods carries input → core modifier flags.
 type Mods uint8
 
@@ -117,9 +160,15 @@ type ModState struct{ Depressed, Latched, Locked, Group uint32 }
 func (KeyEvent) inputEvent() {}
 
 // PointerMotion uses global layout coordinates in logical pixels (see OutputPlacement).
+// DX and DY are the accelerated logical deltas and UnaccelDX, UnaccelDY the
+// raw device deltas; all four are 0 for absolute devices. TimeUsec is the
+// device timestamp in microseconds.
 type PointerMotion struct {
-	X, Y     float64
-	TimeMsec uint32
+	X, Y                 float64
+	DX, DY               float64
+	UnaccelDX, UnaccelDY float64
+	TimeMsec             uint32
+	TimeUsec             uint64
 }
 
 func (PointerMotion) inputEvent() {}
@@ -263,10 +312,16 @@ type PointerFocus struct {
 
 func (PointerFocus) clientCommand() {}
 
+// PointerMotionTo carries core → wayland motion for the pointer focus, in
+// window coordinates. The deltas and TimeUsec feed zwp_relative_pointer_v1;
+// While the window locks the pointer, wayland sends only relative motion.
 type PointerMotionTo struct {
-	ID       WindowID
-	X, Y     float64
-	TimeMsec uint32
+	ID                   WindowID
+	X, Y                 float64
+	DX, DY               float64
+	UnaccelDX, UnaccelDY float64
+	TimeMsec             uint32
+	TimeUsec             uint64
 }
 
 func (PointerMotionTo) clientCommand() {}

@@ -53,6 +53,9 @@ var (
 	pointerEvent    func(ev uintptr) uintptr
 	pointerDX       func(pev uintptr) float64
 	pointerDY       func(pev uintptr) float64
+	pointerRawDX    func(pev uintptr) float64
+	pointerRawDY    func(pev uintptr) float64
+	pointerUsec     func(pev uintptr) uint64
 	pointerAbsX     func(pev uintptr, width uint32) float64
 	pointerAbsY     func(pev uintptr, height uint32) float64
 	pointerButton   func(pev uintptr) uint32
@@ -99,6 +102,9 @@ func load() error {
 		reg(&pointerEvent, "event_get_pointer_event")
 		reg(&pointerDX, "event_pointer_get_dx")
 		reg(&pointerDY, "event_pointer_get_dy")
+		reg(&pointerRawDX, "event_pointer_get_dx_unaccelerated")
+		reg(&pointerRawDY, "event_pointer_get_dy_unaccelerated")
+		reg(&pointerUsec, "event_pointer_get_time_usec")
 		reg(&pointerAbsX, "event_pointer_get_absolute_x_transformed")
 		reg(&pointerAbsY, "event_pointer_get_absolute_y_transformed")
 		reg(&pointerButton, "event_pointer_get_button")
@@ -136,7 +142,10 @@ type Options struct {
 	// Layout is the initial output layout; Layouts replaces it live.
 	Layout  ports.Layout
 	Layouts <-chan ports.Layout
-	Active  <-chan bool
+	// Constraints holds the pointer lock or confinement of the focused
+	// window, in global logical coordinates.
+	Constraints <-chan ports.PointerConstraint
+	Active      <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
 	// read, before core sees the event: the output under the pointer and
 	// the physical position on it.
@@ -202,6 +211,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		case l := <-opts.Layouts:
 			p.setLayout(l)
 			p.moved(opts.MoveCursor)
+		case c := <-opts.Constraints:
+			p.constrain(c)
+			p.moved(opts.MoveCursor)
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -253,14 +265,19 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 		return ke, nil
 	case evPointerMotion:
 		pe := pointerEvent(ev)
-		x, y := p.move(pointerDX(pe), pointerDY(pe))
+		m := p.move(pointerDX(pe), pointerDY(pe))
+		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
+		m.TimeMsec, m.TimeUsec = now, pointerUsec(pe)
 		p.moved(opts.MoveCursor)
-		log.Debug().Float64("x", x).Float64("y", y).Msg("pointer")
-		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
+		log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
+		return m, nil
 	case evPointerAbs:
 		// Absolute devices (tablets, VMs) map to the whole layout.
 		pe := pointerEvent(ev)
 		b := p.bounds()
+		if p.constraint.Mode == ports.ConstraintLock {
+			return ports.PointerMotion{X: p.x, Y: p.y, TimeMsec: now}, nil
+		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
 		p.moved(opts.MoveCursor)
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
@@ -310,9 +327,10 @@ func hotkey(ke ports.KeyEvent) (hotkeyAction, int) {
 // is divided by the scale of the output under the pointer, so it moves the
 // same number of physical pixels on every output.
 type pointer struct {
-	x, y    float64
-	layout  ports.Layout
-	touched bool // false until the user moves it: it follows the primary output
+	x, y       float64
+	layout     ports.Layout
+	touched    bool // false until the user moves it: it follows the primary output
+	constraint ports.PointerConstraint
 }
 
 // newPointer starts at the centre of the primary output, else the first.
@@ -347,15 +365,32 @@ func (p *pointer) scale() float64 {
 	return 1
 }
 
-func (p *pointer) move(dx, dy float64) (float64, float64) {
+// move applies a relative motion and returns it with the logical deltas.
+// A locked pointer stays still; a confined one stays in its rectangle.
+func (p *pointer) move(dx, dy float64) ports.PointerMotion {
 	s := p.scale()
-	return p.set(p.x+dx/s, p.y+dy/s)
+	dx, dy = dx/s, dy/s
+	if p.constraint.Mode != ports.ConstraintLock {
+		p.set(p.x+dx, p.y+dy)
+	}
+	return ports.PointerMotion{X: p.x, Y: p.y, DX: dx, DY: dy}
 }
 
 func (p *pointer) set(x, y float64) (float64, float64) {
 	p.touched = true
-	p.x, p.y = p.layout.Clamp(p.x, p.y, x, y)
+	p.x, p.y = p.constraint.Clamp(p.layout.Clamp(p.x, p.y, x, y))
 	return p.x, p.y
+}
+
+// constrain applies a new constraint. Entering or leaving a lock resyncs
+// the pointer to core's cursor, which stood still meanwhile; a confined
+// pointer moves inside.
+func (p *pointer) constrain(c ports.PointerConstraint) {
+	if c.Mode == ports.ConstraintLock || p.constraint.Mode == ports.ConstraintLock {
+		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
+	}
+	p.constraint = c
+	p.x, p.y = c.Clamp(p.x, p.y)
 }
 
 // bounds is the rectangle holding every output.

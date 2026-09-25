@@ -35,7 +35,12 @@ func (f *forwarder) push(ev ports.InputEvent) {
 	if m, ok := ev.(ports.PointerMotion); ok {
 		f.stats.Motions++
 		if n := len(f.queue); n > 0 {
-			if _, tail := f.queue[n-1].(ports.PointerMotion); tail {
+			if prev, tail := f.queue[n-1].(ports.PointerMotion); tail {
+				// Relative deltas add up: games read them, not the position.
+				m.DX += prev.DX
+				m.DY += prev.DY
+				m.UnaccelDX += prev.UnaccelDX
+				m.UnaccelDY += prev.UnaccelDY
 				f.queue[n-1] = m
 				f.stats.Coalesced++
 				f.mu.Unlock()

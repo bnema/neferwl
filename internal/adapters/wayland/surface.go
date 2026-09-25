@@ -157,6 +157,9 @@ func (s *surface) Destroy(*wayland.Surface) {
 	if s.role != nil {
 		s.role(false)
 	}
+	if c := s.server.constraints[s]; c != nil {
+		s.server.dropConstraint(c)
+	}
 }
 func (s *surface) Attach(_ *wayland.Surface, b *wayland.Buffer, _, _ int32) {
 	s.pending = b
@@ -230,6 +233,7 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
 	}
+	s.commitConstraint(geometry)
 	if fresh || moved || geometry || s.sub.parent != nil {
 		s.redraw()
 	}

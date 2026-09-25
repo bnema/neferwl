@@ -74,12 +74,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	spawn := make(chan ports.SpawnRequest, 32)
 	scenes := make(chan []ports.Scene, 1)
 	layouts := make(chan ports.Layout, 1)
+	constraints := make(chan ports.PointerConstraint, 1)
 	states := make(chan ports.State, 1)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -142,7 +143,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				return
 			}
 			done <- safe("input", func() error {
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input")}, input)
 			})
 			return
 		}
