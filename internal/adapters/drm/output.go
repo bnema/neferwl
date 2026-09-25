@@ -50,6 +50,8 @@ type Output struct {
 	tearing      bool
 	vrrProp      uint32
 	vrrOn, async bool
+	// composedSince is when composition took over from scanout.
+	composedSince time.Time
 	// kind is how the images were made; validated once a modeset took them.
 	kind      imageKind
 	validated bool
@@ -115,7 +117,13 @@ func (o *Output) present(r ports.Renderer) error {
 	if b := o.bufs[o.back]; b != nil {
 		r.CopyBGRX(b.mem, int(b.pitch))
 	}
-	o.setVRR(false)
+	// VRR goes off only after composing for vrrHold: each toggle is a
+	// blocking commit and may flicker, so short compositions keep it.
+	if o.composedSince.IsZero() {
+		o.composedSince = time.Now()
+	} else if time.Since(o.composedSince) > vrrHold {
+		o.setVRR(false)
+	}
 	o.setAsync(false)
 	if err := flip(o.fd, o.crtc, o.fbs[o.back], false); err != nil {
 		return err
@@ -149,23 +157,28 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 		// Already on screen: nothing to flip.
 		return true, nil
 	}
-	o.setVRR(true)
 	// Drivers refuse async flips that change the format or modifier: the
 	// flip from the composed image into scanout waits for vblank.
-	async := c.Async && o.tearing && o.shown != 0
-	o.setAsync(async)
+	cfb := o.clientFBs[c.DMABuf.ID]
+	async := c.Async && o.tearing && o.shown != 0 && !cfb.noAsync
 	err := flip(o.fd, o.crtc, fb, async)
 	if err != nil && async && errors.Is(err, unix.EINVAL) {
-		// Refused anyway (e.g. the client changed buffer layout): flip
-		// at vblank this time.
+		// Refused (e.g. a layout change, or not a fast update): this
+		// buffer flips at vblank from now on.
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
+		cfb.noAsync, async = true, false
 		err = flip(o.fd, o.crtc, fb, false)
+	}
+	if err == nil {
+		o.setAsync(async)
+		o.setVRR(true)
+		o.composedSince = time.Time{}
 	}
 	if err != nil {
 		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE) {
 			// KMS refuses this buffer on the plane: compose it instead.
 			o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
-			o.clientFBs[c.DMABuf.ID].failed = "flip_refused"
+			cfb.failed = "flip_refused"
 			o.reason = "flip_refused"
 			o.log.Info().Bool("direct_scanout", false).Str("reason", o.reason).Str("connector", o.conn.name).Msg("scanout")
 			return false, nil
@@ -177,6 +190,9 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 	return true, nil
 }
 
+// vrrHold is how long composition runs before VRR turns off.
+const vrrHold = 500 * time.Millisecond
+
 // setVRR turns variable refresh on or off, when the output has it.
 func (o *Output) setVRR(on bool) {
 	if o.vrrProp == 0 || on == o.vrrOn {
@@ -186,13 +202,18 @@ func (o *Output) setVRR(on bool) {
 	if on {
 		v = 1
 	}
+	// SETPROPERTY is a blocking atomic commit (about one refresh).
+	start := time.Now()
 	if err := setProp(o.fd, o.crtc, objCrtc, o.vrrProp, v); err != nil {
+		if lostMaster(err) {
+			return // switched away: retried on the next change
+		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr; disabled")
 		o.vrrProp = 0
 		return
 	}
 	o.vrrOn = on
-	o.log.Info().Bool("vrr", on).Str("connector", o.conn.name).Msg("vrr")
+	o.log.Info().Bool("vrr", on).Str("connector", o.conn.name).Dur("took", time.Since(start)).Msg("vrr")
 }
 
 // setAsync logs when the output starts or stops tearing.
@@ -344,6 +365,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			dirty = dirty || scene.Shows(c.ID)
 		case <-stats.C:
 			o.dropClientFBs(time.Now(), false)
+			// A composed screen that stopped changing still drops VRR.
+			if !o.composedSince.IsZero() && time.Since(o.composedSince) > vrrHold {
+				o.setVRR(false)
+			}
 			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
 			if o.cursor != nil {
 				cs := o.cursor.TakeStats()

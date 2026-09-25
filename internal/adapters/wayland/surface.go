@@ -140,6 +140,7 @@ func (s *surface) detach() {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	s.tearing = nil // the control becomes inert
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
 		s.server.cursorSurface = nil

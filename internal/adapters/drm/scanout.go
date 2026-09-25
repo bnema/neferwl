@@ -90,6 +90,8 @@ type clientFB struct {
 	last time.Time // when last wanted on screen
 	// failed is the reason KMS refused the buffer; it is not retried.
 	failed string
+	// noAsync: KMS refused an async flip to it; it flips at vblank.
+	noAsync bool
 }
 
 // scanoutFB returns the framebuffer of a client buffer, importing it on
