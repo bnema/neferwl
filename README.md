@@ -111,3 +111,16 @@ Use `--input path` (or `--input -` for stdin) to inject a headless script. Each 
 `type text`, `key Super+Return` (also Shift, Ctrl, Alt or a bare key), `sleep 1s`, `move x y` (absolute output coordinates), `click [left|right|middle]`,
 `down button`, or `up button`. Cursor rendering is not implemented yet; pointer
 focus after layout changes is updated on the next move.
+
+## Why not Rust?
+
+Most Wayland compositors today are written in Rust or C. NeferTTY is written in Go, by choice:
+
+- **Simple and readable.** Go is small and explicit. Goroutines and channels fit a compositor where each part (input, outputs, clients) owns its own state.
+- **Fast builds, easy tooling.** A full build takes seconds; tests, the race detector, profiling and formatting come with the language.
+- **No cgo.** NeferTTY builds with `CGO_ENABLED=0`: libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego).
+- **Fast enough.** With care for allocations and the garbage collector, the hot paths (input, rendering, buffer handling) perform close to native code.
+
+As a software engineer, my passion is bringing more tools to the Go ecosystem. NeferTTY grew its own libraries along the way: purego-libwayland, purego-vulkan and wlturbo, to be published for others to reuse. Building them is part of the fun.
+
+What Go does not give us is Rust's borrow checker: memory and concurrency mistakes are not caught at compile time. NeferTTY makes up for it with strict ownership (one goroutine owns each piece of state), the race detector on every test run, and protocol tests against real Wayland clients.
