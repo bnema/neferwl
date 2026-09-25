@@ -173,6 +173,9 @@ func (c *Core) refill() []slotKey {
 
 // anyPending reports whether a slot waits for its window.
 func (c *Core) anyPending() bool {
+	if len(c.terms) > 0 {
+		return true
+	}
 	for _, st := range c.slots {
 		if st.pending() {
 			return true

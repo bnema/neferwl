@@ -74,11 +74,12 @@ type Cursor struct {
 	size       int // buffer side
 	hotX, hotY int
 	shown      bool
-	hidden     bool // Hide was called; the next move shows it again
+	hidden     bool // the plane is off because the pointer left this output
 	plane      cursorPlane
 
-	mu    sync.Mutex // guards x, y and stats; never held across an ioctl
+	mu    sync.Mutex // guards x, y, away and stats; never held across an ioctl
 	x, y  int        // physical position of the hotspot
+	away  bool       // Hide was called and no Move since
 	stats CursorStats
 
 	wake chan struct{}
@@ -148,7 +149,12 @@ func (c *Cursor) start() {
 				// fails too and Reapply restores the cursor.
 				_ = c.plane.WaitVblank()
 				c.io.Lock()
-				if c.hidden {
+				c.mu.Lock()
+				away := c.away
+				c.mu.Unlock()
+				if away {
+					// A move queued before Hide: the pointer is elsewhere.
+				} else if c.hidden {
 					// A move shows it again, even before its first image.
 					c.hidden = false
 					_ = c.apply()
@@ -213,6 +219,7 @@ func (c *Cursor) apply() error {
 func (c *Cursor) Move(x, y float64) {
 	c.mu.Lock()
 	c.x, c.y = int(x), int(y)
+	c.away = false
 	c.stats.Moves++
 	c.mu.Unlock()
 	select {
@@ -226,6 +233,9 @@ func (c *Cursor) Move(x, y float64) {
 func (c *Cursor) Hide() {
 	c.io.Lock()
 	defer c.io.Unlock()
+	c.mu.Lock()
+	c.away = true
+	c.mu.Unlock()
 	if c.buf == nil || c.hidden {
 		return
 	}

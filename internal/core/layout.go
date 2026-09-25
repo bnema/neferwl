@@ -295,6 +295,35 @@ func (w *Workspace) MoveColumn(dir int) {
 		w.scroll()
 	}
 }
+
+// takeColumn removes the focused column and returns it, as a normal column.
+func (w *Workspace) takeColumn() (Column, bool) {
+	if len(w.Columns) == 0 {
+		return Column{}, false
+	}
+	col := w.Columns[w.Focus]
+	col.Slot = 0
+	if slices.Contains(col.Windows, w.fullscreen) {
+		w.fullscreen = 0
+	}
+	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
+	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
+	if len(w.Columns) == 0 {
+		w.ViewX = 0
+	} else {
+		w.scroll()
+	}
+	return col, true
+}
+
+// insertColumn adds a column at index at (clamped) and focuses it.
+func (w *Workspace) insertColumn(at int, col Column) {
+	at = min(max(at, 0), len(w.Columns))
+	w.Columns = slices.Insert(w.Columns, at, col)
+	w.Focus = at
+	w.scroll()
+}
+
 func (w *Workspace) CycleWidth() {
 	if len(w.Columns) == 0 || len(w.presets) == 0 {
 		return

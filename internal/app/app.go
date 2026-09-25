@@ -76,7 +76,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, ConfigErrors: configErrors}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -94,9 +94,6 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	log.Info().Str("WAYLAND_DISPLAY", server.SocketName()).Msg("listening")
 	child := launcher.New(launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir), logging.For(ctx, "launcher"))
-	if !opts.NoTerminal {
-		spawn <- ports.SpawnRequest{Argv: append([]string(nil), opts.Config.Terminal.Command...)}
-	}
 	if inject != nil {
 		inject(input)
 	}

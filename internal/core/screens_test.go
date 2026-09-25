@@ -16,6 +16,7 @@ type multiRig struct {
 	reload   chan ports.ConfigChanged
 	commands chan ports.ClientCommand
 	scenes   chan []ports.Scene
+	spawn    chan ports.SpawnRequest
 	cfg      ports.Config
 }
 
@@ -28,6 +29,13 @@ var (
 // the given outputs in order.
 func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
+	return startRig(t, false, edit, outs...)
+}
+
+// startRig is startMulti; with terminal set, core keeps a terminal on every
+// empty workspace on screen.
+func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
+	t.Helper()
 	cfg := config.Defaults()
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Border.Width = 0
@@ -37,9 +45,9 @@ func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo
 	r := &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
-		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), cfg: cfg,
+		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), cfg: cfg,
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, Terminal: terminal})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,5 +345,77 @@ func TestPrimaryOutputGetsFocusAtStartup(t *testing.T) {
 	set := r.mapWindow(t, 1)
 	if got := shown(set); len(got["DP-2"]) != 1 {
 		t.Fatal(got)
+	}
+}
+
+func TestMoveColumnCrossesOutputs(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	// Window 2 is the right column of DP-1: moving right first hits the
+	// edge, then the column goes to DP-2 and focus follows it.
+	set := r.key(t, "Right", ports.ModAlt|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+	if out := lastOutputs(t, r.commands); out.Focused != "DP-2" {
+		t.Fatal(out.Focused)
+	}
+	// Back left: it lands on the right side of DP-1.
+	set = r.key(t, "Left", ports.ModAlt|ports.ModShift)
+	if got := shown(set)["DP-1"]; len(got) != 2 {
+		t.Fatal(got)
+	}
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if w.ID == 2 && (s.Output != "DP-1" || !w.Focused || w.Rect.X == 0) {
+				t.Fatalf("%s %+v", s.Output, w)
+			}
+		}
+	}
+}
+
+func TestPointerFocusesOutput(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.input <- ports.PointerMotion{X: 250, Y: 50}
+	receive(t, r.scenes)
+	if out := lastOutputs(t, r.commands); out.Focused != "DP-2" {
+		t.Fatal(out.Focused)
+	}
+	// New windows open where the pointer is.
+	if got := shown(r.mapWindow(t, 1)); len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+}
+
+func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
+	r := startRig(t, true, nil, left, right)
+	// One terminal per output, each tagged for its workspace.
+	var reqs []ports.SpawnRequest
+	for len(reqs) < 2 {
+		reqs = append(reqs, receive(t, r.spawn))
+	}
+	if len(r.spawn) != 0 || reqs[0].Argv[0] != "foot" || reqs[0].Env[0] == reqs[1].Env[0] {
+		t.Fatal(reqs, len(r.spawn))
+	}
+	token := func(req ports.SpawnRequest) string { return req.Env[0][len(ports.SlotEnv)+1:] }
+	// The focused screen is DP-2 now; DP-1's terminal still lands on DP-1.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.client <- ports.WindowMapped{ID: 1, Slot: token(reqs[0])}
+	r.client <- ports.WindowMapped{ID: 2, Slot: token(reqs[1])}
+	receive(t, r.scenes)
+	set := receive(t, r.scenes)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 1 || got["DP-1"][0] == got["DP-2"][0] {
+		t.Fatal(got)
+	}
+	// Closing the last window spawns a new terminal; nothing while pending.
+	r.client <- ports.WindowUnmapped{ID: 2}
+	receive(t, r.scenes)
+	if v := receive(t, r.spawn); v.Argv[0] != "foot" {
+		t.Fatal(v)
+	}
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	if len(r.spawn) != 0 {
+		t.Fatal("spawned twice")
 	}
 }

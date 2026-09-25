@@ -28,6 +28,9 @@ type Channels struct {
 	// latest first (capacity 1, drained like Scenes). Input and cursors use it.
 	Layouts      chan ports.Layout
 	ConfigErrors chan<- error
+	// Terminal, when set, keeps a window on every workspace on screen: an
+	// empty one gets the configured terminal (the terminal is the desktop).
+	Terminal bool
 }
 type binding struct {
 	mods ports.Mods
@@ -57,6 +60,9 @@ type Core struct {
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn     []slotKey
 	sentPending bool
+	// terms are the terminals spawned for empty workspaces, by SlotEnv
+	// token, until their window maps.
+	terms map[string]*termSpawn
 }
 
 func keyName(s string) string {
@@ -239,7 +245,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes and layouts must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -326,8 +332,16 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.sentOutputs = v
 	}
+	terms := c.fillEmpty()
 	if err := c.publishPending(ctx); err != nil {
 		return err
+	}
+	for _, req := range terms {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case c.ch.Spawn <- req:
+		}
 	}
 	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
@@ -462,7 +476,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.layerChanged = true
 				c.setLayers(v.Layers)
 			case ports.WindowMapped:
-				if v.Slot == "" || !c.placeSlotWindow(v.ID, v.Slot) {
+				if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
 					if s, _ := c.screenOf(v.ID); s == nil {
 						c.cur().mon.AddWindow(v.ID)
 					}
@@ -533,6 +547,14 @@ func (c *Core) Run(ctx context.Context) error {
 			switch v := ev.(type) {
 			case ports.PointerMotion:
 				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y)
+				// The focused screen follows the pointer, so new windows
+				// and launchers open where the user is.
+				if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.cur().name() {
+					c.focusScreen = c.screenIndex(o.Info.Name)
+					if err := c.publish(ctx); err != nil {
+						return nil
+					}
+				}
 				id, x, y := c.hit(c.cursorX, c.cursorY)
 				// Layout changes are intentionally re-hit-tested only on motion.
 				if id != c.pointer {
