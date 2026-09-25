@@ -23,6 +23,7 @@ const (
 
 	fbModifiers        = 1 << 1
 	capAddFB2Modifiers = 0x10
+	capAsyncPageFlip   = 0x7
 	modInvalid         = 0x00ffffffffffffff
 	scanoutIdleTTL     = 5 * time.Second // a cached framebuffer survives unused
 )
@@ -89,6 +90,8 @@ type clientFB struct {
 	last time.Time // when last wanted on screen
 	// failed is the reason KMS refused the buffer; it is not retried.
 	failed string
+	// noAsync: KMS refused an async flip to it; it flips at vblank.
+	noAsync bool
 }
 
 // scanoutFB returns the framebuffer of a client buffer, importing it on

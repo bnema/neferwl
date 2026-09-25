@@ -42,14 +42,14 @@ func safe(name string, fn func() error) (err error) {
 
 // openDRM opens the seat and every card with a connected display. Outputs
 // are found by the first Scan of each card.
-func openDRM(ctx context.Context, outputs []ports.OutputConfig, scanout bool) (*drmBackend, error) {
+func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 	log := logging.For(ctx, "drm")
 	s, err := seat.Open(ctx, logging.For(ctx, "seat"))
 	if err != nil {
 		log.Error().Err(err).Msg("open seat")
 		return nil, fmt.Errorf("open seat: %w", err)
 	}
-	want := wantFromConfig(outputs, scanout)
+	want := wantFromConfig(cfg)
 	paths, _ := filepath.Glob("/dev/dri/card[0-9]*")
 	sort.Strings(paths)
 	b := &drmBackend{seat: s}
@@ -78,10 +78,11 @@ func openDRM(ctx context.Context, outputs []ports.OutputConfig, scanout bool) (*
 	return b, nil
 }
 
-// wantFromConfig turns output.<name> entries into connector choices.
-func wantFromConfig(outputs []ports.OutputConfig, scanout bool) drm.Want {
-	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, NoScanout: !scanout}
-	for _, o := range outputs {
+// wantFromConfig turns output.<name> and render.* entries into connector choices.
+func wantFromConfig(cfg ports.Config) drm.Want {
+	r := cfg.Render
+	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR}
+	for _, o := range cfg.Outputs {
 		if o.Off {
 			want.Disabled[o.Name] = true
 			continue

@@ -63,6 +63,10 @@ layout.presets = 1/3, 1/2, 2/3, 1
 # output.DP-2.scale = 4/3
 
 render.direct-scanout = on
+# Games asking for tearing flip without waiting for vblank, and variable
+# refresh runs; both only while a fullscreen window is scanned out directly.
+render.tearing = on
+render.vrr = on
 
 # log.level: debug, info, warn or error. log.debug: components or all.
 log.level = info

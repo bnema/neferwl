@@ -44,6 +44,14 @@ type Output struct {
 	shown, queued uint64
 	reason        string // why the last frame was composed ("" = scanout)
 	unsent        ports.OutputPresented
+	// Tearing (ADR 006): async flips of scanned-out buffers that ask for
+	// them, while the card accepts them. vrrProp is the CRTC's VRR_ENABLED
+	// property (0: no VRR), turned on while a buffer is scanned out.
+	tearing      bool
+	vrrProp      uint32
+	vrrOn, async bool
+	// composedSince is when composition took over from scanout.
+	composedSince time.Time
 	// kind is how the images were made; validated once a modeset took them.
 	kind      imageKind
 	validated bool
@@ -61,10 +69,14 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
 	}
+	o.tearing = card.async && !card.want.NoTearing
+	if !card.want.NoVRR {
+		o.vrrProp = vrrProperty(card.fd, c.id, crtc)
+	}
 	if o.cursor, err = newCursor(card.fd, crtc, slices.Index(card.crtcs, crtc)); err != nil {
 		log.Warn().Err(err).Str("connector", c.name).Msg("no hardware cursor")
 	}
-	log.Info().Str("card", card.path).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Msg("output")
+	log.Info().Str("card", card.path).Str("connector", c.name).Str("mode", mode.String()).Str("make", o.monitor.Make).Str("model", o.monitor.Model).Uint32("crtc", crtc).Bool("tearing", o.tearing).Bool("vrr", o.vrrProp != 0).Msg("output")
 	return o, nil
 }
 
@@ -93,6 +105,9 @@ func (o *Output) modeset() error {
 		return fmt.Errorf("set crtc: %w", err)
 	}
 	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
+	// Another master may have left VRR on: start from off.
+	o.vrrOn = true
+	o.setVRR(false)
 	return nil
 }
 
@@ -102,7 +117,15 @@ func (o *Output) present(r ports.Renderer) error {
 	if b := o.bufs[o.back]; b != nil {
 		r.CopyBGRX(b.mem, int(b.pitch))
 	}
-	if err := flip(o.fd, o.crtc, o.fbs[o.back]); err != nil {
+	// VRR goes off only after composing for vrrHold: each toggle is a
+	// blocking commit and may flicker, so short compositions keep it.
+	if o.composedSince.IsZero() {
+		o.composedSince = time.Now()
+	} else if time.Since(o.composedSince) > vrrHold {
+		o.setVRR(false)
+	}
+	o.setAsync(false)
+	if err := flip(o.fd, o.crtc, o.fbs[o.back], false); err != nil {
 		return err
 	}
 	o.pending, o.flipStart = true, time.Now()
@@ -134,11 +157,28 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 		// Already on screen: nothing to flip.
 		return true, nil
 	}
-	if err := flip(o.fd, o.crtc, fb); err != nil {
+	// Drivers refuse async flips that change the format or modifier: the
+	// flip from the composed image into scanout waits for vblank.
+	cfb := o.clientFBs[c.DMABuf.ID]
+	async := c.Async && o.tearing && o.shown != 0 && !cfb.noAsync
+	err := flip(o.fd, o.crtc, fb, async)
+	if err != nil && async && errors.Is(err, unix.EINVAL) {
+		// Refused (e.g. a layout change, or not a fast update): this
+		// buffer flips at vblank from now on.
+		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
+		cfb.noAsync, async = true, false
+		err = flip(o.fd, o.crtc, fb, false)
+	}
+	if err == nil {
+		o.setAsync(async)
+		o.setVRR(true)
+		o.composedSince = time.Time{}
+	}
+	if err != nil {
 		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE) {
 			// KMS refuses this buffer on the plane: compose it instead.
 			o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
-			o.clientFBs[c.DMABuf.ID].failed = "flip_refused"
+			cfb.failed = "flip_refused"
 			o.reason = "flip_refused"
 			o.log.Info().Bool("direct_scanout", false).Str("reason", o.reason).Str("connector", o.conn.name).Msg("scanout")
 			return false, nil
@@ -150,12 +190,47 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 	return true, nil
 }
 
+// vrrHold is how long composition runs before VRR turns off.
+const vrrHold = 500 * time.Millisecond
+
+// setVRR turns variable refresh on or off, when the output has it.
+func (o *Output) setVRR(on bool) {
+	if o.vrrProp == 0 || on == o.vrrOn {
+		return
+	}
+	v := uint64(0)
+	if on {
+		v = 1
+	}
+	// SETPROPERTY is a blocking atomic commit (about one refresh).
+	start := time.Now()
+	if err := setProp(o.fd, o.crtc, objCrtc, o.vrrProp, v); err != nil {
+		if lostMaster(err) {
+			return // switched away: retried on the next change
+		}
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr; disabled")
+		o.vrrProp, o.vrrOn = 0, false
+		return
+	}
+	o.vrrOn = on
+	o.log.Info().Bool("vrr", on).Str("connector", o.conn.name).Dur("took", time.Since(start)).Msg("vrr")
+}
+
+// setAsync logs when the output starts or stops tearing.
+func (o *Output) setAsync(on bool) {
+	if on != o.async {
+		o.async = on
+		o.log.Info().Bool("tearing", on).Str("connector", o.conn.name).Msg("tearing")
+	}
+}
+
 // Close restores the CRTC state found at startup, when it had a mode, and
 // frees buffers.
 func (o *Output) Close() {
 	if o.cursor != nil {
 		o.cursor.close()
 	}
+	o.setVRR(false)
 	if o.saved.crtcID != 0 {
 		ids := []uint32{o.conn.id}
 		s := o.saved
@@ -218,8 +293,18 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if o.unsent.Output != "" {
 			retry = time.After(time.Millisecond)
 		}
+		// A composed screen that stopped changing still drops VRR on time.
+		var vrrOff <-chan time.Time
+		if enabled && o.vrrOn && !o.composedSince.IsZero() {
+			vrrOff = time.After(max(0, vrrHold-time.Since(o.composedSince)))
+		}
 		select {
 		case <-retry:
+			continue
+		case <-vrrOff:
+			if o.setVRR(false); o.vrrOn {
+				o.composedSince = time.Now() // failed: retry later, not in a loop
+			}
 			continue
 		case <-ctx.Done():
 			return nil

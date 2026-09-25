@@ -25,6 +25,7 @@ const (
 	ioctlDestroyDumb  = 0xC00464B4
 
 	pageFlipEvent    = 1
+	pageFlipAsync    = 2
 	eventFlipDone    = 2
 	modeTypePrefered = 1 << 3
 	connected        = 1
@@ -121,6 +122,10 @@ type Want struct {
 	Modes map[string][3]float64
 	// NoScanout disables direct scanout (render.direct-scanout = off).
 	NoScanout bool
+	// NoTearing ignores tearing requests (render.tearing = off).
+	NoTearing bool
+	// NoVRR keeps variable refresh off (render.vrr = off).
+	NoVRR bool
 }
 
 // usable reports whether a connector should be driven.
@@ -316,8 +321,11 @@ func getCrtc(fd int, crtc uint32) (modeCrtc, error) {
 	return c, err
 }
 
-func flip(fd int, crtc, fb uint32) error {
+func flip(fd int, crtc, fb uint32, async bool) error {
 	p := pageFlip{crtcID: crtc, fbID: fb, flags: pageFlipEvent}
+	if async {
+		p.flags |= pageFlipAsync
+	}
 	return ioctl(fd, ioctlPageFlip, unsafe.Pointer(&p))
 }
 

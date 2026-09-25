@@ -29,6 +29,8 @@ type Card struct {
 	// their own goroutines); modifiers is DRM_CAP_ADDFB2_MODIFIERS.
 	gemMu     sync.Mutex
 	modifiers bool
+	// async is DRM_CAP_ASYNC_PAGE_FLIP.
+	async bool
 }
 
 // OpenCard reads the card's CRTCs. fd stays owned by the caller.
@@ -43,7 +45,9 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 	}
 	cp := getCap{capability: capAddFB2Modifiers}
 	mods := ioctl(fd, ioctlGetCap, unsafe.Pointer(&cp)) == nil && cp.value == 1
-	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, modifiers: mods}, nil
+	ap := getCap{capability: capAsyncPageFlip}
+	async := ioctl(fd, ioctlGetCap, unsafe.Pointer(&ap)) == nil && ap.value == 1
+	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, modifiers: mods, async: async}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.

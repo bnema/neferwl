@@ -23,6 +23,9 @@ func TestStructSizesMatchIoctls(t *testing.T) {
 		{"fb_cmd2", unsafe.Sizeof(fbCmd2{}), ioctlAddFB2},
 		{"prime_handle", unsafe.Sizeof(primeHandle{}), ioctlPrimeFDToHandle},
 		{"gem_close", unsafe.Sizeof(gemClose{}), ioctlGemClose},
+		{"obj_get_props", unsafe.Sizeof(objGetProps{}), ioctlObjGetProps},
+		{"get_prop", unsafe.Sizeof(getProp{}), ioctlGetProp},
+		{"obj_set_prop", unsafe.Sizeof(objSetProp{}), ioctlObjSetProp},
 	} {
 		if want := (tc.req >> 16) & 0x3fff; tc.got != want {
 			t.Errorf("%s: size %d, ioctl encodes %d", tc.name, tc.got, want)

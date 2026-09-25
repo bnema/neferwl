@@ -42,6 +42,10 @@ type surface struct {
 	content ports.SurfaceContent
 	has     bool
 	sub     subState
+	// tearing is the surface's wp_tearing_control_v1; async is the
+	// committed hint, pendingAsync the requested one.
+	tearing             *tearingHandler
+	async, pendingAsync bool
 }
 
 // subState is the subsurface tree: parent is set on subsurfaces, children
@@ -87,6 +91,7 @@ func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	if s.xdg != nil {
 		c.Geometry = s.xdg.geometry
 	}
+	c.Async = s.async
 	return c
 }
 
@@ -135,6 +140,7 @@ func (s *surface) detach() {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	s.tearing = nil // the control becomes inert
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
 		s.server.cursorSurface = nil
@@ -184,6 +190,8 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.pendingScale > 0 {
 		s.bufferScale = s.pendingScale
 	}
+	hinted := s.async != s.pendingAsync
+	s.async = s.pendingAsync
 	if s.viewport != nil {
 		s.viewport.commit()
 	}
@@ -237,7 +245,7 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	if fresh || moved || geometry || s.sub.parent != nil {
+	if fresh || moved || geometry || hinted || s.sub.parent != nil {
 		s.redraw()
 	}
 }

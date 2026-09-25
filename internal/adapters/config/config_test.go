@@ -62,6 +62,8 @@ output.DP-1.scale = 1.5
 output.DP-1.primary = on
 bind.cmd+code:30 = quit
 render.direct-scanout = off
+render.tearing = off
+render.vrr = off
 startup = wl-paste --watch cliphist store
 startup = wl-paste --primary --watch cliphist store
 `)
@@ -71,7 +73,7 @@ startup = wl-paste --primary --watch cliphist store
 	if !reflect.DeepEqual(c.Startup, [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"wl-paste", "--primary", "--watch", "cliphist", "store"}}) {
 		t.Fatalf("startup: %q", c.Startup)
 	}
-	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout {
+	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout || c.Render.Tearing || c.Render.VRR {
 		t.Fatalf("%+v", c)
 	}
 	if !reflect.DeepEqual(c.Layout.Presets, []string{"1/3", "1/2", "1"}) || !reflect.DeepEqual(c.Log.Debug, []string{"core", "input"}) {
