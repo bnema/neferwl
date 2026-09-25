@@ -126,6 +126,74 @@ func (_c *MockRenderer_CopyBGRX_Call) RunAndReturn(run func(dst []byte, pitch in
 	return _c
 }
 
+// ExportTargets provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
+	ret := _mock.Called(n, modifiers)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExportTargets")
+	}
+
+	var r0 []ports.DMABuf
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64) ([]ports.DMABuf, error)); ok {
+		return returnFunc(n, modifiers)
+	}
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64) []ports.DMABuf); ok {
+		r0 = returnFunc(n, modifiers)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]ports.DMABuf)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(int, []uint64) error); ok {
+		r1 = returnFunc(n, modifiers)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRenderer_ExportTargets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExportTargets'
+type MockRenderer_ExportTargets_Call struct {
+	*mock.Call
+}
+
+// ExportTargets is a helper method to define mock.On call
+//   - n int
+//   - modifiers []uint64
+func (_e *MockRenderer_Expecter) ExportTargets(n any, modifiers any) *MockRenderer_ExportTargets_Call {
+	return &MockRenderer_ExportTargets_Call{Call: _e.mock.On("ExportTargets", n, modifiers)}
+}
+
+func (_c *MockRenderer_ExportTargets_Call) Run(run func(n int, modifiers []uint64)) *MockRenderer_ExportTargets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 []uint64
+		if args[1] != nil {
+			arg1 = args[1].([]uint64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_ExportTargets_Call) Return(dMABufs []ports.DMABuf, err error) *MockRenderer_ExportTargets_Call {
+	_c.Call.Return(dMABufs, err)
+	return _c
+}
+
+func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifiers []uint64) ([]ports.DMABuf, error)) *MockRenderer_ExportTargets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Pixels provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) Pixels() *image.RGBA {
 	ret := _mock.Called()
@@ -226,6 +294,46 @@ func (_c *MockRenderer_Render_Call) Return(err error) *MockRenderer_Render_Call 
 
 func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[ports.WindowID]ports.SurfaceContent) error) *MockRenderer_Render_Call {
 	_c.Call.Return(run)
+	return _c
+}
+
+// UseTarget provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) UseTarget(i int) {
+	_mock.Called(i)
+	return
+}
+
+// MockRenderer_UseTarget_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UseTarget'
+type MockRenderer_UseTarget_Call struct {
+	*mock.Call
+}
+
+// UseTarget is a helper method to define mock.On call
+//   - i int
+func (_e *MockRenderer_Expecter) UseTarget(i any) *MockRenderer_UseTarget_Call {
+	return &MockRenderer_UseTarget_Call{Call: _e.mock.On("UseTarget", i)}
+}
+
+func (_c *MockRenderer_UseTarget_Call) Run(run func(i int)) *MockRenderer_UseTarget_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_UseTarget_Call) Return() *MockRenderer_UseTarget_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockRenderer_UseTarget_Call) RunAndReturn(run func(i int)) *MockRenderer_UseTarget_Call {
+	_c.Run(run)
 	return _c
 }
 

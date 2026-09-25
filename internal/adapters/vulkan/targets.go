@@ -1,0 +1,203 @@
+package vulkan
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"slices"
+	"unsafe"
+
+	"github.com/bnema/nefertty/internal/ports"
+	vk "github.com/bnema/purego-vulkan/vulkan"
+)
+
+// Render targets (ADR 014). A DRM output scans out images the renderer
+// draws into: ExportTargets allocates them with a DRM format modifier the
+// display accepts and exports their memory as dmabufs, which the output
+// turns into KMS framebuffers. Render then composes straight into the
+// selected target and the output flips to it; nothing is copied by the
+// CPU. The internal image is the target until then (headless, tests).
+// Readback into host memory happens only for Pixels and CopyBGRX.
+
+// target is an image frames are drawn into.
+type target struct {
+	image  vk.Image
+	memory vk.DeviceMemory
+	layout vk.ImageLayout
+	// exported images are shared with the display: ownership goes to the
+	// foreign queue family after each frame, and KMS reads them.
+	exported bool
+}
+
+// fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.
+const fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
+
+// ExportTargets allocates n exported images of the output size.
+func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
+	if r.dd.GetMemoryFdKHR == nil || r.dd.GetImageDrmFormatModifierPropertiesEXT == nil || len(r.dmabuf.Formats) == 0 {
+		return nil, errors.New("device cannot export dmabufs")
+	}
+	mods := r.exportModifiers(modifiers)
+	if len(mods) == 0 {
+		return nil, errors.New("no XRGB8888 modifier both the device and the display accept")
+	}
+	r.dropTargets()
+	var out []ports.DMABuf
+	for range n {
+		t, buf, err := r.exportTarget(mods)
+		if err != nil {
+			r.dropTargets()
+			for _, b := range out {
+				for _, p := range b.Planes {
+					p.File.Close()
+				}
+			}
+			return nil, err
+		}
+		r.targets = append(r.targets, t)
+		out = append(out, buf)
+	}
+	r.current = 0
+	return out, nil
+}
+
+// UseTarget selects the exported image the next frames draw into.
+func (r *Renderer) UseTarget(i int) {
+	if i >= 0 && i < len(r.targets) {
+		r.current = i
+	}
+}
+
+// target is the image the next frame draws into.
+func (r *Renderer) target() *target {
+	if len(r.targets) > 0 {
+		return r.targets[r.current]
+	}
+	return &r.own
+}
+
+// exportModifiers are the XRGB8888 modifiers the device renders to and
+// exports with one plane, restricted to the display's when given.
+func (r *Renderer) exportModifiers(display []uint64) []uint64 {
+	var out []uint64
+	for _, m := range r.renderMods {
+		if len(display) == 0 || slices.Contains(display, m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// probeRenderModifiers lists the B8G8R8A8 modifiers usable as a transfer
+// destination with a single plane that the device can export.
+func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
+	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
+	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
+	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
+	if list.DrmFormatModifierCount == 0 {
+		return
+	}
+	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
+	list.DrmFormatModifierProperties = &mods[0]
+	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
+	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit)
+	for _, m := range mods[:list.DrmFormatModifierCount] {
+		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
+			r.renderMods = append(r.renderMods, m.DrmFormatModifier)
+		}
+	}
+}
+
+func (r *Renderer) exportable(physical vk.PhysicalDevice, modifier uint64) bool {
+	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
+	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: vk.FormatB8g8r8a8Unorm, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage}
+	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
+	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
+	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
+		return false
+	}
+	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureExportableBit != 0
+}
+
+// VK_FORMAT_FEATURE_TRANSFER_SRC_BIT / _DST_BIT (Vulkan 1.1), missing from
+// the generated bindings.
+const (
+	formatFeatureTransferSrc = 1 << 14
+	formatFeatureTransferDst = 1 << 15
+)
+
+const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit
+
+// exportTarget creates one exported image with a modifier from mods.
+func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
+	d := r.dd
+	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
+	ok := false
+	defer func() {
+		if !ok {
+			r.freeTarget(t)
+		}
+	}()
+	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: uint32(len(mods)), DrmFormatModifiers: &mods[0]}
+	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	if err := checked("vkCreateImage(target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	var req vk.MemoryRequirements
+	d.GetImageMemoryRequirements(r.device, t.image, &req)
+	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
+	if err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: t.image}
+	export := vk.ExportMemoryAllocateInfo{SType: vk.StructureTypeExportMemoryAllocateInfo, Next: unsafe.Pointer(&dedicated), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&export), AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(target)", d.AllocateMemory(r.device, &alloc, nil, &t.memory)); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	if err := checked("vkBindImageMemory(target)", d.BindImageMemory(r.device, t.image, t.memory, 0)); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	props := vk.ImageDrmFormatModifierPropertiesEXT{SType: vk.StructureTypeImageDRMFormatModifierPropertiesEXT}
+	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.device, t.image, &props)); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	var layout vk.SubresourceLayout
+	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
+	d.GetImageSubresourceLayout(r.device, t.image, &sub, &layout)
+	var fd int32
+	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: t.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
+	f := os.NewFile(uintptr(fd), "nefertty-target")
+	if f == nil {
+		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
+	}
+	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourccXRGB, Modifier: props.DrmFormatModifier, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}
+	ok = true
+	return t, buf, nil
+}
+
+func (r *Renderer) freeTarget(t *target) {
+	if t.image != 0 {
+		r.dd.DestroyImage(r.device, t.image, nil)
+		t.image = 0
+	}
+	if t.memory != 0 {
+		r.dd.FreeMemory(r.device, t.memory, nil)
+		t.memory = 0
+	}
+}
+
+func (r *Renderer) dropTargets() {
+	if len(r.targets) > 0 && r.device != 0 {
+		_ = checked("vkDeviceWaitIdle", r.dd.DeviceWaitIdle(r.device))
+	}
+	for _, t := range r.targets {
+		r.freeTarget(t)
+	}
+	r.targets, r.current = nil, 0
+}

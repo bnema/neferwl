@@ -457,7 +457,11 @@ func TestStateSnapshot(t *testing.T) {
 	<-r.state // the channel holds the latest snapshot only
 	r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
 	receive(t, r.scenes)
+	// Snapshots from before window 2 may still be queued: wait for it.
 	st := receive(t, r.state)
+	for len(st.Windows) < 2 {
+		st = receive(t, r.state)
+	}
 	want := ports.State{
 		Output:  "DP-2",
 		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1}, {Name: "DP-2", Active: 1, Count: 1}},

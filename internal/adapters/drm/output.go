@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"time"
+	"unsafe"
 
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -16,13 +17,18 @@ import (
 // Output is one KMS connector driven with two dumb buffers. One goroutine
 // runs it (Run) and closes it.
 type Output struct {
-	fd        int
-	flipped   <-chan int // page flips of this CRTC, from Card.ReadEvents
-	crtc      uint32
-	conn      connector
-	mode      modeInfo
-	saved     modeCrtc
-	bufs      [2]*dumbBuffer
+	fd      int
+	flipped <-chan int // page flips of this CRTC, from Card.ReadEvents
+	crtc    uint32
+	conn    connector
+	mode    modeInfo
+	saved   modeCrtc
+	// fbs are the two images frames alternate between, back the one the
+	// next frame draws into. They are renderer images exported as dmabufs
+	// (ADR 014: zero copy), or dumb buffers filled by the CPU when the GPU
+	// cannot export a scanout-capable image (logged fallback).
+	fbs       [2]uint32
+	bufs      [2]*dumbBuffer // fallback only
 	back      int
 	pending   bool
 	flipStart time.Time
@@ -52,12 +58,6 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
 	}
-	for i := range o.bufs {
-		if o.bufs[i], err = newDumb(card.fd, o.Width(), o.Height()); err != nil {
-			o.Close()
-			return nil, err
-		}
-	}
 	if o.cursor, err = newCursor(card.fd, crtc, slices.Index(card.crtcs, crtc)); err != nil {
 		log.Warn().Err(err).Str("connector", c.name).Msg("no hardware cursor")
 	}
@@ -86,19 +86,20 @@ func (o *Output) Height() int { return int(o.mode.VDisplay) }
 func (o *Output) modeset() error {
 	o.pending = false
 	o.shown, o.queued = 0, 0
-	front := o.bufs[1-o.back]
-	if err := setCrtc(o.fd, o.crtc, o.conn.id, front.fbID, &o.mode); err != nil {
+	if err := setCrtc(o.fd, o.crtc, o.conn.id, o.fbs[1-o.back], &o.mode); err != nil {
 		return fmt.Errorf("set crtc: %w", err)
 	}
 	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
 	return nil
 }
 
-// present copies img into the back buffer and queues a page flip.
+// present queues a page flip to the frame just drawn into the back image
+// (copied into it by the CPU on the dumb-buffer fallback).
 func (o *Output) present(r ports.Renderer) error {
-	b := o.bufs[o.back]
-	r.CopyBGRX(b.mem, int(b.pitch))
-	if err := flip(o.fd, o.crtc, b.fbID); err != nil {
+	if b := o.bufs[o.back]; b != nil {
+		r.CopyBGRX(b.mem, int(b.pitch))
+	}
+	if err := flip(o.fd, o.crtc, o.fbs[o.back]); err != nil {
 		return err
 	}
 	o.pending, o.flipStart = true, time.Now()
@@ -159,11 +160,7 @@ func (o *Output) Close() {
 			_ = setCrtc(o.fd, s.crtcID, ids[0], s.fbID, &s.mode)
 		}
 	}
-	for _, b := range o.bufs {
-		if b != nil {
-			b.destroy(o.fd)
-		}
-	}
+	o.freeImages()
 	o.shown, o.queued = 0, 0
 	o.dropClientFBs(time.Now(), true)
 }
@@ -183,10 +180,23 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	case enabled = <-active:
 	default:
 	}
-	if enabled {
-		if err := o.modeset(); err != nil {
+	// Output images, from the best to the fallback (ADR 014). KMS may
+	// refuse an image only at modeset: then the next kind is tried.
+	for kind := imagesDriver; ; kind++ {
+		got, err := o.setupImages(r, kind)
+		if err == nil && enabled {
+			if err = o.modeset(); err != nil {
+				o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
+				o.freeImages()
+			}
+		}
+		if err == nil {
+			break
+		}
+		if got == imagesDumb {
 			return err
 		}
+		kind = got
 	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
@@ -286,6 +296,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		start := time.Now()
 		direct, err := o.tryScanout(scene, surfaces)
 		if !direct {
+			r.UseTarget(o.back)
 			if err := r.Render(scene, surfaces); err != nil {
 				return fmt.Errorf("render frame: %w", err)
 			}
@@ -347,5 +358,83 @@ func (o *Output) flushReport(presented chan<- ports.OutputPresented) {
 	case presented <- o.unsent:
 		o.unsent = ports.OutputPresented{}
 	default:
+	}
+}
+
+// imageKind is how output images are made, best first.
+type imageKind int
+
+const (
+	imagesDriver imageKind = iota // exported, modifier chosen by the driver
+	imagesLinear                  // exported, linear
+	imagesDumb                    // dumb buffers filled by CPU copies
+)
+
+// setupImages gives the output the two images it flips between: renderer
+// targets exported as dmabufs, or dumb buffers as a logged fallback. A
+// kind that fails falls through to the next one.
+func (o *Output) setupImages(r ports.Renderer, kind imageKind) (imageKind, error) {
+	var err error
+	for ; kind < imagesDumb; kind++ {
+		mods := []uint64(nil)
+		if kind == imagesLinear {
+			mods = []uint64{0}
+		}
+		if err = o.exportImages(r, mods); err == nil {
+			return kind, nil
+		}
+		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
+	}
+	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("output falls back to CPU copies (ADR 014)")
+	for i := range o.bufs {
+		if o.bufs[i], err = newDumb(o.fd, o.Width(), o.Height()); err != nil {
+			o.freeImages()
+			return imagesDumb, err
+		}
+		o.fbs[i] = o.bufs[i].fbID
+	}
+	return imagesDumb, nil
+}
+
+// exportImages makes the renderer's exported targets the output images.
+func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
+	bufs, err := r.ExportTargets(len(o.fbs), mods)
+	if err != nil {
+		return err
+	}
+	for i := range bufs {
+		if err == nil {
+			o.fbs[i], err = o.card.addFB(&bufs[i])
+		}
+		bufs[i].Planes[0].File.Close()
+	}
+	// GPU memory starts undefined (old VRAM contents): clear both images
+	// before the modeset shows one.
+	for i := range o.fbs {
+		if err != nil {
+			break
+		}
+		r.UseTarget(i)
+		err = r.Render(ports.Scene{Background: "#000000"}, nil)
+	}
+	if err != nil {
+		o.freeImages()
+		return err
+	}
+	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")
+	return nil
+}
+
+// freeImages removes the output images; dumb buffers own their fb.
+func (o *Output) freeImages() {
+	for i, fb := range o.fbs {
+		if b := o.bufs[i]; b != nil {
+			b.destroy(o.fd)
+			o.bufs[i] = nil
+		} else if fb != 0 {
+			v := fb
+			_ = ioctl(o.fd, ioctlRmFB, unsafe.Pointer(&v))
+		}
+		o.fbs[i] = 0
 	}
 }
