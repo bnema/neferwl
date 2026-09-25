@@ -361,7 +361,8 @@ func TestMoveColumnCrossesOutputs(t *testing.T) {
 	if out := lastOutputs(t, r.commands); out.Focused != "DP-2" {
 		t.Fatal(out.Focused)
 	}
-	// Back left: it lands on the right side of DP-1.
+	// Back left (no terminal kept here, so a last column may move): it
+	// lands on the right side of DP-1.
 	set = r.key(t, "Left", ports.ModAlt|ports.ModShift)
 	if got := shown(set)["DP-1"]; len(got) != 2 {
 		t.Fatal(got)
@@ -408,14 +409,40 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 1 || got["DP-1"][0] == got["DP-2"][0] {
 		t.Fatal(got)
 	}
-	// Closing the last window spawns a new terminal; nothing while pending.
+	// A terminal that exits right after mapping is not respawned at once
+	// (no loop for a broken terminal command).
 	r.client <- ports.WindowUnmapped{ID: 2}
 	receive(t, r.scenes)
-	if v := receive(t, r.spawn); v.Argv[0] != "foot" {
-		t.Fatal(v)
-	}
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
 	if len(r.spawn) != 0 {
-		t.Fatal("spawned twice")
+		t.Fatal("respawned at once")
+	}
+}
+
+func TestLastColumnStaysOnItsOutput(t *testing.T) {
+	r := startRig(t, true, nil, left, right)
+	r.mapWindow(t, 1)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestKeyboardScreenFocusSticksUntilPointerLeaves(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	r.input <- ports.PointerMotion{X: 10, Y: 10}
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	// Jitter on DP-1 keeps DP-2 focused: the next window opens there.
+	r.input <- ports.PointerMotion{X: 11, Y: 10}
+	if got := shown(r.mapWindow(t, 2)); len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	// Entering DP-1 again focuses it.
+	r.input <- ports.PointerMotion{X: 250, Y: 10}
+	r.input <- ports.PointerMotion{X: 10, Y: 10}
+	receive(t, r.scenes)
+	if got := shown(r.mapWindow(t, 3)); len(got["DP-1"]) != 2 {
+		t.Fatal(got)
 	}
 }

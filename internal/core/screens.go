@@ -99,7 +99,7 @@ func (c *Core) byName(name string) (*screen, *Workspace) {
 	return nil, nil
 }
 
-// configScale is output.<name>.scale, else 1.
+// isPrimary reports output.<name>.primary.
 func (c *Core) isPrimary(name string) bool {
 	for _, o := range c.cfg.Outputs {
 		if o.Name == name && o.Primary {
@@ -121,6 +121,7 @@ func (c *Core) anyWindow() bool {
 	return false
 }
 
+// configScale is output.<name>.scale, else 1.
 func (c *Core) configScale(name string) float64 {
 	v := 1.0
 	for _, o := range c.cfg.Outputs {

@@ -49,6 +49,7 @@ type Core struct {
 	grab             WindowID
 	buttons          map[uint32]bool
 	cursorX, cursorY float64 // global, logical
+	pointerOutput    string  // output under the pointer at the last motion
 	seq              uint64
 	// layerChanged is set once layer state arrives from wayland.
 	layerChanged bool
@@ -549,10 +550,15 @@ func (c *Core) Run(ctx context.Context) error {
 				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y)
 				// The focused screen follows the pointer, so new windows
 				// and launchers open where the user is.
-				if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.cur().name() {
-					c.focusScreen = c.screenIndex(o.Info.Name)
-					if err := c.publish(ctx); err != nil {
-						return nil
+				// Only a pointer entering another output switches: keyboard
+				// moves to another screen stick until then. Not mid-drag.
+				if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.pointerOutput && c.grab == 0 {
+					c.pointerOutput = o.Info.Name
+					if o.Info.Name != c.cur().name() {
+						c.focusScreen = c.screenIndex(o.Info.Name)
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
 					}
 				}
 				id, x, y := c.hit(c.cursorX, c.cursorY)
