@@ -31,7 +31,7 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string) []string {
 			continue
 		}
 		switch {
-		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"):
+		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"), strings.HasPrefix(key, "XCURSOR_"):
 			values[key] = value
 		}
 	}
@@ -39,6 +39,11 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string) []string {
 	values["XDG_RUNTIME_DIR"] = runtimeDir
 	values["XDG_CURRENT_DESKTOP"] = "nefertty"
 	values["XDG_SESSION_TYPE"] = "wayland"
+	// X11 apps (through Xwayland) and toolkits pick their own cursor size:
+	// give them the compositor's, 24 unless set.
+	if values["XCURSOR_SIZE"] == "" {
+		values["XCURSOR_SIZE"] = "24"
+	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
