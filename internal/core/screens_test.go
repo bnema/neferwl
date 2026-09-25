@@ -361,7 +361,14 @@ func TestMoveColumnCrossesOutputs(t *testing.T) {
 	if out := lastOutputs(t, r.commands); out.Focused != "DP-2" {
 		t.Fatal(out.Focused)
 	}
-	// Back left: it lands on the right side of DP-1.
+	// It is DP-2's only column now: it stays. With a second one, the
+	// focused column goes back and lands on the right side of DP-1.
+	set = r.key(t, "Left", ports.ModAlt|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	r.mapWindow(t, 3)
+	r.key(t, "Left", ports.ModAlt) // focus window 2, the left column
 	set = r.key(t, "Left", ports.ModAlt|ports.ModShift)
 	if got := shown(set)["DP-1"]; len(got) != 2 {
 		t.Fatal(got)
@@ -417,5 +424,14 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
 	if len(r.spawn) != 0 {
 		t.Fatal("spawned twice")
+	}
+}
+
+func TestLastColumnStaysOnItsOutput(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatal(got)
 	}
 }
