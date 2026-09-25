@@ -103,7 +103,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		return err
 	}
 	log.Info().Str("WAYLAND_DISPLAY", server.SocketName()).Msg("listening")
-	childEnv := launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir)
+	childEnv := launcher.ChildEnv(os.Environ(), server.SocketName(), runtimeDir, cursorSize())
 	statePath, err := statefile.Path(runtimeDir, server.SocketName())
 	if err != nil {
 		log.Warn().Err(err).Msg("state file disabled")
