@@ -39,6 +39,12 @@ type WindowFullscreenRequest struct {
 
 func (WindowFullscreenRequest) clientEvent() {}
 
+// WindowActivate carries wayland → core a valid xdg-activation request:
+// show the window's workspace and focus it.
+type WindowActivate struct{ ID WindowID }
+
+func (WindowActivate) clientEvent() {}
+
 // WindowAppID carries wayland → core an app ID set after the window mapped.
 type WindowAppID struct {
 	ID    WindowID

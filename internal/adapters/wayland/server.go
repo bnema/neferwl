@@ -62,14 +62,19 @@ type Server struct {
 	// lastFlip is each output's latest page flip.
 	fifoSurfaces map[*surface]struct{}
 	lastFlip     map[string]time.Time
-	surfaces     map[*server.Resource]*surface
-	buffers      map[*server.Resource]clientBuffer
-	dmabuf       *dmabufGlobal
-	serial       uint32
+	// tokens are the issued xdg-activation tokens (activation.go).
+	tokens   map[string]activationToken
+	surfaces map[*server.Resource]*surface
+	buffers  map[*server.Resource]clientBuffer
+	dmabuf   *dmabufGlobal
+	serial   uint32
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
-	press                   uint32
-	pressClient             server.Client
+	press       uint32
+	pressClient server.Client
+	// pressAt and focusAt date the last press and keyboard focus change,
+	// for xdg-activation tokens.
+	pressAt, focusAt        time.Time
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
@@ -154,6 +159,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
+	s.tokens = map[string]activationToken{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
 		if e != nil {
@@ -383,7 +389,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			state := uint32(0)
 			if c.Pressed {
 				state = 1
-				s.press, s.pressClient = s.serial, w.xdg.resource.Client()
+				s.press, s.pressClient, s.pressAt = s.serial, w.xdg.resource.Client(), time.Now()
 			}
 			for _, p := range s.windowPointers(w) {
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
@@ -417,7 +423,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 		if c.Key.Pressed {
 			if surf, _ := s.focusTarget(c.ID); surf != nil {
-				s.press, s.pressClient = s.serial, surf.Client()
+				s.press, s.pressClient, s.pressAt = s.serial, surf.Client(), time.Now()
 			}
 		}
 		for _, k := range keyboards {
@@ -568,6 +574,14 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
+	old := s.focusClient()
+	defer func() {
+		// Tokens of a client losing the focus die with it.
+		if now := s.focusClient(); now != old {
+			s.dropTokens(old)
+			s.focusAt = time.Now()
+		}
+	}()
 	if surf, keyboards := s.focusTarget(s.focused); surf != nil {
 		for _, k := range keyboards {
 			s.serial++

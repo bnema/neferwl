@@ -449,3 +449,35 @@ func TestFixedOverflowEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+// Activating a window hidden by another's fullscreen shows it; a floating
+// target stays above the fullscreen window, which keeps it.
+func TestActivateLeavesFullscreen(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(w *Workspace)
+		keep  bool
+	}{
+		{"fixed", func(w *Workspace) { w.Overflow = OverflowFixed; w.MaxColumns = 2; w.AddWindow(3) }, false},
+		{"same column", func(w *Workspace) { w.Columns[0].Windows = append(w.Columns[0].Windows, 3) }, false},
+		{"floating", func(w *Workspace) { w.AddFloating(3, 10, 10) }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &Workspace{}
+			w.SetOutput(100, 80)
+			w.AddWindow(2)
+			tc.setup(w)
+			w.FocusID(2)
+			w.SetFullscreen(2, true)
+			w.Activate(3)
+			for _, p := range w.Layout() {
+				if p.ID == 3 && (p.Hidden || !p.Focused) {
+					t.Fatalf("3 not shown and focused: %+v", p)
+				}
+				if p.ID == 2 && p.Fullscreen != tc.keep {
+					t.Fatalf("fullscreen of 2 = %v", p.Fullscreen)
+				}
+			}
+		})
+	}
+}
