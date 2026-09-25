@@ -139,8 +139,9 @@ func (c *cursors) set(output string, cur cursor) {
 		return
 	}
 	c.all[output] = cur
-	// Before the first move nothing is shown yet: hiding would stick.
-	if c.last != "" && output != c.last {
+	// Only the output under the pointer shows it; before the first move,
+	// none does (a new cursor would show at its top-left corner).
+	if output != c.last {
 		cur.Hide()
 	}
 }

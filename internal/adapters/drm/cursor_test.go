@@ -139,3 +139,32 @@ func TestCursorStats(t *testing.T) {
 		t.Fatalf("not reset: %+v", s)
 	}
 }
+
+// A move still waiting for its vblank when the pointer leaves the output
+// must not show the cursor again.
+func TestCursorHideDropsQueuedMove(t *testing.T) {
+	c, plane := testCursor(t)
+	vblank := make(chan struct{})
+	set := make(chan modeCursor2, 16)
+	plane.EXPECT().WaitVblank().RunAndReturn(func() error { <-vblank; return nil })
+	plane.EXPECT().Set(mock.Anything).RunAndReturn(func(v *modeCursor2) error { set <- *v; return nil })
+	c.start()
+	defer func() { close(vblank); c.close() }()
+	c.Move(10, 10)
+	c.Hide()
+	if v := <-set; v.handle != 0 || v.flags != cursorBO {
+		t.Fatalf("hide: %+v", v)
+	}
+	vblank <- struct{}{}
+	select {
+	case v := <-set:
+		t.Fatalf("queued move applied after hide: %+v", v)
+	case <-time.After(20 * time.Millisecond):
+	}
+	// The next move shows it again.
+	c.Move(20, 20)
+	vblank <- struct{}{}
+	if v := <-set; v.flags != cursorBO|cursorMove || v.x != 20 {
+		t.Fatalf("show: %+v", v)
+	}
+}

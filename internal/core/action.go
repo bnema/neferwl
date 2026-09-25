@@ -114,6 +114,32 @@ func (c *Core) applyAction(a Action) Effect {
 			c.focusScreen = i
 			return Effect{}
 		}
+	case ActionMoveColumnLeft, ActionMoveColumnRight:
+		// Past the edge the column moves to the neighbor screen, on the
+		// side facing this one, and focus follows it.
+		w := c.cur().mon.Current()
+		dir = 1
+		if a == ActionMoveColumnLeft {
+			dir = -1
+		}
+		edge := (dir < 0 && w.Focus == 0) || (dir > 0 && w.Focus == len(w.Columns)-1)
+		if i := c.neighbor(dir); edge && i >= 0 {
+			col, ok := w.takeColumn()
+			if !ok {
+				return Effect{}
+			}
+			from := c.cur()
+			c.focusScreen = i
+			to := c.cur().mon.Current()
+			at := 0
+			if dir < 0 {
+				at = len(to.Columns)
+			}
+			to.insertColumn(at, col)
+			from.mon.normalize()
+			c.cur().mon.normalize()
+			return Effect{}
+		}
 	}
 	return c.cur().mon.Apply(a)
 }
