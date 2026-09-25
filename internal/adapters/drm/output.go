@@ -293,8 +293,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if o.unsent.Output != "" {
 			retry = time.After(time.Millisecond)
 		}
+		// A composed screen that stopped changing still drops VRR on time.
+		var vrrOff <-chan time.Time
+		if o.vrrOn && !o.composedSince.IsZero() {
+			vrrOff = time.After(max(0, vrrHold-time.Since(o.composedSince)))
+		}
 		select {
 		case <-retry:
+			continue
+		case <-vrrOff:
+			o.setVRR(false)
 			continue
 		case <-ctx.Done():
 			return nil
@@ -365,10 +373,6 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			dirty = dirty || scene.Shows(c.ID)
 		case <-stats.C:
 			o.dropClientFBs(time.Now(), false)
-			// A composed screen that stopped changing still drops VRR.
-			if !o.composedSince.IsZero() && time.Since(o.composedSince) > vrrHold {
-				o.setVRR(false)
-			}
 			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
 			if o.cursor != nil {
 				cs := o.cursor.TakeStats()
