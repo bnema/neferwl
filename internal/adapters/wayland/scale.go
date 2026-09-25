@@ -16,6 +16,8 @@ import (
 // outputOfSurface is the output a surface is on: its window's configured
 // output, its layer output, or the focused one.
 func (s *Server) outputOfSurface(surf *surface) *output {
+	// Subsurfaces are on their root's output.
+	surf = surf.root()
 	name := ""
 	switch {
 	case surf.xdg != nil && surf.xdg.window != nil:
@@ -24,6 +26,14 @@ func (s *Server) outputOfSurface(surf *surface) *output {
 		return surf.layer.output
 	}
 	return s.outputByName(name)
+}
+
+// sendTreeScale sends the scale to a surface and its subsurfaces.
+func (surf *surface) sendTreeScale() {
+	surf.sendScale()
+	for _, ch := range surf.sub.children {
+		ch.sendTreeScale()
+	}
 }
 
 // sendScale tells the surface about its output: enter/leave, the integer

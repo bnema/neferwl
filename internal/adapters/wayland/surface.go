@@ -35,10 +35,109 @@ type surface struct {
 	// on is the output the surface entered; scale is the last scale sent.
 	on    *output
 	scale float64
+	// content is the last content built from this surface's own buffer;
+	// has is false while no buffer is attached.
+	content ports.SurfaceContent
+	has     bool
+	sub     subState
+}
+
+// subState is the subsurface tree: parent is set on subsurfaces, children
+// are ordered bottom to top, below marks children under their parent.
+type subState struct {
+	// role is the live wl_subsurface, nil when the surface has none.
+	role         *wayland.Subsurface
+	parent       *surface
+	children     []*surface
+	x, y         int // committed position, from the parent origin
+	pendX, pendY int
+	moved        bool // a position waits for the parent commit
+	below        bool
+}
+
+// root is the top of the surface's subsurface tree.
+func (s *surface) root() *surface {
+	for s.sub.parent != nil {
+		s = s.sub.parent
+	}
+	return s
+}
+
+// windowID is the mapped window or layer the surface draws, or 0.
+func (s *surface) windowID() ports.WindowID {
+	if s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped {
+		return s.xdg.window.id
+	}
+	if s.layer != nil && s.layer.mapped {
+		return s.layer.id
+	}
+	return 0
+}
+
+// tree is the root's content with its subsurfaces flattened.
+func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
+	c := s.content
+	c.ID = id
+	c.Children = nil
+	for _, ch := range s.sub.children {
+		ch.appendTree(&c.Children, ch.sub.x, ch.sub.y, ch.sub.below)
+	}
+	if s.xdg != nil {
+		c.Geometry = s.xdg.geometry
+	}
+	return c
+}
+
+// appendTree flattens a subsurface at (x, y) from the root: its children
+// below it, itself, then its children above.
+func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
+	for _, ch := range s.sub.children {
+		if ch.sub.below {
+			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+		}
+	}
+	if s.has {
+		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.content})
+	}
+	for _, ch := range s.sub.children {
+		if !ch.sub.below {
+			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+		}
+	}
+}
+
+// redraw sends the tree of a mapped root to the outputs.
+func (s *surface) redraw() {
+	r := s.root()
+	if id := r.windowID(); id != 0 && s.server.channels.Contents != nil {
+		s.server.emitContent(r.tree(id))
+	}
+}
+
+// detach removes a subsurface from its parent and redraws the parent.
+func (s *surface) detach() {
+	p := s.sub.parent
+	if p == nil {
+		return
+	}
+	for i, ch := range p.sub.children {
+		if ch == s {
+			p.sub.children = append(p.sub.children[:i:i], p.sub.children[i+1:]...)
+			break
+		}
+	}
+	s.sub.parent = nil
+	p.redraw()
+	s.sendScale()
 }
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	s.detach()
+	for _, ch := range s.sub.children {
+		ch.sub.parent = nil
+	}
+	s.sub.children = nil
 	for _, cb := range s.callbacks {
 		cb.Destroy()
 	}
@@ -90,35 +189,45 @@ func (s *surface) Commit(*wayland.Surface) {
 	if s.role != nil {
 		s.role(s.current != nil)
 	}
-	id := ports.WindowID(0)
-	if s.xdg != nil && s.xdg.window != nil && s.xdg.window.mapped {
-		id = s.xdg.window.id
-	}
-	if s.layer != nil && s.layer.mapped {
-		id = s.layer.id
-	}
-	if fresh && id != 0 && s.server.channels.Contents != nil {
-		b := s.current
-		if state, ok := s.server.buffers[b.Resource]; ok {
-			if c, ok := state.content(id); ok {
+	if fresh {
+		if state, ok := s.server.buffers[s.current.Resource]; ok {
+			if c, ok := state.content(0); ok {
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
-				if c.Width != s.lastW || c.Height != s.lastH {
+				if s.sub.parent == nil && (c.Width != s.lastW || c.Height != s.lastH) {
 					s.lastW, s.lastH = c.Width, c.Height
-					s.server.log.Info().Uint64("id", uint64(id)).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
+					s.server.log.Info().Uint64("id", uint64(s.windowID())).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
 				}
-				s.server.emitContent(c)
+				s.content, s.has = c, true
 			} else if shm, ok := state.(*buffer); ok {
 				shm.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
 			}
 			// wl_shm pixels were copied: the client may reuse the buffer.
 			// A dmabuf is read in place until the next buffer replaces it.
 			if _, gpu := state.(*dmabufBuffer); !gpu {
-				if b.Resource.Alive() {
-					b.SendRelease()
+				if s.current.Resource.Alive() {
+					s.current.SendRelease()
 				}
 				s.released = true
 			}
 		}
+	}
+	if s.current == nil {
+		s.content, s.has = ports.SurfaceContent{}, false
+	}
+	// Subsurface positions apply on the parent commit.
+	moved := false
+	for _, ch := range s.sub.children {
+		if ch.sub.moved {
+			ch.sub.x, ch.sub.y, ch.sub.moved = ch.sub.pendX, ch.sub.pendY, false
+			moved = true
+		}
+	}
+	geometry := false
+	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
+		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
+	}
+	if fresh || moved || geometry || s.sub.parent != nil {
+		s.redraw()
 	}
 }
 func (*surface) Damage(*wayland.Surface, int32, int32, int32, int32)       {}

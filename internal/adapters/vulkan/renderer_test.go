@@ -247,3 +247,59 @@ func TestRendererScale(t *testing.T) {
 		t.Errorf("clipped column = %v", got)
 	}
 }
+
+// solidContent is a w×h B8G8R8A8 buffer of one color.
+func solidContent(w, h int, c color.RGBA) ports.SurfaceContent {
+	px := make([]byte, w*h*4)
+	for i := 0; i < len(px); i += 4 {
+		px[i], px[i+1], px[i+2], px[i+3] = c.B, c.G, c.R, 255
+	}
+	return ports.SurfaceContent{Width: w, Height: h, Stride: w * 4, Pixels: px}
+}
+
+// The window geometry lands on the window rect and the client shadow
+// around it is clipped; subsurfaces draw from the root origin, above or
+// below it.
+func TestRendererGeometryAndSubsurfaces(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	red, green, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}
+	bg := color.RGBA{16, 32, 48, 255}
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 10}, Borderless: true}}}
+	// A 30×20 surface whose window is the 20×10 at (5, 5): a 5px shadow.
+	root := solidContent(30, 20, red)
+	root.Geometry = ports.Rect{X: 5, Y: 5, W: 20, H: 10}
+	// Green covers the window's top-left 4×4 corner; blue sits below the
+	// root, hidden by it.
+	root.Children = []ports.Subsurface{
+		{X: 3, Y: 3, Below: true, SurfaceContent: solidContent(30, 20, blue)},
+		{X: 5, Y: 5, SurfaceContent: solidContent(4, 4, green)},
+	}
+	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	px := r.Pixels()
+	for _, c := range []struct {
+		x, y int
+		want color.RGBA
+	}{
+		{10, 10, green}, {13, 13, green}, {14, 14, red}, {29, 19, red},
+		// The shadow and the child reaching past it are clipped.
+		{9, 10, bg}, {30, 19, bg}, {29, 20, bg},
+	} {
+		if got := px.At(c.x, c.y); got != c.want {
+			t.Errorf("At(%d,%d)=%v want %v", c.x, c.y, got, c.want)
+		}
+	}
+	// A root with no buffer of its own still shows its children.
+	only := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: solidContent(20, 10, blue)}}}
+	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: only}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Pixels().At(20, 15); got != blue {
+		t.Errorf("child only: %v", got)
+	}
+}
