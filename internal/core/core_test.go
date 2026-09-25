@@ -641,3 +641,84 @@ func TestPointerConstraint(t *testing.T) {
 		t.Fatalf("release %+v", got)
 	}
 }
+
+// A click outside a grabbing menu chain closes it, the topmost popup first.
+func TestPopupChainDismissOrder(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: ports.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+	for _, v := range []struct{ id, parent ports.WindowID }{{2, 1}, {3, 2}} {
+		client <- ports.PopupRequest{ID: v.id, Parent: v.parent, Positioner: pos, Grab: true}
+		for {
+			if cp, ok := command(t, commands).(ports.ConfigurePopup); ok && cp.ID == v.id {
+				break
+			}
+		}
+		client <- ports.PopupMapped{ID: v.id}
+		scene(t, scenes)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	// The window's far corner is outside both popups.
+	input <- ports.PointerMotion{X: 90, Y: 70}
+	input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	var closed []ports.WindowID
+	for len(closed) < 2 {
+		if v, ok := command(t, commands).(ports.ClosePopup); ok {
+			closed = append(closed, v.ID)
+		}
+	}
+	if closed[0] != 3 || closed[1] != 2 {
+		t.Fatalf("close order %v, want [3 2]", closed)
+	}
+}
+
+// A dialog over a fullscreen window gets the pointer.
+func TestFloatOverFullscreenHit(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10}
+	scene(t, scenes)
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: 50, Y: 40}
+	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
+		t.Fatalf("pointer went to %v, want the dialog", v)
+	}
+}

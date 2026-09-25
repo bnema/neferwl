@@ -506,6 +506,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			continue
 		}
 		x, y := w.Rect.X, w.Rect.Y
+		if w.Popup {
+			// Menus draw only what the client drew, shadows clipped.
+			content := contents[w.ID]
+			place(&content, x, y, w.Rect.W, w.Rect.H)
+			continue
+		}
 		// Content sits inside the border; core sized the client to match.
 		b := 0
 		if !w.Fullscreen && !w.Borderless {

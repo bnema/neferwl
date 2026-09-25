@@ -82,6 +82,7 @@ func (m *Monitor) take(w *Workspace) {
 func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Gaps = m.template.Gaps
+	w.border = m.template.border
 	w.SetOutput(m.template.Output.W, m.template.Output.H)
 	w.SetUsable(m.template.Usable)
 	if hidden {
@@ -116,7 +117,7 @@ func (m *Monitor) Current() *Workspace {
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
-	w.Columns, w.home = nil, ""
+	w.Columns, w.Floats, w.floatFocus, w.home = nil, nil, false, ""
 	return &w
 }
 
@@ -230,6 +231,15 @@ func (m *Monitor) AddWindow(id WindowID) {
 	m.normalize()
 }
 
+// AddFloating adds a floating window to the active workspace.
+func (m *Monitor) AddFloating(id WindowID, width, height int) {
+	if w, _ := m.find(id); w != nil {
+		return
+	}
+	m.Current().AddFloating(id, width, height)
+	m.normalize()
+}
+
 // RemoveWindow drops the window wherever it is; focus stays on the active workspace.
 func (m *Monitor) RemoveWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
@@ -255,8 +265,14 @@ func (m *Monitor) MoveToWorkspace(i int) {
 	if !ok || m.Workspaces[i] == cur {
 		return
 	}
-	cur.RemoveWindow(id)
-	m.Workspaces[i].AddWindow(id)
+	if f := cur.floatIndex(id); f >= 0 {
+		fl := cur.Floats[f]
+		cur.RemoveWindow(id)
+		m.Workspaces[i].AddFloating(id, fl.W, fl.H)
+	} else {
+		cur.RemoveWindow(id)
+		m.Workspaces[i].AddWindow(id)
+	}
 	m.normalize()
 }
 
@@ -271,10 +287,8 @@ func (m *Monitor) Layout() []Placement {
 			result = append(result, w.Layout()...)
 			continue
 		}
-		for _, c := range w.Columns {
-			for _, id := range c.Windows {
-				result = append(result, Placement{ID: id, Hidden: true})
-			}
+		for _, id := range w.windows() {
+			result = append(result, Placement{ID: id, Hidden: true})
 		}
 	}
 	return result
@@ -296,6 +310,7 @@ func (m *Monitor) SetOutput(width, height int) {
 }
 func (m *Monitor) SetUsable(r Rect)     { m.each(func(w *Workspace) { w.SetUsable(r) }) }
 func (m *Monitor) SetGaps(g int)        { m.each(func(w *Workspace) { w.SetGaps(g) }) }
+func (m *Monitor) SetBorder(b int)      { m.each(func(w *Workspace) { w.border = max(b, 0) }) }
 func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
 
 // SetMaxColumns sets the default; named workspaces may override it.
@@ -363,6 +378,9 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 			for _, id := range c.Windows {
 				m.Workspaces[m.Active].AddWindow(id)
 			}
+		}
+		for _, f := range w.Floats {
+			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
 		}
 	}
 	m.hidden = hidden

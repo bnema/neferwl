@@ -91,6 +91,8 @@ type Placement struct {
 	ID                          WindowID
 	Rect                        Rect
 	Fullscreen, Focused, Hidden bool
+	// Floating windows sit over the columns at their own size.
+	Floating bool
 	// Borderless is set when the column fills the usable width: it is the only
 	// column on screen, so no border marks focus.
 	Borderless bool
@@ -119,8 +121,14 @@ type Workspace struct {
 	Usable     Rect
 	Gaps       int
 	MaxColumns int
+	// border is drawn around floating windows, inside their rect.
+	border     int
 	presets    []Width
 	fullscreen WindowID
+	// Floats are floating windows, bottom to top; floatFocus is set while
+	// the top one has the focus instead of the columns.
+	Floats     []Float
+	floatFocus bool
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
 	// its position there, where it returns.
@@ -130,10 +138,51 @@ type Workspace struct {
 	termAt time.Time
 }
 
-func (w *Workspace) empty() bool { return len(w.Columns) == 0 }
+// Float is a floating window and its client size, logical.
+type Float struct {
+	ID   WindowID
+	W, H int
+}
+
+func (w *Workspace) empty() bool { return len(w.Columns) == 0 && len(w.Floats) == 0 }
+
+// windows lists every window: columns first, then floating ones.
+func (w *Workspace) windows() []WindowID {
+	var ids []WindowID
+	for _, c := range w.Columns {
+		ids = append(ids, c.Windows...)
+	}
+	for _, f := range w.Floats {
+		ids = append(ids, f.ID)
+	}
+	return ids
+}
+
+func (w *Workspace) floatIndex(id WindowID) int {
+	return slices.IndexFunc(w.Floats, func(f Float) bool { return f.ID == id })
+}
+
+// AddFloating shows a window over the columns and focuses it.
+func (w *Workspace) AddFloating(id WindowID, width, height int) {
+	if id == 0 || w.has(id) {
+		return
+	}
+	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height})
+	w.floatFocus = true
+}
+
+// ResizeFloating records the size a floating window draws.
+func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
+	if i := w.floatIndex(id); i >= 0 {
+		w.Floats[i].W, w.Floats[i].H = width, height
+	}
+}
 
 // has reports whether the workspace holds the window.
 func (w *Workspace) has(id WindowID) bool {
+	if w.floatIndex(id) >= 0 {
+		return true
+	}
 	for _, c := range w.Columns {
 		for _, v := range c.Windows {
 			if v == id {
@@ -145,6 +194,9 @@ func (w *Workspace) has(id WindowID) bool {
 }
 
 func (w *Workspace) Focused() (WindowID, bool) {
+	if w.floatFocus && len(w.Floats) > 0 {
+		return w.Floats[len(w.Floats)-1].ID, true
+	}
 	if w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return 0, false
 	}
@@ -223,6 +275,16 @@ func (w *Workspace) unslot(n int) {
 }
 
 func (w *Workspace) RemoveWindow(id WindowID) {
+	if i := w.floatIndex(id); i >= 0 {
+		w.Floats = slices.Delete(w.Floats, i, i+1)
+		if w.fullscreen == id {
+			w.fullscreen = 0
+		}
+		if len(w.Floats) == 0 {
+			w.floatFocus = false
+		}
+		return
+	}
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v != id {
@@ -256,8 +318,16 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	}
 }
 
-// FocusID selects a window and scrolls its column into view.
+// FocusID selects a window and scrolls its column into view; a floating
+// window is raised.
 func (w *Workspace) FocusID(id WindowID) bool {
+	if i := w.floatIndex(id); i >= 0 {
+		f := w.Floats[i]
+		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
+		w.floatFocus = true
+		return true
+	}
+	w.floatFocus = false
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v == id {
@@ -271,6 +341,11 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	return false
 }
 func (w *Workspace) FocusColumn(dir int) {
+	if w.floatFocus {
+		// The first move leaves the floating window for the columns.
+		w.floatFocus = false
+		return
+	}
 	if len(w.Columns) > 0 && (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
 		w.Focus += dir
 		w.scroll()
@@ -279,6 +354,10 @@ func (w *Workspace) FocusColumn(dir int) {
 
 // FocusWindow moves focus inside the column; false means it was already at the edge.
 func (w *Workspace) FocusWindow(dir int) bool {
+	if w.floatFocus {
+		w.floatFocus = false
+		return true
+	}
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
 		return false
 	}
@@ -291,6 +370,9 @@ func (w *Workspace) FocusWindow(dir int) bool {
 	return false
 }
 func (w *Workspace) MoveColumn(dir int) {
+	if w.floatFocus {
+		return
+	}
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
 		i := w.Focus
 		w.Columns[i], w.Columns[i+dir] = w.Columns[i+dir], w.Columns[i]
@@ -301,7 +383,7 @@ func (w *Workspace) MoveColumn(dir int) {
 
 // takeColumn removes the focused column and returns it, as a normal column.
 func (w *Workspace) takeColumn() (Column, bool) {
-	if len(w.Columns) == 0 {
+	if len(w.Columns) == 0 || w.floatFocus {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]
@@ -328,7 +410,7 @@ func (w *Workspace) insertColumn(at int, col Column) {
 }
 
 func (w *Workspace) CycleWidth() {
-	if len(w.Columns) == 0 || len(w.presets) == 0 {
+	if len(w.Columns) == 0 || len(w.presets) == 0 || w.floatFocus {
 		return
 	}
 	// auto → presets in order → auto.
@@ -362,6 +444,14 @@ func (w *Workspace) ToggleFullscreen() {
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
+	if w.floatIndex(id) >= 0 {
+		if on {
+			w.fullscreen = id
+		} else if w.fullscreen == id {
+			w.fullscreen = 0
+		}
+		return
+	}
 	for i := range w.Columns {
 		for _, v := range w.Columns[i].Windows {
 			if v == id {
@@ -503,6 +593,8 @@ func (w *Workspace) Layout() []Placement {
 	var result []Placement
 	gap := w.gap()
 	cols := w.columnRects()
+	focusedID, _ := w.Focused()
+	floatFocused := w.floatIndex(focusedID) >= 0
 	for i, c := range w.Columns {
 		col := cols[i]
 		n := len(c.Windows)
@@ -539,9 +631,32 @@ func (w *Workspace) Layout() []Placement {
 			if hidden {
 				r = Rect{}
 			}
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: i == w.Focus && j == c.Focus, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
+			focused := !floatFocused && i == w.Focus && j == c.Focus
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: focused, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
 			y += h + gap
 		}
 	}
+	// Floating windows go last: they are drawn and hit on top.
+	for _, f := range w.Floats {
+		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID}
+		// Floats stay above a fullscreen window: a dialog opened from a
+		// fullscreen app must be seen.
+		if w.fullscreen == f.ID {
+			p.Rect, p.Fullscreen = Rect{W: w.Output.W, H: w.Output.H}, true
+		}
+		result = append(result, p)
+	}
 	return result
+}
+
+// floatRect centres a floating window in the usable area, its border
+// around its client size, clamped to the area.
+func (w *Workspace) floatRect(f Float) Rect {
+	u := w.Usable
+	fw, fh := f.W, f.H
+	if fw <= 0 || fh <= 0 {
+		fw, fh = u.W/2, u.H/2
+	}
+	fw, fh = min(fw+2*w.border, u.W), min(fh+2*w.border, u.H)
+	return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
 }

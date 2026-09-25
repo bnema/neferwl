@@ -18,6 +18,10 @@ import (
 func (s *Server) outputOfSurface(surf *surface) *output {
 	// Subsurfaces are on their root's output.
 	surf = surf.root()
+	// Popups are on their parent's output.
+	for surf.xdg != nil && surf.xdg.window != nil && surf.xdg.window.popup != nil && surf.xdg.window.popup.parent != nil {
+		surf = surf.xdg.window.popup.parent.xdg.surface.root()
+	}
 	name := ""
 	switch {
 	case surf.xdg != nil && surf.xdg.window != nil:

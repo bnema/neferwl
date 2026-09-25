@@ -37,20 +37,24 @@ type Channels struct {
 	Cursors chan<- ports.CursorChange
 }
 type Server struct {
-	display                 *server.Display
-	env                     procEnv
-	slotsPending            bool // core waits for a slot window
-	name                    string
-	cleanup                 func()
-	log                     zerowrap.Logger
-	channels                Channels
-	awaiting                []*wayland.Callback
-	frames                  uint64
-	started                 time.Time
-	surfaces                map[*server.Resource]*surface
-	buffers                 map[*server.Resource]clientBuffer
-	dmabuf                  *dmabufGlobal
-	serial                  uint32
+	display      *server.Display
+	env          procEnv
+	slotsPending bool // core waits for a slot window
+	name         string
+	cleanup      func()
+	log          zerowrap.Logger
+	channels     Channels
+	awaiting     []*wayland.Callback
+	frames       uint64
+	started      time.Time
+	surfaces     map[*server.Resource]*surface
+	buffers      map[*server.Resource]clientBuffer
+	dmabuf       *dmabufGlobal
+	serial       uint32
+	// press is the serial of the last button or key press, sent to
+	// pressClient: popup grabs must come from it.
+	press                   uint32
+	pressClient             server.Client
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
@@ -98,6 +102,7 @@ type Server struct {
 	relatives   map[server.Client][]*relativepointer.ZwpRelativePointerV1
 	constraints map[*surface]*constraint
 	constraint  *constraint // the active one
+	positioners map[*server.Resource]*positioner
 }
 
 func removeItem[T comparable](list []T, v T) []T {
@@ -131,7 +136,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -390,12 +395,13 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 	case ports.PointerButtonTo:
 		// Releases may target the implicit-grab window after focus has moved.
 		if w := s.windows[c.ID]; w != nil {
+			s.serial++
+			state := uint32(0)
+			if c.Pressed {
+				state = 1
+				s.press, s.pressClient = s.serial, w.xdg.resource.Client()
+			}
 			for _, p := range s.windowPointers(w) {
-				s.serial++
-				state := uint32(0)
-				if c.Pressed {
-					state = 1
-				}
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
 				pointerFrame(p)
 			}
@@ -425,6 +431,11 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if c.Key.Pressed {
 			state = 1
 		}
+		if c.Key.Pressed {
+			if surf, _ := s.focusTarget(c.ID); surf != nil {
+				s.press, s.pressClient = s.serial, surf.Client()
+			}
+		}
 		for _, k := range keyboards {
 			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
 		}
@@ -435,9 +446,17 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 				s.sendModifiers(k)
 			}
 		}
+	case ports.ConfigurePopup:
+		if w := s.windows[c.ID]; w != nil && w.popup != nil {
+			w.popup.configure(c)
+		}
+	case ports.ClosePopup:
+		if w := s.windows[c.ID]; w != nil && w.popup != nil {
+			w.popup.dismiss()
+		}
 	case ports.ConfigureWindow:
 		w := s.windows[c.ID]
-		if w == nil || !w.toplevel.Resource.Alive() || !w.xdg.resource.Resource.Alive() {
+		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() || !w.xdg.resource.Resource.Alive() {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("configure missing window")
 			return
 		}
@@ -453,7 +472,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.slotsPending = c.Pending
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
-		if w == nil || !w.toplevel.Resource.Alive() {
+		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("close missing window")
 			return
 		}

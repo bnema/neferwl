@@ -157,6 +157,8 @@ func TestPopupBlocksSecondRole(t *testing.T) {
 	registerProtocol(t, c, surf)
 	positioner := c.AllocateID()
 	requestProtocol(t, c, wm, xdgshell.WmBaseRequestCreatePositioner, positioner)
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetSize, int32(10), int32(10))
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetAnchorRect, int32(0), int32(0), int32(1), int32(1))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -646,4 +648,144 @@ func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientE
 		}
 		return mapped(t, events, 2*time.Second), surf, xdg
 	}
+}
+
+type popupDoneProxy struct {
+	wlturbo.BaseProxy
+	done chan struct{}
+}
+
+func (p *popupDoneProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == uint16(xdgshell.PopupEventPopupDone) {
+		p.done <- struct{}{}
+	}
+}
+
+// xdgWindow maps a 1×1 xdg_surface; role sets its role before the first commit.
+func xdgWindow(t *testing.T, c *wlturbo.Display, comp, wm, buffer uint32, role func(xdg uint32)) (surf, xdg uint32, serials chan uint32) {
+	t.Helper()
+	surf, xdg = c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+	registerProtocol(t, c, surf)
+	serials = make(chan uint32, 4)
+	proxy := &configureProxy{serial: serials}
+	proxy.SetID(xdg)
+	c.Context().Register(proxy)
+	role(xdg)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	return surf, xdg, serials
+}
+
+func ackAndAttach(t *testing.T, c *wlturbo.Display, surf, xdg, buffer uint32, serials chan uint32) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(serials) == 0 && time.Now().Before(deadline) {
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case serial := <-serials:
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+	default:
+		t.Fatal("configure timeout")
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPopupAndFloatingLifecycle(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	registerProtocol(t, c, shm)
+	fd, err := unix.MemfdCreate("popup-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	pool, buffer := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buffer)
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+
+	// A fixed-size toplevel (min == max) floats, like a splash screen.
+	surf, xdg, serials := xdgWindow(t, c, comp, wm, buffer, func(xdg uint32) {
+		top := c.AllocateID()
+		registerProtocol(t, c, top)
+		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
+		requestProtocol(t, c, top, xdgshell.ToplevelRequestSetMinSize, int32(1), int32(1))
+		requestProtocol(t, c, top, xdgshell.ToplevelRequestSetMaxSize, int32(1), int32(1))
+	})
+	ackAndAttach(t, c, surf, xdg, buffer, serials)
+	top := mapped(t, events, 2*time.Second)
+	if !top.Floating {
+		t.Fatalf("splash not floating: %+v", top)
+	}
+	if ev, ok := waitEvent(t, events, 2*time.Second).(ports.WindowResized); !ok || ev.Width != 1 || ev.Height != 1 {
+		t.Fatalf("splash size %+v", ev)
+	}
+
+	positioner := c.AllocateID()
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestCreatePositioner, positioner)
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetSize, int32(1), int32(1))
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetAnchorRect, int32(0), int32(0), int32(1), int32(1))
+	done := make(chan struct{}, 1)
+	psurf, pxdg, pserials := xdgWindow(t, c, comp, wm, buffer, func(pxdg uint32) {
+		popup := c.AllocateID()
+		proxy := &popupDoneProxy{done: done}
+		proxy.SetID(popup)
+		c.Context().Register(proxy)
+		requestProtocol(t, c, pxdg, xdgshell.SurfaceRequestGetPopup, popup, xdg, positioner)
+	})
+	req, ok := waitEvent(t, events, 2*time.Second).(ports.PopupRequest)
+	if !ok || req.Parent != top.ID || req.Positioner.Width != 1 {
+		t.Fatalf("popup request %+v", req)
+	}
+	commands <- ports.ConfigurePopup{ID: req.ID, Rect: ports.Rect{X: 2, Y: 3, W: 1, H: 1}}
+	ackAndAttach(t, c, psurf, pxdg, buffer, pserials)
+	if ev, ok := waitEvent(t, events, 2*time.Second).(ports.PopupMapped); !ok || ev.ID != req.ID {
+		t.Fatalf("popup mapped %+v", ev)
+	}
+	commands <- ports.ClosePopup{ID: req.ID}
+	for deadline := time.Now().Add(2 * time.Second); len(done) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("popup_done timeout")
+		}
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestPopupIncompletePositioner(t *testing.T) {
+	s, _, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	surf, xdg := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
+	registerProtocol(t, c, xdg)
+	positioner := c.AllocateID()
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestCreatePositioner, positioner)
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetSize, int32(10), int32(10))
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetPopup, c.AllocateID(), uint32(0), positioner)
+	expectProtocolError(t, c, wm, uint32(xdgshell.WmBaseErrorInvalidPositioner))
 }
