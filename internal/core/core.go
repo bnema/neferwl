@@ -739,6 +739,15 @@ func (c *Core) Run(ctx context.Context) error {
 					c.grab = 0
 				}
 				continue
+			case ports.PointerAxis:
+				// Scroll goes to the window under the pointer, which has the
+				// pointer focus even mid-drag.
+				if c.pointer != 0 {
+					if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
+						return nil
+					}
+				}
+				continue
 			}
 			key, ok := ev.(ports.KeyEvent)
 			if !ok {

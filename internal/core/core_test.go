@@ -247,6 +247,10 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, TimeMsec: 1}) {
 		t.Fatal(v)
 	}
+	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
+	if v := command(t, commands); v != (ports.PointerAxisTo{ID: 1, Axis: ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}}) {
+		t.Fatal(v)
+	}
 	input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true}) {
 		t.Fatal(v)
@@ -265,6 +269,9 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	if v := command(t, commands); v != (ports.PointerFocus{}) {
 		t.Fatal(v)
 	}
+	// Mid-drag off the window, scroll goes to what is under the pointer:
+	// nothing here, not the grab window that got a leave.
+	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 1}}
 	input <- ports.PointerButton{Button: 0x110}
 	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110}) {
 		t.Fatal(v)

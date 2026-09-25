@@ -27,6 +27,9 @@ const (
 	evPointerMotion = 400
 	evPointerAbs    = 401
 	evPointerButton = 402
+	evScrollWheel   = 404
+	evScrollFinger  = 405
+	evScrollCont    = 406
 )
 
 var (
@@ -60,6 +63,9 @@ var (
 	pointerAbsY     func(pev uintptr, height uint32) float64
 	pointerButton   func(pev uintptr) uint32
 	pointerBtnState func(pev uintptr) int32
+	pointerHasAxis  func(pev uintptr, axis uint32) int32
+	scrollValue     func(pev uintptr, axis uint32) float64
+	scrollV120      func(pev uintptr, axis uint32) float64
 	iface           [2]uintptr
 	active          ports.Seat
 )
@@ -109,6 +115,9 @@ func load() error {
 		reg(&pointerAbsY, "event_pointer_get_absolute_y_transformed")
 		reg(&pointerButton, "event_pointer_get_button")
 		reg(&pointerBtnState, "event_pointer_get_button_state")
+		reg(&pointerHasAxis, "event_pointer_has_axis")
+		reg(&scrollValue, "event_pointer_get_scroll_value")
+		reg(&scrollV120, "event_pointer_get_scroll_value_v120")
 		iface[0] = purego.NewCallback(func(path *byte, _, _ uintptr) uintptr {
 			fd, err := active.OpenDevice(goString(path))
 			if err != nil {
@@ -286,6 +295,25 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 		b, pressed := pointerButton(pe), pointerBtnState(pe) == 1
 		log.Debug().Uint32("button", b).Bool("pressed", pressed).Msg("button")
 		return ports.PointerButton{Button: b, Pressed: pressed, TimeMsec: now}, nil
+	case evScrollWheel, evScrollFinger, evScrollCont:
+		pe := pointerEvent(ev)
+		// The three scroll events follow each other as the sources do.
+		source := ports.AxisSource(eventType(ev) - evScrollWheel)
+		a := ports.PointerAxis{Source: source, TimeMsec: now}
+		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
+		for i, s := range []*ports.ScrollAxis{&a.Vertical, &a.Horizontal} {
+			if pointerHasAxis(pe, uint32(i)) == 0 {
+				continue
+			}
+			s.Set, s.Value = true, scrollValue(pe, uint32(i))
+			if source == ports.AxisWheel {
+				s.V120 = int32(scrollV120(pe, uint32(i)))
+			} else {
+				s.Stop = s.Value == 0
+			}
+		}
+		log.Debug().Float64("v", a.Vertical.Value).Float64("h", a.Horizontal.Value).Int32("v120", a.Vertical.V120).Int32("hv120", a.Horizontal.V120).Uint8("source", uint8(a.Source)).Msg("scroll")
+		return a, nil
 	}
 	return nil, nil
 }

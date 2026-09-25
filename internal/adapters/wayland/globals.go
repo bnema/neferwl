@@ -38,7 +38,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 			})
 		},
 		func() error {
-			return wayland.NewSeatGlobal(d, 7, func(c server.Client, v, id uint32) {
+			return wayland.NewSeatGlobal(d, 8, func(c server.Client, v, id uint32) {
 				r, e := wayland.NewSeat(c, int32(v), id, seat{s})
 				if e == nil {
 					capabilities := uint32(wayland.SeatCapabilityPointer)
