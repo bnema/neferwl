@@ -187,12 +187,22 @@ func (c *Cursor) position() (int, int) {
 func (c *Cursor) Limit() int { return c.size }
 
 // SetImage shows premultiplied ARGB8888 pixels (w×h, w*4 per row) with the
-// click point at (hotX, hotY). Larger images are cropped to the plane.
+// click point at (hotX, hotY). Larger images are cropped to the plane; an
+// empty image hides the cursor (a client asked for none).
 func (c *Cursor) SetImage(pixels []byte, w, h, hotX, hotY int) error {
 	c.io.Lock()
 	defer c.io.Unlock()
 	if c.buf == nil {
 		return nil
+	}
+	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
+		wasShown := c.shown
+		c.shown = false
+		if !wasShown || c.hidden {
+			return nil
+		}
+		v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
+		return c.plane.Set(&v)
 	}
 	pitch := int(c.buf.pitch)
 	clear(c.buf.mem)

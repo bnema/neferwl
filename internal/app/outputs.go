@@ -8,8 +8,8 @@ import (
 )
 
 // outputRun drives one output until ctx ends: it renders the scenes and
-// surface contents it receives.
-type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent) error
+// surface contents it receives, with the cursor the client asks for.
+type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
 // per output; each goes to its output, latest first. Surface contents go to
@@ -19,6 +19,7 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 type outputSet struct {
 	outs    map[string]*runningOutput
 	latest  map[ports.WindowID]ports.SurfaceContent
+	cursor  ports.CursorChange
 	stopped chan string
 	quit    chan struct{} // closed by wait: nobody reads stopped any more
 }
@@ -26,6 +27,7 @@ type outputSet struct {
 type runningOutput struct {
 	scenes   chan ports.Scene
 	contents chan ports.SurfaceContent
+	cursor   chan ports.CursorChange
 	ctx      context.Context
 	stop     context.CancelFunc
 	err      error
@@ -39,18 +41,31 @@ func newOutputSet() *outputSet {
 // start runs an output in its own goroutine and replays the window contents.
 func (s *outputSet) start(ctx context.Context, name string, run outputRun) {
 	octx, stop := context.WithCancel(ctx)
-	r := &runningOutput{scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), ctx: octx, stop: stop, done: make(chan struct{})}
+	r := &runningOutput{scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), ctx: octx, stop: stop, done: make(chan struct{})}
 	s.outs[name] = r
 	go func() {
-		r.err = run(octx, r.scenes, r.contents)
+		r.err = run(octx, r.scenes, r.contents, r.cursor)
 		close(r.done)
 		select {
 		case s.stopped <- name:
 		case <-s.quit:
 		}
 	}()
+	r.cursor <- s.cursor
 	for _, c := range s.latest {
 		r.send(c)
+	}
+}
+
+// setCursor gives every output the latest cursor, replacing an unread one.
+func (s *outputSet) setCursor(c ports.CursorChange) {
+	s.cursor = c
+	for _, r := range s.outs {
+		select {
+		case <-r.cursor:
+		default:
+		}
+		r.cursor <- c
 	}
 }
 

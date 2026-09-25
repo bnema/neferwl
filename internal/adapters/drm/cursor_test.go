@@ -168,3 +168,28 @@ func TestCursorHideDropsQueuedMove(t *testing.T) {
 		t.Fatalf("show: %+v", v)
 	}
 }
+
+// An empty image takes the buffer off the plane; the next image shows it.
+func TestCursorEmptyImageHides(t *testing.T) {
+	c, plane := testCursor(t)
+	c.buf.mem = make([]byte, 64*64*4)
+	c.buf.pitch = 64 * 4
+	var sets []modeCursor2
+	plane.EXPECT().Set(mock.Anything).RunAndReturn(func(v *modeCursor2) error { sets = append(sets, *v); return nil })
+	if err := c.SetImage(nil, 0, 0, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(sets) != 1 || sets[0].flags != cursorBO || sets[0].handle != 0 || c.shown {
+		t.Fatalf("hide: %+v shown=%v", sets, c.shown)
+	}
+	// Still hidden: no second ioctl.
+	if err := c.SetImage(nil, 0, 0, 0, 0); err != nil || len(sets) != 1 {
+		t.Fatalf("second hide: %+v %v", sets, err)
+	}
+	if err := c.SetImage(make([]byte, 4), 1, 1, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(sets) != 2 || sets[1].flags != cursorBO|cursorMove || !c.shown {
+		t.Fatalf("show: %+v", sets)
+	}
+}

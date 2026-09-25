@@ -108,7 +108,7 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -176,11 +176,11 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 					curs.set(name, cur)
 				}
 				active := b.seat.Subscribe()
-				set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent) error {
+				set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange) error {
 					defer b.seat.Unsubscribe(active)
 					return safe("output "+name, func() error {
 						defer o.Close()
-						return o.Run(octx, newRenderer, loadCursor, active, sc, cc)
+						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu)
 					})
 				})
 				send(ports.OutputAdded{Info: o.Info()})
@@ -205,6 +205,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 			set.scenes(s)
 		case c := <-contents:
 			set.content(c)
+		case c := <-cursorChanges:
+			set.setCursor(c)
 		case name := <-set.stopped:
 			err := set.finish(name)
 			if ctx.Err() != nil {

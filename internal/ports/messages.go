@@ -304,6 +304,18 @@ type CursorImage struct {
 	Pixels           []byte
 }
 
+// CursorChange carries wayland → outputs the cursor the focused client asks
+// for: a CSS cursor name (wp_cursor_shape_v1), its own image, or none.
+// The zero value is the default arrow.
+type CursorChange struct {
+	// Shape is a CSS cursor name such as "pointer" or "text".
+	Shape string
+	// Image is a client cursor at Scale buffer pixels per logical pixel.
+	Image  *CursorImage
+	Scale  int
+	Hidden bool
+}
+
 // SpawnRequest carries core → launcher process arguments.
 type SpawnRequest struct {
 	Argv []string
