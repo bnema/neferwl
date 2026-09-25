@@ -195,11 +195,14 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 	}
 	drainContents(contents)
 	time.Sleep(3 * defaultFramePeriod)
-	select {
-	case ev := <-events:
-		if _, ok := ev.(ports.WindowUnmapped); ok {
-			t.Fatal("window unmapped by a dead queued buffer")
+	for {
+		select {
+		case ev := <-events:
+			if _, ok := ev.(ports.WindowUnmapped); ok {
+				t.Fatal("window unmapped by a dead queued buffer")
+			}
+		default:
+			return
 		}
-	default:
 	}
 }
