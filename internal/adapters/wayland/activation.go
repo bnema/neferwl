@@ -24,7 +24,9 @@ const tokenLifetime = 10 * time.Second
 const maxTokens = 32
 
 // activationToken is an issued valid token. Tokens of a client die when
-// the user moves the focus away from it.
+// the focus moves away from it, even on an automatic focus change such as
+// a new window mapping: a hand-off racing a transient window then fails
+// safe, without stealing focus.
 type activationToken struct {
 	client server.Client
 	at     time.Time

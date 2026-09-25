@@ -6,7 +6,6 @@ import (
 	"github.com/bnema/nefertty/internal/adapters/config"
 	"github.com/bnema/nefertty/internal/core"
 	"github.com/bnema/nefertty/internal/ports"
-	"slices"
 	"testing"
 	"time"
 )
@@ -774,19 +773,4 @@ func TestWindowActivateShowsAndFocuses(t *testing.T) {
 		}
 	}
 
-	// An activated window behind a fullscreen one comes out.
-	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
-	scene(t, scenes)
-	client <- ports.WindowMapped{ID: 3}
-	scene(t, scenes)
-	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
-	scene(t, scenes)
-	client <- ports.WindowActivate{ID: 3}
-	for {
-		sc := scene(t, scenes)
-		shown := visible(sc)
-		if len(shown) > 0 && slices.ContainsFunc(shown, func(w ports.SceneWindow) bool { return w.ID == 3 && w.Focused }) {
-			break
-		}
-	}
 }

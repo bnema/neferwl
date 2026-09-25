@@ -133,10 +133,7 @@ func TestActivationAcrossClients(t *testing.T) {
 	// A token dies when the focus leaves its client.
 	token = newToken(t, a, managerA)
 	commands <- ports.FocusWindow{ID: winB.ID}
-	if err := b.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(20 * time.Millisecond)
+	waitFocus(t, s, winB.ID)
 	requestProtocol(t, b, managerB, xdgactivation.ActivationV1RequestActivate, token, surfB)
 	noActivation(t, b, events)
 }
@@ -173,10 +170,7 @@ func TestActivationPressSerial(t *testing.T) {
 	// The focus moved after the press: stale.
 	commands <- ports.FocusWindow{ID: w.ID}
 	commands <- ports.FocusWindow{}
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(20 * time.Millisecond)
+	waitFocus(t, s, 0)
 	token = newToken(t, c, manager, serial, seat)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestActivate, token, surf)
 	noActivation(t, c, events)
@@ -192,4 +186,17 @@ func TestActivationTokenCommittedTwice(t *testing.T) {
 	requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestCommit)
 	requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestCommit)
 	expectProtocolError(t, c, id, uint32(xdgactivation.ActivationTokenV1ErrorAlreadyUsed))
+}
+
+// waitFocus waits until the display goroutine has applied a focus change.
+func waitFocus(t *testing.T, s *Server, id ports.WindowID) {
+	t.Helper()
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+		done := make(chan ports.WindowID, 1)
+		s.display.Do(func() { done <- s.focused })
+		if <-done == id {
+			return
+		}
+	}
+	t.Fatal("focus not applied", id)
 }
