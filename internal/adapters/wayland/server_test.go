@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -398,17 +399,15 @@ func TestWestonContents(t *testing.T) {
 	for count < 2 {
 		select {
 		case c := <-contents:
-			if c.ID != w.ID || c.Width <= 0 || c.Height <= 0 || c.Stride < c.Width*4 || len(c.Pixels) != c.Stride*c.Height {
-				t.Fatalf("invalid content: id=%d dimensions=%dx%d stride=%d length=%d", c.ID, c.Width, c.Height, c.Stride, len(c.Pixels))
+			if c.ID != w.ID || c.Width <= 0 || c.Height <= 0 || c.SHM == nil || c.SHM.Stride < c.Width*4 || c.SHM.File == nil {
+				t.Fatalf("invalid content: %+v", c)
 			}
-			nonzero := false
-			for _, b := range c.Pixels {
-				if b != 0 {
-					nonzero = true
-					break
-				}
+			// The pool holds the client's pixels: read them like a renderer.
+			px := make([]byte, c.SHM.Stride)
+			if _, err := c.SHM.File.ReadAt(px, int64(c.SHM.Offset+c.Height/2*c.SHM.Stride)); err != nil {
+				t.Fatal(err)
 			}
-			if !nonzero {
+			if !slices.ContainsFunc(px, func(b byte) bool { return b != 0 }) {
 				t.Fatal("empty pixels")
 			}
 			if count == 0 {

@@ -52,6 +52,7 @@ type Server struct {
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
 	nextWindow              ports.WindowID
+	nextPool                uint64
 	focused                 ports.WindowID
 	pointerFocus            ports.WindowID
 	pointerX, pointerY      float64

@@ -23,7 +23,24 @@ import (
 
 type usageError struct{ error }
 
-func main() { os.Exit(runCode()) }
+func main() {
+	tuneGC()
+	os.Exit(runCode())
+}
+
+// tuneGC keeps the heap close to what nefertty uses: a compositor runs for
+// days and its per-frame garbage is small, so the default GOGC=100 (heap
+// grows to twice the live data) mostly holds freed memory. A soft limit
+// makes the collector work harder before the process gets large. GOGC and
+// GOMEMLIMIT set in the environment win.
+func tuneGC() {
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(50)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(256 << 20)
+	}
+}
 func runCode() int {
 	err := run()
 	if err == nil || errors.Is(err, flag.ErrHelp) || errors.Is(err, context.Canceled) {

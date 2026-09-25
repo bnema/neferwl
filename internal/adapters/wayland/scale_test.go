@@ -157,7 +157,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	for {
 		select {
 		case got := <-contents:
-			if got.Pixels == nil {
+			if got.SHM == nil {
 				continue
 			}
 			if got.Width != 30 || got.Height != 15 || got.LogicalW != 20 || got.LogicalH != 10 {

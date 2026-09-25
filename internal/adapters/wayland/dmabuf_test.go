@@ -163,7 +163,7 @@ func TestWestonDMABuf(t *testing.T) {
 	for {
 		select {
 		case c := <-contents:
-			if c.ID != w.ID || c.DMABuf == nil || c.Pixels != nil || len(c.DMABuf.Planes) == 0 || c.DMABuf.Planes[0].File == nil {
+			if c.ID != w.ID || c.DMABuf == nil || c.SHM != nil || len(c.DMABuf.Planes) == 0 || c.DMABuf.Planes[0].File == nil {
 				t.Fatalf("content %+v", c)
 			}
 			return

@@ -31,7 +31,6 @@ type surface struct {
 	callbacks                 []*wayland.Callback
 	role                      func(bool)
 	destroyed                 bool
-	released                  bool
 	// on is the output the surface entered; scale is the last scale sent.
 	on    *output
 	scale float64
@@ -142,6 +141,10 @@ func (s *surface) Destroy(*wayland.Surface) {
 		cb.Destroy()
 	}
 	s.callbacks = nil
+	// The client may reuse the buffer on another surface.
+	if s.current != nil && s.current.Resource.Alive() {
+		s.current.SendRelease()
+	}
 	s.current, s.pending = nil, nil
 	if s.role != nil {
 		s.role(false)
@@ -175,12 +178,11 @@ func (s *surface) Commit(*wayland.Surface) {
 	}
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
-			if !s.released && s.current.Resource.Alive() {
+			if s.current.Resource.Alive() {
 				s.current.SendRelease()
 			}
 		}
 		s.current = s.pending
-		s.released = false
 		s.pending = nil
 		s.attached = false
 	}
@@ -201,14 +203,8 @@ func (s *surface) Commit(*wayland.Surface) {
 			} else if shm, ok := state.(*buffer); ok {
 				shm.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
 			}
-			// wl_shm pixels were copied: the client may reuse the buffer.
-			// A dmabuf is read in place until the next buffer replaces it.
-			if _, gpu := state.(*dmabufBuffer); !gpu {
-				if s.current.Resource.Alive() {
-					s.current.SendRelease()
-				}
-				s.released = true
-			}
+			// Buffers are read in place: released when the next one
+			// replaces them.
 		}
 	}
 	if s.current == nil {
