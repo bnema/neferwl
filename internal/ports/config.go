@@ -27,7 +27,9 @@ type Config struct {
 		RepeatDelay              int
 		CmdKey                   string
 	}
-	Terminal   struct{ Command []string }
+	Terminal struct{ Command []string }
+	// Startup are commands run once when the session starts, in order.
+	Startup    [][]string
 	Background struct{ Color string }
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {

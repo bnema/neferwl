@@ -48,9 +48,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				}
 			})
 		},
-		func() error {
-			return wayland.NewDataDeviceManagerGlobal(d, 3, func(c server.Client, v, id uint32) { wayland.NewDataDeviceManager(c, int32(v), id, dataManager{}) })
-		},
+		func() error { return registerClipboard(d, s) },
 	} {
 		if err := register(); err != nil {
 			return err
@@ -396,26 +394,3 @@ func (keyboard) Release(*wayland.Keyboard) {}
 type touch struct{}
 
 func (touch) Release(*wayland.Touch) {}
-
-type dataManager struct{}
-
-func (dataManager) CreateDataSource(r *wayland.DataDeviceManager, id uint32) {
-	wayland.NewDataSource(r.Client(), r.Version(), id, dataSource{})
-}
-func (dataManager) GetDataDevice(r *wayland.DataDeviceManager, id uint32, _ *wayland.Seat) {
-	wayland.NewDataDevice(r.Client(), r.Version(), id, dataDevice{})
-}
-func (dataManager) Release(*wayland.DataDeviceManager) {}
-
-type dataSource struct{}
-
-func (dataSource) Offer(*wayland.DataSource, string)      {}
-func (dataSource) Destroy(*wayland.DataSource)            {}
-func (dataSource) SetActions(*wayland.DataSource, uint32) {}
-
-type dataDevice struct{}
-
-func (dataDevice) StartDrag(*wayland.DataDevice, *wayland.DataSource, *wayland.Surface, *wayland.Surface, uint32) {
-}
-func (dataDevice) SetSelection(*wayland.DataDevice, *wayland.DataSource, uint32) {}
-func (dataDevice) Release(*wayland.DataDevice)                                   {}
