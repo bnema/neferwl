@@ -23,7 +23,6 @@ const heldTimeout = 100 * time.Millisecond
 type heldBuffer struct {
 	res    *wayland.Buffer
 	window ports.WindowID
-	output string
 	id     uint64 // DMABuf ID, 0 for wl_shm
 	after  uint64 // the window's content Seq when the buffer was replaced
 	at     time.Time
@@ -41,7 +40,7 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer) {
 		b.SendRelease()
 		return
 	}
-	h := heldBuffer{res: b, window: window, output: name, at: time.Now()}
+	h := heldBuffer{res: b, window: window, at: time.Now()}
 	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
 		h.id = d.buf.ID
 	}
@@ -57,24 +56,26 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer) {
 }
 
 // releaseHeld records the output reports and releases the buffers no
-// output reads. It reports whether buffers are still held.
+// output reads. Every output reads every window's content, so a buffer
+// waits until no live output shows or queues it and all of them have seen
+// a later content of its window (or heldTimeout passed). It reports
+// whether buffers are still held.
 func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) bool {
 	for _, r := range reports {
 		s.reports[r.Output] = r
 	}
-	live := map[string]bool{}
-	for _, o := range s.outputs {
-		live[o.name()] = true
-	}
+	live := make([]ports.OutputPresented, 0, len(s.outputs))
 	for name := range s.reports {
-		if !live[name] {
+		if s.outputByNameExact(name) == nil {
 			delete(s.reports, name)
 		}
 	}
+	for _, r := range s.reports {
+		live = append(live, r)
+	}
 	kept := s.held[:0]
 	for _, h := range s.held {
-		r, reported := s.reports[h.output]
-		if live[h.output] && keepHeld(h, r, reported, now) {
+		if keepHeld(h, live, now) {
 			kept = append(kept, h)
 			continue
 		}
@@ -87,15 +88,21 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	return len(s.held) > 0
 }
 
-// keepHeld reports whether the output (last report r) may still read a
-// held buffer: it scans it out or queued it, it has not got a later
-// content of the window yet, or it has not reported within heldTimeout.
-func keepHeld(h heldBuffer, r ports.OutputPresented, reported bool, now time.Time) bool {
-	if reported && h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
-		return true
+// keepHeld reports whether an output may still read a held buffer: one
+// scans it out or queued it, or one has not got a later content of its
+// window yet and heldTimeout has not passed.
+func keepHeld(h heldBuffer, reports []ports.OutputPresented, now time.Time) bool {
+	seen := true
+	for _, r := range reports {
+		if h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
+			return true
+		}
+		if r.Seen[h.window] <= h.after {
+			seen = false
+		}
 	}
-	if reported && r.Seen[h.window] > h.after {
-		return false
+	if len(reports) == 0 {
+		seen = false
 	}
-	return now.Sub(h.at) < heldTimeout
+	return !seen && now.Sub(h.at) < heldTimeout
 }

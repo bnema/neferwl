@@ -37,6 +37,7 @@ type Output struct {
 	clientFBs     map[uint64]*clientFB
 	shown, queued uint64
 	reason        string // why the last frame was composed ("" = scanout)
+	unsent        ports.OutputPresented
 }
 
 // CursorLoader returns the image of a cursor at an output scale, at most
@@ -204,8 +205,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if flipped || reportDirty {
 			o.report(presented, flipped, seen)
 			flipped, reportDirty = false, false
+		} else {
+			o.flushReport(presented)
+		}
+		// An unsent report is retried soon, not only on the next event.
+		var retry <-chan time.Time
+		if o.unsent.Output != "" {
+			retry = time.After(time.Millisecond)
 		}
 		select {
+		case <-retry:
+			continue
 		case <-ctx.Done():
 			return nil
 		case on := <-active:
@@ -320,11 +330,22 @@ func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float6
 // report tells wayland what the output shows and has read, so replaced
 // client buffers can be released. It must follow the frame decision: a
 // buffer is safe once a later content is seen and it is neither shown nor
-// queued. A full channel drops the report; the next one carries the state.
+// queued. A report the channel cannot take waits in unsent, replaced by
+// newer ones (Flip kept), and is retried on the next loop.
 func (o *Output) report(presented chan<- ports.OutputPresented, flip bool, seen map[ports.WindowID]uint64) {
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: maps.Clone(seen)}
+	r := ports.OutputPresented{Output: o.conn.name, Flip: flip || o.unsent.Flip, Shown: o.shown, Queued: o.queued, Seen: maps.Clone(seen)}
+	o.unsent = r
+	o.flushReport(presented)
+}
+
+// flushReport sends the unsent report, if any, without blocking.
+func (o *Output) flushReport(presented chan<- ports.OutputPresented) {
+	if o.unsent.Output == "" {
+		return
+	}
 	select {
-	case presented <- r:
+	case presented <- o.unsent:
+		o.unsent = ports.OutputPresented{}
 	default:
 	}
 }

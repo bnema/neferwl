@@ -11,25 +11,32 @@ func TestKeepHeld(t *testing.T) {
 	now := time.Unix(100, 0)
 	dma := heldBuffer{window: 1, id: 7, after: 5, at: now}
 	shm := heldBuffer{window: 1, after: 5, at: now}
-	seen := func(seq uint64) map[ports.WindowID]uint64 { return map[ports.WindowID]uint64{1: seq} }
+	out := func(shown, queued, seq uint64) ports.OutputPresented {
+		return ports.OutputPresented{Shown: shown, Queued: queued, Seen: map[ports.WindowID]uint64{1: seq}}
+	}
+	type R = []ports.OutputPresented
 	for _, tc := range []struct {
-		name     string
-		h        heldBuffer
-		r        ports.OutputPresented
-		reported bool
-		after    time.Duration
-		want     bool
+		name    string
+		h       heldBuffer
+		reports R
+		after   time.Duration
+		want    bool
 	}{
-		{"no report yet", dma, ports.OutputPresented{}, false, 0, true},
-		{"output has only this content", dma, ports.OutputPresented{Seen: seen(5)}, true, 0, true},
-		{"later content seen", dma, ports.OutputPresented{Seen: seen(6)}, true, 0, false},
-		{"scanned out", dma, ports.OutputPresented{Shown: 7, Seen: seen(6)}, true, time.Second, true},
-		{"queued for scanout", dma, ports.OutputPresented{Queued: 7, Seen: seen(6)}, true, time.Second, true},
-		{"another buffer scanned out", dma, ports.OutputPresented{Shown: 8, Seen: seen(6)}, true, 0, false},
-		{"silent output times out", dma, ports.OutputPresented{Seen: seen(5)}, true, heldTimeout, false},
-		{"shm follows content", shm, ports.OutputPresented{Shown: 0, Seen: seen(6)}, true, 0, false},
+		{"no report yet", dma, nil, 0, true},
+		{"no report times out", dma, nil, heldTimeout, false},
+		{"output has only this content", dma, R{out(0, 0, 5)}, 0, true},
+		{"later content seen", dma, R{out(0, 0, 6)}, 0, false},
+		{"scanned out", dma, R{out(7, 0, 6)}, time.Second, true},
+		{"queued for scanout", dma, R{out(0, 7, 6)}, time.Second, true},
+		{"another buffer scanned out", dma, R{out(8, 0, 6)}, 0, false},
+		{"silent output times out", dma, R{out(0, 0, 5)}, heldTimeout, false},
+		{"shm follows content", shm, R{out(0, 0, 6)}, 0, false},
+		// A window moved off output A: A still scans the buffer out.
+		{"other output scans it out", dma, R{out(0, 0, 6), out(7, 0, 6)}, time.Second, true},
+		{"other output lags", dma, R{out(0, 0, 6), out(0, 0, 5)}, 0, true},
+		{"all outputs moved on", dma, R{out(0, 0, 6), out(0, 0, 6)}, 0, false},
 	} {
-		if got := keepHeld(tc.h, tc.r, tc.reported, now.Add(tc.after)); got != tc.want {
+		if got := keepHeld(tc.h, tc.reports, now.Add(tc.after)); got != tc.want {
 			t.Errorf("%s: %v", tc.name, got)
 		}
 	}
