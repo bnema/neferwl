@@ -34,6 +34,8 @@ Building requires sibling checkouts of purego-libwayland and purego-vulkan until
 
 ## Running commands
 
+NeferTTY starts a program, not a shell line: `spawn` runs a binary or a script. Anything more than one command with arguments, such as pipes or variables, goes in a script that you write.
+
 `spawn <command>` binds, `startup = <command>` lines and `terminal = <command>` run one program directly, without a shell. The line is split on spaces: the first word is the program (looked up in `PATH`, or a path such as `/opt/tool/run`), the other words are its arguments.
 
 ```text
