@@ -55,6 +55,14 @@ func TestFloatingWindows(t *testing.T) {
 	if r := w.Layout()[1].Rect; r.W != u.W || r.H != u.H {
 		t.Fatalf("clamped %+v", r)
 	}
+	// A dialog from a fullscreen window shows above it and takes the focus.
+	w.SetFullscreen(1, true)
+	w.RemoveWindow(2)
+	w.AddFloating(2, 20, 10)
+	if l := w.Layout(); l[1].Hidden || !l[1].Focused || l[0].Focused {
+		t.Fatalf("float under fullscreen %+v", l)
+	}
+	w.SetFullscreen(1, false)
 	w.RemoveWindow(2)
 	if id, _ := w.Focused(); id != 1 || len(w.Floats) != 0 {
 		t.Fatalf("focus after close %d", id)

@@ -97,8 +97,8 @@ func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, serial uint32) {
 	// Only a grab answering the client's last press may take the keyboard,
 	// and a popup over a popup grabs only if its parent does.
 	s := p.w.xdg.server
-	fresh := serial == s.press && s.pressClient != nil && *s.pressClient == r.Client()
-	if !fresh || p.parent == nil || p.parent.popup != nil && !p.parent.popup.grab {
+	fresh := serial == s.press && s.pressClient == r.Client()
+	if !fresh || p.parent == nil || !s.topGrab(p.parent) {
 		p.dismiss()
 		return
 	}
@@ -135,6 +135,22 @@ func (p *popup) configure(c ports.ConfigurePopup) {
 	if surf := p.w.xdg.surface; surf != nil {
 		surf.sendTreeScale()
 	}
+}
+
+// topGrab reports whether a grabbing popup may go on parent: parent is
+// the client's newest live grabbing popup, or a toplevel when it has none.
+func (s *Server) topGrab(parent *window) bool {
+	client := parent.xdg.resource.Client()
+	var top *window
+	for _, w := range s.windows {
+		if w.popup != nil && w.popup.grab && !w.popup.done && w.xdg.resource.Client() == client && (top == nil || w.id > top.id) {
+			top = w
+		}
+	}
+	if top == nil {
+		return parent.popup == nil
+	}
+	return top == parent
 }
 
 // dismiss sends popup_done once; the client then destroys the popup.

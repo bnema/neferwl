@@ -195,10 +195,7 @@ func (w *Workspace) has(id WindowID) bool {
 
 func (w *Workspace) Focused() (WindowID, bool) {
 	if w.floatFocus && len(w.Floats) > 0 {
-		// A fullscreen column window hides the floats: it has the focus.
-		if top := w.Floats[len(w.Floats)-1].ID; w.fullscreen == 0 || w.fullscreen == top {
-			return top, true
-		}
+		return w.Floats[len(w.Floats)-1].ID, true
 	}
 	if w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return 0, false
@@ -642,11 +639,10 @@ func (w *Workspace) Layout() []Placement {
 	// Floating windows go last: they are drawn and hit on top.
 	for _, f := range w.Floats {
 		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID}
+		// Floats stay above a fullscreen window: a dialog opened from a
+		// fullscreen app must be seen.
 		if w.fullscreen == f.ID {
 			p.Rect, p.Fullscreen = Rect{W: w.Output.W, H: w.Output.H}, true
-		} else if w.fullscreen != 0 {
-			// A fullscreen window covers the floating ones.
-			p.Rect, p.Hidden = Rect{}, true
 		}
 		result = append(result, p)
 	}

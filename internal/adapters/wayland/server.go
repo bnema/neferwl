@@ -54,7 +54,7 @@ type Server struct {
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
 	press                   uint32
-	pressClient             *server.Client
+	pressClient             server.Client
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
@@ -395,16 +395,13 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 	case ports.PointerButtonTo:
 		// Releases may target the implicit-grab window after focus has moved.
 		if w := s.windows[c.ID]; w != nil {
+			s.serial++
+			state := uint32(0)
+			if c.Pressed {
+				state = 1
+				s.press, s.pressClient = s.serial, w.xdg.resource.Client()
+			}
 			for _, p := range s.windowPointers(w) {
-				s.serial++
-				state := uint32(0)
-				if c.Pressed {
-					state = 1
-				}
-				if c.Pressed {
-					client := w.xdg.resource.Client()
-					s.press, s.pressClient = s.serial, &client
-				}
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
 				pointerFrame(p)
 			}
@@ -436,8 +433,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 		if c.Key.Pressed {
 			if surf, _ := s.focusTarget(c.ID); surf != nil {
-				client := surf.Client()
-				s.press, s.pressClient = s.serial, &client
+				s.press, s.pressClient = s.serial, surf.Client()
 			}
 		}
 		for _, k := range keyboards {
