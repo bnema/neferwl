@@ -195,7 +195,10 @@ func (w *Workspace) has(id WindowID) bool {
 
 func (w *Workspace) Focused() (WindowID, bool) {
 	if w.floatFocus && len(w.Floats) > 0 {
-		return w.Floats[len(w.Floats)-1].ID, true
+		// A fullscreen column window hides the floats: it has the focus.
+		if top := w.Floats[len(w.Floats)-1].ID; w.fullscreen == 0 || w.fullscreen == top {
+			return top, true
+		}
 	}
 	if w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return 0, false
@@ -593,6 +596,8 @@ func (w *Workspace) Layout() []Placement {
 	var result []Placement
 	gap := w.gap()
 	cols := w.columnRects()
+	focusedID, _ := w.Focused()
+	floatFocused := w.floatIndex(focusedID) >= 0
 	for i, c := range w.Columns {
 		col := cols[i]
 		n := len(c.Windows)
@@ -629,14 +634,14 @@ func (w *Workspace) Layout() []Placement {
 			if hidden {
 				r = Rect{}
 			}
-			focused := !w.floatFocus && i == w.Focus && j == c.Focus
+			focused := !floatFocused && i == w.Focus && j == c.Focus
 			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: focused, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
 			y += h + gap
 		}
 	}
 	// Floating windows go last: they are drawn and hit on top.
-	for i, f := range w.Floats {
-		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: w.floatFocus && i == len(w.Floats)-1}
+	for _, f := range w.Floats {
+		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID}
 		if w.fullscreen == f.ID {
 			p.Rect, p.Fullscreen = Rect{W: w.Output.W, H: w.Output.H}, true
 		} else if w.fullscreen != 0 {

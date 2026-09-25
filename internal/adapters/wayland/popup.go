@@ -63,12 +63,14 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 			s.emit(ports.PopupMapped{ID: w.id})
 			s.log.Debug().Uint64("id", uint64(w.id)).Uint64("parent", uint64(parent.id)).Msg("popup mapped")
 		case !buffer && w.mapped:
+			// Unmapped, it may map again after a new initial commit.
 			w.unmap()
+			pp.sent, pp.grab = false, false
 		}
 	}
 	res.OnDestroy = func() {
 		// Core forgets the popup, placed or mapped.
-		if !w.mapped && pp.sent {
+		if !w.mapped && pp.sent && !pp.done {
 			s.emit(ports.WindowUnmapped{ID: w.id})
 		}
 		w.unmap()
@@ -87,9 +89,17 @@ func (*popup) Destroy(*xdgshell.Popup) {}
 
 // Grab is only valid before the first commit; core then gives the popup the
 // keyboard and closes it on a click outside its popup chain.
-func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, _ uint32) {
+func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, serial uint32) {
 	if p.sent || p.w.mapped {
 		r.PostError(uint32(xdgshell.PopupErrorInvalidGrab), "grab after the popup was committed")
+		return
+	}
+	// Only a grab answering the client's last press may take the keyboard,
+	// and a popup over a popup grabs only if its parent does.
+	s := p.w.xdg.server
+	fresh := serial == s.press && s.pressClient != nil && *s.pressClient == r.Client()
+	if !fresh || p.parent == nil || p.parent.popup != nil && !p.parent.popup.grab {
+		p.dismiss()
 		return
 	}
 	p.grab = true

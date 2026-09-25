@@ -231,6 +231,15 @@ func (m *Monitor) AddWindow(id WindowID) {
 	m.normalize()
 }
 
+// AddFloating adds a floating window to the active workspace.
+func (m *Monitor) AddFloating(id WindowID, width, height int) {
+	if w, _ := m.find(id); w != nil {
+		return
+	}
+	m.Current().AddFloating(id, width, height)
+	m.normalize()
+}
+
 // RemoveWindow drops the window wherever it is; focus stays on the active workspace.
 func (m *Monitor) RemoveWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {

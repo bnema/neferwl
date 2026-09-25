@@ -153,7 +153,9 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 func (c *Core) placePopup(ctx context.Context, v ports.PopupRequest) error {
 	sc, pr, ok := c.windowRect(v.Parent)
 	if !ok {
-		delete(c.popups, v.ID)
+		if c.popups[v.ID] != nil {
+			return c.closePopup(ctx, v.ID)
+		}
 		return c.command(ctx, ports.ClosePopup{ID: v.ID})
 	}
 	o := sc.mon.Output()
@@ -169,55 +171,60 @@ func (c *Core) placePopup(ctx context.Context, v ports.PopupRequest) error {
 	return c.command(ctx, ports.ConfigurePopup{ID: v.ID, Rect: p.rect, Reposition: v.Reposition, Token: v.Token})
 }
 
-// dropPopup forgets a popup and dismisses its children.
+// closePopup dismisses a popup after its children, topmost first as
+// xdg-shell requires, and forgets them.
+func (c *Core) closePopup(ctx context.Context, id WindowID) error {
+	if err := c.closePopupsOf(ctx, id); err != nil {
+		return err
+	}
+	if err := c.command(ctx, ports.ClosePopup{ID: id}); err != nil {
+		return err
+	}
+	c.forgetPopup(id)
+	return nil
+}
+
+// closePopupsOf dismisses the popups hanging from a window or popup,
+// newest first.
+func (c *Core) closePopupsOf(ctx context.Context, id WindowID) error {
+	for _, child := range slices.Backward(slices.Clone(c.popupOrder)) {
+		if p := c.popups[child]; p != nil && p.parent == id {
+			if err := c.closePopup(ctx, child); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// dropPopup forgets a popup the client unmapped and dismisses its children.
 func (c *Core) dropPopup(ctx context.Context, id WindowID) error {
 	if c.popups[id] == nil {
 		return nil
 	}
-	delete(c.popups, id)
-	c.popupOrder = slices.DeleteFunc(c.popupOrder, func(v WindowID) bool { return v == id })
-	for _, child := range slices.Clone(c.popupOrder) {
-		if p := c.popups[child]; p != nil && p.parent == id {
-			if err := c.command(ctx, ports.ClosePopup{ID: child}); err != nil {
-				return err
-			}
-			if err := c.dropPopup(ctx, child); err != nil {
-				return err
-			}
-		}
+	if err := c.closePopupsOf(ctx, id); err != nil {
+		return err
 	}
-	if c.pointer == id {
-		c.pointer = 0
-	}
+	c.forgetPopup(id)
 	return nil
 }
 
-// dropPopupsOf dismisses the popups hanging from a window.
-func (c *Core) dropPopupsOf(ctx context.Context, id WindowID) error {
-	for _, child := range slices.Clone(c.popupOrder) {
-		if p := c.popups[child]; p != nil && p.parent == id {
-			if err := c.command(ctx, ports.ClosePopup{ID: child}); err != nil {
-				return err
-			}
-			if err := c.dropPopup(ctx, child); err != nil {
-				return err
-			}
-		}
+func (c *Core) forgetPopup(id WindowID) {
+	delete(c.popups, id)
+	c.popupOrder = slices.DeleteFunc(c.popupOrder, func(v WindowID) bool { return v == id })
+	if c.pointer == id {
+		c.pointer = 0
 	}
-	return nil
 }
 
 // closeHiddenPopups dismisses popups whose window left the screen.
 func (c *Core) closeHiddenPopups(ctx context.Context) error {
-	for _, id := range slices.Clone(c.popupOrder) {
+	for _, id := range slices.Backward(slices.Clone(c.popupOrder)) {
 		if c.popups[id] == nil {
 			continue
 		}
 		if _, _, ok := c.windowRect(id); !ok {
-			if err := c.command(ctx, ports.ClosePopup{ID: id}); err != nil {
-				return err
-			}
-			if err := c.dropPopup(ctx, id); err != nil {
+			if err := c.closePopup(ctx, id); err != nil {
 				return err
 			}
 		}
@@ -228,7 +235,7 @@ func (c *Core) closeHiddenPopups(ctx context.Context) error {
 // dismissGrabs closes the grabbing popups unless the click hit one of
 // them: a click outside a menu closes it.
 func (c *Core) dismissGrabs(ctx context.Context, hit WindowID) error {
-	for _, id := range slices.Clone(c.popupOrder) {
+	for _, id := range slices.Backward(slices.Clone(c.popupOrder)) {
 		p := c.popups[id]
 		if p == nil || !p.grab {
 			continue
@@ -238,10 +245,7 @@ func (c *Core) dismissGrabs(ctx context.Context, hit WindowID) error {
 		if c.popups[hit] != nil && (hit == id || c.isAncestor(id, hit) || c.isAncestor(hit, id)) {
 			continue
 		}
-		if err := c.command(ctx, ports.ClosePopup{ID: id}); err != nil {
-			return err
-		}
-		if err := c.dropPopup(ctx, id); err != nil {
+		if err := c.closePopup(ctx, id); err != nil {
 			return err
 		}
 	}

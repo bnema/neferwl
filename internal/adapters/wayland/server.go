@@ -37,20 +37,24 @@ type Channels struct {
 	Cursors chan<- ports.CursorChange
 }
 type Server struct {
-	display                 *server.Display
-	env                     procEnv
-	slotsPending            bool // core waits for a slot window
-	name                    string
-	cleanup                 func()
-	log                     zerowrap.Logger
-	channels                Channels
-	awaiting                []*wayland.Callback
-	frames                  uint64
-	started                 time.Time
-	surfaces                map[*server.Resource]*surface
-	buffers                 map[*server.Resource]clientBuffer
-	dmabuf                  *dmabufGlobal
-	serial                  uint32
+	display      *server.Display
+	env          procEnv
+	slotsPending bool // core waits for a slot window
+	name         string
+	cleanup      func()
+	log          zerowrap.Logger
+	channels     Channels
+	awaiting     []*wayland.Callback
+	frames       uint64
+	started      time.Time
+	surfaces     map[*server.Resource]*surface
+	buffers      map[*server.Resource]clientBuffer
+	dmabuf       *dmabufGlobal
+	serial       uint32
+	// press is the serial of the last button or key press, sent to
+	// pressClient: popup grabs must come from it.
+	press                   uint32
+	pressClient             *server.Client
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
 	layers                  map[ports.WindowID]*layerSurface
@@ -397,6 +401,10 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 				if c.Pressed {
 					state = 1
 				}
+				if c.Pressed {
+					client := w.xdg.resource.Client()
+					s.press, s.pressClient = s.serial, &client
+				}
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
 				pointerFrame(p)
 			}
@@ -425,6 +433,12 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		state := uint32(0)
 		if c.Key.Pressed {
 			state = 1
+		}
+		if c.Key.Pressed {
+			if surf, _ := s.focusTarget(c.ID); surf != nil {
+				client := surf.Client()
+				s.press, s.pressClient = s.serial, &client
+			}
 		}
 		for _, k := range keyboards {
 			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)

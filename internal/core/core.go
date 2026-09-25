@@ -565,7 +565,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.clients[v.ID] = v
 				if v.Floating {
 					if s, _ := c.screenOf(v.ID); s == nil {
-						c.cur().mon.Current().AddFloating(v.ID, v.Width, v.Height)
+						c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
 					}
 				} else if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
 					if s, _ := c.screenOf(v.ID); s == nil {
@@ -595,7 +595,7 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 				}
-				if err := c.dropPopupsOf(ctx, v.ID); err != nil {
+				if err := c.closePopupsOf(ctx, v.ID); err != nil {
 					return nil
 				}
 				delete(c.clients, v.ID)
