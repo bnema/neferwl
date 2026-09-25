@@ -128,3 +128,45 @@ func TestCommitTimingDelaysCommit(t *testing.T) {
 	requestProtocol(t, c, timer, committiming.WpCommitTimerV1RequestSetTimestamp, uint32(0), uint32(1), uint32(0))
 	expectProtocolError(t, c, timer, uint32(committiming.WpCommitTimerV1ErrorTimestampExists))
 }
+
+// Far or past timestamps never hold a surface longer than a second.
+func TestMonotonicTimeClamps(t *testing.T) {
+	var now unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		sec    uint64
+		nsec   int64
+		lo, hi time.Duration
+	}{
+		{^uint64(0), 0, maxTimestampAhead - 10*time.Millisecond, maxTimestampAhead},
+		{0, 0, -10 * time.Millisecond, 10 * time.Millisecond},
+		{uint64(now.Sec), now.Nsec, -10 * time.Millisecond, 10 * time.Millisecond},
+	} {
+		got := time.Until(monotonicTime(tc.sec, tc.nsec))
+		if got < tc.lo || got > tc.hi {
+			t.Errorf("sec %d: %v not in [%v, %v]", tc.sec, got, tc.lo, tc.hi)
+		}
+	}
+}
+
+// A barrier on an output that flips clears on its next flip.
+func TestTickFifoClearsBarrierOnFlip(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	surf := &surface{server: s, xdg: &xdgSurface{window: &window{last: ports.ConfigureWindow{Output: "DP-2"}}}}
+	now := time.Unix(100, 0)
+	s.lastFlip["DP-2"] = now.Add(-time.Millisecond)
+	surf.setBarrier(now)
+	if _, waiting := s.tickFifo(now.Add(time.Millisecond), nil); !waiting || !surf.barrier {
+		t.Fatal("barrier cleared before the flip")
+	}
+	// A flipping output waits up to 1.5 refreshes for a missed flip.
+	if w, _ := s.tickFifo(now.Add(20*time.Millisecond), nil); !surf.barrier || w < 4*time.Millisecond {
+		t.Fatalf("barrier %v wait %v", surf.barrier, w)
+	}
+	if _, waiting := s.tickFifo(now.Add(21*time.Millisecond), map[string]bool{"DP-2": true}); waiting || surf.barrier {
+		t.Fatal("barrier kept after the flip")
+	}
+}

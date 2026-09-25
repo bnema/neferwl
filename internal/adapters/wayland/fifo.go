@@ -122,16 +122,31 @@ func (h *timerHandler) SetTimestamp(r *committiming.WpCommitTimerV1, secHi, secL
 	case !h.surface.pendingTime.IsZero():
 		r.PostError(uint32(committiming.WpCommitTimerV1ErrorTimestampExists), "timestamp already set")
 	default:
-		h.surface.pendingTime = monotonicTime(int64(secHi)<<32|int64(secLo), int64(nsec))
+		h.surface.pendingTime = monotonicTime(uint64(secHi)<<32|uint64(secLo), int64(nsec))
 	}
 }
 func (*timerHandler) Destroy(*committiming.WpCommitTimerV1) {}
 
-// monotonicTime converts a CLOCK_MONOTONIC time to wall time.
-func monotonicTime(sec, nsec int64) time.Time {
+// maxTimestampAhead bounds how far a commit timestamp can hold a commit.
+const maxTimestampAhead = time.Second
+
+// monotonicTime converts a CLOCK_MONOTONIC time to wall time, at most
+// maxTimestampAhead from now: a far timestamp must not stall the surface.
+func monotonicTime(sec uint64, nsec int64) time.Time {
 	var now unix.Timespec
-	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &now)
-	return time.Now().Add(time.Duration((sec-now.Sec)*1e9 + nsec - now.Nsec))
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &now) != nil {
+		return time.Now()
+	}
+	ahead := time.Duration(nsec - now.Nsec)
+	switch n := uint64(now.Sec); {
+	case sec >= n+2:
+		ahead = maxTimestampAhead
+	case sec+2 <= n:
+		ahead = 0 // in the past: apply now
+	default:
+		ahead += time.Duration(int64(sec)-now.Sec) * time.Second
+	}
+	return time.Now().Add(min(max(ahead, 0), maxTimestampAhead))
 }
 
 // content_type_v1
@@ -279,19 +294,25 @@ func (s *surface) queueUpdate() {
 
 // applyUpdate applies a queued update, keeping the requests made since.
 func (s *surface) applyUpdate(u update) {
+	// A buffer destroyed while queued (a swapchain resize) shows nothing.
+	if u.buffer != nil && !u.buffer.Resource.Alive() {
+		u.buffer = nil
+	}
 	later := s.takePending()
 	s.putPending(u)
 	s.applyCommit()
 	s.putPending(later)
 }
 
-// dropQueue discards the queued updates of a destroyed surface.
+// dropQueue discards the queued updates of a destroyed surface or role.
 func (s *surface) dropQueue() {
+	released := map[*server.Resource]bool{}
 	for _, u := range s.queue {
 		for _, cb := range u.callbacks {
 			cb.Destroy()
 		}
-		if u.buffer != nil && u.buffer != s.current && u.buffer.Resource.Alive() {
+		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() {
+			released[u.buffer.Resource] = true
 			u.buffer.SendRelease()
 		}
 	}
@@ -329,23 +350,27 @@ func (s *Server) outputPeriod(name string) time.Duration {
 // clear it after one refresh, or 1.5 when they usually flip. It returns
 // the time to the next deadline and whether any surface still waits.
 func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration, bool) {
-	for name := range flipped {
-		if flipped[name] {
+	for name, f := range flipped {
+		if f {
 			s.lastFlip[name] = now
+		}
+	}
+	for name := range s.lastFlip {
+		if s.outputByNameExact(name) == nil {
+			delete(s.lastFlip, name)
 		}
 	}
 	wait := defaultFramePeriod
 	for surf := range s.fifoSurfaces {
 		name := s.fifoOutput(surf)
 		p := s.outputPeriod(name)
-		if surf.barrier {
-			deadline := surf.barrierAt.Add(p)
-			if name != "" && now.Sub(s.lastFlip[name]) < time.Second {
-				deadline = deadline.Add(p / 2)
-			}
-			if (flipped[name] && name != "" && s.lastFlip[name].After(surf.barrierAt)) || !now.Before(deadline) {
-				surf.barrier = false
-			}
+		// The deadline of outputs that usually flip only catches a missed flip.
+		deadline := surf.barrierAt.Add(p)
+		if name != "" && now.Sub(s.lastFlip[name]) < time.Second {
+			deadline = deadline.Add(p / 2)
+		}
+		if surf.barrier && ((flipped[name] && name != "" && s.lastFlip[name].After(surf.barrierAt)) || !now.Before(deadline)) {
+			surf.barrier = false
 		}
 		for len(surf.queue) > 0 && !surf.destroyed {
 			u := surf.queue[0]
@@ -360,7 +385,6 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 			surf.applyUpdate(u)
 		}
 		if surf.barrier {
-			deadline := surf.barrierAt.Add(p)
 			wait = min(wait, deadline.Sub(now))
 		}
 		if !surf.barrier && len(surf.queue) == 0 {
@@ -368,6 +392,11 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		}
 	}
 	return max(wait, time.Millisecond), len(s.fifoSurfaces) > 0
+}
+
+// sameBuffer reports whether two wrappers are the same wl_buffer.
+func sameBuffer(a, b *wayland.Buffer) bool {
+	return a != nil && b != nil && a.Resource == b.Resource
 }
 
 // wakePacer makes the pacer look at its queues now.
