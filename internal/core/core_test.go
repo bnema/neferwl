@@ -689,3 +689,36 @@ func TestPopupChainDismissOrder(t *testing.T) {
 		t.Fatalf("close order %v, want [3 2]", closed)
 	}
 }
+
+// A dialog over a fullscreen window gets the pointer.
+func TestFloatOverFullscreenHit(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10}
+	scene(t, scenes)
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: 50, Y: 40}
+	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
+		t.Fatalf("pointer went to %v, want the dialog", v)
+	}
+}

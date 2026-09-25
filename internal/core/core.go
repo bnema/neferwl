@@ -519,16 +519,19 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
+	full := false
 	for _, p := range sc.mon.Layout() {
 		r := c.clientRect(p)
 		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
-			// Floating windows come last in the layout and are on top.
+			// Floating windows come last in the layout and are on top,
+			// even of a fullscreen window; nothing else is.
+			if full && !p.Floating {
+				continue
+			}
 			if id == 0 || p.Fullscreen || p.Floating {
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
-			if p.Fullscreen {
-				break
-			}
+			full = full || p.Fullscreen
 		}
 	}
 	return id, sx, sy
