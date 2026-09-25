@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -23,7 +24,7 @@ func New(env []string, log zerowrap.Logger) *Launcher {
 	return &Launcher{env: append([]string(nil), env...), log: log}
 }
 
-func ChildEnv(base []string, waylandDisplay, runtimeDir string) []string {
+func ChildEnv(base []string, waylandDisplay, runtimeDir string, cursorSize int) []string {
 	values := map[string]string{}
 	for _, entry := range base {
 		key, value, ok := strings.Cut(entry, "=")
@@ -31,7 +32,7 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string) []string {
 			continue
 		}
 		switch {
-		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"):
+		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"), strings.HasPrefix(key, "XCURSOR_"):
 			values[key] = value
 		}
 	}
@@ -39,6 +40,9 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string) []string {
 	values["XDG_RUNTIME_DIR"] = runtimeDir
 	values["XDG_CURRENT_DESKTOP"] = "nefertty"
 	values["XDG_SESSION_TYPE"] = "wayland"
+	// X11 apps (through Xwayland) and toolkits pick their own cursor size:
+	// give them the compositor's.
+	values["XCURSOR_SIZE"] = strconv.Itoa(cursorSize)
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
