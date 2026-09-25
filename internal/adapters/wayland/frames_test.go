@@ -1,10 +1,12 @@
 package wayland
 
 import (
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
 func TestFramePeriod(t *testing.T) {
@@ -18,28 +20,57 @@ func TestFramePeriod(t *testing.T) {
 	}
 }
 
-// Each output is paced at its own refresh; a page flip resets its deadline.
-func TestFireFramesPacing(t *testing.T) {
+// Each output is paced at its own refresh; a flip fires its queue and
+// pushes its deadline back; the pacer idles with nothing queued.
+func TestDueFrames(t *testing.T) {
 	fast := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 165000}}}
 	slow := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "HDMI-A-1", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{fast, slow}, frameDue: map[string]time.Time{}}
+	s := &Server{outputs: []*output{fast, slow}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
+	// dueFrames only counts the queued callbacks: nil ones stand for them.
+	queue := func(name string) { s.awaiting[name] = append(s.awaiting[name], nil) }
+	fired := func(fire []string) {
+		for _, name := range fire {
+			delete(s.awaiting, name)
+		}
+	}
 	now := time.Unix(100, 0)
-	if wait := s.fireFrames(now, "", false); wait != framePeriod(165000) {
-		t.Fatalf("first wait %v", wait)
+	if _, _, idle := s.dueFrames(now, nil); !idle {
+		t.Fatal("not idle without callbacks")
 	}
-	if due := s.frameDue["HDMI-A-1"]; due != now.Add(time.Second/60) {
-		t.Fatalf("60 Hz due %v", due.Sub(now))
+	// A first callback goes out at once, then one per refresh.
+	queue("DP-2")
+	queue("HDMI-A-1")
+	fire, _, idle := s.dueFrames(now, nil)
+	if len(fire) != 2 || !idle {
+		t.Fatalf("first fire %v idle %v", fire, idle)
 	}
-	// A flip on DP-2 pushes its timer back: flips pace it.
-	later := now.Add(time.Millisecond)
-	s.fireFrames(later, "DP-2", true)
-	if due := s.frameDue["DP-2"]; due != later.Add(framePeriod(165000)*3/2) {
-		t.Fatalf("flip due %v", due.Sub(later))
+	fired(fire)
+	queue("DP-2")
+	queue("HDMI-A-1")
+	fire, wait, _ := s.dueFrames(now.Add(time.Millisecond), nil)
+	if len(fire) != 0 || wait != framePeriod(165000)-time.Millisecond {
+		t.Fatalf("early fire %v wait %v", fire, wait)
 	}
-	// An unplugged output is forgotten.
+	at := now.Add(framePeriod(165000))
+	fire, wait, _ = s.dueFrames(at, nil)
+	if !slices.Equal(fire, []string{"DP-2"}) || wait != time.Second/60-framePeriod(165000) {
+		t.Fatalf("165 Hz fire %v wait %v", fire, wait)
+	}
+	fired(fire)
+	// A flip fires its output early and pushes its deadline to 1.5 periods.
+	queue("DP-2")
+	flip := at.Add(time.Millisecond)
+	fire, _, _ = s.dueFrames(flip, map[string]bool{"DP-2": true})
+	if !slices.Equal(fire, []string{"DP-2"}) || s.frameDue["DP-2"] != flip.Add(framePeriod(165000)*3/2) {
+		t.Fatalf("flip fire %v due %v", fire, s.frameDue["DP-2"].Sub(flip))
+	}
+	fired(fire)
+	// A queue on an unplugged output moves to the outputless one (60 Hz).
 	s.outputs = []*output{fast}
-	s.fireFrames(later, "", false)
-	if _, ok := s.frameDue["HDMI-A-1"]; ok {
-		t.Fatal("stale output kept")
+	queue("HDMI-A-1")
+	fire, _, _ = s.dueFrames(flip, nil)
+	fired(fire)
+	if _, ok := s.frameDue["HDMI-A-1"]; ok || len(s.awaiting["HDMI-A-1"]) != 0 || !slices.Equal(fire, []string{""}) {
+		t.Fatalf("unplugged: fire %v due %v", fire, s.frameDue)
 	}
 }

@@ -198,11 +198,7 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.attached = false
 	}
 	if len(s.callbacks) > 0 {
-		name := ""
-		if o := s.server.outputOfSurface(s); o != nil {
-			name = o.name()
-		}
-		s.server.awaiting[name] = append(s.server.awaiting[name], s.callbacks...)
+		s.server.queueFrames(s.server.frameOutput(s), s.callbacks)
 	}
 	s.callbacks = nil
 	if s.role != nil {
