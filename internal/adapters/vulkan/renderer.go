@@ -23,8 +23,16 @@ type Renderer struct {
 	device        vk.Device
 	dd            *vk.DeviceDispatch
 	queue         vk.Queue
-	image         vk.Image
-	imageMemory   vk.DeviceMemory
+	// own is the target until ExportTargets; targets are exported images
+	// (targets.go), current the one the next frame draws into.
+	own        target
+	targets    []*target
+	current    int
+	renderMods []uint64
+	// last is the target of the last frame; readback copies it into
+	// buffer only when Pixels or CopyBGRX asks (stale until then).
+	last          *target
+	readBack      bool
 	buffer        vk.Buffer
 	bufferMemory  vk.DeviceMemory
 	staging       vk.Buffer
@@ -35,7 +43,6 @@ type Renderer struct {
 	pool          vk.CommandPool
 	command       vk.CommandBuffer
 	fence         vk.Fence
-	layout        vk.ImageLayout
 	memory        vk.PhysicalDeviceMemoryProperties
 	family        uint32
 	// dmabuf is what clients may send; imports are their buffers by ID.
@@ -65,7 +72,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, layout: vk.ImageLayoutUndefined, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}}
+	r = &Renderer{width: width, height: height, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -169,26 +176,27 @@ func New(width, height int) (r *Renderer, err error) {
 		// Clients need the render node to allocate on the right GPU.
 		if sup := r.probeDMABuf(physical); sup.Device != 0 {
 			r.dmabuf = sup
+			r.probeRenderModifiers(physical)
 		}
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
-	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.image)); err != nil {
+	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
 		return
 	}
 	var req vk.MemoryRequirements
-	r.dd.GetImageMemoryRequirements(r.device, r.image, &req)
+	r.dd.GetImageMemoryRequirements(r.device, r.own.image, &req)
 	var kind uint32
 	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyDeviceLocalBit)
 	if err != nil {
 		return
 	}
 	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(image)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.imageMemory)); err != nil {
+	if err = checked("vkAllocateMemory(image)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.own.memory)); err != nil {
 		return
 	}
-	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.image, r.imageMemory, 0)); err != nil {
+	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
 	size := vk.DeviceSize(width) * vk.DeviceSize(height) * 4
@@ -197,7 +205,7 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	// The CPU reads this buffer every frame: uncached memory makes that ~100x slower.
+	// Readback (screenshots, fallback) reads this buffer: uncached memory is ~100x slower.
 	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
 	if err != nil {
 		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
@@ -575,18 +583,27 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		return err
 	}
 	rangeInfo := vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, LevelCount: 1, LayerCount: 1}
+	tg := r.target()
 	srcStage := vk.PipelineStageFlags(vk.PipelineStageTopOfPipeBit)
 	srcAccess := vk.AccessFlags(0)
-	if r.layout == vk.ImageLayoutTransferSrcOptimal {
+	if tg.layout == vk.ImageLayoutTransferSrcOptimal {
 		srcStage = vk.PipelineStageTransferBit
 		srcAccess = vk.AccessTransferReadBit
 	}
-	barrier := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: srcAccess, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: r.layout, NewLayout: vk.ImageLayoutTransferDstOptimal, Image: r.image, SubresourceRange: rangeInfo}
+	// The whole target is cleared: its old contents never matter.
+	barrier := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: srcAccess, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: tg.layout, NewLayout: vk.ImageLayoutTransferDstOptimal, Image: tg.image, SubresourceRange: rangeInfo}
+	if tg.exported {
+		// Acquire from the display (foreign queue family).
+		barrier.OldLayout = vk.ImageLayoutUndefined
+		barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+		srcStage, barrier.SrcAccessMask = vk.PipelineStageTopOfPipeBit, 0
+	}
 	d.CmdPipelineBarrier(r.command, srcStage, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+	barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = 0, 0
 	// VkClearColorValue is a union; UNORM formats read it as float32.
 	unorm := func(v uint8) uint32 { return math.Float32bits(float32(v) / 255) }
 	color := vk.ClearColorValue{unorm(rgb[0]), unorm(rgb[1]), unorm(rgb[2]), math.Float32bits(1)}
-	d.CmdClearColorImage(r.command, r.image, vk.ImageLayoutTransferDstOptimal, &color, 1, &rangeInfo)
+	d.CmdClearColorImage(r.command, tg.image, vk.ImageLayoutTransferDstOptimal, &color, 1, &rangeInfo)
 	barrier.SrcAccessMask = vk.AccessTransferWriteBit
 	barrier.DstAccessMask = vk.AccessTransferWriteBit
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
@@ -633,7 +650,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				DstSubresource: layers,
 				DstOffsets:     [2]vk.Offset3D{{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, {X: int32(rect.Max.X), Y: int32(rect.Max.Y), Z: 1}},
 			}
-			d.CmdBlitImage(r.command, f.dma.image, vk.ImageLayoutTransferSrcOptimal, r.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
+			d.CmdBlitImage(r.command, f.dma.image, vk.ImageLayoutTransferSrcOptimal, tg.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
 			continue
 		}
 		layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
@@ -644,19 +661,26 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				h := min(fillRows, rect.Max.Y-y)
 				r.fillRegions = append(r.fillRegions, vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(h), Depth: 1}})
 			}
-			d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, uint32(len(r.fillRegions)), &r.fillRegions[0])
+			d.CmdCopyBufferToImage(r.command, r.staging, tg.image, vk.ImageLayoutTransferDstOptimal, uint32(len(r.fillRegions)), &r.fillRegions[0])
 			continue
 		}
 		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
-		d.CmdCopyBufferToImage(r.command, r.staging, r.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
+		d.CmdCopyBufferToImage(r.command, r.staging, tg.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
 	}
 	ownership(false)
+	barrier.SrcAccessMask = vk.AccessTransferWriteBit
 	barrier.DstAccessMask = vk.AccessTransferReadBit
 	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
 	barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
-	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	copyRegion := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-	d.CmdCopyImageToBuffer(r.command, r.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &copyRegion)
+	if tg.exported {
+		// Release to the display: KMS scans it out after the fence.
+		barrier.NewLayout = vk.ImageLayoutGeneral
+		barrier.DstAccessMask = 0
+		barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &barrier)
+	} else {
+		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+	}
 	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(r.command)); err != nil {
 		return err
 	}
@@ -684,7 +708,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		return err
 	}
 	runtime.KeepAlive(stages)
-	r.layout = vk.ImageLayoutTransferSrcOptimal
+	tg.layout = barrier.NewLayout
+	r.last, r.readBack = tg, false
+	// The fence wait is the GPU completion ADR 014 requires before a flip.
 	if err := checked("vkWaitForFences", d.WaitForFences(r.device, 1, &r.fence, 1, math.MaxUint64)); err != nil {
 		return err
 	}
@@ -695,7 +721,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 
 func (r *Renderer) Pixels() *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
-	if r.mapped == nil {
+	if r.mapped == nil || r.readback() != nil {
 		return out
 	}
 	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
@@ -709,7 +735,7 @@ func (r *Renderer) Pixels() *image.RGBA {
 // CopyBGRX writes the last frame into an XRGB8888 buffer with the given pitch.
 // The image is B8G8R8A8, which is already XRGB8888 in memory.
 func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
-	if r.mapped == nil {
+	if r.mapped == nil || r.readback() != nil {
 		return
 	}
 	row := r.width * 4
@@ -717,6 +743,60 @@ func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
 	for y := 0; y < r.height; y++ {
 		copy(dst[y*pitch:y*pitch+row], src[y*row:(y+1)*row])
 	}
+}
+
+// Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
+const (
+	queueFamilyIgnored = ^uint32(0)
+	wholeSize          = ^vk.DeviceSize(0)
+)
+
+// readback copies the last frame into the host buffer, once per frame.
+func (r *Renderer) readback() error {
+	if r.readBack || r.last == nil || r.last.image == 0 {
+		return nil
+	}
+	d := r.dd
+	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
+		return err
+	}
+	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo}
+	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(r.command, &begin)); err != nil {
+		return err
+	}
+	t := r.last
+	rangeInfo := vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, LevelCount: 1, LayerCount: 1}
+	b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessTransferReadBit, OldLayout: t.layout, NewLayout: vk.ImageLayoutTransferSrcOptimal, Image: t.image, SubresourceRange: rangeInfo}
+	if t.exported {
+		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+		b.SrcAccessMask = 0
+	}
+	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+	region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
+	d.CmdCopyImageToBuffer(r.command, t.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
+	// Make the copy visible to host reads of the mapped buffer.
+	hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: r.buffer, Size: wholeSize}
+	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
+	if t.exported {
+		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
+		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
+		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+	} else {
+		t.layout = vk.ImageLayoutTransferSrcOptimal
+	}
+	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(r.command)); err != nil {
+		return err
+	}
+	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &r.command}
+	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, r.fence)); err != nil {
+		return err
+	}
+	if err := checked("vkWaitForFences", d.WaitForFences(r.device, 1, &r.fence, 1, math.MaxUint64)); err != nil {
+		return err
+	}
+	r.readBack = true
+	return checked("vkResetFences", d.ResetFences(r.device, 1, &r.fence))
 }
 
 func (r *Renderer) Close() {
@@ -728,6 +808,7 @@ func (r *Renderer) Close() {
 		if r.device != 0 {
 			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.device))
 		}
+		r.dropTargets()
 		for id, im := range r.imports {
 			r.release(im)
 			delete(r.imports, id)
@@ -770,14 +851,7 @@ func (r *Renderer) Close() {
 			d.FreeMemory(r.device, r.bufferMemory, nil)
 			r.bufferMemory = 0
 		}
-		if r.image != 0 {
-			d.DestroyImage(r.device, r.image, nil)
-			r.image = 0
-		}
-		if r.imageMemory != 0 {
-			d.FreeMemory(r.device, r.imageMemory, nil)
-			r.imageMemory = 0
-		}
+		r.freeTarget(&r.own)
 		d.DestroyDevice(r.device, nil)
 		r.device = 0
 	} else if r.device != 0 && r.id != nil {

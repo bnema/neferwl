@@ -2,12 +2,22 @@ package ports
 
 import "image"
 
-// Renderer draws scenes for an output. One goroutine owns it.
+// Renderer draws scenes for an output. One goroutine owns it. Frames go
+// to its own image until ExportTargets gives it scanout images; then each
+// Render draws into the target chosen by UseTarget (ADR 014: no CPU copy).
 type Renderer interface {
 	Render(Scene, map[WindowID]SurfaceContent) error
-	// Pixels returns the last frame (headless screenshots).
+	// ExportTargets allocates n images of the renderer's size that the
+	// display can scan out, with one of the given XRGB8888 modifiers
+	// (none: any the device exports), and returns them as dmabufs.
+	// n = 0 drops the targets.
+	ExportTargets(n int, modifiers []uint64) ([]DMABuf, error)
+	// UseTarget selects the exported image the next Render draws into.
+	UseTarget(i int)
+	// Pixels reads the last frame back (headless screenshots, tests).
 	Pixels() *image.RGBA
-	// CopyBGRX writes the last frame as XRGB8888 rows of the given pitch (DRM scanout).
+	// CopyBGRX reads the last frame back as XRGB8888 rows of the given
+	// pitch: the logged fallback when no image can be exported.
 	CopyBGRX(dst []byte, pitch int)
 	Close()
 }

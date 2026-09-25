@@ -100,7 +100,7 @@ func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
 	}
 	fb := &clientFB{last: now}
 	o.clientFBs[b.ID] = fb
-	id, err := o.card.addClientFB(b)
+	id, err := o.card.addFB(b)
 	if err != nil {
 		o.log.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
 		fb.failed = "import_failed"
@@ -127,11 +127,12 @@ const (
 	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 )
 
-// addClientFB imports a dmabuf as a framebuffer. The GEM handle belongs to
-// the card fd and is shared by every import of the same buffer, so import,
-// ADDFB2 and close run under the card lock and the handle is closed right
-// away: the framebuffer keeps its own reference to the buffer.
-func (c *Card) addClientFB(b *ports.DMABuf) (uint32, error) {
+// addFB imports a dmabuf as a framebuffer: client buffers and the
+// renderer's exported output images. The GEM handle belongs to the card fd
+// and is shared by every import of the same buffer, so import, ADDFB2 and
+// close run under the card lock and the handle is closed right away: the
+// framebuffer keeps its own reference to the buffer.
+func (c *Card) addFB(b *ports.DMABuf) (uint32, error) {
 	format, ok := scanoutFormat(b.Format)
 	if !ok {
 		return 0, errors.New("format not scanned out")
