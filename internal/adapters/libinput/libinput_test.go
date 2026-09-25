@@ -59,3 +59,13 @@ func TestPointerAcrossOutputs(t *testing.T) {
 		t.Fatal(p.x, p.y)
 	}
 }
+
+func TestPointerStartsOnPrimary(t *testing.T) {
+	p := newPointer(ports.Layout{
+		{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},
+		{Info: ports.OutputInfo{Name: "B"}, X: 100, Width: 200, Height: 100, Scale: 1, Primary: true},
+	})
+	if p.x != 200 || p.y != 50 {
+		t.Fatal(p.x, p.y)
+	}
+}

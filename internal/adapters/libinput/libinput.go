@@ -310,22 +310,33 @@ func hotkey(ke ports.KeyEvent) (hotkeyAction, int) {
 // is divided by the scale of the output under the pointer, so it moves the
 // same number of physical pixels on every output.
 type pointer struct {
-	x, y   float64
-	layout ports.Layout
+	x, y    float64
+	layout  ports.Layout
+	touched bool // false until the user moves it: it follows the primary output
 }
 
-// newPointer starts at the centre of the first output.
+// newPointer starts at the centre of the primary output, else the first.
 func newPointer(l ports.Layout) *pointer {
-	p := &pointer{layout: l}
-	if len(l) > 0 {
-		p.x, p.y = float64(l[0].X)+float64(l[0].Width)/2, float64(l[0].Y)+float64(l[0].Height)/2
-	}
+	p := &pointer{}
+	p.setLayout(l)
 	return p
 }
 
 // setLayout keeps the pointer where it is, or clamps it onto an output.
+// Until it is first moved it stays centred on the primary output, which
+// may be plugged in after the others.
 func (p *pointer) setLayout(l ports.Layout) {
 	p.layout = l
+	if !p.touched && len(l) > 0 {
+		o := l[0]
+		for _, v := range l {
+			if v.Primary {
+				o = v
+			}
+		}
+		p.x, p.y = float64(o.X)+float64(o.Width)/2, float64(o.Y)+float64(o.Height)/2
+		return
+	}
 	p.x, p.y = l.Clamp(p.x, p.y, p.x, p.y)
 }
 
@@ -342,6 +353,7 @@ func (p *pointer) move(dx, dy float64) (float64, float64) {
 }
 
 func (p *pointer) set(x, y float64) (float64, float64) {
+	p.touched = true
 	p.x, p.y = p.layout.Clamp(p.x, p.y, x, y)
 	return p.x, p.y
 }

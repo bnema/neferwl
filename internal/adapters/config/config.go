@@ -197,6 +197,17 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
+			if base, ok := strings.CutSuffix(name, ".primary"); ok {
+				name = base
+				b, err := onOff(value)
+				if err != nil {
+					warn("%s: %v", key, err)
+					continue
+				}
+				override()
+				entry().Primary = b
+				continue
+			}
 			if base, ok := strings.CutSuffix(name, ".scale"); ok {
 				name = base
 				s, err := parseScale(value)
@@ -219,7 +230,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale = e.Scale
+			o.Scale, o.Primary = e.Scale, e.Primary
 			*e = o
 			continue
 		}

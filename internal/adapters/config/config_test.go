@@ -59,6 +59,7 @@ output.DP-2 = 5120x2160@165.058
 output.HDMI-A-1 = off
 output.DP-1 = preferred
 output.DP-1.scale = 1.5
+output.DP-1.primary = on
 bind.cmd+code:30 = quit
 render.direct-scanout = off
 `)
@@ -72,7 +73,7 @@ render.direct-scanout = off
 		t.Fatalf("%+v", c)
 	}
 	// Scale and mode lines combine in either order.
-	if len(c.Outputs) != 3 || c.Outputs[0].Mode != "5120x2160@165.058" || c.Outputs[0].Scale != 4.0/3 || !c.Outputs[1].Off || c.Outputs[2].Mode != "" || c.Outputs[2].Off || c.Outputs[2].Scale != 1.5 {
+	if len(c.Outputs) != 3 || c.Outputs[0].Mode != "5120x2160@165.058" || c.Outputs[0].Scale != 4.0/3 || !c.Outputs[1].Off || c.Outputs[2].Mode != "" || c.Outputs[2].Off || c.Outputs[2].Scale != 1.5 || !c.Outputs[2].Primary || c.Outputs[0].Primary {
 		t.Fatalf("%+v", c.Outputs)
 	}
 	if c.Binds["Cmd+code:30"] != "quit" {
@@ -95,6 +96,7 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"output.DP-2 = big", "output.DP-2"},
 		{"output.DP-2 = 1920x1080@0", "output.DP-2"},
 		{"output.DP-2.scale = 0.5", "between 1 and 4"},
+		{"output.DP-2.primary = yes", "output.DP-2.primary"},
 		{"output.DP-2.scale = 3/0", "between 1 and 4"},
 		{"bind.cmd+code:x = quit", "evdev key code"},
 		{"nope = 1", "nope"},

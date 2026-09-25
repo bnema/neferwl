@@ -178,6 +178,8 @@ type OutputPlacement struct {
 	Info                OutputInfo
 	X, Y, Width, Height int
 	Scale               float64
+	// Primary is output.<name>.primary: the pointer starts on it.
+	Primary bool
 }
 
 // Contains reports whether the logical point is on the output.
