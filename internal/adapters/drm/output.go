@@ -29,6 +29,13 @@ type Output struct {
 	monitor   Monitor
 	cursor    *Cursor
 	log       zerowrap.Logger
+	// Direct scanout: client framebuffers by DMABuf ID, GEM handle counts,
+	// and the buffer on screen and queued (0: the composed image).
+	scanout       bool
+	clientFBs     map[uint64]*clientFB
+	handles       map[uint32]int
+	shown, queued uint64
+	reason        string // why the last frame was composed ("" = scanout)
 }
 
 // CursorLoader returns the image of a cursor at an output scale, at most
@@ -38,7 +45,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 // newOutput allocates buffers and the cursor for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
-	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name)}
+	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, handles: map[uint32]int{}, reason: "start"}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -76,6 +83,7 @@ func (o *Output) Height() int { return int(o.mode.VDisplay) }
 // modeset shows the front buffer; needed at start and after every VT resume.
 func (o *Output) modeset() error {
 	o.pending = false
+	o.shown, o.queued = 0, 0
 	front := o.bufs[1-o.back]
 	if err := setCrtc(o.fd, o.crtc, o.conn.id, front.fbID, &o.mode); err != nil {
 		return fmt.Errorf("set crtc: %w", err)
@@ -92,8 +100,53 @@ func (o *Output) present(r ports.Renderer) error {
 		return err
 	}
 	o.pending, o.flipStart = true, time.Now()
+	o.queued = 0
 	o.back = 1 - o.back
 	return nil
+}
+
+// tryScanout flips a fullscreen client buffer directly. It reports false,
+// with the reason logged on change, when the frame must be composed.
+func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (bool, error) {
+	reason := "disabled"
+	var c ports.SurfaceContent
+	if o.scanout {
+		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
+	}
+	var fb uint32
+	if reason == "" {
+		var err error
+		if fb, err = o.scanoutFB(c.DMABuf); err != nil {
+			if !errors.Is(err, errScanoutRefused) {
+				o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout import failed")
+			}
+			reason = "import_failed"
+		}
+	}
+	if reason != o.reason {
+		o.log.Info().Bool("direct_scanout", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("scanout")
+		o.reason = reason
+	}
+	if reason != "" {
+		return false, nil
+	}
+	if o.shown == c.DMABuf.ID && o.queued == 0 {
+		// Already on screen: nothing to flip.
+		return true, nil
+	}
+	if err := flip(o.fd, o.crtc, fb); err != nil {
+		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE) {
+			// KMS refuses this buffer on the plane: compose it instead.
+			o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
+			o.clientFBs[c.DMABuf.ID].failed = true
+			o.reason = "flip_refused"
+			return false, nil
+		}
+		return true, err
+	}
+	o.pending, o.flipStart = true, time.Now()
+	o.queued = c.DMABuf.ID
+	return true, nil
 }
 
 // Close restores the CRTC state found at startup, when it had a mode, and
@@ -114,6 +167,8 @@ func (o *Output) Close() {
 			b.destroy(o.fd)
 		}
 	}
+	o.shown, o.queued = 0, 0
+	o.dropClientFBs(true)
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
@@ -170,8 +225,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			o.pending = false
 			o.flips += n
+			o.shown = o.queued
+			o.dropClientFBs(false)
 			select {
-			case presented <- ports.OutputPresented{Output: o.conn.name}:
+			case presented <- ports.OutputPresented{Output: o.conn.name, Scanout: o.shown}:
 			default:
 			}
 			if d := time.Since(o.flipStart); d > 20*time.Millisecond {
@@ -210,11 +267,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		if err := r.Render(scene, surfaces); err != nil {
-			return fmt.Errorf("render frame: %w", err)
+		direct, err := o.tryScanout(scene, surfaces)
+		if !direct {
+			if err := r.Render(scene, surfaces); err != nil {
+				return fmt.Errorf("render frame: %w", err)
+			}
+			err = o.present(r)
 		}
 		copyStart := time.Now()
-		if err := o.present(r); err != nil {
+		if err != nil {
 			if errors.Is(err, unix.EBUSY) {
 				// A flip is still in flight; retry after its event.
 				o.pending, o.flipStart = true, time.Now()

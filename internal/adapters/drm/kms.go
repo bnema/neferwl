@@ -119,6 +119,8 @@ type Want struct {
 	Disabled map[string]bool
 	// Modes maps a connector to W, H and Hz (0: highest refresh at W x H).
 	Modes map[string][3]float64
+	// NoScanout disables direct scanout (render.direct-scanout = off).
+	NoScanout bool
 }
 
 // usable reports whether a connector should be driven.

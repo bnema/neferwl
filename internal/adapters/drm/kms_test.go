@@ -20,6 +20,9 @@ func TestStructSizesMatchIoctls(t *testing.T) {
 		{"page_flip", unsafe.Sizeof(pageFlip{}), ioctlPageFlip},
 		{"create_dumb", unsafe.Sizeof(createDumb{}), ioctlCreateDumb},
 		{"map_dumb", unsafe.Sizeof(mapDumb{}), ioctlMapDumb},
+		{"fb_cmd2", unsafe.Sizeof(fbCmd2{}), ioctlAddFB2},
+		{"prime_handle", unsafe.Sizeof(primeHandle{}), ioctlPrimeFDToHandle},
+		{"gem_close", unsafe.Sizeof(gemClose{}), ioctlGemClose},
 	} {
 		if want := (tc.req >> 16) & 0x3fff; tc.got != want {
 			t.Errorf("%s: size %d, ioctl encodes %d", tc.name, tc.got, want)

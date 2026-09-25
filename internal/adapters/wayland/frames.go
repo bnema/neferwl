@@ -25,13 +25,14 @@ func (s *Server) pace(ctx context.Context) {
 	presented := s.channels.Presented
 	for {
 		flipped := map[string]bool{}
+		scanned := map[string]uint64{}
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.display.Stopped():
 			return
 		case p := <-presented:
-			flipped[p.Output] = true
+			flipped[p.Output], scanned[p.Output] = true, p.Scanout
 		case <-s.frameReady:
 		case <-timer.C:
 		}
@@ -41,7 +42,7 @@ func (s *Server) pace(ctx context.Context) {
 		for {
 			select {
 			case p := <-presented:
-				flipped[p.Output] = true
+				flipped[p.Output], scanned[p.Output] = true, p.Scanout
 			default:
 				break drain
 			}
@@ -53,6 +54,10 @@ func (s *Server) pace(ctx context.Context) {
 				due, wait, idle = s.dueFrames(time.Now(), flipped)
 				for _, name := range due {
 					s.sendFrames(name)
+				}
+				if s.releaseHeld(time.Now(), scanned) && idle {
+					// Held buffers wait for a flip or heldTimeout.
+					wait, idle = heldTimeout, false
 				}
 			}
 		}) {

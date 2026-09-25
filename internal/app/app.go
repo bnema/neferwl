@@ -64,7 +64,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	var hw *drmBackend
 	if opts.Backend == "drm" {
 		var err error
-		if hw, err = openDRM(ctx, opts.Config.Outputs); err != nil {
+		if hw, err = openDRM(ctx, opts.Config.Outputs, opts.Config.Render.DirectScanout); err != nil {
 			return err
 		}
 		defer hw.close()
@@ -208,7 +208,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func() drm.Want { return wantFromConfig(opts.Config.Outputs) }
+				want := func() drm.Want { return wantFromConfig(opts.Config.Outputs, opts.Config.Render.DirectScanout) }
 				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return

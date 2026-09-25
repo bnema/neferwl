@@ -280,7 +280,12 @@ func (OutputAdded) outputEvent() {}
 
 // OutputPresented carries output → wayland that a frame reached the screen
 // (a page flip completed): frame callbacks of the surfaces on it are due.
-type OutputPresented struct{ Output string }
+// Scanout is the DMABuf ID now scanned out directly, 0 for a composed
+// frame: until another flip, that client buffer must not be released.
+type OutputPresented struct {
+	Output  string
+	Scanout uint64
+}
 
 // OutputRemoved carries output → core an unplugged display.
 type OutputRemoved struct{ Name string }
