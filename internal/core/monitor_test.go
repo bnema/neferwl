@@ -487,14 +487,36 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 		return m
 	}
-	t.Run("a window opened there stays when it returns", func(t *testing.T) {
+	t.Run("a dialog opened there floats and follows it home", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
 		m.AddWindow(4)
-		m.Current().MoveColumn(-1)
+		if fs := m.Current(); fs.floatIndex(4) != 0 || fs.fullscreen != 2 {
+			t.Fatal(fs.Floats, fs.fullscreen)
+		}
 		m.SetFullscreen(2, false)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {4}, {}}) || m.Active != 0 {
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) || m.Active != 0 || m.Current().floatIndex(4) != 0 {
+			t.Fatal(got, m.Active, m.Current().Floats)
+		}
+	})
+	t.Run("the bind from a dialog returns the fullscreen window", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(2)
+		m.ToggleFullscreen()
+		m.AddWindow(4) // focused dialog
+		m.ToggleFullscreen()
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) || m.Current().floatIndex(4) != 0 {
+			t.Fatal(got, m.Current().Floats)
+		}
+	})
+	t.Run("closing it brings its dialogs home", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(2)
+		m.ToggleFullscreen()
+		m.AddWindow(4)
+		m.RemoveWindow(2)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3}, {}}) || m.Active != 0 || m.Current().floatIndex(4) != 0 {
 			t.Fatal(got, m.Active)
 		}
 	})
