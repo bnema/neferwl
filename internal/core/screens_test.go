@@ -494,8 +494,8 @@ func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 	// An app ID set after map reaches the state.
 	r.client <- ports.WindowAppID{ID: 1, AppID: "foot"}
 	receive(t, r.scenes)
-	if st := receive(t, r.state); st.Windows[0].AppID != "foot" {
-		t.Fatalf("%+v", st)
+	// Snapshots from before the app ID may still be queued.
+	for st := receive(t, r.state); st.Windows[0].AppID != "foot"; st = receive(t, r.state) {
 	}
 	// A hidden workspace on screen: no active number, its name, window 1 off screen.
 	r.key(t, "n", ports.ModAlt)

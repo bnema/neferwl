@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Output is one KMS connector driven with two dumb buffers. One goroutine
+// Output is one KMS connector flipping between two images. One goroutine
 // runs it (Run) and closes it.
 type Output struct {
 	fd      int
@@ -44,13 +44,16 @@ type Output struct {
 	shown, queued uint64
 	reason        string // why the last frame was composed ("" = scanout)
 	unsent        ports.OutputPresented
+	// kind is how the images were made; validated once a modeset took them.
+	kind      imageKind
+	validated bool
 }
 
 // CursorLoader returns the image of a cursor at an output scale, at most
 // limit pixels on a side; an empty image hides the cursor.
 type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
 
-// newOutput allocates buffers and the cursor for a connector on crtc.
+// newOutput prepares the cursor and saves the CRTC for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), card: card, scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
@@ -180,23 +183,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	case enabled = <-active:
 	default:
 	}
-	// Output images, from the best to the fallback (ADR 014). KMS may
-	// refuse an image only at modeset: then the next kind is tried.
-	for kind := imagesDriver; ; kind++ {
-		got, err := o.setupImages(r, kind)
-		if err == nil && enabled {
-			if err = o.modeset(); err != nil {
-				o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
-				o.freeImages()
-			}
-		}
-		if err == nil {
-			break
-		}
-		if got == imagesDumb {
-			return err
-		}
-		kind = got
+	// Output images, from the best to the fallback (ADR 014). While
+	// switched away they are validated by the first modeset on enable.
+	if enabled {
+		err = o.showImages(r, imagesDriver, nil)
+	} else {
+		o.kind, err = o.setupImages(r, imagesDriver, nil)
+	}
+	if err != nil {
+		return err
 	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
@@ -231,10 +226,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case on := <-active:
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
-				if err := o.modeset(); err != nil {
+				err := o.modeset()
+				if err != nil && !o.validated && o.kind < imagesDumb {
+					o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(o.kind)).Msg("modeset refused the output images")
+					o.freeImages()
+					err = o.showImages(r, o.kind+1, err)
+				}
+				if err != nil {
 					o.log.Error().Err(err).Msg("resume")
 					return err
 				}
+				o.validated = true
 				dirty = haveScene
 				if o.cursor != nil {
 					if err := o.cursor.Reapply(); err != nil {
@@ -370,11 +372,34 @@ const (
 	imagesDumb                    // dumb buffers filled by CPU copies
 )
 
+// showImages sets up images from kind on and modesets them. KMS may refuse
+// an image only at modeset: then the next kind is tried. cause is why the
+// previous kind failed, for the log.
+func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error {
+	for {
+		got, err := o.setupImages(r, kind, cause)
+		if err != nil {
+			return err
+		}
+		o.kind = got
+		if err = o.modeset(); err == nil {
+			o.validated = true
+			return nil
+		}
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
+		o.freeImages()
+		if got == imagesDumb {
+			return err
+		}
+		kind, cause = got+1, err
+	}
+}
+
 // setupImages gives the output the two images it flips between: renderer
 // targets exported as dmabufs, or dumb buffers as a logged fallback. A
 // kind that fails falls through to the next one.
-func (o *Output) setupImages(r ports.Renderer, kind imageKind) (imageKind, error) {
-	var err error
+func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (imageKind, error) {
+	err := cause
 	for ; kind < imagesDumb; kind++ {
 		mods := []uint64(nil)
 		if kind == imagesLinear {
@@ -386,6 +411,8 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind) (imageKind, error
 		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
 	}
 	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("output falls back to CPU copies (ADR 014)")
+	// The renderer draws into its own image again, read back by CopyBGRX.
+	_, _ = r.ExportTargets(0, nil)
 	for i := range o.bufs {
 		if o.bufs[i], err = newDumb(o.fd, o.Width(), o.Height()); err != nil {
 			o.freeImages()
@@ -419,6 +446,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 	}
 	if err != nil {
 		o.freeImages()
+		_, _ = r.ExportTargets(0, nil)
 		return err
 	}
 	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")

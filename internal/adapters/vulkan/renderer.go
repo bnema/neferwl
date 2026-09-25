@@ -746,6 +746,12 @@ func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
 }
 
 // readback copies the last frame into the host buffer, once per frame.
+// Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
+const (
+	queueFamilyIgnored = ^uint32(0)
+	wholeSize          = ^vk.DeviceSize(0)
+)
+
 func (r *Renderer) readback() error {
 	if r.readBack || r.last == nil || r.last.image == 0 {
 		return nil
@@ -768,6 +774,9 @@ func (r *Renderer) readback() error {
 	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
 	region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
 	d.CmdCopyImageToBuffer(r.command, t.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
+	// Make the copy visible to host reads of the mapped buffer.
+	hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: r.buffer, Size: wholeSize}
+	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
 	if t.exported {
 		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
 		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0

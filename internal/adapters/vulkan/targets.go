@@ -32,8 +32,13 @@ type target struct {
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.
 const fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 
-// ExportTargets allocates n exported images of the output size.
+// ExportTargets allocates n exported images of the output size, replacing
+// the previous ones; n = 0 only drops them (back to the internal image).
 func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
+	r.dropTargets()
+	if n == 0 {
+		return nil, nil
+	}
 	if r.dd.GetMemoryFdKHR == nil || r.dd.GetImageDrmFormatModifierPropertiesEXT == nil || len(r.dmabuf.Formats) == 0 {
 		return nil, errors.New("device cannot export dmabufs")
 	}
@@ -41,7 +46,6 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	if len(mods) == 0 {
 		return nil, errors.New("no XRGB8888 modifier both the device and the display accept")
 	}
-	r.dropTargets()
 	var out []ports.DMABuf
 	for range n {
 		t, buf, err := r.exportTarget(mods)
@@ -197,6 +201,9 @@ func (r *Renderer) dropTargets() {
 		_ = checked("vkDeviceWaitIdle", r.dd.DeviceWaitIdle(r.device))
 	}
 	for _, t := range r.targets {
+		if r.last == t {
+			r.last = nil
+		}
 		r.freeTarget(t)
 	}
 	r.targets, r.current = nil, 0

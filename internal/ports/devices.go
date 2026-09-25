@@ -10,6 +10,7 @@ type Renderer interface {
 	// ExportTargets allocates n images of the renderer's size that the
 	// display can scan out, with one of the given XRGB8888 modifiers
 	// (none: any the device exports), and returns them as dmabufs.
+	// n = 0 drops the targets.
 	ExportTargets(n int, modifiers []uint64) ([]DMABuf, error)
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)
