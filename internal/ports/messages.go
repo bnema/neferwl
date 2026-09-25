@@ -278,13 +278,18 @@ type OutputAdded struct{ Info OutputInfo }
 
 func (OutputAdded) outputEvent() {}
 
-// OutputPresented carries output → wayland that a frame reached the screen
-// (a page flip completed): frame callbacks of the surfaces on it are due.
-// Scanout is the DMABuf ID now scanned out directly, 0 for a composed
-// frame: until another flip, that client buffer must not be released.
+// OutputPresented carries output → wayland what an output shows and reads.
+// Flip is set when a page flip completed: frame callbacks of the surfaces
+// on it are due. Shown and Queued are the DMABuf IDs scanned out directly
+// (0: a composed image); Seen is the latest content Seq the output got per
+// window. A replaced client buffer is released once every output that
+// reports has seen a later content of its window and neither shows nor
+// queues it.
 type OutputPresented struct {
-	Output  string
-	Scanout uint64
+	Output        string
+	Flip          bool
+	Shown, Queued uint64
+	Seen          map[WindowID]uint64
 }
 
 // OutputRemoved carries output → core an unplugged display.
@@ -525,7 +530,9 @@ type SceneLayer struct {
 // Geometry is the part of the surface that is the window (xdg window
 // geometry), the rest being client shadows.
 type SurfaceContent struct {
-	ID                 WindowID
+	ID WindowID
+	// Seq counts the window's contents (wayland sets it), for release.
+	Seq                uint64
 	Width, Height      int
 	LogicalW, LogicalH int
 	Opaque             bool // x formats: ignore the alpha byte

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -31,9 +32,9 @@ type Output struct {
 	log       zerowrap.Logger
 	// Direct scanout: client framebuffers by DMABuf ID, GEM handle counts,
 	// and the buffer on screen and queued (0: the composed image).
+	card          *Card
 	scanout       bool
 	clientFBs     map[uint64]*clientFB
-	handles       map[uint32]int
 	shown, queued uint64
 	reason        string // why the last frame was composed ("" = scanout)
 }
@@ -45,7 +46,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 // newOutput allocates buffers and the cursor for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
-	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, handles: map[uint32]int{}, reason: "start"}
+	o := &Output{fd: card.fd, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), card: card, scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -115,13 +116,7 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 	}
 	var fb uint32
 	if reason == "" {
-		var err error
-		if fb, err = o.scanoutFB(c.DMABuf); err != nil {
-			if !errors.Is(err, errScanoutRefused) {
-				o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout import failed")
-			}
-			reason = "import_failed"
-		}
+		fb, reason = o.scanoutFB(c.DMABuf, time.Now())
 	}
 	if reason != o.reason {
 		o.log.Info().Bool("direct_scanout", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("scanout")
@@ -138,8 +133,9 @@ func (o *Output) tryScanout(scene ports.Scene, surfaces map[ports.WindowID]ports
 		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE) {
 			// KMS refuses this buffer on the plane: compose it instead.
 			o.log.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
-			o.clientFBs[c.DMABuf.ID].failed = true
+			o.clientFBs[c.DMABuf.ID].failed = "flip_refused"
 			o.reason = "flip_refused"
+			o.log.Info().Bool("direct_scanout", false).Str("reason", o.reason).Str("connector", o.conn.name).Msg("scanout")
 			return false, nil
 		}
 		return true, err
@@ -168,7 +164,7 @@ func (o *Output) Close() {
 		}
 	}
 	o.shown, o.queued = 0, 0
-	o.dropClientFBs(true)
+	o.dropClientFBs(time.Now(), true)
 }
 
 // Run renders scenes and flips until ctx ends. active reports seat enable/disable.
@@ -199,7 +195,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	frame := 0
 	stats := time.NewTicker(10 * time.Second)
 	defer stats.Stop()
+	// seen is the latest content Seq per window, reported to wayland with
+	// what the output scans out, after each frame decision.
+	seen := map[ports.WindowID]uint64{}
+	reportDirty := false
+	flipped := false
 	for {
+		if flipped || reportDirty {
+			o.report(presented, flipped, seen)
+			flipped, reportDirty = false, false
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -226,11 +231,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			o.pending = false
 			o.flips += n
 			o.shown = o.queued
-			o.dropClientFBs(false)
-			select {
-			case presented <- ports.OutputPresented{Output: o.conn.name, Scanout: o.shown}:
-			default:
-			}
+			o.queued = 0
+			flipped = true
 			if d := time.Since(o.flipStart); d > 20*time.Millisecond {
 				o.log.Info().Dur("flip_ms", d).Msg("slow flip")
 			}
@@ -253,9 +255,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			} else {
 				surfaces[c.ID] = c
 			}
+			if c.Seq > seen[c.ID] {
+				seen[c.ID] = c.Seq
+				reportDirty = true
+			}
 			// Windows on other outputs or workspaces do not need a frame.
 			dirty = dirty || scene.Shows(c.ID)
 		case <-stats.C:
+			o.dropClientFBs(time.Now(), false)
 			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
 			if o.cursor != nil {
 				cs := o.cursor.TakeStats()
@@ -291,6 +298,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			return fmt.Errorf("page flip: %w", err)
 		}
 		dirty = false
+		reportDirty = true
 		frame++
 		o.log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("render", time.Since(start)).Dur("copy", time.Since(copyStart)).Msg("frame")
 	}
@@ -307,4 +315,16 @@ func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float6
 		return
 	}
 	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Bool("client", c.Image != nil).Int("w", img.W).Int("h", img.H).Msg("cursor image")
+}
+
+// report tells wayland what the output shows and has read, so replaced
+// client buffers can be released. It must follow the frame decision: a
+// buffer is safe once a later content is seen and it is neither shown nor
+// queued. A full channel drops the report; the next one carries the state.
+func (o *Output) report(presented chan<- ports.OutputPresented, flip bool, seen map[ports.WindowID]uint64) {
+	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: maps.Clone(seen)}
+	select {
+	case presented <- r:
+	default:
+	}
 }

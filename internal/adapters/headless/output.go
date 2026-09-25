@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,6 +23,10 @@ type Options struct {
 	ScreenshotDir string
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
+	// Name and Presented report what the output has read after each
+	// frame, so wayland can release client buffers (nil: no reports).
+	Name      string
+	Presented chan<- ports.OutputPresented
 }
 
 func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
@@ -36,7 +41,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	frame := 0
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
+	seen := map[ports.WindowID]uint64{}
 	update := func(c ports.SurfaceContent) {
+		seen[c.ID] = max(seen[c.ID], c.Seq)
 		dirty = dirty || scene.Shows(c.ID)
 		if c.Empty() {
 			delete(surfaces, c.ID)
@@ -88,6 +95,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		if !haveScene || !dirty {
+			// Contents not drawn are still read: report them.
+			opts.report(false, seen)
 			continue
 		}
 		dirty = false
@@ -104,6 +113,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return fmt.Errorf("render frame: %w", err)
 		}
 		frame++
+		opts.report(false, seen)
 		if opts.ScreenshotDir != "" {
 			shot := r.Pixels()
 			if opts.Cursor != nil {
@@ -134,4 +144,17 @@ func writePNG(path string, img *image.RGBA) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
+}
+
+// report sends what the output read; a full channel drops it.
+// Headless frames are not paced by a screen: Flip stays false and frame
+// callbacks follow the refresh timer.
+func (opts Options) report(flip bool, seen map[ports.WindowID]uint64) {
+	if opts.Presented == nil {
+		return
+	}
+	select {
+	case opts.Presented <- ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: maps.Clone(seen)}:
+	default:
+	}
 }

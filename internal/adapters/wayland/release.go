@@ -3,98 +3,99 @@ package wayland
 import (
 	"time"
 
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
-// Buffer release. A replaced wl_buffer goes back to the client (release)
-// when nothing reads it any more. Composed outputs copy buffers into their
-// own image, so buffers are released at once. While an output scans out a
-// client buffer directly (ADR 006), a replaced GPU buffer of a surface on
-// it may be on screen or queued for a page flip: it is held until the
-// output presents a frame that scans out another buffer, or heldTimeout
-// passes without a flip. The first buffer of a switch to scanout is not
-// held (known limitation: it may be released while its flip is queued).
+// Buffer release. Outputs read client buffers in place: the renderer
+// samples them when it draws, and an output scanning out a client buffer
+// (ADR 006) shows it until the next flip. A replaced wl_buffer therefore
+// goes back to the client (release) only when the output showing its
+// window reports (ports.OutputPresented) that it has a later content of
+// that window and neither shows nor queues the buffer. Outputs keep only
+// the latest content of a window, so they never draw an older buffer
+// again. heldTimeout guards against an output that stopped reporting
+// (switched away, stalled): a buffer it does not scan out is released then.
 
-// heldTimeout releases held buffers of an output that stopped flipping; a
-// queued flip completes well within it.
+// heldTimeout releases held buffers of an output that stopped reporting.
 const heldTimeout = 100 * time.Millisecond
 
 type heldBuffer struct {
-	res *wayland.Buffer
-	id  uint64
-	at  time.Time
+	res    *wayland.Buffer
+	window ports.WindowID
+	output string
+	id     uint64 // DMABuf ID, 0 for wl_shm
+	after  uint64 // the window's content Seq when the buffer was replaced
+	at     time.Time
 }
 
-// releaseBuffer releases a replaced buffer, or holds a GPU buffer until
-// its output flipped away from it.
+// releaseBuffer releases a replaced buffer, or holds it until the output
+// showing its window no longer reads it.
 func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer) {
 	if !b.Resource.Alive() {
 		return
 	}
-	d, ok := s.buffers[b.Resource].(*dmabufBuffer)
-	name := s.frameOutput(surf)
-	// Only an output scanning out a client buffer reads it after the
-	// frame: composed outputs copied it already.
-	if !ok || name == "" || s.scanned[name] == 0 {
+	window, name := surf.root().windowID(), s.frameOutput(surf)
+	if window == 0 || name == "" {
+		// Not drawn (unmapped, hidden, a cursor): nothing reads it.
 		b.SendRelease()
 		return
 	}
-	s.held[name] = append(s.held[name], heldBuffer{res: b, id: d.buf.ID, at: time.Now()})
-	// Wake the pacer: it releases the buffer after the next flip.
+	h := heldBuffer{res: b, window: window, output: name, at: time.Now()}
+	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
+		h.id = d.buf.ID
+	}
+	s.contentMu.Lock()
+	h.after = s.contentSeq[window]
+	s.contentMu.Unlock()
+	s.held = append(s.held, h)
+	// Wake the pacer: it releases the buffer on the next output report.
 	select {
 	case s.frameReady <- struct{}{}:
 	default:
 	}
 }
 
-// releaseHeld records the buffers scanned out by the outputs that flipped
-// and releases held buffers no output shows. It reports whether buffers
-// are still held.
-func (s *Server) releaseHeld(now time.Time, scanned map[string]uint64) bool {
-	for name, id := range scanned {
-		if id == 0 {
-			delete(s.scanned, name)
-		} else {
-			s.scanned[name] = id
-		}
+// releaseHeld records the output reports and releases the buffers no
+// output reads. It reports whether buffers are still held.
+func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) bool {
+	for _, r := range reports {
+		s.reports[r.Output] = r
 	}
 	live := map[string]bool{}
 	for _, o := range s.outputs {
 		live[o.name()] = true
 	}
-	for name := range s.scanned {
+	for name := range s.reports {
 		if !live[name] {
-			delete(s.scanned, name)
+			delete(s.reports, name)
 		}
 	}
-	for name, list := range s.held {
-		_, flipped := scanned[name]
-		kept := list[:0]
-		for _, h := range list {
-			if keepHeld(h, s.scanned[name], live[name], flipped, now) {
-				kept = append(kept, h)
-				continue
-			}
-			if h.res.Resource.Alive() {
-				h.res.SendRelease()
-			}
+	kept := s.held[:0]
+	for _, h := range s.held {
+		r, reported := s.reports[h.output]
+		if live[h.output] && keepHeld(h, r, reported, now) {
+			kept = append(kept, h)
+			continue
 		}
-		if len(kept) == 0 {
-			delete(s.held, name)
-		} else {
-			s.held[name] = kept
+		if h.res.Resource.Alive() {
+			h.res.SendRelease()
 		}
 	}
+	clear(s.held[len(kept):])
+	s.held = kept
 	return len(s.held) > 0
 }
 
-// keepHeld reports whether a held buffer must stay with the client's
-// compositor: its output scans it out, or has not flipped since it was
-// replaced (a queued flip may still show it) and heldTimeout has not
-// passed. A buffer of an unplugged output is released.
-func keepHeld(h heldBuffer, scanned uint64, live, flipped bool, now time.Time) bool {
-	if scanned == h.id {
+// keepHeld reports whether the output (last report r) may still read a
+// held buffer: it scans it out or queued it, it has not got a later
+// content of the window yet, or it has not reported within heldTimeout.
+func keepHeld(h heldBuffer, r ports.OutputPresented, reported bool, now time.Time) bool {
+	if reported && h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
 		return true
 	}
-	return live && !flipped && now.Sub(h.at) < heldTimeout
+	if reported && r.Seen[h.window] > h.after {
+		return false
+	}
+	return now.Sub(h.at) < heldTimeout
 }
