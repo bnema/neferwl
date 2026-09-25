@@ -32,10 +32,11 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	defer r.Close()
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
-	haveScene := false
+	haveScene, dirty := false, false
 	frame := 0
 	cursorScale := -1.0 // not loaded yet
 	update := func(c ports.SurfaceContent) {
+		dirty = dirty || scene.Shows(c.ID)
 		if c.Empty() {
 			delete(surfaces, c.ID)
 		} else {
@@ -54,7 +55,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				scenes = nil
 				continue
 			}
-			scene, haveScene = s, true
+			scene, haveScene, dirty = s, true, true
 		case c, ok := <-contents:
 			if !ok {
 				contents = nil
@@ -70,7 +71,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				if !ok {
 					scenes = nil
 				} else {
-					scene, haveScene = s, true
+					scene, haveScene, dirty = s, true, true
 				}
 			case c, ok := <-contents:
 				if !ok {
@@ -82,9 +83,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				break drain
 			}
 		}
-		if !haveScene {
+		if !haveScene || !dirty {
 			continue
 		}
+		dirty = false
 		if opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
 			cursorScale = scene.Scale
 			if img, err := opts.LoadCursor(scene.Scale, 256); err == nil {

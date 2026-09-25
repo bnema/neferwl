@@ -327,6 +327,22 @@ type Scene struct {
 	Layers []SceneLayer
 }
 
+// Shows reports whether the scene draws the surface of id: only its
+// content changes need a new frame.
+func (s Scene) Shows(id WindowID) bool {
+	for _, w := range s.Windows {
+		if w.ID == id && !w.Hidden {
+			return true
+		}
+	}
+	for _, l := range s.Layers {
+		if l.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // Border carries the window border style; colors are #rrggbb, "" skips drawing.
 type Border struct {
 	Width            int
