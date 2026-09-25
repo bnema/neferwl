@@ -209,7 +209,7 @@ func (o *Output) setVRR(on bool) {
 			return // switched away: retried on the next change
 		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr; disabled")
-		o.vrrProp = 0
+		o.vrrProp, o.vrrOn = 0, false
 		return
 	}
 	o.vrrOn = on
