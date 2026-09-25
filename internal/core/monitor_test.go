@@ -487,7 +487,7 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 		return m
 	}
-	t.Run("a dialog opened there floats and follows it home", func(t *testing.T) {
+	t.Run("a window opened there floats, then tiles after it at home", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
@@ -496,28 +496,56 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 			t.Fatal(fs.Floats, fs.fullscreen)
 		}
 		m.SetFullscreen(2, false)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) || m.Active != 0 || m.Current().floatIndex(4) != 0 {
-			t.Fatal(got, m.Active, m.Current().Floats)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 4, 3}, {}}) || m.Active != 0 {
+			t.Fatal(got, m.Active)
 		}
 	})
 	t.Run("the bind from a dialog returns the fullscreen window", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
-		m.AddWindow(4) // focused dialog
+		m.AddFloating(4, 10, 10) // focused dialog
 		m.ToggleFullscreen()
 		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) || m.Current().floatIndex(4) != 0 {
 			t.Fatal(got, m.Current().Floats)
 		}
 	})
-	t.Run("closing it brings its dialogs home", func(t *testing.T) {
+	t.Run("a dialog asking fullscreen keeps the link", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
-		m.AddWindow(4)
+		m.AddFloating(4, 10, 10)
+		m.SetFullscreen(4, true)
+		m.SetFullscreen(4, false)
+		m.ToggleFullscreen()
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3}, {}}) {
+			t.Fatal(got)
+		}
+	})
+	t.Run("moved in by hand it floats", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(2)
+		m.ToggleFullscreen()
+		m.Apply(ActionFocusWorkspaceUp)
+		m.Current().FocusID(1)
+		m.Apply(ActionMoveToWorkspaceDown)
+		if fs := m.Workspaces[1]; fs.floatIndex(1) != 0 || fs.origin == nil {
+			t.Fatal(fs.Floats)
+		}
+	})
+	t.Run("closing it brings its dialogs home, below a focused float", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(2)
+		m.ToggleFullscreen()
+		m.AddFloating(4, 10, 10)
+		m.Apply(ActionFocusWorkspaceUp)
+		m.AddFloating(9, 10, 10)
 		m.RemoveWindow(2)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3}, {}}) || m.Active != 0 || m.Current().floatIndex(4) != 0 {
-			t.Fatal(got, m.Active)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3}, {}}) || m.Current().floatIndex(4) != 0 {
+			t.Fatal(got, m.Current().Floats)
+		}
+		if id, _ := m.Focused(); id != 9 {
+			t.Fatal("focus", id)
 		}
 	})
 	t.Run("stack of three keeps its column", func(t *testing.T) {

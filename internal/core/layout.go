@@ -145,8 +145,10 @@ type Workspace struct {
 // origPlace remembers where a window was: its column, its row in a stacked
 // column, the column's width and slot, or its floating size.
 type origPlace struct {
-	// id is the window that went fullscreen.
+	// id is the window that went fullscreen; tiled lists the windows that
+	// joined its workspace tiled, floating there until they go home.
 	id             WindowID
+	tiled          []WindowID
 	col, row, slot int
 	// stacked holds the windows left in the column: the window returns to
 	// its row in the column that still holds one of them.

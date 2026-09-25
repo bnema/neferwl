@@ -231,7 +231,7 @@ func (m *Monitor) AddWindow(id WindowID) {
 		return
 	}
 	if cur := m.Current(); cur.origin != nil {
-		cur.AddFloating(id, 0, 0)
+		cur.joinFullscreen(id)
 		m.normalize()
 		return
 	}
@@ -254,10 +254,10 @@ func (m *Monitor) RemoveWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
 		if w.origin != nil && id == w.back.id && m.has(w.origin) {
 			// Its dialogs go home with the view.
-			origin, at := w.origin, w.back.col
+			origin, back := w.origin, w.back
 			w.RemoveWindow(id)
 			w.origin, w.back = nil, origPlace{}
-			m.foldInto(w, origin, at, false)
+			m.foldInto(w, origin, back.col, false, back.tiled)
 		} else {
 			w.RemoveWindow(id)
 		}
@@ -273,6 +273,9 @@ func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 	w, _ := m.find(id)
 	switch {
 	case w == nil:
+	case w.origin != nil && id != w.back.id:
+		// A dialog of a fullscreen workspace already floats above it; its
+		// own fullscreen would take the workspace from the window it holds.
 	case on && m.ownWorkspace(w, id):
 		focused, _ := w.Focused()
 		m.enterFullscreen(w, id, w == m.Current() && focused == id)
@@ -364,7 +367,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	origin, back, id := fs.origin, fs.back, fs.back.id
 	fs.origin, fs.back = nil, origPlace{}
 	fs.RemoveWindow(id)
-	defer m.foldInto(fs, origin, back.col+1, focus)
+	defer m.foldInto(fs, origin, back.col+1, focus, back.tiled)
 	switch prev := origin.Focus; {
 	case back.float != nil && focus:
 		origin.AddFloating(id, back.float.W, back.float.H)
@@ -405,7 +408,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 // foldInto moves what is left in fs (windows opened while fullscreen: its
 // dialogs) to origin, tiled ones from column at, floating ones on top, and
 // drops fs. The view goes along when fs was on screen.
-func (m *Monitor) foldInto(fs, origin *Workspace, at int, focus bool) {
+func (m *Monitor) foldInto(fs, origin *Workspace, at int, focus bool, tiled []WindowID) {
 	shown := m.Current() == fs
 	at = min(max(at, 0), len(origin.Columns))
 	for _, c := range slices.Backward(fs.Columns) {
@@ -414,8 +417,25 @@ func (m *Monitor) foldInto(fs, origin *Workspace, at int, focus bool) {
 			origin.Focus++
 		}
 	}
-	origin.Floats = append(origin.Floats, fs.Floats...)
-	origin.floatFocus = origin.floatFocus || len(fs.Floats) > 0 && (focus || shown) && fs.floatFocus
+	var floats []Float
+	for _, f := range fs.Floats {
+		if !slices.Contains(tiled, f.ID) {
+			floats = append(floats, f)
+			continue
+		}
+		origin.Columns = slices.Insert(origin.Columns, at, Column{Windows: []WindowID{f.ID}})
+		if at <= origin.Focus && len(origin.Columns) > 1 {
+			origin.Focus++
+		}
+		at++
+	}
+	if focus || shown {
+		origin.Floats = append(origin.Floats, floats...)
+		origin.floatFocus = origin.floatFocus || len(floats) > 0 && fs.floatFocus
+	} else {
+		// The user is elsewhere: below, the focused float keeps the focus.
+		origin.Floats = append(floats, origin.Floats...)
+	}
 	fs.Columns, fs.Floats = nil, nil
 	origin.scroll()
 	m.take(fs)
@@ -469,11 +489,22 @@ func (m *Monitor) MoveToWorkspace(i int) {
 		fl := cur.Floats[f]
 		cur.RemoveWindow(id)
 		m.Workspaces[i].AddFloating(id, fl.W, fl.H)
+	} else if to := m.Workspaces[i]; to.origin != nil {
+		cur.RemoveWindow(id)
+		to.joinFullscreen(id)
 	} else {
 		cur.RemoveWindow(id)
-		m.Workspaces[i].AddWindow(id)
+		to.AddWindow(id)
 	}
 	m.normalize()
+}
+
+// joinFullscreen adds a tiled window to a fullscreen workspace fs: it floats
+// above the fullscreen window, which would hide it (fixed overflow), and
+// tiles again once home.
+func (fs *Workspace) joinFullscreen(id WindowID) {
+	fs.AddFloating(id, 0, 0)
+	fs.back.tiled = append(fs.back.tiled, id)
 }
 
 func (m *Monitor) Focused() (WindowID, bool) { return m.Current().Focused() }
