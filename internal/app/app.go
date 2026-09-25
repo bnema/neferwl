@@ -89,7 +89,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	keymap := km.String()
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
+	// Every output renders on the same GPU: its formats are the clients'.
+	dmabuf := vulkan.Probe()
+	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err

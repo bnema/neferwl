@@ -107,13 +107,17 @@ func (s *surface) Commit(*wayland.Surface) {
 					s.server.log.Info().Uint64("id", uint64(id)).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
 				}
 				s.server.emitContent(c)
-			} else {
-				state.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
+			} else if shm, ok := state.(*buffer); ok {
+				shm.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")
 			}
-			if b.Resource.Alive() {
-				b.SendRelease()
+			// wl_shm pixels were copied: the client may reuse the buffer.
+			// A dmabuf is read in place until the next buffer replaces it.
+			if _, gpu := state.(*dmabufBuffer); !gpu {
+				if b.Resource.Alive() {
+					b.SendRelease()
+				}
+				s.released = true
 			}
-			s.released = true
 		}
 	}
 }

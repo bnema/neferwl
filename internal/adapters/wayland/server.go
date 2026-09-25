@@ -19,8 +19,10 @@ import (
 // Options configures the server. Outputs is the initial layout; core
 // replaces it with ports.SetOutputs.
 type Options struct {
-	RuntimeDir              string
-	Outputs                 ports.Layout
+	RuntimeDir string
+	Outputs    ports.Layout
+	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
+	DMABuf                  ports.DMABufSupport
 	Keymap                  string
 	RepeatRate, RepeatDelay int
 }
@@ -43,7 +45,8 @@ type Server struct {
 	frames                  uint64
 	started                 time.Time
 	surfaces                map[*server.Resource]*surface
-	buffers                 map[*server.Resource]*buffer
+	buffers                 map[*server.Resource]clientBuffer
+	dmabuf                  *dmabufGlobal
 	serial                  uint32
 	ctx                     context.Context
 	windows                 map[ports.WindowID]*window
@@ -108,7 +111,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]*buffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -123,6 +126,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		if s.keymapFD >= 0 {
 			unix.Close(s.keymapFD)
 		}
+		s.dmabuf.close()
 		cleanup()
 	}
 	if err = registerGlobals(d, opts, s); err != nil {

@@ -77,7 +77,7 @@ func (s *outputSet) scenes(set []ports.Scene) {
 }
 
 func (s *outputSet) content(c ports.SurfaceContent) {
-	if c.Pixels == nil {
+	if c.Empty() {
 		delete(s.latest, c.ID)
 	} else {
 		s.latest[c.ID] = c

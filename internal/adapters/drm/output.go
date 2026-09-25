@@ -178,7 +178,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			scene, haveScene, dirty = s, true, true
 		case c := <-contents:
-			if c.Pixels == nil {
+			if c.Empty() {
 				delete(surfaces, c.ID)
 			} else {
 				surfaces[c.ID] = c

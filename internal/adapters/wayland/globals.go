@@ -15,6 +15,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerXDGOutput(d, s) },
 		func() error { return registerDecoration(d, s) },
 		func() error { return registerScale(d, s) },
+		func() error { return registerDMABuf(d, s, o.DMABuf) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
@@ -203,6 +204,25 @@ type buffer struct {
 }
 
 func (*buffer) Destroy(*wayland.Buffer) {}
+
+func (b *buffer) size() (int, int) { return b.width, b.height }
+
+// clientBuffer is a wl_buffer's content source: wl_shm or linux-dmabuf.
+type clientBuffer interface {
+	// content returns what the renderer draws; false means the client
+	// broke its buffer (a truncated shm file).
+	content(ports.WindowID) (ports.SurfaceContent, bool)
+	size() (int, int)
+}
+
+// addBuffer tracks a buffer until the client destroys it.
+func (s *Server) addBuffer(r *wayland.Buffer, b *dmabufBuffer) {
+	s.buffers[r.Resource] = b
+	r.OnDestroy = func() {
+		delete(s.buffers, r.Resource)
+		b.close()
+	}
+}
 
 // A malicious client may truncate its fd after mmap; SetPanicOnFault converts
 // the resulting SIGBUS on this goroutine to a recoverable panic.

@@ -36,7 +36,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	frame := 0
 	cursorScale := -1.0 // not loaded yet
 	update := func(c ports.SurfaceContent) {
-		if c.Pixels == nil {
+		if c.Empty() {
 			delete(surfaces, c.ID)
 		} else {
 			surfaces[c.ID] = c

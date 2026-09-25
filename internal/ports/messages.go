@@ -1,5 +1,7 @@
 package ports
 
+import "os"
+
 // ClientEvent carries wayland → core notifications.
 type ClientEvent interface{ clientEvent() }
 
@@ -338,18 +340,55 @@ type SceneLayer struct {
 	Rect  Rect
 }
 
-// SurfaceContent carries wayland → output the latest committed pixels of a
-// window. Pixels is a private copy in B8G8R8A8 (wl_shm argb8888/xrgb8888
-// little-endian) with Stride bytes per row; receivers never modify it.
-// Pixels == nil means the window has no content. LogicalW and LogicalH are
-// the surface size in logical pixels (buffer scale and viewport applied).
+// SurfaceContent carries wayland → output the latest committed content of a
+// window: either Pixels, a private copy in B8G8R8A8 (wl_shm
+// argb8888/xrgb8888 little-endian) with Stride bytes per row, or DMABuf, a
+// GPU buffer the renderer reads in place. Receivers never modify either.
+// Empty means the window has no content. LogicalW and LogicalH are the
+// surface size in logical pixels (buffer scale and viewport applied).
 type SurfaceContent struct {
 	ID                 WindowID
 	Width, Height      int
 	LogicalW, LogicalH int
 	Stride             int
-	Opaque             bool // xrgb8888: ignore the alpha byte
+	Opaque             bool // x formats: ignore the alpha byte
 	Pixels             []byte
+	DMABuf             *DMABuf
+}
+
+// Empty reports whether the content has nothing to draw.
+func (c SurfaceContent) Empty() bool { return c.Pixels == nil && c.DMABuf == nil }
+
+// DMABuf is a client GPU buffer (linux-dmabuf). Its files stay open while
+// the client's buffer exists; a renderer that keeps it must duplicate the
+// descriptors under File.SyscallConn so a concurrent close cannot hand it a
+// reused one. ID is unique per buffer for the whole session: renderers key
+// their imports on it.
+type DMABuf struct {
+	ID            uint64
+	Width, Height int
+	Format        uint32 // DRM fourcc
+	Modifier      uint64
+	Planes        []DMABufPlane
+}
+
+// DMABufPlane is one plane of a DMABuf.
+type DMABufPlane struct {
+	File           *os.File
+	Offset, Stride uint32
+}
+
+// DMABufFormat is a DRM fourcc with a modifier the renderer can import.
+type DMABufFormat struct {
+	Format   uint32
+	Modifier uint64
+}
+
+// DMABufSupport is what the renderer imports: the render device (a dev_t,
+// 0 when unknown) and the formats. No formats means no dmabuf.
+type DMABufSupport struct {
+	Device  uint64
+	Formats []DMABufFormat
 }
 
 // SceneWindow carries core → renderer window placement.
