@@ -132,12 +132,12 @@ func (r *Renderer) destroyBlend() {
 	*b = blendPipeline{}
 }
 
-// bindStaging points the set at the staging buffer: blended pixels in
-// [0, tableOffset), the draw table from tableOffset.
-func (r *Renderer) bindStaging(tableOffset int) {
+// bindStaging points the set at the staging buffer: pixels blended
+// pixel bytes from 0, and the draw table of n entries at tableOffset.
+func (r *Renderer) bindStaging(pixels, tableOffset, n int) {
 	infos := []vk.DescriptorBufferInfo{
-		{Buffer: r.staging, Range: vk.DeviceSize(max(tableOffset, 4))},
-		{Buffer: r.staging, Offset: vk.DeviceSize(tableOffset), Range: wholeSize},
+		{Buffer: r.staging, Range: vk.DeviceSize(max(pixels, 4))},
+		{Buffer: r.staging, Offset: vk.DeviceSize(tableOffset), Range: vk.DeviceSize(n * drawSize)},
 	}
 	writes := []vk.WriteDescriptorSet{
 		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: r.blend.set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, BufferInfo: &infos[0]},

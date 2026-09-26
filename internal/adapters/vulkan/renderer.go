@@ -598,6 +598,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			blends++
 		}
 	}
+	pixelBytes := used
 	tableOffset := (used + r.align - 1) / r.align * r.align
 	used = tableOffset + blends*drawSize
 	for k := range uploads {
@@ -611,7 +612,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	data := unsafe.Slice((*byte)(r.stagingMapped), r.stagingSize)
 	if blends > 0 {
-		r.bindStaging(tableOffset)
+		r.bindStaging(pixelBytes, tableOffset, blends)
 		i := 0
 		for k := range uploads {
 			if uploads[k].blend {
