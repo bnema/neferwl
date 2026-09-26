@@ -155,14 +155,14 @@ func TestPresentationFeedback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	flip := func(when time.Duration, seq uint64, shows uint64, zero bool) {
+	flip := func(when time.Duration, seq uint64, shows uint64, zero ports.WindowID) {
 		presented <- ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[ports.WindowID]uint64{w.ID: shows}}}
 	}
 	// Presented with the flip's time, counter and flags.
 	a := feedback()
 	commit()
 	seqA := lastSeq()
-	flip(5*time.Second+7, 42, seqA, true)
+	flip(5*time.Second+7, 42, seqA, w.ID)
 	ev := answer(a, "presented")
 	if ev.discarded || ev.when != 5*time.Second+7 || ev.seq != 42 || ev.refresh != uint32(time.Second/60) || ev.syncOutputs != 1 {
 		t.Fatalf("presented %+v", ev)
@@ -178,9 +178,9 @@ func TestPresentationFeedback(t *testing.T) {
 	d := feedback()
 	commit()
 	seqD := lastSeq()
-	flip(6*time.Second, 43, seqB, false)
-	flip(7*time.Second, 44, seqD, false)
-	if ev := answer(b, "first of two"); ev.when != 6*time.Second || ev.seq != 43 {
+	flip(6*time.Second, 43, seqB, w.ID+1) // another window on the overlay
+	flip(7*time.Second, 44, seqD, 0)
+	if ev := answer(b, "first of two"); ev.when != 6*time.Second || ev.seq != 43 || ev.flags&uint32(presentationtime.WpPresentationFeedbackKindZeroCopy) != 0 {
 		t.Fatalf("first %+v", ev)
 	}
 	if ev := answer(d, "second of two"); ev.when != 7*time.Second || ev.seq != 44 {
@@ -192,7 +192,7 @@ func TestPresentationFeedback(t *testing.T) {
 	lastSeq()
 	commit()
 	seqNew := lastSeq()
-	flip(8*time.Second, 45, seqNew, false)
+	flip(8*time.Second, 45, seqNew, 0)
 	if ev := answer(old, "replaced"); !ev.discarded {
 		t.Fatalf("replaced: %+v", ev)
 	}
@@ -213,7 +213,7 @@ func TestPresentationFeedback(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	commit() // the parent applies the subsurface
 	seqC := lastSeq()
-	flip(8500*time.Millisecond, 50, seqC, false)
+	flip(8500*time.Millisecond, 50, seqC, 0)
 	if ev := answer(cp, "subsurface"); ev.discarded || ev.seq != 50 {
 		t.Fatalf("subsurface %+v", ev)
 	}
@@ -222,7 +222,7 @@ func TestPresentationFeedback(t *testing.T) {
 	commit()
 	lastSeq()
 	requestProtocol(t, c, surf, wayland.SurfaceRequestDestroy)
-	flip(9*time.Second, 46, 0, false)
+	flip(9*time.Second, 46, 0, 0)
 	if ev := answer(gone, "destroyed"); !ev.discarded {
 		t.Fatalf("destroyed: %+v", ev)
 	}

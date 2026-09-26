@@ -361,8 +361,9 @@ type OutputFormats struct {
 
 // FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
 // (hardware clock on DRM), Seq the output's vblank counter, Refresh the
-// refresh period (0 while variable refresh is on). ZeroCopy is set when a
-// client buffer was shown without composition, Async for a tearing flip.
+// refresh period (0 while variable refresh is on). ZeroCopy is the window
+// whose buffer was shown without composition (direct scanout or overlay
+// plane; 0: none), Async set for a tearing flip.
 // Shows is the content Seq per window the flipped frame shows. Merged
 // counts earlier flips folded into this one when the reader fell behind:
 // their presentation feedback is discarded.
@@ -370,7 +371,7 @@ type FlipInfo struct {
 	When          time.Duration
 	Seq           uint64
 	Refresh       time.Duration
-	ZeroCopy      bool
+	ZeroCopy      WindowID
 	Async         bool
 	HardwareClock bool
 	Merged        int
@@ -655,6 +656,8 @@ type SurfaceContent struct {
 	// buffer, instead of the buffer's implicit fences. Wayland owns it and
 	// closes it when the buffer is released; a reader that keeps it past
 	// the call duplicates it under Acquire.SyscallConn. nil: implicit sync.
+	// Wayland closes it only after every output reported a later content of
+	// the window as seen, so a reader never gets it already closed.
 	Acquire *os.File
 	// DamageHistory is what changed in the root surface's buffer over the
 	// window's last contents, oldest first, ending with this one (Seq).

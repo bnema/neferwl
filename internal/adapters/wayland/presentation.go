@@ -161,7 +161,7 @@ func (s *Server) sendPresented(w feedbackWait, o *output, f *ports.FlipInfo, exa
 	if f.HardwareClock {
 		flags |= uint32(presentationtime.WpPresentationFeedbackKindHwClock | presentationtime.WpPresentationFeedbackKindHwCompletion)
 	}
-	if f.ZeroCopy {
+	if f.ZeroCopy != 0 && f.ZeroCopy == w.win {
 		flags |= uint32(presentationtime.WpPresentationFeedbackKindZeroCopy)
 	}
 	sec, nsec := uint64(f.When/time.Second), uint32(f.When%time.Second)

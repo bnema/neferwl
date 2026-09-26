@@ -91,10 +91,11 @@ type Output struct {
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
-	frame           bool
-	queued          uint64
-	zeroCopy, async bool
-	shows           map[ports.WindowID]uint64
+	frame    bool
+	queued   uint64
+	zeroCopy ports.WindowID // window shown without composition
+	async    bool
+	shows    map[ports.WindowID]uint64
 }
 
 // Commit event userData: the commit serial above userKindBits, the kind
@@ -561,7 +562,7 @@ func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame
 	// flip from the composed image into scanout waits for vblank.
 	async := c.Async && o.tearing && o.shown != 0 && !cfb.noAsync
 	vrr := o.wantVRR(true)
-	f.queued, f.zeroCopy = c.DMABuf.ID, true
+	f.queued, f.zeroCopy = c.DMABuf.ID, c.ID
 	// Explicit sync: KMS waits on the client's acquire fence. Wayland may
 	// close its file at any time: commit a duplicate taken while it is
 	// held open (the kernel keeps its own reference).
@@ -847,7 +848,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			// The overlay buffer is on screen like a scanned-out one: it
 			// is reported shown, so it is not released under the plane.
-			f.queued, f.zeroCopy = ov.buf, ov.buf != 0
+			f.queued, f.zeroCopy = ov.buf, ov.id
 			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(false), f, ov)
 			if done != nil {
 				done.Close()
