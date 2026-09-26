@@ -58,6 +58,10 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 		k.server.log.Debug().Msg("virtual keymap rejected")
 		return
 	}
+	if wide, from := widenKeycodes(text); from != 0 {
+		k.server.log.Debug().Int("maximum", from).Int("widened", minKeycodeMax).Msg("virtual keymap keycode range widened")
+		text = wide
+	}
 	copyFD, copySize, err := keymapFile(text)
 	if err != nil {
 		k.server.log.Warn().Err(err).Msg("virtual keymap copy failed")
