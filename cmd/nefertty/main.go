@@ -119,7 +119,7 @@ func run() error {
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	noXwayland := flags.Bool("no-xwayland", false, "no X11 display for X11 apps")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
-	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
+	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; input-motion logs every pointer motion)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
 	session := flags.Bool("session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services")
 	if err := flags.Parse(os.Args[1:]); err != nil {

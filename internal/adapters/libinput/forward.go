@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 // forwarder decouples reading libinput from core. libinput keeps reading
@@ -17,7 +18,14 @@ type forwarder struct {
 	queue []ports.InputEvent
 	wake  chan struct{}
 	stats forwardStats
+	// The queue is unbounded (no event is ever dropped); long is set
+	// while it is past forwardWarn entries, warned once each way.
+	log  zerowrap.Logger
+	long bool
 }
+
+// forwardWarn is the queue length that means core has stalled.
+const forwardWarn = 4096
 
 // forwardStats is reset by take.
 type forwardStats struct {
@@ -27,7 +35,9 @@ type forwardStats struct {
 	MaxBlock  time.Duration // longest wait for core to accept one event
 }
 
-func newForwarder() *forwarder { return &forwarder{wake: make(chan struct{}, 1)} }
+func newForwarder(log zerowrap.Logger) *forwarder {
+	return &forwarder{wake: make(chan struct{}, 1), log: log}
+}
 
 // push queues ev without blocking.
 func (f *forwarder) push(ev ports.InputEvent) {
@@ -49,6 +59,10 @@ func (f *forwarder) push(ev ports.InputEvent) {
 		}
 	}
 	f.queue = append(f.queue, ev)
+	if len(f.queue) > forwardWarn && !f.long {
+		f.long = true
+		f.log.Warn().Str("component", "input").Int("queued", len(f.queue)).Msg("core is not reading input; events queue up")
+	}
 	f.mu.Unlock()
 	select {
 	case f.wake <- struct{}{}:
@@ -65,6 +79,10 @@ func (f *forwarder) pop() (ports.InputEvent, bool) {
 	ev := f.queue[0]
 	f.queue[0] = nil
 	f.queue = f.queue[1:]
+	if f.long && len(f.queue) < forwardWarn {
+		f.long = false
+		f.log.Warn().Str("component", "input").Int("queued", len(f.queue)).Msg("input queue drained")
+	}
 	return ev, true
 }
 

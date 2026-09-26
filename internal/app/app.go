@@ -161,7 +161,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				return
 			}
 			done <- safe("input", func() error {
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion")}, input)
 			})
 			return
 		}

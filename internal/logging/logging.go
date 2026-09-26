@@ -20,6 +20,10 @@ var components = map[string]bool{
 	"render": true, "sync": true, "config": true, "app": true,
 }
 
+// categories are debug switches narrower than a component, only on when
+// named: "all" leaves them off (input-motion logs every pointer motion).
+var categories = map[string]bool{"input-motion": true}
+
 type debugKey struct{}
 type levelKey struct{}
 type debugSet map[string]bool
@@ -34,7 +38,7 @@ func ParseDebug(value string) (map[string]bool, error) {
 			selected[name] = true
 			continue
 		}
-		if !components[name] {
+		if !components[name] && !categories[name] {
 			return nil, fmt.Errorf("invalid debug component %q", name)
 		}
 		selected[name] = true
@@ -102,6 +106,12 @@ func (w *consoleAndFile) Write(p []byte) (int, error) {
 	// JSON remains the canonical output; terminal users also see each entry.
 	_, _ = os.Stderr.Write(p)
 	return w.file.Write(p)
+}
+
+// Enabled reports whether a debug category was named in --debug.
+func Enabled(ctx context.Context, category string) bool {
+	selected, _ := ctx.Value(debugKey{}).(debugSet)
+	return selected[category]
 }
 
 // For returns a component logger with debug enabled only for selected components.

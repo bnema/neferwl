@@ -18,6 +18,7 @@ func TestParseDebug(t *testing.T) {
 	}{
 		{"", false, nil}, {"core,app", false, []string{"core", "app"}},
 		{"all", false, []string{"all"}}, {"unknown", true, nil}, {"core,", true, nil},
+		{"all,input-motion", false, []string{"all", "input-motion"}},
 	} {
 		got, err := ParseDebug(tc.input)
 		if (err != nil) != tc.wantError {
@@ -81,4 +82,21 @@ func splitLines(data []byte) [][]byte {
 		}
 	}
 	return lines
+}
+
+// Narrow categories are on only when named, never through "all".
+func TestEnabledCategories(t *testing.T) {
+	for _, tc := range []struct {
+		debug string
+		want  bool
+	}{{"all", false}, {"input", false}, {"input-motion", true}, {"all,input-motion", true}} {
+		sel, err := ParseDebug(tc.debug)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := context.WithValue(context.Background(), debugKey{}, debugSet(sel))
+		if got := Enabled(ctx, "input-motion"); got != tc.want {
+			t.Errorf("%q: %v", tc.debug, got)
+		}
+	}
 }

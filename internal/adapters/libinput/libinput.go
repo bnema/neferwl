@@ -160,6 +160,9 @@ type Options struct {
 	// the physical position on it.
 	MoveCursor func(output string, x, y float64)
 	Log        zerowrap.Logger
+	// LogMotion logs every pointer motion (--debug=input-motion); motions
+	// are otherwise only counted in the input stats.
+	LogMotion bool
 }
 
 // statsEvery is how often Run logs input throughput.
@@ -192,7 +195,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor)
 	fd := getFD(li)
-	fwd := newForwarder()
+	fwd := newForwarder(opts.Log)
 	fwdCtx, stopFwd := context.WithCancel(ctx)
 	var fwdDone sync.WaitGroup
 	fwdDone.Go(func() { fwd.run(fwdCtx, input) })
@@ -278,7 +281,9 @@ func translate(ev uintptr, opts Options, p *pointer) (ports.InputEvent, error) {
 		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
 		m.TimeMsec, m.TimeUsec = now, pointerUsec(pe)
 		p.moved(opts.MoveCursor)
-		log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
+		if opts.LogMotion {
+			log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
+		}
 		return m, nil
 	case evPointerAbs:
 		// Absolute devices (tablets, VMs) map to the whole layout.
