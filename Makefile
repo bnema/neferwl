@@ -50,17 +50,21 @@ check: vet test arch fakes-check
 # sibling purego-* modules are vendored, so the package builds offline. It
 # holds the working trees; the version ends in .dirty when one is not clean.
 SIBLINGS := github.com/bnema/purego-libwayland github.com/bnema/purego-vulkan
-SIBLING_DIRS := $(shell go list -m -f '{{.Dir}}' $(SIBLINGS))
+SIBLING_DIRS = $(shell go list -m -f '{{.Dir}}' $(SIBLINGS))
 dirty = $(shell for d in . $(SIBLING_DIRS); do git -C $$d diff --quiet HEAD && \
 	test -z "$$(git -C $$d ls-files -o --exclude-standard)" || { echo .dirty; break; }; done)
 # pacman-ordered: 0.0.0.r<commits>.g<hash>; a tag replaces 0.0.0.
-VERSION := $(or $(VERSION),$(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
-	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")$(dirty))
-DIST := dist/nefertty-$(VERSION)
+VERSION ?= $(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
+	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")$(dirty)
+DIST = dist/nefertty-$(VERSION)
 dist: SHELL := bash
 dist: .SHELLFLAGS := -eo pipefail -c
+# Computed once per dist run (git and go list), not for every target.
+ifneq ($(filter dist pkg,$(MAKECMDGOALS)),)
+VERSION := $(VERSION)
+endif
 dist:
-	@test -n "$(SIBLING_DIRS)" || { echo "sibling modules not found: $(SIBLINGS)" >&2; exit 1; }
+	@for d in $(SIBLING_DIRS); do test -d $$d || { echo "sibling module not found: $$d" >&2; exit 1; }; done
 	rm -rf $(DIST) && mkdir -p $(DIST)
 	git ls-files -co --exclude-standard -z | tar --null -T - -c | tar -x -C $(DIST)
 	cd $(DIST) && go mod edit $(foreach m,$(SIBLINGS),-replace=$(m)=$(shell go list -m -f '{{.Dir}}' $(m))) && go mod vendor
