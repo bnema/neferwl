@@ -182,7 +182,8 @@ func (w *window) unmap() {
 	w.xdg.acked = false
 	w.xdg.serials = nil
 	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
-	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id})
+	w.xdg.server.syncInhibitors()
+	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id}, damage{full: true})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	if x.window != nil {
@@ -215,6 +216,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			// Its size comes with the commit, in WindowResized (afterCommit).
 			w.floating = w.floats()
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH})
+			x.server.syncInhibitors()
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
 		} else if !buffer && w.mapped {
 			w.unmap()

@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"golang.org/x/sys/unix"
 	"slices"
 	"time"
 
@@ -34,7 +35,7 @@ func (s *Server) pace(ctx context.Context) {
 		case <-s.display.Stopped():
 			return
 		case p := <-presented:
-			flipped[p.Output] = flipped[p.Output] || p.Flip
+			flipped[p.Output] = flipped[p.Output] || paces(p)
 			reports = append(reports, p)
 		case <-s.frameReady:
 		case <-timer.C:
@@ -45,7 +46,7 @@ func (s *Server) pace(ctx context.Context) {
 		for {
 			select {
 			case p := <-presented:
-				flipped[p.Output] = flipped[p.Output] || p.Flip
+				flipped[p.Output] = flipped[p.Output] || paces(p)
 				reports = append(reports, p)
 			default:
 				break drain
@@ -54,10 +55,28 @@ func (s *Server) pace(ctx context.Context) {
 		wait, idle := defaultFramePeriod, false
 		if !s.display.Do(func() {
 			if ctx.Err() == nil {
+				// Each flip answers its own presentation feedbacks, in
+				// order: flips are never merged here.
+				for _, p := range reports {
+					if p.Flip != nil {
+						s.flips[p.Output] = *p.Flip
+						s.presentFlip(p.Output, p.Flip)
+					}
+				}
+				s.dropFeedbacks(time.Now())
+				if len(s.feedbacks) > 0 {
+					wait = feedbackTimeout
+				}
 				var due []string
-				due, wait, idle = s.dueFrames(time.Now(), flipped)
+				var dueWait time.Duration
+				due, dueWait, idle = s.dueFrames(time.Now(), flipped)
+				if len(s.feedbacks) > 0 {
+					// Unanswered feedbacks time out: keep ticking.
+					dueWait, idle = min(dueWait, feedbackTimeout), false
+				}
+				wait = dueWait
 				for _, name := range due {
-					s.sendFrames(name)
+					s.sendFrames(name, flipped[name])
 				}
 				if s.releaseHeld(time.Now(), reports) && idle {
 					// Held buffers wait for a flip or heldTimeout.
@@ -167,13 +186,24 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 	return fire, max(wait, time.Millisecond), !waiting
 }
 
-func (s *Server) sendFrames(name string) {
+// paces reports whether a report paces frame callbacks: a flip of a real
+// display. Software flips (headless) answer presentation feedback, but
+// callbacks keep the output's refresh period.
+func paces(p ports.OutputPresented) bool { return p.Flip != nil && p.Flip.HardwareClock }
+
+// sendFrames fires an output's callbacks; flipped: a flip of it fired them.
+func (s *Server) sendFrames(name string, flipped bool) {
 	callbacks := s.awaiting[name]
 	delete(s.awaiting, name)
 	if len(callbacks) == 0 {
 		return
 	}
+	// done carries the flip's time when the output flips (the frame the
+	// client drew for is on screen), else now.
 	ms := uint32(time.Since(s.started).Milliseconds())
+	if f, ok := s.flips[name]; ok && flipped && f.When > 0 {
+		ms = uint32(max(f.When-monotonic(s.started), 0).Milliseconds())
+	}
 	for _, cb := range callbacks {
 		if !cb.Resource.Alive() {
 			continue
@@ -190,4 +220,13 @@ func framePeriod(refreshMilli int) time.Duration {
 		return defaultFramePeriod
 	}
 	return time.Duration(int64(time.Second) * 1000 / int64(refreshMilli))
+}
+
+// monotonic is t on CLOCK_MONOTONIC, the clock of flip timestamps.
+func monotonic(t time.Time) time.Duration {
+	var ts unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts) != nil {
+		return 0
+	}
+	return time.Duration(ts.Nano()) - time.Since(t)
 }

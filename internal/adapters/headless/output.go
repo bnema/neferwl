@@ -3,6 +3,7 @@ package headless
 import (
 	"context"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"image"
 	"image/png"
 	"maps"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bnema/nefertty/internal/adapters/syncfile"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -118,11 +120,24 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		start := time.Now()
-		if err := r.Render(scene, surfaces); err != nil {
+		done, err := r.Render(scene, surfaces)
+		if err != nil {
 			return fmt.Errorf("render frame: %w", err)
 		}
+		if done != nil {
+			// No screen paces headless frames: wait for the GPU before
+			// reporting that its buffers were read.
+			err = syncfile.Wait(ctx, done)
+			done.Close()
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("frame fence: %w", err)
+			}
+		}
 		frame++
-		pending = opts.report(pending, seen)
+		pending = opts.flipped(pending, seen, scene, surfaces)
 		if opts.ScreenshotDir != "" {
 			shot := r.Pixels()
 			if opts.Cursor != nil {
@@ -155,15 +170,40 @@ func writePNG(path string, img *image.RGBA) error {
 	return os.Rename(f.Name(), path)
 }
 
-// report sends what the output read; a full channel drops it.
 // report sends what the output read, or returns it to retry when the
-// channel is full. Headless frames are not paced by a screen: Flip stays
-// false and frame callbacks follow the refresh timer.
+// channel is full. Frames that were not drawn carry no flip.
 func (opts Options) report(_ *ports.OutputPresented, seen map[ports.WindowID]uint64) *ports.OutputPresented {
 	if opts.Presented == nil {
 		return nil
 	}
 	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen)})
+}
+
+// flipped reports a drawn frame as a flip at the current CLOCK_MONOTONIC
+// time (software clock, refresh unknown), so presentation feedback and
+// frame callbacks follow headless frames. A report still waiting is
+// sent first.
+func (opts Options) flipped(pending *ports.OutputPresented, seen map[ports.WindowID]uint64, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) *ports.OutputPresented {
+	if opts.Presented == nil {
+		return nil
+	}
+	var merged int
+	if pending != nil && opts.send(pending) != nil {
+		// The reader is behind: this frame's report replaces the waiting
+		// one, and its flip counts as merged (its feedback is discarded).
+		if pending.Flip != nil {
+			merged = 1 + pending.Flip.Merged
+		}
+	}
+	var ts unix.Timespec
+	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
+	shows := map[ports.WindowID]uint64{}
+	for id, c := range surfaces {
+		if scene.Shows(id) {
+			shows[id] = c.Seq
+		}
+	}
+	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), Flip: &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows, Merged: merged}})
 }
 
 func (opts Options) send(r *ports.OutputPresented) *ports.OutputPresented {

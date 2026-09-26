@@ -25,6 +25,7 @@ import (
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 type Options struct {
@@ -87,6 +88,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
 	presented := make(chan ports.OutputPresented, 64)
+	outputFormats := make(chan ports.OutputFormats, 8)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -101,7 +103,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -159,7 +161,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				return
 			}
 			done <- safe("input", func() error {
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion")}, input)
 			})
 			return
 		}
@@ -215,8 +217,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func() drm.Want { return wantFromConfig(opts.Config) }
-				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "drm"))
+				want := func() drm.Want {
+					w := wantFromConfig(opts.Config)
+					w.Sampled = dmabuf.Formats
+					return w
+				}
+				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, outputFormats, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
@@ -372,4 +378,12 @@ func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.
 	}
 	log.Info().Str("DISPLAY", d.Name()).Msg("listening on X11 display")
 	return d
+}
+
+// renderNode is the /dev/dri path of a render node dev_t, "" when none.
+func renderNode(dev uint64) string {
+	if dev == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(dev))
 }

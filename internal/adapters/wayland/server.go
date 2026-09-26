@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,9 +24,15 @@ type Options struct {
 	RuntimeDir string
 	Outputs    ports.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
-	DMABuf                  ports.DMABufSupport
+	DMABuf ports.DMABufSupport
+	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
+	// syncobjs are imported on; empty or without timeline support, no
+	// explicit sync is offered.
+	SyncobjNode             string
 	Keymap                  string
 	RepeatRate, RepeatDelay int
+	// syncDev replaces the render node's syncobj interface (tests).
+	syncDev syncobjDevice
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -38,6 +45,9 @@ type Channels struct {
 	// Presented paces frame callbacks on the outputs' page flips; outputs
 	// that do not flip (idle, headless) are paced at their refresh rate.
 	Presented <-chan ports.OutputPresented
+	// OutputFormats are the outputs' direct scanout formats, offered in
+	// dmabuf feedback to fullscreen surfaces.
+	OutputFormats <-chan ports.OutputFormats
 }
 type Server struct {
 	display      *server.Display
@@ -98,17 +108,32 @@ type Server struct {
 	// Events, which happens only at shutdown (core owns the receiving end). A
 	// stalled core is a bug surfaced by ctx cancellation, not a reason to block
 	// the display goroutine.
-	eventMu       sync.Mutex
-	events        []ports.ClientEvent
-	eventReady    chan struct{}
-	contentMu     sync.Mutex
-	contents      map[ports.WindowID]ports.SurfaceContent
-	contentSeq    map[ports.WindowID]uint64
-	contentNotify chan struct{}
-	contentReady  chan struct{}
-	outputs       []*output
-	focusedOutput string
-	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
+	eventMu    sync.Mutex
+	events     []ports.ClientEvent
+	eventReady chan struct{}
+	contentMu  sync.Mutex
+	contents   map[ports.WindowID]ports.SurfaceContent
+	contentSeq map[ports.WindowID]uint64
+	// damage is each window's recent damage (contentMu).
+	damage map[ports.WindowID][]ports.SeqDamage
+	// feedbacks wait for the flip that shows their content (presentation.go).
+	feedbacks []feedbackWait
+	// Explicit sync (syncobj.go): the render node, imported timelines by
+	// resource, and the acquire point waiter.
+	syncDev   syncobjDevice
+	timelines map[*server.Resource]*timeline
+	syncWait  *syncWaiter
+	// flips is each output's latest flip (pacer, under Do).
+	flips map[string]ports.FlipInfo
+	// inhibitors are the live inhibitor objects (inhibit.go);
+	// shortcutWindows and idleWindows what core was told.
+	inhibitors                   []*inhibitor
+	shortcutWindows, idleWindows map[ports.WindowID]bool
+	contentNotify                chan struct{}
+	contentReady                 chan struct{}
+	outputs                      []*output
+	focusedOutput                string
+	fractions                    map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorMu guards only the latest cursor change for forwardCursors.
@@ -159,9 +184,30 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
+	s.flips = map[string]ports.FlipInfo{}
+	s.timelines = map[*server.Resource]*timeline{}
+	var node *renderNode
+	if opts.syncDev != nil {
+		s.syncDev = opts.syncDev
+		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+			cleanup()
+			d.Close()
+			return nil, err
+		}
+	} else if opts.SyncobjNode != "" {
+		if node, err = openSyncobj(opts.SyncobjNode); err != nil {
+			log.Info().Str("component", "wayland").Err(err).Msg("explicit sync off")
+			node = nil
+		} else if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+			node.close()
+			node = nil
+		} else {
+			s.syncDev = node
+		}
+	}
 	s.tokens = map[string]activationToken{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -177,6 +223,12 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			unix.Close(s.keymapFD)
 		}
 		s.dmabuf.close()
+		if s.syncWait != nil {
+			s.syncWait.close()
+		}
+		if node != nil {
+			node.close()
+		}
 		cleanup()
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
@@ -196,7 +248,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()
@@ -233,9 +285,42 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 	go func() { defer wg.Done(); s.pace(ctx) }()
+	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
+	if s.syncWait != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); s.syncWait.run(ctx) }()
+	}
 	err := s.display.Run(ctx)
 	wg.Wait()
 	return err
+}
+
+// damageHistory is how many contents a window's damage history covers:
+// enough for a renderer target a few frames old.
+const damageHistory = 4
+
+// forwardOutputFormats applies the outputs' scanout formats on the
+// display goroutine.
+func (s *Server) forwardOutputFormats(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case f, ok := <-s.channels.OutputFormats:
+			if !ok {
+				return
+			}
+			if !s.display.Do(func() {
+				if s.dmabuf != nil {
+					s.dmabuf.setOutputFormats(f)
+				}
+			}) {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) emit(ev ports.ClientEvent) {
@@ -275,13 +360,24 @@ func (s *Server) forward(ctx context.Context) {
 	}
 }
 
-func (s *Server) emitContent(c ports.SurfaceContent) {
+func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	if s.channels.Contents == nil {
 		return
 	}
 	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
+	// The window's damage history: its last damageHistory contents.
+	h := append(s.damage[c.ID], ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
+	if len(h) > damageHistory {
+		h = h[len(h)-damageHistory:]
+	}
+	if c.Empty() {
+		delete(s.damage, c.ID)
+	} else {
+		s.damage[c.ID] = h
+	}
+	c.DamageHistory = slices.Clone(h)
 	s.contents[c.ID] = c
 	close(s.contentNotify)
 	s.contentNotify = make(chan struct{})
@@ -473,8 +569,12 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
+		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
+		if scanoutChanged && w.xdg.surface != nil {
+			s.dmabuf.resendSurface(w.xdg.surface)
+		}
 		if surf := w.xdg.surface; surf != nil && c.Output != "" {
 			surf.sendTreeScale()
 		}
@@ -482,6 +582,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.setOutputs(c)
 	case ports.SlotsPending:
 		s.slotsPending = c.Pending
+	case ports.ShortcutsInhibitState:
+		s.setShortcutsInhibit(c)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() {

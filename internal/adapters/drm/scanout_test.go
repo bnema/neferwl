@@ -2,8 +2,10 @@ package drm
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestScanoutCandidate(t *testing.T) {
@@ -38,11 +40,6 @@ func TestScanoutCandidate(t *testing.T) {
 		{"scaled", nil, func(c *ports.SurfaceContent) { c.Width = 100 }, "size_mismatch"},
 		{"cropped", nil, func(c *ports.SurfaceContent) { c.Geometry = ports.Rect{X: 5, W: 90, H: 50} }, "geometry_crop"},
 		{"client ignores scale", nil, func(c *ports.SurfaceContent) { c.LogicalW = 200 }, "logical_mismatch"},
-		{"unsupported format", nil, func(c *ports.SurfaceContent) {
-			d := *c.DMABuf
-			d.Format = 'N' | 'V'<<8 | '1'<<16 | '2'<<24
-			c.DMABuf = &d
-		}, "format"},
 		{"whole geometry", nil, func(c *ports.SurfaceContent) { c.Geometry = ports.Rect{W: 100, H: 50} }, ""},
 	} {
 		s := scene
@@ -60,11 +57,99 @@ func TestScanoutCandidate(t *testing.T) {
 	}
 }
 
-func TestScanoutFormat(t *testing.T) {
-	for f, want := range map[uint32]bool{fourccXRGB: true, fourccARGB: true, 'A' | 'B'<<8 | '2'<<16 | '4'<<24: false} {
-		got, ok := scanoutFormat(f)
-		if ok != want || ok && got != fourccXRGB {
-			t.Errorf("%x: %x %v", f, got, ok)
+// A buffer scans out when the primary plane lists its format (or the
+// opaque variant) with its modifier; the tranche offers only formats the
+// renderer also composes.
+func TestScanoutFormatFollowsInFormats(t *testing.T) {
+	const tiled = 0x0200000000000001
+	o, k, _ := testOutput(t)
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0}, {Format: fourccXR30, Modifier: tiled}}
+	nv12 := uint32('N' | 'V'<<8 | '1'<<16 | '2'<<24)
+	for _, tc := range []struct {
+		name   string
+		format uint32
+		mod    uint64
+		as     uint32
+		ok     bool
+	}{
+		{"argb as xrgb", fourccARGB, tiled, fourccXRGB, true},
+		{"xrgb linear", fourccXRGB, 0, fourccXRGB, true},
+		{"10 bit alpha as opaque", fourccAR30, tiled, fourccXR30, true},
+		{"modifier not listed", fourccXRGB, 0x0200000000000002, 0, false},
+		{"format not listed", nv12, tiled, 0, false},
+	} {
+		got, ok := o.scanoutFormat(&ports.DMABuf{Format: tc.format, Modifier: tc.mod})
+		if ok != tc.ok || ok && got != tc.as {
+			t.Errorf("%s: %#x %v", tc.name, got, ok)
 		}
+	}
+	sampled := []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0x0200000000000002}, {Format: nv12, Modifier: tiled}}
+	if got := o.scanoutFormats(sampled); len(got) != 1 || got[0] != sampled[0] {
+		t.Fatalf("tranche %v", got)
+	}
+	// A buffer not in IN_FORMATS is refused before any import.
+	o.clientFBs = map[uint64]*clientFB{}
+	if fb, reason := o.scanoutFB(&ports.DMABuf{ID: 4, Format: nv12, Modifier: tiled}, time.Now()); fb != 0 || reason != "format" {
+		t.Fatalf("fb %d reason %q", fb, reason)
+	}
+	// A listed one is imported with every plane (addFB builds ADDFB2).
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
+	if fb, reason := o.scanoutFB(&ports.DMABuf{ID: 5, Format: fourccARGB, Modifier: tiled, Planes: []ports.DMABufPlane{{}, {}}}, time.Now()); fb != 88 || reason != "" {
+		t.Fatalf("fb %d reason %q", fb, reason)
+	}
+}
+
+// Each modeset reports the formats clients may allocate for scanout;
+// with direct scanout off the list is empty.
+func TestModesetSendsScanoutFormats(t *testing.T) {
+	const tiled = 0x0200000000000001
+	for _, on := range []bool{true, false} {
+		o, k, _ := testOutput(t)
+		o.cursor = nil
+		o.scanout, o.device = on, 9
+		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}}
+		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}}
+		ch := make(chan ports.OutputFormats, 1)
+		o.formats = ch
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
+		if err := o.modeset(); err != nil {
+			t.Fatal(err)
+		}
+		f := <-ch
+		if f.Output != "DP-1" || f.Device != 9 {
+			t.Fatalf("report %+v", f)
+		}
+		if on != (len(f.Formats) == 1 && f.Formats[0] == o.sampled[0]) || !on && len(f.Formats) != 0 {
+			t.Fatalf("scanout=%v formats %v", on, f.Formats)
+		}
+	}
+}
+
+// A plane without IN_FORMATS (driver without modifiers) scans out its
+// GETPLANE formats, linear.
+func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
+	k := newMockkms(t)
+	k.EXPECT().planes().Return([]planeRes{{id: 1, possible: 1, formats: []uint32{fourccXRGB}}}, nil)
+	k.EXPECT().objProps(uint32(1), uint32(objPlane)).Return(map[string][2]uint64{"type": {20, planePrimary}}, nil)
+	ps, err := readPlanes(k, 0)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("%v %v", ps, err)
+	}
+	o := &Output{primary: ps[0]}
+	if f, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB}); !ok || f != fourccXRGB {
+		t.Fatalf("linear argb: %#x %v", f, ok)
+	}
+	if _, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB, Modifier: 0x0200000000000001}); ok {
+		t.Fatal("tiled accepted without IN_FORMATS")
+	}
+}
+
+// A flip shows only the windows its scene draws: presentation feedback of
+// a window on another workspace or hidden is discarded, not presented.
+func TestShownByScene(t *testing.T) {
+	s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1}, {ID: 2, Hidden: true}}, Layers: []ports.SceneLayer{{ID: 5}}}
+	got := shownBy(s, map[ports.WindowID]uint64{1: 3, 2: 4, 5: 6, 9: 7})
+	if len(got) != 2 || got[1] != 3 || got[5] != 6 {
+		t.Fatalf("shows %v", got)
 	}
 }

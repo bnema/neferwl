@@ -89,6 +89,12 @@ type Core struct {
 	// pointer moving to another output does not.
 	layerFocus WindowID
 	layerOver  map[*screen]WindowID
+	// inhibitors are the windows asking to keep compositor binds while
+	// focused, inhibiting the one active now (0: none); idle are those
+	// keeping the session awake.
+	inhibitors map[WindowID]bool
+	inhibiting WindowID
+	idle       map[WindowID]bool
 }
 
 func keyName(s string) string {
@@ -271,7 +277,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -448,9 +454,34 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.focus = focus
 	}
+	if err := c.updateInhibit(ctx); err != nil {
+		return err
+	}
 	c.resolveConstraint()
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
+	return nil
+}
+
+// updateInhibit makes the shortcuts inhibitor of the keyboard focus the
+// active one and tells wayland when it changes.
+func (c *Core) updateInhibit(ctx context.Context) error {
+	want := WindowID(0)
+	if f := c.keyboardFocus(); f != 0 && c.inhibitors[f] {
+		want = f
+	}
+	if want == c.inhibiting {
+		return nil
+	}
+	if c.inhibiting != 0 {
+		if err := c.command(ctx, ports.ShortcutsInhibitState{Window: c.inhibiting}); err != nil {
+			return err
+		}
+	}
+	c.inhibiting = want
+	if want != 0 {
+		return c.command(ctx, ports.ShortcutsInhibitState{Window: want, Active: true})
+	}
 	return nil
 }
 
@@ -616,6 +647,24 @@ func (c *Core) Run(ctx context.Context) error {
 				if p := c.popups[v.ID]; p != nil {
 					p.mapped = true
 				}
+			case ports.ShortcutsInhibit:
+				if v.Active {
+					c.inhibitors[v.Window] = true
+				} else {
+					delete(c.inhibitors, v.Window)
+				}
+				if err := c.updateInhibit(ctx); err != nil {
+					return nil
+				}
+				continue
+			case ports.IdleInhibit:
+				if v.Active {
+					c.idle[v.Window] = true
+				} else {
+					delete(c.idle, v.Window)
+				}
+				c.publishState()
+				continue
 			case ports.WindowAppID:
 				if info, ok := c.clients[v.ID]; ok {
 					info.AppID = v.AppID
@@ -631,6 +680,8 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 				delete(c.clients, v.ID)
+				delete(c.inhibitors, v.ID)
+				delete(c.idle, v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
 				}
@@ -797,6 +848,21 @@ func (c *Core) Run(ctx context.Context) error {
 			if !ok {
 				continue
 			}
+			// A focused window inhibiting shortcuts gets every key:
+			// no bind runs (emergency quit and VT switch are handled by
+			// input before core).
+			if c.inhibiting != 0 && c.inhibiting == c.keyboardFocus() {
+				if held := heldKey(key); !key.Pressed && c.pressed[held] {
+					// Its press ran a bind before inhibiting began: the
+					// window never saw it.
+					delete(c.pressed, held)
+					continue
+				}
+				if err := c.command(ctx, ports.ForwardKey{ID: c.inhibiting, Key: key}); err != nil {
+					return nil
+				}
+				continue
+			}
 			name := keyName(key.Keysym)
 			// A bind on the keysym wins; then the unshifted keysym (Cmd+Shift+1
 			// prints exclam on US); then the physical key (code:N).
@@ -808,10 +874,7 @@ func (c *Core) Run(ctx context.Context) error {
 				action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
 			}
 			// Track presses by physical key: Shift may be released before the key.
-			held := name
-			if key.Keycode != 0 {
-				held = "#" + strconv.FormatUint(uint64(key.Keycode), 10)
-			}
+			held := heldKey(key)
 			if !key.Pressed {
 				consumed := c.pressed[held]
 				delete(c.pressed, held)
@@ -901,4 +964,13 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 	w.Activate(id)
 	c.focusScreen = c.screenIndex(s.name())
 	return c.afterShow(ctx, before)
+}
+
+// heldKey names a key for press tracking: by physical key, since Shift
+// may be released before the key.
+func heldKey(key ports.KeyEvent) string {
+	if key.Keycode != 0 {
+		return "#" + strconv.FormatUint(uint64(key.Keycode), 10)
+	}
+	return keyName(key.Keysym)
 }

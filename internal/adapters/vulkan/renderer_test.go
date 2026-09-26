@@ -48,7 +48,7 @@ func TestRendererRender(t *testing.T) {
 	bg := color.RGBA{16, 32, 48, 255}
 	check := func(s ports.Scene, expected map[image.Point]color.RGBA) {
 		t.Helper()
-		if err := r.Render(s, nil); err != nil {
+		if err := render(r, s, nil); err != nil {
 			t.Fatal(err)
 		}
 		for p, want := range expected {
@@ -92,7 +92,7 @@ func TestRendererContents(t *testing.T) {
 		if c != nil {
 			contents = map[ports.WindowID]ports.SurfaceContent{1: *c}
 		}
-		if err := r.Render(scene, contents); err != nil {
+		if err := render(r, scene, contents); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -127,7 +127,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}},
 		{ID: 2, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}},
 	}}
-	if err := r.Render(scene, nil); err != nil {
+	if err := render(r, scene, nil); err != nil {
 		t.Fatal(err)
 	}
 	c := windowColor(2)
@@ -143,7 +143,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	opaque := shmContent(t, 16, 16, 64, px)
 	opaque.Opaque = true
 	contents := map[ports.WindowID]ports.SurfaceContent{1: *opaque}
-	if err := r.Render(scene, contents); err != nil {
+	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -174,7 +174,7 @@ func TestRendererLayers(t *testing.T) {
 	window := color.RGBA{wc[0], wc[1], wc[2], 255}
 	check := func(want color.RGBA) {
 		t.Helper()
-		if err := r.Render(scene, contents); err != nil {
+		if err := render(r, scene, contents); err != nil {
 			t.Fatal(err)
 		}
 		if got := r.Pixels().RGBAAt(5, 2); got != want {
@@ -218,7 +218,7 @@ func TestRendererScale(t *testing.T) {
 	scaled := shmContent(t, 20, 20, 80, solid(20, 20, red))
 	scaled.ID, scaled.LogicalW, scaled.LogicalH = 1, 10, 10
 	content := map[ports.WindowID]ports.SurfaceContent{1: *scaled}
-	if err := r.Render(s, content); err != nil {
+	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
 	px := r.Pixels()
@@ -236,7 +236,7 @@ func TestRendererScale(t *testing.T) {
 	// Scale 1.5 with an integer-scale client (buffer scale 2): the 20x20
 	// buffer is 10x10 logical and downscaled to 15x15 physical at (6,6).
 	s.Scale = 1.5
-	if err := r.Render(s, content); err != nil {
+	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
 	px = r.Pixels()
@@ -252,7 +252,7 @@ func TestRendererScale(t *testing.T) {
 	odd := shmContent(t, 16, 15, 64, solid(16, 15, red))
 	odd.ID, odd.LogicalW, odd.LogicalH = 1, 10, 10
 	content[1] = *odd
-	if err := r.Render(s, content); err != nil {
+	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
 	if got := r.Pixels().At(21, 10); got != (color.RGBA{0, 0, 0, 255}) {
@@ -309,7 +309,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 		{X: 3, Y: 3, Below: true, SurfaceContent: solidContent(t, 30, 20, blue)},
 		{X: 5, Y: 5, SurfaceContent: solidContent(t, 4, 4, green)},
 	}
-	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
 	px := r.Pixels()
@@ -327,7 +327,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	}
 	// A root with no buffer of its own still shows its children.
 	only := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: solidContent(t, 20, 10, blue)}}}
-	if err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: only}); err != nil {
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: only}); err != nil {
 		t.Fatal(err)
 	}
 	if got := r.Pixels().At(20, 15); got != blue {
@@ -335,17 +335,16 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	}
 }
 
-// A fill taller than one staged strip is copied down in bands: every row
-// through the last one gets the color.
+// A tall fill covers every row through the last one.
 func TestRendererTallFill(t *testing.T) {
-	h := fillRows*2 + 7
+	h := 135
 	r, err := New(8, h)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 1, Y: 0, W: 6, H: h}}}}
-	if err := r.Render(scene, nil); err != nil {
+	if err := render(r, scene, nil); err != nil {
 		t.Fatal(err)
 	}
 	c := windowColor(1)
@@ -403,7 +402,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 			{ID: 3, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 16, H: 8}},
 			{ID: 4, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 8, W: 16, H: 8}},
 		}}
-	if err := r.Render(scene, contents); err != nil {
+	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	px := r.Pixels()

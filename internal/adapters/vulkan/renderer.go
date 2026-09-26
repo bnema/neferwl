@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"slices"
 	"strconv"
 	"unsafe"
 
@@ -30,41 +29,43 @@ type Renderer struct {
 	current    int
 	renderMods []uint64
 	// last is the target of the last frame; readback copies it into
-	// buffer only when Pixels or CopyBGRX asks (stale until then).
-	last          *target
-	readBack      bool
-	buffer        vk.Buffer
-	bufferMemory  vk.DeviceMemory
-	staging       vk.Buffer
-	stagingMemory vk.DeviceMemory
-	stagingMapped unsafe.Pointer
-	stagingSize   int
-	mapped        unsafe.Pointer
-	pool          vk.CommandPool
-	command       vk.CommandBuffer
-	fence         vk.Fence
-	memory        vk.PhysicalDeviceMemoryProperties
-	family        uint32
+	// buffer only when Pixels asks (stale until then).
+	last         *target
+	readBack     bool
+	buffer       vk.Buffer
+	bufferMemory vk.DeviceMemory
+	mapped       unsafe.Pointer
+	pool         vk.CommandPool
+	memory       vk.PhysicalDeviceMemoryProperties
+	family       uint32
+	// Frames in flight (frame.go): frame is the last frame recorded,
+	// submitted the last submitted, completed the last known finished.
+	slots                       [frameSlots]frameSlot
+	frame, submitted, completed uint64
+	deferred                    []deferredFree
+	// syncFD: frames export a sync file (else Render waits for them).
+	syncFD bool
 	// dmabuf is what clients may send; imports are their buffers by ID.
 	dmabuf  ports.DMABufSupport
 	imports map[uint64]*imported
 	// pools are client wl_shm pools mapped by pool ID.
 	pools map[uint64]*mapping
-	// retired are pool mappings replaced this frame, unmapped after staging.
+	// retired are pool mappings replaced this frame, unmapped once the
+	// frame's copies are done.
 	retired [][]byte
-	frame   uint64
-	// fillRegions is reused by Render for the bands of solid fills.
-	fillRegions []vk.BufferImageCopy
-	// blend draws translucent client pixels (blend.go); align is the
-	// device's storage buffer offset alignment.
-	blend    blendPipeline
-	align    int
-	maxRange int // bytes of blended pixels one frame may bind
+	// shm are the GPU copies of wl_shm surfaces (shm.go); copied counts
+	// the bytes copied into them, for tests.
+	shm    map[shmKey]*shmSurface
+	copied int
+	// redrawn counts the target pixels drawn, for tests.
+	redrawn int
+	// cursors are the exported cursor images (CursorBuffers).
+	cursors [2]*cursorImage
+	// compose draws every frame (compose.go); maxRange bounds one
+	// storage buffer binding.
+	compose  composer
+	maxRange int
 }
-
-// fillRows is the height of the strip staged for a solid fill: the CPU
-// writes it once, the GPU copies it down the rect.
-const fillRows = 64
 
 func checked(name string, result vk.Result) error {
 	if err := vk.Check(result); err != nil {
@@ -77,7 +78,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}}
+	r = &Renderer{width: width, height: height, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -153,7 +154,6 @@ func New(width, height int) (r *Renderer, err error) {
 	r.id.GetPhysicalDeviceMemoryProperties(physical, &r.memory)
 	var properties vk.PhysicalDeviceProperties
 	r.id.GetPhysicalDeviceProperties(physical, &properties)
-	r.align = int(max(properties.Limits.MinStorageBufferOffsetAlignment, 4))
 	r.maxRange = int(properties.Limits.MaxStorageBufferRange)
 	r.family = family
 	priority := float32(1)
@@ -187,6 +187,9 @@ func New(width, height int) (r *Renderer, err error) {
 			r.dmabuf = sup
 			r.probeRenderModifiers(physical)
 		}
+		// VK_KHR_external_semaphore_fd (enabled above): frames export
+		// their fence as a sync file.
+		r.syncFD = r.dd.GetSemaphoreFdKHR != nil
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
@@ -214,7 +217,7 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	// Readback (screenshots, fallback) reads this buffer: uncached memory is ~100x slower.
+	// Readback (screenshots) reads this buffer: uncached memory is ~100x slower.
 	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
 	if err != nil {
 		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
@@ -232,44 +235,17 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkMapMemory", r.dd.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
 		return
 	}
-	// Start with two frame-sized regions; later frames grow staging on demand.
-	stagingSize := size * 2
-	r.stagingSize = int(stagingSize)
-	stagingInfo := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: stagingSize, Usage: stagingUsage, SharingMode: vk.SharingModeExclusive}
-	if err = checked("vkCreateBuffer(staging)", r.dd.CreateBuffer(r.device, &stagingInfo, nil, &r.staging)); err != nil {
-		return
-	}
-	r.dd.GetBufferMemoryRequirements(r.device, r.staging, &req)
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
-	if err != nil {
-		return
-	}
-	alloc = vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(staging)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.stagingMemory)); err != nil {
-		return
-	}
-	if err = checked("vkBindBufferMemory(staging)", r.dd.BindBufferMemory(r.device, r.staging, r.stagingMemory, 0)); err != nil {
-		return
-	}
-	if err = checked("vkMapMemory(staging)", r.dd.MapMemory(r.device, r.stagingMemory, 0, stagingSize, 0, &r.stagingMapped)); err != nil {
-		return
-	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
 	if err = checked("vkCreateCommandPool", r.dd.CreateCommandPool(r.device, &pi, nil, &r.pool)); err != nil {
 		return
 	}
-	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
-	if err = checked("vkAllocateCommandBuffers", r.dd.AllocateCommandBuffers(r.device, &ai, &r.command)); err != nil {
+	if err = r.createSlots(); err != nil {
 		return
 	}
 	if err = r.createView(&r.own); err != nil {
 		return
 	}
-	if err = r.createBlend(); err != nil {
-		return
-	}
-	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
-	if err = checked("vkCreateFence", r.dd.CreateFence(r.device, &fi, nil, &r.fence)); err != nil {
+	if err = r.createComposer(); err != nil {
 		return
 	}
 	runtime.KeepAlive(priority)
@@ -323,111 +299,9 @@ func windowColor(id ports.WindowID) [3]uint8 {
 	return [3]uint8{uint8(a * 255), uint8(b * 255), uint8(c * 255)}
 }
 
-// ensureStaging grows the mapped transfer buffer before recording any commands.
-func (r *Renderer) ensureStaging(size int) error {
-	if size <= r.stagingSize {
-		return nil
-	}
-	d := r.dd
-	capacity := size
-	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(capacity), Usage: stagingUsage, SharingMode: vk.SharingModeExclusive}
-	var buffer vk.Buffer
-	if err := checked("vkCreateBuffer(staging)", d.CreateBuffer(r.device, &info, nil, &buffer)); err != nil {
-		return err
-	}
-	var memory vk.DeviceMemory
-	defer func() {
-		if buffer != 0 {
-			d.DestroyBuffer(r.device, buffer, nil)
-		}
-		if memory != 0 {
-			d.FreeMemory(r.device, memory, nil)
-		}
-	}()
-	var req vk.MemoryRequirements
-	d.GetBufferMemoryRequirements(r.device, buffer, &req)
-	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
-	if err != nil {
-		return err
-	}
-	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(staging)", d.AllocateMemory(r.device, &alloc, nil, &memory)); err != nil {
-		return err
-	}
-	if err := checked("vkBindBufferMemory(staging)", d.BindBufferMemory(r.device, buffer, memory, 0)); err != nil {
-		return err
-	}
-	var mapped unsafe.Pointer
-	if err := checked("vkMapMemory(staging)", d.MapMemory(r.device, memory, 0, vk.DeviceSize(capacity), 0, &mapped)); err != nil {
-		return err
-	}
-	d.UnmapMemory(r.device, r.stagingMemory)
-	d.DestroyBuffer(r.device, r.staging, nil)
-	d.FreeMemory(r.device, r.stagingMemory, nil)
-	r.staging, r.stagingMemory, r.stagingMapped, r.stagingSize = buffer, memory, mapped, capacity
-	buffer, memory = 0, 0
-	return nil
-}
-
-func (r *Renderer) Clear(rgb [3]uint8) error {
-	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
-}
-
-// upload is one piece of a frame: a solid fill, client pixels staged from
-// a wl_shm pool, or a dmabuf blitted in place.
-type upload struct {
-	rect   image.Rectangle
-	offset int
-	pixels []byte
-	stride int
-	// dst covers src; they differ in size when the buffer is not drawn at
-	// the physical size (integer-scale clients, rounding).
-	dst, src image.Rectangle
-	color    [3]uint8
-	opaque   bool
-	// blend draws the staged pixels over the target instead of copying.
-	blend bool
-	// dma is a client GPU buffer, blitted instead of copied from staging.
-	dma *imported
-	// fill is a solid color: staging holds one strip of rows.
-	fill bool
-}
-
-// size is the staging bytes of an upload: a strip for a fill.
-func (u *upload) size() int {
-	if u.fill {
-		return u.rect.Dx() * min(u.rect.Dy(), fillRows) * 4
-	}
-	return u.rect.Dx() * u.rect.Dy() * 4
-}
-
-// stage copies the visible pixels of a client buffer into dst, resampling
-// when the buffer is not drawn at its size.
-func (u *upload) stage(dst []byte) {
-	for row := 0; row < u.rect.Dy(); row++ {
-		line := dst[row*u.rect.Dx()*4 : (row+1)*u.rect.Dx()*4]
-		y := u.rect.Min.Y + row
-		if u.dst.Size() == u.src.Size() {
-			start := (u.src.Min.Y+y-u.dst.Min.Y)*u.stride + (u.src.Min.X+u.rect.Min.X-u.dst.Min.X)*4
-			copy(line, u.pixels[start:start+len(line)])
-		} else {
-			// Nearest-neighbour resample, sampling pixel centres.
-			sy := u.src.Min.Y + ((y-u.dst.Min.Y)*2+1)*u.src.Dy()/(u.dst.Dy()*2)
-			src := u.pixels[sy*u.stride:]
-			for i := 0; i < u.rect.Dx(); i++ {
-				sx := u.src.Min.X + ((u.rect.Min.X+i-u.dst.Min.X)*2+1)*u.src.Dx()/(u.dst.Dx()*2)
-				copy(line[i*4:i*4+4], src[sx*4:sx*4+4])
-			}
-		}
-		if u.opaque {
-			for i := 3; i < len(line); i += 4 {
-				line[i] = 255
-			}
-		}
-	}
-}
-
-func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
+// draws walks the scene into quads in paint order, copying new wl_shm
+// content into GPU buffers on the way.
+func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
 	// Scene rects are logical; everything below works in physical pixels.
 	scale := s.Scale
 	if scale <= 0 {
@@ -435,21 +309,20 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	phys := func(v int) int { return int(math.Round(float64(v) * scale)) }
 	physRect := func(x, y, w, h int) image.Rectangle { return image.Rect(phys(x), phys(y), phys(x+w), phys(y+h)) }
-	var uploads []upload
+	var draws []draw
 	bounds := image.Rect(0, 0, r.width, r.height)
 	add := func(rect image.Rectangle, c [3]uint8) {
 		rect = rect.Intersect(bounds)
 		if rect.Empty() {
 			return
 		}
-		// A fill stages a strip of up to fillRows rows; the GPU copies the
-		// strip down the rect.
-		uploads = append(uploads, upload{rect: rect, color: c, fill: true})
+		draws = append(draws, r.fillDraw(rect, c))
 	}
-	// addContent maps src (buffer pixels) onto dst (physical pixels).
-	addContent := func(dst, src image.Rectangle, content *ports.SurfaceContent) {
+	// addContent draws the part of a buffer mapped onto full (physical
+	// pixels) that dst shows. key names the surface, seq its content.
+	addContent := func(dst, full image.Rectangle, content *ports.SurfaceContent, key shmKey, seq uint64) {
 		rect := dst.Intersect(bounds)
-		if rect.Empty() || src.Empty() {
+		if rect.Empty() {
 			return
 		}
 		if content.DMABuf != nil {
@@ -458,7 +331,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				// The window shows its background until a buffer imports.
 				return
 			}
-			uploads = append(uploads, upload{rect: rect, dst: dst, src: src, dma: im})
+			dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
+			dr.set, dr.im = im.set, im
+			dr.acquire = content.Acquire
+			draws = append(draws, dr)
 			return
 		}
 		b := content.SHM
@@ -466,11 +342,24 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if err != nil {
 			return
 		}
-		uploads = append(uploads, upload{rect: rect, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, blend: !content.Opaque, dst: dst, src: src})
+		st := shmState{w: content.Width, h: content.Height, seq: seq}
+		// Damage history is the root surface's: children copy in full.
+		var damage func(uint64) ([]ports.Rect, bool)
+		if key.index == 0 {
+			damage = content.DamageSince
+		}
+		c, err := r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage)
+		if err != nil {
+			return
+		}
+		dr := r.contentDraw(rect, full, content.Width, content.Height, modeBuffer, content.Opaque)
+		dr.set = c.set
+		dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
+		draws = append(draws, dr)
 	}
 	// drawSurface draws one surface buffer with its origin at (x, y)
 	// logical, clipped to clip (logical).
-	drawSurface := func(content *ports.SurfaceContent, x, y int, clip image.Rectangle) {
+	drawSurface := func(content *ports.SurfaceContent, x, y int, clip image.Rectangle, key shmKey, seq uint64) {
 		lw, lh := content.LogicalW, content.LogicalH
 		if lw <= 0 || lh <= 0 {
 			lw, lh = content.Width, content.Height
@@ -492,26 +381,27 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if dst.Empty() {
 			return
 		}
-		// The visible part of dst in buffer pixels.
-		bx := func(v int) int { return (v - full.Min.X) * content.Width / full.Dx() }
-		by := func(v int) int { return (v - full.Min.Y) * content.Height / full.Dy() }
-		src := image.Rect(bx(dst.Min.X), by(dst.Min.Y), bx(dst.Max.X), by(dst.Max.Y))
-		addContent(dst, src, content)
+		if key.index == 0 {
+			dmg.content(key.win, content, full, dst)
+		}
+		addContent(dst, full, content, key, seq)
 	}
 	// place draws a surface tree with its window geometry at (x, y)
 	// logical, clipped to w×h logical: client shadows fall outside.
-	place := func(content *ports.SurfaceContent, x, y, w, h int) {
+	// Every surface of the tree is keyed by its window and place in it;
+	// the tree's Seq changes with any of them.
+	place := func(id ports.WindowID, content *ports.SurfaceContent, x, y, w, h int) {
 		clip := image.Rect(x, y, x+w, y+h)
 		ox, oy := x-content.Geometry.X, y-content.Geometry.Y
 		for i := range content.Children {
 			if ch := &content.Children[i]; ch.Below {
-				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
+				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, i + 1}, content.Seq)
 			}
 		}
-		drawSurface(content, ox, oy, clip)
+		drawSurface(content, ox, oy, clip, shmKey{id, 0}, content.Seq)
 		for i := range content.Children {
 			if ch := &content.Children[i]; !ch.Below {
-				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
+				drawSurface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, i + 1}, content.Seq)
 			}
 		}
 	}
@@ -527,7 +417,8 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 				continue
 			}
 			content := contents[layer.ID]
-			place(&content, layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H)
+			dmg.window(layer.ID, content, physRect(layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H))
+			place(layer.ID, &content, layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H)
 		}
 	}
 	addLayers(false)
@@ -547,11 +438,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
 		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
+		dmg.window(w.ID, content, physRect(x, y, w.Rect.W, w.Rect.H))
 		if content.Empty() {
 			add(body, windowColor(w.ID))
 		} else {
 			add(body, parseColor(s.Background))
-			place(&content, cx, cy, cw, ch)
+			place(w.ID, &content, cx, cy, cw, ch)
 		}
 		borderColor := s.Border.Inactive
 		if w.Focused {
@@ -576,225 +468,15 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		for _, w := range s.Windows {
 			if w.Popup && w.OverLayers == overLayers && !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 {
 				content := contents[w.ID]
-				place(&content, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H)
+				dmg.window(w.ID, content, physRect(w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+				place(w.ID, &content, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H)
 			}
 		}
 	}
 	addPopups(false)
 	addLayers(true)
 	addPopups(true)
-	// Blended pixels are staged first, so the shaders bind only them,
-	// within the device's storage buffer range; past it they are copied.
-	// The draw table follows them, then the other uploads.
-	blends, used := 0, 0
-	for k := range uploads {
-		u := &uploads[k]
-		if u.blend && used+u.size() > r.maxRange {
-			u.blend = false
-		}
-		if u.blend {
-			u.offset = used
-			used += u.size()
-			blends++
-		}
-	}
-	pixelBytes := used
-	tableOffset := (used + r.align - 1) / r.align * r.align
-	used = tableOffset + blends*drawSize
-	for k := range uploads {
-		if u := &uploads[k]; !u.blend && u.dma == nil {
-			u.offset = used
-			used += u.size()
-		}
-	}
-	if err := r.ensureStaging(used); err != nil {
-		return err
-	}
-	data := unsafe.Slice((*byte)(r.stagingMapped), r.stagingSize)
-	if blends > 0 {
-		r.bindStaging(pixelBytes, tableOffset, blends)
-		i := 0
-		for k := range uploads {
-			if uploads[k].blend {
-				r.putDraw(data[tableOffset:], i, &uploads[k])
-				i++
-			}
-		}
-	}
-	for _, u := range uploads {
-		if u.dma != nil {
-			continue
-		}
-		if u.fill {
-			line := data[u.offset : u.offset+u.rect.Dx()*min(u.rect.Dy(), fillRows)*4]
-			for i := 0; i < len(line); i += 4 {
-				line[i], line[i+1], line[i+2], line[i+3] = u.color[2], u.color[1], u.color[0], 255
-			}
-			continue
-		}
-		dst := data[u.offset : u.offset+u.rect.Dx()*u.rect.Dy()*4]
-		// The client may shrink its pool under the mapping: its window
-		// then shows garbage for this frame, never a crash.
-		copyGuarded(func() { u.stage(dst) })
-	}
-	rgb := parseColor(s.Background)
-	d := r.dd
-	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
-		return err
-	}
-	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo}
-	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(r.command, &begin)); err != nil {
-		return err
-	}
-	rangeInfo := vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, LevelCount: 1, LayerCount: 1}
-	tg := r.target()
-	srcStage := vk.PipelineStageFlags(vk.PipelineStageTopOfPipeBit)
-	srcAccess := vk.AccessFlags(0)
-	if tg.layout == vk.ImageLayoutTransferSrcOptimal {
-		srcStage = vk.PipelineStageTransferBit
-		srcAccess = vk.AccessTransferReadBit
-	}
-	// The whole target is cleared: its old contents never matter.
-	barrier := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: srcAccess, DstAccessMask: vk.AccessTransferWriteBit, OldLayout: tg.layout, NewLayout: vk.ImageLayoutTransferDstOptimal, Image: tg.image, SubresourceRange: rangeInfo}
-	if tg.exported {
-		// Acquire from the display (foreign queue family).
-		barrier.OldLayout = vk.ImageLayoutUndefined
-		barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
-		srcStage, barrier.SrcAccessMask = vk.PipelineStageTopOfPipeBit, 0
-	}
-	d.CmdPipelineBarrier(r.command, srcStage, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = 0, 0
-	// VkClearColorValue is a union; UNORM formats read it as float32.
-	unorm := func(v uint8) uint32 { return math.Float32bits(float32(v) / 255) }
-	color := vk.ClearColorValue{unorm(rgb[0]), unorm(rgb[1]), unorm(rgb[2]), math.Float32bits(1)}
-	d.CmdClearColorImage(r.command, tg.image, vk.ImageLayoutTransferDstOptimal, &color, 1, &rangeInfo)
-	barrier.SrcAccessMask = vk.AccessTransferWriteBit
-	barrier.DstAccessMask = vk.AccessTransferWriteBit
-	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
-	barrier.NewLayout = vk.ImageLayoutTransferDstOptimal
-	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	// Client buffers come from the foreign queue family (their driver) and
-	// go back to it after the frame, so the next frame acquires them again.
-	var dmas []*imported
-	for _, u := range uploads {
-		if u.dma != nil && !slices.Contains(dmas, u.dma) {
-			dmas = append(dmas, u.dma)
-		}
-	}
-	ownership := func(acquire bool) {
-		for _, im := range dmas {
-			b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: rangeInfo}
-			if acquire {
-				// GENERAL, never UNDEFINED: the client's contents must survive.
-				b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutTransferSrcOptimal
-				b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
-				b.DstAccessMask = vk.AccessTransferReadBit
-			} else {
-				b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
-				b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-				b.SrcAccessMask = vk.AccessTransferReadBit
-			}
-			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
-		}
-	}
-	ownership(true)
-	drawn := 0 // blended uploads drawn so far: their index in the draw table
-	for i := 0; i < len(uploads); i++ {
-		f := uploads[i]
-		if i > 0 && !f.blend {
-			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-		}
-		if f.blend {
-			// Consecutive blended uploads share one draw: blending follows
-			// primitive order within it.
-			n := 1
-			for i+n < len(uploads) && uploads[i+n].blend {
-				n++
-			}
-			r.drawBlended(tg.image, tg.view, drawn, drawn+n)
-			drawn += n
-			i += n - 1
-			continue
-		}
-		rect := f.rect
-		if f.dma != nil {
-			// Map the visible part of dst back onto the buffer.
-			sx := func(x int) int32 { return int32(f.src.Min.X + (x-f.dst.Min.X)*f.src.Dx()/f.dst.Dx()) }
-			sy := func(y int) int32 { return int32(f.src.Min.Y + (y-f.dst.Min.Y)*f.src.Dy()/f.dst.Dy()) }
-			layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
-			blit := vk.ImageBlit{
-				SrcSubresource: layers,
-				SrcOffsets:     [2]vk.Offset3D{{X: sx(rect.Min.X), Y: sy(rect.Min.Y)}, {X: sx(rect.Max.X), Y: sy(rect.Max.Y), Z: 1}},
-				DstSubresource: layers,
-				DstOffsets:     [2]vk.Offset3D{{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, {X: int32(rect.Max.X), Y: int32(rect.Max.Y), Z: 1}},
-			}
-			d.CmdBlitImage(r.command, f.dma.image, vk.ImageLayoutTransferSrcOptimal, tg.image, vk.ImageLayoutTransferDstOptimal, 1, &blit, vk.FilterNearest)
-			continue
-		}
-		layers := vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}
-		if f.fill {
-			// Every band reads the same staged strip.
-			r.fillRegions = r.fillRegions[:0]
-			for y := rect.Min.Y; y < rect.Max.Y; y += fillRows {
-				h := min(fillRows, rect.Max.Y-y)
-				r.fillRegions = append(r.fillRegions, vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(h), Depth: 1}})
-			}
-			d.CmdCopyBufferToImage(r.command, r.staging, tg.image, vk.ImageLayoutTransferDstOptimal, uint32(len(r.fillRegions)), &r.fillRegions[0])
-			continue
-		}
-		region := vk.BufferImageCopy{BufferOffset: vk.DeviceSize(f.offset), ImageSubresource: layers, ImageOffset: vk.Offset3D{X: int32(rect.Min.X), Y: int32(rect.Min.Y)}, ImageExtent: vk.Extent3D{Width: uint32(rect.Dx()), Height: uint32(rect.Dy()), Depth: 1}}
-		d.CmdCopyBufferToImage(r.command, r.staging, tg.image, vk.ImageLayoutTransferDstOptimal, 1, &region)
-	}
-	ownership(false)
-	barrier.SrcAccessMask = vk.AccessTransferWriteBit
-	barrier.DstAccessMask = vk.AccessTransferReadBit
-	barrier.OldLayout = vk.ImageLayoutTransferDstOptimal
-	barrier.NewLayout = vk.ImageLayoutTransferSrcOptimal
-	if tg.exported {
-		// Release to the display: KMS scans it out after the fence.
-		barrier.NewLayout = vk.ImageLayoutGeneral
-		barrier.DstAccessMask = 0
-		barrier.SrcQueueFamilyIndex, barrier.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &barrier)
-	} else {
-		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
-	}
-	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(r.command)); err != nil {
-		return err
-	}
-	// Implicit sync: wait for the client's GPU writes to each buffer.
-	var waits []vk.Semaphore
-	for _, im := range dmas {
-		if sem := r.readFence(im); sem != 0 {
-			waits = append(waits, sem)
-		}
-	}
-	defer func() {
-		for _, sem := range waits {
-			d.DestroySemaphore(r.device, sem, nil)
-		}
-	}()
-	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &r.command}
-	stages := make([]vk.PipelineStageFlags, len(waits))
-	if len(waits) > 0 {
-		for i := range stages {
-			stages[i] = vk.PipelineStageTransferBit
-		}
-		submit.WaitSemaphoreCount, submit.WaitSemaphores, submit.WaitDstStageMask = uint32(len(waits)), &waits[0], &stages[0]
-	}
-	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, r.fence)); err != nil {
-		return err
-	}
-	runtime.KeepAlive(stages)
-	tg.layout = barrier.NewLayout
-	r.last, r.readBack = tg, false
-	// The fence wait is the GPU completion ADR 014 requires before a flip.
-	if err := checked("vkWaitForFences", d.WaitForFences(r.device, 1, &r.fence, 1, math.MaxUint64)); err != nil {
-		return err
-	}
-	r.dropUnused()
-	r.dropPools()
-	return checked("vkResetFences", d.ResetFences(r.device, 1, &r.fence))
+	return draws
 }
 
 func (r *Renderer) Pixels() *image.RGBA {
@@ -810,71 +492,50 @@ func (r *Renderer) Pixels() *image.RGBA {
 	return out
 }
 
-// CopyBGRX writes the last frame into an XRGB8888 buffer with the given pitch.
-// The image is B8G8R8A8, which is already XRGB8888 in memory.
-func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
-	if r.mapped == nil || r.readback() != nil {
-		return
-	}
-	row := r.width * 4
-	src := unsafe.Slice((*byte)(r.mapped), row*r.height)
-	for y := 0; y < r.height; y++ {
-		copy(dst[y*pitch:y*pitch+row], src[y*row:(y+1)*row])
-	}
-}
-
 // Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
 const (
 	queueFamilyIgnored = ^uint32(0)
 	wholeSize          = ^vk.DeviceSize(0)
 )
 
-// readback copies the last frame into the host buffer, once per frame.
+// readback copies the last frame into the host buffer, once per frame
+// (screenshots only).
 func (r *Renderer) readback() error {
 	if r.readBack || r.last == nil || r.last.image == 0 {
 		return nil
 	}
-	d := r.dd
-	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
-		return err
-	}
-	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo}
-	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(r.command, &begin)); err != nil {
+	// The copy reads the frame: wait for it, and keep the ring ordered.
+	if err := r.waitFrame(r.submitted); err != nil {
 		return err
 	}
 	t := r.last
-	rangeInfo := vk.ImageSubresourceRange{AspectMask: vk.ImageAspectColorBit, LevelCount: 1, LayerCount: 1}
-	b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessTransferReadBit, OldLayout: t.layout, NewLayout: vk.ImageLayoutTransferSrcOptimal, Image: t.image, SubresourceRange: rangeInfo}
-	if t.exported {
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
-		b.SrcAccessMask = 0
+	err := r.oneShot(func(cmd vk.CommandBuffer) {
+		d := r.dd
+		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: t.layout, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: t.image, SubresourceRange: colorRange}
+		if t.exported {
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
+		}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
+		d.CmdCopyImageToBuffer(cmd, t.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
+		// Make the copy visible to host reads of the mapped buffer.
+		hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: r.buffer, Size: wholeSize}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
+		if t.exported {
+			b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
+			b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+			d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+		}
+	})
+	if err != nil {
+		return err
 	}
-	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
-	region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-	d.CmdCopyImageToBuffer(r.command, t.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
-	// Make the copy visible to host reads of the mapped buffer.
-	hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: r.buffer, Size: wholeSize}
-	d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
-	if t.exported {
-		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
-		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-		d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
-	} else {
+	if !t.exported {
 		t.layout = vk.ImageLayoutTransferSrcOptimal
 	}
-	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(r.command)); err != nil {
-		return err
-	}
-	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &r.command}
-	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, r.fence)); err != nil {
-		return err
-	}
-	if err := checked("vkWaitForFences", d.WaitForFences(r.device, 1, &r.fence, 1, math.MaxUint64)); err != nil {
-		return err
-	}
 	r.readBack = true
-	return checked("vkResetFences", d.ResetFences(r.device, 1, &r.fence))
+	return nil
 }
 
 func (r *Renderer) Close() {
@@ -885,37 +546,21 @@ func (r *Renderer) Close() {
 		d := r.dd
 		if r.device != 0 {
 			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.device))
+			r.idle()
 		}
 		r.dropTargets()
+		r.dropCursors()
 		for id, im := range r.imports {
 			r.release(im)
 			delete(r.imports, id)
 		}
 		r.frame += importTTL + 1
 		r.dropPools()
-		if r.fence != 0 {
-			d.DestroyFence(r.device, r.fence, nil)
-			r.fence = 0
-		}
-		if r.command != 0 {
-			d.FreeCommandBuffers(r.device, r.pool, 1, &r.command)
-			r.command = 0
-		}
+		r.dropShm()
+		r.destroySlots()
 		if r.pool != 0 {
 			d.DestroyCommandPool(r.device, r.pool, nil)
 			r.pool = 0
-		}
-		if r.stagingMapped != nil {
-			d.UnmapMemory(r.device, r.stagingMemory)
-			r.stagingMapped = nil
-		}
-		if r.staging != 0 {
-			d.DestroyBuffer(r.device, r.staging, nil)
-			r.staging = 0
-		}
-		if r.stagingMemory != 0 {
-			d.FreeMemory(r.device, r.stagingMemory, nil)
-			r.stagingMemory = 0
 		}
 		if r.mapped != nil {
 			d.UnmapMemory(r.device, r.bufferMemory)
@@ -929,7 +574,7 @@ func (r *Renderer) Close() {
 			d.FreeMemory(r.device, r.bufferMemory, nil)
 			r.bufferMemory = 0
 		}
-		r.destroyBlend()
+		r.destroyComposer()
 		r.freeTarget(&r.own)
 		d.DestroyDevice(r.device, nil)
 		r.device = 0

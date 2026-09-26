@@ -20,6 +20,11 @@ var components = map[string]bool{
 	"render": true, "sync": true, "config": true, "app": true,
 }
 
+// categories are debug switches narrower than a component, only on when
+// named: "all" leaves them off (input-motion logs every pointer motion).
+// Naming one turns on debug for its component.
+var categories = map[string]string{"input-motion": "input"}
+
 type debugKey struct{}
 type levelKey struct{}
 type debugSet map[string]bool
@@ -34,7 +39,7 @@ func ParseDebug(value string) (map[string]bool, error) {
 			selected[name] = true
 			continue
 		}
-		if !components[name] {
+		if _, ok := categories[name]; !components[name] && !ok {
 			return nil, fmt.Errorf("invalid debug component %q", name)
 		}
 		selected[name] = true
@@ -104,6 +109,12 @@ func (w *consoleAndFile) Write(p []byte) (int, error) {
 	return w.file.Write(p)
 }
 
+// Enabled reports whether a debug category was named in --debug.
+func Enabled(ctx context.Context, category string) bool {
+	selected, _ := ctx.Value(debugKey{}).(debugSet)
+	return selected[category]
+}
+
 // For returns a component logger with debug enabled only for selected components.
 func For(ctx context.Context, component string) zerowrap.Logger {
 	log := zerowrap.FromCtxWithField(ctx, zerowrap.FieldComponent, component)
@@ -119,6 +130,11 @@ func For(ctx context.Context, component string) zerowrap.Logger {
 	}
 	if selected["all"] || selected[component] {
 		level = zerolog.DebugLevel
+	}
+	for name, owner := range categories {
+		if selected[name] && owner == component {
+			level = zerolog.DebugLevel
+		}
 	}
 	log = zerowrap.Logger{Logger: log.Level(level)}
 	return log

@@ -13,7 +13,7 @@ import (
 
 // dmabuf import (linux-dmabuf clients): each client buffer becomes a
 // VkImage bound to its imported memory, cached by buffer ID while the
-// client keeps attaching it, and blitted into the output image. Sync is
+// client keeps attaching it, and sampled by the compose shader. Sync is
 // implicit: before sampling, the renderer waits on the fences the client's
 // driver attached to the buffer (DMA_BUF_IOCTL_EXPORT_SYNC_FILE), imported
 // as a semaphore.
@@ -86,7 +86,7 @@ func cstring(b []byte) string {
 }
 
 // probeDMABuf lists the fourcc/modifier pairs the device imports as
-// single-plane blit sources, and the render node.
+// single-plane sampled images with linear filtering, and the render node.
 func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 	var sup ports.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
@@ -107,8 +107,9 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 		r.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		for _, m := range mods[:list.DrmFormatModifierCount] {
 			// Multi-plane modifiers (compression metadata) are left to a
-			// later step; the blit needs a source.
-			if m.DrmFormatModifierPlaneCount != 1 || m.DrmFormatModifierTilingFeatures&vk.FormatFeatureBlitSrcBit == 0 {
+			// later step.
+			need := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageBit | vk.FormatFeatureSampledImageFilterLinearBit)
+			if m.DrmFormatModifierPlaneCount != 1 || m.DrmFormatModifierTilingFeatures&need != need {
 				continue
 			}
 			if r.importable(physical, f.format, m.DrmFormatModifier) {
@@ -124,7 +125,7 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageTransferSrcBit}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
 	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
@@ -136,10 +137,14 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 // DMABuf reports the formats this renderer imports.
 func (r *Renderer) DMABuf() ports.DMABufSupport { return r.dmabuf }
 
-// imported is a client dmabuf bound to a VkImage.
+// imported is a client dmabuf bound to a VkImage, with the view and set
+// the compose shader samples it through.
 type imported struct {
 	image  vk.Image
 	memory vk.DeviceMemory
+	view   vk.ImageView
+	pool   vk.DescriptorPool
+	set    vk.DescriptorSet
 	fd     int // our duplicate of plane 0, for implicit sync
 	// last is the frame that drew it, for eviction.
 	last uint64
@@ -177,7 +182,7 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 	layout := vk.SubresourceLayout{Offset: vk.DeviceSize(b.Planes[0].Offset), RowPitch: vk.DeviceSize(b.Planes[0].Stride)}
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: 1, PlaneLayouts: &layout}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&explicit), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(dmabuf)", d.CreateImage(r.device, &ii, nil, &im.image)); err != nil {
 		return nil, err
 	}
@@ -206,6 +211,12 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 	if err := checked("vkBindImageMemory(dmabuf)", d.BindImageMemory(r.device, im.image, im.memory, 0)); err != nil {
 		return nil, err
 	}
+	if im.view, err = r.imageView(im.image, format); err != nil {
+		return nil, err
+	}
+	if im.pool, im.set, err = r.newSet(im.view, r.compose.dummyBuffer.buffer); err != nil {
+		return nil, err
+	}
 	ok = true
 	r.imports[b.ID] = im
 	return im, nil
@@ -229,6 +240,12 @@ func dupFile(f *os.File) (int, error) {
 }
 
 func (r *Renderer) release(im *imported) {
+	if im.pool != 0 {
+		r.dd.DestroyDescriptorPool(r.device, im.pool, nil)
+	}
+	if im.view != 0 {
+		r.dd.DestroyImageView(r.device, im.view, nil)
+	}
 	if im.image != 0 {
 		r.dd.DestroyImage(r.device, im.image, nil)
 	}
@@ -240,13 +257,13 @@ func (r *Renderer) release(im *imported) {
 	}
 }
 
-// dropUnused frees imports not drawn for importTTL frames: the client moved
-// on to other buffers or went away. Called after a frame completes.
+// dropUnused frees imports not drawn for importTTL frames (the client
+// moved on to other buffers or went away), once the last frame that drew
+// them completed.
 func (r *Renderer) dropUnused() {
-	r.frame++
 	for id, im := range r.imports {
 		if r.frame-im.last > importTTL {
-			r.release(im)
+			r.retire(im.last, func() { r.release(im) })
 			delete(r.imports, id)
 		}
 	}
@@ -270,15 +287,31 @@ func (r *Renderer) readFence(im *imported) vk.Semaphore {
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(im.fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
 		return 0
 	}
+	return r.importSyncFD(int(arg.fd))
+}
+
+// importFence makes a wait semaphore of a sync file. The file stays the
+// caller's: Vulkan takes a duplicate, made while the file is held open.
+func (r *Renderer) importFence(f *os.File) vk.Semaphore {
+	fd, err := dupFile(f)
+	if err != nil {
+		return 0
+	}
+	return r.importSyncFD(fd)
+}
+
+// importSyncFD imports a sync file fd as a temporary semaphore payload;
+// the fd is Vulkan's on success and closed on failure.
+func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	if r.dd.CreateSemaphore(r.device, &si, nil, &sem) != vk.Success {
-		unix.Close(int(arg.fd))
+		unix.Close(fd)
 		return 0
 	}
-	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: arg.fd}
+	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
 	if r.dd.ImportSemaphoreFdKHR(r.device, &imp) != vk.Success {
-		unix.Close(int(arg.fd))
+		unix.Close(fd)
 		r.dd.DestroySemaphore(r.device, sem, nil)
 		return 0
 	}

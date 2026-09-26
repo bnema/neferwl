@@ -40,7 +40,7 @@ func (c *Core) state() ports.State {
 			n := indexOf(m.Workspaces, w) + 1
 			for _, id := range w.windows() {
 				info := c.clients[id]
-				st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: w == cur})
+				st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: w == cur, IdleInhibit: c.idle[id]})
 			}
 		}
 	}

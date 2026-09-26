@@ -1,12 +1,12 @@
-// Package drm drives KMS outputs with raw ioctls and dumb buffers.
+// Package drm drives KMS outputs with raw ioctls and atomic commits.
 package drm
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"unsafe"
 
+	"github.com/bnema/nefertty/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -14,18 +14,10 @@ import (
 const (
 	ioctlGetResources = 0xC04064A0
 	ioctlGetCrtc      = 0xC06864A1
-	ioctlSetCrtc      = 0xC06864A2
 	ioctlGetEncoder   = 0xC01464A6
 	ioctlGetConnector = 0xC05064A7
-	ioctlAddFB        = 0xC01C64AE
 	ioctlRmFB         = 0xC00464AF
-	ioctlPageFlip     = 0xC01864B0
-	ioctlCreateDumb   = 0xC02064B2
-	ioctlMapDumb      = 0xC01064B3
-	ioctlDestroyDumb  = 0xC00464B4
 
-	pageFlipEvent    = 1
-	pageFlipAsync    = 2
 	eventFlipDone    = 2
 	modeTypePrefered = 1 << 3
 	connected        = 1
@@ -72,24 +64,6 @@ type modeCrtc struct {
 	mode            modeInfo
 }
 
-type pageFlip struct {
-	crtcID, fbID, flags, reserved uint32
-	userData                      uint64
-}
-
-type createDumb struct {
-	height, width, bpp, flags uint32
-	handle, pitch             uint32
-	size                      uint64
-}
-
-type mapDumb struct {
-	handle, pad uint32
-	offset      uint64
-}
-
-type fbCmd struct{ fbID, width, height, pitch, bpp, depth, handle uint32 }
-
 func ioctl(fd int, req uintptr, arg unsafe.Pointer) error {
 	for {
 		_, _, e := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), req, uintptr(arg))
@@ -126,6 +100,11 @@ type Want struct {
 	NoTearing bool
 	// NoVRR keeps variable refresh off (render.vrr = off).
 	NoVRR bool
+	// Sampled are the dmabuf formats the renderer composes: direct
+	// scanout is offered only for those, so a refused buffer still draws.
+	Sampled []ports.DMABufFormat
+	// Device is the KMS device (dev_t) offered in scanout tranches.
+	Device uint64
 }
 
 // usable reports whether a connector should be driven.
@@ -261,89 +240,8 @@ func pickCrtc(fd int, c connector, crtcs []uint32, used map[uint32]bool) (uint32
 	return 0, fmt.Errorf("no free CRTC for %s", c.name)
 }
 
-type dumbBuffer struct {
-	handle, fbID, pitch uint32
-	mem                 []byte
-}
-
-func newDumb(fd int, w, h int) (*dumbBuffer, error) {
-	c := createDumb{width: uint32(w), height: uint32(h), bpp: 32}
-	if err := ioctl(fd, ioctlCreateDumb, unsafe.Pointer(&c)); err != nil {
-		return nil, fmt.Errorf("create dumb: %w", err)
-	}
-	b := &dumbBuffer{handle: c.handle, pitch: c.pitch}
-	f := fbCmd{width: uint32(w), height: uint32(h), pitch: c.pitch, bpp: 32, depth: 24, handle: c.handle}
-	if err := ioctl(fd, ioctlAddFB, unsafe.Pointer(&f)); err != nil {
-		b.destroy(fd)
-		return nil, fmt.Errorf("add fb: %w", err)
-	}
-	b.fbID = f.fbID
-	m := mapDumb{handle: c.handle}
-	if err := ioctl(fd, ioctlMapDumb, unsafe.Pointer(&m)); err != nil {
-		b.destroy(fd)
-		return nil, fmt.Errorf("map dumb: %w", err)
-	}
-	mem, err := unix.Mmap(fd, int64(m.offset), int(c.size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
-	if err != nil {
-		b.destroy(fd)
-		return nil, fmt.Errorf("mmap dumb: %w", err)
-	}
-	b.mem = mem
-	return b, nil
-}
-
-func (b *dumbBuffer) destroy(fd int) {
-	if b.mem != nil {
-		_ = unix.Munmap(b.mem)
-		b.mem = nil
-	}
-	if b.fbID != 0 {
-		id := b.fbID
-		_ = ioctl(fd, ioctlRmFB, unsafe.Pointer(&id))
-		b.fbID = 0
-	}
-	h := b.handle
-	_ = ioctl(fd, ioctlDestroyDumb, unsafe.Pointer(&h))
-}
-
-func setCrtc(fd int, crtc, conn, fb uint32, mode *modeInfo) error {
-	ids := []uint32{conn}
-	c := modeCrtc{crtcID: crtc, fbID: fb, countConnectors: 1, setConnectors: unsafe.Pointer(&ids[0])}
-	if mode != nil {
-		c.mode, c.modeValid = *mode, 1
-	}
-	return ioctl(fd, ioctlSetCrtc, unsafe.Pointer(&c))
-}
-
 func getCrtc(fd int, crtc uint32) (modeCrtc, error) {
 	c := modeCrtc{crtcID: crtc}
 	err := ioctl(fd, ioctlGetCrtc, unsafe.Pointer(&c))
 	return c, err
-}
-
-func flip(fd int, crtc, fb uint32, async bool) error {
-	p := pageFlip{crtcID: crtc, fbID: fb, flags: pageFlipEvent}
-	if async {
-		p.flags |= pageFlipAsync
-	}
-	return ioctl(fd, ioctlPageFlip, unsafe.Pointer(&p))
-}
-
-// flipCrtcs parses DRM events read from the card fd and returns the CRTC of
-// each completed page flip.
-func flipCrtcs(buf []byte) []uint32 {
-	var out []uint32
-	for len(buf) >= 8 {
-		typ := binary.LittleEndian.Uint32(buf)
-		length := int(binary.LittleEndian.Uint32(buf[4:]))
-		if length < 8 || length > len(buf) {
-			break
-		}
-		// struct drm_event_vblank: base(8) user_data(8) sec usec sequence crtc_id.
-		if typ == eventFlipDone && length >= 32 {
-			out = append(out, binary.LittleEndian.Uint32(buf[28:]))
-		}
-		buf = buf[length:]
-	}
-	return out
 }

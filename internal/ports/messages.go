@@ -1,6 +1,9 @@
 package ports
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 // ClientEvent carries wayland → core notifications.
 type ClientEvent interface{ clientEvent() }
@@ -30,6 +33,25 @@ func (WindowMapped) clientEvent() {}
 type WindowUnmapped struct{ ID WindowID }
 
 func (WindowUnmapped) clientEvent() {}
+
+// ShortcutsInhibit carries wayland → core that a window asks for (Active)
+// or stops asking for all keys, compositor binds included, while it has
+// keyboard focus (zwp_keyboard_shortcuts_inhibit_v1).
+type ShortcutsInhibit struct {
+	Window WindowID
+	Active bool
+}
+
+func (ShortcutsInhibit) clientEvent() {}
+
+// IdleInhibit carries wayland → core that a window keeps (Active) or
+// stops keeping the session from going idle (zwp_idle_inhibit_v1).
+type IdleInhibit struct {
+	Window WindowID
+	Active bool
+}
+
+func (IdleInhibit) clientEvent() {}
 
 // WindowFullscreenRequest carries wayland → core fullscreen requests.
 type WindowFullscreenRequest struct {
@@ -315,15 +337,45 @@ func (OutputAdded) outputEvent() {}
 // OutputPresented carries output → wayland what an output shows and reads.
 // Flip is set when a page flip completed: frame callbacks of the surfaces
 // on it are due. Shown and Queued are the DMABuf IDs scanned out directly
-// (0: a composed image); Seen is the latest content Seq the output got per
-// window. A replaced client buffer is released once every output that
-// reports has seen a later content of its window and neither shows nor
-// queues it.
+// (0: a composed image); Seen is the latest content Seq per window the
+// output finished reading (the GPU is done with it). A replaced client
+// buffer is released once every output that reports has seen a later
+// content of its window and neither shows nor queues it.
 type OutputPresented struct {
 	Output        string
-	Flip          bool
+	Flip          *FlipInfo
 	Shown, Queued uint64
 	Seen          map[WindowID]uint64
+}
+
+// OutputFormats carries output → wayland the dmabuf formats an output can
+// scan out directly (its primary plane's, that the renderer also samples,
+// so a refused buffer can still be composed). Device is the KMS device
+// (dev_t) clients allocate scanout buffers for. Sent at start and after
+// every modeset; empty Formats means no direct scanout.
+type OutputFormats struct {
+	Output  string
+	Device  uint64
+	Formats []DMABufFormat
+}
+
+// FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
+// (hardware clock on DRM), Seq the output's vblank counter, Refresh the
+// refresh period (0 while variable refresh is on). ZeroCopy is the window
+// whose buffer was shown without composition (direct scanout or overlay
+// plane; 0: none), Async set for a tearing flip.
+// Shows is the content Seq per window the flipped frame shows. Merged
+// counts earlier flips folded into this one when the reader fell behind:
+// their presentation feedback is discarded.
+type FlipInfo struct {
+	When          time.Duration
+	Seq           uint64
+	Refresh       time.Duration
+	ZeroCopy      WindowID
+	Async         bool
+	HardwareClock bool
+	Merged        int
+	Shows         map[WindowID]uint64
 }
 
 // OutputRemoved carries output → core an unplugged display.
@@ -336,6 +388,15 @@ type ConfigChanged struct{ Config Config }
 
 // ClientCommand carries core → wayland commands.
 type ClientCommand interface{ clientCommand() }
+
+// ShortcutsInhibitState carries core → wayland whether a window's
+// shortcuts inhibitor is in effect (it has keyboard focus).
+type ShortcutsInhibitState struct {
+	Window WindowID
+	Active bool
+}
+
+func (ShortcutsInhibitState) clientCommand() {}
 
 // ConfigureWindow carries core → wayland geometry and state. Output is the
 // connector showing the window, empty while it is hidden.
@@ -590,6 +651,50 @@ type SurfaceContent struct {
 	// Async asks for tearing presentation (wp_tearing_control_v1); outputs
 	// honour it only in direct scanout.
 	Async bool
+	// Acquire is the explicit-sync fence of this content's root buffer
+	// (wp_linux_drm_syncobj_v1): readers wait on it before reading the
+	// buffer, instead of the buffer's implicit fences. Wayland owns it and
+	// closes it when the buffer is released; a reader that keeps it past
+	// the call duplicates it under Acquire.SyscallConn. nil: implicit sync.
+	// Wayland closes it only after every output reported a later content of
+	// the window as seen, so a reader never gets it already closed.
+	Acquire *os.File
+	// DamageHistory is what changed in the root surface's buffer over the
+	// window's last contents, oldest first, ending with this one (Seq).
+	// A renderer holding an older content redraws the union of the
+	// entries after it, or everything when the history does not reach it.
+	DamageHistory []SeqDamage
+}
+
+// SeqDamage is what content Seq changed from the one before: Rects in
+// root buffer pixels, or everything when Full.
+type SeqDamage struct {
+	Seq   uint64
+	Full  bool
+	Rects []Rect
+}
+
+// DamageSince is the union of changes after content seq up to this one,
+// and false when the history does not reach back to seq (redraw all).
+func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
+	if seq >= c.Seq {
+		return nil, true
+	}
+	h := c.DamageHistory
+	if len(h) == 0 || h[0].Seq > seq+1 || h[len(h)-1].Seq != c.Seq {
+		return nil, false
+	}
+	var out []Rect
+	for _, d := range h {
+		if d.Seq <= seq {
+			continue
+		}
+		if d.Full {
+			return nil, false
+		}
+		out = append(out, d.Rects...)
+	}
+	return out, true
 }
 
 // Subsurface is a child surface at X, Y logical pixels from the root
@@ -695,4 +800,6 @@ type WindowState struct {
 	// Visible means on the workspace on screen (it may be behind a
 	// fullscreen window).
 	Visible bool
+	// IdleInhibit is set while the window keeps the session from idling.
+	IdleInhibit bool `json:",omitempty"`
 }
