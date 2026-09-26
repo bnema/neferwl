@@ -55,6 +55,10 @@ type Renderer struct {
 	frame   uint64
 	// fillRegions is reused by Render for the bands of solid fills.
 	fillRegions []vk.BufferImageCopy
+	// blend draws translucent client pixels (blend.go); align is the
+	// device's storage buffer offset alignment.
+	blend blendPipeline
+	align int
 }
 
 // fillRows is the height of the strip staged for a solid fill: the CPU
@@ -123,6 +127,7 @@ func New(width, height int) (r *Renderer, err error) {
 		if properties.ApiVersion < vk.MakeVersion(1, 3, 0) {
 			continue
 		}
+		r.align = int(max(properties.Limits.MinStorageBufferOffsetAlignment, 4))
 		var n uint32
 		r.id.GetPhysicalDeviceQueueFamilyProperties(device, &n, nil)
 		if n == 0 {
@@ -181,7 +186,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
 		return
 	}
@@ -226,7 +231,7 @@ func New(width, height int) (r *Renderer, err error) {
 	// Start with two frame-sized regions; later frames grow staging on demand.
 	stagingSize := size * 2
 	r.stagingSize = int(stagingSize)
-	stagingInfo := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: stagingSize, Usage: vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
+	stagingInfo := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: stagingSize, Usage: stagingUsage, SharingMode: vk.SharingModeExclusive}
 	if err = checked("vkCreateBuffer(staging)", r.dd.CreateBuffer(r.device, &stagingInfo, nil, &r.staging)); err != nil {
 		return
 	}
@@ -251,6 +256,12 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	ai := vk.CommandBufferAllocateInfo{SType: vk.StructureTypeCommandBufferAllocateInfo, CommandPool: r.pool, Level: vk.CommandBufferLevelPrimary, CommandBufferCount: 1}
 	if err = checked("vkAllocateCommandBuffers", r.dd.AllocateCommandBuffers(r.device, &ai, &r.command)); err != nil {
+		return
+	}
+	if err = r.createView(&r.own); err != nil {
+		return
+	}
+	if err = r.createBlend(); err != nil {
 		return
 	}
 	fi := vk.FenceCreateInfo{SType: vk.StructureTypeFenceCreateInfo}
@@ -315,7 +326,7 @@ func (r *Renderer) ensureStaging(size int) error {
 	}
 	d := r.dd
 	capacity := size
-	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(capacity), Usage: vk.BufferUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive}
+	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(capacity), Usage: stagingUsage, SharingMode: vk.SharingModeExclusive}
 	var buffer vk.Buffer
 	if err := checked("vkCreateBuffer(staging)", d.CreateBuffer(r.device, &info, nil, &buffer)); err != nil {
 		return err
@@ -370,6 +381,8 @@ type upload struct {
 	dst, src image.Rectangle
 	color    [3]uint8
 	opaque   bool
+	// blend draws the staged pixels over the target instead of copying.
+	blend bool
 	// dma is a client GPU buffer, blitted instead of copied from staging.
 	dma *imported
 	// fill is a solid color: staging holds one strip of rows.
@@ -443,7 +456,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if err != nil {
 			return
 		}
-		uploads = append(uploads, upload{rect: rect, offset: used, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, dst: dst, src: src})
+		uploads = append(uploads, upload{rect: rect, offset: used, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, blend: !content.Opaque, dst: dst, src: src})
 		used += rect.Dx() * rect.Dy() * 4
 	}
 	// drawSurface draws one surface buffer with its origin at (x, y)
@@ -561,10 +574,31 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	addPopups(false)
 	addLayers(true)
 	addPopups(true)
+	// The draw table of blended uploads follows the pixels.
+	blends := 0
+	for _, u := range uploads {
+		if u.blend {
+			blends++
+		}
+	}
+	tableOffset := (used + r.align - 1) / r.align * r.align
+	if blends > 0 {
+		used = tableOffset + blends*drawSize
+	}
 	if err := r.ensureStaging(used); err != nil {
 		return err
 	}
 	data := unsafe.Slice((*byte)(r.stagingMapped), r.stagingSize)
+	if blends > 0 {
+		r.bindStaging(tableOffset)
+		i := 0
+		for k := range uploads {
+			if uploads[k].blend {
+				r.putDraw(data[tableOffset:], i, &uploads[k])
+				i++
+			}
+		}
+	}
 	for _, u := range uploads {
 		if u.dma != nil {
 			continue
@@ -581,7 +615,6 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		// then shows garbage for this frame, never a crash.
 		copyGuarded(func() { u.stage(dst) })
 	}
-	// B8G8R8A8 pixels are copied unchanged; blending belongs to the compositing pipeline.
 	rgb := parseColor(s.Background)
 	d := r.dd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(r.command, 0)); err != nil {
@@ -643,9 +676,23 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 	}
 	ownership(true)
-	for i, f := range uploads {
-		if i > 0 {
+	drawn := 0 // blended uploads drawn so far: their index in the draw table
+	for i := 0; i < len(uploads); i++ {
+		f := uploads[i]
+		if i > 0 && !f.blend {
 			d.CmdPipelineBarrier(r.command, vk.PipelineStageTransferBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &barrier)
+		}
+		if f.blend {
+			// Consecutive blended uploads share one draw: blending follows
+			// primitive order within it.
+			n := 1
+			for i+n < len(uploads) && uploads[i+n].blend {
+				n++
+			}
+			r.drawBlended(tg.image, tg.view, drawn, drawn+n)
+			drawn += n
+			i += n - 1
+			continue
 		}
 		rect := f.rect
 		if f.dma != nil {
@@ -860,6 +907,7 @@ func (r *Renderer) Close() {
 			d.FreeMemory(r.device, r.bufferMemory, nil)
 			r.bufferMemory = 0
 		}
+		r.destroyBlend()
 		r.freeTarget(&r.own)
 		d.DestroyDevice(r.device, nil)
 		r.device = 0

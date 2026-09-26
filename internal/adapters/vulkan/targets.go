@@ -24,6 +24,7 @@ type target struct {
 	image  vk.Image
 	memory vk.DeviceMemory
 	layout vk.ImageLayout
+	view   vk.ImageView // color attachment for blended draws
 	// exported images are shared with the display: ownership goes to the
 	// foreign queue family after each frame, and KMS reads them.
 	exported bool
@@ -104,7 +105,7 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
 	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
-	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit)
+	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
 			r.renderMods = append(r.renderMods, m.DrmFormatModifier)
@@ -131,7 +132,11 @@ const (
 	formatFeatureTransferDst = 1 << 15
 )
 
-const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit
+// Targets are copied into and drawn on (blend.go).
+const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit | vk.ImageUsageColorAttachmentBit
+
+// Staging feeds copies and, as a storage buffer, the blend shaders.
+const stagingUsage = vk.BufferUsageTransferSrcBit | vk.BufferUsageStorageBufferBit
 
 // exportTarget creates one exported image with a modifier from mods.
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
@@ -171,6 +176,9 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	var layout vk.SubresourceLayout
 	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
 	d.GetImageSubresourceLayout(r.device, t.image, &sub, &layout)
+	if err := r.createView(t); err != nil {
+		return nil, ports.DMABuf{}, err
+	}
 	var fd int32
 	get := vk.MemoryGetFdInfoKHR{SType: vk.StructureTypeMemoryGetFDInfoKHR, Memory: t.memory, HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
@@ -186,6 +194,10 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 }
 
 func (r *Renderer) freeTarget(t *target) {
+	if t.view != 0 {
+		r.dd.DestroyImageView(r.device, t.view, nil)
+		t.view = 0
+	}
 	if t.image != 0 {
 		r.dd.DestroyImage(r.device, t.image, nil)
 		t.image = 0
