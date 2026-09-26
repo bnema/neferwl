@@ -69,7 +69,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	if err := target.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	want := []uint16{uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventKey), uint16(wayland.KeyboardEventKey)}
+	want := []uint16{uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventModifiers), uint16(wayland.KeyboardEventKey), uint16(wayland.KeyboardEventKey)}
 	if !slices.Equal(proxy.opcodes, want) {
 		t.Fatalf("virtual events %v, want %v", proxy.opcodes, want)
 	}
@@ -142,7 +142,8 @@ func TestVirtualKeyboardDisconnectReleases(t *testing.T) {
 	}
 	k, m := uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventModifiers)
 	key := uint16(wayland.KeyboardEventKey)
-	want := []uint16{k, m, key, key, k, m}
+	// The Modifiers request comes after the switch's own modifiers event.
+	want := []uint16{k, m, m, key, key, k, m}
 	if !slices.Equal(proxy.opcodes, want) {
 		t.Fatalf("events %v, want %v", proxy.opcodes, want)
 	}
@@ -210,5 +211,50 @@ func TestVirtualKeyboardSameKeymapNotResent(t *testing.T) {
 	}
 	if keys != 4 {
 		t.Fatalf("keys %d, want 4 (events %v)", keys, proxy.opcodes)
+	}
+}
+
+// A virtual keyboard with the seat keymap types without the seat's
+// modifiers: its switch sends its own (none), and the seat's come back
+// with the next real key.
+func TestVirtualKeyboardSameKeymapOwnModifiers(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	const capsLocked = 2
+	set := make(chan struct{})
+	s.display.Do(func() { s.modState = ports.ModState{Locked: capsLocked}; close(set) })
+	<-set
+	proxy.locked = nil
+	typer, kb := virtualTyper(t, s, dir)
+	sendVirtualKeymap(t, typer, kb, keymapText(t))
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
+	roundtrip(t, typer, target)
+	m, key := uint16(wayland.KeyboardEventModifiers), uint16(wayland.KeyboardEventKey)
+	if !slices.Equal(proxy.opcodes, []uint16{m, key}) || !slices.Equal(proxy.locked, []uint32{0}) {
+		t.Fatalf("events %v locked %v, want modifiers with nothing locked, then the key", proxy.opcodes, proxy.locked)
+	}
+}
+
+// A virtual keymap that differs from the seat's is sent on switch, on
+// update while it owns the keyboards, and the seat's again on switch back.
+func TestVirtualKeyboardOtherKeymapSent(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	typer, kb := virtualTyper(t, s, dir)
+	first := strings.Replace(keymapText(t), "xkb_keymap", "xkb_keymap  ", 1)
+	second := strings.Replace(keymapText(t), "xkb_keymap", "xkb_keymap   ", 1)
+	sendVirtualKeymap(t, typer, kb, first)
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
+	sendVirtualKeymap(t, typer, kb, second)
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(2), uint32(30), uint32(0))
+	roundtrip(t, typer, target)
+	_ = typer.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(proxy.keymaps) < 3 && time.Now().Before(deadline) {
+		roundtrip(t, target)
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !slices.Equal(proxy.keymaps, []string{first, second, keymapText(t)}) {
+		t.Fatalf("keymaps %d, want virtual, updated virtual, seat", len(proxy.keymaps))
 	}
 }

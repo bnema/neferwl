@@ -101,7 +101,7 @@ type Server struct {
 	heldKeys                map[uint32]bool
 	keymapFD                int
 	keymapSize              uint32
-	keymapText              string // the seat keymap, to compare virtual keymaps with
+	keymapText              string           // the seat keymap, to compare virtual keymaps with
 	keymapOwner             *virtualKeyboard // nil: keyboards carry the seat keymap
 	repeatRate, repeatDelay int
 	// eventMu protects only the notification queue, not display-owned window state.
