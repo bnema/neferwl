@@ -22,7 +22,8 @@ var components = map[string]bool{
 
 // categories are debug switches narrower than a component, only on when
 // named: "all" leaves them off (input-motion logs every pointer motion).
-var categories = map[string]bool{"input-motion": true}
+// Naming one turns on debug for its component.
+var categories = map[string]string{"input-motion": "input"}
 
 type debugKey struct{}
 type levelKey struct{}
@@ -38,7 +39,7 @@ func ParseDebug(value string) (map[string]bool, error) {
 			selected[name] = true
 			continue
 		}
-		if !components[name] && !categories[name] {
+		if _, ok := categories[name]; !components[name] && !ok {
 			return nil, fmt.Errorf("invalid debug component %q", name)
 		}
 		selected[name] = true
@@ -129,6 +130,11 @@ func For(ctx context.Context, component string) zerowrap.Logger {
 	}
 	if selected["all"] || selected[component] {
 		level = zerolog.DebugLevel
+	}
+	for name, owner := range categories {
+		if selected[name] && owner == component {
+			level = zerolog.DebugLevel
+		}
 	}
 	log = zerowrap.Logger{Logger: log.Level(level)}
 	return log

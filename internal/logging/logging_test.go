@@ -84,6 +84,28 @@ func splitLines(data []byte) [][]byte {
 	return lines
 }
 
+// A category alone raises its component to debug, so its lines are written.
+func TestCategoryEnablesComponentDebug(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	ctx, closeLog, err := Open(context.Background(), "info", "input-motion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, core := For(ctx, "input"), For(ctx, "core")
+	input.Debug().Msg("motion")
+	core.Debug().Msg("hidden")
+	if err := closeLog(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "runs", "latest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines := splitLines(data); len(lines) != 1 || !bytes.Contains(lines[0], []byte(`"motion"`)) {
+		t.Fatalf("got %q", data)
+	}
+}
+
 // Narrow categories are on only when named, never through "all".
 func TestEnabledCategories(t *testing.T) {
 	for _, tc := range []struct {
