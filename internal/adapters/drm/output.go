@@ -63,11 +63,19 @@ type Output struct {
 	pendingSerial, nextSerial uint64
 	flipStart                 time.Time
 	flips                     int
-	// A commit whose event does not come within stuckAfter (default
-	// stuckTimeout) is abandoned with a modeset. A commit refused with
-	// EBUSY is retried after busyRetry; busySince is when EBUSY began.
-	stuckAfter time.Duration
-	busySince  time.Time
+	// A commit whose event does not come by stuckAt is abandoned with a
+	// modeset once its fences signalled (stuckAfter, default
+	// stuckTimeout; fenceWarned once it waits for a fence). A commit
+	// refused with EBUSY is retried after busyRetry; busySince is when
+	// the EBUSY run began, lastBusy the latest EBUSY.
+	stuckAfter          time.Duration
+	stuckAt             time.Time
+	fenceWarned         bool
+	busySince, lastBusy time.Time
+	// readFences are fences of frames rendered but not committed: the
+	// GPU may still read client buffers until they signal, so what was
+	// seen is reported only then (or after a later frame flipped).
+	readFences []*os.File
 	// Direct scanout: client framebuffers by DMABuf ID and the buffer on
 	// screen and queued (0: the composed image).
 	scanout       bool
@@ -103,6 +111,86 @@ type pendingFrame struct {
 	zeroCopy ports.WindowID // window shown without composition
 	async    bool
 	shows    map[ports.WindowID]uint64
+	// fences are duplicates of the fences the commit waits on, owned by
+	// the output until the commit ends. composed is set when the frame
+	// was rendered (its fence is the renderer's).
+	fences   []*os.File
+	composed bool
+}
+
+// closeFences closes the fences of f.
+func (f *pendingFrame) closeFences() {
+	for _, fd := range f.fences {
+		fd.Close()
+	}
+	f.fences = nil
+}
+
+// dupFences duplicates the non-nil fences.
+func dupFences(fs ...*os.File) []*os.File {
+	var out []*os.File
+	for _, f := range fs {
+		if d := dupFence(f); d != nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// signalled reports whether every fence signalled (readable); an fd that
+// cannot be polled counts as signalled.
+func signalled(fs []*os.File) bool {
+	if len(fs) == 0 {
+		return true
+	}
+	pfds := make([]unix.PollFd, len(fs))
+	for i, f := range fs {
+		pfds[i] = unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN}
+	}
+	if _, err := unix.Poll(pfds, 0); err != nil {
+		return true
+	}
+	for _, p := range pfds {
+		if p.Revents == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// holdRead keeps the fences of a frame that was not committed.
+func (o *Output) holdRead(fs ...*os.File) {
+	o.readFences = append(o.readFences, dupFences(fs...)...)
+}
+
+// readDone reports whether no uncommitted frame may still read client
+// buffers, closing the fences that signalled.
+func (o *Output) readDone() bool {
+	kept := o.readFences[:0]
+	for _, f := range o.readFences {
+		if signalled([]*os.File{f}) {
+			f.Close()
+			continue
+		}
+		kept = append(kept, f)
+	}
+	clear(o.readFences[len(kept):])
+	o.readFences = kept
+	return len(kept) == 0
+}
+
+// dropRead closes the fences of uncommitted frames.
+func (o *Output) dropRead() {
+	for _, f := range o.readFences {
+		f.Close()
+	}
+	o.readFences = nil
+}
+
+// endPending ends the pending commit, closing its fences.
+func (o *Output) endPending() {
+	o.pendingFrame.closeFences()
+	o.pending, o.pendingFrame = false, pendingFrame{}
 }
 
 // Commit event userData: the commit serial above userKindBits, the kind
@@ -123,7 +211,9 @@ func (o *Output) userData(kind uint64) uint64 {
 // begin marks the commit made with the last userData pending.
 func (o *Output) begin(f pendingFrame) {
 	o.pendingSerial = o.nextSerial
+	o.pendingFrame.closeFences()
 	o.pending, o.pendingFrame, o.flipStart = true, f, time.Now()
+	o.stuckAt, o.fenceWarned = o.flipStart.Add(o.stuckLimit()), false
 	o.busySince = time.Time{}
 }
 
@@ -141,29 +231,29 @@ func (o *Output) stuckLimit() time.Duration {
 	return stuckTimeout
 }
 
-// pendingLimit is how long the pending commit may wait for its event.
-// After EBUSY no commit of ours may be in flight: no event may come, so
-// the commit is retried soon.
-func (o *Output) pendingLimit() time.Duration {
-	if o.pendingSerial == 0 {
-		return busyRetry
-	}
-	return o.stuckLimit()
-}
-
-// expire ends a pending commit whose event did not come in time, so the
-// next commit can go. It reports whether the output needs a modeset: an
-// event is missing (the kernel state is unknown) or EBUSY lasted past
-// the limit.
+// expire handles a pending commit whose event did not come by stuckAt.
+// A commit still waiting for a fence (a long GPU job) keeps waiting.
+// Else the commit is abandoned so the next can go; it reports whether
+// the output needs a modeset: an event is missing (the kernel state is
+// unknown) or EBUSY lasted past the limit.
 func (o *Output) expire() bool {
-	age := time.Since(o.flipStart)
+	now := time.Now()
+	age := now.Sub(o.flipStart)
+	if o.pendingSerial != 0 && !signalled(o.pendingFrame.fences) {
+		if !o.fenceWarned {
+			o.fenceWarned = true
+			o.log.Warn().Str("connector", o.conn.name).Uint64("serial", o.pendingSerial).Dur("age", age).Msg("frame waits for GPU fence")
+		}
+		o.stuckAt = now.Add(o.stuckLimit())
+		return false
+	}
 	kind := "state"
 	if o.pendingFrame.frame {
 		kind = "frame"
 	}
-	o.pending, o.pendingFrame = false, pendingFrame{}
+	o.endPending()
 	if o.pendingSerial == 0 {
-		busy := time.Since(o.busySince)
+		busy := now.Sub(o.busySince)
 		if o.busySince.IsZero() || busy < o.stuckLimit() {
 			return false
 		}
@@ -316,9 +406,6 @@ func (o *Output) primaryProps(req *atomicReq, fb uint32) {
 // other plane on the CRTC; needed at start and after every VT resume.
 // It blocks until the kernel applied it.
 func (o *Output) modeset() error {
-	o.pending, o.busySince = false, time.Time{}
-	o.pendingFrame = pendingFrame{}
-	o.shown, o.queued = 0, 0
 	blob, err := o.modeBlobFor(o.mode)
 	if err != nil {
 		return err
@@ -327,6 +414,11 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(blob)
 		return fmt.Errorf("modeset: %w", err)
 	}
+	// Only now is nothing of ours pending or on screen: on failure the
+	// previous buffers may still show.
+	o.endPending()
+	o.busySince = time.Time{}
+	o.shown, o.queued = 0, 0
 	if o.modeBlob != 0 {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
@@ -531,6 +623,7 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 		o.overlayOn = ov.buf
 	}
 	f.frame, f.async = true, async
+	f.fences = dupFences(fence, ov.acquire)
 	o.setAsync(async)
 	o.begin(f)
 	return nil
@@ -711,6 +804,8 @@ func (o *Output) Close() {
 		o.cursor.free(o.k)
 	}
 	o.freeImages()
+	o.endPending()
+	o.dropRead()
 	o.shown, o.queued = 0, 0
 	o.dropClientFBs(time.Now(), true)
 }
@@ -762,14 +857,18 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		cursorWake = o.cursor.wake
 	}
 	for {
+		readWait := false
 		if reportDirty && !o.pending {
-			o.report(nil, seen)
-			reportDirty = false
+			if readWait = !o.readDone(); !readWait {
+				o.report(nil, seen)
+				reportDirty = false
+			}
 		}
 		o.flushReport(presented)
-		// An unsent report is retried soon, not only on the next event.
+		// An unsent report is retried soon, not only on the next event;
+		// so is one that waits for an uncommitted frame's fence.
 		var retry <-chan time.Time
-		if len(o.unsent) > 0 {
+		if len(o.unsent) > 0 || readWait {
 			retry = time.After(time.Millisecond)
 		}
 		// A composed screen that stopped changing still drops VRR on time.
@@ -780,13 +879,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		// A commit whose event never comes must not stop the output.
 		var stuck <-chan time.Time
 		if enabled && o.pending {
-			stuck = time.After(max(0, o.pendingLimit()-time.Since(o.flipStart)))
+			stuck = time.After(max(0, time.Until(o.stuckAt)))
 		}
 		stateDirty := false
 		select {
 		case <-retry:
 			continue
 		case <-stuck:
+			if o.pending && o.stuckAt.After(time.Now()) {
+				continue // waits for a fence
+			}
 			if o.expire() {
 				if err := o.modeset(); err != nil {
 					if !o.commitFailed(err, &enabled) {
@@ -919,8 +1021,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			// The overlay buffer is on screen like a scanned-out one: it
 			// is reported shown, so it is not released under the plane.
-			f.queued, f.zeroCopy = ov.buf, ov.id
+			f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true
 			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(false), f, ov)
+			if err != nil {
+				// The GPU may still read client buffers for this frame.
+				o.holdRead(done)
+			}
 			if done != nil {
 				done.Close()
 			}
@@ -958,12 +1064,16 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 		// The kernel still works on an earlier commit (e.g. across a VT
 		// switch, or one whose event already came): wait for any event
 		// of this CRTC, or retry after busyRetry since none may come.
-		o.pending, o.pendingFrame, o.flipStart = true, pendingFrame{}, time.Now()
+		o.endPending()
+		now := time.Now()
+		o.pending, o.flipStart, o.stuckAt = true, now, now.Add(busyRetry)
 		o.pendingSerial = 0
-		if o.busySince.IsZero() {
-			o.busySince = o.flipStart
+		// A run of EBUSY: each refusal follows the previous retry.
+		if o.busySince.IsZero() || now.Sub(o.lastBusy) > 4*busyRetry {
+			o.busySince = now
 			o.log.Info().Err(err).Str("connector", o.conn.name).Msg("commit busy")
 		}
+		o.lastBusy = now
 		return true
 	case lostMaster(err):
 		o.log.Warn().Err(err).Msg("commit refused")
@@ -982,7 +1092,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		return false
 	}
 	f := o.pendingFrame
-	o.pending, o.pendingFrame = false, pendingFrame{}
+	o.endPending()
 	o.busySince = time.Time{}
 	if d := time.Since(o.flipStart); d > 20*time.Millisecond {
 		o.log.Info().Dur("flip_ms", d).Str("connector", o.conn.name).Msg("slow flip")
@@ -992,6 +1102,11 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	}
 	if !f.frame {
 		return true
+	}
+	if f.composed {
+		// Frames render in order: this flip's fence signalled after
+		// those of frames rendered before it and not committed.
+		o.dropRead()
 	}
 	o.flips++
 	o.shown = f.queued
