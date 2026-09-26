@@ -30,7 +30,7 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	c := shmContent(t, 2, 1, 8, px)
 	c.LogicalW, c.LogicalH = 64, 16
 	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}, Borderless: true}}}
-	if _, err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	got := r.Pixels().RGBAAt(32, 8)
@@ -63,7 +63,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 	buf := &ports.DMABuf{ID: 3, Width: 64, Height: 1, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
 	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 128, H: 4}, Borderless: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 1, LogicalW: 128, LogicalH: 4, DMABuf: buf}
-	if _, err := r.Render(scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
 	// Target x=64 (centre 64.5) maps to buffer 32.25: between texel 31
@@ -134,5 +134,48 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	render()
 	if r.copied != 2*16*16*4 {
 		t.Fatalf("new content copied %d", r.copied)
+	}
+}
+
+// render draws a frame and closes its fence.
+func render(r *Renderer, s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
+	done, err := r.Render(s, contents)
+	if done != nil {
+		done.Close()
+	}
+	return err
+}
+
+// A wl_shm window's GPU buffer is rewritten only after every frame that
+// read it completed: contents 1, 2, 3 back to back alternate two buffers,
+// and the third copy waits for the frame that drew the first (the slot
+// ring and shmCopyFor's waitFrame both guarantee it).
+func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}, Borderless: true}}}
+	var readers []uint64
+	for seq := uint64(1); seq <= 3; seq++ {
+		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})
+		c.ID, c.Seq = 1, seq
+		if seq == 3 {
+			// The buffer about to be reused was last read by frame 1.
+			if r.completed >= readers[0] {
+				t.Fatalf("frame %d already known done before the reuse", readers[0])
+			}
+		}
+		if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+			t.Fatal(err)
+		}
+		readers = append(readers, r.frame)
+		if seq == 3 && r.completed < readers[0] {
+			t.Fatalf("buffer of frame %d rewritten with completed=%d", readers[0], r.completed)
+		}
+	}
+	if got := r.Pixels().RGBAAt(4, 4); got != (color.RGBA{180, 0, 0, 255}) {
+		t.Fatalf("pixel %v", got)
 	}
 }

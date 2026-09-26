@@ -52,16 +52,29 @@ func (r *Renderer) createSlots() error {
 		if err := checked("vkCreateFence", d.CreateFence(r.device, &fi, nil, &s.fence)); err != nil {
 			return err
 		}
-		si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
-		export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-		if r.syncFD {
-			si.Next = unsafe.Pointer(&export)
-		}
-		if err := checked("vkCreateSemaphore", d.CreateSemaphore(r.device, &si, nil, &s.done)); err != nil {
+		if err := r.newDone(s); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// newDone creates a slot's frame semaphore, exportable as a sync file when
+// the device allows it; a device that refuses falls back to waiting for
+// frames on the CPU (syncFD off).
+func (r *Renderer) newDone(s *frameSlot) error {
+	d := r.dd
+	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
+	export := vk.ExportSemaphoreCreateInfo{SType: vk.StructureTypeExportSemaphoreCreateInfo, HandleTypes: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	if r.syncFD {
+		si.Next = unsafe.Pointer(&export)
+		if d.CreateSemaphore(r.device, &si, nil, &s.done) == vk.Success {
+			return nil
+		}
+		r.syncFD = false
+		si.Next = nil
+	}
+	return checked("vkCreateSemaphore", d.CreateSemaphore(r.device, &si, nil, &s.done))
 }
 
 func (r *Renderer) destroySlots() {
@@ -144,6 +157,8 @@ func (r *Renderer) idle() {
 // the GPU finished it; nil when the device cannot export a sync file,
 // then the frame is finished on return.
 func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) (done *os.File, err error) {
+	// A frame that fails before its submit keeps its number: objects it
+	// touched are freed once a later frame completes (never early).
 	r.frame++
 	slot := &r.slots[r.frame%frameSlots]
 	// The slot's previous frame must be done before its command buffer
@@ -237,7 +252,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	var fd int32
 	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
 	if err := checked("vkGetSemaphoreFdKHR", d.GetSemaphoreFdKHR(r.device, &get, &fd)); err != nil {
-		return nil, errors.Join(err, r.waitFrame(frame))
+		// The semaphore stays signalled: replace it once the frame is
+		// done, so the slot's next submit signals a fresh one.
+		err = errors.Join(err, r.waitFrame(frame))
+		d.DestroySemaphore(r.device, slot.done, nil)
+		slot.done = 0
+		return nil, errors.Join(err, r.newDone(slot))
 	}
 	if fd < 0 {
 		// Already signalled: the driver may return -1.
@@ -259,7 +279,9 @@ func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire boo
 			b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutShaderReadOnlyOptimal
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
 			b.DstAccessMask = vk.AccessShaderReadBit
-			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, &b)
+			// The frame waits on the client's fence at the fragment
+			// stage: the transfer must come after that wait.
+			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, &b)
 		} else {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutGeneral
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
