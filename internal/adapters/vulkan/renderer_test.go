@@ -384,16 +384,16 @@ func TestRendererAlphaBlend(t *testing.T) {
 	}
 	defer r.Close()
 	halfRed, halfBlue := [4]byte{0, 0, 128, 128}, [4]byte{128, 0, 0, 128}
-	clear := fill(16, 8, halfRed)
+	partly := fill(16, 8, halfRed)
 	for y := range 8 {
-		copy(clear[y*64+48:y*64+64], make([]byte, 16)) // last 4 pixels: transparent
+		copy(partly[y*64+48:y*64+64], make([]byte, 16)) // last 4 pixels: transparent
 	}
 	white := shmContent(t, 32, 48, 32*4, solid(32, 48, [3]uint8{255, 255, 255}))
 	white.Opaque = true
 	contents := map[ports.WindowID]ports.SurfaceContent{
 		1: *white,
 		2: *shmContent(t, 64, 48, 64*4, fill(64, 48, halfRed)),
-		3: *shmContent(t, 16, 8, 16*4, clear),
+		3: *shmContent(t, 16, 8, 16*4, partly),
 		4: *shmContent(t, 16, 8, 16*4, fill(16, 8, halfBlue)),
 	}
 	scene := ports.Scene{Background: "#000000",
