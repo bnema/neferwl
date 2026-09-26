@@ -20,7 +20,9 @@ import (
 // Output is one KMS connector on a CRTC, driven by atomic commits (ADR
 // 015). One goroutine runs it (Run) and closes it. Every commit that
 // changes the screen asks for an event and leaves the output pending until
-// it arrives: the next commit waits for it, so none fails with EBUSY.
+// it arrives: the next commit waits for it. The kernel may still refuse
+// it with EBUSY (it retries soon), and an event that never comes is
+// bounded (stuckTimeout, then a modeset).
 type Output struct {
 	k       kms
 	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
@@ -61,6 +63,11 @@ type Output struct {
 	pendingSerial, nextSerial uint64
 	flipStart                 time.Time
 	flips                     int
+	// A commit whose event does not come within stuckAfter (default
+	// stuckTimeout) is abandoned with a modeset. A commit refused with
+	// EBUSY is retried after busyRetry; busySince is when EBUSY began.
+	stuckAfter time.Duration
+	busySince  time.Time
 	// Direct scanout: client framebuffers by DMABuf ID and the buffer on
 	// screen and queued (0: the composed image).
 	scanout       bool
@@ -117,6 +124,54 @@ func (o *Output) userData(kind uint64) uint64 {
 func (o *Output) begin(f pendingFrame) {
 	o.pendingSerial = o.nextSerial
 	o.pending, o.pendingFrame, o.flipStart = true, f, time.Now()
+	o.busySince = time.Time{}
+}
+
+// Bounds on waiting for a commit event: no path may leave an output
+// pending forever.
+const (
+	stuckTimeout = time.Second
+	busyRetry    = 50 * time.Millisecond
+)
+
+func (o *Output) stuckLimit() time.Duration {
+	if o.stuckAfter > 0 {
+		return o.stuckAfter
+	}
+	return stuckTimeout
+}
+
+// pendingLimit is how long the pending commit may wait for its event.
+// After EBUSY no commit of ours may be in flight: no event may come, so
+// the commit is retried soon.
+func (o *Output) pendingLimit() time.Duration {
+	if o.pendingSerial == 0 {
+		return busyRetry
+	}
+	return o.stuckLimit()
+}
+
+// expire ends a pending commit whose event did not come in time, so the
+// next commit can go. It reports whether the output needs a modeset: an
+// event is missing (the kernel state is unknown) or EBUSY lasted past
+// the limit.
+func (o *Output) expire() bool {
+	age := time.Since(o.flipStart)
+	kind := "state"
+	if o.pendingFrame.frame {
+		kind = "frame"
+	}
+	o.pending, o.pendingFrame = false, pendingFrame{}
+	if o.pendingSerial == 0 {
+		busy := time.Since(o.busySince)
+		if o.busySince.IsZero() || busy < o.stuckLimit() {
+			return false
+		}
+		o.log.Warn().Str("connector", o.conn.name).Str("kind", "busy").Dur("age", busy).Msg("commits refused as busy; modeset")
+		return true
+	}
+	o.log.Warn().Str("connector", o.conn.name).Uint64("serial", o.pendingSerial).Str("kind", kind).Dur("age", age).Msg("commit event missing; modeset")
+	return true
 }
 
 // CursorLoader returns the image of a cursor at an output scale, at most
@@ -261,7 +316,7 @@ func (o *Output) primaryProps(req *atomicReq, fb uint32) {
 // other plane on the CRTC; needed at start and after every VT resume.
 // It blocks until the kernel applied it.
 func (o *Output) modeset() error {
-	o.pending = false
+	o.pending, o.busySince = false, time.Time{}
 	o.pendingFrame = pendingFrame{}
 	o.shown, o.queued = 0, 0
 	blob, err := o.modeBlobFor(o.mode)
@@ -722,10 +777,26 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if enabled && o.vrrOn && !o.pending && !o.composedSince.IsZero() {
 			vrrOff = time.After(max(0, vrrHold-time.Since(o.composedSince)))
 		}
+		// A commit whose event never comes must not stop the output.
+		var stuck <-chan time.Time
+		if enabled && o.pending {
+			stuck = time.After(max(0, o.pendingLimit()-time.Since(o.flipStart)))
+		}
 		stateDirty := false
 		select {
 		case <-retry:
 			continue
+		case <-stuck:
+			if o.expire() {
+				if err := o.modeset(); err != nil {
+					if !o.commitFailed(err, &enabled) {
+						return fmt.Errorf("recovery modeset: %w", err)
+					}
+					continue
+				}
+			}
+			dirty = haveScene
+			stateDirty = true
 		case <-vrrOff:
 			stateDirty = true
 		case <-cursorWake:
@@ -795,7 +866,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			dirty = dirty || scene.Shows(c.ID)
 		case <-stats.C:
 			o.dropClientFBs(time.Now(), false)
-			ev := o.log.Info().Int("frames", frame).Int("flips", o.flips)
+			ev := o.log.Info().Str("connector", o.conn.name).Int("frames", frame).Int("flips", o.flips).Bool("pending", o.pending)
 			if o.cursor != nil {
 				cs := o.cursor.TakeStats()
 				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_commits", cs.Commits)
@@ -884,10 +955,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 func (o *Output) commitFailed(err error, enabled *bool) bool {
 	switch {
 	case errors.Is(err, unix.EBUSY):
-		// A commit of ours is in flight (e.g. across a VT switch): wait
-		// for any event of this CRTC.
+		// The kernel still works on an earlier commit (e.g. across a VT
+		// switch, or one whose event already came): wait for any event
+		// of this CRTC, or retry after busyRetry since none may come.
 		o.pending, o.pendingFrame, o.flipStart = true, pendingFrame{}, time.Now()
 		o.pendingSerial = 0
+		if o.busySince.IsZero() {
+			o.busySince = o.flipStart
+			o.log.Info().Err(err).Str("connector", o.conn.name).Msg("commit busy")
+		}
 		return true
 	case lostMaster(err):
 		o.log.Warn().Err(err).Msg("commit refused")
@@ -907,8 +983,9 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	}
 	f := o.pendingFrame
 	o.pending, o.pendingFrame = false, pendingFrame{}
+	o.busySince = time.Time{}
 	if d := time.Since(o.flipStart); d > 20*time.Millisecond {
-		o.log.Info().Dur("flip_ms", d).Msg("slow flip")
+		o.log.Info().Dur("flip_ms", d).Str("connector", o.conn.name).Msg("slow flip")
 	}
 	if o.cursor != nil {
 		o.cursor.landed()
