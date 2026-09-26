@@ -60,7 +60,9 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 		return err
 	}
 	defer unix.Close(fd)
-	const mask = unix.IN_CLOSE_WRITE | unix.IN_MOVED_TO | unix.IN_CREATE | unix.IN_DELETE | unix.IN_MOVED_FROM
+	// IN_MODIFY restarts the debounce on every write, the truncation of an
+	// in-place save included: the file is never read half written.
+	const mask = unix.IN_CLOSE_WRITE | unix.IN_MODIFY | unix.IN_MOVED_TO | unix.IN_CREATE | unix.IN_DELETE | unix.IN_MOVED_FROM
 	wd := -1
 	var pending time.Time
 	last := loadRaw(path)
