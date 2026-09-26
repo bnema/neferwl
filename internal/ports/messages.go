@@ -53,6 +53,15 @@ type IdleInhibit struct {
 
 func (IdleInhibit) clientEvent() {}
 
+// OutputPower carries wayland → core a client turning a display off or
+// back on (zwlr_output_power_v1).
+type OutputPower struct {
+	Output string
+	On     bool
+}
+
+func (OutputPower) clientEvent() {}
+
 // WindowFullscreenRequest carries wayland → core fullscreen requests.
 type WindowFullscreenRequest struct {
 	ID         WindowID
@@ -398,6 +407,17 @@ type ShortcutsInhibitState struct {
 
 func (ShortcutsInhibitState) clientCommand() {}
 
+// UserActivity carries core → wayland that the user touched an input
+// device, for idle notifications (ext_idle_notifier_v1). Core sends at
+// most one per ActivityInterval.
+type UserActivity struct{}
+
+func (UserActivity) clientCommand() {}
+
+// ActivityInterval is the most often core reports UserActivity: idle
+// timers may start up to this much early, so no idle timeout is shorter.
+const ActivityInterval = 100 * time.Millisecond
+
 // ConfigureWindow carries core → wayland geometry and state. Output is the
 // connector showing the window, empty while it is hidden.
 type ConfigureWindow struct {
@@ -462,6 +482,9 @@ func (l Layout) Clamp(fromX, fromY, x, y float64) (float64, float64) {
 type SetOutputs struct {
 	Outputs Layout
 	Focused string
+	// Off lists the outputs a client turned off (output power management),
+	// in Outputs order.
+	Off []string
 }
 
 func (SetOutputs) clientCommand() {}
@@ -588,9 +611,12 @@ type Scene struct {
 	Seq                       uint64
 	OutputWidth, OutputHeight int
 	Scale                     float64
-	Background                string
-	Border                    Border
-	Windows                   []SceneWindow
+	// Off turns the display off (output power management): nothing is
+	// drawn until a scene without it.
+	Off        bool
+	Background string
+	Border     Border
+	Windows    []SceneWindow
 	// Separators are the lines between windows, drawn in slice order with
 	// the Border colors: tile lines over the tiles, under the floats; a
 	// float's border right after the float.

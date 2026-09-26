@@ -143,6 +143,22 @@ xwayland = off                  # no X11 display
 
 Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` takes effect at the next start.
 
+## Idle and screen off
+
+NeferWL supports `ext_idle_notifier_v1` and `zwlr_output_power_management_v1`, so [swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay. A window that inhibits idle, such as a video player or a game, keeps them on.
+
+```text
+startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
+```
+
+`swayidle` runs its commands through a shell; NeferWL does not, so the quoted form `timeout 300 'wlopm --off "*"'` does not fit on a `startup` line. Put each command in a script (see [Running commands](#running-commands)):
+
+```sh
+#!/bin/sh
+# ~/.local/bin/wlopm-off (wlopm-on is the same with --on)
+exec wlopm --off '*'
+```
+
 ## State for scripts
 
 While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:

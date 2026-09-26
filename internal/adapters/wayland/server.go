@@ -130,11 +130,16 @@ type Server struct {
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
 	shortcutWindows, idleWindows map[ports.WindowID]bool
-	contentNotify                chan struct{}
-	contentReady                 chan struct{}
-	outputs                      []*output
-	focusedOutput                string
-	fractions                    map[*surface]*fractionalscale.WpFractionalScaleV1
+	// idleNotes and powers are the idle notifications and output power
+	// objects (idle.go); outputsOff the outputs core turned off.
+	idleNotes     []*idleNotification
+	powers        []*outputPower
+	outputsOff    map[string]bool
+	contentNotify chan struct{}
+	contentReady  chan struct{}
+	outputs       []*output
+	focusedOutput string
+	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorMu guards only the latest cursor change for forwardCursors.
@@ -588,6 +593,13 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 	case ports.SetOutputs:
 		s.setOutputs(c)
+		off := map[string]bool{}
+		for _, name := range c.Off {
+			off[name] = true
+		}
+		s.setOutputsOff(off)
+	case ports.UserActivity:
+		s.userActivity()
 	case ports.SlotsPending:
 		s.slotsPending = c.Pending
 	case ports.ShortcutsInhibitState:

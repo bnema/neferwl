@@ -28,14 +28,15 @@ func scene(t *testing.T, ch <-chan []ports.Scene) ports.Scene {
 	return receive(t, ch)[0]
 }
 
-// command receives the next client command, skipping output scale updates.
+// command receives the next client command, skipping output scale updates
+// and user activity reports.
 func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
 	t.Helper()
 	for {
-		if v := receive(t, ch); v != nil {
-			if _, ok := v.(ports.SetOutputs); !ok {
-				return v
-			}
+		switch v := receive(t, ch); v.(type) {
+		case nil, ports.SetOutputs, ports.UserActivity:
+		default:
+			return v
 		}
 	}
 }

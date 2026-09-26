@@ -22,6 +22,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerPresentation(d, s) },
 		func() error { return registerSyncobj(d, s) },
 		func() error { return registerInhibit(d, s) },
+		func() error { return registerIdle(d, s) },
 		func() error { return registerActivation(d, s) },
 		func() error { return registerVirtualKeyboard(d, s) },
 		func() error {
