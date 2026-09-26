@@ -87,6 +87,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
 	presented := make(chan ports.OutputPresented, 64)
+	outputFormats := make(chan ports.OutputFormats, 8)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -101,7 +102,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -215,8 +216,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func() drm.Want { return wantFromConfig(opts.Config) }
-				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "drm"))
+				want := func() drm.Want {
+					w := wantFromConfig(opts.Config)
+					w.Sampled = dmabuf.Formats
+					return w
+				}
+				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, outputFormats, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}

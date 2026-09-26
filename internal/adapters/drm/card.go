@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
@@ -32,6 +33,9 @@ type Card struct {
 	async bool
 	// serials numbers the commits of every output (event userData).
 	serials atomic.Uint64
+	// formats receives each output's direct scanout formats (nil: none
+	// sent); set before the first Scan.
+	formats chan<- ports.OutputFormats
 }
 
 // OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
@@ -54,6 +58,20 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 
 // Path is the device path, e.g. /dev/dri/card1.
 func (c *Card) Path() string { return c.path }
+
+// Device is the card's dev_t, the KMS device clients allocate scanout
+// buffers for (0 when unknown).
+func (c *Card) Device() uint64 {
+	var st unix.Stat_t
+	if unix.Fstat(c.fd, &st) != nil {
+		return 0
+	}
+	return st.Rdev
+}
+
+// SetFormats sets where outputs report their direct scanout formats.
+// Call before the first Scan.
+func (c *Card) SetFormats(ch chan<- ports.OutputFormats) { c.formats = ch }
 
 // SetWant replaces the connector config; the next Scan applies it.
 func (c *Card) SetWant(w Want) { c.want = w }

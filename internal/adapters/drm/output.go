@@ -76,6 +76,11 @@ type Output struct {
 	composedSince time.Time
 	// kind is how the images were made.
 	kind imageKind
+	// formats receives the direct scanout formats after each modeset;
+	// sampled and device are what they are built from (Want).
+	formats chan<- ports.OutputFormats
+	sampled []ports.DMABufFormat
+	device  uint64
 }
 
 // pendingFrame is what the pending frame commit shows.
@@ -115,7 +120,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], serials: &card.serials, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
+	o := &Output{k: card.k, flipped: card.flips[crtc], serials: &card.serials, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -267,7 +272,27 @@ func (o *Output) modeset() error {
 	}
 	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
 	o.testCursor()
+	o.sendFormats()
 	return nil
+}
+
+// sendFormats reports the formats clients may allocate for direct
+// scanout on this output (none when scanout is off). It never blocks:
+// wayland keeps the latest per output, a dropped report is resent at the
+// next modeset.
+func (o *Output) sendFormats() {
+	if o.formats == nil {
+		return
+	}
+	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
+	if o.scanout {
+		f.Formats = o.scanoutFormats(o.sampled)
+	}
+	select {
+	case o.formats <- f:
+	default:
+		o.log.Warn().Str("connector", o.conn.name).Msg("scanout formats not sent: wayland busy")
+	}
 }
 
 // testModeset asks KMS whether it would take the modeset of the output

@@ -172,3 +172,100 @@ func TestWestonDMABuf(t *testing.T) {
 		}
 	}
 }
+
+// feedbackProxy records the tranches of each feedback round (done).
+type feedbackProxy struct {
+	wlturbo.BaseProxy
+	rounds chan []tranche
+	cur    []tranche
+	open   tranche
+}
+
+type tranche struct {
+	flags   uint32
+	indices []uint16
+}
+
+func (p *feedbackProxy) Dispatch(e *wlturbo.Event) {
+	switch uint32(e.Opcode) {
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventFormatTable:
+		if fd := e.Fd(); fd != 0 {
+			unix.Close(int(fd))
+		}
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheFlags:
+		p.open.flags = e.Uint32()
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheFormats:
+		a := e.Array()
+		for i := 0; i+1 < len(a); i += 2 {
+			p.open.indices = append(p.open.indices, uint16(a[i])|uint16(a[i+1])<<8)
+		}
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheDone:
+		p.cur, p.open = append(p.cur, p.open), tranche{}
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventDone:
+		p.rounds <- p.cur
+		p.cur = nil
+	}
+}
+
+// A fullscreen surface on an output with scanout formats gets a scanout
+// tranche first; leaving fullscreen sends the renderer tranche alone.
+func TestDMABufScanoutTranche(t *testing.T) {
+	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
+	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+	dir := t.TempDir()
+	events := make(chan ports.ClientEvent, 16)
+	commands := make(chan ports.ClientCommand, 16)
+	formats := make(chan ports.OutputFormats, 1)
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events, Commands: commands, OutputFormats: formats}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	c := protocolClient(t, s, dir)
+	w, surf, xdg := surfaceMapper(t, c, events)()
+	// Our configures must not block the mapper's one-slot proxy.
+	registerProtocol(t, c, xdg)
+	dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", dmabufVersion)
+	fb := c.AllocateID()
+	proxy := &feedbackProxy{rounds: make(chan []tranche, 8)}
+	proxy.SetID(fb)
+	c.Context().Register(proxy)
+	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestGetSurfaceFeedback, fb, surf)
+	round := func(what string) []tranche {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case r := <-proxy.rounds:
+				return r
+			case <-deadline:
+				t.Fatalf("no feedback: %s", what)
+			default:
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+	}
+	scanout := uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout)
+	if r := round("initial"); len(r) != 1 || r[0].flags != 0 || len(r[0].indices) != 2 {
+		t.Fatalf("tiled window: %+v", r)
+	}
+	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	r := round("fullscreen")
+	for len(r) == 1 { // the formats may land after the configure
+		r = round("fullscreen with formats")
+	}
+	if len(r) != 2 || r[0].flags != scanout || len(r[0].indices) != 1 || r[0].indices[0] != 1 || r[1].flags != 0 {
+		t.Fatalf("fullscreen: %+v", r)
+	}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1"}
+	if r := round("tiled again"); len(r) != 1 || r[0].flags != 0 {
+		t.Fatalf("left fullscreen: %+v", r)
+	}
+}

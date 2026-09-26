@@ -109,12 +109,13 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, formats chan<- ports.OutputFormats, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
 	readerErr := make(chan error, len(b.cards))
 	for _, c := range b.cards {
+		c.SetFormats(formats)
 		readers.Go(func() {
 			if err := safe("drm events", func() error { return c.ReadEvents(ctx) }); err != nil {
 				readerErr <- fmt.Errorf("%s: %w", c.Path(), err)
@@ -141,7 +142,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 	stopping := map[string]bool{}
 	scan := func() {
 		for _, c := range b.cards {
-			c.SetWant(want())
+			w := want()
+			w.Device = c.Device()
+			c.SetWant(w)
 			added, removed, replaced, err := c.Scan()
 			if err != nil {
 				log.Warn().Err(err).Msg("scan connectors")

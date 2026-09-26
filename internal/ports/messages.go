@@ -329,6 +329,17 @@ type OutputPresented struct {
 	Seen          map[WindowID]uint64
 }
 
+// OutputFormats carries output → wayland the dmabuf formats an output can
+// scan out directly (its primary plane's, that the renderer also samples,
+// so a refused buffer can still be composed). Device is the KMS device
+// (dev_t) clients allocate scanout buffers for. Sent at start and after
+// every modeset; empty Formats means no direct scanout.
+type OutputFormats struct {
+	Output  string
+	Device  uint64
+	Formats []DMABufFormat
+}
+
 // FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
 // (hardware clock on DRM), Seq the output's vblank counter, Refresh the
 // refresh period (0 while variable refresh is on). ZeroCopy is set when a

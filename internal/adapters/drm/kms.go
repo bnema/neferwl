@@ -6,6 +6,7 @@ import (
 	"math"
 	"unsafe"
 
+	"github.com/bnema/nefertty/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
@@ -99,6 +100,11 @@ type Want struct {
 	NoTearing bool
 	// NoVRR keeps variable refresh off (render.vrr = off).
 	NoVRR bool
+	// Sampled are the dmabuf formats the renderer composes: direct
+	// scanout is offered only for those, so a refused buffer still draws.
+	Sampled []ports.DMABufFormat
+	// Device is the KMS device (dev_t) offered in scanout tranches.
+	Device uint64
 }
 
 // usable reports whether a connector should be driven.

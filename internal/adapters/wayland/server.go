@@ -38,6 +38,9 @@ type Channels struct {
 	// Presented paces frame callbacks on the outputs' page flips; outputs
 	// that do not flip (idle, headless) are paced at their refresh rate.
 	Presented <-chan ports.OutputPresented
+	// OutputFormats are the outputs' direct scanout formats, offered in
+	// dmabuf feedback to fullscreen surfaces.
+	OutputFormats <-chan ports.OutputFormats
 }
 type Server struct {
 	display      *server.Display
@@ -196,7 +199,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(5)
+	wg.Add(6)
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()
@@ -233,9 +236,34 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 	go func() { defer wg.Done(); s.pace(ctx) }()
+	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	err := s.display.Run(ctx)
 	wg.Wait()
 	return err
+}
+
+// forwardOutputFormats applies the outputs' scanout formats on the
+// display goroutine.
+func (s *Server) forwardOutputFormats(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case f, ok := <-s.channels.OutputFormats:
+			if !ok {
+				return
+			}
+			if !s.display.Do(func() {
+				if s.dmabuf != nil {
+					s.dmabuf.setOutputFormats(f)
+				}
+			}) {
+				return
+			}
+		}
+	}
 }
 
 func (s *Server) emit(ev ports.ClientEvent) {
@@ -473,8 +501,12 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
+		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
+		if scanoutChanged && w.xdg.surface != nil {
+			s.dmabuf.resendSurface(w.xdg.surface)
+		}
 		if surf := w.xdg.surface; surf != nil && c.Output != "" {
 			surf.sendTreeScale()
 		}

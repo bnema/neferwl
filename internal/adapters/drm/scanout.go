@@ -2,6 +2,8 @@ package drm
 
 import (
 	"errors"
+	"os"
+	"slices"
 	"time"
 	"unsafe"
 
@@ -42,6 +44,7 @@ type fbCmd2 struct {
 
 // scanoutCandidate returns the window content the output can scan out
 // directly, or a reason why it cannot. w, h are the output's physical size.
+// The plane's formats are checked by scanoutFB.
 func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int) (ports.SurfaceContent, string) {
 	var full *ports.SceneWindow
 	for i := range s.Windows {
@@ -69,14 +72,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "not_dmabuf"
 	case len(c.Children) > 0:
 		return c, "subsurfaces"
-	case len(c.DMABuf.Planes) != 1:
-		return c, "multi_plane"
 	case c.Width != w || c.Height != h:
 		return c, "size_mismatch"
 	case c.LogicalW != full.Rect.W || c.LogicalH != full.Rect.H:
 		return c, "logical_mismatch"
-	case !scanoutable(c.DMABuf.Format):
-		return c, "format"
 	case c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0 || c.Geometry.W != c.LogicalW || c.Geometry.H != c.LogicalH):
 		return c, "geometry_crop"
 	}
@@ -102,7 +101,7 @@ func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
 	}
 	fb := &clientFB{last: now}
 	o.clientFBs[b.ID] = fb
-	format, ok := scanoutFormat(b.Format)
+	format, ok := o.scanoutFormat(b)
 	if !ok {
 		fb.failed = "format"
 		return 0, fb.failed
@@ -117,20 +116,57 @@ func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
 	return id, ""
 }
 
-// scanoutFormat is the framebuffer format for a client format. The primary
-// plane shows no alpha: alpha formats are scanned out as their X variant,
-// others are refused.
-func scanoutFormat(f uint32) (uint32, bool) {
-	switch f {
-	case fourccXRGB, fourccARGB:
-		return fourccXRGB, true
+// scanoutFormat is the framebuffer format a client buffer is scanned out
+// as, when the primary plane lists it with the buffer's modifier. The
+// primary plane shows no alpha: an alpha format goes as its X variant
+// when the plane has that one.
+func (o *Output) scanoutFormat(b *ports.DMABuf) (uint32, bool) {
+	has := func(f uint32) bool {
+		return slices.Contains(o.primary.formats, ports.DMABufFormat{Format: f, Modifier: b.Modifier})
 	}
-	return 0, false
+	if x, ok := opaqueVariant[b.Format]; ok && has(x) {
+		return x, true
+	}
+	return b.Format, has(b.Format)
+}
+
+// opaqueVariant maps alpha formats to the same layout without alpha.
+var opaqueVariant = map[uint32]uint32{
+	fourccARGB: fourccXRGB,
+	fourccABGR: fourccXBGR,
+	fourccAR30: fourccXR30,
+	fourccAB30: fourccXB30,
+	fourccAR4H: fourccXR4H,
+	fourccAB4H: fourccXB4H,
+}
+
+// scanoutFormats are the formats a buffer can be scanned out with: in the
+// primary plane's IN_FORMATS (directly or as its opaque variant) and
+// composable by the renderer.
+func (o *Output) scanoutFormats(sampled []ports.DMABufFormat) []ports.DMABufFormat {
+	var out []ports.DMABufFormat
+	for _, f := range sampled {
+		b := ports.DMABuf{Format: f.Format, Modifier: f.Modifier}
+		if _, ok := o.scanoutFormat(&b); ok {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 const (
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
+	fourccXBGR = 'X' | 'B'<<8 | '2'<<16 | '4'<<24
+	fourccABGR = 'A' | 'B'<<8 | '2'<<16 | '4'<<24
+	fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
+	fourccAR30 = 'A' | 'R'<<8 | '3'<<16 | '0'<<24
+	fourccXB30 = 'X' | 'B'<<8 | '3'<<16 | '0'<<24
+	fourccAB30 = 'A' | 'B'<<8 | '3'<<16 | '0'<<24
+	fourccXR4H = 'X' | 'R'<<8 | '4'<<16 | 'H'<<24
+	fourccAR4H = 'A' | 'R'<<8 | '4'<<16 | 'H'<<24
+	fourccXB4H = 'X' | 'B'<<8 | '4'<<16 | 'H'<<24
+	fourccAB4H = 'A' | 'B'<<8 | '4'<<16 | 'H'<<24
 )
 
 // addFB imports a dmabuf as a framebuffer of the given fourcc: client buffers, the renderer's
@@ -161,14 +197,59 @@ func (k kmsDevice) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
 		_ = ioctl(k.fd, ioctlGemClose, unsafe.Pointer(&g))
 	}()
 	cmd := fbCmd2{width: uint32(b.Width), height: uint32(b.Height), format: format}
-	cmd.handles[0], cmd.pitches[0], cmd.offsets[0] = p.handle, b.Planes[0].Stride, b.Planes[0].Offset
-	if b.Modifier != modInvalid && (b.Modifier != 0 || k.modifiers) {
-		cmd.flags, cmd.modifiers[0] = fbModifiers, b.Modifier
+	useMod := b.Modifier != modInvalid && (b.Modifier != 0 || k.modifiers)
+	if useMod {
+		cmd.flags = fbModifiers
+	}
+	// Every plane of a buffer lives in the same dmabuf or its own: each
+	// gets its GEM handle (one import per distinct file).
+	for i, pl := range b.Planes {
+		if i >= len(cmd.handles) {
+			break
+		}
+		h := p.handle
+		if i > 0 {
+			var err error
+			if h, err = k.primeImport(pl.File); err != nil {
+				return 0, err
+			}
+			defer k.gemClose(h)
+		}
+		cmd.handles[i], cmd.pitches[i], cmd.offsets[i] = h, pl.Stride, pl.Offset
+		if useMod {
+			cmd.modifiers[i] = b.Modifier
+		}
 	}
 	if err := ioctl(k.fd, ioctlAddFB2, unsafe.Pointer(&cmd)); err != nil {
 		return 0, errors.Join(errors.New("add fb2"), err)
 	}
 	return cmd.fbID, nil
+}
+
+// primeImport returns the GEM handle of a dmabuf file. The caller holds
+// gemMu and closes the handle.
+func (k kmsDevice) primeImport(f *os.File) (uint32, error) {
+	raw, err := f.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var p primeHandle
+	var ioErr error
+	if err := raw.Control(func(fd uintptr) {
+		p.fd = int32(fd)
+		ioErr = ioctl(k.fd, ioctlPrimeFDToHandle, unsafe.Pointer(&p))
+	}); err != nil {
+		return 0, err
+	}
+	if ioErr != nil {
+		return 0, errors.Join(errors.New("prime import"), ioErr)
+	}
+	return p.handle, nil
+}
+
+func (k kmsDevice) gemClose(h uint32) {
+	g := gemClose{handle: h}
+	_ = ioctl(k.fd, ioctlGemClose, unsafe.Pointer(&g))
 }
 
 // dropClientFBs frees framebuffers not wanted for scanoutIdleTTL, or all
@@ -187,5 +268,3 @@ func (o *Output) dropClientFBs(now time.Time, all bool) {
 		delete(o.clientFBs, id)
 	}
 }
-
-func scanoutable(f uint32) bool { _, ok := scanoutFormat(f); return ok }
