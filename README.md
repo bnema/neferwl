@@ -36,7 +36,7 @@ terminal = foot
 startup = waybar
 
 output.DP-1 = 3840x2160@144
-output.DP-1.scale = 3/2
+output.DP-1.scale = 1.5
 
 layout.max-columns = 3
 
