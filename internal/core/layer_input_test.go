@@ -258,4 +258,14 @@ func TestLayerFocusAcrossOutputs(t *testing.T) {
 	if v := next(t, commands, anyOf[ports.ForwardKey]); v.ID != 6 {
 		t.Fatalf("key to %d, want the bar", v.ID)
 	}
+	input <- ports.KeyEvent{Keysym: "a"}
+	next(t, commands, anyOf[ports.ForwardKey])
+
+	// A window mapped on OUT-2 (focused there) takes the keyboard back.
+	client <- ports.WindowMapped{ID: 2}
+	next(t, commands, func(v ports.FocusWindow) bool { return v.ID == 2 })
+	input <- ports.KeyEvent{Keysym: "b", Pressed: true}
+	if v := next(t, commands, anyOf[ports.ForwardKey]); v.ID != 2 {
+		t.Fatalf("key to %d, want the new window", v.ID)
+	}
 }

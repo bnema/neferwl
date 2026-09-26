@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -82,14 +83,12 @@ type Core struct {
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
 	// layerFocus is the on-demand layer surface the user clicked; it keeps
-	// the keyboard while it stays mapped on-demand and the window focus
-	// (layerOver) does not change: any click elsewhere, bind, activation or
-	// new window takes the keyboard back.
+	// the keyboard while it stays mapped on-demand and no window focus
+	// changes on any output (layerOver, taken at the click): any click
+	// elsewhere, bind, activation or new window takes the keyboard back. The
+	// pointer moving to another output does not.
 	layerFocus WindowID
-	layerOver  WindowID
-	// layerScreen is the output focused at the click: the pointer moving to
-	// another output does not end the layer's focus.
-	layerScreen *screen
+	layerOver  map[*screen]WindowID
 }
 
 func keyName(s string) string {
@@ -309,6 +308,15 @@ func (c *Core) visible(id WindowID) bool {
 // interactivity and the highest ID on any output, else the focused window of
 // the focused output. An on-demand layer takes focus only when clicked, until
 // a window is clicked. When the layer unmaps, focus returns to the window.
+// windowFocus is the focused window of each output.
+func (c *Core) windowFocus() map[*screen]WindowID {
+	m := make(map[*screen]WindowID, len(c.screens))
+	for _, sc := range c.screens {
+		m[sc], _ = sc.mon.Focused()
+	}
+	return m
+}
+
 func (c *Core) keyboardFocus() WindowID {
 	var layer WindowID
 	for _, sc := range c.screens {
@@ -325,11 +333,8 @@ func (c *Core) keyboardFocus() WindowID {
 	if g := c.grabFocus(); g != 0 {
 		return g
 	}
-	if c.layerFocus != 0 {
-		over, _ := c.layerScreen.mon.Focused()
-		if !c.onDemand(c.layerFocus) || !slices.Contains(c.screens, c.layerScreen) || over != c.layerOver {
-			c.layerFocus, c.layerScreen = 0, nil
-		}
+	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
+		c.layerFocus, c.layerOver = 0, nil
 	}
 	if c.layerFocus != 0 {
 		return c.layerFocus
@@ -753,8 +758,7 @@ func (c *Core) Run(ctx context.Context) error {
 					// A click on an on-demand layer gives it the keyboard.
 					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
 						c.layerFocus = id
-						c.layerScreen = c.cur()
-						c.layerOver, _ = c.layerScreen.mon.Focused()
+						c.layerOver = c.windowFocus()
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
@@ -832,6 +836,7 @@ func (c *Core) Run(ctx context.Context) error {
 						continue
 					}
 					before := c.cur().mon.Current()
+					c.layerFocus = 0 // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
 						return ErrQuit
