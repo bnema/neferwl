@@ -838,6 +838,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				if done != nil {
 					done.Close()
 				}
+				ov.close()
 				ov = overlayWin{}
 				if done, rerr = r.Render(scene, surfaces); rerr != nil {
 					return fmt.Errorf("render frame: %w", rerr)
@@ -850,6 +851,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			if done != nil {
 				done.Close()
 			}
+			ov.close()
 			if err != nil && o.overlayConflict(err, ov.buf) {
 				err = errOverlayDropped
 			}

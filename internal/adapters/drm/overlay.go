@@ -2,6 +2,7 @@ package drm
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
@@ -49,6 +50,9 @@ type overlayWin struct {
 	buf  uint64
 	rect ports.Rect // CRTC rect
 	w, h int        // buffer size
+	// acquire is the client's explicit-sync fence, a duplicate owned by
+	// the frame loop (closed after the commit); nil without one.
+	acquire *os.File
 }
 
 // overlayCandidate finds the one window the overlay can show: an opaque
@@ -121,7 +125,8 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 					scale = 1
 				}
 				ov = overlayWin{id: w.ID, fb: fb, buf: c.DMABuf.ID, w: c.Width, h: c.Height,
-					rect: ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height}}
+					rect:    ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
+					acquire: dupFence(c.Acquire)}
 			}
 		}
 	}
@@ -164,6 +169,17 @@ func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 	req.set(p.id, p.prop("CRTC_Y"), uint64(int64(ov.rect.Y)))
 	req.set(p.id, p.prop("CRTC_W"), uint64(ov.rect.W))
 	req.set(p.id, p.prop("CRTC_H"), uint64(ov.rect.H))
+	if ov.acquire != nil {
+		// KMS waits for the client's GPU work before scanning it out.
+		req.set(p.id, p.prop("IN_FENCE_FD"), uint64(ov.acquire.Fd()))
+	}
+}
+
+// close releases the frame's duplicate of the acquire fence.
+func (ov overlayWin) close() {
+	if ov.acquire != nil {
+		ov.acquire.Close()
+	}
 }
 
 // testOverlay asks KMS whether it takes the frame with ov on the overlay,

@@ -18,8 +18,8 @@ import (
 type inhibitor struct {
 	surf     *surface
 	shortcut *keyboardshortcutsinhibit.ZwpKeyboardShortcutsInhibitorV1 // nil: idle
-	window   ports.WindowID                                           // reported to core (0: not yet)
-	active   bool                                                     // shortcuts: last state sent
+	window   ports.WindowID                                            // reported to core (0: not yet)
+	active   bool                                                      // shortcuts: last state sent
 }
 
 func registerInhibit(d *server.Display, s *Server) error {

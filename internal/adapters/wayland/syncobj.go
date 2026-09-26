@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
@@ -147,11 +148,12 @@ func (s *surface) checkSyncCommit() bool {
 		return true
 	}
 	a, r := st.acquire, st.release
-	hasBuffer := s.attached && s.pending != nil || !s.attached && s.current != nil
+	// Points belong only to a commit that attaches a non-null buffer.
+	hasBuffer := s.attached && s.pending != nil
 	res := st.resource
 	switch {
 	case !a.set() && !r.set():
-		if hasBuffer && s.attached {
+		if hasBuffer {
 			res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoAcquirePoint), "buffer without acquire point")
 			return false
 		}
@@ -194,13 +196,14 @@ type syncWaiter struct {
 	wake  func()
 	pipeR *os.File
 	pipeW *os.File
-	add   chan *syncWait
+	added []*syncWait // new waits for run (under mu)
 }
 
 // syncWait is one acquire point a queued commit waits for.
 type syncWait struct {
-	efd  int
-	done bool // the eventfd fired (pacer, under Do)
+	efd       int
+	done      bool        // the eventfd fired or the wait was cancelled (pacer, under Do)
+	cancelled atomic.Bool // run stops polling it and closes efd
 }
 
 func newSyncWaiter(wake func()) (*syncWaiter, error) {
@@ -208,7 +211,7 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, add: make(chan *syncWait, 64)}, nil
+	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w}, nil
 }
 
 // watch registers an eventfd for p; the wait is ready once it fires.
@@ -222,7 +225,9 @@ func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
 		return nil, err
 	}
 	w := &syncWait{efd: efd}
-	sw.add <- w
+	sw.mu.Lock()
+	sw.added = append(sw.added, w)
+	sw.mu.Unlock()
 	_, _ = sw.pipeW.Write([]byte{0})
 	return w, nil
 }
@@ -240,10 +245,12 @@ func (sw *syncWaiter) fired(w *syncWait) bool {
 
 // cancel stops watching w (the commit was dropped).
 func (sw *syncWaiter) cancel(w *syncWait) {
+	w.cancelled.Store(true)
 	sw.mu.Lock()
 	delete(sw.ready, w)
 	sw.mu.Unlock()
 	w.done = true
+	_, _ = sw.pipeW.Write([]byte{0}) // run closes its eventfd
 }
 
 // run polls every watched eventfd; it owns and closes them.
@@ -251,11 +258,24 @@ func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
 	var waits []*syncWait
 	defer func() {
+		sw.mu.Lock()
+		waits = append(waits, sw.added...)
+		sw.added = nil
+		sw.mu.Unlock()
 		for _, w := range waits {
 			unix.Close(w.efd)
 		}
 	}()
 	for ctx.Err() == nil {
+		live := waits[:0]
+		for _, w := range waits {
+			if w.cancelled.Load() {
+				unix.Close(w.efd)
+				continue
+			}
+			live = append(live, w)
+		}
+		waits = live
 		fds := []unix.PollFd{{Fd: int32(sw.pipeR.Fd()), Events: unix.POLLIN}}
 		for _, w := range waits {
 			fds = append(fds, unix.PollFd{Fd: int32(w.efd), Events: unix.POLLIN})
@@ -285,15 +305,10 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		if fds[0].Revents != 0 {
 			var b [64]byte
 			_, _ = sw.pipeR.Read(b[:])
-		drain:
-			for {
-				select {
-				case w := <-sw.add:
-					waits = append(waits, w)
-				default:
-					break drain
-				}
-			}
+			sw.mu.Lock()
+			waits = append(waits, sw.added...)
+			sw.added = nil
+			sw.mu.Unlock()
 		}
 		if fired {
 			sw.wake()
@@ -362,18 +377,25 @@ func (s *surface) syncReady(cs *commitSync) bool {
 	return cs == nil || cs.wait == nil || s.server.syncWait.fired(cs.wait)
 }
 
-// dropSync forgets a commit that will never apply: its points are
-// signalled so the client can reuse the buffer.
+// dropSync forgets a commit that will never apply. Its release point is
+// signalled only once the acquire point has a fence: signalling earlier
+// could move a shared timeline past a point the client has not submitted.
 func (s *surface) dropSync(cs *commitSync) {
 	if cs == nil {
 		return
 	}
+	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait)
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
 	}
 	cs.acquire.tl.uses--
 	s.server.dropTimeline(cs.acquire.tl)
-	s.server.releaseSync(syncHold{release: cs.release})
+	if ready {
+		s.server.releaseSync(syncHold{release: cs.release})
+		return
+	}
+	cs.release.tl.uses--
+	s.server.dropTimeline(cs.release.tl)
 }
 
 // applySync makes a commit's points the current buffer's: its acquire

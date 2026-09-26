@@ -333,9 +333,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			}
 			dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
 			dr.set, dr.im = im.set, im
-			if key.index == 0 {
-				dr.acquire = content.Acquire
-			}
+			dr.acquire = content.Acquire
 			draws = append(draws, dr)
 			return
 		}

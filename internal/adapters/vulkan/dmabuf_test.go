@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"image"
 	"image/color"
 	"os"
 	"slices"
@@ -105,4 +106,32 @@ func TestRendererImportsDMABuf(t *testing.T) {
 	if len(r.imports) != 0 {
 		t.Fatalf("import kept: %d", len(r.imports))
 	}
+}
+
+// A subsurface dmabuf is read after its own acquire fence, not the root's.
+func TestRendererSubsurfaceAcquire(t *testing.T) {
+	r, err := New(80, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	if !slices.Contains(r.DMABuf().Formats, linear) {
+		t.Skipf("linear ARGB8888 not importable: %+v", r.DMABuf())
+	}
+	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
+	fence, w, _ := os.Pipe()
+	defer fence.Close()
+	defer w.Close()
+	child := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, Acquire: fence,
+		DMABuf: &ports.DMABuf{ID: 8, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
+	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, Children: []ports.Subsurface{{SurfaceContent: child}}}}
+	ds := r.draws(scene, contents, newDamage(r.target(), scene, image.Rect(0, 0, 80, 32)))
+	for _, d := range ds {
+		if d.im != nil && d.acquire == fence {
+			return
+		}
+	}
+	t.Fatal("subsurface draw has no acquire fence")
 }

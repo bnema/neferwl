@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -185,11 +186,15 @@ func (p *syncReleaseProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+func (h *syncHarness) setPoints(acquire, release uint64) {
+	requestProtocol(h.t, h.c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetAcquirePoint, h.timeline, uint32(acquire>>32), uint32(acquire))
+	requestProtocol(h.t, h.c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetReleasePoint, h.timeline, uint32(release>>32), uint32(release))
+}
+
 func (h *syncHarness) commit(buf uint32, acquire, release uint64) {
 	t, c := h.t, h.c
 	requestProtocol(t, c, h.surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
-	requestProtocol(t, c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetAcquirePoint, h.timeline, uint32(acquire>>32), uint32(acquire))
-	requestProtocol(t, c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetReleasePoint, h.timeline, uint32(release>>32), uint32(release))
+	h.setPoints(acquire, release)
 	requestProtocol(t, c, h.surf, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -315,6 +320,34 @@ func TestSyncobjProtocolErrors(t *testing.T) {
 			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
 			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
 		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoAcquirePoint)},
+		{"no acquire point", func(h *syncHarness) {
+			b := h.dmabuf()
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+			requestProtocol(t, h.c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetReleasePoint, h.timeline, uint32(0), uint32(5))
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
+		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoAcquirePoint)},
+		{"points without attach", func(h *syncHarness) {
+			b := h.dmabuf()
+			h.commit(b, 1, 2)
+			h.fire(1)
+			h.setPoints(3, 4)
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
+		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoBuffer)},
+		{"points with null attach", func(h *syncHarness) {
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+			h.setPoints(1, 2)
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
+		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoBuffer)},
+		{"wl_shm buffer", func(h *syncHarness) {
+			b := shmBuffer(t, h.c)
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+			h.setPoints(1, 2)
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestCommit)
+		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorUnsupportedBuffer)},
+		{"surface destroyed", func(h *syncHarness) {
+			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestDestroy)
+			h.setPoints(1, 2)
+		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoSurface)},
 		{"surface exists", func(h *syncHarness) {
 			mgr := bindProtocol(t, h.c, "wp_linux_drm_syncobj_manager_v1")
 			h.mgr = mgr
@@ -352,4 +385,77 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectProtocolError(t, c, mgr, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorInvalidTimeline))
+}
+
+// A commit dropped before its acquire point has a fence signals nothing
+// (the client has not submitted that point) and sends no wl_buffer.release;
+// the waiter closes its eventfd and no acquire file is left open.
+func TestSyncobjDroppedCommit(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	a := h.dmabuf()
+	before := openFDs(t)
+	h.commit(a, 1, 2)
+	requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestDestroy)
+	if err := h.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	// The point never gets a fence: the waiter must still stop polling it.
+	time.Sleep(250 * time.Millisecond)
+	if err := h.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.signalled(); len(got) != 0 {
+		t.Fatalf("signalled %v for a commit whose acquire point never arrived", got)
+	}
+	select {
+	case <-h.releases[a].released:
+		t.Fatal("wl_buffer.release sent under explicit sync")
+	default:
+	}
+	// The harness keeps its own duplicate of the eventfd.
+	if after := openFDs(t); after > before+1 {
+		t.Fatalf("eventfds and sync files %d -> %d", before, after)
+	}
+}
+
+// A commit dropped after its acquire point fired signals its release point.
+func TestSyncobjDroppedReadyCommitReleases(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	a := h.dmabuf()
+	h.commit(a, 1, 2)
+	h.fire(1)
+	if _, ok := h.content(2 * time.Second); !ok {
+		t.Fatal("content")
+	}
+	requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestDestroy)
+	deadline := time.Now().Add(2 * time.Second)
+	for len(h.signalled()) == 0 && time.Now().Before(deadline) {
+		if err := h.c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := h.signalled(); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("signalled %v", got)
+	}
+}
+
+// openFDs counts the eventfds and sync files (pipes stand in for them)
+// the process holds.
+func openFDs(t *testing.T) int {
+	t.Helper()
+	ents, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range ents {
+		l, _ := os.Readlink("/proc/self/fd/" + e.Name())
+		if strings.Contains(l, "eventfd") || strings.HasPrefix(l, "pipe:") {
+			n++
+		}
+	}
+	return n
 }

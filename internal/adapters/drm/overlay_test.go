@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -143,5 +144,39 @@ func TestOverlayCursorConflictDropsOverlay(t *testing.T) {
 	}
 	if ov2, _ := o.overlayFrame(s, c); ov2.fb != 0 || o.overlayReason != "cursor_conflict" {
 		t.Fatalf("overlay kept: %+v %q", ov2, o.overlayReason)
+	}
+}
+
+// An explicit-sync window on the overlay: the plane carries a duplicate of
+// the client's acquire fence, closed once the frame is committed.
+func TestOverlayCarriesAcquireFence(t *testing.T) {
+	o, k, commits := overlayOutput(t)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	s, c := overlayScene()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	win := c[2]
+	win.Acquire = r
+	c[2] = win
+	ov, _ := o.overlayFrame(s, c)
+	if ov.acquire == nil || ov.acquire.Fd() == r.Fd() {
+		t.Fatal("overlay has no duplicate of the acquire fence")
+	}
+	fd := ov.acquire.Fd()
+	if err := o.commitWith(70, nil, false, false, pendingFrame{queued: ov.buf}, ov); err != nil {
+		t.Fatal(err)
+	}
+	ov.close()
+	last := (*commits)[len(*commits)-1]
+	if v, ok := last.req.value(tOverlay, pFence); !ok || v != uint64(fd) {
+		t.Fatalf("overlay IN_FENCE_FD %d %v, want %d", v, ok, fd)
+	}
+	if _, err := ov.acquire.Stat(); err == nil {
+		t.Fatal("duplicate left open")
 	}
 }

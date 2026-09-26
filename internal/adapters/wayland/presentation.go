@@ -22,11 +22,11 @@ const presentationVersion = 2
 // feedbackWait is a committed feedback: presented once a flip on the
 // surface's output shows content seq of window win.
 type feedbackWait struct {
-	fb     *presentationtime.WpPresentationFeedback
-	surf   *surface
-	win    ports.WindowID
-	seq    uint64
-	at     time.Time
+	fb   *presentationtime.WpPresentationFeedback
+	surf *surface
+	win  ports.WindowID
+	seq  uint64
+	at   time.Time
 	// replaced is the window content Seq of the surface's next commit (0:
 	// none yet): a flip showing it or later shows the replacement.
 	replaced uint64
