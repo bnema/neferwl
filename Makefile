@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check fakes-check arch check bin tty logs dist pkg
+.PHONY: build test vet race mocks mocks-check fakes-check arch check bin tty logs pkg
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -46,40 +46,18 @@ arch:
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
 check: vet test arch fakes-check
 
-# Self-contained source tarball for packaging (packaging/arch/PKGBUILD): the
-# sibling purego-* modules are vendored, so the package builds offline. It
-# holds the working trees; the version ends in .dirty when one is not clean.
-SIBLINGS := github.com/bnema/purego-libwayland github.com/bnema/purego-vulkan
-SIBLING_DIRS = $(shell go list -m -f '{{.Dir}}' $(SIBLINGS))
-dirty = $(shell for d in . $(SIBLING_DIRS); do git -C $$d diff --quiet HEAD && \
-	test -z "$$(git -C $$d ls-files -o --exclude-standard)" || { echo .dirty; break; }; done)
-# pacman-ordered: 0.0.0.r<commits>.g<hash>; a tag replaces 0.0.0.
-VERSION ?= $(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
-	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")$(dirty)
-DIST = dist/nefertty-$(VERSION)
-dist: SHELL := bash
-dist: .SHELLFLAGS := -eo pipefail -c
-# Computed once per dist run (git and go list), not for every target.
-ifneq ($(filter dist pkg,$(MAKECMDGOALS)),)
-VERSION := $(VERSION)
-endif
-dist:
-	@for d in $(SIBLING_DIRS); do test -d $$d || { echo "sibling module not found: $$d" >&2; exit 1; }; done
-	rm -rf $(DIST) && mkdir -p $(DIST)
-	git ls-files -co --exclude-standard -z | tar --null -T - -c | tar -x -C $(DIST)
-	cd $(DIST) && go mod edit $(foreach m,$(SIBLINGS),-replace=$(m)=$(shell go list -m -f '{{.Dir}}' $(m))) && go mod vendor
-	cd $(DIST) && $(foreach m,$(SIBLINGS),sed -i 's#=> $(shell go list -m -f '{{.Dir}}' $(m))$$#=> ../$(notdir $(m))#' go.mod vendor/modules.txt &&) true
-	@! grep -rqF "$(HOME)" $(DIST) || { echo "home path leaked into $(DIST)" >&2; exit 1; }
-	echo '$(VERSION)' > $(DIST)/VERSION
-	tar --owner=0 --group=0 --numeric-owner --sort=name --mtime=@$$(git log -1 --format=%ct) -C dist -czf $(DIST).tar.gz nefertty-$(VERSION)
-	rm -rf $(DIST)
-	@echo $(DIST).tar.gz
-
-# Arch package from the dist tarball, built outside the home directory so
-# no path of it lands in the package metadata. Install it with
-# `sudo pacman -U` on the printed file.
-pkg: dist
-	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX) && cp packaging/arch/PKGBUILD $(DIST).tar.gz $$d/ && \
-		cd $$d && sed -i "s/^pkgver=.*/pkgver=$(VERSION)/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD && \
-		makepkg -f --noconfirm && mv *.pkg.tar.zst $(CURDIR)/dist/ && cd / && rm -rf $$d
+# Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
+# come from the module proxy in prepare(); the build itself runs offline.
+# pacman-ordered version: 0.0.0.r<commits>.g<hash>; a tag replaces 0.0.0.
+pkg: SHELL := bash
+pkg: .SHELLFLAGS := -eo pipefail -c
+pkg:
+	@test -z "$$(git status --porcelain)" || echo "warning: uncommitted changes are not packaged" >&2
+	v=$$(t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
+		echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)"); \
+	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX); trap 'rm -rf "$$d"' EXIT; \
+	git archive --prefix=nefertty-$$v/ -o "$$d/nefertty-$$v.tar.gz" HEAD; \
+	cp packaging/arch/PKGBUILD "$$d/"; \
+	cd "$$d" && sed -i "s/^pkgver=.*/pkgver=$$v/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD; \
+	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; rm -f $(CURDIR)/dist/nefertty-*.pkg.tar.zst; mv *.pkg.tar.zst $(CURDIR)/dist/
 	@ls dist/*.pkg.tar.zst

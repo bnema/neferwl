@@ -10,18 +10,28 @@ Requires Linux and Go 1.27.
 - **NVIDIA GPUs:** untested. NVIDIA drivers need explicit sync (`linux-drm-syncobj`), which NeferTTY does not implement yet. Testers with NVIDIA hardware are welcome to report issues or contribute.
 - **Intel GPUs:** untested.
 
-Build: `make build` (requires sibling checkouts of purego-libwayland and purego-vulkan).
+Build: `make build`.
 
 Run: `nefertty --backend=headless --timeout 5s`
 
 ## Install (Arch Linux)
 
 ```sh
-make pkg                                  # builds dist/nefertty-*.pkg.tar.zst
+make pkg                                  # builds dist/nefertty-*.pkg.tar.zst from HEAD
 sudo pacman -U dist/nefertty-*.pkg.tar.zst
 ```
 
-The package installs `nefertty` and a **NeferTTY** session for display managers (Ly, GDM, SDDM). The session runs `nefertty --session`, which shares `WAYLAND_DISPLAY` and `DISPLAY` with D-Bus and systemd user services, so portals and notification daemons reach it. `make dist` alone builds the self-contained source tarball (Go modules vendored) that the package uses; its version ends in `.dirty` when this repo or a sibling module has uncommitted changes.
+The package installs `nefertty` and a **NeferTTY** session for display managers (Ly, GDM, SDDM). The session runs `nefertty --session`, which shares `WAYLAND_DISPLAY` and `DISPLAY` with D-Bus and systemd user services, so portals and notification daemons reach it.
+
+## Developing the bindings
+
+NeferTTY depends on tagged releases of [purego-libwayland](https://github.com/bnema/purego-libwayland) and [purego-vulkan](https://github.com/bnema/purego-vulkan). To change them together with NeferTTY, check them out next to it and use a Go workspace (not committed):
+
+```sh
+go work init . ../purego-libwayland ../purego-vulkan
+```
+
+`make pkg` ignores the workspace and builds the versions in `go.mod`: tag a binding change and update `go.mod` before packaging it.
 
 ## Configuration
 
@@ -38,8 +48,6 @@ startup = wl-paste --watch cliphist store
 ```
 
 See `examples/config` for every key and its default. A missing file means defaults. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Every key applies live when the file changes, including the keyboard layout; each reload logs the keys that changed.
-
-Building requires sibling checkouts of purego-libwayland and purego-vulkan until they are published.
 
 ## Running commands
 
