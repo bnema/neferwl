@@ -6,8 +6,10 @@ Requires Linux and Go 1.27.
 
 ## Hardware support
 
+NeferTTY needs a GPU and kernel driver with atomic KMS and a Vulkan 1.3 device that can export images as dmabufs; without them it stops at startup with an error. Frames are composed on the GPU only: no CPU copy and no CPU wait for the GPU before a page flip.
+
 - **AMD GPUs:** developed and tested on AMD (radv).
-- **NVIDIA GPUs:** untested. NVIDIA drivers need explicit sync (`linux-drm-syncobj`), which NeferTTY does not implement yet. Testers with NVIDIA hardware are welcome to report issues or contribute.
+- **NVIDIA GPUs:** untested. Explicit sync (`linux-drm-syncobj`), which NVIDIA drivers need, is implemented. Testers with NVIDIA hardware are welcome to report issues or contribute.
 - **Intel GPUs:** untested.
 
 Build: `make build`.
