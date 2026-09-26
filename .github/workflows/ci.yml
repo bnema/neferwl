@@ -7,30 +7,26 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # Arch matches the development system: libwayland, glslc and Go versions
+  # change protocol behavior and SPIR-V bytes.
   check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-      # Libraries loaded at runtime through purego; lavapipe gives tests a Vulkan device.
-      - run: >-
-          sudo apt-get update && sudo apt-get install -y
-          libwayland-server0 libxkbcommon0 libinput10 libseat1 libvulkan1 mesa-vulkan-drivers
-      - run: go install github.com/bnema/hexcheck/cmd/hexcheck@v0.2.0
-      - run: go install github.com/vektra/mockery/v3@v3.8.0
-      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
-      - run: make check
-      - run: make race
-      - run: make mocks-check
-      - run: staticcheck ./...
-  # SPIR-V bytes depend on the glslc version: build with Arch's shaderc, as developers do.
-  shaders:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      - run: pacman -Syu --noconfirm git go make shaderc
+      # Libraries loaded at runtime through purego; vulkan-swrast (lavapipe)
+      # gives tests a Vulkan device; gcc is for the race detector.
+      - run: >-
+          pacman -Syu --noconfirm --needed
+          git go make gcc shaderc wayland libxkbcommon libinput seatd
+          vulkan-icd-loader vulkan-swrast
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: |
+          go install github.com/bnema/hexcheck/cmd/hexcheck@v0.2.0
+          go install github.com/vektra/mockery/v3@v3.8.0
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+      - run: make check
+      - run: make race
+      - run: make mocks-check
       - run: make spv-check
+      - run: ~/go/bin/staticcheck ./...
