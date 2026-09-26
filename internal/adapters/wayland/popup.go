@@ -4,6 +4,7 @@ import (
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+	"github.com/bnema/purego-libwayland/server"
 )
 
 // popup is the xdg_popup role of a window. Core places it (PopupRequest →
@@ -13,8 +14,11 @@ type popup struct {
 	w        *window
 	resource *xdgshell.Popup
 	parent   *window
-	pos      ports.Positioner
-	grab     bool
+	// layer is the parent set through zwlr_layer_surface_v1.get_popup,
+	// for a popup created without an xdg parent.
+	layer *layerSurface
+	pos   ports.Positioner
+	grab  bool
 	// sent is set once core got the PopupRequest; done once dismissed.
 	sent, done bool
 }
@@ -42,11 +46,6 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 	s.nextWindow++
 	s.windows[w.id] = w
 	x.window = w
-	// Without a parent (xdg-shell lets clients set it through another
-	// protocol, such as layer-shell) the popup has nowhere to go.
-	if parent == nil {
-		pp.dismiss()
-	}
 	x.surface.role = func(buffer bool) {
 		if x.surface.destroyed {
 			w.unmap()
@@ -54,14 +53,21 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 		}
 		switch {
 		case !buffer && !w.mapped && !x.configured && !pp.done:
+			// Without a parent (xdg-shell lets clients set it through
+			// layer-shell before the first commit) the popup has nowhere
+			// to go.
+			if pp.parentID() == 0 {
+				pp.dismiss()
+				return
+			}
 			if !pp.sent {
 				pp.sent = true
-				s.emit(ports.PopupRequest{ID: w.id, Parent: parent.id, Positioner: pp.pos, Grab: pp.grab})
+				s.emit(ports.PopupRequest{ID: w.id, Parent: pp.parentID(), Positioner: pp.pos, Grab: pp.grab})
 			}
 		case buffer && !w.mapped && x.acked && !pp.done:
 			w.mapped = true
 			s.emit(ports.PopupMapped{ID: w.id})
-			s.log.Debug().Uint64("id", uint64(w.id)).Uint64("parent", uint64(parent.id)).Msg("popup mapped")
+			s.log.Debug().Uint64("id", uint64(w.id)).Uint64("parent", uint64(pp.parentID())).Msg("popup mapped")
 		case !buffer && w.mapped:
 			// Unmapped, it may map again after a new initial commit.
 			w.unmap()
@@ -88,6 +94,17 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 
 func (*popup) Destroy(*xdgshell.Popup) {}
 
+// parentID is the window or layer surface the popup hangs from, 0 if none.
+func (p *popup) parentID() ports.WindowID {
+	switch {
+	case p.parent != nil:
+		return p.parent.id
+	case p.layer != nil:
+		return p.layer.id
+	}
+	return 0
+}
+
 // Grab is only valid before the first commit; core then gives the popup the
 // keyboard and closes it on a click outside its popup chain.
 func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, serial uint32) {
@@ -99,7 +116,7 @@ func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, serial uint32) {
 	// and a popup over a popup grabs only if its parent does.
 	s := p.w.xdg.server
 	fresh := serial == s.press && s.pressClient == r.Client()
-	if !fresh || p.parent == nil || !s.topGrab(p.parent) {
+	if !fresh || p.parentID() == 0 || !s.topGrab(r.Client(), p.parent) {
 		p.dismiss()
 		return
 	}
@@ -114,7 +131,7 @@ func (p *popup) Reposition(r *xdgshell.Popup, pos *xdgshell.Positioner, token ui
 	}
 	p.pos = next
 	if p.sent {
-		s.emit(ports.PopupRequest{ID: p.w.id, Parent: p.parent.id, Positioner: next, Grab: p.grab, Reposition: true, Token: token})
+		s.emit(ports.PopupRequest{ID: p.w.id, Parent: p.parentID(), Positioner: next, Grab: p.grab, Reposition: true, Token: token})
 	}
 }
 
@@ -138,10 +155,10 @@ func (p *popup) configure(c ports.ConfigurePopup) {
 	}
 }
 
-// topGrab reports whether a grabbing popup may go on parent: parent is
-// the client's newest live grabbing popup, or a toplevel when it has none.
-func (s *Server) topGrab(parent *window) bool {
-	client := parent.xdg.resource.Client()
+// topGrab reports whether a grabbing popup of client may go on parent:
+// parent is the client's newest live grabbing popup, or a toplevel (nil
+// for a layer surface) when it has none.
+func (s *Server) topGrab(client server.Client, parent *window) bool {
 	var top *window
 	for _, w := range s.windows {
 		if w.popup != nil && w.popup.grab && !w.popup.done && w.xdg.resource.Client() == client && (top == nil || w.id > top.id) {
@@ -149,7 +166,7 @@ func (s *Server) topGrab(parent *window) bool {
 		}
 	}
 	if top == nil {
-		return parent.popup == nil
+		return parent == nil || parent.popup == nil
 	}
 	return top == parent
 }

@@ -34,7 +34,10 @@ type Options struct {
 	Timeout    time.Duration
 	NoTerminal bool
 	// NoXwayland skips the X11 display even when the config enables it.
-	NoXwayland    bool
+	NoXwayland bool
+	// Session exports the displays to D-Bus and systemd user services
+	// before any client starts, and withdraws them on exit.
+	Session       bool
 	ScreenshotDir string
 	// Sizes are the headless outputs (width, height), left to right; empty
 	// means one 1920x1080 output. With several outputs, screenshots go to
@@ -115,6 +118,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if xdisplay != nil {
 		defer xdisplay.Close()
 		childEnv = append(childEnv, "DISPLAY="+xdisplay.Name())
+	}
+	if opts.Session {
+		launcher.ExportSession(ctx, childEnv, logging.For(ctx, "launcher"))
+		defer launcher.UnexportSession(childEnv, logging.For(ctx, "launcher"))
 	}
 	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
 	if inject != nil {

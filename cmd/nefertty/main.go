@@ -23,6 +23,9 @@ import (
 
 type usageError struct{ error }
 
+// version is set with -ldflags "-X main.version=..." by packaged builds.
+var version string
+
 func main() {
 	tuneGC()
 	os.Exit(runCode())
@@ -99,11 +102,13 @@ func run() error {
 			fmt.Println("unknown")
 			return nil
 		}
-		version := info.Main.Version
-		if version == "" {
-			version = "(devel)"
+		v := info.Main.Version
+		if version != "" {
+			v = version // set by release builds (make dist)
+		} else if v == "" {
+			v = "(devel)"
 		}
-		fmt.Println(version)
+		fmt.Println(v)
 		return nil
 	}
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
@@ -116,6 +121,7 @@ func run() error {
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
+	session := flags.Bool("session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return err
@@ -221,7 +227,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, Session: *session, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil

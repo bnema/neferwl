@@ -125,7 +125,7 @@ func flipY(e uint32) uint32 {
 	return e
 }
 
-// windowRect is where a window or popup is on its screen: its client
+// windowRect is where a window, layer surface or popup is on its screen: its client
 // area, output-local and logical. ok is false when it is not on screen.
 func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 	if p := c.popups[id]; p != nil {
@@ -134,6 +134,12 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 			return nil, Rect{}, false
 		}
 		return sc, Rect{X: pr.X + p.rect.X, Y: pr.Y + p.rect.Y, W: p.rect.W, H: p.rect.H}, true
+	}
+	if sc, l, ok := c.layerOf(id); ok {
+		if !shown(sc, l.Layer) {
+			return nil, Rect{}, false
+		}
+		return sc, l.Rect, true
 	}
 	for _, sc := range c.screens {
 		for _, pl := range sc.mon.Layout() {
@@ -272,11 +278,12 @@ func (c *Core) grabFocus() WindowID {
 	return 0
 }
 
-// popupAt returns the topmost mapped popup under the output-local point.
-func (c *Core) popupAt(sc *screen, lx, ly float64) (WindowID, float64, float64) {
+// popupAt returns the topmost mapped popup under the output-local point,
+// among layer popups (overLayers) or window popups.
+func (c *Core) popupAt(sc *screen, lx, ly float64, overLayers bool) (WindowID, float64, float64) {
 	for i := len(c.popupOrder) - 1; i >= 0; i-- {
 		p := c.popups[c.popupOrder[i]]
-		if p == nil || !p.mapped {
+		if p == nil || !p.mapped || c.onLayer(c.popupRoot(p.id)) != overLayers {
 			continue
 		}
 		s, r, ok := c.windowRect(p.id)
@@ -290,6 +297,27 @@ func (c *Core) popupAt(sc *screen, lx, ly float64) (WindowID, float64, float64) 
 	return 0, 0, 0
 }
 
+// popupRoot is the window or layer a popup chain hangs from; id itself
+// when it is not a popup.
+func (c *Core) popupRoot(id WindowID) WindowID {
+	for p := c.popups[id]; p != nil; p = c.popups[id] {
+		id = p.parent
+	}
+	return id
+}
+
+// onLayer reports whether id is a mapped layer surface.
+func (c *Core) onLayer(id WindowID) bool {
+	for _, sc := range c.screens {
+		for _, l := range sc.layers {
+			if l.ID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // scenePopups are the mapped popups on a screen, bottom to top.
 func (c *Core) scenePopups(sc *screen) []ports.SceneWindow {
 	var out []ports.SceneWindow
@@ -299,7 +327,7 @@ func (c *Core) scenePopups(sc *screen) []ports.SceneWindow {
 			continue
 		}
 		if s, r, ok := c.windowRect(id); ok && s == sc {
-			out = append(out, ports.SceneWindow{ID: id, Rect: r, Popup: true})
+			out = append(out, ports.SceneWindow{ID: id, Rect: r, Popup: true, OverLayers: c.onLayer(c.popupRoot(id))})
 		}
 	}
 	return out

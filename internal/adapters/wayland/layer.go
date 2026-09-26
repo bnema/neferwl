@@ -106,8 +106,31 @@ func (l *layerSurface) SetKeyboardInteractivity(r *wlrlayershell.ZwlrLayerSurfac
 	l.pending.keyboard = k
 }
 
-// Layer popups are deferred; layer-shell is capped at v4.
-func (*layerSurface) GetPopup(*wlrlayershell.ZwlrLayerSurfaceV1, *xdgshell.Popup) {}
+// GetPopup makes the layer surface the parent of an xdg_popup created
+// without one. Core places it relative to the layer.
+func (l *layerSurface) GetPopup(_ *wlrlayershell.ZwlrLayerSurfaceV1, r *xdgshell.Popup) {
+	if r == nil {
+		return
+	}
+	for _, w := range l.shell.server.windows {
+		if p := w.popup; p != nil && p.resource.Resource == r.Resource {
+			if p.parent == nil && !p.sent && !p.done {
+				p.layer = l
+			}
+			return
+		}
+	}
+}
+
+// surfaceResource is the layer's live wl_surface, if any.
+func (l *layerSurface) surfaceResource() *wayland.Surface {
+	for resource, state := range l.shell.server.surfaces {
+		if state == l.surface && resource.Alive() {
+			return wayland.WrapSurface(resource)
+		}
+	}
+	return nil
+}
 func (l *layerSurface) AckConfigure(r *wlrlayershell.ZwlrLayerSurfaceV1, serial uint32) {
 	for i, v := range l.serials {
 		if v == serial {
@@ -135,6 +158,9 @@ func (l *layerSurface) unmap() {
 	}
 	if s := l.shell.server; s.focused == l.id {
 		s.changeFocus(0)
+	}
+	if s := l.shell.server; s.pointerFocus == l.id {
+		s.changePointerFocus(0, 0, 0)
 	}
 	l.mapped = false
 	l.configured = false

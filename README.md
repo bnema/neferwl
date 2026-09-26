@@ -14,6 +14,15 @@ Build: `make build` (requires sibling checkouts of purego-libwayland and purego-
 
 Run: `nefertty --backend=headless --timeout 5s`
 
+## Install (Arch Linux)
+
+```sh
+make pkg                                  # builds dist/nefertty-*.pkg.tar.zst
+sudo pacman -U dist/nefertty-*.pkg.tar.zst
+```
+
+The package installs `nefertty` and a **NeferTTY** session for display managers (Ly, GDM, SDDM). The session runs `nefertty --session`, which shares `WAYLAND_DISPLAY` and `DISPLAY` with D-Bus and systemd user services, so portals and notification daemons reach it. `make dist` alone builds the self-contained source tarball (Go modules vendored) that the package uses; its version ends in `.dirty` when this repo or a sibling module has uncommitted changes.
+
 ## Configuration
 
 Configuration lives at `$XDG_CONFIG_HOME/nefertty/config` (or `~/.config/nefertty/config`). Use `nefertty --config path` to select another file; `nefertty validate-config [path]` checks it without starting the compositor.

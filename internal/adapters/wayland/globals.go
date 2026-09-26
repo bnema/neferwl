@@ -361,11 +361,12 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 			s.pointers[r.Client()] = list
 		}
 	}
-	if w := s.windows[s.pointerFocus]; w != nil && w.mapped && w.xdg.resource.Client() == r.Client() {
-		s.serial++
-		x, y := w.surfacePoint(s.pointerX, s.pointerY)
-		p.SendEnter(s.serial, w.xdg.surfaceResource(), server.FixedFromFloat(x), server.FixedFromFloat(y))
-		pointerFrame(p)
+	if s.hasPointerFocus(r.Client()) {
+		if surf, _, x, y := s.pointerSurface(s.pointerFocus, s.pointerX, s.pointerY); surf != nil {
+			s.serial++
+			p.SendEnter(s.serial, surf, server.FixedFromFloat(x), server.FixedFromFloat(y))
+			pointerFrame(p)
+		}
 	}
 }
 func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {

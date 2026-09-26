@@ -515,9 +515,6 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		x, y := w.Rect.X, w.Rect.Y
 		if w.Popup {
-			// Menus draw only what the client drew, shadows clipped.
-			content := contents[w.ID]
-			place(&content, x, y, w.Rect.W, w.Rect.H)
 			continue
 		}
 		// Content sits inside the border; core sized the client to match.
@@ -551,7 +548,19 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			}
 		}
 	}
+	// Popups draw only what the client drew, shadows clipped. Window popups
+	// stay with the windows; a layer's go over every layer.
+	addPopups := func(overLayers bool) {
+		for _, w := range s.Windows {
+			if w.Popup && w.OverLayers == overLayers && !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 {
+				content := contents[w.ID]
+				place(&content, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H)
+			}
+		}
+	}
+	addPopups(false)
 	addLayers(true)
+	addPopups(true)
 	if err := r.ensureStaging(used); err != nil {
 		return err
 	}

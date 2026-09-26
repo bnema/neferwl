@@ -5,6 +5,7 @@ import (
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
+	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 	"os"
@@ -128,7 +129,16 @@ func TestWaybarLayer(t *testing.T) {
 	if err = os.WriteFile(style, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, done, output := lifecycleClient(t, tool, s, dir, []string{"HOME=" + home}, "-c", config, "-s", style)
+	// waybar (gio) aborts without a session bus; the user bus is the default.
+	bus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+	if bus == "" {
+		sock := os.Getenv("XDG_RUNTIME_DIR") + "/bus"
+		if _, err := os.Stat(sock); err != nil {
+			t.Skip("no D-Bus session bus")
+		}
+		bus = "unix:path=" + sock
+	}
+	_, done, output := lifecycleClient(t, tool, s, dir, []string{"HOME=" + home, "DBUS_SESSION_BUS_ADDRESS=" + bus}, "-c", config, "-s", style)
 	select {
 	case ev := <-events:
 		v, ok := ev.(ports.LayerChanged)
@@ -220,5 +230,119 @@ func TestXDGOutputDone(t *testing.T) {
 				t.Fatalf("wl_output v%d: xdg done=%d, wl_output done=%d", version, xp.done, op.done)
 			}
 		})
+	}
+}
+
+type layerPointerProxy struct {
+	wlturbo.BaseProxy
+	enters  chan [2]float64
+	buttons chan uint32 // serials
+}
+
+func (p *layerPointerProxy) Dispatch(e *wlturbo.Event) {
+	switch e.Opcode {
+	case uint16(wayland.PointerEventEnter):
+		_, _ = e.Uint32(), e.Uint32()
+		p.enters <- [2]float64{e.Fixed().Float64(), e.Fixed().Float64()}
+	case uint16(wayland.PointerEventButton):
+		p.buttons <- e.Uint32()
+	}
+}
+
+// A bar gets the pointer, and a menu it opens on a click through
+// get_popup reaches core with the bar as its parent and a grab.
+func TestLayerPointerAndPopup(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindVersion(t, c, "wl_seat", 8)
+	registerProtocol(t, c, seat)
+	pointer := c.AllocateID()
+	pp := &layerPointerProxy{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 1)}
+	pp.SetID(pointer)
+	c.Context().Register(pp)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+	comp := bindProtocol(t, c, "wl_compositor")
+	wm := bindProtocol(t, c, "xdg_wm_base")
+	shm := bindProtocol(t, c, "wl_shm")
+	registerProtocol(t, c, shm)
+	fd, err := unix.MemfdCreate("layer-popup-buffer", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err = unix.Ftruncate(fd, 4); err != nil {
+		t.Fatal(err)
+	}
+	pool, buf := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, pool)
+	registerProtocol(t, c, buf)
+	if err = c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(0))
+
+	surf, layer := layerProtocol(t, c)
+	lp := &layerProxy{configured: make(chan [3]uint32, 2)}
+	lp.SetID(layer)
+	c.Context().Register(lp)
+	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(1), uint32(1))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err = c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var config [3]uint32
+	select {
+	case config = <-lp.configured:
+	case <-time.After(2 * time.Second):
+		t.Fatal("configure timeout")
+	}
+	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestAckConfigure, config[0])
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err = c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	lc, ok := waitEvent(t, events, 2*time.Second).(ports.LayerChanged)
+	if !ok || len(lc.Layers) != 1 {
+		t.Fatalf("layer mapped %+v", lc)
+	}
+	id := lc.Layers[0].ID
+
+	commands <- ports.PointerFocus{ID: id, X: 0.5, Y: 0.25}
+	commands <- ports.PointerButtonTo{ID: id, Button: 0x110, Pressed: true}
+	var press uint32
+	for deadline := time.Now().Add(2 * time.Second); len(pp.buttons) == 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("pointer events timeout")
+		}
+		if err = c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if at := <-pp.enters; at != [2]float64{0.5, 0.25} {
+		t.Fatalf("enter at %v", at)
+	}
+	press = <-pp.buttons
+
+	positioner := c.AllocateID()
+	requestProtocol(t, c, wm, xdgshell.WmBaseRequestCreatePositioner, positioner)
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetSize, int32(1), int32(1))
+	requestProtocol(t, c, positioner, xdgshell.PositionerRequestSetAnchorRect, int32(0), int32(0), int32(1), int32(1))
+	done := make(chan struct{}, 1)
+	xdgWindow(t, c, comp, wm, buf, func(pxdg uint32) {
+		popup := c.AllocateID()
+		proxy := &popupDoneProxy{done: done}
+		proxy.SetID(popup)
+		c.Context().Register(proxy)
+		requestProtocol(t, c, pxdg, xdgshell.SurfaceRequestGetPopup, popup, uint32(0), positioner)
+		requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestGetPopup, popup)
+		requestProtocol(t, c, popup, xdgshell.PopupRequestGrab, seat, press)
+	})
+	req, ok := waitEvent(t, events, 2*time.Second).(ports.PopupRequest)
+	if !ok || req.Parent != id || !req.Grab {
+		t.Fatalf("popup request %+v, want parent %d with a grab", req, id)
+	}
+	if len(done) != 0 {
+		t.Fatal("layer popup dismissed")
 	}
 }

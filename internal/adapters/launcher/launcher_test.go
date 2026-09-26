@@ -14,8 +14,8 @@ import (
 )
 
 func TestChildEnv(t *testing.T) {
-	got := ChildEnv([]string{"TERM=x", "DISPLAY=:0", "WAYLAND_SOCKET=4", "WAYLAND_DISPLAY=old", "HOME=/home/me", "PATH=/bin", "LC_ALL=C", "XDG_RUNTIME_DIR=old", "XCURSOR_THEME=Adwaita", "XCURSOR_PATH=/icons", "SECRET=bad"}, "wayland-7", "/run/me", 24)
-	want := []string{"HOME=/home/me", "LC_ALL=C", "PATH=/bin", "WAYLAND_DISPLAY=wayland-7", "XCURSOR_PATH=/icons", "XCURSOR_SIZE=24", "XCURSOR_THEME=Adwaita", "XDG_CURRENT_DESKTOP=nefertty", "XDG_RUNTIME_DIR=/run/me", "XDG_SESSION_TYPE=wayland"}
+	got := ChildEnv([]string{"TERM=x", "DISPLAY=:0", "WAYLAND_SOCKET=4", "WAYLAND_DISPLAY=old", "HOME=/home/me", "PATH=/bin", "LC_ALL=C", "XDG_RUNTIME_DIR=old", "XCURSOR_THEME=Adwaita", "XCURSOR_PATH=/icons", "SECRET=bad", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/me/bus"}, "wayland-7", "/run/me", 24)
+	want := []string{"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/me/bus", "HOME=/home/me", "LC_ALL=C", "PATH=/bin", "WAYLAND_DISPLAY=wayland-7", "XCURSOR_PATH=/icons", "XCURSOR_SIZE=24", "XCURSOR_THEME=Adwaita", "XDG_CURRENT_DESKTOP=nefertty", "XDG_RUNTIME_DIR=/run/me", "XDG_SESSION_TYPE=wayland"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}

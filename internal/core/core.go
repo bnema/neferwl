@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bnema/nefertty/internal/ports"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +82,13 @@ type Core struct {
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
+	// layerFocus is the on-demand layer surface the user clicked; it keeps
+	// the keyboard while it stays mapped on-demand and no window focus
+	// changes on any output (layerOver, taken at the click): any click
+	// elsewhere, bind, activation or new window takes the keyboard back. The
+	// pointer moving to another output does not.
+	layerFocus WindowID
+	layerOver  map[*screen]WindowID
 }
 
 func keyName(s string) string {
@@ -289,22 +297,26 @@ func (c *Core) clientRect(p Placement) Rect {
 	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
 }
 
-// visible reports whether the window is on screen on any output.
+// visible reports whether the window, layer surface or popup is on screen
+// on any output.
 func (c *Core) visible(id WindowID) bool {
+	_, _, ok := c.windowRect(id)
+	return ok
+}
+
+// windowFocus is the focused window of each output.
+func (c *Core) windowFocus() map[*screen]WindowID {
+	m := make(map[*screen]WindowID, len(c.screens))
 	for _, sc := range c.screens {
-		for _, p := range sc.mon.Layout() {
-			if p.ID == id {
-				return !p.Hidden
-			}
-		}
+		m[sc], _ = sc.mon.Focused()
 	}
-	return false
+	return m
 }
 
 // keyboardFocus is the mapped top/overlay layer with exclusive keyboard
-// interactivity and the highest ID on any output, else the focused window of
-// the focused output. On-demand layers never take focus automatically. When
-// the layer unmaps, focus returns to the window.
+// interactivity and the highest ID on any output, else a grabbing popup,
+// else a clicked on-demand layer (see layerFocus), else the focused window
+// of the focused output.
 func (c *Core) keyboardFocus() WindowID {
 	var layer WindowID
 	for _, sc := range c.screens {
@@ -320,6 +332,12 @@ func (c *Core) keyboardFocus() WindowID {
 	// A menu with a grab takes the keyboard until it closes.
 	if g := c.grabFocus(); g != 0 {
 		return g
+	}
+	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
+		c.layerFocus, c.layerOver = 0, nil
+	}
+	if c.layerFocus != 0 {
+		return c.layerFocus
 	}
 	id, _ := c.cur().mon.Focused()
 	return id
@@ -503,9 +521,10 @@ func (c *Core) allLayers() []ports.LayerSurface {
 	return all
 }
 
-// hit returns the window under the global logical point and the point in
-// its surface coordinates. Fullscreen wins; otherwise the last visible
-// placement is topmost.
+// hit returns the surface under the global logical point and the point in
+// its surface coordinates: popups, then overlay and top layers, then
+// windows (fullscreen wins; otherwise the last visible placement is
+// topmost), then bottom and background layers.
 func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	o, ok := c.layout().At(x, y)
 	if !ok {
@@ -513,8 +532,15 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	lx, ly := x-float64(o.X), y-float64(o.Y)
 	sc := c.screens[c.screenIndex(o.Info.Name)]
-	// Popups are above everything but fullscreen covers nothing of them.
-	if id, px, py := c.popupAt(sc, lx, ly); id != 0 {
+	// Layer popups are over everything; window popups are over the windows
+	// only, under the top and overlay layers (as drawn).
+	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {
+		return id, px, py
+	}
+	if id, px, py := layerAt(sc, lx, ly, true); id != 0 {
+		return id, px, py
+	}
+	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
 	}
 	var id WindowID
@@ -533,6 +559,9 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			}
 			full = full || p.Fullscreen
 		}
+	}
+	if id == 0 {
+		return layerAt(sc, lx, ly, false)
 	}
 	return id, sx, sy
 }
@@ -726,8 +755,23 @@ func (c *Core) Run(ctx context.Context) error {
 					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
 						return nil
 					}
+					// A click on an on-demand layer gives it the keyboard.
+					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
+						c.layerFocus = id
+						c.layerOver = c.windowFocus()
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					} else if v.Pressed && c.layerFocus != 0 && id != c.layerFocus && c.popupRoot(id) != c.layerFocus {
+						// A click anywhere else takes the keyboard back.
+						c.layerFocus = 0
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					}
 					// A click focuses the window and its output.
-					if s, w := c.screenOf(id); v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
+					s, w := c.screenOf(id)
+					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
 						w.FocusID(id)
 						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
@@ -792,6 +836,7 @@ func (c *Core) Run(ctx context.Context) error {
 						continue
 					}
 					before := c.cur().mon.Current()
+					c.layerFocus = 0 // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
 						return ErrQuit
