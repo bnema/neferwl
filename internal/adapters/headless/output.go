@@ -129,6 +129,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			err = syncfile.Wait(ctx, done)
 			done.Close()
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return fmt.Errorf("frame fence: %w", err)
 			}
 		}

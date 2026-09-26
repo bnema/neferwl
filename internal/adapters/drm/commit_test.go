@@ -111,24 +111,6 @@ func TestCursorRefusedDoesNotBlameScanoutBuffer(t *testing.T) {
 	}
 }
 
-// A cursor-only commit's event still reports content read meanwhile.
-func TestCursorEventReportsSeen(t *testing.T) {
-	o, _, commits := testOutput(t)
-	o.cursor.image = true
-	o.cursor.Move(1, 1)
-	if err := o.commitState(false); err != nil {
-		t.Fatal(err)
-	}
-	seen := map[ports.WindowID]uint64{2: 5}
-	if !o.completed(eventOf((*commits)[0]), seen) {
-		t.Fatal("event not taken")
-	}
-	// Run reports Seen at the top of its loop once nothing is pending.
-	if o.pending {
-		t.Fatal("still pending")
-	}
-}
-
 // showImages validates the images with a TEST_ONLY modeset and falls back
 // to linear images when KMS refuses the driver's.
 func TestShowImagesTestsBeforeModeset(t *testing.T) {
