@@ -21,7 +21,7 @@ make pkg                                  # builds dist/pkg/nefertty-*.pkg.tar.z
 sudo pacman -U dist/pkg/nefertty-*.pkg.tar.zst
 ```
 
-The package installs `nefertty` and a **NeferTTY** session for display managers (Ly, GDM, SDDM). The session runs `nefertty --session`, which shares `WAYLAND_DISPLAY` and `DISPLAY` with D-Bus and systemd user services, so portals and notification daemons reach it. `make dist` alone builds the self-contained source tarball (Go modules vendored) that the package uses.
+The package installs `nefertty` and a **NeferTTY** session for display managers (Ly, GDM, SDDM). The session runs `nefertty --session`, which shares `WAYLAND_DISPLAY` and `DISPLAY` with D-Bus and systemd user services, so portals and notification daemons reach it. `make dist` alone builds the self-contained source tarball (Go modules vendored) that the package uses; its version ends in `.dirty` when this repo or a sibling module has uncommitted changes.
 
 ## Configuration
 

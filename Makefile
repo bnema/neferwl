@@ -47,25 +47,35 @@ arch:
 check: vet test arch fakes-check
 
 # Self-contained source tarball for packaging (packaging/arch/PKGBUILD): the
-# sibling purego-* modules are vendored, so the package builds offline.
-# pacman-ordered: 0.0.0.r<commits>.g<hash>, a tag replaces 0.0.0 once there is one.
-VERSION ?= $(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
-	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")
-DIST := dist/nefertty-$(VERSION)
+# sibling purego-* modules are vendored, so the package builds offline. It
+# holds the working trees; the version ends in .dirty when one is not clean.
 SIBLINGS := github.com/bnema/purego-libwayland github.com/bnema/purego-vulkan
+SIBLING_DIRS := $(shell go list -m -f '{{.Dir}}' $(SIBLINGS))
+dirty = $(shell for d in . $(SIBLING_DIRS); do git -C $$d diff --quiet HEAD && \
+	test -z "$$(git -C $$d ls-files -o --exclude-standard)" || { echo .dirty; break; }; done)
+# pacman-ordered: 0.0.0.r<commits>.g<hash>; a tag replaces 0.0.0.
+VERSION := $(or $(VERSION),$(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
+	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")$(dirty))
+DIST := dist/nefertty-$(VERSION)
+dist: SHELL := bash
+dist: .SHELLFLAGS := -eo pipefail -c
 dist:
-	@rm -rf $(DIST) && mkdir -p $(DIST)
-	git archive $$(git stash create || echo HEAD) | tar -x -C $(DIST)
-	cd $(DIST) && go mod edit $$(cd $(CURDIR) && go list -m -f '-replace={{.Path}}={{.Dir}}' $(SIBLINGS)) && go mod vendor && \
-		for m in $(SIBLINGS); do d=$$(cd $(CURDIR) && go list -m -f '{{.Dir}}' $$m); \
-			sed -i "s#=> $$d\$$#=> ../$${m##*/}#" go.mod vendor/modules.txt; done && \
-		! grep -rq "$(HOME)" go.mod vendor/modules.txt && echo '$(VERSION)' > VERSION
-	tar -C dist -czf $(DIST).tar.gz nefertty-$(VERSION)
-	@rm -rf $(DIST) && echo $(DIST).tar.gz
+	@test -n "$(SIBLING_DIRS)" || { echo "sibling modules not found: $(SIBLINGS)" >&2; exit 1; }
+	rm -rf $(DIST) && mkdir -p $(DIST)
+	git ls-files -co --exclude-standard -z | tar --null -T - -c | tar -x -C $(DIST)
+	cd $(DIST) && go mod edit $(foreach m,$(SIBLINGS),-replace=$(m)=$(shell go list -m -f '{{.Dir}}' $(m))) && go mod vendor
+	cd $(DIST) && $(foreach m,$(SIBLINGS),sed -i 's#=> $(shell go list -m -f '{{.Dir}}' $(m))$$#=> ../$(notdir $(m))#' go.mod vendor/modules.txt &&) true
+	@! grep -rqF "$(HOME)" $(DIST) || { echo "home path leaked into $(DIST)" >&2; exit 1; }
+	echo '$(VERSION)' > $(DIST)/VERSION
+	tar --owner=0 --group=0 --numeric-owner --sort=name --mtime=@$$(git log -1 --format=%ct) -C dist -czf $(DIST).tar.gz nefertty-$(VERSION)
+	rm -rf $(DIST)
+	@echo $(DIST).tar.gz
 
-# Arch package from the dist tarball; install it with `sudo pacman -U` on
-# the printed file.
+# Arch package from the dist tarball, built outside the home directory so
+# no path of it lands in the package metadata. Install it with
+# `sudo pacman -U` on the printed file.
 pkg: dist
-	rm -rf dist/pkg && mkdir -p dist/pkg && cp packaging/arch/PKGBUILD $(DIST).tar.gz dist/pkg/
-	cd dist/pkg && sed -i "s/^pkgver=.*/pkgver=$(VERSION)/" PKGBUILD && makepkg -f --noconfirm
-	@ls dist/pkg/*.pkg.tar.zst
+	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX) && cp packaging/arch/PKGBUILD $(DIST).tar.gz $$d/ && \
+		cd $$d && sed -i "s/^pkgver=.*/pkgver=$(VERSION)/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD && \
+		makepkg -f --noconfirm && mv *.pkg.tar.zst $(CURDIR)/dist/ && cd / && rm -rf $$d
+	@ls dist/*.pkg.tar.zst

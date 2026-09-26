@@ -23,10 +23,6 @@ import (
 
 type usageError struct{ error }
 
-// sessionEnvCommand exports the session environment to D-Bus and systemd
-// user services (--session).
-var sessionEnvCommand = []string{"dbus-update-activation-environment", "--systemd", "WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE"}
-
 // version is set with -ldflags "-X main.version=..." by packaged builds.
 var version string
 
@@ -190,11 +186,6 @@ func run() error {
 		fmt.Fprintln(os.Stderr, cfgErr)
 		return cfgErr
 	}
-	if *session {
-		// First startup command: portals and other D-Bus or systemd user
-		// services started later find the session's displays.
-		cfg.Startup = append([][]string{sessionEnvCommand}, cfg.Startup...)
-	}
 	var script *os.File
 	if *inputPath != "" {
 		if *inputPath == "-" {
@@ -236,7 +227,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, Session: *session, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil
