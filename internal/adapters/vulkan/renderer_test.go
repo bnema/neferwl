@@ -335,10 +335,9 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	}
 }
 
-// A fill taller than one staged strip is copied down in bands: every row
-// through the last one gets the color.
+// A tall fill covers every row through the last one.
 func TestRendererTallFill(t *testing.T) {
-	h := fillRows*2 + 7
+	h := 135
 	r, err := New(8, h)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)

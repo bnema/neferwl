@@ -29,7 +29,7 @@ const fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 func (r *Renderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
 	var out [2]ports.DMABuf
 	r.dropCursors()
-	if r.dd.GetMemoryFdKHR == nil || size <= 0 || size > 512 {
+	if r.dd.GetMemoryFdKHR == nil || len(r.dmabuf.Formats) == 0 || size <= 0 || size > 512 {
 		return out, errors.New("device cannot export cursor images")
 	}
 	for i := range r.cursors {
@@ -55,8 +55,12 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 			r.freeCursor(c)
 		}
 	}()
-	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(size), Height: uint32(size), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingLinear, Usage: vk.ImageUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutPreinitialized}
+	// Exported images take an explicit DRM modifier: linear, as cursor
+	// planes scan out. The GPU never touches them (the CPU writes, KMS reads).
+	linear := uint64(0)
+	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: 1, DrmFormatModifiers: &linear}
+	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(size), Height: uint32(size), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageTransferSrcBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(cursor)", d.CreateImage(r.device, &ii, nil, &c.image)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
@@ -76,7 +80,7 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 		return nil, ports.DMABuf{}, err
 	}
 	var layout vk.SubresourceLayout
-	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectColorBit}
+	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
 	d.GetImageSubresourceLayout(r.device, c.image, &sub, &layout)
 	c.pitch = int(layout.RowPitch)
 	// Cursor planes scan out packed rows from the start of the buffer.

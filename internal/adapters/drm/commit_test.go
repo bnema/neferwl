@@ -314,3 +314,97 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Frame fences are closed on every path: flipped, EBUSY (re-rendered
+// after the event) and lost master (re-rendered after the modeset). The
+// fd count is unchanged after many frames.
+func TestRunClosesFrameFences(t *testing.T) {
+	fds := func() int {
+		ents, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			t.Skip(err)
+		}
+		return len(ents)
+	}
+	const rounds = 30
+	// Commit results: modeset test and modeset, then per round
+	// EBUSY + flip, or lost master + modeset + flip, or a plain flip.
+	errs := []error{nil, nil}
+	for i := range rounds {
+		switch i % 3 {
+		case 0:
+			errs = append(errs, unix.EBUSY, nil)
+		case 1:
+			errs = append(errs, unix.EACCES, nil, nil)
+		default:
+			errs = append(errs, nil)
+		}
+	}
+	o, k, commits, commitMu := testOutputMu(t, errs...)
+	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+	flips := make(chan flipEvent, 1)
+	o.flipped = flips
+	r := portsmocks.NewMockRenderer(t)
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		f, w, _ := os.Pipe()
+		_, _ = w.Write([]byte{1})
+		w.Close()
+		return f, nil
+	})
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	before := fds()
+	active := make(chan bool, 1)
+	scenes := make(chan ports.Scene, 1)
+	presented := make(chan ports.OutputPresented, 4*rounds)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, presented)
+	}()
+	count := func() int {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return len(*commits)
+	}
+	last := func() commitRec {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return (*commits)[len(*commits)-1]
+	}
+	waitFor(t, func() bool { return count() == 2 })
+	for i := range rounds {
+		n := count()
+		scenes <- ports.Scene{Seq: uint64(i)}
+		switch i % 3 {
+		case 0:
+			waitFor(t, func() bool { return count() == n+1 })
+			flips <- flipEvent{crtc: tCrtc} // ends the EBUSY wait
+			waitFor(t, func() bool { return count() == n+2 })
+		case 1:
+			waitFor(t, func() bool { return count() == n+1 })
+			active <- true
+			waitFor(t, func() bool { return count() == n+3 })
+		default:
+			waitFor(t, func() bool { return count() == n+1 })
+		}
+		flips <- eventOf(last())
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if after := fds(); after > before {
+		t.Fatalf("fds %d -> %d", before, after)
+	}
+}

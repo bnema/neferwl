@@ -105,9 +105,8 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
 	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
-	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
-	// Targets are drawn on too (blend.go): a transfer-only modifier is
-	// not a target, and without any the output cannot start.
+	need := vk.FormatFeatureFlags(formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
+	// Targets are drawn on (compose.go) and read back for screenshots.
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
 			r.renderMods = append(r.renderMods, m.DrmFormatModifier)
@@ -127,18 +126,12 @@ func (r *Renderer) exportable(physical vk.PhysicalDevice, modifier uint64) bool 
 	return extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureExportableBit != 0
 }
 
-// VK_FORMAT_FEATURE_TRANSFER_SRC_BIT / _DST_BIT (Vulkan 1.1), missing from
-// the generated bindings.
-const (
-	formatFeatureTransferSrc = 1 << 14
-	formatFeatureTransferDst = 1 << 15
-)
+// VK_FORMAT_FEATURE_TRANSFER_SRC_BIT (Vulkan 1.1), missing from the
+// generated bindings.
+const formatFeatureTransferSrc = 1 << 14
 
-// Targets are copied into and drawn on (blend.go).
-const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageTransferDstBit | vk.ImageUsageColorAttachmentBit
-
-// Staging feeds copies and, as a storage buffer, the blend shaders.
-const stagingUsage = vk.BufferUsageTransferSrcBit | vk.BufferUsageStorageBufferBit
+// Targets are drawn on (compose.go) and copied from for screenshots.
+const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageColorAttachmentBit
 
 // exportTarget creates one exported image with a modifier from mods.
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
@@ -213,6 +206,7 @@ func (r *Renderer) freeTarget(t *target) {
 func (r *Renderer) dropTargets() {
 	if len(r.targets) > 0 && r.device != 0 {
 		_ = checked("vkDeviceWaitIdle", r.dd.DeviceWaitIdle(r.device))
+		r.idle()
 	}
 	for _, t := range r.targets {
 		if r.last == t {

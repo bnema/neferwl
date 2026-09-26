@@ -3,15 +3,20 @@ package vulkan
 import (
 	"fmt"
 	"runtime/debug"
+	"unsafe"
 
 	"github.com/bnema/nefertty/internal/ports"
+	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
 )
 
-// wl_shm buffers are read in place: each client pool is mapped once, read
-// only, and the visible pixels are copied from it into staging when a frame
-// is drawn. Mappings follow the dmabuf import rules: kept while drawn,
-// dropped after importTTL frames without use.
+// wl_shm buffers: each client pool is mapped once, read only. A surface's
+// pixels are copied once per new content into a persistently mapped,
+// host-visible GPU buffer (device-local when the GPU exposes it, ReBAR)
+// that the fragment shader reads directly: one memcpy per row, no staging
+// copy, no resample, no alpha fix-up on the CPU. Each surface has two GPU
+// buffers used in turn, so the CPU never writes one a frame in flight
+// reads. Mappings and buffers are dropped after importTTL frames unused.
 
 // mapping is a client pool mapped read-only.
 type mapping struct {
@@ -27,8 +32,8 @@ func (r *Renderer) shmPixels(b *ports.SHMBuffer, end int) ([]byte, error) {
 			m.last = r.frame
 			return m.data, nil
 		}
-		// Uploads collected earlier this frame may still slice the old
-		// mapping: it is unmapped once staging is done.
+		// Draws collected earlier this frame may still read the old
+		// mapping: it is unmapped once the frame is recorded.
 		r.retired = append(r.retired, m.data)
 		delete(r.pools, b.Pool)
 	}
@@ -53,7 +58,8 @@ func (r *Renderer) shmPixels(b *ports.SHMBuffer, end int) ([]byte, error) {
 }
 
 // dropPools unmaps replaced mappings and pools not drawn for importTTL
-// frames.
+// frames. The GPU never reads a mapping: this runs once the CPU copies of
+// a frame are done.
 func (r *Renderer) dropPools() {
 	for _, data := range r.retired {
 		_ = unix.Munmap(data)
@@ -79,4 +85,174 @@ func copyGuarded(copy func()) (ok bool) {
 	}()
 	copy()
 	return true
+}
+
+// gpuBuffer is a host-visible storage buffer, mapped for its whole life.
+type gpuBuffer struct {
+	buffer vk.Buffer
+	memory vk.DeviceMemory
+	mapped unsafe.Pointer
+	size   int
+	// last is the frame that last read it: it is written or freed only
+	// once that frame completed.
+	last uint64
+}
+
+func (r *Renderer) newGPUBuffer(b *gpuBuffer, size int) error {
+	d := r.dd
+	ok := false
+	defer func() {
+		if !ok {
+			r.freeGPUBuffer(b)
+		}
+	}()
+	info := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: vk.DeviceSize(size), Usage: vk.BufferUsageStorageBufferBit, SharingMode: vk.SharingModeExclusive}
+	if err := checked("vkCreateBuffer(shm)", d.CreateBuffer(r.device, &info, nil, &b.buffer)); err != nil {
+		return err
+	}
+	var req vk.MemoryRequirements
+	d.GetBufferMemoryRequirements(r.device, b.buffer, &req)
+	host := vk.MemoryPropertyFlags(vk.MemoryPropertyHostVisibleBit | vk.MemoryPropertyHostCoherentBit)
+	kind, err := r.findMemoryType(req.MemoryTypeBits, host|vk.MemoryPropertyDeviceLocalBit)
+	if err != nil {
+		kind, err = r.findMemoryType(req.MemoryTypeBits, host)
+	}
+	if err != nil {
+		return err
+	}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(shm)", d.AllocateMemory(r.device, &alloc, nil, &b.memory)); err != nil {
+		return err
+	}
+	if err := checked("vkBindBufferMemory(shm)", d.BindBufferMemory(r.device, b.buffer, b.memory, 0)); err != nil {
+		return err
+	}
+	if err := checked("vkMapMemory(shm)", d.MapMemory(r.device, b.memory, 0, vk.DeviceSize(size), 0, &b.mapped)); err != nil {
+		return err
+	}
+	b.size, ok = size, true
+	return nil
+}
+
+func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
+	d := r.dd
+	if b.mapped != nil {
+		d.UnmapMemory(r.device, b.memory)
+	}
+	if b.buffer != 0 {
+		d.DestroyBuffer(r.device, b.buffer, nil)
+	}
+	if b.memory != 0 {
+		d.FreeMemory(r.device, b.memory, nil)
+	}
+	*b = gpuBuffer{}
+}
+
+// shmKey is a surface of a window: index 0 is the root, i+1 its child i.
+type shmKey struct {
+	win   ports.WindowID
+	index int
+}
+
+// shmState is what a GPU buffer holds: a client buffer at a content Seq.
+type shmState struct {
+	pool           uint64
+	offset, stride int
+	w, h           int
+	seq            uint64
+}
+
+// shmCopy is one of a surface's two GPU buffers and the set binding it.
+type shmCopy struct {
+	gpu   gpuBuffer
+	pool  vk.DescriptorPool
+	set   vk.DescriptorSet
+	holds shmState
+	valid bool
+}
+
+// shmSurface is the GPU copy of one surface's wl_shm content.
+type shmSurface struct {
+	bufs [2]*shmCopy
+	last uint64 // frame that drew it
+}
+
+// shmCopyFor returns the GPU buffer holding a surface's content st, copying
+// the client pixels into one when no buffer holds them yet.
+func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte) (*shmCopy, error) {
+	s := r.shm[key]
+	if s == nil {
+		s = &shmSurface{}
+		r.shm[key] = s
+	}
+	s.last = r.frame
+	for _, c := range s.bufs {
+		if c != nil && c.valid && c.holds == st {
+			c.gpu.last = r.frame
+			return c, nil
+		}
+	}
+	// The older buffer takes the new content.
+	i := 0
+	if s.bufs[0] != nil && (s.bufs[1] == nil || s.bufs[1].gpu.last < s.bufs[0].gpu.last) {
+		i = 1
+	}
+	size := st.w * st.h * 4
+	if size > r.maxRange {
+		return nil, fmt.Errorf("shm buffer of %d bytes past the storage buffer range", size)
+	}
+	c := s.bufs[i]
+	if c != nil && c.gpu.size != size {
+		r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
+		s.bufs[i], c = nil, nil
+	}
+	if c == nil {
+		c = &shmCopy{}
+		if err := r.newGPUBuffer(&c.gpu, size); err != nil {
+			return nil, err
+		}
+		var err error
+		if c.pool, c.set, err = r.newSet(r.compose.dummyView, c.gpu.buffer); err != nil {
+			r.freeGPUBuffer(&c.gpu)
+			return nil, err
+		}
+		s.bufs[i] = c
+	}
+	if err := r.waitFrame(c.gpu.last); err != nil {
+		return nil, err
+	}
+	dst := unsafe.Slice((*byte)(c.gpu.mapped), size)
+	row := st.w * 4
+	// The client may shrink its pool under the mapping: its window then
+	// shows garbage for this frame, never a crash, and is copied again.
+	c.valid = copyGuarded(func() {
+		for y := range st.h {
+			copy(dst[y*row:(y+1)*row], pixels[st.offset+y*st.stride:])
+		}
+	})
+	r.copied += size
+	c.holds, c.gpu.last = st, r.frame
+	return c, nil
+}
+
+func (r *Renderer) freeShmCopy(c *shmCopy) {
+	if c.pool != 0 {
+		r.dd.DestroyDescriptorPool(r.device, c.pool, nil)
+		c.pool = 0
+	}
+	r.freeGPUBuffer(&c.gpu)
+}
+
+// dropShm frees the GPU buffers of surfaces not drawn for importTTL frames.
+func (r *Renderer) dropShm() {
+	for key, s := range r.shm {
+		if r.frame-s.last > importTTL {
+			for _, c := range s.bufs {
+				if c != nil {
+					r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
+				}
+			}
+			delete(r.shm, key)
+		}
+	}
 }
