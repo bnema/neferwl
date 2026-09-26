@@ -504,3 +504,22 @@ func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 		t.Fatalf("%+v", st)
 	}
 }
+
+func TestMoveColumnOntoFullscreenStaysVisible(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	// Window 2 goes to DP-2, alone, and goes fullscreen in place.
+	r.key(t, "Right", ports.ModAlt|ports.ModShift)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	// Window 1 joins from DP-1: the fullscreen ends so it is visible and focused.
+	set := r.key(t, "Right", ports.ModAlt|ports.ModShift)
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if w.ID == 1 && (s.Output != "DP-2" || w.Hidden || !w.Focused) {
+				t.Fatalf("%s %+v", s.Output, w)
+			}
+		}
+	}
+}

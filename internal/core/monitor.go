@@ -493,6 +493,7 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 		fl := cur.Floats[f]
 		cur.RemoveWindow(id)
 		to.AddFloating(id, fl.W, fl.H)
+		to.FocusID(id)
 	} else {
 		col := Column{Windows: []WindowID{id}}
 		if column {
@@ -500,20 +501,32 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 		} else {
 			cur.RemoveWindow(id)
 		}
-		if to.origin != nil {
-			for _, w := range col.Windows {
-				to.joinFullscreen(w)
-			}
-		} else {
-			to.addColumn(col)
-		}
+		to.receive(col, -1)
 	}
 	if m.followMove {
 		m.Active = i
 		m.shown = nil
-		to.FocusID(id)
 	}
 	m.normalize()
+}
+
+// receive adds a column moved in from another workspace and focuses it: at
+// index at, or where a new window goes when at < 0. It stays visible: on a
+// fixed-overflow fullscreen workspace its windows float above, and an
+// in-place fullscreen is left.
+func (w *Workspace) receive(col Column, at int) {
+	id := col.Windows[col.Focus]
+	switch {
+	case w.origin != nil:
+		for _, v := range col.Windows {
+			w.joinFullscreen(v)
+		}
+	case at < 0:
+		w.addColumn(col)
+	default:
+		w.insertColumn(at, col)
+	}
+	w.Activate(id)
 }
 
 // joinFullscreen adds a tiled window to a fullscreen workspace fs: it floats

@@ -156,7 +156,7 @@ func (c *Core) applyAction(a Action) Effect {
 			if dir < 0 {
 				at = len(to.Columns)
 			}
-			to.insertColumn(at, col)
+			to.receive(col, at)
 			from.mon.normalize()
 			c.cur().mon.normalize()
 			return Effect{}
