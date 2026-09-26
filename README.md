@@ -7,7 +7,7 @@
   <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://badgen.net/github/stars/bnema/neferwl?icon=github" alt="GitHub stars"></a>
 </p>
 
-<p align="center">A minimal Wayland compositor in Go, built for performance: column tiling, multi-monitor workspaces and a zero-copy path for games.</p>
+<p align="center">A minimal Wayland compositor in Go, built for performance.</p>
 
 > [!WARNING]
 > **Early alpha.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
