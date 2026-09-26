@@ -258,3 +258,77 @@ func TestVirtualKeyboardOtherKeymapSent(t *testing.T) {
 		t.Fatalf("keymaps %d, want virtual, updated virtual, seat", len(proxy.keymaps))
 	}
 }
+
+// smallKeymap is a dictation tool keymap: only the keys it types.
+const smallKeymap = `xkb_keymap {
+xkb_keycodes "(unnamed)" {
+minimum = 8;
+maximum = 26;
+<K1> = 9;
+};
+xkb_types "(unnamed)" { include "complete" };
+xkb_compatibility "(unnamed)" { include "complete" };
+xkb_symbols "(unnamed)" {
+key <K1> {[D]};
+};
+};
+`
+
+func TestWidenKeycodes(t *testing.T) {
+	const tail = "\nxkb_symbols { key <K1> {[D]}; };\n};\n"
+	cases := []struct {
+		name, in, want string
+		from           int
+	}{
+		{"small maximum", smallKeymap, strings.Replace(smallKeymap, "maximum = 26;", "maximum = 255;", 1), 26},
+		{"maximum 127..254", "xkb_keymap {\nxkb_keycodes { minimum = 8; maximum = 200; <K1> = 9; };" + tail,
+			"xkb_keymap {\nxkb_keycodes { minimum = 8; maximum = 255; <K1> = 9; };" + tail, 200},
+		{"no maximum", "xkb_keymap {\nxkb_keycodes \"x\" { minimum = 8; <K1> = 9; <K2> = 25; };" + tail,
+			"xkb_keymap {\nxkb_keycodes \"x\" { maximum = 255; minimum = 8; <K1> = 9; <K2> = 25; };" + tail, 25},
+		{"mixed case", "XKB_Keymap {\nXkb_KeyCodes { MINIMUM = 8; Maximum = 26; <K1> = 9; };" + tail,
+			"XKB_Keymap {\nXkb_KeyCodes { MINIMUM = 8; Maximum = 255; <K1> = 9; };" + tail, 26},
+		{"brace in comment", "xkb_keymap {\nxkb_keycodes {\n// ends here }\n# and } here\nminimum = 8;\nmaximum = 26;\n<K1> = 9;\n};" + tail,
+			"xkb_keymap {\nxkb_keycodes {\n// ends here }\n# and } here\nminimum = 8;\nmaximum = 255;\n<K1> = 9;\n};" + tail, 26},
+		{"commented maximum", "xkb_keymap {\nxkb_keycodes {\n// maximum = 26;\nminimum = 8;\n<K1> = 9;\n};" + tail,
+			"xkb_keymap {\nxkb_keycodes { maximum = 255;\n// maximum = 26;\nminimum = 8;\n<K1> = 9;\n};" + tail, 9},
+		{"maximum after comment", "xkb_keymap {\nxkb_keycodes {\nminimum = 8;\nmaximum = // why\n 26;\n<K1> = 9;\n};" + tail,
+			"xkb_keymap {\nxkb_keycodes {\nminimum = 8;\nmaximum = // why\n 255;\n<K1> = 9;\n};" + tail, 26},
+	}
+	for _, c := range cases {
+		got, from := widenKeycodes(c.in)
+		if got != c.want || from != c.from {
+			t.Errorf("%s: from %d want %d\n%s", c.name, from, c.from, got)
+		}
+	}
+	for name, keep := range map[string]string{
+		"seat keymap":       keymapText(t),
+		"maximum 255":       "xkb_keymap { xkb_keycodes { maximum = 255; <K1> = 9; }; };",
+		"maximum above 255": "xkb_keymap { xkb_keycodes { minimum = 8; maximum = 708; <K1> = 9; }; };",
+		"no keycodes":       "xkb_keymap { xkb_symbols { }; };",
+		"includes":          "xkb_keymap { xkb_keycodes { include \"evdev+aliases(qwerty)\" }; };",
+		"maximum in string": "xkb_keymap { xkb_keycodes \"maximum = 26;\" { minimum = 8; <K1> = 300; }; };",
+	} {
+		if got, from := widenKeycodes(keep); from != 0 || got != keep {
+			t.Errorf("%s changed:\n%s", name, got)
+		}
+	}
+}
+
+// Xwayland overflows its key maps on a keymap whose maximum keycode is
+// small: clients get the virtual keymap with the full keycode range.
+func TestVirtualKeymapWidenedForClients(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	typer, kb := virtualTyper(t, s, dir)
+	sendVirtualKeymap(t, typer, kb, smallKeymap)
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(1), uint32(1))
+	roundtrip(t, typer, target)
+	deadline := time.Now().Add(2 * time.Second)
+	for len(proxy.keymaps) < 1 && time.Now().Before(deadline) {
+		roundtrip(t, target)
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := len(proxy.keymaps); n == 0 || !strings.Contains(proxy.keymaps[n-1], "maximum = 255;") || strings.Contains(proxy.keymaps[n-1], "maximum = 26;") {
+		t.Fatalf("keymaps %q", proxy.keymaps)
+	}
+}
