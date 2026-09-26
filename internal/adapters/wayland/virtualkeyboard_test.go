@@ -180,3 +180,35 @@ func TestVirtualKeyBeforeKeymap(t *testing.T) {
 	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
 	expectProtocolError(t, typer, kb, uint32(virtualkeyboard.ZwpVirtualKeyboardV1ErrorNoKeymap))
 }
+
+// A virtual keyboard with the seat keymap (dictation tools, wtype) sends
+// no keymap to clients: only its keys, then no keymap on the switch back.
+func TestVirtualKeyboardSameKeymapNotResent(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	for range 2 { // one typer per use, like a dictation app
+		typer, kb := virtualTyper(t, s, dir)
+		sendVirtualKeymap(t, typer, kb, keymapText(t))
+		requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
+		requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(2), uint32(30), uint32(0))
+		roundtrip(t, typer, target)
+		_ = typer.Close()
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		roundtrip(t, target)
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(proxy.keymaps) != 0 {
+		t.Fatalf("%d keymaps sent for a virtual keyboard with the seat keymap", len(proxy.keymaps))
+	}
+	keys := 0
+	for _, o := range proxy.opcodes {
+		if o == uint16(wayland.KeyboardEventKey) {
+			keys++
+		}
+	}
+	if keys != 4 {
+		t.Fatalf("keys %d, want 4 (events %v)", keys, proxy.opcodes)
+	}
+}

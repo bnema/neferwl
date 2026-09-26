@@ -22,6 +22,7 @@ type virtualKeyboard struct {
 	server *Server
 	fd     int // sealed copy of the client keymap, -1 before one
 	size   uint32
+	text   string // the keymap, compared with the active one
 	// pressed are keys held on focus; a focus change releases them by leave.
 	pressed map[uint32]bool
 	focus   ports.WindowID
@@ -65,7 +66,9 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 		unix.Close(k.fd)
 	}
 	k.fd, k.size = copyFD, copySize
-	if s := k.server; s.keymapOwner == k {
+	old := k.server.activeKeymapText()
+	k.text = text
+	if s := k.server; s.keymapOwner == k && text != old {
 		// Clients must see the new layout before the next key.
 		s.sendKeymapAll(k.fd, k.size)
 	}
@@ -164,8 +167,15 @@ func (s *Server) useKeymap(k *virtualKeyboard) {
 	if s.keymapOwner == k {
 		return
 	}
+	old := s.activeKeymapText()
 	s.keymapOwner = k
-	s.sendKeymapAll(s.currentKeymap())
+	// Like wlroots and smithay, a keymap equal to the active one is not
+	// sent again: tools such as dictation apps create a virtual keyboard
+	// with the seat layout per use, and each resend makes every client
+	// (Xwayland included) recompile its keymap.
+	if s.activeKeymapText() != old {
+		s.sendKeymapAll(s.currentKeymap())
+	}
 	if k == nil {
 		s.serial++
 		for _, kb := range s.clientKeyboards(s.focusClient()) {
@@ -183,6 +193,14 @@ func (s *Server) sendKeymapAll(fd int, size uint32) {
 			}
 		}
 	}
+}
+
+// activeKeymapText is the text of the keymap keyboards carry.
+func (s *Server) activeKeymapText() string {
+	if k := s.keymapOwner; k != nil {
+		return k.text
+	}
+	return s.keymapText
 }
 
 // currentKeymap is the keymap a new keyboard must start with.
