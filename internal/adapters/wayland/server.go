@@ -432,7 +432,8 @@ func (s *Server) forwardContents(ctx context.Context) {
 const maxCommandBatch = 256
 
 // drainCommands returns first plus the commands already queued, with runs of
-// pointer motion for the same window collapsed into the latest one. open is
+// pointer motion for the same window collapsed into the latest one, their
+// relative deltas summed. open is
 // false once the channel is closed.
 func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (batch []ports.ClientCommand, open bool) {
 	batch = append(batch, first)
@@ -444,6 +445,12 @@ func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (
 			}
 			if m, isMotion := c.(ports.PointerMotionTo); isMotion {
 				if last, lastMotion := batch[len(batch)-1].(ports.PointerMotionTo); lastMotion && last.ID == m.ID {
+					// The position is the latest; relative deltas add up so
+					// locked pointers (games) lose no movement.
+					m.DX += last.DX
+					m.DY += last.DY
+					m.UnaccelDX += last.UnaccelDX
+					m.UnaccelDY += last.UnaccelDY
 					batch[len(batch)-1] = m
 					continue
 				}
