@@ -11,6 +11,9 @@
 
 <p align="center">A minimal Wayland compositor in Go, built for performance: scrollable columns, multi-monitor workspaces and a zero-copy path for games.</p>
 
+> [!WARNING]
+> **Early alpha.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
+
 ---
 
 ## Why NeferWL
@@ -104,39 +107,7 @@ bind.ctrl+cmd+space = spawn fuzzel
 startup = wl-paste --watch cliphist store
 ```
 
-### Keys
-
-| Key | Default | Meaning |
-|---|---|---|
-| `keyboard.layout`, `.variant`, `.options` | empty | xkb names, e.g. `fr`, `caps:escape` |
-| `keyboard.repeat-rate` / `repeat-delay` | `25` / `600` | Key repeat per second / delay in ms |
-| `keyboard.cmd` | `super` | Modifier that `cmd` means in binds: `super`, `alt` or `ctrl` |
-| `terminal` | `foot` | Opened at startup and by `spawn-terminal` |
-| `startup` | none | Command run once at session start; repeat the key for more |
-| `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
-| `background` | `#111111` | Solid background color |
-| `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
-| `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
-| `layout.gaps` | `0` | Space between windows |
-| `layout.max-columns` | `2` | Columns that share the screen before scrolling |
-| `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
-| `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` |
-| `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `workspace.<name>.hidden` | `off` | Reachable only through its bind, which toggles it |
-| `workspace.<name>.monitor` | focused | Home monitor: connector (`DP-2`) or monitor key |
-| `workspace.<name>.max-columns`, `.overflow` | layout values | Per-workspace layout |
-| `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
-| `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
-| `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
-| `output.<name>.primary` | `off` | Gets focus and pointer at startup |
-| `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
-| `render.tearing` / `render.vrr` | `on` / `on` | For games in direct scanout |
-| `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
-| `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
-
-Bind actions: `spawn <command>`, `spawn-terminal`, `close-window`, `toggle-fullscreen`, `cycle-column-width`, `focus-column-left/right`, `focus-window-up/down`, `move-column-left/right`, `consume-or-expel-window-left/right`, `focus-workspace <N>`, `focus-workspace-up/down`, `workspace <name>`, `move-column-to-workspace <N|up|down>`, `move-window-to-workspace <N|up|down>`, `focus-monitor-left/right`, `move-workspace-to-monitor-left/right`, `scale-up`, `scale-down`, `quit`.
-
-See `examples/config` for every default bind, with comments. A missing file means defaults. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Every key applies live when the file changes, including the keyboard layout; each reload logs the keys that changed.
+Every key, value and default bind is listed in [docs/config.md](docs/config.md); `examples/config` is a commented copy of the defaults. A missing file means defaults. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Every key applies live when the file changes, including the keyboard layout; each reload logs the keys that changed.
 
 ## Running commands
 
@@ -230,6 +201,12 @@ Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hy
 As a software engineer, my passion is bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way: purego-libwayland, purego-vulkan and wlturbo, to be published for others to reuse. Building them is part of the fun.
 
 What Go does not give us is Rust's borrow checker: memory and concurrency mistakes are not caught at compile time. NeferWL makes up for it with strict ownership (one goroutine owns each piece of state), the race detector on every test run, and protocol tests against real Wayland clients.
+
+## Contributing
+
+Contributions are welcome. Open an issue first, for a bug fix or a feature, and wait until it is accepted before sending a pull request. Pull requests without an accepted issue will be closed.
+
+Before a pull request, `make check`, `make race`, `make mocks-check` and `staticcheck ./...` must pass. Repository rules are in [AGENTS.md](AGENTS.md).
 
 ## License
 

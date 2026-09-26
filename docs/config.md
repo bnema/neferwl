@@ -1,0 +1,128 @@
+# Configuration
+
+NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`). `neferwl --config <path>` selects another file; `neferwl validate-config [path]` checks one without starting the compositor.
+
+## Format
+
+- One `key = value` per line; `#` starts a comment.
+- Lists are comma-separated; booleans are `on` / `off`.
+- A missing file or key means the default. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. A duplicate key warns and the last one wins.
+- Every key applies live when the file is saved; windows stay open. `startup` and `xwayland` take effect at the next start.
+
+## Keys
+
+| Key | Default | Meaning |
+|---|---|---|
+| `keyboard.layout`, `.variant`, `.options` | empty | xkb names, e.g. `fr`, `caps:escape` |
+| `keyboard.repeat-rate` / `repeat-delay` | `25` / `600` | Key repeat per second / delay in ms |
+| `keyboard.cmd` | `super` | Modifier that `cmd` means in binds: `super`, `alt` or `ctrl` |
+| `terminal` | `foot` | Opened at startup and by `spawn-terminal` |
+| `startup` | none | Command run once at session start; repeat the key for more |
+| `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
+| `background` | `#111111` | Solid background color |
+| `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
+| `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
+| `layout.gaps` | `0` | Space between windows |
+| `layout.max-columns` | `2` | Columns that share the screen before scrolling |
+| `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
+| `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` |
+| `focus.follow-move` | `off` | Follow a column moved to another workspace |
+| `workspace.<name>.hidden` | `off` | Reachable only through its bind, which toggles it |
+| `workspace.<name>.monitor` | focused | Home monitor: connector (`DP-2`) or monitor key |
+| `workspace.<name>.max-columns`, `.overflow` | layout values | Per-workspace layout |
+| `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
+| `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
+| `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
+| `output.<name>.primary` | `off` | Gets focus and pointer at startup |
+| `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
+| `render.tearing` / `render.vrr` | `on` / `on` | For games in direct scanout |
+| `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
+| `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
+
+## Binds
+
+`bind.<keys> = <action>`. Modifiers: `cmd` (see `keyboard.cmd`), `shift`, `ctrl`, `alt`, `super`.
+
+- Keys are what the active layout prints: `cmd+é` on AZERTY. Write `=`, `#` and space by name: `cmd+equal`, `cmd+numbersign`, `cmd+space`.
+- `code:N` is a physical key (evdev code), the same on every layout: `code:2` to `code:10` are the digit row 1 to 9.
+- `none` removes a default bind.
+- `spawn <command>` runs a program without a shell; see [Running commands](../README.md#running-commands).
+
+### Actions
+
+| Action | Effect |
+|---|---|
+| `spawn <command>` | Run a program |
+| `spawn-terminal` | Run `terminal` |
+| `close-window` | Close the focused window |
+| `toggle-fullscreen` | Fullscreen the focused window |
+| `cycle-column-width` | Step through `layout.presets` |
+| `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor |
+| `focus-window-up/down` | Focus in the column; past the edge, the next workspace |
+| `move-column-left/right` | Move the focused column |
+| `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
+| `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
+| `workspace <name>` | Toggle a named workspace |
+| `move-column-to-workspace <N>` / `-up/-down` | Move the focused column |
+| `move-window-to-workspace <N>` / `-up/-down` | Move only the focused window |
+| `focus-monitor-left/right` | Focus the neighbor monitor |
+| `move-workspace-to-monitor-left/right` | Move the workspace; it gets a new home |
+| `scale-up` / `scale-down` | Zoom the whole display |
+| `quit` | Exit NeferWL |
+
+### Default binds
+
+| Keys | Action |
+|---|---|
+| `cmd+return` | `spawn-terminal` |
+| `cmd+left` | `focus-column-left` |
+| `cmd+right` | `focus-column-right` |
+| `cmd+up` | `focus-window-up` |
+| `cmd+down` | `focus-window-down` |
+| `cmd+shift+left` | `move-column-left` |
+| `cmd+shift+right` | `move-column-right` |
+| `cmd+h` | `focus-column-left` |
+| `cmd+l` | `focus-column-right` |
+| `cmd+k` | `focus-window-up` |
+| `cmd+j` | `focus-window-down` |
+| `cmd+shift+h` | `move-column-left` |
+| `cmd+shift+l` | `move-column-right` |
+| `cmd+bracketleft` | `consume-or-expel-window-left` |
+| `cmd+bracketright` | `consume-or-expel-window-right` |
+| `cmd+r` | `cycle-column-width` |
+| `cmd+shift+f` | `toggle-fullscreen` |
+| `cmd+q` | `close-window` |
+| `ctrl+alt+backspace` | `quit` |
+| `ctrl+cmd+space` | `spawn fuzzel` |
+| `cmd+pageup` | `focus-workspace-up` |
+| `cmd+pagedown` | `focus-workspace-down` |
+| `cmd+shift+pageup` | `move-column-to-workspace-up` |
+| `cmd+shift+pagedown` | `move-column-to-workspace-down` |
+| `cmd+code:2` | `focus-workspace 1` |
+| `cmd+code:3` | `focus-workspace 2` |
+| `cmd+code:4` | `focus-workspace 3` |
+| `cmd+code:5` | `focus-workspace 4` |
+| `cmd+code:6` | `focus-workspace 5` |
+| `cmd+code:7` | `focus-workspace 6` |
+| `cmd+code:8` | `focus-workspace 7` |
+| `cmd+code:9` | `focus-workspace 8` |
+| `cmd+code:10` | `focus-workspace 9` |
+| `cmd+shift+code:2` | `move-column-to-workspace 1` |
+| `cmd+shift+code:3` | `move-column-to-workspace 2` |
+| `cmd+shift+code:4` | `move-column-to-workspace 3` |
+| `cmd+shift+code:5` | `move-column-to-workspace 4` |
+| `cmd+shift+code:6` | `move-column-to-workspace 5` |
+| `cmd+shift+code:7` | `move-column-to-workspace 6` |
+| `cmd+shift+code:8` | `move-column-to-workspace 7` |
+| `cmd+shift+code:9` | `move-column-to-workspace 8` |
+| `cmd+shift+code:10` | `move-column-to-workspace 9` |
+| `cmd+ctrl+left` | `focus-monitor-left` |
+| `cmd+ctrl+right` | `focus-monitor-right` |
+| `cmd+ctrl+h` | `focus-monitor-left` |
+| `cmd+ctrl+l` | `focus-monitor-right` |
+| `cmd+ctrl+shift+left` | `move-workspace-to-monitor-left` |
+| `cmd+ctrl+shift+right` | `move-workspace-to-monitor-right` |
+| `cmd+ctrl+shift+h` | `move-workspace-to-monitor-left` |
+| `cmd+ctrl+shift+l` | `move-workspace-to-monitor-right` |
+| `cmd+code:13` | `scale-up` |
+| `cmd+code:12` | `scale-down` |
