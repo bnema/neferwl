@@ -105,8 +105,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				break drain
 			}
 		}
-		if !haveScene || !dirty {
-			// Contents not drawn are still read: report them.
+		if !haveScene || !dirty || scene.Off {
+			// Contents not drawn are still read: report them. An output
+			// turned off draws nothing.
 			pending = opts.report(pending, seen)
 			continue
 		}

@@ -14,7 +14,8 @@ type screen struct {
 	mon             *Monitor
 	scale, cfgScale float64
 	primary         bool
-	x               int // logical left edge in the global layout
+	x               int  // logical left edge in the global layout
+	off             bool // turned off by a client (output power management)
 	layers          []ports.LayerSurface
 	placed          []ports.SceneLayer
 }

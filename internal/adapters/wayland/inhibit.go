@@ -127,7 +127,9 @@ func (s *Server) syncInhibitors() {
 	for id, on := range diffSets(s.idleWindows, idle) {
 		s.emit(ports.IdleInhibit{Window: id, Active: on})
 	}
+	wasHeld := len(s.idleWindows) > 0
 	s.shortcutWindows, s.idleWindows = shortcuts, idle
+	s.syncIdle(wasHeld)
 }
 
 // diffSets is the membership changes from old to cur.

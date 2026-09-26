@@ -95,6 +95,9 @@ type Output struct {
 	vrrProp       uint32
 	vrrOn         bool
 	composedSince time.Time
+	// off: the CRTC is inactive because a client turned the display off
+	// (Scene.Off); cleared by every modeset.
+	off bool
 	// kind is how the images were made.
 	kind imageKind
 	// formats receives the direct scanout formats after each modeset;
@@ -423,7 +426,7 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
 	o.modeBlob = blob
-	o.vrrOn, o.overlayOn = false, 0
+	o.vrrOn, o.overlayOn, o.off = false, 0, false
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
 		o.cursor.screen, o.cursor.flying = 0, false
@@ -431,6 +434,21 @@ func (o *Output) modeset() error {
 	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
 	o.testCursor()
 	o.sendFormats()
+	return nil
+}
+
+// powerOff turns the display off: the CRTC goes inactive and keeps its
+// mode, as DPMS off. The commit blocks, so no event is pending after it;
+// a modeset turns the display back on.
+func (o *Output) powerOff() error {
+	req := &atomicReq{}
+	req.set(o.crtc, o.crtcProps["ACTIVE"], 0)
+	req.set(o.crtc, o.vrrProp, 0)
+	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
+		return fmt.Errorf("power off: %w", err)
+	}
+	o.off, o.vrrOn = true, false
+	o.log.Info().Str("connector", o.conn.name).Msg("power off")
 	return nil
 }
 
@@ -976,6 +994,22 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			ev.Msg("stats")
 		}
 		if !enabled || o.pending {
+			continue
+		}
+		// Output power: off waits for no commit in flight; on is a modeset
+		// and a full frame.
+		if haveScene && scene.Off != o.off {
+			var err error
+			if scene.Off {
+				err = o.powerOff()
+			} else if err = o.modeset(); err == nil {
+				dirty = true
+			}
+			if err != nil && !o.commitFailed(err, &enabled) {
+				return err
+			}
+		}
+		if o.off {
 			continue
 		}
 		if !dirty || !haveScene {

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -95,6 +96,9 @@ type Core struct {
 	inhibitors map[WindowID]bool
 	inhibiting WindowID
 	idle       map[WindowID]bool
+	// activity is when core last told wayland about user input
+	// (ports.UserActivity), sent at most once per ActivityInterval.
+	activity time.Time
 }
 
 func keyName(s string) string {
@@ -370,7 +374,7 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	// Clients learn outputs and scales before the configures sized for them.
-	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name()}); !sameOutputs(v, c.sentOutputs) {
+	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}); !sameOutputs(v, c.sentOutputs) {
 		if err := c.command(ctx, v); err != nil {
 			return err
 		}
@@ -398,7 +402,7 @@ func (c *Core) publish(ctx context.Context) error {
 	for i, sc := range c.screens {
 		c.seq++
 		o := sc.mon.Output()
-		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
+		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
 		layout := sc.mon.Layout()
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
@@ -541,7 +545,7 @@ func latest[T any](ch chan T, v T) {
 }
 
 func sameOutputs(a, b ports.SetOutputs) bool {
-	return a.Focused == b.Focused && slices.Equal(a.Outputs, b.Outputs)
+	return a.Focused == b.Focused && slices.Equal(a.Outputs, b.Outputs) && slices.Equal(a.Off, b.Off)
 }
 
 // allLayers lists the layer surfaces of every output.
@@ -658,6 +662,10 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 				continue
+			case ports.OutputPower:
+				if i := c.screenIndex(v.Output); i >= 0 && c.screens[i].off == v.On {
+					c.screens[i].off = !v.On
+				}
 			case ports.IdleInhibit:
 				if v.Active {
 					c.idle[v.Window] = true
@@ -750,6 +758,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if !ok {
 				c.ch.Input = nil
 				continue
+			}
+			if err := c.userActivity(ctx); err != nil {
+				return nil
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
