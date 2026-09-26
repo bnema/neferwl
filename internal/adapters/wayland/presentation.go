@@ -19,14 +19,13 @@ import (
 
 const presentationVersion = 2
 
-// feedbackWait is a committed feedback: presented once a flip on output
-// shows content seq of window win.
+// feedbackWait is a committed feedback: presented once a flip on the
+// surface's output shows content seq of window win.
 type feedbackWait struct {
 	fb     *presentationtime.WpPresentationFeedback
 	surf   *surface
 	win    ports.WindowID
 	seq    uint64
-	output string
 	at     time.Time
 	// replaced is the window content Seq of the surface's next commit (0:
 	// none yet): a flip showing it or later shows the replacement.
@@ -69,12 +68,13 @@ func (feedbackHandler) Destroy(*presentationtime.WpPresentationFeedback) {}
 
 // commitFeedback moves a surface's pending feedbacks to its window's
 // content just emitted, or discards them when the surface shows nowhere.
-// The commit replaces the surface's earlier waiting feedbacks.
-func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedback) {
+// A commit with a new buffer (fresh) replaces the surface's earlier
+// waiting feedbacks.
+func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedback, fresh bool) {
 	srv := s.server
 	root := s.root()
 	win := root.windowID()
-	if win != 0 {
+	if win != 0 && fresh {
 		srv.contentMu.Lock()
 		seq := srv.contentSeq[win]
 		srv.contentMu.Unlock()
@@ -98,7 +98,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 	seq := srv.contentSeq[win]
 	srv.contentMu.Unlock()
 	for _, fb := range pending {
-		srv.feedbacks = append(srv.feedbacks, feedbackWait{fb: fb, surf: s, win: win, seq: seq, output: output, at: time.Now()})
+		srv.feedbacks = append(srv.feedbacks, feedbackWait{fb: fb, surf: s, win: win, seq: seq, at: time.Now()})
 	}
 }
 
@@ -124,7 +124,7 @@ func (s *Server) presentFlip(output string, f *ports.FlipInfo) {
 		case !w.fb.Resource.Alive():
 		case w.surf.destroyed:
 			discard(w.fb)
-		case w.output != output || !ok || shown < w.seq:
+		case s.frameOutput(w.surf) != output || !ok || shown < w.seq:
 			kept = append(kept, w)
 		case f.Merged > 0:
 			// The reader fell behind: which flip showed it is unknown.
@@ -154,7 +154,8 @@ func (s *Server) sendPresented(w feedbackWait, o *output, f *ports.FlipInfo, exa
 		}
 	}
 	flags := uint32(0)
-	if !f.Async {
+	// A software clock (headless) claims nothing about the display.
+	if !f.Async && f.HardwareClock {
 		flags |= uint32(presentationtime.WpPresentationFeedbackKindVsync)
 	}
 	if f.HardwareClock {
@@ -181,7 +182,7 @@ func (s *Server) dropFeedbacks(now time.Time) {
 		if !w.fb.Resource.Alive() {
 			continue
 		}
-		if w.surf.destroyed || s.outputByNameExact(w.output) == nil || now.Sub(w.at) > feedbackTimeout {
+		if w.surf.destroyed || s.frameOutput(w.surf) == "" || now.Sub(w.at) > feedbackTimeout {
 			discard(w.fb)
 			continue
 		}

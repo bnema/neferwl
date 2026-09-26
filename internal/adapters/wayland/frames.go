@@ -35,7 +35,7 @@ func (s *Server) pace(ctx context.Context) {
 		case <-s.display.Stopped():
 			return
 		case p := <-presented:
-			flipped[p.Output] = flipped[p.Output] || p.Flip != nil
+			flipped[p.Output] = flipped[p.Output] || paces(p)
 			reports = append(reports, p)
 		case <-s.frameReady:
 		case <-timer.C:
@@ -46,7 +46,7 @@ func (s *Server) pace(ctx context.Context) {
 		for {
 			select {
 			case p := <-presented:
-				flipped[p.Output] = flipped[p.Output] || p.Flip != nil
+				flipped[p.Output] = flipped[p.Output] || paces(p)
 				reports = append(reports, p)
 			default:
 				break drain
@@ -76,7 +76,7 @@ func (s *Server) pace(ctx context.Context) {
 				}
 				wait = dueWait
 				for _, name := range due {
-					s.sendFrames(name)
+					s.sendFrames(name, flipped[name])
 				}
 				if s.releaseHeld(time.Now(), reports) && idle {
 					// Held buffers wait for a flip or heldTimeout.
@@ -186,7 +186,13 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 	return fire, max(wait, time.Millisecond), !waiting
 }
 
-func (s *Server) sendFrames(name string) {
+// paces reports whether a report paces frame callbacks: a flip of a real
+// display. Software flips (headless) answer presentation feedback, but
+// callbacks keep the output's refresh period.
+func paces(p ports.OutputPresented) bool { return p.Flip != nil && p.Flip.HardwareClock }
+
+// sendFrames fires an output's callbacks; flipped: a flip of it fired them.
+func (s *Server) sendFrames(name string, flipped bool) {
 	callbacks := s.awaiting[name]
 	delete(s.awaiting, name)
 	if len(callbacks) == 0 {
@@ -195,7 +201,7 @@ func (s *Server) sendFrames(name string) {
 	// done carries the flip's time when the output flips (the frame the
 	// client drew for is on screen), else now.
 	ms := uint32(time.Since(s.started).Milliseconds())
-	if f, ok := s.flips[name]; ok && f.When > 0 {
+	if f, ok := s.flips[name]; ok && flipped && f.When > 0 {
 		ms = uint32(max(f.When-monotonic(s.started), 0).Milliseconds())
 	}
 	for _, cb := range callbacks {

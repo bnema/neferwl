@@ -271,3 +271,14 @@ func TestNextRefreshFollowsFlips(t *testing.T) {
 		t.Fatalf("next refresh in %v, want %v", d, period*3/4)
 	}
 }
+
+// Software flips (headless) answer feedback without flags and do not pace
+// frame callbacks.
+func TestSoftwareFlipsDoNotPace(t *testing.T) {
+	if paces(ports.OutputPresented{Flip: &ports.FlipInfo{}}) {
+		t.Fatal("software flip paces callbacks")
+	}
+	if !paces(ports.OutputPresented{Flip: &ports.FlipInfo{HardwareClock: true}}) {
+		t.Fatal("display flip does not pace")
+	}
+}

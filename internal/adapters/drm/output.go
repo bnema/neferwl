@@ -818,11 +818,13 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		f := pendingFrame{shows: maps.Clone(seen)}
+		// shows is what the frame puts on screen: presentation feedback
+		// of windows it does not draw is discarded, not presented.
+		f := pendingFrame{shows: shownBy(scene, seen)}
 		fb, c := o.scanoutFrame(scene, surfaces)
 		direct := false
 		if fb != 0 {
-			direct, err = o.commitScanout(fb, c, f)
+			direct, err = o.commitScanout(fb, c, pendingFrame{shows: map[ports.WindowID]uint64{c.ID: seen[c.ID]}})
 		}
 		if !direct {
 			ov, composed := o.overlayFrame(scene, surfaces)
@@ -1086,4 +1088,15 @@ func (o *Output) freeImages() {
 		}
 		o.fbs[i] = 0
 	}
+}
+
+// shownBy is the content Seq of each window the scene draws.
+func shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[ports.WindowID]uint64 {
+	out := map[ports.WindowID]uint64{}
+	for id, seq := range seen {
+		if s.Shows(id) {
+			out[id] = seq
+		}
+	}
+	return out
 }

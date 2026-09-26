@@ -187,9 +187,13 @@ func (opts Options) flipped(pending *ports.OutputPresented, seen map[ports.Windo
 	if opts.Presented == nil {
 		return nil
 	}
+	var merged int
 	if pending != nil && opts.send(pending) != nil {
-		// The reader is behind: this frame's report replaces the waiting one.
-		pending = nil
+		// The reader is behind: this frame's report replaces the waiting
+		// one, and its flip counts as merged (its feedback is discarded).
+		if pending.Flip != nil {
+			merged = 1 + pending.Flip.Merged
+		}
 	}
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
@@ -199,7 +203,7 @@ func (opts Options) flipped(pending *ports.OutputPresented, seen map[ports.Windo
 			shows[id] = c.Seq
 		}
 	}
-	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), Flip: &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows}})
+	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), Flip: &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows, Merged: merged}})
 }
 
 func (opts Options) send(r *ports.OutputPresented) *ports.OutputPresented {

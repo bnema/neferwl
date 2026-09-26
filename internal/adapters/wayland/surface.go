@@ -340,7 +340,8 @@ func (s *surface) applyCommit() {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	if fresh || moved || geometry || hinted || s.sub.parent != nil {
+	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil
+	if drawn {
 		if moved || geometry {
 			s.committed = damage{full: true}
 		}
@@ -348,7 +349,7 @@ func (s *surface) applyCommit() {
 	}
 	fb := s.pendingFeedback
 	s.pendingFeedback = nil
-	s.commitFeedback(fb)
+	s.commitFeedback(fb, fresh)
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {
