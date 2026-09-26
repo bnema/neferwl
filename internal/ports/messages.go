@@ -388,8 +388,6 @@ type ConfigChanged struct{ Config Config }
 // ClientCommand carries core → wayland commands.
 type ClientCommand interface{ clientCommand() }
 
-// ConfigureWindow carries core → wayland geometry and state. Output is the
-// connector showing the window, empty while it is hidden.
 // ShortcutsInhibitState carries core → wayland whether a window's
 // shortcuts inhibitor is in effect (it has keyboard focus).
 type ShortcutsInhibitState struct {
@@ -399,6 +397,8 @@ type ShortcutsInhibitState struct {
 
 func (ShortcutsInhibitState) clientCommand() {}
 
+// ConfigureWindow carries core → wayland geometry and state. Output is the
+// connector showing the window, empty while it is hidden.
 type ConfigureWindow struct {
 	ID                    WindowID
 	Width, Height         int

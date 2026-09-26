@@ -852,6 +852,12 @@ func (c *Core) Run(ctx context.Context) error {
 			// no bind runs (emergency quit and VT switch are handled by
 			// input before core).
 			if c.inhibiting != 0 && c.inhibiting == c.keyboardFocus() {
+				if held := heldKey(key); !key.Pressed && c.pressed[held] {
+					// Its press ran a bind before inhibiting began: the
+					// window never saw it.
+					delete(c.pressed, held)
+					continue
+				}
 				if err := c.command(ctx, ports.ForwardKey{ID: c.inhibiting, Key: key}); err != nil {
 					return nil
 				}
@@ -868,10 +874,7 @@ func (c *Core) Run(ctx context.Context) error {
 				action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
 			}
 			// Track presses by physical key: Shift may be released before the key.
-			held := name
-			if key.Keycode != 0 {
-				held = "#" + strconv.FormatUint(uint64(key.Keycode), 10)
-			}
+			held := heldKey(key)
 			if !key.Pressed {
 				consumed := c.pressed[held]
 				delete(c.pressed, held)
@@ -961,4 +964,13 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 	w.Activate(id)
 	c.focusScreen = c.screenIndex(s.name())
 	return c.afterShow(ctx, before)
+}
+
+// heldKey names a key for press tracking: by physical key, since Shift
+// may be released before the key.
+func heldKey(key ports.KeyEvent) string {
+	if key.Keycode != 0 {
+		return "#" + strconv.FormatUint(uint64(key.Keycode), 10)
+	}
+	return keyName(key.Keysym)
 }
