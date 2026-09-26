@@ -49,7 +49,6 @@ func TestConsumeOrExpel(t *testing.T) {
 			if got := ids(tc.w); !reflect.DeepEqual(got, tc.want) || stays != tc.stays || tc.w.Focus != tc.focusCol {
 				t.Fatal(got, stays, tc.w.Focus)
 			}
-
 		})
 	}
 }
@@ -80,6 +79,15 @@ func TestConsumeOrExpelSkips(t *testing.T) {
 			t.Fatal(got)
 		}
 	})
+}
+
+func TestConsumeIntoFullscreenColumnShows(t *testing.T) {
+	w := cols(OverflowScroll, 2, 0, []WindowID{1}, []WindowID{2})
+	w.fullscreen = 2
+	w.ConsumeOrExpel(1)
+	if id, _ := w.Focused(); !reflect.DeepEqual(ids(w), [][]WindowID{{2, 1}}) || id != 1 || w.fullscreen != 0 {
+		t.Fatal(ids(w), id, w.fullscreen)
+	}
 }
 
 func TestConsumeOrExpelSlots(t *testing.T) {

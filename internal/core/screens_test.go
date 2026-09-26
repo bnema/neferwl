@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/bnema/nefertty/internal/adapters/config"
@@ -576,6 +577,27 @@ func TestExpelCrossesToFullNeighbor(t *testing.T) {
 	// Now at the edge with no right monitor: nothing moves.
 	set = r.key(t, "bracketright", ports.ModAlt)
 	if got, focused := windowsOf(set, "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{4, 5, 3}) || focused != 3 {
+		t.Fatal(got, focused)
+	}
+}
+
+func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	// DP-1: [1] [2 3], focus on 3.
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.mapWindow(t, 3)
+	r.key(t, "bracketleft", ports.ModAlt)
+	// DP-2: [4] [5]; 5 goes fullscreen on its own workspace.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 4)
+	r.mapWindow(t, 5)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	// 3 floats above the fullscreen window, visible and focused.
+	set := r.key(t, "bracketright", ports.ModAlt)
+	got, focused := windowsOf(set, "DP-2")
+	if !slices.Contains(got, 3) || focused != 3 {
 		t.Fatal(got, focused)
 	}
 }

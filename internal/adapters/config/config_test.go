@@ -47,6 +47,17 @@ func TestDefaultsAndLoad(t *testing.T) {
 	}
 }
 
+func TestFollowMove(t *testing.T) {
+	c, w := parseString(t, "focus.follow-move = on\n")
+	if !c.Focus.FollowMove || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	c, w = parseString(t, "focus.follow-move = yes\n")
+	if c.Focus.FollowMove || len(w) != 1 {
+		t.Fatal(c.Focus, w)
+	}
+}
+
 func TestParse(t *testing.T) {
 	c, w := parseString(t, `
 # comment

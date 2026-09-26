@@ -496,10 +496,14 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 		to.FocusID(id)
 	} else {
 		col := Column{Windows: []WindowID{id}}
+		ok := true
 		if column {
-			col, _ = cur.takeColumn()
+			col, ok = cur.takeColumn()
 		} else {
-			cur.RemoveWindow(id)
+			_, ok = cur.takeWindow()
+		}
+		if !ok {
+			return
 		}
 		to.receive(col, -1)
 	}

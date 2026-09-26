@@ -246,6 +246,25 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 			t.Fatal(got)
 		}
 	})
+	t.Run("the slot window alone releases its slot", func(t *testing.T) {
+		m := stack()
+		c := &m.Current().Columns[1]
+		c.Slot, c.Focus = 2, 0
+		m.Apply(ActionMoveWindowToWorkspaceDown)
+		if c := m.Current().Columns[1]; c.Slot != 0 || c.Windows[0] != 3 {
+			t.Fatal(c)
+		}
+	})
+	t.Run("follow a floating window", func(t *testing.T) {
+		m := stack()
+		m.SetFollowMove(true)
+		m.AddFloating(9, 10, 10)
+		m.Current().FocusID(9)
+		m.Apply(ActionMoveWindowToWorkspaceDown)
+		if id, _ := m.Focused(); m.Active != 1 || id != 9 {
+			t.Fatal(m.Active, id)
+		}
+	})
 	t.Run("slot column loses its slot", func(t *testing.T) {
 		m := stack()
 		m.Current().Columns[1].Slot = 2

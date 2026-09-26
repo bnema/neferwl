@@ -391,3 +391,22 @@ func TestSlotKeptWhileFullscreenAway(t *testing.T) {
 	r.press(t, "d")
 	noSpawn(t, r.spawn)
 }
+
+// Expelling a slot window from a stacked column keeps one column per slot:
+// the slot and its width follow the window, and nothing is respawned.
+func TestSlotFollowsExpelledWindow(t *testing.T) {
+	r := startSlots(t, true) // dev is numbered: [1] [dev] [empty]
+	r.fill(t)
+	r.press(t, "d") // dev: [code] [foot], focus on code
+	r.client <- ports.WindowMapped{ID: 9}
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
+	r.press(t, "bracketleft")  // 9 joins code: [code 9] [foot]
+	r.press(t, "Up")           // focus code, the slot window
+	r.press(t, "bracketright") // code leaves: [9] [code] [foot]
+	r.press(t, "d")
+	s := r.press(t, "d") // shown again: no slot is empty
+	noSpawn(t, r.spawn)
+	if got := visible(s); got[2].W != 70 {
+		t.Fatalf("slots: %v", got)
+	}
+}

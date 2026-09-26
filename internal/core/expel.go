@@ -65,7 +65,8 @@ func (w *Workspace) stack(id, target WindowID) {
 	w.RemoveWindow(id)
 	i := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, target) })
 	w.Columns[i].Windows = append(w.Columns[i].Windows, id)
-	w.FocusID(id)
+	// Activate leaves a fullscreen of the target column, which would hide it.
+	w.Activate(id)
 }
 
 // dropSlotOf clears the slot of the column whose slot window is id.
