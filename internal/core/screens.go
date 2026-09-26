@@ -3,7 +3,7 @@ package core
 import (
 	"slices"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and

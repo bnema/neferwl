@@ -2,7 +2,7 @@ package wayland
 
 import (
 	"fmt"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"

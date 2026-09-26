@@ -3,7 +3,7 @@ package core
 import (
 	"sort"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // arrangeLayers places exclusive surfaces first, then sorts the resulting scene by layer.

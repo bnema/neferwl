@@ -1,4 +1,4 @@
-# nefertty config: one `key = value` per line, # starts a comment.
+# neferwl config: one `key = value` per line, # starts a comment.
 # Every value below is the default; a missing file means defaults.
 # Changes apply live. An invalid line logs a warning and keeps the default.
 
@@ -16,7 +16,7 @@ terminal = foot
 
 # Commands run once when the session starts, one line each. Like spawn, a
 # command runs without a shell: see "Running commands" in the README.
-# Programs get WAYLAND_DISPLAY and NEFERTTY_STATE.
+# Programs get WAYLAND_DISPLAY and NEFERWL_STATE.
 # startup = waybar
 # startup = wl-paste --watch cliphist store
 
@@ -49,7 +49,7 @@ focus.follow-move = off
 # workspace.web.max-columns = 3
 # workspace.web.overflow = fixed
 #
-# Slots: column.N = <width>, <command>. nefertty starts each command in the
+# Slots: column.N = <width>, <command>. neferwl starts each command in the
 # background and puts its first window in column N, without taking focus.
 # A closed slot stays empty until the workspace is shown again. Apps that
 # reuse a running instance need a new-instance flag. Widths need

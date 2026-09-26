@@ -7,7 +7,7 @@ template: testify
 template-schema: '{{.Template}}.schema.json'
 require-template-schema-exists: true
 packages:
-  github.com/bnema/nefertty/internal/ports:
+  github.com/bnema/neferwl/internal/ports:
     config:
       dir: internal/mocks/ports
       pkgname: portsmocks
@@ -16,14 +16,14 @@ packages:
       Renderer:
       Seat:
   # Unexported adapter seams: mocks live next to the code, in test files.
-  github.com/bnema/nefertty/internal/adapters/drm:
+  github.com/bnema/neferwl/internal/adapters/drm:
     interfaces:
       kms:
         config:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
-  github.com/bnema/nefertty/internal/adapters/wayland:
+  github.com/bnema/neferwl/internal/adapters/wayland:
     interfaces:
       procEnv:
         config:
@@ -35,7 +35,7 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: syncobj_device_mock_test.go
-  github.com/bnema/nefertty/internal/adapters/statefile:
+  github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:
         config:

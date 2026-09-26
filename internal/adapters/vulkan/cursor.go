@@ -6,7 +6,7 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -97,7 +97,7 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 	if err := checked("vkGetMemoryFdKHR(cursor)", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	f := os.NewFile(uintptr(fd), "nefertty-cursor")
+	f := os.NewFile(uintptr(fd), "neferwl-cursor")
 	if f == nil {
 		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}

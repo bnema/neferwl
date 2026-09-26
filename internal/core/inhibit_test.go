@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/core"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // commandOf waits for the next command of type T, skipping others.

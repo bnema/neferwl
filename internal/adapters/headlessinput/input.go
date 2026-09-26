@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/bnema/nefertty/internal/adapters/xkb"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 

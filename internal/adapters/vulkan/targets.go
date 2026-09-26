@@ -7,7 +7,7 @@ import (
 	"slices"
 	"unsafe"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -184,7 +184,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	f := os.NewFile(uintptr(fd), "nefertty-target")
+	f := os.NewFile(uintptr(fd), "neferwl-target")
 	if f == nil {
 		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}

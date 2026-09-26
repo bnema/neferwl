@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/adapters/syncfile"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/syncfile"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // near reports whether two colors are within tol per channel.

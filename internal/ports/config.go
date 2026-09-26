@@ -86,7 +86,7 @@ type WorkspaceConfig struct {
 }
 
 // SlotConfig reserves column N of a workspace for the window of one command.
-// nefertty spawns the command at startup; the window it opens goes to the
+// neferwl spawns the command at startup; the window it opens goes to the
 // slot. Width is a layout width (fraction, percentage or pixels).
 type SlotConfig struct {
 	Index int

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/xkb"
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestHeadlessConfigReload(t *testing.T) {
@@ -171,7 +171,7 @@ func TestHeadlessTyping(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	dir := t.TempDir()
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo nefertty-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, ScreenshotDir: dir, Script: io.NopCloser(strings.NewReader("sleep 1.5s\ntype echo neferwl-ok\nkey Return\nsleep 1s\n")), Timeout: 6 * time.Second})
 	if err != nil {
 		if strings.Contains(err.Error(), "Vulkan") || strings.Contains(err.Error(), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
@@ -202,12 +202,12 @@ func TestHeadlessTyping(t *testing.T) {
 	if !varied {
 		t.Fatal("window image is uniform")
 	}
-	if os.Getenv("NEFERTTY_KEEP_SHOTS") == "1" {
+	if os.Getenv("NEFERWL_KEEP_SHOTS") == "1" {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile("/tmp/nefertty-typing.png", data, 0600); err != nil {
+		if err := os.WriteFile("/tmp/neferwl-typing.png", data, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

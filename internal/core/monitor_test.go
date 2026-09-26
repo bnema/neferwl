@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func monitor() *Monitor {

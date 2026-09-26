@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/statefile"
-	"github.com/bnema/nefertty/internal/app"
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/app"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type usageError struct{ error }
@@ -31,7 +31,7 @@ func main() {
 	os.Exit(runCode())
 }
 
-// tuneGC keeps the heap close to what nefertty uses: a compositor runs for
+// tuneGC keeps the heap close to what neferwl uses: a compositor runs for
 // days and its per-frame garbage is small, so the default GOGC=100 (heap
 // grows to twice the live data) mostly holds freed memory. A soft limit
 // makes the collector work harder before the process gets large. GOGC and
@@ -111,7 +111,7 @@ func run() error {
 		fmt.Println(v)
 		return nil
 	}
-	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
+	flags := flag.NewFlagSet("neferwl", flag.ContinueOnError)
 	backend := flags.String("backend", "drm", "drm or headless")
 	screenshot := flags.String("screenshot", "", "write PNG frames to directory")
 	size := flags.String("size", "1920x1080", "headless output sizes WxH, comma-separated for several outputs")
@@ -247,10 +247,10 @@ func run() error {
 
 // runState prints the session state for scripts:
 //
-//	nefertty state                 the whole state
-//	nefertty state output-of <pid> the output showing that process's window
+//	neferwl state                 the whole state
+//	neferwl state output-of <pid> the output showing that process's window
 //
-// The file is $NEFERTTY_STATE, else the one of $WAYLAND_DISPLAY.
+// The file is $NEFERWL_STATE, else the one of $WAYLAND_DISPLAY.
 func runState(args []string) error {
 	usage := usageError{fmt.Errorf("usage: state [output-of <pid>]")}
 	pid := 0

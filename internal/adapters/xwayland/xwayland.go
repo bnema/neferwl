@@ -1,5 +1,5 @@
 // Package xwayland runs X11 clients through xwayland-satellite, started on
-// demand: nefertty owns the X11 display sockets and starts the satellite
+// demand: neferwl owns the X11 display sockets and starts the satellite
 // when the first X11 client connects, and again after it exits.
 package xwayland
 

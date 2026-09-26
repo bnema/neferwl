@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // outputRun drives one output until ctx ends: it renders the scenes and

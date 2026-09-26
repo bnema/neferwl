@@ -1,10 +1,10 @@
 # Built by `make pkg` at the repo root, from `git archive HEAD`.
-pkgname=nefertty
+pkgname=neferwl
 pkgver=0.0.0
 pkgrel=1
 pkgdesc='Minimal Wayland compositor with scrollable columns, for the TTY'
 arch=('x86_64')
-url='https://github.com/bnema/nefertty'
+url='https://github.com/bnema/neferwl'
 license=('MIT')
 # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
@@ -27,21 +27,21 @@ prepare() {
 build() {
 	cd "$pkgname-$pkgver"
 	export CGO_ENABLED=0 GOFLAGS='-mod=vendor -trimpath -buildvcs=false -buildmode=pie' GOPROXY=off GOWORK=off GOTOOLCHAIN=local
-	go build -ldflags "-X main.version=$pkgver" -o nefertty ./cmd/nefertty
+	go build -ldflags "-X main.version=$pkgver" -o neferwl ./cmd/neferwl
 }
 
 check() {
 	cd "$pkgname-$pkgver"
-	./nefertty version
-	./nefertty validate-config examples/config
+	./neferwl version
+	./neferwl validate-config examples/config
 }
 
 package() {
 	cd "$pkgname-$pkgver"
-	install -Dm755 nefertty "$pkgdir/usr/bin/nefertty"
-	install -Dm644 packaging/nefertty.desktop "$pkgdir/usr/share/wayland-sessions/nefertty.desktop"
-	install -Dm644 packaging/nefertty-portals.conf "$pkgdir/usr/share/xdg-desktop-portal/nefertty-portals.conf"
-	install -Dm644 examples/config "$pkgdir/usr/share/doc/nefertty/config.example"
-	install -Dm644 README.md "$pkgdir/usr/share/doc/nefertty/README.md"
-	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/nefertty/LICENSE"
+	install -Dm755 neferwl "$pkgdir/usr/bin/neferwl"
+	install -Dm644 packaging/neferwl.desktop "$pkgdir/usr/share/wayland-sessions/neferwl.desktop"
+	install -Dm644 packaging/neferwl-portals.conf "$pkgdir/usr/share/xdg-desktop-portal/neferwl-portals.conf"
+	install -Dm644 examples/config "$pkgdir/usr/share/doc/neferwl/config.example"
+	install -Dm644 README.md "$pkgdir/usr/share/doc/neferwl/README.md"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/neferwl/LICENSE"
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func newTest(t *testing.T, layout string) *Keymap {

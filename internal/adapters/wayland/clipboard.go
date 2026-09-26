@@ -13,7 +13,7 @@ import (
 // keyboard focus may set them and sees them; clipboard managers such as
 // cliphist and wl-clipboard use ext_data_control_v1, which sees and sets
 // both without focus. Like wlroots, any client may bind it. Pasting hands the reader's pipe to the source client:
-// the data never goes through nefertty. Drag and drop is not implemented.
+// the data never goes through neferwl. Drag and drop is not implemented.
 
 const (
 	selClipboard = iota

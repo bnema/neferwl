@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func parseString(t *testing.T, s string) (ports.Config, []Warning) {
@@ -34,7 +34,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 		t.Fatalf("explicit missing: %v", err)
 	}
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	if DefaultPath() != filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "nefertty", "config") {
+	if DefaultPath() != filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "neferwl", "config") {
 		t.Fatal(DefaultPath())
 	}
 	got, w, err := LoadDefault()

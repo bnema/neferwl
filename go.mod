@@ -1,4 +1,4 @@
-module github.com/bnema/nefertty
+module github.com/bnema/neferwl
 
 go 1.27
 

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Slots of declared workspaces (ADR 011): workspace.<name>.column.N reserves
 // column N for the window of one command. The slot, not the window, has the
-// identity: nefertty spawns the command with SlotEnv set to a random token,
+// identity: neferwl spawns the command with SlotEnv set to a random token,
 // and the first window of a client carrying that token fills the slot.
 //
 // Only the token of the pending spawn is accepted: once the slot is filled,

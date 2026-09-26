@@ -1,6 +1,6 @@
 package core
 
-import "github.com/bnema/nefertty/internal/ports"
+import "github.com/bnema/neferwl/internal/ports"
 
 // Separator lines follow tmux (screen-redraw.c): tiles share one line per
 // side where they touch, owned by the left or top tile (Placement.Inset).

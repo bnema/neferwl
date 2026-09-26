@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestChildEnv(t *testing.T) {
 	got := ChildEnv([]string{"TERM=x", "DISPLAY=:0", "WAYLAND_SOCKET=4", "WAYLAND_DISPLAY=old", "HOME=/home/me", "PATH=/bin", "LC_ALL=C", "XDG_RUNTIME_DIR=old", "XCURSOR_THEME=Adwaita", "XCURSOR_PATH=/icons", "SECRET=bad", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/me/bus"}, "wayland-7", "/run/me", 24)
-	want := []string{"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/me/bus", "HOME=/home/me", "LC_ALL=C", "PATH=/bin", "WAYLAND_DISPLAY=wayland-7", "XCURSOR_PATH=/icons", "XCURSOR_SIZE=24", "XCURSOR_THEME=Adwaita", "XDG_CURRENT_DESKTOP=nefertty", "XDG_RUNTIME_DIR=/run/me", "XDG_SESSION_TYPE=wayland"}
+	want := []string{"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/me/bus", "HOME=/home/me", "LC_ALL=C", "PATH=/bin", "WAYLAND_DISPLAY=wayland-7", "XCURSOR_PATH=/icons", "XCURSOR_SIZE=24", "XCURSOR_THEME=Adwaita", "XDG_CURRENT_DESKTOP=neferwl", "XDG_RUNTIME_DIR=/run/me", "XDG_SESSION_TYPE=wayland"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -38,9 +38,9 @@ func TestRun(t *testing.T) {
 		done <- New([]string{"PATH=/bin", "FILE=" + file}, logging.For(ctx, "launcher")).Run(ctx, reqs)
 	}()
 	reqs <- ports.SpawnRequest{}
-	reqs <- ports.SpawnRequest{Argv: []string{"nonexistent-nefertty-binary"}}
+	reqs <- ports.SpawnRequest{Argv: []string{"nonexistent-neferwl-binary"}}
 	// Env adds to the child environment (slot tokens).
-	reqs <- ports.SpawnRequest{Argv: []string{"sh", "-c", "echo ok$NEFERTTY_SLOT > $FILE"}, Env: []string{"NEFERTTY_SLOT=7"}}
+	reqs <- ports.SpawnRequest{Argv: []string{"sh", "-c", "echo ok$NEFERWL_SLOT > $FILE"}, Env: []string{"NEFERWL_SLOT=7"}}
 	deadline := time.After(3 * time.Second)
 	for {
 		data, err := os.ReadFile(file)
@@ -69,7 +69,7 @@ func TestRun(t *testing.T) {
 
 func TestChildPath(t *testing.T) {
 	dir := t.TempDir()
-	name := "nefertty-child-only-script"
+	name := "neferwl-child-only-script"
 	result := filepath.Join(dir, "result")
 	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\nprintf ok > \"$1\"\n"), 0700); err != nil {
 		t.Fatal(err)

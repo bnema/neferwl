@@ -3,7 +3,7 @@ package wayland
 import (
 	"bytes"
 	"context"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/logging"
+	"github.com/bnema/neferwl/internal/logging"
 )
 
 func TestWaylandInfo(t *testing.T) {

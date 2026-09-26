@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/committiming"
 	"github.com/bnema/purego-libwayland/protocol/fifo"
 	"github.com/bnema/purego-libwayland/protocol/wayland"

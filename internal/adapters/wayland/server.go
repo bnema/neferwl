@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
@@ -668,7 +668,7 @@ func keymapFile(keymap string) (int, uint32, error) {
 	if uint64(len(keymap))+1 > uint64(^uint32(0)) {
 		return -1, 0, fmt.Errorf("keymap too large")
 	}
-	fd, err := unix.MemfdCreate("nefertty-keymap", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	fd, err := unix.MemfdCreate("neferwl-keymap", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
 	if err != nil {
 		return -1, 0, err
 	}
