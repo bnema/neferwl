@@ -101,6 +101,7 @@ type Server struct {
 	heldKeys                map[uint32]bool
 	keymapFD                int
 	keymapSize              uint32
+	keymapText              string           // the seat keymap, to compare virtual keymaps with
 	keymapOwner             *virtualKeyboard // nil: keyboards carry the seat keymap
 	repeatRate, repeatDelay int
 	// eventMu protects only the notification queue, not display-owned window state.
@@ -216,7 +217,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			d.Close()
 			return nil, e
 		}
-		s.keymapFD, s.keymapSize = fd, size
+		s.keymapFD, s.keymapSize, s.keymapText = fd, size, opts.Keymap
 	}
 	s.cleanup = func() {
 		if s.keymapFD >= 0 {
@@ -431,7 +432,8 @@ func (s *Server) forwardContents(ctx context.Context) {
 const maxCommandBatch = 256
 
 // drainCommands returns first plus the commands already queued, with runs of
-// pointer motion for the same window collapsed into the latest one. open is
+// pointer motion for the same window collapsed into the latest one, their
+// relative deltas summed. open is
 // false once the channel is closed.
 func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (batch []ports.ClientCommand, open bool) {
 	batch = append(batch, first)
@@ -443,6 +445,12 @@ func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (
 			}
 			if m, isMotion := c.(ports.PointerMotionTo); isMotion {
 				if last, lastMotion := batch[len(batch)-1].(ports.PointerMotionTo); lastMotion && last.ID == m.ID {
+					// The position is the latest; relative deltas add up so
+					// locked pointers (games) lose no movement.
+					m.DX += last.DX
+					m.DY += last.DY
+					m.UnaccelDX += last.UnaccelDX
+					m.UnaccelDY += last.UnaccelDY
 					batch[len(batch)-1] = m
 					continue
 				}
@@ -702,7 +710,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 	if s.keymapFD >= 0 {
 		unix.Close(s.keymapFD)
 	}
-	s.keymapFD, s.keymapSize = fd, size
+	s.keymapFD, s.keymapSize, s.keymapText = fd, size, c.Keymap
 	s.keymapOwner = nil
 	focused := s.focused
 	s.changeFocus(0)

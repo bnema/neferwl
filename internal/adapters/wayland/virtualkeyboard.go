@@ -22,6 +22,8 @@ type virtualKeyboard struct {
 	server *Server
 	fd     int // sealed copy of the client keymap, -1 before one
 	size   uint32
+	text   string         // the keymap, compared with the active one
+	mods   ports.ModState // last modifiers request, zero before one
 	// pressed are keys held on focus; a focus change releases them by leave.
 	pressed map[uint32]bool
 	focus   ports.WindowID
@@ -65,7 +67,9 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 		unix.Close(k.fd)
 	}
 	k.fd, k.size = copyFD, copySize
-	if s := k.server; s.keymapOwner == k {
+	old := k.server.activeKeymapText()
+	k.text = text
+	if s := k.server; s.keymapOwner == k && text != old {
 		// Clients must see the new layout before the next key.
 		s.sendKeymapAll(k.fd, k.size)
 	}
@@ -128,6 +132,7 @@ func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key
 }
 
 func (k *virtualKeyboard) Modifiers(r *virtualkeyboard.ZwpVirtualKeyboardV1, depressed, latched, locked, group uint32) {
+	k.mods = ports.ModState{Depressed: depressed, Latched: latched, Locked: locked, Group: group}
 	for _, kb := range k.keyboards(r) {
 		kb.SendModifiers(k.server.serial, depressed, latched, locked, group)
 	}
@@ -164,13 +169,25 @@ func (s *Server) useKeymap(k *virtualKeyboard) {
 	if s.keymapOwner == k {
 		return
 	}
+	old := s.activeKeymapText()
 	s.keymapOwner = k
-	s.sendKeymapAll(s.currentKeymap())
-	if k == nil {
-		s.serial++
-		for _, kb := range s.clientKeyboards(s.focusClient()) {
-			s.sendModifiers(kb)
-		}
+	// Like wlroots and smithay, a keymap equal to the active one is not
+	// sent again: tools such as dictation apps create a virtual keyboard
+	// with the seat layout per use, and each resend makes every client
+	// (Xwayland included) recompile its keymap.
+	if s.activeKeymapText() != old {
+		s.sendKeymapAll(s.currentKeymap())
+	}
+	// Modifiers follow the keyboard that types: a skipped keymap no longer
+	// resets them, so a virtual keyboard never types through seat Shift or
+	// Caps Lock, and the seat gets its own back.
+	m := s.modState
+	if k != nil {
+		m = k.mods
+	}
+	s.serial++
+	for _, kb := range s.clientKeyboards(s.focusClient()) {
+		kb.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 	}
 	s.log.Debug().Bool("virtual", k != nil).Msg("keymap switched")
 }
@@ -183,6 +200,14 @@ func (s *Server) sendKeymapAll(fd int, size uint32) {
 			}
 		}
 	}
+}
+
+// activeKeymapText is the text of the keymap keyboards carry.
+func (s *Server) activeKeymapText() string {
+	if k := s.keymapOwner; k != nil {
+		return k.text
+	}
+	return s.keymapText
 }
 
 // currentKeymap is the keymap a new keyboard must start with.

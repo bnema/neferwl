@@ -129,10 +129,18 @@ type eventsProxy struct {
 	wlturbo.BaseProxy
 	opcodes []uint16
 	keymaps []string
+	locked  []uint32 // locked modifiers of each modifiers event
 }
 
 func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
 	p.opcodes = append(p.opcodes, e.Opcode)
+	if e.Opcode == uint16(wayland.KeyboardEventModifiers) {
+		e.Uint32() // serial
+		e.Uint32() // depressed
+		e.Uint32() // latched
+		p.locked = append(p.locked, e.Uint32())
+		return
+	}
 	if e.Opcode != uint16(wayland.KeyboardEventKeymap) {
 		return
 	}

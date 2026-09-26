@@ -12,16 +12,17 @@ import (
 
 func TestDrainCommandsCollapsesMotion(t *testing.T) {
 	cmds := make(chan ports.ClientCommand, 16)
-	cmds <- ports.PointerMotionTo{ID: 1, X: 2}
-	cmds <- ports.PointerMotionTo{ID: 1, X: 3}
+	cmds <- ports.PointerMotionTo{ID: 1, X: 2, DX: 0.25, UnaccelDX: 0.5}
+	cmds <- ports.PointerMotionTo{ID: 1, X: 3, DX: 0.25, DY: -0.5, UnaccelDX: 0.5, UnaccelDY: -1}
 	cmds <- ports.PointerButtonTo{ID: 1, Button: 272, Pressed: true}
 	cmds <- ports.PointerMotionTo{ID: 1, X: 4}
 	cmds <- ports.PointerFocus{ID: 2}
 	cmds <- ports.PointerMotionTo{ID: 2, X: 5}
 	cmds <- ports.PointerMotionTo{ID: 2, X: 6}
-	batch, open := drainCommands(ports.PointerMotionTo{ID: 1, X: 1}, cmds)
+	batch, open := drainCommands(ports.PointerMotionTo{ID: 1, X: 1, DX: 0.25, UnaccelDX: 0.5}, cmds)
 	want := []ports.ClientCommand{
-		ports.PointerMotionTo{ID: 1, X: 3},
+		// Slow motions add up: none of the sub-pixel deltas is lost.
+		ports.PointerMotionTo{ID: 1, X: 3, DX: 0.75, DY: -0.5, UnaccelDX: 1.5, UnaccelDY: -1},
 		ports.PointerButtonTo{ID: 1, Button: 272, Pressed: true},
 		ports.PointerMotionTo{ID: 1, X: 4},
 		ports.PointerFocus{ID: 2},
