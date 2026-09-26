@@ -304,10 +304,6 @@ func (c *Core) visible(id WindowID) bool {
 	return ok
 }
 
-// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
-// interactivity and the highest ID on any output, else the focused window of
-// the focused output. An on-demand layer takes focus only when clicked, until
-// a window is clicked. When the layer unmaps, focus returns to the window.
 // windowFocus is the focused window of each output.
 func (c *Core) windowFocus() map[*screen]WindowID {
 	m := make(map[*screen]WindowID, len(c.screens))
@@ -317,6 +313,10 @@ func (c *Core) windowFocus() map[*screen]WindowID {
 	return m
 }
 
+// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
+// interactivity and the highest ID on any output, else a grabbing popup,
+// else a clicked on-demand layer (see layerFocus), else the focused window
+// of the focused output.
 func (c *Core) keyboardFocus() WindowID {
 	var layer WindowID
 	for _, sc := range c.screens {
