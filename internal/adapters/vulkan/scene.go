@@ -157,7 +157,9 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 
 // opaqueChildren gives the physical rects shown by the opaque subsurfaces
 // above the root (e.g. a game's GPU surface over its window's shm buffer):
-// they hide the surfaces below them.
+// they hide the surfaces below them. A child whose buffer will not draw is
+// left out, so the surface below it still shows: a dmabuf that fails to
+// import (opaqueChildren pre-imports it) or an unreadable shm buffer.
 func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy int, clip image.Rectangle) []image.Rectangle {
 	var covers []image.Rectangle
 	for i := range content.Children {
@@ -165,11 +167,28 @@ func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy int, cl
 		if ch.Below || !ch.Opaque {
 			continue
 		}
-		if _, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip); ok {
-			covers = append(covers, dst)
+		_, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
+		if !ok || !w.drawable(&ch.SurfaceContent) {
+			continue
 		}
+		covers = append(covers, dst)
 	}
 	return covers
+}
+
+// drawable reports whether the child's buffer will draw. GPU buffer
+// imports are cached, so pre-importing here costs nothing.
+func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
+	if c.DMABuf != nil {
+		_, err := w.r.importDMABuf(c.DMABuf)
+		return err == nil
+	}
+	b := c.SHM
+	if b == nil {
+		return false
+	}
+	_, err := w.r.shmPixels(b, b.Offset+(c.Height-1)*b.Stride+c.Width*4)
+	return err == nil
 }
 
 // surfaceRects gives the physical rect of a surface buffer with its origin
