@@ -95,9 +95,10 @@ type Output struct {
 	vrrProp       uint32
 	vrrOn         bool
 	composedSince time.Time
-	// off: the CRTC is inactive because a client turned the display off
-	// (Scene.Off); cleared by every modeset.
-	off bool
+	// wantOff is the latest Scene.Off: a client turned the display off.
+	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
+	// follows wantOff, so a display turned off never lights up.
+	wantOff, off bool
 	// kind is how the images were made.
 	kind imageKind
 	// formats receives the direct scanout formats after each modeset;
@@ -413,7 +414,7 @@ func (o *Output) modeset() error {
 	if err != nil {
 		return err
 	}
-	if err := o.k.commit(o.modesetReq(blob), atomicAllowModes, 0); err != nil {
+	if err := o.k.commit(o.modesetReq(blob, !o.wantOff), atomicAllowModes, 0); err != nil {
 		_ = o.k.destroyBlob(blob)
 		return fmt.Errorf("modeset: %w", err)
 	}
@@ -426,13 +427,16 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
 	o.modeBlob = blob
-	o.vrrOn, o.overlayOn, o.off = false, 0, false
+	o.vrrOn, o.overlayOn, o.off = false, 0, o.wantOff
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
 		o.cursor.screen, o.cursor.flying = 0, false
 	}
-	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
-	o.testCursor()
+	o.log.Info().Str("connector", o.conn.name).Bool("off", o.off).Msg("modeset")
+	if !o.off {
+		// An inactive CRTC tells nothing about the cursor plane.
+		o.testCursor()
+	}
 	o.sendFormats()
 	return nil
 }
@@ -479,7 +483,8 @@ func (o *Output) testModeset() error {
 		return err
 	}
 	defer func() { _ = o.k.destroyBlob(blob) }()
-	if err := o.k.commit(o.modesetReq(blob), atomicTestOnly|atomicAllowModes, 0); err != nil {
+	// Tested active: an inactive CRTC would accept any image.
+	if err := o.k.commit(o.modesetReq(blob, true), atomicTestOnly|atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("modeset test: %w", err)
 	}
 	return nil
@@ -513,11 +518,12 @@ func (o *Output) cursorOff(err error) {
 	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("cursor plane refused; hardware cursor off")
 }
 
-// modesetReq is the modeset of the front image with mode blob.
-func (o *Output) modesetReq(blob uint32) *atomicReq {
+// modesetReq is the modeset of the front image with mode blob; active
+// false keeps the display off (output power).
+func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 	req := &atomicReq{}
 	req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(blob))
-	req.set(o.crtc, o.crtcProps["ACTIVE"], 1)
+	req.set(o.crtc, o.crtcProps["ACTIVE"], boolValue(active))
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
 	o.primaryProps(req, o.fbs[1-o.back])
@@ -965,6 +971,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				stateDirty = true
 			}
 			scene, haveScene, dirty = s, true, true
+			o.wantOff = s.Off
 		case c := <-cursor:
 			want = c
 			// Before the first scene the scale is unknown: loaded then.
@@ -998,9 +1005,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		// Output power: off waits for no commit in flight; on is a modeset
 		// and a full frame.
-		if haveScene && scene.Off != o.off {
+		if o.wantOff != o.off {
 			var err error
-			if scene.Off {
+			if o.wantOff {
 				err = o.powerOff()
 			} else if err = o.modeset(); err == nil {
 				dirty = true

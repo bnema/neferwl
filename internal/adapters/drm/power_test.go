@@ -43,10 +43,11 @@ func TestRunOutputPower(t *testing.T) {
 	}
 	active := func(c commitRec) (uint64, bool) { return c.req.value(tCrtc, pActive) }
 	scenes := make(chan ports.Scene, 1)
+	vt := make(chan bool)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8))
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, vt, scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8))
 	}()
 	on := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	scenes <- on
@@ -86,6 +87,18 @@ func TestRunOutputPower(t *testing.T) {
 	if len(snapshot()) != n {
 		t.Fatal("committed while off")
 	}
+
+	// A VT switch back modesets while off: the CRTC stays inactive.
+	vt <- false
+	vt <- true
+	waitFor(t, func() bool { return len(snapshot()) > n })
+	time.Sleep(20 * time.Millisecond)
+	for _, c := range snapshot()[n:] {
+		if v, ok := active(c); ok && v != 0 && c.flags&atomicTestOnly == 0 {
+			t.Fatal("VT resume turned the display on")
+		}
+	}
+	n = len(snapshot())
 
 	scenes <- on
 	<-renders

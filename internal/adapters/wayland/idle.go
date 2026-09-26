@@ -91,7 +91,9 @@ func (s *Server) armIdle(n *idleNotification) {
 		return
 	}
 	gen := n.gen
-	n.timer = time.AfterFunc(n.timeout, func() {
+	// Core reports activity at most once per ActivityInterval: a shorter
+	// timeout would fire while the user is still typing.
+	n.timer = time.AfterFunc(max(n.timeout, ports.ActivityInterval), func() {
 		s.display.Do(func() {
 			// A timer stopped or replaced while it waited for Do is stale.
 			if n.gen != gen || !n.res.Resource.Alive() || n.idle || s.idleHeld(n) {
@@ -200,8 +202,11 @@ func (s *Server) setOutputsOff(off map[string]bool) {
 	kept := s.powers[:0]
 	for _, p := range s.powers {
 		if !names[p.output] {
+			// Failed objects are inert, even if an output of that name
+			// comes back.
 			p.res.SendFailed()
 			p.res.OnDestroy = nil
+			p.output = ""
 			continue
 		}
 		if off[p.output] != s.outputsOff[p.output] {

@@ -154,6 +154,43 @@ func TestOutputPower(t *testing.T) {
 	if e := p.next(t, c, 2*time.Second); e[0] != failed {
 		t.Fatalf("after unplug %v", e)
 	}
+	// Back with the same name: the failed object controls nothing.
+	commands <- ports.SetOutputs{Outputs: testOutputs}
+	requestProtocol(t, c, id, wlroutputpower.ZwlrOutputPowerV1RequestSetMode, off)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-events:
+		if v, ok := ev.(ports.OutputPower); ok {
+			t.Fatalf("failed object sent %+v", v)
+		}
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// A timeout shorter than the activity interval still waits for it, so
+// continuous input keeps the notification from idling.
+func TestIdleShortTimeout(t *testing.T) {
+	s, _, commands, _, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	notifier := bindVersion(t, c, "ext_idle_notifier_v1", 2)
+	id, n := newEventProxy(c)
+	start := time.Now()
+	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(0), seat)
+	n.next(t, c, 2*time.Second)
+	if d := time.Since(start); d < ports.ActivityInterval {
+		t.Fatalf("idled after %v, before the activity interval", d)
+	}
+	commands <- ports.UserActivity{}
+	n.next(t, c, 2*time.Second) // resumed
+	for range 4 {
+		time.Sleep(ports.ActivityInterval / 2)
+		commands <- ports.UserActivity{}
+	}
+	n.none(t, c, ports.ActivityInterval/2)
 }
 
 // An unknown mode is a protocol error.

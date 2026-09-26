@@ -415,7 +415,7 @@ type UserActivity struct{}
 func (UserActivity) clientCommand() {}
 
 // ActivityInterval is the most often core reports UserActivity: idle
-// timers may start up to this much early.
+// timers may start up to this much early, so no idle timeout is shorter.
 const ActivityInterval = 100 * time.Millisecond
 
 // ConfigureWindow carries core → wayland geometry and state. Output is the
