@@ -365,48 +365,64 @@ func TestRendererTallFill(t *testing.T) {
 	}
 }
 
-// A translucent overlay layer blends over the window below it (premultiplied
-// ARGB); a fully transparent one leaves it untouched. A copy between two
-// blended draws keeps the paint order.
+// fill returns a w×h premultiplied B8G8R8A8 buffer of one pixel.
+func fill(w, h int, bgra [4]byte) []byte {
+	p := make([]byte, w*h*4)
+	for i := 0; i < len(p); i += 4 {
+		copy(p[i:i+4], bgra[:])
+	}
+	return p
+}
+
+// Translucent buffers blend over what is below them, in paint order: a
+// bottom layer (one draw), an opaque window copied over it, then two
+// overlapping overlays sharing one draw. A transparent pixel changes nothing.
 func TestRendererAlphaBlend(t *testing.T) {
 	r, err := New(64, 48)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	// Half-transparent red, premultiplied: B,G,R,A = 0,0,128,128.
-	half := make([]byte, 16*8*4)
-	for i := 0; i < 8*16*4; i += 4 {
-		copy(half[i:i+4], []byte{0, 0, 128, 128})
+	halfRed, halfBlue := [4]byte{0, 0, 128, 128}, [4]byte{128, 0, 0, 128}
+	clear := fill(16, 8, halfRed)
+	for y := range 8 {
+		copy(clear[y*64+48:y*64+64], make([]byte, 16)) // last 4 pixels: transparent
 	}
-	// The right half of the buffer is fully transparent.
-	for y := 0; y < 8; y++ {
-		for x := 8; x < 16; x++ {
-			copy(half[(y*16+x)*4:], []byte{0, 0, 0, 0})
-		}
+	white := shmContent(t, 32, 48, 32*4, solid(32, 48, [3]uint8{255, 255, 255}))
+	white.Opaque = true
+	contents := map[ports.WindowID]ports.SurfaceContent{
+		1: *white,
+		2: *shmContent(t, 64, 48, 64*4, fill(64, 48, halfRed)),
+		3: *shmContent(t, 16, 8, 16*4, clear),
+		4: *shmContent(t, 16, 8, 16*4, fill(16, 8, halfBlue)),
 	}
-	overlay := shmContent(t, 16, 8, 16*4, half)
-	contents := map[ports.WindowID]ports.SurfaceContent{2: *overlay}
 	scene := ports.Scene{Background: "#000000",
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Borderless: true}},
-		Layers:  []ports.SceneLayer{{ID: 2, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 4, Y: 4, W: 16, H: 8}}}}
-	white := solid(64, 48, [3]uint8{255, 255, 255})
-	win := shmContent(t, 64, 48, 64*4, white)
-	win.Opaque = true
-	contents[1] = *win
+		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 32, H: 48}, Borderless: true}},
+		Layers: []ports.SceneLayer{
+			{ID: 2, Layer: ports.LayerBottom, Rect: ports.Rect{W: 64, H: 48}},
+			{ID: 3, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 16, H: 8}},
+			{ID: 4, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 8, W: 16, H: 8}},
+		}}
 	if err := r.Render(scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	px := r.Pixels()
-	// White under half red: R = 128 + 255*127/255 = 255, G = B = 127.
-	near := func(a, b uint8) bool { return a-b <= 1 || b-a <= 1 }
-	if got := px.RGBAAt(6, 6); !near(got.R, 255) || !near(got.G, 127) || !near(got.B, 127) {
-		t.Errorf("blended pixel = %v, want ~{255 127 127}", got)
-	}
-	if got := px.RGBAAt(14, 6); got != (color.RGBA{255, 255, 255, 255}) {
-		t.Errorf("transparent pixel = %v, want white", got)
-	}
-	if got := px.RGBAAt(40, 30); got != (color.RGBA{255, 255, 255, 255}) {
-		t.Errorf("uncovered pixel = %v, want white", got)
+	near := func(a, b uint8) bool { d := int(a) - int(b); return d >= -1 && d <= 1 }
+	for _, tc := range []struct {
+		name    string
+		x, y    int
+		r, g, b uint8
+	}{
+		{"bottom layer over background", 40, 20, 128, 0, 0},
+		{"opaque window over bottom layer", 20, 20, 255, 255, 255},
+		{"red overlay over window", 4, 4, 255, 127, 127},
+		{"blue over red over window", 10, 4, 127, 63, 191},
+		{"blue over window", 20, 4, 127, 127, 255},
+		{"transparent red pixels: blue over window only", 14, 4, 127, 127, 255},
+	} {
+		got := px.RGBAAt(tc.x, tc.y)
+		if !near(got.R, tc.r) || !near(got.G, tc.g) || !near(got.B, tc.b) {
+			t.Errorf("%s: pixel (%d,%d) = %v, want ~{%d %d %d}", tc.name, tc.x, tc.y, got, tc.r, tc.g, tc.b)
+		}
 	}
 }

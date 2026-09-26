@@ -106,6 +106,8 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	list.DrmFormatModifierProperties = &mods[0]
 	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
 	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
+	// Targets are drawn on too (blend.go): a transfer-only modifier is
+	// not a target, and without any the display falls back to readback.
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
 			r.renderMods = append(r.renderMods, m.DrmFormatModifier)

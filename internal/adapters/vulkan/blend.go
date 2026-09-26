@@ -13,6 +13,10 @@ import (
 // and its fragment shader reads the staged pixels straight from the
 // staging buffer: no texture, no sampler. Wayland buffers are
 // premultiplied, hence ONE, ONE_MINUS_SRC_ALPHA.
+//
+// Limits: dmabuf buffers are still blitted, alpha ignored (blending them
+// needs a sampled-image variant). The opaque region is not honoured, so
+// an ARGB buffer blends even where it is opaque.
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/blend.vert -o shaders/blend.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/blend.frag -o shaders/blend.frag.spv
@@ -128,11 +132,11 @@ func (r *Renderer) destroyBlend() {
 	*b = blendPipeline{}
 }
 
-// bindStaging points the set at the staging buffer: pixels from 0, the
-// draw table from tableOffset.
+// bindStaging points the set at the staging buffer: blended pixels in
+// [0, tableOffset), the draw table from tableOffset.
 func (r *Renderer) bindStaging(tableOffset int) {
 	infos := []vk.DescriptorBufferInfo{
-		{Buffer: r.staging, Range: vk.DeviceSize(tableOffset)},
+		{Buffer: r.staging, Range: vk.DeviceSize(max(tableOffset, 4))},
 		{Buffer: r.staging, Offset: vk.DeviceSize(tableOffset), Range: wholeSize},
 	}
 	writes := []vk.WriteDescriptorSet{
@@ -142,7 +146,7 @@ func (r *Renderer) bindStaging(tableOffset int) {
 	r.dd.UpdateDescriptorSets(r.device, 2, &writes[0], 0, nil)
 }
 
-// putDraw writes draw entry i of the table at data.
+// putDraw writes draw entry i of table.
 func (r *Renderer) putDraw(table []byte, i int, u *upload) {
 	e := table[i*drawSize : (i+1)*drawSize]
 	for j, v := range []uint32{

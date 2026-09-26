@@ -57,8 +57,9 @@ type Renderer struct {
 	fillRegions []vk.BufferImageCopy
 	// blend draws translucent client pixels (blend.go); align is the
 	// device's storage buffer offset alignment.
-	blend blendPipeline
-	align int
+	blend    blendPipeline
+	align    int
+	maxRange int // bytes of blended pixels one frame may bind
 }
 
 // fillRows is the height of the strip staged for a solid fill: the CPU
@@ -127,7 +128,6 @@ func New(width, height int) (r *Renderer, err error) {
 		if properties.ApiVersion < vk.MakeVersion(1, 3, 0) {
 			continue
 		}
-		r.align = int(max(properties.Limits.MinStorageBufferOffsetAlignment, 4))
 		var n uint32
 		r.id.GetPhysicalDeviceQueueFamilyProperties(device, &n, nil)
 		if n == 0 {
@@ -151,6 +151,10 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	r.id.GetPhysicalDeviceMemoryProperties(physical, &r.memory)
+	var properties vk.PhysicalDeviceProperties
+	r.id.GetPhysicalDeviceProperties(physical, &properties)
+	r.align = int(max(properties.Limits.MinStorageBufferOffsetAlignment, 4))
+	r.maxRange = int(properties.Limits.MaxStorageBufferRange)
 	r.family = family
 	priority := float32(1)
 	qi := vk.DeviceQueueCreateInfo{SType: vk.StructureTypeDeviceQueueCreateInfo, QueueFamilyIndex: family, QueueCount: 1, QueuePriorities: &priority}
@@ -389,6 +393,14 @@ type upload struct {
 	fill bool
 }
 
+// size is the staging bytes of an upload: a strip for a fill.
+func (u *upload) size() int {
+	if u.fill {
+		return u.rect.Dx() * min(u.rect.Dy(), fillRows) * 4
+	}
+	return u.rect.Dx() * u.rect.Dy() * 4
+}
+
 // stage copies the visible pixels of a client buffer into dst, resampling
 // when the buffer is not drawn at its size.
 func (u *upload) stage(dst []byte) {
@@ -424,7 +436,6 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	phys := func(v int) int { return int(math.Round(float64(v) * scale)) }
 	physRect := func(x, y, w, h int) image.Rectangle { return image.Rect(phys(x), phys(y), phys(x+w), phys(y+h)) }
 	var uploads []upload
-	used := 0
 	bounds := image.Rect(0, 0, r.width, r.height)
 	add := func(rect image.Rectangle, c [3]uint8) {
 		rect = rect.Intersect(bounds)
@@ -433,8 +444,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 		// A fill stages a strip of up to fillRows rows; the GPU copies the
 		// strip down the rect.
-		uploads = append(uploads, upload{rect: rect, offset: used, color: c, fill: true})
-		used += rect.Dx() * min(rect.Dy(), fillRows) * 4
+		uploads = append(uploads, upload{rect: rect, color: c, fill: true})
 	}
 	// addContent maps src (buffer pixels) onto dst (physical pixels).
 	addContent := func(dst, src image.Rectangle, content *ports.SurfaceContent) {
@@ -456,8 +466,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		if err != nil {
 			return
 		}
-		uploads = append(uploads, upload{rect: rect, offset: used, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, blend: !content.Opaque, dst: dst, src: src})
-		used += rect.Dx() * rect.Dy() * 4
+		uploads = append(uploads, upload{rect: rect, pixels: pixels[b.Offset:], stride: b.Stride, opaque: content.Opaque, blend: !content.Opaque, dst: dst, src: src})
 	}
 	// drawSurface draws one surface buffer with its origin at (x, y)
 	// logical, clipped to clip (logical).
@@ -574,16 +583,28 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	addPopups(false)
 	addLayers(true)
 	addPopups(true)
-	// The draw table of blended uploads follows the pixels.
-	blends := 0
-	for _, u := range uploads {
+	// Blended pixels are staged first, so the shaders bind only them,
+	// within the device's storage buffer range; past it they are copied.
+	// The draw table follows them, then the other uploads.
+	blends, used := 0, 0
+	for k := range uploads {
+		u := &uploads[k]
+		if u.blend && used+u.size() > r.maxRange {
+			u.blend = false
+		}
 		if u.blend {
+			u.offset = used
+			used += u.size()
 			blends++
 		}
 	}
 	tableOffset := (used + r.align - 1) / r.align * r.align
-	if blends > 0 {
-		used = tableOffset + blends*drawSize
+	used = tableOffset + blends*drawSize
+	for k := range uploads {
+		if u := &uploads[k]; !u.blend && u.dma == nil {
+			u.offset = used
+			used += u.size()
+		}
 	}
 	if err := r.ensureStaging(used); err != nil {
 		return err
