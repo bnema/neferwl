@@ -64,17 +64,17 @@ func TestRendererRender(t *testing.T) {
 	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 21}: {0x31, 0x32, 0x44, 255}, {21, 22}: {0x31, 0x32, 0x44, 255}, {23, 23}: {0x31, 0x32, 0x44, 255}, {24, 24}: bg})
 	s.Windows[0].Focused = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: {0xb4, 0xbe, 0xfe, 255}, {10, 10}: wc, {16, 16}: wc})
-	// tmux style: the left window owns the shared line; focusing the right
-	// window lights that line too.
+	// tmux style: the left window owns the shared line. With two tiles the
+	// focused one lights its half: top for the left window, bottom for the right.
 	gray, lit := color.RGBA{0x31, 0x32, 0x44, 255}, color.RGBA{0xb4, 0xbe, 0xfe, 255}
 	pair := s
 	pair.Windows = []ports.SceneWindow{
 		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideRight},
 		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Neighbors: ports.SideLeft, Focused: true},
 	}
-	check(pair, map[image.Point]color.RGBA{{14, 5}: lit, {15, 5}: lit, {13, 5}: wc, {0, 0}: wc})
+	check(pair, map[image.Point]color.RGBA{{14, 12}: lit, {15, 12}: lit, {14, 3}: gray, {13, 5}: wc, {0, 0}: wc})
 	pair.Windows[1].Focused, pair.Windows[0].Focused = false, true
-	check(pair, map[image.Point]color.RGBA{{14, 5}: lit})
+	check(pair, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: gray})
 	pair.Windows[0].Focused = false
 	check(pair, map[image.Point]color.RGBA{{14, 5}: gray, {15, 5}: gray})
 	s.Windows[0].Fullscreen = true

@@ -458,13 +458,30 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	}
 	// The focused window lights the lines along its own sides only: its
 	// inset border, and its neighbors' border line where they own it.
+	// With exactly two tiles one line splits them: like tmux, the focused
+	// window lights only its half of it (left/top window: first half).
 	if focused != nil && s.Border.Active != "" && s.Border.Width > 0 {
-		f := focused
-		for _, strip := range borderStrips(f.Rect, f.Inset, 0, s.Border.Width) {
-			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
+		f, tiles := focused, 0
+		for _, w := range s.Windows {
+			if !w.Hidden && !w.Popup && w.Neighbors != 0 {
+				tiles++
+			}
 		}
-		for _, strip := range borderStrips(f.Rect, f.Neighbors&^f.Inset, s.Border.Width, s.Border.Width) {
-			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
+		for _, side := range []ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom} {
+			out := 0
+			switch {
+			case f.Inset&side != 0:
+			case f.Neighbors&side != 0:
+				out = s.Border.Width
+			default:
+				continue
+			}
+			for _, strip := range borderStrips(f.Rect, side, out, s.Border.Width) {
+				if tiles == 2 {
+					strip = halfStrip(strip, side)
+				}
+				add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
+			}
 		}
 	}
 	// Popups draw only what the client drew, shadows clipped. Window popups
@@ -620,4 +637,20 @@ func borderStrips(r ports.Rect, sides ports.Sides, out, b int) []ports.Rect {
 		strips = append(strips, ports.Rect{X: r.X, Y: r.Y + r.H - b + out, W: r.W, H: b})
 	}
 	return strips
+}
+
+// halfStrip keeps the half of a separator strip owned by the window on
+// side of it: the first half for the left or top window, else the second.
+func halfStrip(r ports.Rect, side ports.Sides) ports.Rect {
+	switch side {
+	case ports.SideRight:
+		r.H /= 2
+	case ports.SideLeft:
+		r.Y, r.H = r.Y+r.H/2, r.H-r.H/2
+	case ports.SideBottom:
+		r.W /= 2
+	case ports.SideTop:
+		r.X, r.W = r.X+r.W/2, r.W-r.W/2
+	}
+	return r
 }
