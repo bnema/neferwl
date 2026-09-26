@@ -831,6 +831,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			r.UseTarget(o.back)
 			done, rerr := r.Render(composed, surfaces)
 			if rerr != nil {
+				ov.close()
 				return fmt.Errorf("render frame: %w", rerr)
 			}
 			if ov.fb != 0 && !o.testOverlay(o.fbs[o.back], ov) {

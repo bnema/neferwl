@@ -290,6 +290,10 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		fired := false
 		kept := waits[:0]
 		for i, w := range waits {
+			if w.cancelled.Load() {
+				unix.Close(w.efd)
+				continue
+			}
 			if fds[i+1].Revents == 0 {
 				kept = append(kept, w)
 				continue
