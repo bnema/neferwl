@@ -672,7 +672,7 @@ func (w *Workspace) Layout() []Placement {
 			y += h + gap
 		}
 	}
-	setNeighbors(result, gap, w.Output)
+	setNeighbors(result, gap)
 	// Floating windows go last: they are drawn and hit on top.
 	for _, f := range w.Floats {
 		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID, Inset: ports.SideAll}
@@ -686,9 +686,9 @@ func (w *Workspace) Layout() []Placement {
 	return result
 }
 
-// setNeighbors marks the sides where tiles touch across the gap. Tiles
-// scrolled off the output are no neighbors: no line at the screen edge.
-func setNeighbors(tiles []Placement, gap int, out Rect) {
+// setNeighbors marks the sides where tiles touch across the gap, from
+// geometry alone: client sizes do not change as the view scrolls.
+func setNeighbors(tiles []Placement, gap int) {
 	overlap := func(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
 	for i := range tiles {
 		a := &tiles[i]
@@ -697,7 +697,7 @@ func setNeighbors(tiles []Placement, gap int, out Rect) {
 		}
 		for j := range tiles {
 			b := tiles[j].Rect
-			if i == j || tiles[j].Hidden || tiles[j].Fullscreen || b.W <= 0 || b.H <= 0 || b.X >= out.X+out.W || b.X+b.W <= out.X {
+			if i == j || tiles[j].Hidden || tiles[j].Fullscreen || b.W <= 0 || b.H <= 0 {
 				continue
 			}
 			r := a.Rect

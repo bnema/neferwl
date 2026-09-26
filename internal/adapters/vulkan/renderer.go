@@ -422,7 +422,28 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		}
 	}
 	addLayers(false)
+	// Separators are drawn in order, active lines over inactive ones:
+	// tile lines (Window 0) over the tiles, a float's border with it.
+	addSeparators := func(id ports.WindowID) {
+		for _, sep := range s.Separators {
+			if sep.Window != id {
+				continue
+			}
+			col := s.Border.Inactive
+			if sep.Active {
+				col = s.Border.Active
+			}
+			if col != "" {
+				add(physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), parseColor(col))
+			}
+		}
+	}
+	tileLines := false
 	for _, w := range s.Windows {
+		if w.Floating && !tileLines {
+			addSeparators(0)
+			tileLines = true
+		}
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
 		}
@@ -446,16 +467,12 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			add(body, parseColor(s.Background))
 			place(w.ID, &content, cx, cy, cw, ch)
 		}
+		if w.Floating {
+			addSeparators(w.ID)
+		}
 	}
-	// Separators are drawn in order: active lines over inactive ones.
-	for _, sep := range s.Separators {
-		col := s.Border.Inactive
-		if sep.Active {
-			col = s.Border.Active
-		}
-		if col != "" {
-			add(physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), parseColor(col))
-		}
+	if !tileLines {
+		addSeparators(0)
 	}
 	// Popups draw only what the client drew, shadows clipped. Window popups
 	// stay with the windows; a layer's go over every layer.

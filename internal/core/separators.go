@@ -6,19 +6,33 @@ import "github.com/bnema/nefertty/internal/ports"
 // side where they touch, owned by the left or top tile (Placement.Inset).
 // The focused tile lights the lines along its sides, corners included.
 // With exactly two tiles one line splits them, and each lights only its
-// half of it: the left or top tile the first half. Floats get a full
-// border of their own.
+// half of it: the left or top tile the first half. With gaps each tile
+// has lines of its own and lights them whole. Floats get a full border
+// of their own, drawn with them (Separator.Window).
+//
+// Only what is on the output counts: lines at the output edge (a column
+// scrolled off beyond it) are not drawn, and only tiles on it count.
 
 var sides = [...]ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom}
 
-// separators are the lines of a layout, inactive ones first so active
-// ones draw over them. lit says whether the focused tile shows focus
-// (only on the focused output).
-func separators(ps []Placement, width int, lit bool) []ports.Separator {
+// separators are the lines of a layout on output o, inactive ones first
+// so active ones draw over them. lit says whether the focused tile shows
+// focus (only on the focused output).
+func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separator {
 	if width <= 0 {
 		return nil
 	}
 	var out []ports.Separator
+	add := func(p *Placement, r Rect, active bool) {
+		if !p.Floating && (r.X < o.X+width || r.X+r.W > o.X+o.W-width) && r.H > r.W {
+			return // a vertical line at the output edge
+		}
+		var id WindowID
+		if p.Floating {
+			id = p.ID
+		}
+		out = append(out, ports.Separator{Rect: r, Active: active, Window: id})
+	}
 	var focused *Placement
 	tiles := 0
 	for i := range ps {
@@ -26,12 +40,12 @@ func separators(ps []Placement, width int, lit bool) []ports.Separator {
 		if p.Hidden || p.Fullscreen || p.Rect.W <= 0 || p.Rect.H <= 0 {
 			continue
 		}
-		if p.Neighbors != 0 {
+		if p.Neighbors != 0 && p.Rect.X < o.X+o.W && p.Rect.X+p.Rect.W > o.X {
 			tiles++
 		}
 		for _, s := range sides {
 			if p.Inset&s != 0 {
-				out = append(out, ports.Separator{Rect: strip(p.Rect, s, 0, width)})
+				add(p, strip(p.Rect, s, 0, width), false)
 			}
 		}
 		if p.Focused && lit {
@@ -51,16 +65,17 @@ func separators(ps []Placement, width int, lit bool) []ports.Separator {
 			line = strip(f.Rect, s, width, width)
 		case f.Inset&s != 0:
 			// A float's own border.
-			out = append(out, ports.Separator{Rect: strip(f.Rect, s, 0, width), Active: true})
+			add(f, strip(f.Rect, s, 0, width), true)
 			continue
 		default:
 			continue
 		}
 		line = closeCorners(line, *f, s, width)
-		if tiles == 2 {
+		// Two tiles share one line only without gaps.
+		if tiles == 2 && gap == 0 {
 			line = half(line, s)
 		}
-		out = append(out, ports.Separator{Rect: line, Active: true})
+		add(f, line, true)
 	}
 	return out
 }

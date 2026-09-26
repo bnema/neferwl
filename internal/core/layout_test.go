@@ -1,10 +1,11 @@
 package core
 
 import (
-	"github.com/bnema/nefertty/internal/ports"
 	"math"
 	"reflect"
 	"testing"
+
+	"github.com/bnema/nefertty/internal/ports"
 )
 
 func workspace() *Workspace {

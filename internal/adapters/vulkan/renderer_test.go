@@ -72,6 +72,15 @@ func TestRendererRender(t *testing.T) {
 	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {15, 9}: lit, {16, 9}: gray, {23, 9}: gray, {10, 10}: wc})
 	s.Border.Inactive = ""
 	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {16, 9}: bg})
+	// A float covers the tile lines; its own border is drawn with it.
+	s.Windows = []ports.SceneWindow{win, {ID: 3, Rect: ports.Rect{X: 12, Y: 4, W: 8, H: 8}, Floating: true, Inset: ports.SideAll}}
+	s.Separators = []ports.Separator{
+		{Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 2}, Active: true},
+		{Rect: ports.Rect{X: 12, Y: 4, W: 8, H: 1}, Active: true, Window: 3},
+	}
+	fc := windowColor(3)
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {14, 9}: {fc[0], fc[1], fc[2], 255}, {14, 4}: lit})
+	s.Windows = []ports.SceneWindow{win}
 	s.Separators, s.Border.Inactive = nil, "#313244"
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})

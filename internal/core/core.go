@@ -401,12 +401,12 @@ func (c *Core) publish(ctx context.Context) error {
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
 		layout := sc.mon.Layout()
 		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, i == c.focusScreen)
+		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
 		for _, p := range layout {
 			alive[p.ID] = true
-			// Only the focused output shows the focused border.
+			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Inset: p.Inset})
+			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset})
 			floating := p.Floating
 			if p.Hidden {
 				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {

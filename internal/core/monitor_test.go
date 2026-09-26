@@ -1,10 +1,11 @@
 package core
 
 import (
-	"github.com/bnema/nefertty/internal/ports"
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/bnema/nefertty/internal/ports"
 )
 
 func monitor() *Monitor {
