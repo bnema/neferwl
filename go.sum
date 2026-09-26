@@ -4,6 +4,8 @@ github.com/bnema/purego-libwayland v0.1.0 h1:bPsZcR47Ra1uBM8h2BGk1MhY2WnTX31hzo7
 github.com/bnema/purego-libwayland v0.1.0/go.mod h1:nN9HngjyWl/8pHLpFcFgtgQCnae8oP9xXjLfY9hMS8w=
 github.com/bnema/purego-libwayland v0.1.1-0.20260926085626-ac96fe0bd3c3 h1:Wgfzm6K+cub07b6I+Hr4JPS3Xp97DD2Imq0LVRusvk4=
 github.com/bnema/purego-libwayland v0.1.1-0.20260926085626-ac96fe0bd3c3/go.mod h1:nN9HngjyWl/8pHLpFcFgtgQCnae8oP9xXjLfY9hMS8w=
+github.com/bnema/purego-libwayland v0.1.1 h1:k7fEcEfv/UxfnIw98Jvg45QMWtuYZSG/nu1x+cQyLNA=
+github.com/bnema/purego-libwayland v0.1.1/go.mod h1:nN9HngjyWl/8pHLpFcFgtgQCnae8oP9xXjLfY9hMS8w=
 github.com/bnema/purego-vulkan v0.4.0 h1:AcnZHek4AJ1ECnQ+8azKtbMP/T15NO25G9U14k1nImo=
 github.com/bnema/purego-vulkan v0.4.0/go.mod h1:ttS5qS7yTInFL8GvZwhvXkEc96u/nwXza0ZAMu9rpYM=
 github.com/bnema/wlturbo v0.2.0 h1:gZPe81TrrrYW8xrbZpEvZnDI7VQBm60+dgAapbXJyRQ=

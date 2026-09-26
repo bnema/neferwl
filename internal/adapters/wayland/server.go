@@ -624,6 +624,8 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
+	// Enter carries seat held keys and modifiers: they need the seat keymap.
+	s.useKeymap(nil)
 	old := s.focusClient()
 	defer func() {
 		// Tokens of a client losing the focus die with it.

@@ -95,6 +95,85 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	}
 }
 
+// focusedTarget maps a focused toplevel with one keyboard and returns its
+// connection and recorder, drained of setup events.
+func focusedTarget(t *testing.T, s *Server, events chan ports.ClientEvent, commands chan ports.ClientCommand, dir string) (*wlturbo.Display, *eventsProxy) {
+	t.Helper()
+	target := protocolClient(t, s, dir)
+	seat := bindProtocol(t, target, "wl_seat")
+	registerProtocol(t, target, seat)
+	proxy := &eventsProxy{}
+	proxy.SetID(target.AllocateID())
+	target.Context().Register(proxy)
+	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
+	w := toplevelMapper(t, target, events)()
+	commands <- ports.FocusWindow{ID: w.ID}
+	waitFocus(t, s, w.ID)
+	if err := target.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	proxy.opcodes, proxy.keymaps = nil, nil
+	return target, proxy
+}
+
+func roundtrip(t *testing.T, cs ...*wlturbo.Display) {
+	t.Helper()
+	for _, c := range cs {
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A typer dying mid-key releases the key and restores the seat keymap.
+func TestVirtualKeyboardDisconnectReleases(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	typer, kb := virtualTyper(t, s, dir)
+	sendVirtualKeymap(t, typer, kb, strings.Replace(keymapText(t), "xkb_keymap", "xkb_keymap  ", 1))
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestModifiers, uint32(1), uint32(0), uint32(0), uint32(0))
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
+	roundtrip(t, typer)
+	_ = typer.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(proxy.keymaps) < 2 && time.Now().Before(deadline) {
+		roundtrip(t, target)
+		time.Sleep(5 * time.Millisecond)
+	}
+	k, m := uint16(wayland.KeyboardEventKeymap), uint16(wayland.KeyboardEventModifiers)
+	key := uint16(wayland.KeyboardEventKey)
+	want := []uint16{k, m, key, key, k, m}
+	if !slices.Equal(proxy.opcodes, want) {
+		t.Fatalf("events %v, want %v", proxy.opcodes, want)
+	}
+	if proxy.keymaps[1] != keymapText(t) {
+		t.Fatal("seat keymap not restored")
+	}
+}
+
+// A keyboard created while a typer owns the keymap starts with it; a
+// malformed keymap is ignored and the last good one stays.
+func TestVirtualKeymapLateKeyboardAndRejected(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, _ := focusedTarget(t, s, events, commands, dir)
+	typer, kb := virtualTyper(t, s, dir)
+	virtual := strings.Replace(keymapText(t), "xkb_keymap", "xkb_keymap  ", 1)
+	sendVirtualKeymap(t, typer, kb, virtual)
+	sendVirtualKeymap(t, typer, kb, "not a keymap")
+	requestProtocol(t, typer, kb, virtualkeyboard.ZwpVirtualKeyboardV1RequestKey, uint32(1), uint32(30), uint32(1))
+	roundtrip(t, typer, target)
+	seat := bindProtocol(t, target, "wl_seat")
+	registerProtocol(t, target, seat)
+	late := &eventsProxy{}
+	late.SetID(target.AllocateID())
+	target.Context().Register(late)
+	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, late.ID())
+	roundtrip(t, target)
+	if len(late.keymaps) != 1 || late.keymaps[0] != virtual {
+		t.Fatal("late keyboard did not get the virtual keymap")
+	}
+}
+
 func TestVirtualKeyBeforeKeymap(t *testing.T) {
 	s, _, _, dir := keyboardServer(t)
 	typer, kb := virtualTyper(t, s, dir)

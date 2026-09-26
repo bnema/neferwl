@@ -1,22 +1,34 @@
 package wayland
 
 import (
+	"bytes"
+	"time"
+
+	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/virtualkeyboard"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
+// maxVirtualKeymap bounds a keymap read from a virtual keyboard client.
+const maxVirtualKeymap = 1 << 20
+
 // virtualKeyboard is a zwp_virtual_keyboard_v1 (wtype, dictation tools).
 // Its keys go to the focused client. The focused client's keyboards carry
 // the keymap of whichever keyboard typed last: a virtual key switches them
-// to the virtual keymap, the next real key switches them back.
+// to the virtual keymap, the next real key or focus change switches back.
 type virtualKeyboard struct {
 	server *Server
-	fd     int
+	fd     int // sealed copy of the client keymap, -1 before one
 	size   uint32
+	// pressed are keys held on focus; a focus change releases them by leave.
+	pressed map[uint32]bool
+	focus   ports.WindowID
 }
 
+// registerVirtualKeyboard exposes the global to every client, as wlroots
+// does by default: any local client may type into the focused window.
 func registerVirtualKeyboard(d *server.Display, s *Server) error {
 	return virtualkeyboard.NewZwpVirtualKeyboardManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
 		_, _ = virtualkeyboard.NewZwpVirtualKeyboardManagerV1(c, int32(v), id, virtualKeyboardManager{s})
@@ -26,7 +38,7 @@ func registerVirtualKeyboard(d *server.Display, s *Server) error {
 type virtualKeyboardManager struct{ server *Server }
 
 func (m virtualKeyboardManager) CreateVirtualKeyboard(r *virtualkeyboard.ZwpVirtualKeyboardManagerV1, _ *wayland.Seat, id uint32) {
-	k := &virtualKeyboard{server: m.server, fd: -1}
+	k := &virtualKeyboard{server: m.server, fd: -1, pressed: map[uint32]bool{}}
 	res, err := virtualkeyboard.NewZwpVirtualKeyboardV1(r.Client(), r.Version(), id, k)
 	if err != nil {
 		return
@@ -35,60 +47,109 @@ func (m virtualKeyboardManager) CreateVirtualKeyboard(r *virtualkeyboard.ZwpVirt
 	m.server.log.Info().Int("pid", r.Client().PID()).Msg("virtual keyboard created")
 }
 
+// Keymap copies the client keymap into a sealed memfd: other clients never
+// see the client's fd. An unreadable or malformed keymap is ignored.
 func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format uint32, fd int, size uint32) {
-	if format != uint32(wayland.KeyboardKeymapFormatXkbV1) || size == 0 {
-		unix.Close(fd)
+	text, ok := readKeymap(fd, size)
+	unix.Close(fd)
+	if format != uint32(wayland.KeyboardKeymapFormatXkbV1) || !ok {
+		k.server.log.Debug().Msg("virtual keymap rejected")
+		return
+	}
+	copyFD, copySize, err := keymapFile(text)
+	if err != nil {
+		k.server.log.Warn().Err(err).Msg("virtual keymap copy failed")
 		return
 	}
 	if k.fd >= 0 {
 		unix.Close(k.fd)
 	}
-	k.fd, k.size = fd, size
+	k.fd, k.size = copyFD, copySize
 	if s := k.server; s.keymapOwner == k {
 		// Clients must see the new layout before the next key.
-		s.sendKeymapAll(fd, size)
+		s.sendKeymapAll(k.fd, k.size)
 	}
 }
 
-func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key, state uint32) {
+// readKeymap reads a NUL-terminated xkb keymap of size bytes from a
+// regular file.
+func readKeymap(fd int, size uint32) (string, bool) {
+	var st unix.Stat_t
+	if size == 0 || size > maxVirtualKeymap || unix.Fstat(fd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFREG || st.Size < int64(size) {
+		return "", false
+	}
+	data := make([]byte, size)
+	if n, err := unix.Pread(fd, data, 0); err != nil || n != int(size) {
+		return "", false
+	}
+	if i := bytes.IndexByte(data, 0); i >= 0 {
+		data = data[:i]
+	}
+	if !bytes.Contains(data, []byte("xkb_keymap")) {
+		return "", false
+	}
+	return string(data), true
+}
+
+// keyboards switches the focused client to k's keymap and returns its
+// keyboards, or nil after a no_keymap error or without focus.
+func (k *virtualKeyboard) keyboards(r *virtualkeyboard.ZwpVirtualKeyboardV1) []*wayland.Keyboard {
 	if k.fd < 0 {
-		r.PostError(uint32(virtualkeyboard.ZwpVirtualKeyboardV1ErrorNoKeymap), "key before keymap")
-		return
+		r.PostError(uint32(virtualkeyboard.ZwpVirtualKeyboardV1ErrorNoKeymap), "no keymap")
+		return nil
 	}
 	s := k.server
 	_, keyboards := s.focusTarget(s.focused)
 	if len(keyboards) == 0 {
-		return
+		return nil
+	}
+	if k.focus != s.focused {
+		clear(k.pressed)
+		k.focus = s.focused
 	}
 	s.useKeymap(k)
 	s.serial++
+	return keyboards
+}
+
+func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key, state uint32) {
+	keyboards := k.keyboards(r)
+	if keyboards == nil {
+		return
+	}
+	if state == 1 {
+		k.pressed[key] = true
+	} else {
+		delete(k.pressed, key)
+	}
 	for _, kb := range keyboards {
-		kb.SendKey(s.serial, time, key, state)
+		kb.SendKey(k.server.serial, time, key, state)
 	}
 }
 
 func (k *virtualKeyboard) Modifiers(r *virtualkeyboard.ZwpVirtualKeyboardV1, depressed, latched, locked, group uint32) {
-	if k.fd < 0 {
-		r.PostError(uint32(virtualkeyboard.ZwpVirtualKeyboardV1ErrorNoKeymap), "modifiers before keymap")
-		return
-	}
-	s := k.server
-	_, keyboards := s.focusTarget(s.focused)
-	if len(keyboards) == 0 {
-		return
-	}
-	s.useKeymap(k)
-	s.serial++
-	for _, kb := range keyboards {
-		kb.SendModifiers(s.serial, depressed, latched, locked, group)
+	for _, kb := range k.keyboards(r) {
+		kb.SendModifiers(k.server.serial, depressed, latched, locked, group)
 	}
 }
 
 func (*virtualKeyboard) Destroy(*virtualkeyboard.ZwpVirtualKeyboardV1) {}
 
-// release runs when the resource dies, by request or client disconnect.
+// release runs when the resource dies, by request or client disconnect:
+// keys still held on the focused client are released.
 func (k *virtualKeyboard) release() {
-	if s := k.server; s.keymapOwner == k {
+	s := k.server
+	if len(k.pressed) > 0 && k.focus == s.focused {
+		_, keyboards := s.focusTarget(s.focused)
+		now := uint32(time.Now().UnixMilli())
+		for key := range k.pressed {
+			s.serial++
+			for _, kb := range keyboards {
+				kb.SendKey(s.serial, now, key, 0)
+			}
+		}
+	}
+	if s.keymapOwner == k {
 		s.useKeymap(nil)
 	}
 	if k.fd >= 0 {
