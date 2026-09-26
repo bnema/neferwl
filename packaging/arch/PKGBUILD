@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='Minimal Wayland compositor with scrollable columns, for the TTY'
 arch=('x86_64')
 url='https://github.com/bnema/neferwl'
-license=('MIT')
+license=('GPL-3.0-only')
 # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
 	'vulkan-driver' 'wayland' 'dbus')

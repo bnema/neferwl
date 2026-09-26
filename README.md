@@ -1,6 +1,42 @@
-# NeferWL
+<h1 align="center">NeferWL</h1>
 
-NeferWL is a minimal Wayland compositor in Go with Niri-style scrollable columns. It runs on a TTY (DRM/KMS, libinput, Vulkan) or headless.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License: GPLv3"></a>
+  <a href="https://github.com/bnema/neferwl"><img src="https://img.shields.io/badge/platform-Linux-blue?style=flat-square" alt="Platform: Linux"></a>
+  <a href="https://github.com/bnema/neferwl/commits/main"><img src="https://badgen.net/github/last-commit/bnema/neferwl/main?icon=github" alt="Last commit"></a>
+  <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://badgen.net/github/stars/bnema/neferwl?icon=github" alt="GitHub stars"></a>
+</p>
+
+<p align="center"><em>Simple. Bare. Fast.</em></p>
+
+<p align="center">A minimal Wayland compositor in Go, built for performance: scrollable columns, multi-monitor workspaces and a zero-copy path for games.</p>
+
+---
+
+## Why NeferWL
+
+NeferWL does a few things and does them fast. No animations, no themes, no built-in bar or wallpaper: those are choices, not missing features. Every frame budget goes to your apps.
+
+- **A terminal, then out of the way.** One workspace opens your terminal at startup. Bars, launchers and notifications are external clients (Waybar, fuzzel, mako…).
+- **Columns between tiling and scrolling.** Up to `max-columns` windows share the screen like a classic tiling WM (Sway); past that, columns scroll to the right like Niri, or split in a spiral with `overflow = fixed`. Each workspace picks its own rules.
+- **Workspaces you design.** Numbered workspaces are dynamic. Named workspaces can be hidden behind a bind, and **slots** declare their columns (width + command): NeferWL starts the apps in the background and puts each window in its place.
+- **Multi-monitor done right.** Each monitor owns its workspaces. Unplug one and its workspaces move to another monitor; plug it back and they return home, without stealing your focus.
+- **Built for games.** Fullscreen games skip composition entirely (details below), with tearing and VRR when the game asks.
+- **Light.** A running session uses about 40–80 MB of RAM with two 4K monitors, and near-zero CPU when nothing changes on screen.
+- **Live config.** One flat `key = value` file. Every key applies on save, keyboard layout included; windows stay open.
+
+### The performance path
+
+Every Wayland protocol NeferWL implements is there because it saves work or latency:
+
+- **Zero copy.** GPU clients (`zwp_linux_dmabuf_v1` v4) are sampled in place. Vulkan composes straight into exported scanout images, and the frame fence goes to KMS as `IN_FENCE_FD`: no CPU copy, no CPU wait before a flip.
+- **Direct scanout.** A fullscreen window's buffer goes straight to the display plane; dmabuf feedback sends the game a scanout-ready format first. A lone opaque window can use an overlay plane.
+- **Tearing and VRR.** `wp_tearing_control_v1` flips without waiting for vblank when the game requests it; variable refresh runs while a buffer is scanned out.
+- **Explicit sync.** `wp_linux_drm_syncobj_v1` passes GPU fences end to end (needed by NVIDIA).
+- **Frame pacing.** `wp_presentation` from kernel flip timestamps, `wp_fifo_v1`, `wp_commit_timing_v1` and `wp_content_type_v1`.
+- **Only what changed.** Damage-limited redraws, occlusion culling of hidden surfaces, idle outputs never redraw. Atomic KMS: frame, cursor, overlay and VRR in one commit.
+- **Input for games.** Relative pointer, pointer constraints, keyboard shortcuts inhibit, 1 kHz+ non-blocking input, hardware cursor plane.
+- **X11 games.** Steam and Wine run through xwayland-satellite, started on the first X11 connection.
 
 Requires Linux and Go 1.27.
 
@@ -143,3 +179,7 @@ Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hy
 As a software engineer, my passion is bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way: purego-libwayland, purego-vulkan and wlturbo, to be published for others to reuse. Building them is part of the fun.
 
 What Go does not give us is Rust's borrow checker: memory and concurrency mistakes are not caught at compile time. NeferWL makes up for it with strict ownership (one goroutine owns each piece of state), the race detector on every test run, and protocol tests against real Wayland clients.
+
+## License
+
+NeferWL is licensed under the [GNU General Public License v3.0](LICENSE).
