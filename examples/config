@@ -27,7 +27,7 @@ background = #111111
 # empty inactive draws only the focused lines. Floats get a full border.
 border.width = 2
 border.active = #808080
-border.inactive = #2a2a2a
+border.inactive = #111111
 
 layout.gaps = 0
 # Columns sharing the screen equally before new ones scroll off to the right.
