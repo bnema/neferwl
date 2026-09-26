@@ -532,7 +532,8 @@ type Scene struct {
 	Windows                   []SceneWindow
 	// Layers are drawn in slice order: background and bottom before windows,
 	// top and overlay after. A fullscreen window covers bottom and top.
-	// Popups (SceneWindow.Popup) are drawn last, over every layer.
+	// Window popups are drawn after the windows, layer popups
+	// (SceneWindow.OverLayers) last, over every layer.
 	Layers []SceneLayer
 }
 
@@ -658,6 +659,9 @@ type SceneWindow struct {
 	Borderless bool
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
+	// OverLayers popups hang from a layer surface: drawn over the top and
+	// overlay layers. Window popups stay with the windows, under them.
+	OverLayers bool
 }
 
 // State carries core → state publisher a snapshot of what is on screen, for

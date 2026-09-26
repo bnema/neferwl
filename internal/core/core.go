@@ -82,8 +82,11 @@ type Core struct {
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
 	// layerFocus is the on-demand layer surface the user clicked; it keeps
-	// the keyboard until a window is clicked or the layer unmaps.
+	// the keyboard while it stays mapped on-demand and the window focus
+	// (layerOver) does not change: any click elsewhere, bind, activation or
+	// new window takes the keyboard back.
 	layerFocus WindowID
+	layerOver  WindowID
 }
 
 func keyName(s string) string {
@@ -319,10 +322,13 @@ func (c *Core) keyboardFocus() WindowID {
 	if g := c.grabFocus(); g != 0 {
 		return g
 	}
-	if c.layerFocus != 0 && c.onDemand(c.layerFocus) {
+	id, _ := c.cur().mon.Focused()
+	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || id != c.layerOver) {
+		c.layerFocus = 0
+	}
+	if c.layerFocus != 0 {
 		return c.layerFocus
 	}
-	id, _ := c.cur().mon.Focused()
 	return id
 }
 
@@ -515,11 +521,15 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	lx, ly := x-float64(o.X), y-float64(o.Y)
 	sc := c.screens[c.screenIndex(o.Info.Name)]
-	// Popups are above everything but fullscreen covers nothing of them.
-	if id, px, py := c.popupAt(sc, lx, ly); id != 0 {
+	// Layer popups are over everything; window popups are over the windows
+	// only, under the top and overlay layers (as drawn).
+	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {
 		return id, px, py
 	}
 	if id, px, py := layerAt(sc, lx, ly, true); id != 0 {
+		return id, px, py
+	}
+	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
 	}
 	var id WindowID
@@ -737,16 +747,19 @@ func (c *Core) Run(ctx context.Context) error {
 					// A click on an on-demand layer gives it the keyboard.
 					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
 						c.layerFocus = id
+						c.layerOver, _ = c.cur().mon.Focused()
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					} else if v.Pressed && c.layerFocus != 0 && id != c.layerFocus && c.popupRoot(id) != c.layerFocus {
+						// A click anywhere else takes the keyboard back.
+						c.layerFocus = 0
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
 					}
-					// A click focuses the window and its output, taking the
-					// keyboard back from a layer.
+					// A click focuses the window and its output.
 					s, w := c.screenOf(id)
-					if v.Pressed && s != nil {
-						c.layerFocus = 0
-					}
 					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
 						w.FocusID(id)
 						c.focusScreen = c.screenIndex(s.name())

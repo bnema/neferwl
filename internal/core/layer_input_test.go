@@ -112,6 +112,68 @@ func TestLayerPointerPopupAndFocus(t *testing.T) {
 	if f := next(t, commands, anyOf[ports.FocusWindow]); f.ID != 6 {
 		t.Fatalf("focus %d, want the bar back", f.ID)
 	}
+
+	// Unmapped then mapped again, the bar does not take the keyboard back.
+	client <- ports.LayerChanged{}
+	next(t, commands, func(v ports.FocusWindow) bool { return v.ID == 1 })
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 20, Y: 50} // publishes
+	next(t, commands, func(v ports.PointerFocus) bool { return v.ID == 1 })
+	select {
+	case v := <-commands:
+		if f, ok := v.(ports.FocusWindow); ok {
+			t.Fatalf("focus moved to %d", f.ID)
+		}
+	default:
+	}
+
+	// A window focus change by keyboard or a new window takes it back too.
+	input <- ports.PointerMotion{X: 50, Y: 5}
+	next(t, commands, func(v ports.PointerFocus) bool { return v.ID == 6 })
+	input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	next(t, commands, func(v ports.FocusWindow) bool { return v.ID == 6 })
+	input <- ports.PointerButton{Button: 0x110}
+	client <- ports.WindowMapped{ID: 2}
+	if f := next(t, commands, anyOf[ports.FocusWindow]); f.ID != 2 {
+		t.Fatalf("focus %d, want the new window", f.ID)
+	}
+}
+
+// A window's menu stays with the windows: an overlay layer covers it.
+func TestWindowPopupUnderOverlay(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.PopupRequest{ID: 9, Parent: 1, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: ports.Rect{X: 0, Y: 0, W: 10, H: 10}}}
+	next(t, commands, func(v ports.ConfigurePopup) bool { return v.ID == 9 })
+	client <- ports.PopupMapped{ID: 9}
+	sc := sceneMatch(t, scenes, func(sc ports.Scene) bool { return len(sc.Windows) == 2 })
+	if w := sc.Windows[1]; !w.Popup || w.OverLayers {
+		t.Fatalf("window popup %+v", w)
+	}
+	osd := ports.LayerSurface{ID: 7, Layer: ports.LayerOverlay, Anchor: 15}
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{osd}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 5, Y: 5}
+	if v := next(t, commands, anyOf[ports.PointerMotionTo]); v.ID != 7 {
+		t.Fatalf("hit %d, want the overlay", v.ID)
+	}
 }
 
 // A fullscreen window hides top and bottom layers from the pointer, not
