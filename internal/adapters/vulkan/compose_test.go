@@ -156,6 +156,9 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
+	if !r.syncFD {
+		t.Skip("frames are finished on return without sync files")
+	}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}, Borderless: true}}}
 	var readers []uint64
 	for seq := uint64(1); seq <= 3; seq++ {

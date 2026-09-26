@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -101,12 +102,14 @@ type Server struct {
 	// Events, which happens only at shutdown (core owns the receiving end). A
 	// stalled core is a bug surfaced by ctx cancellation, not a reason to block
 	// the display goroutine.
-	eventMu       sync.Mutex
-	events        []ports.ClientEvent
-	eventReady    chan struct{}
-	contentMu     sync.Mutex
-	contents      map[ports.WindowID]ports.SurfaceContent
-	contentSeq    map[ports.WindowID]uint64
+	eventMu    sync.Mutex
+	events     []ports.ClientEvent
+	eventReady chan struct{}
+	contentMu  sync.Mutex
+	contents   map[ports.WindowID]ports.SurfaceContent
+	contentSeq map[ports.WindowID]uint64
+	// damage is each window's recent damage (contentMu).
+	damage        map[ports.WindowID][]ports.SeqDamage
 	contentNotify chan struct{}
 	contentReady  chan struct{}
 	outputs       []*output
@@ -162,7 +165,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
 	s.tokens = map[string]activationToken{}
@@ -242,6 +245,10 @@ func (s *Server) Run(ctx context.Context) error {
 	return err
 }
 
+// damageHistory is how many contents a window's damage history covers:
+// enough for a renderer target a few frames old.
+const damageHistory = 4
+
 // forwardOutputFormats applies the outputs' scanout formats on the
 // display goroutine.
 func (s *Server) forwardOutputFormats(ctx context.Context) {
@@ -303,13 +310,24 @@ func (s *Server) forward(ctx context.Context) {
 	}
 }
 
-func (s *Server) emitContent(c ports.SurfaceContent) {
+func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	if s.channels.Contents == nil {
 		return
 	}
 	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
+	// The window's damage history: its last damageHistory contents.
+	h := append(s.damage[c.ID], ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
+	if len(h) > damageHistory {
+		h = h[len(h)-damageHistory:]
+	}
+	if c.Empty() {
+		delete(s.damage, c.ID)
+	} else {
+		s.damage[c.ID] = h
+	}
+	c.DamageHistory = slices.Clone(h)
 	s.contents[c.ID] = c
 	close(s.contentNotify)
 	s.contentNotify = make(chan struct{})

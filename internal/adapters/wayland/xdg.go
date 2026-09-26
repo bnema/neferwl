@@ -182,7 +182,7 @@ func (w *window) unmap() {
 	w.xdg.acked = false
 	w.xdg.serials = nil
 	w.xdg.server.emit(ports.WindowUnmapped{ID: w.id})
-	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id})
+	w.xdg.server.emitContent(ports.SurfaceContent{ID: w.id}, damage{full: true})
 }
 func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	if x.window != nil {

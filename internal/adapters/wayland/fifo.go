@@ -216,6 +216,8 @@ type update struct {
 	barrier   bool
 	wait      bool
 	at        time.Time
+	damage    []ports.Rect
+	bufDamage []ports.Rect
 }
 
 type childMove struct {
@@ -226,8 +228,9 @@ type childMove struct {
 // takePending moves the pending state into an update: one-shot state is
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
-	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime}
+	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage}
 	s.attached, s.pending, s.callbacks = false, nil, nil
+	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
 		u.vp, u.vpW, u.vpH, u.vpSet = v, v.pendingW, v.pendingH, v.pendingSet
@@ -256,6 +259,7 @@ func (s *surface) putPending(u update) {
 	s.attached, s.pending, s.callbacks = u.attached, u.buffer, u.callbacks
 	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
+	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
 	if u.vp != nil && s.viewport == u.vp {
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
 	}

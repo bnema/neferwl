@@ -57,6 +57,8 @@ type Renderer struct {
 	// the bytes copied into them, for tests.
 	shm    map[shmKey]*shmSurface
 	copied int
+	// redrawn counts the target pixels drawn, for tests.
+	redrawn int
 	// cursors are the exported cursor images (CursorBuffers).
 	cursors [2]*cursorImage
 	// compose draws every frame (compose.go); maxRange bounds one
@@ -299,7 +301,7 @@ func windowColor(id ports.WindowID) [3]uint8 {
 
 // draws walks the scene into quads in paint order, copying new wl_shm
 // content into GPU buffers on the way.
-func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) []draw {
+func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
 	// Scene rects are logical; everything below works in physical pixels.
 	scale := s.Scale
 	if scale <= 0 {
@@ -339,8 +341,13 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		if err != nil {
 			return
 		}
-		st := shmState{pool: b.Pool, offset: b.Offset, stride: b.Stride, w: content.Width, h: content.Height, seq: seq}
-		c, err := r.shmCopyFor(key, st, pixels)
+		st := shmState{w: content.Width, h: content.Height, seq: seq}
+		// Damage history is the root surface's: children copy in full.
+		var damage func(uint64) ([]ports.Rect, bool)
+		if key.index == 0 {
+			damage = content.DamageSince
+		}
+		c, err := r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage)
 		if err != nil {
 			return
 		}
@@ -372,6 +379,9 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		dst := full.Intersect(physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy()))
 		if dst.Empty() {
 			return
+		}
+		if key.index == 0 {
+			dmg.content(key.win, content, full, dst)
 		}
 		addContent(dst, full, content, key, seq)
 	}
@@ -406,6 +416,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 				continue
 			}
 			content := contents[layer.ID]
+			dmg.window(layer.ID, content, physRect(layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H))
 			place(layer.ID, &content, layer.Rect.X, layer.Rect.Y, layer.Rect.W, layer.Rect.H)
 		}
 	}
@@ -426,6 +437,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
 		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
+		dmg.window(w.ID, content, physRect(x, y, w.Rect.W, w.Rect.H))
 		if content.Empty() {
 			add(body, windowColor(w.ID))
 		} else {
@@ -455,6 +467,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		for _, w := range s.Windows {
 			if w.Popup && w.OverLayers == overLayers && !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 {
 				content := contents[w.ID]
+				dmg.window(w.ID, content, physRect(w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
 				place(w.ID, &content, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H)
 			}
 		}

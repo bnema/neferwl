@@ -1,8 +1,8 @@
 package vulkan
 
 import (
-	"errors"
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"runtime"
@@ -168,8 +168,19 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			return nil, err
 		}
 	}
-	ds := r.draws(s, contents)
+	tg := r.target()
+	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
+	ds := r.draws(s, contents, dmg)
 	r.dropPools()
+	partial := !dmg.all()
+	if partial {
+		// The pass keeps the image: repaint the background under the
+		// region, then everything clipped to it.
+		ds = dmg.clip(append([]draw{r.fillDraw(dmg.area, parseColor(s.Background))}, ds...))
+		r.redrawn += dmg.area.Dx() * dmg.area.Dy()
+	} else {
+		r.redrawn += r.width * r.height
+	}
 	d := r.dd
 	cmd := slot.cmd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(cmd, 0)); err != nil {
@@ -179,10 +190,13 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin)); err != nil {
 		return nil, err
 	}
-	tg := r.target()
-	// The whole target is cleared by the pass: its old contents never
-	// matter (UNDEFINED).
+	// A full redraw clears the target: its old contents never matter
+	// (UNDEFINED). A partial one keeps them.
 	b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: tg.image, SubresourceRange: colorRange}
+	if partial {
+		b.OldLayout = tg.layout
+		b.DstAccessMask |= vk.AccessColorAttachmentReadBit
+	}
 	if tg.exported {
 		// Acquire from the display (foreign queue family).
 		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
@@ -198,7 +212,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 	}
 	r.ownership(cmd, dmas, true)
-	r.recordDraws(cmd, tg.view, parseColor(s.Background), ds)
+	r.recordDraws(cmd, tg.view, parseColor(s.Background), ds, partial)
 	r.ownership(cmd, dmas, false)
 	b.SrcAccessMask, b.OldLayout = vk.AccessColorAttachmentWriteBit, vk.ImageLayoutColorAttachmentOptimal
 	b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = queueFamilyIgnored, queueFamilyIgnored
@@ -243,6 +257,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	tg.layout = b.NewLayout
+	tg.hold(s, contents)
 	r.last, r.readBack = tg, false
 	r.dropUnused()
 	r.dropShm()
@@ -251,13 +266,16 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	var fd int32
 	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if err := checked("vkGetSemaphoreFdKHR", d.GetSemaphoreFdKHR(r.device, &get, &fd)); err != nil {
-		// The semaphore stays signalled: replace it once the frame is
-		// done, so the slot's next submit signals a fresh one.
-		err = errors.Join(err, r.waitFrame(frame))
+	if d.GetSemaphoreFdKHR(r.device, &get, &fd) != vk.Success {
+		// The frame is drawn: finish it on the CPU. The semaphore stays
+		// signalled: replace it, so the slot's next submit signals a
+		// fresh one.
+		if err := r.waitFrame(frame); err != nil {
+			return nil, err
+		}
 		d.DestroySemaphore(r.device, slot.done, nil)
 		slot.done = 0
-		return nil, errors.Join(err, r.newDone(slot))
+		return nil, r.newDone(slot)
 	}
 	if fd < 0 {
 		// Already signalled: the driver may return -1.

@@ -283,11 +283,15 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, mode uint32
 	return dr
 }
 
-// recordDraws draws ds in one rendering pass that clears view to bg.
-func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, ds []draw) {
+// recordDraws draws ds in one rendering pass that clears view to bg, or
+// keeps its contents (keep).
+func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, ds []draw, keep bool) {
 	d, c := r.dd, &r.compose
 	clear := vk.ClearValue{math.Float32bits(float32(bg[0]) / 255), math.Float32bits(float32(bg[1]) / 255), math.Float32bits(float32(bg[2]) / 255), math.Float32bits(1)}
 	attachment := vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpClear, StoreOp: vk.AttachmentStoreOpStore, ClearValue: clear}
+	if keep {
+		attachment.LoadOp = vk.AttachmentLoadOpLoad
+	}
 	info := vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &attachment}
 	d.CmdBeginRendering(cmd, &info)
 	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, c.pipeline)

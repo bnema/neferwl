@@ -201,8 +201,9 @@ func (k kmsDevice) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
 	if useMod {
 		cmd.flags = fbModifiers
 	}
-	// Every plane of a buffer lives in the same dmabuf or its own: each
-	// gets its GEM handle (one import per distinct file).
+	// Planes in the same dmabuf share its GEM handle: each distinct
+	// handle is closed once.
+	closing := map[uint32]bool{p.handle: true}
 	for i, pl := range b.Planes {
 		if i >= len(cmd.handles) {
 			break
@@ -213,7 +214,10 @@ func (k kmsDevice) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
 			if h, err = k.primeImport(pl.File); err != nil {
 				return 0, err
 			}
-			defer k.gemClose(h)
+			if !closing[h] {
+				closing[h] = true
+				defer k.gemClose(h)
+			}
 		}
 		cmd.handles[i], cmd.pitches[i], cmd.offsets[i] = h, pl.Stride, pl.Offset
 		if useMod {

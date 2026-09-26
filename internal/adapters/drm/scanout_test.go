@@ -124,3 +124,22 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		}
 	}
 }
+
+// A plane without IN_FORMATS (driver without modifiers) scans out its
+// GETPLANE formats, linear.
+func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
+	k := newMockkms(t)
+	k.EXPECT().planes().Return([]planeRes{{id: 1, possible: 1, formats: []uint32{fourccXRGB}}}, nil)
+	k.EXPECT().objProps(uint32(1), uint32(objPlane)).Return(map[string][2]uint64{"type": {20, planePrimary}}, nil)
+	ps, err := readPlanes(k, 0)
+	if err != nil || len(ps) != 1 {
+		t.Fatalf("%v %v", ps, err)
+	}
+	o := &Output{primary: ps[0]}
+	if f, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB}); !ok || f != fourccXRGB {
+		t.Fatalf("linear argb: %#x %v", f, ok)
+	}
+	if _, ok := o.scanoutFormat(&ports.DMABuf{Format: fourccARGB, Modifier: 0x0200000000000001}); ok {
+		t.Fatal("tiled accepted without IN_FORMATS")
+	}
+}

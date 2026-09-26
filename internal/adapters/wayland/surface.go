@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"image"
 	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
@@ -60,7 +61,21 @@ type surface struct {
 	// contentType is the wp_content_type_v1; contentKind the committed type.
 	contentType              *contentTypeHandler
 	contentKind, pendingKind uint32
+	// Damage requested since the last commit: in surface (logical) and
+	// buffer pixels; committed is what the last commit changed, in buffer
+	// pixels (full: everything), read by the window's damage history.
+	pendingDamage, pendingBufDamage []ports.Rect
+	committed                       damage
 }
+
+// damage is what one commit changed in a surface's buffer.
+type damage struct {
+	full  bool
+	rects []ports.Rect
+}
+
+// maxDamageRects bounds one commit's rects: past it the commit is full.
+const maxDamageRects = 32
 
 // subState is the subsurface tree: parent is set on subsurfaces, children
 // are ordered bottom to top, below marks children under their parent.
@@ -127,11 +142,16 @@ func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
 	}
 }
 
-// redraw sends the tree of a mapped root to the outputs.
+// redraw sends the tree of a mapped root to the outputs. Only a commit
+// of the root's own buffer with no other change keeps partial damage.
 func (s *surface) redraw() {
 	r := s.root()
 	if id := r.windowID(); id != 0 && s.server.channels.Contents != nil {
-		s.server.emitContent(r.tree(id))
+		d := damage{full: true}
+		if s == r && len(r.sub.children) == 0 {
+			d = r.committed
+		}
+		s.server.emitContent(r.tree(id), d)
 	}
 }
 
@@ -248,6 +268,7 @@ func (s *surface) applyCommit() {
 		if state, ok := s.server.buffers[s.current.Resource]; ok {
 			if c, ok := state.content(0); ok {
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
+				s.commitDamage(true, !s.has || c.Width != s.content.Width || c.Height != s.content.Height, c.Width, c.Height)
 				if s.sub.parent == nil && (c.Width != s.lastW || c.Height != s.lastH) {
 					s.lastW, s.lastH = c.Width, c.Height
 					s.server.log.Info().Uint64("id", uint64(s.windowID())).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
@@ -259,6 +280,9 @@ func (s *surface) applyCommit() {
 			// Buffers are read in place: released when the next one
 			// replaces them.
 		}
+	}
+	if !fresh {
+		s.commitDamage(false, false, 0, 0)
 	}
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
@@ -280,14 +304,64 @@ func (s *surface) applyCommit() {
 		s.xdg.window.afterCommit()
 	}
 	if fresh || moved || geometry || hinted || s.sub.parent != nil {
+		if moved || geometry {
+			s.committed = damage{full: true}
+		}
 		s.redraw()
 	}
 }
-func (*surface) Damage(*wayland.Surface, int32, int32, int32, int32)       {}
-func (*surface) DamageBuffer(*wayland.Surface, int32, int32, int32, int32) {}
-func (*surface) SetOpaqueRegion(*wayland.Surface, *wayland.Region)         {}
-func (*surface) SetInputRegion(*wayland.Surface, *wayland.Region)          {}
-func (*surface) SetBufferTransform(*wayland.Surface, int32)                {}
+func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
+	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {
+		s.pendingDamage = append(s.pendingDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+	}
+}
+func (s *surface) DamageBuffer(_ *wayland.Surface, x, y, w, h int32) {
+	if w > 0 && h > 0 && len(s.pendingBufDamage) <= maxDamageRects {
+		s.pendingBufDamage = append(s.pendingBufDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+	}
+}
+
+// commitDamage turns the requested damage into buffer pixels of a bw×bh
+// buffer. Surface damage scales by the buffer/logical ratio, rounded out.
+// A new size, too many rects or none at all with a new buffer (clients
+// that do not report damage) is a full change.
+func (s *surface) commitDamage(fresh, resized bool, bw, bh int) {
+	surf, buf := s.pendingDamage, s.pendingBufDamage
+	s.pendingDamage, s.pendingBufDamage = nil, nil
+	if !fresh {
+		s.committed = damage{}
+		return
+	}
+	if resized || len(surf)+len(buf) == 0 || len(surf)+len(buf) > maxDamageRects {
+		s.committed = damage{full: true}
+		return
+	}
+	lw, lh := s.logicalSize(bw, bh)
+	d := damage{rects: make([]ports.Rect, 0, len(surf)+len(buf))}
+	bounds := image.Rect(0, 0, bw, bh)
+	add := func(r image.Rectangle) {
+		if r = r.Intersect(bounds); !r.Empty() {
+			d.rects = append(d.rects, ports.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()})
+		}
+	}
+	for _, r := range buf {
+		add(image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H))
+	}
+	for _, r := range surf {
+		if lw <= 0 || lh <= 0 {
+			s.committed = damage{full: true}
+			return
+		}
+		// Clients may damage INT32_MAX-sized rects: clamp before scaling.
+		x0, y0 := max(r.X, 0), max(r.Y, 0)
+		x1, y1 := min(r.X+min(r.W, lw), lw), min(r.Y+min(r.H, lh), lh)
+		add(image.Rect(x0*bw/lw, y0*bh/lh, (x1*bw+lw-1)/lw, (y1*bh+lh-1)/lh))
+	}
+	s.committed = d
+}
+func (*surface) SetOpaqueRegion(*wayland.Surface, *wayland.Region) {}
+func (*surface) SetInputRegion(*wayland.Surface, *wayland.Region)  {}
+func (*surface) SetBufferTransform(*wayland.Surface, int32)        {}
 func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
 	if v < 1 {
 		r.PostError(uint32(wayland.SurfaceErrorInvalidScale), "buffer scale must be positive")

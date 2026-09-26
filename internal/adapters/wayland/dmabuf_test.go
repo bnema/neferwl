@@ -264,8 +264,26 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	if len(r) != 2 || r[0].flags != scanout || len(r[0].indices) != 1 || r[0].indices[0] != 1 || r[1].flags != 0 {
 		t.Fatalf("fullscreen: %+v", r)
 	}
+	// Fullscreen on another output: its formats (none) apply at once.
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1"}
+	if r := round("other output"); len(r) != 1 {
+		t.Fatalf("moved output: %+v", r)
+	}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1"}
 	if r := round("tiled again"); len(r) != 1 || r[0].flags != 0 {
 		t.Fatalf("left fullscreen: %+v", r)
+	}
+	// A destroyed feedback gets nothing more (a protocol error would
+	// kill the connection) and leaves the server's list.
+	requestProtocol(t, c, fb, linuxdmabuf.ZwpLinuxDmabufFeedbackV1RequestDestroy)
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	s.display.Do(func() { n = len(s.dmabuf.feedbacks) })
+	if n != 0 {
+		t.Fatalf("%d feedbacks kept", n)
 	}
 }

@@ -88,7 +88,12 @@ type kms interface {
 }
 
 // planeRes is one plane of the card: possible is a bitmask of CRTC indices.
-type planeRes struct{ id, possible uint32 }
+type planeRes struct {
+	id, possible uint32
+	// formats is the plane's format list (GETPLANE): used, all linear,
+	// when the plane has no IN_FORMATS (drivers without modifiers).
+	formats []uint32
+}
 
 // atomicReq collects (object, property, value) triples in insertion order.
 type atomicReq struct {
@@ -217,7 +222,16 @@ func (k kmsDevice) planes() ([]planeRes, error) {
 		if ioctl(k.fd, ioctlGetPlane, unsafe.Pointer(&p)) != nil {
 			continue
 		}
-		out = append(out, planeRes{id: id, possible: p.possibleCrtcs})
+		res := planeRes{id: id, possible: p.possibleCrtcs}
+		if p.countFormats > 0 {
+			fs := make([]uint32, p.countFormats)
+			p.formats = uint64(uintptr(unsafe.Pointer(&fs[0])))
+			if ioctl(k.fd, ioctlGetPlane, unsafe.Pointer(&p)) == nil {
+				res.formats = fs[:min(int(p.countFormats), len(fs))]
+			}
+			runtime.KeepAlive(fs)
+		}
+		out = append(out, res)
 	}
 	return out, nil
 }
@@ -256,6 +270,8 @@ type plane struct {
 	props   map[string]uint32
 	crtc    uint32 // CRTC_ID when read
 	formats []ports.DMABufFormat
+	// zposValue is the plane's zpos when read (its "zpos" property).
+	zposValue uint64
 }
 
 func (p *plane) prop(name string) uint32 {
@@ -280,13 +296,18 @@ func readPlanes(k kms, pipe int) ([]*plane, error) {
 		if err != nil {
 			continue
 		}
-		p := &plane{id: r.id, typ: uint32(props["type"][1]), props: map[string]uint32{}, crtc: uint32(props["CRTC_ID"][1])}
+		p := &plane{id: r.id, typ: uint32(props["type"][1]), props: map[string]uint32{}, crtc: uint32(props["CRTC_ID"][1]), zposValue: props["zpos"][1]}
 		for name, v := range props {
 			p.props[name] = uint32(v[0])
 		}
 		if blob := uint32(props["IN_FORMATS"][1]); blob != 0 {
 			if data, err := k.getBlob(blob); err == nil {
 				p.formats = parseInFormats(data)
+			}
+		}
+		if p.formats == nil {
+			for _, f := range r.formats {
+				p.formats = append(p.formats, ports.DMABufFormat{Format: f})
 			}
 		}
 		out = append(out, p)

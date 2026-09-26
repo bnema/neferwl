@@ -40,6 +40,12 @@ type Output struct {
 	primary *plane
 	cursor  *Cursor
 	stray   []*plane
+	// overlay shows one window's buffer above the composed frame
+	// (overlay.go); overlayOn is the buffer on it in the pending or last
+	// frame (0: off), overlayReason why it is off.
+	overlay       *plane
+	overlayOn     uint64
+	overlayReason string
 	// fbs are the two renderer images frames alternate between, back the
 	// one the next frame draws into (ADR 014: zero copy).
 	fbs  [2]uint32
@@ -183,6 +189,7 @@ func (o *Output) readProps(pipe int, taken map[uint32]bool, cursorSide int) erro
 			o.stray = append(o.stray, p)
 		}
 	}
+	o.pickOverlay()
 	return nil
 }
 
@@ -191,6 +198,9 @@ func (o *Output) owned() []*plane {
 	out := []*plane{o.primary}
 	if o.cursor != nil {
 		out = append(out, o.cursor.plane)
+	}
+	if o.overlay != nil {
+		out = append(out, o.overlay)
 	}
 	return out
 }
@@ -265,7 +275,7 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
 	o.modeBlob = blob
-	o.vrrOn = false
+	o.vrrOn, o.overlayOn = false, 0
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
 		o.cursor.screen, o.cursor.flying = 0, false
@@ -348,6 +358,7 @@ func (o *Output) modesetReq(blob uint32) *atomicReq {
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cursorState{})
 	}
+	o.overlayProps(req, overlayWin{})
 	for _, p := range o.stray {
 		// Only planes a previous master left on this CRTC.
 		props, err := o.k.objProps(p.id, objPlane)
@@ -404,11 +415,16 @@ func (o *Output) wantVRR(direct bool) bool {
 // also move the cursor or change VRR flips at vblank. fence is the
 // frame's GPU fence (nil: none); the caller keeps and closes it.
 func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame) error {
+	return o.commitWith(fb, fence, async, vrr, f, overlayWin{})
+}
+
+// commitWith is commitFrame with ov on the overlay plane (zero: off).
+func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin) error {
 	cur := cursorState{}
 	if o.cursor != nil {
 		cur = o.cursor.desired()
 	}
-	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence) {
+	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn) {
 		async = false
 	}
 	req := &atomicReq{}
@@ -422,6 +438,9 @@ func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f 
 		if o.cursor != nil {
 			o.cursor.props(req, o.crtc, cur)
 		}
+		if ov.buf != 0 || o.overlayOn != 0 {
+			o.overlayProps(req, ov)
+		}
 	}
 	if fence != nil {
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
@@ -429,7 +448,7 @@ func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f 
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.userData(userFrame)); err != nil {
 		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
-			return o.commitFrame(fb, fence, false, vrr, f)
+			return o.commitWith(fb, fence, false, vrr, f, ov)
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
@@ -451,6 +470,9 @@ func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f 
 	if o.cursor != nil {
 		// An async commit leaves the cursor plane as applied.
 		o.cursor.committed(cur)
+	}
+	if !async {
+		o.overlayOn = ov.buf
 	}
 	f.frame, f.async = true, async
 	o.setAsync(async)
@@ -483,6 +505,10 @@ func (o *Output) commitState(vrr bool) error {
 		return nil
 	}
 	if err := o.k.commit(req, atomicNonblock|flipEventFlag, o.userData(userState)); err != nil {
+		if o.overlayConflict(err, o.overlayOn) {
+			// The next frame is composed without the overlay.
+			return errOverlayDropped
+		}
 		if cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
 			return o.commitState(vrr)
 		}
@@ -772,7 +798,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		if !dirty || !haveScene {
 			if stateDirty {
-				if err := o.commitState(o.wantVRR(o.shown != 0)); err != nil && !o.commitFailed(err, &enabled) {
+				err := o.commitState(o.wantVRR(o.shown != 0))
+				if errors.Is(err, errOverlayDropped) {
+					dirty = haveScene
+					continue
+				}
+				if err != nil && !o.commitFailed(err, &enabled) {
 					return fmt.Errorf("commit: %w", err)
 				}
 			}
@@ -786,21 +817,42 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			direct, err = o.commitScanout(fb, c, f)
 		}
 		if !direct {
+			ov, composed := o.overlayFrame(scene, surfaces)
 			r.UseTarget(o.back)
-			done, rerr := r.Render(scene, surfaces)
+			done, rerr := r.Render(composed, surfaces)
 			if rerr != nil {
 				return fmt.Errorf("render frame: %w", rerr)
 			}
-			err = o.commitFrame(o.fbs[o.back], done, false, o.wantVRR(false), f)
+			if ov.fb != 0 && !o.testOverlay(o.fbs[o.back], ov) {
+				// Refused: compose the window too (cached per buffer).
+				if done != nil {
+					done.Close()
+				}
+				ov = overlayWin{}
+				if done, rerr = r.Render(scene, surfaces); rerr != nil {
+					return fmt.Errorf("render frame: %w", rerr)
+				}
+			}
+			// The overlay buffer is on screen like a scanned-out one: it
+			// is reported shown, so it is not released under the plane.
+			f.queued, f.zeroCopy = ov.buf, ov.buf != 0
+			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(false), f, ov)
 			if done != nil {
 				done.Close()
 			}
+			if err != nil && o.overlayConflict(err, ov.buf) {
+				err = errOverlayDropped
+			}
 			if err == nil {
-				o.queued = 0
+				o.queued = ov.buf
 				o.back = 1 - o.back
 			}
 		}
 		if err != nil {
+			if errors.Is(err, errOverlayDropped) {
+				dirty = true
+				continue
+			}
 			if !o.commitFailed(err, &enabled) {
 				return fmt.Errorf("page flip: %w", err)
 			}

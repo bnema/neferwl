@@ -154,12 +154,11 @@ type shmKey struct {
 	index int
 }
 
-// shmState is what a GPU buffer holds: a client buffer at a content Seq.
+// shmState is what a GPU buffer holds: a w×h client buffer at a content
+// Seq.
 type shmState struct {
-	pool           uint64
-	offset, stride int
-	w, h           int
-	seq            uint64
+	w, h int
+	seq  uint64
 }
 
 // shmCopy is one of a surface's two GPU buffers and the set binding it.
@@ -178,8 +177,11 @@ type shmSurface struct {
 }
 
 // shmCopyFor returns the GPU buffer holding a surface's content st, copying
-// the client pixels into one when no buffer holds them yet.
-func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte) (*shmCopy, error) {
+// the client pixels (stride bytes per row from offset) into one when no
+// buffer holds them yet. A buffer holding an older content of the same
+// size gets only what changed since (damage, in buffer pixels; false:
+// everything).
+func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, stride int, damage func(since uint64) ([]ports.Rect, bool)) (*shmCopy, error) {
 	s := r.shm[key]
 	if s == nil {
 		s = &shmSurface{}
@@ -223,14 +225,27 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte) (*shmCopy,
 	}
 	dst := unsafe.Slice((*byte)(c.gpu.mapped), size)
 	row := st.w * 4
+	rects := []ports.Rect{{W: st.w, H: st.h}}
+	if c.valid && c.holds.w == st.w && c.holds.h == st.h && damage != nil {
+		if d, ok := damage(c.holds.seq); ok {
+			rects = d
+		}
+	}
 	// The client may shrink its pool under the mapping: its window then
 	// shows garbage for this frame, never a crash, and is copied again.
 	c.valid = copyGuarded(func() {
-		for y := range st.h {
-			copy(dst[y*row:(y+1)*row], pixels[st.offset+y*st.stride:])
+		for _, rc := range rects {
+			x0, y0 := max(rc.X, 0), max(rc.Y, 0)
+			x1, y1 := min(rc.X+rc.W, st.w), min(rc.Y+rc.H, st.h)
+			for y := y0; y < y1; y++ {
+				d := y*row + x0*4
+				s := offset + y*stride + x0*4
+				n := (x1 - x0) * 4
+				copy(dst[d:d+n], pixels[s:s+n])
+				r.copied += n
+			}
 		}
 	})
-	r.copied += size
 	c.holds, c.gpu.last = st, r.frame
 	return c, nil
 }

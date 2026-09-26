@@ -28,6 +28,11 @@ type target struct {
 	// exported images are shared with the display: ownership goes to the
 	// foreign queue family after each frame, and KMS reads them.
 	exported bool
+	// What the image holds (damage.go): the scene Seq and each window's
+	// content Seq; valid once a frame was drawn whole.
+	valid    bool
+	sceneSeq uint64
+	seqs     map[ports.WindowID]uint64
 }
 
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.

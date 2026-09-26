@@ -622,6 +622,42 @@ type SurfaceContent struct {
 	// Async asks for tearing presentation (wp_tearing_control_v1); outputs
 	// honour it only in direct scanout.
 	Async bool
+	// DamageHistory is what changed in the root surface's buffer over the
+	// window's last contents, oldest first, ending with this one (Seq).
+	// A renderer holding an older content redraws the union of the
+	// entries after it, or everything when the history does not reach it.
+	DamageHistory []SeqDamage
+}
+
+// SeqDamage is what content Seq changed from the one before: Rects in
+// root buffer pixels, or everything when Full.
+type SeqDamage struct {
+	Seq   uint64
+	Full  bool
+	Rects []Rect
+}
+
+// DamageSince is the union of changes after content seq up to this one,
+// and false when the history does not reach back to seq (redraw all).
+func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
+	if seq >= c.Seq {
+		return nil, true
+	}
+	h := c.DamageHistory
+	if len(h) == 0 || h[0].Seq > seq+1 || h[len(h)-1].Seq != c.Seq {
+		return nil, false
+	}
+	var out []Rect
+	for _, d := range h {
+		if d.Seq <= seq {
+			continue
+		}
+		if d.Full {
+			return nil, false
+		}
+		out = append(out, d.Rects...)
+	}
+	return out, true
 }
 
 // Subsurface is a child surface at X, Y logical pixels from the root
