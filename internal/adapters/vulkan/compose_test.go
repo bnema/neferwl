@@ -138,6 +138,69 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	}
 }
 
+// A surface fully hidden by an opaque subsurface above it is not copied:
+// only the subsurface's bytes are, and the frame shows it.
+func TestRendererSkipsOccludedSurface(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	green := color.RGBA{0, 255, 0, 255}
+	root := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
+	root.ID, root.Seq = 1, 1
+	game := solidContent(t, 16, 16, green)
+	game.Opaque = true
+	root.Children = []ports.Subsurface{{SurfaceContent: game}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	if r.copied != 16*16*4 {
+		t.Fatalf("copied %d bytes, want only the subsurface's %d", r.copied, 16*16*4)
+	}
+	if got := r.Pixels().At(8, 8); got != green {
+		t.Fatalf("At(8,8)=%v want %v", got, green)
+	}
+	// A smaller opaque child leaves part of the root visible: it is copied.
+	small := solidContent(t, 8, 8, green)
+	small.Opaque = true
+	root.Seq = 2
+	root.Children = []ports.Subsurface{{SurfaceContent: small}}
+	r.copied = 0
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	if r.copied != 16*16*4+8*8*4 {
+		t.Fatalf("partly hidden root: copied %d", r.copied)
+	}
+}
+
+// A covering child whose buffer will not draw does not hide the root:
+// an unimportable dmabuf still shows the surface below it, not a hole.
+func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	red := color.RGBA{255, 0, 0, 255}
+	root := solidContent(t, 16, 16, red)
+	root.ID, root.Seq = 1, 1
+	bad := &ports.DMABuf{ID: 9, Width: 16, Height: 16, Format: 0xdeadbeef}
+	root.Children = []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Width: 16, Height: 16, Opaque: true, DMABuf: bad}}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	if r.copied != 16*16*4 {
+		t.Fatalf("copied %d bytes, want the root's %d", r.copied, 16*16*4)
+	}
+	if got := r.Pixels().At(8, 8); got != red {
+		t.Fatalf("At(8,8)=%v want %v", got, red)
+	}
+}
+
 // render draws a frame and closes its fence.
 func render(r *Renderer, s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
 	done, err := r.Render(s, contents)
