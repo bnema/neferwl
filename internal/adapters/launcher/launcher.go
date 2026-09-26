@@ -32,7 +32,7 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string, cursorSize int) 
 			continue
 		}
 		switch {
-		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"), strings.HasPrefix(key, "XCURSOR_"):
+		case key == "HOME", key == "USER", key == "LOGNAME", key == "SHELL", key == "PATH", key == "LANG", key == "DBUS_SESSION_BUS_ADDRESS", strings.HasPrefix(key, "LC_"), strings.HasPrefix(key, "XDG_"), strings.HasPrefix(key, "XCURSOR_"):
 			values[key] = value
 		}
 	}

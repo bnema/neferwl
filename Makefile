@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check fakes-check arch check bin tty logs
+.PHONY: build test vet race mocks mocks-check fakes-check arch check bin tty logs dist pkg
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -45,3 +45,27 @@ fakes-check:
 arch:
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
 check: vet test arch fakes-check
+
+# Self-contained source tarball for packaging (packaging/arch/PKGBUILD): the
+# sibling purego-* modules are vendored, so the package builds offline.
+# pacman-ordered: 0.0.0.r<commits>.g<hash>, a tag replaces 0.0.0 once there is one.
+VERSION ?= $(shell t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
+	echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)")
+DIST := dist/nefertty-$(VERSION)
+SIBLINGS := github.com/bnema/purego-libwayland github.com/bnema/purego-vulkan
+dist:
+	@rm -rf $(DIST) && mkdir -p $(DIST)
+	git archive $$(git stash create || echo HEAD) | tar -x -C $(DIST)
+	cd $(DIST) && go mod edit $$(cd $(CURDIR) && go list -m -f '-replace={{.Path}}={{.Dir}}' $(SIBLINGS)) && go mod vendor && \
+		for m in $(SIBLINGS); do d=$$(cd $(CURDIR) && go list -m -f '{{.Dir}}' $$m); \
+			sed -i "s#=> $$d\$$#=> ../$${m##*/}#" go.mod vendor/modules.txt; done && \
+		! grep -rq "$(HOME)" go.mod vendor/modules.txt && echo '$(VERSION)' > VERSION
+	tar -C dist -czf $(DIST).tar.gz nefertty-$(VERSION)
+	@rm -rf $(DIST) && echo $(DIST).tar.gz
+
+# Arch package from the dist tarball; install it with `sudo pacman -U` on
+# the printed file.
+pkg: dist
+	rm -rf dist/pkg && mkdir -p dist/pkg && cp packaging/arch/PKGBUILD $(DIST).tar.gz dist/pkg/
+	cd dist/pkg && sed -i "s/^pkgver=.*/pkgver=$(VERSION)/" PKGBUILD && makepkg -f --noconfirm
+	@ls dist/pkg/*.pkg.tar.zst

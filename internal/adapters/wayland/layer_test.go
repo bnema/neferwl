@@ -128,7 +128,16 @@ func TestWaybarLayer(t *testing.T) {
 	if err = os.WriteFile(style, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, done, output := lifecycleClient(t, tool, s, dir, []string{"HOME=" + home}, "-c", config, "-s", style)
+	// waybar (gio) aborts without a session bus; the user bus is the default.
+	bus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+	if bus == "" {
+		sock := os.Getenv("XDG_RUNTIME_DIR") + "/bus"
+		if _, err := os.Stat(sock); err != nil {
+			t.Skip("no D-Bus session bus")
+		}
+		bus = "unix:path=" + sock
+	}
+	_, done, output := lifecycleClient(t, tool, s, dir, []string{"HOME=" + home, "DBUS_SESSION_BUS_ADDRESS=" + bus}, "-c", config, "-s", style)
 	select {
 	case ev := <-events:
 		v, ok := ev.(ports.LayerChanged)

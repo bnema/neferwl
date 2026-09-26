@@ -23,6 +23,13 @@ import (
 
 type usageError struct{ error }
 
+// sessionEnvCommand exports the session environment to D-Bus and systemd
+// user services (--session).
+var sessionEnvCommand = []string{"dbus-update-activation-environment", "--systemd", "WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE"}
+
+// version is set with -ldflags "-X main.version=..." by packaged builds.
+var version string
+
 func main() {
 	tuneGC()
 	os.Exit(runCode())
@@ -99,11 +106,13 @@ func run() error {
 			fmt.Println("unknown")
 			return nil
 		}
-		version := info.Main.Version
-		if version == "" {
-			version = "(devel)"
+		v := info.Main.Version
+		if version != "" {
+			v = version // set by release builds (make dist)
+		} else if v == "" {
+			v = "(devel)"
 		}
-		fmt.Println(version)
+		fmt.Println(v)
 		return nil
 	}
 	flags := flag.NewFlagSet("nefertty", flag.ContinueOnError)
@@ -116,6 +125,7 @@ func run() error {
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
+	session := flags.Bool("session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return err
@@ -179,6 +189,11 @@ func run() error {
 	if cfgErr != nil {
 		fmt.Fprintln(os.Stderr, cfgErr)
 		return cfgErr
+	}
+	if *session {
+		// First startup command: portals and other D-Bus or systemd user
+		// services started later find the session's displays.
+		cfg.Startup = append([][]string{sessionEnvCommand}, cfg.Startup...)
 	}
 	var script *os.File
 	if *inputPath != "" {
