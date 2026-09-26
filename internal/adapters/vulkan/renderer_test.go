@@ -57,13 +57,31 @@ func TestRendererRender(t *testing.T) {
 			}
 		}
 	}
-	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}}
+	// The client sits inside its inset sides; separators are drawn over
+	// the windows in order, with the border colors.
+	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}, Inset: ports.SideAll}
 	c := windowColor(1)
 	wc := color.RGBA{c[0], c[1], c[2], 255}
+	gray, lit := color.RGBA{0x31, 0x32, 0x44, 255}, color.RGBA{0xb4, 0xbe, 0xfe, 255}
 	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
-	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 21}: {0x31, 0x32, 0x44, 255}, {21, 22}: {0x31, 0x32, 0x44, 255}, {23, 23}: {0x31, 0x32, 0x44, 255}, {24, 24}: bg})
-	s.Windows[0].Focused = true
-	check(s, map[image.Point]color.RGBA{{9, 9}: {0xb4, 0xbe, 0xfe, 255}, {10, 10}: wc, {16, 16}: wc})
+	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: bg, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 22}: bg, {24, 24}: bg})
+	s.Separators = []ports.Separator{
+		{Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 2}},
+		{Rect: ports.Rect{X: 8, Y: 8, W: 8, H: 2}, Active: true},
+	}
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {15, 9}: lit, {16, 9}: gray, {23, 9}: gray, {10, 10}: wc})
+	s.Border.Inactive = ""
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {16, 9}: bg})
+	// A float covers the tile lines; its own border is drawn with it.
+	s.Windows = []ports.SceneWindow{win, {ID: 3, Rect: ports.Rect{X: 12, Y: 4, W: 8, H: 8}, Floating: true, Inset: ports.SideAll}}
+	s.Separators = []ports.Separator{
+		{Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 2}, Active: true},
+		{Rect: ports.Rect{X: 12, Y: 4, W: 8, H: 1}, Active: true, Window: 3},
+	}
+	fc := windowColor(3)
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {14, 9}: {fc[0], fc[1], fc[2], 255}, {14, 4}: lit})
+	s.Windows = []ports.SceneWindow{win}
+	s.Separators, s.Border.Inactive = nil, "#313244"
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
 	s.Windows[0].Fullscreen = false
@@ -135,7 +153,8 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		t.Errorf("overlap = %v, want %v", got, want)
 	}
 	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
-	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true}}
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true, Inset: ports.SideAll}}
+	scene.Separators = []ports.Separator{{Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 4}, Active: true}}
 	px := make([]byte, 16*16*4)
 	for i := 0; i < len(px); i += 4 {
 		copy(px[i:i+4], []byte{3, 5, 7, 0})
@@ -214,7 +233,7 @@ func TestRendererScale(t *testing.T) {
 	red := [3]uint8{200, 0, 0}
 	// Scale 2: a 10x10 logical window at (4,4) covers physical (8,8)-(28,28);
 	// its 20x20 buffer (fractional client) is copied 1:1.
-	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 10, H: 10}, Borderless: true}}}
+	s := ports.Scene{Scale: 2, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 10, H: 10}}}}
 	scaled := shmContent(t, 20, 20, 80, solid(20, 20, red))
 	scaled.ID, scaled.LogicalW, scaled.LogicalH = 1, 10, 10
 	content := map[ports.WindowID]ports.SurfaceContent{1: *scaled}
@@ -299,7 +318,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	defer r.Close()
 	red, green, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 255, 255}
 	bg := color.RGBA{16, 32, 48, 255}
-	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 10}, Borderless: true}}}
+	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 10}}}}
 	// A 30×20 surface whose window is the 20×10 at (5, 5): a 5px shadow.
 	root := solidContent(t, 30, 20, red)
 	root.Geometry = ports.Rect{X: 5, Y: 5, W: 20, H: 10}
@@ -396,7 +415,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 		4: *shmContent(t, 16, 8, 16*4, fill(16, 8, halfBlue)),
 	}
 	scene := ports.Scene{Background: "#000000",
-		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 32, H: 48}, Borderless: true}},
+		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 32, H: 48}}},
 		Layers: []ports.SceneLayer{
 			{ID: 2, Layer: ports.LayerBottom, Rect: ports.Rect{W: 64, H: 48}},
 			{ID: 3, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 16, H: 8}},

@@ -30,7 +30,7 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	px := []byte{0, 0, 0, 255, 255, 255, 255, 255}
 	c := shmContent(t, 2, 1, 8, px)
 	c.LogicalW, c.LogicalH = 64, 16
-	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}, Borderless: true}}}
+	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 		return [4]byte{255, 255, 255, 255}
 	})
 	buf := &ports.DMABuf{ID: 3, Width: 64, Height: 1, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
-	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 128, H: 4}, Borderless: true}}}
+	scene := ports.Scene{Background: "#ff0000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 128, H: 4}}}}
 	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 1, LogicalW: 128, LogicalH: 4, DMABuf: buf}
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	defer r.Close()
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
 	c.ID, c.Seq = 1, 1
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}, Borderless: true}}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
 	render := func() {
 		t.Helper()
@@ -160,7 +160,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	if !r.syncFD {
 		t.Skip("frames are finished on return without sync files")
 	}
-	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}, Borderless: true}}}
+	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
 	var readers []uint64
 	for seq := uint64(1); seq <= 3; seq++ {
 		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})

@@ -591,6 +591,10 @@ type Scene struct {
 	Background                string
 	Border                    Border
 	Windows                   []SceneWindow
+	// Separators are the lines between windows, drawn in slice order with
+	// the Border colors: tile lines over the tiles, under the floats; a
+	// float's border right after the float.
+	Separators []Separator
 	// Layers are drawn in slice order: background and bottom before windows,
 	// top and overlay after. A fullscreen window covers bottom and top.
 	// Window popups are drawn after the windows, layer popups
@@ -614,10 +618,20 @@ func (s Scene) Shows(id WindowID) bool {
 	return false
 }
 
-// Border carries the window border style; colors are #rrggbb, "" skips drawing.
+// Border carries the window border style; colors are #rrggbb, "" skips
+// drawing. Width is in logical pixels.
 type Border struct {
 	Width            int
 	Active, Inactive string
+}
+
+// Separator is a line between windows, in logical pixels. Active lines
+// mark the focused window and use Border.Active, others Border.Inactive.
+// Window is the float whose border it is; 0 for lines between tiles.
+type Separator struct {
+	Rect   Rect
+	Active bool
+	Window WindowID
 }
 
 // SceneLayer carries core → renderer layer surface placement.
@@ -760,8 +774,11 @@ type SceneWindow struct {
 	ID                          WindowID
 	Rect                        Rect
 	Focused, Fullscreen, Hidden bool
-	// Borderless windows fill the usable width alone; no border is drawn.
-	Borderless bool
+	// Inset sides carry a separator line inside Rect: the client is drawn
+	// inside it.
+	Inset Sides
+	// Floating windows are drawn over the tiles and their lines.
+	Floating bool
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

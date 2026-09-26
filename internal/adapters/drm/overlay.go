@@ -91,8 +91,8 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
 		}
 	}
-	if !pick.Fullscreen && !pick.Borderless && s.Border.Width > 0 {
-		// The overlay shows the buffer alone; its border would go with it.
+	if !pick.Fullscreen && len(s.Separators) > 0 {
+		// The overlay shows the buffer alone; the lines would go with it.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
 	}
 	c := surfaces[pick.ID]

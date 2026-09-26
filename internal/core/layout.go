@@ -93,9 +93,12 @@ type Placement struct {
 	Fullscreen, Focused, Hidden bool
 	// Floating windows sit over the columns at their own size.
 	Floating bool
-	// Borderless is set when the column fills the usable width: it is the only
-	// column on screen, so no border marks focus.
-	Borderless bool
+	// Neighbors are the sides touching another tiled window. Inset are the
+	// sides where the border takes room from the window: all sides of a
+	// float; for tiles, the right and bottom neighbors only, so two
+	// windows share one separator line (tmux style). With gaps, each tile
+	// insets all its neighbor sides.
+	Neighbors, Inset ports.Sides
 }
 
 // Overflow says what happens past MaxColumns columns.
@@ -665,13 +668,14 @@ func (w *Workspace) Layout() []Placement {
 				r = Rect{}
 			}
 			focused := !floatFocused && i == w.Focus && j == c.Focus
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: focused, Hidden: hidden, Borderless: col.W >= w.Usable.W-2*gap && (w.Overflow != OverflowFixed || len(w.Columns) == 1)})
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: focused, Hidden: hidden})
 			y += h + gap
 		}
 	}
+	setNeighbors(result, gap)
 	// Floating windows go last: they are drawn and hit on top.
 	for _, f := range w.Floats {
-		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID}
+		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID, Inset: ports.SideAll}
 		// Floats stay above a fullscreen window: a dialog opened from a
 		// fullscreen app must be seen.
 		if w.fullscreen == f.ID {
@@ -680,6 +684,39 @@ func (w *Workspace) Layout() []Placement {
 		result = append(result, p)
 	}
 	return result
+}
+
+// setNeighbors marks the sides where tiles touch across the gap, from
+// geometry alone: client sizes do not change as the view scrolls.
+func setNeighbors(tiles []Placement, gap int) {
+	overlap := func(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
+	for i := range tiles {
+		a := &tiles[i]
+		if a.Hidden || a.Fullscreen || a.Rect.W <= 0 || a.Rect.H <= 0 {
+			continue
+		}
+		for j := range tiles {
+			b := tiles[j].Rect
+			if i == j || tiles[j].Hidden || tiles[j].Fullscreen || b.W <= 0 || b.H <= 0 {
+				continue
+			}
+			r := a.Rect
+			switch {
+			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H):
+				a.Neighbors |= ports.SideRight
+			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H):
+				a.Neighbors |= ports.SideLeft
+			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W):
+				a.Neighbors |= ports.SideBottom
+			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W):
+				a.Neighbors |= ports.SideTop
+			}
+		}
+		a.Inset = a.Neighbors
+		if gap == 0 {
+			a.Inset &= ports.SideRight | ports.SideBottom
+		}
+	}
 }
 
 // floatRect centres a floating window in the usable area, its border

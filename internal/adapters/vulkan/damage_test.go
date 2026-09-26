@@ -54,7 +54,7 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 	base := shmContent(t, w, h, w*4, pixels)
 	base.ID = 1
 	f := base.SHM.File
-	scene := ports.Scene{Seq: 5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}, Borderless: true}}}
+	scene := ports.Scene{Seq: 5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []ports.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
 	step := func(i int, c ports.SurfaceContent) {
@@ -113,7 +113,7 @@ func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 	c := solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255})
 	c.ID, c.Seq = 1, 1
 	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
-	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 16, H: 16}, Borderless: true}}}
+	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 16, H: 16}}}}
 	without := with
 	without.Windows = nil
 	check := func(s ports.Scene, what string) {

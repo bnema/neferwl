@@ -422,7 +422,28 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		}
 	}
 	addLayers(false)
+	// Separators are drawn in order, active lines over inactive ones:
+	// tile lines (Window 0) over the tiles, a float's border with it.
+	addSeparators := func(id ports.WindowID) {
+		for _, sep := range s.Separators {
+			if sep.Window != id {
+				continue
+			}
+			col := s.Border.Inactive
+			if sep.Active {
+				col = s.Border.Active
+			}
+			if col != "" {
+				add(physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), parseColor(col))
+			}
+		}
+	}
+	tileLines := false
 	for _, w := range s.Windows {
+		if w.Floating && !tileLines {
+			addSeparators(0)
+			tileLines = true
+		}
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
 		}
@@ -431,11 +452,12 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			continue
 		}
 		// Content sits inside the border; core sized the client to match.
-		b := 0
-		if !w.Fullscreen && !w.Borderless {
-			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
+		b, inset := 0, ports.Sides(0)
+		if !w.Fullscreen {
+			b, inset = s.Border.Width, w.Inset
 		}
-		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
+		c := w.Rect.Inset(inset, b)
+		cx, cy, cw, ch := c.X, c.Y, c.W, c.H
 		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
 		dmg.window(w.ID, content, physRect(x, y, w.Rect.W, w.Rect.H))
@@ -445,22 +467,12 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			add(body, parseColor(s.Background))
 			place(w.ID, &content, cx, cy, cw, ch)
 		}
-		borderColor := s.Border.Inactive
-		if w.Focused {
-			borderColor = s.Border.Active
+		if w.Floating {
+			addSeparators(w.ID)
 		}
-		if b > 0 && borderColor != "" {
-			rgb := parseColor(borderColor)
-			outer, inner := physRect(x, y, w.Rect.W, w.Rect.H), physRect(cx, cy, cw, ch)
-			for _, strip := range []image.Rectangle{
-				image.Rect(outer.Min.X, outer.Min.Y, outer.Max.X, inner.Min.Y),
-				image.Rect(outer.Min.X, inner.Max.Y, outer.Max.X, outer.Max.Y),
-				image.Rect(outer.Min.X, inner.Min.Y, inner.Min.X, inner.Max.Y),
-				image.Rect(inner.Max.X, inner.Min.Y, outer.Max.X, inner.Max.Y),
-			} {
-				add(strip, rgb)
-			}
-		}
+	}
+	if !tileLines {
+		addSeparators(0)
 	}
 	// Popups draw only what the client drew, shadows clipped. Window popups
 	// stay with the windows; a layer's go over every layer.

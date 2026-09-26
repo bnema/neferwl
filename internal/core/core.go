@@ -292,15 +292,13 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	}
 }
 
-// clientRect is the placement minus the border drawn around the client.
+// clientRect is the placement minus the border on its inset sides.
 // The renderer applies the same inset (ports.Border).
 func (c *Core) clientRect(p Placement) Rect {
-	r := p.Rect
-	if p.Fullscreen || p.Borderless {
-		return r
+	if p.Fullscreen {
+		return p.Rect
 	}
-	b := min(max(c.cfg.Border.Width, 0), r.W/2, r.H/2)
-	return Rect{X: r.X + b, Y: r.Y + b, W: r.W - 2*b, H: r.H - 2*b}
+	return p.Rect.Inset(p.Inset, c.cfg.Border.Width)
 }
 
 // visible reports whether the window, layer surface or popup is on screen
@@ -401,11 +399,14 @@ func (c *Core) publish(ctx context.Context) error {
 		c.seq++
 		o := sc.mon.Output()
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
-		for _, p := range sc.mon.Layout() {
+		layout := sc.mon.Layout()
+		// Only the focused output lights the focused window's lines.
+		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
+		for _, p := range layout {
 			alive[p.ID] = true
-			// Only the focused output shows the focused border.
+			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Borderless: p.Borderless})
+			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset})
 			floating := p.Floating
 			if p.Hidden {
 				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {
