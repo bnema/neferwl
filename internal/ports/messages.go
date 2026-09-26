@@ -34,6 +34,25 @@ type WindowUnmapped struct{ ID WindowID }
 
 func (WindowUnmapped) clientEvent() {}
 
+// ShortcutsInhibit carries wayland → core that a window asks for (Active)
+// or stops asking for all keys, compositor binds included, while it has
+// keyboard focus (zwp_keyboard_shortcuts_inhibit_v1).
+type ShortcutsInhibit struct {
+	Window WindowID
+	Active bool
+}
+
+func (ShortcutsInhibit) clientEvent() {}
+
+// IdleInhibit carries wayland → core that a window keeps (Active) or
+// stops keeping the session from going idle (zwp_idle_inhibit_v1).
+type IdleInhibit struct {
+	Window WindowID
+	Active bool
+}
+
+func (IdleInhibit) clientEvent() {}
+
 // WindowFullscreenRequest carries wayland → core fullscreen requests.
 type WindowFullscreenRequest struct {
 	ID         WindowID
@@ -371,6 +390,15 @@ type ClientCommand interface{ clientCommand() }
 
 // ConfigureWindow carries core → wayland geometry and state. Output is the
 // connector showing the window, empty while it is hidden.
+// ShortcutsInhibitState carries core → wayland whether a window's
+// shortcuts inhibitor is in effect (it has keyboard focus).
+type ShortcutsInhibitState struct {
+	Window WindowID
+	Active bool
+}
+
+func (ShortcutsInhibitState) clientCommand() {}
+
 type ConfigureWindow struct {
 	ID                    WindowID
 	Width, Height         int
@@ -769,4 +797,6 @@ type WindowState struct {
 	// Visible means on the workspace on screen (it may be behind a
 	// fullscreen window).
 	Visible bool
+	// IdleInhibit is set while the window keeps the session from idling.
+	IdleInhibit bool `json:",omitempty"`
 }

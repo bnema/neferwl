@@ -124,12 +124,16 @@ type Server struct {
 	timelines map[*server.Resource]*timeline
 	syncWait  *syncWaiter
 	// flips is each output's latest flip (pacer, under Do).
-	flips         map[string]ports.FlipInfo
-	contentNotify chan struct{}
-	contentReady  chan struct{}
-	outputs       []*output
-	focusedOutput string
-	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
+	flips map[string]ports.FlipInfo
+	// inhibitors are the live inhibitor objects (inhibit.go);
+	// shortcutWindows and idleWindows what core was told.
+	inhibitors                   []*inhibitor
+	shortcutWindows, idleWindows map[ports.WindowID]bool
+	contentNotify                chan struct{}
+	contentReady                 chan struct{}
+	outputs                      []*output
+	focusedOutput                string
+	fractions                    map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorMu guards only the latest cursor change for forwardCursors.
@@ -578,6 +582,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.setOutputs(c)
 	case ports.SlotsPending:
 		s.slotsPending = c.Pending
+	case ports.ShortcutsInhibitState:
+		s.setShortcutsInhibit(c)
 	case ports.CloseWindow:
 		w := s.windows[c.ID]
 		if w == nil || w.toplevel == nil || !w.toplevel.Resource.Alive() {
