@@ -343,7 +343,7 @@ func TestSlotReleasedWhenWindowMoved(t *testing.T) {
 	r.fill(t)
 	r.press(t, "d") // on dev, focus on code (slot 1)
 	r.input <- ports.KeyEvent{Keysym: "Prior", Mods: ports.ModAlt | ports.ModShift, Pressed: true}
-	scene(t, r.scenes) // move-to-workspace-up: code goes to workspace 1
+	scene(t, r.scenes) // move-window-to-workspace-up: code goes to workspace 1
 	noSpawn(t, r.spawn)
 	r.press(t, "d") // back to workspace 1
 	r.press(t, "d") // dev again: slot 1 is empty

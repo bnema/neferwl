@@ -21,8 +21,11 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 40 || d.Layout.MaxColumns != 2 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 50 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
+	}
+	if d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
+		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
 		t.Fatal(d.Binds)

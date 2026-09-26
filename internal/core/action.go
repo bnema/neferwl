@@ -20,38 +20,54 @@ const (
 	ActionCloseWindow      Action = "close-window"
 	ActionQuit             Action = "quit"
 	// Workspaces stack vertically; up/down stop at the ends.
-	ActionFocusWorkspaceUp    Action = "focus-workspace-up"
-	ActionFocusWorkspaceDown  Action = "focus-workspace-down"
-	ActionMoveToWorkspaceUp   Action = "move-to-workspace-up"
-	ActionMoveToWorkspaceDown Action = "move-to-workspace-down"
+	ActionFocusWorkspaceUp   Action = "focus-workspace-up"
+	ActionFocusWorkspaceDown Action = "focus-workspace-down"
+	// Move the focused column, or only the focused window, one workspace
+	// up or down.
+	ActionMoveColumnToWorkspaceUp   Action = "move-column-to-workspace-up"
+	ActionMoveColumnToWorkspaceDown Action = "move-column-to-workspace-down"
+	ActionMoveWindowToWorkspaceUp   Action = "move-window-to-workspace-up"
+	ActionMoveWindowToWorkspaceDown Action = "move-window-to-workspace-down"
 	// Monitors are ordered left to right (ADR 011).
 	ActionFocusMonitorLeft   Action = "focus-monitor-left"
 	ActionFocusMonitorRight  Action = "focus-monitor-right"
 	ActionMoveWorkspaceLeft  Action = "move-workspace-to-monitor-left"
 	ActionMoveWorkspaceRight Action = "move-workspace-to-monitor-right"
 	// Scale steps through the clean scales of the output (see CleanScales).
-	ActionScaleUp         Action = "scale-up"
-	ActionScaleDown       Action = "scale-down"
-	actionFocusWorkspace         = "focus-workspace "
-	actionMoveToWorkspace        = "move-to-workspace "
+	ActionScaleUp   Action = "scale-up"
+	ActionScaleDown Action = "scale-down"
 )
 
-// WorkspaceArg parses "focus-workspace N" and "move-to-workspace N" (N from 1).
-// move is true for move-to-workspace.
-func WorkspaceArg(a Action) (n int, move bool, ok bool) {
-	rest, found := strings.CutPrefix(string(a), actionFocusWorkspace)
-	if !found {
-		rest, found = strings.CutPrefix(string(a), actionMoveToWorkspace)
-		move = true
+// WorkspaceOp is what a numbered workspace action does.
+type WorkspaceOp int
+
+const (
+	FocusWorkspace WorkspaceOp = iota
+	MoveColumnToWorkspace
+	MoveWindowToWorkspace
+)
+
+var workspacePrefixes = [...]string{
+	FocusWorkspace:        "focus-workspace ",
+	MoveColumnToWorkspace: "move-column-to-workspace ",
+	MoveWindowToWorkspace: "move-window-to-workspace ",
+}
+
+// WorkspaceArg parses "focus-workspace N", "move-column-to-workspace N" and
+// "move-window-to-workspace N" (N from 1).
+func WorkspaceArg(a Action) (n int, op WorkspaceOp, ok bool) {
+	for i, prefix := range workspacePrefixes {
+		rest, found := strings.CutPrefix(string(a), prefix)
+		if !found {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(rest))
+		if err != nil || n < 1 || n > 99 {
+			return 0, 0, false
+		}
+		return n, WorkspaceOp(i), true
 	}
-	if !found {
-		return 0, false, false
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(rest))
-	if err != nil || n < 1 || n > 99 {
-		return 0, false, false
-	}
-	return n, move, true
+	return 0, 0, false
 }
 
 // namedPrefix toggles a named workspace: "workspace dev".
@@ -151,11 +167,11 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
-	if n, move, ok := WorkspaceArg(a); ok {
-		if move {
-			m.MoveToWorkspace(n - 1)
-		} else {
+	if n, op, ok := WorkspaceArg(a); ok {
+		if op == FocusWorkspace {
 			m.FocusNumber(n)
+		} else {
+			m.MoveToWorkspace(n-1, op == MoveColumnToWorkspace)
 		}
 		return Effect{}
 	}
@@ -185,14 +201,14 @@ func (m *Monitor) Apply(a Action) Effect {
 			m.Focus(m.Active + 1)
 		}
 		return Effect{}
-	case ActionMoveToWorkspaceUp:
+	case ActionMoveColumnToWorkspaceUp, ActionMoveWindowToWorkspaceUp:
 		if m.shown == nil && m.Active > 0 {
-			m.MoveToWorkspace(m.Active - 1)
+			m.MoveToWorkspace(m.Active-1, a == ActionMoveColumnToWorkspaceUp)
 		}
 		return Effect{}
-	case ActionMoveToWorkspaceDown:
+	case ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceDown:
 		if m.shown == nil {
-			m.MoveToWorkspace(m.Active + 1)
+			m.MoveToWorkspace(m.Active+1, a == ActionMoveColumnToWorkspaceDown)
 		}
 		return Effect{}
 	}

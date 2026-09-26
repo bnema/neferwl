@@ -34,14 +34,14 @@ var defaultBinds = []struct{ combo, action string }{
 	{"ctrl+cmd+space", "spawn fuzzel"},
 	{"cmd+pageup", "focus-workspace-up"},
 	{"cmd+pagedown", "focus-workspace-down"},
-	{"cmd+shift+pageup", "move-to-workspace-up"},
-	{"cmd+shift+pagedown", "move-to-workspace-down"},
+	{"cmd+shift+pageup", "move-column-to-workspace-up"},
+	{"cmd+shift+pagedown", "move-column-to-workspace-down"},
 	{"cmd+ctrl+left", "focus-monitor-left"},
 	{"cmd+ctrl+right", "focus-monitor-right"},
 	{"cmd+ctrl+shift+left", "move-workspace-to-monitor-left"},
 	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
 }
-var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-to-workspace-up": true, "move-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "toggle-fullscreen": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -87,11 +87,20 @@ func Defaults() ports.Config {
 	c.Layout.Overflow = "scroll"
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
-		combo, err := parseCombo(b.combo)
-		if err != nil {
-			panic(err)
+		combos := []string{b.combo}
+		// Every arrow bind has a vim twin: h j k l.
+		for arrow, vim := range map[string]string{"left": "h", "down": "j", "up": "k", "right": "l"} {
+			if base, ok := strings.CutSuffix(b.combo, "+"+arrow); ok {
+				combos = append(combos, base+"+"+vim)
+			}
 		}
-		c.Binds[combo] = b.action
+		for _, s := range combos {
+			combo, err := parseCombo(s)
+			if err != nil {
+				panic(err)
+			}
+			c.Binds[combo] = b.action
+		}
 	}
 	// Digits and zoom use physical keys (evdev codes 2-10, 12, 13), so they
 	// work the same on AZERTY, QWERTZ or Dvorak.
@@ -103,7 +112,7 @@ func Defaults() ports.Config {
 		focus, _ := parseCombo(fmt.Sprintf("cmd+code:%d", n+1))
 		move, _ := parseCombo(fmt.Sprintf("cmd+shift+code:%d", n+1))
 		c.Binds[focus] = fmt.Sprintf("focus-workspace %d", n)
-		c.Binds[move] = fmt.Sprintf("move-to-workspace %d", n)
+		c.Binds[move] = fmt.Sprintf("move-column-to-workspace %d", n)
 	}
 	c.Render.DirectScanout = true
 	c.Render.Tearing = true
@@ -447,6 +456,12 @@ func set(c *ports.Config, key, v string) error {
 			}
 		}
 		c.Layout.Presets = list
+	case "focus.follow-move":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Focus.FollowMove = b
 	case "render.direct-scanout":
 		b, err := onOff(v)
 		if err != nil {
@@ -622,7 +637,7 @@ func checkAction(v string) error {
 		}
 		return nil
 	}
-	for _, prefix := range []string{"focus-workspace ", "move-to-workspace "} {
+	for _, prefix := range []string{"focus-workspace ", "move-column-to-workspace ", "move-window-to-workspace "} {
 		if rest, ok := strings.CutPrefix(v, prefix); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err != nil || n < 1 || n > 99 {
 				return fmt.Errorf("%snumber must be between 1 and 99", prefix)

@@ -229,6 +229,11 @@ func (w *Workspace) AddWindow(id WindowID) {
 	if id == 0 || w.has(id) {
 		return
 	}
+	w.addColumn(Column{Windows: []WindowID{id}})
+}
+
+// addColumn places a new column like a new window and focuses it.
+func (w *Workspace) addColumn(col Column) {
 	at := 0
 	if w.Overflow == OverflowFixed {
 		// The spiral depends only on window order: new windows go last.
@@ -238,7 +243,7 @@ func (w *Workspace) AddWindow(id WindowID) {
 	}
 	w.Columns = append(w.Columns, Column{})
 	copy(w.Columns[at+1:], w.Columns[at:])
-	w.Columns[at] = Column{Windows: []WindowID{id}}
+	w.Columns[at] = col
 	w.Focus = at
 	w.scroll()
 }

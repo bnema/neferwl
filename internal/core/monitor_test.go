@@ -154,11 +154,11 @@ func TestMonitorActions(t *testing.T) {
 		t.Fatal(m.Active)
 	}
 	// Move the focused window (2) down: focus stays on workspace 1.
-	m.Apply(ActionMoveToWorkspaceDown)
+	m.Apply(ActionMoveWindowToWorkspaceDown)
 	if !reflect.DeepEqual(windows(m), [][]WindowID{{1}, {2}, {}}) || m.Active != 0 {
 		t.Fatal(windows(m), m.Active)
 	}
-	m.Apply("move-to-workspace 3")
+	m.Apply("move-window-to-workspace 3")
 	if !reflect.DeepEqual(windows(m), [][]WindowID{{}, {2}, {1}, {}}) || m.Active != 0 {
 		t.Fatal(windows(m), m.Active)
 	}
@@ -202,15 +202,70 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 	}
 }
 
+// stack returns a monitor with columns [1] [2 3], focus on window 3.
+func stack() *Monitor {
+	m := monitor()
+	m.AddWindow(1)
+	m.AddWindow(2)
+	m.AddWindow(3)
+	w := m.Current()
+	w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3}, Focus: 1}}
+	w.Focus = 1
+	return m
+}
+
+func TestMoveColumnToWorkspace(t *testing.T) {
+	t.Run("whole column, focus stays", func(t *testing.T) {
+		m := stack()
+		m.Apply("move-column-to-workspace 2")
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {2, 3}, {}}) || m.Active != 0 {
+			t.Fatal(got, m.Active)
+		}
+		if w := m.Workspaces[1]; len(w.Columns) != 1 || w.Columns[0].Focus != 1 {
+			t.Fatal(w.Columns)
+		}
+		if id, _ := m.Focused(); id != 1 {
+			t.Fatal(id)
+		}
+	})
+	t.Run("window only", func(t *testing.T) {
+		m := stack()
+		m.Apply(ActionMoveWindowToWorkspaceDown)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {3}, {}}) {
+			t.Fatal(got)
+		}
+	})
+	t.Run("follow shows the target", func(t *testing.T) {
+		m := stack()
+		m.SetFollowMove(true)
+		m.Apply(ActionMoveColumnToWorkspaceDown)
+		if id, _ := m.Focused(); m.Active != 1 || id != 3 {
+			t.Fatal(m.Active, id)
+		}
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {2, 3}, {}}) {
+			t.Fatal(got)
+		}
+	})
+	t.Run("slot column loses its slot", func(t *testing.T) {
+		m := stack()
+		m.Current().Columns[1].Slot = 2
+		m.Apply(ActionMoveColumnToWorkspaceDown)
+		if c := m.Workspaces[1].Columns[0]; c.Slot != 0 {
+			t.Fatal(c)
+		}
+	})
+}
+
 func TestWorkspaceArg(t *testing.T) {
 	for _, tc := range []struct {
-		a        Action
-		n        int
-		move, ok bool
-	}{{"focus-workspace 3", 3, false, true}, {"move-to-workspace 12", 12, true, true}, {"focus-workspace 0", 0, false, false}, {"focus-workspace x", 0, false, false}, {"quit", 0, false, false}} {
-		n, move, ok := WorkspaceArg(tc.a)
-		if n != tc.n || move != tc.move || ok != tc.ok {
-			t.Errorf("%s: %d %v %v", tc.a, n, move, ok)
+		a  Action
+		n  int
+		op WorkspaceOp
+		ok bool
+	}{{"focus-workspace 3", 3, FocusWorkspace, true}, {"move-column-to-workspace 12", 12, MoveColumnToWorkspace, true}, {"move-window-to-workspace 2", 2, MoveWindowToWorkspace, true}, {"move-to-workspace 2", 0, 0, false}, {"focus-workspace 0", 0, 0, false}, {"focus-workspace x", 0, 0, false}, {"quit", 0, 0, false}} {
+		n, op, ok := WorkspaceArg(tc.a)
+		if n != tc.n || op != tc.op || ok != tc.ok {
+			t.Errorf("%s: %d %v %v", tc.a, n, op, ok)
 		}
 	}
 }
@@ -278,8 +333,8 @@ func TestHiddenWorkspaceToggle(t *testing.T) {
 	}
 	// Moving a window up/down from a hidden workspace does nothing.
 	m.Apply("workspace dev")
-	m.Apply(ActionMoveToWorkspaceDown)
-	m.Apply(ActionMoveToWorkspaceUp)
+	m.Apply(ActionMoveWindowToWorkspaceDown)
+	m.Apply(ActionMoveWindowToWorkspaceUp)
 	if id, _ := m.Focused(); id != 2 || m.Current().Name != "dev" {
 		t.Fatal(id, windows(m))
 	}
@@ -541,9 +596,29 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		m.ToggleFullscreen()
 		m.Apply(ActionFocusWorkspaceUp)
 		m.Current().FocusID(1)
-		m.Apply(ActionMoveToWorkspaceDown)
+		m.Apply(ActionMoveWindowToWorkspaceDown)
 		if fs := m.Workspaces[1]; fs.floatIndex(1) != 0 || fs.origin == nil {
 			t.Fatal(fs.Floats)
+		}
+	})
+	t.Run("a moved column floats window by window", func(t *testing.T) {
+		m := fixed()
+		m.Current().FocusID(2)
+		m.ToggleFullscreen()
+		m.Apply(ActionFocusWorkspaceUp)
+		w := m.Current()
+		ids := w.windows()
+		w.Columns = []Column{{Windows: ids}}
+		w.Focus = 0
+		m.Apply(ActionMoveColumnToWorkspaceDown)
+		fs := m.Workspaces[1]
+		for _, id := range ids {
+			if fs.floatIndex(id) < 0 {
+				t.Fatal(id, fs.Floats)
+			}
+		}
+		if fs.origin == nil || len(ids) < 2 {
+			t.Fatal(fs.origin, ids)
 		}
 	})
 	t.Run("closing it brings its dialogs home, below a focused float", func(t *testing.T) {
@@ -603,7 +678,7 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
-		m.Apply(ActionMoveToWorkspaceUp)
+		m.Apply(ActionMoveWindowToWorkspaceUp)
 		m.AddWindow(4)
 		m.RemoveWindow(4)
 		if m.Active != 1 {

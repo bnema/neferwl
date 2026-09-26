@@ -37,6 +37,9 @@ layout.overflow = scroll
 # cycle-column-width steps through these, then back to the equal share.
 layout.presets = 1/3, 1/2, 2/3, 1
 
+# on: moving a column or window to another workspace shows that workspace.
+focus.follow-move = off
+
 # Named workspaces. Numbered at their place like any other and never removed
 # when empty. hidden = on keeps one out of the numbers and of up/down: only its
 # bind shows it, and pressing the bind again returns to the previous workspace.
@@ -87,6 +90,13 @@ bind.cmd+up = focus-window-up
 bind.cmd+down = focus-window-down
 bind.cmd+shift+left = move-column-left
 bind.cmd+shift+right = move-column-right
+# Vim keys: every arrow bind also works with h j k l.
+bind.cmd+h = focus-column-left
+bind.cmd+l = focus-column-right
+bind.cmd+k = focus-window-up
+bind.cmd+j = focus-window-down
+bind.cmd+shift+h = move-column-left
+bind.cmd+shift+l = move-column-right
 bind.cmd+r = cycle-column-width
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+q = close-window
@@ -97,8 +107,10 @@ bind.ctrl+cmd+space = spawn fuzzel
 # waits below the last. cmd+up/down past the column edge also switch workspace.
 bind.cmd+pageup = focus-workspace-up
 bind.cmd+pagedown = focus-workspace-down
-bind.cmd+shift+pageup = move-to-workspace-up
-bind.cmd+shift+pagedown = move-to-workspace-down
+# move-column-to-workspace moves the whole column; move-window-to-workspace
+# (N, -up, -down) moves only the focused window and has no default bind.
+bind.cmd+shift+pageup = move-column-to-workspace-up
+bind.cmd+shift+pagedown = move-column-to-workspace-down
 bind.cmd+code:2 = focus-workspace 1
 bind.cmd+code:3 = focus-workspace 2
 bind.cmd+code:4 = focus-workspace 3
@@ -108,15 +120,25 @@ bind.cmd+code:7 = focus-workspace 6
 bind.cmd+code:8 = focus-workspace 7
 bind.cmd+code:9 = focus-workspace 8
 bind.cmd+code:10 = focus-workspace 9
-bind.cmd+shift+code:2 = move-to-workspace 1
-bind.cmd+shift+code:3 = move-to-workspace 2
-bind.cmd+shift+code:4 = move-to-workspace 3
-bind.cmd+shift+code:5 = move-to-workspace 4
-bind.cmd+shift+code:6 = move-to-workspace 5
-bind.cmd+shift+code:7 = move-to-workspace 6
-bind.cmd+shift+code:8 = move-to-workspace 7
-bind.cmd+shift+code:9 = move-to-workspace 8
-bind.cmd+shift+code:10 = move-to-workspace 9
+bind.cmd+shift+code:2 = move-column-to-workspace 1
+bind.cmd+shift+code:3 = move-column-to-workspace 2
+bind.cmd+shift+code:4 = move-column-to-workspace 3
+bind.cmd+shift+code:5 = move-column-to-workspace 4
+bind.cmd+shift+code:6 = move-column-to-workspace 5
+bind.cmd+shift+code:7 = move-column-to-workspace 6
+bind.cmd+shift+code:8 = move-column-to-workspace 7
+bind.cmd+shift+code:9 = move-column-to-workspace 8
+bind.cmd+shift+code:10 = move-column-to-workspace 9
+
+# Monitors, left to right: focus the neighbor, or move the workspace there.
+bind.cmd+ctrl+left = focus-monitor-left
+bind.cmd+ctrl+right = focus-monitor-right
+bind.cmd+ctrl+h = focus-monitor-left
+bind.cmd+ctrl+l = focus-monitor-right
+bind.cmd+ctrl+shift+left = move-workspace-to-monitor-left
+bind.cmd+ctrl+shift+right = move-workspace-to-monitor-right
+bind.cmd+ctrl+shift+h = move-workspace-to-monitor-left
+bind.cmd+ctrl+shift+l = move-workspace-to-monitor-right
 
 # Zoom: the whole display, live.
 bind.cmd+code:13 = scale-up

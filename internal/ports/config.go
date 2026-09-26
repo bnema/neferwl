@@ -48,6 +48,11 @@ type Config struct {
 		// Overflow is "scroll" or "fixed" (see WorkspaceConfig).
 		Overflow string
 	}
+	Focus struct {
+		// FollowMove shows the target workspace after a column or window
+		// moves to it.
+		FollowMove bool
+	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig
 	// Outputs selects and configures physical displays (drm backend).

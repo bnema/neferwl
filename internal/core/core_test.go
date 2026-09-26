@@ -496,7 +496,7 @@ func TestShiftReleasedFirst(t *testing.T) {
 	for len(commands) > 0 {
 		<-commands
 	}
-	// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-to-workspace 1.
+	// US Cmd+Shift+1 prints exclam; the physical key (code 2) matches move-column-to-workspace 1.
 	input <- ports.KeyEvent{Keysym: "exclam", Base: "1", Keycode: 2, Mods: ports.ModSuper | ports.ModShift, Pressed: true}
 	scene(t, scenes)
 	// Shift goes up first, so the release reports "1": still swallowed.
