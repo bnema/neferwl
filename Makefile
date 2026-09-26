@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check fakes-check arch check bin tty logs pkg
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check bin tty logs pkg
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -35,6 +35,10 @@ mocks:
 mocks-check: mocks
 	git diff --exit-code -- $(MOCKS)
 	@test -z "$$(git ls-files --others --exclude-standard -- $(MOCKS))"
+# Committed SPIR-V must match the GLSL shaders (needs glslc).
+spv-check:
+	go generate ./internal/adapters/vulkan
+	git diff --exit-code -- 'internal/adapters/vulkan/shaders/*.spv'
 # Test doubles come from Mockery only: no handwritten fake/stub/spy types.
 # Matches `type fakeX`, `\ttype RendererStub[T any]` and `spyX struct` in `type (` blocks.
 # grep exit 1 (no match) passes; 0 (match) and 2 (error) fail.

@@ -13,3 +13,5 @@ jobs:
       - run: make check
       - run: make race
       - run: make mocks-check
+      - run: sudo apt-get install -y glslc
+      - run: make spv-check
