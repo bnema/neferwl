@@ -1,5 +1,11 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -8,10 +14,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27'
-      - run: go install github.com/bnema/hexcheck@latest
+      # Libraries loaded at runtime through purego; lavapipe gives tests a Vulkan device.
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y
+          glslc libwayland-server0 libxkbcommon0 libinput10 libseat1 libvulkan1 mesa-vulkan-drivers
+      - run: go install github.com/bnema/hexcheck/cmd/hexcheck@v0.2.0
       - run: go install github.com/vektra/mockery/v3@v3.8.0
+      - run: go install honnef.co/go/tools/cmd/staticcheck@latest
       - run: make check
       - run: make race
       - run: make mocks-check
-      - run: sudo apt-get install -y glslc
       - run: make spv-check
+      - run: staticcheck ./...
