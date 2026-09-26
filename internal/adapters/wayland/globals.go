@@ -20,6 +20,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerTearing(d, s) },
 		func() error { return registerPresentation(d, s) },
 		func() error { return registerActivation(d, s) },
+		func() error { return registerVirtualKeyboard(d, s) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},
@@ -393,7 +394,8 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 		return
 	}
 	s.keyboards[r.Client()] = append(s.keyboards[r.Client()], k)
-	k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.keymapFD, s.keymapSize)
+	fd, size := s.currentKeymap()
+	k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), fd, size)
 	if r.Version() >= 4 {
 		k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
 	}

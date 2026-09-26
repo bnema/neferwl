@@ -91,6 +91,7 @@ type Server struct {
 	heldKeys                map[uint32]bool
 	keymapFD                int
 	keymapSize              uint32
+	keymapOwner             *virtualKeyboard // nil: keyboards carry the seat keymap
 	repeatRate, repeatDelay int
 	// eventMu protects only the notification queue, not display-owned window state.
 	// The event queue is unbounded by design: it grows only if core stops draining
@@ -428,6 +429,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
 			return
 		}
+		s.useKeymap(nil)
 		if s.heldKeys == nil {
 			s.heldKeys = make(map[uint32]bool)
 		}
@@ -599,6 +601,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 		unix.Close(s.keymapFD)
 	}
 	s.keymapFD, s.keymapSize = fd, size
+	s.keymapOwner = nil
 	focused := s.focused
 	s.changeFocus(0)
 	s.heldKeys = nil
@@ -621,6 +624,8 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
+	// Enter carries seat held keys and modifiers: they need the seat keymap.
+	s.useKeymap(nil)
 	old := s.focusClient()
 	defer func() {
 		// Tokens of a client losing the focus die with it.
