@@ -97,6 +97,11 @@ bind.cmd+k = focus-window-up
 bind.cmd+j = focus-window-down
 bind.cmd+shift+h = move-column-left
 bind.cmd+shift+l = move-column-right
+# A window alone in its column joins the neighbor column; a stacked one
+# leaves for a new column. A full fixed workspace stacks it into the
+# neighbor column instead, past the edge on the neighbor monitor.
+bind.cmd+bracketleft = consume-or-expel-window-left
+bind.cmd+bracketright = consume-or-expel-window-right
 bind.cmd+r = cycle-column-width
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+q = close-window

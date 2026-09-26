@@ -36,6 +36,9 @@ const (
 	// Scale steps through the clean scales of the output (see CleanScales).
 	ActionScaleUp   Action = "scale-up"
 	ActionScaleDown Action = "scale-down"
+	// Consume or expel the focused window (ADR 016).
+	ActionConsumeOrExpelLeft  Action = "consume-or-expel-window-left"
+	ActionConsumeOrExpelRight Action = "consume-or-expel-window-right"
 )
 
 // WorkspaceOp is what a numbered workspace action does.
@@ -130,6 +133,31 @@ func (c *Core) applyAction(a Action) Effect {
 			c.focusScreen = i
 			return Effect{}
 		}
+	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
+		dir = 1
+		if a == ActionConsumeOrExpelLeft {
+			dir = -1
+		}
+		from := c.cur()
+		if from.mon.Current().ConsumeOrExpel(dir) {
+			from.mon.normalize()
+			return Effect{}
+		}
+		// Full fixed workspace, stacked edge column: one hop to the
+		// neighbor monitor, if any; focus follows the window.
+		i := c.neighbor(dir)
+		if i < 0 {
+			return Effect{}
+		}
+		id, ok := from.mon.Current().takeWindow()
+		if !ok {
+			return Effect{}
+		}
+		c.focusScreen = i
+		c.cur().mon.Current().expelTo(id, dir)
+		from.mon.normalize()
+		c.cur().mon.normalize()
+		return Effect{}
 	case ActionMoveColumnLeft, ActionMoveColumnRight:
 		// Past the edge the column moves to the neighbor screen, on the
 		// side facing this one, and focus follows it.

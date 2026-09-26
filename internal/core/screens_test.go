@@ -523,3 +523,59 @@ func TestMoveColumnOntoFullscreenStaysVisible(t *testing.T) {
 		}
 	}
 }
+
+// windowsOf lists the tiled windows of an output in scene order, with the
+// focused one.
+func windowsOf(set []ports.Scene, out string) (ids []ports.WindowID, focused ports.WindowID) {
+	for _, s := range set {
+		if s.Output != out {
+			continue
+		}
+		for _, w := range s.Windows {
+			if !w.Hidden {
+				ids = append(ids, w.ID)
+			}
+			if w.Focused {
+				focused = w.ID
+			}
+		}
+	}
+	return ids, focused
+}
+
+func TestExpelCrossesToFullNeighbor(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	// DP-1 (max 2): [1] [2] [3] in the spiral; consume 3 left gives
+	// [1] [2 3], focus on 3 at the bottom of the edge column.
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.mapWindow(t, 3)
+	r.key(t, "bracketleft", ports.ModAlt)
+	// DP-2: [4] [5], full too.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 4)
+	r.mapWindow(t, 5)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	// Expel right at the edge: 3 stacks under 4, the first column of DP-2.
+	set := r.key(t, "bracketright", ports.ModAlt)
+	if got, _ := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) {
+		t.Fatal(got)
+	}
+	got, focused := windowsOf(set, "DP-2")
+	if !reflect.DeepEqual(got, []ports.WindowID{4, 3, 5}) || focused != 3 {
+		t.Fatal(got, focused)
+	}
+	if out := lastOutputs(t, r.commands); out.Focused != "DP-2" {
+		t.Fatal(out.Focused)
+	}
+	// 3 is not in the edge column of DP-2: it stacks into [5].
+	set = r.key(t, "bracketright", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{4, 5, 3}) || focused != 3 {
+		t.Fatal(got, focused)
+	}
+	// Now at the edge with no right monitor: nothing moves.
+	set = r.key(t, "bracketright", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{4, 5, 3}) || focused != 3 {
+		t.Fatal(got, focused)
+	}
+}
