@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/bnema/purego v0.11.0-bnema.4
-	github.com/bnema/purego-libwayland v0.1.1
+	github.com/bnema/purego-libwayland v0.2.0
 	github.com/bnema/purego-vulkan v0.4.1
 	github.com/bnema/wlturbo v0.2.0
 	github.com/bnema/zerowrap v1.4.1
