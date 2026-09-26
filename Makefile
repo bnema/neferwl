@@ -52,12 +52,12 @@ check: vet test arch fakes-check
 pkg: SHELL := bash
 pkg: .SHELLFLAGS := -eo pipefail -c
 pkg:
-	@git diff --quiet HEAD || echo "warning: uncommitted changes are not packaged" >&2
+	@test -z "$$(git status --porcelain)" || echo "warning: uncommitted changes are not packaged" >&2
 	v=$$(t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
 		echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)"); \
-	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX); \
-	git archive --prefix=nefertty-$$v/ -o $$d/nefertty-$$v.tar.gz HEAD; \
-	cp packaging/arch/PKGBUILD $$d/; \
-	cd $$d && sed -i "s/^pkgver=.*/pkgver=$$v/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD; \
-	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; mv *.pkg.tar.zst $(CURDIR)/dist/; cd /; rm -rf $$d
+	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX); trap 'rm -rf "$$d"' EXIT; \
+	git archive --prefix=nefertty-$$v/ -o "$$d/nefertty-$$v.tar.gz" HEAD; \
+	cp packaging/arch/PKGBUILD "$$d/"; \
+	cd "$$d" && sed -i "s/^pkgver=.*/pkgver=$$v/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD; \
+	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; rm -f $(CURDIR)/dist/nefertty-*.pkg.tar.zst; mv *.pkg.tar.zst $(CURDIR)/dist/
 	@ls dist/*.pkg.tar.zst

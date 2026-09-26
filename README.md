@@ -31,6 +31,8 @@ NeferTTY depends on tagged releases of [purego-libwayland](https://github.com/bn
 go work init . ../purego-libwayland ../purego-vulkan
 ```
 
+`make pkg` ignores the workspace and builds the versions in `go.mod`: tag a binding change and update `go.mod` before packaging it.
+
 ## Configuration
 
 Configuration lives at `$XDG_CONFIG_HOME/nefertty/config` (or `~/.config/nefertty/config`). Use `nefertty --config path` to select another file; `nefertty validate-config [path]` checks it without starting the compositor.

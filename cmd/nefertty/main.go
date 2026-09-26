@@ -104,7 +104,7 @@ func run() error {
 		}
 		v := info.Main.Version
 		if version != "" {
-			v = version // set by release builds (make dist)
+			v = version // set by packaged builds (PKGBUILD -X main.version)
 		} else if v == "" {
 			v = "(devel)"
 		}

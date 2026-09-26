@@ -19,7 +19,7 @@ sha256sums=('SKIP')
 
 prepare() {
 	cd "$pkgname-$pkgver"
-	export GOFLAGS='-mod=mod' GOWORK=off GOTOOLCHAIN=local
+	export GOPATH="$srcdir/gopath" GOFLAGS='-mod=readonly -modcacherw' GOWORK=off GOTOOLCHAIN=local
 	go mod download
 	go mod vendor
 }
