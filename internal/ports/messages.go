@@ -614,7 +614,8 @@ func (s Scene) Shows(id WindowID) bool {
 	return false
 }
 
-// Border carries the window border style; colors are #rrggbb, "" skips drawing.
+// Border carries the window border style; colors are #rrggbb, "" skips
+// drawing. Width is in logical pixels.
 type Border struct {
 	Width            int
 	Active, Inactive string
@@ -760,8 +761,10 @@ type SceneWindow struct {
 	ID                          WindowID
 	Rect                        Rect
 	Focused, Fullscreen, Hidden bool
-	// Borderless windows fill the usable width alone; no border is drawn.
-	Borderless bool
+	// Inset sides carry the border inside Rect. Neighbors are the sides
+	// touching another tile: the focused window also lights its neighbors'
+	// border line on the sides it does not inset.
+	Neighbors, Inset Sides
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

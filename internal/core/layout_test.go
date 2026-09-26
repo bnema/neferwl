@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/bnema/nefertty/internal/ports"
 	"math"
 	"reflect"
 	"testing"
@@ -84,7 +85,7 @@ func TestStackAndLayout(t *testing.T) {
 	}
 	w.FocusWindow(-1)
 	p := w.Layout()
-	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || !p[0].Borderless {
+	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || p[0].Neighbors != ports.SideBottom || p[1].Inset != ports.SideTop {
 		t.Fatal(p)
 	}
 	w.ToggleFullscreen()
@@ -444,7 +445,7 @@ func TestFixedOverflowEdgeCases(t *testing.T) {
 		if got[1].Rect != (Rect{X: 4, Y: 4, W: 92, H: 34}) || got[2].Rect != (Rect{X: 4, Y: 42, W: 92, H: 34}) {
 			t.Fatal(got[1].Rect, got[2].Rect)
 		}
-		if got[1].Borderless || got[2].Borderless {
+		if got[1].Neighbors == 0 || got[2].Neighbors == 0 {
 			t.Fatal("spiral windows must keep borders to show focus")
 		}
 	})

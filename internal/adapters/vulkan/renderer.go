@@ -422,6 +422,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		}
 	}
 	addLayers(false)
+	var focused *ports.SceneWindow
 	for _, w := range s.Windows {
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
@@ -431,11 +432,12 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			continue
 		}
 		// Content sits inside the border; core sized the client to match.
-		b := 0
-		if !w.Fullscreen && !w.Borderless {
-			b = min(max(s.Border.Width, 0), w.Rect.W/2, w.Rect.H/2)
+		b, inset := 0, ports.Sides(0)
+		if !w.Fullscreen {
+			b, inset = s.Border.Width, w.Inset
 		}
-		cx, cy, cw, ch := x+b, y+b, w.Rect.W-2*b, w.Rect.H-2*b
+		c := w.Rect.Inset(inset, b)
+		cx, cy, cw, ch := c.X, c.Y, c.W, c.H
 		body := physRect(cx, cy, cw, ch)
 		content := contents[w.ID]
 		dmg.window(w.ID, content, physRect(x, y, w.Rect.W, w.Rect.H))
@@ -445,21 +447,24 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			add(body, parseColor(s.Background))
 			place(w.ID, &content, cx, cy, cw, ch)
 		}
-		borderColor := s.Border.Inactive
-		if w.Focused {
-			borderColor = s.Border.Active
-		}
-		if b > 0 && borderColor != "" {
-			rgb := parseColor(borderColor)
-			outer, inner := physRect(x, y, w.Rect.W, w.Rect.H), physRect(cx, cy, cw, ch)
-			for _, strip := range []image.Rectangle{
-				image.Rect(outer.Min.X, outer.Min.Y, outer.Max.X, inner.Min.Y),
-				image.Rect(outer.Min.X, inner.Max.Y, outer.Max.X, outer.Max.Y),
-				image.Rect(outer.Min.X, inner.Min.Y, inner.Min.X, inner.Max.Y),
-				image.Rect(inner.Max.X, inner.Min.Y, outer.Max.X, inner.Max.Y),
-			} {
-				add(strip, rgb)
+		if s.Border.Inactive != "" {
+			for _, strip := range borderStrips(w.Rect, inset, 0, b) {
+				add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Inactive))
 			}
+		}
+		if w.Focused && !w.Fullscreen {
+			focused = &w
+		}
+	}
+	// The focused window lights the lines along its own sides only: its
+	// inset border, and its neighbors' border line where they own it.
+	if focused != nil && s.Border.Active != "" && s.Border.Width > 0 {
+		f := focused
+		for _, strip := range borderStrips(f.Rect, f.Inset, 0, s.Border.Width) {
+			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
+		}
+		for _, strip := range borderStrips(f.Rect, f.Neighbors&^f.Inset, s.Border.Width, s.Border.Width) {
+			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
 		}
 	}
 	// Popups draw only what the client drew, shadows clipped. Window popups
@@ -592,4 +597,27 @@ func (r *Renderer) Close() {
 		}
 		r.instance = 0
 	}
+}
+
+// borderStrips are the b-wide strips along sides of r, in logical pixels:
+// inside r when out is 0, else just outside it (a neighbor's border).
+func borderStrips(r ports.Rect, sides ports.Sides, out, b int) []ports.Rect {
+	if b <= 0 {
+		return nil
+	}
+	b = min(b, max(r.W/2, out), max(r.H/2, out))
+	var strips []ports.Rect
+	if sides&ports.SideLeft != 0 {
+		strips = append(strips, ports.Rect{X: r.X - out, Y: r.Y, W: b, H: r.H})
+	}
+	if sides&ports.SideRight != 0 {
+		strips = append(strips, ports.Rect{X: r.X + r.W - b + out, Y: r.Y, W: b, H: r.H})
+	}
+	if sides&ports.SideTop != 0 {
+		strips = append(strips, ports.Rect{X: r.X, Y: r.Y - out, W: r.W, H: b})
+	}
+	if sides&ports.SideBottom != 0 {
+		strips = append(strips, ports.Rect{X: r.X, Y: r.Y + r.H - b + out, W: r.W, H: b})
+	}
+	return strips
 }

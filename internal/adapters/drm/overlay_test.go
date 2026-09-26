@@ -120,6 +120,10 @@ func TestOverlayPopupAndBorder(t *testing.T) {
 	}
 	s, _ = overlayScene()
 	s.Border.Width = 2
+	if _, _, reason := overlayCandidate(s, c); reason != "" {
+		t.Fatalf("lone window: %q", reason)
+	}
+	s.Windows[len(s.Windows)-1].Neighbors = ports.SideLeft
 	if _, _, reason := overlayCandidate(s, c); reason != "border" {
 		t.Fatalf("border: %q", reason)
 	}

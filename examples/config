@@ -22,14 +22,16 @@ terminal = foot
 
 background = #111111
 
-# Drawn inside the window edge; width 0 disables it, empty inactive draws nothing.
-border.width = 2
-border.active = #b4befe
-border.inactive =
+# Separator lines between tiled windows (tmux style), in logical pixels.
+# The lines along the focused window use active; width 0 disables them,
+# empty inactive draws only the focused lines. Floats get a full border.
+border.width = 1
+border.active = #6c6c6c
+border.inactive = #2a2a2a
 
 layout.gaps = 0
 # Columns sharing the screen equally before new ones scroll off to the right.
-# A lone column fills the screen without a border.
+# A lone column fills the screen without separators.
 layout.max-columns = 2
 # Past max-columns: scroll opens columns to the right; fixed keeps everything
 # on screen, each new window splitting the newest one (spiral).

@@ -69,7 +69,7 @@ func TestOwner(t *testing.T) {
 	client <- ports.WindowMapped{ID: 1}
 	s = scene(t, scenes)
 	// A single column fills the usable width.
-	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || !s.Windows[0].Borderless {
+	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != 0 {
 		t.Fatal(s)
 	}
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1"}) {
@@ -301,15 +301,15 @@ func TestBorderInset(t *testing.T) {
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1"}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
-	// With a second column, the scene keeps the outer rect and the client is
-	// configured 2px smaller on each side.
+	// With a second column, the left window owns the shared separator: its
+	// client is 2px narrower on the right; the right window keeps its rect.
 	client <- ports.WindowMapped{ID: 2}
 	s := scene(t, scenes)
 	r = s.Windows[1].Rect
-	if s.Windows[1].ID != 2 || s.Windows[1].Borderless {
+	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || s.Windows[1].Neighbors != ports.SideLeft {
 		t.Fatal(s)
 	}
-	want := ports.ConfigureWindow{ID: 2, Width: r.W - 4, Height: r.H - 4, Activated: true, Output: "OUT-1"}
+	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1"}
 	found := false
 	for len(commands) > 0 {
 		if v := <-commands; v == want {
@@ -320,7 +320,7 @@ func TestBorderInset(t *testing.T) {
 		t.Fatalf("no %v for outer %v", want, r)
 	}
 	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), TimeMsec: 1}
-	if v := command(t, commands); v != (ports.PointerFocus{ID: 2, X: 0, Y: 3}) {
+	if v := command(t, commands); v != (ports.PointerFocus{ID: 2, X: 2, Y: 5}) {
 		t.Fatal(v)
 	}
 }
@@ -421,7 +421,7 @@ func TestWorkspaceSwitch(t *testing.T) {
 	// A new window opens on workspace 2, alone and borderless.
 	client <- ports.WindowMapped{ID: 2}
 	s = scene(t, scenes)
-	if len(s.Windows) != 2 || s.Windows[1].ID != 2 || s.Windows[1].Hidden || !s.Windows[1].Borderless {
+	if len(s.Windows) != 2 || s.Windows[1].ID != 2 || s.Windows[1].Hidden || s.Windows[1].Inset != 0 {
 		t.Fatal(s)
 	}
 }

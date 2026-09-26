@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/bnema/nefertty/internal/ports"
 	"reflect"
 	"slices"
 	"testing"
@@ -180,13 +181,13 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 	m.SetMaxColumns(3)
 	m.AddWindow(1)
 	p := m.Layout()
-	if p[0].Rect.W != 100 || !p[0].Borderless {
+	if p[0].Rect.W != 100 || p[0].Neighbors != 0 {
 		t.Fatal(p)
 	}
 	m.AddWindow(2)
 	m.AddWindow(3)
 	p = m.Layout()
-	if p[0].Rect.W != 33 || p[1].Rect.W != 33 || p[2].Rect.W != 33 || p[0].Borderless {
+	if p[0].Rect.W != 33 || p[1].Rect.W != 33 || p[2].Rect.W != 33 || p[0].Neighbors != ports.SideRight || p[0].Inset != ports.SideRight {
 		t.Fatal(p)
 	}
 	// A fourth column scrolls: still 1/3 each.
@@ -307,7 +308,7 @@ func TestLonePresetColumnKeepsWidth(t *testing.T) {
 	m.SetPresets([]Width{{Num: 1, Den: 2}})
 	m.AddWindow(1)
 	m.Apply(ActionCycleColumnWidth)
-	if p := m.Layout()[0]; p.Rect.W != 50 || p.Borderless {
+	if p := m.Layout()[0]; p.Rect.W != 50 || p.Neighbors != 0 {
 		t.Fatal(p)
 	}
 }

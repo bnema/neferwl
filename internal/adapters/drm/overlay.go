@@ -91,7 +91,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
 		}
 	}
-	if !pick.Fullscreen && !pick.Borderless && s.Border.Width > 0 {
+	if !pick.Fullscreen && pick.Inset|pick.Neighbors != 0 && s.Border.Width > 0 {
 		// The overlay shows the buffer alone; its border would go with it.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
 	}
