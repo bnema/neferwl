@@ -2,9 +2,9 @@ package headlessinput
 
 import (
 	"context"
-	"github.com/bnema/nefertty/internal/adapters/xkb"
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"strings"
 	"testing"
 )

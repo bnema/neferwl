@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/extdatacontrol"
 	"github.com/bnema/purego-libwayland/protocol/primaryselection"
 	"github.com/bnema/purego-libwayland/protocol/wayland"

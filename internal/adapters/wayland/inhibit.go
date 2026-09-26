@@ -1,7 +1,7 @@
 package wayland
 
 import (
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/idleinhibit"
 	"github.com/bnema/purego-libwayland/protocol/keyboardshortcutsinhibit"
 	"github.com/bnema/purego-libwayland/protocol/wayland"

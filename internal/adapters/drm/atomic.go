@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Atomic KMS (ADR 015): every change on screen is one atomic commit. A

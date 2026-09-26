@@ -4,7 +4,7 @@ import (
 	"image"
 	"sync"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Cursor is the software cursor drawn into screenshots; it plays the role of

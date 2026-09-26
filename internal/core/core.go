@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"maps"
 	"slices"
 	"strconv"

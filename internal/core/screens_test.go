@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/core"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type multiRig struct {

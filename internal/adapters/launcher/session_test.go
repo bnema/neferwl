@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/logging"
+	"github.com/bnema/neferwl/internal/logging"
 )
 
 // The session commands run with the child environment and the right

@@ -3,7 +3,7 @@ package wayland
 import (
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // High-resolution wheels send fractions of a detent: pre-v8 clients get a

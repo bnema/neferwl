@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm

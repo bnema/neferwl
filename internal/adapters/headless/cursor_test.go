@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestCursorDraw(t *testing.T) {

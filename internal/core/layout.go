@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"math/bits"
 	"slices"
 	"strconv"

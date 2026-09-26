@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A mapped window carries the slot token of its client process.
@@ -25,8 +25,8 @@ func TestWindowMappedCarriesSlot(t *testing.T) {
 }
 
 func TestLinuxProcEnv(t *testing.T) {
-	t.Setenv("NEFERTTY_TEST_KEY", "x") // not in /proc: environ is the start env
-	if _, ok := (linuxProcEnv{}).Lookup(os.Getpid(), "NEFERTTY_TEST_KEY"); ok {
+	t.Setenv("NEFERWL_TEST_KEY", "x") // not in /proc: environ is the start env
+	if _, ok := (linuxProcEnv{}).Lookup(os.Getpid(), "NEFERWL_TEST_KEY"); ok {
 		t.Fatal("environ reflects later changes")
 	}
 	path, ok := (linuxProcEnv{}).Lookup(os.Getpid(), "PATH")

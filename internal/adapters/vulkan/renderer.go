@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -111,10 +111,10 @@ func New(width, height int) (r *Renderer, err error) {
 		return
 	}
 	index := -1
-	if value, ok := os.LookupEnv("NEFERTTY_VK_DEVICE"); ok {
+	if value, ok := os.LookupEnv("NEFERWL_VK_DEVICE"); ok {
 		index, err = strconv.Atoi(value)
 		if err != nil || index < 0 || index >= int(count) {
-			err = fmt.Errorf("invalid NEFERTTY_VK_DEVICE index %q", value)
+			err = fmt.Errorf("invalid NEFERWL_VK_DEVICE index %q", value)
 			return
 		}
 	}

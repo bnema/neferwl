@@ -1,5 +1,5 @@
 // Package statefile publishes core's state as JSON for scripts, and reads it
-// back for the `nefertty state` command. The JSON format is defined here,
+// back for the `neferwl state` command. The JSON format is defined here,
 // not in ports: it is a public interface scripts depend on.
 package statefile
 
@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
-// Env names the state file in the environment of processes nefertty starts.
-const Env = "NEFERTTY_STATE"
+// Env names the state file in the environment of processes neferwl starts.
+const Env = "NEFERWL_STATE"
 
 // Path is the state file of the session on a wayland socket: one per
 // session, so nested or test instances never overwrite each other.
@@ -27,7 +27,7 @@ func Path(runtimeDir, socket string) (string, error) {
 	if runtimeDir == "" || socket == "" || socket == "." || socket == "/" {
 		return "", errors.New("XDG_RUNTIME_DIR and WAYLAND_DISPLAY must be set")
 	}
-	return filepath.Join(runtimeDir, "nefertty", socket+".json"), nil
+	return filepath.Join(runtimeDir, "neferwl", socket+".json"), nil
 }
 
 // State is the file format.

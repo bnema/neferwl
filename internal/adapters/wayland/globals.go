@@ -1,7 +1,7 @@
 package wayland
 
 import (
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"os"
@@ -256,7 +256,7 @@ func fileHolds(f *os.File, size int64) bool {
 	return err == nil && st.Size() >= size
 }
 
-// pool is a wl_shm pool. nefertty never maps it: renderers map the file
+// pool is a wl_shm pool. neferwl never maps it: renderers map the file
 // and read the pixels when they draw (ports.SHMBuffer).
 type pool struct {
 	id        uint64

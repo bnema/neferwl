@@ -9,11 +9,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/drm"
-	"github.com/bnema/nefertty/internal/adapters/seat"
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/seat"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 

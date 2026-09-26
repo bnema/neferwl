@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -38,7 +38,7 @@ func ChildEnv(base []string, waylandDisplay, runtimeDir string, cursorSize int) 
 	}
 	values["WAYLAND_DISPLAY"] = waylandDisplay
 	values["XDG_RUNTIME_DIR"] = runtimeDir
-	values["XDG_CURRENT_DESKTOP"] = "nefertty"
+	values["XDG_CURRENT_DESKTOP"] = "neferwl"
 	values["XDG_SESSION_TYPE"] = "wayland"
 	// X11 apps (through Xwayland) and toolkits pick their own cursor size:
 	// give them the compositor's.

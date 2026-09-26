@@ -2,15 +2,15 @@
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
-RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/nefertty/runs
+RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/neferwl/runs
 
 # Build a fresh binary with the git revision embedded.
 bin:
-	CGO_ENABLED=0 go build -o bin/nefertty ./cmd/nefertty
+	CGO_ENABLED=0 go build -o bin/neferwl ./cmd/neferwl
 
 # Run on the current TTY. Quit: Ctrl+Alt+Backspace (or the quit bind).
 tty: bin
-	./bin/nefertty --backend=drm --debug=all --timeout=$(TTY_TIMEOUT); \
+	./bin/neferwl --backend=drm --debug=all --timeout=$(TTY_TIMEOUT); \
 	echo "exit $$? - log: $(RUNS)/latest.log"
 
 # Summarise the last run: lifecycle, warnings and errors.
@@ -59,9 +59,9 @@ pkg:
 	@test -z "$$(git status --porcelain)" || echo "warning: uncommitted changes are not packaged" >&2
 	v=$$(t=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//; s/-/_/g'); \
 		echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)"); \
-	d=$$(mktemp -d /tmp/nefertty-pkg.XXXXXX); trap 'rm -rf "$$d"' EXIT; \
-	git archive --prefix=nefertty-$$v/ -o "$$d/nefertty-$$v.tar.gz" HEAD; \
+	d=$$(mktemp -d /tmp/neferwl-pkg.XXXXXX); trap 'rm -rf "$$d"' EXIT; \
+	git archive --prefix=neferwl-$$v/ -o "$$d/neferwl-$$v.tar.gz" HEAD; \
 	cp packaging/arch/PKGBUILD "$$d/"; \
 	cd "$$d" && sed -i "s/^pkgver=.*/pkgver=$$v/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD; \
-	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; rm -f $(CURDIR)/dist/nefertty-*.pkg.tar.zst; mv *.pkg.tar.zst $(CURDIR)/dist/
+	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; rm -f $(CURDIR)/dist/neferwl-*.pkg.tar.zst; mv *.pkg.tar.zst $(CURDIR)/dist/
 	@ls dist/*.pkg.tar.zst

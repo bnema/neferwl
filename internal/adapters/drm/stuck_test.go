@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	portsmocks "github.com/bnema/nefertty/internal/mocks/ports"
-	"github.com/bnema/nefertty/internal/ports"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )

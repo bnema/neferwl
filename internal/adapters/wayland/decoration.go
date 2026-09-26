@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/purego-libwayland/server"
 )
 
-// Server-side decorations: nefertty draws the border, so clients must not draw
+// Server-side decorations: neferwl draws the border, so clients must not draw
 // their own title bar or shadow (which would shrink the visible content).
 type decorationManager struct{ s *Server }
 

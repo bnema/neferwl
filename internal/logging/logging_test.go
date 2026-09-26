@@ -34,7 +34,7 @@ func TestParseDebug(t *testing.T) {
 
 func TestComponentLevelsAndRotation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "runs")
+	dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs")
 	path := filepath.Join(dir, "latest.log")
 	for run := 0; run < keepRuns+2; run++ {
 		time.Sleep(2 * time.Millisecond) // distinct millisecond timestamps
@@ -97,7 +97,7 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	if err := closeLog(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "nefertty", "runs", "latest.log"))
+	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "latest.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

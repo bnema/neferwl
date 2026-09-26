@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // damagedContent writes px into the content's pool (the client drawing

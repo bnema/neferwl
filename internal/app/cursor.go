@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/bnema/nefertty/internal/adapters/xcursor"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/xcursor"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // cursorSize is XCURSOR_SIZE (logical pixels), 24 by default.

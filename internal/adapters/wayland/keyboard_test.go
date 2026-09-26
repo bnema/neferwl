@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"

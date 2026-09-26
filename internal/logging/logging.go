@@ -66,7 +66,7 @@ func Open(ctx context.Context, level, debug string) (context.Context, func() err
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	dir := filepath.Join(state, "nefertty", "runs")
+	dir := filepath.Join(state, "neferwl", "runs")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}

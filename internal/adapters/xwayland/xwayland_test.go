@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/logging"
+	"github.com/bnema/neferwl/internal/logging"
 	"golang.org/x/sys/unix"
 )
 

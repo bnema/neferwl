@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestWantFromConfig(t *testing.T) {

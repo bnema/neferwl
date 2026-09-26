@@ -6,7 +6,7 @@ import (
 	"os"
 	"slices"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/linuxdmabuf"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
@@ -59,7 +59,7 @@ func formatTable(formats []ports.DMABufFormat) (*os.File, error) {
 		binary.NativeEndian.PutUint32(data[i*16:], f.Format)
 		binary.NativeEndian.PutUint64(data[i*16+8:], f.Modifier)
 	}
-	fd, err := unix.MemfdCreate("nefertty-dmabuf-formats", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	fd, err := unix.MemfdCreate("neferwl-dmabuf-formats", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
 	if err != nil {
 		return nil, err
 	}

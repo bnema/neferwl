@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Frames drawn into exported targets reach their dmabufs: another renderer

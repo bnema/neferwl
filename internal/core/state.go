@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // publishState sends the script-facing snapshot when it changed.

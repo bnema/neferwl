@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 

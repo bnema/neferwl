@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=NeferTTY
-Comment=Minimal Wayland compositor with scrollable columns
-Exec=nefertty --session
-Type=Application
-DesktopNames=nefertty

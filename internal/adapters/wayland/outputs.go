@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgoutput"
 	"github.com/bnema/purego-libwayland/server"
@@ -41,7 +41,7 @@ func (o *output) sendAll(r *wayland.Output) {
 	i := o.place.Info
 	make, model := i.Make, i.Model
 	if make == "" {
-		make, model = "nefertty", "headless"
+		make, model = "neferwl", "headless"
 	}
 	refresh := i.RefreshMilli
 	if refresh == 0 {

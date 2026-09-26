@@ -3,7 +3,7 @@ package libinput
 import (
 	"testing"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestHotkey(t *testing.T) {

@@ -11,19 +11,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bnema/nefertty/internal/adapters/config"
-	"github.com/bnema/nefertty/internal/adapters/drm"
-	"github.com/bnema/nefertty/internal/adapters/headlessinput"
-	"github.com/bnema/nefertty/internal/adapters/launcher"
-	"github.com/bnema/nefertty/internal/adapters/libinput"
-	"github.com/bnema/nefertty/internal/adapters/statefile"
-	"github.com/bnema/nefertty/internal/adapters/vulkan"
-	"github.com/bnema/nefertty/internal/adapters/wayland"
-	"github.com/bnema/nefertty/internal/adapters/xkb"
-	"github.com/bnema/nefertty/internal/adapters/xwayland"
-	"github.com/bnema/nefertty/internal/core"
-	"github.com/bnema/nefertty/internal/logging"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/headlessinput"
+	"github.com/bnema/neferwl/internal/adapters/launcher"
+	"github.com/bnema/neferwl/internal/adapters/libinput"
+	"github.com/bnema/neferwl/internal/adapters/statefile"
+	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/wayland"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/adapters/xwayland"
+	"github.com/bnema/neferwl/internal/core"
+	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
@@ -53,7 +53,7 @@ func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
 
 func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)) error {
 	log := logging.For(ctx, "app")
-	log.Info().Str("backend", opts.Backend).Msg("starting nefertty")
+	log.Info().Str("backend", opts.Backend).Msg("starting neferwl")
 	var cancel context.CancelFunc
 	if opts.Timeout > 0 {
 		ctx, cancel = context.WithTimeoutCause(ctx, opts.Timeout, errTimeout)

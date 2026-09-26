@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Every output gets the latest cursor, and a new output starts with it.

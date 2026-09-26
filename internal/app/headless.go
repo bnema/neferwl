@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bnema/nefertty/internal/adapters/headless"
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/adapters/headless"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 

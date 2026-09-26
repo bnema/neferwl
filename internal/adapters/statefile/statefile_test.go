@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
@@ -62,7 +62,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 }
 
 func TestPath(t *testing.T) {
-	if p, err := Path("/run/user/1", "/run/user/1/wayland-1"); err != nil || p != "/run/user/1/nefertty/wayland-1.json" {
+	if p, err := Path("/run/user/1", "/run/user/1/wayland-1"); err != nil || p != "/run/user/1/neferwl/wayland-1.json" {
 		t.Fatal(p, err)
 	}
 	for _, c := range [][2]string{{"", "wayland-1"}, {"/run/user/1", ""}} {

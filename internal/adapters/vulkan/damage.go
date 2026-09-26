@@ -4,7 +4,7 @@ import (
 	"image"
 	"math"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Damage: an output target keeps what it holds (scene Seq, each window's

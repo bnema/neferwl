@@ -15,7 +15,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // defaultBinds use the config syntax and go through the same parser as user binds.
@@ -71,7 +71,7 @@ func DefaultPath() string {
 			base = filepath.Join(home, ".config")
 		}
 	}
-	return filepath.Join(base, "nefertty", "config")
+	return filepath.Join(base, "neferwl", "config")
 }
 
 func Defaults() ports.Config {

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Hardware cursor on the CRTC's cursor plane. Move and Hide come from the

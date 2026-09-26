@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // popupState is a placed xdg_popup. Rect is relative to the parent's

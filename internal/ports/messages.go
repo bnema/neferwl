@@ -23,9 +23,9 @@ type WindowMapped struct {
 	Width, Height int
 }
 
-// SlotEnv is the environment variable nefertty sets on processes it spawns
+// SlotEnv is the environment variable neferwl sets on processes it spawns
 // for a slot. The client's value maps its windows to the slot.
-const SlotEnv = "NEFERTTY_SLOT"
+const SlotEnv = "NEFERWL_SLOT"
 
 func (WindowMapped) clientEvent() {}
 

@@ -9,7 +9,7 @@ import (
 	"slices"
 	"unsafe"
 
-	"github.com/bnema/nefertty/internal/ports"
+	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -293,7 +293,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		// Already signalled: the driver may return -1.
 		return nil, r.waitFrame(frame)
 	}
-	f := os.NewFile(uintptr(fd), "nefertty-frame")
+	f := os.NewFile(uintptr(fd), "neferwl-frame")
 	if f == nil {
 		return nil, fmt.Errorf("invalid frame sync file %d", fd)
 	}
