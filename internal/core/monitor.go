@@ -22,6 +22,8 @@ type Monitor struct {
 	back       *Workspace // where a named workspace toggle returns to
 	template   Workspace
 	named      []NamedWorkspace
+	// followMove shows the target workspace after a move to it.
+	followMove bool
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
@@ -477,27 +479,58 @@ func (m *Monitor) fullscreenHome() {
 	}
 }
 
-// MoveToWorkspace moves the focused window to numbered workspace index i;
-// focus stays here.
-func (m *Monitor) MoveToWorkspace(i int) {
+// MoveToWorkspace moves the focused column (or only the focused window) to
+// numbered workspace index i. A floating window always moves alone. Focus
+// stays here unless followMove is set (ADR 017).
+func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	i = min(max(i, 0), len(m.Workspaces)-1)
-	cur := m.Current()
+	cur, to := m.Current(), m.Workspaces[i]
 	id, ok := cur.Focused()
-	if !ok || m.Workspaces[i] == cur {
+	if !ok || to == cur {
 		return
 	}
 	if f := cur.floatIndex(id); f >= 0 {
 		fl := cur.Floats[f]
 		cur.RemoveWindow(id)
-		m.Workspaces[i].AddFloating(id, fl.W, fl.H)
-	} else if to := m.Workspaces[i]; to.origin != nil {
-		cur.RemoveWindow(id)
-		to.joinFullscreen(id)
+		to.AddFloating(id, fl.W, fl.H)
+		to.FocusID(id)
 	} else {
-		cur.RemoveWindow(id)
-		to.AddWindow(id)
+		col := Column{Windows: []WindowID{id}}
+		ok := true
+		if column {
+			col, ok = cur.takeColumn()
+		} else {
+			_, ok = cur.takeWindow()
+		}
+		if !ok {
+			return
+		}
+		to.receive(col, -1)
+	}
+	if m.followMove {
+		m.Active = i
+		m.shown = nil
 	}
 	m.normalize()
+}
+
+// receive adds a column moved in from another workspace and focuses it: at
+// index at, or where a new window goes when at < 0. It stays visible: on a
+// fixed-overflow fullscreen workspace its windows float above, and an
+// in-place fullscreen is left.
+func (w *Workspace) receive(col Column, at int) {
+	id := col.Windows[col.Focus]
+	switch {
+	case w.origin != nil:
+		for _, v := range col.Windows {
+			w.joinFullscreen(v)
+		}
+	case at < 0:
+		w.addColumn(col)
+	default:
+		w.insertColumn(at, col)
+	}
+	w.Activate(id)
 }
 
 // joinFullscreen adds a tiled window to a fullscreen workspace fs: it floats
@@ -544,6 +577,9 @@ func (m *Monitor) SetUsable(r Rect)     { m.each(func(w *Workspace) { w.SetUsabl
 func (m *Monitor) SetGaps(g int)        { m.each(func(w *Workspace) { w.SetGaps(g) }) }
 func (m *Monitor) SetBorder(b int)      { m.each(func(w *Workspace) { w.border = max(b, 0) }) }
 func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
+
+// SetFollowMove makes moves to another workspace show it (focus.follow-move).
+func (m *Monitor) SetFollowMove(on bool) { m.followMove = on }
 
 // SetMaxColumns sets the default; named workspaces may override it.
 func (m *Monitor) SetMaxColumns(n int) {

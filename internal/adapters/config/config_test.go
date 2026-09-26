@@ -21,8 +21,11 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 
 func TestDefaultsAndLoad(t *testing.T) {
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 40 || d.Layout.MaxColumns != 2 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 52 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
+	}
+	if d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
+		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
 		t.Fatal(d.Binds)
@@ -41,6 +44,17 @@ func TestDefaultsAndLoad(t *testing.T) {
 	example, w, err := Load("../../../examples/config")
 	if err != nil || len(w) != 0 || !reflect.DeepEqual(example, d) {
 		t.Fatalf("example: %v %v\n%+v\n%+v", err, w, example, d)
+	}
+}
+
+func TestFollowMove(t *testing.T) {
+	c, w := parseString(t, "focus.follow-move = on\n")
+	if !c.Focus.FollowMove || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	c, w = parseString(t, "focus.follow-move = yes\n")
+	if c.Focus.FollowMove || len(w) != 1 {
+		t.Fatal(c.Focus, w)
 	}
 }
 

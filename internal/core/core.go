@@ -181,7 +181,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			continue
 		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveToWorkspaceUp, ActionMoveToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
