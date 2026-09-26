@@ -422,7 +422,6 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		}
 	}
 	addLayers(false)
-	var focused *ports.SceneWindow
 	for _, w := range s.Windows {
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
@@ -447,45 +446,15 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 			add(body, parseColor(s.Background))
 			place(w.ID, &content, cx, cy, cw, ch)
 		}
-		if s.Border.Inactive != "" {
-			for _, strip := range borderStrips(w.Rect, inset, 0, b) {
-				add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Inactive))
-			}
-		}
-		if w.Focused && !w.Fullscreen {
-			focused = &w
-		}
 	}
-	// The focused window lights the lines along its own sides only: its
-	// inset border, and its neighbors' border line where they own it.
-	// tmux rule (screen-redraw.c): the focused window lights the lines
-	// along its sides, corners included. With exactly two tiles a single
-	// line splits them: each lights only its half of it (left/top window:
-	// first half).
-	if focused != nil && s.Border.Active != "" && s.Border.Width > 0 {
-		f, tiles := focused, 0
-		for _, w := range s.Windows {
-			if !w.Hidden && !w.Popup && w.Neighbors != 0 {
-				tiles++
-			}
+	// Separators are drawn in order: active lines over inactive ones.
+	for _, sep := range s.Separators {
+		col := s.Border.Inactive
+		if sep.Active {
+			col = s.Border.Active
 		}
-		// Inset sides with no neighbor (floats) light fully.
-		for _, strip := range borderStrips(f.Rect, f.Inset&^f.Neighbors, 0, s.Border.Width) {
-			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
-		}
-		for _, side := range []ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom} {
-			if f.Neighbors&side == 0 {
-				continue
-			}
-			out := s.Border.Width
-			if f.Inset&side != 0 {
-				out = 0
-			}
-			line := closeCorners(borderStrips(f.Rect, side, out, s.Border.Width)[0], *f, side, s.Border.Width)
-			if tiles == 2 {
-				line = halfStrip(line, side)
-			}
-			add(physRect(line.X, line.Y, line.W, line.H), parseColor(s.Border.Active))
+		if col != "" {
+			add(physRect(sep.Rect.X, sep.Rect.Y, sep.Rect.W, sep.Rect.H), parseColor(col))
 		}
 	}
 	// Popups draw only what the client drew, shadows clipped. Window popups
@@ -618,65 +587,4 @@ func (r *Renderer) Close() {
 		}
 		r.instance = 0
 	}
-}
-
-// borderStrips are the b-wide strips along sides of r, in logical pixels:
-// inside r when out is 0, else just outside it (a neighbor's border).
-func borderStrips(r ports.Rect, sides ports.Sides, out, b int) []ports.Rect {
-	if b <= 0 {
-		return nil
-	}
-	b = min(b, max(r.W/2, out), max(r.H/2, out))
-	var strips []ports.Rect
-	if sides&ports.SideLeft != 0 {
-		strips = append(strips, ports.Rect{X: r.X - out, Y: r.Y, W: b, H: r.H})
-	}
-	if sides&ports.SideRight != 0 {
-		strips = append(strips, ports.Rect{X: r.X + r.W - b + out, Y: r.Y, W: b, H: r.H})
-	}
-	if sides&ports.SideTop != 0 {
-		strips = append(strips, ports.Rect{X: r.X, Y: r.Y - out, W: r.W, H: b})
-	}
-	if sides&ports.SideBottom != 0 {
-		strips = append(strips, ports.Rect{X: r.X, Y: r.Y + r.H - b + out, W: r.W, H: b})
-	}
-	return strips
-}
-
-// closeCorners runs a line along side of w b further at each end where
-// the crossing line lies outside w (a neighbor's), so lit lines meet.
-func closeCorners(line ports.Rect, w ports.SceneWindow, side ports.Sides, b int) ports.Rect {
-	outside := func(s ports.Sides) bool { return w.Neighbors&s != 0 && w.Inset&s == 0 }
-	if side == ports.SideLeft || side == ports.SideRight {
-		if outside(ports.SideTop) {
-			line.Y, line.H = line.Y-b, line.H+b
-		}
-		if outside(ports.SideBottom) {
-			line.H += b
-		}
-		return line
-	}
-	if outside(ports.SideLeft) {
-		line.X, line.W = line.X-b, line.W+b
-	}
-	if outside(ports.SideRight) {
-		line.W += b
-	}
-	return line
-}
-
-// halfStrip keeps the half of a separator strip owned by the window on
-// side of it: the first half for the left or top window, else the second.
-func halfStrip(r ports.Rect, side ports.Sides) ports.Rect {
-	switch side {
-	case ports.SideRight:
-		r.H /= 2
-	case ports.SideLeft:
-		r.Y, r.H = r.Y+r.H/2, r.H-r.H/2
-	case ports.SideBottom:
-		r.W /= 2
-	case ports.SideTop:
-		r.X, r.W = r.X+r.W/2, r.W-r.W/2
-	}
-	return r
 }

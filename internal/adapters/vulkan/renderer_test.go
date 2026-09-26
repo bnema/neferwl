@@ -57,47 +57,22 @@ func TestRendererRender(t *testing.T) {
 			}
 		}
 	}
+	// The client sits inside its inset sides; separators are drawn over
+	// the windows in order, with the border colors.
 	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}, Inset: ports.SideAll}
 	c := windowColor(1)
 	wc := color.RGBA{c[0], c[1], c[2], 255}
-	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
-	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: {0x31, 0x32, 0x44, 255}, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 21}: {0x31, 0x32, 0x44, 255}, {21, 22}: {0x31, 0x32, 0x44, 255}, {23, 23}: {0x31, 0x32, 0x44, 255}, {24, 24}: bg})
-	s.Windows[0].Focused = true
-	check(s, map[image.Point]color.RGBA{{9, 9}: {0xb4, 0xbe, 0xfe, 255}, {10, 10}: wc, {16, 16}: wc})
-	// tmux style: the left window owns the shared line. With two tiles the
-	// focused one lights its half: top for the left window, bottom for the right.
 	gray, lit := color.RGBA{0x31, 0x32, 0x44, 255}, color.RGBA{0xb4, 0xbe, 0xfe, 255}
-	pair := s
-	pair.Windows = []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideRight},
-		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Neighbors: ports.SideLeft, Focused: true},
+	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
+	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: bg, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 22}: bg, {24, 24}: bg})
+	s.Separators = []ports.Separator{
+		{Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 2}},
+		{Rect: ports.Rect{X: 8, Y: 8, W: 8, H: 2}, Active: true},
 	}
-	check(pair, map[image.Point]color.RGBA{{14, 12}: lit, {15, 12}: lit, {14, 3}: gray, {13, 5}: wc, {0, 0}: wc})
-	pair.Windows[1].Focused, pair.Windows[0].Focused = false, true
-	check(pair, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: gray})
-	pair.Windows[0].Focused = false
-	check(pair, map[image.Point]color.RGBA{{14, 5}: gray, {15, 5}: gray})
-	// Three columns (tmux rule): the focused window lights its full lines.
-	three := s
-	three.Windows = []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideRight},
-		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideLeft | ports.SideRight, Focused: true},
-		{ID: 3, Rect: ports.Rect{X: 32, Y: 0, W: 16, H: 16}, Neighbors: ports.SideLeft},
-	}
-	check(three, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: lit, {30, 3}: lit, {30, 12}: lit})
-	three.Windows[1].Focused, three.Windows[0].Focused = false, true
-	check(three, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: lit, {30, 3}: gray, {30, 12}: gray})
-	// Bottom-right tile of a split column: its left line and top line are
-	// lit, and they meet in the corner.
-	grid := s
-	grid.Windows = []ports.SceneWindow{
-		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 32}, Inset: ports.SideRight, Neighbors: ports.SideRight},
-		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Inset: ports.SideBottom, Neighbors: ports.SideLeft | ports.SideBottom},
-		{ID: 3, Rect: ports.Rect{X: 16, Y: 16, W: 16, H: 16}, Neighbors: ports.SideLeft | ports.SideTop, Focused: true},
-	}
-	check(grid, map[image.Point]color.RGBA{{14, 30}: lit, {14, 20}: lit, {14, 14}: lit, {14, 5}: gray, {24, 14}: lit, {17, 14}: lit})
-	grid.Windows[2].Focused, grid.Windows[1].Focused = false, true
-	check(grid, map[image.Point]color.RGBA{{14, 3}: lit, {14, 14}: lit, {14, 15}: lit, {14, 20}: gray, {30, 14}: lit})
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {15, 9}: lit, {16, 9}: gray, {23, 9}: gray, {10, 10}: wc})
+	s.Border.Inactive = ""
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {16, 9}: bg})
+	s.Separators, s.Border.Inactive = nil, "#313244"
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
 	s.Windows[0].Fullscreen = false
@@ -170,6 +145,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	}
 	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
 	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}, Focused: true, Inset: ports.SideAll}}
+	scene.Separators = []ports.Separator{{Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 4}, Active: true}}
 	px := make([]byte, 16*16*4)
 	for i := 0; i < len(px); i += 4 {
 		copy(px[i:i+4], []byte{3, 5, 7, 0})

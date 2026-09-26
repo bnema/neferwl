@@ -306,7 +306,7 @@ func TestBorderInset(t *testing.T) {
 	client <- ports.WindowMapped{ID: 2}
 	s := scene(t, scenes)
 	r = s.Windows[1].Rect
-	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || s.Windows[1].Neighbors != ports.SideLeft {
+	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || len(s.Separators) == 0 {
 		t.Fatal(s)
 	}
 	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1"}
