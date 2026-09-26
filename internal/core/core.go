@@ -87,6 +87,9 @@ type Core struct {
 	// new window takes the keyboard back.
 	layerFocus WindowID
 	layerOver  WindowID
+	// layerScreen is the output focused at the click: the pointer moving to
+	// another output does not end the layer's focus.
+	layerScreen *screen
 }
 
 func keyName(s string) string {
@@ -322,13 +325,16 @@ func (c *Core) keyboardFocus() WindowID {
 	if g := c.grabFocus(); g != 0 {
 		return g
 	}
-	id, _ := c.cur().mon.Focused()
-	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || id != c.layerOver) {
-		c.layerFocus = 0
+	if c.layerFocus != 0 {
+		over, _ := c.layerScreen.mon.Focused()
+		if !c.onDemand(c.layerFocus) || !slices.Contains(c.screens, c.layerScreen) || over != c.layerOver {
+			c.layerFocus, c.layerScreen = 0, nil
+		}
 	}
 	if c.layerFocus != 0 {
 		return c.layerFocus
 	}
+	id, _ := c.cur().mon.Focused()
 	return id
 }
 
@@ -747,7 +753,8 @@ func (c *Core) Run(ctx context.Context) error {
 					// A click on an on-demand layer gives it the keyboard.
 					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
 						c.layerFocus = id
-						c.layerOver, _ = c.cur().mon.Focused()
+						c.layerScreen = c.cur()
+						c.layerOver, _ = c.layerScreen.mon.Focused()
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}

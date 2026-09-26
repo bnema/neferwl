@@ -220,3 +220,42 @@ func TestLayerHitOrder(t *testing.T) {
 	hit(50, 5, 1)
 	hit(50, 75, 7)
 }
+
+// The pointer moving to another output does not take the keyboard from a
+// clicked on-demand layer: keys still reach it.
+func TestLayerFocusAcrossOutputs(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	bar := ports.LayerSurface{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10, Keyboard: 2, Output: "OUT-1"}
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 50, Y: 5}
+	next(t, commands, func(v ports.PointerFocus) bool { return v.ID == 6 })
+	input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	next(t, commands, func(v ports.FocusWindow) bool { return v.ID == 6 })
+	input <- ports.PointerButton{Button: 0x110}
+	input <- ports.PointerMotion{X: 100, Y: 40} // onto OUT-2, now focused
+	next(t, commands, func(v ports.PointerFocus) bool { return v.ID == 0 })
+	input <- ports.KeyEvent{Keysym: "a", Pressed: true}
+	if v := next(t, commands, anyOf[ports.ForwardKey]); v.ID != 6 {
+		t.Fatalf("key to %d, want the bar", v.ID)
+	}
+}
