@@ -32,6 +32,7 @@ func TestStructSizesMatchIoctls(t *testing.T) {
 		{"atomic", unsafe.Sizeof(modeAtomic{}), ioctlAtomic},
 		{"create_blob", unsafe.Sizeof(createBlob{}), ioctlCreateBlob},
 		{"get_cap", unsafe.Sizeof(getCap{}), ioctlGetCap},
+		{"destroy_blob", unsafe.Sizeof(uint32(0)), ioctlDestroyBlob},
 	} {
 		if want := (tc.req >> 16) & 0x3fff; tc.got != want {
 			t.Errorf("%s: size %d, ioctl encodes %d", tc.name, tc.got, want)

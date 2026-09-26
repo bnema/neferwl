@@ -2,6 +2,7 @@ package drm
 
 import (
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/bnema/nefertty/internal/ports"
@@ -38,6 +39,21 @@ type Cursor struct {
 	hotX, hotY int
 	applied    cursorState // what the last commit put on the plane
 	commits    int
+	// screen is the image the plane scans out (0: none); flight is what
+	// the pending commit puts on it when flying. An image is written only
+	// when it is neither, so the plane never shows a half-written image.
+	screen uint32
+	flight cursorState
+	flying bool
+	// later is an image that waits for a free slot (both on screen or in
+	// flight); off is set when KMS refused the cursor plane.
+	later *laterImage
+	off   bool
+}
+
+type laterImage struct {
+	pixels           []byte
+	w, h, hotX, hotY int
 }
 
 // cursorState is the cursor plane as committed: off, or fb at x, y.
@@ -115,9 +131,12 @@ func (c *Cursor) setup(k kms, r ports.Renderer) error {
 	return err
 }
 
-// setImage loads premultiplied ARGB8888 pixels into the image not on
-// screen; an empty image hides the cursor (a client asked for none).
+// setImage loads premultiplied ARGB8888 pixels into an image neither on
+// screen nor in flight; when there is none it waits for the next commit
+// event (flushLater). An empty image hides the cursor (a client asked for
+// none).
 func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int) error {
+	c.later = nil
 	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
 		c.image = false
 		return nil
@@ -125,7 +144,11 @@ func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int)
 	if c.fbs[0] == 0 {
 		return errors.New("no cursor images")
 	}
-	next := 1 - c.cur
+	next := c.freeSlot()
+	if next < 0 {
+		c.later = &laterImage{pixels: slices.Clone(pixels[:w*h*4]), w: w, h: h, hotX: hotX, hotY: hotY}
+		return nil
+	}
 	if err := r.WriteCursor(next, pixels, w, h); err != nil {
 		return err
 	}
@@ -133,12 +156,53 @@ func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int)
 	return nil
 }
 
+// freeSlot is an image the plane neither shows nor is about to show, -1
+// when both are busy.
+func (c *Cursor) freeSlot() int {
+	for i, fb := range c.fbs {
+		if fb != c.screen && !(c.flying && c.flight.on && c.flight.fb == fb) {
+			return i
+		}
+	}
+	return -1
+}
+
+// flushLater loads an image that waited for a free slot. It reports
+// whether the cursor changed.
+func (c *Cursor) flushLater(r ports.Renderer) (bool, error) {
+	l := c.later
+	if l == nil || c.freeSlot() < 0 {
+		return false, nil
+	}
+	return true, c.setImage(r, l.pixels, l.w, l.h, l.hotX, l.hotY)
+}
+
+// committed records that a commit carrying state s is in flight.
+func (c *Cursor) committed(s cursorState) {
+	if s != c.applied {
+		c.mu.Lock()
+		c.commits++
+		c.mu.Unlock()
+	}
+	c.applied, c.flight, c.flying = s, s, true
+}
+
+// landed records that the pending commit reached the screen.
+func (c *Cursor) landed() {
+	if c.flying {
+		c.screen, c.flying = 0, false
+		if c.flight.on {
+			c.screen = c.flight.fb
+		}
+	}
+}
+
 // desired is what the cursor plane should show now.
 func (c *Cursor) desired() cursorState {
 	c.mu.Lock()
 	x, y, away := c.x, c.y, c.away
 	c.mu.Unlock()
-	if !c.image || away || c.fbs[c.cur] == 0 {
+	if !c.image || away || c.off || c.fbs[c.cur] == 0 {
 		return cursorState{}
 	}
 	return cursorState{on: true, fb: c.fbs[c.cur], x: x - c.hotX, y: y - c.hotY}
@@ -172,5 +236,6 @@ func (c *Cursor) free(k kms) {
 			c.fbs[i] = 0
 		}
 	}
-	c.image = false
+	c.image, c.later = false, nil
+	c.screen, c.flying = 0, false
 }

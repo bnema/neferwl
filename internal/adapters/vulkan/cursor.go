@@ -79,6 +79,10 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectColorBit}
 	d.GetImageSubresourceLayout(r.device, c.image, &sub, &layout)
 	c.pitch = int(layout.RowPitch)
+	// Cursor planes scan out packed rows from the start of the buffer.
+	if c.pitch != size*4 || layout.Offset != 0 {
+		return nil, ports.DMABuf{}, fmt.Errorf("cursor image layout pitch %d offset %d, want pitch %d offset 0", c.pitch, layout.Offset, size*4)
+	}
 	if err := checked("vkMapMemory(cursor)", d.MapMemory(r.device, c.memory, 0, vk.DeviceSize(req.Size), 0, &c.mapped)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}

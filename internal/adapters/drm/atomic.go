@@ -236,7 +236,7 @@ func enableAtomic(fd int) error {
 	for _, c := range []uint64{clientCapUniversalPlanes, clientCapAtomic} {
 		v := setClientCap{capability: c, value: 1}
 		if err := ioctl(fd, ioctlSetClientCap, unsafe.Pointer(&v)); err != nil {
-			return errors.Join(errors.New("atomic modesetting unsupported"), err)
+			return err
 		}
 	}
 	if !hasCap(fd, capTimestampMonotonic) {

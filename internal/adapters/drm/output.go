@@ -7,9 +7,11 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
+	"github.com/bnema/nefertty/internal/adapters/syncfile"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -46,8 +48,13 @@ type Output struct {
 	// new frame (else it only changed the cursor or VRR).
 	pending      bool
 	pendingFrame pendingFrame
-	flipStart    time.Time
-	flips        int
+	// serials numbers commits per card, so an event queued before a
+	// modeset, or for an earlier output on this CRTC, never completes a
+	// newer commit; pendingSerial is the pending commit's.
+	serials                   *atomic.Uint64
+	pendingSerial, nextSerial uint64
+	flipStart                 time.Time
+	flips                     int
 	// Direct scanout: client framebuffers by DMABuf ID and the buffer on
 	// screen and queued (0: the composed image).
 	scanout       bool
@@ -67,9 +74,8 @@ type Output struct {
 	vrrProp       uint32
 	vrrOn         bool
 	composedSince time.Time
-	// kind is how the images were made; validated once a modeset took them.
-	kind      imageKind
-	validated bool
+	// kind is how the images were made.
+	kind imageKind
 }
 
 // pendingFrame is what the pending frame commit shows.
@@ -80,11 +86,26 @@ type pendingFrame struct {
 	shows           map[ports.WindowID]uint64
 }
 
-// Commit event userData.
+// Commit event userData: the commit serial above userKindBits, the kind
+// of commit below.
 const (
-	userFrame = 1
-	userState = 2
+	userFrame    = 1
+	userState    = 2
+	userKindBits = 2
 )
+
+// userData takes a new serial for the next commit of kind and returns
+// what the commit carries.
+func (o *Output) userData(kind uint64) uint64 {
+	o.nextSerial = o.serials.Add(1)
+	return o.nextSerial<<userKindBits | kind
+}
+
+// begin marks the commit made with the last userData pending.
+func (o *Output) begin(f pendingFrame) {
+	o.pendingSerial = o.nextSerial
+	o.pending, o.pendingFrame, o.flipStart = true, f, time.Now()
+}
 
 // CursorLoader returns the image of a cursor at an output scale, at most
 // limit pixels on a side; an empty image hides the cursor.
@@ -94,7 +115,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
+	o := &Output{k: card.k, flipped: card.flips[crtc], serials: &card.serials, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -227,11 +248,72 @@ func (o *Output) modeset() error {
 	o.pending = false
 	o.pendingFrame = pendingFrame{}
 	o.shown, o.queued = 0, 0
-	mode := o.mode
+	blob, err := o.modeBlobFor(o.mode)
+	if err != nil {
+		return err
+	}
+	if err := o.k.commit(o.modesetReq(blob), atomicAllowModes, 0); err != nil {
+		_ = o.k.destroyBlob(blob)
+		return fmt.Errorf("modeset: %w", err)
+	}
+	if o.modeBlob != 0 {
+		_ = o.k.destroyBlob(o.modeBlob)
+	}
+	o.modeBlob = blob
+	o.vrrOn = false
+	if o.cursor != nil {
+		o.cursor.applied = cursorState{}
+		o.cursor.screen, o.cursor.flying = 0, false
+	}
+	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
+	o.testCursor()
+	return nil
+}
+
+// testModeset asks KMS whether it would take the modeset of the output
+// images without applying it.
+func (o *Output) testModeset() error {
+	blob, err := o.modeBlobFor(o.mode)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = o.k.destroyBlob(blob) }()
+	if err := o.k.commit(o.modesetReq(blob), atomicTestOnly|atomicAllowModes, 0); err != nil {
+		return fmt.Errorf("modeset test: %w", err)
+	}
+	return nil
+}
+
+func (o *Output) modeBlobFor(mode modeInfo) (uint32, error) {
 	blob, err := o.k.createBlob(unsafe.Slice((*byte)(unsafe.Pointer(&mode)), unsafe.Sizeof(mode)))
 	if err != nil {
-		return fmt.Errorf("mode blob: %w", err)
+		return 0, fmt.Errorf("mode blob: %w", err)
 	}
+	return blob, nil
+}
+
+// testCursor turns the hardware cursor off when KMS refuses its images on
+// the cursor plane (e.g. a pitch the plane cannot scan out).
+func (o *Output) testCursor() {
+	c := o.cursor
+	if c == nil || c.off || c.fbs[0] == 0 {
+		return
+	}
+	req := &atomicReq{}
+	c.props(req, o.crtc, cursorState{on: true, fb: c.fbs[0]})
+	if err := o.k.commit(req, atomicTestOnly, 0); refused(err) {
+		o.cursorOff(err)
+	}
+}
+
+// cursorOff stops using the cursor plane for the rest of the output's life.
+func (o *Output) cursorOff(err error) {
+	o.cursor.off = true
+	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("cursor plane refused; hardware cursor off")
+}
+
+// modesetReq is the modeset of the front image with mode blob.
+func (o *Output) modesetReq(blob uint32) *atomicReq {
 	req := &atomicReq{}
 	req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(blob))
 	req.set(o.crtc, o.crtcProps["ACTIVE"], 1)
@@ -250,20 +332,7 @@ func (o *Output) modeset() error {
 		req.set(p.id, p.prop("FB_ID"), 0)
 		req.set(p.id, p.prop("CRTC_ID"), 0)
 	}
-	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
-		_ = o.k.destroyBlob(blob)
-		return fmt.Errorf("modeset: %w", err)
-	}
-	if o.modeBlob != 0 {
-		_ = o.k.destroyBlob(o.modeBlob)
-	}
-	o.modeBlob = blob
-	o.vrrOn = false
-	if o.cursor != nil {
-		o.cursor.applied = cursorState{}
-	}
-	o.log.Info().Str("connector", o.conn.name).Msg("modeset")
-	return nil
+	return req
 }
 
 // probeAsync checks once whether async commits may carry IN_FENCE_FD.
@@ -333,7 +402,10 @@ func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f 
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
 	}
 	// The kernel takes its own reference on the fence.
-	if err := o.k.commit(req, flags, userFrame); err != nil {
+	if err := o.k.commit(req, flags, o.userData(userFrame)); err != nil {
+		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
+			return o.commitFrame(fb, fence, false, vrr, f)
+		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
 			// refuses VRR on this output.
@@ -350,19 +422,23 @@ func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f 
 			o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
 		}
 		o.vrrOn = vrr
-		if o.cursor != nil {
-			if cur != o.cursor.applied {
-				o.cursor.mu.Lock()
-				o.cursor.commits++
-				o.cursor.mu.Unlock()
-			}
-			o.cursor.applied = cur
-		}
+	}
+	if o.cursor != nil {
+		// An async commit leaves the cursor plane as applied.
+		o.cursor.committed(cur)
 	}
 	f.frame, f.async = true, async
 	o.setAsync(async)
-	o.pending, o.pendingFrame, o.flipStart = true, f, time.Now()
+	o.begin(f)
 	return nil
+}
+
+// cursorRefused reports, after a commit carrying the cursor failed with
+// EINVAL, whether the cursor plane was the cause; then the cursor is off
+// and the commit can be retried without it.
+func (o *Output) cursorRefused() bool {
+	o.testCursor()
+	return o.cursor.off
 }
 
 // commitState commits a cursor or VRR change without a new frame.
@@ -381,20 +457,20 @@ func (o *Output) commitState(vrr bool) error {
 	if len(req.objs) == 0 {
 		return nil
 	}
-	if err := o.k.commit(req, atomicNonblock|flipEventFlag, userState); err != nil {
+	if err := o.k.commit(req, atomicNonblock|flipEventFlag, o.userData(userState)); err != nil {
+		if cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
+			return o.commitState(vrr)
+		}
 		return err
 	}
-	if o.cursor != nil && cur != o.cursor.applied {
-		o.cursor.applied = cur
-		o.cursor.mu.Lock()
-		o.cursor.commits++
-		o.cursor.mu.Unlock()
+	if o.cursor != nil {
+		o.cursor.committed(cur)
 	}
 	if vrr != o.vrrOn {
 		o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
 	}
 	o.vrrOn = vrr
-	o.pending, o.pendingFrame, o.flipStart = true, pendingFrame{}, time.Now()
+	o.begin(pendingFrame{})
 	return nil
 }
 
@@ -477,13 +553,14 @@ func (o *Output) Close() {
 	req.set(o.crtc, o.vrrProp, 0)
 	s := o.saved
 	var blob uint32
+	p := o.primary
+	restored := false
 	if s.crtcID != 0 && s.modeValid != 0 && s.fbID != 0 {
-		mode := s.mode
-		if b, err := o.k.createBlob(unsafe.Slice((*byte)(unsafe.Pointer(&mode)), unsafe.Sizeof(mode))); err == nil {
-			blob = b
+		if b, err := o.modeBlobFor(s.mode); err == nil {
+			blob, restored = b, true
 			req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(b))
 			req.set(o.crtc, o.crtcProps["ACTIVE"], 1)
-			p := o.primary
+			req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
 			req.set(p.id, p.prop("FB_ID"), uint64(s.fbID))
 			req.set(p.id, p.prop("CRTC_ID"), uint64(o.crtc))
 			req.set(p.id, p.prop("SRC_X"), 0)
@@ -496,8 +573,18 @@ func (o *Output) Close() {
 			req.set(p.id, p.prop("CRTC_H"), uint64(s.mode.VDisplay))
 		}
 	}
+	if !restored {
+		// Nothing to give back: leave the CRTC off.
+		req.set(o.crtc, o.crtcProps["ACTIVE"], 0)
+		req.set(o.crtc, o.crtcProps["MODE_ID"], 0)
+		req.set(p.id, p.prop("FB_ID"), 0)
+		req.set(p.id, p.prop("CRTC_ID"), 0)
+		req.set(o.conn.id, o.connCrtc, 0)
+	}
 	// Best effort: at exit the card may already belong to another session.
-	_ = o.k.commit(req, atomicAllowModes, 0)
+	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
+		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("restore crtc")
+	}
 	if blob != 0 {
 		_ = o.k.destroyBlob(blob)
 	}
@@ -523,7 +610,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	defer r.Close()
 	if o.cursor != nil {
 		if err := o.cursor.setup(o.k, r); err != nil {
-			o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("no hardware cursor images")
+			o.cursor.off = true
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("no hardware cursor images; hardware cursor off")
 		}
 	}
 	// The seat sends its state first; while switched away (e.g. a monitor
@@ -534,16 +622,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	default:
 	}
 	// Output images, from the best to the linear fallback (ADR 014).
-	// While switched away they are validated by the first modeset on enable.
+	// While switched away they are made on the first enable.
 	if enabled {
-		err = o.showImages(r, imagesDriver, nil)
-	} else {
-		o.kind, err = o.setupImages(r, imagesDriver, nil)
-	}
-	if err != nil {
-		return err
-	}
-	if enabled {
+		if err := o.showImages(r, imagesDriver, nil); err != nil {
+			return err
+		}
 		o.probeAsync(r)
 	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
@@ -592,22 +675,21 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case on := <-active:
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
-				err := o.modeset()
+				var err error
+				if o.fbs[0] == 0 {
+					err = o.showImages(r, imagesDriver, nil)
+				} else {
+					err = o.modeset()
+				}
 				if lostMaster(err) {
 					// The seat took DRM master back: wait for the next enable.
 					o.log.Warn().Err(err).Msg("resume")
 					continue
 				}
-				if refused(err) && !o.validated && o.kind < imagesLinear {
-					o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(o.kind)).Msg("modeset refused the output images")
-					o.freeImages()
-					err = o.showImages(r, o.kind+1, err)
-				}
 				if err != nil {
 					o.log.Error().Err(err).Msg("resume")
 					return err
 				}
-				o.validated = true
 				o.probeAsync(r)
 				dirty = haveScene
 				stateDirty = true
@@ -615,12 +697,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			enabled = on
 			o.log.Info().Bool("enabled", on).Msg("output")
 		case ev := <-o.flipped:
-			if !o.pending {
+			if !o.completed(ev, seen) {
 				continue // stale event from before a modeset
 			}
-			o.completed(ev, seen)
-			reportDirty = false
 			stateDirty = true
+			if o.cursor != nil {
+				// An image that waited for a free slot loads now.
+				if _, err := o.cursor.flushLater(r); err != nil {
+					o.log.Warn().Err(err).Msg("cursor")
+				}
+			}
 		case s := <-scenes:
 			if o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
 				cursorScale = s.Scale
@@ -707,7 +793,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 func (o *Output) commitFailed(err error, enabled *bool) bool {
 	switch {
 	case errors.Is(err, unix.EBUSY):
+		// A commit of ours is in flight (e.g. across a VT switch): wait
+		// for any event of this CRTC.
 		o.pending, o.pendingFrame, o.flipStart = true, pendingFrame{}, time.Now()
+		o.pendingSerial = 0
 		return true
 	case lostMaster(err):
 		o.log.Warn().Err(err).Msg("commit refused")
@@ -719,15 +808,22 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 }
 
 // completed handles the event of the pending commit: a flipped frame is
-// reported with its kernel timestamp.
-func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) {
+// reported with its kernel timestamp. It reports false for an event of
+// another commit, which is dropped.
+func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
+	if !o.pending || o.pendingSerial != 0 && ev.user>>userKindBits != o.pendingSerial {
+		return false
+	}
 	f := o.pendingFrame
 	o.pending, o.pendingFrame = false, pendingFrame{}
 	if d := time.Since(o.flipStart); d > 20*time.Millisecond {
 		o.log.Info().Dur("flip_ms", d).Msg("slow flip")
 	}
+	if o.cursor != nil {
+		o.cursor.landed()
+	}
 	if !f.frame {
-		return
+		return true
 	}
 	o.flips++
 	o.shown = f.queued
@@ -739,10 +835,14 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) {
 		refresh = time.Duration(int64(time.Second) * 1000 / int64(max(1, o.mode.refreshMilli())))
 	}
 	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: refresh, ZeroCopy: f.zeroCopy, Async: f.async, HardwareClock: true, Shows: f.shows}, seen)
+	return true
 }
 
 // setCursor loads a cursor for scale into the cursor images.
 func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorChange, scale float64) {
+	if o.cursor.off {
+		return
+	}
 	img, err := load(c, scale, o.cursor.Limit())
 	if err == nil {
 		err = o.cursor.setImage(r, img.Pixels, img.W, img.H, img.HotX, img.HotY)
@@ -807,7 +907,8 @@ const (
 )
 
 // showImages sets up images from kind on and modesets them. KMS may refuse
-// an image only at modeset: then the next kind is tried. cause is why the
+// an image only in a modeset: a TEST_ONLY modeset checks it first, and the
+// next kind is tried on refusal. cause is why the
 // previous kind failed, for the log.
 func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error {
 	for {
@@ -816,11 +917,11 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 			return err
 		}
 		o.kind = got
-		if err = o.modeset(); err == nil {
-			o.validated = true
-			return nil
+		if err = o.testModeset(); err == nil {
+			return o.modeset()
 		}
 		if !refused(err) || got == imagesLinear {
+			o.freeImages()
 			return err
 		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
@@ -879,7 +980,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 		var done *os.File
 		if done, err = r.Render(ports.Scene{Background: "#000000"}, nil); done != nil {
 			// The modeset is a blocking commit: wait for the clear.
-			err = errors.Join(err, waitFence(done))
+			err = errors.Join(err, syncfile.Wait(context.Background(), done))
 			done.Close()
 		}
 	}
@@ -890,17 +991,6 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 	}
 	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")
 	return nil
-}
-
-// waitFence blocks until a sync file signals (setup only, never per frame).
-func waitFence(f *os.File) error {
-	fds := []unix.PollFd{{Fd: int32(f.Fd()), Events: unix.POLLIN}}
-	for {
-		_, err := unix.Poll(fds, -1)
-		if !errors.Is(err, unix.EINTR) {
-			return err
-		}
-	}
 }
 
 // freeImages removes the output images' framebuffers.

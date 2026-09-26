@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -29,13 +30,15 @@ type Card struct {
 	taken map[uint32]bool
 	// async is DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP.
 	async bool
+	// serials numbers the commits of every output (event userData).
+	serials atomic.Uint64
 }
 
 // OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
 // stays owned by the caller. A card without atomic KMS is refused.
 func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error) {
 	if err := enableAtomic(fd); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("drm: atomic modesetting unsupported by %s: %w", path, err)
 	}
 	crtcs, _, err := resources(fd)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,9 +24,6 @@ const (
 
 var planeProps = map[string]uint32{"FB_ID": pFB, "CRTC_ID": pCrtcID, "IN_FENCE_FD": pFence, "SRC_X": 10, "SRC_Y": 11, "SRC_W": 12, "SRC_H": 13, "CRTC_X": 14, "CRTC_Y": 15, "CRTC_W": 16, "CRTC_H": 17}
 
-// commitMu guards recorded commits (Run commits on its goroutine).
-var commitMu sync.Mutex
-
 // commitRec is one recorded atomic commit.
 type commitRec struct {
 	req   atomicReq
@@ -36,8 +34,16 @@ type commitRec struct {
 // testOutput returns an output on a mocked kms that records commits;
 // commit returns the next error of errs (nil when empty).
 func testOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec) {
+	o, k, commits, _ := testOutputMu(t, errs...)
+	return o, k, commits
+}
+
+// testOutputMu is testOutput with the mutex that guards the recorded
+// commits (Run commits on its goroutine).
+func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec, *sync.Mutex) {
 	k := newMockkms(t)
 	var commits []commitRec
+	commitMu := &sync.Mutex{}
 	k.EXPECT().commit(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(r *atomicReq, flags uint32, user uint64) error {
 		commitMu.Lock()
 		defer commitMu.Unlock()
@@ -57,11 +63,14 @@ func testOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec) {
 	primary := &plane{id: tPrimary, typ: planePrimary, props: planeProps}
 	cur := newCursor(&plane{id: tCursor, typ: planeCursor, props: planeProps}, 64)
 	cur.fbs = [2]uint32{90, 91}
-	o := &Output{k: k, crtc: tCrtc, conn: connector{id: tConn, name: "DP-1"}, mode: modeInfo{HDisplay: 200, VDisplay: 100, VRefresh: 60}, log: zerowrap.Default(),
+	o := &Output{k: k, serials: &atomic.Uint64{}, crtc: tCrtc, conn: connector{id: tConn, name: "DP-1"}, mode: modeInfo{HDisplay: 200, VDisplay: 100, VRefresh: 60}, log: zerowrap.Default(),
 		crtcProps: map[string]uint32{"MODE_ID": pMode, "ACTIVE": pActive, "VRR_ENABLED": pVRR}, connCrtc: pConnCrtc, vrrProp: pVRR,
 		primary: primary, cursor: cur, fbs: [2]uint32{70, 71}, clientFBs: map[uint64]*clientFB{}, scanout: true, tearing: true, asyncFence: true}
-	return o, k, &commits
+	return o, k, &commits, commitMu
 }
+
+// eventOf is the flip event of commit c.
+func eventOf(c commitRec) flipEvent { return flipEvent{crtc: tCrtc, user: c.user} }
 
 func objCount(c commitRec) int { return len(c.req.objs) }
 
@@ -79,7 +88,7 @@ func TestFrameCommitCarriesPrimaryFenceCursorAndVRR(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := (*commits)[0]
-	if c.flags != atomicNonblock|flipEventFlag || c.user != userFrame {
+	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userFrame || c.user>>userKindBits != o.pendingSerial {
 		t.Fatalf("flags %#x user %d", c.flags, c.user)
 	}
 	if v, _ := c.req.value(tPrimary, pFB); v != 70 {
@@ -167,12 +176,12 @@ func TestCursorCommitWaitsForEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := (*commits)[0]
-	if c.flags != atomicNonblock|flipEventFlag || c.user != userState || !o.pending {
+	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userState || !o.pending {
 		t.Fatalf("cursor commit flags %#x user %d pending %v", c.flags, c.user, o.pending)
 	}
 	// Its event is not a frame: nothing is reported.
 	seen := map[ports.WindowID]uint64{}
-	o.completed(flipEvent{user: userState}, seen)
+	o.completed(eventOf(c), seen)
 	if o.pending || len(o.unsent) != 0 || o.flips != 0 {
 		t.Fatalf("pending=%v unsent=%d flips=%d", o.pending, len(o.unsent), o.flips)
 	}
@@ -192,13 +201,13 @@ func TestBusyCommitStaysPending(t *testing.T) {
 }
 
 func TestFlipReportsTimestampAndShownFrame(t *testing.T) {
-	o, _, _ := testOutput(t)
+	o, _, commits := testOutput(t)
 	o.vrrOn = false
 	o.mode.Clock, o.mode.HTotal, o.mode.VTotal = 0, 0, 0
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{shows: map[ports.WindowID]uint64{1: 4}}); err != nil {
 		t.Fatal(err)
 	}
-	o.completed(flipEvent{user: userFrame, when: 5 * time.Second, seq: 11}, map[ports.WindowID]uint64{1: 4})
+	o.completed(flipEvent{user: (*commits)[0].user, when: 5 * time.Second, seq: 11}, map[ports.WindowID]uint64{1: 4})
 	if len(o.unsent) != 1 {
 		t.Fatalf("reports %d", len(o.unsent))
 	}
@@ -344,7 +353,7 @@ func TestBufferRefusedIsNotBlamedOnVRR(t *testing.T) {
 // GPU, so a newer content is reported only after the flip event; every
 // frame fence is closed.
 func TestRunReportsSeenAfterFlip(t *testing.T) {
-	o, k, commits := testOutput(t)
+	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
 	flips := make(chan flipEvent, 1)
 	o.flipped = flips
@@ -360,7 +369,8 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		f, w, _ := os.Pipe()
-		w.Close() // readable: signalled
+		_, _ = w.Write([]byte{1}) // readable: signalled
+		w.Close()
 		mu.Lock()
 		fences = append(fences, f)
 		mu.Unlock()
@@ -376,7 +386,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		defer commitMu.Unlock()
 		n := 0
 		for _, c := range *commits {
-			if c.user == userFrame {
+			if c.user&3 == userFrame {
 				n++
 			}
 		}
@@ -399,7 +409,10 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		t.Fatalf("report while a frame is in flight: %+v", p)
 	case <-time.After(30 * time.Millisecond):
 	}
-	flips <- flipEvent{crtc: tCrtc, user: userFrame, when: time.Second, seq: 1}
+	commitMu.Lock()
+	last := (*commits)[len(*commits)-1]
+	commitMu.Unlock()
+	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
 	select {
 	case p := <-presented:
 		if p.Flip == nil || p.Flip.When != time.Second || p.Seen[1] != 3 {
