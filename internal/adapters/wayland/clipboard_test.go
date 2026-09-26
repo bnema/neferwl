@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -180,7 +181,14 @@ func TestClipboardFollowsFocus(t *testing.T) {
 		}
 	}
 	buf := make([]byte, 16)
-	n, _ := unix.Read(fds[0], buf)
+	// Go runtime signals (preemption) can interrupt the raw read: retry.
+	n, err := unix.Read(fds[0], buf)
+	for errors.Is(err, unix.EINTR) {
+		n, err = unix.Read(fds[0], buf)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(buf[:n]) != "pasted" {
 		t.Fatalf("pasted %q", buf[:n])
 	}

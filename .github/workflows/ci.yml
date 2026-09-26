@@ -1,17 +1,39 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
+  # Arch matches the development system: libwayland, glslc and Go versions
+  # change protocol behavior and SPIR-V bytes.
   check:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+      # An init process reaps killed children, as on a real session.
+      options: --init
+    env:
+      XDG_RUNTIME_DIR: /tmp/xdg-runtime
     steps:
+      # Libraries loaded at runtime through purego; vulkan-swrast (lavapipe)
+      # gives tests a Vulkan device; gcc is for the race detector.
+      - run: >-
+          pacman -Syu --noconfirm --needed
+          git go make gcc shaderc wayland libxkbcommon libinput seatd
+          vulkan-icd-loader vulkan-swrast
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-      - run: go install github.com/bnema/hexcheck@latest
-      - run: go install github.com/vektra/mockery/v3@v3.8.0
+      - run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          install -d -m 700 "$XDG_RUNTIME_DIR"
+      - run: |
+          go install github.com/bnema/hexcheck/cmd/hexcheck@v0.2.0
+          go install github.com/vektra/mockery/v3@v3.8.0
+          go install honnef.co/go/tools/cmd/staticcheck@latest
       - run: make check
       - run: make race
       - run: make mocks-check
-      - run: sudo apt-get install -y glslc
       - run: make spv-check
+      - run: ~/go/bin/staticcheck ./...

@@ -80,7 +80,12 @@ func TestRunDropsClientsOfFailedSatellite(t *testing.T) {
 	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 3}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := unix.Read(fd, make([]byte, 1)); n != 0 || err != nil {
+	// Go runtime signals (preemption) can interrupt the raw read: retry.
+	n, err := unix.Read(fd, make([]byte, 1))
+	for errors.Is(err, unix.EINTR) {
+		n, err = unix.Read(fd, make([]byte, 1))
+	}
+	if n != 0 || err != nil {
 		t.Fatalf("read %d %v, want EOF", n, err)
 	}
 	cancel()
