@@ -4,8 +4,8 @@ go 1.27
 
 require (
 	github.com/bnema/purego v0.11.0-bnema.4
-	github.com/bnema/purego-libwayland v0.0.0
-	github.com/bnema/purego-vulkan v0.0.0
+	github.com/bnema/purego-libwayland v0.1.0
+	github.com/bnema/purego-vulkan v0.4.0
 	github.com/bnema/wlturbo v0.2.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/rs/zerolog v1.35.1
@@ -21,7 +21,3 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
-
-replace github.com/bnema/purego-libwayland => ../purego-libwayland
-
-replace github.com/bnema/purego-vulkan => ../purego-vulkan
