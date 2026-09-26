@@ -77,29 +77,27 @@ func TestRendererRender(t *testing.T) {
 	check(pair, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: gray})
 	pair.Windows[0].Focused = false
 	check(pair, map[image.Point]color.RGBA{{14, 5}: gray, {15, 5}: gray})
-	// Three columns: each line is split on its own. Focus in the middle
-	// lights the bottom half of the left line and the top half of the right one.
+	// Three columns (tmux rule): the focused window lights its full lines.
 	three := s
 	three.Windows = []ports.SceneWindow{
 		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideRight},
 		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Inset: ports.SideRight, Neighbors: ports.SideLeft | ports.SideRight, Focused: true},
 		{ID: 3, Rect: ports.Rect{X: 32, Y: 0, W: 16, H: 16}, Neighbors: ports.SideLeft},
 	}
-	check(three, map[image.Point]color.RGBA{{14, 3}: gray, {14, 12}: lit, {30, 3}: lit, {30, 12}: gray})
-	// Bottom-right tile of a split column: its top line (owned by the tile
-	// above) meets the left line (owned by the left column); lit halves
-	// ending at that corner close it.
+	check(three, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: lit, {30, 3}: lit, {30, 12}: lit})
+	three.Windows[1].Focused, three.Windows[0].Focused = false, true
+	check(three, map[image.Point]color.RGBA{{14, 3}: lit, {14, 12}: lit, {30, 3}: gray, {30, 12}: gray})
+	// Bottom-right tile of a split column: its left line and top line are
+	// lit, and they meet in the corner.
 	grid := s
 	grid.Windows = []ports.SceneWindow{
 		{ID: 1, Rect: ports.Rect{X: 0, Y: 0, W: 16, H: 32}, Inset: ports.SideRight, Neighbors: ports.SideRight},
 		{ID: 2, Rect: ports.Rect{X: 16, Y: 0, W: 16, H: 16}, Inset: ports.SideBottom, Neighbors: ports.SideLeft | ports.SideBottom},
 		{ID: 3, Rect: ports.Rect{X: 16, Y: 16, W: 16, H: 16}, Neighbors: ports.SideLeft | ports.SideTop, Focused: true},
 	}
-	check(grid, map[image.Point]color.RGBA{{14, 30}: lit, {14, 20}: gray, {24, 14}: lit, {17, 14}: gray})
+	check(grid, map[image.Point]color.RGBA{{14, 30}: lit, {14, 20}: lit, {14, 14}: lit, {14, 5}: gray, {24, 14}: lit, {17, 14}: lit})
 	grid.Windows[2].Focused, grid.Windows[1].Focused = false, true
-	// Top-right tile: left line bottom half and bottom line left half meet
-	// at the corner inside the left column's line.
-	check(grid, map[image.Point]color.RGBA{{14, 14}: lit, {14, 15}: lit, {16, 14}: lit, {14, 3}: gray, {30, 14}: gray})
+	check(grid, map[image.Point]color.RGBA{{14, 3}: lit, {14, 14}: lit, {14, 15}: lit, {14, 20}: gray, {30, 14}: lit})
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
 	s.Windows[0].Fullscreen = false
