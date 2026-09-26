@@ -7,8 +7,6 @@
   <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://badgen.net/github/stars/bnema/neferwl?icon=github" alt="GitHub stars"></a>
 </p>
 
-<p align="center"><em>Ancient Egyptian: beautiful</em></p>
-
 <p align="center">A minimal Wayland compositor in Go, built for performance: scrollable columns, multi-monitor workspaces and a zero-copy path for games.</p>
 
 > [!WARNING]
