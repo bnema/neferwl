@@ -18,11 +18,11 @@ packages:
   # Unexported adapter seams: mocks live next to the code, in test files.
   github.com/bnema/nefertty/internal/adapters/drm:
     interfaces:
-      cursorPlane:
+      kms:
         config:
           dir: internal/adapters/drm
           pkgname: drm
-          filename: cursor_plane_mock_test.go
+          filename: kms_mock_test.go
   github.com/bnema/nefertty/internal/adapters/wayland:
     interfaces:
       procEnv:

@@ -1,281 +1,176 @@
 package drm
 
 import (
-	"fmt"
+	"errors"
 	"sync"
-	"time"
-	"unsafe"
+
+	"github.com/bnema/nefertty/internal/ports"
 )
 
-// Hardware cursor through the legacy cursor ioctls: the GPU overlays a small
-// buffer at a position, so moving it never re-renders the frame.
+// Hardware cursor on the CRTC's cursor plane. Move and Hide come from the
+// input goroutine: they only record the position and wake the output,
+// whose goroutine puts the cursor plane in its next atomic commit. A move
+// while a commit is pending waits for it, so the cursor moves at most once
+// per flip and never blocks input.
 
 const (
-	ioctlGetCap  = 0xC010640C // DRM_IOWR('d', 0x0C, struct drm_get_cap)
-	ioctlCursor2 = 0xC02464BB // DRM_IOWR('d', 0xBB, struct drm_mode_cursor2)
-	ioctlVblank  = 0xC018643A // DRM_IOWR('d', 0x3A, union drm_wait_vblank)
-	vblankRel    = 0x1        // _DRM_VBLANK_RELATIVE
-	vblankCrtcSh = 1          // _DRM_VBLANK_HIGH_CRTC_SHIFT
-	vblankCrtcMk = 0x3e       // _DRM_VBLANK_HIGH_CRTC_MASK
-	capCursorW   = 0x8
-	capCursorH   = 0x9
-	cursorBO     = 0x01
-	cursorMove   = 0x02
+	ioctlGetCap = 0xC010640C // DRM_IOWR('d', 0x0C, struct drm_get_cap)
+	capCursorW  = 0x8
+	capCursorH  = 0x9
 )
 
 type getCap struct{ capability, value uint64 }
 
-// waitVblank is union drm_wait_vblank (request and reply share 24 bytes).
-type waitVblank struct {
-	typ, sequence uint32
-	sec, usec     int64
-}
-
-// cursorPlane is the kernel side of the hardware cursor.
-type cursorPlane interface {
-	// Set issues DRM_IOCTL_MODE_CURSOR2.
-	Set(v *modeCursor2) error
-	// WaitVblank blocks until the next vblank of the cursor's CRTC.
-	WaitVblank() error
-}
-
-// kmsCursorPlane drives the cursor of the CRTC at index pipe.
-type kmsCursorPlane struct{ fd, pipe int }
-
-func (p kmsCursorPlane) Set(v *modeCursor2) error {
-	return ioctl(p.fd, ioctlCursor2, unsafe.Pointer(v))
-}
-
-func (p kmsCursorPlane) WaitVblank() error {
-	v := waitVblank{typ: vblankRel | uint32(p.pipe<<vblankCrtcSh)&vblankCrtcMk, sequence: 1}
-	return ioctl(p.fd, ioctlVblank, unsafe.Pointer(&v))
-}
-
-type modeCursor2 struct {
-	flags, crtcID uint32
-	x, y          int32
-	width, height uint32
-	handle        uint32
-	hotX, hotY    int32
-}
-
-// Cursor is the hardware cursor of one output. Move is safe to call from the
-// input goroutine while the output goroutine changes the image.
-//
-// Move only records the position. A worker waits for the next vblank and then
-// applies the latest one, so the cursor moves at most once per frame, between
-// scanouts: moving it mid-scanout tears it into doubled images, and input is
-// never throttled by the ioctl.
+// Cursor is the hardware cursor of one output.
 type Cursor struct {
-	io         sync.Mutex // serialises cursor ioctls and guards the fields below
-	fd         int
-	crtc       uint32
-	buf        *dumbBuffer
-	size       int // buffer side
-	hotX, hotY int
-	shown      bool
-	hidden     bool // the plane is off because the pointer left this output
-	plane      cursorPlane
-
-	mu    sync.Mutex // guards x, y, away and stats; never held across an ioctl
+	mu    sync.Mutex // guards x, y, away and moves
 	x, y  int        // physical position of the hotspot
 	away  bool       // Hide was called and no Move since
-	stats CursorStats
+	moves int
+	wake  chan struct{}
 
-	wake chan struct{}
-	stop chan struct{}
-	done chan struct{}
+	// Owned by the output goroutine.
+	plane      *plane
+	size       int
+	fbs        [2]uint32 // the two images; cur is on screen or next
+	cur        int
+	image      bool // an image is loaded
+	hotX, hotY int
+	applied    cursorState // what the last commit put on the plane
+	commits    int
+}
+
+// cursorState is the cursor plane as committed: off, or fb at x, y.
+type cursorState struct {
+	on   bool
+	fb   uint32
+	x, y int
 }
 
 // CursorStats counts cursor work since the last TakeStats.
 type CursorStats struct {
-	Moves    int           // Move calls
-	Ioctls   int           // move ioctls issued by the worker
-	MaxIoctl time.Duration // slowest move ioctl
+	Moves   int // Move calls
+	Commits int // commits that moved or changed the cursor
 }
 
-// TakeStats returns and resets the counters.
+func newCursor(p *plane, size int) *Cursor {
+	return &Cursor{plane: p, size: size, wake: make(chan struct{}, 1)}
+}
+
+// TakeStats returns and resets the counters. Output goroutine only.
 func (c *Cursor) TakeStats() CursorStats {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	s := c.stats
-	c.stats = CursorStats{}
+	s := CursorStats{Moves: c.moves, Commits: c.commits}
+	c.moves, c.commits = 0, 0
+	c.mu.Unlock()
 	return s
-}
-
-// newCursor allocates a cursor buffer at the driver's preferred size (64 when
-// the driver does not say).
-func newCursor(fd int, crtc uint32, pipe int) (*Cursor, error) {
-	// The plane is square: the smaller of the width and height caps.
-	size := 0
-	for _, c := range []uint64{capCursorW, capCursorH} {
-		v := getCap{capability: c}
-		if ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value >= 16 && v.value <= 512 {
-			if size == 0 || int(v.value) < size {
-				size = int(v.value)
-			}
-		}
-	}
-	if size == 0 {
-		size = 64
-	}
-	buf, err := newDumb(fd, size, size)
-	if err != nil {
-		return nil, err
-	}
-	// The cursor ioctl passes no pitch: drivers assume width*4.
-	if int(buf.pitch) != size*4 {
-		buf.destroy(fd)
-		return nil, fmt.Errorf("cursor buffer pitch %d, want %d", buf.pitch, size*4)
-	}
-	c := &Cursor{fd: fd, crtc: crtc, buf: buf, size: size, plane: kmsCursorPlane{fd: fd, pipe: pipe}}
-	c.start()
-	return c, nil
-}
-
-// start runs the worker that applies coalesced moves.
-func (c *Cursor) start() {
-	c.wake = make(chan struct{}, 1)
-	c.stop = make(chan struct{})
-	c.done = make(chan struct{})
-	go func() {
-		defer close(c.done)
-		for {
-			select {
-			case <-c.stop:
-				return
-			case <-c.wake:
-				// Errors (VT switched away) fall through: the move
-				// fails too and Reapply restores the cursor.
-				_ = c.plane.WaitVblank()
-				c.io.Lock()
-				c.mu.Lock()
-				away := c.away
-				c.mu.Unlock()
-				if away {
-					// A move queued before Hide: the pointer is elsewhere.
-				} else if c.hidden {
-					// A move shows it again, even before its first image.
-					c.hidden = false
-					_ = c.apply()
-				} else if c.shown && c.buf != nil {
-					x, y := c.position()
-					v := modeCursor2{flags: cursorMove, crtcID: c.crtc, x: int32(x - c.hotX), y: int32(y - c.hotY)}
-					// Errors while another session owns the card (VT switched
-					// away) are ignored; Reapply restores the cursor.
-					start := time.Now()
-					_ = c.plane.Set(&v)
-					d := time.Since(start)
-					c.mu.Lock()
-					c.stats.Ioctls++
-					c.stats.MaxIoctl = max(c.stats.MaxIoctl, d)
-					c.mu.Unlock()
-				}
-				c.io.Unlock()
-			}
-		}
-	}()
-}
-
-func (c *Cursor) position() (int, int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.x, c.y
 }
 
 // Limit is the largest image side the cursor plane accepts.
 func (c *Cursor) Limit() int { return c.size }
 
-// SetImage shows premultiplied ARGB8888 pixels (w×h, w*4 per row) with the
-// click point at (hotX, hotY). Larger images are cropped to the plane; an
-// empty image hides the cursor (a client asked for none).
-func (c *Cursor) SetImage(pixels []byte, w, h, hotX, hotY int) error {
-	c.io.Lock()
-	defer c.io.Unlock()
-	if c.buf == nil {
-		return nil
-	}
-	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
-		wasShown := c.shown
-		c.shown = false
-		if !wasShown || c.hidden {
-			return nil
-		}
-		v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
-		return c.plane.Set(&v)
-	}
-	pitch := int(c.buf.pitch)
-	clear(c.buf.mem)
-	for y := range min(h, c.size) {
-		row := pixels[y*w*4:]
-		copy(c.buf.mem[y*pitch:y*pitch+min(w, c.size)*4], row[:min(w, c.size)*4])
-	}
-	c.hotX, c.hotY, c.shown = hotX, hotY, true
-	return c.apply()
-}
-
-// apply (re)attaches the buffer at the current position. Callers hold c.io.
-func (c *Cursor) apply() error {
-	if !c.shown || c.hidden || c.buf == nil {
-		return nil
-	}
-	x, y := c.position()
-	v := modeCursor2{flags: cursorBO | cursorMove, crtcID: c.crtc, x: int32(x - c.hotX), y: int32(y - c.hotY), width: uint32(c.size), height: uint32(c.size), handle: c.buf.handle, hotX: int32(c.hotX), hotY: int32(c.hotY)}
-	return c.plane.Set(&v)
-}
-
-// Move places the hotspot at physical (x, y). It never blocks on the GPU:
-// the worker applies the latest position.
+// Move places the hotspot at physical (x, y). It never blocks.
 func (c *Cursor) Move(x, y float64) {
 	c.mu.Lock()
 	c.x, c.y = int(x), int(y)
 	c.away = false
-	c.stats.Moves++
+	c.moves++
 	c.mu.Unlock()
-	select {
-	case c.wake <- struct{}{}:
-	default: // a move is already queued; it will read this position
-	}
+	c.poke()
 }
 
 // Hide removes the cursor from the output until the next move (the pointer
 // is on another output).
 func (c *Cursor) Hide() {
-	c.io.Lock()
-	defer c.io.Unlock()
 	c.mu.Lock()
 	c.away = true
 	c.mu.Unlock()
-	if c.buf == nil || c.hidden {
-		return
-	}
-	c.hidden = true
-	v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
-	_ = c.plane.Set(&v)
+	c.poke()
 }
 
-// Reapply shows the cursor again after a modeset (VT switch back).
-func (c *Cursor) Reapply() error {
-	c.io.Lock()
-	defer c.io.Unlock()
-	return c.apply()
+func (c *Cursor) poke() {
+	select {
+	case c.wake <- struct{}{}:
+	default: // a wake is queued; the output reads the latest state
+	}
 }
 
-// close stops the worker, hides the cursor and frees its buffer.
-func (c *Cursor) close() {
-	if c.stop != nil {
-		close(c.stop)
-		<-c.done
-		c.stop = nil
+// setup allocates the two cursor images and their framebuffers.
+func (c *Cursor) setup(k kms, r ports.Renderer) error {
+	bufs, err := r.CursorBuffers(c.size)
+	if err != nil {
+		return err
 	}
-	c.io.Lock()
-	defer c.io.Unlock()
-	if c.buf == nil {
+	for i := range bufs {
+		if err == nil {
+			c.fbs[i], err = k.addFB(&bufs[i], fourccARGB)
+		}
+		for _, p := range bufs[i].Planes {
+			p.File.Close()
+		}
+	}
+	if err != nil {
+		c.free(k)
+	}
+	return err
+}
+
+// setImage loads premultiplied ARGB8888 pixels into the image not on
+// screen; an empty image hides the cursor (a client asked for none).
+func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int) error {
+	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
+		c.image = false
+		return nil
+	}
+	if c.fbs[0] == 0 {
+		return errors.New("no cursor images")
+	}
+	next := 1 - c.cur
+	if err := r.WriteCursor(next, pixels, w, h); err != nil {
+		return err
+	}
+	c.cur, c.image, c.hotX, c.hotY = next, true, hotX, hotY
+	return nil
+}
+
+// desired is what the cursor plane should show now.
+func (c *Cursor) desired() cursorState {
+	c.mu.Lock()
+	x, y, away := c.x, c.y, c.away
+	c.mu.Unlock()
+	if !c.image || away || c.fbs[c.cur] == 0 {
+		return cursorState{}
+	}
+	return cursorState{on: true, fb: c.fbs[c.cur], x: x - c.hotX, y: y - c.hotY}
+}
+
+// props adds the cursor plane in state s to req.
+func (c *Cursor) props(req *atomicReq, crtc uint32, s cursorState) {
+	p := c.plane
+	if !s.on {
+		req.set(p.id, p.prop("FB_ID"), 0)
+		req.set(p.id, p.prop("CRTC_ID"), 0)
 		return
 	}
-	// Best effort: at exit the card may already belong to another session.
-	v := modeCursor2{flags: cursorBO, crtcID: c.crtc}
-	_ = c.plane.Set(&v)
-	c.buf.destroy(c.fd)
-	c.buf, c.shown = nil, false
+	size := uint64(c.size)
+	req.set(p.id, p.prop("FB_ID"), uint64(s.fb))
+	req.set(p.id, p.prop("CRTC_ID"), uint64(crtc))
+	req.set(p.id, p.prop("SRC_X"), 0)
+	req.set(p.id, p.prop("SRC_Y"), 0)
+	req.set(p.id, p.prop("SRC_W"), size<<16)
+	req.set(p.id, p.prop("SRC_H"), size<<16)
+	req.set(p.id, p.prop("CRTC_X"), uint64(int64(s.x)))
+	req.set(p.id, p.prop("CRTC_Y"), uint64(int64(s.y)))
+	req.set(p.id, p.prop("CRTC_W"), size)
+	req.set(p.id, p.prop("CRTC_H"), size)
+}
+
+func (c *Cursor) free(k kms) {
+	for i, fb := range c.fbs {
+		if fb != 0 {
+			_ = k.rmFB(fb)
+			c.fbs[i] = 0
+		}
+	}
+	c.image = false
 }

@@ -31,7 +31,7 @@ func TestExportTargets(t *testing.T) {
 	colors := []string{"#ff0000", "#0000ff"}
 	for i, c := range colors {
 		r.UseTarget(i)
-		if err := r.Render(ports.Scene{Background: c}, nil); err != nil {
+		if _, err := r.Render(ports.Scene{Background: c}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -55,7 +55,7 @@ func TestExportTargets(t *testing.T) {
 	}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 32, Opaque: true, DMABuf: &b}}
-	if err := viewer.Render(scene, contents); err != nil {
+	if _, err := viewer.Render(scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	if got := viewer.Pixels().At(10, 10); got != (color.RGBA{255, 0, 0, 255}) {

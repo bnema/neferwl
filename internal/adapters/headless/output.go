@@ -2,6 +2,7 @@ package headless
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 type Options struct {
@@ -118,8 +120,18 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		start := time.Now()
-		if err := r.Render(scene, surfaces); err != nil {
+		done, err := r.Render(scene, surfaces)
+		if err != nil {
 			return fmt.Errorf("render frame: %w", err)
+		}
+		if done != nil {
+			// No screen paces headless frames: wait for the GPU before
+			// reporting that its buffers were read.
+			err = waitFence(done)
+			done.Close()
+			if err != nil {
+				return fmt.Errorf("frame fence: %w", err)
+			}
 		}
 		frame++
 		pending = opts.report(pending, seen)
@@ -172,5 +184,16 @@ func (opts Options) send(r *ports.OutputPresented) *ports.OutputPresented {
 		return nil
 	default:
 		return r
+	}
+}
+
+// waitFence blocks until a sync file signals.
+func waitFence(f *os.File) error {
+	fds := []unix.PollFd{{Fd: int32(f.Fd()), Events: unix.POLLIN}}
+	for {
+		_, err := unix.Poll(fds, -1)
+		if !errors.Is(err, unix.EINTR) {
+			return err
+		}
 	}
 }

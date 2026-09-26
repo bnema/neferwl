@@ -23,7 +23,6 @@ const (
 
 	fbModifiers        = 1 << 1
 	capAddFB2Modifiers = 0x10
-	capAsyncPageFlip   = 0x7
 	modInvalid         = 0x00ffffffffffffff
 	scanoutIdleTTL     = 5 * time.Second // a cached framebuffer survives unused
 )
@@ -103,7 +102,12 @@ func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
 	}
 	fb := &clientFB{last: now}
 	o.clientFBs[b.ID] = fb
-	id, err := o.card.addFB(b)
+	format, ok := scanoutFormat(b.Format)
+	if !ok {
+		fb.failed = "format"
+		return 0, fb.failed
+	}
+	id, err := o.k.addFB(b, format)
 	if err != nil {
 		o.log.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
 		fb.failed = "import_failed"
@@ -114,9 +118,8 @@ func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
 }
 
 // scanoutFormat is the framebuffer format for a client format. The primary
-// plane shows no alpha, and a legacy page flip keeps the format of the
-// composed image (XRGB8888): alpha formats are scanned out as their X
-// variant, others are refused.
+// plane shows no alpha: alpha formats are scanned out as their X variant,
+// others are refused.
 func scanoutFormat(f uint32) (uint32, bool) {
 	switch f {
 	case fourccXRGB, fourccARGB:
@@ -130,27 +133,23 @@ const (
 	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 )
 
-// addFB imports a dmabuf as a framebuffer: client buffers and the
-// renderer's exported output images. The GEM handle belongs to the card fd
+// addFB imports a dmabuf as a framebuffer of the given fourcc: client buffers, the renderer's
+// output images and cursor images. The GEM handle belongs to the card fd
 // and is shared by every import of the same buffer, so import, ADDFB2 and
-// close run under the card lock and the handle is closed right away: the
+// close run under the lock and the handle is closed right away: the
 // framebuffer keeps its own reference to the buffer.
-func (c *Card) addFB(b *ports.DMABuf) (uint32, error) {
-	format, ok := scanoutFormat(b.Format)
-	if !ok {
-		return 0, errors.New("format not scanned out")
-	}
+func (k kmsDevice) addFB(b *ports.DMABuf, format uint32) (uint32, error) {
 	raw, err := b.Planes[0].File.SyscallConn()
 	if err != nil {
 		return 0, err
 	}
-	c.gemMu.Lock()
-	defer c.gemMu.Unlock()
+	k.gemMu.Lock()
+	defer k.gemMu.Unlock()
 	var p primeHandle
 	var ioErr error
 	if err := raw.Control(func(fd uintptr) {
 		p.fd = int32(fd)
-		ioErr = ioctl(c.fd, ioctlPrimeFDToHandle, unsafe.Pointer(&p))
+		ioErr = ioctl(k.fd, ioctlPrimeFDToHandle, unsafe.Pointer(&p))
 	}); err != nil {
 		return 0, err
 	}
@@ -159,14 +158,14 @@ func (c *Card) addFB(b *ports.DMABuf) (uint32, error) {
 	}
 	defer func() {
 		g := gemClose{handle: p.handle}
-		_ = ioctl(c.fd, ioctlGemClose, unsafe.Pointer(&g))
+		_ = ioctl(k.fd, ioctlGemClose, unsafe.Pointer(&g))
 	}()
 	cmd := fbCmd2{width: uint32(b.Width), height: uint32(b.Height), format: format}
 	cmd.handles[0], cmd.pitches[0], cmd.offsets[0] = p.handle, b.Planes[0].Stride, b.Planes[0].Offset
-	if b.Modifier != modInvalid && (b.Modifier != 0 || c.modifiers) {
+	if b.Modifier != modInvalid && (b.Modifier != 0 || k.modifiers) {
 		cmd.flags, cmd.modifiers[0] = fbModifiers, b.Modifier
 	}
-	if err := ioctl(c.fd, ioctlAddFB2, unsafe.Pointer(&cmd)); err != nil {
+	if err := ioctl(k.fd, ioctlAddFB2, unsafe.Pointer(&cmd)); err != nil {
 		return 0, errors.Join(errors.New("add fb2"), err)
 	}
 	return cmd.fbID, nil
@@ -183,8 +182,7 @@ func (o *Output) dropClientFBs(now time.Time, all bool) {
 			continue
 		}
 		if fb.fbID != 0 {
-			v := fb.fbID
-			_ = ioctl(o.fd, ioctlRmFB, unsafe.Pointer(&v))
+			_ = o.k.rmFB(fb.fbID)
 		}
 		delete(o.clientFBs, id)
 	}

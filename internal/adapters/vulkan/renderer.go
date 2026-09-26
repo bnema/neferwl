@@ -30,7 +30,7 @@ type Renderer struct {
 	current    int
 	renderMods []uint64
 	// last is the target of the last frame; readback copies it into
-	// buffer only when Pixels or CopyBGRX asks (stale until then).
+	// buffer only when Pixels asks (stale until then).
 	last          *target
 	readBack      bool
 	buffer        vk.Buffer
@@ -55,6 +55,8 @@ type Renderer struct {
 	frame   uint64
 	// fillRegions is reused by Render for the bands of solid fills.
 	fillRegions []vk.BufferImageCopy
+	// cursors are the exported cursor images (CursorBuffers).
+	cursors [2]*cursorImage
 	// blend draws translucent client pixels (blend.go); align is the
 	// device's storage buffer offset alignment.
 	blend    blendPipeline
@@ -370,7 +372,7 @@ func (r *Renderer) ensureStaging(size int) error {
 }
 
 func (r *Renderer) Clear(rgb [3]uint8) error {
-	return r.Render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
+	return r.render(ports.Scene{Background: fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2])}, nil)
 }
 
 // upload is one piece of a frame: a solid fill, client pixels staged from
@@ -427,7 +429,12 @@ func (u *upload) stage(dst []byte) {
 	}
 }
 
-func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
+// Render draws a frame. It still waits for the GPU; done is nil.
+func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) (done *os.File, err error) {
+	return nil, r.render(s, contents)
+}
+
+func (r *Renderer) render(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent) error {
 	// Scene rects are logical; everything below works in physical pixels.
 	scale := s.Scale
 	if scale <= 0 {
@@ -810,19 +817,6 @@ func (r *Renderer) Pixels() *image.RGBA {
 	return out
 }
 
-// CopyBGRX writes the last frame into an XRGB8888 buffer with the given pitch.
-// The image is B8G8R8A8, which is already XRGB8888 in memory.
-func (r *Renderer) CopyBGRX(dst []byte, pitch int) {
-	if r.mapped == nil || r.readback() != nil {
-		return
-	}
-	row := r.width * 4
-	src := unsafe.Slice((*byte)(r.mapped), row*r.height)
-	for y := 0; y < r.height; y++ {
-		copy(dst[y*pitch:y*pitch+row], src[y*row:(y+1)*row])
-	}
-}
-
 // Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
 const (
 	queueFamilyIgnored = ^uint32(0)
@@ -887,6 +881,7 @@ func (r *Renderer) Close() {
 			_ = checked("vkDeviceWaitIdle", d.DeviceWaitIdle(r.device))
 		}
 		r.dropTargets()
+		r.dropCursors()
 		for id, im := range r.imports {
 			r.release(im)
 			delete(r.imports, id)

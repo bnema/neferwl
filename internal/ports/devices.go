@@ -1,12 +1,17 @@
 package ports
 
-import "image"
+import (
+	"image"
+	"os"
+)
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
 // to its own image until ExportTargets gives it scanout images; then each
-// Render draws into the target chosen by UseTarget (ADR 014: no CPU copy).
+// Render draws into the target chosen by UseTarget (ADR 014: no CPU pass).
 type Renderer interface {
-	Render(Scene, map[WindowID]SurfaceContent) error
+	// Render draws the scene. done is a sync file signalled when the GPU
+	// finished the frame (nil: already finished); the caller closes it.
+	Render(Scene, map[WindowID]SurfaceContent) (done *os.File, err error)
 	// ExportTargets allocates n images of the renderer's size that the
 	// display can scan out, with one of the given XRGB8888 modifiers
 	// (none: any the device exports), and returns them as dmabufs.
@@ -14,11 +19,14 @@ type Renderer interface {
 	ExportTargets(n int, modifiers []uint64) ([]DMABuf, error)
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)
+	// CursorBuffers allocates two linear ARGB8888 images of size×size the
+	// display can show on its cursor plane, and returns them as dmabufs.
+	CursorBuffers(size int) ([2]DMABuf, error)
+	// WriteCursor fills cursor image i with premultiplied ARGB8888 pixels
+	// (w×h, w*4 per row), cropped to the image and cleared around it.
+	WriteCursor(i int, pixels []byte, w, h int) error
 	// Pixels reads the last frame back (headless screenshots, tests).
 	Pixels() *image.RGBA
-	// CopyBGRX reads the last frame back as XRGB8888 rows of the given
-	// pitch: the logged fallback when no image can be exported.
-	CopyBGRX(dst []byte, pitch int)
 	Close()
 }
 

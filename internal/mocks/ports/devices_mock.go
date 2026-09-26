@@ -6,6 +6,7 @@ package portsmocks
 
 import (
 	"image"
+	"os"
 
 	"github.com/bnema/nefertty/internal/ports"
 	mock "github.com/stretchr/testify/mock"
@@ -80,49 +81,65 @@ func (_c *MockRenderer_Close_Call) RunAndReturn(run func()) *MockRenderer_Close_
 	return _c
 }
 
-// CopyBGRX provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) CopyBGRX(dst []byte, pitch int) {
-	_mock.Called(dst, pitch)
-	return
+// CursorBuffers provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
+	ret := _mock.Called(size)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CursorBuffers")
+	}
+
+	var r0 [2]ports.DMABuf
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(int) ([2]ports.DMABuf, error)); ok {
+		return returnFunc(size)
+	}
+	if returnFunc, ok := ret.Get(0).(func(int) [2]ports.DMABuf); ok {
+		r0 = returnFunc(size)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([2]ports.DMABuf)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(int) error); ok {
+		r1 = returnFunc(size)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
-// MockRenderer_CopyBGRX_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CopyBGRX'
-type MockRenderer_CopyBGRX_Call struct {
+// MockRenderer_CursorBuffers_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CursorBuffers'
+type MockRenderer_CursorBuffers_Call struct {
 	*mock.Call
 }
 
-// CopyBGRX is a helper method to define mock.On call
-//   - dst []byte
-//   - pitch int
-func (_e *MockRenderer_Expecter) CopyBGRX(dst any, pitch any) *MockRenderer_CopyBGRX_Call {
-	return &MockRenderer_CopyBGRX_Call{Call: _e.mock.On("CopyBGRX", dst, pitch)}
+// CursorBuffers is a helper method to define mock.On call
+//   - size int
+func (_e *MockRenderer_Expecter) CursorBuffers(size any) *MockRenderer_CursorBuffers_Call {
+	return &MockRenderer_CursorBuffers_Call{Call: _e.mock.On("CursorBuffers", size)}
 }
 
-func (_c *MockRenderer_CopyBGRX_Call) Run(run func(dst []byte, pitch int)) *MockRenderer_CopyBGRX_Call {
+func (_c *MockRenderer_CursorBuffers_Call) Run(run func(size int)) *MockRenderer_CursorBuffers_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 []byte
+		var arg0 int
 		if args[0] != nil {
-			arg0 = args[0].([]byte)
-		}
-		var arg1 int
-		if args[1] != nil {
-			arg1 = args[1].(int)
+			arg0 = args[0].(int)
 		}
 		run(
 			arg0,
-			arg1,
 		)
 	})
 	return _c
 }
 
-func (_c *MockRenderer_CopyBGRX_Call) Return() *MockRenderer_CopyBGRX_Call {
-	_c.Call.Return()
+func (_c *MockRenderer_CursorBuffers_Call) Return(dMABufs [2]ports.DMABuf, err error) *MockRenderer_CursorBuffers_Call {
+	_c.Call.Return(dMABufs, err)
 	return _c
 }
 
-func (_c *MockRenderer_CopyBGRX_Call) RunAndReturn(run func(dst []byte, pitch int)) *MockRenderer_CopyBGRX_Call {
-	_c.Run(run)
+func (_c *MockRenderer_CursorBuffers_Call) RunAndReturn(run func(size int) ([2]ports.DMABuf, error)) *MockRenderer_CursorBuffers_Call {
+	_c.Call.Return(run)
 	return _c
 }
 
@@ -241,20 +258,31 @@ func (_c *MockRenderer_Pixels_Call) RunAndReturn(run func() *image.RGBA) *MockRe
 }
 
 // Render provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent map[ports.WindowID]ports.SurfaceContent) error {
+func (_mock *MockRenderer) Render(scene ports.Scene, windowIDToSurfaceContent map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 	ret := _mock.Called(scene, windowIDToSurfaceContent)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Render")
 	}
 
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) error); ok {
+	var r0 *os.File
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error)); ok {
+		return returnFunc(scene, windowIDToSurfaceContent)
+	}
+	if returnFunc, ok := ret.Get(0).(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) *os.File); ok {
 		r0 = returnFunc(scene, windowIDToSurfaceContent)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*os.File)
+		}
 	}
-	return r0
+	if returnFunc, ok := ret.Get(1).(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) error); ok {
+		r1 = returnFunc(scene, windowIDToSurfaceContent)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
 }
 
 // MockRenderer_Render_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Render'
@@ -287,12 +315,12 @@ func (_c *MockRenderer_Render_Call) Run(run func(scene ports.Scene, windowIDToSu
 	return _c
 }
 
-func (_c *MockRenderer_Render_Call) Return(err error) *MockRenderer_Render_Call {
-	_c.Call.Return(err)
+func (_c *MockRenderer_Render_Call) Return(done *os.File, err error) *MockRenderer_Render_Call {
+	_c.Call.Return(done, err)
 	return _c
 }
 
-func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[ports.WindowID]ports.SurfaceContent) error) *MockRenderer_Render_Call {
+func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, windowIDToSurfaceContent map[ports.WindowID]ports.SurfaceContent) (*os.File, error)) *MockRenderer_Render_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -334,6 +362,75 @@ func (_c *MockRenderer_UseTarget_Call) Return() *MockRenderer_UseTarget_Call {
 
 func (_c *MockRenderer_UseTarget_Call) RunAndReturn(run func(i int)) *MockRenderer_UseTarget_Call {
 	_c.Run(run)
+	return _c
+}
+
+// WriteCursor provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) WriteCursor(i int, pixels []byte, w int, h int) error {
+	ret := _mock.Called(i, pixels, w, h)
+
+	if len(ret) == 0 {
+		panic("no return value specified for WriteCursor")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(int, []byte, int, int) error); ok {
+		r0 = returnFunc(i, pixels, w, h)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRenderer_WriteCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'WriteCursor'
+type MockRenderer_WriteCursor_Call struct {
+	*mock.Call
+}
+
+// WriteCursor is a helper method to define mock.On call
+//   - i int
+//   - pixels []byte
+//   - w int
+//   - h int
+func (_e *MockRenderer_Expecter) WriteCursor(i any, pixels any, w any, h any) *MockRenderer_WriteCursor_Call {
+	return &MockRenderer_WriteCursor_Call{Call: _e.mock.On("WriteCursor", i, pixels, w, h)}
+}
+
+func (_c *MockRenderer_WriteCursor_Call) Run(run func(i int, pixels []byte, w int, h int)) *MockRenderer_WriteCursor_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 []byte
+		if args[1] != nil {
+			arg1 = args[1].([]byte)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_WriteCursor_Call) Return(err error) *MockRenderer_WriteCursor_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRenderer_WriteCursor_Call) RunAndReturn(run func(i int, pixels []byte, w int, h int) error) *MockRenderer_WriteCursor_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

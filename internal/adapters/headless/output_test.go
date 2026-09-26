@@ -35,12 +35,12 @@ func (f *frames) snapshot() ([]ports.Scene, []map[ports.WindowID]ports.SurfaceCo
 func recordingRenderer(t *testing.T, err error) (*portsmocks.MockRenderer, *frames) {
 	r := portsmocks.NewMockRenderer(t)
 	f := &frames{}
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) error {
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.scenes = append(f.scenes, s)
 		f.contents = append(f.contents, maps.Clone(c))
-		return err
+		return nil, err
 	}).Maybe()
 	r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
 	r.EXPECT().Close().Return().Once()

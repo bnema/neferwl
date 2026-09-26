@@ -2,8 +2,12 @@ package drm
 
 import (
 	"encoding/binary"
+	"slices"
 	"testing"
+	"time"
 	"unsafe"
+
+	"github.com/bnema/nefertty/internal/ports"
 )
 
 func TestStructSizesMatchIoctls(t *testing.T) {
@@ -13,19 +17,21 @@ func TestStructSizesMatchIoctls(t *testing.T) {
 		req  uintptr
 	}{
 		{"card_res", unsafe.Sizeof(cardRes{}), ioctlGetResources},
-		{"mode_crtc", unsafe.Sizeof(modeCrtc{}), ioctlSetCrtc},
 		{"get_encoder", unsafe.Sizeof(getEncoder{}), ioctlGetEncoder},
 		{"get_connector", unsafe.Sizeof(getConnector{}), ioctlGetConnector},
-		{"fb_cmd", unsafe.Sizeof(fbCmd{}), ioctlAddFB},
-		{"page_flip", unsafe.Sizeof(pageFlip{}), ioctlPageFlip},
-		{"create_dumb", unsafe.Sizeof(createDumb{}), ioctlCreateDumb},
-		{"map_dumb", unsafe.Sizeof(mapDumb{}), ioctlMapDumb},
 		{"fb_cmd2", unsafe.Sizeof(fbCmd2{}), ioctlAddFB2},
 		{"prime_handle", unsafe.Sizeof(primeHandle{}), ioctlPrimeFDToHandle},
 		{"gem_close", unsafe.Sizeof(gemClose{}), ioctlGemClose},
 		{"obj_get_props", unsafe.Sizeof(objGetProps{}), ioctlObjGetProps},
 		{"get_prop", unsafe.Sizeof(getProp{}), ioctlGetProp},
-		{"obj_set_prop", unsafe.Sizeof(objSetProp{}), ioctlObjSetProp},
+		{"mode_crtc", unsafe.Sizeof(modeCrtc{}), ioctlGetCrtc},
+		{"set_client_cap", unsafe.Sizeof(setClientCap{}), ioctlSetClientCap},
+		{"get_plane_res", unsafe.Sizeof(getPlaneRes{}), ioctlGetPlaneRes},
+		{"get_plane", unsafe.Sizeof(getPlane{}), ioctlGetPlane},
+		{"get_blob", unsafe.Sizeof(getBlob{}), ioctlGetPropBlob},
+		{"atomic", unsafe.Sizeof(modeAtomic{}), ioctlAtomic},
+		{"create_blob", unsafe.Sizeof(createBlob{}), ioctlCreateBlob},
+		{"get_cap", unsafe.Sizeof(getCap{}), ioctlGetCap},
 	} {
 		if want := (tc.req >> 16) & 0x3fff; tc.got != want {
 			t.Errorf("%s: size %d, ioctl encodes %d", tc.name, tc.got, want)
@@ -88,19 +94,53 @@ func TestParseEDID(t *testing.T) {
 	}
 }
 
-func TestFlipCrtcs(t *testing.T) {
-	ev := func(typ, crtc uint32) []byte {
+func TestParseFlips(t *testing.T) {
+	ev := func(typ, crtc uint32, user uint64, sec, usec, seq uint32) []byte {
 		b := make([]byte, 32)
-		binary.LittleEndian.PutUint32(b, typ)
-		binary.LittleEndian.PutUint32(b[4:], 32)
-		binary.LittleEndian.PutUint32(b[28:], crtc)
+		le := binary.LittleEndian
+		le.PutUint32(b, typ)
+		le.PutUint32(b[4:], 32)
+		le.PutUint64(b[8:], user)
+		le.PutUint32(b[16:], sec)
+		le.PutUint32(b[20:], usec)
+		le.PutUint32(b[24:], seq)
+		le.PutUint32(b[28:], crtc)
 		return b
 	}
-	buf := append(append(ev(eventFlipDone, 41), ev(1, 7)...), ev(eventFlipDone, 42)...)
-	if got := flipCrtcs(buf); len(got) != 2 || got[0] != 41 || got[1] != 42 {
-		t.Fatalf("got %v", got)
+	buf := append(append(ev(eventFlipDone, 41, userFrame, 3, 250, 7), ev(1, 7, 0, 0, 0, 0)...), ev(eventFlipDone, 42, userState, 0, 1, 8)...)
+	got := parseFlips(buf)
+	want := []flipEvent{{crtc: 41, user: userFrame, when: 3*time.Second + 250*time.Microsecond, seq: 7}, {crtc: 42, user: userState, when: time.Microsecond, seq: 8}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
-	if got := flipCrtcs(buf[:20]); len(got) != 0 {
+	if got := parseFlips(buf[:20]); len(got) != 0 {
 		t.Fatalf("truncated: got %v", got)
+	}
+}
+
+func TestParseInFormats(t *testing.T) {
+	le := binary.LittleEndian
+	// 3 formats at 24, 2 modifiers at 40.
+	b := make([]byte, 40+2*24)
+	le.PutUint32(b, 1)
+	le.PutUint32(b[8:], 3)
+	le.PutUint32(b[12:], 24)
+	le.PutUint32(b[16:], 2)
+	le.PutUint32(b[20:], 40)
+	for i, f := range []uint32{fourccXRGB, fourccARGB, 0x3432564e} {
+		le.PutUint32(b[24+i*4:], f)
+	}
+	// linear on formats 0 and 2, a tiled modifier on format 1.
+	le.PutUint64(b[40:], 0b101)
+	le.PutUint64(b[56:], 0)
+	le.PutUint64(b[64:], 0b010)
+	le.PutUint64(b[80:], 0x0200000000000001)
+	got := parseInFormats(b)
+	want := []ports.DMABufFormat{{Format: fourccXRGB}, {Format: 0x3432564e}, {Format: fourccARGB, Modifier: 0x0200000000000001}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if parseInFormats(b[:30]) != nil {
+		t.Fatal("truncated blob parsed")
 	}
 }

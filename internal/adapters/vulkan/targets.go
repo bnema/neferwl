@@ -17,7 +17,7 @@ import (
 // turns into KMS framebuffers. Render then composes straight into the
 // selected target and the output flips to it; nothing is copied by the
 // CPU. The internal image is the target until then (headless, tests).
-// Readback into host memory happens only for Pixels and CopyBGRX.
+// Readback into host memory happens only for Pixels (screenshots).
 
 // target is an image frames are drawn into.
 type target struct {
@@ -107,7 +107,7 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
 	need := vk.FormatFeatureFlags(formatFeatureTransferDst | formatFeatureTransferSrc | vk.FormatFeatureBlitDstBit | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
 	// Targets are drawn on too (blend.go): a transfer-only modifier is
-	// not a target, and without any the display falls back to readback.
+	// not a target, and without any the output cannot start.
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
 			r.renderMods = append(r.renderMods, m.DrmFormatModifier)

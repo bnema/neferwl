@@ -34,7 +34,7 @@ func (s *Server) pace(ctx context.Context) {
 		case <-s.display.Stopped():
 			return
 		case p := <-presented:
-			flipped[p.Output] = flipped[p.Output] || p.Flip
+			flipped[p.Output] = flipped[p.Output] || p.Flip != nil
 			reports = append(reports, p)
 		case <-s.frameReady:
 		case <-timer.C:
@@ -45,7 +45,7 @@ func (s *Server) pace(ctx context.Context) {
 		for {
 			select {
 			case p := <-presented:
-				flipped[p.Output] = flipped[p.Output] || p.Flip
+				flipped[p.Output] = flipped[p.Output] || p.Flip != nil
 				reports = append(reports, p)
 			default:
 				break drain

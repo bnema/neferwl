@@ -81,7 +81,7 @@ func TestRendererImportsDMABuf(t *testing.T) {
 	buf := &ports.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Width: 64, Height: 16, DMABuf: buf}}
-	if err := r.Render(scene, contents); err != nil {
+	if _, err := r.Render(scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	px := r.Pixels()
@@ -98,7 +98,7 @@ func TestRendererImportsDMABuf(t *testing.T) {
 	}
 	// Frames without the buffer: its import is released after importTTL.
 	for range importTTL + 1 {
-		if err := r.Render(scene, nil); err != nil {
+		if _, err := r.Render(scene, nil); err != nil {
 			t.Fatal(err)
 		}
 	}

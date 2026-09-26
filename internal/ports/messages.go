@@ -1,6 +1,9 @@
 package ports
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 // ClientEvent carries wayland → core notifications.
 type ClientEvent interface{ clientEvent() }
@@ -315,15 +318,33 @@ func (OutputAdded) outputEvent() {}
 // OutputPresented carries output → wayland what an output shows and reads.
 // Flip is set when a page flip completed: frame callbacks of the surfaces
 // on it are due. Shown and Queued are the DMABuf IDs scanned out directly
-// (0: a composed image); Seen is the latest content Seq the output got per
-// window. A replaced client buffer is released once every output that
-// reports has seen a later content of its window and neither shows nor
-// queues it.
+// (0: a composed image); Seen is the latest content Seq per window the
+// output finished reading (the GPU is done with it). A replaced client
+// buffer is released once every output that reports has seen a later
+// content of its window and neither shows nor queues it.
 type OutputPresented struct {
 	Output        string
-	Flip          bool
+	Flip          *FlipInfo
 	Shown, Queued uint64
 	Seen          map[WindowID]uint64
+}
+
+// FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
+// (hardware clock on DRM), Seq the output's vblank counter, Refresh the
+// refresh period (0 while variable refresh is on). ZeroCopy is set when a
+// client buffer was shown without composition, Async for a tearing flip.
+// Shows is the content Seq per window the flipped frame shows. Merged
+// counts earlier flips folded into this one when the reader fell behind:
+// their presentation feedback is discarded.
+type FlipInfo struct {
+	When          time.Duration
+	Seq           uint64
+	Refresh       time.Duration
+	ZeroCopy      bool
+	Async         bool
+	HardwareClock bool
+	Merged        int
+	Shows         map[WindowID]uint64
 }
 
 // OutputRemoved carries output → core an unplugged display.

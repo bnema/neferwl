@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"slices"
 	"sync"
-	"unsafe"
 
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
 // Card is one DRM device and the outputs it drives. Scan finds connected
-// connectors; each gets its own Output (CRTC, buffers, cursor) run by one
-// goroutine. One reader goroutine reads page-flip events for all of them
+// connectors; each gets its own Output (CRTC, planes, cursor) run by one
+// goroutine. One reader goroutine reads commit events for all of them
 // and hands each to its output by CRTC.
 type Card struct {
 	fd    int
@@ -24,30 +23,30 @@ type Card struct {
 	crtcs []uint32
 	// outputs by connector name; owned by the goroutine that calls Scan.
 	outputs map[string]*Output
-	flips   map[uint32]chan int // by CRTC; set before the reader starts
-	// gemMu serialises GEM handle import and close on fd (outputs run on
-	// their own goroutines); modifiers is DRM_CAP_ADDFB2_MODIFIERS.
-	gemMu     sync.Mutex
-	modifiers bool
-	// async is DRM_CAP_ASYNC_PAGE_FLIP.
+	flips   map[uint32]chan flipEvent // by CRTC; set before the reader starts
+	k       kmsDevice
+	// taken are planes driven by an output, by plane ID.
+	taken map[uint32]bool
+	// async is DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP.
 	async bool
 }
 
-// OpenCard reads the card's CRTCs. fd stays owned by the caller.
+// OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
+// stays owned by the caller. A card without atomic KMS is refused.
 func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error) {
+	if err := enableAtomic(fd); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	crtcs, _, err := resources(fd)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	flips := make(map[uint32]chan int, len(crtcs))
+	flips := make(map[uint32]chan flipEvent, len(crtcs))
 	for _, c := range crtcs {
-		flips[c] = make(chan int, 4)
+		flips[c] = make(chan flipEvent, 4)
 	}
-	cp := getCap{capability: capAddFB2Modifiers}
-	mods := ioctl(fd, ioctlGetCap, unsafe.Pointer(&cp)) == nil && cp.value == 1
-	ap := getCap{capability: capAsyncPageFlip}
-	async := ioctl(fd, ioctlGetCap, unsafe.Pointer(&ap)) == nil && ap.value == 1
-	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, modifiers: mods, async: async}, nil
+	k := kmsDevice{fd: fd, gemMu: &sync.Mutex{}, modifiers: hasCap(fd, capAddFB2Modifiers)}
+	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.
@@ -103,9 +102,16 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 	return added, removed, replaced, nil
 }
 
-// Release forgets an output closed by its goroutine, freeing its CRTC for the
-// next Scan.
-func (c *Card) Release(name string) { delete(c.outputs, name) }
+// Release forgets an output closed by its goroutine, freeing its CRTC and
+// planes for the next Scan.
+func (c *Card) Release(name string) {
+	if o := c.outputs[name]; o != nil {
+		for _, p := range o.owned() {
+			delete(c.taken, p.id)
+		}
+	}
+	delete(c.outputs, name)
+}
 
 // Outputs returns the driven outputs.
 func (c *Card) Outputs() []*Output {
@@ -131,11 +137,19 @@ func (c *Card) open(conn connector, mode modeInfo) (*Output, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newOutput(c, conn, mode, crtc)
+	o, err := newOutput(c, conn, mode, crtc)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range o.owned() {
+		c.taken[p.id] = true
+	}
+	return o, nil
 }
 
-// ReadEvents reads page-flip events until ctx ends and routes them to the
-// output of their CRTC. Run it once per card.
+// ReadEvents reads commit events until ctx ends and routes them to the
+// output of their CRTC. Run it once per card. An event is never dropped:
+// the output owes it a pending commit.
 func (c *Card) ReadEvents(ctx context.Context) error {
 	buf := make([]byte, 1024)
 	for ctx.Err() == nil {
@@ -154,14 +168,15 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 			}
 			return fmt.Errorf("drm read: %w", err)
 		}
-		for _, crtc := range flipCrtcs(buf[:m]) {
-			ch := c.flips[crtc]
+		for _, ev := range parseFlips(buf[:m]) {
+			ch := c.flips[ev.crtc]
 			if ch == nil {
 				continue
 			}
 			select {
-			case ch <- 1:
-			default: // the output is busy; the flip is counted on its next event
+			case ch <- ev:
+			case <-ctx.Done():
+				return nil
 			}
 		}
 	}
