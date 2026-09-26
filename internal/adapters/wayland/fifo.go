@@ -7,6 +7,7 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/committiming"
 	"github.com/bnema/purego-libwayland/protocol/contenttype"
 	"github.com/bnema/purego-libwayland/protocol/fifo"
+	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -24,7 +25,7 @@ import (
 // queued; the pacer (frames.go) applies queued updates in order when they
 // are ready. wp_content_type_v1 is recorded and logged only.
 
-func registerPresentation(d *server.Display, s *Server) error {
+func registerPresentationConstraints(d *server.Display, s *Server) error {
 	if err := fifo.NewWpFifoManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
 		_, _ = fifo.NewWpFifoManagerV1(c, int32(v), id, fifoManager{s})
 	}); err != nil {
@@ -216,6 +217,7 @@ type update struct {
 	barrier   bool
 	wait      bool
 	at        time.Time
+	feedback  []*presentationtime.WpPresentationFeedback
 	damage    []ports.Rect
 	bufDamage []ports.Rect
 }
@@ -228,8 +230,9 @@ type childMove struct {
 // takePending moves the pending state into an update: one-shot state is
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
-	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage}
+	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback}
 	s.attached, s.pending, s.callbacks = false, nil, nil
+	s.pendingFeedback = nil
 	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
@@ -260,6 +263,7 @@ func (s *surface) putPending(u update) {
 	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
 	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
+	s.pendingFeedback = u.feedback
 	if u.vp != nil && s.viewport == u.vp {
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
 	}
@@ -287,7 +291,25 @@ func (s *surface) mustWait(now time.Time) bool {
 // tooEarly reports whether content applied now would show before at:
 // it reaches the screen one refresh later.
 func (s *surface) tooEarly(at, now time.Time) bool {
-	return !at.IsZero() && at.After(now.Add(s.server.outputPeriod(s.server.fifoOutput(s))))
+	return !at.IsZero() && at.After(s.server.nextRefresh(s.server.fifoOutput(s), now))
+}
+
+// nextRefresh is when the output's next frame reaches the screen: the
+// vblank after now counted from its last flip (kernel time, refresh
+// period), or one period from now without flips or while VRR is on.
+func (s *Server) nextRefresh(name string, now time.Time) time.Time {
+	p := s.outputPeriod(name)
+	f, ok := s.flips[name]
+	if !ok || f.When <= 0 || f.Refresh <= 0 {
+		return now.Add(p)
+	}
+	mono := monotonic(now)
+	since := mono - f.When
+	if since < 0 || since > time.Second {
+		return now.Add(p)
+	}
+	n := since/f.Refresh + 1
+	return now.Add(f.When + n*f.Refresh - mono)
 }
 
 // queueUpdate queues the pending commit until it can apply.
@@ -321,6 +343,9 @@ func (s *surface) dropQueue() {
 			}
 		} else if len(u.callbacks) > 0 {
 			s.server.queueFrames(s.server.frameOutput(s), u.callbacks)
+		}
+		for _, fb := range u.feedback {
+			discard(fb)
 		}
 		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() {
 			released[u.buffer.Resource] = true
@@ -389,7 +414,7 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 				break
 			}
 			if surf.tooEarly(u.at, now) {
-				wait = min(wait, u.at.Add(-p).Sub(now))
+				wait = min(wait, u.at.Sub(s.nextRefresh(name, now))+time.Millisecond)
 				break
 			}
 			surf.queue = surf.queue[1:]

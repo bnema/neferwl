@@ -18,6 +18,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerDMABuf(d, s, o.DMABuf) },
 		func() error { return registerPointerConstraints(d, s) },
 		func() error { return registerTearing(d, s) },
+		func() error { return registerPresentationConstraints(d, s) },
 		func() error { return registerPresentation(d, s) },
 		func() error { return registerActivation(d, s) },
 		func() error { return registerVirtualKeyboard(d, s) },

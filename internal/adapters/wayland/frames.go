@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"golang.org/x/sys/unix"
 	"slices"
 	"time"
 
@@ -54,8 +55,26 @@ func (s *Server) pace(ctx context.Context) {
 		wait, idle := defaultFramePeriod, false
 		if !s.display.Do(func() {
 			if ctx.Err() == nil {
+				// Each flip answers its own presentation feedbacks, in
+				// order: flips are never merged here.
+				for _, p := range reports {
+					if p.Flip != nil {
+						s.flips[p.Output] = *p.Flip
+						s.presentFlip(p.Output, p.Flip)
+					}
+				}
+				s.dropFeedbacks(time.Now())
+				if len(s.feedbacks) > 0 {
+					wait = feedbackTimeout
+				}
 				var due []string
-				due, wait, idle = s.dueFrames(time.Now(), flipped)
+				var dueWait time.Duration
+				due, dueWait, idle = s.dueFrames(time.Now(), flipped)
+				if len(s.feedbacks) > 0 {
+					// Unanswered feedbacks time out: keep ticking.
+					dueWait, idle = min(dueWait, feedbackTimeout), false
+				}
+				wait = dueWait
 				for _, name := range due {
 					s.sendFrames(name)
 				}
@@ -173,7 +192,12 @@ func (s *Server) sendFrames(name string) {
 	if len(callbacks) == 0 {
 		return
 	}
+	// done carries the flip's time when the output flips (the frame the
+	// client drew for is on screen), else now.
 	ms := uint32(time.Since(s.started).Milliseconds())
+	if f, ok := s.flips[name]; ok && f.When > 0 {
+		ms = uint32(max(f.When-monotonic(s.started), 0).Milliseconds())
+	}
 	for _, cb := range callbacks {
 		if !cb.Resource.Alive() {
 			continue
@@ -190,4 +214,13 @@ func framePeriod(refreshMilli int) time.Duration {
 		return defaultFramePeriod
 	}
 	return time.Duration(int64(time.Second) * 1000 / int64(refreshMilli))
+}
+
+// monotonic is t on CLOCK_MONOTONIC, the clock of flip timestamps.
+func monotonic(t time.Time) time.Duration {
+	var ts unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts) != nil {
+		return 0
+	}
+	return time.Duration(ts.Nano()) - time.Since(t)
 }

@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"image"
 	"time"
 
@@ -66,6 +67,8 @@ type surface struct {
 	// pixels (full: everything), read by the window's damage history.
 	pendingDamage, pendingBufDamage []ports.Rect
 	committed                       damage
+	// pendingFeedback are wp_presentation feedbacks for the next commit.
+	pendingFeedback []*presentationtime.WpPresentationFeedback
 }
 
 // damage is what one commit changed in a surface's buffer.
@@ -174,6 +177,10 @@ func (s *surface) detach() {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
+	for _, fb := range s.pendingFeedback {
+		discard(fb)
+	}
+	s.pendingFeedback = nil
 	s.tearing = nil // the control becomes inert
 	s.dropQueue()
 	if s.server.cursorSurface == s {
@@ -309,6 +316,9 @@ func (s *surface) applyCommit() {
 		}
 		s.redraw()
 	}
+	fb := s.pendingFeedback
+	s.pendingFeedback = nil
+	s.commitFeedback(fb)
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {
