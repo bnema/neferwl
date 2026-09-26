@@ -65,8 +65,12 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
 		}
+		if w.Popup {
+			// Popups draw after every window, wherever they are listed.
+			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
+		}
 		c := surfaces[w.ID]
-		if c.DMABuf != nil && c.Opaque && len(c.Children) == 0 && !w.Popup {
+		if c.DMABuf != nil && c.Opaque && len(c.Children) == 0 {
 			pick = w
 			continue
 		}
@@ -82,6 +86,10 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 && !(pick.Fullscreen && l.Layer == ports.LayerTop) {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
 		}
+	}
+	if !pick.Fullscreen && !pick.Borderless && s.Border.Width > 0 {
+		// The overlay shows the buffer alone; its border would go with it.
+		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
@@ -107,7 +115,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 		w, c, reason = overlayCandidate(s, surfaces)
 		if reason == "" {
 			var fb uint32
-			if fb, reason = o.scanoutFB(c.DMABuf, time.Now()); reason == "" {
+			if fb, reason = o.overlayFB(c.DMABuf, time.Now()); reason == "" {
 				scale := s.Scale
 				if scale <= 0 {
 					scale = 1
@@ -173,7 +181,7 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 		return true
 	}
 	if cfb := o.clientFBs[ov.buf]; cfb != nil && refused(err) {
-		cfb.failed = "overlay_refused"
+		cfb.overlayFailed = "overlay_refused"
 	}
 	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
@@ -191,7 +199,7 @@ func (o *Output) overlayConflict(err error, buf uint64) bool {
 		return false
 	}
 	if cfb := o.clientFBs[buf]; cfb != nil {
-		cfb.failed = "cursor_conflict"
+		cfb.overlayFailed = "cursor_conflict"
 	}
 	o.log.Info().Str("component", "render").Bool("overlay", false).Str("reason", "cursor_conflict").Str("connector", o.conn.name).Msg("overlay")
 	o.overlayReason = "cursor_conflict"

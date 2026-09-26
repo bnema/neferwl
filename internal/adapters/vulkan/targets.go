@@ -32,7 +32,7 @@ type target struct {
 	// content Seq; valid once a frame was drawn whole.
 	valid    bool
 	sceneSeq uint64
-	seqs     map[ports.WindowID]uint64
+	windows  map[ports.WindowID]heldWindow
 }
 
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.

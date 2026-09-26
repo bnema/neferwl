@@ -608,6 +608,7 @@ func (o *Output) Close() {
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cursorState{})
 	}
+	o.overlayProps(req, overlayWin{})
 	req.set(o.crtc, o.vrrProp, 0)
 	s := o.saved
 	var blob uint32

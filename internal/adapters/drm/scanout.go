@@ -91,39 +91,69 @@ type clientFB struct {
 	failed string
 	// noAsync: KMS refused an async flip to it; it flips at vblank.
 	noAsync bool
+	// overlayFailed is why the overlay plane refused it; kept apart from
+	// failed, so a refusal on one plane does not bar the other.
+	overlayFailed string
+	importErr     bool
 }
 
-// scanoutFB returns the framebuffer of a client buffer, importing it on
-// first use. A buffer KMS refuses is remembered with its reason.
+// scanoutFB returns the framebuffer of a client buffer for the primary
+// plane, importing it on first use. A buffer KMS refuses is remembered
+// with its reason.
 func (o *Output) scanoutFB(b *ports.DMABuf, now time.Time) (uint32, string) {
-	if fb := o.clientFBs[b.ID]; fb != nil {
-		fb.last = now
-		return fb.fbID, fb.failed
+	return o.planeFB(o.primary, b, now, func(fb *clientFB) *string { return &fb.failed })
+}
+
+// overlayFB is scanoutFB for the overlay plane, with its own formats and
+// refusal reason.
+func (o *Output) overlayFB(b *ports.DMABuf, now time.Time) (uint32, string) {
+	return o.planeFB(o.overlay, b, now, func(fb *clientFB) *string { return &fb.overlayFailed })
+}
+
+// planeFB imports b once as a framebuffer; reason is the plane's refusal
+// field. Both planes share the framebuffer: they show the same format.
+func (o *Output) planeFB(p *plane, b *ports.DMABuf, now time.Time, reason func(*clientFB) *string) (uint32, string) {
+	fb := o.clientFBs[b.ID]
+	if fb == nil {
+		fb = &clientFB{}
+		o.clientFBs[b.ID] = fb
 	}
-	fb := &clientFB{last: now}
-	o.clientFBs[b.ID] = fb
-	format, ok := o.scanoutFormat(b)
+	fb.last = now
+	why := reason(fb)
+	if *why != "" {
+		return 0, *why
+	}
+	format, ok := planeFormat(p, b)
 	if !ok {
-		fb.failed = "format"
-		return 0, fb.failed
+		*why = "format"
+		return 0, *why
 	}
-	id, err := o.k.addFB(b, format)
-	if err != nil {
-		o.log.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
-		fb.failed = "import_failed"
-		return 0, fb.failed
+	if fb.fbID == 0 {
+		if fb.importErr {
+			*why = "import_failed"
+			return 0, *why
+		}
+		id, err := o.k.addFB(b, format)
+		if err != nil {
+			o.log.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
+			fb.importErr, *why = true, "import_failed"
+			return 0, *why
+		}
+		fb.fbID = id
 	}
-	fb.fbID = id
-	return id, ""
+	return fb.fbID, ""
 }
 
 // scanoutFormat is the framebuffer format a client buffer is scanned out
-// as, when the primary plane lists it with the buffer's modifier. The
-// primary plane shows no alpha: an alpha format goes as its X variant
-// when the plane has that one.
-func (o *Output) scanoutFormat(b *ports.DMABuf) (uint32, bool) {
+// as on the primary plane (see planeFormat).
+func (o *Output) scanoutFormat(b *ports.DMABuf) (uint32, bool) { return planeFormat(o.primary, b) }
+
+// planeFormat is the framebuffer format a client buffer shows as on p,
+// when p lists it with the buffer's modifier. Planes here show no alpha:
+// an alpha format goes as its X variant when the plane has that one.
+func planeFormat(p *plane, b *ports.DMABuf) (uint32, bool) {
 	has := func(f uint32) bool {
-		return slices.Contains(o.primary.formats, ports.DMABufFormat{Format: f, Modifier: b.Modifier})
+		return slices.Contains(p.formats, ports.DMABufFormat{Format: f, Modifier: b.Modifier})
 	}
 	if x, ok := opaqueVariant[b.Format]; ok && has(x) {
 		return x, true

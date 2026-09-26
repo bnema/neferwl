@@ -2,6 +2,7 @@ package drm
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -19,6 +20,7 @@ func overlayOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec
 	}
 	o.primary.props = props
 	o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2}}
+	o.primary.formats = nil // the overlay's own formats decide
 	o.pickOverlay()
 	if o.overlay == nil {
 		t.Fatal("no overlay picked")
@@ -63,7 +65,7 @@ func TestOverlayCandidate(t *testing.T) {
 func TestOverlayChosen(t *testing.T) {
 	o, k, commits := overlayOutput(t)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, rest := o.overlayFrame(s, c)
 	if ov.fb != 88 || len(rest.Windows) != 1 || rest.Windows[0].ID != 1 {
@@ -91,7 +93,7 @@ func TestOverlayChosen(t *testing.T) {
 func TestOverlayTestRefusedFallsBack(t *testing.T) {
 	o, k, _ := overlayOutput(t, unix.EINVAL)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	if o.testOverlay(70, ov) {
@@ -100,6 +102,26 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 	if ov2, rest := o.overlayFrame(s, c); ov2.fb != 0 || len(rest.Windows) != 2 {
 		t.Fatal("refused buffer tried again")
 	}
+	// The overlay's refusal does not bar direct scanout of the buffer.
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	if fb, reason := o.scanoutFB(c[2].DMABuf, time.Now()); fb != 88 || reason != "" {
+		t.Fatalf("scanout after overlay refusal: %d %q", fb, reason)
+	}
+}
+
+// Popups are drawn above every window: one listed first still blocks the
+// overlay; a bordered window does too.
+func TestOverlayPopupAndBorder(t *testing.T) {
+	s, c := overlayScene()
+	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: ports.Rect{W: 5, H: 5}}}, s.Windows...)
+	if _, _, reason := overlayCandidate(s, c); reason != "window_above" {
+		t.Fatalf("popup: %q", reason)
+	}
+	s, _ = overlayScene()
+	s.Border.Width = 2
+	if _, _, reason := overlayCandidate(s, c); reason != "border" {
+		t.Fatalf("border: %q", reason)
+	}
 }
 
 // A cursor commit refused with the overlay on drops the overlay: the
@@ -107,7 +129,7 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 func TestOverlayCursorConflictDropsOverlay(t *testing.T) {
 	o, k, _ := overlayOutput(t, nil, unix.EINVAL)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
 	ov, _ := o.overlayFrame(s, c)
 	if err := o.commitWith(70, nil, false, false, pendingFrame{}, ov); err != nil {

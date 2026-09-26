@@ -171,6 +171,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	tg := r.target()
 	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, contents, dmg)
+	dmg.finish()
 	r.dropPools()
 	partial := !dmg.all()
 	if partial {
@@ -268,7 +269,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	tg.layout = b.NewLayout
-	tg.hold(s, contents)
+	tg.hold(s, dmg)
 	r.last, r.readBack = tg, false
 	r.dropUnused()
 	r.dropShm()

@@ -96,3 +96,41 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 	step(3, c)
 	step(4, c)
 }
+
+// A window left out of a frame (on an overlay plane) and drawn again in
+// the same scene is redrawn whole; one held but no longer drawn is
+// cleared.
+func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
+	newR := func() *Renderer {
+		r, err := New(64, 48)
+		if err != nil {
+			t.Skipf("Vulkan unavailable: %v", err)
+		}
+		t.Cleanup(r.Close)
+		return r
+	}
+	damaged, full := newR(), newR()
+	c := solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255})
+	c.ID, c.Seq = 1, 1
+	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	with := ports.Scene{Seq: 9, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 16, H: 16}, Borderless: true}}}
+	without := with
+	without.Windows = nil
+	check := func(s ports.Scene, what string) {
+		t.Helper()
+		if err := render(damaged, s, contents); err != nil {
+			t.Fatal(err)
+		}
+		plain := s
+		plain.Seq = 0
+		if err := render(full, plain, contents); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(damaged.Pixels().Pix, full.Pixels().Pix) {
+			t.Fatalf("%s differs from a full redraw", what)
+		}
+	}
+	check(without, "overlay frame")
+	check(with, "overlay refused, window composed")
+	check(without, "window on the overlay again")
+}

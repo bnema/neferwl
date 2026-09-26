@@ -89,6 +89,16 @@ func TestDamageHistory(t *testing.T) {
 	if !ok || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("damage %v %v", got, ok)
 	}
+	// Same buffer size, new logical size (buffer scale): full.
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[0], int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestSetBufferScale, int32(2))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestDamageBuffer, int32(0), int32(0), int32(1), int32(1))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	scaled := next()
+	if _, ok := scaled.DamageSince(second.Seq); ok {
+		t.Fatal("logical resize kept partial damage")
+	}
+	second = scaled
 	// No damage with a new buffer: full.
 	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[0], int32(0), int32(0))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)

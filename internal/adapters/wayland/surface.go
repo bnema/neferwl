@@ -303,7 +303,8 @@ func (s *surface) applyCommit() {
 		if state, ok := s.server.buffers[s.current.Resource]; ok {
 			if c, ok := state.content(0); ok {
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
-				s.commitDamage(true, !s.has || c.Width != s.content.Width || c.Height != s.content.Height, c.Width, c.Height)
+				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
+				s.commitDamage(true, resized, c.Width, c.Height)
 				if s.sub.parent == nil && (c.Width != s.lastW || c.Height != s.lastH) {
 					s.lastW, s.lastH = c.Width, c.Height
 					s.server.log.Info().Uint64("id", uint64(s.windowID())).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
