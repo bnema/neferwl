@@ -82,8 +82,8 @@ func Defaults() ports.Config {
 	c.Terminal.Command = []string{"foot"}
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
-	c.Border.Width = 1
-	c.Border.Active = "#6c6c6c"
+	c.Border.Width = 2
+	c.Border.Active = "#808080"
 	c.Border.Inactive = "#2a2a2a"
 	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}

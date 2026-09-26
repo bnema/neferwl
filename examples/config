@@ -25,8 +25,8 @@ background = #111111
 # Separator lines between tiled windows (tmux style), in logical pixels.
 # The lines along the focused window use active; width 0 disables them,
 # empty inactive draws only the focused lines. Floats get a full border.
-border.width = 1
-border.active = #6c6c6c
+border.width = 2
+border.active = #808080
 border.inactive = #2a2a2a
 
 layout.gaps = 0
