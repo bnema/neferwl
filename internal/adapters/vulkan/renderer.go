@@ -458,29 +458,31 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	}
 	// The focused window lights the lines along its own sides only: its
 	// inset border, and its neighbors' border line where they own it.
-	// With exactly two tiles one line splits them: like tmux, the focused
-	// window lights only its half of it (left/top window: first half).
+	// tmux style: each stretch of line shared by two tiles is split in
+	// half, the left or top window owning the first half. The focused
+	// window lights its half of every stretch along its sides.
 	if focused != nil && s.Border.Active != "" && s.Border.Width > 0 {
-		f, tiles := focused, 0
-		for _, w := range s.Windows {
-			if !w.Hidden && !w.Popup && w.Neighbors != 0 {
-				tiles++
-			}
+		f := focused
+		// Inset sides with no neighbor (floats) light fully.
+		for _, strip := range borderStrips(f.Rect, f.Inset&^f.Neighbors, 0, s.Border.Width) {
+			add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
 		}
 		for _, side := range []ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom} {
-			out := 0
-			switch {
-			case f.Inset&side != 0:
-			case f.Neighbors&side != 0:
-				out = s.Border.Width
-			default:
+			if f.Neighbors&side == 0 {
 				continue
 			}
-			for _, strip := range borderStrips(f.Rect, side, out, s.Border.Width) {
-				if tiles == 2 {
-					strip = halfStrip(strip, side)
+			out := s.Border.Width
+			if f.Inset&side != 0 {
+				out = 0
+			}
+			line := borderStrips(f.Rect, side, out, s.Border.Width)[0]
+			for _, n := range s.Windows {
+				if n.ID == f.ID || n.Hidden || n.Popup || n.Neighbors&opposite(side) == 0 {
+					continue
 				}
-				add(physRect(strip.X, strip.Y, strip.W, strip.H), parseColor(s.Border.Active))
+				if part, ok := focusedHalf(line, *f, n.Rect, side, s.Border.Width); ok {
+					add(physRect(part.X, part.Y, part.W, part.H), parseColor(s.Border.Active))
+				}
 			}
 		}
 	}
@@ -639,18 +641,66 @@ func borderStrips(r ports.Rect, sides ports.Sides, out, b int) []ports.Rect {
 	return strips
 }
 
-// halfStrip keeps the half of a separator strip owned by the window on
-// side of it: the first half for the left or top window, else the second.
-func halfStrip(r ports.Rect, side ports.Sides) ports.Rect {
+// opposite is the side facing side.
+func opposite(side ports.Sides) ports.Sides {
 	switch side {
-	case ports.SideRight:
-		r.H /= 2
 	case ports.SideLeft:
-		r.Y, r.H = r.Y+r.H/2, r.H-r.H/2
-	case ports.SideBottom:
-		r.W /= 2
+		return ports.SideRight
+	case ports.SideRight:
+		return ports.SideLeft
 	case ports.SideTop:
-		r.X, r.W = r.X+r.W/2, r.W-r.W/2
+		return ports.SideBottom
 	}
-	return r
+	return ports.SideTop
+}
+
+// focusedHalf is the part of line, along side of window w, that w owns
+// in the stretch it shares with neighbor n: the first half when w is the
+// left or top window, else the second. ok is false when n is not across
+// side or they share no stretch. A part reaching a corner of w whose
+// crossing line lies outside w (a neighbor's) runs b further to close
+// the corner.
+func focusedHalf(line ports.Rect, w ports.SceneWindow, n ports.Rect, side ports.Sides, b int) (ports.Rect, bool) {
+	f := w.Rect
+	outside := func(s ports.Sides) bool { return w.Neighbors&s != 0 && w.Inset&s == 0 }
+	var lo, hi int
+	switch side {
+	case ports.SideRight, ports.SideLeft:
+		if side == ports.SideRight && n.X < f.X+f.W || side == ports.SideLeft && n.X+n.W > f.X {
+			return ports.Rect{}, false
+		}
+		lo, hi = max(f.Y, n.Y), min(f.Y+f.H, n.Y+n.H)
+	default:
+		if side == ports.SideBottom && n.Y < f.Y+f.H || side == ports.SideTop && n.Y+n.H > f.Y {
+			return ports.Rect{}, false
+		}
+		lo, hi = max(f.X, n.X), min(f.X+f.W, n.X+n.W)
+	}
+	if hi <= lo {
+		return ports.Rect{}, false
+	}
+	mid := lo + (hi-lo)/2
+	if side == ports.SideLeft || side == ports.SideTop {
+		lo = mid
+	} else {
+		hi = mid
+	}
+	if side == ports.SideRight || side == ports.SideLeft {
+		if lo == f.Y && outside(ports.SideTop) {
+			lo -= b
+		}
+		if hi == f.Y+f.H && outside(ports.SideBottom) {
+			hi += b
+		}
+		line.Y, line.H = lo, hi-lo
+	} else {
+		if lo == f.X && outside(ports.SideLeft) {
+			lo -= b
+		}
+		if hi == f.X+f.W && outside(ports.SideRight) {
+			hi += b
+		}
+		line.X, line.W = lo, hi-lo
+	}
+	return line, true
 }
