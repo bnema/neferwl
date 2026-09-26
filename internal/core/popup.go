@@ -125,7 +125,7 @@ func flipY(e uint32) uint32 {
 	return e
 }
 
-// windowRect is where a window or popup is on its screen: its client
+// windowRect is where a window, layer surface or popup is on its screen: its client
 // area, output-local and logical. ok is false when it is not on screen.
 func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 	if p := c.popups[id]; p != nil {
@@ -134,6 +134,12 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 			return nil, Rect{}, false
 		}
 		return sc, Rect{X: pr.X + p.rect.X, Y: pr.Y + p.rect.Y, W: p.rect.W, H: p.rect.H}, true
+	}
+	if sc, l, ok := c.layerOf(id); ok {
+		if !shown(sc, l.Layer) {
+			return nil, Rect{}, false
+		}
+		return sc, l.Rect, true
 	}
 	for _, sc := range c.screens {
 		for _, pl := range sc.mon.Layout() {

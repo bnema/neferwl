@@ -532,6 +532,7 @@ type Scene struct {
 	Windows                   []SceneWindow
 	// Layers are drawn in slice order: background and bottom before windows,
 	// top and overlay after. A fullscreen window covers bottom and top.
+	// Popups (SceneWindow.Popup) are drawn last, over every layer.
 	Layers []SceneLayer
 }
 

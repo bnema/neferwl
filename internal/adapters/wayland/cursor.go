@@ -100,10 +100,11 @@ func (p pointer) SetCursor(r *wayland.Pointer, _ uint32, surf *wayland.Surface, 
 }
 func (pointer) Release(r *wayland.Pointer) { r.Destroy() }
 
-// hasPointerFocus reports whether the client owns the window under the pointer.
+// hasPointerFocus reports whether the client owns the window or layer
+// under the pointer.
 func (s *Server) hasPointerFocus(c server.Client) bool {
-	w := s.windows[s.pointerFocus]
-	return w != nil && w.mapped && w.xdg.resource.Client() == c
+	owner, _, ok := s.pointerTarget(s.pointerFocus)
+	return ok && owner == c
 }
 
 // cursorImage copies the committed shm buffer of a cursor surface. No

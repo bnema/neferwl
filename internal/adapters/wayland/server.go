@@ -363,6 +363,14 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 	case ports.PointerFocus:
 		s.changePointerFocus(c.ID, c.X, c.Y)
 	case ports.PointerMotionTo:
+		if l := s.layers[c.ID]; l != nil && c.ID == s.pointerFocus {
+			s.pointerX, s.pointerY = c.X, c.Y
+			for _, p := range s.layerPointers(l) {
+				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				pointerFrame(p)
+			}
+			return
+		}
 		if w := s.windows[c.ID]; w != nil && c.ID == s.pointerFocus {
 			if s.relativeMotion(w, c) && s.locked(w) {
 				for _, p := range s.windowPointers(w) {
@@ -386,14 +394,14 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 	case ports.PointerButtonTo:
 		// Releases may target the implicit-grab window after focus has moved.
-		if w := s.windows[c.ID]; w != nil {
+		if client, pointers, ok := s.pointerTarget(c.ID); ok {
 			s.serial++
 			state := uint32(0)
 			if c.Pressed {
 				state = 1
-				s.press, s.pressClient, s.pressAt = s.serial, w.xdg.resource.Client(), time.Now()
+				s.press, s.pressClient, s.pressAt = s.serial, client, time.Now()
 			}
-			for _, p := range s.windowPointers(w) {
+			for _, p := range pointers {
 				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
 				pointerFrame(p)
 			}
@@ -404,7 +412,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		steps, values := s.wheelSteps(c.Axis)
-		for _, p := range s.windowPointers(s.windows[c.ID]) {
+		_, pointers, _ := s.pointerTarget(c.ID)
+		for _, p := range pointers {
 			sendAxis(p, c.Axis, steps, values)
 		}
 	case ports.SetKeymap:
@@ -506,13 +515,40 @@ func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Ke
 		}
 	}
 	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
-		for resource, state := range s.surfaces {
-			if state == l.surface && resource.Alive() {
-				return wayland.WrapSurface(resource), s.clientKeyboards(l.resource.Client())
-			}
+		if surf := l.surfaceResource(); surf != nil {
+			return surf, s.clientKeyboards(l.resource.Client())
 		}
 	}
 	return nil, nil
+}
+
+// pointerTarget resolves a mapped window or layer ID to its client and
+// live pointers.
+func (s *Server) pointerTarget(id ports.WindowID) (server.Client, []*wayland.Pointer, bool) {
+	if w := s.windows[id]; w != nil && w.mapped && w.xdg.resource.Resource.Alive() {
+		return w.xdg.resource.Client(), s.windowPointers(w), true
+	}
+	if l := s.layers[id]; l != nil && l.mapped && l.resource.Resource.Alive() {
+		return l.resource.Client(), s.layerPointers(l), true
+	}
+	return server.Client{}, nil, false
+}
+
+// pointerSurface is the wl_surface of a mapped window or layer and the
+// point in its surface coordinates.
+func (s *Server) pointerSurface(id ports.WindowID, x, y float64) (*wayland.Surface, []*wayland.Pointer, float64, float64) {
+	if w := s.windows[id]; w != nil {
+		if surf := w.xdg.surfaceResource(); surf != nil && surf.Resource.Alive() {
+			x, y := w.surfacePoint(x, y)
+			return surf, s.windowPointers(w), x, y
+		}
+	}
+	if l := s.layers[id]; l != nil && l.mapped {
+		if surf := l.surfaceResource(); surf != nil {
+			return surf, s.layerPointers(l), x, y
+		}
+	}
+	return nil, nil, 0, 0
 }
 
 // keymapFile writes a sealed memfd holding the NUL-terminated keymap.
@@ -698,8 +734,19 @@ func (s *Server) windowPointers(w *window) []*wayland.Pointer {
 	if w == nil || !w.mapped || !w.xdg.resource.Resource.Alive() {
 		return nil
 	}
+	return s.clientPointers(w.xdg.resource.Client())
+}
+
+func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {
+	if l == nil || !l.mapped || !l.resource.Resource.Alive() {
+		return nil
+	}
+	return s.clientPointers(l.resource.Client())
+}
+
+func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
 	var result []*wayland.Pointer
-	for _, p := range s.pointers[w.xdg.resource.Client()] {
+	for _, p := range s.pointers[c] {
 		if p.Resource.Alive() {
 			result = append(result, p)
 		}
@@ -714,25 +761,20 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
 	s.setCursor(ports.CursorChange{})
-	if old := s.windows[s.pointerFocus]; old != nil {
-		if surface := old.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
-			for _, p := range s.windowPointers(old) {
-				s.serial++
-				p.SendLeave(s.serial, surface)
-				pointerFrame(p)
-			}
+	if surface, pointers, _, _ := s.pointerSurface(s.pointerFocus, 0, 0); surface != nil {
+		for _, p := range pointers {
+			s.serial++
+			p.SendLeave(s.serial, surface)
+			pointerFrame(p)
 		}
 	}
 	s.pointerFocus = 0
-	if w := s.windows[id]; w != nil {
-		if surface := w.xdg.surfaceResource(); surface != nil && surface.Resource.Alive() {
-			s.pointerFocus, s.pointerX, s.pointerY = id, x, y
-			x, y := w.surfacePoint(x, y)
-			for _, p := range s.windowPointers(w) {
-				s.serial++
-				p.SendEnter(s.serial, surface, server.FixedFromFloat(x), server.FixedFromFloat(y))
-				pointerFrame(p)
-			}
+	if surface, pointers, sx, sy := s.pointerSurface(id, x, y); surface != nil {
+		s.pointerFocus, s.pointerX, s.pointerY = id, x, y
+		for _, p := range pointers {
+			s.serial++
+			p.SendEnter(s.serial, surface, server.FixedFromFloat(sx), server.FixedFromFloat(sy))
+			pointerFrame(p)
 		}
 	}
 	s.updateConstraint()

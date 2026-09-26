@@ -73,3 +73,61 @@ func arrangeLayers(outW, outH int, layers []ports.LayerSurface) (placed []ports.
 	sort.SliceStable(placed, func(i, j int) bool { return placed[i].Layer < placed[j].Layer })
 	return
 }
+
+// layerOf finds a placed layer surface by ID.
+func (c *Core) layerOf(id WindowID) (*screen, ports.SceneLayer, bool) {
+	for _, sc := range c.screens {
+		for _, l := range sc.placed {
+			if l.ID == id {
+				return sc, l, true
+			}
+		}
+	}
+	return nil, ports.SceneLayer{}, false
+}
+
+// hasFullscreen reports whether a visible fullscreen window covers the screen.
+func hasFullscreen(sc *screen) bool {
+	for _, p := range sc.mon.Layout() {
+		if p.Fullscreen && !p.Hidden {
+			return true
+		}
+	}
+	return false
+}
+
+// shown reports whether a layer is drawn: a fullscreen window hides the
+// bottom and top layers, as the renderer does.
+func shown(sc *screen, layer ports.Layer) bool {
+	return !(hasFullscreen(sc) && (layer == ports.LayerBottom || layer == ports.LayerTop))
+}
+
+// layerAt returns the topmost shown layer surface under the output-local
+// point among those above (or below) the windows.
+func layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float64, float64) {
+	full := hasFullscreen(sc)
+	for i := len(sc.placed) - 1; i >= 0; i-- {
+		l := sc.placed[i]
+		r := l.Rect
+		if (l.Layer >= ports.LayerTop) != above || (full && (l.Layer == ports.LayerBottom || l.Layer == ports.LayerTop)) || r.W <= 0 || r.H <= 0 {
+			continue
+		}
+		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
+			return l.ID, lx - float64(r.X), ly - float64(r.Y)
+		}
+	}
+	return 0, 0, 0
+}
+
+// onDemand reports whether id is a mapped layer surface with on-demand
+// keyboard interactivity.
+func (c *Core) onDemand(id WindowID) bool {
+	for _, sc := range c.screens {
+		for _, l := range sc.layers {
+			if l.ID == id {
+				return l.Keyboard == 2
+			}
+		}
+	}
+	return false
+}
