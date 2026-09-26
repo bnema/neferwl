@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=NeferWL
-Comment=Minimal Wayland compositor with scrollable columns
+Comment=Minimal Wayland compositor with column tiling
 Exec=neferwl --session
 Type=Application
 DesktopNames=neferwl
