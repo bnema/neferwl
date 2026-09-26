@@ -25,6 +25,7 @@ import (
 	"github.com/bnema/nefertty/internal/logging"
 	"github.com/bnema/nefertty/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 type Options struct {
@@ -102,7 +103,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -377,4 +378,12 @@ func openXwayland(ctx context.Context, opts Options, env []string, log zerowrap.
 	}
 	log.Info().Str("DISPLAY", d.Name()).Msg("listening on X11 display")
 	return d
+}
+
+// renderNode is the /dev/dri path of a render node dev_t, "" when none.
+func renderNode(dev uint64) string {
+	if dev == 0 {
+		return ""
+	}
+	return fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(dev))
 }

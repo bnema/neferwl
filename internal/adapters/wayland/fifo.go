@@ -218,6 +218,7 @@ type update struct {
 	wait      bool
 	at        time.Time
 	feedback  []*presentationtime.WpPresentationFeedback
+	sync      *commitSync
 	damage    []ports.Rect
 	bufDamage []ports.Rect
 }
@@ -230,9 +231,9 @@ type childMove struct {
 // takePending moves the pending state into an update: one-shot state is
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
-	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback}
+	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback, sync: s.pendingSync}
 	s.attached, s.pending, s.callbacks = false, nil, nil
-	s.pendingFeedback = nil
+	s.pendingFeedback, s.pendingSync = nil, nil
 	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
@@ -263,7 +264,7 @@ func (s *surface) putPending(u update) {
 	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
 	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
-	s.pendingFeedback = u.feedback
+	s.pendingFeedback, s.pendingSync = u.feedback, u.sync
 	if u.vp != nil && s.viewport == u.vp {
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
 	}
@@ -285,7 +286,7 @@ func (s *surface) putPending(u update) {
 
 // mustWait reports whether the pending commit cannot apply now.
 func (s *surface) mustWait(now time.Time) bool {
-	return len(s.queue) > 0 || (s.pendingWait && s.barrier) || s.tooEarly(s.pendingTime, now)
+	return len(s.queue) > 0 || (s.pendingWait && s.barrier) || s.tooEarly(s.pendingTime, now) || !s.syncReady(s.pendingSync)
 }
 
 // tooEarly reports whether content applied now would show before at:
@@ -346,6 +347,10 @@ func (s *surface) dropQueue() {
 		}
 		for _, fb := range u.feedback {
 			discard(fb)
+		}
+		s.dropSync(u.sync)
+		if u.sync != nil {
+			continue // explicit sync: the release point replaced release
 		}
 		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() {
 			released[u.buffer.Resource] = true
@@ -411,6 +416,9 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		for len(surf.queue) > 0 && !surf.destroyed {
 			u := surf.queue[0]
 			if u.wait && surf.barrier {
+				break
+			}
+			if !surf.syncReady(u.sync) {
 				break
 			}
 			if surf.tooEarly(u.at, now) {

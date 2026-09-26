@@ -1,0 +1,396 @@
+package wayland
+
+import (
+	"context"
+	"errors"
+	"os"
+	"sync"
+
+	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
+	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/server"
+	"golang.org/x/sys/unix"
+)
+
+// wp_linux_drm_syncobj_v1: explicit sync. A client names, per commit, the
+// timeline point its GPU signals when the buffer is drawn (acquire) and
+// the point we signal once nothing reads the buffer any more (release).
+// A commit waits (like a fifo barrier) until its acquire point has a
+// fence; the fence then travels with the content as a sync file the
+// renderer and the display wait on, so no CPU waits for the GPU. The
+// release point replaces wl_buffer.release.
+
+const syncobjVersion = 1
+
+// timeline is an imported client timeline.
+type timeline struct {
+	dev    syncobjDevice
+	handle uint32
+	alive  bool
+	// uses counts committed points still to signal or wait on.
+	uses int
+}
+
+// syncPoint is a point on a timeline.
+type syncPoint struct {
+	tl    *timeline
+	point uint64
+}
+
+func (p syncPoint) set() bool { return p.tl != nil }
+
+// syncState is a surface's wp_linux_drm_syncobj_surface_v1 state.
+type syncState struct {
+	resource         *linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1
+	acquire, release syncPoint // pending, for the next commit
+}
+
+func registerSyncobj(d *server.Display, s *Server) error {
+	if s.syncDev == nil {
+		return nil
+	}
+	return linuxdrmsyncobj.NewWpLinuxDrmSyncobjManagerV1Global(d, syncobjVersion, func(c server.Client, v, id uint32) {
+		_, _ = linuxdrmsyncobj.NewWpLinuxDrmSyncobjManagerV1(c, int32(v), id, syncManager{s})
+	})
+}
+
+type syncManager struct{ server *Server }
+
+func (syncManager) Destroy(*linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1) {}
+
+func (m syncManager) GetSurface(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, id uint32, surf *wayland.Surface) {
+	state := m.server.surfaceOf(surf)
+	if state == nil {
+		return
+	}
+	if state.sync != nil {
+		r.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorSurfaceExists), "surface already has a syncobj surface")
+		return
+	}
+	st := &syncState{}
+	res, err := linuxdrmsyncobj.NewWpLinuxDrmSyncobjSurfaceV1(r.Client(), r.Version(), id, syncSurface{state, st})
+	if err != nil {
+		return
+	}
+	st.resource = res
+	state.sync = st
+	res.OnDestroy = func() {
+		if state.sync == st {
+			state.sync = nil
+		}
+	}
+}
+
+func (m syncManager) ImportTimeline(r *linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1, id uint32, fd int) {
+	defer unix.Close(fd)
+	h, err := m.server.syncDev.fdToHandle(fd)
+	if err != nil {
+		r.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorInvalidTimeline), "invalid timeline fd")
+		return
+	}
+	tl := &timeline{dev: m.server.syncDev, handle: h, alive: true}
+	res, err := linuxdrmsyncobj.NewWpLinuxDrmSyncobjTimelineV1(r.Client(), r.Version(), id, timelineHandler{})
+	if err != nil {
+		_ = tl.dev.destroy(h)
+		return
+	}
+	m.server.timelines[res.Resource] = tl
+	res.OnDestroy = func() {
+		delete(m.server.timelines, res.Resource)
+		// Points already committed keep the syncobj: destroyed once no
+		// held buffer or waiting commit uses it (timeline.drop).
+		tl.alive = false
+		m.server.dropTimeline(tl)
+	}
+}
+
+type timelineHandler struct{}
+
+func (timelineHandler) Destroy(*linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1) {}
+
+type syncSurface struct {
+	surf *surface
+	st   *syncState
+}
+
+func (syncSurface) Destroy(*linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1) {}
+
+func (h syncSurface) point(r *linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1, tl *linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1, hi, lo uint32) (syncPoint, bool) {
+	if h.surf.destroyed {
+		r.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoSurface), "surface destroyed")
+		return syncPoint{}, false
+	}
+	t := h.surf.server.timelines[tl.Resource]
+	if t == nil {
+		return syncPoint{}, false
+	}
+	return syncPoint{tl: t, point: uint64(hi)<<32 | uint64(lo)}, true
+}
+
+func (h syncSurface) SetAcquirePoint(r *linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1, tl *linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1, hi, lo uint32) {
+	if p, ok := h.point(r, tl, hi, lo); ok {
+		h.st.acquire = p
+	}
+}
+
+func (h syncSurface) SetReleasePoint(r *linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1, tl *linuxdrmsyncobj.WpLinuxDrmSyncobjTimelineV1, hi, lo uint32) {
+	if p, ok := h.point(r, tl, hi, lo); ok {
+		h.st.release = p
+	}
+}
+
+// checkSyncCommit applies the protocol rules to a commit with sync
+// points; false means a protocol error was posted.
+func (s *surface) checkSyncCommit() bool {
+	st := s.sync
+	if st == nil {
+		return true
+	}
+	a, r := st.acquire, st.release
+	hasBuffer := s.attached && s.pending != nil || !s.attached && s.current != nil
+	res := st.resource
+	switch {
+	case !a.set() && !r.set():
+		if hasBuffer && s.attached {
+			res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoAcquirePoint), "buffer without acquire point")
+			return false
+		}
+		return true
+	case !hasBuffer:
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoBuffer), "points without a buffer")
+	case !a.set():
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoAcquirePoint), "no acquire point")
+	case !r.set():
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoReleasePoint), "no release point")
+	case a.tl == r.tl && a.point >= r.point:
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorConflictingPoints), "release point not after acquire point")
+	case s.pendingIsSHM():
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorUnsupportedBuffer), "explicit sync on a wl_shm buffer")
+	default:
+		return true
+	}
+	return false
+}
+
+// pendingIsSHM reports whether the buffer of the next commit is wl_shm.
+func (s *surface) pendingIsSHM() bool {
+	b := s.pending
+	if !s.attached {
+		b = s.current
+	}
+	if b == nil {
+		return false
+	}
+	_, dma := s.server.buffers[b.Resource].(*dmabufBuffer)
+	return !dma
+}
+
+// syncWaiter watches acquire points: each gets an eventfd the kernel
+// writes once the point has a fence, and the pacer is woken to apply the
+// commits that waited for it.
+type syncWaiter struct {
+	mu    sync.Mutex
+	ready map[*syncWait]bool
+	wake  func()
+	pipeR *os.File
+	pipeW *os.File
+	add   chan *syncWait
+}
+
+// syncWait is one acquire point a queued commit waits for.
+type syncWait struct {
+	efd  int
+	done bool // the eventfd fired (pacer, under Do)
+}
+
+func newSyncWaiter(wake func()) (*syncWaiter, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, add: make(chan *syncWait, 64)}, nil
+}
+
+// watch registers an eventfd for p; the wait is ready once it fires.
+func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
+	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
+		unix.Close(efd)
+		return nil, err
+	}
+	w := &syncWait{efd: efd}
+	sw.add <- w
+	_, _ = sw.pipeW.Write([]byte{0})
+	return w, nil
+}
+
+// fired reports whether w's point has a fence, and forgets w once it has.
+func (sw *syncWaiter) fired(w *syncWait) bool {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	if sw.ready[w] {
+		delete(sw.ready, w)
+		w.done = true
+	}
+	return w.done
+}
+
+// cancel stops watching w (the commit was dropped).
+func (sw *syncWaiter) cancel(w *syncWait) {
+	sw.mu.Lock()
+	delete(sw.ready, w)
+	sw.mu.Unlock()
+	w.done = true
+}
+
+// run polls every watched eventfd; it owns and closes them.
+func (sw *syncWaiter) run(ctx context.Context) {
+	defer sw.pipeR.Close()
+	var waits []*syncWait
+	defer func() {
+		for _, w := range waits {
+			unix.Close(w.efd)
+		}
+	}()
+	for ctx.Err() == nil {
+		fds := []unix.PollFd{{Fd: int32(sw.pipeR.Fd()), Events: unix.POLLIN}}
+		for _, w := range waits {
+			fds = append(fds, unix.PollFd{Fd: int32(w.efd), Events: unix.POLLIN})
+		}
+		n, err := unix.Poll(fds, 100)
+		if err != nil && !errors.Is(err, unix.EINTR) {
+			return
+		}
+		if n <= 0 {
+			continue
+		}
+		fired := false
+		kept := waits[:0]
+		for i, w := range waits {
+			if fds[i+1].Revents == 0 {
+				kept = append(kept, w)
+				continue
+			}
+			unix.Close(w.efd)
+			sw.mu.Lock()
+			sw.ready[w] = true
+			sw.mu.Unlock()
+			fired = true
+		}
+		waits = kept
+		// New waits join the next poll.
+		if fds[0].Revents != 0 {
+			var b [64]byte
+			_, _ = sw.pipeR.Read(b[:])
+		drain:
+			for {
+				select {
+				case w := <-sw.add:
+					waits = append(waits, w)
+				default:
+					break drain
+				}
+			}
+		}
+		if fired {
+			sw.wake()
+		}
+	}
+}
+
+// close stops the waiter's input side.
+func (sw *syncWaiter) close() { sw.pipeW.Close() }
+
+// syncHold is a buffer's explicit-sync state while it is on screen: the
+// acquire fence handed to readers and the release point to signal.
+type syncHold struct {
+	acquire *os.File
+	release syncPoint
+}
+
+// releaseSync signals the release point once nothing reads the buffer,
+// and closes the acquire fence.
+func (s *Server) releaseSync(h syncHold) {
+	if h.acquire != nil {
+		h.acquire.Close()
+	}
+	if h.release.set() {
+		if err := h.release.tl.dev.signal(h.release.tl.handle, h.release.point); err != nil {
+			s.log.Warn().Str("component", "wayland").Err(err).Msg("release point")
+		}
+		h.release.tl.uses--
+		s.dropTimeline(h.release.tl)
+	}
+}
+
+// dropTimeline destroys a timeline the client destroyed once no held
+// buffer still needs to signal it.
+func (s *Server) dropTimeline(tl *timeline) {
+	if !tl.alive && tl.uses <= 0 && tl.handle != 0 {
+		_ = tl.dev.destroy(tl.handle)
+		tl.handle = 0
+	}
+}
+
+// takeSyncPoints moves the surface's requested points to the commit and
+// starts waiting for the acquire point's fence.
+func (s *surface) takeSyncPoints() {
+	st := s.sync
+	if st == nil || !st.acquire.set() {
+		return
+	}
+	cs := &commitSync{acquire: st.acquire, release: st.release}
+	st.acquire, st.release = syncPoint{}, syncPoint{}
+	cs.acquire.tl.uses++
+	cs.release.tl.uses++
+	w, err := s.server.syncWait.watch(cs.acquire)
+	if err != nil {
+		// The point cannot be watched: apply now, readers wait on the
+		// fence (or its absence) when they read the buffer.
+		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire point")
+	} else {
+		cs.wait = w
+	}
+	s.pendingSync = cs
+}
+
+// syncReady reports whether a commit's acquire point has its fence.
+func (s *surface) syncReady(cs *commitSync) bool {
+	return cs == nil || cs.wait == nil || s.server.syncWait.fired(cs.wait)
+}
+
+// dropSync forgets a commit that will never apply: its points are
+// signalled so the client can reuse the buffer.
+func (s *surface) dropSync(cs *commitSync) {
+	if cs == nil {
+		return
+	}
+	if cs.wait != nil {
+		s.server.syncWait.cancel(cs.wait)
+	}
+	cs.acquire.tl.uses--
+	s.server.dropTimeline(cs.acquire.tl)
+	s.server.releaseSync(syncHold{release: cs.release})
+}
+
+// applySync makes a commit's points the current buffer's: its acquire
+// fence goes with the content, its release point waits for release.
+func (s *surface) applySync(cs *commitSync) {
+	if cs == nil {
+		return
+	}
+	if cs.wait != nil {
+		s.server.syncWait.cancel(cs.wait)
+	}
+	f, err := cs.acquire.tl.dev.exportSyncFile(cs.acquire.tl.handle, cs.acquire.point)
+	if err != nil {
+		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire fence")
+		f = nil
+	}
+	cs.acquire.tl.uses--
+	s.server.dropTimeline(cs.acquire.tl)
+	s.hold = syncHold{acquire: f, release: cs.release}
+}

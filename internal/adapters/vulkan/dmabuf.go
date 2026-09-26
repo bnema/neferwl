@@ -287,15 +287,31 @@ func (r *Renderer) readFence(im *imported) vk.Semaphore {
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(im.fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
 		return 0
 	}
+	return r.importSyncFD(int(arg.fd))
+}
+
+// importFence makes a wait semaphore of a sync file. The file stays the
+// caller's: Vulkan takes a duplicate, made while the file is held open.
+func (r *Renderer) importFence(f *os.File) vk.Semaphore {
+	fd, err := dupFile(f)
+	if err != nil {
+		return 0
+	}
+	return r.importSyncFD(fd)
+}
+
+// importSyncFD imports a sync file fd as a temporary semaphore payload;
+// the fd is Vulkan's on success and closed on failure.
+func (r *Renderer) importSyncFD(fd int) vk.Semaphore {
 	var sem vk.Semaphore
 	si := vk.SemaphoreCreateInfo{SType: vk.StructureTypeSemaphoreCreateInfo}
 	if r.dd.CreateSemaphore(r.device, &si, nil, &sem) != vk.Success {
-		unix.Close(int(arg.fd))
+		unix.Close(fd)
 		return 0
 	}
-	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: arg.fd}
+	imp := vk.ImportSemaphoreFdInfoKHR{SType: vk.StructureTypeImportSemaphoreFDInfoKHR, Semaphore: sem, Flags: vk.SemaphoreImportTemporaryBit, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit, Fd: int32(fd)}
 	if r.dd.ImportSemaphoreFdKHR(r.device, &imp) != vk.Success {
-		unix.Close(int(arg.fd))
+		unix.Close(fd)
 		r.dd.DestroySemaphore(r.device, sem, nil)
 		return 0
 	}

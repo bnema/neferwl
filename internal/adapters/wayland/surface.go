@@ -69,6 +69,18 @@ type surface struct {
 	committed                       damage
 	// pendingFeedback are wp_presentation feedbacks for the next commit.
 	pendingFeedback []*presentationtime.WpPresentationFeedback
+	// Explicit sync (syncobj.go): the surface's syncobj object; the
+	// committed points of the pending commit (pendingSync, with the wait
+	// for its acquire point); and the current buffer's hold.
+	sync        *syncState
+	pendingSync *commitSync
+	hold        syncHold
+}
+
+// commitSync is a commit's explicit-sync points and acquire wait.
+type commitSync struct {
+	acquire, release syncPoint
+	wait             *syncWait
 }
 
 // damage is what one commit changed in a surface's buffer.
@@ -198,8 +210,11 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 	s.callbacks = nil
 	// The client may reuse the buffer on another surface.
+	s.dropSync(s.pendingSync)
+	s.pendingSync = nil
 	if s.current != nil {
-		s.server.releaseBuffer(s, s.current)
+		s.server.releaseBuffer(s, s.current, s.hold)
+		s.hold = syncHold{}
 	}
 	s.current, s.pending = nil, nil
 	if s.role != nil {
@@ -228,7 +243,12 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
 	}
-	// A commit behind a fifo barrier or a future timestamp waits (fifo.go).
+	if !s.checkSyncCommit() {
+		return
+	}
+	s.takeSyncPoints()
+	// A commit behind a fifo barrier, a future timestamp or an acquire
+	// point without a fence yet waits (fifo.go).
 	if s.mustWait(time.Now()) {
 		s.queueUpdate()
 		return
@@ -256,14 +276,22 @@ func (s *surface) applyCommit() {
 	if s.viewport != nil {
 		s.viewport.commit()
 	}
+	cs := s.pendingSync
+	s.pendingSync = nil
 	if s.attached {
 		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
-			s.server.releaseBuffer(s, s.current)
+			s.server.releaseBuffer(s, s.current, s.hold)
+		} else if cs != nil || s.pending == nil {
+			// Same buffer again, or detached: the old points are done
+			// with once the new ones take over.
+			s.server.releaseBufferSync(s, s.hold)
 		}
+		s.hold = syncHold{}
 		s.current = s.pending
 		s.pending = nil
 		s.attached = false
 	}
+	s.applySync(cs)
 	if len(s.callbacks) > 0 {
 		s.server.queueFrames(s.server.frameOutput(s), s.callbacks)
 	}
@@ -280,6 +308,7 @@ func (s *surface) applyCommit() {
 					s.lastW, s.lastH = c.Width, c.Height
 					s.server.log.Info().Uint64("id", uint64(s.windowID())).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
 				}
+				c.Acquire = s.hold.acquire
 				s.content, s.has = c, true
 			} else if shm, ok := state.(*buffer); ok {
 				shm.pool.shm.PostError(uint32(wayland.ShmErrorInvalidFd), "SHM backing file truncated")

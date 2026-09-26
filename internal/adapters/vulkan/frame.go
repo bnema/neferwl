@@ -205,10 +205,14 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	// Client buffers come from the foreign queue family (their driver)
 	// and go back to it after the frame, so the next frame acquires them.
 	var dmas []*imported
+	acquires := map[*imported]*os.File{}
 	for _, dr := range ds {
 		if dr.im != nil && !slices.Contains(dmas, dr.im) {
 			dmas = append(dmas, dr.im)
 			dr.im.last = r.frame
+		}
+		if dr.acquire != nil {
+			acquires[dr.im] = dr.acquire
 		}
 	}
 	r.ownership(cmd, dmas, true)
@@ -228,10 +232,17 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd)); err != nil {
 		return nil, err
 	}
-	// Implicit sync: wait for the client's GPU writes to each buffer.
+	// Wait for the client's GPU writes to each buffer: its explicit
+	// acquire fence, else the buffer's implicit fences.
 	var waits []vk.Semaphore
 	for _, im := range dmas {
-		if sem := r.readFence(im); sem != 0 {
+		sem := vk.Semaphore(0)
+		if f := acquires[im]; f != nil {
+			sem = r.importFence(f)
+		} else {
+			sem = r.readFence(im)
+		}
+		if sem != 0 {
 			waits = append(waits, sem)
 		}
 	}

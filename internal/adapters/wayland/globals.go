@@ -20,6 +20,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerTearing(d, s) },
 		func() error { return registerPresentationConstraints(d, s) },
 		func() error { return registerPresentation(d, s) },
+		func() error { return registerSyncobj(d, s) },
 		func() error { return registerActivation(d, s) },
 		func() error { return registerVirtualKeyboard(d, s) },
 		func() error {

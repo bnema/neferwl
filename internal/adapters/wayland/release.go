@@ -21,7 +21,10 @@ import (
 const heldTimeout = 100 * time.Millisecond
 
 type heldBuffer struct {
-	res    *wayland.Buffer
+	res *wayland.Buffer
+	// sync is the buffer's explicit-sync state: its release point is
+	// signalled instead of wl_buffer.release.
+	sync   syncHold
 	window ports.WindowID
 	id     uint64 // DMABuf ID, 0 for wl_shm
 	after  uint64 // the window's content Seq when the buffer was replaced
@@ -30,17 +33,14 @@ type heldBuffer struct {
 
 // releaseBuffer releases a replaced buffer, or holds it until the output
 // showing its window no longer reads it.
-func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer) {
-	if !b.Resource.Alive() {
-		return
-	}
+func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) {
 	window, name := surf.root().windowID(), s.frameOutput(surf)
-	if window == 0 || name == "" {
+	if !b.Resource.Alive() || window == 0 || name == "" {
 		// Not drawn (unmapped, hidden, a cursor): nothing reads it.
-		b.SendRelease()
+		s.release(b, sync)
 		return
 	}
-	h := heldBuffer{res: b, window: window, at: time.Now()}
+	h := heldBuffer{res: b, sync: sync, window: window, at: time.Now()}
 	if d, ok := s.buffers[b.Resource].(*dmabufBuffer); ok {
 		h.id = d.buf.ID
 	}
@@ -53,6 +53,36 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer) {
 	case s.frameReady <- struct{}{}:
 	default:
 	}
+}
+
+// release gives a buffer back: its release point is signalled when it
+// has one (explicit sync), else wl_buffer.release.
+func (s *Server) release(b *wayland.Buffer, sync syncHold) {
+	if sync.release.set() || sync.acquire != nil {
+		s.releaseSync(sync)
+		return
+	}
+	if b != nil && b.Resource.Alive() {
+		b.SendRelease()
+	}
+}
+
+// releaseBufferSync holds only a buffer's explicit-sync points: the same
+// buffer committed again with new points (clients reuse one buffer).
+func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
+	if !sync.release.set() && sync.acquire == nil {
+		return
+	}
+	window := surf.root().windowID()
+	if window == 0 || s.frameOutput(surf) == "" {
+		s.releaseSync(sync)
+		return
+	}
+	s.contentMu.Lock()
+	after := s.contentSeq[window]
+	s.contentMu.Unlock()
+	s.held = append(s.held, heldBuffer{sync: sync, window: window, after: after, at: time.Now()})
+	s.wakePacer()
 }
 
 // releaseHeld records the output reports and releases the buffers no
@@ -79,9 +109,7 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 			kept = append(kept, h)
 			continue
 		}
-		if h.res.Resource.Alive() {
-			h.res.SendRelease()
-		}
+		s.release(h.res, h.sync)
 	}
 	clear(s.held[len(kept):])
 	s.held = kept

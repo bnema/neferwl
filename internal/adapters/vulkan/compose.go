@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"image"
 	"math"
+	"os"
 	"unsafe"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
@@ -51,6 +52,8 @@ type draw struct {
 	pc  pushConstants
 	set vk.DescriptorSet
 	im  *imported // sampled client dmabuf, for ownership barriers
+	// acquire is the content's explicit-sync fence (nil: implicit).
+	acquire *os.File
 }
 
 // composer is the pipeline state and the objects every draw can bind.

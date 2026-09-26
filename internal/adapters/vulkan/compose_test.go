@@ -3,6 +3,7 @@ package vulkan
 import (
 	"context"
 	"image/color"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -180,5 +181,35 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	}
 	if got := r.Pixels().RGBAAt(4, 4); got != (color.RGBA{180, 0, 0, 255}) {
 		t.Fatalf("pixel %v", got)
+	}
+}
+
+// A content's explicit acquire fence becomes a wait semaphore; a file
+// that is not a sync file is refused (no semaphore) without failing the
+// frame, and the caller's file stays open.
+func TestRendererImportsAcquireFence(t *testing.T) {
+	r, err := New(8, 8)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
+	if err != nil || done == nil {
+		t.Skipf("no sync file: %v", err)
+	}
+	defer done.Close()
+	sem := r.importFence(done)
+	if sem == 0 {
+		t.Fatal("sync file not imported")
+	}
+	r.dd.DestroySemaphore(r.device, sem, nil)
+	if _, err := done.Stat(); err != nil {
+		t.Fatal("caller's fence closed")
+	}
+	f, w, _ := os.Pipe()
+	defer f.Close()
+	defer w.Close()
+	if sem := r.importFence(f); sem != 0 {
+		t.Fatal("pipe imported as a fence")
 	}
 }

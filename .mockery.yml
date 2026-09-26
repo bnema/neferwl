@@ -30,6 +30,11 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: proc_env_mock_test.go
+      syncobjDevice:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: syncobj_device_mock_test.go
   github.com/bnema/nefertty/internal/adapters/statefile:
     interfaces:
       procTree:

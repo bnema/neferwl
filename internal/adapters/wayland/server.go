@@ -24,9 +24,15 @@ type Options struct {
 	RuntimeDir string
 	Outputs    ports.Layout
 	// DMABuf is what the renderer imports; empty disables linux-dmabuf.
-	DMABuf                  ports.DMABufSupport
+	DMABuf ports.DMABufSupport
+	// SyncobjNode is the render node (/dev/dri/renderD*) timeline
+	// syncobjs are imported on; empty or without timeline support, no
+	// explicit sync is offered.
+	SyncobjNode             string
 	Keymap                  string
 	RepeatRate, RepeatDelay int
+	// syncDev replaces the render node's syncobj interface (tests).
+	syncDev syncobjDevice
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -112,6 +118,11 @@ type Server struct {
 	damage map[ports.WindowID][]ports.SeqDamage
 	// feedbacks wait for the flip that shows their content (presentation.go).
 	feedbacks []feedbackWait
+	// Explicit sync (syncobj.go): the render node, imported timelines by
+	// resource, and the acquire point waiter.
+	syncDev   syncobjDevice
+	timelines map[*server.Resource]*timeline
+	syncWait  *syncWaiter
 	// flips is each output's latest flip (pacer, under Do).
 	flips         map[string]ports.FlipInfo
 	contentNotify chan struct{}
@@ -173,6 +184,26 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
 	s.flips = map[string]ports.FlipInfo{}
+	s.timelines = map[*server.Resource]*timeline{}
+	var node *renderNode
+	if opts.syncDev != nil {
+		s.syncDev = opts.syncDev
+		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+			cleanup()
+			d.Close()
+			return nil, err
+		}
+	} else if opts.SyncobjNode != "" {
+		if node, err = openSyncobj(opts.SyncobjNode); err != nil {
+			log.Info().Str("component", "wayland").Err(err).Msg("explicit sync off")
+			node = nil
+		} else if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+			node.close()
+			node = nil
+		} else {
+			s.syncDev = node
+		}
+	}
 	s.tokens = map[string]activationToken{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -188,6 +219,12 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			unix.Close(s.keymapFD)
 		}
 		s.dmabuf.close()
+		if s.syncWait != nil {
+			s.syncWait.close()
+		}
+		if node != nil {
+			node.close()
+		}
 		cleanup()
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
@@ -245,6 +282,10 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go func() { defer wg.Done(); s.pace(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
+	if s.syncWait != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); s.syncWait.run(ctx) }()
+	}
 	err := s.display.Run(ctx)
 	wg.Wait()
 	return err

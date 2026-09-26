@@ -562,13 +562,20 @@ func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame
 	async := c.Async && o.tearing && o.shown != 0 && !cfb.noAsync
 	vrr := o.wantVRR(true)
 	f.queued, f.zeroCopy = c.DMABuf.ID, true
-	err := o.commitFrame(fb, nil, async, vrr, f)
+	// Explicit sync: KMS waits on the client's acquire fence. Wayland may
+	// close its file at any time: commit a duplicate taken while it is
+	// held open (the kernel keeps its own reference).
+	fence := dupFence(c.Acquire)
+	if fence != nil {
+		defer fence.Close()
+	}
+	err := o.commitFrame(fb, fence, async, vrr, f)
 	if err != nil && async && errors.Is(err, unix.EINVAL) {
 		// Refused (e.g. not a fast update): this buffer flips at vblank
 		// from now on.
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
 		cfb.noAsync = true
-		err = o.commitFrame(fb, nil, false, vrr, f)
+		err = o.commitFrame(fb, fence, false, vrr, f)
 	}
 	if err != nil && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)) {
 		// KMS refuses this buffer on the plane: compose it instead.

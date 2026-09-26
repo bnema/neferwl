@@ -622,6 +622,12 @@ type SurfaceContent struct {
 	// Async asks for tearing presentation (wp_tearing_control_v1); outputs
 	// honour it only in direct scanout.
 	Async bool
+	// Acquire is the explicit-sync fence of this content's root buffer
+	// (wp_linux_drm_syncobj_v1): readers wait on it before reading the
+	// buffer, instead of the buffer's implicit fences. Wayland owns it and
+	// closes it when the buffer is released; a reader that keeps it past
+	// the call duplicates it under Acquire.SyscallConn. nil: implicit sync.
+	Acquire *os.File
 	// DamageHistory is what changed in the root surface's buffer over the
 	// window's last contents, oldest first, ending with this one (Seq).
 	// A renderer holding an older content redraws the union of the

@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/nefertty/internal/ports"
+	"golang.org/x/sys/unix"
 )
 
 // Direct scanout (ADR 006): when one fullscreen window covers the output
@@ -271,4 +272,21 @@ func (o *Output) dropClientFBs(now time.Time, all bool) {
 		}
 		delete(o.clientFBs, id)
 	}
+}
+
+// dupFence duplicates a sync file under its SyscallConn, so a concurrent
+// Close cannot hand us a reused fd; nil when f is nil or closed.
+func dupFence(f *os.File) *os.File {
+	if f == nil {
+		return nil
+	}
+	raw, err := f.SyscallConn()
+	if err != nil {
+		return nil
+	}
+	fd := -1
+	if raw.Control(func(v uintptr) { fd, _ = unix.FcntlInt(v, unix.F_DUPFD_CLOEXEC, 0) }) != nil || fd < 0 {
+		return nil
+	}
+	return os.NewFile(uintptr(fd), "acquire-fence")
 }
