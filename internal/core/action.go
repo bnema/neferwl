@@ -218,6 +218,15 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionToggleFullscreen:
 		m.ToggleFullscreen()
 		return Effect{}
+	case ActionMaximizeColumn:
+		// A client that made itself fullscreen (Wine at monitor size) goes
+		// back to its column width; the next press maximizes the column.
+		if w := m.Current(); w.fullscreen != 0 {
+			if id, ok := w.Focused(); ok && id == w.fullscreen {
+				m.ToggleFullscreen()
+				return Effect{}
+			}
+		}
 	case ActionFocusWorkspaceUp, ActionFocusWorkspaceDown:
 		if m.shown == nil && a == ActionFocusWorkspaceUp {
 			m.Focus(m.Active - 1)

@@ -664,3 +664,32 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 	})
 }
+
+// Cmd+F on a window that made itself fullscreen returns it to its column
+// (Wine opens monitor-sized apps fullscreen); the next press maximizes.
+func TestMaximizeLeavesClientFullscreen(t *testing.T) {
+	for _, o := range []Overflow{OverflowScroll, OverflowFixed} {
+		t.Run(string(o), func(t *testing.T) {
+			m := monitor()
+			m.SetOverflow(o)
+			m.AddWindow(1)
+			m.AddWindow(2)
+			m.SetFullscreen(2, true)
+			m.Apply(ActionMaximizeColumn)
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {}}) || m.Active != 0 {
+				t.Fatal(got, m.Active)
+			}
+			w := m.Current()
+			if w.fullscreen != 0 || w.Columns[1].FullWidth {
+				t.Fatal(w.fullscreen, w.Columns)
+			}
+			if id, _ := m.Focused(); id != 2 {
+				t.Fatal("focus", id)
+			}
+			m.Apply(ActionMaximizeColumn)
+			if !w.Columns[1].FullWidth {
+				t.Fatal(w.Columns)
+			}
+		})
+	}
+}
