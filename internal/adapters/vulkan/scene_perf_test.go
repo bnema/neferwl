@@ -31,7 +31,7 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, count := range []int{16, 64} {
-		contents[1] = ports.SurfaceContent{ID: 1, Seq: root.Seq, Children: root.Children[:count]}
+		contents[1] = ports.SurfaceContent{ID: 1, Seq: root.Seq, Surface: root.Surface, Version: root.Version, Children: root.Children[:count]}
 		walk := func() {
 			dmg := newDamage(&target{}, scene, r.Pixels().Bounds())
 			_ = r.draws(scene, contents, dmg)
