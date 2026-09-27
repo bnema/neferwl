@@ -3,7 +3,6 @@ package wayland
 import (
 	"context"
 	"encoding/binary"
-	"reflect"
 
 	"github.com/bnema/neferwl/internal/ports"
 	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
@@ -19,8 +18,8 @@ type workspaceManager struct {
 	pending []uint64
 }
 type workspaceGroup struct {
-	res    *ext.ExtWorkspaceGroupHandleV1
-	output *wayland.Output
+	res     *ext.ExtWorkspaceGroupHandleV1
+	outputs map[*server.Resource]bool // output_enter sent for each live wl_output
 }
 type workspaceHandle struct {
 	res   *ext.ExtWorkspaceHandleV1
@@ -42,12 +41,16 @@ func registerWorkspaces(d *server.Display, s *Server) error {
 	})
 }
 func (m *workspaceManager) Commit(*ext.ExtWorkspaceManagerV1) {
+	ids := make([]uint64, 0, len(m.pending))
 	for _, id := range m.pending {
 		if h := m.handles[id]; h != nil && h.res.Alive() {
-			m.s.emit(ports.WorkspaceActivate{ID: id})
+			ids = append(ids, id)
 		}
 	}
 	m.pending = nil
+	if len(ids) > 0 {
+		m.s.emit(ports.WorkspaceActivate{IDs: ids})
+	}
 }
 func (m *workspaceManager) Stop(*ext.ExtWorkspaceManagerV1) {
 	m.res.SendFinished()
@@ -73,35 +76,38 @@ func (*workspaceRequests) Deactivate(*ext.ExtWorkspaceHandleV1)                 
 func (*workspaceRequests) Assign(*ext.ExtWorkspaceHandleV1, *ext.ExtWorkspaceGroupHandleV1) {}
 func (*workspaceRequests) Remove(*ext.ExtWorkspaceHandleV1)                                 {}
 
-func (m *workspaceManager) outputResource(name string) *wayland.Output {
-	o := m.s.outputByNameExact(name)
-	if o == nil {
-		return nil
-	}
-	for _, r := range o.resources {
-		if r.Client() == m.res.Client() && r.Alive() {
-			return r
-		}
-	}
-	return nil
-}
+// outputBound announces every wl_output resource bound by this client for an
+// assigned output. A client may bind the same global more than once.
 func (m *workspaceManager) outputBound(name string) bool {
 	g := m.groups[name]
-	if g == nil || !g.res.Alive() {
+	o := m.s.outputByNameExact(name)
+	if g == nil || !g.res.Alive() || o == nil {
 		return false
 	}
-	r := m.outputResource(name)
-	if r == g.output {
-		return false
+	if g.outputs == nil {
+		g.outputs = make(map[*server.Resource]bool)
 	}
-	if g.output != nil && g.output.Alive() {
-		g.res.SendOutputLeave(g.output)
-	}
-	g.output = r
-	if r != nil {
+	changed := false
+	for _, r := range o.resources {
+		if r.Client() != m.res.Client() || !r.Alive() || g.outputs[r.Resource] {
+			continue
+		}
+		g.outputs[r.Resource] = true
 		g.res.SendOutputEnter(r)
+		changed = true
 	}
-	return true
+	return changed
+}
+
+func (m *workspaceManager) leaveOutputs(g *workspaceGroup) {
+	if !g.res.Alive() {
+		return
+	}
+	for res := range g.outputs {
+		if res.Alive() {
+			g.res.SendOutputLeave(wayland.WrapOutput(res))
+		}
+	}
 }
 func (s *Server) forwardWorkspaces(ctx context.Context) {
 	for {
@@ -126,21 +132,37 @@ func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
 		m.update(snapshot)
 	}
 }
+func workspaceState(w ports.WorkspaceInfo) uint32 {
+	var state uint32
+	if w.Active {
+		state |= uint32(ext.ExtWorkspaceHandleV1StateActive)
+	}
+	if w.Hidden {
+		state |= uint32(ext.ExtWorkspaceHandleV1StateHidden)
+	}
+	return state
+}
+func (m *workspaceManager) sendCoordinates(r *ext.ExtWorkspaceHandleV1, index int) {
+	var b [4]byte
+	binary.NativeEndian.PutUint32(b[:], uint32(index))
+	r.SendCoordinates(b[:])
+}
 func (m *workspaceManager) update(snapshot ports.Workspaces) {
 	if !m.res.Alive() {
 		return
 	}
 	wanted := map[string]bool{}
-	ids := map[uint64]bool{}
+	infos := map[uint64]ports.WorkspaceInfo{}
 	for _, out := range snapshot.Outputs {
 		wanted[out.Name] = true
 		for _, w := range out.Workspaces {
-			ids[w.ID] = true
+			infos[w.ID] = w
 		}
 	}
 	// Move existing workspaces before retiring their old output group.
 	for id, h := range m.handles {
-		if !ids[id] {
+		info, exists := infos[id]
+		if !exists || info.Configured != h.info.Configured {
 			if g := m.groups[h.group]; g != nil && g.res.Alive() && h.res.Alive() {
 				g.res.SendWorkspaceLeave(h.res)
 			}
@@ -152,27 +174,22 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 	}
 	for _, out := range snapshot.Outputs {
 		g := m.groups[out.Name]
-		if g != nil && !g.res.Alive() {
-			delete(m.groups, out.Name)
-			g = nil
-		}
 		if g == nil {
 			r, err := ext.NewExtWorkspaceGroupHandleV1(m.res.Client(), 1, 0, m)
 			if err != nil {
 				continue
 			}
-			g = &workspaceGroup{res: r}
+			g = &workspaceGroup{res: r, outputs: map[*server.Resource]bool{}}
 			m.groups[out.Name] = g
 			m.res.SendWorkspaceGroup(r)
 			r.SendCapabilities(0)
 		}
 		m.outputBound(out.Name)
 		for _, w := range out.Workspaces {
-			h := m.handles[w.ID]
-			if h != nil && !h.res.Alive() {
-				delete(m.handles, w.ID)
-				h = nil
+			if !g.res.Alive() {
+				continue
 			}
+			h := m.handles[w.ID]
 			if h == nil {
 				r, err := ext.NewExtWorkspaceHandleV1(m.res.Client(), 1, 0, &workspaceRequests{m})
 				if err != nil {
@@ -184,7 +201,29 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 				if w.Configured != "" {
 					r.SendId(w.Configured)
 				}
+				r.SendName(w.Name)
+				m.sendCoordinates(r, w.Index)
+				r.SendState(workspaceState(w))
 				r.SendCapabilities(uint32(ext.ExtWorkspaceHandleV1WorkspaceCapabilitiesActivate))
+				h.info = w
+			}
+			if !h.res.Alive() {
+				continue
+			}
+			if h.info.ID != w.ID {
+				continue
+			}
+			if h.info != w {
+				if h.info.Name != w.Name {
+					h.res.SendName(w.Name)
+				}
+				if h.info.Index != w.Index {
+					m.sendCoordinates(h.res, w.Index)
+				}
+				if h.info.Active != w.Active || h.info.Hidden != w.Hidden {
+					h.res.SendState(workspaceState(w))
+				}
+				h.info = w
 			}
 			if h.group != out.Name {
 				if old := m.groups[h.group]; old != nil && old.res.Alive() && h.res.Alive() {
@@ -193,34 +232,11 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 				g.res.SendWorkspaceEnter(h.res)
 				h.group = out.Name
 			}
-			if !reflect.DeepEqual(h.info, w) {
-				if h.info.Name != w.Name {
-					h.res.SendName(w.Name)
-				}
-				if h.info.Index != w.Index || h.info.ID == 0 {
-					var b [4]byte
-					binary.NativeEndian.PutUint32(b[:], uint32(w.Index))
-					h.res.SendCoordinates(b[:])
-				}
-				if h.info.Active != w.Active || h.info.Hidden != w.Hidden || h.info.ID == 0 {
-					var state uint32
-					if w.Active {
-						state |= uint32(ext.ExtWorkspaceHandleV1StateActive)
-					}
-					if w.Hidden {
-						state |= uint32(ext.ExtWorkspaceHandleV1StateHidden)
-					}
-					h.res.SendState(state)
-				}
-				h.info = w
-			}
 		}
 	}
 	for name, g := range m.groups {
 		if !wanted[name] {
-			if g.output != nil && g.output.Alive() && g.res.Alive() {
-				g.res.SendOutputLeave(g.output)
-			}
+			m.leaveOutputs(g)
 			if g.res.Alive() {
 				g.res.SendRemoved()
 			}

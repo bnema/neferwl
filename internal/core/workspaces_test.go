@@ -9,6 +9,13 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+func TestWorkspaceChannelCapacity(t *testing.T) {
+	_, err := core.New(config.Defaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)})
+	if err == nil {
+		t.Fatal("expected capacity-1 validation")
+	}
+}
+
 func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev", Hidden: true})
@@ -59,17 +66,18 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	}
 	// Activation on B also focuses B, without disturbing A's active workspace.
 	bID := two.Outputs[1].Workspaces[0].ID
-	client <- ports.WorkspaceActivate{ID: bID}
+	client <- ports.WorkspaceActivate{IDs: []uint64{bID}}
 	for receive(t, state).Output != "B" {
 	}
-	client <- ports.WorkspaceActivate{ID: spare}
+	// Both requests are applied in order in one event: A wins final focus.
+	client <- ports.WorkspaceActivate{IDs: []uint64{bID, spare}}
 	for receive(t, state).Output != "A" {
 	}
 	active := receive(t, snapshots)
 	if !active.Outputs[0].Workspaces[1].Active || active.Outputs[1].Workspaces[0].Active != true {
 		t.Fatal(active)
 	}
-	client <- ports.WorkspaceActivate{ID: 999999999}
+	client <- ports.WorkspaceActivate{IDs: []uint64{999999999}}
 	scene(t, scenes)
 	select {
 	case v := <-snapshots:
@@ -77,7 +85,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	default:
 	}
 	// Move the populated workspace right; its ID follows it.
-	client <- ports.WorkspaceActivate{ID: id}
+	client <- ports.WorkspaceActivate{IDs: []uint64{id}}
 	receive(t, snapshots)
 	input <- ports.KeyEvent{Keysym: "Right", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
 	move := receive(t, snapshots)
