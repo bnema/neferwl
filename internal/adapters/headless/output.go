@@ -24,6 +24,7 @@ type Options struct {
 	LoadCursor    func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
+	HDR           bool // virtual HDR output for protocol testing only
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
 	// Name and Presented report what the output has read after each
@@ -39,6 +40,15 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
+	if opts.HDR {
+		r.SetHDR(203)
+		if _, err := r.ExportTargets(1, nil); err != nil {
+			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
+			r.SetHDR(0)
+		} else {
+			opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
+		}
+	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
 	haveScene, dirty := false, false

@@ -118,6 +118,7 @@ func run() error {
 	inputPath := flags.String("input", "", "headless input script path (- for stdin)")
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	noXwayland := flags.Bool("no-xwayland", false, "no X11 display for X11 apps")
+	headlessHDR := flags.Bool("headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; input-motion logs every pointer motion)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
@@ -132,6 +133,9 @@ func run() error {
 		err := usageError{fmt.Errorf("invalid backend %q", *backend)}
 		fmt.Fprintln(os.Stderr, err)
 		return err
+	}
+	if *headlessHDR && *backend != "headless" {
+		return usageError{fmt.Errorf("--headless-hdr requires --backend=headless")}
 	}
 	if *screenshot != "" && *backend != "headless" {
 		err := usageError{fmt.Errorf("--screenshot requires --backend=headless")}
@@ -227,7 +231,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, Session: *session, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, HeadlessHDR: *headlessHDR, Session: *session, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil

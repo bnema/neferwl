@@ -36,6 +36,8 @@ type Options struct {
 	NoTerminal bool
 	// NoXwayland skips the X11 display even when the config enables it.
 	NoXwayland bool
+	// HeadlessHDR enables a virtual HDR output for protocol testing only.
+	HeadlessHDR bool
 	// Session exports the displays to D-Bus and systemd user services
 	// before any client starts, and withdraws them on exit.
 	Session       bool
@@ -240,7 +242,17 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
+		if opts.HeadlessHDR {
+			for i := range sizes {
+				name := fmt.Sprintf("HEADLESS-%d", i+1)
+				select {
+				case outputFormats <- ports.OutputFormats{Output: name, HDR: &ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
