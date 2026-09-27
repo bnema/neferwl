@@ -112,7 +112,7 @@ func (r *Renderer) createPipeline() error {
 	if err := r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline); err != nil {
 		return err
 	}
-	return r.createGraphicsPipeline(composeVert, composeHDRFrag, vk.FormatR16g16b16a16Sfloat, r.compose.layout, true, &r.compose.hdrPipeline)
+	return nil
 }
 
 func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, pipeline *vk.Pipeline) error {
