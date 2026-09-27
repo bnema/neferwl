@@ -3,26 +3,63 @@ package vulkan
 import (
 	"encoding/binary"
 	"math"
+	"sync"
 	"unsafe"
 )
 
-// hdrPixel converts one RGBA16F linear-light pixel to clipped BGRA8 at
-// readback time only. No conversion work is done on normal presentation.
-func (r *Renderer) hdrPixel(x, y int) [4]byte {
-	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*8)
-	pos := (y*r.width + x) * 8
-	var out [4]byte
-	for i := 0; i < 3; i++ {
-		v := math.Max(0, math.Min(float64(halfFloat(binary.LittleEndian.Uint16(src[pos+i*2:]))), 1))
-		if v <= .0031308 {
-			v *= 12.92
-		} else {
-			v = 1.055*math.Pow(v, 1/2.4) - .055
-		}
-		out[2-i] = byte(math.Round(v * 255))
+// halfToSRGB maps every binary16 bit pattern to its clipped sRGB byte.
+// It is built on the first HDR capture; normal presentation never touches it.
+var halfToSRGB = sync.OnceValue(func() *[1 << 16]byte {
+	var t [1 << 16]byte
+	for i := range t {
+		t[i] = encodeSRGB8(halfFloat(uint16(i)))
 	}
-	out[3] = 255
-	return out
+	return &t
+})
+
+// encodeSRGB8 clips a linear-light value to [0, 1] and encodes it as sRGB.
+func encodeSRGB8(f float32) byte {
+	v := float64(f)
+	if !(v > 0) { // also maps NaN to black
+		return 0
+	}
+	v = math.Min(v, 1)
+	if v <= .0031308 {
+		v *= 12.92
+	} else {
+		v = 1.055*math.Pow(v, 1/2.4) - .055
+	}
+	return byte(math.Round(v * 255))
+}
+
+// hdrRow converts n RGBA16F linear-light pixels to opaque BGRA8 sRGB.
+func hdrRow(dst, src []byte, n int) {
+	t := halfToSRGB()
+	_ = dst[n*4-1]
+	_ = src[n*8-1]
+	for x := range n {
+		s, d := src[x*8:x*8+6], dst[x*4:x*4+4]
+		d[0] = t[binary.LittleEndian.Uint16(s[4:])]
+		d[1] = t[binary.LittleEndian.Uint16(s[2:])]
+		d[2] = t[binary.LittleEndian.Uint16(s[0:])]
+		d[3] = 255
+	}
+}
+
+// hdrRegion converts a region of the mapped HDR readback, row by row.
+// swapRB writes RGBA instead of BGRA.
+func (r *Renderer) hdrRegion(dst []byte, stride, x0, y0, w, h int, swapRB bool) {
+	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*8)
+	for y := range h {
+		start := ((y0+y)*r.width + x0) * 8
+		row := dst[y*stride : y*stride+w*4]
+		hdrRow(row, src[start:start+w*8], w)
+		if swapRB {
+			for i := 0; i < len(row); i += 4 {
+				row[i], row[i+2] = row[i+2], row[i]
+			}
+		}
+	}
 }
 
 // halfFloat expands an IEEE 754 binary16 component for capture only.

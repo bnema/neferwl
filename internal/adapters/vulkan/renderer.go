@@ -316,13 +316,7 @@ func (r *Renderer) Pixels() *image.RGBA {
 		return out
 	}
 	if r.last == &r.hdrOwn {
-		for y := range r.height {
-			for x := range r.width {
-				c := r.hdrPixel(x, y)
-				i := (y*r.width + x) * 4
-				out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = c[2], c[1], c[0], 255
-			}
-		}
+		r.hdrRegion(out.Pix, out.Stride, 0, 0, r.width, r.height, true)
 		return out
 	}
 	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
@@ -347,13 +341,7 @@ func (r *Renderer) Capture(region image.Rectangle, dst []byte, stride int) error
 		return err
 	}
 	if r.last == &r.hdrOwn {
-		for y := range h {
-			for x := range w {
-				c := r.hdrPixel(region.Min.X+x, region.Min.Y+y)
-				i := y*stride + x*4
-				copy(dst[i:i+4], c[:])
-			}
-		}
+		r.hdrRegion(dst, stride, region.Min.X, region.Min.Y, w, h, false)
 		return nil
 	}
 	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*4)
