@@ -210,6 +210,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				cards[name] = c
 				readySources[name] = o.Ready()
+				if progress.active && !want(currentConfig).Disabled[name] {
+					progress.required[name] = true
+				}
 				source := readySources[name]
 				stopped := make(chan struct{})
 				stopReady[name] = stopped
@@ -272,6 +275,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-hotplug:
 			log.Info().Msg("hotplug")
 			scan()
+			if progress.active {
+				running := map[string]<-chan error{}
+				for name := range set.outs {
+					running[name] = readySources[name]
+				}
+				complete(progress.scanned(running))
+			}
 		case currentConfig = <-configs:
 			op++
 			if timer != nil {
