@@ -289,7 +289,7 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	}
 	o.hdrSettings = card.want.HDR[c.name]
 	if o.hdrSettings.SDRBrightness == 0 {
-		o.hdrSettings.SDRBrightness = 203
+		o.hdrSettings.SDRBrightness = ports.DefaultSDRBrightness
 	}
 	o.hdr = detectHDR(o.monitor, o.hdrProps)
 	log.Info().Str("component", "drm").Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")

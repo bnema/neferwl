@@ -209,7 +209,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 					return &c.Outputs[i]
 				}
 				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: 203})
+				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
 			if base, ok := strings.CutSuffix(name, ".primary"); ok {

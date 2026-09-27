@@ -85,7 +85,7 @@ func wantFromConfig(cfg ports.Config) drm.Want {
 	for _, o := range cfg.Outputs {
 		nits := o.SDRBrightness
 		if nits == 0 {
-			nits = 203
+			nits = ports.DefaultSDRBrightness
 		}
 		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits}
 		if o.Off {

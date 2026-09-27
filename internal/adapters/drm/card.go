@@ -75,11 +75,6 @@ func (c *Card) SetFormats(ch chan<- ports.OutputFormats) { c.formats = ch }
 
 // SetWant replaces the connector config; the next Scan applies it.
 func (c *Card) SetWant(w Want) {
-	for name, o := range c.outputs {
-		if w.HDR[name].Enabled && !c.want.HDR[name].Enabled && !o.hdr.Capable {
-			c.log.Warn().Str("component", "drm").Str("connector", name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
-		}
-	}
 	c.want = w
 }
 
@@ -106,7 +101,11 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		seen[conn.name] = true
 		mode := c.want.pickMode(conn)
 		if o := c.outputs[conn.name]; o != nil {
-			if o.mode == mode {
+			settings := c.want.HDR[conn.name]
+			if settings.SDRBrightness == 0 {
+				settings.SDRBrightness = ports.DefaultSDRBrightness
+			}
+			if o.mode == mode && o.hdrSettings == settings {
 				continue
 			}
 			replaced = append(replaced, conn.name)

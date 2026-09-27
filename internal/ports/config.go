@@ -1,5 +1,8 @@
 package ports
 
+// DefaultSDRBrightness is the BT.2408 SDR reference white in HDR, in nits.
+const DefaultSDRBrightness = 203
+
 // OutputConfig configures one connector. Name is the connector (e.g. "DP-2").
 // Mode is "WxH" (highest refresh) or "WxH@Hz" (closest refresh); empty picks the
 // monitor's preferred mode. Off disables the connector.
@@ -16,8 +19,8 @@ type OutputConfig struct {
 	Off           bool
 	Scale         float64
 	Primary       bool
-	HDR           bool // opt-in; activation is not yet implemented
-	SDRBrightness int  // nits; default 203
+	HDR           bool // opt-in to HDR10 on capable outputs
+	SDRBrightness int  // nits; default DefaultSDRBrightness
 	ScaleOnly     bool
 }
 

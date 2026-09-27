@@ -65,6 +65,7 @@ func objProps(fd int, obj, typ uint32) (map[string][2]uint64, error) {
 type connectorHDRProps struct {
 	Metadata, Colorspace, MaxBPC uint32
 	BT2020Value                  uint64
+	DefaultValue                 uint64 // connector Colorspace "Default" enum
 	MaxBPCValue                  uint64 // current value for eventual restoration
 }
 
@@ -79,6 +80,11 @@ func readConnectorHDRProps(fd int, props map[string][2]uint64) connectorHDRProps
 			p.enumBlobs = uint64(uintptr(unsafe.Pointer(&enums[0])))
 			if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) == nil {
 				out.Colorspace, out.BT2020Value = bt2020Enum(id, enums[:min(int(p.countEn), len(enums))])
+				for _, e := range enums[:min(int(p.countEn), len(enums))] {
+					if unix.ByteSliceToString(e.name[:]) == "Default" {
+						out.DefaultValue = e.value
+					}
+				}
 			}
 			runtime.KeepAlive(enums)
 		}
