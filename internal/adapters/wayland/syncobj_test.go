@@ -387,6 +387,47 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 	expectProtocolError(t, c, mgr, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorInvalidTimeline))
 }
 
+// A synchronized subsurface dropped before its acquire is ready must
+// retire its release point without sending wl_buffer.release.
+func TestSyncobjDroppedSubsurfaceCommit(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	c := h.c
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	mgr := bindProtocol(t, c, "wp_linux_drm_syncobj_manager_v1")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, h.surf)
+	registerProtocol(t, c, sub)
+	syncChild := c.AllocateID()
+	requestProtocol(t, c, mgr, linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestGetSurface, syncChild, child)
+	registerProtocol(t, c, syncChild)
+	b := h.dmabuf()
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+	requestProtocol(t, c, syncChild, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetAcquirePoint, h.timeline, uint32(0), uint32(21))
+	requestProtocol(t, c, syncChild, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetReleasePoint, h.timeline, uint32(0), uint32(22))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	h.fire(21) // dropping before acquire means the later signal must not release
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.signalled(); len(got) != 0 {
+		t.Fatalf("premature release point: %v", got)
+	}
+	select {
+	case <-h.releases[b].released:
+		t.Fatal("explicit sync sent wl_buffer.release")
+	default:
+	}
+}
+
 // A commit dropped before its acquire point has a fence signals nothing
 // (the client has not submitted that point) and sends no wl_buffer.release;
 // the waiter closes its eventfd and no acquire file is left open.
