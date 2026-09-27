@@ -52,7 +52,6 @@ type surface struct {
 	// cachedTree is never modified once returned to emitContent.
 	cachedTree                 []ports.Subsurface
 	treeDirty                  bool
-	viewportErrorLogged        bool
 	commitFresh, commitSkipped bool
 	queuedScale                int
 	queuedBuffer               uint32

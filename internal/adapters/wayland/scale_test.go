@@ -285,6 +285,59 @@ func TestViewportApplyErrors(t *testing.T) {
 	}
 }
 
+// A client rounds the source position and size to 1/256 independently, so
+// their sum can pass the buffer edge by a unit: that is accepted. The
+// values are a real rejected source (y 213.86, height 1946.14 on 2160 rows).
+// One pixel past the edge is still out_of_buffer.
+func TestViewportSourceEdgeRounding(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		y, h  int32
+		error bool
+	}{
+		{"rounded edge", 54749, 498212, false},
+		{"one pixel past", 54749, 498212 + 256, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _, dir := contentServer(t)
+			c := protocolClient(t, s, dir)
+			comp := bindProtocol(t, c, "wl_compositor")
+			vpm := bindProtocol(t, c, "wp_viewporter")
+			shm := bindProtocol(t, c, "wl_shm")
+			registerProtocol(t, c, shm)
+			surf, vp := c.AllocateID(), c.AllocateID()
+			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+			requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
+			registerProtocol(t, c, vp)
+			const w, h = 4, 2160
+			fd, err := unix.MemfdCreate("viewport-edge", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(fd)
+			if err := unix.Ftruncate(fd, w*h*4); err != nil {
+				t.Fatal(err)
+			}
+			pool, buf := c.AllocateID(), c.AllocateID()
+			registerProtocol(t, c, pool)
+			registerProtocol(t, c, buf)
+			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(w*h*4)); err != nil {
+				t.Fatal(err)
+			}
+			requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(w), int32(h), int32(w*4), uint32(0))
+			requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(w), int32(100))
+			requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), tc.y, int32(w*256), tc.h)
+			requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+			requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+			if tc.error {
+				expectProtocolError(t, c, vp, uint32(viewporter.WpViewportErrorOutOfBuffer))
+				return
+			}
+			roundtrip(t, c)
+		})
+	}
+}
+
 // A NULL attach unmaps the surface: viewporter.xml exempts it from
 // out_of_buffer, so a source larger than the previous buffer is not an error.
 // A later commit that keeps the retained buffer is still validated.

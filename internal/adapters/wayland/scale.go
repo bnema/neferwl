@@ -214,7 +214,11 @@ func (s *surface) source(bw, bh int) ([4]float32, bool) {
 	}
 	v := s.committedViewport.src
 	scale := float32(max(s.bufferScale, 1)) / 256
-	return [4]float32{float32(v[0]) * scale, float32(v[1]) * scale, float32(v[2]) * scale, float32(v[3]) * scale}, true
+	src := [4]float32{float32(v[0]) * scale, float32(v[1]) * scale, float32(v[2]) * scale, float32(v[3]) * scale}
+	// validateViewport tolerates a rounding overshoot: sample inside the buffer.
+	src[2] = min(src[2], float32(bw)-src[0])
+	src[3] = min(src[3], float32(bh)-src[1])
+	return src, true
 }
 
 func (s *surface) validateViewport(bw, bh int) bool {
@@ -227,10 +231,16 @@ func (s *surface) validateViewport(bw, bh int) bool {
 		return false
 	}
 	// int64 prevents overflow when adding signed fixed coordinates.
-	if int64(v.src[0])+int64(v.src[2]) > int64(bw)*256/int64(max(s.bufferScale, 1)) ||
-		int64(v.src[1])+int64(v.src[3]) > int64(bh)*256/int64(max(s.bufferScale, 1)) {
-		if !s.viewportErrorLogged {
-			s.viewportErrorLogged = true
+	// Position and size are each rounded to 1/256 by the client, so an edge
+	// computed in floating point can land up to two units past the buffer:
+	// that rounding is tolerated, anything larger is a real overflow.
+	const rounding = 2
+	if int64(v.src[0])+int64(v.src[2]) > int64(bw)*256/int64(max(s.bufferScale, 1))+rounding ||
+		int64(v.src[1])+int64(v.src[3]) > int64(bh)*256/int64(max(s.bufferScale, 1))+rounding {
+		// The error disconnects the client: log every occurrence, with the
+		// source edges and limits in pixels to show which bound failed.
+		{
+			limitW, limitH := float64(bw)/float64(max(s.bufferScale, 1)), float64(bh)/float64(max(s.bufferScale, 1))
 			surfaceID, viewportID, bufferID := uint32(0), uint32(0), uint32(0)
 			if s.wl != nil {
 				surfaceID = s.wl.ID()
@@ -245,7 +255,10 @@ func (s *surface) validateViewport(bw, bh int) bool {
 				Bool("fresh", s.commitFresh).Bool("retained", !s.commitFresh).Bool("skipped_destroyed", s.commitSkipped).
 				Uint32("buffer", bufferID).Uint32("queued_buffer", s.queuedBuffer).Int("buffer_width", bw).Int("buffer_height", bh).
 				Int("committed_scale", s.bufferScale).Int("queued_scale", s.queuedScale).
-				Ints32("raw_source", []int32{int32(v.src[0]), int32(v.src[1]), int32(v.src[2]), int32(v.src[3])}).Msg("viewport source exceeds buffer")
+				Ints32("raw_source", []int32{int32(v.src[0]), int32(v.src[1]), int32(v.src[2]), int32(v.src[3])}).
+				Float64("source_right", float64(int64(v.src[0])+int64(v.src[2]))/256).Float64("limit_w", limitW).
+				Float64("source_bottom", float64(int64(v.src[1])+int64(v.src[3]))/256).Float64("limit_h", limitH).
+				Bool("destination_set", v.dest).Msg("viewport source exceeds buffer")
 		}
 		s.viewportError(viewporter.WpViewportErrorOutOfBuffer, "source exceeds buffer")
 		return false
