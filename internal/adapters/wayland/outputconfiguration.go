@@ -75,7 +75,8 @@ func (c *outputConfiguration) submit(r *wlr.ZwlrOutputConfigurationV1, test bool
 		return
 	}
 	c.used = true
-	if c.cancelled || c.manager.s.managementSerial != c.serial {
+	if c.manager.s.managementSerial != c.serial {
+		c.cancelled = true
 		r.SendCancelled()
 		return
 	}
@@ -118,7 +119,7 @@ func (h *headConfiguration) SetMode(r *wlr.ZwlrOutputConfigurationHeadV1, mode *
 		return
 	}
 	head := h.parent.manager.heads[h.change.Name]
-	if mode == nil {
+	if head == nil || mode == nil || !mode.Resource.Alive() {
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidMode), "invalid mode")
 		return
 	}

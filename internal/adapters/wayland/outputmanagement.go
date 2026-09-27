@@ -43,6 +43,7 @@ func registerOutputManagement(d *server.Display, s *Server) error {
 func (m *outputManager) Stop(_ *wlr.ZwlrOutputManagerV1) {
 	m.stopped = true
 	m.res.SendFinished()
+	m.res.Destroy()
 }
 func (m *outputManager) CreateConfiguration(r *wlr.ZwlrOutputManagerV1, id, serial uint32) {
 	c := &outputConfiguration{manager: m, heads: map[string]*headConfiguration{}, serial: serial}
@@ -51,8 +52,21 @@ func (m *outputManager) CreateConfiguration(r *wlr.ZwlrOutputManagerV1, id, seri
 		return
 	}
 	c.res = res
+	res.OnDestroy = func() {
+		for _, h := range c.heads {
+			if h.res != nil {
+				h.res.Destroy()
+			}
+		}
+		for id, pending := range m.s.outputReplies {
+			if pending == c {
+				delete(m.s.outputReplies, id)
+			}
+		}
+	}
 	if serial != m.s.managementSerial {
 		c.cancelled = true
+		c.used = true
 		res.SendCancelled()
 	}
 }
@@ -83,6 +97,10 @@ func (m *outputManager) addHead(info ports.OutputHead) {
 		}
 		h.modes[mr.Resource] = mode
 		h.modeResources = append(h.modeResources, mr)
+		mr.OnDestroy = func() {
+			delete(h.modes, mr.Resource)
+			h.modeResources = removeItem(h.modeResources, mr)
+		}
 		res.SendMode(mr)
 		mr.SendSize(int32(mode.Width), int32(mode.Height))
 		mr.SendRefresh(int32(mode.RefreshMilli))
@@ -90,6 +108,7 @@ func (m *outputManager) addHead(info ports.OutputHead) {
 			mr.SendPreferred()
 		}
 	}
+	m.sendState(h, info)
 }
 func (m *outputManager) update() {
 	if m.stopped {
@@ -122,38 +141,38 @@ func (m *outputManager) update() {
 		}
 		if h == nil {
 			m.addHead(info)
-			h = m.heads[info.Info.Name]
-		}
-		if h == nil {
-			continue
+			continue // addHead has already sent the initial state.
 		}
 		changed := !reflect.DeepEqual(h.info, info)
 		placementChanged := m.places[info.Info.Name] != m.s.placementFor(info.Info.Name)
 		if !changed && !placementChanged {
 			continue
 		}
-		h.info = info
-		enabled := int32(0)
-		if info.Enabled {
-			enabled = 1
-		}
-		h.res.SendEnabled(enabled)
-		if info.Enabled {
-			for res, mode := range h.modes {
-				if info.Current != nil && mode.Width == info.Current.Width && mode.Height == info.Current.Height && mode.RefreshMilli == info.Current.RefreshMilli {
-					h.res.SendCurrentMode(wlr.WrapZwlrOutputModeV1(res))
-					break
-				}
-			}
-			place := m.s.placementFor(info.Info.Name)
-			if place.Info.Name != "" {
-				h.res.SendPosition(int32(place.X), int32(place.Y))
-				h.res.SendScale(server.FixedFromFloat(place.Scale))
-			}
-			h.res.SendTransform(0)
-		}
-		m.places[info.Info.Name] = m.s.placementFor(info.Info.Name)
+		m.sendState(h, info)
 	}
+}
+func (m *outputManager) sendState(h *managementHead, info ports.OutputHead) {
+	h.info = info
+	enabled := int32(0)
+	if info.Enabled {
+		enabled = 1
+	}
+	h.res.SendEnabled(enabled)
+	if info.Enabled {
+		for res, mode := range h.modes {
+			if info.Current != nil && mode.Width == info.Current.Width && mode.Height == info.Current.Height && mode.RefreshMilli == info.Current.RefreshMilli {
+				h.res.SendCurrentMode(wlr.WrapZwlrOutputModeV1(res))
+				break
+			}
+		}
+		place := m.s.placementFor(info.Info.Name)
+		if place.Info.Name != "" {
+			h.res.SendPosition(int32(place.X), int32(place.Y))
+			h.res.SendScale(server.FixedFromFloat(place.Scale))
+		}
+		h.res.SendTransform(0)
+	}
+	m.places[info.Info.Name] = m.s.placementFor(info.Info.Name)
 }
 func (s *Server) placementFor(name string) ports.OutputPlacement {
 	for _, p := range s.outputPlaces {

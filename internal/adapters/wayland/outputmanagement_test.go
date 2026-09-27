@@ -13,9 +13,10 @@ import (
 
 type managementEvents struct {
 	wlturbo.BaseProxy
-	events chan [2]uint32
-	client *wlturbo.Display
-	modes  chan uint32
+	events     chan [2]uint32
+	client     *wlturbo.Display
+	modes      chan uint32
+	headEvents chan [2]uint32
 }
 
 func (p *managementEvents) Dispatch(e *wlturbo.Event) {
@@ -24,7 +25,7 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 		msg[1] = e.Uint32()
 	}
 	if e.Opcode == uint16(wlr.ZwlrOutputManagerV1EventHead) {
-		h := &managementHeadEvents{client: p.client, modes: p.modes}
+		h := &managementHeadEvents{client: p.client, modes: p.modes, events: p.headEvents}
 		h.SetID(msg[1])
 		p.client.Context().Register(h)
 	}
@@ -35,9 +36,18 @@ type managementHeadEvents struct {
 	wlturbo.BaseProxy
 	client *wlturbo.Display
 	modes  chan uint32
+	events chan [2]uint32
 }
 
 func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
+	if p.events != nil {
+		value := uint32(0)
+		switch uint32(e.Opcode) {
+		case wlr.ZwlrOutputHeadV1EventEnabled, wlr.ZwlrOutputHeadV1EventCurrentMode, wlr.ZwlrOutputHeadV1EventTransform:
+			value = e.Uint32()
+		}
+		p.events <- [2]uint32{uint32(e.Opcode), value}
+	}
 	if e.Opcode == uint16(wlr.ZwlrOutputHeadV1EventMode) {
 		mode := &protocolProxy{}
 		mode.SetID(e.Uint32())
@@ -350,5 +360,232 @@ func TestOutputManagementProtocolErrors(t *testing.T) {
 			}
 			expectProtocolError(t, c, object, tc.code)
 		})
+	}
+}
+
+func TestOutputManagementInitialHeadState(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(map[bool]string{true: "enabled", false: "disabled"}[enabled], func(t *testing.T) {
+			s, _, _, _, dir := outputTestServer(t)
+			heads := testHead()
+			heads.Heads[0].Enabled = enabled
+			if !s.display.Do(func() { s.setOutputHeads(heads) }) {
+				t.Fatal("display stopped")
+			}
+			c := protocolClient(t, s, dir)
+			id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+			p := &managementEvents{events: make(chan [2]uint32, 32), headEvents: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+			p.SetID(id)
+			c.Context().Register(p)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			for ev := recvManagement(t, p.events); ev[0] != wlr.ZwlrOutputManagerV1EventDone; ev = recvManagement(t, p.events) {
+			}
+			mode := <-p.modes
+			found := map[uint32]bool{}
+			for len(p.headEvents) > 0 {
+				ev := <-p.headEvents
+				found[ev[0]] = true
+				if ev[0] == wlr.ZwlrOutputHeadV1EventEnabled && (ev[1] != 0) != enabled {
+					t.Fatalf("enabled event: %v", ev)
+				}
+				if ev[0] == wlr.ZwlrOutputHeadV1EventCurrentMode && ev[1] != mode {
+					t.Fatalf("current mode: %v, want %d", ev, mode)
+				}
+			}
+			if !found[wlr.ZwlrOutputHeadV1EventMode] || !found[wlr.ZwlrOutputHeadV1EventEnabled] || found[wlr.ZwlrOutputHeadV1EventCurrentMode] != enabled || found[wlr.ZwlrOutputHeadV1EventTransform] != enabled {
+				t.Fatalf("head state: %v", found)
+			}
+		})
+	}
+}
+
+func TestOutputManagementStopDestroysManager(t *testing.T) {
+	s, _, _, _, dir := outputTestServer(t)
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	p := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+	p.SetID(id)
+	c.Context().Register(p)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestStop)
+	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputManagerV1EventDone)
+	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputManagerV1EventFinished)
+	if !s.display.Do(func() {
+		if len(s.outputManagers) != 0 {
+			t.Errorf("manager retained: %d", len(s.outputManagers))
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+}
+
+func TestOutputManagementReleasedModeNotReused(t *testing.T) {
+	s, _, _, _, dir := outputTestServer(t)
+	if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+		t.Fatal("display stopped")
+	}
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	p := &managementEvents{events: make(chan [2]uint32, 32), headEvents: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+	p.SetID(id)
+	c.Context().Register(p)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for ev := recvManagement(t, p.events); ev[0] != wlr.ZwlrOutputManagerV1EventDone; ev = recvManagement(t, p.events) {
+	}
+	mode := <-p.modes
+	for len(p.headEvents) > 0 {
+		<-p.headEvents
+	}
+	requestProtocol(t, c, mode, wlr.ZwlrOutputModeV1RequestRelease)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.display.Do(func() {
+		m := s.outputManagers[0]
+		h := m.heads["HEADLESS-1"]
+		if len(h.modes) != 0 || len(h.modeResources) != 0 {
+			t.Errorf("released mode retained: %d %d", len(h.modes), len(h.modeResources))
+		}
+		updated := testHead()
+		updated.Heads[0].Current = nil
+		s.setOutputHeads(updated)
+	}) {
+		t.Fatal("display stopped")
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.headEvents) > 0 {
+		if ev := <-p.headEvents; ev[0] == wlr.ZwlrOutputHeadV1EventCurrentMode {
+			t.Fatalf("dead mode referenced: %v", ev)
+		}
+	}
+}
+
+func managementSetup(t *testing.T) (*Server, *wlturbo.Display, uint32, uint32, uint32, uint32) {
+	t.Helper()
+	s, _, _, _, dir := outputTestServer(t)
+	if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+		t.Fatal("display stopped")
+	}
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	p := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+	p.SetID(id)
+	c.Context().Register(p)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	head := recvManagement(t, p.events)[1]
+	var done [2]uint32
+	for done[0] != wlr.ZwlrOutputManagerV1EventDone {
+		done = recvManagement(t, p.events)
+	}
+	return s, c, id, head, <-p.modes, done[1]
+}
+
+func TestOutputManagementSetModeAfterHotplug(t *testing.T) {
+	s, c, id, head, mode, serial := managementSetup(t)
+	cfg := c.AllocateID()
+	registerProtocol(t, c, cfg)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial)
+	ch := c.AllocateID()
+	registerProtocol(t, c, ch)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.display.Do(func() { s.setOutputHeads(ports.OutputHeads{}) }) {
+		t.Fatal("display stopped")
+	}
+	requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetMode, mode)
+	expectProtocolError(t, c, ch, uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidMode))
+}
+
+func TestOutputManagementDestroyConfigurationChildren(t *testing.T) {
+	s, c, id, head, _, serial := managementSetup(t)
+	cfg := c.AllocateID()
+	registerProtocol(t, c, cfg)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial)
+	ch := c.AllocateID()
+	registerProtocol(t, c, ch)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var child *wlr.ZwlrOutputConfigurationHeadV1
+	if !s.display.Do(func() {
+		for _, pending := range s.outputReplies {
+			child = pending.heads["HEADLESS-1"].res
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+	if child == nil {
+		t.Fatal("no child resource")
+	}
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.display.Do(func() {
+		if child.Alive() {
+			t.Error("configuration head survived parent destruction")
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+}
+
+func TestOutputManagementStaleConfigurationSingleTerminal(t *testing.T) {
+	_, c, id, _, _, serial := managementSetup(t)
+	cfg := c.AllocateID()
+	p := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+	p.SetID(cfg)
+	c.Context().Register(p)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial-1)
+	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputConfigurationV1EventCancelled)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+	expectProtocolError(t, c, cfg, uint32(wlr.ZwlrOutputConfigurationV1ErrorAlreadyUsed))
+	select {
+	case ev := <-p.events:
+		t.Fatalf("second terminal event: %v", ev)
+	default:
+	}
+}
+
+func TestOutputManagementDestroyDropsPendingReply(t *testing.T) {
+	s, c, id, head, _, serial := managementSetup(t)
+	cfg := c.AllocateID()
+	registerProtocol(t, c, cfg)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial)
+	ch := c.AllocateID()
+	registerProtocol(t, c, ch)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head)
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.display.Do(func() {
+		if len(s.outputReplies) != 1 {
+			t.Errorf("pending replies: %d", len(s.outputReplies))
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !s.display.Do(func() {
+		if len(s.outputReplies) != 0 {
+			t.Errorf("orphan replies: %d", len(s.outputReplies))
+		}
+	}) {
+		t.Fatal("display stopped")
 	}
 }
