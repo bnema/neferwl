@@ -50,7 +50,7 @@ arch:
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
 # Fast, mandatory guards for tiled content publications and SHM copies.
 perf-check:
-	CGO_ENABLED=0 go test ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestHeadlessTiledSHMPlaybackBudget)$$' -count=1
+	CGO_ENABLED=0 go test ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget)$$' -count=1
 check: vet test arch fakes-check perf-check
 
 # Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
