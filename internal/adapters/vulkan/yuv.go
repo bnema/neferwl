@@ -18,6 +18,8 @@ const (
 	structureImagePlaneRequirements vk.StructureType    = 1000156003
 	structureBindImagePlane         vk.StructureType    = 1000156002
 	structureImageFormatList        vk.StructureType    = 1000147000
+	formatR10X6                     vk.Format           = 1000156007
+	formatR10X6G10X6                vk.Format           = 1000156008
 )
 
 type imageFormatList struct {
@@ -31,7 +33,7 @@ type imageFormatList struct {
 // VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT is used for per-plane sampling.
 func yuvViewFormats(format vk.Format) [3]vk.Format {
 	if format == vk.Format(1000156013) {
-		return [3]vk.Format{format, vk.FormatR16Unorm, vk.FormatR16g16Unorm}
+		return [3]vk.Format{format, formatR10X6, formatR10X6G10X6}
 	}
 	return [3]vk.Format{format, vk.FormatR8Unorm, vk.FormatR8g8Unorm}
 }
@@ -136,7 +138,7 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	}
 	yFormat, uvFormat := vk.Format(vk.FormatR8Unorm), vk.Format(vk.FormatR8g8Unorm)
 	if b.Format == fourcc('P', '0', '1', '0') {
-		yFormat, uvFormat = vk.FormatR16Unorm, vk.FormatR16g16Unorm
+		yFormat, uvFormat = formatR10X6, formatR10X6G10X6
 	}
 	view := func(aspect vk.ImageAspectFlags, f vk.Format) (vk.ImageView, error) {
 		vi := vk.ImageViewCreateInfo{SType: vk.StructureTypeImageViewCreateInfo, Image: im.image, ViewType: vk.ImageViewType2d, Format: f, SubresourceRange: vk.ImageSubresourceRange{AspectMask: aspect, LevelCount: 1, LayerCount: 1}}

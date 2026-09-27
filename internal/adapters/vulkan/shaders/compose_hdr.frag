@@ -55,8 +55,7 @@ vec4 sampleYUV(vec2 src) {
     bool tenBit = (d.misc.y & flagP010) != 0u;
     bool limited = ((d.buf.w >> 8) & 255u) == 2u;
     float maxCode = tenBit ? 1023.0 : 255.0;
-    // P010 stores its ten meaningful bits in the most significant bits.
-    if (tenBit) { y *= 65535.0 / 65472.0; cbcr *= 65535.0 / 65472.0; }
+    // Packed 10-bit plane views normalize directly to the 0..1023 code range.
     float yOff = limited ? (tenBit ? 64.0 : 16.0) / maxCode : 0.0;
     float yScale = limited ? maxCode / (tenBit ? 876.0 : 219.0) : 1.0;
     float cScale = limited ? maxCode / (tenBit ? 896.0 : 224.0) : 1.0;
