@@ -200,24 +200,25 @@ func TestWatchSymlink(t *testing.T) {
 	}
 	until("#ff0000", func(body string) { write(target, body) })
 	until("#00ff00", atomic(target))
-	// The middle link now points to another file.
+	// The middle link now points to another file, once: later writes to it
+	// reload only if the watch moved there.
 	moved := filepath.Join(dirs["other"], "config")
-	until("#0000ff", func(body string) {
-		write(moved, body)
-		link(moved, middle)
-	})
+	write(moved, "background = #0000ff\n")
+	link(moved, middle)
+	until("#0000ff", func(string) {})
 	until("#ffffff", func(body string) { write(moved, body) })
-	// The target disappears, with its directory, then comes back.
+	// The target disappears with its directory, then comes back once: later
+	// writes reload only if the missing directory was watched again.
 	if err := os.RemoveAll(dirs["other"]); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	until("#abcdef", func(body string) {
-		if err := os.MkdirAll(dirs["other"], 0700); err != nil {
-			t.Fatal(err)
-		}
-		atomic(moved)(body)
-	})
+	if err := os.Mkdir(dirs["other"], 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(moved, "background = #000001\n")
+	time.Sleep(100 * time.Millisecond) // past the 20 ms retry
+	until("#abcdef", func(body string) { write(moved, body) })
 	// The old target no longer matters.
 	write(target, "background = #123456\n")
 	select {
