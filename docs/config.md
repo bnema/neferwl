@@ -46,7 +46,9 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 `output.<name>.hdr = on` sends HDR10 (BT.2020, PQ) to displays whose EDID and connector support it. The desktop stays SDR content, shown at `sdr-brightness` nits.
 
-Native Wayland clients can present HDR through `wp_color_manager_v1`: Mesa's Vulkan driver then offers HDR10 swapchains, so Proton or Wine with the Wayland driver and HDR-aware Wayland apps output HDR. X11 clients stay SDR.
+Native Wayland clients can present HDR through `wp_color_manager_v1`: Mesa's Vulkan driver then offers HDR10 or extended-linear fp16 swapchains, so Proton or Wine with the Wayland driver and HDR-aware Wayland apps output HDR. X11 clients stay SDR.
+
+Firefox requires `gfx.wayland.hdr=true` (restart Firefox) for Wayland HDR video. Hardware-decoded video uses NV12 (8-bit) or P010 (10-bit) DMA-BUF subsurfaces with BT.601/709/2020 coefficients, full or limited range, and chroma-location type 0 via `wp_color_representation_v1`. These multi-plane formats are offered **only if the selected Vulkan device supports disjoint DMA-BUF import**; if not offered, Firefox must fall back to an RGB video path. Current RADV on the tested AMD GPUs does not expose disjoint for NV12/P010, so zero-copy HDR video remains unavailable there. Check the compositor's advertised DMA-BUF formats and Firefox's `about:support` (Hardware Video Decoding).
 
 - Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
 - Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending.
