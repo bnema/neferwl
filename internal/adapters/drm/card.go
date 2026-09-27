@@ -136,7 +136,8 @@ func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
 	for _, id := range ids {
 		conn, err := readConnector(c.fd, id)
 		if err != nil {
-			return nil, err
+			c.log.Warn().Err(err).Uint32("connector", id).Msg("read connector for inventory")
+			continue
 		}
 		if !conn.connected || len(conn.modes) == 0 {
 			continue

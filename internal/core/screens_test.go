@@ -683,3 +683,18 @@ func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
 		t.Fatal(got, focused)
 	}
 }
+
+func TestExplicitOverlappingPositionsAndNegativeY(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1", Pos: &image.Point{X: 20, Y: -120}}, {Name: "DP-2", Pos: &image.Point{X: 20, Y: -120}}}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	if len(out.Outputs) != 2 || out.Outputs[0].Info.Name != "DP-1" || out.Outputs[1].Info.Name != "DP-2" {
+		t.Fatalf("ordering: %+v", out.Outputs)
+	}
+	for _, o := range out.Outputs {
+		if o.X != 20 || o.Y != -120 {
+			t.Fatalf("explicit position: %+v", o)
+		}
+	}
+}

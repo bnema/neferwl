@@ -884,9 +884,16 @@ func (o *Output) Close() {
 // enable/disable. What the output shows and read is reported on presented.
 func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
+		p := recover()
+		if p != nil {
+			runErr = fmt.Errorf("output panic: %v", p)
+		}
 		if o.ready != nil && !o.readySent {
 			o.ready <- runErr
 			o.readySent = true
+		}
+		if p != nil {
+			panic(p)
 		}
 	}()
 	r, err := newRenderer(o.Width(), o.Height())
