@@ -21,7 +21,8 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<
 		if dir != "" && len(sizes) > 1 {
 			dir = filepath.Join(shots, name)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
+				// Outputs already started stop and release their captures.
+				return joinErr(err, set.wait())
 			}
 		}
 		cur := &headless.Cursor{}
