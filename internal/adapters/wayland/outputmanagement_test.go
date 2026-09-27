@@ -100,8 +100,10 @@ func waitManagementEvent(t *testing.T, c *wlturbo.Display, ch <-chan [2]uint32, 
 	t.Fatal("missing management event")
 }
 func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
-	s, heads, _, _, dir := outputTestServer(t)
-	heads <- testHead()
+	s, _, _, _, dir := outputTestServer(t)
+	if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+		t.Fatal("display stopped")
+	}
 	c := protocolClient(t, s, dir)
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
