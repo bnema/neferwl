@@ -5,7 +5,48 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
+
+// A cached child buffer is not released until its role is destroyed;
+// nothing in the output could have sampled an unpublished commit.
+func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	b := shmBuffer(t, c)
+	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
+	p.SetID(b)
+	c.Context().Register(p)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.released:
+		t.Fatal("cached child buffer released before parent commit")
+	case <-time.After(40 * time.Millisecond):
+	}
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("dropped child buffer never released")
+	}
+}
 
 func TestKeepHeld(t *testing.T) {
 	now := time.Unix(100, 0)
