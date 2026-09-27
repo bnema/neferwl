@@ -39,14 +39,15 @@ type Renderer struct {
 	cursorCache cursorConversion
 	// last is the target of the last frame; readback copies it into
 	// buffer only when Pixels asks (stale until then).
-	last         *target
-	readBack     bool
-	buffer       vk.Buffer
-	bufferMemory vk.DeviceMemory
-	mapped       unsafe.Pointer
-	pool         vk.CommandPool
-	memory       vk.PhysicalDeviceMemoryProperties
-	family       uint32
+	last          *target
+	readBack      bool
+	buffer        vk.Buffer
+	bufferMemory  vk.DeviceMemory
+	readbackBytes int // bytes per pixel allocated for the mapped readback buffer
+	mapped        unsafe.Pointer
+	pool          vk.CommandPool
+	memory        vk.PhysicalDeviceMemoryProperties
+	family        uint32
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
@@ -221,29 +222,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
-	// Readback of the optional RGBA16F HDR composition uses eight bytes/pixel.
-	size := vk.DeviceSize(width) * vk.DeviceSize(height) * 8
-	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
-	if err = checked("vkCreateBuffer", r.dd.CreateBuffer(r.device, &bi, nil, &r.buffer)); err != nil {
-		return
-	}
-	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	// Readback (screenshots) reads this buffer: uncached memory is ~100x slower.
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
-	if err != nil {
-		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
-	}
-	if err != nil {
-		return
-	}
-	alloc = vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(buffer)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.bufferMemory)); err != nil {
-		return
-	}
-	if err = checked("vkBindBufferMemory", r.dd.BindBufferMemory(r.device, r.buffer, r.bufferMemory, 0)); err != nil {
-		return
-	}
-	if err = checked("vkMapMemory", r.dd.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
+	if err = r.createReadback(4); err != nil {
 		return
 	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
@@ -261,6 +240,52 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	runtime.KeepAlive(priority)
 	return
+}
+
+// createReadback replaces the host buffer only while the device is idle (at
+// construction or on an SDR→HDR transition). The caller closes on failure.
+func (r *Renderer) createReadback(bytesPerPixel int) error {
+	d := r.dd
+	if r.mapped != nil {
+		d.UnmapMemory(r.device, r.bufferMemory)
+		r.mapped = nil
+	}
+	if r.buffer != 0 {
+		d.DestroyBuffer(r.device, r.buffer, nil)
+		r.buffer = 0
+	}
+	if r.bufferMemory != 0 {
+		d.FreeMemory(r.device, r.bufferMemory, nil)
+		r.bufferMemory = 0
+	}
+	r.readbackBytes = 0
+	size := vk.DeviceSize(r.width) * vk.DeviceSize(r.height) * vk.DeviceSize(bytesPerPixel)
+	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
+	if err := checked("vkCreateBuffer", d.CreateBuffer(r.device, &bi, nil, &r.buffer)); err != nil {
+		return err
+	}
+	var req vk.MemoryRequirements
+	d.GetBufferMemoryRequirements(r.device, r.buffer, &req)
+	// Readback (screenshots) reads this buffer: prefer cached host memory.
+	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
+	if err != nil {
+		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	}
+	if err != nil {
+		return err
+	}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(buffer)", d.AllocateMemory(r.device, &alloc, nil, &r.bufferMemory)); err != nil {
+		return err
+	}
+	if err := checked("vkBindBufferMemory", d.BindBufferMemory(r.device, r.buffer, r.bufferMemory, 0)); err != nil {
+		return err
+	}
+	if err := checked("vkMapMemory", d.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
+		return err
+	}
+	r.readbackBytes = bytesPerPixel
+	return nil
 }
 
 func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (uint32, error) {

@@ -58,6 +58,15 @@ func (r *Renderer) SetHDR(nits float64) {
 			return
 		}
 	}
+	if r.readbackBytes < 8 {
+		// SetHDR is called before rendering on the owner goroutine. On
+		// transitions the device has already been drained above.
+		r.hdrError = r.createReadback(8)
+		if r.hdrError != nil {
+			r.freeTarget(&r.hdrOwn)
+			return
+		}
+	}
 	if r.compose.hdrPipeline == 0 {
 		r.hdrError = r.createGraphicsPipeline(composeVert, composeHDRFrag, vk.FormatR16g16b16a16Sfloat, r.compose.layout, true, &r.compose.hdrPipeline)
 		if r.hdrError != nil {

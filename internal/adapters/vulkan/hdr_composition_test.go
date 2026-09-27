@@ -19,7 +19,13 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	t.Cleanup(r.Close)
+	if r.readbackBytes != 4 {
+		t.Fatalf("SDR readback bytes/pixel = %d", r.readbackBytes)
+	}
 	r.SetHDR(203)
+	if r.hdrError == nil && r.readbackBytes != 8 {
+		t.Fatalf("HDR readback bytes/pixel = %d", r.readbackBytes)
+	}
 	r.hdrReadback = true
 	if r.physical == 0 {
 		t.Skip("no exportable GPU")
