@@ -52,11 +52,25 @@ func diff(old, cur map[string]string) []string {
 	return keys
 }
 
-// watchedFiles are the files whose changes reload the config: path itself
-// and, when path goes through symlinks (dotfiles), the file they resolve to.
+// watchedFiles are the files whose changes reload the config: path, then
+// each symlink it goes through (dotfiles) down to the final file, which may
+// not exist yet. Symlinked parent directories are followed by inotify
+// itself; retargeting one is not detected.
 func watchedFiles(path string) []string {
 	files := []string{filepath.Clean(path)}
-	if target, err := filepath.EvalSymlinks(path); err == nil && target != files[0] {
+	for len(files) <= 40 { // the kernel's symlink limit
+		cur := files[len(files)-1]
+		target, err := os.Readlink(cur)
+		if err != nil {
+			break
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(cur), target)
+		}
+		target = filepath.Clean(target)
+		if slices.Contains(files, target) {
+			break // a loop: the config is unreadable anyway
+		}
 		files = append(files, target)
 	}
 	return files
@@ -79,6 +93,8 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 	names := map[int32]map[string]bool{}
 	var files []string
 	rewatch := true
+	// retry sets the watches up again while a directory is missing.
+	var retry time.Time
 	var pending time.Time
 	last := loadRaw(path)
 	buf := make([]byte, 4096)
@@ -86,19 +102,20 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 		if ctx.Err() != nil {
 			return nil
 		}
+		if !retry.IsZero() && !time.Now().Before(retry) {
+			rewatch = true
+		}
 		if rewatch {
+			rewatch, retry = false, time.Time{}
 			for wd := range names {
 				_, _ = unix.InotifyRmWatch(fd, uint32(wd))
 			}
 			clear(names)
 			files = watchedFiles(path)
-			missing := false
-			for i, file := range files {
+			for _, file := range files {
 				wd, err := unix.InotifyAddWatch(fd, filepath.Dir(file), mask)
 				if errors.Is(err, unix.ENOENT) {
-					// Only the configured directory is waited for; a
-					// target directory shows up through the link.
-					missing = missing || i == 0
+					retry = time.Now().Add(directoryPollInterval)
 					continue
 				}
 				if err != nil {
@@ -109,17 +126,11 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 				}
 				names[int32(wd)][filepath.Base(file)] = true
 			}
-			if missing {
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-time.After(directoryPollInterval):
-					continue
-				}
-			}
-			rewatch = false
 		}
 		timeout := 200
+		if !retry.IsZero() {
+			timeout = min(timeout, int(time.Until(retry).Milliseconds())+1)
+		}
 		if !pending.IsZero() {
 			remaining := time.Until(pending)
 			if remaining <= 0 {
@@ -149,9 +160,7 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 				}
 				continue
 			}
-			if remaining < 200*time.Millisecond {
-				timeout = int(remaining.Milliseconds()) + 1
-			}
+			timeout = min(timeout, int(remaining.Milliseconds())+1)
 		}
 		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 		_, err = unix.Poll(fds, timeout)

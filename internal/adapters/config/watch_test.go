@@ -2,8 +2,10 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -113,15 +115,15 @@ func TestWatch(t *testing.T) {
 	}
 }
 
-// A config symlinked into another directory (dotfiles) reloads when its
-// target changes, in place or atomically, and follows a retargeted link.
+// A config symlinked elsewhere (dotfiles), directly or through a chain,
+// reloads when its target changes, follows a retargeted link, and survives
+// a target that is missing for a while.
 func TestWatchSymlink(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "config")
-	dotfiles := filepath.Join(root, "dotfiles")
-	other := filepath.Join(root, "other")
-	for _, d := range []string{dir, dotfiles, other} {
-		if err := os.Mkdir(d, 0700); err != nil {
+	dirs := map[string]string{}
+	for _, d := range []string{"config", "dotfiles", "chain", "other"} {
+		dirs[d] = filepath.Join(root, d)
+		if err := os.Mkdir(dirs[d], 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -131,15 +133,29 @@ func TestWatchSymlink(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	target := filepath.Join(dotfiles, "neferwl.conf")
-	write(target, "background = #000000\n")
-	path := filepath.Join(dir, "config")
-	if err := os.Symlink(target, path); err != nil {
-		t.Fatal(err)
+	link := func(target, at string) {
+		t.Helper()
+		tmp := at + ".tmp"
+		if err := os.Symlink(target, tmp); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, at); err != nil {
+			t.Fatal(err)
+		}
 	}
+	// config/config -> chain/config (relative) -> dotfiles/neferwl.conf
+	target := filepath.Join(dirs["dotfiles"], "neferwl.conf")
+	write(target, "background = #000000\n")
+	middle := filepath.Join(dirs["chain"], "config")
+	link("../dotfiles/neferwl.conf", middle)
+	path := filepath.Join(dirs["config"], "config")
+	link(middle, path)
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan ports.ConfigChanged, 8)
 	done := make(chan error, 1)
+	old := directoryPollInterval
+	directoryPollInterval = 20 * time.Millisecond
+	defer func() { directoryPollInterval = old }()
 	go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
 	defer func() {
 		cancel()
@@ -147,49 +163,87 @@ func TestWatchSymlink(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	time.Sleep(40 * time.Millisecond)
-	receive := func(want string) {
+	// until repeats change until the config reloads to want: the watches
+	// may not be set up yet on a slow machine. Each try changes another key
+	// too, as the watcher may have read the first try at startup.
+	tries := 0
+	until := func(want string, change func(body string)) {
 		t.Helper()
-		deadline := time.After(time.Second)
+		try := func() {
+			tries++
+			change(fmt.Sprintf("background = %s\nborder.width = %d\n", want, tries%32))
+		}
+		try()
+		deadline := time.After(2 * time.Second)
+		retry := time.NewTicker(300 * time.Millisecond)
+		defer retry.Stop()
 		for {
 			select {
 			case c := <-out:
 				if c.Config.Background.Color == want {
 					return
 				}
+			case <-retry.C:
+				try()
 			case <-deadline:
 				t.Fatalf("no config change to %s", want)
 			}
 		}
 	}
-	// In place.
-	write(target, "background = #ff0000\n")
-	receive("#ff0000")
-	// Atomic replacement of the target.
-	tmp := filepath.Join(dotfiles, ".neferwl.conf.tmp")
-	write(tmp, "background = #00ff00\n")
-	if err := os.Rename(tmp, target); err != nil {
+	atomic := func(file string) func(string) {
+		return func(body string) {
+			write(file+".new", body)
+			if err := os.Rename(file+".new", file); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	until("#ff0000", func(body string) { write(target, body) })
+	until("#00ff00", atomic(target))
+	// The middle link now points to another file.
+	moved := filepath.Join(dirs["other"], "config")
+	until("#0000ff", func(body string) {
+		write(moved, body)
+		link(moved, middle)
+	})
+	until("#ffffff", func(body string) { write(moved, body) })
+	// The target disappears, with its directory, then comes back.
+	if err := os.RemoveAll(dirs["other"]); err != nil {
 		t.Fatal(err)
 	}
-	receive("#00ff00")
-	// The link now points to another file: it is read and then watched.
-	moved := filepath.Join(other, "config")
-	write(moved, "background = #0000ff\n")
-	link := filepath.Join(dir, ".config.tmp")
-	if err := os.Symlink(moved, link); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(link, path); err != nil {
-		t.Fatal(err)
-	}
-	receive("#0000ff")
-	write(moved, "background = #ffffff\n")
-	receive("#ffffff")
+	time.Sleep(50 * time.Millisecond)
+	until("#abcdef", func(body string) {
+		if err := os.MkdirAll(dirs["other"], 0700); err != nil {
+			t.Fatal(err)
+		}
+		atomic(moved)(body)
+	})
 	// The old target no longer matters.
 	write(target, "background = #123456\n")
 	select {
 	case c := <-out:
 		t.Fatalf("old target reloaded: %+v", c.Config.Background)
 	case <-time.After(250 * time.Millisecond):
+	}
+}
+
+func TestWatchedFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	if got := watchedFiles(path); !slices.Equal(got, []string{path}) {
+		t.Fatal(got)
+	}
+	// A dangling link still names its target; a loop stops.
+	if err := os.Symlink("sub/../missing", path); err != nil {
+		t.Fatal(err)
+	}
+	if got := watchedFiles(path); !slices.Equal(got, []string{path, filepath.Join(dir, "missing")}) {
+		t.Fatal(got)
+	}
+	if err := os.Symlink("config", filepath.Join(dir, "missing")); err != nil {
+		t.Fatal(err)
+	}
+	if got := watchedFiles(path); !slices.Equal(got, []string{path, filepath.Join(dir, "missing")}) {
+		t.Fatal(got)
 	}
 }
