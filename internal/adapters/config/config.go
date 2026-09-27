@@ -464,12 +464,9 @@ func set(c *ports.Config, key, v string) error {
 	case "layout.default-width":
 		return fmt.Errorf("replaced by layout.max-columns (columns share the width equally)")
 	case "layout.max-columns":
-		return positive(&c.Layout.MaxColumns, v, 16)
+		return setLayoutRule(&c.Layout.LayoutRules, "max-columns", v)
 	case "layout.overflow":
-		if v != "scroll" && v != "fixed" {
-			return fmt.Errorf("must be scroll or fixed")
-		}
-		c.Layout.Overflow = v
+		return setLayoutRule(&c.Layout.LayoutRules, "overflow", v)
 	case "layout.presets":
 		list := splitList(v)
 		if len(list) == 0 {
@@ -519,9 +516,48 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Log.Debug = list
 	default:
+		if rest, ok := strings.CutPrefix(key, "layout."); ok {
+			if i := strings.LastIndex(rest, "."); i > 0 {
+				return setOutputLayout(c, rest[:i], rest[i+1:], v)
+			}
+		}
 		return fmt.Errorf("unknown key")
 	}
 	return nil
+}
+
+// setOutputLayout applies one layout.<output>.<field> key.
+func setOutputLayout(c *ports.Config, output, field, v string) error {
+	i := slices.IndexFunc(c.Layout.Outputs, func(o ports.OutputLayout) bool { return o.Output == output })
+	o := ports.OutputLayout{Output: output}
+	if i >= 0 {
+		o = c.Layout.Outputs[i]
+	}
+	if err := setLayoutRule(&o.LayoutRules, field, v); err != nil {
+		return err
+	}
+	if i < 0 {
+		c.Layout.Outputs = append(c.Layout.Outputs, o)
+	} else {
+		c.Layout.Outputs[i] = o
+	}
+	return nil
+}
+
+// setLayoutRule applies max-columns or overflow, for layout.*,
+// layout.<output>.* and workspace.<name>.*.
+func setLayoutRule(r *ports.LayoutRules, field, v string) error {
+	switch field {
+	case "max-columns":
+		return positive(&r.MaxColumns, v, 16)
+	case "overflow":
+		if v != "scroll" && v != "fixed" {
+			return fmt.Errorf("must be scroll or fixed")
+		}
+		r.Overflow = v
+		return nil
+	}
+	return fmt.Errorf("unknown key (max-columns, overflow)")
 }
 
 // checkWorkspaceBinds warns about a `workspace <name>` bind to an undeclared
@@ -546,11 +582,15 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 		}
 	}
 	for _, w := range c.Workspaces {
-		overflow := w.Overflow
-		if overflow == "" {
-			overflow = c.Layout.Overflow
+		// The config only knows the monitor as written: a connector home
+		// does not match a key rule, and the reverse.
+		rules := c.Layout.LayoutRules
+		for _, o := range c.Layout.Outputs {
+			if w.Monitor != "" && o.Output == w.Monitor {
+				rules = o.Over(rules)
+			}
 		}
-		if overflow == "fixed" && len(w.Slots) > 0 {
+		if w.Over(rules).Overflow == "fixed" && len(w.Slots) > 0 {
 			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
 			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
 		}
@@ -576,13 +616,8 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
 		}
 		w.Monitor = v
-	case "max-columns":
-		return positive(&w.MaxColumns, v, 16)
-	case "overflow":
-		if v != "scroll" && v != "fixed" {
-			return fmt.Errorf("must be scroll or fixed")
-		}
-		w.Overflow = v
+	case "max-columns", "overflow":
+		return setLayoutRule(&w.LayoutRules, field, v)
 	default:
 		n, ok := strings.CutPrefix(field, "column.")
 		if !ok {

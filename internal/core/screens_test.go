@@ -125,6 +125,70 @@ func TestOutputsLeftToRight(t *testing.T) {
 	}
 }
 
+func TestLayoutPerOutput(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Layout.MaxColumns = 2
+		c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
+	}, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	var set []ports.Scene
+	for id := ports.WindowID(2); id <= 6; id++ {
+		set = r.mapWindow(t, id)
+	}
+	// DP-2: four columns of 100; the fifth window splits the last one
+	// (fixed) instead of scrolling.
+	if got := shown(set); len(got["DP-2"]) != 5 {
+		t.Fatal(got)
+	}
+	for _, s := range set {
+		for _, w := range s.Windows {
+			// DP-1 keeps the default: one window of two columns fills it.
+			if want := map[string]int{"DP-1": 200, "DP-2": 100}[s.Output]; w.Rect.W != want {
+				t.Fatalf("%s: %+v", s.Output, w)
+			}
+		}
+	}
+}
+
+// widths returns the window widths on one output.
+func widths(set []ports.Scene, output string) []int {
+	var out []int
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if s.Output == output {
+				out = append(out, w.Rect.W)
+			}
+		}
+	}
+	return out
+}
+
+func TestLayoutPerOutputFollowsMonitorAndReload(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Layout.MaxColumns = 1
+		c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", LayoutRules: ports.LayoutRules{MaxColumns: 2}}}
+	}, right)
+	r.mapWindow(t, 1)
+	if got := widths(r.mapWindow(t, 2), "DP-2"); !slices.Equal(got, []int{200, 200}) {
+		t.Fatal(got)
+	}
+	// Another monitor on DP-2: the key rule no longer applies.
+	other := right
+	other.Serial = "3"
+	if got := widths(r.plug(t, other), "DP-2"); !slices.Equal(got, []int{400, 400}) {
+		t.Fatal(got)
+	}
+	// Back to the first monitor, then a reload drops the rule.
+	r.plug(t, right)
+	cfg := r.cfg
+	cfg.Layout.Outputs = nil
+	r.reload <- ports.ConfigChanged{Config: cfg}
+	if got := widths(receive(t, r.scenes), "DP-2"); !slices.Equal(got, []int{400, 400}) {
+		t.Fatal(got)
+	}
+}
+
 func TestWindowsOpenOnFocusedOutput(t *testing.T) {
 	r := startMulti(t, nil, left, right)
 	r.mapWindow(t, 1)

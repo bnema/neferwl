@@ -304,6 +304,34 @@ workspace.lost.hidden = on
 	}
 }
 
+func TestLayoutPerOutput(t *testing.T) {
+	c, w := parseString(t, `layout.max-columns = 2
+layout.HDMI-A-1.max-columns = 3
+layout.HDMI-A-1.overflow = fixed
+layout.LG Electronics 27GR95UM 123.overflow = scroll
+layout.DP-2.overflow = spiral
+layout.DP-2.color = red
+`)
+	want := []ports.OutputLayout{
+		{Output: "HDMI-A-1", MaxColumns: 3, Overflow: "fixed"},
+		{Output: "LG Electronics 27GR95UM 123", Overflow: "scroll"},
+	}
+	if c.Layout.MaxColumns != 2 || !reflect.DeepEqual(c.Layout.Outputs, want) || len(w) != 2 {
+		t.Fatalf("%+v %v", c.Layout.Outputs, w)
+	}
+}
+
+func TestFixedOutputWarnsSlotWidths(t *testing.T) {
+	_, w := parseString(t, `layout.DP-2.overflow = fixed
+workspace.dev.monitor = DP-2
+workspace.dev.column.1 = 50%, foot
+workspace.web.column.1 = 50%, foot
+`)
+	if len(w) != 1 || w[0].Line != 3 {
+		t.Fatal(w)
+	}
+}
+
 func TestWorkspaceSlots(t *testing.T) {
 	c, w := parseString(t, `workspace.dev.hidden = on
 workspace.dev.column.2 = 33%, foot --title x

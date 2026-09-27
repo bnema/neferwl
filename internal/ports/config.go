@@ -24,6 +24,34 @@ type OutputConfig struct {
 	ScaleOnly     bool
 }
 
+// LayoutRules are the layout settings shared by the defaults, screens and
+// named workspaces. Zero MaxColumns and an empty Overflow inherit.
+type LayoutRules struct {
+	// MaxColumns is how many columns share the screen at once.
+	MaxColumns int
+	// Overflow is "scroll" (further columns scroll) or "fixed" (they split
+	// the last one).
+	Overflow string
+}
+
+// Over fills the unset rules of r from base.
+func (r LayoutRules) Over(base LayoutRules) LayoutRules {
+	if r.MaxColumns == 0 {
+		r.MaxColumns = base.MaxColumns
+	}
+	if r.Overflow == "" {
+		r.Overflow = base.Overflow
+	}
+	return r
+}
+
+// OutputLayout is the layout of one screen, matched by connector (DP-2) or
+// monitor key.
+type OutputLayout struct {
+	Output string
+	LayoutRules
+}
+
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
@@ -46,12 +74,12 @@ type Config struct {
 		Inactive string
 	}
 	Layout struct {
-		Gaps int
-		// MaxColumns is how many columns share the screen before scrolling.
-		MaxColumns int
-		Presets    []string
-		// Overflow is "scroll" or "fixed" (see WorkspaceConfig).
-		Overflow string
+		Gaps    int
+		Presets []string
+		// LayoutRules are the defaults; Outputs override them per screen and
+		// named workspaces override them again.
+		LayoutRules
+		Outputs []OutputLayout
 	}
 	Focus struct {
 		// FollowMove shows the target workspace after a column or window
@@ -84,10 +112,9 @@ type WorkspaceConfig struct {
 	// ("make model serial"); empty means the first output.
 	Monitor string
 	// Slots are the declared columns (workspace.<name>.column.N), by N.
-	Slots      []SlotConfig
-	Hidden     bool
-	MaxColumns int
-	Overflow   string
+	Slots  []SlotConfig
+	Hidden bool
+	LayoutRules
 }
 
 // SlotConfig reserves column N of a workspace for the window of one command.

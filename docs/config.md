@@ -25,11 +25,12 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
 | `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
+| `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.hidden` | `off` | Reachable only through its bind, which toggles it |
 | `workspace.<name>.monitor` | focused | Home monitor: connector (`DP-2`) or monitor key |
-| `workspace.<name>.max-columns`, `.overflow` | layout values | Per-workspace layout |
+| `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |

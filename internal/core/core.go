@@ -69,7 +69,6 @@ type Core struct {
 	sentOutputs  ports.SetOutputs
 	specs        []NamedWorkspace
 	presets      []Width
-	overflow     Overflow
 	slots        map[slotKey]*slotState
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn     []slotKey
@@ -198,12 +197,19 @@ func (c *Core) apply(cfg ports.Config) error {
 		}
 		return "", fmt.Errorf("invalid overflow %q", v)
 	}
-	defOverflow, err := overflow(cfg.Layout.Overflow)
-	if err != nil {
+	if _, err := overflow(cfg.Layout.Overflow); err != nil {
 		return err
 	}
-	if defOverflow == "" {
-		defOverflow = OverflowScroll
+	if cfg.Layout.Overflow == "" {
+		cfg.Layout.Overflow = string(OverflowScroll)
+	}
+	for _, o := range cfg.Layout.Outputs {
+		if _, err := overflow(o.Overflow); err != nil {
+			return err
+		}
+		if o.Output == "" || o.MaxColumns < 0 {
+			return fmt.Errorf("invalid layout for output %q", o.Output)
+		}
 	}
 	named := make([]NamedWorkspace, 0, len(cfg.Workspaces))
 	seen := map[string]bool{}
@@ -224,7 +230,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
-	c.specs, c.presets, c.overflow = named, presets, defOverflow
+	c.specs, c.presets = named, presets
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
 	for _, s := range c.screens {
