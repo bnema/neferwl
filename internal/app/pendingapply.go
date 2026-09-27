@@ -41,11 +41,10 @@ func (p *applyProgress) stopping(name string) {
 	}
 }
 
-func (p *applyProgress) started(name string, instance <-chan error) applyDecision {
+func (p *applyProgress) started(name string, instance <-chan error) {
 	if p.active && p.required[name] && !p.completed[instance] && !p.waiting[name] {
 		p.ready[name] = instance
 	}
-	return p.complete()
 }
 
 func (p *applyProgress) readyEvent(name string, instance <-chan error, err error) applyDecision {
@@ -111,6 +110,14 @@ func (p *applyProgress) scanned(running map[string]<-chan error) applyDecision {
 		}
 	}
 	return p.complete()
+}
+
+// scanError fails the active operation even if an old output was already ready.
+func (p *applyProgress) scanError(err error) applyDecision {
+	if !p.active || err == nil {
+		return applyDecision{}
+	}
+	return p.fail(err)
 }
 
 func (p *applyProgress) timeout(id uint64) applyDecision {

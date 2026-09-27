@@ -17,6 +17,15 @@ func TestApplyProgress(t *testing.T) {
 			p.scanned(map[string]<-chan error{"A": a})
 			return p.readyEvent("A", a, nil)
 		}, false},
+		{"scan error with previously ready output", func(p *applyProgress, a, _ <-chan error) applyDecision {
+			p.completed = map[<-chan error]bool{a: true}
+			p.start(1, map[string]bool{"A": true}, nil)
+			d := p.scanError(boom)
+			if later := p.scanned(map[string]<-chan error{"A": a}); later.reply {
+				t.Fatalf("old ready output completed failed apply: %+v", later)
+			}
+			return d
+		}, true},
 		{"ready error rollback", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true}, nil)
 			p.scanned(map[string]<-chan error{"A": a})
@@ -66,6 +75,9 @@ func TestApplyProgress(t *testing.T) {
 			}
 			if !d.reply || (d.err != nil) != tc.failure || d.rollback != tc.failure {
 				t.Fatalf("decision: %+v", d)
+			}
+			if tc.name == "scan error with previously ready output" && !errors.Is(d.err, boom) {
+				t.Fatalf("scan error lost: %v", d.err)
 			}
 		})
 	}

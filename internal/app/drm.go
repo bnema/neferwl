@@ -31,6 +31,26 @@ type drmCard struct {
 	fd int
 }
 
+// A failed card read must not erase its heads from a multi-card inventory.
+func retainedHeads(previous, found []ports.OutputHead, err error) []ports.OutputHead {
+	if err != nil {
+		return previous
+	}
+	return found
+}
+
+// A stopped instance is no longer enabled, even if the inventory read fails.
+func releasedHead(heads []ports.OutputHead, name string) []ports.OutputHead {
+	heads = append([]ports.OutputHead(nil), heads...)
+	for i := range heads {
+		if heads[i].Info.Name == name {
+			heads[i].Enabled = false
+			heads[i].Current = nil
+		}
+	}
+	return heads
+}
+
 // safe turns a panic in a hardware goroutine into an error, so the TTY is still restored.
 func safe(name string, fn func() error) (err error) {
 	defer func() {
@@ -148,6 +168,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	stopping := map[string]bool{}
 	currentConfig := initial
 	var currentHeads ports.OutputHeads
+	lastHeads := map[*drmCard][]ports.OutputHead{}
 	progress := &applyProgress{completed: map[<-chan error]bool{}}
 	readySources := map[string]<-chan error{}
 	stopReady := map[string]chan struct{}{}
@@ -173,14 +194,36 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-ctx.Done():
 		}
 	}
+	publishInventory := func() {
+		var inventory ports.OutputHeads
+		for _, card := range b.cards {
+			found, err := card.ConnectedHeads()
+			if err != nil {
+				log.Warn().Err(err).Str("card", card.Path()).Msg("inventory outputs")
+			}
+			lastHeads[card] = retainedHeads(lastHeads[card], found, err)
+			inventory.Heads = append(inventory.Heads, lastHeads[card]...)
+		}
+		currentHeads = inventory
+		select {
+		case heads <- inventory:
+		case <-ctx.Done():
+		}
+		select {
+		case report <- inventory:
+		case <-ctx.Done():
+		}
+	}
 	scan := func() {
+		var scanErrors []error
 		for _, c := range b.cards {
 			w := want(currentConfig)
 			w.Device = c.Device()
 			c.SetWant(w)
 			added, removed, replaced, err := c.Scan()
 			if err != nil {
-				log.Warn().Err(err).Msg("scan connectors")
+				log.Warn().Err(err).Str("card", c.Path()).Msg("scan connectors")
+				scanErrors = append(scanErrors, fmt.Errorf("scan %s: %w", c.Path(), err))
 				continue
 			}
 			stop := func(name string, restart bool) {
@@ -243,24 +286,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				send(ports.OutputAdded{Info: o.Info()})
 			}
 		}
-		var inventory ports.OutputHeads
-		for _, card := range b.cards {
-			found, err := card.ConnectedHeads()
-			if err != nil {
-				log.Warn().Err(err).Str("card", card.Path()).Msg("inventory outputs")
-				continue
-			}
-			inventory.Heads = append(inventory.Heads, found...)
-		}
-		currentHeads = inventory
-		select {
-		case heads <- inventory:
-		case <-ctx.Done():
-		}
-		select {
-		case report <- inventory:
-		case <-ctx.Done():
-		}
+		publishInventory()
+		complete(progress.scanError(errors.Join(scanErrors...)))
 	}
 	scan()
 	if len(set.outs) == 0 {
@@ -339,7 +366,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			restart := stopping[name]
 			delete(stopping, name)
 			curs.set(name, nil)
-			cards[name].Release(name)
+			card := cards[name]
+			card.Release(name)
+			lastHeads[card] = releasedHead(lastHeads[card], name)
 			delete(cards, name)
 			source := readySources[name]
 			delete(readySources, name)
@@ -347,7 +376,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				close(stopped)
 				delete(stopReady, name)
 			}
-			complete(progress.stopped(name, source, restart, err))
+			stopDecision := progress.stopped(name, source, restart, err)
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
 				// session down. It stays off until the next hotplug, so a
@@ -355,10 +384,17 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				log.Error().Err(err).Str("connector", name).Msg("output stopped")
 				restart = false
 			}
+			// Release changes the enabled state in ConnectedHeads. Do not
+			// restart a failed or disabled output just to refresh inventory.
+			if restart {
+				scan()
+			} else {
+				publishInventory()
+			}
+			complete(stopDecision)
 			if restart {
 				// Same connector, new mode: core keeps its screen and
 				// workspaces; OutputAdded updates the size.
-				scan()
 				if set.outs[name] != nil {
 					running := map[string]<-chan error{}
 					for n := range set.outs {
