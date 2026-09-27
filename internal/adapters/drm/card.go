@@ -74,7 +74,14 @@ func (c *Card) Device() uint64 {
 func (c *Card) SetFormats(ch chan<- ports.OutputFormats) { c.formats = ch }
 
 // SetWant replaces the connector config; the next Scan applies it.
-func (c *Card) SetWant(w Want) { c.want = w }
+func (c *Card) SetWant(w Want) {
+	for name, o := range c.outputs {
+		if w.HDR[name].Enabled && !c.want.HDR[name].Enabled && !o.hdr.Capable {
+			c.log.Warn().Str("component", "drm").Str("connector", name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
+		}
+	}
+	c.want = w
+}
 
 // Scan compares connectors with the outputs driven now. It returns outputs to
 // start (newly connected, or with a new mode after Release), names of

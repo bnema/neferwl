@@ -24,14 +24,17 @@ import (
 // it with EBUSY (it retries soon), and an event that never comes is
 // bounded (stuckTimeout, then a modeset).
 type Output struct {
-	k       kms
-	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
-	crtc    uint32
-	conn    connector
-	mode    modeInfo
-	saved   modeCrtc
-	monitor Monitor
-	log     zerowrap.Logger
+	k           kms
+	flipped     <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
+	crtc        uint32
+	conn        connector
+	mode        modeInfo
+	saved       modeCrtc
+	monitor     Monitor
+	hdr         hdrCapability
+	hdrProps    connectorHDRProps
+	hdrSettings HDRSettings
+	log         zerowrap.Logger
 	// Properties: CRTC and connector property IDs by name.
 	crtcProps map[string]uint32
 	connCrtc  uint32 // the connector's CRTC_ID property
@@ -281,8 +284,17 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
 	}
-	if err := o.readProps(pipe, card.taken, cursorSize(card.fd)); err != nil {
+	if err := o.readProps(card.fd, pipe, card.taken, cursorSize(card.fd)); err != nil {
 		return nil, err
+	}
+	o.hdrSettings = card.want.HDR[c.name]
+	if o.hdrSettings.SDRBrightness == 0 {
+		o.hdrSettings.SDRBrightness = 203
+	}
+	o.hdr = detectHDR(o.monitor, o.hdrProps)
+	log.Info().Str("component", "drm").Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
+	if o.hdrSettings.Enabled && !o.hdr.Capable {
+		log.Warn().Str("component", "drm").Str("connector", c.name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
 	}
 	o.tearing = card.async && !card.want.NoTearing
 	if !card.want.NoVRR {
@@ -294,7 +306,7 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 
 // readProps finds the output's planes and property IDs. taken are planes
 // other outputs drive.
-func (o *Output) readProps(pipe int, taken map[uint32]bool, cursorSide int) error {
+func (o *Output) readProps(fd, pipe int, taken map[uint32]bool, cursorSide int) error {
 	cp, err := o.k.objProps(o.crtc, objCrtc)
 	if err != nil {
 		return fmt.Errorf("crtc properties: %w", err)
@@ -308,6 +320,8 @@ func (o *Output) readProps(pipe int, taken map[uint32]bool, cursorSide int) erro
 		return fmt.Errorf("connector properties: %w", err)
 	}
 	o.connCrtc = uint32(np["CRTC_ID"][0])
+	// The connector's property metadata is needed for enum/range capability.
+	o.hdrProps = readConnectorHDRProps(fd, np)
 	if o.crtcProps["MODE_ID"] == 0 || o.crtcProps["ACTIVE"] == 0 || o.connCrtc == 0 {
 		return errors.New("crtc or connector lacks atomic properties")
 	}
