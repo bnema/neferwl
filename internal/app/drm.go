@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
@@ -28,6 +29,26 @@ type drmBackend struct {
 type drmCard struct {
 	*drm.Card
 	fd int
+}
+
+// A failed card read must not erase its heads from a multi-card inventory.
+func retainedHeads(previous, found []ports.OutputHead, err error) []ports.OutputHead {
+	if err != nil {
+		return previous
+	}
+	return found
+}
+
+// A stopped instance is no longer enabled, even if the inventory read fails.
+func releasedHead(heads []ports.OutputHead, name string) []ports.OutputHead {
+	heads = append([]ports.OutputHead(nil), heads...)
+	for i := range heads {
+		if heads[i].Info.Name == name {
+			heads[i].Enabled = false
+			heads[i].Current = nil
+		}
+	}
+	return heads
 }
 
 // safe turns a panic in a hardware goroutine into an error, so the TTY is still restored.
@@ -114,7 +135,7 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, formats chan<- ports.OutputFormats, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, formats chan<- ports.OutputFormats, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, configs <-chan ports.Config, applied chan<- error, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -145,20 +166,71 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 	// stopping holds outputs asked to stop: true when they restart with a
 	// new mode (core keeps the screen), false when they are gone.
 	stopping := map[string]bool{}
+	currentConfig := initial
+	var currentHeads ports.OutputHeads
+	lastHeads := map[*drmCard][]ports.OutputHead{}
+	progress := &applyProgress{completed: map[<-chan error]bool{}}
+	readySources := map[string]<-chan error{}
+	stopReady := map[string]chan struct{}{}
+	type readyResult struct {
+		name   string
+		source <-chan error
+		err    error
+	}
+	ready := make(chan readyResult)
+	deadline := make(chan uint64, 1)
+	var timer *time.Timer
+	var op uint64
+	complete := func(d applyDecision) {
+		if !d.reply {
+			return
+		}
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		select {
+		case applied <- d.err:
+		case <-ctx.Done():
+		}
+	}
+	publishInventory := func() {
+		var inventory ports.OutputHeads
+		for _, card := range b.cards {
+			found, err := card.ConnectedHeads()
+			if err != nil {
+				log.Warn().Err(err).Str("card", card.Path()).Msg("inventory outputs")
+			}
+			lastHeads[card] = retainedHeads(lastHeads[card], found, err)
+			inventory.Heads = append(inventory.Heads, lastHeads[card]...)
+		}
+		currentHeads = inventory
+		select {
+		case heads <- inventory:
+		case <-ctx.Done():
+		}
+		select {
+		case report <- inventory:
+		case <-ctx.Done():
+		}
+	}
 	scan := func() {
+		var scanErrors []error
 		for _, c := range b.cards {
-			w := want()
+			w := want(currentConfig)
 			w.Device = c.Device()
 			c.SetWant(w)
 			added, removed, replaced, err := c.Scan()
 			if err != nil {
-				log.Warn().Err(err).Msg("scan connectors")
+				log.Warn().Err(err).Str("card", c.Path()).Msg("scan connectors")
+				scanErrors = append(scanErrors, fmt.Errorf("scan %s: %w", c.Path(), err))
 				continue
 			}
 			stop := func(name string, restart bool) {
 				if r := set.outs[name]; r != nil && cards[name] == c {
 					if _, ok := stopping[name]; !ok {
 						stopping[name] = restart
+						progress.stopping(name)
 						r.stop()
 					}
 				}
@@ -181,6 +253,25 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 					continue
 				}
 				cards[name] = c
+				readySources[name] = o.Ready()
+				if progress.active && !want(currentConfig).Disabled[name] {
+					progress.required[name] = true
+				}
+				source := readySources[name]
+				stopped := make(chan struct{})
+				stopReady[name] = stopped
+				go func() {
+					select {
+					case err := <-source:
+						select {
+						case ready <- readyResult{name, source, err}:
+						case <-ctx.Done():
+						}
+					case <-stopped:
+					case <-ctx.Done():
+					}
+				}()
+				progress.started(name, source)
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
 				}
@@ -195,6 +286,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 				send(ports.OutputAdded{Info: o.Info()})
 			}
 		}
+		publishInventory()
+		complete(progress.scanError(errors.Join(scanErrors...)))
 	}
 	scan()
 	if len(set.outs) == 0 {
@@ -210,6 +303,53 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 		case <-hotplug:
 			log.Info().Msg("hotplug")
 			scan()
+			if progress.active {
+				running := map[string]<-chan error{}
+				for name := range set.outs {
+					running[name] = readySources[name]
+				}
+				complete(progress.scanned(running))
+			}
+		case currentConfig = <-configs:
+			op++
+			if timer != nil {
+				timer.Stop()
+				timer = nil
+			}
+			required := map[string]bool{}
+			// Desired enabled heads, not the inventory's current mode, require a first modeset.
+			w := want(currentConfig)
+			for _, h := range currentHeads.Heads {
+				if !w.Disabled[h.Info.Name] {
+					required[h.Info.Name] = true
+				}
+			}
+			for name := range set.outs {
+				if !w.Disabled[name] {
+					required[name] = true
+				}
+			}
+			progress.start(op, required, stopping)
+			scan()
+			running := map[string]<-chan error{}
+			for name := range set.outs {
+				running[name] = readySources[name]
+			}
+			d := progress.scanned(running)
+			if progress.active {
+				id := op
+				timer = time.AfterFunc(5*time.Second, func() {
+					select {
+					case deadline <- id:
+					case <-ctx.Done():
+					}
+				})
+			}
+			complete(d)
+		case result := <-ready:
+			complete(progress.readyEvent(result.name, result.source, result.err))
+		case id := <-deadline:
+			complete(progress.timeout(id))
 		case s := <-scenes:
 			set.scenes(s)
 		case c := <-contents:
@@ -226,8 +366,17 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 			restart := stopping[name]
 			delete(stopping, name)
 			curs.set(name, nil)
-			cards[name].Release(name)
+			card := cards[name]
+			card.Release(name)
+			lastHeads[card] = releasedHead(lastHeads[card], name)
 			delete(cards, name)
+			source := readySources[name]
+			delete(readySources, name)
+			if stopped := stopReady[name]; stopped != nil {
+				close(stopped)
+				delete(stopReady, name)
+			}
+			stopDecision := progress.stopped(name, source, restart, err)
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
 				// session down. It stays off until the next hotplug, so a
@@ -235,15 +384,32 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 				log.Error().Err(err).Str("connector", name).Msg("output stopped")
 				restart = false
 			}
+			// Release changes the enabled state in ConnectedHeads. Do not
+			// restart a failed or disabled output just to refresh inventory.
+			if restart {
+				scan()
+			} else {
+				publishInventory()
+			}
+			complete(stopDecision)
 			if restart {
 				// Same connector, new mode: core keeps its screen and
 				// workspaces; OutputAdded updates the size.
-				scan()
 				if set.outs[name] != nil {
+					running := map[string]<-chan error{}
+					for n := range set.outs {
+						running[n] = readySources[n]
+					}
+					complete(progress.scanned(running))
 					continue
 				}
 			}
 			send(ports.OutputRemoved{Name: name})
+			running := map[string]<-chan error{}
+			for n := range set.outs {
+				running[n] = readySources[n]
+			}
+			complete(progress.scanned(running))
 		}
 	}
 }

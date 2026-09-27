@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"image"
 	"reflect"
 	"slices"
 	"testing"
@@ -186,6 +187,23 @@ func TestLayoutPerOutputFollowsMonitorAndReload(t *testing.T) {
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if got := widths(receive(t, r.scenes), "DP-2"); !slices.Equal(got, []int{400, 400}) {
 		t.Fatal(got)
+	}
+}
+
+func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Pos: &image.Point{X: 100, Y: 40}}}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	if len(out.Outputs) != 2 || out.Outputs[0].X != 500 || out.Outputs[0].Y != 0 || out.Outputs[1].X != 100 || out.Outputs[1].Y != 40 {
+		t.Fatalf("unexpected positions: %+v", out.Outputs)
+	}
+	r.cfg.Outputs[1].Pos = &image.Point{X: -200, Y: 12}
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	out = lastOutputs(t, r.commands)
+	if out.Outputs[0].X != 200 || out.Outputs[1].X != -200 || out.Outputs[1].Y != 12 {
+		t.Fatalf("unexpected positions after reload: %+v", out.Outputs)
 	}
 }
 
@@ -663,5 +681,20 @@ func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
 	got, focused := windowsOf(set, "DP-2")
 	if !slices.Contains(got, 3) || focused != 3 {
 		t.Fatal(got, focused)
+	}
+}
+
+func TestExplicitOverlappingPositionsAndNegativeY(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1", Pos: &image.Point{X: 20, Y: -120}}, {Name: "DP-2", Pos: &image.Point{X: 20, Y: -120}}}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	if len(out.Outputs) != 2 || out.Outputs[0].Info.Name != "DP-1" || out.Outputs[1].Info.Name != "DP-2" {
+		t.Fatalf("ordering: %+v", out.Outputs)
+	}
+	for _, o := range out.Outputs {
+		if o.X != 20 || o.Y != -120 {
+			t.Fatalf("explicit position: %+v", o)
+		}
 	}
 }

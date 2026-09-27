@@ -91,6 +91,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	captures := make(chan ports.CaptureRequest, 32)
 	captured := make(chan ports.CaptureDone, 64)
 	outputFormats := make(chan ports.OutputFormats, 8)
+	outputHeads := make(chan ports.OutputHeads, 8)
+	inventory := make(chan ports.OutputHeads, 8)
+	applyOutput := make(chan ports.OutputApply, 8)
+	appliedOutput := make(chan ports.OutputApplied, 8)
+	backendConfig := make(chan ports.Config, 8)
+	backendApplied := make(chan error, 8)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
@@ -105,7 +111,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -144,10 +150,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer workers.Done()
 		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
 	}()
+	filtered := make(chan ports.ConfigChanged, 8)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, watched, configChanges, keymaps, commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, watched, filtered, keymaps, commands, logging.For(ctx, "config"))
+	}()
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		relayOutputSettings(ctx, newOutputOverrides(opts.Config, hw == nil), filtered, inventory, applyOutput, configChanges, backendConfig, backendApplied, appliedOutput, logging.For(ctx, "app"))
 	}()
 	script := make(chan string)
 	curs := newCursors()
@@ -219,16 +231,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		if hw != nil {
 			done <- safe("output", func() error {
-				want := func() drm.Want {
-					w := wantFromConfig(opts.Config)
+				want := func(cfg ports.Config) drm.Want {
+					w := wantFromConfig(cfg)
 					w.Sampled = dmabuf.Formats
 					return w
 				}
-				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputFormats, curs, newRenderer, logging.For(ctx, "drm"))
+				return hw.runOutputs(ctx, want, opts.Config, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputFormats, outputHeads, inventory, backendConfig, backendApplied, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, captures, captured, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

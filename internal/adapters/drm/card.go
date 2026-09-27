@@ -125,6 +125,45 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 	return added, removed, replaced, nil
 }
 
+// ConnectedHeads inventories physical connectors independently of the desired
+// enabled state. The caller owns Scan and must invoke this on the same goroutine.
+func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
+	_, ids, err := resources(c.fd)
+	if err != nil {
+		return nil, err
+	}
+	var heads []ports.OutputHead
+	for _, id := range ids {
+		conn, err := readConnector(c.fd, id)
+		if err != nil {
+			c.log.Warn().Err(err).Uint32("connector", id).Msg("read connector for inventory")
+			continue
+		}
+		if !conn.connected || len(conn.modes) == 0 {
+			continue
+		}
+		monitor := readMonitor(c.path, conn.name)
+		h := ports.OutputHead{Info: ports.OutputInfo{Name: conn.name, Make: monitor.Make, Model: monitor.Model, Serial: monitor.Serial, PhysicalW: conn.mmW, PhysicalH: conn.mmH}}
+		if h.Info.Make == "Unknown" {
+			h.Info.Make = ""
+		}
+		if h.Info.Model == "Unknown" {
+			h.Info.Model = ""
+		}
+		if o := c.outputs[conn.name]; o != nil {
+			h.Info = o.Info()
+			m := ports.OutputMode{Width: o.Width(), Height: o.Height(), RefreshMilli: o.mode.refreshMilli()}
+			h.Current = &m
+			h.Enabled = true
+		}
+		for _, m := range conn.modes {
+			h.Modes = append(h.Modes, ports.OutputMode{Width: int(m.HDisplay), Height: int(m.VDisplay), RefreshMilli: m.refreshMilli(), Preferred: m.Type&modeTypePrefered != 0})
+		}
+		heads = append(heads, h)
+	}
+	return heads, nil
+}
+
 // Release forgets an output closed by its goroutine, freeing its CRTC and
 // planes for the next Scan.
 func (c *Card) Release(name string) {

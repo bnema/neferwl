@@ -50,6 +50,9 @@ type Channels struct {
 	// OutputFormats are the outputs' direct scanout formats, offered in
 	// dmabuf feedback to fullscreen surfaces.
 	OutputFormats <-chan ports.OutputFormats
+	OutputHeads   <-chan ports.OutputHeads
+	OutputApply   chan<- ports.OutputApply
+	OutputApplied <-chan ports.OutputApplied
 }
 type Server struct {
 	nextCapture     uint64
@@ -138,14 +141,20 @@ type Server struct {
 	shortcutWindows, idleWindows map[ports.WindowID]bool
 	// idleNotes and powers are the idle notifications and output power
 	// objects (idle.go); outputsOff the outputs core turned off.
-	idleNotes     []*idleNotification
-	powers        []*outputPower
-	outputsOff    map[string]bool
-	contentNotify chan struct{}
-	contentReady  chan struct{}
-	outputs       []*output
-	focusedOutput string
-	fractions     map[*surface]*fractionalscale.WpFractionalScaleV1
+	idleNotes        []*idleNotification
+	powers           []*outputPower
+	outputsOff       map[string]bool
+	contentNotify    chan struct{}
+	contentReady     chan struct{}
+	outputs          []*output
+	outputManagers   []*outputManager
+	outputHeads      ports.OutputHeads
+	outputPlaces     ports.Layout
+	managementSerial uint32
+	nextOutputApply  uint64
+	outputReplies    map[uint64]*outputConfiguration
+	focusedOutput    string
+	fractions        map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorMu guards only the latest cursor change for forwardCursors.
@@ -198,6 +207,8 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
+	s.outputReplies = map[uint64]*outputConfiguration{}
+	s.managementSerial = 1
 	s.captureSources = map[*server.Resource]*output{}
 	s.captureSessions = map[*captureSession]struct{}{}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
@@ -263,7 +274,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(7)
+	wg.Add(9)
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()
@@ -301,6 +312,8 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go func() { defer wg.Done(); s.pace(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
+	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
+	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()
 	go func() { defer wg.Done(); s.forwardCaptured(ctx.Done()) }()
 	if s.syncWait != nil {
 		wg.Add(1)
@@ -309,6 +322,54 @@ func (s *Server) Run(ctx context.Context) error {
 	err := s.display.Run(ctx)
 	wg.Wait()
 	return err
+}
+
+// forwardOutputHeads delivers backend inventory on the display owner goroutine.
+func (s *Server) forwardOutputHeads(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case heads, ok := <-s.channels.OutputHeads:
+			if !ok {
+				return
+			}
+			if !s.display.Do(func() { s.setOutputHeads(heads) }) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) forwardOutputApplied(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case result, ok := <-s.channels.OutputApplied:
+			if !ok {
+				return
+			}
+			if !s.display.Do(func() {
+				c := s.outputReplies[result.ID]
+				delete(s.outputReplies, result.ID)
+				if c == nil || !c.res.Alive() {
+					return
+				}
+				if result.Err != nil {
+					c.res.SendFailed()
+				} else {
+					c.res.SendSucceeded()
+				}
+			}) {
+				return
+			}
+		}
+	}
 }
 
 // damageHistory is how many contents a window's damage history covers:

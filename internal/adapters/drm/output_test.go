@@ -525,3 +525,22 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRunPanicReportsReadinessError(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.ready = make(chan error, 1)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("panic not propagated")
+		}
+		select {
+		case err := <-o.Ready():
+			if err == nil {
+				t.Fatal("panic reported as ready")
+			}
+		default:
+			t.Fatal("missing readiness")
+		}
+	}()
+	o.Run(context.Background(), func(int, int) (ports.Renderer, error) { panic("renderer panic") }, nil, nil, nil, nil, nil, nil, nil, nil)
+}

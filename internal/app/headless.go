@@ -13,10 +13,13 @@ import (
 
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output.
-func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, captured)
+	inventory := ports.OutputHeads{}
 	for i, size := range sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
+		mode := ports.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
+		inventory.Heads = append(inventory.Heads, ports.OutputHead{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true})
 		dir := shots
 		if dir != "" && len(sizes) > 1 {
 			dir = filepath.Join(shots, name)
@@ -36,6 +39,16 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<
 		case <-ctx.Done():
 			return set.wait()
 		}
+	}
+	select {
+	case heads <- inventory:
+	case <-ctx.Done():
+		return set.wait()
+	}
+	select {
+	case report <- inventory:
+	case <-ctx.Done():
+		return set.wait()
 	}
 	// The pointer starts centred on the first output, like libinput's.
 	curs.move("HEADLESS-1", float64(sizes[0][0])/2, float64(sizes[0][1])/2)

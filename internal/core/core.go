@@ -508,6 +508,7 @@ func (c *Core) resolveConstraint() {
 				}
 				r := c.clientRect(p)
 				r.X += s.x
+				r.Y += s.y
 				if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
 					// The region is clipped to the window.
 					x0, y0 := max(r.X, r.X+w.X), max(r.Y, r.Y+w.Y)
