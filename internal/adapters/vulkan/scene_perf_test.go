@@ -7,6 +7,30 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// TestRenderSteadyStateAllocations measures the cost of a small stable scene.
+func TestRenderSteadyStateAllocations(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Seq: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 32, H: 32}}}}
+	content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
+	content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
+	contents := map[ports.WindowID]ports.SurfaceContent{1: content}
+	frame := func() {
+		if err := render(r, scene, contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frame()
+	if allocs := testing.AllocsPerRun(20, frame); allocs > 13 {
+		t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
+	} else {
+		t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
+	}
+}
+
 // TestSceneWalkUnchangedTiledSHM guards the GPU copy budget of an unchanged
 // subsurface tree. Each child has its own real wl_shm pool.
 func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
@@ -37,13 +61,25 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 			_ = r.draws(scene, contents, dmg)
 		}
 		walk()
-		if allocs := testing.AllocsPerRun(20, walk); allocs > 16 {
-			t.Errorf("%d tiles: %.1f allocations/walk, want <=16", count, allocs)
+		if allocs := testing.AllocsPerRun(20, walk); allocs > 8 {
+			t.Errorf("%d tiles: %.1f allocations/walk, want <=8", count, allocs)
 		} else {
 			t.Logf("%d tiles: %.1f allocations/walk", count, allocs)
 		}
 	}
 	contents[1] = root
+	// The same renderer and scene are reused; measure only steady-state frame work.
+	frame := func() {
+		if err := render(r, scene, contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frame()
+	if allocs := testing.AllocsPerRun(20, frame); allocs > 16 {
+		t.Errorf("steady-state Render: %.1f allocs/frame, want <=16", allocs)
+	} else {
+		t.Logf("steady-state Render: %.1f allocs/frame", allocs)
+	}
 	before := r.copied
 	for i := range 100 {
 		root.Seq++

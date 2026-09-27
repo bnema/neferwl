@@ -32,7 +32,7 @@ const fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 func (r *Renderer) CursorBuffers(size int) ([2]ports.DMABuf, error) {
 	var out [2]ports.DMABuf
 	r.dropCursors()
-	if r.dd.GetMemoryFdKHR == nil || len(r.dmabuf.Formats) == 0 || size <= 0 || size > 512 {
+	if !r.dd.HasGetMemoryFdKHR() || len(r.dmabuf.Formats) == 0 || size <= 0 || size > 512 {
 		return out, errors.New("device cannot export cursor images")
 	}
 	for i := range r.cursors {

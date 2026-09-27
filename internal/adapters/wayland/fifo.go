@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"sync"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -233,6 +234,45 @@ type update struct {
 	bufDamage          []ports.Rect
 	readyGeneration    uint64
 	readyResult        bool
+	// refs counts incoming deps and prev links. Retired updates remain readable
+	// until their last incoming link goes away, even after dropQueue.
+	refs    int
+	retired bool
+}
+
+// updatePool contains only retired updates with no incoming graph links. A
+// popped update is NOT reusable just because it left its owner's queue: a
+// parent's queued deps can still point to it (including after role teardown).
+// The display owner goroutine changes graph links; sync.Pool only shares dead,
+// zeroed storage between independent displays.
+var updatePool sync.Pool
+
+func (u *update) releaseRef() {
+	u.refs--
+	if u.refs == 0 && u.retired {
+		deps := u.deps[:0]
+		*u = update{deps: deps}
+		updatePool.Put(u)
+	}
+}
+
+// retireUpdate severs outgoing links only after the update is no longer used
+// by applyUpdate/dropQueue. Incoming links keep its identity until consumed.
+func (u *update) retireUpdate() {
+	u.retired = true
+	prev, deps := u.prev, u.deps
+	u.prev, u.deps = nil, deps[:0]
+	if prev != nil {
+		prev.releaseRef()
+	}
+	for i, dep := range deps {
+		deps[i] = nil // the pooled backing array must not retain old dependencies
+		dep.releaseRef()
+	}
+	if u.refs == 0 {
+		*u = update{deps: u.deps}
+		updatePool.Put(u)
+	}
 }
 
 type childLayout struct {
@@ -347,7 +387,13 @@ func (s *Server) nextRefresh(name string, now time.Time) time.Time {
 
 // queueUpdate queues the pending commit until it can apply.
 func (s *surface) queueUpdate() {
-	u := s.takePending()
+	u, _ := updatePool.Get().(*update)
+	if u == nil {
+		u = new(update)
+	}
+	deps := u.deps[:0]
+	*u = s.takePending()
+	u.deps = deps
 	u.owner, u.synced = s, s.effectivelySynced()
 	for _, ch := range s.sub.children {
 		for i := len(ch.queue) - 1; i >= 0; i-- {
@@ -355,14 +401,16 @@ func (s *surface) queueUpdate() {
 			if candidate.synced && !candidate.bound {
 				candidate.bound = true
 				u.deps = append(u.deps, candidate)
+				candidate.refs++
 				break
 			}
 		}
 	}
 	if len(s.queue) > 0 {
 		u.prev = s.queue[len(s.queue)-1]
+		u.prev.refs++
 	}
-	s.queue = append(s.queue, &u)
+	s.queue = append(s.queue, u)
 	s.server.fifoSurfaces[s] = struct{}{}
 	s.server.wakePacer()
 }
@@ -431,7 +479,11 @@ func (s *surface) dropQueue() {
 			u.buffer.SendRelease()
 		}
 	}
-	s.queue = nil
+	for i, u := range s.queue {
+		s.queue[i] = nil // do not retain retired objects in the queue backing array
+		u.retireUpdate()
+	}
+	s.queue = s.queue[:0]
 	delete(s.server.fifoSurfaces, s)
 }
 
@@ -574,6 +626,9 @@ func (s *surface) flushDesync() {
 }
 
 func (u *update) graphReady(now time.Time) bool {
+	if u.retired {
+		return true // applied or dropped; a queued parent cannot replay it
+	}
 	s := u.owner
 	gen := s.server.readinessGeneration
 	if gen != 0 && u.readyGeneration == gen {
@@ -598,6 +653,9 @@ func (u *update) graphReady(now time.Time) bool {
 }
 
 func (u *update) applyGraph() {
+	if u.retired {
+		return
+	}
 	s := u.owner
 	for len(s.queue) > 0 && s.queue[0] != u {
 		s.queue[0].applyGraph()
@@ -610,11 +668,19 @@ func (u *update) applyGraph() {
 	if len(s.queue) == 0 || s.queue[0] != u {
 		return
 	}
-	s.queue = s.queue[1:]
+	s.queue[0] = nil
+	if len(s.queue) == 1 {
+		s.queue = s.queue[:0] // retain capacity for the next commit
+	} else {
+		s.queue = s.queue[1:]
+	}
 	if len(s.queue) > 0 {
-		s.queue[0].prev = nil
+		next := s.queue[0]
+		next.prev = nil
+		u.releaseRef() // next's prev no longer points to u
 	}
 	s.applyUpdate(u)
+	u.retireUpdate()
 }
 
 // sameBuffer reports whether two wrappers are the same wl_buffer.

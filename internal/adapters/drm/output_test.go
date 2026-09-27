@@ -218,6 +218,49 @@ func TestFlipReportsTimestampAndShownFrame(t *testing.T) {
 	}
 }
 
+// Unchanged reports share an immutable snapshot; a later content update
+// must not change an earlier report, even after it has been sent.
+func TestReportSeenAllocations(t *testing.T) {
+	o, _, _ := testOutput(t)
+	seen := map[ports.WindowID]uint64{1: 1, 2: 2}
+	o.report(nil, seen)
+	// Keep the queue bounded without measuring the queue's growth.
+	if allocs := testing.AllocsPerRun(100, func() { o.report(nil, seen) }); allocs != 0 {
+		t.Errorf("unchanged report: %.1f allocs, want 0", allocs)
+	} else {
+		t.Logf("unchanged report: %.1f allocs", allocs)
+	}
+	previous := o.unsent[0].Seen
+	seen[1] = 3
+	o.report(nil, seen)
+	if previous[1] != 1 || o.unsent[0].Seen[1] != 3 {
+		t.Fatalf("snapshot mutated: old %v new %v", previous, o.unsent[0].Seen)
+	}
+}
+
+func TestShownBySnapshotAllocations(t *testing.T) {
+	o := &Output{}
+	s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1}}}
+	seen := map[ports.WindowID]uint64{1: 1, 2: 2}
+	previous := o.shownBy(s, seen)
+	if allocs := testing.AllocsPerRun(100, func() { o.shownBy(s, seen) }); allocs != 0 {
+		t.Errorf("unchanged shows: %.1f allocs, want 0", allocs)
+	}
+	seen[1] = 3
+	current := o.shownBy(s, seen)
+	if previous[1] != 1 || current[1] != 3 {
+		t.Fatalf("snapshot mutated: old %v new %v", previous, current)
+	}
+	direct := o.directShownBy(1, 3)
+	if allocs := testing.AllocsPerRun(100, func() { o.directShownBy(1, 3) }); allocs != 0 {
+		t.Errorf("unchanged direct shows: %.1f allocs, want 0", allocs)
+	}
+	o.directShownBy(1, 4)
+	if direct[1] != 3 {
+		t.Fatalf("direct snapshot mutated: %v", direct)
+	}
+}
+
 func TestReportsKeepEveryFlip(t *testing.T) {
 	o, _, _ := testOutput(t)
 	seen := map[ports.WindowID]uint64{1: 1}

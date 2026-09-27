@@ -26,9 +26,14 @@ func (s *Server) pace(ctx context.Context) {
 	timer := time.NewTimer(defaultFramePeriod)
 	defer timer.Stop()
 	presented := s.channels.Presented
+	if s.flipped == nil {
+		s.flipped = make(map[string]bool)
+	}
 	for {
-		flipped := map[string]bool{}
-		var reports []ports.OutputPresented
+		clear(s.flipped)
+		flipped := s.flipped
+		s.frameReports = s.frameReports[:0]
+		reports := s.frameReports
 		select {
 		case <-ctx.Done():
 			return
@@ -52,6 +57,7 @@ func (s *Server) pace(ctx context.Context) {
 				break drain
 			}
 		}
+		s.frameReports = reports
 		wait, idle := defaultFramePeriod, false
 		if !s.display.Do(func() {
 			if ctx.Err() == nil {
@@ -130,7 +136,11 @@ func (s *Server) queueFrames(name string, callbacks []*wayland.Callback) {
 // their deadline. wait is the time to the next deadline; idle is set when
 // no callback waits after firing.
 func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []string, wait time.Duration, idle bool) {
-	periods := make(map[string]time.Duration, len(s.outputs)+1)
+	if s.framePeriods == nil {
+		s.framePeriods = make(map[string]time.Duration, len(s.outputs)+1)
+	}
+	periods := s.framePeriods
+	clear(periods)
 	for _, o := range s.outputs {
 		periods[o.name()] = framePeriod(o.place.Info.RefreshMilli)
 	}

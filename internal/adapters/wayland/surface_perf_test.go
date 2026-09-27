@@ -9,9 +9,43 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// TestEffectiveInputEmptyTreeAllocations guards against a heap-allocated
+// recursive closure for every input-region traversal of a tiled tree.
+func TestEffectiveInputEmptyTreeAllocations(t *testing.T) {
+	root := &surface{}
+	for range 64 {
+		child := &surface{}
+		root.sub.children = append(root.sub.children, child)
+		root.sub.layout = append(root.sub.layout, childLayout{child: child})
+	}
+	walk := func() {
+		all, rects := root.effectiveInput()
+		if all || len(rects) != 0 {
+			t.Fatal("empty tree has input")
+		}
+	}
+	if allocs := testing.AllocsPerRun(100, walk); allocs != 0 {
+		t.Errorf("empty tiled input traversal: %.1f allocs, want 0", allocs)
+	}
+}
+
 // TestTiledCommitPublishAllocations exercises real content publication without
 // a client connection, holding old snapshots while subsequent commits publish.
 func TestTiledCommitPublishAllocations(t *testing.T) {
+	// The top-level test is listed in Makefile perf-check; this subtest guards
+	// the per-commit update storage after its first retirement.
+	t.Run("queueUpdateSteadyState", func(t *testing.T) {
+		srv := &Server{fifoSurfaces: make(map[*surface]struct{}), frameReady: make(chan struct{}, 1)}
+		surf := &surface{server: srv}
+		commit := func() {
+			surf.queueUpdate()
+			surf.dropQueue()
+		}
+		commit()
+		if allocs := testing.AllocsPerRun(100, commit); allocs != 0 {
+			t.Errorf("steady-state queueUpdate/dropQueue: %.1f allocs/commit; want 0", allocs)
+		}
+	})
 	for _, count := range []int{16, 64} {
 		t.Run(fmt.Sprintf("%d", count), func(t *testing.T) {
 			channels := Channels{Contents: make(chan ports.SurfaceContent, 1)}
@@ -35,8 +69,8 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			if first.Seq != 1 || len(first.Children) != count || len(first.DamageHistory) != 1 {
 				t.Fatalf("previous publication changed: %+v", first)
 			}
-			if allocs := testing.AllocsPerRun(100, publish); allocs > 4 {
-				t.Errorf("%d children: %.1f allocs/publication; want <=4", count, allocs)
+			if allocs := testing.AllocsPerRun(100, publish); allocs > 2 {
+				t.Errorf("%d children: %.1f allocs/publication; want <=2", count, allocs)
 			} else {
 				t.Logf("%d children: %.1f allocs/unchanged publication", count, allocs)
 			}
@@ -44,8 +78,19 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			// proportionally to the number of children.
 			root.sub.pendingLayout = root.sub.layout
 			queue := func() { _ = root.takePending() }
-			if allocs := testing.AllocsPerRun(100, queue); allocs > 2 {
-				t.Errorf("%d children: %.1f allocs/queued commit; want <=2", count, allocs)
+			if allocs := testing.AllocsPerRun(100, queue); allocs > 0 {
+				t.Errorf("%d children: %.1f allocs/queued commit; want 0", count, allocs)
+			} else {
+				t.Logf("%d children: %.1f allocs/takePending", count, allocs)
+			}
+			commit := func() {
+				root.queueUpdate()
+				root.dropQueue()
+			}
+			if allocs := testing.AllocsPerRun(100, commit); allocs != 0 {
+				t.Errorf("%d children: %.1f allocs/queueUpdate; want 0", count, allocs)
+			} else {
+				t.Logf("%d children: %.1f allocs/queueUpdate", count, allocs)
 			}
 			if first.Seq != 1 || len(first.Children) != count || len(first.DamageHistory) != 1 || first.DamageHistory[0].Seq != 1 {
 				t.Fatal("previous publication was mutated")
@@ -68,8 +113,8 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 				root.treeDirty = true
 				root.redraw()
 			}
-			if allocs := testing.AllocsPerRun(100, changed); allocs > 4 {
-				t.Errorf("%d children: %.1f allocs/changed publication; want <=4", count, allocs)
+			if allocs := testing.AllocsPerRun(100, changed); allocs > 3 {
+				t.Errorf("%d children: %.1f allocs/changed publication; want <=3", count, allocs)
 			} else {
 				t.Logf("%d children: %.1f allocs/changed publication", count, allocs)
 			}
