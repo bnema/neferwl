@@ -364,19 +364,25 @@ type dmaBufSync struct {
 const ioctlExportSyncFile = 0xc0086202
 const dmaBufSyncRead = 1
 
-// readFence returns a semaphore signalled when the client's pending writes
-// to the buffer finish, or 0 when the kernel cannot export them (older than
-// 5.20): the buffer is then read as is.
-func (r *Renderer) readFence(im *imported) vk.Semaphore {
-	fd := im.fd
-	if im.yuv {
-		fd = im.fds[0]
+// appendReadFences waits on every distinct backing object's pending writes.
+// Shared YUV planes have one implicit fence; disjoint planes have two.
+func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Semaphore {
+	fds := im.fds[:1]
+	if !im.yuv {
+		fds = []int{im.fd}
+	} else if im.disjoint {
+		fds = im.fds[:]
 	}
-	arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
-	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
-		return 0
+	for _, fd := range fds {
+		arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
+			continue // Older kernels cannot export implicit fences.
+		}
+		if sem := r.importSyncFD(int(arg.fd)); sem != 0 {
+			waits = append(waits, sem)
+		}
 	}
-	return r.importSyncFD(int(arg.fd))
+	return waits
 }
 
 // importFence makes a wait semaphore of a sync file. The file stays the

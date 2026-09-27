@@ -249,14 +249,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	// acquire fence, else the buffer's implicit fences.
 	var waits []vk.Semaphore
 	for _, im := range dmas {
-		sem := vk.Semaphore(0)
 		if f := acquires[im]; f != nil {
-			sem = r.importFence(f)
+			if sem := r.importFence(f); sem != 0 {
+				waits = append(waits, sem)
+			}
 		} else {
-			sem = r.readFence(im)
-		}
-		if sem != 0 {
-			waits = append(waits, sem)
+			waits = r.appendReadFences(waits, im)
 		}
 	}
 	frame := r.frame
