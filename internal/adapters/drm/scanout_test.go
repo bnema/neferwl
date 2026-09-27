@@ -125,6 +125,30 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 	}
 }
 
+func TestModesetReportsConfirmedHDR(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.hdrOn = true
+	o.hdr = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
+	ch := make(chan ports.OutputFormats, 2)
+	o.formats = ch
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Twice()
+	k.EXPECT().destroyBlob(uint32(99)).Return(nil).Once()
+	if err := o.modeset(); err != nil {
+		t.Fatal(err)
+	}
+	if f := <-ch; f.HDR == nil || f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != 0.005 {
+		t.Fatalf("HDR report: %+v", f)
+	}
+	o.hdrOn = false // fallback to SDR
+	if err := o.modeset(); err != nil {
+		t.Fatal(err)
+	}
+	if f := <-ch; f.HDR != nil {
+		t.Fatalf("SDR fallback report: %+v", f)
+	}
+}
+
 // A plane without IN_FORMATS (driver without modifiers) scans out its
 // GETPLANE formats, linear.
 func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {

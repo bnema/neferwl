@@ -86,7 +86,9 @@ type Server struct {
 	surfaces map[*server.Resource]*surface
 	buffers  map[*server.Resource]clientBuffer
 	dmabuf   *dmabufGlobal
-	serial   uint32
+	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
+	hdrOutputs map[string]ports.OutputHDR
+	serial     uint32
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
 	press       uint32
@@ -390,6 +392,7 @@ func (s *Server) forwardOutputFormats(ctx context.Context) {
 				return
 			}
 			if !s.display.Do(func() {
+				s.setOutputHDR(f)
 				if s.dmabuf != nil {
 					s.dmabuf.setOutputFormats(f)
 				}

@@ -492,7 +492,10 @@ func (o *Output) sendFormats() {
 		return
 	}
 	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
-	if o.scanout && !o.hdrOn {
+	if o.hdrOn && !o.off {
+		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.MaxLuminance, MaxFrameAverage: o.hdr.MaxFrameAverage, MinLuminance: o.hdr.MinLuminance}
+	}
+	if o.scanout && !o.hdrOn && !o.off {
 		f.Formats = o.scanoutFormats(o.sampled)
 	}
 	select {

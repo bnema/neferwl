@@ -12,6 +12,23 @@ import (
 
 var second = ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-2", Width: 1280, Height: 1024}, X: 1920, Width: 1280, Height: 1024, Scale: 1}
 
+func TestOutputHDRConfirmedState(t *testing.T) {
+	s := &Server{}
+	const name = "DP-1"
+	if _, ok := s.hdrOutputs[name]; ok {
+		t.Fatal("output must start SDR")
+	}
+	want := ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
+	s.setOutputHDR(ports.OutputFormats{Output: name, HDR: &want})
+	if got := s.hdrOutputs[name]; got != want {
+		t.Fatalf("HDR report: %+v", got)
+	}
+	s.setOutputHDR(ports.OutputFormats{Output: name})
+	if _, ok := s.hdrOutputs[name]; ok {
+		t.Fatal("SDR fallback must clear HDR")
+	}
+}
+
 // outputCount counts wl_output globals the client sees.
 func outputCount(c *wlturbo.Display) int {
 	n := 0

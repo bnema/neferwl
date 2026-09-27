@@ -11,6 +11,19 @@ import (
 	"github.com/bnema/purego-libwayland/server"
 )
 
+// setOutputHDR records confirmed DRM state independently of the core layout.
+// Until the first modeset report for an output it is treated as SDR.
+func (s *Server) setOutputHDR(f ports.OutputFormats) {
+	if s.hdrOutputs == nil {
+		s.hdrOutputs = make(map[string]ports.OutputHDR)
+	}
+	if f.HDR == nil {
+		delete(s.hdrOutputs, f.Output)
+	} else {
+		s.hdrOutputs[f.Output] = *f.HDR
+	}
+}
+
 // Outputs. Core sends the global layout (ports.SetOutputs); each output is
 // one wl_output global, removed when the display is unplugged. Every size
 // sent to clients (configures, xdg-output, layer configures, pointer
@@ -155,6 +168,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		o.global.Remove()
+		delete(s.hdrOutputs, o.name())
 		for session := range s.captureSessions {
 			if session.o == o && !session.stopped {
 				session.stopped = true

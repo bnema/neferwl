@@ -424,12 +424,21 @@ type OutputPresented struct {
 // OutputFormats carries output → wayland the dmabuf formats an output can
 // scan out directly (its primary plane's, that the renderer also samples,
 // so a refused buffer can still be composed). Device is the KMS device
-// (dev_t) clients allocate scanout buffers for. Sent at start and after
-// every modeset; empty Formats means no direct scanout.
+// (dev_t) clients allocate scanout buffers for. Sent after every successful
+// modeset, including startup and VT resume; empty Formats means no direct
+// scanout. HDR is non-nil only when the output's HDR10 modeset succeeded;
+// nil means SDR, regardless of the monitor's HDR capability.
 type OutputFormats struct {
 	Output  string
 	Device  uint64
 	Formats []DMABufFormat
+	HDR     *OutputHDR
+}
+
+// OutputHDR carries the active HDR10 output's EDID luminances in nits.
+// These describe the display, not any client's content metadata.
+type OutputHDR struct {
+	MaxLuminance, MaxFrameAverage, MinLuminance float64
 }
 
 // FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
