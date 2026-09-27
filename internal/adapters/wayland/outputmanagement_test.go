@@ -94,9 +94,60 @@ func waitManagementEvent(t *testing.T, c *wlturbo.Display, ch <-chan [2]uint32, 
 	}
 	t.Fatal("missing management event")
 }
+func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
+	s, heads, _, _, dir := outputTestServer(t)
+	heads <- testHead()
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
+	manager.SetID(id)
+	c.Context().Register(manager)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var first [2]uint32
+	for first[0] != wlr.ZwlrOutputManagerV1EventDone {
+		first = recvManagement(t, manager.events)
+	}
+	if first[0] != wlr.ZwlrOutputManagerV1EventDone {
+		t.Fatalf("initial: %v", first)
+	}
+	if !s.display.Do(func() {
+		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080}, X: 100, Width: 1920, Height: 1080, Scale: 1}}})
+	}) {
+		t.Fatal("display stopped")
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	second := recvManagement(t, manager.events)
+	if second[0] != wlr.ZwlrOutputManagerV1EventDone || second[1] == first[1] {
+		t.Fatalf("layout serial: %v -> %v", first, second)
+	}
+	configID := c.AllocateID()
+	proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+	proxy.SetID(configID)
+	c.Context().Register(proxy)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, first[1])
+	waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventCancelled))
+	if !s.display.Do(func() { s.setOutputHeads(ports.OutputHeads{}) }) {
+		t.Fatal("display stopped")
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	third := recvManagement(t, manager.events)
+	if third[0] != wlr.ZwlrOutputManagerV1EventDone || third[1] == second[1] {
+		t.Fatalf("inventory serial: %v -> %v", second, third)
+	}
+}
+
 func TestOutputManagementHeadsAndApply(t *testing.T) {
 	s, heads, apply, replies, dir := outputTestServer(t)
 	heads <- testHead()
+	if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+		t.Fatal("display stopped")
+	}
 	c := protocolClient(t, s, dir)
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
@@ -109,8 +160,11 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	if head[0] != wlr.ZwlrOutputManagerV1EventHead {
 		t.Fatalf("head event: %v", head)
 	}
-	serial := recvManagement(t, manager.events)
-	if serial[0] != wlr.ZwlrOutputManagerV1EventDone || serial[1] == 0 {
+	var serial [2]uint32
+	for serial[0] != wlr.ZwlrOutputManagerV1EventDone {
+		serial = recvManagement(t, manager.events)
+	}
+	if serial[1] == 0 {
 		t.Fatalf("done: %v", serial)
 	}
 	configID := c.AllocateID()
