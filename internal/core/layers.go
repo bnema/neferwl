@@ -104,7 +104,7 @@ func shown(sc *screen, layer ports.Layer) bool {
 
 // layerAt returns the topmost shown layer surface under the output-local
 // point among those above (or below) the windows.
-func layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float64, float64) {
+func (c *Core) layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float64, float64) {
 	full := hasFullscreen(sc)
 	for i := len(sc.placed) - 1; i >= 0; i-- {
 		l := sc.placed[i]
@@ -112,7 +112,7 @@ func layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float64, float64
 		if (l.Layer >= ports.LayerTop) != above || (full && (l.Layer == ports.LayerBottom || l.Layer == ports.LayerTop)) || r.W <= 0 || r.H <= 0 {
 			continue
 		}
-		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
+		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) && c.acceptsInput(l.ID, lx-float64(r.X), ly-float64(r.Y)) {
 			return l.ID, lx - float64(r.X), ly - float64(r.Y)
 		}
 	}

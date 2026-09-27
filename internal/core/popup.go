@@ -290,7 +290,7 @@ func (c *Core) popupAt(sc *screen, lx, ly float64, overLayers bool) (WindowID, f
 		if !ok || s != sc {
 			continue
 		}
-		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
+		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) && c.acceptsInput(p.id, lx-float64(r.X), ly-float64(r.Y)) {
 			return p.id, lx - float64(r.X), ly - float64(r.Y)
 		}
 	}

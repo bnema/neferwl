@@ -77,8 +77,9 @@ type Core struct {
 	terms                 map[string]*termSpawn
 	firstTerminalResolved bool
 	// clients holds the app ID and PID of mapped windows, for State.
-	clients   map[WindowID]ports.WindowMapped
-	sentState ports.State
+	clients      map[WindowID]ports.WindowMapped
+	inputRegions map[WindowID]ports.InputRegionChanged
+	sentState    ports.State
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -288,7 +289,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -361,15 +362,23 @@ func (c *Core) keyboardFocus() WindowID {
 // setLayers splits the mapped layer surfaces by output. A surface without an
 // output, or on an unknown one, goes to the focused output.
 func (c *Core) setLayers(all []ports.LayerSurface) {
+	previous := make(map[WindowID]bool)
 	for _, sc := range c.screens {
+		for _, l := range sc.layers {
+			previous[l.ID] = true
+		}
 		sc.layers = nil
 	}
 	for _, l := range all {
+		delete(previous, l.ID)
 		sc := c.cur()
 		if i := c.screenIndex(l.Output); i >= 0 {
 			sc = c.screens[i]
 		}
 		sc.layers = append(sc.layers, l)
+	}
+	for id := range previous {
+		delete(c.inputRegions, id)
 	}
 	for _, sc := range c.screens {
 		sc.arrange()
@@ -565,6 +574,19 @@ func (c *Core) allLayers() []ports.LayerSurface {
 	return all
 }
 
+func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
+	r, ok := c.inputRegions[id]
+	if !ok || r.All {
+		return true
+	}
+	for _, box := range r.Rects {
+		if x >= float64(box.X) && x < float64(box.X+box.W) && y >= float64(box.Y) && y < float64(box.Y+box.H) {
+			return true
+		}
+	}
+	return false
+}
+
 // hit returns the surface under the global logical point and the point in
 // its surface coordinates: popups, then overlay and top layers, then
 // windows (fullscreen wins; otherwise the last visible placement is
@@ -581,7 +603,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {
 		return id, px, py
 	}
-	if id, px, py := layerAt(sc, lx, ly, true); id != 0 {
+	if id, px, py := c.layerAt(sc, lx, ly, true); id != 0 {
 		return id, px, py
 	}
 	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
@@ -598,6 +620,9 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			if full && !p.Floating {
 				continue
 			}
+			if !c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
+				continue
+			}
 			if id == 0 || p.Fullscreen || p.Floating {
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
@@ -605,7 +630,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 		}
 	}
 	if id == 0 {
-		return layerAt(sc, lx, ly, false)
+		return c.layerAt(sc, lx, ly, false)
 	}
 	return id, sx, sy
 }
@@ -637,6 +662,8 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.LayerChanged:
 				c.layerChanged = true
 				c.setLayers(v.Layers)
+			case ports.InputRegionChanged:
+				c.inputRegions[v.ID] = v
 			case ports.WindowMapped:
 				c.clients[v.ID] = v
 				if v.Floating {
@@ -697,6 +724,7 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 				delete(c.clients, v.ID)
+				delete(c.inputRegions, v.ID)
 				delete(c.inhibitors, v.ID)
 				delete(c.idle, v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {

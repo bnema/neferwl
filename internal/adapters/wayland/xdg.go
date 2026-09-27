@@ -178,6 +178,7 @@ func (w *window) unmap() {
 		return
 	}
 	w.mapped = false
+	w.xdg.surface.resetInputEmission()
 	w.xdg.configured = false
 	w.xdg.acked = false
 	w.xdg.serials = nil

@@ -45,10 +45,14 @@ type surface struct {
 	scale float64
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
-	content  ports.SurfaceContent
-	has      bool
-	identity uint64
-	version  uint64
+	inputAll, pendingInputAll, pendingInputSet bool
+	inputRects, pendingInputRects              []ports.Rect
+	sentInput, lastInputAll                    bool
+	lastInputRects                             []ports.Rect
+	content                                    ports.SurfaceContent
+	has                                        bool
+	identity                                   uint64
+	version                                    uint64
 	// cachedTree is never modified once returned to emitContent.
 	cachedTree                 []ports.Subsurface
 	treeDirty                  bool
@@ -233,6 +237,7 @@ func (s *surface) detach() {
 	s.dropQueue()
 	s.flushDesync()
 	p.redraw()
+	p.emitInput()
 	s.sendScale()
 }
 
@@ -359,6 +364,11 @@ func (s *surface) applyCommit() {
 		s.attached = false
 	}
 	s.applySync(cs)
+	if s.pendingInputSet {
+		s.inputAll, s.inputRects = s.pendingInputAll, s.pendingInputRects
+		s.pendingInputRects = nil
+		s.pendingInputSet = false
+	}
 	if len(s.callbacks) > 0 {
 		s.server.queueFrames(s.server.frameOutput(s), s.callbacks)
 	}
@@ -423,6 +433,7 @@ func (s *surface) applyCommit() {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
 	}
 	s.commitConstraint(geometry)
+	s.emitInput()
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
@@ -500,7 +511,6 @@ func (s *surface) commitDamage(fresh, resized bool, bw, bh int) {
 	s.committed = d
 }
 func (*surface) SetOpaqueRegion(*wayland.Surface, *wayland.Region) {}
-func (*surface) SetInputRegion(*wayland.Surface, *wayland.Region)  {}
 func (*surface) SetBufferTransform(*wayland.Surface, int32)        {}
 func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
 	if v < 1 {

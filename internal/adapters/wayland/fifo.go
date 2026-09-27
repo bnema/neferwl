@@ -198,39 +198,41 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // update is a surface's pending state taken out by a commit that waits.
 type update struct {
-	attached        bool
-	buffer          *wayland.Buffer
-	scale           int
-	async           bool
-	kind            uint32
-	callbacks       []*wayland.Callback
-	vp              *viewport
-	vpW, vpH        int32
-	vpSet           bool
-	vpSrc           [4]server.Fixed
-	vpCrop          bool
-	layout          []childLayout
-	deps            []*update
-	owner           *surface
-	prev            *update
-	synced, bound   bool
-	xdg             *xdgSurface
-	geometry        ports.Rect
-	cons            *constraint
-	region          *ports.Rect
-	layer           *layerSurface
-	layerNext       layerState
-	barrier         bool
-	wait            bool
-	at              time.Time
-	feedback        []*presentationtime.WpPresentationFeedback
-	sync            *commitSync
-	color           SurfaceColor
-	representation  surfaceRepresentation
-	damage          []ports.Rect
-	bufDamage       []ports.Rect
-	readyGeneration uint64
-	readyResult     bool
+	inputSet, inputAll bool
+	inputRects         []ports.Rect
+	attached           bool
+	buffer             *wayland.Buffer
+	scale              int
+	async              bool
+	kind               uint32
+	callbacks          []*wayland.Callback
+	vp                 *viewport
+	vpW, vpH           int32
+	vpSet              bool
+	vpSrc              [4]server.Fixed
+	vpCrop             bool
+	layout             []childLayout
+	deps               []*update
+	owner              *surface
+	prev               *update
+	synced, bound      bool
+	xdg                *xdgSurface
+	geometry           ports.Rect
+	cons               *constraint
+	region             *ports.Rect
+	layer              *layerSurface
+	layerNext          layerState
+	barrier            bool
+	wait               bool
+	at                 time.Time
+	feedback           []*presentationtime.WpPresentationFeedback
+	sync               *commitSync
+	color              SurfaceColor
+	representation     surfaceRepresentation
+	damage             []ports.Rect
+	bufDamage          []ports.Rect
+	readyGeneration    uint64
+	readyResult        bool
 }
 
 type childLayout struct {
@@ -266,6 +268,9 @@ func sameLayout(a, b []childLayout) bool {
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
 	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback, sync: s.pendingSync, color: s.pendingColor, representation: s.pendingRepresentation}
+	u.inputSet, u.inputAll, u.inputRects = s.pendingInputSet, s.pendingInputAll, s.pendingInputRects
+	s.pendingInputSet = false
+	s.pendingInputRects = nil
 	s.attached, s.pending, s.callbacks = false, nil, nil
 	s.pendingFeedback, s.pendingSync = nil, nil
 	s.pendingDamage, s.pendingBufDamage = nil, nil
@@ -289,6 +294,7 @@ func (s *surface) takePending() update {
 // putPending makes an update the surface's pending state again. Parts
 // whose object is gone (viewport, child, role, constraint) are dropped.
 func (s *surface) putPending(u update) {
+	s.pendingInputSet, s.pendingInputAll, s.pendingInputRects = u.inputSet, u.inputAll, u.inputRects
 	s.attached, s.pending, s.callbacks = u.attached, u.buffer, u.callbacks
 	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
 	s.pendingColor = u.color
