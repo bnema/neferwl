@@ -39,7 +39,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
 | `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
-| `render.tearing` / `render.vrr` | `on` / `on` | For games in direct scanout |
+| `render.tearing` / `render.vrr` | `on` / `on` | Tearing: games in direct scanout. VRR: any fullscreen window covering the output |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
 

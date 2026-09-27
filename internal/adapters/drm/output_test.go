@@ -359,6 +359,53 @@ func TestVRRToggleOnlyInsideFrames(t *testing.T) {
 	}
 }
 
+// A composed fullscreen frame keeps VRR and restarts the hold; state
+// commits (cursor, vrrOff timer) keep it too until the fullscreen ends.
+func TestVRRKeptWhileFullscreenComposed(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.vrrOn = true
+	o.composedSince = time.Now().Add(-time.Second)
+	if !o.wantVRR(true) || !o.composedSince.IsZero() {
+		t.Fatal("composed fullscreen dropped VRR")
+	}
+	// Cursor-only state commit between frames.
+	if !o.stateVRR() {
+		t.Fatal("state commit dropped VRR during fullscreen")
+	}
+	// Fullscreen ends, a tiled window stays on the overlay plane: the
+	// hold starts, then VRR goes off.
+	o.shown = 9
+	if !o.wantVRR(false) || o.composedSince.IsZero() {
+		t.Fatal("hold not started on exit")
+	}
+	o.composedSince = time.Now().Add(-time.Second)
+	if o.stateVRR() {
+		t.Fatal("VRR kept after the hold (overlay buffer taken for a game)")
+	}
+}
+
+// A VRR refusal on a composed frame with an overlay retries with the
+// overlay: the composed image left its window out.
+func TestVRRRefusedKeepsOverlay(t *testing.T) {
+	o, k, commits := overlayOutput(t, unix.EINVAL)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	s, c := overlayScene()
+	ov, _ := o.overlayFrame(s, c)
+	if ov.fb == 0 {
+		t.Fatal("no overlay")
+	}
+	if err := o.commitWith(70, nil, false, true, pendingFrame{queued: ov.buf}, ov); err != nil {
+		t.Fatal(err)
+	}
+	if len(*commits) != 2 || o.vrrProp != 0 {
+		t.Fatalf("%d commits, vrrProp %d", len(*commits), o.vrrProp)
+	}
+	if v, _ := (*commits)[1].req.value(tOverlay, pFB); v != 88 || o.overlayOn != ov.buf {
+		t.Fatalf("retry overlay fb %d, overlayOn %d", v, o.overlayOn)
+	}
+}
+
 func TestReadPlanes(t *testing.T) {
 	k := newMockkms(t)
 	k.EXPECT().planes().Return([]planeRes{{id: 1, possible: 1}, {id: 2, possible: 2}, {id: 3, possible: 3}}, nil)
@@ -479,6 +526,75 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		if _, err := f.Stat(); err == nil {
 			t.Fatal("frame fence left open")
 		}
+	}
+}
+
+// Run: a fullscreen window composed under an overlay layer keeps VRR on in
+// the frame commit; a tiled scene turns it off only after vrrHold.
+func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.cursor, o.tearing = nil, false
+	flips := make(chan flipEvent, 1)
+	o.flipped = flips
+	r := portsmocks.NewMockRenderer(t)
+	pipeBuf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	lastFrame := func() (commitRec, int) {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		n, last := 0, commitRec{}
+		for _, c := range *commits {
+			if c.user&3 == userFrame {
+				n, last = n+1, c
+			}
+		}
+		return last, n
+	}
+	scenes := make(chan ports.Scene, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+	}()
+	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
+		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
+		Layers:  []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 10, H: 10}}}}
+	waitFor(t, func() bool { _, n := lastFrame(); return n == 1 })
+	last, _ := lastFrame()
+	if v, ok := last.req.value(tCrtc, pVRR); !ok || v != 1 {
+		t.Fatalf("composed fullscreen frame VRR %d %v", v, ok)
+	}
+	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}}
+	waitFor(t, func() bool { _, n := lastFrame(); return n == 2 })
+	last, _ = lastFrame()
+	if v, _ := last.req.value(tCrtc, pVRR); v != 1 {
+		t.Fatal("VRR dropped before vrrHold")
+	}
+	flips <- flipEvent{crtc: tCrtc, user: last.user, when: 2 * time.Second, seq: 2}
+	// The vrrOff timer turns VRR off with a state commit after the hold.
+	waitFor(t, func() bool {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		c := (*commits)[len(*commits)-1]
+		v, ok := c.req.value(tCrtc, pVRR)
+		return c.user&3 == userState && ok && v == 0
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 

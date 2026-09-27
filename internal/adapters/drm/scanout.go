@@ -43,6 +43,23 @@ type fbCmd2 struct {
 	modifiers                          [4]uint64
 }
 
+// covers reports whether win fills the output of scene s.
+func covers(s *ports.Scene, win *ports.SceneWindow) bool {
+	return win.Rect.X == 0 && win.Rect.Y == 0 && win.Rect.W == s.OutputWidth && win.Rect.H == s.OutputHeight
+}
+
+// fullscreenShown reports whether a visible fullscreen window covers the
+// output, whether its frame is scanned out or composed.
+func fullscreenShown(s *ports.Scene) bool {
+	for i := range s.Windows {
+		win := &s.Windows[i]
+		if win.Fullscreen && !win.Hidden && covers(s, win) {
+			return true
+		}
+	}
+	return false
+}
+
 // scanoutCandidate returns the window content the output can scan out
 // directly, or a reason why it cannot. w, h are the output's physical size.
 // The plane's formats are checked by scanoutFB.
@@ -53,8 +70,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		if win.Hidden || win.Rect.W <= 0 || win.Rect.H <= 0 {
 			continue
 		}
-		covers := win.Rect.X == 0 && win.Rect.Y == 0 && win.Rect.W == s.OutputWidth && win.Rect.H == s.OutputHeight
-		if !win.Fullscreen || !covers || full != nil {
+		if !win.Fullscreen || !covers(&s, win) || full != nil {
 			return ports.SurfaceContent{}, "other_windows"
 		}
 		full = win

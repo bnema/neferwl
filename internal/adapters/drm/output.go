@@ -107,9 +107,11 @@ type Output struct {
 	asyncProbed bool
 	async       bool
 	// VRR: the CRTC's VRR_ENABLED property (0: none), on while a buffer is
-	// scanned out, set inside frame commits.
+	// scanned out or a fullscreen window covers the output, set inside
+	// frame commits. vrrGame is that state for the last frame.
 	vrrProp       uint32
 	vrrOn         bool
+	vrrGame       bool
 	composedSince time.Time
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
@@ -456,7 +458,7 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
 	o.modeBlob = blob
-	o.vrrOn, o.overlayOn, o.off = false, 0, o.wantOff
+	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, o.wantOff
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
 		o.cursor.screen, o.cursor.flying = 0, false
@@ -484,7 +486,7 @@ func (o *Output) powerOff() error {
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("power off: %w", err)
 	}
-	o.off, o.vrrOn = true, false
+	o.off, o.vrrOn, o.vrrGame = true, false, false
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
 	// An inactive output offers neither HDR nor direct scanout.
 	o.sendFormats()
@@ -608,14 +610,16 @@ func (o *Output) probeAsync(r ports.Renderer) {
 	o.log.Info().Err(err).Str("connector", o.conn.name).Bool("async_fence", o.asyncFence).Msg("tearing probe")
 }
 
-// wantVRR is the VRR state the next frame commit sets: on while a buffer
-// is scanned out, off after composing for vrrHold (each toggle may
-// flicker, so short compositions keep it).
-func (o *Output) wantVRR(direct bool) bool {
+// wantVRR is the VRR state the next frame commit sets: on while game (a
+// buffer is scanned out or a fullscreen window covers the output), off
+// after vrrHold without it (each toggle may flicker, so short breaks keep
+// it).
+func (o *Output) wantVRR(game bool) bool {
 	if o.vrrProp == 0 {
 		return false
 	}
-	if direct {
+	o.vrrGame = game
+	if game {
 		o.composedSince = time.Time{}
 		return true
 	}
@@ -624,6 +628,11 @@ func (o *Output) wantVRR(direct bool) bool {
 	}
 	return o.vrrOn && time.Since(o.composedSince) <= vrrHold
 }
+
+// stateVRR is the VRR state of a commit without a new frame (cursor,
+// vrrOff timer): the last frame's. A shown buffer is not enough: it may
+// be a tiled window on the overlay plane.
+func (o *Output) stateVRR() bool { return o.wantVRR(o.vrrGame) }
 
 // commitFrame flips fb in one commit with the cursor and VRR. An async
 // commit carries only the primary plane (kernel rule): a frame that must
@@ -667,8 +676,9 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
-			// refuses VRR on this output.
-			if o.commitFrame(fb, fence, false, false, f) == nil {
+			// refuses VRR on this output. The overlay stays: the composed
+			// image left its window out.
+			if o.commitWith(fb, fence, false, false, f, ov) == nil {
 				o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr refused; disabled")
 				o.vrrProp = 0
 				return nil
@@ -1156,7 +1166,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		if !dirty || !haveScene {
 			if stateDirty {
-				err := o.commitState(o.wantVRR(o.shown != 0))
+				err := o.commitState(o.stateVRR())
 				if errors.Is(err, errOverlayDropped) {
 					dirty = haveScene
 					continue
@@ -1215,7 +1225,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			// The overlay buffer is on screen like a scanned-out one: it
 			// is reported shown, so it is not released under the plane.
 			f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true
-			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(false), f, ov)
+			// A covering fullscreen window keeps VRR while composed
+			// (overlay layer, subsurfaces, size mismatch).
+			game := o.vrrProp != 0 && fullscreenShown(&scene)
+			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(game), f, ov)
 			if err != nil {
 				// The GPU may still read client buffers for this frame.
 				o.holdRead(done)

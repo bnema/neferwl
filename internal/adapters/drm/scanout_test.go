@@ -57,6 +57,56 @@ func TestScanoutCandidate(t *testing.T) {
 	}
 }
 
+// VRR follows a visible fullscreen window covering the output, even
+// when other windows or layers force composition.
+func TestFullscreenShown(t *testing.T) {
+	full := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 100, H: 50}, Fullscreen: true}
+	for _, tc := range []struct {
+		name string
+		wins []ports.SceneWindow
+		want bool
+	}{
+		{"fullscreen", []ports.SceneWindow{full}, true},
+		{"with dialog above", []ports.SceneWindow{full, {ID: 2, Rect: ports.Rect{W: 10, H: 10}, Floating: true}}, true},
+		{"hidden", []ports.SceneWindow{{ID: 1, Rect: full.Rect, Fullscreen: true, Hidden: true}}, false},
+		{"off screen", []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 100, W: 100, H: 50}, Fullscreen: true}}, false},
+		{"tiled covering", []ports.SceneWindow{{ID: 1, Rect: full.Rect}}, false},
+		{"none", nil, false},
+	} {
+		s := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: tc.wins}
+		if got := fullscreenShown(&s); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// fullscreenShown runs on every composed frame of a VRR output.
+func TestFullscreenShownAllocations(t *testing.T) {
+	s := tiledFullscreenScene()
+	if allocs := testing.AllocsPerRun(100, func() { fullscreenShown(&s) }); allocs != 0 {
+		t.Errorf("fullscreenShown: %.1f allocs, want 0", allocs)
+	}
+}
+
+func BenchmarkFullscreenShown(b *testing.B) {
+	s := tiledFullscreenScene()
+	b.ReportAllocs()
+	for b.Loop() {
+		fullscreenShown(&s)
+	}
+}
+
+// tiledFullscreenScene is 64 tiled windows with the fullscreen one last
+// (worst case for the walk).
+func tiledFullscreenScene() ports.Scene {
+	s := ports.Scene{OutputWidth: 3840, OutputHeight: 2160}
+	for i := range 64 {
+		s.Windows = append(s.Windows, ports.SceneWindow{ID: ports.WindowID(i + 1), Rect: ports.Rect{X: i * 60, W: 60, H: 2160}})
+	}
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 99, Rect: ports.Rect{W: 3840, H: 2160}, Fullscreen: true})
+	return s
+}
+
 // A buffer scans out when the primary plane lists its format (or the
 // opaque variant) with its modifier; the tranche offers only formats the
 // renderer also composes.
