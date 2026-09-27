@@ -64,7 +64,10 @@ type Config struct {
 		RepeatDelay              int
 		CmdKey                   string
 	}
-	Terminal struct{ Command []string }
+	Terminal struct {
+		Command  []string
+		AutoOpen string
+	}
 	// Xwayland is the xwayland-satellite binary serving X11 clients; empty
 	// disables X11.
 	Xwayland string
@@ -107,8 +110,7 @@ type Config struct {
 	}
 }
 
-// WorkspaceConfig declares a named workspace. Hidden ones are not numbered and
-// only reachable through a `workspace <name>` bind, which toggles them.
+// WorkspaceConfig declares a bind-only named workspace, outside the numbered list.
 // Zero MaxColumns and an empty Overflow use the layout.* defaults.
 type WorkspaceConfig struct {
 	Name string
@@ -116,8 +118,7 @@ type WorkspaceConfig struct {
 	// ("make model serial"); empty means the first output.
 	Monitor string
 	// Slots are the declared columns (workspace.<name>.column.N), by N.
-	Slots  []SlotConfig
-	Hidden bool
+	Slots []SlotConfig
 	LayoutRules
 }
 

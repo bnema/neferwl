@@ -36,8 +36,7 @@ func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo
 	return startRig(t, false, edit, outs...)
 }
 
-// startRig is startMulti; with terminal set, core keeps a terminal on every
-// empty workspace on screen.
+// startRig is startMulti; terminal enables the configured automatic-open policy.
 func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
 	cfg := config.Defaults()
@@ -342,9 +341,26 @@ func TestReplugReturnsHiddenGuestAtOnce(t *testing.T) {
 	}
 }
 
+func TestNamedWorkspaceHomeChangeAppliesLive(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	r.key(t, "w", ports.ModAlt)
+	r.mapWindow(t, 1)
+	r.key(t, "w", ports.ModAlt)
+	r.cfg.Workspaces[0].Monitor = "DP-2"
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+}
+
 func TestNamedWorkspaceOnItsMonitor(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
-		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-2", Hidden: true}}
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-2"}}
 		c.Binds["Alt+w"] = "workspace web"
 	}, left)
 	// DP-2 is not plugged: web lives on DP-1 as a guest.
@@ -474,8 +490,80 @@ func TestPointerFocusesOutput(t *testing.T) {
 	}
 }
 
+func TestTerminalAutoOpenFirstOnly(t *testing.T) {
+	r := startRig(t, true, nil, left)
+	first := receive(t, r.spawn)
+	if first.Argv[0] != "foot" {
+		t.Fatal(first)
+	}
+	r.key(t, "Next", ports.ModAlt)
+	if len(r.spawn) != 0 {
+		t.Fatal("opened a terminal on the second workspace")
+	}
+}
+
+func TestTerminalAutoOpenOff(t *testing.T) {
+	r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "off" }, left)
+	if len(r.spawn) != 0 {
+		t.Fatal("opened a terminal with auto-open off")
+	}
+	r.key(t, "Return", ports.ModAlt)
+	if req := receive(t, r.spawn); req.Argv[0] != "foot" || len(req.Env) != 0 {
+		t.Fatal(req)
+	}
+}
+
+func TestTerminalAutoOpenFirstSkipsPopulatedInitialWorkspace(t *testing.T) {
+	r := startRig(t, false, nil, left)
+	r.mapWindow(t, 1)
+	r.cfg.Terminal.AutoOpen = "first"
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	r.key(t, "Next", ports.ModAlt)
+	if len(r.spawn) != 0 {
+		t.Fatal("opened a terminal after the initial workspace opportunity passed")
+	}
+}
+
+func TestTerminalAutoOpenFirstDoesNotTargetLaterWorkspace(t *testing.T) {
+	r := startRig(t, false, nil, left)
+	r.key(t, "Next", ports.ModAlt)
+	r.cfg.Terminal.AutoOpen = "first"
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	if len(r.spawn) != 0 {
+		t.Fatal("opened the first terminal outside workspace 1")
+	}
+}
+
+func TestTerminalAutoOpenFirstSurvivesReloadBeforeOutput(t *testing.T) {
+	r := startRig(t, true, nil)
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	r.plug(t, left)
+	if req := receive(t, r.spawn); req.Argv[0] != "foot" {
+		t.Fatal(req)
+	}
+}
+
+func TestTerminalAutoOpenAllThenFirstDoesNotOpenAgain(t *testing.T) {
+	r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+	req := receive(t, r.spawn)
+	token := req.Env[0][len(ports.SlotEnv)+1:]
+	r.client <- ports.WindowMapped{ID: 1, Slot: token}
+	receive(t, r.scenes)
+	r.cfg.Terminal.AutoOpen = "first"
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	r.client <- ports.WindowUnmapped{ID: 1}
+	receive(t, r.scenes)
+	if len(r.spawn) != 0 {
+		t.Fatal("opened a second automatic terminal after all-to-first reload")
+	}
+}
+
 func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
-	r := startRig(t, true, nil, left, right)
+	r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left, right)
 	// One terminal per output, each tagged for its workspace.
 	var reqs []ports.SpawnRequest
 	for len(reqs) < 2 {
@@ -504,11 +592,11 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	}
 }
 
-func TestLastColumnStaysOnItsOutput(t *testing.T) {
+func TestLastColumnMovesToNeighborOutput(t *testing.T) {
 	r := startRig(t, true, nil, left, right)
 	r.mapWindow(t, 1)
 	set := r.key(t, "Right", ports.ModAlt|ports.ModShift)
-	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+	if got := shown(set); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
 		t.Fatal(got)
 	}
 }
@@ -568,7 +656,7 @@ func TestStateSnapshot(t *testing.T) {
 
 func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
-		c.Workspaces = []ports.WorkspaceConfig{{Name: "notes", Hidden: true}}
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "notes"}}
 		c.Binds["Alt+n"] = "workspace notes"
 	}, left)
 	r.client <- ports.WindowMapped{ID: 1, PID: 100}

@@ -30,7 +30,7 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	cfg := config.Defaults()
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Border.Width = 0
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Hidden: len(numbered) == 0, Slots: []ports.SlotConfig{
+	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{
 		{Index: 1, Width: "70%", Argv: []string{"code"}},
 		{Index: 2, Width: "30%", Argv: []string{"foot"}},
 	}}}
@@ -338,20 +338,6 @@ func TestPendingSlotRespawnedOnSecondShow(t *testing.T) {
 
 // Moving a slot window to another workspace releases the slot; showing the
 // workspace again refills it.
-func TestSlotReleasedWhenWindowMoved(t *testing.T) {
-	r := startSlots(t, true) // dev is numbered: [1] [dev] [empty]
-	r.fill(t)
-	r.press(t, "d") // on dev, focus on code (slot 1)
-	r.input <- ports.KeyEvent{Keysym: "Prior", Mods: ports.ModAlt | ports.ModShift, Pressed: true}
-	scene(t, r.scenes) // move-window-to-workspace-up: code goes to workspace 1
-	noSpawn(t, r.spawn)
-	r.press(t, "d") // back to workspace 1
-	r.press(t, "d") // dev again: slot 1 is empty
-	if v := receive(t, r.spawn); v.Argv[0] != "code" {
-		t.Fatal(v)
-	}
-}
-
 // Startup commands are spawned once, before the slots.
 func TestStartupCommands(t *testing.T) {
 	cfg := config.Defaults()

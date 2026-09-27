@@ -20,7 +20,7 @@ NeferWL has no animations, themes, built-in bar or wallpaper, by design. The com
 
 - **Terminal first.** NeferWL opens your terminal at startup. Bars, launchers and notifications are external clients such as Waybar, fuzzel and mako.
 - **Column tiling.** Up to `max-columns` windows share the screen, as in Sway. Past that, new columns scroll to the right as in Niri, or split in a spiral with `overflow = fixed`. Each workspace can set its own rules.
-- **Custom workspaces.** Numbered workspaces appear and disappear as you use them. Named workspaces can be hidden behind a bind. **Slots** declare a workspace's columns (width and command): NeferWL starts the apps in the background and puts each window in its column.
+- **Custom workspaces.** Numbered workspaces appear and disappear as you use them. Named workspaces are outside the numbered list and shown through a bind. **Slots** declare a workspace's columns (width and command): NeferWL starts the apps in the background and puts each window in its column.
 - **Multi-monitor.** Each monitor has its own workspaces. When you unplug a monitor, its workspaces move to another one; when you plug it back, they return, and your focus stays where it was.
 - **Games.** A fullscreen game is shown without composition, with tearing and VRR when the game asks for them. Details are in [the performance path](#the-performance-path).
 - **Low footprint.** About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
@@ -30,7 +30,7 @@ An example config:
 
 ```text
 keyboard.layout = fr
-terminal = foot
+terminal.auto-open = first
 startup = waybar
 
 output.DP-1 = 3840x2160@144
@@ -38,12 +38,14 @@ output.DP-1.scale = 1.5
 
 layout.max-columns = 3
 
-# A hidden dev workspace: editor and terminal, started and placed for you.
-workspace.dev.hidden = on
+# A bind-only dev workspace: editor and terminal, started and placed for you.
+workspace.dev.monitor = DP-1
 workspace.dev.column.1 = 67%, code --new-window
 workspace.dev.column.2 = 33%, foot
 bind.cmd+d = workspace dev
 ```
+
+The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `terminal.auto-open = first` opens it once on the initial numbered workspace; `all` opens it on each visible empty workspace without slots, and `off` disables automatic opening. `--no-terminal` overrides automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR`, and `$VISUAL`.
 
 ### The performance path
 

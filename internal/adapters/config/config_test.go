@@ -20,6 +20,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 }
 
 func TestDefaultsAndLoad(t *testing.T) {
+	t.Setenv("TERMINAL", "")
 	d := Defaults()
 	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 52 || d.Layout.MaxColumns != 2 {
 		t.Fatalf("defaults: %+v", d)
@@ -282,12 +283,12 @@ workspace.web.overflow = spiral
 bind.cmd+d = workspace dev
 bind.cmd+w = workspace
 bind.cmd+x = workspace typo
-workspace.lost.hidden = on
+workspace.lost.monitor = DP-1
 `)
 	want := []ports.WorkspaceConfig{
-		{Name: "dev", Monitor: "DP-2", Hidden: true, MaxColumns: 3},
+		{Name: "dev", Monitor: "DP-2", MaxColumns: 3},
 		{Name: "web", Overflow: "scroll"},
-		{Name: "lost", Hidden: true},
+		{Name: "lost", Monitor: "DP-1"},
 	}
 	if c.Layout.Overflow != "fixed" || !reflect.DeepEqual(c.Workspaces, want) {
 		t.Fatalf("%q %+v", c.Layout.Overflow, c.Workspaces)
@@ -299,7 +300,7 @@ workspace.lost.hidden = on
 	for _, x := range w {
 		lines = append(lines, x.Line)
 	}
-	if !reflect.DeepEqual(lines, []int{6, 7, 8, 10, 11, 12}) {
+	if !reflect.DeepEqual(lines, []int{2, 4, 6, 7, 8, 10, 11, 12}) {
 		t.Fatal(w)
 	}
 }
@@ -327,13 +328,13 @@ workspace.dev.monitor = DP-2
 workspace.dev.column.1 = 50%, foot
 workspace.web.column.1 = 50%, foot
 `)
-	if len(w) != 1 || w[0].Line != 3 {
+	if len(w) != 3 || w[1].Line != 3 {
 		t.Fatal(w)
 	}
 }
 
 func TestWorkspaceSlots(t *testing.T) {
-	c, w := parseString(t, `workspace.dev.hidden = on
+	c, w := parseString(t, `workspace.dev.monitor = DP-2
 workspace.dev.column.2 = 33%, foot --title x
 workspace.dev.column.1 = 67%, code --new-window
 workspace.dev.column.2 = 1/3, kitty
@@ -362,7 +363,27 @@ func TestSlotWidthsIgnoredWithFixedOverflow(t *testing.T) {
 	_, w := parseString(t, `workspace.dev.overflow = fixed
 workspace.dev.column.1 = 67%, foot
 `)
-	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "ignored") {
+	if len(w) != 2 || w[1].Line != 2 || !strings.Contains(w[1].Msg, "ignored") {
 		t.Fatal(w)
+	}
+}
+
+func TestTerminalResolutionAndAutoOpen(t *testing.T) {
+	t.Setenv("TERMINAL", "ghostty --new-window")
+	c, w := parseString(t, "terminal.auto-open = all\n")
+	if len(w) != 0 || !reflect.DeepEqual(c.Terminal.Command, []string{"ghostty", "--new-window"}) || c.Terminal.AutoOpen != "all" {
+		t.Fatal(c.Terminal, w)
+	}
+	c, w = parseString(t, "terminal = foot --server\nterminal.auto-open = off\n")
+	if len(w) != 0 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Terminal.AutoOpen != "off" {
+		t.Fatal(c.Terminal, w)
+	}
+	c, w = parseString(t, "terminal.auto-open = invalid\n")
+	if len(w) != 1 || c.Terminal.AutoOpen != "first" {
+		t.Fatal(c.Terminal, w)
+	}
+	t.Setenv("TERMINAL", " ")
+	if got := Defaults().Terminal.Command; !reflect.DeepEqual(got, []string{"foot"}) {
+		t.Fatal(got)
 	}
 }

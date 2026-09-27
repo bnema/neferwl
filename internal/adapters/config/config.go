@@ -79,7 +79,11 @@ func Defaults() ports.Config {
 	c.Keyboard.RepeatRate = 25
 	c.Keyboard.RepeatDelay = 600
 	c.Keyboard.CmdKey = "super"
-	c.Terminal.Command = []string{"foot"}
+	c.Terminal.Command = strings.Fields(os.Getenv("TERMINAL"))
+	if len(c.Terminal.Command) == 0 {
+		c.Terminal.Command = []string{"foot"}
+	}
+	c.Terminal.AutoOpen = "first"
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Border.Width = 2
@@ -310,6 +314,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 		return c, raw, warnings, err
 	}
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
+	sort.SliceStable(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
 	for combo := range c.Binds {
@@ -425,6 +430,11 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must not be empty")
 		}
 		c.Terminal.Command = argv
+	case "terminal.auto-open":
+		if v != "first" && v != "all" && v != "off" {
+			return fmt.Errorf("must be first, all or off")
+		}
+		c.Terminal.AutoOpen = v
 	case "xwayland":
 		switch {
 		case v == "off":
@@ -561,8 +571,7 @@ func setLayoutRule(r *ports.LayoutRules, field, v string) error {
 }
 
 // checkWorkspaceBinds warns about a `workspace <name>` bind to an undeclared
-// workspace (it does nothing) and a hidden workspace no bind reaches (its
-// windows could only come back by editing the config).
+// workspace (it does nothing) and a named workspace no bind reaches.
 func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 	declared := map[string]bool{}
 	for _, w := range c.Workspaces {
@@ -594,8 +603,14 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
 			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
 		}
-		if w.Hidden && !bound[w.Name] {
-			warnings = append(warnings, Warning{Line: seen["workspace."+w.Name+".hidden"], Msg: fmt.Sprintf("workspace.%s.hidden: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
+		if !bound[w.Name] {
+			line := 0
+			for key, n := range seen {
+				if strings.HasPrefix(key, "workspace."+w.Name+".") && (line == 0 || n < line) {
+					line = n
+				}
+			}
+			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: no bind shows it (add bind.<keys> = workspace %s)", w.Name, w.Name)})
 		}
 	}
 	sort.Slice(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
@@ -607,10 +622,6 @@ var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 // setWorkspace applies one workspace.<name>.<field> key.
 func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 	switch field {
-	case "hidden":
-		b, err := onOff(v)
-		w.Hidden = b
-		return err
 	case "monitor":
 		if v == "" {
 			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
@@ -621,7 +632,7 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 	default:
 		n, ok := strings.CutPrefix(field, "column.")
 		if !ok {
-			return fmt.Errorf("unknown key (hidden, max-columns, overflow, column.N)")
+			return fmt.Errorf("unknown key (monitor, max-columns, overflow, column.N)")
 		}
 		index, err := strconv.Atoi(n)
 		if err != nil || index < 1 || index > 16 {

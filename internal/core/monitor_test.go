@@ -320,7 +320,7 @@ func named(m *Monitor, specs ...NamedWorkspace) *Monitor {
 }
 
 func TestHiddenWorkspaceToggle(t *testing.T) {
-	m := named(monitor(), NamedWorkspace{Name: "dev", Hidden: true})
+	m := named(monitor(), NamedWorkspace{Name: "dev"})
 	m.AddWindow(1)
 	if len(m.Workspaces) != 2 {
 		t.Fatal("hidden workspace is numbered", windows(m))
@@ -361,40 +361,27 @@ func TestHiddenWorkspaceToggle(t *testing.T) {
 	}
 }
 
-func TestNamedWorkspaceIsNumberedAndKept(t *testing.T) {
-	m := monitor()
-	m.AddWindow(1)
-	named(m, NamedWorkspace{Name: "web"})
-	// Inserted above the trailing empty workspace: [1:{1}] [2:web] [3:{}].
-	if len(m.Workspaces) != 3 || m.Workspaces[1].Name != "web" || m.Active != 0 {
-		t.Fatal(windows(m), m.Active)
-	}
-	// Empty named workspaces are not removed when left.
-	m.FocusNumber(2)
-	m.FocusNumber(1)
-	if m.Workspaces[1].Name != "web" {
+func TestNamedWorkspaceBindOnly(t *testing.T) {
+	m := named(monitor(), NamedWorkspace{Name: "web"})
+	if len(m.Workspaces) != 1 {
 		t.Fatal(windows(m))
 	}
 	m.Apply("workspace web")
-	if m.Active != 1 {
-		t.Fatal(m.Active)
+	if m.Current().Name != "web" {
+		t.Fatal(m.Current().Name)
 	}
 	m.Apply("workspace web")
-	if m.Active != 0 {
-		t.Fatal("toggle did not return", m.Active)
-	}
-	m.Apply("workspace nope") // unknown: nothing
-	if m.Active != 0 {
-		t.Fatal(m.Active)
+	if m.Current().Name != "" {
+		t.Fatal(m.Current().Name)
 	}
 }
 
 func TestNamedWorkspaceReload(t *testing.T) {
-	m := named(monitor(), NamedWorkspace{Name: "dev", Hidden: true}, NamedWorkspace{Name: "web"})
+	m := named(monitor(), NamedWorkspace{Name: "dev"}, NamedWorkspace{Name: "web"})
 	m.Apply("workspace dev")
 	m.AddWindow(7)
 	// Reload keeps windows and the workspace on screen; web becomes hidden.
-	named(m, NamedWorkspace{Name: "dev", Hidden: true}, NamedWorkspace{Name: "web", Hidden: true})
+	named(m, NamedWorkspace{Name: "dev"}, NamedWorkspace{Name: "web"})
 	if m.Current().Name != "dev" || len(m.Workspaces) != 1 {
 		t.Fatal(m.Current().Name, windows(m))
 	}
@@ -406,7 +393,7 @@ func TestNamedWorkspaceReload(t *testing.T) {
 }
 
 func TestNamedWorkspaceSettings(t *testing.T) {
-	m := named(monitor(), NamedWorkspace{Name: "dev", Hidden: true, MaxColumns: 3, Overflow: OverflowFixed})
+	m := named(monitor(), NamedWorkspace{Name: "dev", MaxColumns: 3, Overflow: OverflowFixed})
 	m.SetMaxColumns(1)
 	if m.Current().MaxColumns != 1 || m.Current().Overflow != "" {
 		t.Fatal(m.Current().MaxColumns, m.Current().Overflow)
@@ -424,79 +411,6 @@ func TestNamedWorkspaceSettings(t *testing.T) {
 	}
 }
 
-// checkInvariants fails when the monitor is in a state no action should reach.
-func checkInvariants(t *testing.T, m *Monitor, want []WindowID) {
-	t.Helper()
-	if m.Active < 0 || m.Active >= len(m.Workspaces) {
-		t.Fatalf("active %d of %d", m.Active, len(m.Workspaces))
-	}
-	if last := m.Workspaces[len(m.Workspaces)-1]; !last.empty() || last.Name != "" {
-		t.Fatal("no trailing empty unnamed workspace")
-	}
-	if m.shown != nil && indexOf(m.hidden, m.shown) < 0 {
-		t.Fatal("shown is not a hidden workspace")
-	}
-	if m.back != nil && !m.has(m.back) {
-		t.Fatal("back dangles")
-	}
-	seen := map[WindowID]int{}
-	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {
-		for _, c := range w.Columns {
-			for _, id := range c.Windows {
-				seen[id]++
-			}
-		}
-	}
-	for _, id := range want {
-		if seen[id] != 1 {
-			t.Fatalf("window %d present %d times", id, seen[id])
-		}
-	}
-	if len(seen) != len(want) {
-		t.Fatalf("windows %v, want %v", seen, want)
-	}
-}
-
-func TestSetNamedTransitions(t *testing.T) {
-	dev := NamedWorkspace{Name: "dev"}
-	devHidden := NamedWorkspace{Name: "dev", Hidden: true}
-	web := NamedWorkspace{Name: "web"}
-	for _, tc := range []struct {
-		name   string
-		before []NamedWorkspace
-		after  []NamedWorkspace
-		onDev  bool   // show dev before the reload
-		want   string // workspace name on screen after
-	}{
-		{"numbered active becomes hidden", []NamedWorkspace{dev}, []NamedWorkspace{devHidden}, true, "dev"},
-		{"hidden shown becomes numbered", []NamedWorkspace{devHidden}, []NamedWorkspace{dev}, true, "dev"},
-		{"rename drops the old name", []NamedWorkspace{dev}, []NamedWorkspace{web}, true, ""},
-		{"hidden shown is removed", []NamedWorkspace{devHidden}, nil, true, ""},
-		{"hidden not shown is removed", []NamedWorkspace{devHidden, web}, []NamedWorkspace{web}, false, ""},
-		{"add while on numbered", nil, []NamedWorkspace{devHidden, web}, false, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			m := named(monitor(), tc.before...)
-			m.AddWindow(1)
-			if tc.onDev {
-				m.Apply("workspace dev")
-			}
-			m.AddWindow(2)
-			checkInvariants(t, m, []WindowID{1, 2})
-			m.SetNamed(tc.after)
-			checkInvariants(t, m, []WindowID{1, 2})
-			if got := m.Current().Name; got != tc.want {
-				t.Fatalf("on %q, want %q", got, tc.want)
-			}
-			if id, _ := m.Focused(); id != 2 {
-				t.Fatalf("focus moved to %d", id)
-			}
-		})
-	}
-}
-
-// Under fixed overflow, fullscreen moves the window to its own workspace
-// below; workspace up/down still work and leaving brings it back in place.
 func TestMonitorFixedFullscreenOwnWorkspace(t *testing.T) {
 	m := monitor()
 	m.SetOverflow(OverflowFixed)

@@ -168,11 +168,6 @@ func (c *Core) applyAction(a Action) Effect {
 		}
 		edge := (dir < 0 && w.Focus == 0) || (dir > 0 && w.Focus == len(w.Columns)-1)
 		if i := c.neighbor(dir); edge && i >= 0 {
-			// The last column stays: a workspace on screen is never
-			// empty, and moving it would only spawn a new terminal.
-			if len(w.Columns) < 2 && c.keepsTerminal() {
-				return Effect{}
-			}
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
