@@ -495,8 +495,12 @@ func (o *Output) sendFormats() {
 	if o.hdrOn && !o.off {
 		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.MaxLuminance, MaxFrameAverage: o.hdr.MaxFrameAverage, MinLuminance: o.hdr.MinLuminance}
 	}
-	if o.scanout && !o.hdrOn && !o.off {
-		f.Formats = o.scanoutFormats(o.sampled)
+	if o.scanout && !o.off {
+		for _, format := range o.scanoutFormats(o.sampled) {
+			if isTenBit(format.Format) == o.hdrOn {
+				f.Formats = append(f.Formats, format)
+			}
+		}
 	}
 	select {
 	case o.formats <- f:
@@ -741,10 +745,19 @@ func boolValue(b bool) uint64 {
 // composed.
 func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent) {
 	reason := "disabled"
-	if o.hdrOn {
-		reason = "hdr"
-	} else if o.scanout {
+	if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
+		if o.hdrOn && reason == "" {
+			switch {
+			case !c.Color.IsPQ2020():
+				reason = "hdr_sdr_content"
+			case !isTenBit(c.DMABuf.Format):
+				reason = "hdr_format"
+			}
+		} else if !o.hdrOn && reason == "" && c.Color.IsPQ2020() {
+			// An SDR connector must never show raw PQ values.
+			reason = "sdr_pq_content"
+		}
 	}
 	if reason == "" {
 		fb, reason = o.scanoutFB(c.DMABuf, time.Now())

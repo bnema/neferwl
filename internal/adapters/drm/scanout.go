@@ -185,6 +185,15 @@ func (o *Output) scanoutFormats(sampled []ports.DMABufFormat) []ports.DMABufForm
 	return out
 }
 
+// isTenBit identifies the packed 2101010 formats supported by the renderer.
+func isTenBit(format uint32) bool {
+	switch format {
+	case fourccXR30, fourccAR30, fourccXB30, fourccAB30:
+		return true
+	}
+	return false
+}
+
 const (
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24

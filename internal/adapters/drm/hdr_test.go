@@ -53,7 +53,7 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 		}
 	}
 	o.hdrOn = true
-	if fb, _ := o.scanoutFrame(ports.Scene{}, nil); fb != 0 || o.reason != "hdr" {
+	if fb, _ := o.scanoutFrame(ports.Scene{}, nil); fb != 0 || o.reason != "no_fullscreen" {
 		t.Fatalf("scanout: fb %d reason %q", fb, o.reason)
 	}
 	if ov, _ := o.overlayFrame(ports.Scene{}, nil); ov.fb != 0 || o.overlayReason != "hdr" {
