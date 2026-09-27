@@ -106,6 +106,7 @@ func TestHeadlessTiledSHMPlaybackBudget(t *testing.T) {
 		}
 	}
 	render(previous)
+	copied := r.CopiedBytes()
 	var cpuStart, cpuEnd unix.Rusage
 	if err := unix.Getrusage(unix.RUSAGE_SELF, &cpuStart); err != nil {
 		t.Fatal(err)
@@ -145,6 +146,10 @@ func TestHeadlessTiledSHMPlaybackBudget(t *testing.T) {
 	callbackDone:
 		next := wait()
 		render(next)
+		if delta := r.CopiedBytes() - copied; delta != edge*edge*4 {
+			t.Fatalf("frame %d copied %d bytes, want only the changing child's %d (root: id=%d version=%d size=%dx%d, previous root version=%d; first tile: id=%d version=%d previous=%d)", i, delta, edge*edge*4, next.Surface, next.Version, next.Width, next.Height, previous.Version, next.Children[0].Surface, next.Children[0].Version, previous.Children[0].Version)
+		}
+		copied = r.CopiedBytes()
 		for tile := range tiles {
 			if next.Children[tile].Version != previous.Children[tile].Version {
 				t.Fatalf("unchanged tile %d changed version", tile)

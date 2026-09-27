@@ -131,7 +131,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	}
 	defer r.Close()
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
-	c.ID, c.Seq = 1, 1
+	c.ID, c.Seq, c.Version = 1, 1, 1
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
 	render := func() {
@@ -154,7 +154,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	if r.copied != 16*16*4 {
 		t.Fatalf("unchanged content copied again: %d", r.copied)
 	}
-	c.Seq = 2
+	c.Seq, c.Version = 2, 2
 	contents[1] = c
 	render()
 	if r.copied != 2*16*16*4 {

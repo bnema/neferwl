@@ -190,7 +190,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 	}
 	s.last = r.frame
 	for _, c := range s.bufs {
-		if c != nil && c.valid && c.holds == st {
+		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq {
 			c.gpu.last = r.frame
 			return c, nil
 		}
