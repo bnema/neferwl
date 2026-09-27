@@ -32,8 +32,11 @@ type Renderer struct {
 	hdrNits    float64
 	hdr        hdrPass
 	hdrError   error
-	// Cursor conversions are cached by image contents and dimensions.
-	cursorCache map[string][]byte
+	// hdrReadback is used only by the GPU test to permit transfer from a 10-bit target.
+	hdrReadback bool
+	physical    vk.PhysicalDevice
+	// One converted cursor image is kept; changes replace it in bounded memory.
+	cursorCache cursorConversion
 	// last is the target of the last frame; readback copies it into
 	// buffer only when Pixels asks (stale until then).
 	last         *target
@@ -192,6 +195,7 @@ func New(width, height int) (r *Renderer, err error) {
 		if sup := r.probeDMABuf(physical); sup.Device != 0 {
 			r.dmabuf = sup
 			r.probeRenderModifiers(physical)
+			r.physical = physical
 		}
 		// VK_KHR_external_semaphore_fd (enabled above): frames export
 		// their fence as a sync file.

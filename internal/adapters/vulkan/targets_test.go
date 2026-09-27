@@ -75,6 +75,15 @@ func TestHDRExportTarget(t *testing.T) {
 	}
 	defer r.Close()
 	r.SetHDR(203)
+	// Only this GPU test requests transfer-src on an HDR target.
+	r.hdrReadback = true
+	if r.physical == 0 {
+		t.Skip("no exportable GPU")
+	}
+	r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
+	if len(r.hdrMods) == 0 {
+		t.Skip("no HDR modifier supporting transfer-src")
+	}
 	bufs, err := r.ExportTargets(1, r.hdrMods)
 	if err != nil {
 		t.Skipf("no HDR-exportable target: %v", err)
@@ -83,19 +92,50 @@ func TestHDRExportTarget(t *testing.T) {
 	if bufs[0].Format != fourccXR30 {
 		t.Fatalf("format: %#x", bufs[0].Format)
 	}
-	if err := render(r, ports.Scene{Background: "#ffffff"}, nil); err != nil {
+
+	// A real second frame with an unchanged scene must retain the internal
+	// image and use a partial-damage load from its actual prior layout.
+	scene := ports.Scene{Seq: 1, Background: "#ffffff"}
+	for _, tc := range []struct {
+		bg  string
+		rgb [3]float64
+	}{
+		{"#ffffff", [3]float64{1, 1, 1}},
+		{"#ff0000", [3]float64{1, 0, 0}},
+		{"#0000ff", [3]float64{0, 0, 1}},
+		{"#808080", [3]float64{128.0 / 255, 128.0 / 255, 128.0 / 255}},
+	} {
+		scene.Seq++
+		scene.Background = tc.bg
+		if err := render(r, scene, nil); err != nil {
+			t.Fatal(err)
+		}
+		checkHDRPixel(t, r, tc.rgb)
+	}
+	before := r.redrawn
+	if err := render(r, scene, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().RGBAAt(0, 0); got.R != 255 || got.G != 255 || got.B != 255 {
+	if r.redrawn-before >= r.width*r.height {
+		t.Fatalf("unchanged HDR frame redrew %d pixels", r.redrawn-before)
+	}
+	checkHDRPixel(t, r, [3]float64{128.0 / 255, 128.0 / 255, 128.0 / 255})
+	if r.own.layout != vk.ImageLayoutTransferSrcOptimal {
+		t.Fatalf("internal layout after HDR: %v", r.own.layout)
+	}
+	if got := r.Pixels().RGBAAt(0, 0); got.R != 128 || got.G != 128 || got.B != 128 {
 		t.Fatalf("SDR readback: %v", got)
 	}
-	// Temporarily read the 10-bit target back into the existing 4-byte/pixel
-	// staging buffer, without changing the production Pixels path.
+}
+
+// Test-only target readback: production HDR images do not have transfer-src.
+func checkHDRPixel(t *testing.T, r *Renderer, rgb [3]float64) {
+	t.Helper()
 	if err := r.waitFrame(r.submitted); err != nil {
 		t.Fatal(err)
 	}
 	target := r.targets[0]
-	err = r.oneShot(func(cmd vk.CommandBuffer) {
+	err := r.oneShot(func(cmd vk.CommandBuffer) {
 		d := r.dd
 		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: target.image, SubresourceRange: colorRange}
 		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
@@ -110,11 +150,11 @@ func TestHDRExportTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := *(*uint32)(unsafe.Pointer(r.mapped))
-	want, _, _ := hdrPixel(1, 1, 1, 203)
-	for _, shift := range []uint{0, 10, 20} {
-		got := float64(v>>shift&1023) / 1023
-		if math.Abs(got-want) > 0.004 {
-			t.Fatalf("channel %d: PQ %.5f want %.5f", shift, got, want)
+	red, green, blue := hdrPixel(rgb[0], rgb[1], rgb[2], 203)
+	for i, want := range []float64{blue, green, red} {
+		got := float64(v>>uint(i*10)&1023) / 1023
+		if math.Abs(got-want) > 0.005 {
+			t.Fatalf("rgb %v channel %d: PQ %.5f want %.5f", rgb, i, got, want)
 		}
 	}
 }

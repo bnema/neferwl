@@ -1,10 +1,12 @@
 package vulkan
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"os"
-	"strconv"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -106,6 +108,26 @@ func (r *Renderer) cursorImage(size int) (*cursorImage, ports.DMABuf, error) {
 	return c, ports.DMABuf{Width: size, Height: size, Format: fourccARGB, Modifier: 0, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}, nil
 }
 
+// cursorConversion keeps only the last converted image, bounded by the
+// cursor plane's maximum dimensions, regardless of cursor theme size.
+type cursorConversion struct {
+	key    [32]byte
+	pixels []byte
+}
+
+func cursorKey(pixels []byte, w, h int, nits float64) [32]byte {
+	var header [24]byte
+	binary.LittleEndian.PutUint64(header[:8], uint64(w))
+	binary.LittleEndian.PutUint64(header[8:16], uint64(h))
+	binary.LittleEndian.PutUint64(header[16:], math.Float64bits(nits))
+	digest := sha256.New()
+	_, _ = digest.Write(header[:])
+	_, _ = digest.Write(pixels)
+	var key [32]byte
+	digest.Sum(key[:0])
+	return key
+}
+
 // WriteCursor copies premultiplied ARGB8888 pixels (w×h, w*4 per row)
 // into cursor image i at its row pitch, cropped and cleared around.
 func (r *Renderer) WriteCursor(i int, pixels []byte, w, h int) error {
@@ -121,12 +143,9 @@ func (r *Renderer) WriteCursor(i int, pixels []byte, w, h int) error {
 	cw := min(w, c.size) * 4
 	if r.hdrNits > 0 {
 		// WriteCursor is called only on image changes, never on moves.
-		key := strconv.Itoa(w) + ":" + strconv.Itoa(h) + ":" + strconv.FormatFloat(r.hdrNits, 'f', -1, 64) + ":" + string(pixels[:w*h*4])
-		if r.cursorCache == nil {
-			r.cursorCache = make(map[string][]byte)
-		}
-		converted, ok := r.cursorCache[key]
-		if !ok {
+		key := cursorKey(pixels[:w*h*4], w, h, r.hdrNits)
+		converted := r.cursorCache.pixels
+		if converted == nil || r.cursorCache.key != key {
 			converted = make([]byte, cw*min(h, c.size))
 			for y := range min(h, c.size) {
 				copy(converted[y*cw:(y+1)*cw], pixels[y*w*4:y*w*4+cw])
@@ -134,7 +153,7 @@ func (r *Renderer) WriteCursor(i int, pixels []byte, w, h int) error {
 					hdrCursorPixel(converted[y*cw+x:y*cw+x+4], r.hdrNits)
 				}
 			}
-			r.cursorCache[key] = converted
+			r.cursorCache = cursorConversion{key: key, pixels: converted}
 		}
 		for y := range min(h, c.size) {
 			copy(mem[y*c.pitch:y*c.pitch+cw], converted[y*cw:(y+1)*cw])

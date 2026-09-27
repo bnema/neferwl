@@ -226,16 +226,18 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if hdr {
 		r.recordHDR(cmd, r.targets[r.current])
 	}
-	b.SrcAccessMask, b.OldLayout = vk.AccessColorAttachmentWriteBit, vk.ImageLayoutColorAttachmentOptimal
-	b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = queueFamilyIgnored, queueFamilyIgnored
-	if tg.exported {
-		// Release to the display: KMS scans it out after the fence.
-		b.NewLayout, b.DstAccessMask = vk.ImageLayoutGeneral, 0
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
-	} else {
-		b.NewLayout, b.DstAccessMask = vk.ImageLayoutTransferSrcOptimal, vk.AccessTransferReadBit
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+	if !hdr {
+		b.SrcAccessMask, b.OldLayout = vk.AccessColorAttachmentWriteBit, vk.ImageLayoutColorAttachmentOptimal
+		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = queueFamilyIgnored, queueFamilyIgnored
+		if tg.exported {
+			// Release to the display: KMS scans it out after the fence.
+			b.NewLayout, b.DstAccessMask = vk.ImageLayoutGeneral, 0
+			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+		} else {
+			b.NewLayout, b.DstAccessMask = vk.ImageLayoutTransferSrcOptimal, vk.AccessTransferReadBit
+			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+		}
 	}
 	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd)); err != nil {
 		return nil, err
@@ -275,9 +277,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(stages)
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
-	tg.layout = b.NewLayout
 	if hdr {
+		// recordHDR left the composed image in TRANSFER_SRC for Pixels.
+		tg.layout = vk.ImageLayoutTransferSrcOptimal
 		r.targets[r.current].layout = vk.ImageLayoutGeneral
+	} else {
+		tg.layout = b.NewLayout
 	}
 	tg.hold(s, dmg)
 	r.last, r.readBack = tg, false

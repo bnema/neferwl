@@ -130,6 +130,8 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
 	if format == vk.FormatB8g8r8a8Unorm {
 		need |= formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBlendBit
+	} else if r.hdrReadback {
+		need |= formatFeatureTransferSrc
 	}
 	var result []uint64
 	// SDR targets are composed and read back; HDR targets are color attachments.
@@ -144,7 +146,7 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 func (r *Renderer) exportable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback)}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
 	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
@@ -159,6 +161,15 @@ const formatFeatureTransferSrc = 1 << 14
 
 // Exported SDR targets compose directly; HDR targets receive the final pass.
 const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageColorAttachmentBit
+
+// Production HDR targets need only a color attachment; test readback opts
+// into transfer source before export and skips if the driver refuses it.
+func exportUsage(format vk.Format, readback bool) vk.ImageUsageFlags {
+	if format == vk.FormatA2r10g10b10UnormPack32 && !readback {
+		return vk.ImageUsageColorAttachmentBit
+	}
+	return targetUsage
+}
 
 // exportTarget creates one exported image with a modifier from mods.
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
@@ -176,7 +187,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}()
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: uint32(len(mods)), DrmFormatModifiers: &mods[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
