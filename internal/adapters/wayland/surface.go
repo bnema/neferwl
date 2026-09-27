@@ -126,10 +126,25 @@ func (s *surface) windowID() ports.WindowID {
 	return 0
 }
 
+// outputColor converts the committed protocol description without allocating.
+func (s *surface) outputColor() ports.SurfaceColor {
+	if !s.color.Set {
+		return ports.SurfaceColor{}
+	}
+	return ports.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL)}
+}
+
+func (s *surface) contentWithColor() ports.SurfaceContent {
+	c := s.content
+	c.Color = s.outputColor()
+	return c
+}
+
 // tree is the root's content with its subsurfaces flattened.
 func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	c := s.content
 	c.ID = id
+	c.Color = s.outputColor()
 	c.Children = nil
 	for _, ch := range s.sub.children {
 		ch.appendTree(&c.Children, ch.sub.x, ch.sub.y, ch.sub.below)
@@ -150,7 +165,7 @@ func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
 		}
 	}
 	if s.has {
-		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.content})
+		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.contentWithColor()})
 	}
 	for _, ch := range s.sub.children {
 		if !ch.sub.below {
@@ -274,7 +289,7 @@ func (s *surface) applyCommit() {
 	if s.pendingScale > 0 {
 		s.bufferScale = s.pendingScale
 	}
-	hinted := s.async != s.pendingAsync
+	hinted := s.async != s.pendingAsync || s.color != s.pendingColor
 	s.async = s.pendingAsync
 	s.color = s.pendingColor
 	if s.viewport != nil {

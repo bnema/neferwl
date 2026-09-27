@@ -114,6 +114,17 @@ func TestColorMesaFlow(t *testing.T) {
 	if before != (SurfaceColor{true, pq, bt2020, 1000, 400}) {
 		t.Fatalf("committed color %+v", before)
 	}
+	var routed ports.SurfaceColor
+	s.display.Do(func() {
+		for res, surf := range s.surfaces {
+			if res.ID() == wl {
+				routed = surf.tree(1).Color
+			}
+		}
+	})
+	if routed != (ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020, MaxCLL: 1000, MaxFALL: 400}) {
+		t.Fatalf("routed color %+v", routed)
+	}
 	requestProtocol(t, c, surfaceID, cm.WpColorManagementSurfaceV1RequestUnsetImageDescription)
 	requestProtocol(t, c, wl, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {

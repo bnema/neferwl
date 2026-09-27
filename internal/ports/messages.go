@@ -740,6 +740,23 @@ type SceneLayer struct {
 	Rect  Rect
 }
 
+// SurfaceColor is the committed encoding of a surface. Zero means sRGB.
+// Only PQ+BT.2020 is currently transformed by the renderer; other encodings
+// retain the legacy sRGB interpretation. MaxCLL/MaxFALL are in nits.
+type SurfaceColor struct {
+	TF, Primaries   uint8
+	MaxCLL, MaxFALL uint16
+}
+
+const (
+	ColorTFPQ            uint8 = 11 // wp_color_manager_v1 ST2084 PQ
+	ColorPrimariesBT2020 uint8 = 6  // wp_color_manager_v1 BT.2020
+)
+
+func (c SurfaceColor) IsPQ2020() bool {
+	return c.TF == ColorTFPQ && c.Primaries == ColorPrimariesBT2020
+}
+
 // SurfaceContent carries wayland → output the latest committed content of a
 // window: SHM, a client shared-memory buffer, or DMABuf, a GPU buffer.
 // Renderers read both in place and never modify them. Empty means the window
@@ -754,6 +771,7 @@ type SurfaceContent struct {
 	Width, Height      int
 	LogicalW, LogicalH int
 	Opaque             bool // x formats: ignore the alpha byte
+	Color              SurfaceColor
 	SHM                *SHMBuffer
 	DMABuf             *DMABuf
 	// Children are the subsurfaces, bottom to top, flattened.
