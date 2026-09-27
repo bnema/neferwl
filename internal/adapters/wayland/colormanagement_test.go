@@ -71,7 +71,7 @@ func TestColorMesaFlow(t *testing.T) {
 			prim = append(prim, caps.values[i][0])
 		}
 	}
-	if len(features) != 1 || features[0] != uint32(cm.WpColorManagerV1FeatureParametric) || len(tf) != 3 || len(prim) != 2 || uint32(caps.events[len(caps.events)-1]) != cm.WpColorManagerV1EventDone {
+	if len(features) != 1 || features[0] != uint32(cm.WpColorManagerV1FeatureParametric) || len(tf) != 3 || tf[0] != pq || tf[1] != extLinear || tf[2] != uint32(cm.WpColorManagerV1TransferFunctionSrgb) || len(prim) != 2 || uint32(caps.events[len(caps.events)-1]) != cm.WpColorManagerV1EventDone {
 		t.Fatalf("capabilities %v %v %v %v", features, tf, prim, caps.events)
 	}
 	comp := bindProtocol(t, c, "wl_compositor")
@@ -244,7 +244,8 @@ func TestColorParametricCombinations(t *testing.T) {
 		prim, tf uint32
 		ready    bool
 	}{
-		{"sRGB gamma22", srgb, gamma22, true},
+		{"sRGB gamma22", srgb, gamma22, false},
+		{"sRGB sRGB", srgb, uint32(cm.WpColorManagerV1TransferFunctionSrgb), true},
 		{"BT2020 PQ", bt2020, pq, true},
 		{"sRGB extended linear", srgb, extLinear, true},
 		{"BT2020 extended linear", bt2020, extLinear, false},
