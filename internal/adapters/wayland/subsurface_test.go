@@ -222,6 +222,40 @@ func TestSubsurfaceBoundUpdateStaysBound(t *testing.T) {
 	}
 }
 
+// Destroying the parent cannot publish a captured child dependency.
+func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if len(got.Children) != 0 {
+			t.Fatalf("destroyed parent published child: %+v", got)
+		}
+	case <-time.After(40 * time.Millisecond):
+	}
+}
+
 // Destroying a queued child removes it from captured parent layouts and
 // retires its unpublished buffer without publishing its content.
 func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
