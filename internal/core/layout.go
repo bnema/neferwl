@@ -114,6 +114,8 @@ const (
 )
 
 type Workspace struct {
+	// ID stays with the workspace across reorder and monitor moves.
+	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
 	Name       string
 	Overflow   Overflow

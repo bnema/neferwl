@@ -1,6 +1,11 @@
 package core
 
-import "slices"
+import (
+	"slices"
+	"sync/atomic"
+)
+
+var nextWorkspaceID atomic.Uint64
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
 // are positions: Cmd+N targets Workspaces[N-1]. An empty workspace always sits
@@ -120,6 +125,7 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.floatFocus, w.home, w.origin, w.back = nil, nil, false, "", nil, origPlace{}
+	w.ID = nextWorkspaceID.Add(1)
 	return &w
 }
 

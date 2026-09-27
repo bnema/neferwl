@@ -36,7 +36,8 @@ type Channels struct {
 	ConfigErrors chan<- error
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
-	State chan ports.State
+	State      chan ports.State
+	Workspaces chan ports.Workspaces
 	// Terminal, when set, keeps a window on every workspace on screen: an
 	// empty one gets the configured terminal (the terminal is the desktop).
 	Terminal bool
@@ -77,8 +78,9 @@ type Core struct {
 	// token, until their window maps.
 	terms map[string]*termSpawn
 	// clients holds the app ID and PID of mapped windows, for State.
-	clients   map[WindowID]ports.WindowMapped
-	sentState ports.State
+	clients        map[WindowID]ports.WindowMapped
+	sentState      ports.State
+	sentWorkspaces ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -471,6 +473,7 @@ func (c *Core) publish(ctx context.Context) error {
 	c.resolveConstraint()
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
+	c.publishWorkspaces()
 	return nil
 }
 
@@ -623,6 +626,7 @@ func (c *Core) Run(ctx context.Context) error {
 		return nil
 	}
 	c.publishState()
+	c.publishWorkspaces()
 	for {
 		select {
 		case <-ctx.Done():
@@ -713,6 +717,18 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.WindowFullscreenRequest:
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
+				}
+			case ports.WorkspaceActivate:
+				for _, sc := range c.screens {
+					if sc.name() == "" {
+						continue
+					}
+					for _, w := range sc.mon.all() {
+						if w.ID == v.ID {
+							sc.mon.show(w)
+							break
+						}
+					}
 				}
 			case ports.WindowActivate:
 				if c.activate(ctx, v.ID) != nil {

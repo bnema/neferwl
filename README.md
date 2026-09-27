@@ -159,6 +159,8 @@ startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 exec wlopm --off '*'
 ```
 
+NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
+
 ## State for scripts
 
 While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:

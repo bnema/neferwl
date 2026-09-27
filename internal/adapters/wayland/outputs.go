@@ -139,6 +139,9 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 		o.resources = append(o.resources, r)
 		r.OnDestroy = func() { o.resources = removeItem(o.resources, r) }
 		o.sendAll(r)
+		for _, m := range s.workspaceManagers {
+			m.outputBound(o.name())
+		}
 	})
 	if err != nil {
 		s.log.Warn().Err(err).Str("output", p.Info.Name).Msg("add wl_output")
