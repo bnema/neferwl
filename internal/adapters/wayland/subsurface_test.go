@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/viewporter"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"golang.org/x/sys/unix"
@@ -53,6 +54,102 @@ func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
 		case <-deadline:
 			t.Fatal("parent graph did not publish")
 		}
+	}
+}
+
+// Desync drains cached commits in FIFO order, including an unmap.
+func TestSubsurfaceDesyncQueuedOrderAndUnmap(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	drainContents(contents)
+	for _, b := range []uint32{shmBuffer(t, c), shmBuffer(t, c), 0} {
+		requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+		requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		t.Fatalf("cached commit published: %+v", got)
+	case <-time.After(40 * time.Millisecond):
+	}
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetDesync)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-contents:
+			if got.Seq < 5 {
+				continue // the forwarder can coalesce intermediate publications
+			}
+			if got.ID != w.ID || got.Seq != 5 || len(got.Children) != 0 {
+				t.Fatalf("desync did not apply all three commits: %+v", got)
+			}
+			return
+		case <-deadline:
+			t.Fatal("missing final desync publication")
+		}
+	}
+}
+
+// Pending viewport and scale are captured by the child commit.
+func TestSubsurfaceCachedViewportAndScale(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	vpm := bindProtocol(t, c, "wp_viewporter")
+	comp = bindVersion(t, c, "wl_compositor", 4)
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	vp := c.AllocateID()
+	requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, child)
+	registerProtocol(t, c, vp)
+	b := shmBuffer(t, c)
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(128), int32(128))
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(3), int32(4))
+	requestProtocol(t, c, child, wayland.SurfaceRequestSetBufferScale, int32(2))
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestDamage, int32(0), int32(0), int32(1), int32(1))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(9), int32(9))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if got.ID != w.ID || len(got.Children) != 1 || got.Children[0].LogicalW != 3 || got.Children[0].LogicalH != 4 || got.Children[0].Source != ([4]float32{0, 0, 1, 1}) {
+			t.Fatalf("cached viewport: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no cached content")
 	}
 }
 
