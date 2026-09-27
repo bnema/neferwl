@@ -80,9 +80,10 @@ func (v Width) Resolve(usableW, gaps int) int {
 // Column.Width is zero (auto) until the user picks a preset: auto columns share
 // the usable width equally, up to MaxColumns visible at once.
 type Column struct {
-	Windows []WindowID
-	Width   Width
-	Focus   int
+	Windows   []WindowID
+	Width     Width
+	FullWidth bool
+	Focus     int
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
@@ -246,6 +247,9 @@ func (w *Workspace) addColumn(col Column) {
 	} else if len(w.Columns) > 0 {
 		at = w.Focus + 1
 	}
+	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
+		w.Columns[w.Focus].FullWidth = false
+	}
 	w.Columns = append(w.Columns, Column{})
 	copy(w.Columns[at+1:], w.Columns[at:])
 	w.Columns[at] = col
@@ -360,6 +364,9 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v == id {
+				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) {
+					w.Columns[w.Focus].FullWidth = false
+				}
 				w.Focus = i
 				w.Columns[i].Focus = j
 				w.scroll()
@@ -376,6 +383,9 @@ func (w *Workspace) FocusColumn(dir int) {
 		return
 	}
 	if len(w.Columns) > 0 && (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
+		if w.Overflow == OverflowFixed {
+			w.Columns[w.Focus].FullWidth = false
+		}
 		w.Focus += dir
 		w.scroll()
 	}
@@ -433,6 +443,9 @@ func (w *Workspace) takeColumn() (Column, bool) {
 // insertColumn adds a column at index at (clamped) and focuses it.
 func (w *Workspace) insertColumn(at int, col Column) {
 	at = min(max(at, 0), len(w.Columns))
+	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
+		w.Columns[w.Focus].FullWidth = false
+	}
 	w.Columns = slices.Insert(w.Columns, at, col)
 	w.Focus = at
 	w.scroll()
@@ -455,8 +468,20 @@ func (w *Workspace) CycleWidth() {
 		}
 	}
 	c.Width = next
+	c.FullWidth = false
 	w.scroll()
 }
+
+// ToggleFullWidth expands the focused tiled column without changing its saved width.
+func (w *Workspace) ToggleFullWidth() {
+	if len(w.Columns) == 0 || w.floatFocus {
+		return
+	}
+	c := &w.Columns[w.Focus]
+	c.FullWidth = !c.FullWidth
+	w.scroll()
+}
+
 func (w *Workspace) ToggleFullscreen() {
 	id, ok := w.Focused()
 	if !ok {
@@ -551,6 +576,9 @@ func (w *Workspace) fullscreenColumn(i int) bool {
 	return false
 }
 func (w *Workspace) columnWidth(i int) int {
+	if w.Columns[i].FullWidth {
+		return max(w.Usable.W-2*w.gap(), 0)
+	}
 	if w.fullscreenColumn(i) {
 		return w.Output.W
 	}
@@ -604,6 +632,10 @@ func (w *Workspace) columnRects() []Rect {
 	for i := range w.Columns {
 		rects[i] = Rect{X: w.columnX(i) - w.ViewX, Y: y, W: w.columnWidth(i), H: h}
 	}
+	if w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
+		rects[w.Focus].X = w.Usable.X + g
+		return rects
+	}
 	k := max(w.MaxColumns, 1)
 	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
 		return rects
@@ -656,9 +688,10 @@ func (w *Workspace) Layout() []Placement {
 			h = min(h, bottom-y)
 			r := Rect{X: col.X, Y: y, W: col.W, H: h}
 			full := w.fullscreen == id && id != 0
-			// Fixed overflow keeps every column on screen: hide them all
-			// behind a fullscreen window.
-			hidden := (fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full
+			// Fixed overflow cannot scroll to other columns while one fills
+			// the view. Keep them in place, but out of the scene.
+			maximized := w.Overflow == OverflowFixed && w.Columns[w.Focus].FullWidth && i != w.Focus
+			hidden := ((fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full) || maximized
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = Rect{X: col.X, Y: 0, W: w.Output.W, H: w.Output.H}

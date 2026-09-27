@@ -16,6 +16,7 @@ const (
 	ActionMoveColumnLeft   Action = "move-column-left"
 	ActionMoveColumnRight  Action = "move-column-right"
 	ActionCycleColumnWidth Action = "cycle-column-width"
+	ActionMaximizeColumn   Action = "maximize-column"
 	ActionToggleFullscreen Action = "toggle-fullscreen"
 	ActionCloseWindow      Action = "close-window"
 	ActionQuit             Action = "quit"
@@ -260,6 +261,8 @@ func (w *Workspace) Apply(a Action) Effect {
 		w.MoveColumn(1)
 	case ActionCycleColumnWidth:
 		w.CycleWidth()
+	case ActionMaximizeColumn:
+		w.ToggleFullWidth()
 	case ActionToggleFullscreen:
 		// In place only: binds go through Monitor.Apply, which gives a
 		// fixed-overflow fullscreen its own workspace.

@@ -108,6 +108,7 @@ bind.cmd+shift+l = move-column-right
 bind.cmd+bracketleft = consume-or-expel-window-left
 bind.cmd+bracketright = consume-or-expel-window-right
 bind.cmd+r = cycle-column-width
+bind.cmd+f = maximize-column
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+q = close-window
 bind.ctrl+alt+backspace = quit

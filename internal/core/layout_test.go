@@ -107,6 +107,58 @@ func TestStackAndLayout(t *testing.T) {
 		t.Fatal(w.Usable)
 	}
 }
+func TestMaximizeColumnScroll(t *testing.T) {
+	w := workspace()
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	w.Columns[1].Width = Width{Pixels: 30}
+	w.FocusID(2)
+	w.Apply(ActionMaximizeColumn)
+	if !w.Columns[1].FullWidth || w.Columns[1].Width.Pixels != 30 || w.Layout()[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) {
+		t.Fatal(w.Columns, w.Layout())
+	}
+	if w.Layout()[0].Rect.X >= 0 || w.Layout()[2].Rect.X < 100 || w.Layout()[1].Fullscreen {
+		t.Fatal(w.Layout())
+	}
+	w.Apply(ActionMaximizeColumn)
+	if w.Columns[1].FullWidth || w.Columns[1].Width.Pixels != 30 || w.Layout()[1].Rect.W != 30 {
+		t.Fatal(w.Columns, w.Layout())
+	}
+}
+
+func TestMaximizeColumnFixed(t *testing.T) {
+	w := workspace()
+	w.Overflow = OverflowFixed
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	w.FocusID(2)
+	w.Apply(ActionMaximizeColumn)
+	p := w.Layout()
+	if p[1].Rect != (Rect{X: 5, Y: 5, W: 90, H: 71}) || p[1].Fullscreen || !p[0].Hidden || !p[2].Hidden {
+		t.Fatal(p)
+	}
+	w.FocusColumn(1)
+	p = w.Layout()
+	if w.Columns[1].FullWidth || p[2].Hidden || p[0].Hidden || p[1].Hidden {
+		t.Fatal(w.Columns, p)
+	}
+}
+
+func TestMaximizeColumnFixedAddWindow(t *testing.T) {
+	w := workspace()
+	w.Overflow = OverflowFixed
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.ToggleFullWidth()
+	w.AddWindow(3)
+	p := w.Layout()
+	if w.Columns[1].FullWidth || p[0].Hidden || p[1].Hidden || p[2].Hidden || p[2].Rect.W == 0 {
+		t.Fatal(w.Columns, p)
+	}
+}
+
 func TestPresetsAndActions(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
