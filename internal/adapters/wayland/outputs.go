@@ -179,8 +179,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		if sizeChanged {
 			for session := range s.captureSessions {
 				if session.o == o && !session.stopped {
-					session.res.SendBufferSize(uint32(p.Info.Width), uint32(p.Info.Height))
-					session.res.SendDone()
+					session.sendConstraints(p.Info.Width, p.Info.Height)
 				}
 			}
 		}

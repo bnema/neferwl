@@ -14,7 +14,6 @@ import (
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output.
 func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
-	defer drainCaptures(ctx, captures, captured)
 	set := newOutputSet(ctx, captured)
 	for i, size := range sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)

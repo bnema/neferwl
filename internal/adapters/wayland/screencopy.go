@@ -235,21 +235,22 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 	}
 	state.res = res
 	m.s.captureSessions[state] = struct{}{}
-	res.OnDestroy = func() {
-		delete(m.s.captureSessions, state)
-		if state.frame != nil {
-			delete(m.s.captureReplies, state.frame.replyID)
-		}
-	}
+	// Frames outlive their session (the spec): each frame drops its own reply.
+	res.OnDestroy = func() { delete(m.s.captureSessions, state) }
 	if o == nil {
 		res.SendStopped()
 		state.stopped = true
 		return
 	}
-	res.SendBufferSize(uint32(o.place.Info.Width), uint32(o.place.Info.Height))
-	res.SendShmFormat(uint32(wayland.ShmFormatXrgb8888))
-	res.SendShmFormat(uint32(wayland.ShmFormatArgb8888))
-	res.SendDone()
+	state.sendConstraints(o.place.Info.Width, o.place.Info.Height)
+}
+
+// sendConstraints sends one complete constraint batch: formats, size, done.
+func (c *captureSession) sendConstraints(w, h int) {
+	c.res.SendBufferSize(uint32(w), uint32(h))
+	c.res.SendShmFormat(uint32(wayland.ShmFormatXrgb8888))
+	c.res.SendShmFormat(uint32(wayland.ShmFormatArgb8888))
+	c.res.SendDone()
 }
 func (m copyCaptureManager) CreatePointerCursorSession(r *ext.ExtImageCopyCaptureManagerV1, id uint32, _ *source.ExtImageCaptureSourceV1, _ *wayland.Pointer) {
 	state := &cursorCaptureSession{}

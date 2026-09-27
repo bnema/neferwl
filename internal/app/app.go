@@ -246,6 +246,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	cancel()
 	workers.Wait()
+	// The wayland server has stopped: no request can be queued any more.
+	drainCaptures(ctx, captures, nil)
 	// A keymap the input goroutine never took is still ours to free.
 	select {
 	case km := <-keymaps:

@@ -215,7 +215,8 @@ func (s *outputSet) failQueued(r *runningOutput) {
 	}
 }
 
-// drainCaptures releases requests still in the app queue when routing exits.
+// drainCaptures releases requests left in the app queue. Call it once the
+// producer (the wayland server) has stopped, so none can arrive after it.
 func drainCaptures(ctx context.Context, incoming <-chan ports.CaptureRequest, replies chan<- ports.CaptureDone) {
 	for {
 		select {

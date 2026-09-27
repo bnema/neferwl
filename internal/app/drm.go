@@ -129,7 +129,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 			log.Warn().Err(err).Msg("hotplug watch disabled")
 		}
 	}()
-	defer drainCaptures(ctx, captures, captured)
 	set := newOutputSet(ctx, captured)
 	cards := map[string]*drmCard{}
 	send := func(ev ports.OutputEvent) {

@@ -422,13 +422,14 @@ func TestExtCaptureLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unix.Close(fd)
-	if err := unix.Ftruncate(fd, 64); err != nil {
+	// Room for the 4x4 and the resized 5x4 buffers.
+	if err := unix.Ftruncate(fd, 80); err != nil {
 		t.Fatal(err)
 	}
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
+	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(80)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(4), int32(4), int32(16), uint32(wayland.ShmFormatXrgb8888))
@@ -481,11 +482,100 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range [][]uint32{{0, 5, 4}, {4}} {
+	// A resize sends a complete constraint batch, formats included.
+	for _, want := range [][]uint32{{0, 5, 4}, {1, uint32(wayland.ShmFormatXrgb8888)}, {1, uint32(wayland.ShmFormatArgb8888)}, {4}} {
 		got := <-p.events
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("resize event %v != %v", got, want)
 		}
+	}
+	// Destroying the session leaves its pending frame alive: it still gets ready.
+	requestProtocol(t, c, frame, ext.ExtImageCopyCaptureFrameV1RequestDestroy) // one live frame per session
+	buf2, frame2 := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, buf2)
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf2, int32(0), int32(5), int32(4), int32(20), uint32(wayland.ShmFormatXrgb8888))
+	fp2 := &captureDetails{events: make(chan []uint32, 16)}
+	fp2.SetID(frame2)
+	c.Context().Register(fp2)
+	requestProtocol(t, c, session, ext.ExtImageCopyCaptureSessionV1RequestCreateFrame, frame2)
+	requestProtocol(t, c, frame2, ext.ExtImageCopyCaptureFrameV1RequestAttachBuffer, buf2)
+	requestProtocol(t, c, frame2, ext.ExtImageCopyCaptureFrameV1RequestCapture)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case req = <-requests:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no capture request after resize")
+	}
+	if err := req.Dst.File.Close(); err != nil {
+		t.Fatal(err)
+	}
+	requestProtocol(t, c, session, ext.ExtImageCopyCaptureSessionV1RequestDestroy)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	replies <- ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)}
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][]uint32{{0, 0, 0}, {1, 0, 0, 5, 4}, {2, 0, uint32(now.Sec), uint32(now.Nsec)}, {3}} {
+		select {
+		case got := <-fp2.events:
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("frame after session destroy: %v != %v", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("frame after session destroy: missing %v", want)
+		}
+	}
+}
+
+// The remaining stop check needs a live session.
+func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
+	dir := t.TempDir()
+	commands := make(chan ports.ClientCommand, 4)
+	initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
+	s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{initial}}, Channels{Captures: make(chan ports.CaptureRequest, 1), Captured: make(chan ports.CaptureDone, 1), Commands: commands}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	c := protocolClient(t, s, dir)
+	g, ok := c.Registry().FindGlobal("wl_output")
+	if !ok {
+		t.Fatal("output missing")
+	}
+	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registerProtocol(t, c, out)
+	srcMgr := bindProtocol(t, c, "ext_output_image_capture_source_manager_v1")
+	mgr := bindProtocol(t, c, "ext_image_copy_capture_manager_v1")
+	src, session := c.AllocateID(), c.AllocateID()
+	registerProtocol(t, c, src)
+	p := &captureDetails{events: make(chan []uint32, 16)}
+	p.SetID(session)
+	c.Context().Register(p)
+	requestProtocol(t, c, srcMgr, source.ExtOutputImageCaptureSourceManagerV1RequestCreateSource, src, out)
+	requestProtocol(t, c, mgr, ext.ExtImageCopyCaptureManagerV1RequestCreateSession, session, src, uint32(0))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for range 4 { // initial constraint batch
+		<-p.events
 	}
 	commands <- ports.SetOutputs{}
 	if !s.display.Do(func() {}) {
