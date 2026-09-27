@@ -36,9 +36,10 @@ type Options struct {
 
 // Channels carries client notifications and commands. Events may be unbuffered.
 type Channels struct {
-	Events   chan<- ports.ClientEvent
-	Contents chan<- ports.SurfaceContent
-	Commands <-chan ports.ClientCommand
+	Events     chan<- ports.ClientEvent
+	Contents   chan<- ports.SurfaceContent
+	Commands   <-chan ports.ClientCommand
+	Workspaces <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
 	Cursors chan<- ports.CursorChange
 	// Presented paces frame callbacks on the outputs' page flips; outputs
@@ -152,20 +153,22 @@ type Server struct {
 	shortcutWindows, idleWindows map[ports.WindowID]bool
 	// idleNotes and powers are the idle notifications and output power
 	// objects (idle.go); outputsOff the outputs core turned off.
-	idleNotes        []*idleNotification
-	powers           []*outputPower
-	outputsOff       map[string]bool
-	contentNotify    chan struct{}
-	contentReady     chan struct{}
-	outputs          []*output
-	outputManagers   []*outputManager
-	outputHeads      ports.OutputHeads
-	outputPlaces     ports.Layout
-	managementSerial uint32
-	nextOutputApply  uint64
-	outputReplies    map[uint64]*outputConfiguration
-	focusedOutput    string
-	fractions        map[*surface]*fractionalscale.WpFractionalScaleV1
+	idleNotes         []*idleNotification
+	powers            []*outputPower
+	outputsOff        map[string]bool
+	contentNotify     chan struct{}
+	contentReady      chan struct{}
+	outputs           []*output
+	outputManagers    []*outputManager
+	workspaceManagers []*workspaceManager
+	workspaceSnapshot ports.Workspaces
+	outputHeads       ports.OutputHeads
+	outputPlaces      ports.Layout
+	managementSerial  uint32
+	nextOutputApply   uint64
+	outputReplies     map[uint64]*outputConfiguration
+	focusedOutput     string
+	fractions         map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
 	// cursorMu guards only the latest cursor change for forwardCursors.
@@ -289,7 +292,8 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(9)
+	wg.Add(10)
+	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()

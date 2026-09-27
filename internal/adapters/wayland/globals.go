@@ -13,6 +13,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerLayer(d, s) },
 		func() error { return registerXDGOutput(d, s) },
 		func() error { return registerOutputManagement(d, s) },
+		func() error { return registerWorkspaces(d, s) },
 		func() error { return registerDecoration(d, s) },
 		func() error { return registerScale(d, s) },
 		func() error { return registerCursorShape(d, s) },

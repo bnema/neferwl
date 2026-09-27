@@ -107,6 +107,26 @@ type WindowActivate struct{ ID WindowID }
 
 func (WindowActivate) clientEvent() {}
 
+// WorkspaceActivate requests showing workspaces by stable ID, in commit order.
+// Core applies the entire batch before publishing a new state.
+type WorkspaceActivate struct{ IDs []uint64 }
+
+func (WorkspaceActivate) clientEvent() {}
+
+// Workspaces is an immutable, latest-only inventory of output workspaces.
+type Workspaces struct{ Outputs []WorkspaceOutput }
+type WorkspaceOutput struct {
+	Name       string
+	Workspaces []WorkspaceInfo
+}
+type WorkspaceInfo struct {
+	ID             uint64
+	Configured     string // stable configured name; empty for dynamic workspaces
+	Name           string
+	Index          int // zero-based vertical coordinate
+	Active, Hidden bool
+}
+
 // WindowAppID carries wayland → core an app ID set after the window mapped.
 type WindowAppID struct {
 	ID    WindowID

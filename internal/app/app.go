@@ -85,6 +85,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	layouts := make(chan ports.Layout, 1)
 	constraints := make(chan ports.PointerConstraint, 1)
 	states := make(chan ports.State, 1)
+	workspaces := make(chan ports.Workspaces, 1)
 	configErrors := make(chan error, 8)
 	renderScenes := make(chan []ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 64)
@@ -99,7 +100,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	appliedOutput := make(chan ports.OutputApplied, 8)
 	backendConfig := make(chan ports.Config, 8)
 	backendApplied := make(chan error, 8)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -113,7 +114,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err

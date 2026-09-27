@@ -36,7 +36,8 @@ type Channels struct {
 	ConfigErrors chan<- error
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
-	State chan ports.State
+	State      chan ports.State
+	Workspaces chan ports.Workspaces
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
 }
@@ -45,6 +46,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	nextWorkspaceID  uint64
 	ch               Channels
 	cfg              ports.Config
 	screens          []*screen
@@ -77,9 +79,10 @@ type Core struct {
 	terms                 map[string]*termSpawn
 	firstTerminalResolved bool
 	// clients holds the app ID and PID of mapped windows, for State.
-	clients      map[WindowID]ports.WindowMapped
-	inputRegions map[WindowID]ports.InputRegionChanged
-	sentState    ports.State
+	clients        map[WindowID]ports.WindowMapped
+	inputRegions   map[WindowID]ports.InputRegionChanged
+	sentState      ports.State
+	sentWorkspaces ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -285,11 +288,12 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	return nil
 }
 func New(cfg ports.Config, ch Channels) (*Core, error) {
-	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) {
-		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
+	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) || (ch.Workspaces != nil && cap(ch.Workspaces) != 1) {
+		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -481,6 +485,7 @@ func (c *Core) publish(ctx context.Context) error {
 	c.resolveConstraint()
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
+	c.publishWorkspaces()
 	return nil
 }
 
@@ -649,6 +654,7 @@ func (c *Core) Run(ctx context.Context) error {
 		return nil
 	}
 	c.publishState()
+	c.publishWorkspaces()
 	for {
 		select {
 		case <-ctx.Done():
@@ -742,6 +748,21 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.WindowFullscreenRequest:
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
+				}
+			case ports.WorkspaceActivate:
+				for _, id := range v.IDs {
+					for i, sc := range c.screens {
+						if sc.name() == "" {
+							continue
+						}
+						for _, w := range sc.mon.all() {
+							if w.ID == id {
+								c.focusScreen = i
+								sc.mon.show(w)
+								break
+							}
+						}
+					}
 				}
 			case ports.WindowActivate:
 				if c.activate(ctx, v.ID) != nil {
