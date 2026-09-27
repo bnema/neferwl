@@ -783,10 +783,10 @@ type SurfaceContent struct {
 	// Source is the committed crop in buffer pixels: x, y, width, height.
 	// Zero width means the entire buffer is used.
 	Source [4]float32
-	Opaque             bool // x formats: ignore the alpha byte
-	Color              SurfaceColor
-	SHM                *SHMBuffer
-	DMABuf             *DMABuf
+	Opaque bool // x formats: ignore the alpha byte
+	Color  SurfaceColor
+	SHM    *SHMBuffer
+	DMABuf *DMABuf
 	// Children are the subsurfaces, bottom to top, flattened.
 	Children []Subsurface
 	// Geometry is in logical pixels from the surface origin; empty means

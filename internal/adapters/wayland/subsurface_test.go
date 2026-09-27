@@ -240,6 +240,18 @@ func TestSubsurfaceParentDestroyDropsCapturedChild(t *testing.T) {
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	// That parent commit legitimately publishes the child: consume it
+	// before destroying the parent, so the check below sees only later output.
+	select {
+	case <-contents:
+	case <-time.After(2 * time.Second):
+		t.Fatal("parent commit did not publish")
+	}
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	requestProtocol(t, c, root, wayland.SurfaceRequestDestroy)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -292,6 +304,57 @@ func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("no parent update after child destroy")
+		}
+	}
+}
+
+// A queued buffer destroyed before its parent commits is skipped with the
+// crop made for it: the retained buffer keeps its own crop, without error.
+func TestSubsurfaceDestroyedQueuedBufferKeepsCrop(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	vpm := bindProtocol(t, c, "wp_viewporter")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	vp := c.AllocateID()
+	requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, child)
+	registerProtocol(t, c, vp)
+	small, wide := shmBuffer(t, c), shmBuffer(t, c)
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(256), int32(256))
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, small, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+	drainContents(contents)
+
+	// A 2x1 crop meant for a wider buffer that is destroyed while queued.
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(512), int32(256))
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, wide, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, wide, wayland.BufferRequestDestroy)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-contents:
+			if got.ID != w.ID {
+				continue
+			}
+			if len(got.Children) != 1 || got.Children[0].Source != ([4]float32{0, 0, 1, 1}) {
+				t.Fatalf("retained crop: %+v", got)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no parent update")
 		}
 	}
 }

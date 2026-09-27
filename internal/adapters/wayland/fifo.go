@@ -367,6 +367,15 @@ func (s *surface) applyUpdate(u *update) {
 	// surface keeps its content, and is not unmapped behind the client.
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
 		u.buffer, u.attached = nil, false
+		// The viewport change was made for that buffer: keep the crop that
+		// matches the retained content instead of validating a mismatch.
+		if u.vp != nil {
+			if v := s.committedViewport; v != nil {
+				u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v.destW, v.destH, v.dest, v.src, v.crop
+			} else {
+				u.vpSet, u.vpCrop = false, false
+			}
+		}
 	}
 	later := s.takePending()
 	originalViewport := s.viewport
