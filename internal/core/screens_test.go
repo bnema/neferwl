@@ -125,6 +125,32 @@ func TestOutputsLeftToRight(t *testing.T) {
 	}
 }
 
+func TestLayoutPerOutput(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Layout.MaxColumns = 2
+		c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
+	}, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	var set []ports.Scene
+	for id := ports.WindowID(2); id <= 6; id++ {
+		set = r.mapWindow(t, id)
+	}
+	// DP-2: four columns of 100; the fifth window splits the last one
+	// (fixed) instead of scrolling.
+	if got := shown(set); len(got["DP-2"]) != 5 {
+		t.Fatal(got)
+	}
+	for _, s := range set {
+		for _, w := range s.Windows {
+			// DP-1 keeps the default: one window of two columns fills it.
+			if want := map[string]int{"DP-1": 200, "DP-2": 100}[s.Output]; w.Rect.W != want {
+				t.Fatalf("%s: %+v", s.Output, w)
+			}
+		}
+	}
+}
+
 func TestWindowsOpenOnFocusedOutput(t *testing.T) {
 	r := startMulti(t, nil, left, right)
 	r.mapWindow(t, 1)

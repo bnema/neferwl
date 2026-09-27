@@ -162,10 +162,10 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 		s.info = info
 	} else {
 		s = &screen{info: info, mon: newMonitor(info.Name, info.Key())}
-		c.settings(s.mon)
 		c.screens = append(c.screens, s)
 	}
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
+	c.settings(s.mon)
 	s.cfgScale = c.configScale(info.Name)
 	s.setScale(s.cfgScale)
 	s.primary = c.isPrimary(info.Name)
@@ -300,8 +300,14 @@ func (c *Core) named() {
 
 // settings applies output-wide config to a monitor.
 func (c *Core) settings(m *Monitor) {
-	m.SetOverflow(c.overflow)
-	m.SetMaxColumns(c.cfg.Layout.MaxColumns)
+	rules := c.cfg.Layout.LayoutRules
+	for _, o := range c.cfg.Layout.Outputs {
+		if m.matches(o.Output) {
+			rules = o.Over(rules)
+		}
+	}
+	m.SetOverflow(Overflow(rules.Overflow))
+	m.SetMaxColumns(rules.MaxColumns)
 	m.SetPresets(c.presets)
 	m.SetGaps(c.cfg.Layout.Gaps)
 	m.SetBorder(c.cfg.Border.Width)
