@@ -38,6 +38,7 @@ const (
 
 	flagOpaque = 1
 	flagExact  = 2
+	flagPQ     = 4
 )
 
 // pushConstants is struct Draw of the shaders (std430 push constant block).

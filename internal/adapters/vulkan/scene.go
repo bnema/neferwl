@@ -250,6 +250,13 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			return
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
+		if content.Color.IsPQ2020() {
+			dr.pc.misc[1] |= flagPQ
+			dr.pc.color[0] = float32(r.hdrNits)
+			if dr.pc.color[0] <= 0 {
+				dr.pc.color[0] = 203
+			}
+		}
 		dr.set, dr.im = im.set, im
 		dr.acquire = content.Acquire
 		w.draws = append(w.draws, dr)
@@ -271,6 +278,13 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, modeBuffer, content.Opaque)
+	if content.Color.IsPQ2020() {
+		dr.pc.misc[1] |= flagPQ
+		dr.pc.color[0] = float32(r.hdrNits)
+		if dr.pc.color[0] <= 0 {
+			dr.pc.color[0] = 203
+		}
+	}
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)

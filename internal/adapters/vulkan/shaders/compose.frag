@@ -22,6 +22,23 @@ const uint modeSolid = 0u;
 const uint modeImage = 1u;
 const uint flagOpaque = 1u;
 const uint flagExact = 2u;
+const uint flagPQ = 4u;
+
+// PQ values are absolute nits. BT.2020 is converted in linear light to
+// BT.709, then clipped to the 8-bit sRGB intermediate. Highlights above
+// SDR reference white are lost (no tone mapping).
+vec3 pqToSRGB(vec3 v, float whiteNits) {
+    vec3 p = pow(clamp(v, 0.0, 1.0), vec3(32.0 / 2523.0));
+    vec3 nits = pow(max(p - vec3(3424.0 / 4096.0), vec3(0.0)) /
+        max(vec3(2413.0 / 128.0) - p * (2392.0 / 128.0), vec3(0.00001)), vec3(16384.0 / 2610.0)) * 10000.0;
+    vec3 rgb = vec3(
+        dot(nits, vec3(1.660491, -0.587641, -0.072850)),
+        dot(nits, vec3(-0.124550, 1.132900, -0.008349)),
+        dot(nits, vec3(-0.018151, -0.100579, 1.118730))
+    );
+    rgb = clamp(rgb / whiteNits, 0.0, 1.0);
+    return mix(rgb * 12.92, 1.055 * pow(rgb, vec3(1.0 / 2.4)) - 0.055, greaterThan(rgb, vec3(0.0031308)));
+}
 
 // texel reads buffer pixel p, clamped to the buffer (clamp to edge).
 vec4 texel(ivec2 p) {
@@ -50,6 +67,9 @@ void main() {
     }
     if ((d.misc.y & flagOpaque) != 0u) {
         c.a = 1.0;
+    }
+    if ((d.misc.y & flagPQ) != 0u && c.a > 0.0) {
+        c.rgb = pqToSRGB(c.rgb / c.a, d.color.x) * c.a;
     }
     color = c;
 }
