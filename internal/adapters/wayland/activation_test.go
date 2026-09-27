@@ -95,9 +95,7 @@ func TestActivationNeedsFocusedRequester(t *testing.T) {
 
 	// The focused client's token activates, once.
 	commands <- ports.FocusWindow{ID: first.ID}
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
+	waitFocus(t, s, first.ID)
 	token = newToken(t, c, manager)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestActivate, token, surf)
 	activated(t, events, second.ID)
@@ -120,9 +118,7 @@ func TestActivationAcrossClients(t *testing.T) {
 	managerA := bindProtocol(t, a, "xdg_activation_v1")
 	managerB := bindProtocol(t, b, "xdg_activation_v1")
 	commands <- ports.FocusWindow{ID: winA.ID}
-	if err := a.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
+	waitFocus(t, s, winA.ID)
 	token := newToken(t, b, managerB)
 	requestProtocol(t, b, managerB, xdgactivation.ActivationV1RequestActivate, token, surfB)
 	noActivation(t, b, events)
