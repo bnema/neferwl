@@ -133,6 +133,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	if opts.Session {
 		launcher.ExportSession(ctx, childEnv, logging.For(ctx, "launcher"))
+		launcher.NotifyReady(os.Getenv("NOTIFY_SOCKET"), logging.For(ctx, "launcher"))
 		defer launcher.UnexportSession(childEnv, logging.For(ctx, "launcher"))
 	}
 	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
