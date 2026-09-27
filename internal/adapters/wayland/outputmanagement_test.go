@@ -369,7 +369,10 @@ func TestOutputManagementInitialHeadState(t *testing.T) {
 			s, _, _, _, dir := outputTestServer(t)
 			heads := testHead()
 			heads.Heads[0].Enabled = enabled
-			if !s.display.Do(func() { s.setOutputHeads(heads) }) {
+			if !s.display.Do(func() {
+				s.setOutputHeads(heads)
+				s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, X: 100, Scale: 2}}})
+			}) {
 				t.Fatal("display stopped")
 			}
 			c := protocolClient(t, s, dir)
@@ -394,7 +397,7 @@ func TestOutputManagementInitialHeadState(t *testing.T) {
 					t.Fatalf("current mode: %v, want %d", ev, mode)
 				}
 			}
-			if !found[wlr.ZwlrOutputHeadV1EventMode] || !found[wlr.ZwlrOutputHeadV1EventEnabled] || found[wlr.ZwlrOutputHeadV1EventCurrentMode] != enabled || found[wlr.ZwlrOutputHeadV1EventTransform] != enabled {
+			if !found[wlr.ZwlrOutputHeadV1EventMode] || !found[wlr.ZwlrOutputHeadV1EventEnabled] || found[wlr.ZwlrOutputHeadV1EventCurrentMode] != enabled || found[wlr.ZwlrOutputHeadV1EventTransform] != enabled || found[wlr.ZwlrOutputHeadV1EventPosition] != enabled || found[wlr.ZwlrOutputHeadV1EventScale] != enabled {
 				t.Fatalf("head state: %v", found)
 			}
 		})
@@ -449,9 +452,7 @@ func TestOutputManagementReleasedModeNotReused(t *testing.T) {
 		if len(h.modes) != 0 || len(h.modeResources) != 0 {
 			t.Errorf("released mode retained: %d %d", len(h.modes), len(h.modeResources))
 		}
-		updated := testHead()
-		updated.Heads[0].Current = nil
-		s.setOutputHeads(updated)
+		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: testHead().Heads[0].Info, X: 100, Scale: 1}}})
 	}) {
 		t.Fatal("display stopped")
 	}
