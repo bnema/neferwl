@@ -367,13 +367,15 @@ const dmaBufSyncRead = 1
 // appendReadFences waits on every distinct backing object's pending writes.
 // Shared YUV planes have one implicit fence; disjoint planes have two.
 func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Semaphore {
-	fds := im.fds[:1]
-	if !im.yuv {
-		fds = []int{im.fd}
-	} else if im.disjoint {
-		fds = im.fds[:]
+	fds := [2]int{im.fd}
+	count := 1
+	if im.yuv {
+		fds = im.fds
+		if im.disjoint {
+			count = 2
+		}
 	}
-	for _, fd := range fds {
+	for _, fd := range fds[:count] {
 		arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
 		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
 			continue // Older kernels cannot export implicit fences.
