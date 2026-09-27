@@ -499,7 +499,7 @@ func (o *Output) sendFormats() {
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
-			if isTenBit(format.Format) == o.hdrOn {
+			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdrOn {
 				f.Formats = append(f.Formats, format)
 			}
 		}

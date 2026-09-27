@@ -107,8 +107,8 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		o, k, _ := testOutput(t)
 		o.cursor = nil
 		o.scanout, o.device = on, 9
-		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}}
-		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}}
+		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
+		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
 		ch := make(chan ports.OutputFormats, 1)
 		o.formats = ch
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
