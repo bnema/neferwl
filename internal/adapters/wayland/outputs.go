@@ -147,6 +147,12 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		o.global.Remove()
+		for session := range s.captureSessions {
+			if session.o == o && !session.stopped {
+				session.stopped = true
+				session.res.SendStopped()
+			}
+		}
 		s.log.Info().Str("output", o.name()).Msg("output removed")
 		for _, l := range s.layers {
 			if l.output == o {
