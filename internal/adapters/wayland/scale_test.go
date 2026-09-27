@@ -299,14 +299,14 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 		{"one pixel past", 54749, 498212 + 256, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, _, _, _, dir := contentServer(t)
+			s, events, _, contents, dir := contentServer(t)
 			c := protocolClient(t, s, dir)
-			comp := bindProtocol(t, c, "wl_compositor")
+			win, surf, _ := surfaceMapper(t, c, events)()
+			drainContents(contents)
 			vpm := bindProtocol(t, c, "wp_viewporter")
 			shm := bindProtocol(t, c, "wl_shm")
 			registerProtocol(t, c, shm)
-			surf, vp := c.AllocateID(), c.AllocateID()
-			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+			vp := c.AllocateID()
 			requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
 			registerProtocol(t, c, vp)
 			const w, h = 4, 2160
@@ -334,6 +334,14 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 				return
 			}
 			roundtrip(t, c)
+			select {
+			case got := <-contents:
+				if got.ID != win.ID || got.Source[1]+got.Source[3] > h || got.Source[1] == 0 {
+					t.Fatalf("published source outside buffer: %+v", got)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("missing viewport publication")
+			}
 		})
 	}
 }
