@@ -148,33 +148,29 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	stopping := map[string]bool{}
 	currentConfig := initial
 	var currentHeads ports.OutputHeads
-	var pendingConfig *ports.Config
-	var pendingWait map[string]bool
-	var pendingReady map[string]<-chan error
+	progress := &applyProgress{completed: map[<-chan error]bool{}}
 	readySources := map[string]<-chan error{}
-	var pendingErr error
-	ready := make(chan struct {
+	stopReady := map[string]chan struct{}{}
+	type readyResult struct {
 		name   string
 		source <-chan error
 		err    error
-	})
-	deadline := make(chan struct{}, 1)
+	}
+	ready := make(chan readyResult)
+	deadline := make(chan uint64, 1)
 	var timer *time.Timer
-	// Complete only when every affected output stopped/restarted and is
-	// running; the backend owns all outputSet access.
-	complete := func() {
-		if pendingConfig == nil || len(pendingWait) > 0 || len(pendingReady) > 0 {
+	var op uint64
+	complete := func(d applyDecision) {
+		if !d.reply {
 			return
 		}
-		select {
-		case applied <- pendingErr:
-		case <-ctx.Done():
-		}
-		pendingConfig = nil
-		pendingErr = nil
 		if timer != nil {
 			timer.Stop()
 			timer = nil
+		}
+		select {
+		case applied <- d.err:
+		case <-ctx.Done():
 		}
 	}
 	scan := func() {
@@ -214,6 +210,21 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				cards[name] = c
 				readySources[name] = o.Ready()
+				source := readySources[name]
+				stopped := make(chan struct{})
+				stopReady[name] = stopped
+				go func() {
+					select {
+					case err := <-source:
+						select {
+						case ready <- readyResult{name, source, err}:
+						case <-ctx.Done():
+						}
+					case <-stopped:
+					case <-ctx.Done():
+					}
+				}()
+				progress.started(name, source)
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
 				}
@@ -247,27 +258,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-ctx.Done():
 		}
 	}
-	watchReady := func(name string) {
-		source := readySources[name]
-		if source == nil || pendingReady[name] == source {
-			return
-		}
-		pendingReady[name] = source
-		go func() {
-			select {
-			case err := <-source:
-				select {
-				case ready <- struct {
-					name   string
-					source <-chan error
-					err    error
-				}{name, source, err}:
-				case <-ctx.Done():
-				}
-			case <-ctx.Done():
-			}
-		}()
-	}
 	scan()
 	if len(set.outs) == 0 {
 		return errors.Join(errors.New("no connected display"), set.wait())
@@ -283,69 +273,45 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			log.Info().Msg("hotplug")
 			scan()
 		case currentConfig = <-configs:
-			select {
-			case <-deadline:
-			default:
+			op++
+			if timer != nil {
+				timer.Stop()
+				timer = nil
 			}
-			previousHeads := currentHeads
-			pendingConfig = &currentConfig
-			pendingReady = map[string]<-chan error{}
-			pendingWait = map[string]bool{}
+			required := map[string]bool{}
+			// Desired enabled heads, not the inventory's current mode, require a first modeset.
+			w := want(currentConfig)
+			for _, h := range currentHeads.Heads {
+				if !w.Disabled[h.Info.Name] {
+					required[h.Info.Name] = true
+				}
+			}
 			for name := range set.outs {
-				pendingWait[name] = true
+				if !w.Disabled[name] {
+					required[name] = true
+				}
 			}
+			progress.start(op, required, stopping)
 			scan()
-			// Only outputs asked to stop must finish before acknowledging.
-			for name := range pendingWait {
-				if _, ok := stopping[name]; !ok {
-					delete(pendingWait, name)
-				}
+			running := map[string]<-chan error{}
+			for name := range set.outs {
+				running[name] = readySources[name]
 			}
-			for _, head := range currentHeads.Heads {
-				if !head.Enabled {
-					continue
-				}
-				wasEnabled := false
-				var old *ports.OutputMode
-				for _, h := range previousHeads.Heads {
-					if h.Info.Name == head.Info.Name {
-						wasEnabled, old = h.Enabled, h.Current
-					}
-				}
-				if !wasEnabled || old == nil || head.Current == nil || *old != *head.Current {
-					if readySources[head.Info.Name] == nil {
-						pendingErr = errors.Join(pendingErr, fmt.Errorf("%s failed to start", head.Info.Name))
-					} else {
-						watchReady(head.Info.Name)
-					}
-				}
-			}
-			if len(pendingWait)+len(pendingReady) > 0 {
+			d := progress.scanned(running)
+			if progress.active {
+				id := op
 				timer = time.AfterFunc(5*time.Second, func() {
 					select {
-					case deadline <- struct{}{}:
+					case deadline <- id:
 					case <-ctx.Done():
 					}
 				})
 			}
-			complete()
+			complete(d)
 		case result := <-ready:
-			if pendingConfig != nil && pendingReady[result.name] == result.source {
-				delete(pendingReady, result.name)
-				if result.err != nil {
-					pendingErr = fmt.Errorf("%s: %w", result.name, result.err)
-					clear(pendingReady)
-					clear(pendingWait)
-				}
-				complete()
-			}
-		case <-deadline:
-			if pendingConfig != nil && timer != nil {
-				pendingErr = errTimeout
-				clear(pendingReady)
-				clear(pendingWait)
-				complete()
-			}
+			complete(progress.readyEvent(result.name, result.source, result.err))
+		case id := <-deadline:
+			complete(progress.timeout(id))
 		case s := <-scenes:
 			set.scenes(s)
 		case c := <-contents:
@@ -364,18 +330,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			curs.set(name, nil)
 			cards[name].Release(name)
 			delete(cards, name)
+			source := readySources[name]
 			delete(readySources, name)
-			if restart && err == nil {
-				delete(pendingReady, name)
+			if stopped := stopReady[name]; stopped != nil {
+				close(stopped)
+				delete(stopReady, name)
 			}
-			if pendingConfig != nil && (err != nil || (pendingReady[name] != nil && !restart)) {
-				pendingErr = errors.Join(pendingErr, fmt.Errorf("%s stopped: %w", name, errTimeout))
-				if err != nil {
-					pendingErr = errors.Join(pendingErr, err)
-				}
-				clear(pendingReady)
-				clear(pendingWait)
-			}
+			complete(progress.stopped(name, source, restart, err))
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
 				// session down. It stays off until the next hotplug, so a
@@ -388,17 +349,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				// workspaces; OutputAdded updates the size.
 				scan()
 				if set.outs[name] != nil {
-					if pendingConfig != nil {
-						watchReady(name)
+					running := map[string]<-chan error{}
+					for n := range set.outs {
+						running[n] = readySources[n]
 					}
-					delete(pendingWait, name)
-					complete()
+					complete(progress.scanned(running))
 					continue
 				}
 			}
 			send(ports.OutputRemoved{Name: name})
-			delete(pendingWait, name)
-			complete()
+			running := map[string]<-chan error{}
+			for n := range set.outs {
+				running[n] = readySources[n]
+			}
+			complete(progress.scanned(running))
 		}
 	}
 }
