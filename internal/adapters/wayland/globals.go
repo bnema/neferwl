@@ -73,7 +73,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 type compositor struct{ server *Server }
 
 func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
-	state := &surface{server: c.server, bufferScale: 1}
+	state := &surface{server: c.server, bufferScale: 1, inputAll: true}
 	if w, err := wayland.NewSurface(r.Client(), r.Version(), id, state); err == nil {
 		state.wl = w
 		c.server.surfaces[w.Resource] = state
@@ -122,6 +122,7 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	up.sub.children = append(up.sub.children, state)
 	// The child follows its root window's output and scale.
 	state.sendScale()
+	up.emitInput()
 	sub.OnDestroy = func() {
 		if state.sub.role != sub {
 			return
@@ -212,23 +213,40 @@ func sortBelowFirst(list []*surface) {
 	copy(list, append(below, above...))
 }
 
-// region keeps the bounding box of the rectangles added: pointer
-// confinement is the only user, and subtracted areas are ignored.
-type region struct{ box ports.Rect }
+// region stores the exact union of added rectangles.
+type region struct{ rects []ports.Rect }
 
 func (*region) Destroy(*wayland.Region) {}
 func (g *region) Add(_ *wayland.Region, x, y, w, h int32) {
+	if w > 0 && h > 0 {
+		g.rects = append(g.rects, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+	}
+}
+func (g *region) Subtract(_ *wayland.Region, x, y, w, h int32) {
 	if w <= 0 || h <= 0 {
 		return
 	}
-	r := ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}
-	if g.box.W > 0 {
-		x0, y0 := min(g.box.X, r.X), min(g.box.Y, r.Y)
-		r = ports.Rect{X: x0, Y: y0, W: max(g.box.X+g.box.W, r.X+r.W) - x0, H: max(g.box.Y+g.box.H, r.Y+r.H) - y0}
+	cut := ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)}
+	var out []ports.Rect
+	for _, r := range g.rects {
+		i := intersectRect(r, cut)
+		if i.W == 0 {
+			out = append(out, r)
+			continue
+		}
+		for _, piece := range []ports.Rect{
+			{X: r.X, Y: r.Y, W: r.W, H: i.Y - r.Y},
+			{X: r.X, Y: i.Y + i.H, W: r.W, H: r.Y + r.H - i.Y - i.H},
+			{X: r.X, Y: i.Y, W: i.X - r.X, H: i.H},
+			{X: i.X + i.W, Y: i.Y, W: r.X + r.W - i.X - i.W, H: i.H},
+		} {
+			if piece.W > 0 && piece.H > 0 {
+				out = append(out, piece)
+			}
+		}
 	}
-	g.box = r
+	g.rects = out
 }
-func (*region) Subtract(*wayland.Region, int32, int32, int32, int32) {}
 
 type shm struct{ server *Server }
 

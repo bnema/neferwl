@@ -50,6 +50,16 @@ const SlotEnv = "NEFERWL_SLOT"
 
 func (WindowMapped) clientEvent() {}
 
+// InputRegionChanged replaces the surface-local hit area for a mapped surface.
+// All means the full hit rectangle; otherwise Rects is the exact union.
+type InputRegionChanged struct {
+	ID    WindowID
+	All   bool
+	Rects []Rect
+}
+
+func (InputRegionChanged) clientEvent() {}
+
 // WindowUnmapped carries wayland → core removal.
 type WindowUnmapped struct{ ID WindowID }
 

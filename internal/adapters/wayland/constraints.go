@@ -138,7 +138,7 @@ func (s *Server) regionBox(reg *wayland.Region) ports.Rect {
 		return ports.Rect{}
 	}
 	if g := s.regions[reg.Resource]; g != nil {
-		return g.box
+		return g.boxRect()
 	}
 	return ports.Rect{}
 }
@@ -258,6 +258,28 @@ func (s *Server) emitConstraint(c *constraint) {
 		r.X -= x.geometry.X
 		r.Y -= x.geometry.Y
 	}
+	// The input region also bounds confinement. A box is sufficient for core;
+	// contains uses the exact region to decide activation.
+	if mode == ports.ConstraintConfine {
+		if all, rects := c.surface.effectiveInput(); !all {
+			var box ports.Rect
+			for _, input := range rects {
+				if r.W > 0 && r.H > 0 {
+					input = intersectRect(input, r)
+				}
+				if input.W <= 0 {
+					continue
+				}
+				if box.W == 0 {
+					box = input
+				} else {
+					x0, y0 := min(box.X, input.X), min(box.Y, input.Y)
+					box = ports.Rect{X: x0, Y: y0, W: max(box.X+box.W, input.X+input.W) - x0, H: max(box.Y+box.H, input.Y+input.H) - y0}
+				}
+			}
+			r = box
+		}
+	}
 	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}})
 }
 
@@ -265,10 +287,23 @@ func (s *Server) emitConstraint(c *constraint) {
 // activates only there, so it never warps the pointer.
 func (c *constraint) contains(w *window) bool {
 	r := c.region
+	x, y := w.surfacePoint(w.xdg.server.pointerX, w.xdg.server.pointerY)
+	all, rects := c.surface.effectiveInput()
+	if !all {
+		inside := false
+		for _, input := range rects {
+			if x-float64(w.xdg.geometry.X) >= float64(input.X) && x-float64(w.xdg.geometry.X) < float64(input.X+input.W) && y-float64(w.xdg.geometry.Y) >= float64(input.Y) && y-float64(w.xdg.geometry.Y) < float64(input.Y+input.H) {
+				inside = true
+				break
+			}
+		}
+		if !inside {
+			return false
+		}
+	}
 	if r.W <= 0 || r.H <= 0 {
 		return true
 	}
-	x, y := w.surfacePoint(w.xdg.server.pointerX, w.xdg.server.pointerY)
 	return x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H)
 }
 

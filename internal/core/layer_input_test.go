@@ -269,3 +269,49 @@ func TestLayerFocusAcrossOutputs(t *testing.T) {
 		t.Fatalf("key to %d, want the new window", v.ID)
 	}
 }
+
+// A layer's transparent margin passes pointer focus through to the window.
+func TestLayerInputRegionPassThrough(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 16)
+	input := make(chan ports.InputEvent, 16)
+	output := make(chan ports.OutputEvent, 16)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{{ID: 6, Layer: ports.LayerOverlay, Width: 100, Height: 80}}}
+	scene(t, scenes)
+	client <- ports.InputRegionChanged{ID: 6, Rects: []ports.Rect{{X: 10, Y: 10, W: 80, H: 60}}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 5, Y: 5}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 1 {
+		t.Fatalf("margin focus: %+v", v)
+	}
+	input <- ports.PointerMotion{X: 20, Y: 20}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 6 {
+		t.Fatalf("interior focus: %+v", v)
+	}
+	client <- ports.InputRegionChanged{ID: 6}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 20, Y: 21}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 1 {
+		t.Fatalf("empty focus: %+v", v)
+	}
+	client <- ports.InputRegionChanged{ID: 6, All: true}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 5, Y: 5}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 6 {
+		t.Fatalf("reset focus: %+v", v)
+	}
+}
