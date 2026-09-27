@@ -125,24 +125,18 @@ func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-
 	var active *operation
 	var sending chan<- ports.Config
 	var next ports.Config
-	publish := func(cfg ports.Config) bool {
-		select {
-		case configs <- ports.ConfigChanged{Config: cfg}:
-			return true
-		case <-ctx.Done():
-			return false
-		}
+	var configSend chan<- ports.ConfigChanged
+	var pendingConfig ports.ConfigChanged
+	var pendingReplies []ports.OutputApplied
+	publish := func(cfg ports.Config) {
+		pendingConfig = ports.ConfigChanged{Config: cfg}
+		configSend = configs
 	}
-	reply := func(id uint64, err error) bool {
+	reply := func(id uint64, err error) {
 		if err != nil {
 			log.Warn().Err(err).Msg("output configuration failed")
 		}
-		select {
-		case replies <- ports.OutputApplied{ID: id, Err: err}:
-			return true
-		case <-ctx.Done():
-			return false
-		}
+		pendingReplies = append(pendingReplies, ports.OutputApplied{ID: id, Err: err})
 	}
 	enqueue := func(op operation) {
 		if state.headless {
@@ -158,40 +152,49 @@ func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-
 			next = active.cfg
 			sending = backend
 		}
+		var replySend chan<- ports.OutputApplied
+		var nextReply ports.OutputApplied
+		if len(pendingReplies) > 0 {
+			replySend = replies
+			nextReply = pendingReplies[0]
+		}
 		select {
 		case <-ctx.Done():
 			return
+		case configSend <- pendingConfig:
+			configSend = nil
+		case replySend <- nextReply:
+			pendingReplies[0] = ports.OutputApplied{}
+			pendingReplies = pendingReplies[1:]
 		case sending <- next:
 			sending = nil
 		case ev := <-reloads:
 			cfg := state.reload(ev.Config)
-			if !publish(cfg) {
-				return
-			}
+			publish(cfg)
 			// The reload supersedes runtime overrides. Old backend completion cannot
 			// roll back the new file configuration.
 			if active != nil && active.req != nil {
-				if !reply(active.req.ID, fmt.Errorf("output apply superseded by reload")) {
-					return
-				}
+				reply(active.req.ID, fmt.Errorf("output apply superseded by reload"))
 				active.req = nil
 			}
 			for i := range queue {
 				if queue[i].req != nil {
-					if !reply(queue[i].req.ID, fmt.Errorf("output apply superseded by reload")) {
-						return
-					}
-					queue[i].req = nil
+					reply(queue[i].req.ID, fmt.Errorf("output apply superseded by reload"))
 				}
 			}
-			enqueue(operation{cfg: cfg})
+			queue = nil // Only the latest reload needs backend work.
+			if active != nil && sending != nil {
+				// The backend has not accepted the active config yet.
+				active.cfg = cfg
+				next = cfg
+			} else {
+				enqueue(operation{cfg: cfg})
+			}
 		case heads := <-inventory:
 			state.heads = heads
 		case req := <-apply:
 			if active != nil || len(queue) > 0 {
-				if !reply(req.ID, fmt.Errorf("output apply already pending")) {
-					return
-				}
+				reply(req.ID, fmt.Errorf("output apply already pending"))
 				continue
 			}
 			previous := make(map[string]ports.OutputConfig, len(state.overrides))
@@ -200,18 +203,12 @@ func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-
 			}
 			cfg, err := state.apply(req)
 			if err != nil || req.Test {
-				if !reply(req.ID, err) {
-					return
-				}
+				reply(req.ID, err)
 				continue
 			}
-			if !publish(cfg) {
-				return
-			}
+			publish(cfg)
 			if state.headless {
-				if !reply(req.ID, nil) {
-					return
-				}
+				reply(req.ID, nil)
 			} else {
 				enqueue(operation{cfg: cfg, req: &req, previous: previous})
 			}
@@ -225,26 +222,20 @@ func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-
 				continue
 			}
 			if op.rollback {
-				if !reply(op.req.ID, op.failure) {
-					return
-				}
+				reply(op.req.ID, op.failure)
 				continue
 			}
 			if err != nil {
 				state.overrides = op.previous
 				cfg := state.effective()
-				if !publish(cfg) {
-					return
-				}
+				publish(cfg)
 				enqueue(operation{cfg: cfg, req: op.req, rollback: true, failure: err})
 				continue
 			}
 			for _, h := range op.req.Heads {
 				log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
 			}
-			if !reply(op.req.ID, nil) {
-				return
-			}
+			reply(op.req.ID, nil)
 		}
 	}
 }

@@ -83,6 +83,81 @@ func TestOutputSettingsRelay(t *testing.T) {
 	}
 }
 
+func TestOutputSettingsRelayBlockedConsumers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	state := newOutputOverrides(ports.Config{}, false)
+	reloads := make(chan ports.ConfigChanged)
+	inventory := make(chan ports.OutputHeads)
+	applies := make(chan ports.OutputApply)
+	configs := make(chan ports.ConfigChanged)
+	backend := make(chan ports.Config)
+	backendDone := make(chan error)
+	replies := make(chan ports.OutputApplied)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		relayOutputSettings(ctx, state, reloads, inventory, applies, configs, backend, backendDone, replies, logging.For(ctx, "app"))
+	}()
+	defer func() { cancel(); <-done }()
+
+	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	select {
+	case inventory <- ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode}}}:
+	case <-time.After(time.Second):
+		t.Fatal("inventory blocked")
+	}
+	select {
+	case applies <- ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}}}:
+	case <-time.After(time.Second):
+		t.Fatal("apply blocked")
+	}
+	// Neither config consumer nor backend nor Wayland is reading. Reload must
+	// still supersede the apply and subsequent requests must still be answered.
+	select {
+	case reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}}:
+	case <-time.After(time.Second):
+		t.Fatal("reload blocked by unread config or backend")
+	}
+	select {
+	case reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}}:
+	case <-time.After(time.Second):
+		t.Fatal("second reload blocked by unread config or backend")
+	}
+	for _, id := range []uint64{2, 3} {
+		select {
+		case applies <- ports.OutputApply{ID: id}:
+		case <-time.After(time.Second):
+			t.Fatalf("request %d blocked by unread reply", id)
+		}
+	}
+	for _, id := range []uint64{1, 2, 3} {
+		select {
+		case result := <-replies:
+			if result.ID != id || result.Err == nil {
+				t.Fatalf("reply %d: %+v", id, result)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("missing reply %d", id)
+		}
+	}
+	select {
+	case cfg := <-configs:
+		if len(cfg.Config.Outputs) != 1 || cfg.Config.Outputs[0].Scale != 2 || cfg.Config.Outputs[0].Pos != nil {
+			t.Fatalf("latest config: %+v", cfg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing latest config")
+	}
+	select {
+	case cfg := <-backend:
+		if len(cfg.Outputs) != 1 || cfg.Outputs[0].Scale != 2 || cfg.Outputs[0].Pos != nil {
+			t.Fatalf("latest backend config: %+v", cfg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing latest backend config")
+	}
+}
+
 func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 	state := newOutputOverrides(ports.Config{}, true)
