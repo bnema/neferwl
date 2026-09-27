@@ -271,6 +271,8 @@ func (p *params) anyPlane() bool {
 }
 
 const (
+	fourccNV12 = 'N' | 'V'<<8 | '1'<<16 | '2'<<24
+	fourccP010 = 'P' | '0'<<8 | '1'<<16 | '0'<<24
 	fourccAB4H = 'A' | 'B'<<8 | '4'<<16 | 'H'<<24
 	fourccXB4H = 'X' | 'B'<<8 | '4'<<16 | 'H'<<24
 )

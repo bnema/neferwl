@@ -48,10 +48,12 @@ type surface struct {
 	sub     subState
 	// tearing is the surface's wp_tearing_control_v1; async is the
 	// committed hint, pendingAsync the requested one.
-	tearing             *tearingHandler
-	async, pendingAsync bool
-	colorControl        *colorSurface
-	color, pendingColor SurfaceColor
+	tearing                               *tearingHandler
+	async, pendingAsync                   bool
+	colorControl                          *colorSurface
+	color, pendingColor                   SurfaceColor
+	representation, pendingRepresentation surfaceRepresentation
+	representationControl                 *representationSurface
 	// Presentation constraints (fifo.go): pending fifo requests and commit
 	// timestamp, the barrier, and the commits waiting to apply.
 	fifo                        *fifoHandler
@@ -128,10 +130,7 @@ func (s *surface) windowID() ports.WindowID {
 
 // outputColor converts the committed protocol description without allocating.
 func (s *surface) outputColor() ports.SurfaceColor {
-	if !s.color.Set {
-		return ports.SurfaceColor{}
-	}
-	return ports.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL)}
+	return ports.SurfaceColor{TF: uint8(s.color.TF), Primaries: uint8(s.color.Primaries), MaxCLL: uint16(s.color.MaxCLL), MaxFALL: uint16(s.color.MaxFALL), Coefficients: s.representation.coefficients, Range: s.representation.rangeValue, Chroma: s.representation.chroma}
 }
 
 func (s *surface) contentWithColor() ports.SurfaceContent {
@@ -212,6 +211,7 @@ func (s *surface) Destroy(*wayland.Surface) {
 	s.pendingFeedback = nil
 	s.tearing = nil // the control becomes inert
 	s.colorControl = nil
+	s.representationControl = nil
 	s.dropQueue()
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
@@ -261,7 +261,7 @@ func (s *surface) Commit(*wayland.Surface) {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
 	}
-	if !s.checkSyncCommit() {
+	if !s.checkSyncCommit() || !s.checkRepresentationCommit() {
 		return
 	}
 	s.takeSyncPoints()
@@ -289,9 +289,10 @@ func (s *surface) applyCommit() {
 	if s.pendingScale > 0 {
 		s.bufferScale = s.pendingScale
 	}
-	hinted := s.async != s.pendingAsync || s.color != s.pendingColor
+	hinted := s.async != s.pendingAsync || s.color != s.pendingColor || s.representation != s.pendingRepresentation
 	s.async = s.pendingAsync
 	s.color = s.pendingColor
+	s.representation = s.pendingRepresentation
 	if s.viewport != nil {
 		s.viewport.commit()
 	}
