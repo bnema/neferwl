@@ -637,3 +637,61 @@ func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
 		t.Fatal("superseded feedback not discarded")
 	}
 }
+
+// A subsurface resource remains live after its parent surface is destroyed.
+func TestSubsurfacePositionAfterParentDestroy(t *testing.T) {
+	s, events, _, _, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, root, wayland.SurfaceRequestDestroy)
+	roundtrip(t, c)
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetPosition, int32(3), int32(4))
+	roundtrip(t, c)
+}
+
+// A graph without a changed surface must not republish a mapped tree.
+func TestSubsurfaceNoopRootCommitDoesNotPublish(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+	drainContents(contents)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+	select {
+	case got := <-contents:
+		t.Fatalf("no-op published: %+v", got)
+	case <-time.After(80 * time.Millisecond):
+	}
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+	select {
+	case got := <-contents:
+		if len(got.Children) != 1 {
+			t.Fatalf("child change not published: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("child change did not publish")
+	}
+}

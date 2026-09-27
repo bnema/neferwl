@@ -505,12 +505,15 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 				break
 			}
 			s.applyingGraph = true
+			s.graphDrawn = false
 			s.graphFeedback = s.graphFeedback[:0]
 			u.applyGraph()
 			s.applyingGraph = false
 			// Applying a graph changes queues and readiness within this tick.
 			s.readinessGeneration++
-			surf.redraw()
+			if s.graphDrawn {
+				surf.redraw()
+			}
 			// Only the last commit per surface can be sampled from this
 			// publication. Earlier callbacks were already queued on apply.
 			for i, fb := range s.graphFeedback {

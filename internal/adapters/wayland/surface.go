@@ -427,11 +427,15 @@ func (s *surface) applyCommit() {
 		s.xdg.window.afterCommit()
 	}
 	drawn := fresh || damaged || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
-	if drawn && !s.server.applyingGraph {
+	if drawn {
 		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source {
 			s.committed = damage{full: true}
 		}
-		s.redraw()
+		if s.server.applyingGraph {
+			s.server.graphDrawn = true
+		} else {
+			s.redraw()
+		}
 	}
 	fb := s.pendingFeedback
 	s.pendingFeedback = nil

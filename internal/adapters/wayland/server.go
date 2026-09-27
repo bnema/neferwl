@@ -80,6 +80,7 @@ type Server struct {
 	// lastFlip is each output's latest page flip.
 	fifoSurfaces        map[*surface]struct{}
 	applyingGraph       bool
+	graphDrawn          bool
 	graphFeedback       []graphFeedback
 	readinessGeneration uint64
 	lastFlip            map[string]time.Time
