@@ -96,3 +96,42 @@ func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 		t.Fatalf("disable: %+v, %v", cfg, err)
 	}
 }
+
+func TestReloadDuringPendingApply(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	state := newOutputOverrides(ports.Config{}, false)
+	reloads := make(chan ports.ConfigChanged)
+	inventory := make(chan ports.OutputHeads)
+	applies := make(chan ports.OutputApply)
+	configs := make(chan ports.ConfigChanged, 4)
+	backend := make(chan ports.Config, 4)
+	backendDone := make(chan error)
+	replies := make(chan ports.OutputApplied, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		relayOutputSettings(ctx, state, reloads, inventory, applies, configs, backend, backendDone, replies, logging.For(ctx, "app"))
+	}()
+	defer func() { cancel(); <-done }()
+	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	inventory <- ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode}}}
+	applies <- ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}}}
+	<-configs
+	<-backend
+	reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}}
+	select {
+	case cfg := <-configs:
+		if cfg.Config.Outputs[0].Pos != nil {
+			t.Fatal("override survived reload")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reload blocked by backend")
+	}
+	if r := <-replies; r.ID != 1 || r.Err == nil {
+		t.Fatalf("superseded reply: %+v", r)
+	}
+	backendDone <- errors.New("old apply failed")
+	<-backend
+	backendDone <- nil
+}

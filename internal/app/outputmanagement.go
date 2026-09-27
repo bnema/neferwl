@@ -114,86 +114,135 @@ func (o *outputOverrides) apply(req ports.OutputApply) (ports.Config, error) {
 // relayOutputSettings serializes reloads, inventory, and protocol requests.
 // The app owns the only writer to overrides; core receives effective settings.
 func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-chan ports.ConfigChanged, inventory <-chan ports.OutputHeads, apply <-chan ports.OutputApply, configs chan<- ports.ConfigChanged, backend chan<- ports.Config, backendDone <-chan error, replies chan<- ports.OutputApplied, log zerowrap.Logger) {
+	type operation struct {
+		cfg      ports.Config
+		req      *ports.OutputApply
+		previous map[string]ports.OutputConfig
+		rollback bool
+		failure  error
+	}
+	var queue []operation
+	var active *operation
+	var sending chan<- ports.Config
+	var next ports.Config
+	publish := func(cfg ports.Config) bool {
+		select {
+		case configs <- ports.ConfigChanged{Config: cfg}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	reply := func(id uint64, err error) bool {
+		if err != nil {
+			log.Warn().Err(err).Msg("output configuration failed")
+		}
+		select {
+		case replies <- ports.OutputApplied{ID: id, Err: err}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	enqueue := func(op operation) {
+		if state.headless {
+			return
+		}
+		queue = append(queue, op)
+	}
 	for {
+		if active == nil && len(queue) > 0 {
+			op := queue[0]
+			active = &op
+			queue = queue[1:]
+			next = active.cfg
+			sending = backend
+		}
 		select {
 		case <-ctx.Done():
 			return
+		case sending <- next:
+			sending = nil
 		case ev := <-reloads:
-			next := state.reload(ev.Config)
-			select {
-			case configs <- ports.ConfigChanged{Config: next}:
-			case <-ctx.Done():
+			cfg := state.reload(ev.Config)
+			if !publish(cfg) {
 				return
 			}
-			if !state.headless {
-				select {
-				case backend <- next:
-				case <-ctx.Done():
+			// The reload supersedes runtime overrides. Old backend completion cannot
+			// roll back the new file configuration.
+			if active != nil && active.req != nil {
+				if !reply(active.req.ID, fmt.Errorf("output apply superseded by reload")) {
 					return
 				}
-				select {
-				case <-backendDone:
-				case <-ctx.Done():
-					return
+				active.req = nil
+			}
+			for i := range queue {
+				if queue[i].req != nil {
+					if !reply(queue[i].req.ID, fmt.Errorf("output apply superseded by reload")) {
+						return
+					}
+					queue[i].req = nil
 				}
 			}
+			enqueue(operation{cfg: cfg})
 		case heads := <-inventory:
 			state.heads = heads
 		case req := <-apply:
+			if active != nil && active.req != nil || len(queue) > 0 {
+				if !reply(req.ID, fmt.Errorf("output apply already pending")) {
+					return
+				}
+				continue
+			}
 			previous := make(map[string]ports.OutputConfig, len(state.overrides))
 			for name, entry := range state.overrides {
 				previous[name] = entry
 			}
-			next, err := state.apply(req)
-			if err == nil && !req.Test {
-				select {
-				case configs <- ports.ConfigChanged{Config: next}:
-				case <-ctx.Done():
+			cfg, err := state.apply(req)
+			if err != nil || req.Test {
+				if !reply(req.ID, err) {
 					return
 				}
-				if !state.headless {
-					select {
-					case backend <- next:
-					case <-ctx.Done():
-						return
-					}
-					select {
-					case err = <-backendDone:
-					case <-ctx.Done():
-						return
-					}
-					if err != nil {
-						state.overrides = previous
-						prev := state.effective()
-						select {
-						case configs <- ports.ConfigChanged{Config: prev}:
-						case <-ctx.Done():
-							return
-						}
-						select {
-						case backend <- prev:
-						case <-ctx.Done():
-							return
-						}
-						select {
-						case <-backendDone:
-						case <-ctx.Done():
-							return
-						}
-					}
+				continue
+			}
+			if !publish(cfg) {
+				return
+			}
+			if state.headless {
+				if !reply(req.ID, nil) {
+					return
 				}
-				if err == nil {
-					for _, h := range req.Heads {
-						log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
-					}
+			} else {
+				enqueue(operation{cfg: cfg, req: &req, previous: previous})
+			}
+		case err := <-backendDone:
+			if active == nil || sending != nil {
+				continue
+			}
+			op := active
+			active = nil
+			if op.req == nil {
+				continue
+			}
+			if op.rollback {
+				if !reply(op.req.ID, op.failure) {
+					return
 				}
+				continue
 			}
 			if err != nil {
-				log.Warn().Err(err).Msg("output configuration failed")
+				state.overrides = op.previous
+				cfg := state.effective()
+				if !publish(cfg) {
+					return
+				}
+				enqueue(operation{cfg: cfg, req: op.req, rollback: true, failure: err})
+				continue
 			}
-			select {
-			case replies <- ports.OutputApplied{ID: req.ID, Err: err}:
-			case <-ctx.Done():
+			for _, h := range op.req.Heads {
+				log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
+			}
+			if !reply(op.req.ID, nil) {
 				return
 			}
 		}
