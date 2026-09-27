@@ -172,8 +172,9 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	defer r.Close()
 	green := color.RGBA{0, 255, 0, 255}
 	root := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
-	root.ID, root.Seq = 1, 1
+	root.ID, root.Seq, root.Surface, root.Version = 1, 1, 1, 1
 	game := solidContent(t, 16, 16, green)
+	game.Surface, game.Version = 2, 1
 	game.Opaque = true
 	root.Children = []ports.Subsurface{{SurfaceContent: game}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
@@ -188,6 +189,7 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	}
 	// A smaller opaque child leaves part of the root visible: it is copied.
 	small := solidContent(t, 8, 8, green)
+	small.Surface, small.Version = 3, 1
 	small.Opaque = true
 	root.Seq = 2
 	root.Children = []ports.Subsurface{{SurfaceContent: small}}
@@ -251,7 +253,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	var readers []uint64
 	for seq := uint64(1); seq <= 3; seq++ {
 		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})
-		c.ID, c.Seq = 1, seq
+		c.ID, c.Seq, c.Version = 1, seq, seq
 		if seq == 3 {
 			// The buffer about to be reused was last read by frame 1.
 			if r.completed >= readers[0] {
