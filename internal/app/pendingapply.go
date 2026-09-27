@@ -34,8 +34,15 @@ func (p *applyProgress) start(id uint64, required map[string]bool, stopping map[
 	return applyDecision{}
 }
 
+func (p *applyProgress) stopping(name string) {
+	if p.active {
+		p.waiting[name] = true
+		delete(p.ready, name)
+	}
+}
+
 func (p *applyProgress) started(name string, instance <-chan error) applyDecision {
-	if p.active && p.required[name] && !p.completed[instance] {
+	if p.active && p.required[name] && !p.completed[instance] && !p.waiting[name] {
 		p.ready[name] = instance
 	}
 	return p.complete()
@@ -53,6 +60,8 @@ func (p *applyProgress) readyEvent(name string, instance <-chan error, err error
 		if err != nil {
 			return p.fail(fmt.Errorf("%s: %w", name, err))
 		}
+	} else if p.active && err != nil && p.required[name] && !p.waiting[name] {
+		return p.fail(fmt.Errorf("%s: %w", name, err))
 	}
 	return p.complete()
 }
@@ -69,7 +78,7 @@ func (p *applyProgress) stopped(name string, instance <-chan error, restart bool
 		return p.fail(fmt.Errorf("%s stopped: %w", name, err))
 	}
 	if restart && p.required[name] {
-		p.waiting[name] = true
+		p.waiting[name] = false
 		return applyDecision{}
 	} else {
 		delete(p.waiting, name)
@@ -89,10 +98,15 @@ func (p *applyProgress) scanned(running map[string]<-chan error) applyDecision {
 		if instance == nil {
 			return p.fail(fmt.Errorf("%s failed to start", name))
 		}
+		if stopping, ok := p.waiting[name]; ok {
+			if stopping {
+				continue
+			}
+			delete(p.waiting, name)
+		}
 		if !p.completed[instance] {
 			p.ready[name] = instance
 		}
-		delete(p.waiting, name)
 	}
 	return p.complete()
 }

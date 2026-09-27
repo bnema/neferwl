@@ -187,6 +187,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				if r := set.outs[name]; r != nil && cards[name] == c {
 					if _, ok := stopping[name]; !ok {
 						stopping[name] = restart
+						progress.stopping(name)
 						r.stop()
 					}
 				}
