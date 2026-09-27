@@ -11,13 +11,12 @@ import (
 	"strings"
 )
 
-// ScaleStore writes output.<name>.scale into the config file. It edits the
-// value in place and keeps every other line, comments included.
+// ScaleStore writes output.<name>.scale into the config file, preserving
+// unrelated lines and comments.
 type ScaleStore struct{ Path string }
 
-// SaveOutputScale sets output.<name>.scale, appending the key when the file
-// has none. The file is replaced atomically; a symlinked config is written
-// through to its target.
+// SaveOutputScale updates output.<name>.scale in the config file. The file is
+// replaced atomically; a symlinked config is written through to its target.
 func (s ScaleStore) SaveOutputScale(output string, scale float64) error {
 	path := s.Path
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -44,21 +43,66 @@ func (s ScaleStore) SaveOutputScale(output string, scale float64) error {
 	return writeAtomic(path, setKey(data, "output."+output+".scale", formatScale(scale)), mode)
 }
 
-// setKey replaces the value of the last line setting key (the one parse
-// keeps) or appends key = value.
+// setKey replaces the last active assignment, or enables a matching commented
+// assignment. New keys go beside the closest related key, then at the end.
 func setKey(data []byte, key, value string) []byte {
 	lines := strings.SplitAfter(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		k, v, ok := strings.Cut(lines[i], "=")
-		if !ok || strings.TrimSpace(k) != key {
+	commented := -1
+	for i, line := range lines {
+		body := strings.TrimSpace(line)
+		if !strings.HasPrefix(body, "#") {
 			continue
 		}
-		// Keep the spacing around = and an end-of-line comment.
-		rest := strings.TrimRight(v, "\r\n")
-		eol := v[len(rest):]
-		old := stripComment(strings.TrimSpace(rest))
-		start := strings.Index(rest, old)
-		lines[i] = k + "=" + rest[:start] + value + rest[start+len(old):] + eol
+		body = strings.TrimSpace(strings.TrimPrefix(body, "#"))
+		k, _, ok := strings.Cut(body, "=")
+		if ok && strings.TrimSpace(k) == key {
+			commented = i
+		}
+	}
+	for i := len(lines) - 1; i >= 0; i-- {
+		prefix, rest, ok := strings.Cut(lines[i], "=")
+		if !ok || strings.TrimSpace(prefix) != key {
+			continue
+		}
+		lines[i] = replaceValue(prefix+"=", rest, value)
+		return []byte(strings.Join(lines, ""))
+	}
+	if commented >= 0 {
+		line := lines[commented]
+		indent, body, _ := strings.Cut(line, "#")
+		prefix, rest, _ := strings.Cut(strings.TrimLeft(body, " \t"), "=")
+		lines[commented] = replaceValue(indent+prefix+"=", rest, value)
+		return []byte(strings.Join(lines, ""))
+	}
+	// Match the longest dotted parent first: output.DP-2.scale belongs beside
+	// output.DP-2.*, not merely beside any output.* key.
+	for parent := key; ; {
+		dot := strings.LastIndexByte(parent, '.')
+		if dot < 0 {
+			break
+		}
+		parent = parent[:dot]
+		index := -1
+		for i, line := range lines {
+			k, _, ok := strings.Cut(line, "=")
+			k = strings.TrimSpace(k)
+			if ok && (k == parent || strings.HasPrefix(k, parent+".")) {
+				index = i
+			}
+		}
+		if index < 0 {
+			continue
+		}
+		eol := "\n"
+		if strings.HasSuffix(lines[index], "\r\n") {
+			eol = "\r\n"
+		}
+		if !strings.HasSuffix(lines[index], "\n") {
+			lines[index] += eol
+		}
+		lines = append(lines, "")
+		copy(lines[index+2:], lines[index+1:])
+		lines[index+1] = key + " = " + value + eol
 		return []byte(strings.Join(lines, ""))
 	}
 	var b bytes.Buffer
@@ -68,6 +112,15 @@ func setKey(data []byte, key, value string) []byte {
 	}
 	fmt.Fprintf(&b, "%s = %s\n", key, value)
 	return b.Bytes()
+}
+
+// replaceValue keeps indentation, spacing and trailing comments in an assignment.
+func replaceValue(prefix, rest, value string) string {
+	plain := strings.TrimRight(rest, "\r\n")
+	eol := rest[len(plain):]
+	old := stripComment(strings.TrimSpace(plain))
+	start := strings.Index(plain, old)
+	return prefix + plain[:start] + value + plain[start+len(old):] + eol
 }
 
 // formatScale writes scales as the config expects them: a decimal when it is

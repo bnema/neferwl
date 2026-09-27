@@ -15,11 +15,18 @@ func TestSaveOutputScale(t *testing.T) {
 		{"missing file", "", "output.DP-2.scale = 1.5\n", 1.5},
 		{"append", "# my config\nborder.width = 3", "# my config\nborder.width = 3\noutput.DP-2.scale = 1.5\n", 1.5},
 		{"replace in place", "output.DP-2.scale = 2 # big\n# end\n", "output.DP-2.scale = 1.25 # big\n# end\n", 1.25},
+		{"enable commented value", "# output.DP-2.scale = 4/3 # 4K display\nrender.vrr = on\n", "output.DP-2.scale = 1.5 # 4K display\nrender.vrr = on\n", 1.5},
+		{"enable indented CRLF example", "  # output.DP-2.scale = 2  # note\r\nrender.vrr = on\r\n", "  output.DP-2.scale = 1.5  # note\r\nrender.vrr = on\r\n", 1.5},
+		{"insert with same output group", "output.DP-2.hdr = off\noutput.DP-1 = off\n", "output.DP-2.hdr = off\noutput.DP-2.scale = 1.5\noutput.DP-1 = off\n", 1.5},
+		{"insert with output group", "output.DP-1 = off\nrender.vrr = on\n", "output.DP-1 = off\noutput.DP-2.scale = 1.5\nrender.vrr = on\n", 1.5},
+		{"enable example before bind", "# Scale setting\n# output.DP-2.scale = 4/3\n\nbind.cmd+return = spawn-terminal\n", "# Scale setting\noutput.DP-2.scale = 1.25\n\nbind.cmd+return = spawn-terminal\n", 1.25},
+		{"insert beside output", "output.DP-2 = preferred\noutput.DP-1 = off\nrender.vrr = on\n", "output.DP-2 = preferred\noutput.DP-2.scale = 1.5\noutput.DP-1 = off\nrender.vrr = on\n", 1.5},
+		{"active beats commented example", "output.DP-2.scale = 2\n# output.DP-2.scale = 4/3\n", "output.DP-2.scale = 1.5\n# output.DP-2.scale = 4/3\n", 1.5},
 		{"keeps CRLF", "output.DP-2.scale = 2\r\nborder.width = 3\r\n", "output.DP-2.scale = 1.5\r\nborder.width = 3\r\n", 1.5},
 		{"comment with = and #", "output.DP-2.scale = 2 # was a=b #1\n", "output.DP-2.scale = 1.5 # was a=b #1\n", 1.5},
 		{"keeps spacing", "output.DP-2.scale=2\n", "output.DP-2.scale=4/3\n", 4.0 / 3},
 		{"last line wins", "output.DP-2.scale = 2\noutput.DP-2.scale = 3\n", "output.DP-2.scale = 2\noutput.DP-2.scale = 5/3\n", 5.0 / 3},
-		{"ignores comments and other outputs", "# output.DP-2.scale = 2\noutput.DP-1.scale = 2\n", "# output.DP-2.scale = 2\noutput.DP-1.scale = 2\noutput.DP-2.scale = 1\n", 1},
+		{"ignores other outputs", "# output.DP-1.scale = 2\noutput.DP-1.scale = 2\n", "# output.DP-1.scale = 2\noutput.DP-1.scale = 2\noutput.DP-2.scale = 1\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "neferwl", "config")
@@ -46,10 +53,17 @@ func TestSaveOutputScale(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			found := false
 			for _, o := range cfg.Outputs {
-				if o.Name == "DP-2" && o.Scale != tc.scale {
-					t.Fatalf("parsed %v, want %v", o.Scale, tc.scale)
+				if o.Name == "DP-2" {
+					found = true
+					if o.Scale != tc.scale {
+						t.Fatalf("parsed %v, want %v", o.Scale, tc.scale)
+					}
 				}
+			}
+			if !found {
+				t.Fatal("saved output missing from parsed config")
 			}
 			// Existing files keep their mode; new ones are private.
 			{
