@@ -113,10 +113,15 @@ type Output struct {
 	kind imageKind
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
-	formats chan<- ports.OutputFormats
-	sampled []ports.DMABufFormat
-	device  uint64
+	formats   chan<- ports.OutputFormats
+	sampled   []ports.DMABufFormat
+	device    uint64
+	ready     chan error // first successful modeset, or a startup failure
+	readySent bool
 }
+
+// Ready reports the result of the first modeset exactly once.
+func (o *Output) Ready() <-chan error { return o.ready }
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
@@ -286,7 +291,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], serials: &card.serials, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start"}
+	o := &Output{k: card.k, flipped: card.flips[crtc], serials: &card.serials, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1)}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -456,6 +461,10 @@ func (o *Output) modeset() error {
 		o.testCursor()
 	}
 	o.sendFormats()
+	if o.ready != nil && !o.readySent {
+		o.ready <- nil
+		o.readySent = true
+	}
 	return nil
 }
 
@@ -873,7 +882,13 @@ func (o *Output) Close() {
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is reported on presented.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) error {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+	defer func() {
+		if o.ready != nil && !o.readySent {
+			o.ready <- runErr
+			o.readySent = true
+		}
+	}()
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)

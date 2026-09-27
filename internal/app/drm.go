@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
@@ -149,20 +150,21 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	var currentHeads ports.OutputHeads
 	var pendingConfig *ports.Config
 	var pendingWait map[string]bool
+	var pendingReady map[string]<-chan error
+	readySources := map[string]<-chan error{}
 	var pendingErr error
+	ready := make(chan struct {
+		name   string
+		source <-chan error
+		err    error
+	})
+	deadline := make(chan struct{}, 1)
+	var timer *time.Timer
 	// Complete only when every affected output stopped/restarted and is
 	// running; the backend owns all outputSet access.
 	complete := func() {
-		if pendingConfig == nil || len(pendingWait) > 0 {
+		if pendingConfig == nil || len(pendingWait) > 0 || len(pendingReady) > 0 {
 			return
-		}
-		for _, head := range currentHeads.Heads {
-			if want(currentConfig).Disabled[head.Info.Name] {
-				continue
-			}
-			if set.outs[head.Info.Name] == nil {
-				pendingErr = errors.Join(pendingErr, fmt.Errorf("%s failed to start", head.Info.Name))
-			}
 		}
 		select {
 		case applied <- pendingErr:
@@ -170,6 +172,10 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		}
 		pendingConfig = nil
 		pendingErr = nil
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
 	}
 	scan := func() {
 		for _, c := range b.cards {
@@ -207,6 +213,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					continue
 				}
 				cards[name] = c
+				readySources[name] = o.Ready()
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
 				}
@@ -240,6 +247,27 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case <-ctx.Done():
 		}
 	}
+	watchReady := func(name string) {
+		source := readySources[name]
+		if source == nil || pendingReady[name] == source {
+			return
+		}
+		pendingReady[name] = source
+		go func() {
+			select {
+			case err := <-source:
+				select {
+				case ready <- struct {
+					name   string
+					source <-chan error
+					err    error
+				}{name, source, err}:
+				case <-ctx.Done():
+				}
+			case <-ctx.Done():
+			}
+		}()
+	}
 	scan()
 	if len(set.outs) == 0 {
 		return errors.Join(errors.New("no connected display"), set.wait())
@@ -255,7 +283,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			log.Info().Msg("hotplug")
 			scan()
 		case currentConfig = <-configs:
+			select {
+			case <-deadline:
+			default:
+			}
+			previousHeads := currentHeads
 			pendingConfig = &currentConfig
+			pendingReady = map[string]<-chan error{}
 			pendingWait = map[string]bool{}
 			for name := range set.outs {
 				pendingWait[name] = true
@@ -267,7 +301,51 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					delete(pendingWait, name)
 				}
 			}
+			for _, head := range currentHeads.Heads {
+				if !head.Enabled {
+					continue
+				}
+				wasEnabled := false
+				var old *ports.OutputMode
+				for _, h := range previousHeads.Heads {
+					if h.Info.Name == head.Info.Name {
+						wasEnabled, old = h.Enabled, h.Current
+					}
+				}
+				if !wasEnabled || old == nil || head.Current == nil || *old != *head.Current {
+					if readySources[head.Info.Name] == nil {
+						pendingErr = errors.Join(pendingErr, fmt.Errorf("%s failed to start", head.Info.Name))
+					} else {
+						watchReady(head.Info.Name)
+					}
+				}
+			}
+			if len(pendingWait)+len(pendingReady) > 0 {
+				timer = time.AfterFunc(5*time.Second, func() {
+					select {
+					case deadline <- struct{}{}:
+					case <-ctx.Done():
+					}
+				})
+			}
 			complete()
+		case result := <-ready:
+			if pendingConfig != nil && pendingReady[result.name] == result.source {
+				delete(pendingReady, result.name)
+				if result.err != nil {
+					pendingErr = fmt.Errorf("%s: %w", result.name, result.err)
+					clear(pendingReady)
+					clear(pendingWait)
+				}
+				complete()
+			}
+		case <-deadline:
+			if pendingConfig != nil && timer != nil {
+				pendingErr = errTimeout
+				clear(pendingReady)
+				clear(pendingWait)
+				complete()
+			}
 		case s := <-scenes:
 			set.scenes(s)
 		case c := <-contents:
@@ -286,8 +364,17 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			curs.set(name, nil)
 			cards[name].Release(name)
 			delete(cards, name)
-			if err != nil && pendingConfig != nil {
-				pendingErr = errors.Join(pendingErr, err)
+			delete(readySources, name)
+			if restart && err == nil {
+				delete(pendingReady, name)
+			}
+			if pendingConfig != nil && (err != nil || (pendingReady[name] != nil && !restart)) {
+				pendingErr = errors.Join(pendingErr, fmt.Errorf("%s stopped: %w", name, errTimeout))
+				if err != nil {
+					pendingErr = errors.Join(pendingErr, err)
+				}
+				clear(pendingReady)
+				clear(pendingWait)
 			}
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
@@ -301,6 +388,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				// workspaces; OutputAdded updates the size.
 				scan()
 				if set.outs[name] != nil {
+					if pendingConfig != nil {
+						watchReady(name)
+					}
 					delete(pendingWait, name)
 					complete()
 					continue
