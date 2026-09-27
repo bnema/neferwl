@@ -325,6 +325,46 @@ func (_c *MockRenderer_Render_Call) RunAndReturn(run func(scene ports.Scene, win
 	return _c
 }
 
+// SetHDR provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) SetHDR(sdrNits float64) {
+	_mock.Called(sdrNits)
+	return
+}
+
+// MockRenderer_SetHDR_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetHDR'
+type MockRenderer_SetHDR_Call struct {
+	*mock.Call
+}
+
+// SetHDR is a helper method to define mock.On call
+//   - sdrNits float64
+func (_e *MockRenderer_Expecter) SetHDR(sdrNits any) *MockRenderer_SetHDR_Call {
+	return &MockRenderer_SetHDR_Call{Call: _e.mock.On("SetHDR", sdrNits)}
+}
+
+func (_c *MockRenderer_SetHDR_Call) Run(run func(sdrNits float64)) *MockRenderer_SetHDR_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 float64
+		if args[0] != nil {
+			arg0 = args[0].(float64)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_SetHDR_Call) Return() *MockRenderer_SetHDR_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockRenderer_SetHDR_Call) RunAndReturn(run func(sdrNits float64)) *MockRenderer_SetHDR_Call {
+	_c.Run(run)
+	return _c
+}
+
 // UseTarget provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) UseTarget(i int) {
 	_mock.Called(i)

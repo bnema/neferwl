@@ -20,6 +20,8 @@ import (
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.vert -o shaders/compose.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.frag -o shaders/compose.frag.spv
+//go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.vert -o shaders/hdr.vert.spv
+//go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.frag -o shaders/hdr.frag.spv
 
 var (
 	//go:embed shaders/compose.vert.spv
@@ -98,13 +100,17 @@ func (r *Renderer) createComposer() error {
 }
 
 func (r *Renderer) createPipeline() error {
-	d, c := r.dd, &r.compose
-	vert, err := r.shaderModule(composeVert)
+	return r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline)
+}
+
+func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, pipeline *vk.Pipeline) error {
+	d := r.dd
+	vert, err := r.shaderModule(vertex)
 	if err != nil {
 		return err
 	}
 	defer d.DestroyShaderModule(r.device, vert, nil)
-	frag, err := r.shaderModule(composeFrag)
+	frag, err := r.shaderModule(fragment)
 	if err != nil {
 		return err
 	}
@@ -128,16 +134,18 @@ func (r *Renderer) createPipeline() error {
 		SrcAlphaBlendFactor: vk.BlendFactorOne, DstAlphaBlendFactor: vk.BlendFactorOneMinusSrcAlpha, AlphaBlendOp: vk.BlendOpAdd,
 		ColorWriteMask: vk.ColorComponentRBit | vk.ColorComponentGBit | vk.ColorComponentBBit | vk.ColorComponentABit,
 	}
+	if !blend {
+		attachment.BlendEnable = 0
+	}
 	blendState := vk.PipelineColorBlendStateCreateInfo{SType: vk.StructureTypePipelineColorBlendStateCreateInfo, AttachmentCount: 1, Attachments: &attachment}
-	format := vk.Format(vk.FormatB8g8r8a8Unorm)
 	rendering := vk.PipelineRenderingCreateInfo{SType: vk.StructureTypePipelineRenderingCreateInfo, ColorAttachmentCount: 1, ColorAttachmentFormats: &format}
 	gpi := vk.GraphicsPipelineCreateInfo{
 		SType: vk.StructureTypeGraphicsPipelineCreateInfo, Next: unsafe.Pointer(&rendering),
 		StageCount: 2, Stages: &stages[0], VertexInputState: &vertexInput, InputAssemblyState: &assembly,
 		ViewportState: &viewportState, RasterizationState: &raster, MultisampleState: &multisample,
-		ColorBlendState: &blendState, Layout: c.layout, BasePipelineIndex: -1,
+		ColorBlendState: &blendState, Layout: layout, BasePipelineIndex: -1,
 	}
-	return checked("vkCreateGraphicsPipelines", d.CreateGraphicsPipelines(r.device, 0, 1, &gpi, nil, &c.pipeline))
+	return checked("vkCreateGraphicsPipelines", d.CreateGraphicsPipelines(r.device, 0, 1, &gpi, nil, pipeline))
 }
 
 // createDummies makes the placeholder image (1×1, shader-read layout) and

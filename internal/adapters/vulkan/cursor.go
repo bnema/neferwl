@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -118,8 +119,30 @@ func (r *Renderer) WriteCursor(i int, pixels []byte, w, h int) error {
 	mem := unsafe.Slice((*byte)(c.mapped), c.pitch*c.size)
 	clear(mem)
 	cw := min(w, c.size) * 4
-	for y := range min(h, c.size) {
-		copy(mem[y*c.pitch:y*c.pitch+cw], pixels[y*w*4:y*w*4+cw])
+	if r.hdrNits > 0 {
+		// WriteCursor is called only on image changes, never on moves.
+		key := strconv.Itoa(w) + ":" + strconv.Itoa(h) + ":" + strconv.FormatFloat(r.hdrNits, 'f', -1, 64) + ":" + string(pixels[:w*h*4])
+		if r.cursorCache == nil {
+			r.cursorCache = make(map[string][]byte)
+		}
+		converted, ok := r.cursorCache[key]
+		if !ok {
+			converted = make([]byte, cw*min(h, c.size))
+			for y := range min(h, c.size) {
+				copy(converted[y*cw:(y+1)*cw], pixels[y*w*4:y*w*4+cw])
+				for x := 0; x < cw; x += 4 {
+					hdrCursorPixel(converted[y*cw+x:y*cw+x+4], r.hdrNits)
+				}
+			}
+			r.cursorCache[key] = converted
+		}
+		for y := range min(h, c.size) {
+			copy(mem[y*c.pitch:y*c.pitch+cw], converted[y*cw:(y+1)*cw])
+		}
+	} else {
+		for y := range min(h, c.size) {
+			copy(mem[y*c.pitch:y*c.pitch+cw], pixels[y*w*4:y*w*4+cw])
+		}
 	}
 	return nil
 }

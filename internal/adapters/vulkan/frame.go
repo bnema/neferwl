@@ -169,6 +169,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		}
 	}
 	tg := r.target()
+	hdr := r.hdrNits > 0 && len(r.targets) > 0
+	if hdr {
+		tg = &r.own
+	}
 	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
@@ -219,6 +223,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	r.ownership(cmd, dmas, true)
 	r.recordDraws(cmd, tg.view, parseColor(s.Background), ds, partial)
 	r.ownership(cmd, dmas, false)
+	if hdr {
+		r.recordHDR(cmd, r.targets[r.current])
+	}
 	b.SrcAccessMask, b.OldLayout = vk.AccessColorAttachmentWriteBit, vk.ImageLayoutColorAttachmentOptimal
 	b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = queueFamilyIgnored, queueFamilyIgnored
 	if tg.exported {
@@ -269,6 +276,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	tg.layout = b.NewLayout
+	if hdr {
+		r.targets[r.current].layout = vk.ImageLayoutGeneral
+	}
 	tg.hold(s, dmg)
 	r.last, r.readBack = tg, false
 	r.dropUnused()

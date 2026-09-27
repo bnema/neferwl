@@ -22,12 +22,18 @@ type Renderer struct {
 	device        vk.Device
 	dd            *vk.DeviceDispatch
 	queue         vk.Queue
-	// own is the target until ExportTargets; targets are exported images
-	// (targets.go), current the one the next frame draws into.
+	// own is the composed image until ExportTargets; in HDR it remains
+	// the SDR composition/readback image while targets carry PQ.
 	own        target
 	targets    []*target
 	current    int
 	renderMods []uint64
+	hdrMods    []uint64
+	hdrNits    float64
+	hdr        hdrPass
+	hdrError   error
+	// Cursor conversions are cached by image contents and dimensions.
+	cursorCache map[string][]byte
 	// last is the target of the last frame; readback copies it into
 	// buffer only when Pixels asks (stale until then).
 	last         *target
@@ -193,7 +199,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
 		return
 	}
@@ -331,6 +337,7 @@ func (r *Renderer) Close() {
 			r.idle()
 		}
 		r.dropTargets()
+		r.destroyHDR()
 		r.dropCursors()
 		for id, im := range r.imports {
 			r.release(im)
