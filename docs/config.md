@@ -65,7 +65,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 - Keys are what the active layout prints: `cmd+é` on AZERTY. Write `=`, `#` and space by name: `cmd+equal`, `cmd+numbersign`, `cmd+space`.
 - `code:N` is a physical key (evdev code), the same on every layout: `code:2` to `code:10` are the digit row 1 to 9.
 - `none` removes a default bind.
-- `spawn <command>` runs a program without a shell; see [Running commands](../README.md#running-commands).
+- `spawn <command>` runs a program without a shell; see [Running commands](desktop.md#running-commands).
 
 ### Actions
 
