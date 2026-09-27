@@ -274,7 +274,11 @@ func (s *Server) createColorDescription(c server.Client, v int32, id uint32, d c
 		return
 	}
 	if failure != 0 {
-		res.SendFailed(failure, "output unavailable")
+		msg := "output unavailable"
+		if failure == uint32(cm.WpImageDescriptionV1CauseUnsupported) {
+			msg = "unsupported transfer function and primaries combination"
+		}
+		res.SendFailed(failure, msg)
 		return
 	}
 	if d.identity == 0 {
@@ -369,6 +373,14 @@ func (h *colorParams) Create(r *cm.WpImageDescriptionCreatorParamsV1, id uint32)
 				return
 			}
 		}
+	}
+	// Advertised transfer functions and primaries do not imply that every
+	// cross-product can be rendered. Reject unsupported combinations as an
+	// image-description failure, not a protocol error.
+	validSDR := h.d.Primaries == srgb && (h.d.TF == gamma22 || h.d.TF == uint32(cm.WpColorManagerV1TransferFunctionSrgb))
+	if !validSDR && !(h.d.Primaries == bt2020 && h.d.TF == pq) {
+		h.s.createColorDescription(r.Client(), r.Version(), id, h.d, uint32(cm.WpImageDescriptionV1CauseUnsupported), false)
+		return
 	}
 	h.s.createColorDescription(r.Client(), r.Version(), id, h.d, 0, false)
 }

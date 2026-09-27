@@ -170,6 +170,10 @@ func TestColorOutputAndFeedback(t *testing.T) {
 	if len(ready.events) != 1 || uint32(ready.events[0]) != cm.WpImageDescriptionV1EventReady2 {
 		t.Fatalf("output ready %v", ready.events)
 	}
+	oldID := uint64(ready.values[0][0])<<32 | uint64(ready.values[0][1])
+	if oldID == 0 {
+		t.Fatal("zero output identity")
+	}
 	info := c.AllocateID()
 	requestProtocol(t, c, desc, cm.WpImageDescriptionV1RequestGetInformation, info)
 	ev := watchColor(c, info)
@@ -213,9 +217,16 @@ func TestColorOutputAndFeedback(t *testing.T) {
 	}
 	desc2 := c.AllocateID()
 	requestProtocol(t, c, obj, cm.WpColorManagementOutputV1RequestGetImageDescription, desc2)
-	watchColor(c, desc2)
+	ready2 := watchColor(c, desc2)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
+	}
+	newID := uint64(ready2.values[0][0])<<32 | uint64(ready2.values[0][1])
+	if newID == 0 || newID == oldID {
+		t.Fatalf("identities before=%d after=%d", oldID, newID)
+	}
+	if len(pref.values) == 0 || uint64(pref.values[len(pref.values)-1][0])<<32|uint64(pref.values[len(pref.values)-1][1]) != newID {
+		t.Fatalf("preferred identity mismatch: %v, ready=%d", pref.values, newID)
 	}
 	info2 := c.AllocateID()
 	requestProtocol(t, c, desc2, cm.WpImageDescriptionV1RequestGetInformation, info2)
@@ -227,6 +238,46 @@ func TestColorOutputAndFeedback(t *testing.T) {
 		t.Fatalf("HDR info %v %v", hdr.events, hdr.values)
 	}
 }
+func TestColorParametricCombinations(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		prim, tf uint32
+		ready    bool
+	}{
+		{"sRGB gamma22", srgb, gamma22, true},
+		{"BT2020 PQ", bt2020, pq, true},
+		{"sRGB PQ", srgb, pq, false},
+		{"BT2020 gamma22", bt2020, gamma22, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, c, _ := colorServer(t)
+			manager := bindVersion(t, c, "wp_color_manager_v1", 2)
+			registerProtocol(t, c, manager)
+			creator := c.AllocateID()
+			requestProtocol(t, c, manager, cm.WpColorManagerV1RequestCreateParametricCreator, creator)
+			registerProtocol(t, c, creator)
+			requestProtocol(t, c, creator, cm.WpImageDescriptionCreatorParamsV1RequestSetPrimariesNamed, tc.prim)
+			requestProtocol(t, c, creator, cm.WpImageDescriptionCreatorParamsV1RequestSetTfNamed, tc.tf)
+			image := c.AllocateID()
+			requestProtocol(t, c, creator, cm.WpImageDescriptionCreatorParamsV1RequestCreate, image)
+			ev := watchColor(c, image)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			if len(ev.events) != 1 {
+				t.Fatalf("events %v", ev.events)
+			}
+			if tc.ready {
+				if uint32(ev.events[0]) != cm.WpImageDescriptionV1EventReady2 {
+					t.Fatalf("events %v", ev.events)
+				}
+			} else if uint32(ev.events[0]) != cm.WpImageDescriptionV1EventFailed || ev.values[0][0] != uint32(cm.WpImageDescriptionV1CauseUnsupported) {
+				t.Fatalf("failure events %v values %v", ev.events, ev.values)
+			}
+		})
+	}
+}
+
 func TestColorProtocolErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
