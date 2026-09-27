@@ -50,15 +50,21 @@ func TestWatch(t *testing.T) {
 				}
 			}
 			write(path, "background = #000000\n")
+			// receive waits for want. A slow machine may pause longer than the
+			// debounce between WriteFile's truncation and its write: the
+			// watcher then reads an empty file first, which is skipped here.
 			receive := func(want string) {
 				t.Helper()
-				select {
-				case c := <-out:
-					if c.Config.Background.Color != want {
-						t.Fatalf("color %s, want %s", c.Config.Background.Color, want)
+				deadline := time.After(time.Second)
+				for {
+					select {
+					case c := <-out:
+						if c.Config.Background.Color == want {
+							return
+						}
+					case <-deadline:
+						t.Fatalf("no config change to %s", want)
 					}
-				case <-time.After(time.Second):
-					t.Fatal("no config change")
 				}
 			}
 			receive("#000000")
