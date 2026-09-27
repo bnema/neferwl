@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	_ "embed"
+	"fmt"
 	"unsafe"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
@@ -71,6 +72,17 @@ func (r *Renderer) SetHDR(nits float64) {
 // createHDROwn allocates the fp16 linear-light composition image once per
 // renderer; toggling HDR reuses it after the previous frames complete.
 func (r *Renderer) createHDROwn() error {
+	// An HDR compositor needs an fp16 blendable color attachment that can
+	// also be sampled by the PQ pass and copied only for capture.
+	if r.physical == 0 {
+		return fmt.Errorf("HDR fp16 device unavailable")
+	}
+	props := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2}
+	r.id.GetPhysicalDeviceFormatProperties2(r.physical, vk.FormatR16g16b16a16Sfloat, &props)
+	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit | vk.FormatFeatureSampledImageBit | formatFeatureTransferSrc)
+	if props.FormatProperties.OptimalTilingFeatures&need != need {
+		return fmt.Errorf("HDR fp16 composition format lacks attachment/blend/sample/readback features")
+	}
 	d, t := r.dd, &r.hdrOwn
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatR16g16b16a16Sfloat, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(HDR composition)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
