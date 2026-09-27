@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"net"
 	"os/exec"
 	"time"
 
@@ -49,4 +50,22 @@ func runSessionCommand(ctx context.Context, env []string, log zerowrap.Logger, a
 		return
 	}
 	log.Info().Strs("vars", sessionVars).Msg(done)
+}
+
+// NotifyReady tells the systemd user manager that the compositor is ready.
+func NotifyReady(socket string, log zerowrap.Logger) {
+	if socket == "" {
+		return
+	}
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
+	if err != nil {
+		log.Warn().Err(err).Msg("session readiness notification failed")
+		return
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("READY=1")); err != nil {
+		log.Warn().Err(err).Msg("session readiness notification failed")
+		return
+	}
+	log.Info().Msg("session ready")
 }

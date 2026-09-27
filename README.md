@@ -75,7 +75,7 @@ make pkg                                  # builds dist/neferwl-*.pkg.tar.zst fr
 sudo pacman -U dist/neferwl-*.pkg.tar.zst
 ```
 
-The package installs `neferwl` and a **NeferWL** session for display managers such as Ly, GDM and SDDM. The session runs `neferwl --session`, which passes `WAYLAND_DISPLAY` and `DISPLAY` to D-Bus and systemd user services so that portals and notification daemons can connect.
+The package installs `neferwl` and a **NeferWL** session for display managers such as Ly, GDM and SDDM. The session runs `neferwl-session`, which starts `neferwl.service` under systemd. This starts `graphical-session.target` and services bound to it (bars, notification daemons, portals, and XDG autostart) with NeferWL and stops them with it. Running `neferwl --session` alone still exports the display environment to D-Bus and systemd user services.
 
 On other distributions, `make build` builds `bin/neferwl`.
 

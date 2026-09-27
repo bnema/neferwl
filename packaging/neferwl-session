@@ -1,0 +1,19 @@
+#!/bin/sh
+if [ "${1:-}" != '-l' ] && [ -n "${SHELL:-}" ] && [ -x "$SHELL" ] && grep -Fxq "$SHELL" /etc/shells; then
+    case "$SHELL" in
+        */false|*/nologin) ;;
+        *) exec "$SHELL" -l -c 'exec neferwl-session -l' ;;
+    esac
+fi
+if systemctl --user -q is-active neferwl.service; then
+    echo 'A NeferWL session is already running.' >&2
+    exit 1
+fi
+systemctl --user reset-failed
+systemctl --user import-environment
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --all
+fi
+systemctl --user --wait start neferwl.service
+systemctl --user start --job-mode=replace-irreversibly neferwl-shutdown.target
+systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NEFERWL_STATE
