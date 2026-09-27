@@ -153,16 +153,24 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		return 0, false
 	}
 	if !s.validCaptureBuffer(b, rect, format) {
+		s.log.Debug().Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Msg("capture buffer rejected")
 		return 0, false
 	}
 	buf := s.buffers[b.Resource].(*buffer)
 	fd, err := unix.Dup(int(buf.pool.file.Fd()))
 	if err != nil {
+		s.log.Warn().Err(err).Str("output", o.name()).Msg("capture: dup shm fd")
 		return 0, false
 	}
 	s.nextCapture++
 	id := s.nextCapture
+	start := time.Now()
 	s.captureReplies[id] = func(done ports.CaptureDone) {
+		ev := s.log.Debug()
+		if done.Err != nil {
+			ev = s.log.Info().Err(done.Err)
+		}
+		ev.Uint64("id", id).Str("output", done.Output).Dur("took", time.Since(start)).Bool("delivered", life.Alive()).Msg("capture done")
 		if life.Alive() {
 			reply(done)
 		}
@@ -170,10 +178,12 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format}
 	select {
 	case s.channels.Captures <- req:
+		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")
 		return id, true
 	default:
 		delete(s.captureReplies, id)
 		req.Dst.File.Close()
+		s.log.Warn().Str("output", o.name()).Msg("capture refused: request queue full")
 		return 0, false
 	}
 }

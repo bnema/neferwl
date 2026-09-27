@@ -168,6 +168,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("frame fence: %w", err)
 			}
 		}
+		if len(requests) > 0 {
+			opts.Log.Debug().Str("output", opts.Name).Int("captures", len(requests)).Msg("capture frame composed")
+		}
 		for _, q := range requests {
 			capture.Write(ctx, q, r, opts.Captured)
 		}

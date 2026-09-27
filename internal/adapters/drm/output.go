@@ -1100,6 +1100,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					return fmt.Errorf("render frame: %w", rerr)
 				}
 			}
+			if len(requests) > 0 {
+				// Scanout and the overlay plane were skipped for this frame.
+				o.log.Debug().Str("connector", o.conn.name).Int("captures", len(requests)).Msg("capture frame composed")
+			}
 			for _, q := range requests {
 				capture.Write(ctx, q, r, captured)
 			}
