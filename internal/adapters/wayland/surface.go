@@ -50,6 +50,8 @@ type surface struct {
 	// committed hint, pendingAsync the requested one.
 	tearing             *tearingHandler
 	async, pendingAsync bool
+	colorControl        *colorSurface
+	color, pendingColor SurfaceColor
 	// Presentation constraints (fifo.go): pending fifo requests and commit
 	// timestamp, the barrier, and the commits waiting to apply.
 	fifo                        *fifoHandler
@@ -194,6 +196,7 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 	s.pendingFeedback = nil
 	s.tearing = nil // the control becomes inert
+	s.colorControl = nil
 	s.dropQueue()
 	if s.server.cursorSurface == s {
 		// The pointer keeps no cursor until the client sets another.
@@ -273,6 +276,7 @@ func (s *surface) applyCommit() {
 	}
 	hinted := s.async != s.pendingAsync
 	s.async = s.pendingAsync
+	s.color = s.pendingColor
 	if s.viewport != nil {
 		s.viewport.commit()
 	}

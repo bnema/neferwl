@@ -53,6 +53,12 @@ func (surf *surface) sendScale() {
 			surf.leave(surf.on)
 		}
 		surf.on = o
+		for h := range s.colorFeedbacks {
+			if h.surf == surf {
+				h.last = o
+				h.changed(s.outputColor(o).identity)
+			}
+		}
 		if o != nil {
 			for _, r := range o.resources {
 				if r.Client() == surf.wl.Client() {

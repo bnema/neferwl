@@ -17,10 +17,14 @@ func (s *Server) setOutputHDR(f ports.OutputFormats) {
 	if s.hdrOutputs == nil {
 		s.hdrOutputs = make(map[string]ports.OutputHDR)
 	}
+	old, had := s.hdrOutputs[f.Output]
 	if f.HDR == nil {
 		delete(s.hdrOutputs, f.Output)
 	} else {
 		s.hdrOutputs[f.Output] = *f.HDR
+	}
+	if (f.HDR == nil && had) || (f.HDR != nil && (!had || old != *f.HDR)) {
+		s.colorOutputChanged(f.Output)
 	}
 }
 
@@ -169,6 +173,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 		o.global.Remove()
 		delete(s.hdrOutputs, o.name())
+		delete(s.colorIdentity, o.name())
 		for session := range s.captureSessions {
 			if session.o == o && !session.stopped {
 				session.stopped = true
@@ -222,6 +227,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	for _, surf := range s.surfaces {
 		surf.sendScale()
 	}
+	s.notifyColorFeedback()
 	// Layer surfaces sized from the output follow its new logical size.
 	adopted := false
 	for _, l := range s.layers {

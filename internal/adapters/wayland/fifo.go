@@ -219,6 +219,7 @@ type update struct {
 	at        time.Time
 	feedback  []*presentationtime.WpPresentationFeedback
 	sync      *commitSync
+	color     SurfaceColor
 	damage    []ports.Rect
 	bufDamage []ports.Rect
 }
@@ -231,7 +232,7 @@ type childMove struct {
 // takePending moves the pending state into an update: one-shot state is
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
-	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback, sync: s.pendingSync}
+	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback, sync: s.pendingSync, color: s.pendingColor}
 	s.attached, s.pending, s.callbacks = false, nil, nil
 	s.pendingFeedback, s.pendingSync = nil, nil
 	s.pendingDamage, s.pendingBufDamage = nil, nil
@@ -262,6 +263,7 @@ func (s *surface) takePending() update {
 func (s *surface) putPending(u update) {
 	s.attached, s.pending, s.callbacks = u.attached, u.buffer, u.callbacks
 	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
+	s.pendingColor = u.color
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
 	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
 	s.pendingFeedback, s.pendingSync = u.feedback, u.sync

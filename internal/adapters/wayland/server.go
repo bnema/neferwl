@@ -87,8 +87,13 @@ type Server struct {
 	buffers  map[*server.Resource]clientBuffer
 	dmabuf   *dmabufGlobal
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
-	hdrOutputs map[string]ports.OutputHDR
-	serial     uint32
+	hdrOutputs        map[string]ports.OutputHDR
+	colorID           uint64
+	colorIdentity     map[string]uint64
+	colorDescriptions map[*server.Resource]colorDescription
+	colorOutputs      map[*colorOutput]struct{}
+	colorFeedbacks    map[*colorFeedback]struct{}
+	serial            uint32
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
 	press       uint32
@@ -236,6 +241,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			s.syncDev = node
 		}
 	}
+	s.colorIdentity = map[string]uint64{}
+	s.colorDescriptions = map[*server.Resource]colorDescription{}
+	s.colorOutputs = map[*colorOutput]struct{}{}
+	s.colorFeedbacks = map[*colorFeedback]struct{}{}
 	s.tokens = map[string]activationToken{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
@@ -664,6 +673,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		}
 		if surf := w.xdg.surface; surf != nil && c.Output != "" {
 			surf.sendTreeScale()
+		}
+		if scanoutChanged {
+			s.notifyColorFeedback()
 		}
 	case ports.SetOutputs:
 		s.setOutputs(c)
