@@ -22,7 +22,7 @@ The design is deliberately small, and it will stay small: no animations, no them
 
 ## Features
 
-- **Games.** A fullscreen window is scanned out directly, with tearing, VRR and explicit sync when the client asks for them. Steam and Wine run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **Games.** A fullscreen window is scanned out directly, with tearing, VRR and explicit sync when the client asks for them. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
 - **HDR.** HDR10 output on capable displays. HDR clients (games, browsers, video players) are shown at full range; SDR content is shown at a configured brightness.
 - **Column tiling.** Up to `max-columns` windows share the screen, as in Sway; past that, columns scroll to the right, as in Niri. Limits are set per output or per workspace.
 - **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
@@ -62,7 +62,7 @@ These protocols and kernel features cut copies, waits and latency between the ap
 - **Frame pacing.** Apps get real flip times through `wp_presentation`, and can queue frames with `wp_fifo_v1` and `wp_commit_timing_v1`.
 - **Only what changed.** NeferWL redraws only damaged regions, skips surfaces hidden behind opaque ones, and leaves idle outputs alone. Frame, cursor, overlay and VRR go to the kernel in one atomic commit.
 - **Input.** Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. Input at 1 kHz and more never waits on rendering, and the cursor has its own hardware plane.
-- **X11 games.** Steam and Wine run through xwayland-satellite, started on the first X11 connection.
+- **X11 games.** Steam and X11-only games run through xwayland-satellite, started on the first X11 connection. Wine with its Wayland driver does not need it.
 
 ## Hardware support
 
