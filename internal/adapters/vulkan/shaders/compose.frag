@@ -9,6 +9,7 @@ layout(push_constant) uniform Draw {
     ivec4 rect;
     vec4 map;
     vec4 color;
+    vec4 crop;
     uvec4 buf;
     uvec4 misc;
 } d;
@@ -73,7 +74,7 @@ vec4 sampleYUV(vec2 src) {
 
 // texel reads buffer pixel p, clamped to the buffer (clamp to edge).
 vec4 texel(ivec2 p) {
-    p = clamp(p, ivec2(floor(d.color.xy)), min(ivec2(d.buf.yz) - 1, ivec2(ceil(d.color.zw)) - 1));
+    p = clamp(p, ivec2(floor(d.crop.xy)), min(ivec2(d.buf.yz) - 1, ivec2(ceil(d.crop.zw)) - 1));
     // Little-endian B,G,R,A bytes: unpack yields (B, G, R, A).
     return unpackUnorm4x8(pixels[d.buf.x + uint(p.y) * d.buf.y + uint(p.x)]).zyxw;
 }
@@ -88,7 +89,7 @@ void main() {
         c = sampleYUV(src);
     } else if (d.misc.x == modeImage) {
         ivec2 size = textureSize(tex, 0);
-        vec2 p = clamp(src, d.color.xy + 0.5, d.color.zw - 0.5);
+        vec2 p = clamp(src, d.crop.xy + 0.5, d.crop.zw - 0.5);
         c = exact ? texelFetch(tex, clamp(ivec2(floor(p)), ivec2(0), size - 1), 0) : texture(tex, p / vec2(size));
     } else if (exact) {
         c = texel(ivec2(floor(src)));

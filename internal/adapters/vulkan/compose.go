@@ -52,6 +52,7 @@ type pushConstants struct {
 	rect  [4]int32
 	mapv  [4]float32
 	color [4]float32
+	crop  [4]float32
 	buf   [4]uint32
 	misc  [4]uint32
 }
@@ -306,7 +307,7 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 	sx, sy := source[2]/float32(full.Dx()), source[3]/float32(full.Dy())
 	dr.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
 	dr.pc.mapv = [4]float32{source[0] - float32(full.Min.X)*sx, source[1] - float32(full.Min.Y)*sy, sx, sy}
-	dr.pc.color = [4]float32{source[0], source[1], source[0] + source[2], source[1] + source[3]}
+	dr.pc.crop = [4]float32{source[0], source[1], source[0] + source[2], source[1] + source[3]}
 	flags := uint32(0)
 	if opaque {
 		flags |= flagOpaque
