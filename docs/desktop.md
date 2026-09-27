@@ -78,6 +78,8 @@ exec wlopm --off '*'
 
 NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
 
+NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. Every client can see window titles and app IDs.
+
 ## State for scripts
 
 While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:

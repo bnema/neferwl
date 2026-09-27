@@ -192,6 +192,7 @@ func (w *window) unmap() {
 		return
 	}
 	w.mapped = false
+	w.xdg.server.toplevelClosed(w.id)
 	w.xdg.surface.resetInputEmission()
 	w.xdg.configured = false
 	w.xdg.acked = false
@@ -232,6 +233,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			w.floating = w.floats()
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH})
 			x.server.syncInhibitors()
+			x.server.toplevelChanged(w)
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
 		} else if !buffer && w.mapped {
 			w.unmap()
@@ -298,7 +300,13 @@ func (t top) SetParent(_ *xdgshell.Toplevel, parent *xdgshell.Toplevel) {
 		}
 	}
 }
-func (t top) SetTitle(_ *xdgshell.Toplevel, title string) { t.w.title = title }
+func (t top) SetTitle(_ *xdgshell.Toplevel, title string) {
+	if title == t.w.title {
+		return
+	}
+	t.w.title = title
+	t.w.xdg.server.toplevelChanged(t.w)
+}
 func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	if appID == t.w.appID {
 		return
@@ -306,6 +314,7 @@ func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	t.w.appID = appID
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowAppID{ID: t.w.id, AppID: appID})
+		t.w.xdg.server.toplevelChanged(t.w)
 	}
 }
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}

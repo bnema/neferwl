@@ -144,6 +144,7 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 				m.res.SendDone()
 			}
 		}
+		s.refreshToplevels()
 	})
 	if err != nil {
 		s.log.Warn().Err(err).Str("output", p.Info.Name).Msg("add wl_output")
@@ -196,6 +197,8 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 	}
 	s.outputs = kept
+	// Windows of a removed output leave it until core moves them.
+	s.refreshToplevels()
 	for _, p := range c.Outputs {
 		o := s.outputByNameExact(p.Info.Name)
 		if o == nil {
