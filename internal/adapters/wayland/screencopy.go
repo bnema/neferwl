@@ -97,20 +97,26 @@ type screencopyFrame struct {
 	o            *output
 	region       image.Rectangle
 	cursor, used bool
+	replyID      uint64
 }
 
-func (*screencopyFrame) Destroy(*wlr.ZwlrScreencopyFrameV1)                     {}
+func (f *screencopyFrame) Destroy(*wlr.ZwlrScreencopyFrameV1)                   { delete(f.s.captureReplies, f.replyID) }
 func (f *screencopyFrame) Copy(_ *wlr.ZwlrScreencopyFrameV1, b *wayland.Buffer) { f.copy(b, false) }
 func (f *screencopyFrame) CopyWithDamage(_ *wlr.ZwlrScreencopyFrameV1, b *wayland.Buffer) {
 	f.copy(b, true)
 }
 func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 	if f.used {
+		f.res.PostError(uint32(wlr.ZwlrScreencopyFrameV1ErrorAlreadyUsed), "frame already used")
 		return
 	}
 	f.used = true
-	if f.o == nil || f.region.Empty() {
+	if f.o == nil || f.region.Empty() || f.s.outputByNameExact(f.o.name()) != f.o {
 		f.res.SendFailed()
+		return
+	}
+	if !f.s.validCaptureBuffer(b, f.region, uint32(wayland.ShmFormatXrgb8888)) {
+		f.res.PostError(uint32(wlr.ZwlrScreencopyFrameV1ErrorInvalidBuffer), "invalid shm buffer")
 		return
 	}
 	id, ok := f.s.requestCapture(f.o, f.region, f.cursor, b, uint32(wayland.ShmFormatXrgb8888), func(done ports.CaptureDone) {
@@ -125,10 +131,19 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 		hi, lo, ns := captureTime(done.Time)
 		f.res.SendReady(hi, lo, ns)
 	}, f.res.Resource)
-	_ = id
+	f.replyID = id
 	if !ok {
 		f.res.SendFailed()
 	}
+}
+
+// validCaptureBuffer checks the advertised shm constraints before any request is queued.
+func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, format uint32) bool {
+	if b == nil {
+		return false
+	}
+	buf, ok := s.buffers[b.Resource].(*buffer)
+	return ok && (format == uint32(wayland.ShmFormatArgb8888) || format == uint32(wayland.ShmFormatXrgb8888)) && buf.width == rect.Dx() && buf.height == rect.Dy() && buf.stride >= rect.Dx()*4 && buf.format == format && fileHolds(buf.pool.file, int64(buf.offset)+int64(buf.height-1)*int64(buf.stride)+int64(buf.width)*4)
 }
 
 // requestCapture duplicates the pool descriptor, so destroying the wl_buffer
@@ -137,10 +152,10 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	if o == nil || b == nil || s.channels.Captures == nil || s.channels.Captured == nil || s.outputByNameExact(o.name()) != o {
 		return 0, false
 	}
-	buf, ok := s.buffers[b.Resource].(*buffer)
-	if !ok || (format != uint32(wayland.ShmFormatArgb8888) && format != uint32(wayland.ShmFormatXrgb8888)) || buf.width != rect.Dx() || buf.height != rect.Dy() || buf.stride < rect.Dx()*4 || buf.format != format || !fileHolds(buf.pool.file, int64(buf.offset)+int64(buf.height-1)*int64(buf.stride)+int64(buf.width)*4) {
+	if !s.validCaptureBuffer(b, rect, format) {
 		return 0, false
 	}
+	buf := s.buffers[b.Resource].(*buffer)
 	fd, err := unix.Dup(int(buf.pool.file.Fd()))
 	if err != nil {
 		return 0, false
@@ -206,6 +221,10 @@ type copyCaptureManager struct{ s *Server }
 func (copyCaptureManager) Destroy(*ext.ExtImageCopyCaptureManagerV1) {}
 func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, id uint32, src *source.ExtImageCaptureSourceV1, options uint32) {
 	var o *output
+	if options&^1 != 0 {
+		r.PostError(uint32(ext.ExtImageCopyCaptureManagerV1ErrorInvalidOption), "invalid capture option")
+		return
+	}
 	if src != nil {
 		o = m.s.captureSources[src.Resource]
 	}
@@ -216,7 +235,12 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 	}
 	state.res = res
 	m.s.captureSessions[state] = struct{}{}
-	res.OnDestroy = func() { delete(m.s.captureSessions, state) }
+	res.OnDestroy = func() {
+		delete(m.s.captureSessions, state)
+		if state.frame != nil {
+			delete(m.s.captureReplies, state.frame.replyID)
+		}
+	}
 	if o == nil {
 		res.SendStopped()
 		state.stopped = true
@@ -236,11 +260,17 @@ func (m copyCaptureManager) CreatePointerCursorSession(r *ext.ExtImageCopyCaptur
 }
 
 type cursorCaptureSession struct {
-	res *ext.ExtImageCopyCaptureCursorSessionV1
+	res  *ext.ExtImageCopyCaptureCursorSessionV1
+	used bool
 }
 
 func (*cursorCaptureSession) Destroy(*ext.ExtImageCopyCaptureCursorSessionV1) {}
 func (c *cursorCaptureSession) GetCaptureSession(_ *ext.ExtImageCopyCaptureCursorSessionV1, id uint32) {
+	if c.used {
+		c.res.PostError(uint32(ext.ExtImageCopyCaptureCursorSessionV1ErrorDuplicateSession), "session already created")
+		return
+	}
+	c.used = true
 	state := &captureSession{stopped: true}
 	res, err := ext.NewExtImageCopyCaptureSessionV1(c.res.Client(), 1, id, state)
 	if err == nil {
@@ -254,14 +284,28 @@ type captureSession struct {
 	o               *output
 	res             *ext.ExtImageCopyCaptureSessionV1
 	cursor, stopped bool
+	frame           *captureExtFrame
 }
 
 func (*captureSession) Destroy(*ext.ExtImageCopyCaptureSessionV1) {}
 func (c *captureSession) CreateFrame(r *ext.ExtImageCopyCaptureSessionV1, id uint32) {
+	if c.frame != nil {
+		r.PostError(uint32(ext.ExtImageCopyCaptureSessionV1ErrorDuplicateFrame), "frame still alive")
+		return
+	}
 	state := &captureExtFrame{session: c}
 	res, err := ext.NewExtImageCopyCaptureFrameV1(r.Client(), 1, id, state)
 	if err == nil {
 		state.res = res
+		c.frame = state
+		res.OnDestroy = func() {
+			if c.frame == state {
+				c.frame = nil
+			}
+			if c.s != nil {
+				delete(c.s.captureReplies, state.replyID)
+			}
+		}
 	}
 }
 
@@ -270,15 +314,29 @@ type captureExtFrame struct {
 	res     *ext.ExtImageCopyCaptureFrameV1
 	buf     *wayland.Buffer
 	used    bool
+	replyID uint64
 }
 
 func (*captureExtFrame) Destroy(*ext.ExtImageCopyCaptureFrameV1) {}
 func (f *captureExtFrame) AttachBuffer(_ *ext.ExtImageCopyCaptureFrameV1, b *wayland.Buffer) {
+	if f.used {
+		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
+		return
+	}
 	f.buf = b
 }
-func (*captureExtFrame) DamageBuffer(_ *ext.ExtImageCopyCaptureFrameV1, _, _, _, _ int32) {}
+func (f *captureExtFrame) DamageBuffer(_ *ext.ExtImageCopyCaptureFrameV1, x, y, w, h int32) {
+	if f.used {
+		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
+		return
+	}
+	if x < 0 || y < 0 || w <= 0 || h <= 0 {
+		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorInvalidBufferDamage), "invalid damage")
+	}
+}
 func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 	if f.used {
+		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
 		return
 	}
 	f.used = true
@@ -289,7 +347,7 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 	}
 	region := image.Rect(0, 0, c.o.place.Info.Width, c.o.place.Info.Height)
 	if f.buf == nil {
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
+		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorNoBuffer), "no buffer attached")
 		return
 	}
 	buf, ok := c.s.buffers[f.buf.GetResource()].(*buffer)
@@ -297,7 +355,7 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
 		return
 	}
-	_, ok = c.s.requestCapture(c.o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
+	f.replyID, ok = c.s.requestCapture(c.o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
 		if done.Err != nil {
 			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 			return
@@ -309,6 +367,10 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 		f.res.SendReady()
 	}, f.res.Resource)
 	if !ok {
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
+		if !c.s.validCaptureBuffer(f.buf, region, buf.format) {
+			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
+		} else {
+			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
+		}
 	}
 }

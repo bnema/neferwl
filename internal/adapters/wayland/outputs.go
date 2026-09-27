@@ -174,7 +174,16 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		scaleChanged := o.place.Scale != p.Scale
+		sizeChanged := o.place.Info.Width != p.Info.Width || o.place.Info.Height != p.Info.Height
 		o.place = p
+		if sizeChanged {
+			for session := range s.captureSessions {
+				if session.o == o && !session.stopped {
+					session.res.SendBufferSize(uint32(p.Info.Width), uint32(p.Info.Height))
+					session.res.SendDone()
+				}
+			}
+		}
 		for _, r := range o.resources {
 			o.sendAll(r)
 		}
