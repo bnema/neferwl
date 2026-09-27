@@ -26,6 +26,7 @@ type toplevelManager struct {
 // sent so that only changes go out.
 type toplevelHandle struct {
 	res          *wlr.ZwlrForeignToplevelHandleV1
+	req          *toplevelRequests
 	title, appID string
 	state        []byte
 	outputs      map[*server.Resource]bool // output_enter sent
@@ -67,11 +68,12 @@ func (m *toplevelManager) refresh(w *window) {
 	h := m.handles[w.id]
 	fresh := h == nil
 	if fresh {
-		r, err := wlr.NewZwlrForeignToplevelHandleV1(m.res.Client(), m.res.Version(), 0, toplevelRequests{s: m.s, id: w.id})
+		req := &toplevelRequests{s: m.s, id: w.id}
+		r, err := wlr.NewZwlrForeignToplevelHandleV1(m.res.Client(), m.res.Version(), 0, req)
 		if err != nil {
 			return
 		}
-		h = &toplevelHandle{res: r, outputs: map[*server.Resource]bool{}}
+		h = &toplevelHandle{res: r, req: req, outputs: map[*server.Resource]bool{}}
 		m.handles[w.id] = h
 		m.res.SendToplevel(r)
 	}
@@ -89,7 +91,7 @@ func (m *toplevelManager) refresh(w *window) {
 		h.res.SendAppId(w.appID)
 		changed = true
 	}
-	if state := toplevelState(w); fresh || !bytes.Equal(h.state, state) {
+	if state := toplevelState(w, h.res.Version()); fresh || !bytes.Equal(h.state, state) {
 		h.state = state
 		h.res.SendState(state)
 		changed = true
@@ -109,6 +111,8 @@ func (m *toplevelManager) closed(id ports.WindowID) {
 		return
 	}
 	delete(m.handles, id)
+	// A remapped window keeps its ID but gets a new handle.
+	h.req.closed = true
 	if h.res.Alive() {
 		h.res.SendClosed()
 	}
@@ -146,8 +150,8 @@ func (h *toplevelHandle) syncOutputs(s *Server, c server.Client, w *window) bool
 }
 
 // toplevelState mirrors the xdg_toplevel states of the last configure:
-// tiled windows are maximized.
-func toplevelState(w *window) []byte {
+// tiled windows are maximized. Fullscreen exists since version 2.
+func toplevelState(w *window, version int32) []byte {
 	if !w.hasLast {
 		return []byte{}
 	}
@@ -162,7 +166,7 @@ func toplevelState(w *window) []byte {
 	if c.Activated {
 		add(wlr.ZwlrForeignToplevelHandleV1StateActivated)
 	}
-	if c.Fullscreen {
+	if c.Fullscreen && version >= 2 {
 		add(wlr.ZwlrForeignToplevelHandleV1StateFullscreen)
 	}
 	if states == nil {
@@ -200,14 +204,18 @@ func (s *Server) refreshToplevels() {
 	}
 }
 
-// toplevelRequests handles requests on one handle. Its window may be gone:
-// requests on a closed handle are ignored.
+// toplevelRequests handles requests on one handle. Requests on a closed
+// handle are ignored.
 type toplevelRequests struct {
-	s  *Server
-	id ports.WindowID
+	s      *Server
+	id     ports.WindowID
+	closed bool
 }
 
-func (t toplevelRequests) window() *window {
+func (t *toplevelRequests) window() *window {
+	if t.closed {
+		return nil
+	}
 	if w := t.s.windows[t.id]; w != nil && w.toplevel != nil && w.mapped && w.toplevel.Resource.Alive() {
 		return w
 	}
@@ -215,33 +223,33 @@ func (t toplevelRequests) window() *window {
 }
 
 // Tiled windows are always maximized and nothing minimizes: these are no-ops.
-func (toplevelRequests) SetMaximized(*wlr.ZwlrForeignToplevelHandleV1)   {}
-func (toplevelRequests) UnsetMaximized(*wlr.ZwlrForeignToplevelHandleV1) {}
-func (toplevelRequests) SetMinimized(*wlr.ZwlrForeignToplevelHandleV1)   {}
-func (toplevelRequests) UnsetMinimized(*wlr.ZwlrForeignToplevelHandleV1) {}
-func (toplevelRequests) Destroy(*wlr.ZwlrForeignToplevelHandleV1)        {}
+func (*toplevelRequests) SetMaximized(*wlr.ZwlrForeignToplevelHandleV1)   {}
+func (*toplevelRequests) UnsetMaximized(*wlr.ZwlrForeignToplevelHandleV1) {}
+func (*toplevelRequests) SetMinimized(*wlr.ZwlrForeignToplevelHandleV1)   {}
+func (*toplevelRequests) UnsetMinimized(*wlr.ZwlrForeignToplevelHandleV1) {}
+func (*toplevelRequests) Destroy(*wlr.ZwlrForeignToplevelHandleV1)        {}
 
-func (t toplevelRequests) Activate(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Seat) {
+func (t *toplevelRequests) Activate(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Seat) {
 	if w := t.window(); w != nil {
 		t.s.emit(ports.WindowActivate{ID: w.id})
 	}
 }
-func (t toplevelRequests) Close(*wlr.ZwlrForeignToplevelHandleV1) {
+func (t *toplevelRequests) Close(*wlr.ZwlrForeignToplevelHandleV1) {
 	if w := t.window(); w != nil {
 		w.toplevel.SendClose()
 	}
 }
-func (toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *wayland.Surface, _, _, w, h int32) {
+func (*toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *wayland.Surface, _, _, w, h int32) {
 	if w < 0 || h < 0 {
 		r.PostError(uint32(wlr.ZwlrForeignToplevelHandleV1ErrorInvalidRectangle), "negative rectangle size")
 	}
 }
-func (t toplevelRequests) SetFullscreen(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Output) {
+func (t *toplevelRequests) SetFullscreen(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Output) {
 	if w := t.window(); w != nil {
 		t.s.emit(ports.WindowFullscreenRequest{ID: w.id, Fullscreen: true})
 	}
 }
-func (t toplevelRequests) UnsetFullscreen(*wlr.ZwlrForeignToplevelHandleV1) {
+func (t *toplevelRequests) UnsetFullscreen(*wlr.ZwlrForeignToplevelHandleV1) {
 	if w := t.window(); w != nil {
 		t.s.emit(ports.WindowFullscreenRequest{ID: w.id})
 	}

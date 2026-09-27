@@ -148,21 +148,63 @@ func TestForeignToplevel(t *testing.T) {
 		t.Fatalf("unmap = %q, want %q", got, want)
 	}
 	unmapped(t, events, w.ID)
+
+	// Remapping the same toplevel announces a new handle; the closed one
+	// stays inert although the window ID is the same.
+	serials := make(chan uint32, 8)
+	xp := &configureProxy{serial: serials}
+	xp.SetID(xdg)
+	c.Context().Register(xp)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	ackAndAttach(t, c, surf, xdg, shmBuffer(t, c), serials)
+	if again := mapped(t, events, 2*time.Second); again.ID != w.ID {
+		t.Fatalf("remapped as %d, want %d", again.ID, w.ID)
+	}
+	if got := takeEvents(t, c, p.events); len(got) == 0 || got[len(got)-1] != "done" {
+		t.Fatalf("remap = %q", got)
+	}
+	remapped := <-p.handles
+	if remapped == handle {
+		t.Fatal("remap reused the closed handle")
+	}
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestActivate, seat)
+	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestClose)
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestDestroy)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case ev := <-events:
-		t.Fatalf("event after close: %#v", ev)
+		t.Fatalf("event from a closed handle: %#v", ev)
 	case <-time.After(100 * time.Millisecond):
+	}
+	requestProtocol(t, c, remapped, wlr.ZwlrForeignToplevelHandleV1RequestActivate, seat)
+	if ev := clientEvent[ports.WindowActivate](t, events); ev.ID != w.ID {
+		t.Fatalf("activate remapped = %#v", ev)
 	}
 
 	// A window mapped after the bind is announced too.
 	mapWindow()
 	if got := takeEvents(t, c, p.events); len(got) == 0 || got[len(got)-1] != "done" {
 		t.Fatalf("new window = %q", got)
+	}
+}
+
+// Fullscreen is a version 2 state: version 1 clients never see it.
+func TestForeignToplevelV1HidesFullscreen(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	w, _, xdg := surfaceMapper(t, c, events)()
+	registerProtocol(t, c, xdg)
+	manager := bindVersion(t, c, "zwlr_foreign_toplevel_manager_v1", 1)
+	p := &toplevelManagerEvents{client: c, handles: make(chan uint32, 4), events: make(chan string, 64)}
+	p.SetID(manager)
+	c.Context().Register(p)
+	takeEvents(t, c, p.events)
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Activated: true}
+	want := []string{fmt.Sprint("state ", []uint32{uint32(wlr.ZwlrForeignToplevelHandleV1StateActivated)}), "done"}
+	if got := takeEvents(t, c, p.events); !slices.Equal(got, want) {
+		t.Fatalf("v1 fullscreen = %q, want %q", got, want)
 	}
 }
 
