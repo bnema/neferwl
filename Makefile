@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check bin tty logs pkg
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check perf-check bin tty logs pkg
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -48,7 +48,10 @@ fakes-check:
 	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'handwritten test double: add an interface and a Mockery entry (see AGENTS.md)' >&2; exit 1; }
 arch:
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
-check: vet test arch fakes-check
+# Fast, mandatory guards for tiled content publications and SHM copies.
+perf-check:
+	CGO_ENABLED=0 go test ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget)$$' -count=1
+check: vet test arch fakes-check perf-check
 
 # Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
 # come from the module proxy in prepare(); the build itself runs offline.

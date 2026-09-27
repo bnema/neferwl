@@ -310,6 +310,10 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 	return 0, fmt.Errorf("no Vulkan memory type for bits %#x and properties %#x", bits, props)
 }
 
+// CopiedBytes reports cumulative wl_shm bytes copied into GPU storage.
+// It is diagnostic only and must be read by the renderer's owner goroutine.
+func (r *Renderer) CopiedBytes() int { return r.copied }
+
 func (r *Renderer) Pixels() *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
 	if r.mapped == nil || r.readback() != nil {

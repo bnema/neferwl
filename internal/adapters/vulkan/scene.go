@@ -136,21 +136,20 @@ func (w *sceneWalk) popups(overLayers bool) {
 
 // place draws a surface tree with its window geometry at (x, y) logical,
 // clipped to width×height logical: client shadows fall outside. Every
-// surface of the tree is keyed by its window and place in it; the tree's
-// Seq changes with any of them.
+// surface of the tree is keyed by its stable surface identity.
 func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y, width, height int) {
 	clip := image.Rect(x, y, x+width, y+height)
 	ox, oy := x-content.Geometry.X, y-content.Geometry.Y
 	covers := w.opaqueChildren(content, ox, oy, clip)
 	for i := range content.Children {
 		if ch := &content.Children[i]; ch.Below {
-			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, i + 1}, content.Seq, covers)
+			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, ch.Surface}, ch.Version, covers, false)
 		}
 	}
-	w.surface(content, ox, oy, clip, shmKey{id, 0}, content.Seq, covers)
+	w.surface(content, ox, oy, clip, shmKey{id, content.Surface}, content.Version, covers, true)
 	for i := range content.Children {
 		if ch := &content.Children[i]; !ch.Below {
-			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, i + 1}, content.Seq, nil)
+			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, ch.Surface}, ch.Version, nil, false)
 		}
 	}
 }
@@ -209,8 +208,12 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 	// A buffer drawn at the physical size (fractional-scale clients round
 	// w*scale, we round per edge) is copied 1:1, never resampled for 1px.
 	near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
-	if near(full.Dx(), content.Width) && near(full.Dy(), content.Height) {
-		full.Max = full.Min.Add(image.Pt(content.Width, content.Height))
+	sourceW, sourceH := content.Width, content.Height
+	if content.Source[2] > 0 {
+		sourceW, sourceH = int(content.Source[2]), int(content.Source[3])
+	}
+	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
+		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}
 	dst = full.Intersect(w.physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy()))
 	return full, dst, !dst.Empty()
@@ -219,7 +222,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 // surface draws one surface buffer with its origin at (x, y) logical,
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
-func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y int, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle) {
+func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y int, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
 		return
@@ -229,15 +232,15 @@ func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y int, clip image.
 			return
 		}
 	}
-	if key.index == 0 {
+	if root {
 		w.dmg.content(key.win, content, full, dst)
 	}
-	w.content(dst, full, content, key, seq)
+	w.content(dst, full, content, key, seq, root)
 }
 
 // content draws the part of a buffer mapped onto full (physical pixels)
 // that dst shows. key names the surface, seq its content.
-func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceContent, key shmKey, seq uint64) {
+func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceContent, key shmKey, seq uint64, root bool) {
 	r := w.r
 	rect := dst.Intersect(w.bounds)
 	if rect.Empty() {
@@ -249,7 +252,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			// The window shows its background until a buffer imports.
 			return
 		}
-		dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
+		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeImage, content.Opaque)
 		r.setContentColor(&dr, content.Color)
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
@@ -275,17 +278,17 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	if err != nil {
 		return
 	}
-	st := shmState{w: content.Width, h: content.Height, seq: seq}
+	st := shmState{w: content.Width, h: content.Height, seq: seq, windowSeq: content.Seq}
 	// Damage history is the root surface's: children copy in full.
 	var damage func(uint64) ([]ports.Rect, bool)
-	if key.index == 0 {
+	if root {
 		damage = content.DamageSince
 	}
 	c, err := r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage)
 	if err != nil {
 		return
 	}
-	dr := r.contentDraw(rect, full, content.Width, content.Height, modeBuffer, content.Opaque)
+	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content.Color)
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}

@@ -21,6 +21,12 @@ const presentationVersion = 2
 
 // feedbackWait is a committed feedback: presented once a flip on the
 // surface's output shows content seq of window win.
+type graphFeedback struct {
+	surf    *surface
+	pending []*presentationtime.WpPresentationFeedback
+	fresh   bool
+}
+
 type feedbackWait struct {
 	fb   *presentationtime.WpPresentationFeedback
 	surf *surface

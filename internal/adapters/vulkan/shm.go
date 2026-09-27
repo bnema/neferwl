@@ -148,17 +148,18 @@ func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
 	*b = gpuBuffer{}
 }
 
-// shmKey is a surface of a window: index 0 is the root, i+1 its child i.
+// shmKey identifies a surface independently of its position in a tree.
 type shmKey struct {
-	win   ports.WindowID
-	index int
+	win     ports.WindowID
+	surface uint64
 }
 
 // shmState is what a GPU buffer holds: a w×h client buffer at a content
 // Seq.
 type shmState struct {
-	w, h int
-	seq  uint64
+	w, h      int
+	seq       uint64
+	windowSeq uint64 // root damage history uses window publications
 }
 
 // shmCopy is one of a surface's two GPU buffers and the set binding it.
@@ -189,7 +190,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 	}
 	s.last = r.frame
 	for _, c := range s.bufs {
-		if c != nil && c.valid && c.holds == st {
+		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq {
 			c.gpu.last = r.frame
 			return c, nil
 		}
@@ -227,7 +228,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 	row := st.w * 4
 	rects := []ports.Rect{{W: st.w, H: st.h}}
 	if c.valid && c.holds.w == st.w && c.holds.h == st.h && damage != nil {
-		if d, ok := damage(c.holds.seq); ok {
+		if d, ok := damage(c.holds.windowSeq); ok {
 			rects = d
 		}
 	}

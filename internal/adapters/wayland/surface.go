@@ -3,6 +3,7 @@ package wayland
 import (
 	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"image"
+	"math"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -22,8 +23,9 @@ const (
 )
 
 type surface struct {
-	wl       *wayland.Surface
-	viewport *viewport
+	wl                *wayland.Surface
+	viewport          *viewport
+	committedViewport *viewport
 	// bufferScale is committed state; pendingScale is set by set_buffer_scale.
 	bufferScale, pendingScale int
 	kind                      roleKind
@@ -43,9 +45,17 @@ type surface struct {
 	scale float64
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
-	content ports.SurfaceContent
-	has     bool
-	sub     subState
+	content  ports.SurfaceContent
+	has      bool
+	identity uint64
+	version  uint64
+	// cachedTree is never modified once returned to emitContent.
+	cachedTree                 []ports.Subsurface
+	treeDirty                  bool
+	commitFresh, commitSkipped bool
+	queuedScale                int
+	queuedBuffer               uint32
+	sub                        subState
 	// tearing is the surface's wp_tearing_control_v1; async is the
 	// committed hint, pendingAsync the requested one.
 	tearing                               *tearingHandler
@@ -62,7 +72,7 @@ type surface struct {
 	pendingTime                 time.Time
 	barrier                     bool
 	barrierAt                   time.Time
-	queue                       []update
+	queue                       []*update
 	// contentType is the wp_content_type_v1; contentKind the committed type.
 	contentType              *contentTypeHandler
 	contentKind, pendingKind uint32
@@ -100,13 +110,11 @@ const maxDamageRects = 32
 // are ordered bottom to top, below marks children under their parent.
 type subState struct {
 	// role is the live wl_subsurface, nil when the surface has none.
-	role         *wayland.Subsurface
-	parent       *surface
-	children     []*surface
-	x, y         int // committed position, from the parent origin
-	pendX, pendY int
-	moved        bool // a position waits for the parent commit
-	below        bool
+	role                  *wayland.Subsurface
+	parent                *surface
+	children              []*surface // structural children
+	pendingLayout, layout []childLayout
+	synced                bool // explicit synchronization mode
 }
 
 // root is the top of the surface's subsurface tree.
@@ -135,19 +143,24 @@ func (s *surface) outputColor() ports.SurfaceColor {
 
 func (s *surface) contentWithColor() ports.SurfaceContent {
 	c := s.content
+	c.Surface, c.Version = s.identity, s.version
 	c.Color = s.outputColor()
 	return c
 }
 
 // tree is the root's content with its subsurfaces flattened.
 func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
-	c := s.content
+	c := s.contentWithColor()
 	c.ID = id
-	c.Color = s.outputColor()
-	c.Children = nil
-	for _, ch := range s.sub.children {
-		ch.appendTree(&c.Children, ch.sub.x, ch.sub.y, ch.sub.below)
+	if s.treeDirty || s.cachedTree == nil {
+		count := s.treeCount()
+		children := make([]ports.Subsurface, 0, count)
+		for _, item := range s.sub.layout {
+			item.child.appendTree(&children, item.x, item.y, item.below)
+		}
+		s.cachedTree, s.treeDirty = children, false
 	}
+	c.Children = s.cachedTree
 	if s.xdg != nil {
 		c.Geometry = s.xdg.geometry
 	}
@@ -155,20 +168,31 @@ func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	return c
 }
 
+func (s *surface) treeCount() int {
+	n := 0
+	for _, item := range s.sub.layout {
+		if item.child.has {
+			n++
+		}
+		n += item.child.treeCount()
+	}
+	return n
+}
+
 // appendTree flattens a subsurface at (x, y) from the root: its children
 // below it, itself, then its children above.
 func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
-	for _, ch := range s.sub.children {
-		if ch.sub.below {
-			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+	for _, item := range s.sub.layout {
+		if item.below {
+			item.child.appendTree(out, x+item.x, y+item.y, below)
 		}
 	}
 	if s.has {
 		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.contentWithColor()})
 	}
-	for _, ch := range s.sub.children {
-		if !ch.sub.below {
-			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+	for _, item := range s.sub.layout {
+		if !item.below {
+			item.child.appendTree(out, x+item.x, y+item.y, below)
 		}
 	}
 }
@@ -198,7 +222,16 @@ func (s *surface) detach() {
 			break
 		}
 	}
+	p.sub.pendingLayout = removeLayout(p.sub.pendingLayout, s)
+	p.sub.layout = removeLayout(p.sub.layout, s)
+	p.root().treeDirty = true
+	for _, u := range p.queue {
+		u.layout = removeLayout(u.layout, s)
+	}
 	s.sub.parent = nil
+	// Parent updates cannot make a detached child's bound commits visible.
+	s.dropQueue()
+	s.flushDesync()
 	p.redraw()
 	s.sendScale()
 }
@@ -221,8 +254,11 @@ func (s *surface) Destroy(*wayland.Surface) {
 	s.detach()
 	for _, ch := range s.sub.children {
 		ch.sub.parent = nil
+		ch.dropQueue()
+		ch.flushDesync()
 	}
 	s.sub.children = nil
+	s.sub.layout, s.sub.pendingLayout = nil, nil
 	for _, cb := range s.callbacks {
 		cb.Destroy()
 	}
@@ -265,18 +301,25 @@ func (s *surface) Commit(*wayland.Surface) {
 		return
 	}
 	s.takeSyncPoints()
-	// A commit behind a fifo barrier, a future timestamp or an acquire
-	// point without a fence yet waits (fifo.go).
-	if s.mustWait(time.Now()) {
-		s.queueUpdate()
-		return
-	}
-	s.applyCommit()
+	// Each request creates an ordered content update. A synchronized update
+	// can only be reached through a parent's committed dependency graph.
+	s.queueUpdate()
+	s.server.tickFifo(time.Now(), nil)
 }
 
 // applyCommit makes the pending state current.
 func (s *surface) applyCommit() {
+	oldW, oldH, oldSource := s.content.LogicalW, s.content.LogicalH, s.content.Source
+	oldColor, oldRepresentation := s.color, s.representation
 	fresh := s.attached && s.pending != nil
+	s.commitFresh = fresh
+	if !s.commitSkipped {
+		s.queuedScale = s.pendingScale
+		s.queuedBuffer = 0
+		if s.pending != nil {
+			s.queuedBuffer = s.pending.ID()
+		}
+	}
 	if s.pendingBarrier {
 		s.pendingBarrier = false
 		s.setBarrier(time.Now())
@@ -295,6 +338,10 @@ func (s *surface) applyCommit() {
 	s.representation = s.pendingRepresentation
 	if s.viewport != nil {
 		s.viewport.commit()
+		v := *s.viewport
+		s.committedViewport = &v
+	} else {
+		s.committedViewport = nil
 	}
 	cs := s.pendingSync
 	s.pendingSync = nil
@@ -322,6 +369,10 @@ func (s *surface) applyCommit() {
 	if fresh {
 		if state, ok := s.server.buffers[s.current.Resource]; ok {
 			if c, ok := state.content(0); ok {
+				if !s.validateViewport(c.Width, c.Height) {
+					return
+				}
+				c.Source, _ = s.source(c.Width, c.Height)
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
 				s.commitDamage(true, resized, c.Width, c.Height)
@@ -338,19 +389,34 @@ func (s *surface) applyCommit() {
 			// replaces them.
 		}
 	}
+	damaged := !fresh && s.current != nil && (len(s.pendingDamage) > 0 || len(s.pendingBufDamage) > 0)
 	if !fresh {
 		s.commitDamage(false, false, 0, 0)
+		// A NULL attach is exempt from out_of_buffer: its content is
+		// cleared below, so the retained buffer is not validated.
+		if s.has && s.current != nil {
+			if !s.validateViewport(s.content.Width, s.content.Height) {
+				return
+			}
+			s.content.Source, _ = s.source(s.content.Width, s.content.Height)
+			s.content.LogicalW, s.content.LogicalH = s.logicalSize(s.content.Width, s.content.Height)
+		}
 	}
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
 	}
-	// Subsurface positions apply on the parent commit.
-	moved := false
-	for _, ch := range s.sub.children {
-		if ch.sub.moved {
-			ch.sub.x, ch.sub.y, ch.sub.moved = ch.sub.pendX, ch.sub.pendY, false
-			moved = true
-		}
+	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation {
+		s.version++
+		s.root().treeDirty = true
+	}
+	// The layout belongs to this update, not to the latest requests.
+	moved := !sameLayout(s.sub.layout, s.sub.pendingLayout)
+	if moved {
+		s.root().treeDirty = true
+	}
+	// Queued updates can still reference the previous layout. Never mutate it.
+	if moved {
+		s.sub.layout = s.sub.pendingLayout
 	}
 	geometry := false
 	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
@@ -360,16 +426,24 @@ func (s *surface) applyCommit() {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil
+	drawn := fresh || damaged || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
 	if drawn {
-		if moved || geometry {
+		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source {
 			s.committed = damage{full: true}
 		}
-		s.redraw()
+		if s.server.applyingGraph {
+			s.server.graphDrawn = true
+		} else {
+			s.redraw()
+		}
 	}
 	fb := s.pendingFeedback
 	s.pendingFeedback = nil
-	s.commitFeedback(fb, fresh)
+	if s.server.applyingGraph {
+		s.server.graphFeedback = append(s.server.graphFeedback, graphFeedback{s, fb, fresh})
+	} else {
+		s.commitFeedback(fb, fresh)
+	}
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {
@@ -416,7 +490,12 @@ func (s *surface) commitDamage(fresh, resized bool, bw, bh int) {
 		// Clients may damage INT32_MAX-sized rects: clamp before scaling.
 		x0, y0 := max(r.X, 0), max(r.Y, 0)
 		x1, y1 := min(r.X+min(r.W, lw), lw), min(r.Y+min(r.H, lh), lh)
-		add(image.Rect(x0*bw/lw, y0*bh/lh, (x1*bw+lw-1)/lw, (y1*bh+lh-1)/lh))
+		if src, ok := s.source(bw, bh); ok {
+			add(image.Rect(int(src[0]+float32(x0)*src[2]/float32(lw)), int(src[1]+float32(y0)*src[3]/float32(lh)),
+				int(math.Ceil(float64(src[0]+float32(x1)*src[2]/float32(lw)))), int(math.Ceil(float64(src[1]+float32(y1)*src[3]/float32(lh))))))
+		} else {
+			add(image.Rect(x0*bw/lw, y0*bh/lh, (x1*bw+lw-1)/lw, (y1*bh+lh-1)/lh))
+		}
 	}
 	s.committed = d
 }

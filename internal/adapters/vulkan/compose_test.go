@@ -43,6 +43,30 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	}
 }
 
+func TestRendererSourceCrop(t *testing.T) {
+	r, err := New(16, 8)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	px := []byte{0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255}
+	c := shmContent(t, 4, 1, 16, px)
+	c.LogicalW, c.LogicalH = 16, 8
+	c.Source = [4]float32{1, 0, 2, 1}
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 8}}}}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x    int
+		want color.RGBA
+	}{{0, color.RGBA{0, 255, 0, 255}}, {15, color.RGBA{0, 0, 255, 255}}} {
+		if got := r.Pixels().RGBAAt(tc.x, 4); !near(got, tc.want, 5) {
+			t.Errorf("crop x=%d: %v want %v", tc.x, got, tc.want)
+		}
+	}
+}
+
 // Scaled dmabufs are sampled with the linear sampler.
 func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 	r, err := New(128, 4)
@@ -107,7 +131,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	}
 	defer r.Close()
 	c := solidContent(t, 16, 16, color.RGBA{1, 2, 3, 255})
-	c.ID, c.Seq = 1, 1
+	c.ID, c.Seq, c.Version = 1, 1, 1
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
 	render := func() {
@@ -130,7 +154,7 @@ func TestRendererSHMCopiedOncePerContent(t *testing.T) {
 	if r.copied != 16*16*4 {
 		t.Fatalf("unchanged content copied again: %d", r.copied)
 	}
-	c.Seq = 2
+	c.Seq, c.Version = 2, 2
 	contents[1] = c
 	render()
 	if r.copied != 2*16*16*4 {
@@ -148,8 +172,9 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	defer r.Close()
 	green := color.RGBA{0, 255, 0, 255}
 	root := solidContent(t, 16, 16, color.RGBA{255, 0, 0, 255})
-	root.ID, root.Seq = 1, 1
+	root.ID, root.Seq, root.Surface, root.Version = 1, 1, 1, 1
 	game := solidContent(t, 16, 16, green)
+	game.Surface, game.Version = 2, 1
 	game.Opaque = true
 	root.Children = []ports.Subsurface{{SurfaceContent: game}}
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
@@ -164,6 +189,7 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	}
 	// A smaller opaque child leaves part of the root visible: it is copied.
 	small := solidContent(t, 8, 8, green)
+	small.Surface, small.Version = 3, 1
 	small.Opaque = true
 	root.Seq = 2
 	root.Children = []ports.Subsurface{{SurfaceContent: small}}
@@ -227,7 +253,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 	var readers []uint64
 	for seq := uint64(1); seq <= 3; seq++ {
 		c := solidContent(t, 16, 16, color.RGBA{uint8(seq * 60), 0, 0, 255})
-		c.ID, c.Seq = 1, seq
+		c.ID, c.Seq, c.Version = 1, seq, seq
 		if seq == 3 {
 			// The buffer about to be reused was last read by frame 1.
 			if r.completed >= readers[0] {

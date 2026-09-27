@@ -776,14 +776,20 @@ func (c SurfaceColor) IsExtendedLinear() bool {
 // geometry), the rest being client shadows.
 type SurfaceContent struct {
 	ID WindowID
+	// Surface is a never-reused wl_surface identity; Version identifies its
+	// applied buffer content independently of the window publication Seq.
+	Surface, Version uint64
 	// Seq counts the window's contents (wayland sets it), for release.
 	Seq                uint64
 	Width, Height      int
 	LogicalW, LogicalH int
-	Opaque             bool // x formats: ignore the alpha byte
-	Color              SurfaceColor
-	SHM                *SHMBuffer
-	DMABuf             *DMABuf
+	// Source is the committed crop in buffer pixels: x, y, width, height.
+	// Zero width means the entire buffer is used.
+	Source [4]float32
+	Opaque bool // x formats: ignore the alpha byte
+	Color  SurfaceColor
+	SHM    *SHMBuffer
+	DMABuf *DMABuf
 	// Children are the subsurfaces, bottom to top, flattened.
 	Children []Subsurface
 	// Geometry is in logical pixels from the surface origin; empty means
