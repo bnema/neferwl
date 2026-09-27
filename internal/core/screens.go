@@ -152,6 +152,11 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 	if i := c.screenIndex(info.Name); i >= 0 {
 		s := c.screens[i]
 		s.info = info
+		if s.mon.Key != info.Key() {
+			// Another monitor on the same connector: key rules change.
+			s.mon.Key = info.Key()
+			c.settings(s.mon)
+		}
 		s.setScale(s.scale)
 		c.order()
 		return

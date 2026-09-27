@@ -582,11 +582,15 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 		}
 	}
 	for _, w := range c.Workspaces {
-		overflow := w.Overflow
-		if overflow == "" {
-			overflow = c.Layout.Overflow
+		// The config only knows the monitor as written: a connector home
+		// does not match a key rule, and the reverse.
+		rules := c.Layout.LayoutRules
+		for _, o := range c.Layout.Outputs {
+			if w.Monitor != "" && o.Output == w.Monitor {
+				rules = o.Over(rules)
+			}
 		}
-		if overflow == "fixed" && len(w.Slots) > 0 {
+		if w.Over(rules).Overflow == "fixed" && len(w.Slots) > 0 {
 			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
 			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
 		}

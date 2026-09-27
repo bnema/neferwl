@@ -321,6 +321,17 @@ layout.DP-2.color = red
 	}
 }
 
+func TestFixedOutputWarnsSlotWidths(t *testing.T) {
+	_, w := parseString(t, `layout.DP-2.overflow = fixed
+workspace.dev.monitor = DP-2
+workspace.dev.column.1 = 50%, foot
+workspace.web.column.1 = 50%, foot
+`)
+	if len(w) != 1 || w[0].Line != 3 {
+		t.Fatal(w)
+	}
+}
+
 func TestWorkspaceSlots(t *testing.T) {
 	c, w := parseString(t, `workspace.dev.hidden = on
 workspace.dev.column.2 = 33%, foot --title x
