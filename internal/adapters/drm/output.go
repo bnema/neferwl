@@ -872,14 +872,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	cursorScale := -1.0 // not loaded yet
 	frame := 0
 	var requests []ports.CaptureRequest
+	ctx, cancelCaptures := context.WithCancel(ctx)
 	defer func() {
+		cancelCaptures()
 		for _, q := range requests {
-			capture.Fail(q, fmt.Errorf("output stopped"), captured)
+			capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
 		}
 		for {
 			select {
 			case q := <-captures:
-				capture.Fail(q, fmt.Errorf("output stopped"), captured)
+				capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
 			default:
 				return
 			}
@@ -947,7 +949,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			return nil
 		case q := <-captures:
 			if !enabled || o.off || o.wantOff {
-				capture.Fail(q, fmt.Errorf("output off"), captured)
+				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
 			} else {
 				requests = append(requests, q)
 				dirty = haveScene
@@ -1025,7 +1027,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		if len(requests) > 0 && (!enabled || o.off || o.wantOff) {
 			for _, q := range requests {
-				capture.Fail(q, fmt.Errorf("output off"), captured)
+				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
 			}
 			requests = nil
 		}
@@ -1099,7 +1101,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				}
 			}
 			for _, q := range requests {
-				capture.Write(q, r, captured)
+				capture.Write(ctx, q, r, captured)
 			}
 			requests = nil
 			// The overlay buffer is on screen like a scanned-out one: it

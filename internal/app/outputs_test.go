@@ -12,7 +12,7 @@ import (
 func TestOutputSetCursor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet()
+	set := newOutputSet(context.Background(), nil)
 	got := map[string]chan ports.CursorChange{}
 	run := func(name string) outputRun {
 		got[name] = make(chan ports.CursorChange, 8)

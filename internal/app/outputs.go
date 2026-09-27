@@ -25,6 +25,7 @@ type outputSet struct {
 	cursor   ports.CursorChange
 	stopped  chan string
 	captured chan<- ports.CaptureDone
+	ctx      context.Context
 	quit     chan struct{} // closed by wait: nobody reads stopped any more
 }
 
@@ -39,12 +40,8 @@ type runningOutput struct {
 	done     chan struct{}
 }
 
-func newOutputSet(captured ...chan<- ports.CaptureDone) *outputSet {
-	var replies chan<- ports.CaptureDone
-	if len(captured) > 0 {
-		replies = captured[0]
-	}
-	return &outputSet{captured: replies, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan string), quit: make(chan struct{})}
+func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
+	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan string), quit: make(chan struct{})}
 }
 
 // start runs an output in its own goroutine and replays the window contents.
@@ -54,6 +51,7 @@ func (s *outputSet) start(ctx context.Context, name string, run outputRun) {
 	s.outs[name] = r
 	go func() {
 		r.err = run(octx, r.scenes, r.contents, r.cursor, r.captures)
+		stop()
 		close(r.done)
 		select {
 		case s.stopped <- name:
@@ -193,15 +191,16 @@ func (c *cursors) move(output string, x, y float64) {
 func (s *outputSet) routeCapture(req ports.CaptureRequest) {
 	r := s.outs[req.Output]
 	if r == nil {
-		capture.Fail(req, fmt.Errorf("output %q unavailable", req.Output), s.captured)
+		capture.Fail(s.ctx, req, fmt.Errorf("output %q unavailable", req.Output), s.captured)
 		return
 	}
 	select {
 	case r.captures <- req:
 	case <-r.done:
-		capture.Fail(req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+		r.stop()
+		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
 	case <-r.ctx.Done():
-		capture.Fail(req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
 	}
 }
 
@@ -209,7 +208,22 @@ func (s *outputSet) failQueued(r *runningOutput) {
 	for {
 		select {
 		case req := <-r.captures:
-			capture.Fail(req, fmt.Errorf("output stopped"), s.captured)
+			capture.Fail(r.ctx, req, fmt.Errorf("output stopped"), s.captured)
+		default:
+			return
+		}
+	}
+}
+
+// drainCaptures releases requests still in the app queue when routing exits.
+func drainCaptures(ctx context.Context, incoming <-chan ports.CaptureRequest, replies chan<- ports.CaptureDone) {
+	for {
+		select {
+		case q, ok := <-incoming:
+			if !ok {
+				return
+			}
+			capture.Fail(ctx, q, fmt.Errorf("output stopped"), replies)
 		default:
 			return
 		}

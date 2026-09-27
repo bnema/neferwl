@@ -33,7 +33,7 @@ type Options struct {
 	Captured  chan<- ports.CaptureDone
 }
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures ...<-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -44,18 +44,16 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	haveScene, dirty := false, false
 	frame := 0
 	var requests []ports.CaptureRequest
-	var incoming <-chan ports.CaptureRequest
-	if len(captures) > 0 {
-		incoming = captures[0]
-	}
+	ctx, cancelCaptures := context.WithCancel(ctx)
 	defer func() {
+		cancelCaptures()
 		for _, q := range requests {
-			capture.Fail(q, fmt.Errorf("output stopped"), opts.Captured)
+			capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
 		}
 		for {
 			select {
 			case q := <-incoming:
-				capture.Fail(q, fmt.Errorf("output stopped"), opts.Captured)
+				capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
 			default:
 				return
 			}
@@ -88,7 +86,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return nil
 		case q := <-incoming:
 			if scene.Off {
-				capture.Fail(q, fmt.Errorf("output off"), opts.Captured)
+				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
 			} else {
 				requests = append(requests, q)
 				dirty = haveScene
@@ -134,7 +132,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		}
 		if scene.Off && len(requests) > 0 {
 			for _, q := range requests {
-				capture.Fail(q, fmt.Errorf("output off"), opts.Captured)
+				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
 			}
 			requests = nil
 		}
@@ -171,7 +169,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		for _, q := range requests {
-			capture.Write(q, r, opts.Captured)
+			capture.Write(ctx, q, r, opts.Captured)
 		}
 		requests = nil
 		frame++

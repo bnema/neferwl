@@ -17,7 +17,8 @@ type CaptureRequest struct {
 	Format                uint32
 }
 
-// CaptureDone is sent exactly once after the output closes the destination.
+// CaptureDone is attempted once after the output closes the destination.
+// Time holds CLOCK_MONOTONIC seconds and nanoseconds since boot, not wall time.
 type CaptureDone struct {
 	ID     uint64
 	Output string
