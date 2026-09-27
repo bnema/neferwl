@@ -163,9 +163,26 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 			if got.Width != 30 || got.Height != 15 || got.LogicalW != 20 || got.LogicalH != 10 {
 				t.Fatalf("%+v", got)
 			}
-			return
+			goto viewportOnly
 		case <-deadline:
 			t.Fatal("no content")
+		}
+	}
+viewportOnly:
+	// Changing only the destination must update content with the current buffer.
+	for _, size := range [][2]int32{{1, 1}, {7, 3}} {
+		requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, size[0], size[1])
+		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-contents:
+			if got.LogicalW != int(size[0]) || got.LogicalH != int(size[1]) || got.Width != 30 || got.Height != 15 {
+				t.Fatalf("viewport-only content: %+v", got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("no viewport-only content")
 		}
 	}
 }

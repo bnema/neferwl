@@ -276,6 +276,7 @@ func (s *surface) Commit(*wayland.Surface) {
 
 // applyCommit makes the pending state current.
 func (s *surface) applyCommit() {
+	oldW, oldH := s.content.LogicalW, s.content.LogicalH
 	fresh := s.attached && s.pending != nil
 	if s.pendingBarrier {
 		s.pendingBarrier = false
@@ -340,6 +341,9 @@ func (s *surface) applyCommit() {
 	}
 	if !fresh {
 		s.commitDamage(false, false, 0, 0)
+		if s.has {
+			s.content.LogicalW, s.content.LogicalH = s.logicalSize(s.content.Width, s.content.Height)
+		}
 	}
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
@@ -360,9 +364,9 @@ func (s *surface) applyCommit() {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil
+	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH))
 	if drawn {
-		if moved || geometry {
+		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH {
 			s.committed = damage{full: true}
 		}
 		s.redraw()
