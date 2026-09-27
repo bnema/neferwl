@@ -365,6 +365,21 @@ type PointerAxis struct {
 
 func (PointerAxis) inputEvent() {}
 
+// SwipeDir is the way the fingers moved on the touchpad.
+type SwipeDir uint8
+
+const (
+	SwipeUp SwipeDir = iota
+	SwipeDown
+	SwipeLeft
+	SwipeRight
+)
+
+// Swipe is a finished three-finger touchpad swipe.
+type Swipe struct{ Dir SwipeDir }
+
+func (Swipe) inputEvent() {}
+
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
 

@@ -59,6 +59,20 @@ func TestFollowMove(t *testing.T) {
 	}
 }
 
+func TestTouchpadNaturalScroll(t *testing.T) {
+	if Defaults().Touchpad.NaturalScroll {
+		t.Fatal("natural scroll on by default")
+	}
+	c, w := parseString(t, "touchpad.natural-scroll = on\n")
+	if !c.Touchpad.NaturalScroll || len(w) != 0 {
+		t.Fatal(c.Touchpad, w)
+	}
+	c, w = parseString(t, "touchpad.natural-scroll = maybe\n")
+	if c.Touchpad.NaturalScroll || len(w) != 1 {
+		t.Fatal(c.Touchpad, w)
+	}
+}
+
 func TestParse(t *testing.T) {
 	c, w := parseString(t, `
 # comment

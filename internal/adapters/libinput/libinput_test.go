@@ -29,6 +29,27 @@ func TestHotkey(t *testing.T) {
 	}
 }
 
+func TestSwipeDir(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		s    swipe
+		dir  ports.SwipeDir
+		ok   bool
+	}{
+		{"up", swipe{fingers: 3, dx: 40, dy: -400}, ports.SwipeUp, true},
+		{"down", swipe{fingers: 3, dy: 400}, ports.SwipeDown, true},
+		{"left", swipe{fingers: 3, dx: -400, dy: 100}, ports.SwipeLeft, true},
+		{"right", swipe{fingers: 3, dx: 400}, ports.SwipeRight, true},
+		{"too short", swipe{fingers: 3, dx: 100, dy: 100}, 0, false},
+		{"four fingers", swipe{fingers: 4, dy: 400}, 0, false},
+	} {
+		d, ok := tc.s.dir()
+		if d != tc.dir || ok != tc.ok {
+			t.Errorf("%s: got %v %t", tc.name, d, ok)
+		}
+	}
+}
+
 func TestPointerAcrossOutputs(t *testing.T) {
 	layout := ports.Layout{
 		{Info: ports.OutputInfo{Name: "A"}, Width: 100, Height: 50, Scale: 1},

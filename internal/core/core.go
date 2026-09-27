@@ -907,6 +907,17 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 				}
 				continue
+			case ports.Swipe:
+				before := c.cur().mon.Current()
+				c.layerFocus = 0
+				c.applyAction(swipeAction(v.Dir, c.cfg.Touchpad.NaturalScroll))
+				if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
+					return nil
+				}
+				if err := c.publish(ctx); err != nil {
+					return nil
+				}
+				continue
 			}
 			key, ok := ev.(ports.KeyEvent)
 			if !ok {

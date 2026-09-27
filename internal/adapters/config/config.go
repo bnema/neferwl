@@ -489,6 +489,12 @@ func set(c *ports.Config, key, v string) error {
 			}
 		}
 		c.Layout.Presets = list
+	case "touchpad.natural-scroll":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Touchpad.NaturalScroll = b
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {
