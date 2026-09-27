@@ -30,7 +30,7 @@ The design is deliberately small, and it will stay small: no animations, no them
 - **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, grim, cliphist, swayidle and wlr-randr work through their standard protocols. See [Desktop integration](docs/desktop.md).
 - **Config.** One `key = value` file, reloaded on save without closing windows. A JSON state file describes outputs, workspaces and windows for scripts.
 
-A taste of the config:
+Config example:
 
 ```text
 keyboard.layout = fr
