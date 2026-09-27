@@ -22,13 +22,13 @@ The design is deliberately small, and it will stay small: no animations, no them
 
 ## Features
 
-- **Built for games.** Fullscreen games bypass composition and go straight to the display, with tearing, VRR, explicit sync and HDR10. Steam and Wine work out of the box. See [the performance path](#the-performance-path).
-- **HDR desktop.** HDR games, browsers and video players show their full range next to an SDR desktop at the brightness you choose.
-- **Column tiling.** Windows share the screen as in Sway, then scroll to the right as in Niri. Each monitor and workspace can have its own rules.
-- **Workspaces that set themselves up.** Declare a workspace's columns and commands; NeferWL starts the apps and places each window. Numbered workspaces appear and disappear as you use them.
-- **Multi-monitor that survives unplugging.** Workspaces move to another monitor and come back when it returns. Fractional scaling per output, saved to your config when you zoom.
-- **Terminal first, external everything else.** Your terminal opens at startup. Waybar, fuzzel, mako, grim, cliphist, swayidle and wlr-randr work through standard protocols.
-- **One config file, live.** `key = value`, applied when you save, windows kept open. A JSON state file and a systemd session for scripts and services. See [Desktop integration](docs/desktop.md).
+- **Games.** A fullscreen window is scanned out directly, with tearing, VRR and explicit sync when the client asks for them. Steam and Wine run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **HDR.** HDR10 output on capable displays. HDR clients (games, browsers, video players) are shown at full range; SDR content is shown at a configured brightness.
+- **Column tiling.** Up to `max-columns` windows share the screen, as in Sway; past that, columns scroll to the right, as in Niri. Limits are set per output or per workspace.
+- **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
+- **Multi-monitor.** Each output has its own workspaces. When an output is unplugged its workspaces move to another one, and return when it is plugged back. Fractional scale per output.
+- **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, grim, cliphist, swayidle and wlr-randr work through their standard protocols. See [Desktop integration](docs/desktop.md).
+- **Config.** One `key = value` file, reloaded on save without closing windows. A JSON state file describes outputs, workspaces and windows for scripts.
 
 A taste of the config:
 
