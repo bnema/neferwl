@@ -42,6 +42,18 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
 
+## HDR
+
+`output.<name>.hdr = on` sends HDR10 (BT.2020, PQ) to displays whose EDID and connector support it. The desktop stays SDR content, shown at `sdr-brightness` nits.
+
+Native Wayland clients can present HDR through `wp_color_manager_v1`: Mesa's Vulkan driver then offers HDR10 swapchains, so Proton or Wine with the Wayland driver and HDR-aware Wayland apps output HDR. X11 clients stay SDR.
+
+- Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
+- Otherwise HDR content is composed and its highlights are clipped at SDR white.
+- The display gets the metadata from its own EDID, not the client's MaxCLL/MaxFALL.
+
+Supported GPUs: AMD (amdgpu). NVIDIA is not supported yet.
+
 ## Binds
 
 `bind.<keys> = <action>`. Modifiers: `cmd` (see `keyboard.cmd`), `shift`, `ctrl`, `alt`, `super`.
