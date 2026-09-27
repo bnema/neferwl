@@ -116,10 +116,7 @@ func TestScreencopyProtocol(t *testing.T) {
 		if err := req.Dst.File.Close(); err != nil {
 			t.Fatal(err)
 		}
-		replies <- ports.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()}
-		if !s.display.Do(func() {}) {
-			t.Fatal("display stopped")
-		}
+		deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Output: req.Output, Time: time.Now()})
 	case <-time.After(2 * time.Second):
 		t.Fatal("no request")
 	}
@@ -339,6 +336,27 @@ func TestCaptureProtocolErrors(t *testing.T) {
 	}
 }
 
+// deliverCapture sends a capture reply and waits until the display
+// goroutine has run it, so a following Roundtrip sees its events.
+func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, done ports.CaptureDone) {
+	t.Helper()
+	replies <- done
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pending := false
+		if !s.display.Do(func() { _, pending = s.captureReplies[done.ID] }) {
+			t.Fatal("display stopped")
+		}
+		if !pending {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("capture reply not delivered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // captureDetails records protocol payloads, not just the event opcodes.
 type captureDetails struct {
 	wlturbo.BaseProxy
@@ -459,10 +477,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
 		t.Fatal(err)
 	}
-	replies <- ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)}
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
+	deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -515,10 +530,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	replies <- ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)}
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
+	deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID, Time: time.Unix(now.Sec, now.Nsec)})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -681,10 +693,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			if _, err := req.Dst.File.Stat(); err == nil {
 				t.Fatal("output descriptor open")
 			}
-			replies <- ports.CaptureDone{ID: req.ID}
-			if !s.display.Do(func() {}) {
-				t.Fatal("display stopped")
-			}
+			deliverCapture(t, s, replies, ports.CaptureDone{ID: req.ID})
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
