@@ -776,6 +776,9 @@ func (c SurfaceColor) IsExtendedLinear() bool {
 // geometry), the rest being client shadows.
 type SurfaceContent struct {
 	ID WindowID
+	// Surface is a never-reused wl_surface identity; Version identifies its
+	// applied buffer content independently of the window publication Seq.
+	Surface, Version uint64
 	// Seq counts the window's contents (wayland sets it), for release.
 	Seq                uint64
 	Width, Height      int

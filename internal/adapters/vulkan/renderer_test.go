@@ -321,12 +321,17 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 10}}}}
 	// A 30×20 surface whose window is the 20×10 at (5, 5): a 5px shadow.
 	root := solidContent(t, 30, 20, red)
+	root.Surface, root.Version = 1, 1
 	root.Geometry = ports.Rect{X: 5, Y: 5, W: 20, H: 10}
 	// Green covers the window's top-left 4×4 corner; blue sits below the
 	// root, hidden by it.
+	below := solidContent(t, 30, 20, blue)
+	below.Surface, below.Version = 2, 1
+	above := solidContent(t, 4, 4, green)
+	above.Surface, above.Version = 3, 1
 	root.Children = []ports.Subsurface{
-		{X: 3, Y: 3, Below: true, SurfaceContent: solidContent(t, 30, 20, blue)},
-		{X: 5, Y: 5, SurfaceContent: solidContent(t, 4, 4, green)},
+		{X: 3, Y: 3, Below: true, SurfaceContent: below},
+		{X: 5, Y: 5, SurfaceContent: above},
 	}
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)

@@ -229,6 +229,24 @@ func (s *surface) validateViewport(bw, bh int) bool {
 	// int64 prevents overflow when adding signed fixed coordinates.
 	if int64(v.src[0])+int64(v.src[2]) > int64(bw)*256/int64(max(s.bufferScale, 1)) ||
 		int64(v.src[1])+int64(v.src[3]) > int64(bh)*256/int64(max(s.bufferScale, 1)) {
+		if !s.viewportErrorLogged {
+			s.viewportErrorLogged = true
+			surfaceID, viewportID, bufferID := uint32(0), uint32(0), uint32(0)
+			if s.wl != nil {
+				surfaceID = s.wl.ID()
+			}
+			if s.viewport != nil && s.viewport.resource != nil {
+				viewportID = s.viewport.resource.ID()
+			}
+			if s.current != nil {
+				bufferID = s.current.ID()
+			}
+			s.server.log.Warn().Str("component", "wayland").Uint32("surface", surfaceID).Uint32("viewport", viewportID).
+				Bool("fresh", s.commitFresh).Bool("retained", !s.commitFresh).Bool("skipped_destroyed", s.commitSkipped).
+				Uint32("buffer", bufferID).Uint32("queued_buffer", s.queuedBuffer).Int("buffer_width", bw).Int("buffer_height", bh).
+				Int("committed_scale", s.bufferScale).Int("queued_scale", s.queuedScale).
+				Ints32("raw_source", []int32{int32(v.src[0]), int32(v.src[1]), int32(v.src[2]), int32(v.src[3])}).Msg("viewport source exceeds buffer")
+		}
 		s.viewportError(viewporter.WpViewportErrorOutOfBuffer, "source exceeds buffer")
 		return false
 	}

@@ -45,9 +45,18 @@ type surface struct {
 	scale float64
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
-	content ports.SurfaceContent
-	has     bool
-	sub     subState
+	content  ports.SurfaceContent
+	has      bool
+	identity uint64
+	version  uint64
+	// cachedTree is never modified once returned to emitContent.
+	cachedTree                 []ports.Subsurface
+	treeDirty                  bool
+	viewportErrorLogged        bool
+	commitFresh, commitSkipped bool
+	queuedScale                int
+	queuedBuffer               uint32
+	sub                        subState
 	// tearing is the surface's wp_tearing_control_v1; async is the
 	// committed hint, pendingAsync the requested one.
 	tearing                               *tearingHandler
@@ -135,24 +144,40 @@ func (s *surface) outputColor() ports.SurfaceColor {
 
 func (s *surface) contentWithColor() ports.SurfaceContent {
 	c := s.content
+	c.Surface, c.Version = s.identity, s.version
 	c.Color = s.outputColor()
 	return c
 }
 
 // tree is the root's content with its subsurfaces flattened.
 func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
-	c := s.content
+	c := s.contentWithColor()
 	c.ID = id
-	c.Color = s.outputColor()
-	c.Children = nil
-	for _, item := range s.sub.layout {
-		item.child.appendTree(&c.Children, item.x, item.y, item.below)
+	if s.treeDirty || s.cachedTree == nil {
+		count := s.treeCount()
+		children := make([]ports.Subsurface, 0, count)
+		for _, item := range s.sub.layout {
+			item.child.appendTree(&children, item.x, item.y, item.below)
+		}
+		s.cachedTree, s.treeDirty = children, false
 	}
+	c.Children = s.cachedTree
 	if s.xdg != nil {
 		c.Geometry = s.xdg.geometry
 	}
 	c.Async = s.async
 	return c
+}
+
+func (s *surface) treeCount() int {
+	n := 0
+	for _, item := range s.sub.layout {
+		if item.child.has {
+			n++
+		}
+		n += item.child.treeCount()
+	}
+	return n
 }
 
 // appendTree flattens a subsurface at (x, y) from the root: its children
@@ -200,6 +225,7 @@ func (s *surface) detach() {
 	}
 	p.sub.pendingLayout = removeLayout(p.sub.pendingLayout, s)
 	p.sub.layout = removeLayout(p.sub.layout, s)
+	p.root().treeDirty = true
 	for _, u := range p.queue {
 		u.layout = removeLayout(u.layout, s)
 	}
@@ -285,7 +311,16 @@ func (s *surface) Commit(*wayland.Surface) {
 // applyCommit makes the pending state current.
 func (s *surface) applyCommit() {
 	oldW, oldH, oldSource := s.content.LogicalW, s.content.LogicalH, s.content.Source
+	oldColor, oldRepresentation := s.color, s.representation
 	fresh := s.attached && s.pending != nil
+	s.commitFresh = fresh
+	if !s.commitSkipped {
+		s.queuedScale = s.pendingScale
+		s.queuedBuffer = 0
+		if s.pending != nil {
+			s.queuedBuffer = s.pending.ID()
+		}
+	}
 	if s.pendingBarrier {
 		s.pendingBarrier = false
 		s.setBarrier(time.Now())
@@ -355,6 +390,7 @@ func (s *surface) applyCommit() {
 			// replaces them.
 		}
 	}
+	damaged := !fresh && s.current != nil && (len(s.pendingDamage) > 0 || len(s.pendingBufDamage) > 0)
 	if !fresh {
 		s.commitDamage(false, false, 0, 0)
 		// A NULL attach is exempt from out_of_buffer: its content is
@@ -370,9 +406,19 @@ func (s *surface) applyCommit() {
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
 	}
+	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation {
+		s.version++
+		s.root().treeDirty = true
+	}
 	// The layout belongs to this update, not to the latest requests.
 	moved := !sameLayout(s.sub.layout, s.sub.pendingLayout)
-	s.sub.layout = append(s.sub.layout[:0], s.sub.pendingLayout...)
+	if moved {
+		s.root().treeDirty = true
+	}
+	// Queued updates can still reference the previous layout. Never mutate it.
+	if moved {
+		s.sub.layout = s.sub.pendingLayout
+	}
 	geometry := false
 	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
@@ -381,7 +427,7 @@ func (s *surface) applyCommit() {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
+	drawn := fresh || damaged || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
 	if drawn && !s.server.applyingGraph {
 		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source {
 			s.committed = damage{full: true}

@@ -75,6 +75,8 @@ type compositor struct{ server *Server }
 func (c compositor) CreateSurface(r *wayland.Compositor, id uint32) {
 	state := &surface{server: c.server, bufferScale: 1}
 	if w, err := wayland.NewSurface(r.Client(), r.Version(), id, state); err == nil {
+		c.server.nextSurface++
+		state.identity = c.server.nextSurface
 		state.wl = w
 		c.server.surfaces[w.Resource] = state
 		state.sendScale()
@@ -120,7 +122,7 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	state.role = func(bool) {}
 	state.sub = subState{role: sub, parent: up, children: state.sub.children, layout: state.sub.layout, pendingLayout: state.sub.pendingLayout, synced: true}
 	up.sub.children = append(up.sub.children, state)
-	up.sub.pendingLayout = append(up.sub.pendingLayout, childLayout{child: state})
+	up.sub.pendingLayout = append(append([]childLayout(nil), up.sub.pendingLayout...), childLayout{child: state})
 	// The child follows its root window's output and scale.
 	state.sendScale()
 	sub.OnDestroy = func() {
@@ -139,7 +141,9 @@ type subsurface struct{ surface *surface }
 
 func (subsurface) Destroy(*wayland.Subsurface) {}
 func (s subsurface) SetPosition(_ *wayland.Subsurface, x, y int32) {
-	for i := range s.surface.sub.parent.sub.pendingLayout {
+	p := s.surface.sub.parent
+	p.sub.pendingLayout = append([]childLayout(nil), p.sub.pendingLayout...)
+	for i := range p.sub.pendingLayout {
 		item := &s.surface.sub.parent.sub.pendingLayout[i]
 		if item.child == s.surface {
 			item.x, item.y = int(x), int(y)
@@ -174,7 +178,7 @@ func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, abo
 		r.PostError(uint32(wayland.SubsurfaceErrorBadSurface), "not a sibling or the parent")
 		return
 	}
-	list := p.sub.pendingLayout
+	list := append([]childLayout(nil), p.sub.pendingLayout...)
 	var item childLayout
 	for _, entry := range list {
 		if entry.child == me {

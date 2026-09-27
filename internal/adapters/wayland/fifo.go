@@ -240,6 +240,7 @@ type childLayout struct {
 }
 
 func removeLayout(layout []childLayout, child *surface) []childLayout {
+	layout = append([]childLayout(nil), layout...)
 	for i := 0; i < len(layout); i++ {
 		if layout[i].child == child {
 			layout = append(layout[:i:i], layout[i+1:]...)
@@ -270,10 +271,9 @@ func (s *surface) takePending() update {
 	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
-		copy := *v
-		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = &copy, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
+		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}
-	u.layout = append([]childLayout(nil), s.sub.pendingLayout...)
+	u.layout = s.sub.pendingLayout
 	if s.xdg != nil {
 		u.xdg, u.geometry = s.xdg, s.xdg.pendingGeometry
 	}
@@ -296,7 +296,7 @@ func (s *surface) putPending(u update) {
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
 	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
 	s.pendingFeedback, s.pendingSync = u.feedback, u.sync
-	if u.vp != nil {
+	if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
 		s.viewport = u.vp
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
 		u.vp.pendingSrc, u.vp.pendingCrop = u.vpSrc, u.vpCrop
@@ -365,11 +365,20 @@ func (s *surface) queueUpdate() {
 func (s *surface) applyUpdate(u *update) {
 	// A buffer destroyed while queued (a swapchain resize) is skipped: the
 	// surface keeps its content, and is not unmapped behind the client.
+	s.commitSkipped = false
+	s.queuedScale = u.scale
+	s.queuedBuffer = 0
+	if u.buffer != nil {
+		s.queuedBuffer = u.buffer.ID()
+	}
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
+		s.commitSkipped = true
 		u.buffer, u.attached = nil, false
+		// Scale and crop describe the same retained buffer.
+		u.scale = s.bufferScale
 		// The viewport change was made for that buffer: keep the crop that
 		// matches the retained content instead of validating a mismatch.
-		if u.vp != nil {
+		if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
 			if v := s.committedViewport; v != nil {
 				u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v.destW, v.destH, v.dest, v.src, v.crop
 			} else {
@@ -389,6 +398,7 @@ func (s *surface) applyUpdate(u *update) {
 	}
 	s.viewport = originalViewport
 	s.sub.pendingLayout = originalLayout
+	s.commitSkipped = false
 }
 
 // dropQueue discards the queued updates of a destroyed surface or role.

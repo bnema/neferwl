@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"os"
-	"slices"
 	"sync"
 	"time"
 
@@ -109,6 +108,7 @@ type Server struct {
 	layers                  map[ports.WindowID]*layerSurface
 	nextWindow              ports.WindowID
 	nextPool                uint64
+	nextSurface             uint64
 	focused                 ports.WindowID
 	pointerFocus            ports.WindowID
 	wheelRest               [2]int32   // v120 not yet sent as axis_discrete, per axis
@@ -459,17 +459,20 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
-	// The window's damage history: its last damageHistory contents.
-	h := append(s.damage[c.ID], ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
-	if len(h) > damageHistory {
-		h = h[len(h)-damageHistory:]
+	// Copy-on-write: previous publications can still be in an output's hands.
+	old := s.damage[c.ID]
+	if len(old) >= damageHistory {
+		old = old[len(old)-damageHistory+1:]
 	}
+	h := make([]ports.SeqDamage, len(old)+1)
+	copy(h, old)
+	h[len(old)] = ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects}
 	if c.Empty() {
 		delete(s.damage, c.ID)
 	} else {
 		s.damage[c.ID] = h
 	}
-	c.DamageHistory = slices.Clone(h)
+	c.DamageHistory = h
 	s.contents[c.ID] = c
 	close(s.contentNotify)
 	s.contentNotify = make(chan struct{})
