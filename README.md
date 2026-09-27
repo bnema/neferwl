@@ -183,7 +183,7 @@ neferwl --backend=headless --screenshot /tmp/neferwl-shots
 WAYLAND_DISPLAY=<name from the log> foot
 ```
 
-Screenshots work with `grim screenshot.png` and `grim -g "$(slurp)" selection.png` (the headless backend also supports these). Cursor overlay is omitted from screencopy on DRM and headless; headless screenshot files include it.
+Screenshots through `grim` are verified with `zwlr_screencopy_v1` and `ext_image_copy_capture_v1`. The cursor is not included in captures: `overlay_cursor` and `paint_cursors` are ignored. Headless screenshot files include the cursor.
 
 `/tmp/neferwl-shots/latest.png` shows the current frame. `--timeout 5s` stops NeferWL after 5 seconds.
 
