@@ -47,6 +47,10 @@ var dmabufFormats = []struct {
 	{fourcc('X', 'R', '3', '0'), vk.FormatA2r10g10b10UnormPack32, true},
 	{fourcc('A', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, false},
 	{fourcc('X', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, true},
+	// Little-endian ABGR16161616F is RGBA16F; floating-point values
+	// are linear electrical signals, not sRGB-encoded.
+	{fourcc('A', 'B', '4', 'H'), vk.FormatR16g16b16a16Sfloat, false},
+	{fourcc('X', 'B', '4', 'H'), vk.FormatR16g16b16a16Sfloat, true},
 }
 
 func fourcc(a, b, c, d byte) uint32 {

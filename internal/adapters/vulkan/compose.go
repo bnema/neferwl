@@ -39,9 +39,10 @@ const (
 	modeImage  = 1
 	modeBuffer = 2
 
-	flagOpaque = 1
-	flagExact  = 2
-	flagPQ     = 4
+	flagOpaque         = 1
+	flagExact          = 2
+	flagPQ             = 4
+	flagExtendedLinear = 8
 )
 
 // pushConstants is struct Draw of the shaders (std430 push constant block).

@@ -23,6 +23,7 @@ const uint modeImage = 1u;
 const uint flagOpaque = 1u;
 const uint flagExact = 2u;
 const uint flagPQ = 4u;
+const uint flagExtendedLinear = 8u;
 
 // PQ values are absolute nits. BT.2020 is converted in linear light to
 // BT.709, then clipped to the 8-bit sRGB intermediate. Highlights above
@@ -68,8 +69,13 @@ void main() {
     if ((d.misc.y & flagOpaque) != 0u) {
         c.a = 1.0;
     }
-    if ((d.misc.y & flagPQ) != 0u && c.a > 0.0) {
-        c.rgb = pqToSRGB(c.rgb / c.a, d.color.x) * c.a;
+    if (c.a > 0.0) {
+        if ((d.misc.y & flagPQ) != 0u) {
+            c.rgb = pqToSRGB(c.rgb / c.a, d.color.x) * c.a;
+        } else if ((d.misc.y & flagExtendedLinear) != 0u) {
+            vec3 v = clamp(c.rgb / c.a * (80.0 / 203.0), 0.0, 1.0);
+            c.rgb = mix(v * 12.92, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, greaterThan(v, vec3(0.0031308))) * c.a;
+        }
     }
     color = c;
 }

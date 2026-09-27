@@ -250,13 +250,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			return
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
-		if content.Color.IsPQ2020() {
-			dr.pc.misc[1] |= flagPQ
-			dr.pc.color[0] = float32(r.hdrNits)
-			if dr.pc.color[0] <= 0 {
-				dr.pc.color[0] = 203
-			}
-		}
+		r.setContentColor(&dr, content.Color)
 		dr.set, dr.im = im.set, im
 		dr.acquire = content.Acquire
 		w.draws = append(w.draws, dr)
@@ -278,16 +272,25 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, modeBuffer, content.Opaque)
-	if content.Color.IsPQ2020() {
-		dr.pc.misc[1] |= flagPQ
-		dr.pc.color[0] = float32(r.hdrNits)
-		if dr.pc.color[0] <= 0 {
-			dr.pc.color[0] = 203
-		}
-	}
+	r.setContentColor(&dr, content.Color)
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)
+}
+
+// setContentColor selects only color encodings the protocol accepts.
+func (r *Renderer) setContentColor(dr *draw, c ports.SurfaceColor) {
+	if c.IsPQ2020() {
+		dr.pc.misc[1] |= flagPQ
+	} else if c.IsExtendedLinear() {
+		dr.pc.misc[1] |= flagExtendedLinear
+	} else {
+		return
+	}
+	dr.pc.color[0] = float32(r.hdrNits)
+	if dr.pc.color[0] <= 0 {
+		dr.pc.color[0] = 203
+	}
 }
 
 func parseColor(s string) [3]uint8 {

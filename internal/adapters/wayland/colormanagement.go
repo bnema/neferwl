@@ -25,10 +25,11 @@ type colorDescription struct {
 }
 
 const (
-	srgb    = uint32(cm.WpColorManagerV1PrimariesSrgb)
-	bt2020  = uint32(cm.WpColorManagerV1PrimariesBt2020)
-	gamma22 = uint32(cm.WpColorManagerV1TransferFunctionGamma22)
-	pq      = uint32(cm.WpColorManagerV1TransferFunctionSt2084Pq)
+	srgb      = uint32(cm.WpColorManagerV1PrimariesSrgb)
+	bt2020    = uint32(cm.WpColorManagerV1PrimariesBt2020)
+	gamma22   = uint32(cm.WpColorManagerV1TransferFunctionGamma22)
+	pq        = uint32(cm.WpColorManagerV1TransferFunctionSt2084Pq)
+	extLinear = uint32(cm.WpColorManagerV1TransferFunctionExtLinear)
 )
 
 func (s *Server) nextColorID() uint64 { s.colorID++; return s.colorID }
@@ -66,7 +67,7 @@ func registerColorManagement(d *server.Display, s *Server) error {
 		}
 		r.SendSupportedIntent(uint32(cm.WpColorManagerV1RenderIntentPerceptual))
 		r.SendSupportedFeature(uint32(cm.WpColorManagerV1FeatureParametric))
-		for _, tf := range []uint32{gamma22, pq} {
+		for _, tf := range []uint32{gamma22, pq, extLinear} {
 			r.SendSupportedTfNamed(tf)
 		}
 		if v == 1 {
@@ -377,7 +378,7 @@ func (h *colorParams) Create(r *cm.WpImageDescriptionCreatorParamsV1, id uint32)
 	// Advertised transfer functions and primaries do not imply that every
 	// cross-product can be rendered. Reject unsupported combinations as an
 	// image-description failure, not a protocol error.
-	validSDR := h.d.Primaries == srgb && (h.d.TF == gamma22 || h.d.TF == uint32(cm.WpColorManagerV1TransferFunctionSrgb))
+	validSDR := h.d.Primaries == srgb && (h.d.TF == gamma22 || h.d.TF == extLinear || h.d.TF == uint32(cm.WpColorManagerV1TransferFunctionSrgb))
 	if !validSDR && !(h.d.Primaries == bt2020 && h.d.TF == pq) {
 		h.s.createColorDescription(r.Client(), r.Version(), id, h.d, uint32(cm.WpImageDescriptionV1CauseUnsupported), false)
 		return
@@ -389,7 +390,7 @@ func (h *colorParams) SetTfNamed(r *cm.WpImageDescriptionCreatorParamsV1, tf uin
 		h.fail(r, cm.WpImageDescriptionCreatorParamsV1ErrorAlreadySet, "TF already set")
 		return
 	}
-	if tf != gamma22 && tf != pq && !(r.Version() == 1 && tf == uint32(cm.WpColorManagerV1TransferFunctionSrgb)) {
+	if tf != gamma22 && tf != pq && tf != extLinear && !(r.Version() == 1 && tf == uint32(cm.WpColorManagerV1TransferFunctionSrgb)) {
 		h.fail(r, cm.WpImageDescriptionCreatorParamsV1ErrorInvalidTf, "unsupported TF")
 		return
 	}
@@ -398,6 +399,9 @@ func (h *colorParams) SetTfNamed(r *cm.WpImageDescriptionCreatorParamsV1, tf uin
 	h.d.Set = true
 	if tf == pq {
 		h.d.min, h.d.max, h.d.white = 50, 10000, 203
+	} else if tf == extLinear {
+		// Protocol defaults: sRGB primary volume, 80 cd/m² reference white.
+		h.d.min, h.d.max, h.d.white = 2000, 80, 80
 	} else {
 		h.d.min, h.d.max, h.d.white = 100, 100, 100
 	}

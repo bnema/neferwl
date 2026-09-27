@@ -23,6 +23,7 @@ const uint modeImage = 1u;
 const uint flagOpaque = 1u;
 const uint flagExact = 2u;
 const uint flagPQ = 4u;
+const uint flagExtendedLinear = 8u;
 
 // The HDR composition target holds linear BT.709 in SDR-white units.
 vec3 decodeSRGB(vec3 v) {
@@ -68,7 +69,11 @@ void main() {
         c.a = 1.0;
     }
     if (c.a > 0.0) {
-        c.rgb = ((d.misc.y & flagPQ) != 0u ? pqToLinear709(c.rgb / c.a, d.color.x) : decodeSRGB(c.rgb / c.a)) * c.a;
+        // ext_linear has the protocol's default 80 cd/m² reference white.
+        // Keep negative and above-white values in fp16 until the HDR pass.
+        vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(c.rgb / c.a, d.color.x) :
+            (d.misc.y & flagExtendedLinear) != 0u ? c.rgb / c.a * (80.0 / d.color.x) : decodeSRGB(c.rgb / c.a);
+        c.rgb = linearRGB * c.a;
     }
     color = c;
 }

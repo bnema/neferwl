@@ -270,6 +270,11 @@ func (p *params) anyPlane() bool {
 	return slices.ContainsFunc(p.planes[:], func(pl *plane) bool { return pl != nil })
 }
 
+const (
+	fourccAB4H = 'A' | 'B'<<8 | '4'<<16 | 'H'<<24
+	fourccXB4H = 'X' | 'B'<<8 | '4'<<16 | 'H'<<24
+)
+
 // build validates the planes and turns them into a buffer; ok is false after
 // a protocol error, failed means the client gets `failed`.
 func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBuffer, failed, ok bool) {
@@ -297,13 +302,17 @@ func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBu
 	if flags != 0 || !slices.Contains(p.global.support.Formats, want) {
 		return nil, true, true
 	}
-	// Supported formats are single-plane, 4 bytes per pixel.
+	// Packed RGB formats are single-plane; RGBA16F uses eight bytes per pixel.
 	if n != 1 {
 		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorIncomplete), "format takes one plane")
 		return nil, false, false
 	}
 	pl := p.planes[0]
-	row := uint64(width) * 4
+	bytesPerPixel := uint64(4)
+	if format == fourccAB4H || format == fourccXB4H {
+		bytesPerPixel = 8
+	}
+	row := uint64(width) * bytesPerPixel
 	end := uint64(pl.offset) + uint64(pl.stride)*uint64(height-1) + row
 	size, err := pl.file.Seek(0, io.SeekEnd)
 	if uint64(pl.stride) < row || (err == nil && end > uint64(size)) {
