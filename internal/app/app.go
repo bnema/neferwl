@@ -161,7 +161,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(childEnv, logging.For(ctx, "launcher")), time.Second)
+			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), time.Second)
 		}()
 	}
 	filtered := make(chan ports.ConfigChanged, 8)

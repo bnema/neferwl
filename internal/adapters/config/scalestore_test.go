@@ -15,6 +15,8 @@ func TestSaveOutputScale(t *testing.T) {
 		{"missing file", "", "output.DP-2.scale = 1.5\n", 1.5},
 		{"append", "# my config\nborder.width = 3", "# my config\nborder.width = 3\noutput.DP-2.scale = 1.5\n", 1.5},
 		{"replace in place", "output.DP-2.scale = 2 # big\n# end\n", "output.DP-2.scale = 1.25 # big\n# end\n", 1.25},
+		{"keeps CRLF", "output.DP-2.scale = 2\r\nborder.width = 3\r\n", "output.DP-2.scale = 1.5\r\nborder.width = 3\r\n", 1.5},
+		{"comment with = and #", "output.DP-2.scale = 2 # was a=b #1\n", "output.DP-2.scale = 1.5 # was a=b #1\n", 1.5},
 		{"keeps spacing", "output.DP-2.scale=2\n", "output.DP-2.scale=4/3\n", 4.0 / 3},
 		{"last line wins", "output.DP-2.scale = 2\noutput.DP-2.scale = 3\n", "output.DP-2.scale = 2\noutput.DP-2.scale = 5/3\n", 5.0 / 3},
 		{"ignores comments and other outputs", "# output.DP-2.scale = 2\noutput.DP-1.scale = 2\n", "# output.DP-2.scale = 2\noutput.DP-1.scale = 2\noutput.DP-2.scale = 1\n", 1},
@@ -49,7 +51,8 @@ func TestSaveOutputScale(t *testing.T) {
 					t.Fatalf("parsed %v, want %v", o.Scale, tc.scale)
 				}
 			}
-			if tc.in != "" {
+			// Existing files keep their mode; new ones are private.
+			{
 				if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
 					t.Fatalf("mode %v", info.Mode().Perm())
 				}

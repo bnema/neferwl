@@ -27,7 +27,8 @@ func (s ScaleStore) SaveOutputScale(output string, scale float64) error {
 		}
 	}
 	data, err := os.ReadFile(path)
-	mode := os.FileMode(0o644)
+	// A new config may hold commands: only its owner reads it.
+	mode := os.FileMode(0o600)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
