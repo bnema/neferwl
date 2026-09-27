@@ -357,7 +357,9 @@ func (s *surface) applyCommit() {
 	}
 	if !fresh {
 		s.commitDamage(false, false, 0, 0)
-		if s.has {
+		// A NULL attach is exempt from out_of_buffer: its content is
+		// cleared below, so the retained buffer is not validated.
+		if s.has && s.current != nil {
 			if !s.validateViewport(s.content.Width, s.content.Height) {
 				return
 			}

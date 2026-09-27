@@ -285,6 +285,36 @@ func TestViewportApplyErrors(t *testing.T) {
 	}
 }
 
+// A NULL attach unmaps the surface: viewporter.xml exempts it from
+// out_of_buffer, so a source larger than the previous buffer is not an error.
+// A later commit that keeps the retained buffer is still validated.
+func TestViewportNullAttachSkipsBufferBounds(t *testing.T) {
+	s, _, _, _, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	vpm := bindProtocol(t, c, "wp_viewporter")
+	surf, vp := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
+	registerProtocol(t, c, vp)
+	buf := shmBuffer(t, c)
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(256), int32(256))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+
+	// Oversized source with a NULL attach: no error.
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), int32(512), int32(256))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	roundtrip(t, c)
+
+	// Reattach the 1x1 buffer: the oversized source now applies to it.
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	expectProtocolError(t, c, vp, uint32(viewporter.WpViewportErrorOutOfBuffer))
+}
+
 func TestViewportBadDestination(t *testing.T) {
 	s, _, _, _, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
