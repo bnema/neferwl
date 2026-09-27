@@ -102,7 +102,8 @@ func cstring(b []byte) string {
 }
 
 // probeDMABuf lists the sampled fourcc/modifier pairs supported by the GPU.
-// Multi-planar formats require mutable per-plane views and disjoint binding.
+// Multi-planar formats require mutable per-plane views; disjoint binding is
+// optional and only used when the device supports it and planes differ.
 func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 	var sup ports.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
@@ -126,15 +127,11 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 			planes := uint32(1)
 			if isYUVFormat(f.fourcc) {
 				planes = 2
-				// Separate external plane fds require DISJOINT, which RADV
-				// currently does not expose for NV12/P010. Never advertise
-				// formats the importer cannot bind legally.
-				need |= 0x00400000
 			}
 			if m.DrmFormatModifierPlaneCount != planes || m.DrmFormatModifierTilingFeatures&need != need {
 				continue
 			}
-			if r.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc)) {
+			if r.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc), false) {
 				sup.Formats = append(sup.Formats, ports.DMABufFormat{Format: f.fourcc, Modifier: m.DrmFormatModifier})
 			}
 		}
@@ -144,12 +141,36 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 
 // importable asks whether an image of that format and modifier can be
 // imported from a dmabuf.
-func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64, yuv bool) bool {
+func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64, yuv, disjoint bool) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
 	flags := vk.ImageCreateFlags(0)
 	if yuv {
-		flags = vk.ImageCreateMutableFormatBit | imageDisjoint
+		flags = vk.ImageCreateMutableFormatBit
+		if disjoint {
+			flags |= imageDisjoint
+			// Image-format queries alone do not imply the modifier supports
+			// disjoint plane bindings. Check its tiling features as well.
+			list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
+			properties := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
+			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			if list.DrmFormatModifierCount == 0 {
+				return false
+			}
+			mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
+			list.DrmFormatModifierProperties = &mods[0]
+			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			found := false
+			for _, m := range mods[:list.DrmFormatModifierCount] {
+				if m.DrmFormatModifier == modifier && m.DrmFormatModifierTilingFeatures&0x00400000 != 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
 		views := yuvViewFormats(format)
 		formats := imageFormatList{sType: structureImageFormatList, viewFormatCount: 3, viewFormats: &views[0]}
 		mod.Next = unsafe.Pointer(&formats)
@@ -180,9 +201,12 @@ type imported struct {
 	memories   [2]vk.DeviceMemory
 	fds        [2]int
 	yuv        bool
-	pool       vk.DescriptorPool
-	set        vk.DescriptorSet
-	fd         int // our duplicate of plane 0, for implicit sync
+	// disjoint is available for this format/modifier; required only when
+	// the two planes refer to different underlying DMA-BUF objects.
+	disjoint bool
+	pool     vk.DescriptorPool
+	set      vk.DescriptorSet
+	fd       int // our duplicate of plane 0, for implicit sync
 	// last is the frame that drew it, for eviction.
 	last uint64
 }

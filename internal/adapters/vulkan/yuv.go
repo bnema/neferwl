@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"fmt"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -46,11 +47,23 @@ type bindImagePlane struct {
 	planeAspect vk.ImageAspectFlags
 }
 
-// importYUV uses one disjoint multi-planar VkImage, with a separate memory
-// binding and single-plane sampled view per plane. The DMA-BUF descriptors
-// may refer to distinct files, or to offsets within the same file.
+// importYUV uses one multi-planar VkImage. Planes sharing a DMA-BUF use one
+// memory binding; different backing objects need disjoint support. Views
+// always sample the Y and UV planes separately.
 func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, error) {
 	im := &imported{fd: -1, yuv: true, last: r.frame, fds: [2]int{-1, -1}}
+	disjoint, err := differentBacking(b.Planes)
+	if err != nil {
+		return nil, err
+	}
+	if disjoint {
+		// Query this modifier with DISJOINT; an advertised shared-memory
+		// import does not imply support for distinct plane objects.
+		if r.physical == 0 || !r.importable(r.physical, format, b.Modifier, true, true) {
+			return nil, fmt.Errorf("YUV buffer has distinct plane objects without Vulkan disjoint support")
+		}
+	}
+	im.disjoint = disjoint
 	ok := false
 	defer func() {
 		if !ok {
@@ -74,41 +87,51 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	explicit := vk.ImageDrmFormatModifierExplicitCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierExplicitCreateInfoEXT, DrmFormatModifier: b.Modifier, DrmFormatModifierPlaneCount: 2, PlaneLayouts: &layouts[0]}
 	formats.next = unsafe.Pointer(&explicit)
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&formats), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), Flags: vk.ImageCreateMutableFormatBit | imageDisjoint, ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	flags := vk.ImageCreateFlags(vk.ImageCreateMutableFormatBit)
+	if disjoint {
+		flags |= imageDisjoint
+	}
+	info := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), Flags: flags, ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(b.Width), Height: uint32(b.Height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(YUV dmabuf)", d.CreateImage(r.device, &info, nil, &im.image)); err != nil {
 		return nil, err
 	}
-	aspects := [2]vk.ImageAspectFlags{aspectPlane0, aspectPlane1}
-	bindings := [2]vk.BindImageMemoryInfo{}
-	for i, fd := range im.fds {
-		props := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
-		if err := checked("vkGetMemoryFdPropertiesKHR(YUV)", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
+	if !disjoint {
+		if err := r.bindSharedYUV(im); err != nil {
 			return nil, err
 		}
-		plane := imagePlaneRequirements{sType: structureImagePlaneRequirements, planeAspect: aspects[i]}
-		request := vk.ImageMemoryRequirementsInfo2{SType: vk.StructureTypeImageMemoryRequirementsInfo2, Next: unsafe.Pointer(&plane), Image: im.image}
-		req := vk.MemoryRequirements2{SType: vk.StructureTypeMemoryRequirements2}
-		d.GetImageMemoryRequirements2(r.device, &request, &req)
-		kind, err := r.findMemoryType(req.MemoryRequirements.MemoryTypeBits&props.MemoryTypeBits, 0)
-		if err != nil {
-			return nil, err
-		}
-		memFD, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
-		if err != nil {
-			return nil, err
-		}
-		dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
-		imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
-		alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.MemoryRequirements.Size, MemoryTypeIndex: kind}
-		if err := checked("vkAllocateMemory(YUV plane)", d.AllocateMemory(r.device, &alloc, nil, &im.memories[i])); err != nil {
-			unix.Close(memFD)
-			return nil, err
-		}
-		planeBind := &bindImagePlane{sType: structureBindImagePlane, planeAspect: aspects[i]}
-		bindings[i] = vk.BindImageMemoryInfo{SType: vk.StructureTypeBindImageMemoryInfo, Next: unsafe.Pointer(planeBind), Image: im.image, Memory: im.memories[i]}
-		// pNext must remain alive through vkBindImageMemory2, so bind each plane.
-		if err := checked("vkBindImageMemory2(YUV plane)", d.BindImageMemory2(r.device, 1, &bindings[i])); err != nil {
-			return nil, err
+	} else {
+		aspects := [2]vk.ImageAspectFlags{aspectPlane0, aspectPlane1}
+		bindings := [2]vk.BindImageMemoryInfo{}
+		for i, fd := range im.fds {
+			props := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
+			if err := checked("vkGetMemoryFdPropertiesKHR(YUV)", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
+				return nil, err
+			}
+			plane := imagePlaneRequirements{sType: structureImagePlaneRequirements, planeAspect: aspects[i]}
+			request := vk.ImageMemoryRequirementsInfo2{SType: vk.StructureTypeImageMemoryRequirementsInfo2, Next: unsafe.Pointer(&plane), Image: im.image}
+			req := vk.MemoryRequirements2{SType: vk.StructureTypeMemoryRequirements2}
+			d.GetImageMemoryRequirements2(r.device, &request, &req)
+			kind, err := r.findMemoryType(req.MemoryRequirements.MemoryTypeBits&props.MemoryTypeBits, 0)
+			if err != nil {
+				return nil, err
+			}
+			memFD, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
+			if err != nil {
+				return nil, err
+			}
+			dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
+			imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
+			alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.MemoryRequirements.Size, MemoryTypeIndex: kind}
+			if err := checked("vkAllocateMemory(YUV plane)", d.AllocateMemory(r.device, &alloc, nil, &im.memories[i])); err != nil {
+				unix.Close(memFD)
+				return nil, err
+			}
+			planeBind := &bindImagePlane{sType: structureBindImagePlane, planeAspect: aspects[i]}
+			bindings[i] = vk.BindImageMemoryInfo{SType: vk.StructureTypeBindImageMemoryInfo, Next: unsafe.Pointer(planeBind), Image: im.image, Memory: im.memories[i]}
+			// pNext must remain alive through vkBindImageMemory2, so bind each plane.
+			if err := checked("vkBindImageMemory2(YUV plane)", d.BindImageMemory2(r.device, 1, &bindings[i])); err != nil {
+				return nil, err
+			}
 		}
 	}
 	yFormat, uvFormat := vk.Format(vk.FormatR8Unorm), vk.Format(vk.FormatR8g8Unorm)
@@ -121,7 +144,6 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 		err := checked("vkCreateImageView(YUV plane)", d.CreateImageView(r.device, &vi, nil, &result))
 		return result, err
 	}
-	var err error
 	if im.view, err = view(aspectPlane0, yFormat); err != nil {
 		return nil, err
 	}
@@ -134,4 +156,56 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	ok = true
 	r.imports[b.ID] = im
 	return im, nil
+}
+
+// differentBacking identifies duplicate descriptors of one DMA-BUF by inode.
+// Compare the opened files themselves, not their integer descriptor values.
+func differentBacking(planes []ports.DMABufPlane) (bool, error) {
+	if len(planes) != 2 {
+		return false, fmt.Errorf("expected two DMA-BUF planes")
+	}
+	var a, b unix.Stat_t
+	for i, p := range planes {
+		if p.File == nil {
+			return false, fmt.Errorf("nil DMA-BUF plane")
+		}
+		var st *unix.Stat_t
+		if i == 0 {
+			st = &a
+		} else {
+			st = &b
+		}
+		if err := unix.Fstat(int(p.File.Fd()), st); err != nil {
+			return false, err
+		}
+	}
+	return a.Dev != b.Dev || a.Ino != b.Ino, nil
+}
+
+// bindSharedYUV imports one DMA-BUF memory for both format planes.
+func (r *Renderer) bindSharedYUV(im *imported) error {
+	d := r.dd
+	fd := im.fds[0]
+	props := vk.MemoryFdPropertiesKHR{SType: vk.StructureTypeMemoryFDPropertiesKHR}
+	if err := checked("vkGetMemoryFdPropertiesKHR(YUV shared)", d.GetMemoryFdPropertiesKHR(r.device, vk.ExternalMemoryHandleTypeDMABUFBitEXT, int32(fd), &props)); err != nil {
+		return err
+	}
+	var req vk.MemoryRequirements
+	d.GetImageMemoryRequirements(r.device, im.image, &req)
+	kind, err := r.findMemoryType(req.MemoryTypeBits&props.MemoryTypeBits, 0)
+	if err != nil {
+		return err
+	}
+	memFD, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	dedicated := vk.MemoryDedicatedAllocateInfo{SType: vk.StructureTypeMemoryDedicatedAllocateInfo, Image: im.image}
+	imp := vk.ImportMemoryFdInfoKHR{SType: vk.StructureTypeImportMemoryFDInfoKHR, Next: unsafe.Pointer(&dedicated), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT, Fd: int32(memFD)}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, Next: unsafe.Pointer(&imp), AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(YUV shared)", d.AllocateMemory(r.device, &alloc, nil, &im.memory)); err != nil {
+		unix.Close(memFD)
+		return err
+	}
+	return checked("vkBindImageMemory(YUV shared)", d.BindImageMemory(r.device, im.image, im.memory, 0))
 }

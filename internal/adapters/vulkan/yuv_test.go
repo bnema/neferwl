@@ -25,60 +25,64 @@ func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int) *ports.DMABuf {
 		t.Skipf("udmabuf unavailable: %v", err)
 	}
 	defer dev.Close()
-	for i := range planes {
-		mem, err := unix.MemfdCreate("yuv-client", unix.MFD_ALLOW_SEALING)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { unix.Close(mem) })
-		stride := uint32(64)
-		if p010 {
-			stride = 128
-		}
-		rows := 16
-		if i == 1 {
-			rows = 8
-		}
-		size := int(stride) * rows
-		pages := (size + os.Getpagesize() - 1) / os.Getpagesize() * os.Getpagesize()
-		if err := unix.Ftruncate(mem, int64(pages)); err != nil {
-			t.Fatal(err)
-		}
-		data := make([]byte, size)
-		for n := 0; n < size; {
-			values := []int{y}
-			if i == 1 {
-				values = []int{u, v}
-			}
-			for _, val := range values {
-				if p010 {
-					code := uint16(val << 6)
-					data[n], data[n+1] = byte(code), byte(code>>8)
-					n += 2
-				} else {
-					data[n] = byte(val)
-					n++
-				}
-			}
-		}
-		if _, err := unix.Pwrite(mem, data, 0); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := unix.FcntlInt(uintptr(mem), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK); err != nil {
-			t.Fatal(err)
-		}
-		arg := struct {
-			memfd, flags uint32
-			offset, size uint64
-		}{memfd: uint32(mem), flags: 1, size: uint64(pages)}
-		fd, _, errno := unix.Syscall(unix.SYS_IOCTL, dev.Fd(), 0x40187542, uintptr(unsafe.Pointer(&arg)))
-		if errno != 0 {
-			t.Skipf("udmabuf create: %v", errno)
-		}
-		f := os.NewFile(fd, "yuv-client")
-		t.Cleanup(func() { f.Close() })
-		planes[i] = ports.DMABufPlane{File: f, Stride: stride}
+	// Use a stride supported by the modifier on the device; the test
+	// populates the exact client-provided row pitch.
+	stride := uint32(256)
+
+	ySize := int(stride) * 16
+	uvSize := int(stride) * 8
+	pages := (ySize + uvSize + os.Getpagesize() - 1) / os.Getpagesize() * os.Getpagesize()
+	mem, err := unix.MemfdCreate("yuv-shared", unix.MFD_ALLOW_SEALING)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer unix.Close(mem)
+	if err := unix.Ftruncate(mem, int64(pages)); err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, pages)
+	for i := 0; i < 2; i++ {
+		start, end := 0, ySize
+		values := []int{y}
+		if i == 1 {
+			start, end, values = ySize, ySize+uvSize, []int{u, v}
+		}
+		for n, ch := start, 0; n < end; ch++ {
+			val := values[ch%len(values)]
+			if p010 {
+				code := uint16(val << 6)
+				data[n], data[n+1] = byte(code), byte(code>>8)
+				n += 2
+			} else {
+				data[n] = byte(val)
+				n++
+			}
+		}
+	}
+	if _, err := unix.Pwrite(mem, data, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unix.FcntlInt(uintptr(mem), unix.F_ADD_SEALS, unix.F_SEAL_SHRINK); err != nil {
+		t.Fatal(err)
+	}
+	arg := struct {
+		memfd, flags uint32
+		offset, size uint64
+	}{memfd: uint32(mem), flags: 1, size: uint64(pages)}
+	fd, _, errno := unix.Syscall(unix.SYS_IOCTL, dev.Fd(), 0x40187542, uintptr(unsafe.Pointer(&arg)))
+	if errno != 0 {
+		t.Skipf("udmabuf create: %v", errno)
+	}
+	f := os.NewFile(fd, "yuv-shared")
+	t.Cleanup(func() { f.Close() })
+	dup, err := unix.Dup(int(f.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2 := os.NewFile(uintptr(dup), "yuv-shared-dup")
+	t.Cleanup(func() { f2.Close() })
+	planes[0] = ports.DMABufPlane{File: f, Stride: stride}
+	planes[1] = ports.DMABufPlane{File: f2, Offset: uint32(ySize), Stride: stride}
 	return &ports.DMABuf{ID: uint64(format) + uint64(y), Width: 64, Height: 16, Format: format, Planes: planes}
 }
 
@@ -110,7 +114,13 @@ func TestYUVComposition(t *testing.T) {
 			}
 			b := yuvTestBuffer(t, tc.p010, tc.y, tc.u, tc.v)
 			if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: b.Format}) {
-				t.Skipf("linear YUV %#x lacks Vulkan disjoint import support", b.Format)
+				t.Skipf("linear YUV %#x not importable", b.Format)
+			}
+			if distinct, err := differentBacking(b.Planes); err != nil || distinct {
+				t.Fatalf("expected duplicate plane fds, distinct=%t err=%v", distinct, err)
+			}
+			if _, err := r.importDMABuf(b); err != nil {
+				t.Fatalf("YUV import: %v", err)
 			}
 			c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, Opaque: true, DMABuf: b, Color: ports.SurfaceColor{Coefficients: tc.coeff, Range: 2, Chroma: 1}}
 			if tc.hdr {
