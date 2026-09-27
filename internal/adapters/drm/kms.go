@@ -94,6 +94,8 @@ type Want struct {
 	Disabled map[string]bool
 	// Modes maps a connector to W, H and Hz (0: highest refresh at W x H).
 	Modes map[string][3]float64
+	// HDR settings are retained per connector; phase 1 never applies them to KMS.
+	HDR map[string]HDRSettings
 	// NoScanout disables direct scanout (render.direct-scanout = off).
 	NoScanout bool
 	// NoTearing ignores tearing requests (render.tearing = off).
@@ -105,6 +107,12 @@ type Want struct {
 	Sampled []ports.DMABufFormat
 	// Device is the KMS device (dev_t) offered in scanout tranches.
 	Device uint64
+}
+
+// HDRSettings is the requested HDR state and SDR reference white (nits).
+type HDRSettings struct {
+	Enabled       bool
+	SDRBrightness int
 }
 
 // usable reports whether a connector should be driven.

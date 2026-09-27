@@ -16,8 +16,8 @@ import (
 // display accepts and exports their memory as dmabufs, which the output
 // turns into KMS framebuffers. Render then composes straight into the
 // selected target and the output flips to it; nothing is copied by the
-// CPU. The internal image is the target until then (headless, tests).
-// Readback into host memory happens only for Pixels (screenshots).
+// CPU. In HDR the internal image retains the SDR scene, sampled by a
+// full-screen GPU pass into the 10-bit target. Pixels reads internal SDR.
 
 // target is an image frames are drawn into.
 type target struct {
@@ -38,10 +38,16 @@ type target struct {
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.
 const fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 
+// fourccXR30 is DRM_FORMAT_XRGB2101010 (A2R10G10B10 packed).
+const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
+
 // ExportTargets allocates n exported images of the output size, replacing
 // the previous ones; n = 0 only drops them (back to the internal image).
 func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
 	r.dropTargets()
+	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
+		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
+	}
 	if n == 0 {
 		return nil, nil
 	}
@@ -50,7 +56,10 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	}
 	mods := r.exportModifiers(modifiers)
 	if len(mods) == 0 {
-		return nil, errors.New("no XRGB8888 modifier both the device and the display accept")
+		if r.hdrNits == 0 {
+			return nil, errors.New("no XRGB8888 modifier both the device and the display accept")
+		}
+		return nil, errors.New("no XRGB2101010 modifier both the device and the display accept")
 	}
 	var out []ports.DMABuf
 	for range n {
@@ -86,43 +95,58 @@ func (r *Renderer) target() *target {
 	return &r.own
 }
 
-// exportModifiers are the XRGB8888 modifiers the device renders to and
-// exports with one plane, restricted to the display's when given.
+// exportModifiers intersects the selected signal format modifiers with
+// those supported by the display. HDR never assumes an unspecified list.
 func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 	var out []uint64
-	for _, m := range r.renderMods {
-		if len(display) == 0 || slices.Contains(display, m) {
+	available := r.renderMods
+	if r.hdrNits > 0 {
+		available = r.hdrMods
+	}
+	for _, m := range available {
+		if (len(display) == 0 && r.hdrNits == 0) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
 	}
 	return out
 }
 
-// probeRenderModifiers lists the B8G8R8A8 modifiers usable as a transfer
-// destination with a single plane that the device can export.
+// probeRenderModifiers lists single-plane, exportable SDR and HDR targets.
 func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
+	r.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
+	r.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
+}
+
+func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
-	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
+	r.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
 	if list.DrmFormatModifierCount == 0 {
-		return
+		return nil
 	}
 	mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
 	list.DrmFormatModifierProperties = &mods[0]
-	r.id.GetPhysicalDeviceFormatProperties2(physical, vk.FormatB8g8r8a8Unorm, &fp)
-	need := vk.FormatFeatureFlags(formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBit | vk.FormatFeatureColorAttachmentBlendBit)
-	// Targets are drawn on (compose.go) and read back for screenshots.
+	r.id.GetPhysicalDeviceFormatProperties2(physical, format, &fp)
+	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
+	if format == vk.FormatB8g8r8a8Unorm {
+		need |= formatFeatureTransferSrc | vk.FormatFeatureColorAttachmentBlendBit
+	} else if r.hdrReadback {
+		need |= formatFeatureTransferSrc
+	}
+	var result []uint64
+	// SDR targets are composed and read back; HDR targets are color attachments.
 	for _, m := range mods[:list.DrmFormatModifierCount] {
-		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, m.DrmFormatModifier) {
-			r.renderMods = append(r.renderMods, m.DrmFormatModifier)
+		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, format, m.DrmFormatModifier) {
+			result = append(result, m.DrmFormatModifier)
 		}
 	}
+	return result
 }
 
-func (r *Renderer) exportable(physical vk.PhysicalDevice, modifier uint64) bool {
+func (r *Renderer) exportable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: vk.FormatB8g8r8a8Unorm, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback)}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
 	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
@@ -135,13 +159,26 @@ func (r *Renderer) exportable(physical vk.PhysicalDevice, modifier uint64) bool 
 // generated bindings.
 const formatFeatureTransferSrc = 1 << 14
 
-// Targets are drawn on (compose.go) and copied from for screenshots.
+// Exported SDR targets compose directly; HDR targets receive the final pass.
 const targetUsage = vk.ImageUsageTransferSrcBit | vk.ImageUsageColorAttachmentBit
+
+// Production HDR targets need only a color attachment; test readback opts
+// into transfer source before export and skips if the driver refuses it.
+func exportUsage(format vk.Format, readback bool) vk.ImageUsageFlags {
+	if format == vk.FormatA2r10g10b10UnormPack32 && !readback {
+		return vk.ImageUsageColorAttachmentBit
+	}
+	return targetUsage
+}
 
 // exportTarget creates one exported image with a modifier from mods.
 func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	d := r.dd
 	t := &target{exported: true, layout: vk.ImageLayoutUndefined}
+	format, fourcc := vk.Format(vk.FormatB8g8r8a8Unorm), uint32(fourccXRGB)
+	if r.hdrNits > 0 {
+		format, fourcc = vk.FormatA2r10g10b10UnormPack32, fourccXR30
+	}
 	ok := false
 	defer func() {
 		if !ok {
@@ -150,7 +187,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}()
 	list := vk.ImageDrmFormatModifierListCreateInfoEXT{SType: vk.StructureTypeImageDRMFormatModifierListCreateInfoEXT, DrmFormatModifierCount: uint32(len(mods)), DrmFormatModifiers: &mods[0]}
 	external := vk.ExternalMemoryImageCreateInfo{SType: vk.StructureTypeExternalMemoryImageCreateInfo, Next: unsafe.Pointer(&list), HandleTypes: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, Next: unsafe.Pointer(&external), ImageType: vk.ImageType2d, Format: format, Extent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: exportUsage(format, r.hdrReadback), SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err := checked("vkCreateImage(target)", d.CreateImage(r.device, &ii, nil, &t.image)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
@@ -176,7 +213,8 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	var layout vk.SubresourceLayout
 	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
 	d.GetImageSubresourceLayout(r.device, t.image, &sub, &layout)
-	if err := r.createView(t); err != nil {
+	t.view, err = r.imageView(t.image, format)
+	if err != nil {
 		return nil, ports.DMABuf{}, err
 	}
 	var fd int32
@@ -188,7 +226,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if f == nil {
 		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}
-	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourccXRGB, Modifier: props.DrmFormatModifier, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}
+	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}
 	ok = true
 	return t, buf, nil
 }

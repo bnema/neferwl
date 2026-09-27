@@ -9,12 +9,16 @@ import (
 // to its own image until ExportTargets gives it scanout images; then each
 // Render draws into the target chosen by UseTarget (ADR 014: no CPU pass).
 type Renderer interface {
+	// SetHDR selects the HDR10 output transform (0 disables it).
+	// The DRM output calls this before ExportTargets.
+	SetHDR(sdrNits float64)
 	// Render draws the scene. done is a sync file signalled when the GPU
 	// finished the frame (nil: already finished); the caller closes it.
 	Render(Scene, map[WindowID]SurfaceContent) (done *os.File, err error)
 	// ExportTargets allocates n images of the renderer's size that the
-	// display can scan out, with one of the given XRGB8888 modifiers
-	// (none: any the device exports), and returns them as dmabufs.
+	// display can scan out, with one of the given XRGB8888 (SDR) or
+	// XRGB2101010 (HDR) modifiers (none: any the device exports),
+	// and returns them as dmabufs.
 	// n = 0 drops the targets.
 	ExportTargets(n int, modifiers []uint64) ([]DMABuf, error)
 	// UseTarget selects the exported image the next Render draws into.

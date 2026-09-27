@@ -22,12 +22,21 @@ type Renderer struct {
 	device        vk.Device
 	dd            *vk.DeviceDispatch
 	queue         vk.Queue
-	// own is the target until ExportTargets; targets are exported images
-	// (targets.go), current the one the next frame draws into.
+	// own is the composed image until ExportTargets; in HDR it remains
+	// the SDR composition/readback image while targets carry PQ.
 	own        target
 	targets    []*target
 	current    int
 	renderMods []uint64
+	hdrMods    []uint64
+	hdrNits    float64
+	hdr        hdrPass
+	hdrError   error
+	// hdrReadback is used only by the GPU test to permit transfer from a 10-bit target.
+	hdrReadback bool
+	physical    vk.PhysicalDevice
+	// One converted cursor image is kept; changes replace it in bounded memory.
+	cursorCache cursorConversion
 	// last is the target of the last frame; readback copies it into
 	// buffer only when Pixels asks (stale until then).
 	last         *target
@@ -186,6 +195,7 @@ func New(width, height int) (r *Renderer, err error) {
 		if sup := r.probeDMABuf(physical); sup.Device != 0 {
 			r.dmabuf = sup
 			r.probeRenderModifiers(physical)
+			r.physical = physical
 		}
 		// VK_KHR_external_semaphore_fd (enabled above): frames export
 		// their fence as a sync file.
@@ -193,7 +203,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}
-	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
+	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: extent, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: targetUsage | vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
 	if err = checked("vkCreateImage", r.dd.CreateImage(r.device, &ii, nil, &r.own.image)); err != nil {
 		return
 	}
@@ -356,6 +366,7 @@ func (r *Renderer) Close() {
 			r.idle()
 		}
 		r.dropTargets()
+		r.destroyHDR()
 		r.dropCursors()
 		for id, im := range r.imports {
 			r.release(im)

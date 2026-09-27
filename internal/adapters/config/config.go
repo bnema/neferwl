@@ -209,7 +209,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 					return &c.Outputs[i]
 				}
 				outputs[name] = len(c.Outputs)
-				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true})
+				c.Outputs = append(c.Outputs, ports.OutputConfig{Name: name, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness})
 				return &c.Outputs[len(c.Outputs)-1]
 			}
 			if base, ok := strings.CutSuffix(name, ".primary"); ok {
@@ -221,6 +221,28 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				}
 				override()
 				entry().Primary = b
+				continue
+			}
+			if base, ok := strings.CutSuffix(name, ".hdr"); ok {
+				name = base
+				b, err := onOff(value)
+				if err != nil {
+					warn("%s: %v", key, err)
+					continue
+				}
+				override()
+				entry().HDR = b
+				continue
+			}
+			if base, ok := strings.CutSuffix(name, ".sdr-brightness"); ok {
+				name = base
+				nits, err := strconv.Atoi(value)
+				if err != nil || nits < 80 || nits > 1000 {
+					warn("%s: must be between 80 and 1000", key)
+					continue
+				}
+				override()
+				entry().SDRBrightness = nits
 				continue
 			}
 			if base, ok := strings.CutSuffix(name, ".scale"); ok {
@@ -245,7 +267,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale, o.Primary = e.Scale, e.Primary
+			o.Scale, o.Primary, o.HDR, o.SDRBrightness = e.Scale, e.Primary, e.HDR, e.SDRBrightness
 			*e = o
 			continue
 		}

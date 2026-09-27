@@ -34,6 +34,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup |
+| `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
+| `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
 | `render.tearing` / `render.vrr` | `on` / `on` | For games in direct scanout |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |

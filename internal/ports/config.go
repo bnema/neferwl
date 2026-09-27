@@ -1,5 +1,8 @@
 package ports
 
+// DefaultSDRBrightness is the BT.2408 SDR reference white in HDR, in nits.
+const DefaultSDRBrightness = 203
+
 // OutputConfig configures one connector. Name is the connector (e.g. "DP-2").
 // Mode is "WxH" (highest refresh) or "WxH@Hz" (closest refresh); empty picks the
 // monitor's preferred mode. Off disables the connector.
@@ -8,15 +11,17 @@ package ports
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
-// ScaleOnly marks an entry set by output.<name>.scale or .primary alone: it
+// ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
-	Name      string
-	Mode      string
-	Off       bool
-	Scale     float64
-	Primary   bool
-	ScaleOnly bool
+	Name          string
+	Mode          string
+	Off           bool
+	Scale         float64
+	Primary       bool
+	HDR           bool // opt-in to HDR10 on capable outputs
+	SDRBrightness int  // nits; default DefaultSDRBrightness
+	ScaleOnly     bool
 }
 
 // Config is the parsed compositor configuration (see the config adapter for keys).

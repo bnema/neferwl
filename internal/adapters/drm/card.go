@@ -74,7 +74,9 @@ func (c *Card) Device() uint64 {
 func (c *Card) SetFormats(ch chan<- ports.OutputFormats) { c.formats = ch }
 
 // SetWant replaces the connector config; the next Scan applies it.
-func (c *Card) SetWant(w Want) { c.want = w }
+func (c *Card) SetWant(w Want) {
+	c.want = w
+}
 
 // Scan compares connectors with the outputs driven now. It returns outputs to
 // start (newly connected, or with a new mode after Release), names of
@@ -99,7 +101,7 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		seen[conn.name] = true
 		mode := c.want.pickMode(conn)
 		if o := c.outputs[conn.name]; o != nil {
-			if o.mode == mode {
+			if !outputNeedsRestart(o, mode, c.want.HDR[conn.name]) {
 				continue
 			}
 			replaced = append(replaced, conn.name)
@@ -202,4 +204,17 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func normalizedHDRSettings(settings HDRSettings) HDRSettings {
+	if settings.SDRBrightness == 0 {
+		settings.SDRBrightness = ports.DefaultSDRBrightness
+	}
+	return settings
+}
+
+// outputNeedsRestart applies the same replacement path to mode and HDR
+// configuration changes; Release drops the old output before reopening it.
+func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
+	return o.mode != mode || o.hdrSettings != normalizedHDRSettings(settings)
 }

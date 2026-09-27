@@ -51,6 +51,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	var started atomic.Bool

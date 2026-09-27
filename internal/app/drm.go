@@ -81,8 +81,13 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 // wantFromConfig turns output.<name> and render.* entries into connector choices.
 func wantFromConfig(cfg ports.Config) drm.Want {
 	r := cfg.Render
-	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR}
+	want := drm.Want{Disabled: map[string]bool{}, Modes: map[string][3]float64{}, HDR: map[string]drm.HDRSettings{}, NoScanout: !r.DirectScanout, NoTearing: !r.Tearing, NoVRR: !r.VRR}
 	for _, o := range cfg.Outputs {
+		nits := o.SDRBrightness
+		if nits == 0 {
+			nits = ports.DefaultSDRBrightness
+		}
+		want.HDR[o.Name] = drm.HDRSettings{Enabled: o.HDR, SDRBrightness: nits}
 		if o.Off {
 			want.Disabled[o.Name] = true
 			continue
