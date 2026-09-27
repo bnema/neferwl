@@ -161,6 +161,7 @@ type Server struct {
 	outputs           []*output
 	outputManagers    []*outputManager
 	workspaceManagers []*workspaceManager
+	toplevelManagers  []*toplevelManager
 	workspaceSnapshot ports.Workspaces
 	outputHeads       ports.OutputHeads
 	outputPlaces      ports.Layout
@@ -679,6 +680,7 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output
 		w.last, w.hasLast = c, true
 		w.sendConfigure()
+		s.toplevelChanged(w)
 		if scanoutChanged && w.xdg.surface != nil {
 			s.dmabuf.resendSurface(w.xdg.surface)
 		}
