@@ -31,6 +31,8 @@ type Renderer interface {
 	WriteCursor(i int, pixels []byte, w, h int) error
 	// Pixels reads the last frame back (headless screenshots, tests).
 	Pixels() *image.RGBA
+	// Capture copies a region of the last rendered frame as opaque BGRA.
+	Capture(region image.Rectangle, dst []byte, stride int) error
 	Close()
 }
 

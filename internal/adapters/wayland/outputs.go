@@ -147,6 +147,12 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		o.global.Remove()
+		for session := range s.captureSessions {
+			if session.o == o && !session.stopped {
+				session.stopped = true
+				session.res.SendStopped()
+			}
+		}
 		s.log.Info().Str("output", o.name()).Msg("output removed")
 		for _, l := range s.layers {
 			if l.output == o {
@@ -168,7 +174,15 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		scaleChanged := o.place.Scale != p.Scale
+		sizeChanged := o.place.Info.Width != p.Info.Width || o.place.Info.Height != p.Info.Height
 		o.place = p
+		if sizeChanged {
+			for session := range s.captureSessions {
+				if session.o == o && !session.stopped {
+					session.sendConstraints(p.Info.Width, p.Info.Height)
+				}
+			}
+		}
 		for _, r := range o.resources {
 			o.sendAll(r)
 		}

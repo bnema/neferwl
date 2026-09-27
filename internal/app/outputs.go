@@ -2,14 +2,17 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"sync"
+
+	"github.com/bnema/neferwl/internal/adapters/capture"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // outputRun drives one output until ctx ends: it renders the scenes and
 // surface contents it receives, with the cursor the client asks for.
-type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error
+type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures <-chan ports.CaptureRequest) error
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
 // per output; each goes to its output, latest first. Surface contents go to
@@ -17,34 +20,38 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // each window is kept so a new output starts with every window drawn.
 // Only the goroutine running loop touches the set.
 type outputSet struct {
-	outs    map[string]*runningOutput
-	latest  map[ports.WindowID]ports.SurfaceContent
-	cursor  ports.CursorChange
-	stopped chan string
-	quit    chan struct{} // closed by wait: nobody reads stopped any more
+	outs     map[string]*runningOutput
+	latest   map[ports.WindowID]ports.SurfaceContent
+	cursor   ports.CursorChange
+	stopped  chan string
+	captured chan<- ports.CaptureDone
+	ctx      context.Context
+	quit     chan struct{} // closed by wait: nobody reads stopped any more
 }
 
 type runningOutput struct {
 	scenes   chan ports.Scene
 	contents chan ports.SurfaceContent
 	cursor   chan ports.CursorChange
+	captures chan ports.CaptureRequest
 	ctx      context.Context
 	stop     context.CancelFunc
 	err      error
 	done     chan struct{}
 }
 
-func newOutputSet() *outputSet {
-	return &outputSet{outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan string), quit: make(chan struct{})}
+func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
+	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan string), quit: make(chan struct{})}
 }
 
 // start runs an output in its own goroutine and replays the window contents.
 func (s *outputSet) start(ctx context.Context, name string, run outputRun) {
 	octx, stop := context.WithCancel(ctx)
-	r := &runningOutput{scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), ctx: octx, stop: stop, done: make(chan struct{})}
+	r := &runningOutput{scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: octx, stop: stop, done: make(chan struct{})}
 	s.outs[name] = r
 	go func() {
-		r.err = run(octx, r.scenes, r.contents, r.cursor)
+		r.err = run(octx, r.scenes, r.contents, r.cursor, r.captures)
+		stop()
 		close(r.done)
 		select {
 		case s.stopped <- name:
@@ -110,6 +117,7 @@ func (s *outputSet) finish(name string) error {
 	}
 	<-r.done
 	r.stop()
+	s.failQueued(r)
 	delete(s.outs, name)
 	return r.err
 }
@@ -121,6 +129,7 @@ func (s *outputSet) wait() error {
 	for name, r := range s.outs {
 		r.stop()
 		<-r.done
+		s.failQueued(r)
 		if first == nil && r.err != nil {
 			first = r.err
 		}
@@ -175,5 +184,49 @@ func (c *cursors) move(output string, x, y float64) {
 	}
 	if cur := c.all[output]; cur != nil {
 		cur.Move(x, y)
+	}
+}
+
+// routeCapture transfers the request to its output or closes it on failure.
+func (s *outputSet) routeCapture(req ports.CaptureRequest) {
+	r := s.outs[req.Output]
+	if r == nil {
+		capture.Fail(s.ctx, req, fmt.Errorf("output %q unavailable", req.Output), s.captured)
+		return
+	}
+	select {
+	case r.captures <- req:
+	case <-r.done:
+		r.stop()
+		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+	case <-r.ctx.Done():
+		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+	}
+}
+
+func (s *outputSet) failQueued(r *runningOutput) {
+	for {
+		select {
+		case req := <-r.captures:
+			capture.Fail(r.ctx, req, fmt.Errorf("output stopped"), s.captured)
+		default:
+			return
+		}
+	}
+}
+
+// drainCaptures releases requests left in the app queue. Call it once the
+// producer (the wayland server) has stopped, so none can arrive after it.
+func drainCaptures(ctx context.Context, incoming <-chan ports.CaptureRequest, replies chan<- ports.CaptureDone) {
+	for {
+		select {
+		case q, ok := <-incoming:
+			if !ok {
+				return
+			}
+			capture.Fail(ctx, q, fmt.Errorf("output stopped"), replies)
+		default:
+			return
+		}
 	}
 }

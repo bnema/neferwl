@@ -284,6 +284,31 @@ func (r *Renderer) Pixels() *image.RGBA {
 	return out
 }
 
+// Capture reads the last rendered image without changing the renderer's target.
+func (r *Renderer) Capture(region image.Rectangle, dst []byte, stride int) error {
+	bounds := image.Rect(0, 0, r.width, r.height)
+	w, h := region.Dx(), region.Dy()
+	if region.Empty() || !region.In(bounds) || stride < w*4 || len(dst) < (h-1)*stride+w*4 {
+		return fmt.Errorf("invalid capture region or destination")
+	}
+	if r.mapped == nil || r.last == nil || r.last.image == 0 {
+		return fmt.Errorf("no rendered frame")
+	}
+	if err := r.readback(); err != nil {
+		return err
+	}
+	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*4)
+	for y := range h {
+		start := ((region.Min.Y+y)*r.width + region.Min.X) * 4
+		row := dst[y*stride : y*stride+w*4]
+		copy(row, src[start:start+w*4])
+		for x := 3; x < len(row); x += 4 {
+			row[x] = 255
+		}
+	}
+	return nil
+}
+
 // Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
 const (
 	queueFamilyIgnored = ^uint32(0)

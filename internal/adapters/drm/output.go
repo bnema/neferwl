@@ -11,6 +11,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/capture"
+
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -871,7 +873,7 @@ func (o *Output) Close() {
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is reported on presented.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented) error {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) error {
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -904,6 +906,22 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	frame := 0
+	var requests []ports.CaptureRequest
+	ctx, cancelCaptures := context.WithCancel(ctx)
+	defer func() {
+		cancelCaptures()
+		for _, q := range requests {
+			capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
+		}
+		for {
+			select {
+			case q := <-captures:
+				capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
+			default:
+				return
+			}
+		}
+	}()
 	stats := time.NewTicker(10 * time.Second)
 	defer stats.Stop()
 	// seen is the latest content Seq per window. It is reported only while
@@ -964,6 +982,13 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			stateDirty = true
 		case <-ctx.Done():
 			return nil
+		case q := <-captures:
+			if !enabled || o.off || o.wantOff {
+				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
+			} else {
+				requests = append(requests, q)
+				dirty = haveScene
+			}
 		case on := <-active:
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
@@ -1035,6 +1060,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			ev.Msg("stats")
 		}
+		if len(requests) > 0 && (!enabled || o.off || o.wantOff) {
+			for _, q := range requests {
+				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
+			}
+			requests = nil
+		}
 		if !enabled || o.pending {
 			continue
 		}
@@ -1071,13 +1102,22 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		// shows is what the frame puts on screen: presentation feedback
 		// of windows it does not draw is discarded, not presented.
 		f := pendingFrame{shows: shownBy(scene, seen)}
-		fb, c := o.scanoutFrame(scene, surfaces)
+		var fb uint32
+		var c ports.SurfaceContent
+		forceCompose := len(requests) > 0
+		if !forceCompose {
+			fb, c = o.scanoutFrame(scene, surfaces)
+		}
 		direct := false
 		if fb != 0 {
 			direct, err = o.commitScanout(fb, c, pendingFrame{shows: map[ports.WindowID]uint64{c.ID: seen[c.ID]}})
 		}
 		if !direct {
-			ov, composed := o.overlayFrame(scene, surfaces)
+			var ov overlayWin
+			composed := scene
+			if !forceCompose {
+				ov, composed = o.overlayFrame(scene, surfaces)
+			}
 			r.UseTarget(o.back)
 			done, rerr := r.Render(composed, surfaces)
 			if rerr != nil {
@@ -1095,6 +1135,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					return fmt.Errorf("render frame: %w", rerr)
 				}
 			}
+			if len(requests) > 0 {
+				// Scanout and the overlay plane were skipped for this frame.
+				o.log.Debug().Str("connector", o.conn.name).Int("captures", len(requests)).Msg("capture frame composed")
+			}
+			for _, q := range requests {
+				capture.Write(ctx, q, r, captured)
+			}
+			requests = nil
 			// The overlay buffer is on screen like a scanned-out one: it
 			// is reported shown, so it is not released under the plane.
 			f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true

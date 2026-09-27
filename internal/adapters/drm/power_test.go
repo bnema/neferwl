@@ -48,7 +48,7 @@ func TestRunOutputPower(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, vt, scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8))
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, vt, scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8), nil, nil)
 	}()
 	on := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	scenes <- on

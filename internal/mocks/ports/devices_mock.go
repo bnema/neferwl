@@ -48,6 +48,69 @@ func (_m *MockRenderer) EXPECT() *MockRenderer_Expecter {
 	return &MockRenderer_Expecter{mock: &_m.Mock}
 }
 
+// Capture provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) Capture(region image.Rectangle, dst []byte, stride int) error {
+	ret := _mock.Called(region, dst, stride)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Capture")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(image.Rectangle, []byte, int) error); ok {
+		r0 = returnFunc(region, dst, stride)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRenderer_Capture_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Capture'
+type MockRenderer_Capture_Call struct {
+	*mock.Call
+}
+
+// Capture is a helper method to define mock.On call
+//   - region image.Rectangle
+//   - dst []byte
+//   - stride int
+func (_e *MockRenderer_Expecter) Capture(region any, dst any, stride any) *MockRenderer_Capture_Call {
+	return &MockRenderer_Capture_Call{Call: _e.mock.On("Capture", region, dst, stride)}
+}
+
+func (_c *MockRenderer_Capture_Call) Run(run func(region image.Rectangle, dst []byte, stride int)) *MockRenderer_Capture_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 image.Rectangle
+		if args[0] != nil {
+			arg0 = args[0].(image.Rectangle)
+		}
+		var arg1 []byte
+		if args[1] != nil {
+			arg1 = args[1].([]byte)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_Capture_Call) Return(err error) *MockRenderer_Capture_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRenderer_Capture_Call) RunAndReturn(run func(region image.Rectangle, dst []byte, stride int) error) *MockRenderer_Capture_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Close provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) Close() {
 	_mock.Called()
