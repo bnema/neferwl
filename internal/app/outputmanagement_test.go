@@ -210,3 +210,26 @@ func TestReloadDuringPendingApply(t *testing.T) {
 	<-backend
 	backendDone <- nil
 }
+
+// A reload that only changes output scales (a saved scale bind) keeps the
+// runtime overrides; any other change drops them.
+func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
+	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+	state := newOutputOverrides(file, false)
+	state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}, {Info: ports.OutputInfo{Name: "DP-2"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
+	if _, err := state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}, {Name: "DP-2", Enabled: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	scaled := file
+	scaled.Outputs = []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}, {Name: "DP-2", Scale: 1.25, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness}}
+	cfg := state.reload(scaled)
+	if len(cfg.Outputs) != 2 || cfg.Outputs[0].Pos == nil || cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[1].Scale != 1.25 {
+		t.Fatalf("scale-only reload: %+v", cfg.Outputs)
+	}
+	other := scaled
+	other.Layout.Gaps = 4
+	if cfg := state.reload(other); cfg.Outputs[0].Pos != nil {
+		t.Fatalf("other reload kept overrides: %+v", cfg.Outputs)
+	}
+}

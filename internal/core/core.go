@@ -38,6 +38,9 @@ type Channels struct {
 	// latest first (capacity 1, drained like Scenes).
 	State      chan ports.State
 	Workspaces chan ports.Workspaces
+	// Scales, when set, receives each scale a scale bind sets, to persist it.
+	// Core does not wait: a full channel drops the change.
+	Scales chan<- ports.ScaleChanged
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
 }
@@ -960,8 +963,16 @@ func (c *Core) Run(ctx context.Context) error {
 							dir = -1
 						}
 						sc := c.cur()
+						prev := sc.scale
 						sc.setScale(StepScale(sc.info.Width, sc.info.Height, sc.scale, dir))
 						c.order()
+						if c.ch.Scales != nil && sc.scale != prev && sc.name() != "" {
+							// Never wait on persistence: a stalled save drops the change.
+							select {
+							case c.ch.Scales <- ports.ScaleChanged{Output: sc.name(), Scale: sc.scale}:
+							default:
+							}
+						}
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}

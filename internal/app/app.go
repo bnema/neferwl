@@ -100,7 +100,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	appliedOutput := make(chan ports.OutputApplied, 8)
 	backendConfig := make(chan ports.Config, 8)
 	backendApplied := make(chan error, 8)
-	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
+	var scales chan ports.ScaleChanged
+	if hw != nil {
+		// Only real sessions save scales: headless runs never touch the config file.
+		scales = make(chan ports.ScaleChanged, 8)
+	}
+	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -154,6 +159,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer workers.Done()
 		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
 	}()
+	if scales != nil {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), time.Second)
+		}()
+	}
 	filtered := make(chan ports.ConfigChanged, 8)
 	workers.Add(1)
 	go func() {

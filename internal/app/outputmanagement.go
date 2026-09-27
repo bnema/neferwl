@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"reflect"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -42,10 +43,58 @@ func (o *outputOverrides) effective() ports.Config {
 	}
 	return cfg
 }
+
+// reload replaces the file configuration. Runtime overrides are dropped,
+// unless only output scales changed (a saved scale bind): then they stay and
+// take the new file scales.
 func (o *outputOverrides) reload(file ports.Config) ports.Config {
+	scales, onlyScales := scaleChanges(o.file, file)
 	o.file = file
-	clear(o.overrides)
+	if !onlyScales {
+		clear(o.overrides)
+		return o.effective()
+	}
+	for name, scale := range scales {
+		if entry, ok := o.overrides[name]; ok {
+			entry.Scale = scale
+			o.overrides[name] = entry
+		}
+	}
 	return o.effective()
+}
+
+// scaleChanges lists the output scales that differ from old to cur, and
+// reports whether nothing else differs.
+func scaleChanges(old, cur ports.Config) (map[string]float64, bool) {
+	scaleOf := func(c ports.Config, name string) float64 {
+		for _, o := range c.Outputs {
+			if o.Name == name {
+				return o.Scale
+			}
+		}
+		return 0
+	}
+	// Without scales, an output.<name>.scale-only entry is empty: drop it.
+	strip := func(c ports.Config) ports.Config {
+		c.Outputs = slices.Clone(c.Outputs)
+		for i := range c.Outputs {
+			c.Outputs[i].Scale = 0
+		}
+		c.Outputs = slices.DeleteFunc(c.Outputs, func(o ports.OutputConfig) bool {
+			return o == ports.OutputConfig{Name: o.Name, ScaleOnly: true, SDRBrightness: ports.DefaultSDRBrightness}
+		})
+		return c
+	}
+	if !reflect.DeepEqual(strip(old), strip(cur)) {
+		return nil, false
+	}
+	scales := map[string]float64{}
+	for _, o := range cur.Outputs {
+		if o.Scale != scaleOf(old, o.Name) {
+			scales[o.Name] = o.Scale
+		}
+	}
+	return scales, true
 }
 func (o *outputOverrides) validate(req ports.OutputApply) error {
 	if len(req.Heads) != len(o.heads.Heads) {
