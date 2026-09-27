@@ -207,6 +207,55 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 	}
 }
 
+// A parent can keep a dependency after the child's queue is dropped or its
+// update is applied independently. Neither path may recycle that dependency
+// into a new commit while the parent still holds it.
+func TestQueuedParentRetainsRetiredChild(t *testing.T) {
+	for _, dropped := range []bool{true, false} {
+		name := "applied"
+		if dropped {
+			name = "dropped"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv := &Server{fifoSurfaces: make(map[*surface]struct{}), frameReady: make(chan struct{}, 1)}
+			parent := &surface{server: srv}
+			child := &surface{server: srv}
+			child.sub.parent, child.sub.synced = parent, true
+			parent.sub.children = []*surface{child}
+			child.pendingScale = 2
+			child.queueUpdate()
+			old := child.queue[0]
+			parent.pendingScale = 3
+			parent.queueUpdate()
+			pu := parent.queue[0]
+			if old.refs != 1 || len(pu.deps) != 1 || pu.deps[0] != old {
+				t.Fatal("parent did not capture child's update")
+			}
+			if dropped {
+				child.dropQueue()
+			} else {
+				old.applyGraph()
+			}
+			if !old.retired || old.refs != 1 {
+				t.Fatalf("retired child ref count: retired=%v refs=%d", old.retired, old.refs)
+			}
+			child.pendingScale = 7
+			child.queueUpdate()
+			if child.queue[0] == old || old.scale != 2 || pu.deps[0] != old {
+				t.Fatal("live dependency was recycled as a new child commit")
+			}
+			if !pu.graphReady(time.Now()) {
+				t.Fatal("retired dependency kept parent waiting")
+			}
+			pu.applyGraph()
+			if parent.bufferScale != 3 || len(parent.queue) != 0 || len(child.queue) != 1 || child.queue[0].scale != 7 {
+				t.Fatal("parent replayed old dependency or changed new child commit")
+			}
+			child.dropQueue()
+		})
+	}
+}
+
 // Rechecking a shared predecessor in a traversal must reuse its readiness.
 func TestGraphReadyMemoizesPredecessors(t *testing.T) {
 	s := &Server{readinessGeneration: 1}

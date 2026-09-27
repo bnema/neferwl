@@ -93,6 +93,12 @@ type Output struct {
 	shown, queued uint64
 	reason        string // why the last frame was composed ("" = scanout)
 	unsent        []ports.OutputPresented
+	// Last immutable snapshot sent in a report. Never mutate it: wayland may
+	// still be reading a prior report on another goroutine.
+	seenSnapshot        map[ports.WindowID]uint64
+	showsSnapshot       map[ports.WindowID]uint64
+	directShowsSnapshot map[ports.WindowID]uint64
+	showsScratch        map[ports.WindowID]uint64
 	// Tearing (ADR 006): async commits of scanned-out buffers that ask for
 	// them, when the card has DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP. asyncFence
 	// is set when an async commit may carry IN_FENCE_FD (probed once).
@@ -967,6 +973,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}()
 	stats := time.NewTicker(10 * time.Second)
 	defer stats.Stop()
+	// Timer channels are enabled only when their condition holds. Go 1.27
+	// guarantees a stopped/reset timer cannot deliver its old value.
+	retryTimer := time.NewTimer(time.Hour)
+	vrrTimer := time.NewTimer(time.Hour)
+	stuckTimer := time.NewTimer(time.Hour)
+	retryTimer.Stop()
+	vrrTimer.Stop()
+	stuckTimer.Stop()
+	defer retryTimer.Stop()
+	defer vrrTimer.Stop()
+	defer stuckTimer.Stop()
 	// seen is the latest content Seq per window. It is reported only while
 	// no frame is in flight: then the GPU has finished every frame that
 	// read older buffers (the kernel waited for their fence to flip).
@@ -989,17 +1006,26 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		// so is one that waits for an uncommitted frame's fence.
 		var retry <-chan time.Time
 		if len(o.unsent) > 0 || readWait {
-			retry = time.After(time.Millisecond)
+			retryTimer.Reset(time.Millisecond)
+			retry = retryTimer.C
+		} else {
+			retryTimer.Stop()
 		}
 		// A composed screen that stopped changing still drops VRR on time.
 		var vrrOff <-chan time.Time
 		if enabled && o.vrrOn && !o.pending && !o.composedSince.IsZero() {
-			vrrOff = time.After(max(0, vrrHold-time.Since(o.composedSince)))
+			vrrTimer.Reset(max(0, vrrHold-time.Since(o.composedSince)))
+			vrrOff = vrrTimer.C
+		} else {
+			vrrTimer.Stop()
 		}
 		// A commit whose event never comes must not stop the output.
 		var stuck <-chan time.Time
 		if enabled && o.pending {
-			stuck = time.After(max(0, time.Until(o.stuckAt)))
+			stuckTimer.Reset(max(0, time.Until(o.stuckAt)))
+			stuck = stuckTimer.C
+		} else {
+			stuckTimer.Stop()
 		}
 		stateDirty := false
 		select {
@@ -1144,7 +1170,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		start := time.Now()
 		// shows is what the frame puts on screen: presentation feedback
 		// of windows it does not draw is discarded, not presented.
-		f := pendingFrame{shows: shownBy(scene, seen)}
+		f := pendingFrame{shows: o.shownBy(scene, seen)}
 		var fb uint32
 		var c ports.SurfaceContent
 		forceCompose := len(requests) > 0
@@ -1153,7 +1179,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		direct := false
 		if fb != 0 {
-			direct, err = o.commitScanout(fb, c, pendingFrame{shows: map[ports.WindowID]uint64{c.ID: seen[c.ID]}})
+			direct, err = o.commitScanout(fb, c, pendingFrame{shows: o.directShownBy(c.ID, seen[c.ID])})
 		}
 		if !direct {
 			var ov overlayWin
@@ -1312,7 +1338,10 @@ const maxUnsent = 16
 // buffers can be released. A flip-less report merges into the newest
 // queued one; flips are never merged unless maxUnsent is reached.
 func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: maps.Clone(seen)}
+	if !maps.Equal(o.seenSnapshot, seen) {
+		o.seenSnapshot = maps.Clone(seen)
+	}
+	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot}
 	if n := len(o.unsent); n > 0 && (flip == nil || o.unsent[n-1].Flip == nil) {
 		if flip == nil {
 			r.Flip = o.unsent[n-1].Flip
@@ -1325,8 +1354,18 @@ func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 		old, next := o.unsent[0].Flip, o.unsent[1].Flip
 		if next != nil && old != nil {
 			next.Merged += 1 + old.Merged
+			// A snapshot can be shared with previously sent flips. Clone only
+			// when a merge actually needs to add an absent window.
+			cloned := false
 			for id, seq := range old.Shows {
 				if _, ok := next.Shows[id]; !ok {
+					if !cloned {
+						next.Shows = maps.Clone(next.Shows)
+						cloned = true
+					}
+					if next.Shows == nil {
+						next.Shows = make(map[ports.WindowID]uint64)
+					}
 					next.Shows[id] = seq
 				}
 			}
@@ -1529,13 +1568,28 @@ func (o *Output) freeImages() {
 	}
 }
 
-// shownBy is the content Seq of each window the scene draws.
-func shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[ports.WindowID]uint64 {
-	out := map[ports.WindowID]uint64{}
+// shownBy returns an immutable snapshot of the content Seq of drawn windows.
+// The scratch map is private to the output; a snapshot may still be read by
+// wayland after a subsequent flip, so never refill a previously sent map.
+func (o *Output) shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[ports.WindowID]uint64 {
+	if o.showsScratch == nil {
+		o.showsScratch = make(map[ports.WindowID]uint64)
+	}
+	clear(o.showsScratch)
 	for id, seq := range seen {
 		if s.Shows(id) {
-			out[id] = seq
+			o.showsScratch[id] = seq
 		}
 	}
-	return out
+	if !maps.Equal(o.showsSnapshot, o.showsScratch) {
+		o.showsSnapshot = maps.Clone(o.showsScratch)
+	}
+	return o.showsSnapshot
+}
+
+func (o *Output) directShownBy(id ports.WindowID, seq uint64) map[ports.WindowID]uint64 {
+	if len(o.directShowsSnapshot) != 1 || o.directShowsSnapshot[id] != seq {
+		o.directShowsSnapshot = map[ports.WindowID]uint64{id: seq}
+	}
+	return o.directShowsSnapshot
 }

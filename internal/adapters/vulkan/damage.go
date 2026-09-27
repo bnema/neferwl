@@ -39,6 +39,24 @@ func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion 
 	return d
 }
 
+// frameDamage reuses the bookkeeping maps. drawn is swapped with the
+// target's previous map after hold, so a target never observes mutations.
+func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
+	if r.damageSeen == nil {
+		r.damageSeen = make(map[ports.WindowID]bool)
+	}
+	clear(r.damageSeen)
+	if r.damageDrawn == nil {
+		r.damageDrawn = make(map[ports.WindowID]heldWindow)
+	}
+	clear(r.damageDrawn)
+	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds}
+	if tg.valid && s.Seq != 0 && tg.sceneSeq == s.Seq {
+		r.damage.held = tg
+	}
+	return &r.damage
+}
+
 // all reports whether the whole target is redrawn.
 func (d *damageRegion) all() bool { return d.held == nil }
 

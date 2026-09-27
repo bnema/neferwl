@@ -176,7 +176,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if hdr {
 		tg = &r.hdrOwn
 	}
-	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
+	dmg := r.frameDamage(tg, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
 	r.dropPools()
@@ -184,7 +184,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if partial {
 		// The pass keeps the image: repaint the background under the
 		// region, then everything clipped to it.
-		ds = dmg.clip(append([]draw{r.fillDraw(dmg.area, parseColor(s.Background))}, ds...))
+		// Keep the background first without allocating a second draw slice.
+		ds = append(ds, draw{})
+		copy(ds[1:], ds[:len(ds)-1])
+		ds[0] = r.fillDraw(dmg.area, parseColor(s.Background))
+		ds = dmg.clip(ds)
+		r.scratchDraws = ds
 		r.redrawn += dmg.area.Dx() * dmg.area.Dy()
 	} else {
 		r.redrawn += r.width * r.height
@@ -212,8 +217,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit|vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, &b)
 	// Client buffers come from the foreign queue family (their driver)
 	// and go back to it after the frame, so the next frame acquires them.
-	var dmas []*imported
-	acquires := map[*imported]*os.File{}
+	dmas := r.frameDMAs[:0]
+	if r.frameAcquires == nil {
+		r.frameAcquires = make(map[*imported]*os.File)
+	}
+	clear(r.frameAcquires)
+	acquires := r.frameAcquires
 	for _, dr := range ds {
 		if dr.im != nil && !slices.Contains(dmas, dr.im) {
 			dmas = append(dmas, dr.im)
@@ -223,6 +232,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			acquires[dr.im] = dr.acquire
 		}
 	}
+	r.frameDMAs = dmas
 	r.ownership(cmd, dmas, true)
 	r.recordDraws(cmd, tg.view, parseColor(s.Background), ds, partial)
 	r.ownership(cmd, dmas, false)
@@ -247,7 +257,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	// Wait for the client's GPU writes to each buffer: its explicit
 	// acquire fence, else the buffer's implicit fences.
-	var waits []vk.Semaphore
+	waits := r.frameWaits[:0]
 	for _, im := range dmas {
 		if f := acquires[im]; f != nil {
 			if sem := r.importFence(f); sem != 0 {
@@ -257,12 +267,17 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			waits = r.appendReadFences(waits, im)
 		}
 	}
+	r.frameWaits = waits
 	frame := r.frame
 	for _, sem := range waits {
+		sem := sem
 		r.retire(frame, func() { d.DestroySemaphore(r.device, sem, nil) })
 	}
 	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd}
-	stages := make([]vk.PipelineStageFlags, len(waits))
+	if cap(r.frameStages) < len(waits) {
+		r.frameStages = make([]vk.PipelineStageFlags, len(waits))
+	}
+	stages := r.frameStages[:len(waits)]
 	if len(waits) > 0 {
 		for i := range stages {
 			stages[i] = vk.PipelineStageFragmentShaderBit
@@ -285,7 +300,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	} else {
 		tg.layout = b.NewLayout
 	}
+	oldWindows := tg.windows
 	tg.hold(s, dmg)
+	r.damageDrawn = oldWindows
 	r.last, r.readBack = tg, false
 	r.dropUnused()
 	r.dropShm()

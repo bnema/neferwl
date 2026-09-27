@@ -56,7 +56,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	if n == 0 {
 		return nil, nil
 	}
-	if r.dd.GetMemoryFdKHR == nil || r.dd.GetImageDrmFormatModifierPropertiesEXT == nil || len(r.dmabuf.Formats) == 0 {
+	if !r.dd.HasGetMemoryFdKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.dmabuf.Formats) == 0 {
 		return nil, errors.New("device cannot export dmabufs")
 	}
 	mods := r.exportModifiers(modifiers)

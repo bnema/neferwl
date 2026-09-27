@@ -224,7 +224,7 @@ func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
 // a window on another workspace or hidden is discarded, not presented.
 func TestShownByScene(t *testing.T) {
 	s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1}, {ID: 2, Hidden: true}}, Layers: []ports.SceneLayer{{ID: 5}}}
-	got := shownBy(s, map[ports.WindowID]uint64{1: 3, 2: 4, 5: 6, 9: 7})
+	got := (&Output{}).shownBy(s, map[ports.WindowID]uint64{1: 3, 2: 4, 5: 6, 9: 7})
 	if len(got) != 2 || got[1] != 3 || got[5] != 6 {
 		t.Fatalf("shows %v", got)
 	}

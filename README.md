@@ -98,6 +98,7 @@ The file has one `key = value` per line, and `#` starts a comment. A missing fil
 - [Configuration](docs/config.md): every key, action and default bind, and HDR.
 - [Desktop integration](docs/desktop.md): running commands, clipboard, X11 apps, idle and screen off, bars, and the state file for scripts.
 - [Headless mode](docs/headless.md): run without a screen, take screenshots and play input scripts.
+- [Performance](docs/performance.md): how to profile, the allocation guards, and reference numbers.
 
 ## Why not Rust?
 

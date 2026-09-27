@@ -34,33 +34,10 @@ func (g *region) boxRect() ports.Rect {
 
 // effectiveInput includes all committed, bounded subsurface regions.
 func (s *surface) effectiveInput() (bool, []ports.Rect) {
-	var rects []ports.Rect
-	var visit func(*surface, int, int)
-	visit = func(v *surface, x, y int) {
-		if v.has {
-			bounds := ports.Rect{W: v.content.LogicalW, H: v.content.LogicalH}
-			if v.inputAll {
-				if bounds.W > 0 && bounds.H > 0 {
-					rects = append(rects, ports.Rect{X: x, Y: y, W: bounds.W, H: bounds.H})
-				}
-			} else {
-				for _, r := range v.inputRects {
-					if r = intersectRect(r, bounds); r.W > 0 {
-						r.X += x
-						r.Y += y
-						rects = append(rects, r)
-					}
-				}
-			}
-		}
-		for _, item := range v.sub.layout {
-			visit(item.child, x+item.x, y+item.y)
-		}
-	}
 	if s.inputAll && len(s.sub.children) == 0 {
 		return true, nil
 	}
-	visit(s, 0, 0)
+	rects := s.appendEffectiveInput(nil, 0, 0)
 	if s.xdg != nil {
 		for i := range rects {
 			rects[i].X -= s.xdg.geometry.X
@@ -68,6 +45,31 @@ func (s *surface) effectiveInput() (bool, []ports.Rect) {
 		}
 	}
 	return false, rects
+}
+
+// appendEffectiveInput walks the committed tree without a per-call recursive
+// closure. The returned slice belongs to the caller (emitInput publishes it).
+func (s *surface) appendEffectiveInput(rects []ports.Rect, x, y int) []ports.Rect {
+	if s.has {
+		bounds := ports.Rect{W: s.content.LogicalW, H: s.content.LogicalH}
+		if s.inputAll {
+			if bounds.W > 0 && bounds.H > 0 {
+				rects = append(rects, ports.Rect{X: x, Y: y, W: bounds.W, H: bounds.H})
+			}
+		} else {
+			for _, r := range s.inputRects {
+				if r = intersectRect(r, bounds); r.W > 0 {
+					r.X += x
+					r.Y += y
+					rects = append(rects, r)
+				}
+			}
+		}
+	}
+	for _, item := range s.sub.layout {
+		rects = item.child.appendEffectiveInput(rects, x+item.x, y+item.y)
+	}
+	return rects
 }
 
 // resetInputEmission makes the next mapping publish its current region again.

@@ -6,6 +6,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -31,19 +34,40 @@ func main() {
 	os.Exit(runCode())
 }
 
-// tuneGC keeps the heap close to what neferwl uses: a compositor runs for
-// days and its per-frame garbage is small, so the default GOGC=100 (heap
-// grows to twice the live data) mostly holds freed memory. A soft limit
-// makes the collector work harder before the process gets large. GOGC and
-// GOMEMLIMIT set in the environment win.
+// tuneGC bounds the heap of a process that runs for days. The Go live heap
+// is small (tens of MB; buffers live in GPU and shared memory), so the
+// default GOGC=100 is kept: on the tiled playback test, GOGC=50 ran 13
+// collections for 91 ms of GC CPU where GOGC=100 ran 2 for 3 ms, for 2 MB
+// more heap. A soft limit makes the collector work harder before the
+// process gets large. GOGC and GOMEMLIMIT set in the environment win.
 func tuneGC() {
-	if os.Getenv("GOGC") == "" {
-		debug.SetGCPercent(50)
-	}
 	if os.Getenv("GOMEMLIMIT") == "" {
 		debug.SetMemoryLimit(256 << 20)
 	}
 }
+
+// servePprof exposes the runtime profiles under /debug/pprof/ until ctx is
+// done. It binds before returning so a bad address fails at startup.
+func servePprof(ctx context.Context, addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("--pprof: %w", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+	return nil
+}
+
 func runCode() int {
 	err := run()
 	if err == nil || errors.Is(err, flag.ErrHelp) || errors.Is(err, context.Canceled) {
@@ -123,6 +147,7 @@ func run() error {
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; input-motion logs every pointer motion)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
 	session := flags.Bool("session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services; notify systemd when ready")
+	pprofAddr := flags.String("pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return err
@@ -224,6 +249,13 @@ func run() error {
 			panic(p)
 		}
 	}()
+	if *pprofAddr != "" {
+		if err := servePprof(ctx, *pprofAddr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return err
+		}
+		log.Info().Str("addr", *pprofAddr).Msg("pprof")
+	}
 	start := time.Now()
 	log.Info().Strs("args", os.Args[1:]).Str("backend", *backend).Str("tty", os.Getenv("XDG_VTNR")).Str("session_type", os.Getenv("XDG_SESSION_TYPE")).Msg("run")
 	configLog := logging.For(ctx, "config")

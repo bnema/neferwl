@@ -75,6 +75,16 @@ type Renderer struct {
 	// storage buffer binding.
 	compose  composer
 	maxRange int
+	// Scratch belongs to the renderer goroutine; neither slice is published.
+	scratchDraws  []draw
+	scratchCovers []image.Rectangle
+	damage        damageRegion
+	damageSeen    map[ports.WindowID]bool
+	damageDrawn   map[ports.WindowID]heldWindow
+	frameDMAs     []*imported
+	frameAcquires map[*imported]*os.File
+	frameWaits    []vk.Semaphore
+	frameStages   []vk.PipelineStageFlags
 }
 
 func checked(name string, result vk.Result) error {
@@ -200,7 +210,7 @@ func New(width, height int) (r *Renderer, err error) {
 		}
 		// VK_KHR_external_semaphore_fd (enabled above): frames export
 		// their fence as a sync file.
-		r.syncFD = r.dd.GetSemaphoreFdKHR != nil
+		r.syncFD = r.dd.HasGetSemaphoreFdKHR()
 	}
 	r.dd.GetDeviceQueue(r.device, family, 0, &r.queue)
 	extent := vk.Extent3D{Width: uint32(width), Height: uint32(height), Depth: 1}

@@ -3,9 +3,9 @@ module github.com/bnema/neferwl
 go 1.27
 
 require (
-	github.com/bnema/purego v0.12.0-bnema.1
-	github.com/bnema/purego-libwayland v0.4.1
-	github.com/bnema/purego-vulkan v0.4.2
+	github.com/bnema/purego v0.13.0-bnema.1
+	github.com/bnema/purego-libwayland v0.5.0
+	github.com/bnema/purego-vulkan v0.5.0
 	github.com/bnema/wlturbo v0.2.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/rs/zerolog v1.35.1

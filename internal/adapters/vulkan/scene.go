@@ -24,7 +24,9 @@ type sceneWalk struct {
 
 // draws walks the scene into quads in paint order.
 func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, bounds: image.Rect(0, 0, r.width, r.height)}
+	clear(r.scratchDraws) // release references from longer earlier scenes
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, bounds: image.Rect(0, 0, r.width, r.height), draws: r.scratchDraws[:0]}
+	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
 	}
@@ -36,6 +38,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.popups(false)
 	w.layers(true)
 	w.popups(true)
+	r.scratchDraws = w.draws
 	return w.draws
 }
 
@@ -160,7 +163,7 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 // left out, so the surface below it still shows: a dmabuf that fails to
 // import (opaqueChildren pre-imports it) or an unreadable shm buffer.
 func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy int, clip image.Rectangle) []image.Rectangle {
-	var covers []image.Rectangle
+	covers := w.r.scratchCovers[:0]
 	for i := range content.Children {
 		ch := &content.Children[i]
 		if ch.Below || !ch.Opaque {
@@ -172,6 +175,7 @@ func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy int, cl
 		}
 		covers = append(covers, dst)
 	}
+	w.r.scratchCovers = covers
 	return covers
 }
 

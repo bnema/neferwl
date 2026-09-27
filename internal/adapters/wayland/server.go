@@ -71,6 +71,11 @@ type Server struct {
 	awaiting   map[string][]*wayland.Callback
 	frameDue   map[string]time.Time
 	frameReady chan struct{}
+	// Pacer scratch: periods is used on the display goroutine, while
+	// flipped and frameReports belong to pace and its synchronous Do call.
+	framePeriods map[string]time.Duration
+	flipped      map[string]bool
+	frameReports []ports.OutputPresented
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
 	held    []heldBuffer

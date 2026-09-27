@@ -9,6 +9,17 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
+func TestDueFramesAllocations(t *testing.T) {
+	s := &Server{frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{}}
+	now := time.Unix(100, 0)
+	s.dueFrames(now, nil)
+	if allocs := testing.AllocsPerRun(100, func() { s.dueFrames(now, nil) }); allocs != 0 {
+		t.Errorf("idle dueFrames: %.1f allocs, want 0", allocs)
+	} else {
+		t.Logf("idle dueFrames: %.1f allocs", allocs)
+	}
+}
+
 func TestFramePeriod(t *testing.T) {
 	for _, tc := range []struct {
 		milli int
