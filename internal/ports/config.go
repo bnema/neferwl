@@ -8,15 +8,17 @@ package ports
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
-// ScaleOnly marks an entry set by output.<name>.scale or .primary alone: it
+// ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
-	Name      string
-	Mode      string
-	Off       bool
-	Scale     float64
-	Primary   bool
-	ScaleOnly bool
+	Name          string
+	Mode          string
+	Off           bool
+	Scale         float64
+	Primary       bool
+	HDR           bool // opt-in; activation is not yet implemented
+	SDRBrightness int  // nits; default 203
+	ScaleOnly     bool
 }
 
 // Config is the parsed compositor configuration (see the config adapter for keys).
