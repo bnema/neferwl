@@ -147,24 +147,38 @@ type window struct {
 // sendConfigure sends w.last as xdg_toplevel + xdg_surface configure.
 func (w *window) sendConfigure() {
 	c := w.last
-	var states []byte
-	if c.Fullscreen {
-		states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateFullscreen))
-	}
-	if c.Activated {
-		states = binary.LittleEndian.AppendUint32(states, uint32(xdgshell.ToplevelStateActivated))
-	}
-	if !c.Fullscreen && !c.Floating && w.toplevel.Version() >= 2 {
-		// Tiled: the client must use exactly this size (no CSD shadows or rounding).
-		for _, st := range []xdgshell.ToplevelState{xdgshell.ToplevelStateTiledLeft, xdgshell.ToplevelStateTiledRight, xdgshell.ToplevelStateTiledTop, xdgshell.ToplevelStateTiledBottom} {
-			states = binary.LittleEndian.AppendUint32(states, uint32(st))
-		}
-	}
-	w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), states)
+	w.toplevel.SendConfigure(int32(c.Width), int32(c.Height), toplevelStates(c, w.toplevel.Version()))
 	s := w.xdg.server
 	s.serial++
 	w.xdg.resource.SendConfigure(s.serial)
 	w.xdg.serials = append(w.xdg.serials, s.serial)
+}
+
+// toplevelStates encodes the xdg_toplevel states of configure c.
+func toplevelStates(c ports.ConfigureWindow, version int32) []byte {
+	var states []byte
+	add := func(st xdgshell.ToplevelState) {
+		states = binary.LittleEndian.AppendUint32(states, uint32(st))
+	}
+	if c.Fullscreen {
+		add(xdgshell.ToplevelStateFullscreen)
+	}
+	if c.Activated {
+		add(xdgshell.ToplevelStateActivated)
+	}
+	if c.Fullscreen || c.Floating {
+		return states
+	}
+	// Tiled windows must use exactly this size. Maximized is the strict
+	// size state every client honours: Wine ignores a size change that only
+	// carries tiled states on a window it considers monitor-sized.
+	add(xdgshell.ToplevelStateMaximized)
+	if version >= 2 {
+		for _, st := range []xdgshell.ToplevelState{xdgshell.ToplevelStateTiledLeft, xdgshell.ToplevelStateTiledRight, xdgshell.ToplevelStateTiledTop, xdgshell.ToplevelStateTiledBottom} {
+			add(st)
+		}
+	}
+	return states
 }
 
 func (w *window) unmap() {
