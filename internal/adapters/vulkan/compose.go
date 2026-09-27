@@ -43,6 +43,8 @@ const (
 	flagExact          = 2
 	flagPQ             = 4
 	flagExtendedLinear = 8
+	flagYUV            = 16
+	flagP010           = 32
 )
 
 // pushConstants is struct Draw of the shaders (std430 push constant block).
@@ -85,8 +87,9 @@ func (r *Renderer) createComposer() error {
 	bindings := []vk.DescriptorSetLayoutBinding{
 		{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
 		{Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 2, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
 	}
-	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: 2, Bindings: &bindings[0]}
+	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: uint32(len(bindings)), Bindings: &bindings[0]}
 	if err := checked("vkCreateDescriptorSetLayout", d.CreateDescriptorSetLayout(r.device, &sli, nil, &c.setLayout)); err != nil {
 		return err
 	}
@@ -196,9 +199,9 @@ func (r *Renderer) createDummies() error {
 
 // newSet allocates a descriptor set from its own pool (the bindings lack
 // vkFreeDescriptorSets: the pool is destroyed with the object).
-func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer) (vk.DescriptorPool, vk.DescriptorSet, error) {
+func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer, chroma ...vk.ImageView) (vk.DescriptorPool, vk.DescriptorSet, error) {
 	d := r.dd
-	sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
+	sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 2}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
 	dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 2, PoolSizes: &sizes[0]}
 	var pool vk.DescriptorPool
 	if err := checked("vkCreateDescriptorPool", d.CreateDescriptorPool(r.device, &dpi, nil, &pool)); err != nil {
@@ -211,12 +214,17 @@ func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer) (vk.DescriptorPoo
 		return 0, 0, err
 	}
 	img := vk.DescriptorImageInfo{Sampler: r.compose.sampler, ImageView: view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}
+	uv := img
+	if len(chroma) > 0 {
+		uv.ImageView = chroma[0]
+	}
 	buf := vk.DescriptorBufferInfo{Buffer: buffer, Range: wholeSize}
 	writes := []vk.WriteDescriptorSet{
 		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img},
 		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 1, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, BufferInfo: &buf},
+		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 2, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &uv},
 	}
-	d.UpdateDescriptorSets(r.device, 2, &writes[0], 0, nil)
+	d.UpdateDescriptorSets(r.device, uint32(len(writes)), &writes[0], 0, nil)
 	return pool, set, nil
 }
 

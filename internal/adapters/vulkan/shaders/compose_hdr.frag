@@ -15,6 +15,7 @@ layout(push_constant) uniform Draw {
 
 layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(std430, set = 0, binding = 1) readonly buffer Pixels { uint pixels[]; };
+layout(set = 0, binding = 2) uniform sampler2D chromaTex;
 
 layout(location = 0) out vec4 color;
 
@@ -24,6 +25,8 @@ const uint flagOpaque = 1u;
 const uint flagExact = 2u;
 const uint flagPQ = 4u;
 const uint flagExtendedLinear = 8u;
+const uint flagYUV = 16u;
+const uint flagP010 = 32u;
 
 // The HDR composition target holds linear BT.709 in SDR-white units.
 vec3 decodeSRGB(vec3 v) {
@@ -40,6 +43,34 @@ vec3 pqToLinear709(vec3 v, float whiteNits) {
     ) / whiteNits;
 }
 
+// H.273 Y'CbCr 4:2:0 reconstruction in electrical (non-linear) light.
+// Type 0 places chroma at x=even luma and halfway between luma rows.
+// vec2 coordinates are normalized to the chroma image for linear filtering.
+vec4 sampleYUV(vec2 src) {
+    ivec2 size = textureSize(tex, 0);
+    vec2 lumaUV = src / vec2(size);
+    float y = texture(tex, lumaUV).r;
+    vec2 chromaUV = vec2((src.x + 0.5) / float(size.x), src.y / float(size.y));
+    vec2 cbcr = texture(chromaTex, chromaUV).rg;
+    bool tenBit = (d.misc.y & flagP010) != 0u;
+    bool limited = ((d.buf.w >> 8) & 255u) == 2u;
+    float maxCode = tenBit ? 1023.0 : 255.0;
+    // P010 stores its ten meaningful bits in the most significant bits.
+    if (tenBit) { y *= 65535.0 / 65472.0; cbcr *= 65535.0 / 65472.0; }
+    float yOff = limited ? (tenBit ? 64.0 : 16.0) / maxCode : 0.0;
+    float yScale = limited ? maxCode / (tenBit ? 876.0 : 219.0) : 1.0;
+    float cScale = limited ? maxCode / (tenBit ? 896.0 : 224.0) : 1.0;
+    float yy = (y - yOff) * yScale;
+    vec2 cc = (cbcr - vec2(tenBit ? 512.0/1023.0 : 128.0/255.0)) * cScale;
+    uint coeff = d.buf.w & 255u;
+    float kr = coeff == 4u ? 0.299 : coeff == 6u ? 0.2627 : 0.2126;
+    float kb = coeff == 4u ? 0.114 : coeff == 6u ? 0.0593 : 0.0722;
+    vec3 rgb = vec3(yy + 2.0*(1.0-kr)*cc.y,
+        yy - 2.0*kb*(1.0-kb)/(1.0-kr-kb)*cc.x - 2.0*kr*(1.0-kr)/(1.0-kr-kb)*cc.y,
+        yy + 2.0*(1.0-kb)*cc.x);
+    return vec4(rgb, 1.0);
+}
+
 // texel reads buffer pixel p, clamped to the buffer (clamp to edge).
 vec4 texel(ivec2 p) {
     p = clamp(p, ivec2(0), ivec2(d.buf.yz) - 1);
@@ -53,6 +84,8 @@ void main() {
     vec4 c;
     if (d.misc.x == modeSolid) {
         c = d.color;
+    } else if (d.misc.x == modeImage && (d.misc.y & flagYUV) != 0u) {
+        c = sampleYUV(src);
     } else if (d.misc.x == modeImage) {
         ivec2 size = textureSize(tex, 0);
         c = exact ? texelFetch(tex, clamp(ivec2(floor(src)), ivec2(0), size - 1), 0) : texture(tex, src / vec2(size));

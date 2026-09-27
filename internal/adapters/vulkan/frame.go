@@ -323,6 +323,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire bool) {
 	for _, im := range dmas {
 		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: colorRange}
+		if im.yuv {
+			b.SubresourceRange.AspectMask = aspectPlane0 | aspectPlane1
+		}
 		if acquire {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutShaderReadOnlyOptimal
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
