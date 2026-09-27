@@ -113,7 +113,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
-	if o.overlay != nil && o.scanout {
+	if o.hdrOn {
+		reason = "hdr"
+	} else if o.overlay != nil && o.scanout {
 		var w ports.SceneWindow
 		var c ports.SurfaceContent
 		w, c, reason = overlayCandidate(s, surfaces)

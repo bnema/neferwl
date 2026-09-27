@@ -365,6 +365,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {

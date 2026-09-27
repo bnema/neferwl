@@ -61,11 +61,13 @@ func objProps(fd int, obj, typ uint32) (map[string][2]uint64, error) {
 	return out, nil
 }
 
-// connectorHDRProps retains the property IDs and BT.2020 enum value for phase 2.
+// connectorHDRProps retains connector property IDs, enum values and the
+// original max bpc for SDR modesets and restoration.
 type connectorHDRProps struct {
 	Metadata, Colorspace, MaxBPC uint32
 	BT2020Value                  uint64
 	DefaultValue                 uint64 // connector Colorspace "Default" enum
+	HasDefault                   bool
 	MaxBPCValue                  uint64 // current value for eventual restoration
 }
 
@@ -82,7 +84,7 @@ func readConnectorHDRProps(fd int, props map[string][2]uint64) connectorHDRProps
 				out.Colorspace, out.BT2020Value = bt2020Enum(id, enums[:min(int(p.countEn), len(enums))])
 				for _, e := range enums[:min(int(p.countEn), len(enums))] {
 					if unix.ByteSliceToString(e.name[:]) == "Default" {
-						out.DefaultValue = e.value
+						out.DefaultValue, out.HasDefault = e.value, true
 					}
 				}
 			}
@@ -136,6 +138,8 @@ func detectHDR(m Monitor, p connectorHDRProps) hdrCapability {
 		c.Reason = "connector: no BT2020_RGB Colorspace"
 	case p.MaxBPC == 0:
 		c.Reason = "connector: max bpc below 10"
+	case !p.HasDefault:
+		c.Reason = "connector: no Default Colorspace"
 	default:
 		c.Capable = true
 	}

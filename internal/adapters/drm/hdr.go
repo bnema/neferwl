@@ -32,13 +32,31 @@ func hdrMetadata(m Monitor) hdrOutputMetadata {
 		WhitePoint:                   [2]uint16{unit(c.WhiteX, 50000), unit(c.WhiteY, 50000)},
 		MaxDisplayMasteringLuminance: unit(h.MaxLuminance, 1),
 		MinDisplayMasteringLuminance: unit(h.MinLuminance, 10000),
-		MaxCLL:                       unit(h.MaxLuminance, 1), MaxFALL: unit(func() float64 {
-			if h.MaxFrameAverage > 0 {
-				return h.MaxFrameAverage
-			}
-			return h.MaxLuminance
-		}(), 1),
+		MaxCLL:                       unit(h.MaxLuminance, 1), MaxFALL: unit(maxFrameAverage(h), 1),
 	}}
+}
+
+func maxFrameAverage(h HDRMetadata) float64 {
+	if h.MaxFrameAverage > 0 {
+		return h.MaxFrameAverage
+	}
+	return h.MaxLuminance
+}
+
+// hdrConnectorProps sets the connector's signal metadata on a modeset or restore.
+func (o *Output) hdrConnectorProps(req *atomicReq, enabled bool) {
+	p := o.hdrProps
+	if enabled {
+		req.set(o.conn.id, p.MaxBPC, 10)
+		req.set(o.conn.id, p.Colorspace, p.BT2020Value)
+		req.set(o.conn.id, p.Metadata, uint64(o.hdrBlob))
+		return
+	}
+	req.set(o.conn.id, p.MaxBPC, p.MaxBPCValue)
+	if p.HasDefault || p.Colorspace != 0 {
+		req.set(o.conn.id, p.Colorspace, p.DefaultValue)
+	}
+	req.set(o.conn.id, p.Metadata, 0)
 }
 
 func (m *hdrOutputMetadata) bytes() []byte {

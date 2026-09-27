@@ -122,7 +122,9 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64(nil)).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64{0}).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -158,6 +160,7 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -258,6 +261,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 	}
 	r.EXPECT().CursorBuffers(64).Return([2]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).Return(nil)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -350,6 +354,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {

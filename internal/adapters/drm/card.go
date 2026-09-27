@@ -101,11 +101,7 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		seen[conn.name] = true
 		mode := c.want.pickMode(conn)
 		if o := c.outputs[conn.name]; o != nil {
-			settings := c.want.HDR[conn.name]
-			if settings.SDRBrightness == 0 {
-				settings.SDRBrightness = ports.DefaultSDRBrightness
-			}
-			if o.mode == mode && o.hdrSettings == settings {
+			if !outputNeedsRestart(o, mode, c.want.HDR[conn.name]) {
 				continue
 			}
 			replaced = append(replaced, conn.name)
@@ -208,4 +204,17 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func normalizedHDRSettings(settings HDRSettings) HDRSettings {
+	if settings.SDRBrightness == 0 {
+		settings.SDRBrightness = ports.DefaultSDRBrightness
+	}
+	return settings
+}
+
+// outputNeedsRestart applies the same replacement path to mode and HDR
+// configuration changes; Release drops the old output before reopening it.
+func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
+	return o.mode != mode || o.hdrSettings != normalizedHDRSettings(settings)
 }

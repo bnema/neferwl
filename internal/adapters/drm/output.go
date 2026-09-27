@@ -34,7 +34,11 @@ type Output struct {
 	hdr         hdrCapability
 	hdrProps    connectorHDRProps
 	hdrSettings HDRSettings
-	log         zerowrap.Logger
+	// hdrFailed disables retries until this Output is replaced; hdrOn is
+	// the currently selected signal encoding, including on VT resume.
+	hdrOn, hdrFailed bool
+	hdrBlob          uint32
+	log              zerowrap.Logger
 	// Properties: CRTC and connector property IDs by name.
 	crtcProps map[string]uint32
 	connCrtc  uint32 // the connector's CRTC_ID property
@@ -287,10 +291,7 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if err := o.readProps(card.fd, pipe, card.taken, cursorSize(card.fd)); err != nil {
 		return nil, err
 	}
-	o.hdrSettings = card.want.HDR[c.name]
-	if o.hdrSettings.SDRBrightness == 0 {
-		o.hdrSettings.SDRBrightness = ports.DefaultSDRBrightness
-	}
+	o.hdrSettings = normalizedHDRSettings(card.want.HDR[c.name])
 	o.hdr = detectHDR(o.monitor, o.hdrProps)
 	log.Info().Str("component", "drm").Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
 	if o.hdrSettings.Enabled && !o.hdr.Capable {
@@ -479,7 +480,7 @@ func (o *Output) sendFormats() {
 		return
 	}
 	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
-	if o.scanout {
+	if o.scanout && !o.hdrOn {
 		f.Formats = o.scanoutFormats(o.sampled)
 	}
 	select {
@@ -540,6 +541,7 @@ func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 	req.set(o.crtc, o.crtcProps["ACTIVE"], boolValue(active))
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
+	o.hdrConnectorProps(req, o.hdrOn)
 	o.primaryProps(req, o.fbs[1-o.back])
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cursorState{})
@@ -724,7 +726,9 @@ func boolValue(b bool) uint64 {
 // composed.
 func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent) {
 	reason := "disabled"
-	if o.scanout {
+	if o.hdrOn {
+		reason = "hdr"
+	} else if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
 	}
 	if reason == "" {
@@ -796,6 +800,7 @@ func (o *Output) Close() {
 		o.cursor.props(req, o.crtc, cursorState{})
 	}
 	o.overlayProps(req, overlayWin{})
+	o.hdrConnectorProps(req, false)
 	req.set(o.crtc, o.vrrProp, 0)
 	s := o.saved
 	var blob uint32
@@ -837,6 +842,10 @@ func (o *Output) Close() {
 	if o.modeBlob != 0 {
 		_ = o.k.destroyBlob(o.modeBlob)
 		o.modeBlob = 0
+	}
+	if o.hdrBlob != 0 {
+		_ = o.k.destroyBlob(o.hdrBlob)
+		o.hdrBlob = 0
 	}
 	if o.cursor != nil {
 		o.cursor.free(o.k)
@@ -1249,6 +1258,35 @@ const (
 // next kind is tried on refusal. cause is why the
 // previous kind failed, for the log.
 func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error {
+	if o.hdrSettings.Enabled && o.hdr.Capable && !o.hdrFailed {
+		o.hdrOn = true
+		meta := hdrMetadata(o.monitor)
+		blob, err := o.k.createBlob(meta.bytes())
+		if err == nil {
+			o.hdrBlob = blob
+			r.SetHDR(float64(o.hdrSettings.SDRBrightness))
+			err = o.showImageKind(r, imagesDriver, nil)
+		}
+		if err == nil {
+			return nil
+		}
+		o.log.Warn().Err(err).Str("component", "drm").Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
+		o.hdrFailed = true
+		o.hdrOn = false
+		o.freeImages()
+		r.SetHDR(0)
+		_, _ = r.ExportTargets(0, nil)
+		if o.hdrBlob != 0 {
+			_ = o.k.destroyBlob(o.hdrBlob)
+			o.hdrBlob = 0
+		}
+	} else {
+		r.SetHDR(0)
+	}
+	return o.showImageKind(r, kind, cause)
+}
+
+func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) error {
 	for {
 		got, err := o.setupImages(r, kind, cause)
 		if err != nil {
@@ -1285,7 +1323,22 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 	err := cause
 	for ; kind <= imagesLinear; kind++ {
 		mods := []uint64(nil)
-		if kind == imagesLinear {
+		if o.hdrOn {
+			for _, f := range o.primary.formats {
+				if f.Format == fourccXR30 {
+					mods = append(mods, f.Modifier)
+				}
+			}
+			if len(mods) == 0 {
+				return kind, fmt.Errorf("primary plane has no XRGB2101010 modifiers")
+			}
+			if kind == imagesLinear {
+				if !slices.Contains(mods, uint64(0)) {
+					continue
+				}
+				mods = []uint64{0}
+			}
+		} else if kind == imagesLinear {
 			mods = []uint64{0}
 		}
 		if err = o.exportImages(r, mods); err == nil {
@@ -1304,7 +1357,11 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 	}
 	for i := range bufs {
 		if err == nil {
-			o.fbs[i], err = o.k.addFB(&bufs[i], fourccXRGB)
+			format := uint32(fourccXRGB)
+			if o.hdrOn {
+				format = fourccXR30
+			}
+			o.fbs[i], err = o.k.addFB(&bufs[i], format)
 		}
 		bufs[i].Planes[0].File.Close()
 	}
