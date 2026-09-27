@@ -1,5 +1,7 @@
 package ports
 
+import "image"
+
 // DefaultSDRBrightness is the BT.2408 SDR reference white in HDR, in nits.
 const DefaultSDRBrightness = 203
 
@@ -14,10 +16,12 @@ const DefaultSDRBrightness = 203
 // ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
-	Name          string
-	Mode          string
-	Off           bool
-	Scale         float64
+	Name  string
+	Mode  string
+	Off   bool
+	Scale float64
+	// Pos is an explicit logical placement set at runtime; nil uses automatic layout.
+	Pos           *image.Point
 	Primary       bool
 	HDR           bool // opt-in to HDR10 on capable outputs
 	SDRBrightness int  // nits; default DefaultSDRBrightness

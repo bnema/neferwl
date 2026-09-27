@@ -14,7 +14,7 @@ type screen struct {
 	mon             *Monitor
 	scale, cfgScale float64
 	primary         bool
-	x               int  // logical left edge in the global layout
+	x, y            int  // logical origin in the global layout
 	off             bool // turned off by a client (output power management)
 	layers          []ports.LayerSurface
 	placed          []ports.SceneLayer
@@ -24,7 +24,7 @@ func (s *screen) name() string { return s.info.Name }
 
 func (s *screen) placement() ports.OutputPlacement {
 	o := s.mon.Output()
-	return ports.OutputPlacement{Info: s.info, X: s.x, Width: o.W, Height: o.H, Scale: s.scale, Primary: s.primary}
+	return ports.OutputPlacement{Info: s.info, X: s.x, Y: s.y, Width: o.W, Height: o.H, Scale: s.scale, Primary: s.primary}
 }
 
 // setScale resizes the logical output; layer placement follows.
@@ -55,10 +55,30 @@ func (c *Core) order() {
 	focused := c.cur()
 	slices.SortStableFunc(c.screens, func(a, b *screen) int { return rank(a) - rank(b) })
 	c.focusScreen = slices.Index(c.screens, focused)
+	// Explicitly placed outputs reserve their position first; auto-placed
+	// outputs follow the rightmost explicit edge in configuration order.
 	x := 0
 	for _, s := range c.screens {
-		s.x = x
-		x += s.mon.Output().W
+		for _, o := range c.cfg.Outputs {
+			if o.Name == s.name() && o.Pos != nil {
+				s.x, s.y = o.Pos.X, o.Pos.Y
+				x = max(x, s.x+s.mon.Output().W)
+				break
+			}
+		}
+	}
+	for _, s := range c.screens {
+		explicit := false
+		for _, o := range c.cfg.Outputs {
+			if o.Name == s.name() && o.Pos != nil {
+				explicit = true
+				break
+			}
+		}
+		if !explicit {
+			s.x, s.y = x, 0
+			x += s.mon.Output().W
+		}
 	}
 }
 
