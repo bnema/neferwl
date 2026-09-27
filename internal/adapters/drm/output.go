@@ -294,9 +294,9 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	}
 	o.hdrSettings = normalizedHDRSettings(card.want.HDR[c.name])
 	o.hdr = detectHDR(o.monitor, o.hdrProps)
-	log.Info().Str("component", "drm").Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
+	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
 	if o.hdrSettings.Enabled && !o.hdr.Capable {
-		log.Warn().Str("component", "drm").Str("connector", c.name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
+		log.Warn().Str("connector", c.name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
 	}
 	o.tearing = card.async && !card.want.NoTearing
 	if !card.want.NoVRR {
@@ -835,7 +835,14 @@ func (o *Output) Close() {
 	}
 	// Best effort: at exit the card may already belong to another session.
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
-		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("restore crtc")
+		ev := o.log.Debug()
+		if o.hdrOn {
+			// The display may stay in HDR mode until the next modeset.
+			ev = o.log.Warn()
+		}
+		ev.Err(err).Str("connector", o.conn.name).Bool("hdr", o.hdrOn).Msg("restore crtc")
+	} else if o.hdrOn {
+		o.log.Info().Str("connector", o.conn.name).Msg("HDR10 off")
 	}
 	if blob != 0 {
 		_ = o.k.destroyBlob(blob)
@@ -1286,6 +1293,7 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 					_ = o.k.destroyBlob(oldBlob)
 				}
 			}
+			o.log.Info().Str("connector", o.conn.name).Int("sdr_brightness", o.hdrSettings.SDRBrightness).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Msg("HDR10 on")
 			return nil
 		}
 		if created && oldBlob != 0 {
@@ -1293,7 +1301,7 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 			_ = o.k.destroyBlob(o.hdrBlob)
 			o.hdrBlob = oldBlob
 		}
-		o.log.Warn().Err(err).Str("component", "drm").Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
 		o.hdrFailed = true
 		o.hdrOn = false
 		o.freeImages()
