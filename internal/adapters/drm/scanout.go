@@ -185,6 +185,11 @@ func (o *Output) scanoutFormats(sampled []ports.DMABufFormat) []ports.DMABufForm
 	return out
 }
 
+// isYUVFormat identifies video formats which are always composed, never scanned out.
+func isYUVFormat(format uint32) bool {
+	return format == fourccNV12 || format == fourccP010
+}
+
 // isTenBit identifies the packed 2101010 formats supported by the renderer.
 func isTenBit(format uint32) bool {
 	switch format {
@@ -195,6 +200,8 @@ func isTenBit(format uint32) bool {
 }
 
 const (
+	fourccNV12 = 'N' | 'V'<<8 | '1'<<16 | '2'<<24
+	fourccP010 = 'P' | '0'<<8 | '1'<<16 | '0'<<24
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccARGB = 'A' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccXBGR = 'X' | 'B'<<8 | '2'<<16 | '4'<<24

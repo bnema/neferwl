@@ -749,6 +749,9 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 	reason := "disabled"
 	if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
+		if reason == "" && isYUVFormat(c.DMABuf.Format) {
+			reason = "yuv"
+		}
 		if o.hdrOn && reason == "" {
 			switch {
 			case !c.Color.IsPQ2020():

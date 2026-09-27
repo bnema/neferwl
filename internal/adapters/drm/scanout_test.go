@@ -142,6 +142,8 @@ func TestHDRScanoutDecision(t *testing.T) {
 	c.Color = ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
 	c.DMABuf.Format = fourccXRGB
 	check("hdr_format")
+	c.DMABuf.Format = fourccP010
+	check("yuv")
 	c.DMABuf.Format = fourccXR30
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(uint32(77), nil).Once()
 	check("")
