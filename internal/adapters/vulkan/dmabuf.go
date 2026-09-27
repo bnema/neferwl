@@ -41,6 +41,12 @@ var dmabufFormats = []struct {
 	{fourcc('X', 'R', '2', '4'), vk.FormatB8g8r8a8Unorm, true},
 	{fourcc('A', 'B', '2', '4'), vk.FormatR8g8b8a8Unorm, false},
 	{fourcc('X', 'B', '2', '4'), vk.FormatR8g8b8a8Unorm, true},
+	// Vulkan's A2R10G10B10/A2B10G10R10 packed UNORM formats match
+	// DRM's little-endian 2101010 layout; do not use an sRGB view for PQ.
+	{fourcc('A', 'R', '3', '0'), vk.FormatA2r10g10b10UnormPack32, false},
+	{fourcc('X', 'R', '3', '0'), vk.FormatA2r10g10b10UnormPack32, true},
+	{fourcc('A', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, false},
+	{fourcc('X', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, true},
 }
 
 func fourcc(a, b, c, d byte) uint32 {

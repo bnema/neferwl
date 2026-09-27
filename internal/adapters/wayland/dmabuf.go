@@ -376,11 +376,13 @@ func (b *dmabufBuffer) size() (int, int) { return b.buf.Width, b.buf.Height }
 
 // content hands the renderer the buffer itself: nothing is copied.
 func (b *dmabufBuffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
-	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR
+	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR || b.buf.Format == fourccXR30 || b.buf.Format == fourccXB30
 	return ports.SurfaceContent{ID: id, Width: b.buf.Width, Height: b.buf.Height, Opaque: opaque, DMABuf: b.buf}, true
 }
 
 const (
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccXBGR = 'X' | 'B'<<8 | '2'<<16 | '4'<<24
+	fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
+	fourccXB30 = 'X' | 'B'<<8 | '3'<<16 | '0'<<24
 )
