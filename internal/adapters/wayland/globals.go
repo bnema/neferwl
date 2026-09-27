@@ -118,8 +118,9 @@ func (c subcompositor) GetSubsurface(r *wayland.Subcompositor, id uint32, w, par
 	}
 	state.kind = roleSubsurface
 	state.role = func(bool) {}
-	state.sub = subState{role: sub, parent: up, children: state.sub.children}
+	state.sub = subState{role: sub, parent: up, children: state.sub.children, layout: state.sub.layout, pendingLayout: state.sub.pendingLayout, synced: true}
 	up.sub.children = append(up.sub.children, state)
+	up.sub.pendingLayout = append(up.sub.pendingLayout, childLayout{child: state})
 	// The child follows its root window's output and scale.
 	state.sendScale()
 	sub.OnDestroy = func() {
@@ -138,7 +139,13 @@ type subsurface struct{ surface *surface }
 
 func (subsurface) Destroy(*wayland.Subsurface) {}
 func (s subsurface) SetPosition(_ *wayland.Subsurface, x, y int32) {
-	s.surface.sub.pendX, s.surface.sub.pendY, s.surface.sub.moved = int(x), int(y), true
+	for i := range s.surface.sub.parent.sub.pendingLayout {
+		item := &s.surface.sub.parent.sub.pendingLayout[i]
+		if item.child == s.surface {
+			item.x, item.y = int(x), int(y)
+			break
+		}
+	}
 }
 func (s subsurface) PlaceAbove(r *wayland.Subsurface, sibling *wayland.Surface) {
 	s.restack(r, sibling, true)
@@ -146,11 +153,16 @@ func (s subsurface) PlaceAbove(r *wayland.Subsurface, sibling *wayland.Surface) 
 func (s subsurface) PlaceBelow(r *wayland.Subsurface, sibling *wayland.Surface) {
 	s.restack(r, sibling, false)
 }
-func (subsurface) SetSync(*wayland.Subsurface)   {}
-func (subsurface) SetDesync(*wayland.Subsurface) {}
+func (s subsurface) SetSync(*wayland.Subsurface) { s.surface.sub.synced = true }
+func (s subsurface) SetDesync(*wayland.Subsurface) {
+	was := s.surface.effectivelySynced()
+	s.surface.sub.synced = false
+	if was && !s.surface.effectivelySynced() {
+		s.surface.flushDesync()
+	}
+}
 
-// restack moves the surface next to a sibling or its parent. The order
-// applies at once rather than on the parent commit.
+// restack changes only the pending layout of the parent.
 func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, above bool) {
 	me := s.surface
 	p := me.sub.parent
@@ -162,55 +174,45 @@ func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, abo
 		r.PostError(uint32(wayland.SubsurfaceErrorBadSurface), "not a sibling or the parent")
 		return
 	}
-	list := p.sub.children
-	for i, ch := range list {
-		if ch == me {
-			list = append(list[:i:i], list[i+1:]...)
+	list := p.sub.pendingLayout
+	var item childLayout
+	for _, entry := range list {
+		if entry.child == me {
+			item = entry
 			break
 		}
 	}
+	list = removeLayout(list, me)
+	at := len(list)
 	if other == p {
-		// Relative to the parent: just above it or just below it.
-		me.sub.below = !above
+		item.below = !above
 		if above {
-			list = append([]*surface{me}, list...)
-		} else {
-			list = append(list, me)
+			for i, entry := range list {
+				if !entry.below {
+					at = i
+					break
+				}
+			}
 		}
-		// Keep below children first so the flattening stays ordered.
-		sortBelowFirst(list)
 	} else {
-		me.sub.below = other.sub.below
-		at := len(list)
-		for i, ch := range list {
-			if ch == other {
-				at = i
+		for i, entry := range list {
+			if entry.child == other {
+				at, item.below = i, entry.below
 				if above {
 					at++
 				}
 				break
 			}
 		}
-		list = append(list[:at:at], append([]*surface{me}, list[at:]...)...)
 	}
-	p.sub.children = list
-	me.redraw()
+	list = append(list, childLayout{})
+	copy(list[at+1:], list[at:])
+	list[at] = item
+	p.sub.pendingLayout = list
 }
 
 // sortBelowFirst moves children below their parent ahead of those above,
 // keeping each group's order.
-func sortBelowFirst(list []*surface) {
-	below := make([]*surface, 0, len(list))
-	above := make([]*surface, 0, len(list))
-	for _, ch := range list {
-		if ch.sub.below {
-			below = append(below, ch)
-		} else {
-			above = append(above, ch)
-		}
-	}
-	copy(list, append(below, above...))
-}
 
 // region keeps the bounding box of the rectangles added: pointer
 // confinement is the only user, and subtracted areas are ignored.

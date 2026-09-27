@@ -79,8 +79,10 @@ type Server struct {
 	started time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
-	fifoSurfaces map[*surface]struct{}
-	lastFlip     map[string]time.Time
+	fifoSurfaces  map[*surface]struct{}
+	applyingGraph bool
+	graphFeedback []graphFeedback
+	lastFlip      map[string]time.Time
 	// tokens are the issued xdg-activation tokens (activation.go).
 	tokens   map[string]activationToken
 	surfaces map[*server.Resource]*surface

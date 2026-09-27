@@ -198,38 +198,64 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // update is a surface's pending state taken out by a commit that waits.
 type update struct {
-	attached       bool
-	buffer         *wayland.Buffer
-	scale          int
-	async          bool
-	kind           uint32
-	callbacks      []*wayland.Callback
-	vp             *viewport
-	vpW, vpH       int32
-	vpSet          bool
+	attached      bool
+	buffer        *wayland.Buffer
+	scale         int
+	async         bool
+	kind          uint32
+	callbacks     []*wayland.Callback
+	vp            *viewport
+	vpW, vpH      int32
+	vpSet         bool
 	vpSrc         [4]server.Fixed
 	vpCrop        bool
-	moves          []childMove
-	xdg            *xdgSurface
-	geometry       ports.Rect
-	cons           *constraint
-	region         *ports.Rect
-	layer          *layerSurface
-	layerNext      layerState
-	barrier        bool
-	wait           bool
-	at             time.Time
-	feedback       []*presentationtime.WpPresentationFeedback
-	sync           *commitSync
-	color          SurfaceColor
+	layout        []childLayout
+	deps          []*update
+	owner         *surface
+	synced, bound bool
+	xdg           *xdgSurface
+	geometry      ports.Rect
+	cons          *constraint
+	region        *ports.Rect
+	layer         *layerSurface
+	layerNext     layerState
+	barrier       bool
+	wait          bool
+	at            time.Time
+	feedback      []*presentationtime.WpPresentationFeedback
+	sync          *commitSync
+	color         SurfaceColor
 	representation surfaceRepresentation
-	damage         []ports.Rect
-	bufDamage      []ports.Rect
+	damage        []ports.Rect
+	bufDamage     []ports.Rect
 }
 
-type childMove struct {
+type childLayout struct {
 	child *surface
 	x, y  int
+	below bool
+}
+
+func removeLayout(layout []childLayout, child *surface) []childLayout {
+	for i := 0; i < len(layout); i++ {
+		if layout[i].child == child {
+			layout = append(layout[:i:i], layout[i+1:]...)
+			i--
+		}
+	}
+	return layout
+}
+
+func sameLayout(a, b []childLayout) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // takePending moves the pending state into an update: one-shot state is
@@ -241,14 +267,10 @@ func (s *surface) takePending() update {
 	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
-		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
+		copy := *v
+		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = &copy, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}
-	for _, ch := range s.sub.children {
-		if ch.sub.moved {
-			u.moves = append(u.moves, childMove{ch, ch.sub.pendX, ch.sub.pendY})
-			ch.sub.moved = false
-		}
-	}
+	u.layout = append([]childLayout(nil), s.sub.pendingLayout...)
 	if s.xdg != nil {
 		u.xdg, u.geometry = s.xdg, s.xdg.pendingGeometry
 	}
@@ -271,15 +293,14 @@ func (s *surface) putPending(u update) {
 	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
 	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
 	s.pendingFeedback, s.pendingSync = u.feedback, u.sync
-	if u.vp != nil && s.viewport == u.vp {
+	if u.vp != nil {
+		s.viewport = u.vp
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
 		u.vp.pendingSrc, u.vp.pendingCrop = u.vpSrc, u.vpCrop
+	} else {
+		s.viewport = nil
 	}
-	for _, m := range u.moves {
-		if m.child.sub.parent == s {
-			m.child.sub.pendX, m.child.sub.pendY, m.child.sub.moved = m.x, m.y, true
-		}
-	}
+	s.sub.pendingLayout = u.layout
 	if u.xdg != nil && s.xdg == u.xdg {
 		u.xdg.pendingGeometry = u.geometry
 	}
@@ -289,11 +310,6 @@ func (s *surface) putPending(u update) {
 	if u.layer != nil && s.layer == u.layer {
 		u.layer.pending = u.layerNext
 	}
-}
-
-// mustWait reports whether the pending commit cannot apply now.
-func (s *surface) mustWait(now time.Time) bool {
-	return len(s.queue) > 0 || (s.pendingWait && s.barrier) || s.tooEarly(s.pendingTime, now) || !s.syncReady(s.pendingSync)
 }
 
 // tooEarly reports whether content applied now would show before at:
@@ -322,22 +338,42 @@ func (s *Server) nextRefresh(name string, now time.Time) time.Time {
 
 // queueUpdate queues the pending commit until it can apply.
 func (s *surface) queueUpdate() {
-	s.queue = append(s.queue, s.takePending())
+	u := s.takePending()
+	u.owner, u.synced = s, s.effectivelySynced()
+	for _, ch := range s.sub.children {
+		for i := len(ch.queue) - 1; i >= 0; i-- {
+			candidate := ch.queue[i]
+			if candidate.synced && !candidate.bound {
+				candidate.bound = true
+				u.deps = append(u.deps, candidate)
+				break
+			}
+		}
+	}
+	s.queue = append(s.queue, &u)
 	s.server.fifoSurfaces[s] = struct{}{}
 	s.server.wakePacer()
 }
 
 // applyUpdate applies a queued update, keeping the requests made since.
-func (s *surface) applyUpdate(u update) {
+func (s *surface) applyUpdate(u *update) {
 	// A buffer destroyed while queued (a swapchain resize) is skipped: the
 	// surface keeps its content, and is not unmapped behind the client.
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
 		u.buffer, u.attached = nil, false
 	}
 	later := s.takePending()
-	s.putPending(u)
+	originalViewport := s.viewport
+	originalLayout := s.sub.pendingLayout
+	s.putPending(*u)
 	s.applyCommit()
 	s.putPending(later)
+	if originalViewport != nil {
+		originalViewport.pendingW, originalViewport.pendingH, originalViewport.pendingSet = later.vpW, later.vpH, later.vpSet
+		originalViewport.pendingSrc, originalViewport.pendingCrop = later.vpSrc, later.vpCrop
+	}
+	s.viewport = originalViewport
+	s.sub.pendingLayout = originalLayout
 }
 
 // dropQueue discards the queued updates of a destroyed surface or role.
@@ -359,13 +395,30 @@ func (s *surface) dropQueue() {
 		if u.sync != nil {
 			continue // explicit sync: the release point replaced release
 		}
-		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() {
+		if u.buffer != nil && !sameBuffer(u.buffer, s.current) && !released[u.buffer.Resource] && u.buffer.Resource.Alive() && !s.bufferQueuedElsewhere(u.buffer) {
 			released[u.buffer.Resource] = true
 			u.buffer.SendRelease()
 		}
 	}
 	s.queue = nil
 	delete(s.server.fifoSurfaces, s)
+}
+
+func (s *surface) bufferQueuedElsewhere(b *wayland.Buffer) bool {
+	for _, other := range s.server.surfaces {
+		if other == s {
+			continue
+		}
+		if sameBuffer(other.current, b) {
+			return true
+		}
+		for _, u := range other.queue {
+			if sameBuffer(u.buffer, b) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // setBarrier applies a committed set_barrier.
@@ -422,18 +475,18 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		}
 		for len(surf.queue) > 0 && !surf.destroyed {
 			u := surf.queue[0]
-			if u.wait && surf.barrier {
+			if u.synced || !u.graphReady(now) {
 				break
 			}
-			if !surf.syncReady(u.sync) {
-				break
+			s.applyingGraph = true
+			s.graphFeedback = s.graphFeedback[:0]
+			u.applyGraph()
+			s.applyingGraph = false
+			surf.redraw()
+			for _, fb := range s.graphFeedback {
+				fb.surf.commitFeedback(fb.pending, fb.fresh)
 			}
-			if surf.tooEarly(u.at, now) {
-				wait = min(wait, u.at.Sub(s.nextRefresh(name, now))+time.Millisecond)
-				break
-			}
-			surf.queue = surf.queue[1:]
-			surf.applyUpdate(u)
+			s.graphFeedback = s.graphFeedback[:0]
 		}
 		if surf.barrier {
 			wait = min(wait, deadline.Sub(now))
@@ -443,6 +496,67 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		}
 	}
 	return max(wait, time.Millisecond), len(s.fifoSurfaces) > 0
+}
+
+func (s *surface) effectivelySynced() bool {
+	for p := s; p != nil; p = p.sub.parent {
+		if p.sub.parent != nil && p.sub.synced {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *surface) flushDesync() {
+	if !s.effectivelySynced() {
+		for _, u := range s.queue {
+			if u.synced && !u.bound {
+				u.synced = false
+			}
+		}
+	}
+	for _, ch := range s.sub.children {
+		ch.flushDesync()
+	}
+	s.server.wakePacer()
+}
+
+func (u *update) graphReady(now time.Time) bool {
+	s := u.owner
+	for _, prev := range s.queue {
+		if prev == u {
+			break
+		}
+		if !prev.graphReady(now) {
+			return false
+		}
+	}
+	if u.wait && s.barrier || !s.syncReady(u.sync) || s.tooEarly(u.at, now) {
+		return false
+	}
+	for _, dep := range u.deps {
+		if !dep.owner.destroyed && !dep.graphReady(now) {
+			return false
+		}
+	}
+	return true
+}
+
+func (u *update) applyGraph() {
+	s := u.owner
+	for len(s.queue) > 0 && s.queue[0] != u {
+		s.queue[0].applyGraph()
+	}
+	for _, dep := range u.deps {
+		if !dep.owner.destroyed {
+			dep.applyGraph()
+		}
+	}
+	if len(s.queue) == 0 || s.queue[0] != u {
+		return
+	}
+	s.queue = s.queue[1:]
+	s.applyUpdate(u)
 }
 
 // sameBuffer reports whether two wrappers are the same wl_buffer.

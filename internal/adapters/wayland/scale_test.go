@@ -219,7 +219,7 @@ func TestBufferScaleLogicalSize(t *testing.T) {
 	if w, h := st.logicalSize(200, 100); w != 100 || h != 50 {
 		t.Fatal(w, h)
 	}
-	st.viewport = &viewport{surface: st, destW: 7, destH: 3, dest: true}
+	st.committedViewport = &viewport{surface: st, destW: 7, destH: 3, dest: true}
 	if w, h := st.logicalSize(200, 100); w != 7 || h != 3 {
 		t.Fatal(w, h)
 	}

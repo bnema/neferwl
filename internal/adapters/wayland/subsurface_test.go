@@ -10,6 +10,149 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// A parent's dependency is fixed at the commit request, not when its
+// acquire point fires. A later child update cannot slip into that graph.
+func TestSubsurfaceAcquireCapturesChildAtRequest(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	c := h.c
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, h.surf)
+	registerProtocol(t, c, sub)
+	a := shmBuffer(t, c)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, a, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	root := h.dmabuf()
+	h.commit(root, 1, 2)
+	// This commit came after the parent request, while it was still waiting.
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := h.content(40 * time.Millisecond); ok && len(got.Children) != 0 {
+		t.Fatalf("child published before parent's acquire: %+v", got.Children)
+	}
+	h.fire(1)
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-h.contents:
+			if got.ID != h.win || got.DMABuf == nil {
+				continue
+			}
+			if len(got.Children) != 1 || got.Children[0].Width != 1 {
+				t.Fatalf("parent captured later child update: %+v", got.Children)
+			}
+			return
+		case <-deadline:
+			t.Fatal("parent graph did not publish")
+		}
+	}
+}
+
+// A synchronized child cannot publish until a parent commits; position and
+// order are part of that same parent update.
+func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	rootWindow, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	buf := shmBuffer(t, c)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestSetPosition, int32(4), int32(5))
+	requestProtocol(t, c, sub, wayland.SubsurfaceRequestPlaceBelow, root)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		t.Fatalf("child/layout published before parent commit: %+v", got)
+	case <-time.After(40 * time.Millisecond):
+	}
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if got.ID != rootWindow.ID || len(got.Children) != 1 || got.Children[0].X != 4 || got.Children[0].Y != 5 || !got.Children[0].Below {
+			t.Fatalf("parent publication: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no parent publication")
+	}
+	select {
+	case got := <-contents:
+		t.Fatalf("extra publication: %+v", got)
+	case <-time.After(40 * time.Millisecond):
+	}
+}
+
+func TestSubsurfaceDesyncFlushesOnlyEffectiveTransition(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	parent, child := c.AllocateID(), c.AllocateID()
+	for _, id := range []uint32{parent, child} {
+		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, id)
+		registerProtocol(t, c, id)
+	}
+	parentSub, childSub := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, parentSub, parent, root)
+	registerProtocol(t, c, parentSub)
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, childSub, child, parent)
+	registerProtocol(t, c, childSub)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, parent, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, parent, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, childSub, wayland.SubsurfaceRequestSetDesync)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if len(got.Children) != 0 {
+			t.Fatalf("ineffective desync published: %+v", got.Children)
+		}
+	case <-time.After(40 * time.Millisecond):
+	}
+	requestProtocol(t, c, parentSub, wayland.SubsurfaceRequestSetDesync)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-contents:
+			if len(got.Children) == 2 {
+				return
+			}
+		case <-deadline:
+			t.Fatal("desync did not flush inherited child update")
+		}
+	}
+}
+
 // A toplevel with a subsurface (how Firefox draws with the GPU) sends one
 // content: its own buffer, the child at its committed position and the
 // window geometry.

@@ -23,8 +23,9 @@ const (
 )
 
 type surface struct {
-	wl       *wayland.Surface
-	viewport *viewport
+	wl                *wayland.Surface
+	viewport          *viewport
+	committedViewport *viewport
 	// bufferScale is committed state; pendingScale is set by set_buffer_scale.
 	bufferScale, pendingScale int
 	kind                      roleKind
@@ -63,7 +64,7 @@ type surface struct {
 	pendingTime                 time.Time
 	barrier                     bool
 	barrierAt                   time.Time
-	queue                       []update
+	queue                       []*update
 	// contentType is the wp_content_type_v1; contentKind the committed type.
 	contentType              *contentTypeHandler
 	contentKind, pendingKind uint32
@@ -101,13 +102,11 @@ const maxDamageRects = 32
 // are ordered bottom to top, below marks children under their parent.
 type subState struct {
 	// role is the live wl_subsurface, nil when the surface has none.
-	role         *wayland.Subsurface
-	parent       *surface
-	children     []*surface
-	x, y         int // committed position, from the parent origin
-	pendX, pendY int
-	moved        bool // a position waits for the parent commit
-	below        bool
+	role                  *wayland.Subsurface
+	parent                *surface
+	children              []*surface // structural children
+	pendingLayout, layout []childLayout
+	synced                bool // explicit synchronization mode
 }
 
 // root is the top of the surface's subsurface tree.
@@ -146,8 +145,8 @@ func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	c.ID = id
 	c.Color = s.outputColor()
 	c.Children = nil
-	for _, ch := range s.sub.children {
-		ch.appendTree(&c.Children, ch.sub.x, ch.sub.y, ch.sub.below)
+	for _, item := range s.sub.layout {
+		item.child.appendTree(&c.Children, item.x, item.y, item.below)
 	}
 	if s.xdg != nil {
 		c.Geometry = s.xdg.geometry
@@ -159,17 +158,17 @@ func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 // appendTree flattens a subsurface at (x, y) from the root: its children
 // below it, itself, then its children above.
 func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
-	for _, ch := range s.sub.children {
-		if ch.sub.below {
-			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+	for _, item := range s.sub.layout {
+		if item.below {
+			item.child.appendTree(out, x+item.x, y+item.y, below)
 		}
 	}
 	if s.has {
 		*out = append(*out, ports.Subsurface{X: x, Y: y, Below: below, SurfaceContent: s.contentWithColor()})
 	}
-	for _, ch := range s.sub.children {
-		if !ch.sub.below {
-			ch.appendTree(out, x+ch.sub.x, y+ch.sub.y, below)
+	for _, item := range s.sub.layout {
+		if !item.below {
+			item.child.appendTree(out, x+item.x, y+item.y, below)
 		}
 	}
 }
@@ -199,7 +198,15 @@ func (s *surface) detach() {
 			break
 		}
 	}
+	p.sub.pendingLayout = removeLayout(p.sub.pendingLayout, s)
+	p.sub.layout = removeLayout(p.sub.layout, s)
+	for _, u := range p.queue {
+		u.layout = removeLayout(u.layout, s)
+	}
 	s.sub.parent = nil
+	// Parent updates cannot make a detached child's bound commits visible.
+	s.dropQueue()
+	s.flushDesync()
 	p.redraw()
 	s.sendScale()
 }
@@ -222,8 +229,11 @@ func (s *surface) Destroy(*wayland.Surface) {
 	s.detach()
 	for _, ch := range s.sub.children {
 		ch.sub.parent = nil
+		ch.dropQueue()
+		ch.flushDesync()
 	}
 	s.sub.children = nil
+	s.sub.layout, s.sub.pendingLayout = nil, nil
 	for _, cb := range s.callbacks {
 		cb.Destroy()
 	}
@@ -266,13 +276,10 @@ func (s *surface) Commit(*wayland.Surface) {
 		return
 	}
 	s.takeSyncPoints()
-	// A commit behind a fifo barrier, a future timestamp or an acquire
-	// point without a fence yet waits (fifo.go).
-	if s.mustWait(time.Now()) {
-		s.queueUpdate()
-		return
-	}
-	s.applyCommit()
+	// Each request creates an ordered content update. A synchronized update
+	// can only be reached through a parent's committed dependency graph.
+	s.queueUpdate()
+	s.server.tickFifo(time.Now(), nil)
 }
 
 // applyCommit makes the pending state current.
@@ -297,6 +304,10 @@ func (s *surface) applyCommit() {
 	s.representation = s.pendingRepresentation
 	if s.viewport != nil {
 		s.viewport.commit()
+		v := *s.viewport
+		s.committedViewport = &v
+	} else {
+		s.committedViewport = nil
 	}
 	cs := s.pendingSync
 	s.pendingSync = nil
@@ -357,14 +368,9 @@ func (s *surface) applyCommit() {
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
 	}
-	// Subsurface positions apply on the parent commit.
-	moved := false
-	for _, ch := range s.sub.children {
-		if ch.sub.moved {
-			ch.sub.x, ch.sub.y, ch.sub.moved = ch.sub.pendX, ch.sub.pendY, false
-			moved = true
-		}
-	}
+	// The layout belongs to this update, not to the latest requests.
+	moved := !sameLayout(s.sub.layout, s.sub.pendingLayout)
+	s.sub.layout = append(s.sub.layout[:0], s.sub.pendingLayout...)
 	geometry := false
 	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
 		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
@@ -374,7 +380,7 @@ func (s *surface) applyCommit() {
 		s.xdg.window.afterCommit()
 	}
 	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
-	if drawn {
+	if drawn && !s.server.applyingGraph {
 		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source {
 			s.committed = damage{full: true}
 		}
@@ -382,7 +388,11 @@ func (s *surface) applyCommit() {
 	}
 	fb := s.pendingFeedback
 	s.pendingFeedback = nil
-	s.commitFeedback(fb, fresh)
+	if s.server.applyingGraph {
+		s.server.graphFeedback = append(s.server.graphFeedback, graphFeedback{s, fb, fresh})
+	} else {
+		s.commitFeedback(fb, fresh)
+	}
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
 	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {

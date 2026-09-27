@@ -209,16 +209,16 @@ func (v *viewport) commit() {
 
 // source returns buffer-pixel crop coordinates, precomputed at commit.
 func (s *surface) source(bw, bh int) ([4]float32, bool) {
-	if s.viewport == nil || !s.viewport.crop {
+	if s.committedViewport == nil || !s.committedViewport.crop {
 		return [4]float32{}, false
 	}
-	v := s.viewport.src
+	v := s.committedViewport.src
 	scale := float32(max(s.bufferScale, 1)) / 256
 	return [4]float32{float32(v[0]) * scale, float32(v[1]) * scale, float32(v[2]) * scale, float32(v[3]) * scale}, true
 }
 
 func (s *surface) validateViewport(bw, bh int) bool {
-	v := s.viewport
+	v := s.committedViewport
 	if v == nil || !v.crop {
 		return true
 	}
@@ -244,12 +244,12 @@ func (s *surface) viewportError(code viewporter.WpViewportError, message string)
 // logicalSize is the surface size in logical pixels: the viewport
 // destination, else the buffer divided by its integer buffer scale.
 func (s *surface) logicalSize(bw, bh int) (int, int) {
-	if s.viewport != nil {
-		if s.viewport.dest {
-			return int(s.viewport.destW), int(s.viewport.destH)
+	if s.committedViewport != nil {
+		if s.committedViewport.dest {
+			return int(s.committedViewport.destW), int(s.committedViewport.destH)
 		}
-		if s.viewport.crop {
-			return int(s.viewport.src[2]) / 256, int(s.viewport.src[3]) / 256
+		if s.committedViewport.crop {
+			return int(s.committedViewport.src[2]) / 256, int(s.committedViewport.src[3]) / 256
 		}
 	}
 	scale := max(s.bufferScale, 1)
