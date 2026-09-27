@@ -16,17 +16,45 @@
 
 ## Why NeferWL
 
-NeferWL has no animations, themes, built-in bar or wallpaper, by design. The compositor stays small so the CPU and GPU go to your terminal and your games.
+NeferWL exists because I wanted a compositor that puts performance first and picks up new Wayland protocols and kernel features as soon as they land. Games get the whole GPU: direct scanout, tearing, VRR, explicit sync and HDR are in from the start.
+
+The design is deliberately small, and it will stay small: no animations, no themes, no built-in bar or wallpaper. Anything that adds latency or work per frame is left out. NeferWL uses about 40–80 MB of RAM with two 4K monitors and almost no CPU while the screen does not change.
+
+## Features
+
+### Windows and workspaces
 
 - **Terminal first.** NeferWL opens your terminal at startup. Bars, launchers and notifications are external clients such as Waybar, fuzzel and mako.
-- **Column tiling.** Up to `max-columns` windows share the screen, as in Sway. Past that, new columns scroll to the right as in Niri, or split in a spiral with `overflow = fixed`. Each workspace can set its own rules.
+- **Column tiling.** Up to `max-columns` windows share the screen, as in Sway. Past that, new columns scroll to the right as in Niri, or split in a spiral with `overflow = fixed`. Each monitor and workspace can set its own rules.
 - **Custom workspaces.** Numbered workspaces appear and disappear as you use them. Named workspaces are outside the numbered list and shown through a bind. **Slots** declare a workspace's columns (width and command): NeferWL starts the apps in the background and puts each window in its column.
-- **Multi-monitor.** Each monitor has its own workspaces. When you unplug a monitor, its workspaces move to another one; when you plug it back, they return, and your focus stays where it was.
-- **Games.** A fullscreen game is shown without composition, with tearing and VRR when the game asks for them. Details are in [the performance path](#the-performance-path).
-- **Low footprint.** About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
-- **Live config.** One `key = value` file. Every key applies when you save, keyboard layout included, and windows stay open.
+- **Window moves.** Move a column or a single window to another workspace or monitor, stack a window into the neighbor column or pull it out, and cycle column widths.
+- **Vim keys.** Every arrow bind has an `hjkl` twin.
+- **Live config.** One `key = value` file. Every key applies when you save, keyboard layout included, and windows stay open. `neferwl validate-config` checks a file before you use it.
 
-An example config:
+### Displays
+
+- **Multi-monitor.** Each monitor has its own workspaces. When you unplug a monitor, its workspaces move to another one; when you plug it back, they return, and your focus stays where it was.
+- **HDR.** HDR10 output on capable displays. HDR games, browsers and video players show their full range, and the desktop stays SDR at a brightness you choose. See [HDR](docs/config.md#hdr).
+- **Scaling.** Fractional scale per output, sent to clients through `wp_fractional_scale_v1` and `wp_viewporter` so text stays sharp. Zooming with a bind saves the new scale to your config.
+- **Output tools.** `wlr-output-management` lets tools such as wlr-randr and kanshi change modes, scale and position.
+
+### Games
+
+A fullscreen game is shown without composition, with tearing and VRR when the game asks for them. Steam and Wine run through xwayland-satellite. Details are in [the performance path](#the-performance-path).
+
+### Desktop integration
+
+- **Bars.** `ext-workspace-v1` for Waybar and ironbar, plus layer shell.
+- **Screenshots.** grim and slurp work through screencopy and image copy capture.
+- **Clipboard.** Clipboard, primary selection and clipboard managers such as cliphist. See [Clipboard](#clipboard).
+- **Idle.** swayidle and wlopm turn screens off; a video or a game keeps them on. See [Idle and screen off](#idle-and-screen-off).
+- **systemd session.** The NeferWL session starts `graphical-session.target`, so bars, portals and XDG autostart start and stop with it.
+- **Focus requests.** `xdg_activation_v1` lets a launcher or notification focus the window it opens.
+- **Cursors and input tools.** Client cursor shapes (`wp_cursor_shape_v1`) and virtual keyboards for tools such as wtype.
+- **Scripting.** A JSON state file lists outputs, workspaces and windows. See [State for scripts](#state-for-scripts).
+- **Headless mode.** Runs without a screen, takes screenshots and plays input scripts, for tests and quick checks. See [Try it](#try-it-headless).
+
+### Example config
 
 ```text
 keyboard.layout = fr
@@ -47,7 +75,7 @@ bind.cmd+d = workspace dev
 
 The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `terminal.auto-open = first` opens it once on the initial numbered workspace; `all` opens it on each visible empty workspace without slots, and `off` disables automatic opening. `--no-terminal` overrides automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR`, and `$VISUAL`.
 
-### The performance path
+## The performance path
 
 These protocols and kernel features cut copies, waits and latency between the app and the screen:
 
@@ -161,6 +189,8 @@ startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 exec wlopm --off '*'
 ```
 
+## Bars
+
 NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
 
 ## State for scripts
@@ -211,8 +241,6 @@ Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hy
 - **Speed.** With care for allocations and the garbage collector, input, rendering and buffer handling run close to native code.
 
 I like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, [purego-libwayland](https://github.com/bnema/purego-libwayland), [purego-vulkan](https://github.com/bnema/purego-vulkan) and [wlturbo](https://github.com/bnema/wlturbo), and other Go projects can use them.
-
-Go has no borrow checker, so the compiler does not catch memory and concurrency mistakes as Rust's does. NeferWL compensates with strict ownership (one goroutine owns each piece of state), the race detector on every test run, and protocol tests against real Wayland clients.
 
 ## Developing the bindings
 
