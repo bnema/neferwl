@@ -188,7 +188,7 @@ func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-
 		case heads := <-inventory:
 			state.heads = heads
 		case req := <-apply:
-			if active != nil && active.req != nil || len(queue) > 0 {
+			if active != nil || len(queue) > 0 {
 				if !reply(req.ID, fmt.Errorf("output apply already pending")) {
 					return
 				}

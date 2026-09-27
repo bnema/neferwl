@@ -106,6 +106,8 @@ func (p *applyProgress) scanned(running map[string]<-chan error) applyDecision {
 		}
 		if !p.completed[instance] {
 			p.ready[name] = instance
+		} else {
+			delete(p.ready, name)
 		}
 	}
 	return p.complete()
