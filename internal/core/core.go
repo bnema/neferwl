@@ -37,8 +37,7 @@ type Channels struct {
 	// State, when set, receives a snapshot for scripts whenever it changes,
 	// latest first (capacity 1, drained like Scenes).
 	State chan ports.State
-	// Terminal, when set, keeps a window on every workspace on screen: an
-	// empty one gets the configured terminal (the terminal is the desktop).
+	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
 }
 type binding struct {
@@ -75,7 +74,8 @@ type Core struct {
 	sentPending bool
 	// terms are the terminals spawned for empty workspaces, by SlotEnv
 	// token, until their window maps.
-	terms map[string]*termSpawn
+	terms                 map[string]*termSpawn
+	firstTerminalResolved bool
 	// clients holds the app ID and PID of mapped windows, for State.
 	clients   map[WindowID]ports.WindowMapped
 	sentState ports.State
@@ -222,7 +222,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			return fmt.Errorf("invalid workspace %q", ws.Name)
 		}
 		seen[ws.Name] = true
-		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, Hidden: ws.Hidden, MaxColumns: ws.MaxColumns, Overflow: o})
+		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o})
 	}
 	specs, err := parseSlots(cfg.Workspaces)
 	if err != nil {
@@ -236,6 +236,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	for _, s := range c.screens {
 		c.settings(s.mon)
 	}
+	c.settleGuests()
 	c.applyConfigScales()
 	return nil
 }

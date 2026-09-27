@@ -8,7 +8,7 @@ import "slices"
 // except the first. Output-wide settings apply to every workspace.
 //
 // Named workspaces come from config and are never removed while configured.
-// A hidden one is not numbered and not reachable by up/down: only its
+// Each named workspace is not numbered and not reachable by up/down: only its
 // `workspace <name>` bind shows it.
 type Monitor struct {
 	// Name is the connector; Key identifies the physical monitor (make,
@@ -32,7 +32,6 @@ type NamedWorkspace struct {
 	Name string
 	// Monitor is the home monitor (connector or key); "" for the first one.
 	Monitor    string
-	Hidden     bool
 	MaxColumns int
 	Overflow   Overflow
 }
@@ -612,11 +611,8 @@ func (m *Monitor) applyNamed() {
 	})
 }
 
-// SetNamed applies the named workspaces from config. New numbered ones are
-// inserted above the trailing empty workspace (never before the first one).
-// A workspace dropped from config becomes a normal one; a dropped hidden one
-// hands its windows to the active numbered workspace. The workspace on
-// screen stays on screen.
+// SetNamed applies bind-only named workspaces from config. Removed named
+// workspaces hand their windows to the active numbered workspace.
 func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 	cur := m.Current()
 	want := map[string]NamedWorkspace{}
@@ -660,20 +656,10 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 			w = m.newWorkspace()
 			w.Name = s.Name
 		}
-		i := indexOf(m.Workspaces, w)
-		switch {
-		case s.Hidden:
-			if i >= 0 {
-				m.removeNumbered(i)
-			}
-			nextHidden = append(nextHidden, w)
-		case i < 0:
-			at := max(len(m.Workspaces)-1, 1)
-			m.Workspaces = append(m.Workspaces[:at], append([]*Workspace{w}, m.Workspaces[at:]...)...)
-			if at <= m.Active {
-				m.Active++
-			}
+		if i := indexOf(m.Workspaces, w); i >= 0 {
+			m.removeNumbered(i)
 		}
+		nextHidden = append(nextHidden, w)
 	}
 	m.hidden = nextHidden
 	if m.back != nil && !m.has(m.back) {

@@ -16,7 +16,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `keyboard.layout`, `.variant`, `.options` | empty | xkb names, e.g. `fr`, `caps:escape` |
 | `keyboard.repeat-rate` / `repeat-delay` | `25` / `600` | Key repeat per second / delay in ms |
 | `keyboard.cmd` | `super` | Modifier that `cmd` means in binds: `super`, `alt` or `ctrl` |
-| `terminal` | `foot` | Opened at startup and by `spawn-terminal` |
+| `terminal` | `$TERMINAL`, or `foot` if unset/empty | Command for automatic requests and `spawn-terminal`; whitespace-separated |
+| `terminal.auto-open` | `first` | `first`: one request for the initial numbered workspace per session; `all`: visible empty workspaces without slots, with retry protection; `off`: none. `--no-terminal` disables automatic requests for this run only |
 | `startup` | none | Command run once at session start; repeat the key for more |
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
@@ -28,8 +29,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `workspace.<name>.hidden` | `off` | Reachable only through its bind, which toggles it |
-| `workspace.<name>.monitor` | focused | Home monitor: connector (`DP-2`) or monitor key |
+| `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
+| `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |

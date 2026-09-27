@@ -8,9 +8,8 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// The terminal is the desktop: a workspace on screen is never empty. When
-// one is, core spawns the configured terminal with a SlotEnv token, and the
-// window carrying it fills that workspace, wherever the focus is by then.
+// Automatic terminal requests use a SlotEnv token to place their windows
+// on the intended workspace even if focus changes before mapping.
 
 // termRetry is the least time between two terminals for one workspace: a
 // terminal that fails, or maps and exits at once, is not respawned in a loop.
@@ -22,7 +21,9 @@ type termSpawn struct {
 }
 
 // keepsTerminal reports whether empty workspaces get a terminal.
-func (c *Core) keepsTerminal() bool { return c.ch.Terminal && len(c.cfg.Terminal.Command) > 0 }
+func (c *Core) keepsTerminal() bool {
+	return c.ch.Terminal && c.cfg.Terminal.AutoOpen != "off" && len(c.cfg.Terminal.Command) > 0
+}
 
 // fillEmpty returns the terminals to spawn for empty workspaces on screen.
 // Workspaces with slots are left to them.
@@ -41,10 +42,20 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 	var reqs []ports.SpawnRequest
 	for _, s := range c.screens {
 		w := s.mon.Current()
+		if c.cfg.Terminal.AutoOpen == "first" {
+			if c.firstTerminalResolved || s != c.cur() || s.name() == "" {
+				continue
+			}
+			c.firstTerminalResolved = true
+			if w != s.mon.Workspaces[0] || !w.empty() || c.hasSlots(w) {
+				continue
+			}
+		}
 		if s.name() == "" || !w.empty() || c.hasSlots(w) || c.termPending(w) || now.Sub(w.termAt) < termRetry {
 			continue
 		}
 		token := rand.Text()
+		c.firstTerminalResolved = true
 		w.termAt = now
 		c.terms[token] = &termSpawn{w: w, at: now}
 		reqs = append(reqs, ports.SpawnRequest{Argv: slices.Clone(c.cfg.Terminal.Command), Env: []string{ports.SlotEnv + "=" + token}})
