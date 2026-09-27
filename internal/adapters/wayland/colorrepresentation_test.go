@@ -99,3 +99,71 @@ func TestColorRepresentationErrors(t *testing.T) {
 		})
 	}
 }
+
+// A queued commit snapshots representation; later requests must not rewrite it.
+func TestColorRepresentationQueuedCommit(t *testing.T) {
+	s, c, _ := colorServer(t)
+	manager := bindProtocol(t, c, "wp_color_representation_manager_v1")
+	registerProtocol(t, c, manager)
+	comp := bindProtocol(t, c, "wl_compositor")
+	registerProtocol(t, c, comp)
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	obj := c.AllocateID()
+	requestProtocol(t, c, manager, cr.WpColorRepresentationManagerV1RequestGetSurface, obj, wl)
+	registerProtocol(t, c, obj)
+	requestProtocol(t, c, obj, cr.WpColorRepresentationSurfaceV1RequestSetCoefficientsAndRange, uint32(coefficient709), uint32(rangeLimited))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() {
+		for res, surf := range s.surfaces {
+			if res.ID() == wl {
+				surf.queueUpdate()
+			}
+		}
+	})
+	requestProtocol(t, c, obj, cr.WpColorRepresentationSurfaceV1RequestSetCoefficientsAndRange, uint32(coefficient2020), uint32(rangeFull))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() {
+		for res, surf := range s.surfaces {
+			if res.ID() != wl {
+				continue
+			}
+			// The pacer may have already applied the queued update.
+			if len(surf.queue) == 1 {
+				if surf.queue[0].representation.coefficients != coefficient709 {
+					t.Errorf("queued representation: %+v", surf.queue[0].representation)
+				}
+				u := surf.queue[0]
+				surf.queue = nil
+				surf.applyUpdate(u)
+			}
+			if surf.representation.coefficients != coefficient709 || surf.pendingRepresentation.coefficients != coefficient2020 {
+				t.Errorf("applied=%+v pending=%+v", surf.representation, surf.pendingRepresentation)
+			}
+		}
+	})
+}
+
+func TestColorRepresentationRejectsRGBWithYUVCoefficients(t *testing.T) {
+	_, c, _ := colorServer(t)
+	manager := bindProtocol(t, c, "wp_color_representation_manager_v1")
+	registerProtocol(t, c, manager)
+	comp := bindProtocol(t, c, "wl_compositor")
+	registerProtocol(t, c, comp)
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	obj := c.AllocateID()
+	requestProtocol(t, c, manager, cr.WpColorRepresentationManagerV1RequestGetSurface, obj, wl)
+	registerProtocol(t, c, obj)
+	buf := shmBuffer(t, c)
+	requestProtocol(t, c, wl, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	requestProtocol(t, c, obj, cr.WpColorRepresentationSurfaceV1RequestSetCoefficientsAndRange, uint32(coefficient709), uint32(rangeLimited))
+	requestProtocol(t, c, wl, wayland.SurfaceRequestCommit)
+	expectProtocolError(t, c, obj, uint32(cr.WpColorRepresentationSurfaceV1ErrorPixelFormat))
+}
