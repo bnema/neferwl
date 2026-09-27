@@ -110,6 +110,7 @@ type WorkspaceOutput struct {
 }
 type WorkspaceInfo struct {
 	ID             uint64
+	Configured     string // stable configured name; empty for dynamic workspaces
 	Name           string
 	Index          int // zero-based vertical coordinate
 	Active, Hidden bool

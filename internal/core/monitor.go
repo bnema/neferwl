@@ -1,11 +1,6 @@
 package core
 
-import (
-	"slices"
-	"sync/atomic"
-)
-
-var nextWorkspaceID atomic.Uint64
+import "slices"
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
 // are positions: Cmd+N targets Workspaces[N-1]. An empty workspace always sits
@@ -26,6 +21,7 @@ type Monitor struct {
 	shown      *Workspace // hidden workspace on screen, nil for Workspaces[Active]
 	back       *Workspace // where a named workspace toggle returns to
 	template   Workspace
+	nextID     *uint64 // shared by the monitors of one Core; owner goroutine only
 	named      []NamedWorkspace
 	// followMove shows the target workspace after a move to it.
 	followMove bool
@@ -45,7 +41,11 @@ type NamedWorkspace struct {
 func NewMonitor() *Monitor { return newMonitor("", "") }
 
 func newMonitor(name, key string) *Monitor {
-	m := &Monitor{Name: name, Key: key}
+	return newMonitorWithIDs(name, key, new(uint64))
+}
+
+func newMonitorWithIDs(name, key string, nextID *uint64) *Monitor {
+	m := &Monitor{Name: name, Key: key, nextID: nextID}
 	m.normalize()
 	return m
 }
@@ -125,7 +125,8 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.floatFocus, w.home, w.origin, w.back = nil, nil, false, "", nil, origPlace{}
-	w.ID = nextWorkspaceID.Add(1)
+	(*m.nextID)++
+	w.ID = *m.nextID
 	return &w
 }
 

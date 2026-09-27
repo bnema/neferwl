@@ -11,14 +11,16 @@ import (
 
 func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	cfg := config.Defaults()
+	cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev", Hidden: true})
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 32)
 	snapshots := make(chan ports.Workspaces, 1)
 	scenes := make(chan []ports.Scene, 1)
+	state := make(chan ports.State, 1)
 	spawn := make(chan ports.SpawnRequest, 8)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn})
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, State: state, Scenes: scenes, Spawn: spawn})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +38,12 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	for len(first.Outputs) == 0 {
 		first = receive(t, snapshots)
 	}
-	if len(first.Outputs) != 1 || len(first.Outputs[0].Workspaces) != 1 || !first.Outputs[0].Workspaces[0].Active {
+	if len(first.Outputs) != 1 || len(first.Outputs[0].Workspaces) < 2 || !first.Outputs[0].Workspaces[0].Active {
 		t.Fatal(first)
+	}
+	hidden := first.Outputs[0].Workspaces[len(first.Outputs[0].Workspaces)-1]
+	if hidden.Configured != "dev" || !hidden.Hidden {
+		t.Fatalf("configured hidden workspace: %+v", hidden)
 	}
 	id := first.Outputs[0].Workspaces[0].ID
 	client <- ports.WindowMapped{ID: 1}
@@ -51,7 +57,14 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 	if len(two.Outputs) != 2 || two.Outputs[0].Workspaces[0].ID != id {
 		t.Fatal(two)
 	}
+	// Activation on B also focuses B, without disturbing A's active workspace.
+	bID := two.Outputs[1].Workspaces[0].ID
+	client <- ports.WorkspaceActivate{ID: bID}
+	for receive(t, state).Output != "B" {
+	}
 	client <- ports.WorkspaceActivate{ID: spare}
+	for receive(t, state).Output != "A" {
+	}
 	active := receive(t, snapshots)
 	if !active.Outputs[0].Workspaces[1].Active || active.Outputs[1].Workspaces[0].Active != true {
 		t.Fatal(active)

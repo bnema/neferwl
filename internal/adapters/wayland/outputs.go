@@ -140,7 +140,9 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 		r.OnDestroy = func() { o.resources = removeItem(o.resources, r) }
 		o.sendAll(r)
 		for _, m := range s.workspaceManagers {
-			m.outputBound(o.name())
+			if m.outputBound(o.name()) {
+				m.res.SendDone()
+			}
 		}
 	})
 	if err != nil {

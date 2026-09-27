@@ -186,7 +186,7 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 		s = c.screens[0]
 		s.info = info
 	} else {
-		s = &screen{info: info, mon: newMonitor(info.Name, info.Key())}
+		s = &screen{info: info, mon: newMonitorWithIDs(info.Name, info.Key(), &c.nextWorkspaceID)}
 		c.screens = append(c.screens, s)
 	}
 	s.mon.Name, s.mon.Key = info.Name, info.Key()

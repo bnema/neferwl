@@ -47,6 +47,7 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	nextWorkspaceID  uint64
 	ch               Channels
 	cfg              ports.Config
 	screens          []*screen
@@ -289,7 +290,8 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints and state must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{screens: []*screen{{mon: NewMonitor(), scale: 1, cfgScale: 1}}, slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
@@ -719,12 +721,13 @@ func (c *Core) Run(ctx context.Context) error {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
 			case ports.WorkspaceActivate:
-				for _, sc := range c.screens {
+				for i, sc := range c.screens {
 					if sc.name() == "" {
 						continue
 					}
 					for _, w := range sc.mon.all() {
 						if w.ID == v.ID {
+							c.focusScreen = i
 							sc.mon.show(w)
 							break
 						}

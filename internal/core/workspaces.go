@@ -1,14 +1,15 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
 	"reflect"
 	"strconv"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // publishWorkspaces describes the numbered vertical stack and configured hidden
-// workspaces. Empty numbered spares are hidden unless currently shown; unlike
-// the script State snapshot, hidden named workspaces remain addressable.
+// workspaces. Config-hidden named workspaces and empty numbered spares are
+// hidden unless shown; unlike State, hidden named workspaces remain addressable.
 func (c *Core) publishWorkspaces() {
 	if c.ch.Workspaces == nil {
 		return
@@ -25,7 +26,7 @@ func (c *Core) publishWorkspaces() {
 			if name == "" {
 				name = strconv.Itoa(i + 1)
 			}
-			out.Workspaces = append(out.Workspaces, ports.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: w.empty() && m.Current() != w})
+			out.Workspaces = append(out.Workspaces, ports.WorkspaceInfo{ID: w.ID, Name: name, Index: i, Active: m.Current() == w, Hidden: m.Current() != w && (m.isHidden(w) || w.empty()), Configured: w.Name})
 		}
 		snapshot.Outputs = append(snapshot.Outputs, out)
 	}

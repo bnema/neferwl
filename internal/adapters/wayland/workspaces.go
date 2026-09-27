@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"reflect"
-	"strconv"
 
 	"github.com/bnema/neferwl/internal/ports"
 	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
@@ -86,14 +85,14 @@ func (m *workspaceManager) outputResource(name string) *wayland.Output {
 	}
 	return nil
 }
-func (m *workspaceManager) outputBound(name string) {
+func (m *workspaceManager) outputBound(name string) bool {
 	g := m.groups[name]
 	if g == nil || !g.res.Alive() {
-		return
+		return false
 	}
 	r := m.outputResource(name)
 	if r == g.output {
-		return
+		return false
 	}
 	if g.output != nil && g.output.Alive() {
 		g.res.SendOutputLeave(g.output)
@@ -102,7 +101,7 @@ func (m *workspaceManager) outputBound(name string) {
 	if r != nil {
 		g.res.SendOutputEnter(r)
 	}
-	m.res.SendDone()
+	return true
 }
 func (s *Server) forwardWorkspaces(ctx context.Context) {
 	for {
@@ -182,6 +181,9 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 				h = &workspaceHandle{res: r}
 				m.handles[w.ID] = h
 				m.res.SendWorkspace(r)
+				if w.Configured != "" {
+					r.SendId(w.Configured)
+				}
 				r.SendCapabilities(uint32(ext.ExtWorkspaceHandleV1WorkspaceCapabilitiesActivate))
 			}
 			if h.group != out.Name {
@@ -209,9 +211,6 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 						state |= uint32(ext.ExtWorkspaceHandleV1StateHidden)
 					}
 					h.res.SendState(state)
-				}
-				if h.info.ID == 0 && w.Name != "" {
-					h.res.SendId(strconv.FormatUint(w.ID, 10))
 				}
 				h.info = w
 			}
