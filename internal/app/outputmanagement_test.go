@@ -12,8 +12,15 @@ import (
 )
 
 func TestOutputSettingsRelay(t *testing.T) {
-	for _, failure := range []bool{false, true} {
-		t.Run(map[bool]string{false: "ready", true: "rollback"}[failure], func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		failure error
+	}{
+		{"ready", nil},
+		{"ready error rollback", errors.New("modeset failed")},
+		{"timeout rollback", errTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			state := newOutputOverrides(ports.Config{}, false)
@@ -43,8 +50,8 @@ func TestOutputSettingsRelay(t *testing.T) {
 				t.Fatal("replied before backend ready")
 			default:
 			}
-			if failure {
-				backendDone <- errors.New("modeset failed")
+			if tc.failure != nil {
+				backendDone <- tc.failure
 				rollback := <-configs
 				if len(rollback.Config.Outputs) != 0 {
 					t.Fatalf("rollback: %+v", rollback)
@@ -56,13 +63,13 @@ func TestOutputSettingsRelay(t *testing.T) {
 			}
 			select {
 			case r := <-replies:
-				if (r.Err != nil) != failure {
-					t.Fatalf("result: %+v", r)
+				if !errors.Is(r.Err, tc.failure) || (r.Err != nil) != (tc.failure != nil) {
+					t.Fatalf("result: %+v, want %v", r, tc.failure)
 				}
 			case <-time.After(2 * time.Second):
 				t.Fatal("missing reply")
 			}
-			if failure && len(state.effective().Outputs) != 0 {
+			if tc.failure != nil && len(state.effective().Outputs) != 0 {
 				t.Fatal("override survived failure")
 			}
 			reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.25}}}}
