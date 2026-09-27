@@ -175,6 +175,30 @@ func TestModesetReportsConfirmedHDR(t *testing.T) {
 	}
 }
 
+// Power off withdraws HDR and scanout formats: clients must not target an
+// inactive output.
+func TestPowerOffWithdrawsHDRAndFormats(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.cursor = nil
+	o.hdrOn, o.scanout = true, true
+	o.hdr = hdrCapability{MaxLuminance: 1000}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
+	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}}
+	ch := make(chan ports.OutputFormats, 1)
+	o.formats = ch
+	if err := o.powerOff(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-ch:
+		if f.HDR != nil || len(f.Formats) != 0 {
+			t.Fatalf("power-off report: %+v", f)
+		}
+	default:
+		t.Fatal("no report after power off")
+	}
+}
+
 // A plane without IN_FORMATS (driver without modifiers) scans out its
 // GETPLANE formats, linear.
 func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {

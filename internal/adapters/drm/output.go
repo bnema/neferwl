@@ -480,6 +480,8 @@ func (o *Output) powerOff() error {
 	}
 	o.off, o.vrrOn = true, false
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
+	// An inactive output offers neither HDR nor direct scanout.
+	o.sendFormats()
 	return nil
 }
 
