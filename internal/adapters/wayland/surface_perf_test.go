@@ -60,6 +60,19 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			if &first.Children[0] == &srv.contents[1].Children[0] {
 				t.Fatal("rebuild reused previously published children storage")
 			}
+			// Rebuilding a changed child's immutable snapshot must have a
+			// constant allocation count, regardless of tree size.
+			child := root.sub.children[count-1]
+			changed := func() {
+				child.version++
+				root.treeDirty = true
+				root.redraw()
+			}
+			if allocs := testing.AllocsPerRun(100, changed); allocs > 4 {
+				t.Errorf("%d children: %.1f allocs/changed publication; want <=4", count, allocs)
+			} else {
+				t.Logf("%d children: %.1f allocs/changed publication", count, allocs)
+			}
 		})
 	}
 }
