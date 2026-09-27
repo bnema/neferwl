@@ -74,7 +74,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
 		}
 		c := surfaces[w.ID]
-		if c.DMABuf != nil && c.Opaque && len(c.Children) == 0 {
+		if c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 {
 			pick = w
 			continue
 		}

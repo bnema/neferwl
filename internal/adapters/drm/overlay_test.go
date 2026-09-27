@@ -45,6 +45,11 @@ func TestOverlayCandidate(t *testing.T) {
 	if w, _, reason := overlayCandidate(s, c); reason != "" || w.ID != 2 {
 		t.Fatalf("candidate %v %q", w.ID, reason)
 	}
+	c[2] = ports.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{Format: fourccNV12}}
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("YUV overlay reason %q", reason)
+	}
+	_, c = overlayScene()
 	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{W: 10, H: 10}})
 	if _, _, reason := overlayCandidate(s, c); reason != "window_above" {
 		t.Fatalf("reason %q", reason)

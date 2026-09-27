@@ -13,7 +13,7 @@ import (
 
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output.
-func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, formats chan<- ports.OutputFormats, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, captured)
 	inventory := ports.OutputHeads{}
 	for i, size := range sizes {
@@ -30,7 +30,7 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, events chan<
 		}
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, Log: log, NewRenderer: newRenderer, Name: name, Presented: presented, Captured: captured}
+		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: hdr, Formats: formats, Log: log, NewRenderer: newRenderer, Name: name, Presented: presented, Captured: captured}
 		set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest) error {
 			return headless.Run(octx, opts, sc, cc, cu, cap)
 		})

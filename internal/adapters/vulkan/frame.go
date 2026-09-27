@@ -170,8 +170,11 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	tg := r.target()
 	hdr := r.hdrNits > 0 && len(r.targets) > 0
+	if r.hdrNits > 0 && !hdr {
+		return nil, fmt.Errorf("HDR composition requires an exported target")
+	}
 	if hdr {
-		tg = &r.own
+		tg = &r.hdrOwn
 	}
 	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, contents, dmg)
@@ -246,14 +249,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	// acquire fence, else the buffer's implicit fences.
 	var waits []vk.Semaphore
 	for _, im := range dmas {
-		sem := vk.Semaphore(0)
 		if f := acquires[im]; f != nil {
-			sem = r.importFence(f)
+			if sem := r.importFence(f); sem != 0 {
+				waits = append(waits, sem)
+			}
 		} else {
-			sem = r.readFence(im)
-		}
-		if sem != 0 {
-			waits = append(waits, sem)
+			waits = r.appendReadFences(waits, im)
 		}
 	}
 	frame := r.frame
@@ -278,7 +279,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	if hdr {
-		// recordHDR left the composed image in TRANSFER_SRC for Pixels.
+		// recordHDR left the composed linear image in TRANSFER_SRC for capture.
 		tg.layout = vk.ImageLayoutTransferSrcOptimal
 		r.targets[r.current].layout = vk.ImageLayoutGeneral
 	} else {
@@ -320,6 +321,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire bool) {
 	for _, im := range dmas {
 		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: colorRange}
+		if im.yuv {
+			b.SubresourceRange.AspectMask = aspectPlane0 | aspectPlane1
+		}
 		if acquire {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutGeneral, vk.ImageLayoutShaderReadOnlyOptimal
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family

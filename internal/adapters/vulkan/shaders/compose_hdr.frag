@@ -28,20 +28,19 @@ const uint flagExtendedLinear = 8u;
 const uint flagYUV = 16u;
 const uint flagP010 = 32u;
 
-// PQ values are absolute nits. BT.2020 is converted in linear light to
-// BT.709, then clipped to the 8-bit sRGB intermediate. Highlights above
-// SDR reference white are lost (no tone mapping).
-vec3 pqToSRGB(vec3 v, float whiteNits) {
+// The HDR composition target holds linear BT.709 in SDR-white units.
+vec3 decodeSRGB(vec3 v) {
+    return mix(v / 12.92, pow((v + 0.055) / 1.055, vec3(2.4)), greaterThan(v, vec3(0.04045)));
+}
+vec3 pqToLinear709(vec3 v, float whiteNits) {
     vec3 p = pow(clamp(v, 0.0, 1.0), vec3(32.0 / 2523.0));
     vec3 nits = pow(max(p - vec3(3424.0 / 4096.0), vec3(0.0)) /
         max(vec3(2413.0 / 128.0) - p * (2392.0 / 128.0), vec3(0.00001)), vec3(16384.0 / 2610.0)) * 10000.0;
-    vec3 rgb = vec3(
+    return vec3(
         dot(nits, vec3(1.660491, -0.587641, -0.072850)),
         dot(nits, vec3(-0.124550, 1.132900, -0.008349)),
         dot(nits, vec3(-0.018151, -0.100579, 1.118730))
-    );
-    rgb = clamp(rgb / whiteNits, 0.0, 1.0);
-    return mix(rgb * 12.92, 1.055 * pow(rgb, vec3(1.0 / 2.4)) - 0.055, greaterThan(rgb, vec3(0.0031308)));
+    ) / whiteNits;
 }
 
 // H.273 Y'CbCr 4:2:0 reconstruction in electrical (non-linear) light.
@@ -83,7 +82,7 @@ void main() {
     bool exact = (d.misc.y & flagExact) != 0u;
     vec4 c;
     if (d.misc.x == modeSolid) {
-        c = d.color;
+        c = vec4(decodeSRGB(d.color.rgb), d.color.a);
     } else if (d.misc.x == modeImage && (d.misc.y & flagYUV) != 0u) {
         c = sampleYUV(src);
     } else if (d.misc.x == modeImage) {
@@ -101,13 +100,12 @@ void main() {
     if ((d.misc.y & flagOpaque) != 0u) {
         c.a = 1.0;
     }
-    if (c.a > 0.0) {
-        if ((d.misc.y & flagPQ) != 0u) {
-            c.rgb = pqToSRGB(c.rgb / c.a, d.color.x) * c.a;
-        } else if ((d.misc.y & flagExtendedLinear) != 0u) {
-            vec3 v = clamp(c.rgb / c.a * (80.0 / 203.0), 0.0, 1.0);
-            c.rgb = mix(v * 12.92, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, greaterThan(v, vec3(0.0031308))) * c.a;
-        }
+    if (c.a > 0.0 && d.misc.x != modeSolid) {
+        // ext_linear has the protocol's default 80 cd/m² reference white.
+        // Keep negative and above-white values in fp16 until the HDR pass.
+        vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(c.rgb / c.a, d.color.x) :
+            (d.misc.y & flagExtendedLinear) != 0u ? c.rgb / c.a * (80.0 / d.color.x) : decodeSRGB(c.rgb / c.a);
+        c.rgb = linearRGB * c.a;
     }
     color = c;
 }

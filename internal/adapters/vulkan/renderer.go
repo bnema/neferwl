@@ -22,9 +22,9 @@ type Renderer struct {
 	device        vk.Device
 	dd            *vk.DeviceDispatch
 	queue         vk.Queue
-	// own is the composed image until ExportTargets; in HDR it remains
-	// the SDR composition/readback image while targets carry PQ.
+	// own is the SDR composition image; HDR uses hdrOwn and PQ targets.
 	own        target
+	hdrOwn     target // linear BT.709 in units of SDR reference white
 	targets    []*target
 	current    int
 	renderMods []uint64
@@ -39,14 +39,15 @@ type Renderer struct {
 	cursorCache cursorConversion
 	// last is the target of the last frame; readback copies it into
 	// buffer only when Pixels asks (stale until then).
-	last         *target
-	readBack     bool
-	buffer       vk.Buffer
-	bufferMemory vk.DeviceMemory
-	mapped       unsafe.Pointer
-	pool         vk.CommandPool
-	memory       vk.PhysicalDeviceMemoryProperties
-	family       uint32
+	last          *target
+	readBack      bool
+	buffer        vk.Buffer
+	bufferMemory  vk.DeviceMemory
+	readbackBytes int // bytes per pixel allocated for the mapped readback buffer
+	mapped        unsafe.Pointer
+	pool          vk.CommandPool
+	memory        vk.PhysicalDeviceMemoryProperties
+	family        uint32
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
@@ -221,28 +222,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
-	size := vk.DeviceSize(width) * vk.DeviceSize(height) * 4
-	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
-	if err = checked("vkCreateBuffer", r.dd.CreateBuffer(r.device, &bi, nil, &r.buffer)); err != nil {
-		return
-	}
-	r.dd.GetBufferMemoryRequirements(r.device, r.buffer, &req)
-	// Readback (screenshots) reads this buffer: uncached memory is ~100x slower.
-	kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
-	if err != nil {
-		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
-	}
-	if err != nil {
-		return
-	}
-	alloc = vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err = checked("vkAllocateMemory(buffer)", r.dd.AllocateMemory(r.device, &alloc, nil, &r.bufferMemory)); err != nil {
-		return
-	}
-	if err = checked("vkBindBufferMemory", r.dd.BindBufferMemory(r.device, r.buffer, r.bufferMemory, 0)); err != nil {
-		return
-	}
-	if err = checked("vkMapMemory", r.dd.MapMemory(r.device, r.bufferMemory, 0, size, 0, &r.mapped)); err != nil {
+	if err = r.createReadback(4); err != nil {
 		return
 	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
@@ -262,6 +242,65 @@ func New(width, height int) (r *Renderer, err error) {
 	return
 }
 
+// createReadback replaces the host buffer only while the device is idle (at
+// construction or on an SDR→HDR transition). The current buffer stays in use
+// until the replacement is mapped, so a failed transition keeps SDR readback.
+func (r *Renderer) createReadback(bytesPerPixel int) (err error) {
+	d := r.dd
+	var (
+		buffer vk.Buffer
+		memory vk.DeviceMemory
+		mapped unsafe.Pointer
+	)
+	defer func() {
+		if err == nil {
+			return
+		}
+		if buffer != 0 {
+			d.DestroyBuffer(r.device, buffer, nil)
+		}
+		if memory != 0 {
+			d.FreeMemory(r.device, memory, nil)
+		}
+	}()
+	size := vk.DeviceSize(r.width) * vk.DeviceSize(r.height) * vk.DeviceSize(bytesPerPixel)
+	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
+	if err := checked("vkCreateBuffer", d.CreateBuffer(r.device, &bi, nil, &buffer)); err != nil {
+		return err
+	}
+	var req vk.MemoryRequirements
+	d.GetBufferMemoryRequirements(r.device, buffer, &req)
+	// Readback (screenshots) reads this buffer: prefer cached host memory.
+	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
+	if err != nil {
+		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
+	}
+	if err != nil {
+		return err
+	}
+	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
+	if err := checked("vkAllocateMemory(buffer)", d.AllocateMemory(r.device, &alloc, nil, &memory)); err != nil {
+		return err
+	}
+	if err := checked("vkBindBufferMemory", d.BindBufferMemory(r.device, buffer, memory, 0)); err != nil {
+		return err
+	}
+	if err := checked("vkMapMemory", d.MapMemory(r.device, memory, 0, size, 0, &mapped)); err != nil {
+		return err
+	}
+	if r.mapped != nil {
+		d.UnmapMemory(r.device, r.bufferMemory)
+	}
+	if r.buffer != 0 {
+		d.DestroyBuffer(r.device, r.buffer, nil)
+	}
+	if r.bufferMemory != 0 {
+		d.FreeMemory(r.device, r.bufferMemory, nil)
+	}
+	r.buffer, r.bufferMemory, r.mapped, r.readbackBytes = buffer, memory, mapped, bytesPerPixel
+	return nil
+}
+
 func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (uint32, error) {
 	for i := uint32(0); i < r.memory.MemoryTypeCount; i++ {
 		if bits&(uint32(1)<<i) != 0 && r.memory.MemoryTypes[i].PropertyFlags&props == props {
@@ -274,6 +313,10 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 func (r *Renderer) Pixels() *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
 	if r.mapped == nil || r.readback() != nil {
+		return out
+	}
+	if r.last == &r.hdrOwn {
+		r.hdrRegion(out.Pix, out.Stride, 0, 0, r.width, r.height, true)
 		return out
 	}
 	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
@@ -296,6 +339,10 @@ func (r *Renderer) Capture(region image.Rectangle, dst []byte, stride int) error
 	}
 	if err := r.readback(); err != nil {
 		return err
+	}
+	if r.last == &r.hdrOwn {
+		r.hdrRegion(dst, stride, region.Min.X, region.Min.Y, w, h, false)
+		return nil
 	}
 	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*4)
 	for y := range h {
@@ -393,6 +440,7 @@ func (r *Renderer) Close() {
 			r.bufferMemory = 0
 		}
 		r.destroyComposer()
+		r.freeTarget(&r.hdrOwn)
 		r.freeTarget(&r.own)
 		d.DestroyDevice(r.device, nil)
 		r.device = 0

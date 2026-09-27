@@ -16,8 +16,9 @@ import (
 // display accepts and exports their memory as dmabufs, which the output
 // turns into KMS framebuffers. Render then composes straight into the
 // selected target and the output flips to it; nothing is copied by the
-// CPU. In HDR the internal image retains the SDR scene, sampled by a
-// full-screen GPU pass into the 10-bit target. Pixels reads internal SDR.
+// CPU. In HDR an internal fp16 linear image keeps full-range composition,
+// sampled by a full-screen GPU pass into the 10-bit target. Capture/Pixels
+// convert to SDR sRGB only when requested.
 
 // target is an image frames are drawn into.
 type target struct {
@@ -45,6 +46,10 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // the previous ones; n = 0 only drops them (back to the internal image).
 func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
 	r.dropTargets()
+	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.physical != 0 {
+		// Test-only transfer-source targets have different format requirements.
+		r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
+	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
 	}
@@ -104,7 +109,7 @@ func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 		available = r.hdrMods
 	}
 	for _, m := range available {
-		if (len(display) == 0 && r.hdrNits == 0) || slices.Contains(display, m) {
+		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback)) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
 	}

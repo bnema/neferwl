@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -246,5 +247,54 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Only the output which successfully prepared HDR reports confirmed HDR.
+// The fallback must explicitly withdraw it, and close exported descriptors.
+func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
+	for _, success := range []bool{true, false} {
+		t.Run(map[bool]string{true: "confirmed", false: "fallback"}[success], func(t *testing.T) {
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().SetHDR(float64(203)).Return().Once()
+			if success {
+				f, err := os.CreateTemp(t.TempDir(), "target")
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+				t.Cleanup(func() {
+					if _, err := f.Stat(); err == nil {
+						t.Error("exported fd not closed")
+					}
+				})
+			} else {
+				r.EXPECT().ExportTargets(1, []uint64(nil)).Return(nil, errors.New("no compatible target")).Once()
+				r.EXPECT().SetHDR(float64(0)).Return().Once()
+				r.EXPECT().ExportTargets(0, []uint64(nil)).Return(nil, nil).Once()
+			}
+			r.EXPECT().Close().Return().Once()
+			formats := make(chan ports.OutputFormats, 1)
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() {
+				done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
+			}()
+			select {
+			case f := <-formats:
+				if f.Output != "HEADLESS-1" || (f.HDR != nil) != success {
+					t.Fatalf("report %+v, success=%t", f, success)
+				}
+				if success && (f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != .005) {
+					t.Fatalf("HDR metadata %+v", f.HDR)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("no format report")
+			}
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

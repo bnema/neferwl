@@ -20,6 +20,7 @@ import (
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.vert -o shaders/compose.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.frag -o shaders/compose.frag.spv
+//go:generate glslc -O --target-env=vulkan1.3 shaders/compose_hdr.frag -o shaders/compose_hdr.frag.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.vert -o shaders/hdr.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.frag -o shaders/hdr.frag.spv
 
@@ -28,6 +29,8 @@ var (
 	composeVert []byte
 	//go:embed shaders/compose.frag.spv
 	composeFrag []byte
+	//go:embed shaders/compose_hdr.frag.spv
+	composeHDRFrag []byte
 )
 
 // Draw modes and flags (shaders: modeSolid, modeImage, flag*).
@@ -36,8 +39,12 @@ const (
 	modeImage  = 1
 	modeBuffer = 2
 
-	flagOpaque = 1
-	flagExact  = 2
+	flagOpaque         = 1
+	flagExact          = 2
+	flagPQ             = 4
+	flagExtendedLinear = 8
+	flagYUV            = 16
+	flagP010           = 32
 )
 
 // pushConstants is struct Draw of the shaders (std430 push constant block).
@@ -60,10 +67,11 @@ type draw struct {
 
 // composer is the pipeline state and the objects every draw can bind.
 type composer struct {
-	setLayout vk.DescriptorSetLayout
-	layout    vk.PipelineLayout
-	pipeline  vk.Pipeline
-	sampler   vk.Sampler
+	setLayout   vk.DescriptorSetLayout
+	layout      vk.PipelineLayout
+	pipeline    vk.Pipeline
+	hdrPipeline vk.Pipeline
+	sampler     vk.Sampler
 	// Placeholders for the binding a draw does not use: every binding
 	// the shader declares must be valid.
 	dummyImage  vk.Image
@@ -79,8 +87,9 @@ func (r *Renderer) createComposer() error {
 	bindings := []vk.DescriptorSetLayoutBinding{
 		{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
 		{Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 2, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
 	}
-	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: 2, Bindings: &bindings[0]}
+	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: uint32(len(bindings)), Bindings: &bindings[0]}
 	if err := checked("vkCreateDescriptorSetLayout", d.CreateDescriptorSetLayout(r.device, &sli, nil, &c.setLayout)); err != nil {
 		return err
 	}
@@ -100,7 +109,10 @@ func (r *Renderer) createComposer() error {
 }
 
 func (r *Renderer) createPipeline() error {
-	return r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline)
+	if err := r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, pipeline *vk.Pipeline) error {
@@ -187,9 +199,9 @@ func (r *Renderer) createDummies() error {
 
 // newSet allocates a descriptor set from its own pool (the bindings lack
 // vkFreeDescriptorSets: the pool is destroyed with the object).
-func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer) (vk.DescriptorPool, vk.DescriptorSet, error) {
+func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer, chroma ...vk.ImageView) (vk.DescriptorPool, vk.DescriptorSet, error) {
 	d := r.dd
-	sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
+	sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 2}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
 	dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 2, PoolSizes: &sizes[0]}
 	var pool vk.DescriptorPool
 	if err := checked("vkCreateDescriptorPool", d.CreateDescriptorPool(r.device, &dpi, nil, &pool)); err != nil {
@@ -202,12 +214,17 @@ func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer) (vk.DescriptorPoo
 		return 0, 0, err
 	}
 	img := vk.DescriptorImageInfo{Sampler: r.compose.sampler, ImageView: view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}
+	uv := img
+	if len(chroma) > 0 {
+		uv.ImageView = chroma[0]
+	}
 	buf := vk.DescriptorBufferInfo{Buffer: buffer, Range: wholeSize}
 	writes := []vk.WriteDescriptorSet{
 		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img},
 		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 1, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, BufferInfo: &buf},
+		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 2, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &uv},
 	}
-	d.UpdateDescriptorSets(r.device, 2, &writes[0], 0, nil)
+	d.UpdateDescriptorSets(r.device, uint32(len(writes)), &writes[0], 0, nil)
 	return pool, set, nil
 }
 
@@ -231,6 +248,9 @@ func (r *Renderer) destroyComposer() {
 	}
 	if c.pipeline != 0 {
 		d.DestroyPipeline(r.device, c.pipeline, nil)
+	}
+	if c.hdrPipeline != 0 {
+		d.DestroyPipeline(r.device, c.hdrPipeline, nil)
 	}
 	if c.layout != 0 {
 		d.DestroyPipelineLayout(r.device, c.layout, nil)
@@ -299,13 +319,22 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, mode uint32
 func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, ds []draw, keep bool) {
 	d, c := r.dd, &r.compose
 	clear := vk.ClearValue{math.Float32bits(float32(bg[0]) / 255), math.Float32bits(float32(bg[1]) / 255), math.Float32bits(float32(bg[2]) / 255), math.Float32bits(1)}
+	if r.hdrNits > 0 {
+		for i := 0; i < 3; i++ {
+			clear[i] = math.Float32bits(float32(srgbToLinear(float64(bg[i]) / 255)))
+		}
+	}
 	attachment := vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpClear, StoreOp: vk.AttachmentStoreOpStore, ClearValue: clear}
 	if keep {
 		attachment.LoadOp = vk.AttachmentLoadOpLoad
 	}
 	info := vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &attachment}
 	d.CmdBeginRendering(cmd, &info)
-	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, c.pipeline)
+	pipeline := c.pipeline
+	if r.hdrNits > 0 {
+		pipeline = c.hdrPipeline
+	}
+	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, pipeline)
 	var bound vk.DescriptorSet
 	for i := range ds {
 		dr := &ds[i]

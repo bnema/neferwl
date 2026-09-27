@@ -11,6 +11,23 @@ import (
 	"github.com/bnema/purego-libwayland/server"
 )
 
+// setOutputHDR records confirmed DRM state independently of the core layout.
+// Until the first modeset report for an output it is treated as SDR.
+func (s *Server) setOutputHDR(f ports.OutputFormats) {
+	if s.hdrOutputs == nil {
+		s.hdrOutputs = make(map[string]ports.OutputHDR)
+	}
+	old, had := s.hdrOutputs[f.Output]
+	if f.HDR == nil {
+		delete(s.hdrOutputs, f.Output)
+	} else {
+		s.hdrOutputs[f.Output] = *f.HDR
+	}
+	if (f.HDR == nil && had) || (f.HDR != nil && (!had || old != *f.HDR)) {
+		s.colorOutputChanged(f.Output)
+	}
+}
+
 // Outputs. Core sends the global layout (ports.SetOutputs); each output is
 // one wl_output global, removed when the display is unplugged. Every size
 // sent to clients (configures, xdg-output, layer configures, pointer
@@ -155,6 +172,8 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		o.global.Remove()
+		delete(s.hdrOutputs, o.name())
+		delete(s.colorIdentity, o.name())
 		for session := range s.captureSessions {
 			if session.o == o && !session.stopped {
 				session.stopped = true
@@ -208,6 +227,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	for _, surf := range s.surfaces {
 		surf.sendScale()
 	}
+	s.notifyColorFeedback()
 	// Layer surfaces sized from the output follow its new logical size.
 	adopted := false
 	for _, l := range s.layers {

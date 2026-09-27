@@ -107,8 +107,8 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		o, k, _ := testOutput(t)
 		o.cursor = nil
 		o.scanout, o.device = on, 9
-		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}}
-		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}}
+		o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: tiled}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
+		o.sampled = []ports.DMABufFormat{{Format: fourccARGB, Modifier: tiled}, {Format: fourccARGB, Modifier: 0}, {Format: fourccNV12, Modifier: tiled}, {Format: fourccP010, Modifier: tiled}}
 		ch := make(chan ports.OutputFormats, 1)
 		o.formats = ch
 		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
@@ -122,6 +122,82 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 		if on != (len(f.Formats) == 1 && f.Formats[0] == o.sampled[0]) || !on && len(f.Formats) != 0 {
 			t.Fatalf("scanout=%v formats %v", on, f.Formats)
 		}
+	}
+}
+
+func TestHDRScanoutDecision(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.hdrOn = true
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
+	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: ports.Rect{W: 200, H: 100}}}}
+	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
+	check := func(want string) {
+		t.Helper()
+		fb, _ := o.scanoutFrame(scene, map[ports.WindowID]ports.SurfaceContent{1: c})
+		if o.reason != want || (fb != 0) != (want == "") {
+			t.Fatalf("fb %d reason %q, want %q", fb, o.reason, want)
+		}
+	}
+	check("hdr_sdr_content")
+	c.Color = ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
+	c.DMABuf.Format = fourccXRGB
+	check("hdr_format")
+	c.DMABuf.Format = fourccP010
+	check("yuv")
+	c.DMABuf.Format = fourccXR30
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(uint32(77), nil).Once()
+	check("")
+	o.hdrOn = false
+	check("sdr_pq_content")
+}
+
+func TestModesetReportsConfirmedHDR(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.hdrOn = true
+	o.hdr = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
+	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
+	ch := make(chan ports.OutputFormats, 2)
+	o.formats = ch
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Twice()
+	k.EXPECT().destroyBlob(uint32(99)).Return(nil).Once()
+	if err := o.modeset(); err != nil {
+		t.Fatal(err)
+	}
+	if f := <-ch; f.HDR == nil || f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != 0.005 || len(f.Formats) != 1 || f.Formats[0].Format != fourccXR30 {
+		t.Fatalf("HDR report: %+v", f)
+	}
+	o.hdrOn = false // fallback to SDR
+	if err := o.modeset(); err != nil {
+		t.Fatal(err)
+	}
+	if f := <-ch; f.HDR != nil || len(f.Formats) != 1 || f.Formats[0].Format != fourccXRGB {
+		t.Fatalf("SDR fallback report: %+v", f)
+	}
+}
+
+// Power off withdraws HDR and scanout formats: clients must not target an
+// inactive output.
+func TestPowerOffWithdrawsHDRAndFormats(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.cursor = nil
+	o.hdrOn, o.scanout = true, true
+	o.hdr = hdrCapability{MaxLuminance: 1000}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
+	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}}
+	ch := make(chan ports.OutputFormats, 1)
+	o.formats = ch
+	if err := o.powerOff(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-ch:
+		if f.HDR != nil || len(f.Formats) != 0 {
+			t.Fatalf("power-off report: %+v", f)
+		}
+	default:
+		t.Fatal("no report after power off")
 	}
 }
 

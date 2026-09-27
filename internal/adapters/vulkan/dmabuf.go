@@ -41,6 +41,22 @@ var dmabufFormats = []struct {
 	{fourcc('X', 'R', '2', '4'), vk.FormatB8g8r8a8Unorm, true},
 	{fourcc('A', 'B', '2', '4'), vk.FormatR8g8b8a8Unorm, false},
 	{fourcc('X', 'B', '2', '4'), vk.FormatR8g8b8a8Unorm, true},
+	// Vulkan's A2R10G10B10/A2B10G10R10 packed UNORM formats match
+	// DRM's little-endian 2101010 layout; do not use an sRGB view for PQ.
+	{fourcc('A', 'R', '3', '0'), vk.FormatA2r10g10b10UnormPack32, false},
+	{fourcc('X', 'R', '3', '0'), vk.FormatA2r10g10b10UnormPack32, true},
+	{fourcc('A', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, false},
+	{fourcc('X', 'B', '3', '0'), vk.FormatA2b10g10r10UnormPack32, true},
+	// Little-endian ABGR16161616F is RGBA16F; floating-point values
+	// are linear electrical signals, not sRGB-encoded.
+	{fourcc('A', 'B', '4', 'H'), vk.FormatR16g16b16a16Sfloat, false},
+	{fourcc('X', 'B', '4', 'H'), vk.FormatR16g16b16a16Sfloat, true},
+	{fourcc('N', 'V', '1', '2'), vk.Format(1000156003), true}, // VK_FORMAT_G8_B8R8_2PLANE_420_UNORM
+	{fourcc('P', '0', '1', '0'), vk.Format(1000156013), true}, // VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16
+}
+
+func isYUVFormat(f uint32) bool {
+	return f == fourcc('N', 'V', '1', '2') || f == fourcc('P', '0', '1', '0')
 }
 
 func fourcc(a, b, c, d byte) uint32 {
@@ -85,8 +101,9 @@ func cstring(b []byte) string {
 	return string(b)
 }
 
-// probeDMABuf lists the fourcc/modifier pairs the device imports as
-// single-plane sampled images with linear filtering, and the render node.
+// probeDMABuf lists the sampled fourcc/modifier pairs supported by the GPU.
+// Multi-planar formats require mutable per-plane views; disjoint binding is
+// optional and only used when the device supports it and planes differ.
 func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 	var sup ports.DMABufSupport
 	drm := vk.PhysicalDeviceDrmPropertiesEXT{SType: vk.StructureTypePhysicalDeviceDRMPropertiesEXT}
@@ -106,13 +123,15 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 		list.DrmFormatModifierProperties = &mods[0]
 		r.id.GetPhysicalDeviceFormatProperties2(physical, f.format, &fp)
 		for _, m := range mods[:list.DrmFormatModifierCount] {
-			// Multi-plane modifiers (compression metadata) are left to a
-			// later step.
 			need := vk.FormatFeatureFlags(vk.FormatFeatureSampledImageBit | vk.FormatFeatureSampledImageFilterLinearBit)
-			if m.DrmFormatModifierPlaneCount != 1 || m.DrmFormatModifierTilingFeatures&need != need {
+			planes := uint32(1)
+			if isYUVFormat(f.fourcc) {
+				planes = 2
+			}
+			if m.DrmFormatModifierPlaneCount != planes || m.DrmFormatModifierTilingFeatures&need != need {
 				continue
 			}
-			if r.importable(physical, f.format, m.DrmFormatModifier) {
+			if r.importable(physical, f.format, m.DrmFormatModifier, isYUVFormat(f.fourcc), false) {
 				sup.Formats = append(sup.Formats, ports.DMABufFormat{Format: f.fourcc, Modifier: m.DrmFormatModifier})
 			}
 		}
@@ -122,10 +141,45 @@ func (r *Renderer) probeDMABuf(physical vk.PhysicalDevice) ports.DMABufSupport {
 
 // importable asks whether an image of that format and modifier can be
 // imported from a dmabuf.
-func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
+func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modifier uint64, yuv, disjoint bool) bool {
 	mod := vk.PhysicalDeviceImageDrmFormatModifierInfoEXT{SType: vk.StructureTypePhysicalDeviceImageDRMFormatModifierInfoEXT, DrmFormatModifier: modifier, SharingMode: vk.SharingModeExclusive}
 	ext := vk.PhysicalDeviceExternalImageFormatInfo{SType: vk.StructureTypePhysicalDeviceExternalImageFormatInfo, Next: unsafe.Pointer(&mod), HandleType: vk.ExternalMemoryHandleTypeDMABUFBitEXT}
-	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
+	flags := vk.ImageCreateFlags(0)
+	if yuv {
+		flags = vk.ImageCreateMutableFormatBit
+		if disjoint {
+			flags |= imageDisjoint
+			// Image-format queries alone do not imply the modifier supports
+			// disjoint plane bindings. Check its tiling features as well.
+			list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
+			properties := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
+			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			if list.DrmFormatModifierCount == 0 {
+				return false
+			}
+			mods := make([]vk.DrmFormatModifierPropertiesEXT, list.DrmFormatModifierCount)
+			list.DrmFormatModifierProperties = &mods[0]
+			r.id.GetPhysicalDeviceFormatProperties2(physical, format, &properties)
+			found := false
+			for _, m := range mods[:list.DrmFormatModifierCount] {
+				if m.DrmFormatModifier == modifier && m.DrmFormatModifierTilingFeatures&0x00400000 != 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		views := yuvViewFormats(format)
+		formats := imageFormatList{sType: structureImageFormatList, viewFormatCount: 3, viewFormats: &views[0]}
+		mod.Next = unsafe.Pointer(&formats)
+		info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
+		extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
+		out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
+		return r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) == vk.Success && extOut.ExternalMemoryProperties.ExternalMemoryFeatures&vk.ExternalMemoryFeatureImportableBit != 0
+	}
+	info := vk.PhysicalDeviceImageFormatInfo2{SType: vk.StructureTypePhysicalDeviceImageFormatInfo2, Next: unsafe.Pointer(&ext), Flags: flags, Format: format, Type: vk.ImageType2d, Tiling: vk.ImageTilingDRMFormatModifierEXT, Usage: vk.ImageUsageSampledBit}
 	extOut := vk.ExternalImageFormatProperties{SType: vk.StructureTypeExternalImageFormatProperties}
 	out := vk.ImageFormatProperties2{SType: vk.StructureTypeImageFormatProperties2, Next: unsafe.Pointer(&extOut)}
 	if r.id.GetPhysicalDeviceImageFormatProperties2(physical, &info, &out) != vk.Success {
@@ -140,12 +194,19 @@ func (r *Renderer) DMABuf() ports.DMABufSupport { return r.dmabuf }
 // imported is a client dmabuf bound to a VkImage, with the view and set
 // the compose shader samples it through.
 type imported struct {
-	image  vk.Image
-	memory vk.DeviceMemory
-	view   vk.ImageView
-	pool   vk.DescriptorPool
-	set    vk.DescriptorSet
-	fd     int // our duplicate of plane 0, for implicit sync
+	image      vk.Image
+	memory     vk.DeviceMemory
+	view       vk.ImageView
+	chromaView vk.ImageView
+	memories   [2]vk.DeviceMemory
+	fds        [2]int
+	yuv        bool
+	// disjoint is available for this format/modifier; required only when
+	// the two planes refer to different underlying DMA-BUF objects.
+	disjoint bool
+	pool     vk.DescriptorPool
+	set      vk.DescriptorSet
+	fd       int // our duplicate of plane 0, for implicit sync
 	// last is the frame that drew it, for eviction.
 	last uint64
 }
@@ -164,8 +225,17 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 		return nil, fmt.Errorf("dmabuf unsupported")
 	}
 	format, _, ok := vkFormat(b.Format)
-	if !ok || len(b.Planes) != 1 || b.Width <= 0 || b.Height <= 0 {
+	if !ok || b.Width <= 0 || b.Height <= 0 {
 		return nil, fmt.Errorf("dmabuf format %#x with %d planes unsupported", b.Format, len(b.Planes))
+	}
+	if isYUVFormat(b.Format) {
+		if len(b.Planes) != 2 || b.Width%2 != 0 || b.Height%2 != 0 {
+			return nil, fmt.Errorf("invalid YUV buffer geometry or planes")
+		}
+		return r.importYUV(b, format)
+	}
+	if len(b.Planes) != 1 {
+		return nil, fmt.Errorf("RGB buffer needs one plane")
 	}
 	fd, err := dupFile(b.Planes[0].File)
 	if err != nil {
@@ -246,14 +316,29 @@ func (r *Renderer) release(im *imported) {
 	if im.view != 0 {
 		r.dd.DestroyImageView(r.device, im.view, nil)
 	}
+	if im.chromaView != 0 {
+		r.dd.DestroyImageView(r.device, im.chromaView, nil)
+	}
 	if im.image != 0 {
 		r.dd.DestroyImage(r.device, im.image, nil)
 	}
 	if im.memory != 0 {
 		r.dd.FreeMemory(r.device, im.memory, nil)
 	}
+	for i := range im.memories {
+		if im.memories[i] != 0 {
+			r.dd.FreeMemory(r.device, im.memories[i], nil)
+		}
+	}
 	if im.fd >= 0 {
 		unix.Close(im.fd)
+	}
+	if im.yuv {
+		for _, fd := range im.fds {
+			if fd >= 0 {
+				unix.Close(fd)
+			}
+		}
 	}
 }
 
@@ -279,15 +364,27 @@ type dmaBufSync struct {
 const ioctlExportSyncFile = 0xc0086202
 const dmaBufSyncRead = 1
 
-// readFence returns a semaphore signalled when the client's pending writes
-// to the buffer finish, or 0 when the kernel cannot export them (older than
-// 5.20): the buffer is then read as is.
-func (r *Renderer) readFence(im *imported) vk.Semaphore {
-	arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
-	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(im.fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
-		return 0
+// appendReadFences waits on every distinct backing object's pending writes.
+// Shared YUV planes have one implicit fence; disjoint planes have two.
+func (r *Renderer) appendReadFences(waits []vk.Semaphore, im *imported) []vk.Semaphore {
+	fds := [2]int{im.fd}
+	count := 1
+	if im.yuv {
+		fds = im.fds
+		if im.disjoint {
+			count = 2
+		}
 	}
-	return r.importSyncFD(int(arg.fd))
+	for _, fd := range fds[:count] {
+		arg := dmaBufSync{flags: dmaBufSyncRead, fd: -1}
+		if _, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), ioctlExportSyncFile, uintptr(unsafe.Pointer(&arg))); errno != 0 || arg.fd < 0 {
+			continue // Older kernels cannot export implicit fences.
+		}
+		if sem := r.importSyncFD(int(arg.fd)); sem != 0 {
+			waits = append(waits, sem)
+		}
+	}
+	return waits
 }
 
 // importFence makes a wait semaphore of a sync file. The file stays the

@@ -424,12 +424,21 @@ type OutputPresented struct {
 // OutputFormats carries output → wayland the dmabuf formats an output can
 // scan out directly (its primary plane's, that the renderer also samples,
 // so a refused buffer can still be composed). Device is the KMS device
-// (dev_t) clients allocate scanout buffers for. Sent at start and after
-// every modeset; empty Formats means no direct scanout.
+// (dev_t) clients allocate scanout buffers for. Sent after every successful
+// modeset, including startup and VT resume; empty Formats means no direct
+// scanout. HDR is non-nil only when the output's HDR10 modeset succeeded;
+// nil means SDR, regardless of the monitor's HDR capability.
 type OutputFormats struct {
 	Output  string
 	Device  uint64
 	Formats []DMABufFormat
+	HDR     *OutputHDR
+}
+
+// OutputHDR carries the active HDR10 output's EDID luminances in nits.
+// These describe the display, not any client's content metadata.
+type OutputHDR struct {
+	MaxLuminance, MaxFrameAverage, MinLuminance float64
 }
 
 // FlipInfo is one completed page flip. When is its CLOCK_MONOTONIC time
@@ -731,6 +740,33 @@ type SceneLayer struct {
 	Rect  Rect
 }
 
+// SurfaceColor is the committed encoding of a surface. Zero means sRGB.
+// PQ+BT.2020 and extended-linear sRGB are color-managed; zero is legacy
+// sRGB. MaxCLL/MaxFALL are in nits. YUV metadata is per surface commit.
+type SurfaceColor struct {
+	TF, Primaries   uint8
+	MaxCLL, MaxFALL uint16
+	// Coefficients/range follow wp_color_representation_v1 (zero =
+	// unspecified, for YUV interpreted as BT.709 limited). Chroma is a
+	// H.273 Chroma420SampleLocType + 1 (zero defaults to type 0).
+	Coefficients, Range, Chroma uint8
+}
+
+const (
+	ColorTFPQ             uint8 = 11 // wp_color_manager_v1 ST2084 PQ
+	ColorTFExtendedLinear uint8 = 5  // wp_color_manager_v1 ext_linear
+	ColorPrimariesBT2020  uint8 = 6  // wp_color_manager_v1 BT.2020
+	ColorPrimariesSRGB    uint8 = 1
+)
+
+func (c SurfaceColor) IsPQ2020() bool {
+	return c.TF == ColorTFPQ && c.Primaries == ColorPrimariesBT2020
+}
+
+func (c SurfaceColor) IsExtendedLinear() bool {
+	return c.TF == ColorTFExtendedLinear && c.Primaries == ColorPrimariesSRGB
+}
+
 // SurfaceContent carries wayland → output the latest committed content of a
 // window: SHM, a client shared-memory buffer, or DMABuf, a GPU buffer.
 // Renderers read both in place and never modify them. Empty means the window
@@ -745,6 +781,7 @@ type SurfaceContent struct {
 	Width, Height      int
 	LogicalW, LogicalH int
 	Opaque             bool // x formats: ignore the alpha byte
+	Color              SurfaceColor
 	SHM                *SHMBuffer
 	DMABuf             *DMABuf
 	// Children are the subsurfaces, bottom to top, flattened.

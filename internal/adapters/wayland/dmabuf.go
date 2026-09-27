@@ -270,6 +270,13 @@ func (p *params) anyPlane() bool {
 	return slices.ContainsFunc(p.planes[:], func(pl *plane) bool { return pl != nil })
 }
 
+const (
+	fourccNV12 = 'N' | 'V'<<8 | '1'<<16 | '2'<<24
+	fourccP010 = 'P' | '0'<<8 | '1'<<16 | '0'<<24
+	fourccAB4H = 'A' | 'B'<<8 | '4'<<16 | 'H'<<24
+	fourccXB4H = 'X' | 'B'<<8 | '4'<<16 | 'H'<<24
+)
+
 // build validates the planes and turns them into a buffer; ok is false after
 // a protocol error, failed means the client gets `failed`.
 func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBuffer, failed, ok bool) {
@@ -297,18 +304,41 @@ func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBu
 	if flags != 0 || !slices.Contains(p.global.support.Formats, want) {
 		return nil, true, true
 	}
-	// Supported formats are single-plane, 4 bytes per pixel.
-	if n != 1 {
-		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorIncomplete), "format takes one plane")
+	// NV12/P010 are 4:2:0 two-plane images. The same modifier must
+	// describe both planes; each plane may have its own fd and offset.
+	yuv := isYUV(format)
+	wantPlanes := 1
+	if yuv {
+		wantPlanes = 2
+	}
+	if n != wantPlanes {
+		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorIncomplete), "wrong plane count")
 		return nil, false, false
 	}
-	pl := p.planes[0]
-	row := uint64(width) * 4
-	end := uint64(pl.offset) + uint64(pl.stride)*uint64(height-1) + row
-	size, err := pl.file.Seek(0, io.SeekEnd)
-	if uint64(pl.stride) < row || (err == nil && end > uint64(size)) {
-		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorOutOfBounds), "plane out of bounds")
+	if yuv && (width%2 != 0 || height%2 != 0) {
+		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidDimensions), "4:2:0 requires even dimensions")
 		return nil, false, false
+	}
+	for i, pl := range p.planes[:n] {
+		row, rows := uint64(width)*4, uint64(height)
+		if yuv {
+			bytesPerSample := uint64(1)
+			if format == fourccP010 {
+				bytesPerSample = 2
+			}
+			row = uint64(width) * bytesPerSample
+			if i == 1 {
+				rows /= 2
+			}
+		} else if format == fourccAB4H || format == fourccXB4H {
+			row = uint64(width) * 8
+		}
+		end := uint64(pl.offset) + uint64(pl.stride)*(rows-1) + row
+		size, err := pl.file.Seek(0, io.SeekEnd)
+		if uint64(pl.stride) < row || (err == nil && end > uint64(size)) {
+			r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorOutOfBounds), "plane out of bounds")
+			return nil, false, false
+		}
 	}
 	p.global.nextID++
 	d := &ports.DMABuf{ID: p.global.nextID, Width: int(width), Height: int(height), Format: format, Modifier: p.modifier}
@@ -376,11 +406,13 @@ func (b *dmabufBuffer) size() (int, int) { return b.buf.Width, b.buf.Height }
 
 // content hands the renderer the buffer itself: nothing is copied.
 func (b *dmabufBuffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
-	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR
+	opaque := b.buf.Format == fourccXRGB || b.buf.Format == fourccXBGR || b.buf.Format == fourccXR30 || b.buf.Format == fourccXB30
 	return ports.SurfaceContent{ID: id, Width: b.buf.Width, Height: b.buf.Height, Opaque: opaque, DMABuf: b.buf}, true
 }
 
 const (
 	fourccXRGB = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
 	fourccXBGR = 'X' | 'B'<<8 | '2'<<16 | '4'<<24
+	fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
+	fourccXB30 = 'X' | 'B'<<8 | '3'<<16 | '0'<<24
 )

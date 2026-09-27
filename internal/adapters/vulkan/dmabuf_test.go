@@ -108,6 +108,25 @@ func TestRendererImportsDMABuf(t *testing.T) {
 	}
 }
 
+// The HDR swapchain's DRM 2101010 formats use packed UNORM views, not
+// automatic sRGB decoding. The same imports work in SDR composition.
+func TestTenBitDMABufFormats(t *testing.T) {
+	for _, tc := range []struct {
+		name   [4]byte
+		opaque bool
+	}{
+		{[4]byte{'A', 'R', '3', '0'}, false},
+		{[4]byte{'X', 'R', '3', '0'}, true},
+		{[4]byte{'A', 'B', '3', '0'}, false},
+		{[4]byte{'X', 'B', '3', '0'}, true},
+	} {
+		format, opaque, ok := vkFormat(fourcc(tc.name[0], tc.name[1], tc.name[2], tc.name[3]))
+		if !ok || format == 0 || opaque != tc.opaque {
+			t.Errorf("%q: format %v opaque %t available %t", tc.name, format, opaque, ok)
+		}
+	}
+}
+
 // A subsurface dmabuf is read after its own acquire fence, not the root's.
 func TestRendererSubsurfaceAcquire(t *testing.T) {
 	r, err := New(80, 32)
