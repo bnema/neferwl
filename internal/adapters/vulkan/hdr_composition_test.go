@@ -139,3 +139,56 @@ func TestHDRLinearBlend(t *testing.T) {
 		}
 	}
 }
+
+func TestHDRSolidColorsMatchPartialRedraw(t *testing.T) {
+	r := hdrTestRenderer(t)
+	const background = "#804020"
+	const border = "#4080c0"
+	scene := ports.Scene{Seq: 1, Background: background, Border: ports.Border{Active: border}, Separators: []ports.Separator{{Rect: ports.Rect{X: 16, Y: 2, W: 2, H: 12}, Active: true}}, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 20, Y: 2, W: 28, H: 12}}}}
+	// The window body is a solid fill; the separator is another solid draw.
+	content := solidContent(t, 28, 12, color.RGBA{128, 64, 32, 255})
+	content.ID, content.Seq = 1, 1
+	check := func(label string) {
+		t.Helper()
+		for _, point := range []struct {
+			x, y int
+			hex  string
+		}{{2, 2, background}, {16, 4, border}, {24, 8, background}} {
+			got := hdrTargetAt(t, r, point.x, point.y)
+			col := parseColor(point.hex)
+			var linear [3]float64
+			for ch, b := range col {
+				v := float64(b) / 255
+				if v > .04045 {
+					v = math.Pow((v+.055)/1.055, 2.4)
+				} else {
+					v /= 12.92
+				}
+				linear[ch] = v
+			}
+			matrix := [3][3]float64{{.627404, .329283, .043313}, {.069097, .919540, .011362}, {.016391, .088013, .895595}}
+			for ch := range got {
+				want := pqEncode((matrix[ch][0]*linear[0] + matrix[ch][1]*linear[1] + matrix[ch][2]*linear[2]) * 203)
+				if math.Abs(got[ch]-want) > .012 {
+					t.Errorf("%s (%d,%d) channel %d got %.4f want %.4f", label, point.x, point.y, ch, got[ch], want)
+				}
+			}
+		}
+	}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: content}); err != nil {
+		t.Fatal(err)
+	}
+	check("full")
+	before := r.redrawn
+	// A changed window sequence damages only its rect; the background is
+	// repainted there via a solid draw instead of the attachment clear.
+	c := content
+	c.Seq = 2
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	if r.redrawn-before >= r.width*r.height {
+		t.Fatal("expected partial redraw")
+	}
+	check("partial")
+}

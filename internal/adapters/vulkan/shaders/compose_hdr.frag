@@ -82,7 +82,7 @@ void main() {
     bool exact = (d.misc.y & flagExact) != 0u;
     vec4 c;
     if (d.misc.x == modeSolid) {
-        c = d.color;
+        c = vec4(decodeSRGB(d.color.rgb), d.color.a);
     } else if (d.misc.x == modeImage && (d.misc.y & flagYUV) != 0u) {
         c = sampleYUV(src);
     } else if (d.misc.x == modeImage) {
@@ -100,7 +100,7 @@ void main() {
     if ((d.misc.y & flagOpaque) != 0u) {
         c.a = 1.0;
     }
-    if (c.a > 0.0) {
+    if (c.a > 0.0 && d.misc.x != modeSolid) {
         // ext_linear has the protocol's default 80 cd/m² reference white.
         // Keep negative and above-white values in fp16 until the HDR pass.
         vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(c.rgb / c.a, d.color.x) :
