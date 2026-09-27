@@ -169,6 +169,7 @@ func TestForeignToplevel(t *testing.T) {
 	}
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestActivate, seat)
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestClose)
+	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestSetRectangle, surf, int32(0), int32(0), int32(-1), int32(1))
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestDestroy)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)

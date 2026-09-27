@@ -239,8 +239,8 @@ func (t *toplevelRequests) Close(*wlr.ZwlrForeignToplevelHandleV1) {
 		w.toplevel.SendClose()
 	}
 }
-func (*toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *wayland.Surface, _, _, w, h int32) {
-	if w < 0 || h < 0 {
+func (t *toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *wayland.Surface, _, _, w, h int32) {
+	if !t.closed && (w < 0 || h < 0) {
 		r.PostError(uint32(wlr.ZwlrForeignToplevelHandleV1ErrorInvalidRectangle), "negative rectangle size")
 	}
 }
