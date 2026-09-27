@@ -198,36 +198,39 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // update is a surface's pending state taken out by a commit that waits.
 type update struct {
-	attached      bool
-	buffer        *wayland.Buffer
-	scale         int
-	async         bool
-	kind          uint32
-	callbacks     []*wayland.Callback
-	vp            *viewport
-	vpW, vpH      int32
-	vpSet         bool
-	vpSrc         [4]server.Fixed
-	vpCrop        bool
-	layout        []childLayout
-	deps          []*update
-	owner         *surface
-	synced, bound bool
-	xdg           *xdgSurface
-	geometry      ports.Rect
-	cons          *constraint
-	region        *ports.Rect
-	layer         *layerSurface
-	layerNext     layerState
-	barrier       bool
-	wait          bool
-	at            time.Time
-	feedback      []*presentationtime.WpPresentationFeedback
-	sync          *commitSync
-	color         SurfaceColor
-	representation surfaceRepresentation
-	damage        []ports.Rect
-	bufDamage     []ports.Rect
+	attached        bool
+	buffer          *wayland.Buffer
+	scale           int
+	async           bool
+	kind            uint32
+	callbacks       []*wayland.Callback
+	vp              *viewport
+	vpW, vpH        int32
+	vpSet           bool
+	vpSrc           [4]server.Fixed
+	vpCrop          bool
+	layout          []childLayout
+	deps            []*update
+	owner           *surface
+	prev            *update
+	synced, bound   bool
+	xdg             *xdgSurface
+	geometry        ports.Rect
+	cons            *constraint
+	region          *ports.Rect
+	layer           *layerSurface
+	layerNext       layerState
+	barrier         bool
+	wait            bool
+	at              time.Time
+	feedback        []*presentationtime.WpPresentationFeedback
+	sync            *commitSync
+	color           SurfaceColor
+	representation  surfaceRepresentation
+	damage          []ports.Rect
+	bufDamage       []ports.Rect
+	readyGeneration uint64
+	readyResult     bool
 }
 
 type childLayout struct {
@@ -350,6 +353,9 @@ func (s *surface) queueUpdate() {
 			}
 		}
 	}
+	if len(s.queue) > 0 {
+		u.prev = s.queue[len(s.queue)-1]
+	}
 	s.queue = append(s.queue, &u)
 	s.server.fifoSurfaces[s] = struct{}{}
 	s.server.wakePacer()
@@ -462,6 +468,7 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		}
 	}
 	wait := defaultFramePeriod
+	s.readinessGeneration++
 	for surf := range s.fifoSurfaces {
 		name := s.fifoOutput(surf)
 		p := s.outputPeriod(name)
@@ -482,8 +489,25 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 			s.graphFeedback = s.graphFeedback[:0]
 			u.applyGraph()
 			s.applyingGraph = false
+			// Applying a graph changes queues and readiness within this tick.
+			s.readinessGeneration++
 			surf.redraw()
-			for _, fb := range s.graphFeedback {
+			// Only the last commit per surface can be sampled from this
+			// publication. Earlier callbacks were already queued on apply.
+			for i, fb := range s.graphFeedback {
+				superseded := false
+				for j := i + 1; j < len(s.graphFeedback); j++ {
+					if s.graphFeedback[j].surf == fb.surf && s.graphFeedback[j].fresh {
+						superseded = true
+						break
+					}
+				}
+				if superseded {
+					for _, pending := range fb.pending {
+						discard(pending)
+					}
+					continue
+				}
 				fb.surf.commitFeedback(fb.pending, fb.fresh)
 			}
 			s.graphFeedback = s.graphFeedback[:0]
@@ -523,13 +547,15 @@ func (s *surface) flushDesync() {
 
 func (u *update) graphReady(now time.Time) bool {
 	s := u.owner
-	for _, prev := range s.queue {
-		if prev == u {
-			break
-		}
-		if !prev.graphReady(now) {
-			return false
-		}
+	gen := s.server.readinessGeneration
+	if gen != 0 && u.readyGeneration == gen {
+		return u.readyResult
+	}
+	if gen != 0 {
+		u.readyGeneration, u.readyResult = gen, false
+	}
+	if u.prev != nil && !u.prev.graphReady(now) {
+		return false
 	}
 	if u.wait && s.barrier || !s.syncReady(u.sync) || s.tooEarly(u.at, now) {
 		return false
@@ -539,6 +565,7 @@ func (u *update) graphReady(now time.Time) bool {
 			return false
 		}
 	}
+	u.readyResult = true
 	return true
 }
 
@@ -556,6 +583,9 @@ func (u *update) applyGraph() {
 		return
 	}
 	s.queue = s.queue[1:]
+	if len(s.queue) > 0 {
+		s.queue[0].prev = nil
+	}
 	s.applyUpdate(u)
 }
 

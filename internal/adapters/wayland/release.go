@@ -105,7 +105,7 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	}
 	kept := s.held[:0]
 	for _, h := range s.held {
-		if keepHeld(h, live, now) {
+		if s.bufferReferenced(h.res) || keepHeld(h, live, now) {
 			kept = append(kept, h)
 			continue
 		}
@@ -114,6 +114,25 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	clear(s.held[len(kept):])
 	s.held = kept
 	return len(s.held) > 0
+}
+
+// bufferReferenced checks queued, cached and pending commits on the owner
+// goroutine. Never return a buffer still promised to a later commit.
+func (s *Server) bufferReferenced(b *wayland.Buffer) bool {
+	if b == nil {
+		return false
+	}
+	for _, surf := range s.surfaces {
+		if surf.attached && sameBuffer(surf.pending, b) {
+			return true
+		}
+		for _, u := range surf.queue {
+			if u.attached && sameBuffer(u.buffer, b) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // keepHeld reports whether an output may still read a held buffer: one

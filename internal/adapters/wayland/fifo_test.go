@@ -206,3 +206,22 @@ func TestFifoQueuedBufferDestroyed(t *testing.T) {
 		}
 	}
 }
+
+// Rechecking a shared predecessor in a traversal must reuse its readiness.
+func TestGraphReadyMemoizesPredecessors(t *testing.T) {
+	s := &Server{readinessGeneration: 1}
+	surf := &surface{server: s}
+	first := &update{owner: surf}
+	second := &update{owner: surf}
+	third := &update{owner: surf}
+	surf.queue = []*update{first, second, third}
+	second.prev = first
+	third.prev = second
+	now := time.Now()
+	if !third.graphReady(now) {
+		t.Fatal("ready chain rejected")
+	}
+	if first.readyGeneration != s.readinessGeneration || second.readyGeneration != s.readinessGeneration {
+		t.Fatal("predecessors not memoized")
+	}
+}

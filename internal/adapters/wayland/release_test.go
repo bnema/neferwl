@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/fifo"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
@@ -80,5 +81,63 @@ func TestKeepHeld(t *testing.T) {
 		if got := keepHeld(tc.h, tc.reports, now.Add(tc.after)); got != tc.want {
 			t.Errorf("%s: %v", tc.name, got)
 		}
+	}
+}
+
+// A later queued use of the same wl_buffer still owns it after the output
+// acknowledges the intervening commit.
+func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
+	s, events, commands, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1"}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	manager := bindProtocol(t, c, "wp_fifo_manager_v1")
+	f := c.AllocateID()
+	registerProtocol(t, c, f)
+	requestProtocol(t, c, manager, fifo.WpFifoManagerV1RequestGetFifo, f, root)
+	b, other := shmBuffer(t, c), shmBuffer(t, c)
+	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
+	p.SetID(b)
+	c.Context().Register(p)
+	attach := func(buf uint32) {
+		requestProtocol(t, c, root, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+		requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	}
+	attach(b)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	drainContents(contents)
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestSetBarrier)
+	attach(other)
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestWaitBarrier)
+	attach(b)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() {
+		surf := s.windows[w.ID].xdg.surface
+		if len(surf.queue) != 1 || surf.queue[0].buffer == nil || sameBuffer(surf.queue[0].buffer, surf.current) || len(s.held) == 0 {
+			t.Errorf("expected replaced buffer and queued reuse: queue=%d held=%d", len(surf.queue), len(s.held))
+		}
+		s.reports["HEADLESS-1"] = ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{w.ID: ^uint64(0)}}
+		s.releaseHeld(time.Now(), nil)
+		if len(s.held) == 0 {
+			t.Error("released held buffer despite queued reuse")
+		}
+		surf.barrier = false
+		s.tickFifo(time.Now(), nil)
+		s.releaseHeld(time.Now().Add(heldTimeout), nil)
+		if len(s.held) != 0 {
+			t.Error("held buffer not released after queued reuse applied")
+		}
+	})
+	select {
+	case <-p.released:
+		t.Fatal("queued buffer released after output ack")
+	case <-time.After(40 * time.Millisecond):
 	}
 }

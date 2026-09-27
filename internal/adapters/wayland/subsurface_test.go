@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"github.com/bnema/purego-libwayland/protocol/viewporter"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
@@ -529,4 +530,47 @@ func TestSubsurfaceRoleOutlivesParent(t *testing.T) {
 	s2 := c.AllocateID()
 	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, s2, b, p)
 	expectProtocolError(t, c, subc, uint32(wayland.SubcompositorErrorBadSurface))
+}
+
+// A parent graph with two child commits only publishes the final child.
+func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	s.display.Do(func() { s.windows[w.ID].xdg.window.last.Output = "HEADLESS-1" })
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	pres := bindProtocol(t, c, "wp_presentation")
+	registerProtocol(t, c, pres)
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	first := &feedbackEvents{out: make(chan presentedEvent, 2)}
+	id := c.AllocateID()
+	first.SetID(id)
+	c.Context().Register(first)
+	requestProtocol(t, c, pres, presentationtime.WpPresentationRequestFeedback, child, id)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-first.out:
+		if !ev.discarded {
+			t.Fatalf("superseded content presented: %+v", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("superseded feedback not discarded")
+	}
 }
