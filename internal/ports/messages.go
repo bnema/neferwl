@@ -1,9 +1,29 @@
 package ports
 
 import (
+	"image"
 	"os"
 	"time"
 )
+
+// CaptureRequest transfers ownership of Dst.File to the output goroutine.
+type CaptureRequest struct {
+	ID                    uint64
+	Output                string
+	Region                image.Rectangle // clipped output buffer coordinates
+	Cursor                bool
+	Dst                   SHMBuffer
+	Width, Height, Stride int
+	Format                uint32
+}
+
+// CaptureDone is sent exactly once after the output closes the destination.
+type CaptureDone struct {
+	ID     uint64
+	Output string
+	Err    error
+	Time   time.Time
+}
 
 // ClientEvent carries wayland → core notifications.
 type ClientEvent interface{ clientEvent() }

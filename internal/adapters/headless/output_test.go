@@ -205,3 +205,46 @@ func TestRunPassesLayerContent(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
+	scenes := make(chan ports.Scene, 1)
+	requests := make(chan ports.CaptureRequest, 1)
+	replies := make(chan ports.CaptureDone, 1)
+	r, frames := recordingRenderer(t, nil)
+
+	r.EXPECT().Capture(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{1, 2, 3, 255}); return nil }).Once()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, requests)
+	}()
+	scenes <- ports.Scene{Background: "#000000"}
+	waitFrames(t, frames, 1)
+	f, err := os.CreateTemp(t.TempDir(), "shot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(16); err != nil {
+		t.Fatal(err)
+	}
+	requests <- ports.CaptureRequest{ID: 1, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
+	select {
+	case result := <-replies:
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no capture")
+	}
+	r.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("descriptor not closed")
+	}
+	if s, _ := frames.snapshot(); len(s) < 2 {
+		t.Fatal("no fresh frame")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

@@ -69,7 +69,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents, nil, h.presented)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents, nil, h.presented, nil, nil)
 	}()
 	h.count = func() int {
 		commitMu.Lock()

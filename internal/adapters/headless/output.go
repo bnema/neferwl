@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -29,9 +30,10 @@ type Options struct {
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
 	Presented chan<- ports.OutputPresented
+	Captured  chan<- ports.CaptureDone
 }
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures ...<-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -41,6 +43,24 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
+	var requests []ports.CaptureRequest
+	var incoming <-chan ports.CaptureRequest
+	if len(captures) > 0 {
+		incoming = captures[0]
+	}
+	defer func() {
+		for _, q := range requests {
+			capture.Fail(q, fmt.Errorf("output stopped"), opts.Captured)
+		}
+		for {
+			select {
+			case q := <-incoming:
+				capture.Fail(q, fmt.Errorf("output stopped"), opts.Captured)
+			default:
+				return
+			}
+		}
+	}()
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	seen := map[ports.WindowID]uint64{}
@@ -66,6 +86,13 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		select {
 		case <-ctx.Done():
 			return nil
+		case q := <-incoming:
+			if scene.Off {
+				capture.Fail(q, fmt.Errorf("output off"), opts.Captured)
+			} else {
+				requests = append(requests, q)
+				dirty = haveScene
+			}
 		case <-retry:
 			pending = opts.send(pending)
 			continue
@@ -105,6 +132,12 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				break drain
 			}
 		}
+		if scene.Off && len(requests) > 0 {
+			for _, q := range requests {
+				capture.Fail(q, fmt.Errorf("output off"), opts.Captured)
+			}
+			requests = nil
+		}
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
@@ -137,6 +170,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("frame fence: %w", err)
 			}
 		}
+		for _, q := range requests {
+			capture.Write(q, r, opts.Captured)
+		}
+		requests = nil
 		frame++
 		pending = opts.flipped(pending, seen, scene, surfaces)
 		if opts.ScreenshotDir != "" {

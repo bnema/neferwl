@@ -88,6 +88,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
 	presented := make(chan ports.OutputPresented, 64)
+	captures := make(chan ports.CaptureRequest, 32)
+	captured := make(chan ports.CaptureDone, 64)
 	outputFormats := make(chan ports.OutputFormats, 8)
 	ch := core.Channels{Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
 	c, err := core.New(opts.Config, ch)
@@ -103,7 +105,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -222,11 +224,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 					w.Sampled = dmabuf.Formats
 					return w
 				}
-				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, outputFormats, curs, newRenderer, logging.For(ctx, "drm"))
+				return hw.runOutputs(ctx, want, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputFormats, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, output, renderScenes, contents, cursorChanges, presented, captures, captured, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
