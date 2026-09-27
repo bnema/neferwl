@@ -833,15 +833,19 @@ func (o *Output) Close() {
 		req.set(p.id, p.prop("CRTC_ID"), 0)
 		req.set(o.conn.id, o.connCrtc, 0)
 	}
+	// A live metadata blob means an HDR modeset may still be on screen, even
+	// after a failed SDR fallback (hdrOn is then false): it is freed only once
+	// an SDR modeset succeeds.
+	hdrShown := o.hdrOn || o.hdrBlob != 0
 	// Best effort: at exit the card may already belong to another session.
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		ev := o.log.Debug()
-		if o.hdrOn {
+		if hdrShown {
 			// The display may stay in HDR mode until the next modeset.
 			ev = o.log.Warn()
 		}
-		ev.Err(err).Str("connector", o.conn.name).Bool("hdr", o.hdrOn).Msg("restore crtc")
-	} else if o.hdrOn {
+		ev.Err(err).Str("connector", o.conn.name).Bool("hdr", hdrShown).Msg("restore crtc")
+	} else if hdrShown {
 		o.log.Info().Str("connector", o.conn.name).Msg("HDR10 off")
 	}
 	if blob != 0 {
