@@ -24,7 +24,8 @@ type Options struct {
 	LoadCursor    func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
-	HDR           bool // virtual HDR output for protocol testing only
+	HDR           bool                       // virtual HDR output for protocol testing only
+	Formats       chan<- ports.OutputFormats // confirmed color state; nil disables reporting
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
 	// Name and Presented report what the output has read after each
@@ -40,13 +41,28 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		return fmt.Errorf("create renderer: %w", err)
 	}
 	defer r.Close()
+	var confirmed *ports.OutputHDR
 	if opts.HDR {
 		r.SetHDR(203)
-		if _, err := r.ExportTargets(1, nil); err != nil {
+		if bufs, err := r.ExportTargets(1, nil); err != nil {
 			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
 			r.SetHDR(0)
+			_, _ = r.ExportTargets(0, nil)
 		} else {
+			for _, b := range bufs {
+				for _, p := range b.Planes {
+					_ = p.File.Close()
+				}
+			}
+			confirmed = &ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}
 			opts.Log.Info().Str("output", opts.Name).Msg("virtual HDR enabled")
+		}
+		if opts.Formats != nil {
+			select {
+			case opts.Formats <- ports.OutputFormats{Output: opts.Name, HDR: confirmed}:
+			case <-ctx.Done():
+				return nil
+			}
 		}
 	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)

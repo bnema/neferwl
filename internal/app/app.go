@@ -242,17 +242,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		if opts.HeadlessHDR {
-			for i := range sizes {
-				name := fmt.Sprintf("HEADLESS-%d", i+1)
-				select {
-				case outputFormats <- ports.OutputFormats{Output: name, HDR: &ports.OutputHDR{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: .005}}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, outputFormats, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
