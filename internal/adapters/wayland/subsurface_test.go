@@ -153,6 +153,79 @@ func TestSubsurfaceCachedViewportAndScale(t *testing.T) {
 	}
 }
 
+// Only the final state of a graph is ever sampled by an output. Buffers
+// replaced inside the graph must be released without an output acknowledgement.
+func TestSubsurfaceSupersededBufferReleased(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	_, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	first := shmBuffer(t, c)
+	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
+	p.SetID(first)
+	c.Context().Register(p)
+	for _, b := range []uint32{first, shmBuffer(t, c)} {
+		requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+		requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	}
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("superseded unpublished buffer held for output")
+	}
+}
+
+// Destroying a queued child removes it from captured parent layouts and
+// retires its unpublished buffer without publishing its content.
+func TestSubsurfaceDestroyQueuedChild(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	drainContents(contents)
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	b := shmBuffer(t, c)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, child, wayland.SurfaceRequestDestroy)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case got := <-contents:
+			if got.ID == w.ID && len(got.Children) != 0 {
+				t.Fatalf("destroyed child published: %+v", got)
+			}
+			if got.ID == w.ID {
+				return
+			}
+		case <-deadline:
+			t.Fatal("no parent update after child destroy")
+		}
+	}
+}
+
 // A synchronized child cannot publish until a parent commits; position and
 // order are part of that same parent update.
 func TestSubsurfaceInitialSyncAndDeferredLayout(t *testing.T) {
