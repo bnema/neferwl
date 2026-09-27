@@ -46,16 +46,16 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 `output.<name>.hdr = on` sends HDR10 (BT.2020, PQ) to displays whose EDID and connector support it. The desktop stays SDR content, shown at `sdr-brightness` nits.
 
-Native Wayland clients can present HDR through `wp_color_manager_v1`: Mesa's Vulkan driver then offers HDR10 or extended-linear fp16 swapchains, so Proton or Wine with the Wayland driver and HDR-aware Wayland apps output HDR. X11 clients stay SDR.
+HDR-aware Wayland clients, including games through Vulkan WSI, browsers, and video players, can present HDR through `wp_color_manager_v1` and `wp_color_representation_v1`. Some apps require HDR to be enabled in their own settings. X11 clients stay SDR.
 
-Firefox requires `gfx.wayland.hdr=true` (restart Firefox) for Wayland HDR video. Hardware-decoded video uses NV12 (8-bit) or P010 (10-bit) DMA-BUF subsurfaces with BT.601/709/2020 coefficients, full or limited range, and chroma-location type 0 via `wp_color_representation_v1`. These multi-plane formats are offered **only if the selected Vulkan device supports disjoint DMA-BUF import**; if not offered, Firefox must fall back to an RGB video path. Current RADV on the tested AMD GPUs does not expose disjoint for NV12/P010, so zero-copy HDR video remains unavailable there. Check the compositor's advertised DMA-BUF formats and Firefox's `about:support` (Hardware Video Decoding).
+Hardware-decoded video can use NV12 (8-bit) or P010 (10-bit) DMA-BUF subsurfaces with BT.601/709/2020 coefficients, full or limited range, and chroma-location type 0. The Vulkan device must support sampling the format/modifier with per-plane views; planes in one DMA-BUF use one memory import, while separate plane buffers additionally require Vulkan DISJOINT support. Unsupported formats are not offered. Confirm hardware decoding and the advertised DMA-BUF formats when testing an app.
 
 - Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
 - Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending.
 - Screenshots and capture of HDR outputs are converted to 8-bit sRGB, clipping highlights at SDR white (only the capture is clipped).
 - The display gets the metadata from its own EDID, not the client's MaxCLL/MaxFALL.
 
-Supported GPUs: AMD (amdgpu). NVIDIA is not supported yet.
+HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 composition and 10-bit export formats/features. Unsupported capabilities fall back to SDR. NVIDIA is not supported yet (tested status).
 
 ## Binds
 
