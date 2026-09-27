@@ -142,9 +142,12 @@ type subsurface struct{ surface *surface }
 func (subsurface) Destroy(*wayland.Subsurface) {}
 func (s subsurface) SetPosition(_ *wayland.Subsurface, x, y int32) {
 	p := s.surface.sub.parent
+	if p == nil {
+		return
+	}
 	p.sub.pendingLayout = append([]childLayout(nil), p.sub.pendingLayout...)
 	for i := range p.sub.pendingLayout {
-		item := &s.surface.sub.parent.sub.pendingLayout[i]
+		item := &p.sub.pendingLayout[i]
 		if item.child == s.surface {
 			item.x, item.y = int(x), int(y)
 			break
@@ -214,9 +217,6 @@ func (s subsurface) restack(r *wayland.Subsurface, sibling *wayland.Surface, abo
 	list[at] = item
 	p.sub.pendingLayout = list
 }
-
-// sortBelowFirst moves children below their parent ahead of those above,
-// keeping each group's order.
 
 // region keeps the bounding box of the rectangles added: pointer
 // confinement is the only user, and subtracted areas are ignored.
