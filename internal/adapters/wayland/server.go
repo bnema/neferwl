@@ -45,18 +45,24 @@ type Channels struct {
 	// Presented paces frame callbacks on the outputs' page flips; outputs
 	// that do not flip (idle, headless) are paced at their refresh rate.
 	Presented <-chan ports.OutputPresented
+	Captures  chan<- ports.CaptureRequest
+	Captured  <-chan ports.CaptureDone
 	// OutputFormats are the outputs' direct scanout formats, offered in
 	// dmabuf feedback to fullscreen surfaces.
 	OutputFormats <-chan ports.OutputFormats
 }
 type Server struct {
-	display      *server.Display
-	env          procEnv
-	slotsPending bool // core waits for a slot window
-	name         string
-	cleanup      func()
-	log          zerowrap.Logger
-	channels     Channels
+	nextCapture     uint64
+	captureReplies  map[uint64]func(ports.CaptureDone)
+	captureSources  map[*server.Resource]*output
+	captureSessions map[*captureSession]struct{}
+	display         *server.Display
+	env             procEnv
+	slotsPending    bool // core waits for a slot window
+	name            string
+	cleanup         func()
+	log             zerowrap.Logger
+	channels        Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting   map[string][]*wayland.Callback
@@ -191,6 +197,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s.captureReplies = map[uint64]func(ports.CaptureDone){}
+	s.captureSources = map[*server.Resource]*output{}
+	s.captureSessions = map[*captureSession]struct{}{}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
 	s.flips = map[string]ports.FlipInfo{}
@@ -254,7 +263,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(7)
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
 	go func() { defer wg.Done(); s.forwardContents(ctx) }()
@@ -292,6 +301,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 	go func() { defer wg.Done(); s.pace(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
+	go func() { defer wg.Done(); s.forwardCaptured(ctx.Done()) }()
 	if s.syncWait != nil {
 		wg.Add(1)
 		go func() { defer wg.Done(); s.syncWait.run(ctx) }()

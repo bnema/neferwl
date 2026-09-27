@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"image"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -398,7 +399,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, presented)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, presented, nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
 	waitFor(t, func() bool { return frameCommits() == 1 })
@@ -445,5 +446,80 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// A request must render even when the output already has an unchanged scene.
+func TestCaptureForcesDRMComposition(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.cursor, o.tearing = nil, false
+	flips := make(chan flipEvent, 2)
+	o.flipped = flips
+	r := &portsmocks.MockRenderer{}
+	makeBuf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	rendered := make(chan ports.Scene, 3)
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		rendered <- s
+		return nil, nil
+	})
+	r.EXPECT().Capture(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{3, 4, 5, 255}); return nil }).Once()
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	scenes := make(chan ports.Scene, 1)
+	requests := make(chan ports.CaptureRequest, 1)
+	replies := make(chan ports.CaptureDone, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, make(chan ports.OutputPresented, 8), requests, replies)
+	}()
+	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
+	select {
+	case <-rendered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no initial render")
+	}
+	waitFor(t, func() bool { commitMu.Lock(); defer commitMu.Unlock(); return len(*commits) > 0 })
+	commitMu.Lock()
+	last := (*commits)[len(*commits)-1]
+	commitMu.Unlock()
+	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+	f, err := os.CreateTemp(t.TempDir(), "capture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(16); err != nil {
+		t.Fatal(err)
+	}
+	requests <- ports.CaptureRequest{ID: 4, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Dst: ports.SHMBuffer{File: f}}
+	select {
+	case result := <-replies:
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("capture not replied")
+	}
+	select {
+	case <-rendered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("capture did not render")
+	}
+	r.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("fd not closed")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

@@ -171,7 +171,7 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1))
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
 	}()
 	count := func(flags uint32) int {
 		commitMu.Lock()
@@ -287,7 +287,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents, nil, presented)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents, nil, presented, nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	var frame commitRec
@@ -370,7 +370,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, presented)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, presented, nil, nil)
 	}()
 	count := func() int {
 		commitMu.Lock()
