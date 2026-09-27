@@ -80,6 +80,10 @@ func readConnectorHDRProps(fd int, props map[string][2]uint64) connectorHDRProps
 		if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) == nil && p.countEn > 0 {
 			enums := make([]propEnum, p.countEn)
 			p.enumBlobs = uint64(uintptr(unsafe.Pointer(&enums[0])))
+			// The kernel also copies an enum's values when countValues is
+			// set: a nil values pointer makes the whole call fail (EFAULT).
+			values := make([]uint64, max(p.countValues, 1))
+			p.values = uint64(uintptr(unsafe.Pointer(&values[0])))
 			if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) == nil {
 				out.Colorspace, out.BT2020Value = bt2020Enum(id, enums[:min(int(p.countEn), len(enums))])
 				for _, e := range enums[:min(int(p.countEn), len(enums))] {
@@ -89,6 +93,7 @@ func readConnectorHDRProps(fd int, props map[string][2]uint64) connectorHDRProps
 				}
 			}
 			runtime.KeepAlive(enums)
+			runtime.KeepAlive(values)
 		}
 	}
 	if id := uint32(props["max bpc"][0]); id != 0 {
