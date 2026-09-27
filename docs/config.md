@@ -75,7 +75,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window |
-| `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off |
+| `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets` |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor |
 | `focus-window-up/down` | Focus in the column; past the edge, the next workspace |
