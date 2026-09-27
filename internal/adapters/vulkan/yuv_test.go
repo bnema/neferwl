@@ -13,7 +13,7 @@ import (
 )
 
 // Each plane can be backed by a separate DMA-BUF, as with VAAPI exports.
-func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int) *ports.DMABuf {
+func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int, rows ...[3]int) *ports.DMABuf {
 	t.Helper()
 	format := fourcc('N', 'V', '1', '2')
 	if p010 {
@@ -49,6 +49,13 @@ func yuvTestBuffer(t *testing.T, p010 bool, y, u, v int) *ports.DMABuf {
 		}
 		for n, ch := start, 0; n < end; ch++ {
 			val := values[ch%len(values)]
+			if len(rows) > 0 {
+				if i == 0 && (n-start)/int(stride) < 4 {
+					val = rows[0][0]
+				} else if i == 1 && (n-start)/int(stride) < 2 {
+					val = rows[0][ch%len(values)+1]
+				}
+			}
 			if p010 {
 				code := uint16(val << 6)
 				data[n], data[n+1] = byte(code), byte(code>>8)
@@ -158,4 +165,27 @@ func TestYUVComposition(t *testing.T) {
 func pqDecode(code float64) float64 {
 	p := math.Pow(code, 32.0/2523)
 	return math.Pow(math.Max(p-3424.0/4096, 0)/(2413.0/128-p*2392.0/128), 16384.0/2610) * 10000
+}
+
+// Luma and chroma rows outside the crop must not bleed into its edge.
+func TestYUVSourceCropEdges(t *testing.T) {
+	r, err := New(64, 16)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	b := yuvTestBuffer(t, false, 235, 128, 128, [3]int{16, 16, 240})
+	if !slices.Contains(r.DMABuf().Formats, ports.DMABufFormat{Format: b.Format}) {
+		t.Skipf("linear NV12 not importable")
+	}
+	c := ports.SurfaceContent{ID: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Source: [4]float32{0, 4, 64, 8}, Opaque: true, DMABuf: b, Color: ports.SurfaceColor{Coefficients: 2, Range: 2, Chroma: 1}}
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	for _, y := range []int{0, 1, 8, 15} {
+		if got := r.Pixels().RGBAAt(8, y); !near(got, color.RGBA{255, 255, 255, 255}, 8) {
+			t.Errorf("cropped edge y=%d: %v, want white", y, got)
+		}
+	}
 }

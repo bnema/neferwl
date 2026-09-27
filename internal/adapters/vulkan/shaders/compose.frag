@@ -50,9 +50,13 @@ vec3 pqToSRGB(vec3 v, float whiteNits) {
 // vec2 coordinates are normalized to the chroma image for linear filtering.
 vec4 sampleYUV(vec2 src) {
     ivec2 size = textureSize(tex, 0);
-    vec2 lumaUV = src / vec2(size);
-    float y = texture(tex, lumaUV).r;
-    vec2 chromaUV = vec2((src.x + 0.5) / float(size.x), src.y / float(size.y));
+    vec2 luma = clamp(src, d.crop.xy + 0.5, d.crop.zw - 0.5);
+    float y = texture(tex, luma / vec2(size)).r;
+    // Type 0 chroma is shifted half a luma pixel in x. Clamp in
+    // half-resolution texel space before filtering the chroma plane.
+    vec2 chroma = clamp((src + vec2(0.5, 0.0)) * 0.5,
+        d.crop.xy * 0.5 + 0.5, d.crop.zw * 0.5 - 0.5);
+    vec2 chromaUV = chroma * 2.0 / vec2(size);
     vec2 cbcr = texture(chromaTex, chromaUV).rg;
     bool tenBit = (d.misc.y & flagP010) != 0u;
     bool limited = ((d.buf.w >> 8) & 255u) == 2u;
