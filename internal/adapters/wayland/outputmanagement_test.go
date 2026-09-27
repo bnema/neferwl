@@ -15,6 +15,7 @@ type managementEvents struct {
 	wlturbo.BaseProxy
 	events chan [2]uint32
 	client *wlturbo.Display
+	modes  chan uint32
 }
 
 func (p *managementEvents) Dispatch(e *wlturbo.Event) {
@@ -23,7 +24,7 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 		msg[1] = e.Uint32()
 	}
 	if e.Opcode == uint16(wlr.ZwlrOutputManagerV1EventHead) {
-		h := &managementHeadEvents{client: p.client}
+		h := &managementHeadEvents{client: p.client, modes: p.modes}
 		h.SetID(msg[1])
 		p.client.Context().Register(h)
 	}
@@ -33,6 +34,7 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 type managementHeadEvents struct {
 	wlturbo.BaseProxy
 	client *wlturbo.Display
+	modes  chan uint32
 }
 
 func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
@@ -40,6 +42,9 @@ func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
 		mode := &protocolProxy{}
 		mode.SetID(e.Uint32())
 		p.client.Context().Register(mode)
+		if p.modes != nil {
+			p.modes <- mode.ID()
+		}
 	}
 }
 func outputTestServer(t *testing.T) (*Server, chan ports.OutputHeads, chan ports.OutputApply, chan ports.OutputApplied, string) {
@@ -214,4 +219,134 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	}
 	replies <- ports.OutputApplied{ID: req.ID}
 	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
+}
+
+// Each case uses a new connection because wl_display.error terminates that client.
+func TestOutputManagementProtocolErrors(t *testing.T) {
+	const (
+		enable  = wlr.ZwlrOutputConfigurationV1RequestEnableHead
+		disable = wlr.ZwlrOutputConfigurationV1RequestDisableHead
+		apply   = wlr.ZwlrOutputConfigurationV1RequestApply
+		custom  = wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode
+	)
+	cases := []struct {
+		name   string
+		object string
+		code   uint32
+		send   func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32)
+	}{
+		{"already configured (enable)", "configuration", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, cfg, enable, c.AllocateID(), head)
+		}},
+		{"already configured (disable)", "configuration", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, cfg, disable, head)
+		}},
+		{"unconfigured head", "configuration", 2, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, cfg, apply)
+		}},
+		{"already used (configuration)", "configuration", 3, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, cfg, apply)
+			requestProtocol(t, c, cfg, apply)
+		}},
+		{"already used (head)", "configuration", 3, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, cfg, apply)
+			requestProtocol(t, c, cfg, enable, c.AllocateID(), head)
+		}},
+		{"already set mode", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetMode, mode)
+			requestProtocol(t, c, ch, custom, int32(800), int32(600), int32(60000))
+		}},
+		{"already set custom mode", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, custom, int32(800), int32(600), int32(60000))
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetMode, mode)
+		}},
+		{"already set position", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			for range 2 {
+				requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetPosition, int32(0), int32(0))
+			}
+		}},
+		{"already set transform", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			for range 2 {
+				requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetTransform, int32(0))
+			}
+		}},
+		{"already set scale", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			for range 2 {
+				requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetScale, int32(256))
+			}
+		}},
+		{"already set adaptive sync", "head", 1, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			for range 2 {
+				requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetAdaptiveSync, uint32(0))
+			}
+		}},
+		{"invalid mode", "head", 2, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetMode, mode)
+		}},
+		{"invalid custom mode", "head", 3, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, custom, int32(0), int32(600), int32(60000))
+		}},
+		{"invalid transform", "head", 4, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetTransform, int32(8))
+		}},
+		{"invalid scale", "head", 5, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetScale, int32(0))
+		}},
+		{"invalid adaptive sync state", "head", 6, func(t *testing.T, c *wlturbo.Display, cfg, ch, head, mode uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetAdaptiveSync, uint32(2))
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _, dir := outputTestServer(t)
+			if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+				t.Fatal("display stopped")
+			}
+			c := protocolClient(t, s, dir)
+			managerID := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+			p := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+			p.SetID(managerID)
+			c.Context().Register(p)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			head := recvManagement(t, p.events)
+			if head[0] != wlr.ZwlrOutputManagerV1EventHead {
+				t.Fatalf("head: %v", head)
+			}
+			var done [2]uint32
+			for done[0] != wlr.ZwlrOutputManagerV1EventDone {
+				done = recvManagement(t, p.events)
+			}
+			mode := <-p.modes
+			if tc.name == "invalid mode" {
+				other := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+				otherEvents := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+				otherEvents.SetID(other)
+				c.Context().Register(otherEvents)
+				if err := c.Roundtrip(); err != nil {
+					t.Fatal(err)
+				}
+				mode = <-otherEvents.modes
+			}
+			cfg := c.AllocateID()
+			registerProtocol(t, c, cfg)
+			requestProtocol(t, c, managerID, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, done[1])
+			var ch uint32
+			if tc.name != "unconfigured head" {
+				ch = c.AllocateID()
+				registerProtocol(t, c, ch)
+				requestProtocol(t, c, cfg, enable, ch, head[1])
+			}
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			tc.send(t, c, cfg, ch, head[1], mode)
+			object := cfg
+			if tc.object == "head" {
+				object = ch
+			}
+			expectProtocolError(t, c, object, tc.code)
+		})
+	}
 }
