@@ -13,6 +13,8 @@ packages:
       pkgname: portsmocks
       filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
     interfaces:
+      Notifier:
+      OutputScaleStore:
       Renderer:
       Seat:
   # Unexported adapter seams: mocks live next to the code, in test files.

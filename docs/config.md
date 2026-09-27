@@ -85,7 +85,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `move-window-to-workspace <N>` / `-up/-down` | Move only the focused window |
 | `focus-monitor-left/right` | Focus the neighbor monitor |
 | `move-workspace-to-monitor-left/right` | Move the workspace; it gets a new home |
-| `scale-up` / `scale-down` | Zoom the whole display |
+| `scale-up` / `scale-down` | Zoom the whole display; one second after the last press, the scale is saved to `output.<name>.scale` and a notification confirms it (`notify-send`) |
 | `quit` | Exit NeferWL |
 
 ### Default binds

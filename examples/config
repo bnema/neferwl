@@ -64,7 +64,8 @@ focus.follow-move = off
 # output.DP-2 = 5120x2160@165.058
 # output.HDMI-A-1 = off
 # Scale (HiDPI), 1 to 4, like 1.5 or 4/3. Default 1. scale-up and scale-down
-# step through the scales where the display divides into whole pixels.
+# step through the scales where the display divides into whole pixels and
+# save the result here.
 # output.DP-2.scale = 4/3
 
 render.direct-scanout = on

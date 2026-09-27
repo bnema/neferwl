@@ -468,6 +468,12 @@ func (OutputRemoved) outputEvent() {}
 // ConfigChanged carries config → core reloads.
 type ConfigChanged struct{ Config Config }
 
+// ScaleChanged carries core → persistence a scale set by a scale bind.
+type ScaleChanged struct {
+	Output string
+	Scale  float64
+}
+
 // ClientCommand carries core → wayland commands.
 type ClientCommand interface{ clientCommand() }
 
