@@ -49,7 +49,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 Native Wayland clients can present HDR through `wp_color_manager_v1`: Mesa's Vulkan driver then offers HDR10 swapchains, so Proton or Wine with the Wayland driver and HDR-aware Wayland apps output HDR. X11 clients stay SDR.
 
 - Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
-- Otherwise HDR content is composed and its highlights are clipped at SDR white.
+- Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending.
+- Screenshots and capture of HDR outputs are converted to 8-bit sRGB, clipping highlights at SDR white (only the capture is clipped).
 - The display gets the metadata from its own EDID, not the client's MaxCLL/MaxFALL.
 
 Supported GPUs: AMD (amdgpu). NVIDIA is not supported yet.

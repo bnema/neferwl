@@ -20,6 +20,7 @@ import (
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.vert -o shaders/compose.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.frag -o shaders/compose.frag.spv
+//go:generate glslc -O --target-env=vulkan1.3 shaders/compose_hdr.frag -o shaders/compose_hdr.frag.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.vert -o shaders/hdr.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.frag -o shaders/hdr.frag.spv
 
@@ -28,6 +29,8 @@ var (
 	composeVert []byte
 	//go:embed shaders/compose.frag.spv
 	composeFrag []byte
+	//go:embed shaders/compose_hdr.frag.spv
+	composeHDRFrag []byte
 )
 
 // Draw modes and flags (shaders: modeSolid, modeImage, flag*).
@@ -61,10 +64,11 @@ type draw struct {
 
 // composer is the pipeline state and the objects every draw can bind.
 type composer struct {
-	setLayout vk.DescriptorSetLayout
-	layout    vk.PipelineLayout
-	pipeline  vk.Pipeline
-	sampler   vk.Sampler
+	setLayout   vk.DescriptorSetLayout
+	layout      vk.PipelineLayout
+	pipeline    vk.Pipeline
+	hdrPipeline vk.Pipeline
+	sampler     vk.Sampler
 	// Placeholders for the binding a draw does not use: every binding
 	// the shader declares must be valid.
 	dummyImage  vk.Image
@@ -101,7 +105,10 @@ func (r *Renderer) createComposer() error {
 }
 
 func (r *Renderer) createPipeline() error {
-	return r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline)
+	if err := r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline); err != nil {
+		return err
+	}
+	return r.createGraphicsPipeline(composeVert, composeHDRFrag, vk.FormatR16g16b16a16Sfloat, r.compose.layout, true, &r.compose.hdrPipeline)
 }
 
 func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, pipeline *vk.Pipeline) error {
@@ -233,6 +240,9 @@ func (r *Renderer) destroyComposer() {
 	if c.pipeline != 0 {
 		d.DestroyPipeline(r.device, c.pipeline, nil)
 	}
+	if c.hdrPipeline != 0 {
+		d.DestroyPipeline(r.device, c.hdrPipeline, nil)
+	}
 	if c.layout != 0 {
 		d.DestroyPipelineLayout(r.device, c.layout, nil)
 	}
@@ -300,13 +310,22 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, mode uint32
 func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, ds []draw, keep bool) {
 	d, c := r.dd, &r.compose
 	clear := vk.ClearValue{math.Float32bits(float32(bg[0]) / 255), math.Float32bits(float32(bg[1]) / 255), math.Float32bits(float32(bg[2]) / 255), math.Float32bits(1)}
+	if r.hdrNits > 0 {
+		for i := 0; i < 3; i++ {
+			clear[i] = math.Float32bits(float32(srgbToLinear(float64(bg[i]) / 255)))
+		}
+	}
 	attachment := vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpClear, StoreOp: vk.AttachmentStoreOpStore, ClearValue: clear}
 	if keep {
 		attachment.LoadOp = vk.AttachmentLoadOpLoad
 	}
 	info := vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &attachment}
 	d.CmdBeginRendering(cmd, &info)
-	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, c.pipeline)
+	pipeline := c.pipeline
+	if r.hdrNits > 0 {
+		pipeline = c.hdrPipeline
+	}
+	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, pipeline)
 	var bound vk.DescriptorSet
 	for i := range ds {
 		dr := &ds[i]

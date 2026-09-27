@@ -16,8 +16,9 @@ import (
 // display accepts and exports their memory as dmabufs, which the output
 // turns into KMS framebuffers. Render then composes straight into the
 // selected target and the output flips to it; nothing is copied by the
-// CPU. In HDR the internal image retains the SDR scene, sampled by a
-// full-screen GPU pass into the 10-bit target. Pixels reads internal SDR.
+// CPU. In HDR an internal fp16 linear image keeps full-range composition,
+// sampled by a full-screen GPU pass into the 10-bit target. Capture/Pixels
+// convert to SDR sRGB only when requested.
 
 // target is an image frames are drawn into.
 type target struct {

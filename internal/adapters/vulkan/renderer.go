@@ -22,9 +22,9 @@ type Renderer struct {
 	device        vk.Device
 	dd            *vk.DeviceDispatch
 	queue         vk.Queue
-	// own is the composed image until ExportTargets; in HDR it remains
-	// the SDR composition/readback image while targets carry PQ.
+	// own is the SDR composition image; HDR uses hdrOwn and PQ targets.
 	own        target
+	hdrOwn     target // linear BT.709 in units of SDR reference white
 	targets    []*target
 	current    int
 	renderMods []uint64
@@ -221,7 +221,8 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
-	size := vk.DeviceSize(width) * vk.DeviceSize(height) * 4
+	// Readback of the optional RGBA16F HDR composition uses eight bytes/pixel.
+	size := vk.DeviceSize(width) * vk.DeviceSize(height) * 8
 	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
 	if err = checked("vkCreateBuffer", r.dd.CreateBuffer(r.device, &bi, nil, &r.buffer)); err != nil {
 		return
@@ -276,6 +277,16 @@ func (r *Renderer) Pixels() *image.RGBA {
 	if r.mapped == nil || r.readback() != nil {
 		return out
 	}
+	if r.last == &r.hdrOwn {
+		for y := range r.height {
+			for x := range r.width {
+				c := r.hdrPixel(x, y)
+				i := (y*r.width + x) * 4
+				out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = c[2], c[1], c[0], 255
+			}
+		}
+		return out
+	}
 	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
 	for i := 0; i < len(src); i += 4 {
 		// The output is opaque: x-format client buffers leave alpha undefined.
@@ -296,6 +307,16 @@ func (r *Renderer) Capture(region image.Rectangle, dst []byte, stride int) error
 	}
 	if err := r.readback(); err != nil {
 		return err
+	}
+	if r.last == &r.hdrOwn {
+		for y := range h {
+			for x := range w {
+				c := r.hdrPixel(region.Min.X+x, region.Min.Y+y)
+				i := y*stride + x*4
+				copy(dst[i:i+4], c[:])
+			}
+		}
+		return nil
 	}
 	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*4)
 	for y := range h {
@@ -393,6 +414,7 @@ func (r *Renderer) Close() {
 			r.bufferMemory = 0
 		}
 		r.destroyComposer()
+		r.freeTarget(&r.hdrOwn)
 		r.freeTarget(&r.own)
 		d.DestroyDevice(r.device, nil)
 		r.device = 0

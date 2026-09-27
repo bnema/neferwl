@@ -120,8 +120,8 @@ func TestHDRExportTarget(t *testing.T) {
 		t.Fatalf("unchanged HDR frame redrew %d pixels", r.redrawn-before)
 	}
 	checkHDRPixel(t, r, [3]float64{128.0 / 255, 128.0 / 255, 128.0 / 255})
-	if r.own.layout != vk.ImageLayoutTransferSrcOptimal {
-		t.Fatalf("internal layout after HDR: %v", r.own.layout)
+	if r.hdrOwn.layout != vk.ImageLayoutTransferSrcOptimal {
+		t.Fatalf("internal layout after HDR: %v", r.hdrOwn.layout)
 	}
 	if got := r.Pixels().RGBAAt(0, 0); got.R != 128 || got.G != 128 || got.B != 128 {
 		t.Fatalf("SDR readback: %v", got)

@@ -170,8 +170,11 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	tg := r.target()
 	hdr := r.hdrNits > 0 && len(r.targets) > 0
+	if r.hdrNits > 0 && !hdr {
+		return nil, fmt.Errorf("HDR composition requires an exported target")
+	}
 	if hdr {
-		tg = &r.own
+		tg = &r.hdrOwn
 	}
 	dmg := newDamage(tg, s, image.Rect(0, 0, r.width, r.height))
 	ds := r.draws(s, contents, dmg)
@@ -278,7 +281,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	runtime.KeepAlive(waits)
 	slot.frame, slot.busy, r.submitted = frame, true, frame
 	if hdr {
-		// recordHDR left the composed image in TRANSFER_SRC for Pixels.
+		// recordHDR left the composed linear image in TRANSFER_SRC for capture.
 		tg.layout = vk.ImageLayoutTransferSrcOptimal
 		r.targets[r.current].layout = vk.ImageLayoutGeneral
 	} else {
