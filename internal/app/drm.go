@@ -114,7 +114,7 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, formats chan<- ports.OutputFormats, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, formats chan<- ports.OutputFormats, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, configs <-chan ports.Config, applied chan<- error, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -145,9 +145,35 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 	// stopping holds outputs asked to stop: true when they restart with a
 	// new mode (core keeps the screen), false when they are gone.
 	stopping := map[string]bool{}
+	currentConfig := initial
+	var currentHeads ports.OutputHeads
+	var pendingConfig *ports.Config
+	var pendingWait map[string]bool
+	var pendingErr error
+	// Complete only when every affected output stopped/restarted and is
+	// running; the backend owns all outputSet access.
+	complete := func() {
+		if pendingConfig == nil || len(pendingWait) > 0 {
+			return
+		}
+		for _, head := range currentHeads.Heads {
+			if want(currentConfig).Disabled[head.Info.Name] {
+				continue
+			}
+			if set.outs[head.Info.Name] == nil {
+				pendingErr = errors.Join(pendingErr, fmt.Errorf("%s failed to start", head.Info.Name))
+			}
+		}
+		select {
+		case applied <- pendingErr:
+		case <-ctx.Done():
+		}
+		pendingConfig = nil
+		pendingErr = nil
+	}
 	scan := func() {
 		for _, c := range b.cards {
-			w := want()
+			w := want(currentConfig)
 			w.Device = c.Device()
 			c.SetWant(w)
 			added, removed, replaced, err := c.Scan()
@@ -195,6 +221,24 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 				send(ports.OutputAdded{Info: o.Info()})
 			}
 		}
+		var inventory ports.OutputHeads
+		for _, card := range b.cards {
+			found, err := card.ConnectedHeads()
+			if err != nil {
+				log.Warn().Err(err).Str("card", card.Path()).Msg("inventory outputs")
+				continue
+			}
+			inventory.Heads = append(inventory.Heads, found...)
+		}
+		currentHeads = inventory
+		select {
+		case heads <- inventory:
+		case <-ctx.Done():
+		}
+		select {
+		case report <- inventory:
+		case <-ctx.Done():
+		}
 	}
 	scan()
 	if len(set.outs) == 0 {
@@ -210,6 +254,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 		case <-hotplug:
 			log.Info().Msg("hotplug")
 			scan()
+		case currentConfig = <-configs:
+			pendingConfig = &currentConfig
+			pendingWait = map[string]bool{}
+			for name := range set.outs {
+				pendingWait[name] = true
+			}
+			scan()
+			// Only outputs asked to stop must finish before acknowledging.
+			for name := range pendingWait {
+				if _, ok := stopping[name]; !ok {
+					delete(pendingWait, name)
+				}
+			}
+			complete()
 		case s := <-scenes:
 			set.scenes(s)
 		case c := <-contents:
@@ -228,6 +286,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 			curs.set(name, nil)
 			cards[name].Release(name)
 			delete(cards, name)
+			if err != nil && pendingConfig != nil {
+				pendingErr = errors.Join(pendingErr, err)
+			}
 			if err != nil {
 				// A broken output (e.g. its renderer) must not take the
 				// session down. It stays off until the next hotplug, so a
@@ -240,10 +301,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func() drm.Want, event
 				// workspaces; OutputAdded updates the size.
 				scan()
 				if set.outs[name] != nil {
+					delete(pendingWait, name)
+					complete()
 					continue
 				}
 			}
 			send(ports.OutputRemoved{Name: name})
+			delete(pendingWait, name)
+			complete()
 		}
 	}
 }

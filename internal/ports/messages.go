@@ -358,6 +358,49 @@ func (i OutputInfo) Key() string {
 	return i.Make + " " + i.Model + " " + i.Serial
 }
 
+// OutputMode describes a connected connector's physical mode.
+type OutputMode struct {
+	Width, Height, RefreshMilli int
+	Preferred                   bool
+}
+
+// OutputHead describes a connected connector even when it is disabled.
+// Current is the active mode; it is nil for disabled or not-yet-running heads.
+type OutputHead struct {
+	Info    OutputInfo
+	Modes   []OutputMode
+	Current *OutputMode
+	Enabled bool
+}
+
+// OutputHeads is a complete backend inventory, delivered to Wayland after a scan.
+type OutputHeads struct{ Heads []OutputHead }
+
+// HeadChange is the complete desired state of one head in a configuration.
+type HeadChange struct {
+	Name         string
+	Enabled      bool
+	Mode         *OutputMode
+	CustomMode   bool
+	Pos          *image.Point
+	Scale        float64
+	Transform    int
+	AdaptiveSync *bool
+}
+
+// OutputApply asks the app owner to validate or apply a runtime configuration.
+type OutputApply struct {
+	ID    uint64
+	Test  bool
+	Heads []HeadChange
+}
+
+// OutputApplied reports completion (or failure) of a runtime configuration.
+type OutputApplied struct {
+	ID  uint64
+	Err error
+}
+
 // OutputAdded carries output → core a new display, or a new mode for a known
 // connector.
 type OutputAdded struct{ Info OutputInfo }

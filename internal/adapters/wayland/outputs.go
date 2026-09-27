@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -135,6 +136,13 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 // advertised, gone ones withdrawn (their layer surfaces are closed), and
 // changed ones resent.
 func (s *Server) setOutputs(c ports.SetOutputs) {
+	changed := !slices.Equal(s.outputPlaces, c.Outputs)
+	s.outputPlaces = append(ports.Layout(nil), c.Outputs...)
+	defer func() {
+		if changed {
+			s.refreshOutputManagers()
+		}
+	}()
 	s.focusedOutput = c.Focused
 	want := map[string]ports.OutputPlacement{}
 	for _, p := range c.Outputs {
