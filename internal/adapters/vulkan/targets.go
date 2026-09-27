@@ -105,7 +105,7 @@ func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 		available = r.hdrMods
 	}
 	for _, m := range available {
-		if (len(display) == 0 && r.hdrNits == 0) || slices.Contains(display, m) {
+		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback)) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
 	}
