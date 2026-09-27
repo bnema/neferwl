@@ -59,6 +59,17 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 	if ov, _ := o.overlayFrame(ports.Scene{}, nil); ov.fb != 0 || o.overlayReason != "hdr" {
 		t.Fatalf("overlay: fb %d reason %q", ov.fb, o.overlayReason)
 	}
+	// Colorspace property without a Default enum must not receive invented 0.
+	o.hdrOn = false
+	o.hdrProps.HasDefault = false
+	if _, ok := o.modesetReq(11, true).value(o.conn.id, o.hdrProps.Colorspace); ok {
+		t.Fatal("SDR set Colorspace with no Default enum")
+	}
+	restore := &atomicReq{}
+	o.hdrConnectorProps(restore, false)
+	if _, ok := restore.value(o.conn.id, o.hdrProps.Colorspace); ok {
+		t.Fatal("restore set Colorspace with no Default enum")
+	}
 }
 
 func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
@@ -171,5 +182,107 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 				t.Fatalf("commit prop %d: %d (%t), want %d", tc.prop, got, ok, tc.want)
 			}
 		}
+	}
+}
+
+// The metadata blob is retained across repeated image setup (e.g. VT resume)
+// and destroyed only once when Close restores SDR.
+func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
+	o, k, commits := testOutput(t)
+	o.cursor = nil
+	o.hdr = hdrCapability{Capable: true}
+	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
+	r := portsmocks.NewMockRenderer(t)
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
+	r.EXPECT().ExportTargets(2, []uint64{19}).RunAndReturn(func(int, []uint64) ([]ports.DMABuf, error) { return []ports.DMABuf{buf(), buf()}, nil }).Twice()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	created, destroyed := 0, 0
+	k.EXPECT().createBlob(mock.Anything).RunAndReturn(func(data []byte) (uint32, error) {
+		if len(data) == 32 {
+			created++
+			return 321, nil
+		}
+		return 11, nil
+	})
+	k.EXPECT().destroyBlob(mock.Anything).RunAndReturn(func(id uint32) error {
+		if id == 321 {
+			destroyed++
+		}
+		return nil
+	})
+	for i := 0; i < 2; i++ {
+		if err := o.showImages(r, imagesDriver, nil); err != nil {
+			t.Fatal(err)
+		}
+		if o.hdrBlob != 321 || created != 1 || destroyed != 0 {
+			t.Fatalf("pass %d blob %d created %d destroyed %d", i, o.hdrBlob, created, destroyed)
+		}
+	}
+	if len(*commits) != 4 {
+		t.Fatalf("commits: %d", len(*commits))
+	}
+	o.Close()
+	if created != 1 || destroyed != 1 {
+		t.Fatalf("created %d destroyed %d", created, destroyed)
+	}
+}
+
+func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.hdr = hdrCapability{Capable: true}
+	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
+	r := portsmocks.NewMockRenderer(t)
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().SetHDR(float64(ports.DefaultSDRBrightness)).Return().Twice()
+	r.EXPECT().ExportTargets(2, []uint64{19}).RunAndReturn(func(int, []uint64) ([]ports.DMABuf, error) { return []ports.DMABuf{buf(), buf()}, nil }).Twice()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	metadata := uint32(320)
+	k.EXPECT().createBlob(mock.Anything).RunAndReturn(func(data []byte) (uint32, error) {
+		if len(data) == 32 {
+			metadata++
+			return metadata, nil
+		}
+		return 11, nil
+	})
+	var destroyed []uint32
+	k.EXPECT().destroyBlob(mock.Anything).RunAndReturn(func(id uint32) error {
+		if id >= 321 {
+			destroyed = append(destroyed, id)
+		}
+		return nil
+	})
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	o.monitor.HDR.MaxLuminance = 1000
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.hdrBlob != 322 || !slices.Equal(destroyed, []uint32{321}) {
+		t.Fatalf("blob %d destroyed %v", o.hdrBlob, destroyed)
+	}
+	o.Close()
+	if !slices.Equal(destroyed, []uint32{321, 322}) {
+		t.Fatalf("destroyed %v", destroyed)
 	}
 }

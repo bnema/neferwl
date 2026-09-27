@@ -38,6 +38,7 @@ type Output struct {
 	// the currently selected signal encoding, including on VT resume.
 	hdrOn, hdrFailed bool
 	hdrBlob          uint32
+	hdrBlobData      hdrOutputMetadata
 	log              zerowrap.Logger
 	// Properties: CRTC and connector property IDs by name.
 	crtcProps map[string]uint32
@@ -1261,14 +1262,36 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 	if o.hdrSettings.Enabled && o.hdr.Capable && !o.hdrFailed {
 		o.hdrOn = true
 		meta := hdrMetadata(o.monitor)
-		blob, err := o.k.createBlob(meta.bytes())
+		// Reuse the live blob across VT resume. A changed EDID creates a
+		// replacement, but the old one remains alive until KMS accepts it.
+		oldBlob := o.hdrBlob
+		created := false
+		var err error
+		if oldBlob == 0 || meta != o.hdrBlobData {
+			var newBlob uint32
+			newBlob, err = o.k.createBlob(meta.bytes())
+			if err == nil {
+				o.hdrBlob = newBlob
+				created = true
+			}
+		}
 		if err == nil {
-			o.hdrBlob = blob
 			r.SetHDR(float64(o.hdrSettings.SDRBrightness))
 			err = o.showImageKind(r, imagesDriver, nil)
 		}
 		if err == nil {
+			if created {
+				o.hdrBlobData = meta
+				if oldBlob != 0 {
+					_ = o.k.destroyBlob(oldBlob)
+				}
+			}
 			return nil
+		}
+		if created && oldBlob != 0 {
+			// Failed replacement: the existing modeset may still use it.
+			_ = o.k.destroyBlob(o.hdrBlob)
+			o.hdrBlob = oldBlob
 		}
 		o.log.Warn().Err(err).Str("component", "drm").Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
 		o.hdrFailed = true
@@ -1276,14 +1299,19 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 		o.freeImages()
 		r.SetHDR(0)
 		_, _ = r.ExportTargets(0, nil)
-		if o.hdrBlob != 0 {
-			_ = o.k.destroyBlob(o.hdrBlob)
-			o.hdrBlob = 0
-		}
+		// A failed test commit can leave the old HDR mode on screen;
+		// retain its blob until the SDR modeset succeeds or Close restores it.
 	} else {
 		r.SetHDR(0)
 	}
-	return o.showImageKind(r, kind, cause)
+	err := o.showImageKind(r, kind, cause)
+	if err == nil && o.hdrFailed && o.hdrBlob != 0 {
+		// The SDR commit has completed; the old HDR metadata is no longer in use.
+		_ = o.k.destroyBlob(o.hdrBlob)
+		o.hdrBlob = 0
+		o.hdrBlobData = hdrOutputMetadata{}
+	}
+	return err
 }
 
 func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) error {

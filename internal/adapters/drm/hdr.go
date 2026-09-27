@@ -53,7 +53,7 @@ func (o *Output) hdrConnectorProps(req *atomicReq, enabled bool) {
 		return
 	}
 	req.set(o.conn.id, p.MaxBPC, p.MaxBPCValue)
-	if p.HasDefault || p.Colorspace != 0 {
+	if p.HasDefault {
 		req.set(o.conn.id, p.Colorspace, p.DefaultValue)
 	}
 	req.set(o.conn.id, p.Metadata, 0)

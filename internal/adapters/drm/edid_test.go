@@ -57,7 +57,7 @@ func TestEDIDHDR(t *testing.T) {
 }
 
 func TestDetectHDR(t *testing.T) {
-	m := Monitor{HDR: HDRMetadata{PQ: true, BT2020RGB: true}}
+	m := Monitor{HDR: HDRMetadata{PQ: true, BT2020RGB: true, StaticType1: true}}
 	p := connectorHDRProps{Metadata: 1, Colorspace: 2, MaxBPC: 3, HasDefault: true}
 	cases := []struct {
 		name   string
@@ -66,8 +66,9 @@ func TestDetectHDR(t *testing.T) {
 		reason string
 	}{
 		{"ready", m, p, ""},
-		{"no PQ", Monitor{HDR: HDRMetadata{BT2020RGB: true}}, p, "edid: no PQ"},
-		{"no RGB", Monitor{HDR: HDRMetadata{PQ: true}}, p, "edid: no BT2020RGB"},
+		{"no PQ", Monitor{HDR: HDRMetadata{BT2020RGB: true, StaticType1: true}}, p, "edid: no PQ"},
+		{"no RGB", Monitor{HDR: HDRMetadata{PQ: true, StaticType1: true}}, p, "edid: no BT2020RGB"},
+		{"no type 1", Monitor{HDR: HDRMetadata{PQ: true, BT2020RGB: true}}, p, "edid: no static metadata type 1"},
 		{"no metadata", m, connectorHDRProps{Colorspace: 2, MaxBPC: 3, HasDefault: true}, "connector: no HDR_OUTPUT_METADATA"},
 		{"no colorspace", m, connectorHDRProps{Metadata: 1, MaxBPC: 3}, "connector: no BT2020_RGB Colorspace"},
 		{"no bpc", m, connectorHDRProps{Metadata: 1, Colorspace: 2, HasDefault: true}, "connector: max bpc below 10"},

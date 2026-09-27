@@ -130,6 +130,8 @@ func detectHDR(m Monitor, p connectorHDRProps) hdrCapability {
 	switch {
 	case !m.HDR.PQ:
 		c.Reason = "edid: no PQ"
+	case !m.HDR.StaticType1:
+		c.Reason = "edid: no static metadata type 1"
 	case !m.HDR.BT2020RGB:
 		c.Reason = "edid: no BT2020RGB"
 	case p.Metadata == 0:
