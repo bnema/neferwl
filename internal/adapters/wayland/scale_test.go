@@ -185,6 +185,33 @@ viewportOnly:
 			t.Fatal("no viewport-only content")
 		}
 	}
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(256), int32(256), int32(5*256), int32(4*256))
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(-1), int32(-1))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if got.LogicalW != 5 || got.LogicalH != 4 || got.Source != [4]float32{1, 1, 5, 4} {
+			t.Fatalf("source-only crop: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no crop content")
+	}
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(2), int32(3))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-contents:
+		if got.LogicalW != 2 || got.LogicalH != 3 || got.Source != [4]float32{1, 1, 5, 4} {
+			t.Fatalf("source and destination: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no source and destination content")
+	}
 }
 
 func TestBufferScaleLogicalSize(t *testing.T) {
@@ -195,6 +222,66 @@ func TestBufferScaleLogicalSize(t *testing.T) {
 	st.viewport = &viewport{surface: st, destW: 7, destH: 3, dest: true}
 	if w, h := st.logicalSize(200, 100); w != 7 || h != 3 {
 		t.Fatal(w, h)
+	}
+}
+
+func TestViewportBadSource(t *testing.T) {
+	s, _, _, _, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	comp := bindProtocol(t, c, "wl_compositor")
+	vpm := bindProtocol(t, c, "wp_viewporter")
+	surf, vp := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
+	registerProtocol(t, c, vp)
+	requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(-256), int32(0), int32(256), int32(256))
+	expectProtocolError(t, c, vp, uint32(viewporter.WpViewportErrorBadValue))
+}
+
+func TestViewportApplyErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		width       int32
+		destination bool
+		code        viewporter.WpViewportError
+	}{
+		{"bad_size", 128, false, viewporter.WpViewportErrorBadSize},
+		{"out_of_buffer", 512, true, viewporter.WpViewportErrorOutOfBuffer},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _, _, dir := contentServer(t)
+			c := protocolClient(t, s, dir)
+			comp := bindProtocol(t, c, "wl_compositor")
+			vpm := bindProtocol(t, c, "wp_viewporter")
+			shm := bindProtocol(t, c, "wl_shm")
+			registerProtocol(t, c, shm)
+			surf, vp := c.AllocateID(), c.AllocateID()
+			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+			requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
+			registerProtocol(t, c, vp)
+			fd, err := unix.MemfdCreate("viewport", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Close(fd)
+			if err := unix.Ftruncate(fd, 4); err != nil {
+				t.Fatal(err)
+			}
+			pool, buf := c.AllocateID(), c.AllocateID()
+			registerProtocol(t, c, pool)
+			registerProtocol(t, c, buf)
+			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+				t.Fatal(err)
+			}
+			requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(0))
+			requestProtocol(t, c, vp, viewporter.WpViewportRequestSetSource, int32(0), int32(0), tc.width, int32(256))
+			if tc.destination {
+				requestProtocol(t, c, vp, viewporter.WpViewportRequestSetDestination, int32(1), int32(1))
+			}
+			requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+			requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+			expectProtocolError(t, c, vp, uint32(tc.code))
+		})
 	}
 }
 

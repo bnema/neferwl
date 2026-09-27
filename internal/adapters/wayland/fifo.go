@@ -207,6 +207,8 @@ type update struct {
 	vp             *viewport
 	vpW, vpH       int32
 	vpSet          bool
+	vpSrc         [4]server.Fixed
+	vpCrop        bool
 	moves          []childMove
 	xdg            *xdgSurface
 	geometry       ports.Rect
@@ -239,7 +241,7 @@ func (s *surface) takePending() update {
 	s.pendingDamage, s.pendingBufDamage = nil, nil
 	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
 	if v := s.viewport; v != nil {
-		u.vp, u.vpW, u.vpH, u.vpSet = v, v.pendingW, v.pendingH, v.pendingSet
+		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}
 	for _, ch := range s.sub.children {
 		if ch.sub.moved {
@@ -271,6 +273,7 @@ func (s *surface) putPending(u update) {
 	s.pendingFeedback, s.pendingSync = u.feedback, u.sync
 	if u.vp != nil && s.viewport == u.vp {
 		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
+		u.vp.pendingSrc, u.vp.pendingCrop = u.vpSrc, u.vpCrop
 	}
 	for _, m := range u.moves {
 		if m.child.sub.parent == s {

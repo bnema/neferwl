@@ -780,6 +780,9 @@ type SurfaceContent struct {
 	Seq                uint64
 	Width, Height      int
 	LogicalW, LogicalH int
+	// Source is the committed crop in buffer pixels: x, y, width, height.
+	// Zero width means the entire buffer is used.
+	Source [4]float32
 	Opaque             bool // x formats: ignore the alpha byte
 	Color              SurfaceColor
 	SHM                *SHMBuffer

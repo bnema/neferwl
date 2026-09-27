@@ -43,6 +43,30 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	}
 }
 
+func TestRendererSourceCrop(t *testing.T) {
+	r, err := New(16, 8)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	px := []byte{0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255}
+	c := shmContent(t, 4, 1, 16, px)
+	c.LogicalW, c.LogicalH = 16, 8
+	c.Source = [4]float32{1, 0, 2, 1}
+	scene := ports.Scene{Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 8}}}}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x    int
+		want color.RGBA
+	}{{0, color.RGBA{0, 255, 0, 255}}, {15, color.RGBA{0, 0, 255, 255}}} {
+		if got := r.Pixels().RGBAAt(tc.x, 4); !near(got, tc.want, 5) {
+			t.Errorf("crop x=%d: %v want %v", tc.x, got, tc.want)
+		}
+	}
+}
+
 // Scaled dmabufs are sampled with the linear sampler.
 func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 	r, err := New(128, 4)

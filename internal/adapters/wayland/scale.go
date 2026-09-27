@@ -158,6 +158,7 @@ func (h viewporterHandler) GetViewport(r *viewporter.WpViewporter, id uint32, w 
 		return
 	}
 	surf.viewport = vp
+	vp.resource = res
 	res.OnDestroy = func() {
 		// Destroying the viewport resets the size on the next commit.
 		if surf.viewport == vp {
@@ -166,17 +167,29 @@ func (h viewporterHandler) GetViewport(r *viewporter.WpViewporter, id uint32, w 
 	}
 }
 
-// viewport holds the pending and committed wp_viewport destination; the
-// source crop is accepted and ignored (clients use it for video crops).
+// viewport holds double-buffered crop and destination state.
 type viewport struct {
-	surface          *surface
-	pendingW, destW  int32
-	pendingH, destH  int32
-	pendingSet, dest bool
+	surface           *surface
+	resource          *viewporter.WpViewport
+	pendingW, destW   int32
+	pendingH, destH   int32
+	pendingSet, dest  bool
+	pendingSrc, src   [4]server.Fixed
+	pendingCrop, crop bool
 }
 
 func (*viewport) Destroy(*viewporter.WpViewport) {}
-func (*viewport) SetSource(*viewporter.WpViewport, server.Fixed, server.Fixed, server.Fixed, server.Fixed) {
+func (v *viewport) SetSource(r *viewporter.WpViewport, x, y, w, h server.Fixed) {
+	if v.surface.destroyed {
+		r.PostError(uint32(viewporter.WpViewportErrorNoSurface), "surface destroyed")
+		return
+	}
+	unset := x == -256 && y == -256 && w == -256 && h == -256
+	if !unset && (x < 0 || y < 0 || w <= 0 || h <= 0) {
+		r.PostError(uint32(viewporter.WpViewportErrorBadValue), "invalid source rectangle")
+		return
+	}
+	v.pendingSrc, v.pendingCrop = [4]server.Fixed{x, y, w, h}, !unset
 }
 func (v *viewport) SetDestination(r *viewporter.WpViewport, w, h int32) {
 	if v.surface.destroyed {
@@ -189,13 +202,55 @@ func (v *viewport) SetDestination(r *viewporter.WpViewport, w, h int32) {
 	}
 	v.pendingW, v.pendingH, v.pendingSet = w, h, w != -1
 }
-func (v *viewport) commit() { v.destW, v.destH, v.dest = v.pendingW, v.pendingH, v.pendingSet }
+func (v *viewport) commit() {
+	v.destW, v.destH, v.dest = v.pendingW, v.pendingH, v.pendingSet
+	v.src, v.crop = v.pendingSrc, v.pendingCrop
+}
+
+// source returns buffer-pixel crop coordinates, precomputed at commit.
+func (s *surface) source(bw, bh int) ([4]float32, bool) {
+	if s.viewport == nil || !s.viewport.crop {
+		return [4]float32{}, false
+	}
+	v := s.viewport.src
+	scale := float32(max(s.bufferScale, 1)) / 256
+	return [4]float32{float32(v[0]) * scale, float32(v[1]) * scale, float32(v[2]) * scale, float32(v[3]) * scale}, true
+}
+
+func (s *surface) validateViewport(bw, bh int) bool {
+	v := s.viewport
+	if v == nil || !v.crop {
+		return true
+	}
+	if !v.dest && (v.src[2]%256 != 0 || v.src[3]%256 != 0) {
+		s.viewportError(viewporter.WpViewportErrorBadSize, "non-integer source size without destination")
+		return false
+	}
+	// int64 prevents overflow when adding signed fixed coordinates.
+	if int64(v.src[0])+int64(v.src[2]) > int64(bw)*256/int64(max(s.bufferScale, 1)) ||
+		int64(v.src[1])+int64(v.src[3]) > int64(bh)*256/int64(max(s.bufferScale, 1)) {
+		s.viewportError(viewporter.WpViewportErrorOutOfBuffer, "source exceeds buffer")
+		return false
+	}
+	return true
+}
+
+func (s *surface) viewportError(code viewporter.WpViewportError, message string) {
+	if s.viewport != nil && s.viewport.resource != nil {
+		s.viewport.resource.PostError(uint32(code), message)
+	}
+}
 
 // logicalSize is the surface size in logical pixels: the viewport
 // destination, else the buffer divided by its integer buffer scale.
 func (s *surface) logicalSize(bw, bh int) (int, int) {
-	if s.viewport != nil && s.viewport.dest {
-		return int(s.viewport.destW), int(s.viewport.destH)
+	if s.viewport != nil {
+		if s.viewport.dest {
+			return int(s.viewport.destW), int(s.viewport.destH)
+		}
+		if s.viewport.crop {
+			return int(s.viewport.src[2]) / 256, int(s.viewport.src[3]) / 256
+		}
 	}
 	scale := max(s.bufferScale, 1)
 	return bw / scale, bh / scale

@@ -3,6 +3,7 @@ package wayland
 import (
 	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"image"
+	"math"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -276,7 +277,7 @@ func (s *surface) Commit(*wayland.Surface) {
 
 // applyCommit makes the pending state current.
 func (s *surface) applyCommit() {
-	oldW, oldH := s.content.LogicalW, s.content.LogicalH
+	oldW, oldH, oldSource := s.content.LogicalW, s.content.LogicalH, s.content.Source
 	fresh := s.attached && s.pending != nil
 	if s.pendingBarrier {
 		s.pendingBarrier = false
@@ -323,6 +324,10 @@ func (s *surface) applyCommit() {
 	if fresh {
 		if state, ok := s.server.buffers[s.current.Resource]; ok {
 			if c, ok := state.content(0); ok {
+				if !s.validateViewport(c.Width, c.Height) {
+					return
+				}
+				c.Source, _ = s.source(c.Width, c.Height)
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
 				s.commitDamage(true, resized, c.Width, c.Height)
@@ -342,6 +347,10 @@ func (s *surface) applyCommit() {
 	if !fresh {
 		s.commitDamage(false, false, 0, 0)
 		if s.has {
+			if !s.validateViewport(s.content.Width, s.content.Height) {
+				return
+			}
+			s.content.Source, _ = s.source(s.content.Width, s.content.Height)
 			s.content.LogicalW, s.content.LogicalH = s.logicalSize(s.content.Width, s.content.Height)
 		}
 	}
@@ -364,9 +373,9 @@ func (s *surface) applyCommit() {
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
-	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH))
+	drawn := fresh || moved || geometry || hinted || s.sub.parent != nil || (s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource))
 	if drawn {
-		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH {
+		if moved || geometry || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source {
 			s.committed = damage{full: true}
 		}
 		s.redraw()
@@ -420,7 +429,12 @@ func (s *surface) commitDamage(fresh, resized bool, bw, bh int) {
 		// Clients may damage INT32_MAX-sized rects: clamp before scaling.
 		x0, y0 := max(r.X, 0), max(r.Y, 0)
 		x1, y1 := min(r.X+min(r.W, lw), lw), min(r.Y+min(r.H, lh), lh)
-		add(image.Rect(x0*bw/lw, y0*bh/lh, (x1*bw+lw-1)/lw, (y1*bh+lh-1)/lh))
+		if src, ok := s.source(bw, bh); ok {
+			add(image.Rect(int(src[0]+float32(x0)*src[2]/float32(lw)), int(src[1]+float32(y0)*src[3]/float32(lh)),
+				int(math.Ceil(float64(src[0]+float32(x1)*src[2]/float32(lw)))), int(math.Ceil(float64(src[1]+float32(y1)*src[3]/float32(lh))))))
+		} else {
+			add(image.Rect(x0*bw/lw, y0*bh/lh, (x1*bw+lw-1)/lw, (y1*bh+lh-1)/lh))
+		}
 	}
 	s.committed = d
 }

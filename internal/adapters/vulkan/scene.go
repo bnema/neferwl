@@ -209,8 +209,12 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 	// A buffer drawn at the physical size (fractional-scale clients round
 	// w*scale, we round per edge) is copied 1:1, never resampled for 1px.
 	near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
-	if near(full.Dx(), content.Width) && near(full.Dy(), content.Height) {
-		full.Max = full.Min.Add(image.Pt(content.Width, content.Height))
+	sourceW, sourceH := content.Width, content.Height
+	if content.Source[2] > 0 {
+		sourceW, sourceH = int(content.Source[2]), int(content.Source[3])
+	}
+	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
+		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}
 	dst = full.Intersect(w.physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy()))
 	return full, dst, !dst.Empty()
@@ -249,7 +253,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			// The window shows its background until a buffer imports.
 			return
 		}
-		dr := r.contentDraw(rect, full, content.Width, content.Height, modeImage, content.Opaque)
+		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeImage, content.Opaque)
 		r.setContentColor(&dr, content.Color)
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
@@ -285,7 +289,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	if err != nil {
 		return
 	}
-	dr := r.contentDraw(rect, full, content.Width, content.Height, modeBuffer, content.Opaque)
+	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content.Color)
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}

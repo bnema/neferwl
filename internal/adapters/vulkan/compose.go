@@ -298,16 +298,20 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 
 // contentDraw draws the visible rect of a w×h buffer mapped onto full
 // (target pixels). exact: the buffer is drawn at its size.
-func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, mode uint32, opaque bool) draw {
+func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]float32, mode uint32, opaque bool) draw {
 	var dr draw
-	sx, sy := float32(w)/float32(full.Dx()), float32(h)/float32(full.Dy())
+	if source[2] <= 0 {
+		source = [4]float32{0, 0, float32(w), float32(h)}
+	}
+	sx, sy := source[2]/float32(full.Dx()), source[3]/float32(full.Dy())
 	dr.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
-	dr.pc.mapv = [4]float32{-float32(full.Min.X) * sx, -float32(full.Min.Y) * sy, sx, sy}
+	dr.pc.mapv = [4]float32{source[0] - float32(full.Min.X)*sx, source[1] - float32(full.Min.Y)*sy, sx, sy}
+	dr.pc.color = [4]float32{source[0], source[1], source[0] + source[2], source[1] + source[3]}
 	flags := uint32(0)
 	if opaque {
 		flags |= flagOpaque
 	}
-	if full.Dx() == w && full.Dy() == h {
+	if full.Dx() == int(source[2]) && full.Dy() == int(source[3]) && source[2] == float32(int(source[2])) && source[3] == float32(int(source[3])) {
 		flags |= flagExact
 	}
 	dr.pc.misc = [4]uint32{mode, flags, uint32(r.width), uint32(r.height)}
