@@ -361,15 +361,23 @@ func (c *Core) keyboardFocus() WindowID {
 // setLayers splits the mapped layer surfaces by output. A surface without an
 // output, or on an unknown one, goes to the focused output.
 func (c *Core) setLayers(all []ports.LayerSurface) {
+	previous := make(map[WindowID]bool)
 	for _, sc := range c.screens {
+		for _, l := range sc.layers {
+			previous[l.ID] = true
+		}
 		sc.layers = nil
 	}
 	for _, l := range all {
+		delete(previous, l.ID)
 		sc := c.cur()
 		if i := c.screenIndex(l.Output); i >= 0 {
 			sc = c.screens[i]
 		}
 		sc.layers = append(sc.layers, l)
+	}
+	for id := range previous {
+		delete(c.inputRegions, id)
 	}
 	for _, sc := range c.screens {
 		sc.arrange()

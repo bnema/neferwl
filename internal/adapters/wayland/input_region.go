@@ -70,6 +70,13 @@ func (s *surface) effectiveInput() (bool, []ports.Rect) {
 	return false, rects
 }
 
+// resetInputEmission makes the next mapping publish its current region again.
+func (s *surface) resetInputEmission() {
+	s.sentInput = false
+	s.lastInputAll = false
+	s.lastInputRects = nil
+}
+
 func (s *surface) emitInput() {
 	root := s.root()
 	id := root.windowID()

@@ -277,7 +277,24 @@ func (s *Server) emitConstraint(c *constraint) {
 					box = ports.Rect{X: x0, Y: y0, W: max(box.X+box.W, input.X+input.W) - x0, H: max(box.Y+box.H, input.Y+input.H) - y0}
 				}
 			}
-			r = box
+			// Core treats an empty rect as the entire window. Keep the
+			// original constraint (or the input box for an unbounded one)
+			// when disjoint, rather than widening it to the whole window.
+			if box.W > 0 {
+				r = box
+			} else if r.W <= 0 || r.H <= 0 {
+				for _, input := range rects {
+					if input.W <= 0 || input.H <= 0 {
+						continue
+					}
+					if r.W <= 0 || r.H <= 0 {
+						r = input
+					} else {
+						x0, y0 := min(r.X, input.X), min(r.Y, input.Y)
+						r = ports.Rect{X: x0, Y: y0, W: max(r.X+r.W, input.X+input.W) - x0, H: max(r.Y+r.H, input.Y+input.H) - y0}
+					}
+				}
+			}
 		}
 	}
 	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}})
@@ -290,9 +307,10 @@ func (c *constraint) contains(w *window) bool {
 	x, y := w.surfacePoint(w.xdg.server.pointerX, w.xdg.server.pointerY)
 	all, rects := c.surface.effectiveInput()
 	if !all {
+		localX, localY := x-float64(w.xdg.geometry.X), y-float64(w.xdg.geometry.Y)
 		inside := false
 		for _, input := range rects {
-			if x-float64(w.xdg.geometry.X) >= float64(input.X) && x-float64(w.xdg.geometry.X) < float64(input.X+input.W) && y-float64(w.xdg.geometry.Y) >= float64(input.Y) && y-float64(w.xdg.geometry.Y) < float64(input.Y+input.H) {
+			if localX >= float64(input.X) && localX < float64(input.X+input.W) && localY >= float64(input.Y) && localY < float64(input.Y+input.H) {
 				inside = true
 				break
 			}

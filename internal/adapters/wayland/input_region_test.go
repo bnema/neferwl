@@ -1,13 +1,14 @@
 package wayland
 
 import (
-	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
-	"golang.org/x/sys/unix"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+	"golang.org/x/sys/unix"
 )
 
 func inputChanged(t *testing.T, events <-chan ports.ClientEvent) ports.InputRegionChanged {
@@ -155,5 +156,61 @@ func TestConstraintIntersectsInputRegion(t *testing.T) {
 	}
 	if got := constrained(t, events); got.Rect != (ports.Rect{W: 1, H: 1}) {
 		t.Fatalf("constraint intersection: %+v", got)
+	}
+}
+
+func TestInputRegionResentAfterRemap(t *testing.T) {
+	s, events, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	w, surf, xdg := surfaceMapper(t, c, events)()
+	comp := bindProtocol(t, c, "wl_compositor")
+	region := c.AllocateID()
+	registerProtocol(t, c, region)
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateRegion, region)
+	requestProtocol(t, c, region, wayland.RegionRequestAdd, int32(0), int32(0), int32(1), int32(1))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestSetInputRegion, region)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got := inputChanged(t, events); got.ID != w.ID || got.All {
+		t.Fatalf("initial input: %+v", got)
+	}
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	unmapped(t, events, w.ID)
+	// Remapping requires a new initial configure and an ack before attaching.
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var serial uint32
+	if !s.display.Do(func() {
+		for _, v := range s.surfaces {
+			if v.xdg != nil && v.xdg.window != nil && v.xdg.window.id == w.ID && len(v.xdg.serials) > 0 {
+				serial = v.xdg.serials[len(v.xdg.serials)-1]
+			}
+		}
+	}) {
+		t.Fatal("server stopped")
+	}
+	if serial == 0 {
+		t.Fatal("no remap configure")
+	}
+	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestAckConfigure, serial)
+	buffer := shmBuffer(t, c)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got := mapped(t, events, 2*time.Second); got.ID != w.ID {
+		t.Fatalf("remapped: %+v", got)
+	}
+	if got := inputChanged(t, events); got.ID != w.ID || got.All || len(got.Rects) != 1 || got.Rects[0] != (ports.Rect{W: 1, H: 1}) {
+		t.Fatalf("remap input: %+v", got)
 	}
 }

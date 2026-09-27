@@ -163,6 +163,7 @@ func (l *layerSurface) unmap() {
 		s.changePointerFocus(0, 0, 0)
 	}
 	l.mapped = false
+	l.surface.resetInputEmission()
 	l.configured = false
 	l.acked = false
 	l.serials = nil

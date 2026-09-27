@@ -315,3 +315,45 @@ func TestLayerInputRegionPassThrough(t *testing.T) {
 		t.Fatalf("reset focus: %+v", v)
 	}
 }
+
+func TestRemovedLayerInputRegionCleared(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 16)
+	input := make(chan ports.InputEvent, 16)
+	output := make(chan ports.OutputEvent, 16)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.InputRegionChanged{ID: 1}
+	scene(t, scenes) // window's empty region must survive layer changes
+	layer := ports.LayerSurface{ID: 6, Layer: ports.LayerOverlay, Width: 100, Height: 80}
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{layer}}
+	scene(t, scenes)
+	client <- ports.InputRegionChanged{ID: 6}
+	scene(t, scenes)
+	client <- ports.LayerChanged{}
+	scene(t, scenes)
+	client <- ports.LayerChanged{Layers: []ports.LayerSurface{layer}}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 20, Y: 20}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 6 {
+		t.Fatalf("remapped layer retains old region: %+v", v)
+	}
+	client <- ports.LayerChanged{}
+	scene(t, scenes)
+	input <- ports.PointerMotion{X: 21, Y: 21}
+	if v := next(t, commands, anyOf[ports.PointerFocus]); v.ID != 0 {
+		t.Fatalf("window region removed with layer: %+v", v)
+	}
+}
