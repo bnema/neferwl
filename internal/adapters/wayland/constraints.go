@@ -205,6 +205,26 @@ func (s *Server) dropConstraint(c *constraint) {
 	s.updateConstraint()
 }
 
+// deactivateConstraint ends the active constraint; a oneshot cannot reactivate.
+func (s *Server) deactivateConstraint() {
+	old := s.constraint
+	if old == nil {
+		return
+	}
+	old.active = false
+	if !old.persistent {
+		old.defunct = true
+	}
+	if old.lock != nil && old.lock.Resource.Alive() {
+		old.lock.SendUnlocked()
+	}
+	if old.confine != nil && old.confine.Resource.Alive() {
+		old.confine.SendUnconfined()
+	}
+	s.constraint = nil
+	s.emit(ports.PointerConstrained{})
+}
+
 // updateConstraint activates the constraint of the window holding both
 // pointer and keyboard focus, and deactivates any other.
 func (s *Server) updateConstraint() {
@@ -217,23 +237,11 @@ func (s *Server) updateConstraint() {
 	if want == s.constraint {
 		return
 	}
-	if old := s.constraint; old != nil {
-		old.active = false
-		if !old.persistent {
-			old.defunct = true
-		}
-		if old.lock != nil && old.lock.Resource.Alive() {
-			old.lock.SendUnlocked()
-		}
-		if old.confine != nil && old.confine.Resource.Alive() {
-			old.confine.SendUnconfined()
-		}
-	}
-	s.constraint = want
+	s.deactivateConstraint()
 	if want == nil {
-		s.emit(ports.PointerConstrained{})
 		return
 	}
+	s.constraint = want
 	want.active = true
 	if want.lock != nil {
 		want.lock.SendLocked()
@@ -258,8 +266,8 @@ func (s *Server) emitConstraint(c *constraint) {
 		r.X -= x.geometry.X
 		r.Y -= x.geometry.Y
 	}
-	// The input region also bounds confinement. A box is sufficient for core;
-	// contains uses the exact region to decide activation.
+	// Core supports one confinement rect, so this bounds the intersection;
+	// contains uses the exact input region to decide activation.
 	if mode == ports.ConstraintConfine {
 		if all, rects := c.surface.effectiveInput(); !all {
 			var box ports.Rect
@@ -277,24 +285,7 @@ func (s *Server) emitConstraint(c *constraint) {
 					box = ports.Rect{X: x0, Y: y0, W: max(box.X+box.W, input.X+input.W) - x0, H: max(box.Y+box.H, input.Y+input.H) - y0}
 				}
 			}
-			// Core treats an empty rect as the entire window. Keep the
-			// original constraint (or the input box for an unbounded one)
-			// when disjoint, rather than widening it to the whole window.
-			if box.W > 0 {
-				r = box
-			} else if r.W <= 0 || r.H <= 0 {
-				for _, input := range rects {
-					if input.W <= 0 || input.H <= 0 {
-						continue
-					}
-					if r.W <= 0 || r.H <= 0 {
-						r = input
-					} else {
-						x0, y0 := min(r.X, input.X), min(r.Y, input.Y)
-						r = ports.Rect{X: x0, Y: y0, W: max(r.X+r.W, input.X+input.W) - x0, H: max(r.Y+r.H, input.Y+input.H) - y0}
-					}
-				}
-			}
+			r = box
 		}
 	}
 	s.emit(ports.PointerConstrained{ID: x.window.id, PointerConstraint: ports.PointerConstraint{Mode: mode, Rect: r}})

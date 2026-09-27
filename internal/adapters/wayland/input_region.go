@@ -96,7 +96,12 @@ func (s *surface) emitInput() {
 	s.server.emit(ports.InputRegionChanged{ID: id, All: all, Rects: rects})
 	if c := s.server.constraints[root]; c != nil {
 		if c.active {
-			s.server.emitConstraint(c)
+			w := s.server.windows[id]
+			if w == nil || !c.contains(w) {
+				s.server.deactivateConstraint()
+			} else {
+				s.server.emitConstraint(c)
+			}
 		} else {
 			s.server.updateConstraint()
 		}

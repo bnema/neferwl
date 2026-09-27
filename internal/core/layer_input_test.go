@@ -357,3 +357,39 @@ func TestRemovedLayerInputRegionCleared(t *testing.T) {
 		t.Fatalf("window region removed with layer: %+v", v)
 	}
 }
+
+func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 16)
+	input := make(chan ports.InputEvent, 16)
+	output := make(chan ports.OutputEvent, 16)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.PopupRequest{ID: 9, Parent: 1, Positioner: ports.Positioner{Width: 30, Height: 20, AnchorRect: ports.Rect{X: 10, Y: 10, W: 10, H: 10}}}
+	next(t, commands, func(v ports.ConfigurePopup) bool { return v.ID == 9 })
+	client <- ports.PopupMapped{ID: 9}
+	sc := sceneMatch(t, scenes, func(sc ports.Scene) bool { return len(sc.Windows) == 2 })
+	client <- ports.InputRegionChanged{ID: 9, Rects: []ports.Rect{{X: 10, Y: 0, W: 20, H: 20}}}
+	scene(t, scenes)
+	popup := sc.Windows[1].Rect
+	input <- ports.PointerMotion{X: float64(popup.X + 2), Y: float64(popup.Y + 2)}
+	if v := next(t, commands, anyOf[ports.PointerMotionTo]); v.ID != 1 {
+		t.Fatalf("popup margin motion: %+v, popup %+v", v, popup)
+	}
+	input <- ports.PointerMotion{X: float64(popup.X + 12), Y: float64(popup.Y + 2)}
+	if v := next(t, commands, anyOf[ports.PointerMotionTo]); v.ID != 9 {
+		t.Fatalf("popup interior motion: %+v", v)
+	}
+}

@@ -1,10 +1,12 @@
 package wayland
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/fifo"
 	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
@@ -212,5 +214,112 @@ func TestInputRegionResentAfterRemap(t *testing.T) {
 	}
 	if got := inputChanged(t, events); got.ID != w.ID || got.All || len(got.Rects) != 1 || got.Rects[0] != (ports.Rect{W: 1, H: 1}) {
 		t.Fatalf("remap input: %+v", got)
+	}
+}
+
+func TestRegionOverlappingAddsSubtractUnion(t *testing.T) {
+	g := &region{}
+	g.Add(nil, 0, 0, 6, 6)
+	g.Add(nil, 2, 2, 6, 6)
+	g.Subtract(nil, 3, 3, 2, 2)
+	for _, r := range g.rects {
+		if intersectRect(r, ports.Rect{X: 3, Y: 3, W: 2, H: 2}).W != 0 {
+			t.Fatalf("subtracted overlap remains: %+v", g.rects)
+		}
+	}
+	if g.boxRect() != (ports.Rect{W: 8, H: 8}) {
+		t.Fatalf("outer region changed: %+v", g.rects)
+	}
+}
+
+func TestInputRegionDeactivatesConstraint(t *testing.T) {
+	for _, kind := range []string{"confine", "lock"} {
+		for _, persistent := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/persistent=%t", kind, persistent), func(t *testing.T) {
+				s, events, commands, dir := lifecycleServer(t)
+				c := protocolClient(t, s, dir)
+				seat := bindProtocol(t, c, "wl_seat")
+				registerProtocol(t, c, seat)
+				pointer := c.AllocateID()
+				registerProtocol(t, c, pointer)
+				requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+				w, surf, _ := surfaceMapper(t, c, events)()
+				manager := bindProtocol(t, c, "zwp_pointer_constraints_v1")
+				id := c.AllocateID()
+				notices := logProxy(t, c, id)
+				lifetime := uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimeOneshot)
+				if persistent {
+					lifetime = uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent)
+				}
+				if kind == "lock" {
+					requestProtocol(t, c, manager, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, id, surf, pointer, uint32(0), lifetime)
+				} else {
+					requestProtocol(t, c, manager, pointerconstraints.ZwpPointerConstraintsV1RequestConfinePointer, id, surf, pointer, uint32(0), lifetime)
+				}
+				commands <- ports.PointerFocus{ID: w.ID}
+				commands <- ports.FocusWindow{ID: w.ID}
+				if ev := next(t, c, notices); ev[0] != 0 {
+					t.Fatalf("activation: %v", ev)
+				}
+				if got := constrained(t, events); got.ID != w.ID {
+					t.Fatalf("constraint: %+v", got)
+				}
+				comp := bindProtocol(t, c, "wl_compositor")
+				region := c.AllocateID()
+				registerProtocol(t, c, region)
+				requestProtocol(t, c, comp, wayland.CompositorRequestCreateRegion, region)
+				requestProtocol(t, c, surf, wayland.SurfaceRequestSetInputRegion, region)
+				requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+				if ev := next(t, c, notices); ev[0] != 1 {
+					t.Fatalf("deactivation: %v", ev)
+				}
+				if got := constrained(t, events); got.ID != 0 {
+					t.Fatalf("constraint retained: %+v", got)
+				}
+				if err := c.Roundtrip(); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case ev := <-notices:
+					t.Fatalf("unexpected reactivation: %v", ev)
+				default:
+				}
+			})
+		}
+	}
+}
+
+func TestFifoQueuedInputRegionsApplyInOrder(t *testing.T) {
+	s, events, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	w, surf, _ := surfaceMapper(t, c, events)()
+	manager := bindProtocol(t, c, "wp_fifo_manager_v1")
+	f := c.AllocateID()
+	registerProtocol(t, c, f)
+	requestProtocol(t, c, manager, fifo.WpFifoManagerV1RequestGetFifo, f, surf)
+	comp := bindProtocol(t, c, "wl_compositor")
+	region := c.AllocateID()
+	registerProtocol(t, c, region)
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateRegion, region)
+	requestProtocol(t, c, region, wayland.RegionRequestAdd, int32(0), int32(0), int32(1), int32(1))
+	// First commit sets a barrier; the next two wait behind it.
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestSetBarrier)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestWaitBarrier)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestSetInputRegion, region)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, f, fifo.WpFifoV1RequestWaitBarrier)
+	empty := c.AllocateID()
+	registerProtocol(t, c, empty)
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateRegion, empty)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestSetInputRegion, empty)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	first := inputChanged(t, events)
+	second := inputChanged(t, events)
+	if first.ID != w.ID || len(first.Rects) != 1 || first.Rects[0] != (ports.Rect{W: 1, H: 1}) || second.ID != w.ID || second.All || len(second.Rects) != 0 {
+		t.Fatalf("queued input order: first %+v, second %+v", first, second)
 	}
 }
