@@ -16,45 +16,21 @@
 
 ## Why NeferWL
 
-NeferWL exists because I wanted a compositor that puts performance first and picks up new Wayland protocols and kernel features as soon as they land. Games get the whole GPU: direct scanout, tearing, VRR, explicit sync and HDR are in from the start.
+NeferWL exists because I wanted a compositor that puts performance first and picks up new Wayland protocols and kernel features as soon as they land. Games get the whole GPU, and the compositor stays out of the way.
 
-The design is deliberately small, and it will stay small: no animations, no themes, no built-in bar or wallpaper. Anything that adds latency or work per frame is left out. NeferWL uses about 40–80 MB of RAM with two 4K monitors and almost no CPU while the screen does not change.
+The design is deliberately small, and it will stay small: no animations, no themes, no built-in bar or wallpaper. Anything that adds latency or work per frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
 ## Features
 
-### Windows and workspaces
+- **Built for games.** Fullscreen games bypass composition and go straight to the display, with tearing, VRR, explicit sync and HDR10. Steam and Wine work out of the box. See [the performance path](#the-performance-path).
+- **HDR desktop.** HDR games, browsers and video players show their full range next to an SDR desktop at the brightness you choose.
+- **Column tiling.** Windows share the screen as in Sway, then scroll to the right as in Niri. Each monitor and workspace can have its own rules.
+- **Workspaces that set themselves up.** Declare a workspace's columns and commands; NeferWL starts the apps and places each window. Numbered workspaces appear and disappear as you use them.
+- **Multi-monitor that survives unplugging.** Workspaces move to another monitor and come back when it returns. Fractional scaling per output, saved to your config when you zoom.
+- **Terminal first, external everything else.** Your terminal opens at startup. Waybar, fuzzel, mako, grim, cliphist, swayidle and wlr-randr work through standard protocols.
+- **One config file, live.** `key = value`, applied when you save, windows kept open. A JSON state file and a systemd session for scripts and services.
 
-- **Terminal first.** NeferWL opens your terminal at startup. Bars, launchers and notifications are external clients such as Waybar, fuzzel and mako.
-- **Column tiling.** Up to `max-columns` windows share the screen, as in Sway. Past that, new columns scroll to the right as in Niri, or split in a spiral with `overflow = fixed`. Each monitor and workspace can set its own rules.
-- **Custom workspaces.** Numbered workspaces appear and disappear as you use them. Named workspaces are outside the numbered list and shown through a bind. **Slots** declare a workspace's columns (width and command): NeferWL starts the apps in the background and puts each window in its column.
-- **Window moves.** Move a column or a single window to another workspace or monitor, stack a window into the neighbor column or pull it out, and cycle column widths.
-- **Vim keys.** Every arrow bind has an `hjkl` twin.
-- **Live config.** One `key = value` file. Every key applies when you save, keyboard layout included, and windows stay open. `neferwl validate-config` checks a file before you use it.
-
-### Displays
-
-- **Multi-monitor.** Each monitor has its own workspaces. When you unplug a monitor, its workspaces move to another one; when you plug it back, they return, and your focus stays where it was.
-- **HDR.** HDR10 output on capable displays. HDR games, browsers and video players show their full range, and the desktop stays SDR at a brightness you choose. See [HDR](docs/config.md#hdr).
-- **Scaling.** Fractional scale per output, sent to clients through `wp_fractional_scale_v1` and `wp_viewporter` so text stays sharp. Zooming with a bind saves the new scale to your config.
-- **Output tools.** `wlr-output-management` lets tools such as wlr-randr and kanshi change modes, scale and position.
-
-### Games
-
-A fullscreen game is shown without composition, with tearing and VRR when the game asks for them. Steam and Wine run through xwayland-satellite. Details are in [the performance path](#the-performance-path).
-
-### Desktop integration
-
-- **Bars.** `ext-workspace-v1` for Waybar and ironbar, plus layer shell.
-- **Screenshots.** grim and slurp work through screencopy and image copy capture.
-- **Clipboard.** Clipboard, primary selection and clipboard managers such as cliphist. See [Clipboard](#clipboard).
-- **Idle.** swayidle and wlopm turn screens off; a video or a game keeps them on. See [Idle and screen off](#idle-and-screen-off).
-- **systemd session.** The NeferWL session starts `graphical-session.target`, so bars, portals and XDG autostart start and stop with it.
-- **Focus requests.** `xdg_activation_v1` lets a launcher or notification focus the window it opens.
-- **Cursors and input tools.** Client cursor shapes (`wp_cursor_shape_v1`) and virtual keyboards for tools such as wtype.
-- **Scripting.** A JSON state file lists outputs, workspaces and windows. See [State for scripts](#state-for-scripts).
-- **Headless mode.** Runs without a screen, takes screenshots and plays input scripts, for tests and quick checks. See [Try it](#try-it-headless).
-
-### Example config
+A taste of the config:
 
 ```text
 keyboard.layout = fr
