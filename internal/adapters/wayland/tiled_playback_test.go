@@ -23,9 +23,9 @@ func (p *callbackBudgetProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
-// TestHeadlessTiledSHMPlaybackBudget checks that callbacks continue to drive
-// real protocol commits and publications with many stable SHM children.
-func TestHeadlessTiledSHMPlaybackBudget(t *testing.T) {
+// TestHeadlessTiledSHMCallbackAndCopyBudget guards callback delivery and
+// the GPU copy budget across publications with many stable SHM children.
+func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	win, root, _ := surfaceMapper(t, c, events)()
@@ -107,10 +107,6 @@ func TestHeadlessTiledSHMPlaybackBudget(t *testing.T) {
 	}
 	render(previous)
 	copied := r.CopiedBytes()
-	var cpuStart, cpuEnd unix.Rusage
-	if err := unix.Getrusage(unix.RUSAGE_SELF, &cpuStart); err != nil {
-		t.Fatal(err)
-	}
 	for i := range 120 {
 		done := make(chan struct{}, 1)
 		cb := c.AllocateID()
@@ -157,8 +153,4 @@ func TestHeadlessTiledSHMPlaybackBudget(t *testing.T) {
 		}
 		previous = next
 	}
-	if err := unix.Getrusage(unix.RUSAGE_SELF, &cpuEnd); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("120 headless callback publications; process user CPU: start=%v end=%v", cpuStart.Utime, cpuEnd.Utime)
 }
