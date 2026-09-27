@@ -46,6 +46,10 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 // the previous ones; n = 0 only drops them (back to the internal image).
 func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
 	r.dropTargets()
+	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.physical != 0 {
+		// Test-only transfer-source targets have different format requirements.
+		r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
+	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
 		return nil, fmt.Errorf("HDR transform unavailable: %w", r.hdrError)
 	}
