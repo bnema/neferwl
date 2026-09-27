@@ -180,7 +180,7 @@ func TestColorOutputAndFeedback(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	if len(ev.events) < 5 || ev.values[1][0] != srgb {
+	if len(ev.events) < 5 || ev.values[1][0] != srgb || ev.values[2][0] != uint32(cm.WpColorManagerV1TransferFunctionSrgb) {
 		t.Fatalf("SDR info %v %v", ev.events, ev.values)
 	}
 	comp := bindProtocol(t, c, "wl_compositor")
