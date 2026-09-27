@@ -218,7 +218,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor)
-	in := &inputState{touchpad: opts.Touchpad, scrollers: map[uintptr]bool{}}
+	in := &inputState{touchpad: opts.Touchpad, scrollers: map[uintptr]bool{}, swipes: map[uintptr]swipe{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
@@ -287,11 +287,11 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 
 // inputState is the device state Run owns: touchpad config, the devices
 // with a natural scroll setting (referenced until removed) and the swipe
-// in progress.
+// in progress on each touchpad.
 type inputState struct {
 	touchpad  ports.TouchpadConfig
 	scrollers map[uintptr]bool
-	swipe     swipe
+	swipes    map[uintptr]swipe
 }
 
 func (s *inputState) applyNatural(dev uintptr, log zerowrap.Logger) {
@@ -358,20 +358,25 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 	case evDeviceRemoved:
 		dev := eventDevice(ev)
 		log.Info().Str("device", deviceName(dev)).Msg("input device removed")
+		delete(in.swipes, dev)
 		if in.scrollers[dev] {
 			delete(in.scrollers, dev)
 			deviceUnref(dev)
 		}
 	case evSwipeBegin:
-		in.swipe = swipe{fingers: int(gestureFingers(gestureEvent(ev)))}
+		in.swipes[eventDevice(ev)] = swipe{fingers: int(gestureFingers(gestureEvent(ev)))}
 	case evSwipeUpdate:
-		ge := gestureEvent(ev)
-		in.swipe.dx += gestureDX(ge)
-		in.swipe.dy += gestureDY(ge)
+		dev, ge := eventDevice(ev), gestureEvent(ev)
+		if s, ok := in.swipes[dev]; ok {
+			s.dx += gestureDX(ge)
+			s.dy += gestureDY(ge)
+			in.swipes[dev] = s
+		}
 	case evSwipeEnd:
-		s := in.swipe
-		in.swipe = swipe{}
-		if gestureCanceled(gestureEvent(ev)) != 0 {
+		dev := eventDevice(ev)
+		s, ok := in.swipes[dev]
+		delete(in.swipes, dev)
+		if !ok || gestureCanceled(gestureEvent(ev)) != 0 {
 			return nil, nil
 		}
 		if d, ok := s.dir(); ok {

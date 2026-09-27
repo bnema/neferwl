@@ -61,8 +61,8 @@ func TestPointerScript(t *testing.T) {
 	if err != nil {
 		t.Skip(err)
 	}
-	script := make(chan string, 4)
-	for _, line := range []string{"move 12.5 45", "click", "down right", "up right"} {
+	script := make(chan string, 8)
+	for _, line := range []string{"move 12.5 45", "click", "down right", "up right", "swipe sideways", "swipe left"} {
 		script <- line
 	}
 	close(script)
@@ -70,7 +70,7 @@ func TestPointerScript(t *testing.T) {
 	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
-	if len(input) != 5 {
+	if len(input) != 6 {
 		t.Fatalf("events: %d", len(input))
 	}
 	m := (<-input).(ports.PointerMotion)
@@ -82,5 +82,8 @@ func TestPointerScript(t *testing.T) {
 		if got.Button != want.Button || got.Pressed != want.Pressed {
 			t.Fatalf("got %+v want %+v", got, want)
 		}
+	}
+	if s := (<-input).(ports.Swipe); s.Dir != ports.SwipeLeft {
+		t.Fatal(s)
 	}
 }

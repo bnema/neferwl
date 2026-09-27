@@ -125,6 +125,21 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				log.Warn().Str("line", line).Msg("invalid move")
 				continue
 			}
+			if len(fields) > 0 && fields[0] == "swipe" {
+				dirs := map[string]ports.SwipeDir{"up": ports.SwipeUp, "down": ports.SwipeDown, "left": ports.SwipeLeft, "right": ports.SwipeRight}
+				d, ok := ports.SwipeDir(0), len(fields) == 2
+				if ok {
+					d, ok = dirs[fields[1]]
+				}
+				if !ok {
+					log.Warn().Str("line", line).Msg("invalid swipe")
+					continue
+				}
+				if err := sendPointer(ports.Swipe{Dir: d}); err != nil {
+					return err
+				}
+				continue
+			}
 			if len(fields) > 0 && (fields[0] == "click" || fields[0] == "down" || fields[0] == "up") {
 				name := "left"
 				if len(fields) == 2 {
