@@ -112,3 +112,84 @@ func TestWatch(t *testing.T) {
 		})
 	}
 }
+
+// A config symlinked into another directory (dotfiles) reloads when its
+// target changes, in place or atomically, and follows a retargeted link.
+func TestWatchSymlink(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "config")
+	dotfiles := filepath.Join(root, "dotfiles")
+	other := filepath.Join(root, "other")
+	for _, d := range []string{dir, dotfiles, other} {
+		if err := os.Mkdir(d, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(file, body string) {
+		t.Helper()
+		if err := os.WriteFile(file, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target := filepath.Join(dotfiles, "neferwl.conf")
+	write(target, "background = #000000\n")
+	path := filepath.Join(dir, "config")
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan ports.ConfigChanged, 8)
+	done := make(chan error, 1)
+	go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	time.Sleep(40 * time.Millisecond)
+	receive := func(want string) {
+		t.Helper()
+		deadline := time.After(time.Second)
+		for {
+			select {
+			case c := <-out:
+				if c.Config.Background.Color == want {
+					return
+				}
+			case <-deadline:
+				t.Fatalf("no config change to %s", want)
+			}
+		}
+	}
+	// In place.
+	write(target, "background = #ff0000\n")
+	receive("#ff0000")
+	// Atomic replacement of the target.
+	tmp := filepath.Join(dotfiles, ".neferwl.conf.tmp")
+	write(tmp, "background = #00ff00\n")
+	if err := os.Rename(tmp, target); err != nil {
+		t.Fatal(err)
+	}
+	receive("#00ff00")
+	// The link now points to another file: it is read and then watched.
+	moved := filepath.Join(other, "config")
+	write(moved, "background = #0000ff\n")
+	link := filepath.Join(dir, ".config.tmp")
+	if err := os.Symlink(moved, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(link, path); err != nil {
+		t.Fatal(err)
+	}
+	receive("#0000ff")
+	write(moved, "background = #ffffff\n")
+	receive("#ffffff")
+	// The old target no longer matters.
+	write(target, "background = #123456\n")
+	select {
+	case c := <-out:
+		t.Fatalf("old target reloaded: %+v", c.Config.Background)
+	case <-time.After(250 * time.Millisecond):
+	}
+}
