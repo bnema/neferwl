@@ -95,11 +95,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	captured := make(chan ports.CaptureDone, 64)
 	outputFormats := make(chan ports.OutputFormats, 8)
 	outputHeads := make(chan ports.OutputHeads, 8)
-	inventory := make(chan ports.OutputHeads, 8)
 	applyOutput := make(chan ports.OutputApply, 8)
 	appliedOutput := make(chan ports.OutputApplied, 8)
-	backendConfig := make(chan ports.Config, 8)
-	backendApplied := make(chan error, 8)
 	var scales chan ports.ScaleChanged
 	if hw != nil {
 		// Only real sessions save scales: headless runs never touch the config file.
@@ -172,11 +169,6 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer workers.Done()
 		relayConfig(ctx, opts.Config, watched, filtered, keymaps, commands, logging.For(ctx, "config"))
 	}()
-	workers.Add(1)
-	go func() {
-		defer workers.Done()
-		relayOutputSettings(ctx, newOutputOverrides(opts.Config, hw == nil), filtered, inventory, applyOutput, configChanges, backendConfig, backendApplied, appliedOutput, logging.For(ctx, "app"))
-	}()
 	script := make(chan string)
 	curs := newCursors()
 	go func() {
@@ -238,7 +230,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
-		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: presented, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, report: inventory, configs: backendConfig, applied: backendApplied}
+		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: presented, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
+		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		newRenderer := func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
@@ -253,11 +246,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 					w.Sampled = dmabuf.Formats
 					return w
 				}
-				return hw.runOutputs(ctx, want, opts.Config, outputIO, curs, newRenderer, logging.For(ctx, "drm"))
+				return hw.runOutputs(ctx, want, opts.Config, apply, outputIO, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, outputIO, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, apply, outputIO, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

@@ -12,8 +12,9 @@ import (
 )
 
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
-// With several outputs, screenshots go to a subdirectory per output.
-func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+// With several outputs, screenshots go to a subdirectory per output. Modes
+// are fixed, so apply answers every configuration without backend work.
+func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, ch.captured)
 	inventory := ports.OutputHeads{}
 	for i, size := range sizes {
@@ -40,15 +41,26 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ch
 			return set.wait()
 		}
 	}
-	if !ch.sendInventory(ctx, inventory) {
+	apply.heads(inventory)
+	if !ch.sendHeads(ctx, inventory) {
 		return set.wait()
 	}
 	// The pointer starts centred on the first output, like libinput's.
 	curs.move("HEADLESS-1", float64(sizes[0][0])/2, float64(sizes[0][1])/2)
 	for {
+		configs, configNext := apply.configOut(ch.configured), apply.config
+		replies, replyNext := apply.replyOut(ch.replies)
 		select {
 		case <-ctx.Done():
 			return set.wait()
+		case ev := <-ch.reloads:
+			apply.reload(ev.Config)
+		case req := <-ch.requests:
+			apply.request(req)
+		case configs <- configNext:
+			apply.configSent()
+		case replies <- replyNext:
+			apply.replySent()
 		case s := <-ch.scenes:
 			set.scenes(s)
 		case c := <-ch.contents:
