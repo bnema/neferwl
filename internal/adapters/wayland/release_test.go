@@ -84,6 +84,61 @@ func TestKeepHeld(t *testing.T) {
 	}
 }
 
+// A buffer replaced just after its window becomes invisible is still held:
+// a scanout plane may read it until the flip that hides the window.
+func TestInvisibleWindowBufferHeldUntilReport(t *testing.T) {
+	s, events, commands, contents, dir := contentServer(t)
+	go func() {
+		for range contents {
+		}
+	}()
+	c := protocolClient(t, s, dir)
+	w, root, xdg := surfaceMapper(t, c, events)()
+	// Our configures must not block the mapper's one-slot proxy.
+	registerProtocol(t, c, xdg)
+	// Commands apply asynchronously: wait for each configure.
+	configure := func(v ports.ConfigureWindow) {
+		t.Helper()
+		commands <- v
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			applied := false
+			s.display.Do(func() { win := s.windows[w.ID]; applied = win.hasLast && win.last == v })
+			if applied {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("configure not applied: %+v", v)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	configure(ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true})
+	b, other := shmBuffer(t, c), shmBuffer(t, c)
+	attach := func(buf uint32) {
+		requestProtocol(t, c, root, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+		requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	}
+	attach(b)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	configure(ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1"})
+	attach(other)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() {
+		held := false
+		for _, h := range s.held {
+			held = held || h.res != nil && h.res.ID() == b
+		}
+		if !held {
+			t.Errorf("replaced buffer of an invisible window released at once: held=%d", len(s.held))
+		}
+	})
+}
+
 // A later queued use of the same wl_buffer still owns it after the output
 // acknowledges the intervening commit.
 func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {

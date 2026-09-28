@@ -193,7 +193,7 @@ func (g *dmabufGlobal) setOutputFormats(f ports.OutputFormats) {
 	}
 	for fb, surf := range g.feedbacks {
 		if surf != nil && !surf.destroyed {
-			if root := surf.root(); root.xdg != nil && root.xdg.window != nil && root.xdg.window.last.Fullscreen && root.xdg.window.last.Output == f.Output {
+			if root := toplevelRoot(surf); root.xdg != nil && root.xdg.window != nil && root.xdg.window.last.Fullscreen && root.xdg.window.last.Output == f.Output {
 				g.send(fb, surf)
 			}
 		}
@@ -207,7 +207,8 @@ func (g *dmabufGlobal) resendSurface(root *surface) {
 		return
 	}
 	for fb, surf := range g.feedbacks {
-		if surf != nil && surf.root() == root {
+		// Popups follow their toplevel's offer (scanoutFor).
+		if surf != nil && toplevelRoot(surf) == root {
 			g.send(fb, surf)
 		}
 	}
