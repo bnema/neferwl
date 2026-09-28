@@ -85,6 +85,11 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if pick == nil {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "no_candidate"
 	}
+	if s.Dim > 0 {
+		// The renderer draws the veil under the first float it composes: a
+		// float on the plane would take the veil with it.
+		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
+	}
 	for _, l := range s.Layers {
 		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 && !(pick.Fullscreen && l.Layer == ports.LayerTop) {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
