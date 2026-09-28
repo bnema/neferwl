@@ -102,6 +102,28 @@ func TestExclusiveFullscreenNewWindow(t *testing.T) {
 	}
 }
 
+// Under a covering fullscreen float, or any fixed-overflow fullscreen,
+// focus moves inside the workspace are off and binds act on the window on
+// screen, never on a column it hides.
+func TestFullscreenPinsFocus(t *testing.T) {
+	w := workspace()
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.AddFloating(3, 20, 10)
+	w.SetFullscreen(3, true)
+	w.FocusColumn(-1)
+	w.FocusWindow(1)
+	w.focusCover()
+	w.Apply(ActionMoveColumnLeft)
+	w.Apply(ActionCycleColumnWidth)
+	if id, _ := w.Focused(); id != 3 || w.fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Width != (Width{}) {
+		t.Fatalf("focused %d fullscreen %d columns %+v", id, w.fullscreen, w.Columns)
+	}
+	if e := w.Apply(ActionCloseWindow); e.Close != 3 {
+		t.Fatalf("close %d, want the fullscreen window", e.Close)
+	}
+}
+
 // A fullscreen window does not float until it leaves fullscreen.
 func TestToggleWindowFloatingIgnoresFullscreen(t *testing.T) {
 	w := workspace()

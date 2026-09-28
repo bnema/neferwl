@@ -503,12 +503,27 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	if !ok || to == cur {
 		return
 	}
+	if m.followMove && to.origin != nil {
+		// The view follows the window: a fullscreen workspace would hide
+		// it, so its window goes home first and the move lands there.
+		origin := to.origin
+		m.leaveFullscreen(to, false)
+		to = origin
+		if i = indexOf(m.Workspaces, to); i < 0 || to == cur {
+			return
+		}
+	}
 	if f := cur.floatIndex(id); f >= 0 {
 		fl := cur.Floats[f]
 		cur.RemoveWindow(id)
 		to.AddFloating(id, fl.W, fl.H)
 		to.Floats[len(to.Floats)-1] = fl
-		to.FocusID(id)
+		if to.origin == nil {
+			// As receive: an in-place fullscreen would hide it.
+			to.Activate(id)
+		} else {
+			to.FocusID(id)
+		}
 	} else {
 		col := Column{Windows: []WindowID{id}}
 		ok := true

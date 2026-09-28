@@ -752,8 +752,10 @@ type Scene struct {
 	// the Border colors: tile lines over the tiles, under the floats; a
 	// float's border right after the float.
 	Separators []Separator
-	// Layers are drawn in slice order: background and bottom before windows,
-	// top and overlay after. A fullscreen window covers bottom and top.
+	// Layers are the shown layer surfaces, drawn in slice order: background
+	// and bottom before windows, top and overlay after. Core leaves out
+	// those a fullscreen window hides (all but the background and a surface
+	// taking the keyboard exclusively); adapters draw every layer given.
 	// Window popups are drawn after the windows, layer popups
 	// (SceneWindow.OverLayers) last, over every layer.
 	Layers []SceneLayer

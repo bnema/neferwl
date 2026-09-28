@@ -72,3 +72,32 @@ func TestFloatingWindows(t *testing.T) {
 		t.Fatalf("focus after close %d", id)
 	}
 }
+
+// A grabbing popup hidden with its parent under a fullscreen window has no
+// keyboard; the fullscreen window has it.
+func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80})
+	m := c.cur().mon
+	m.AddWindow(1)
+	m.AddWindow(2)
+	c.popups[3] = &popupState{id: 3, parent: 1, grab: true, mapped: true, rect: Rect{W: 5, H: 5}}
+	c.popupOrder = append(c.popupOrder, 3)
+	m.Current().FocusID(1)
+	if f := c.keyboardFocus(); f != 3 {
+		t.Fatalf("focus %d, want the grabbing popup", f)
+	}
+	m.SetFullscreen(2, true)
+	// Scroll overflow: the fullscreen window covers once its column is on
+	// screen.
+	m.Current().FocusID(2)
+	if f := c.keyboardFocus(); f != 2 {
+		t.Fatalf("focus %d, want the fullscreen window", f)
+	}
+}

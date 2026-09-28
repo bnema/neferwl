@@ -739,3 +739,35 @@ func TestMaximizeLeavesClientFullscreen(t *testing.T) {
 		})
 	}
 }
+
+// A move that the view follows into a fixed-overflow fullscreen workspace
+// sends its window home first: the moved window must be seen, tiled or
+// floating.
+func TestFollowMoveIntoFullscreenLands(t *testing.T) {
+	for _, floating := range []bool{false, true} {
+		m := newMonitor("", "")
+		m.SetOutput(100, 80)
+		m.SetOverflow(OverflowFixed)
+		m.SetFollowMove(true)
+		m.AddWindow(1)
+		m.AddWindow(2)
+		m.ToggleFullscreen() // 2 on its own workspace, below 1's
+		m.Focus(0)
+		m.Focus(len(m.Workspaces) - 1)
+		if floating {
+			m.AddFloating(5, 10, 10)
+		} else {
+			m.AddWindow(5)
+		}
+		m.MoveToWorkspace(1, true)
+		w := m.Current()
+		if id, _ := w.Focused(); id != 5 || w.cover() != 0 {
+			t.Fatalf("floating %v: focused %d cover %d, workspaces %v", floating, id, w.cover(), windows(m))
+		}
+		for _, p := range m.Layout() {
+			if p.ID == 5 && p.Hidden {
+				t.Fatalf("floating %v: moved window hidden", floating)
+			}
+		}
+	}
+}

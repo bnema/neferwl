@@ -272,7 +272,9 @@ func (c *Core) isAncestor(a, b WindowID) bool {
 // grabFocus is the topmost mapped grabbing popup, which takes the keyboard.
 func (c *Core) grabFocus() WindowID {
 	for i := len(c.popupOrder) - 1; i >= 0; i-- {
-		if p := c.popups[c.popupOrder[i]]; p != nil && p.grab && p.mapped {
+		// A popup hidden with its parent (under a fullscreen window) has
+		// no keyboard.
+		if p := c.popups[c.popupOrder[i]]; p != nil && p.grab && p.mapped && c.visible(p.id) {
 			return p.id
 		}
 	}

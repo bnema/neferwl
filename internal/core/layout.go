@@ -415,6 +415,9 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	return false
 }
 func (w *Workspace) FocusColumn(dir int) {
+	if w.pinned() {
+		return
+	}
 	if w.floatFocus {
 		// The first move leaves the floating window for the columns.
 		w.floatFocus = false
@@ -434,7 +437,7 @@ func (w *Workspace) FocusColumn(dir int) {
 // overflow stacks columns (spiral, expanded strips), so it follows the
 // screen: the column on that side.
 func (w *Workspace) columnToward(dir int) int {
-	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
+	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
 		return -1
 	}
 	if w.onScreenFocus() {
@@ -456,6 +459,9 @@ func (w *Workspace) onScreenFocus() bool {
 // Fixed overflow also stacks columns (spiral, expanded strips): past the
 // column edge, focus goes to the column on screen above or below.
 func (w *Workspace) FocusWindow(dir int) bool {
+	if w.pinned() {
+		return false
+	}
 	if w.floatFocus {
 		w.floatFocus = false
 		return true
@@ -703,6 +709,36 @@ func (w *Workspace) SetMaxColumns(n int) {
 	w.scroll()
 }
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+// pinned reports whether focus moves inside the workspace are off: the
+// covering fullscreen window hides every target. Only in scroll overflow
+// does moving to a tiled neighbor scroll it off and show the target.
+// Moves to another workspace or monitor still work.
+func (w *Workspace) pinned() bool {
+	c := w.cover()
+	return c != 0 && (w.Overflow == OverflowFixed || w.floatIndex(c) >= 0)
+}
+
+// focusCover points the focus state at the covering fullscreen window,
+// which Focused already reports, so a user action acts on the window on
+// screen, not on one it hides.
+func (w *Workspace) focusCover() {
+	c := w.cover()
+	if c == 0 {
+		return
+	}
+	if w.floatIndex(c) >= 0 {
+		w.floatFocus = true
+		w.FocusID(c)
+		return
+	}
+	w.floatFocus = false
+	for i, col := range w.Columns {
+		if j := slices.Index(col.Windows, c); j >= 0 {
+			w.Focus, w.Columns[i].Focus = i, j
+		}
+	}
+}
+
 // cover returns the fullscreen window that covers the output, or 0. The
 // fullscreen is exclusive: while it covers, no other window of the
 // workspace is drawn, so the output can scan it out.
