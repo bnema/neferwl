@@ -235,12 +235,13 @@ func TestHeldCursorMovedBackClearsHold(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.cursor.image = true
 	o.vrrOn, o.vrrGame, o.lastFrame = true, true, time.Now()
+	o.cursor.Move(0, 0)
+	o.cursor.applied = o.cursor.desired() // on screen at (0, 0)
 	o.cursor.Move(5, 5)
 	if err := o.commitState(o.stateVRR()); err != nil || !o.cursorHeld {
 		t.Fatalf("err %v held=%v", err, o.cursorHeld)
 	}
 	o.cursor.Move(0, 0)
-	o.cursor.applied = o.cursor.desired()
 	if err := o.commitState(o.stateVRR()); err != nil || o.cursorHeld || len(*commits) != 0 {
 		t.Fatalf("err %v held=%v commits %d", err, o.cursorHeld, len(*commits))
 	}
