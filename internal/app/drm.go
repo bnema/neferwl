@@ -205,7 +205,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		}
 		currentHeads = inventory
 		apply.heads(inventory)
-		ch.sendHeads(ctx, inventory)
 	}
 	scan := func() {
 		var scanErrors []error
@@ -334,6 +333,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		}
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
+		heads, headsNext := apply.headsOut(ch.heads)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -358,6 +358,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			apply.configSent()
 		case replies <- replyNext:
 			apply.replySent()
+		case heads <- headsNext:
+			apply.headsSent()
 		case result := <-ready:
 			complete(progress.readyEvent(result.name, result.source, result.err))
 		case id := <-deadline:

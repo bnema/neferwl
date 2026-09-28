@@ -142,6 +142,20 @@ func TestOutputApplyOutbox(t *testing.T) {
 	// The reloads wait for the running configuration: no overlap.
 	r.idle()
 	r.a.finished(nil)
+	// Inventory updates while Wayland is not reading: only the latest waits.
+	mode := ports.OutputMode{Width: 1280, Height: 720, RefreshMilli: 60000}
+	for _, name := range []string{"DP-1", "DP-2"} {
+		r.a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: name}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}})
+	}
+	headsCh := make(chan ports.OutputHeads, 1)
+	out, heads := r.a.headsOut(headsCh)
+	if out == nil || len(heads.Heads) != 1 || heads.Heads[0].Info.Name != "DP-2" {
+		t.Fatalf("latest heads: %+v", heads)
+	}
+	r.a.headsSent()
+	if out, _ := r.a.headsOut(headsCh); out != nil {
+		t.Fatal("heads sent twice")
+	}
 	for i, got := range r.replies() {
 		if got.ID != uint64(i+1) || got.Err == nil {
 			t.Fatalf("reply %d: %+v", i+1, got)
