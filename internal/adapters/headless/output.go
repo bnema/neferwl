@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
+	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -33,7 +34,13 @@ type Options struct {
 	Name      string
 	Presented chan<- ports.OutputPresented
 	Captured  chan<- ports.CaptureDone
+	// Clock paces the renderer trim (nil: system clock).
+	Clock ports.Clock
 }
+
+// trimEvery is how often an output lets its renderer free the buffers of
+// windows it no longer draws.
+const trimEvery = 10 * time.Second
 
 func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
@@ -99,6 +106,12 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			surfaces[c.ID] = c
 		}
 	}
+	clk := opts.Clock
+	if clk == nil {
+		clk = clock.System{}
+	}
+	trim := clk.NewTicker(trimEvery)
+	defer trim.Stop()
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -119,6 +132,13 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		case <-retry:
 			pending = opts.send(pending)
+			continue
+		case <-trim.C():
+			// An idle output renders nothing: free what windows that left
+			// it held.
+			if err := r.Trim(clk.Now()); err != nil {
+				return fmt.Errorf("trim renderer: %w", err)
+			}
 			continue
 		case s, ok := <-scenes:
 			if !ok {

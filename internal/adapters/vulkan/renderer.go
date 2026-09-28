@@ -67,6 +67,8 @@ type Renderer struct {
 	// the bytes copied into them, for tests.
 	shm    map[shmKey]*shmSurface
 	copied int
+	// marks date the frames for Trim's wall-clock eviction (trim.go).
+	marks []trimMark
 	// redrawn counts the target pixels drawn, for tests.
 	redrawn int
 	// cursors are the exported cursor images (CursorBuffers).

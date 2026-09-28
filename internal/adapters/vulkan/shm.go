@@ -16,7 +16,8 @@ import (
 // that the fragment shader reads directly: one memcpy per row, no staging
 // copy, no resample, no alpha fix-up on the CPU. Each surface has two GPU
 // buffers used in turn, so the CPU never writes one a frame in flight
-// reads. Mappings and buffers are dropped after importTTL frames unused.
+// reads. Mappings and buffers are dropped after importTTL frames unused,
+// or idleTTL of wall-clock time (Trim).
 
 // mapping is a client pool mapped read-only.
 type mapping struct {
@@ -263,12 +264,18 @@ func (r *Renderer) freeShmCopy(c *shmCopy) {
 func (r *Renderer) dropShm() {
 	for key, s := range r.shm {
 		if r.frame-s.last > importTTL {
-			for _, c := range s.bufs {
-				if c != nil {
-					r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
-				}
-			}
+			r.retireShm(s)
 			delete(r.shm, key)
+		}
+	}
+}
+
+// retireShm frees a surface's GPU buffers once the frames reading them
+// completed.
+func (r *Renderer) retireShm(s *shmSurface) {
+	for _, c := range s.bufs {
+		if c != nil {
+			r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
 		}
 	}
 }

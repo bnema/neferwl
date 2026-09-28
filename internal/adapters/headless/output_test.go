@@ -149,6 +149,45 @@ func TestErrors(t *testing.T) {
 	}
 }
 
+// Each trim tick lets the idle renderer free what it no longer draws,
+// without a frame; a failed trim stops the output.
+func TestRunTrimsRendererOnTick(t *testing.T) {
+	ticks := make(chan time.Time)
+	clk := portsmocks.NewMockClock(t)
+	tk := portsmocks.NewMockTicker(t)
+	clk.EXPECT().NewTicker(trimEvery).Return(tk).Once()
+	tk.EXPECT().C().Return(ticks)
+	tk.EXPECT().Stop().Return().Once()
+	now := time.Unix(1000, 0)
+	clk.EXPECT().Now().Return(now)
+	r, f := recordingRenderer(t, nil)
+	trimmed := make(chan time.Time, 2)
+	failure := errors.New("trim failed")
+	calls := 0 // Run's goroutine only
+	r.EXPECT().Trim(now).RunAndReturn(func(at time.Time) error {
+		trimmed <- at
+		if calls++; calls == 2 {
+			return failure
+		}
+		return nil
+	}).Twice()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
+	}()
+	ticks <- now
+	if got := <-trimmed; !got.Equal(now) {
+		t.Fatalf("trimmed at %v", got)
+	}
+	ticks <- now
+	if err := <-done; !errors.Is(err, failure) {
+		t.Fatalf("run: %v", err)
+	}
+	if s, _ := f.snapshot(); len(s) != 0 {
+		t.Fatalf("%d frames for a trim", len(s))
+	}
+}
+
 func TestWritePNGAtomic(t *testing.T) {
 	dir := t.TempDir()
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))

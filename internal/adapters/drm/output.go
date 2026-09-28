@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
+	"github.com/bnema/neferwl/internal/adapters/clock"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
@@ -41,6 +42,8 @@ type Output struct {
 	hdrBlob          uint32
 	hdrBlobData      hdrOutputMetadata
 	log              zerowrap.Logger
+	// clock paces the periodic stats and renderer trim (nil: system).
+	clock ports.Clock
 	// Properties: CRTC and connector property IDs by name.
 	crtcProps map[string]uint32
 	connCrtc  uint32 // the connector's CRTC_ID property
@@ -875,7 +878,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 		}
 	}()
-	stats := time.NewTicker(10 * time.Second)
+	clk := o.clock
+	if clk == nil {
+		clk = clock.System{}
+	}
+	stats := clk.NewTicker(10 * time.Second)
 	defer stats.Stop()
 	// Timer channels are enabled only when their condition holds. Go 1.27
 	// guarantees a stopped/reset timer cannot deliver its old value.
@@ -1030,8 +1037,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			// Windows on other outputs or workspaces do not need a frame.
 			dirty = dirty || scene.Shows(c.ID)
-		case <-stats.C:
-			o.dropClientFBs(time.Now(), false)
+		case <-stats.C():
+			now := clk.Now()
+			o.dropClientFBs(now, false)
+			// An idle output renders nothing: free what windows that left
+			// it held.
+			if err := r.Trim(now); err != nil {
+				return fmt.Errorf("trim renderer: %w", err)
+			}
 			ev := o.log.Info().Str("connector", o.conn.name).Int("frames", frame).Int("flips", o.flips).Bool("pending", o.frame.pendingCommit())
 			if o.cursor != nil {
 				cs := o.cursor.TakeStats()
