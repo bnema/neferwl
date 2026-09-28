@@ -5,8 +5,9 @@ import (
 	"fmt"
 )
 
-// applyProgress belongs exclusively to the output loop. An instance is identified
-// by its Ready channel, which is distinct for each start of a connector.
+// applyProgress tracks whether the outputs of a DRM configuration are ready.
+// It belongs exclusively to the output loop. An instance is identified by its
+// Ready channel, which is distinct for each start of a connector.
 type applyProgress struct {
 	id        uint64
 	active    bool
@@ -17,10 +18,10 @@ type applyProgress struct {
 	err       error
 }
 
+// applyDecision reports whether the configuration is finished and its result.
 type applyDecision struct {
-	reply    bool
-	err      error
-	rollback bool
+	reply bool
+	err   error
 }
 
 func (p *applyProgress) start(id uint64, required map[string]bool, stopping map[string]bool) applyDecision {
@@ -47,7 +48,12 @@ func (p *applyProgress) started(name string, instance <-chan error) {
 	}
 }
 
-func (p *applyProgress) readyEvent(name string, instance <-chan error, err error) applyDecision {
+// readyEvent records a readiness result. current is the connector's running
+// instance: results of a stopped instance are ignored.
+func (p *applyProgress) readyEvent(name string, instance, current <-chan error, err error) applyDecision {
+	if instance != current {
+		return applyDecision{}
+	}
 	if p.completed == nil {
 		p.completed = map[<-chan error]bool{}
 	}
@@ -130,7 +136,7 @@ func (p *applyProgress) timeout(id uint64) applyDecision {
 func (p *applyProgress) fail(err error) applyDecision {
 	p.err = errors.Join(p.err, err)
 	p.active = false
-	return applyDecision{reply: true, err: p.err, rollback: true}
+	return applyDecision{reply: true, err: p.err}
 }
 
 func (p *applyProgress) complete() applyDecision {
@@ -138,5 +144,5 @@ func (p *applyProgress) complete() applyDecision {
 		return applyDecision{}
 	}
 	p.active = false
-	return applyDecision{reply: true, err: p.err, rollback: p.err != nil}
+	return applyDecision{reply: true, err: p.err}
 }

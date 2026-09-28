@@ -819,7 +819,12 @@ type SurfaceContent struct {
 	// Source is the committed crop in buffer pixels: x, y, width, height.
 	// Zero width means the entire buffer is used.
 	Source [4]float32
-	Opaque bool // x formats: ignore the alpha byte
+	// Transform is the wl_output.transform the client applied to the
+	// buffer: readers apply its inverse. Width and Height stay the buffer's.
+	Transform BufferTransform
+	// Opaque ignores the alpha byte: an x format, or an opaque region that
+	// covers the whole surface.
+	Opaque bool
 	Color  SurfaceColor
 	SHM    *SHMBuffer
 	DMABuf *DMABuf
@@ -844,6 +849,32 @@ type SurfaceContent struct {
 	// A renderer holding an older content redraws the union of the
 	// entries after it, or everything when the history does not reach it.
 	DamageHistory []SeqDamage
+}
+
+// BufferTransform is a wl_output.transform value: bit 0 rotates 90°
+// counter-clockwise, bit 1 rotates 180°, bit 2 flips around the vertical
+// axis first.
+type BufferTransform uint8
+
+// Rotated reports whether width and height swap between buffer and surface.
+func (t BufferTransform) Rotated() bool { return t&1 != 0 }
+
+// ToBuffer maps a point of a w×h surface (logical, before scale) to the
+// same point of its buffer, in the buffer's untransformed w'×h' axes, where
+// w' and h' swap when the transform is Rotated.
+func (t BufferTransform) ToBuffer(x, y, w, h float64) (float64, float64) {
+	if t&4 != 0 {
+		x = w - x
+	}
+	switch t & 3 {
+	case 1:
+		return y, w - x
+	case 2:
+		return w - x, h - y
+	case 3:
+		return h - y, x
+	}
+	return x, y
 }
 
 // SeqDamage is what content Seq changed from the one before: Rects in

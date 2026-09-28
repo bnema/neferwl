@@ -204,6 +204,9 @@ type update struct {
 	attached           bool
 	buffer             *wayland.Buffer
 	scale              int
+	transform          ports.BufferTransform
+	opaque             []ports.Rect
+	opaqueSet          bool
 	async              bool
 	kind               uint32
 	callbacks          []*wayland.Callback
@@ -311,6 +314,9 @@ func (s *surface) takePending() update {
 	u.inputSet, u.inputAll, u.inputRects = s.pendingInputSet, s.pendingInputAll, s.pendingInputRects
 	s.pendingInputSet = false
 	s.pendingInputRects = nil
+	u.transform = s.pendingTransform
+	u.opaque, u.opaqueSet = s.pendingOpaque, s.pendingOpaqueSet
+	s.pendingOpaque, s.pendingOpaqueSet = nil, false
 	s.attached, s.pending, s.callbacks = false, nil, nil
 	s.pendingFeedback, s.pendingSync = nil, nil
 	s.pendingDamage, s.pendingBufDamage = nil, nil
@@ -398,8 +404,9 @@ func (s *surface) applyUpdate(u *update) {
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
 		s.commitSkipped = true
 		u.buffer, u.attached = nil, false
-		// Scale and crop describe the same retained buffer.
+		// Scale, transform and crop describe the same retained buffer.
 		u.scale = s.bufferScale
+		u.transform = s.transform
 		// The viewport change was made for that buffer: keep the crop that
 		// matches the retained content instead of validating a mismatch.
 		if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {

@@ -108,13 +108,14 @@ func (s *Server) hasPointerFocus(c server.Client) bool {
 }
 
 // cursorImage copies the committed shm buffer of a cursor surface. No
-// buffer hides the cursor; an unreadable one falls back to the arrow.
+// buffer hides the cursor; an unreadable or transformed one falls back to
+// the arrow.
 func (s *surface) cursorImage() ports.CursorChange {
 	if s.current == nil {
 		return ports.CursorChange{Hidden: true}
 	}
 	b, ok := s.server.buffers[s.current.Resource].(*buffer)
-	if !ok || b.width > maxCursorSide || b.height > maxCursorSide {
+	if !ok || b.width > maxCursorSide || b.height > maxCursorSide || s.transform != 0 {
 		return ports.CursorChange{}
 	}
 	img := ports.CursorImage{W: b.width, H: b.height, Pixels: make([]byte, b.width*b.height*4)}

@@ -49,6 +49,14 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
 		t.Fatalf("YUV overlay reason %q", reason)
 	}
+	// A transformed buffer is composed: the plane would show it unrotated.
+	_, c = overlayScene()
+	rotated := c[2]
+	rotated.Transform = 1
+	c[2] = rotated
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("transformed overlay reason %q", reason)
+	}
 	_, c = overlayScene()
 	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{W: 10, H: 10}})
 	if _, _, reason := overlayCandidate(s, c); reason != "window_above" {

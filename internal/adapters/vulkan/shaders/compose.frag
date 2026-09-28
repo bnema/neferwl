@@ -8,6 +8,7 @@
 layout(push_constant) uniform Draw {
     ivec4 rect;
     vec4 map;
+    vec4 mapy;
     vec4 color;
     vec4 crop;
     uvec4 buf;
@@ -84,7 +85,7 @@ vec4 texel(ivec2 p) {
 }
 
 void main() {
-    vec2 src = d.map.xy + gl_FragCoord.xy * d.map.zw;
+    vec2 src = d.map.xy + gl_FragCoord.x * d.map.zw + gl_FragCoord.y * d.mapy.xy;
     bool exact = (d.misc.y & flagExact) != 0u;
     vec4 c;
     if (d.misc.x == modeSolid) {

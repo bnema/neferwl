@@ -37,6 +37,7 @@ func TestScanoutCandidate(t *testing.T) {
 		}, nil, ""},
 		{"shm", nil, func(c *ports.SurfaceContent) { c.DMABuf, c.SHM = nil, &ports.SHMBuffer{} }, "not_dmabuf"},
 		{"subsurface", nil, func(c *ports.SurfaceContent) { c.Children = []ports.Subsurface{{}} }, "subsurfaces"},
+		{"buffer transform", nil, func(c *ports.SurfaceContent) { c.Transform = 2 }, "buffer_transform"},
 		{"scaled", nil, func(c *ports.SurfaceContent) { c.Width = 100 }, "size_mismatch"},
 		{"cropped", nil, func(c *ports.SurfaceContent) { c.Geometry = ports.Rect{X: 5, W: 90, H: 50} }, "geometry_crop"},
 		{"client ignores scale", nil, func(c *ports.SurfaceContent) { c.LogicalW = 200 }, "logical_mismatch"},
