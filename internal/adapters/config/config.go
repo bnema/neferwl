@@ -231,6 +231,16 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				entry().Primary = b
 				continue
 			}
+			if base, ok := strings.CutSuffix(name, ".hidden"); ok {
+				name = base
+				if value != "move" && value != "keep" {
+					warn("%s: must be move or keep", key)
+					continue
+				}
+				override()
+				entry().KeepHidden = value == "keep"
+				continue
+			}
 			if base, ok := strings.CutSuffix(name, ".hdr"); ok {
 				name = base
 				b, err := onOff(value)
@@ -275,7 +285,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale, o.Primary, o.HDR, o.SDRBrightness = e.Scale, e.Primary, e.HDR, e.SDRBrightness
+			o.Scale, o.Primary, o.HDR, o.SDRBrightness, o.KeepHidden = e.Scale, e.Primary, e.HDR, e.SDRBrightness, e.KeepHidden
 			*e = o
 			continue
 		}

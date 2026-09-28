@@ -13,6 +13,8 @@ const DefaultSDRBrightness = 203
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
+// KeepHidden keeps the workspaces of a display that shows another input
+// source; by default they move to a shown display until it comes back.
 // ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
@@ -25,6 +27,7 @@ type OutputConfig struct {
 	Primary       bool
 	HDR           bool // opt-in to HDR10 on capable outputs
 	SDRBrightness int  // nits; default DefaultSDRBrightness
+	KeepHidden    bool
 	ScaleOnly     bool
 }
 

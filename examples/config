@@ -77,6 +77,10 @@ focus.follow-move = off
 # step through the scales where the display divides into whole pixels and
 # save the result here.
 # output.DP-2.scale = 4/3
+# A display switched to another input source hands its workspaces to the
+# primary display until it comes back (move), or keeps them (keep).
+# output.DP-2.primary = on
+# output.HDMI-A-1.hidden = move
 
 render.direct-scanout = on
 # Games asking for tearing flip without waiting for vblank, and variable

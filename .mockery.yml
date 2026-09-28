@@ -28,6 +28,13 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/ddc:
+    interfaces:
+      bus:
+        config:
+          dir: internal/adapters/ddc
+          pkgname: ddc
+          filename: bus_mock_test.go
   github.com/bnema/neferwl/internal/adapters/wayland:
     interfaces:
       procEnv:

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -203,9 +204,9 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 	c.named()
 }
 
-// removeScreen moves every workspace of an unplugged output to the focused
-// screen (another one if it was focused), numbered ones below its numbered
-// workspaces, hidden ones hidden. They remember their home and position and
+// removeScreen moves every workspace of an unplugged output to the primary
+// screen, else the focused one (another one if it was focused), numbered
+// ones below its numbered workspaces, hidden ones hidden. They remember their home and position and
 // return when it is plugged in again. The last output becomes the
 // placeholder again: it keeps its windows for the next output.
 func (c *Core) removeScreen(name string) {
@@ -221,17 +222,31 @@ func (c *Core) removeScreen(name string) {
 	gone := c.screens[i]
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
-	c.focusScreen = max(slices.Index(c.screens, focused), 0)
-	host := c.cur()
+	host := c.screens[0]
+	if j := slices.Index(c.screens, focused); j >= 0 {
+		host = focused
+	}
+	if j := slices.IndexFunc(c.screens, func(s *screen) bool { return s.primary }); j >= 0 {
+		host = c.screens[j]
+	}
+	if gone == focused {
+		focused = host
+	}
+	c.focusScreen = slices.Index(c.screens, focused)
 	for pos, w := range gone.mon.Workspaces {
 		if w.empty() && w.Name == "" {
 			continue
 		}
 		switch {
 		case host.mon.matches(w.home):
-			// A guest from the host goes home.
+			// A guest from the host goes home; an idle host shows it,
+			// like settleGuests.
+			idle := host.mon.Current().empty() && host.mon.Current().Name == ""
 			w.home = ""
 			host.mon.adopt(w, false, w.homePos)
+			if idle {
+				host.mon.show(w)
+			}
 			continue
 		case w.home == "":
 			w.home, w.homePos = gone.info.Key(), pos
@@ -367,4 +382,40 @@ func (c *Core) moveWorkspace(dir int) {
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	dst.mon.show(w)
 	c.focusScreen = to
+}
+
+// keepsHidden reports output.<name>.hidden = keep.
+func (c *Core) keepsHidden(name string) bool {
+	for _, o := range c.cfg.Outputs {
+		if o.Name == name && o.KeepHidden {
+			return true
+		}
+	}
+	return false
+}
+
+// syncHidden makes the screens follow the displays showing another input
+// source: such a screen leaves like an unplugged output, so its workspaces
+// move to a shown one, and comes back with them when its display shows
+// this computer again. A screen stays while no shown screen is left to
+// take its workspaces.
+func (c *Core) syncHidden() {
+	for _, name := range slices.Sorted(maps.Keys(c.stashed)) {
+		if !c.hidden[name] || c.keepsHidden(name) {
+			info := c.stashed[name]
+			delete(c.stashed, name)
+			c.addScreen(info)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.hidden)) {
+		i := c.screenIndex(name)
+		shownLeft := slices.ContainsFunc(c.screens, func(s *screen) bool { return s.name() != name && !c.hidden[s.name()] })
+		// A display turned off by a client may stop answering or fall
+		// back to another input on its own: that is not the user leaving.
+		if i < 0 || !shownLeft || c.keepsHidden(name) || c.screens[i].off {
+			continue
+		}
+		c.stashed[name] = c.screens[i].info
+		c.removeScreen(name)
+	}
 }

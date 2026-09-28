@@ -37,7 +37,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
-| `output.<name>.primary` | `off` | Gets focus and pointer at startup |
+| `output.<name>.primary` | `off` | Gets focus and pointer at startup, and the workspaces of displays that go away |
+| `output.<name>.hidden` | `move` | When the display shows another input source: `move` its workspaces to a shown display until it comes back, or `keep` them |
 | `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
 | `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
@@ -57,6 +58,12 @@ A three-finger swipe runs one action when the fingers lift:
 | Right | `focus-column-right` | `focus-column-left` |
 
 Column swipes move the focus with either overflow: `scroll` brings the column into view, `fixed` only moves the focus.
+
+## Input sources
+
+NeferWL asks each monitor over DDC/CI which input source it shows. A display switched to another computer or console counts as gone: its workspaces move to the primary display (else the focused one) and return when it shows NeferWL again. A monitor that does not answer counts as shown.
+
+This needs the `i2c-dev` module and access to `/dev/i2c-*`; the Arch package installs both (`modules-load.d` and a `uaccess` udev rule). The log reports `input source detection off` with the reason otherwise.
 
 ## HDR
 
