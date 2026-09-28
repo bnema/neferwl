@@ -139,9 +139,8 @@ type Workspace struct {
 	Floats       []Float
 	floatFocus   bool
 	floatsHidden bool
-	// hiddenFocus and hiddenFullscreen hold the float focus and a float's
-	// fullscreen while the floats are hidden, restored when shown.
-	hiddenFocus      bool
+	// hiddenFullscreen holds a float's fullscreen while the floats are
+	// hidden, restored when shown.
 	hiddenFullscreen WindowID
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
@@ -336,7 +335,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			w.hiddenFullscreen = 0
 		}
 		if len(w.Floats) == 0 {
-			w.floatFocus, w.floatsHidden, w.hiddenFocus = false, false, false
+			w.floatFocus, w.floatsHidden = false, false
 		}
 		return
 	}
@@ -1013,24 +1012,25 @@ func (w *Workspace) ToggleWindowFloating() {
 	w.Floats[len(w.Floats)-1].back = back
 }
 
-// ToggleFloatingVisible hides every float without changing its placement.
+// ToggleFloatingVisible hides every float without changing its placement
+// when a float has the focus, and shows them again from any window.
 func (w *Workspace) ToggleFloatingVisible() {
-	if len(w.Floats) == 0 {
+	if len(w.Floats) == 0 || !w.floatsHidden && !w.floatFocus {
 		return
 	}
 	w.floatsHidden = !w.floatsHidden
 	if w.floatsHidden {
 		// A hidden fullscreen float would still hide the columns.
-		w.hiddenFocus, w.floatFocus = w.floatFocus, false
+		w.floatFocus = false
 		w.hiddenFullscreen = 0
 		if w.floatIndex(w.fullscreen) >= 0 {
 			w.hiddenFullscreen, w.fullscreen = w.fullscreen, 0
 		}
 		return
 	}
-	w.floatFocus = w.hiddenFocus
+	w.floatFocus = true
 	if w.fullscreen == 0 && w.floatIndex(w.hiddenFullscreen) >= 0 {
 		w.fullscreen = w.hiddenFullscreen
 	}
-	w.hiddenFocus, w.hiddenFullscreen = false, 0
+	w.hiddenFullscreen = 0
 }

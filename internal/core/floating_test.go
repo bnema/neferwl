@@ -128,8 +128,8 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 	}
 }
 
-// Hiding floats keeps the columns' focus, and a hidden fullscreen float
-// no longer hides the columns.
+// Only a focused float hides the floats; a hidden fullscreen float no
+// longer hides the columns.
 func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
@@ -137,9 +137,16 @@ func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
 	w.AddFloating(2, 20, 10)
 	w.FocusID(1)
 	w.Apply(ActionToggleFloatingVisible)
+	if id, _ := w.Focused(); id != 1 || w.floatsHidden {
+		t.Fatalf("column window hid floats: focused %d hidden %v", id, w.floatsHidden)
+	}
+	// Shown again from a column window, the top float takes the focus.
+	w.FocusID(2)
 	w.Apply(ActionToggleFloatingVisible)
-	if id, _ := w.Focused(); id != 1 {
-		t.Fatalf("column focus lost: %d", id)
+	w.FocusID(1)
+	w.Apply(ActionToggleFloatingVisible)
+	if id, _ := w.Focused(); id != 2 || w.floatsHidden {
+		t.Fatalf("show from column: focused %d hidden %v", id, w.floatsHidden)
 	}
 	w.FocusID(2)
 	w.SetFullscreen(2, true)
