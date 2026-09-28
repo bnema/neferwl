@@ -39,11 +39,11 @@ type Monitor struct {
 	overview       bool
 	overviewFrom   *Workspace
 	overviewFromID WindowID
-	// overviewPile is set while the selection is on entry overviewPileAt
-	// of the current workspace's stash pile. The stash itself changes only
-	// when the overview closes on it.
-	overviewPile   bool
-	overviewPileAt int
+	// overviewCard is the selected stash card and overviewCardOf its
+	// workspace; 0 while the selection is on a column. The stash itself
+	// changes only when the overview closes on the card.
+	overviewCard   WindowID
+	overviewCardOf *Workspace
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
@@ -632,7 +632,14 @@ func (m *Monitor) landing() *Workspace {
 	return m.Current()
 }
 
-func (m *Monitor) Focused() (WindowID, bool) { return m.Current().Focused() }
+// Focused is the focused window of the workspace on screen; in the
+// overview, the selected stash card when it is one.
+func (m *Monitor) Focused() (WindowID, bool) {
+	if id := m.card(); id != 0 {
+		return id, true
+	}
+	return m.Current().Focused()
+}
 
 // Layout places every window: the workspace on screen laid out, others hidden.
 func (m *Monitor) Layout() []Placement {

@@ -201,6 +201,10 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
+	// In the overview, close-window closes the selected stash card.
+	if id := m.card(); id != 0 && a == ActionCloseWindow {
+		return Effect{Close: id}
+	}
 	if n, op, ok := WorkspaceArg(a); ok {
 		if op == FocusWorkspace {
 			m.FocusNumber(n)

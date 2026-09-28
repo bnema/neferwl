@@ -49,39 +49,61 @@ func (m *Monitor) ToggleOverview() {
 	m.selectRow()
 }
 
-// selectRow puts the selection in the pile when the current workspace
-// has only stashed windows, else on its focused column.
+// selectRow selects the stash card of a workspace with only stashed
+// windows, else its focused column.
 func (m *Monitor) selectRow() {
-	w := m.Current()
-	m.overviewPile = len(w.Columns) == 0 && len(w.Stash) > 0
-	m.overviewPileAt = w.stashAt
-}
-
-// pileAt is the selected pile entry of w, -1 when the selection is not in
-// its pile. It follows stash changes made while the overview is open.
-func (m *Monitor) pileAt(w *Workspace) int {
-	if !m.overviewPile || w != m.Current() || len(w.Stash) == 0 {
-		return -1
+	m.overviewCard, m.overviewCardOf = 0, nil
+	if w := m.Current(); len(w.Columns) == 0 && len(w.Stash) > 0 {
+		m.selectCard(w, w.stashAt)
 	}
-	return min(max(m.overviewPileAt, 0), len(w.Stash)-1)
 }
 
-// closeOverview closes the overview on the selection: a pile entry shows
-// the stash on it.
+// selectCard selects stash entry i of w.
+func (m *Monitor) selectCard(w *Workspace, i int) {
+	m.overviewCard, m.overviewCardOf = w.Stash[i].ID, w
+}
+
+// card is the selected stash card, 0 when there is none: the overview is
+// closed, the selection is on a column, or its window left the stash on
+// screen (unmapped, unstashed, or another workspace shown by a bind).
+func (m *Monitor) card() WindowID {
+	w := m.overviewCardOf
+	if !m.overview || w == nil || w != m.Current() || w.stashIndex(m.overviewCard) < 0 {
+		return 0
+	}
+	return m.overviewCard
+}
+
+// cardAt is the pile entry of w that is selected, -1 when none.
+func (m *Monitor) cardAt(w *Workspace) int {
+	if id := m.card(); id != 0 && w == m.overviewCardOf {
+		return w.stashIndex(id)
+	}
+	return -1
+}
+
+// closeOverview closes the overview on the selection: a card shows the
+// stash on it. A fullscreen request another stashed window made while
+// the stash was hidden is dropped: the picked card stays in front.
 func (m *Monitor) closeOverview() {
 	w := m.Current()
-	if i := m.pileAt(w); i >= 0 {
+	if i := m.cardAt(w); i >= 0 {
+		if w.hiddenFullscreen != w.Stash[i].ID {
+			w.hiddenFullscreen = 0
+		}
 		w.stashAt = i
 		w.showStash()
 	}
-	m.overview, m.overviewFrom, m.overviewPile = false, nil, false
+	m.overview, m.overviewFrom = false, nil
+	m.overviewCard, m.overviewCardOf = 0, nil
 }
 
 // CancelOverview closes the overview and returns to the workspace and
 // window it opened on, if they are still there.
 func (m *Monitor) CancelOverview() {
 	from, id := m.overviewFrom, m.overviewFromID
-	m.overview, m.overviewFrom, m.overviewPile = false, nil, false
+	m.overview, m.overviewFrom = false, nil
+	m.overviewCard, m.overviewCardOf = 0, nil
 	if from == nil || !m.has(from) {
 		return
 	}
@@ -106,18 +128,18 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		return
 	}
 	w := m.Current()
-	if at := m.pileAt(w); at >= 0 {
+	if at := m.cardAt(w); at >= 0 {
 		switch {
 		case at+dx >= 0 && at+dx < len(w.Stash):
-			m.overviewPileAt = at + dx
+			m.selectCard(w, at+dx)
 		case dx > 0 && len(w.Columns) > 0:
-			m.overviewPile = false
+			m.overviewCard, m.overviewCardOf = 0, nil
 			w.FocusID(w.Columns[0].Windows[w.Columns[0].Focus])
 		}
 		return
 	}
 	if dx < 0 && (len(w.Columns) == 0 || w.Focus == 0) && len(w.Stash) > 0 {
-		m.overviewPile, m.overviewPileAt = true, w.stashAt
+		m.selectCard(w, w.stashAt)
 		return
 	}
 	if len(w.Columns) == 0 {
@@ -134,10 +156,10 @@ func (m *Monitor) OverviewPick(id WindowID) {
 		return
 	}
 	m.show(w)
+	m.overviewCard, m.overviewCardOf = 0, nil
 	if i := w.stashIndex(id); i >= 0 {
-		m.overviewPile, m.overviewPileAt = true, i
+		m.selectCard(w, i)
 	} else {
-		m.overviewPile = false
 		w.FocusID(id)
 	}
 	m.closeOverview()
@@ -168,7 +190,7 @@ func (m *Monitor) overviewLayout() []Placement {
 	for _, w := range m.all() {
 		ry, shown := rows[w]
 		if shown {
-			at := m.pileAt(w)
+			at := m.cardAt(w)
 			result = append(result, w.previewRow(ry, w != cur, at < 0)...)
 			result = append(result, w.pile(ry, w != cur, at)...)
 		}
@@ -193,7 +215,13 @@ func (w *Workspace) pileWidth() int {
 		return 0
 	}
 	card := int(math.Round(float64(w.stashRect().W) * overviewCardZoom))
-	return card + (min(len(w.Stash), overviewCards)-1)*overviewCardStep + w.Usable.W*2/100
+	// Never more than a third of the width: the columns keep the rest.
+	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+w.Usable.W*2/100, w.Usable.W/3)
+}
+
+// cardStep is the offset between stacked cards, smaller on tiny outputs.
+func (w *Workspace) cardStep() int {
+	return min(overviewCardStep, w.Usable.W/100, w.Usable.H/50)
 }
 
 // pile places the stash of w as cards on the left of the row whose top is
@@ -221,7 +249,8 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 	// Farthest card first: the front one is drawn and hit on top.
 	for k := shown - 1; k >= 0; k-- {
 		i := (front + k) % n
-		out = append(out, Placement{ID: w.Stash[i].ID, Rect: Rect{X: x0 + k*overviewCardStep, Y: y0 - k*overviewCardStep, W: cw, H: ch}, Preview: overviewCardZoom, Peek: dim || k > 0, Focused: k == 0 && selected})
+		step := k * w.cardStep()
+		out = append(out, Placement{ID: w.Stash[i].ID, Rect: Rect{X: x0 + step, Y: y0 - step, W: cw, H: ch}, Preview: overviewCardZoom, Peek: dim || k > 0, Focused: k == 0 && selected})
 	}
 	for k := shown; k < n; k++ {
 		out = append(out, Placement{ID: w.Stash[(front+k)%n].ID, Hidden: true})

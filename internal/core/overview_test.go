@@ -179,7 +179,7 @@ func TestOverviewPileNavigation(t *testing.T) {
 	w := m.Current()
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0)
-	if at := m.pileAt(w); at != 2 {
+	if at := m.cardAt(w); at != 2 {
 		t.Fatalf("entered at %d", at)
 	}
 	if f := previewOf(t, m.Layout(), 7); !f.Focused {
@@ -191,7 +191,7 @@ func TestOverviewPileNavigation(t *testing.T) {
 	m.OverviewMove(-1, 0)
 	m.OverviewMove(-1, 0)
 	m.OverviewMove(-1, 0) // stops at the first entry
-	if at := m.pileAt(w); at != 0 {
+	if at := m.cardAt(w); at != 0 {
 		t.Fatalf("left end %d", at)
 	}
 	m.OverviewMove(1, 0)
@@ -204,12 +204,12 @@ func TestOverviewPileNavigation(t *testing.T) {
 	w.FocusID(1)
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0)
-	if at := m.pileAt(w); at != 1 {
+	if at := m.cardAt(w); at != 1 {
 		t.Fatalf("entered at %d", at)
 	}
 	m.OverviewMove(1, 0)
 	m.OverviewMove(1, 0)
-	if m.pileAt(w) >= 0 {
+	if m.cardAt(w) >= 0 {
 		t.Fatal("still in the pile")
 	}
 	if f, _ := m.Focused(); f != 1 {
@@ -278,5 +278,76 @@ func TestOverviewFixedOverflowRow(t *testing.T) {
 				t.Fatalf("%d %+v overlaps %d %+v", a, ra, b, rb)
 			}
 		}
+	}
+}
+
+// The selected card follows its window: removing an earlier stash entry
+// keeps it, removing the card itself drops the selection to the column.
+// The card is what Focused reports, and close-window closes it.
+func TestOverviewCardFollowsWindow(t *testing.T) {
+	m := pileMonitor()
+	w := m.Current()
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0) // on 7
+	if id, _ := m.Focused(); id != 7 {
+		t.Fatalf("focused %d, want the card", id)
+	}
+	if e := m.Apply(ActionCloseWindow); e.Close != 7 {
+		t.Fatalf("close %d, want the card", e.Close)
+	}
+	m.RemoveWindow(5)
+	if id, _ := m.Focused(); id != 7 {
+		t.Fatalf("after removing 5: %d", id)
+	}
+	m.RemoveWindow(7)
+	if id, _ := m.Focused(); id != 1 || m.cardAt(w) >= 0 {
+		t.Fatalf("after removing the card: %d", id)
+	}
+}
+
+// A workspace switched by a bind does not inherit the card selection.
+func TestOverviewCardAfterBindSwitch(t *testing.T) {
+	m := pileMonitor()
+	m.Workspaces[1].AddWindow(8)
+	m.Workspaces[1].FocusID(8)
+	m.Workspaces[1].ToggleWindowStash()
+	m.Workspaces[1].ToggleStashVisible()
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	m.FocusNumber(2)
+	if id, _ := m.Focused(); id != 4 {
+		t.Fatalf("focused %d after the switch", id)
+	}
+	m.ToggleOverview()
+	if !m.Workspaces[1].stashHidden {
+		t.Fatal("the other workspace's stash was shown")
+	}
+}
+
+// Picking a card wins over another stashed window's pending fullscreen.
+func TestOverviewCardOverPendingFullscreen(t *testing.T) {
+	m := pileMonitor()
+	w := m.Current()
+	w.SetFullscreen(5, true) // hidden stash: pending
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	m.ToggleOverview()
+	if id, _ := m.Focused(); id != 7 || w.fullscreen != 0 {
+		t.Fatalf("focused %d, fullscreen %d", id, w.fullscreen)
+	}
+}
+
+// On a tiny output the pile leaves room for the row.
+func TestOverviewPileTinyOutput(t *testing.T) {
+	m := pileMonitor()
+	m.SetOutput(30, 20)
+	m.ToggleOverview()
+	for _, p := range m.Layout() {
+		if !p.Hidden && (p.Rect.W < 0 || p.Rect.X < 0 || p.Rect.X > 30) {
+			t.Fatalf("%+v", p)
+		}
+	}
+	if w := m.Current(); w.pileWidth() > 10 {
+		t.Fatalf("pile %d of 30", w.pileWidth())
 	}
 }
