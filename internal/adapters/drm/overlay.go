@@ -73,7 +73,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
 		}
 		c := surfaces[w.ID]
-		if c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 {
+		// A viewport crop or PQ content is composed: the plane would show
+		// the whole buffer, and raw PQ values on this SDR output.
+		if c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && !c.Color.IsPQ2020() {
 			pick = w
 			continue
 		}
