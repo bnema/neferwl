@@ -165,14 +165,20 @@ func (s *Server) textCommitted(t *textInput, reenabled bool) {
 }
 
 // textInputFocus moves text input focus to the keyboard focus: leave for
-// text inputs on another surface, enter for those of the focused client.
+// text inputs on another surface, then enter for those of the focused
+// client, as the spec orders them.
 func (s *Server) textInputFocus() {
 	surf, _ := s.focusTarget(s.focused)
 	for _, t := range s.textInputs {
 		if t.focus != nil && (surf == nil || t.focus.Resource != surf.Resource) {
 			t.leave()
 		}
-		if surf != nil && t.focus == nil && t.client == surf.Client() {
+	}
+	if surf == nil {
+		return
+	}
+	for _, t := range s.textInputs {
+		if t.focus == nil && t.client == surf.Client() {
 			t.enter(surf)
 		}
 	}
@@ -196,6 +202,7 @@ func (s *Server) activateIM() {
 		return
 	}
 	im.pending = imState{}
+	im.activated = im.dones
 	im.res.SendActivate()
 	s.sendIMState()
 }
@@ -232,11 +239,14 @@ type inputMethod struct {
 	server *Server
 	res    *inputmethod.ZwpInputMethodV2
 	// inert: another input method was bound first; requests are ignored.
-	inert   bool
-	dones   uint32
-	pending imState
-	grab    *keyboardGrab
-	popups  []*inputPopup
+	inert bool
+	dones uint32
+	// activated is dones when the last activate was sent: a commit with
+	// a serial up to it predates the activation.
+	activated uint32
+	pending   imState
+	grab      *keyboardGrab
+	popups    []*inputPopup
 }
 
 func registerInputMethod(d *server.Display, s *Server) error {
@@ -325,8 +335,9 @@ func (im *inputMethod) DeleteSurroundingText(_ *inputmethod.ZwpInputMethodV2, be
 
 // Commit sends the pending state to the active text input, in the
 // spec's order, with done carrying the text input's commit count.
-// Like wlroots, a stale serial is only logged: dropping the commit would
-// lose typed text.
+// A commit from before the last activate is dropped: its text belongs to
+// the previous text input. Within one activation, like wlroots, a stale
+// serial is only logged: dropping the commit would lose typed text.
 func (im *inputMethod) Commit(_ *inputmethod.ZwpInputMethodV2, serial uint32) {
 	if im.inert {
 		return
@@ -336,6 +347,10 @@ func (im *inputMethod) Commit(_ *inputmethod.ZwpInputMethodV2, serial uint32) {
 	s := im.server
 	t := s.activeText
 	if t == nil {
+		return
+	}
+	if serial <= im.activated {
+		s.log.Debug().Uint32("serial", serial).Uint32("activated", im.activated).Msg("input method commit before activation dropped")
 		return
 	}
 	if serial != im.dones {
@@ -357,6 +372,11 @@ func (im *inputMethod) Commit(_ *inputmethod.ZwpInputMethodV2, serial uint32) {
 // learns the text cursor rectangle; it is not drawn.
 func (im *inputMethod) GetInputPopupSurface(r *inputmethod.ZwpInputMethodV2, id uint32, surf *wayland.Surface) {
 	s := im.server
+	if im.inert {
+		// An unavailable input method's requests have no effect.
+		_, _ = inputmethod.NewZwpInputPopupSurfaceV2(r.Client(), r.Version(), id, &inputPopup{im: im})
+		return
+	}
 	if surf == nil {
 		return
 	}
@@ -374,9 +394,6 @@ func (im *inputMethod) GetInputPopupSurface(r *inputmethod.ZwpInputMethodV2, id 
 		return
 	}
 	state.kind, p.res = roleInputPopup, res
-	if im.inert {
-		return
-	}
 	im.popups = append(im.popups, p)
 	res.OnDestroy = func() { im.popups = removeItem(im.popups, p) }
 	if s.activeText != nil {
@@ -445,16 +462,29 @@ func (s *Server) grab() *keyboardGrab {
 }
 
 // grabKey sends a focused key to the input method grab and reports
-// whether it did. The release of a key the client got pressed goes to
-// the client.
+// whether it consumed it. The release of a key the client got pressed
+// goes to the client; the release of a key the grab got pressed never
+// does, even after the grab ends.
 func (s *Server) grabKey(c ports.ForwardKey) bool {
+	code := c.Key.Keycode
 	g := s.grab()
-	if g == nil || c.ID != s.focused || !c.Key.Pressed && s.heldKeys[c.Key.Keycode] {
+	owned := !c.Key.Pressed && s.grabKeys[code]
+	if owned {
+		delete(s.grabKeys, code)
+		if g == nil {
+			s.grabReleaseDropped(c.Key.State)
+			return true
+		}
+	} else if g == nil || c.ID != s.focused || !c.Key.Pressed && s.heldKeys[code] {
 		return false
 	}
 	state := uint32(0)
 	if c.Key.Pressed {
 		state = 1
+		if s.grabKeys == nil {
+			s.grabKeys = make(map[uint32]bool)
+		}
+		s.grabKeys[code] = true
 	}
 	s.serial++
 	g.res.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
@@ -465,6 +495,19 @@ func (s *Server) grabKey(c ports.ForwardKey) bool {
 		g.res.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 	}
 	return true
+}
+
+// grabReleaseDropped keeps the focused client's modifiers right when the
+// release of a grab-owned key is dropped.
+func (s *Server) grabReleaseDropped(m ports.ModState) {
+	if m == s.modState {
+		return
+	}
+	s.modState = m
+	s.serial++
+	for _, k := range s.clientKeyboards(s.focusClient()) {
+		s.sendModifiers(k)
+	}
 }
 
 // grabEnded gives the focused client the seat modifiers it missed.

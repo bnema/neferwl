@@ -331,14 +331,28 @@ func TestInputMethodKeyboardGrab(t *testing.T) {
 	if !slices.Equal(app.keys.opcodes, []uint16{k, k}) {
 		t.Fatalf("client keys %v, want the press and release of 31", app.keys.opcodes)
 	}
+	// 33 is pressed through the grab and released after it ends: the
+	// client never sees it.
+	key(33, true)
+	until(t, "grab did not get 33", func() bool { return len(grab.events) == 3 }, ime.c)
 	requestProtocol(t, ime.c, g, inputmethod.ZwpInputMethodKeyboardGrabV2RequestRelease)
 	settle(t, ime.c)
 	app.keys.opcodes = nil
+	key(33, false)
 	key(32, true)
 	until(t, "key after release did not reach the client", func() bool { return slices.Contains(app.keys.opcodes, k) }, app.c)
 	settle(t, ime.c)
-	if len(grab.events) != 2 {
+	if len(grab.events) != 3 {
 		t.Fatalf("released grab got %q", grab.events)
+	}
+	keys := 0
+	for _, op := range app.keys.opcodes {
+		if op == k {
+			keys++
+		}
+	}
+	if keys != 1 {
+		t.Fatalf("client keys %v, want only the press of 32", app.keys.opcodes)
 	}
 }
 
@@ -413,4 +427,92 @@ func TestInputPopupSurface(t *testing.T) {
 	registerProtocol(t, ime.c, again)
 	ime.request(t, inputmethod.ZwpInputMethodV2RequestGetInputPopupSurface, again, surf)
 	expectProtocolError(t, ime.c, ime.im, uint32(inputmethod.ZwpInputMethodV2ErrorRole))
+}
+
+// tagged forwards a text input's events to a shared log, prefixed, so
+// the order across objects shows.
+type tagged struct {
+	wlturbo.BaseProxy
+	tag  string
+	into *imeLog
+}
+
+func (p *tagged) Dispatch(e *wlturbo.Event) {
+	p.into.Dispatch(e)
+	last := &p.into.events[len(p.into.events)-1]
+	*last = p.tag + " " + *last
+}
+
+// On a focus change every leave comes before any enter, whatever the
+// order the text inputs were created in.
+func TestTextInputLeaveBeforeEnter(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	mapWindow := surfaceMapper(t, c, events)
+	a, aSurf, _ := mapWindow()
+	b, bSurf, _ := mapWindow()
+	manager := bindProtocol(t, c, "zwp_text_input_manager_v3")
+	registerProtocol(t, c, manager)
+	log := newIMELog(c, 0, textInputEvents...)
+	for _, tag := range []string{"t1", "t2"} {
+		p := &tagged{tag: tag, into: log}
+		p.SetID(c.AllocateID())
+		c.Context().Register(p)
+		requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, p.ID(), seat)
+	}
+	commands <- ports.FocusWindow{ID: a.ID}
+	waitFocus(t, s, a.ID)
+	settle(t, c)
+	log.take()
+	commands <- ports.FocusWindow{ID: b.ID}
+	waitFocus(t, s, b.ID)
+	settle(t, c)
+	expectEvents(t, "focus", log.take(), fmt.Sprint("t1 leave ", aSurf), fmt.Sprint("t2 leave ", aSurf), fmt.Sprint("t1 enter ", bSurf), fmt.Sprint("t2 enter ", bSurf))
+}
+
+// A commit sent for a previous activation does not reach the next text
+// input; one for the current activation does.
+func TestInputMethodCommitBeforeActivationDropped(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	ime := newIMEApp(t, s, dir)
+	first := newTextApp(t, s, events, commands, dir)
+	first.enable(t)
+	settle(t, first.c, ime.c)
+	expectEvents(t, "ime", ime.log.take(), "activate", `surrounding_text "hello" 5 5`, "text_change_cause 0", "content_type 2 0", "done")
+	second := newTextApp(t, s, events, commands, dir)
+	second.log.take()
+	second.enable(t)
+	settle(t, second.c, ime.c)
+	if got := ime.log.take(); len(got) != 7 || got[0] != "deactivate" || got[2] != "activate" {
+		t.Fatalf("ime events %q", got)
+	}
+	// Serial 1 is first's activation; second's is 3.
+	ime.request(t, inputmethod.ZwpInputMethodV2RequestCommitString, "late")
+	ime.request(t, inputmethod.ZwpInputMethodV2RequestCommit, uint32(1))
+	ime.request(t, inputmethod.ZwpInputMethodV2RequestCommitString, "ok")
+	ime.request(t, inputmethod.ZwpInputMethodV2RequestCommit, uint32(3))
+	settle(t, ime.c, second.c)
+	expectEvents(t, "second", second.log.take(), `commit_string "ok"`, "done 1")
+}
+
+// An unavailable input method's popup request has no effect: the surface
+// keeps no role.
+func TestInertInputMethodPopupIgnored(t *testing.T) {
+	s, _, _, dir := keyboardServer(t)
+	newIMEApp(t, s, dir)
+	inert := newIMEApp(t, s, dir)
+	inert.log.take()
+	comp := bindProtocol(t, inert.c, "wl_compositor")
+	surf := inert.c.AllocateID()
+	registerProtocol(t, inert.c, surf)
+	requestProtocol(t, inert.c, comp, wayland.CompositorRequestCreateSurface, surf)
+	for range 2 {
+		popup := inert.c.AllocateID()
+		registerProtocol(t, inert.c, popup)
+		inert.request(t, inputmethod.ZwpInputMethodV2RequestGetInputPopupSurface, popup, surf)
+	}
+	settle(t, inert.c)
+	expectEvents(t, "inert", inert.log.take())
 }

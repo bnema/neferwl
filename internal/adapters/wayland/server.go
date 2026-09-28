@@ -125,6 +125,7 @@ type Server struct {
 	modState                ports.ModState
 	keyboards               map[server.Client][]*wayland.Keyboard
 	heldKeys                map[uint32]bool
+	grabKeys                map[uint32]bool // pressed through the input method grab
 	keymapFD                int
 	keymapSize              uint32
 	keymapText              string           // the seat keymap, to compare virtual keymaps with
@@ -839,7 +840,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 	s.keymapOwner = nil
 	focused := s.focused
 	s.changeFocus(0)
-	s.heldKeys = nil
+	s.heldKeys, s.grabKeys = nil, nil
 	s.modState = ports.ModState{}
 	for _, list := range s.keyboards {
 		for _, k := range list {
