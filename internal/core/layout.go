@@ -989,7 +989,10 @@ func (w *Workspace) ToggleWindowFloating() {
 				w.Focus = at
 				w.scroll()
 			} else {
-				w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, FullWidth: back.fullWidth})
+				// Its column is gone: it comes back expanded, unless another
+				// column was expanded meanwhile (as leaveFullscreen).
+				expanded := back.expanded && !slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Expanded })
+				w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, FullWidth: back.fullWidth, Expanded: expanded})
 			}
 		}
 		w.floatFocus = false
@@ -998,7 +1001,8 @@ func (w *Workspace) ToggleWindowFloating() {
 	col := w.Focus
 	c := w.Columns[col]
 	row := c.Focus
-	back := &origPlace{col: col, row: row, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && len(c.Windows) == 1}
+	lone := len(c.Windows) == 1
+	back := &origPlace{col: col, row: row, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && lone, expanded: c.Expanded && lone}
 	for _, v := range c.Windows {
 		if v != id {
 			back.stacked = append(back.stacked, v)

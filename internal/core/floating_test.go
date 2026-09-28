@@ -90,6 +90,24 @@ func TestToggleWindowFloatingKeepsFullWidth(t *testing.T) {
 	}
 }
 
+// A lone expanded column (fixed overflow) comes back expanded.
+func TestToggleWindowFloatingKeepsExpanded(t *testing.T) {
+	w := workspace()
+	w.Overflow = OverflowFixed
+	w.SetMaxColumns(3)
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.CycleWidth()
+	if !w.Columns[w.Focus].Expanded {
+		t.Fatal("column not expanded")
+	}
+	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowFloating)
+	if id, _ := w.Focused(); id != 2 || !w.Columns[w.Focus].Expanded {
+		t.Fatalf("focused %d, column %+v", id, w.Columns[w.Focus])
+	}
+}
+
 // A client fullscreen request of a hidden float leaves it hidden on its
 // workspace, even in fixed overflow (which moves fullscreen windows out).
 func TestHiddenFloatFullscreenRequest(t *testing.T) {
