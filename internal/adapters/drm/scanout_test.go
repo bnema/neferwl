@@ -272,10 +272,11 @@ func TestPlaneWithoutInFormatsIsLinear(t *testing.T) {
 }
 
 // A flip shows only the windows its scene draws: presentation feedback of
-// a window on another workspace or hidden is discarded, not presented.
+// a window on another workspace, hidden or scrolled off the output is
+// discarded, not presented.
 func TestShownByScene(t *testing.T) {
-	s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1}, {ID: 2, Hidden: true}}, Layers: []ports.SceneLayer{{ID: 5}}}
-	got := (&Output{}).shownBy(s, map[ports.WindowID]uint64{1: 3, 2: 4, 5: 6, 9: 7})
+	s := ports.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 5, W: 10, H: 10}}, {ID: 2, Hidden: true}, {ID: 3, Rect: ports.Rect{X: 10, W: 10, H: 10}}}, Layers: []ports.SceneLayer{{ID: 5}}}
+	got := (&Output{}).shownBy(s, map[ports.WindowID]uint64{1: 3, 2: 4, 3: 8, 5: 6, 9: 7})
 	if len(got) != 2 || got[1] != 3 || got[5] != 6 {
 		t.Fatalf("shows %v", got)
 	}

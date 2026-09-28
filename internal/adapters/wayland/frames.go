@@ -14,12 +14,14 @@ import (
 // Frame callbacks (wl_surface.frame) tell a client when to draw its next
 // frame. They are paced per output: on its page flip when it flips, else
 // at its refresh rate, so a 165 Hz output lets clients draw 165 frames a
-// second and a V-Sync game follows the screen. Surfaces with no output
-// (hidden windows, cursors, unplaced surfaces) are paced at 60 Hz. The
+// second and a V-Sync game follows the screen. Cursors and unplaced
+// surfaces are paced at 60 Hz; invisible toplevel trees at 1 Hz. The
 // pacer sleeps while no callback waits.
 
 // defaultFramePeriod paces surfaces without an output (60 Hz).
 const defaultFramePeriod = time.Second / 60
+const suspendedFramePeriod = time.Second
+const suspendedFrameQueue = "\x00suspended" // never a wl_output name
 
 // pace fires the due frame callbacks on page flips and deadlines.
 func (s *Server) pace(ctx context.Context) {
@@ -106,15 +108,29 @@ func (s *Server) pace(ctx context.Context) {
 	}
 }
 
-// frameOutput is the output showing a surface, "" when none does (a hidden
-// window, a cursor): unlike outputOfSurface, no fallback to the focused one.
-func (s *Server) frameOutput(surf *surface) string {
+// toplevelRoot resolves subsurfaces and popups to their parent toplevel.
+func toplevelRoot(surf *surface) *surface {
 	surf = surf.root()
 	for surf.xdg != nil && surf.xdg.window != nil && surf.xdg.window.popup != nil && surf.xdg.window.popup.parent != nil {
 		surf = surf.xdg.window.popup.parent.xdg.surface.root()
 	}
+	return surf
+}
+
+func (s *Server) invisible(surf *surface) bool {
+	root := toplevelRoot(surf)
+	return root.xdg != nil && root.xdg.window != nil && root.xdg.window.hasLast && !root.xdg.window.last.Visible
+}
+
+// frameOutput is the pacing class for a surface; "" is the 60 Hz
+// outputless class, not the invisible toplevel class.
+func (s *Server) frameOutput(surf *surface) string {
+	surf = toplevelRoot(surf)
 	switch {
 	case surf.xdg != nil && surf.xdg.window != nil:
+		if s.invisible(surf) {
+			return suspendedFrameQueue
+		}
 		return surf.xdg.window.last.Output
 	case surf.layer != nil && surf.layer.output != nil:
 		return surf.layer.output.name()
@@ -124,12 +140,45 @@ func (s *Server) frameOutput(surf *surface) string {
 
 // queueFrames adds a committed surface's callbacks to its output's queue
 // ("" when it has none) and wakes the pacer.
-func (s *Server) queueFrames(name string, callbacks []*wayland.Callback) {
+func (s *Server) queueFrames(surf *surface, callbacks []*wayland.Callback) {
+	name := s.frameOutput(surf)
 	s.awaiting[name] = append(s.awaiting[name], callbacks...)
-	select {
-	case s.frameReady <- struct{}{}:
-	default:
+	if s.frameOwners == nil {
+		s.frameOwners = make(map[*wayland.Callback]*surface)
 	}
+	for _, cb := range callbacks {
+		s.frameOwners[cb] = surf
+	}
+	s.wakePacer()
+}
+
+// relocateCallbacks reclassifies callbacks committed before a visibility change.
+func (s *Server) relocateCallbacks(root *surface) {
+	moved := make(map[string][]*wayland.Callback)
+	for name, callbacks := range s.awaiting {
+		kept := callbacks[:0]
+		for _, cb := range callbacks {
+			owner := s.frameOwners[cb]
+			if owner == nil || toplevelRoot(owner) != root || s.frameOutput(owner) == name {
+				kept = append(kept, cb)
+				continue
+			}
+			dest := s.frameOutput(owner)
+			moved[dest] = append(moved[dest], cb)
+		}
+		if len(kept) == 0 {
+			delete(s.awaiting, name)
+		} else {
+			s.awaiting[name] = kept
+		}
+	}
+	for name, callbacks := range moved {
+		s.awaiting[name] = append(s.awaiting[name], callbacks...)
+		if name != suspendedFrameQueue {
+			delete(s.frameDue, name) // resume without waiting for the old phase
+		}
+	}
+	s.wakePacer()
 }
 
 // dueFrames returns the queues to fire now: flipped outputs and those past
@@ -146,12 +195,13 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 	}
 	// Callbacks of surfaces whose output is gone go with the outputless ones.
 	for name, callbacks := range s.awaiting {
-		if _, ok := periods[name]; !ok && name != "" {
+		if _, ok := periods[name]; !ok && name != "" && name != suspendedFrameQueue {
 			delete(s.awaiting, name)
 			s.awaiting[""] = append(s.awaiting[""], callbacks...)
 		}
 	}
 	periods[""] = defaultFramePeriod
+	periods[suspendedFrameQueue] = suspendedFramePeriod
 	for name := range s.frameDue {
 		if _, ok := periods[name]; !ok {
 			delete(s.frameDue, name)
@@ -181,7 +231,7 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 		}
 	}
 	waiting := false
-	wait = defaultFramePeriod
+	wait = suspendedFramePeriod
 	for name, callbacks := range s.awaiting {
 		if len(callbacks) == 0 || slices.Contains(fire, name) {
 			continue
@@ -215,6 +265,7 @@ func (s *Server) sendFrames(name string, flipped bool) {
 		ms = uint32(max(f.When-monotonic(s.started), 0).Milliseconds())
 	}
 	for _, cb := range callbacks {
+		delete(s.frameOwners, cb)
 		if !cb.Resource.Alive() {
 			continue
 		}

@@ -22,10 +22,10 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 53 || d.Layout.MaxColumns != 2 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 55 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
-	if d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
+	if d.Binds["Cmd+v"] != "toggle-window-floating" || d.Binds["Cmd+Shift+v"] != "toggle-floating-visible" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -399,5 +399,23 @@ func TestTerminalResolutionAndAutoOpen(t *testing.T) {
 	t.Setenv("TERMINAL", " ")
 	if got := Defaults().Terminal.Command; !reflect.DeepEqual(got, []string{"foot"}) {
 		t.Fatal(got)
+	}
+}
+
+func TestFloatingDim(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		want    float64
+		warning bool
+	}{
+		{"0", 0, false}, {"0.75", 0.75, false}, {"1", 1, false},
+		{"-0.1", 0.3, true}, {"1.1", 0.3, true}, {"NaN", 0.3, true}, {"invalid", 0.3, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			c, warnings := parseString(t, "floating.dim = "+tc.value)
+			if c.Floating.Dim != tc.want || (len(warnings) != 0) != tc.warning {
+				t.Fatalf("dim %v, warnings %v", c.Floating.Dim, warnings)
+			}
+		})
 	}
 }

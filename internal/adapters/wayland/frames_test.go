@@ -85,3 +85,40 @@ func TestDueFrames(t *testing.T) {
 		t.Fatalf("unplugged: fire %v due %v", fire, s.frameDue)
 	}
 }
+
+func TestInvisibleFramePacingAndMigration(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
+	root := &surface{xdg: &xdgSurface{window: w}}
+	child := &surface{sub: subState{parent: root}}
+	cursor := &surface{}
+	// Use distinct live callback pointers as identities; dueFrames never dereferences them.
+	a, b := new(wayland.Callback), new(wayland.Callback)
+	s.queueFrames(child, []*wayland.Callback{a})
+	s.queueFrames(cursor, []*wayland.Callback{b})
+	w.last.Visible = false
+	s.relocateCallbacks(root)
+	if len(s.awaiting[suspendedFrameQueue]) != 1 || len(s.awaiting["DP-2"]) != 0 || len(s.awaiting[""]) != 1 || s.frameOutput(child) != suspendedFrameQueue {
+		t.Fatalf("migration: %+v", s.awaiting)
+	}
+	now := time.Unix(100, 0)
+	fire, _, _ := s.dueFrames(now, nil)
+	if !slices.Contains(fire, suspendedFrameQueue) || !slices.Contains(fire, "") {
+		t.Fatalf("initial fire: %v", fire)
+	}
+	delete(s.awaiting, suspendedFrameQueue)
+	delete(s.awaiting, "")
+	s.queueFrames(child, []*wayland.Callback{a})
+	s.queueFrames(cursor, []*wayland.Callback{b})
+	fire, wait, _ := s.dueFrames(now.Add(20*time.Millisecond), nil)
+	if slices.Contains(fire, suspendedFrameQueue) || !slices.Contains(fire, "") || wait != 980*time.Millisecond {
+		t.Fatalf("20ms: fire %v wait %v", fire, wait)
+	}
+	w.last.Visible = true
+	s.relocateCallbacks(root)
+	fire, _, _ = s.dueFrames(now.Add(21*time.Millisecond), nil)
+	if !slices.Contains(fire, "DP-2") || len(s.awaiting[suspendedFrameQueue]) != 0 {
+		t.Fatalf("resume: fire %v queues %+v", fire, s.awaiting)
+	}
+}

@@ -428,7 +428,7 @@ func (s *surface) dropQueue() {
 				cb.Destroy()
 			}
 		} else if len(u.callbacks) > 0 {
-			s.server.queueFrames(s.server.frameOutput(s), u.callbacks)
+			s.server.queueFrames(s, u.callbacks)
 		}
 		for _, fb := range u.feedback {
 			discard(fb)
@@ -477,7 +477,7 @@ func (s *surface) setBarrier(now time.Time) {
 // fifoOutput is the output pacing a surface, "" when none does.
 func (s *Server) fifoOutput(surf *surface) string {
 	name := s.frameOutput(surf)
-	if name != "" && s.outputByNameExact(name) == nil {
+	if name != "" && name != suspendedFrameQueue && s.outputByNameExact(name) == nil {
 		return ""
 	}
 	return name
@@ -485,6 +485,9 @@ func (s *Server) fifoOutput(surf *surface) string {
 
 // outputPeriod is one refresh of an output ("": 60 Hz).
 func (s *Server) outputPeriod(name string) time.Duration {
+	if name == suspendedFrameQueue {
+		return suspendedFramePeriod
+	}
 	if o := s.outputByNameExact(name); o != nil && name != "" {
 		return framePeriod(o.place.Info.RefreshMilli)
 	}
@@ -507,7 +510,7 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 			delete(s.lastFlip, name)
 		}
 	}
-	wait := defaultFramePeriod
+	wait := suspendedFramePeriod
 	s.readinessGeneration++
 	for surf := range s.fifoSurfaces {
 		name := s.fifoOutput(surf)
@@ -557,6 +560,9 @@ func (s *Server) tickFifo(now time.Time, flipped map[string]bool) (time.Duration
 		}
 		if surf.barrier {
 			wait = min(wait, deadline.Sub(now))
+		}
+		if len(surf.queue) > 0 {
+			wait = min(wait, p)
 		}
 		if !surf.barrier && len(surf.queue) == 0 {
 			delete(s.fifoSurfaces, surf)

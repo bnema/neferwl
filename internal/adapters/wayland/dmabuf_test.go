@@ -256,7 +256,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 		t.Fatalf("tiled window: %+v", r)
 	}
 	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := round("fullscreen")
 	for len(r) == 1 { // the formats may land after the configure
 		r = round("fullscreen with formats")
@@ -264,19 +264,28 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	if len(r) != 2 || r[0].flags != scanout || len(r[0].indices) != 1 || r[0].indices[0] != 1 || r[1].flags != 0 {
 		t.Fatalf("fullscreen: %+v", r)
 	}
+	// Hidden, the window loses its scanout tranche; shown, it gets it back.
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	if r := round("hidden"); len(r) != 1 {
+		t.Fatalf("hidden fullscreen: %+v", r)
+	}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
+	if r := round("shown again"); len(r) != 2 || r[0].flags != scanout {
+		t.Fatalf("shown fullscreen: %+v", r)
+	}
 	// Fullscreen on another output: its formats (none) apply at once.
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1", Visible: true}
 	if r := round("other output"); len(r) != 1 {
 		t.Fatalf("moved output: %+v", r)
 	}
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1", Visible: true}
 	if r := round("tiled again"); len(r) != 1 || r[0].flags != 0 {
 		t.Fatalf("left fullscreen: %+v", r)
 	}
 	// A destroyed feedback gets nothing more (a protocol error would
 	// kill the connection) and leaves the server's list.
 	requestProtocol(t, c, fb, linuxdmabuf.ZwpLinuxDmabufFeedbackV1RequestDestroy)
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -285,5 +294,48 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	s.display.Do(func() { n = len(s.dmabuf.feedbacks) })
 	if n != 0 {
 		t.Fatalf("%d feedbacks kept", n)
+	}
+}
+
+func TestInvisibleScanoutOffer(t *testing.T) {
+	w := &window{hasLast: true, last: ports.ConfigureWindow{Fullscreen: true, Output: "DP-2", Visible: true}}
+	surf := &surface{xdg: &xdgSurface{window: w}}
+	s := &Server{}
+	g := &dmabufGlobal{server: s, scanout: map[string]ports.OutputFormats{"DP-2": {Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}}}}
+	if _, ok := g.scanoutFor(surf); !ok {
+		t.Fatal("no visible scanout")
+	}
+	w.last.Visible = false
+	if _, ok := g.scanoutFor(surf); ok {
+		t.Fatal("invisible scanout offered")
+	}
+	w.last.Visible = true
+	if _, ok := g.scanoutFor(surf); !ok {
+		t.Fatal("scanout not restored")
+	}
+}
+
+// A popup's feedback follows its toplevel: resent with it, and on its
+// output's format changes.
+func TestPopupFeedbackFollowsToplevel(t *testing.T) {
+	topWin := &window{hasLast: true, last: ports.ConfigureWindow{Fullscreen: true, Output: "DP-2", Visible: true}}
+	top := &surface{xdg: &xdgSurface{window: topWin}}
+	topWin.xdg = top.xdg
+	top.xdg.surface = top
+	popWin := &window{}
+	popWin.popup = &popup{w: popWin, parent: topWin}
+	pop := &surface{xdg: &xdgSurface{window: popWin}}
+	popWin.xdg = pop.xdg
+	pop.xdg.surface = pop
+	if toplevelRoot(pop) != top {
+		t.Fatal("popup does not resolve to its toplevel")
+	}
+	g := &dmabufGlobal{server: &Server{}, scanout: map[string]ports.OutputFormats{"DP-2": {Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}}}}
+	if _, ok := g.scanoutFor(pop); !ok {
+		t.Fatal("popup of a visible fullscreen window has no offer")
+	}
+	topWin.last.Visible = false
+	if _, ok := g.scanoutFor(pop); ok {
+		t.Fatal("popup of an invisible window keeps its offer")
 	}
 }

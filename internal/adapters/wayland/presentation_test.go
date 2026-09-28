@@ -69,7 +69,7 @@ func TestPresentationFeedback(t *testing.T) {
 	c := protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, c, events)()
 	registerProtocol(t, c, xdg)
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true}
 	for deadline := time.Now().Add(2 * time.Second); ; {
 		var out string
 		s.display.Do(func() { out = s.frameOutput(s.windows[w.ID].xdg.surface) })
@@ -158,6 +158,16 @@ func TestPresentationFeedback(t *testing.T) {
 	flip := func(when time.Duration, seq uint64, shows uint64, zero ports.WindowID) {
 		presented <- ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[ports.WindowID]uint64{w.ID: shows}}}
 	}
+	// With no flip, hiding must discard a waiting feedback immediately.
+	hidden := feedback()
+	commit()
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: false}
+	if ev := answer(hidden, "hidden without flip"); !ev.discarded {
+		t.Fatalf("hidden feedback: %+v", ev)
+	}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true}
+	// Synchronize the resume before committing the next feedback.
+	s.display.Do(func() {})
 	// Presented with the flip's time, counter and flags.
 	a := feedback()
 	commit()

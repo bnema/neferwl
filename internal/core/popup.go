@@ -144,7 +144,8 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 	for _, sc := range c.screens {
 		for _, pl := range sc.mon.Layout() {
 			if pl.ID == id {
-				if pl.Hidden {
+				// Hidden or scrolled off: not on screen, like its popups.
+				if !onScreen(pl, sc.mon.Output()) {
 					return nil, Rect{}, false
 				}
 				return sc, c.clientRect(pl), true

@@ -166,6 +166,9 @@ func toplevelStates(c ports.ConfigureWindow, version int32) []byte {
 	if c.Activated {
 		add(xdgshell.ToplevelStateActivated)
 	}
+	if !c.Visible && version >= 6 {
+		add(xdgshell.ToplevelStateSuspended)
+	}
 	if c.Fullscreen || c.Floating {
 		return states
 	}

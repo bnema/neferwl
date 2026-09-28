@@ -274,3 +274,19 @@ func TestGraphReadyMemoizesPredecessors(t *testing.T) {
 		t.Fatal("predecessors not memoized")
 	}
 }
+
+func TestInvisibleFifoPeriod(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2"}}
+	surf := &surface{server: s, xdg: &xdgSurface{window: w}}
+	now := time.Unix(100, 0)
+	surf.setBarrier(now)
+	if _, _ = s.tickFifo(now.Add(100*time.Millisecond), map[string]bool{"DP-2": true}); !surf.barrier || s.outputPeriod(s.fifoOutput(surf)) != time.Second {
+		t.Fatalf("hidden barrier cleared or period wrong: %v %v", surf.barrier, s.outputPeriod(s.fifoOutput(surf)))
+	}
+	w.last.Visible = true
+	if _, waiting := s.tickFifo(now.Add(101*time.Millisecond), nil); surf.barrier || waiting {
+		t.Fatalf("visible barrier not resumed: %v waiting %v", surf.barrier, waiting)
+	}
+}

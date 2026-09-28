@@ -284,6 +284,9 @@ func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 	case w.origin != nil && id != w.back.id:
 		// A dialog of a fullscreen workspace already floats above it; its
 		// own fullscreen would take the workspace from the window it holds.
+	case w.floatsHidden && w.floatIndex(id) >= 0:
+		// A hidden float stays hidden: its fullscreen waits for the show.
+		w.SetFullscreen(id, on)
 	case on && m.ownWorkspace(w, id):
 		focused, _ := w.Focused()
 		m.enterFullscreen(w, id, w == m.Current() && focused == id)
@@ -336,6 +339,7 @@ func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 		fs.back.float = &fl
 		w.RemoveWindow(id)
 		fs.AddFloating(id, fl.W, fl.H)
+		fs.Floats[len(fs.Floats)-1] = fl
 	} else {
 		col := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, id) })
 		c := w.Columns[col]
@@ -380,9 +384,10 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	switch prev := origin.Focus; {
 	case back.float != nil && focus:
 		origin.AddFloating(id, back.float.W, back.float.H)
+		origin.Floats[len(origin.Floats)-1] = *back.float
 	case back.float != nil:
 		// At the bottom: the top float, maybe focused, stays on top.
-		origin.Floats = slices.Insert(origin.Floats, 0, Float{ID: id, W: back.float.W, H: back.float.H})
+		origin.Floats = slices.Insert(origin.Floats, 0, *back.float)
 	case slices.ContainsFunc(origin.Columns, back.holdsStack):
 		back.col = slices.IndexFunc(origin.Columns, back.holdsStack)
 		c := &origin.Columns[back.col]
@@ -502,6 +507,7 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 		fl := cur.Floats[f]
 		cur.RemoveWindow(id)
 		to.AddFloating(id, fl.W, fl.H)
+		to.Floats[len(to.Floats)-1] = fl
 		to.FocusID(id)
 	} else {
 		col := Column{Windows: []WindowID{id}}
@@ -655,6 +661,7 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		}
 		for _, f := range w.Floats {
 			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
+			m.Workspaces[m.Active].Floats[len(m.Workspaces[m.Active].Floats)-1] = f
 		}
 	}
 	m.hidden = hidden

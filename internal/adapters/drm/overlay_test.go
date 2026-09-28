@@ -72,6 +72,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, reason := overlayCandidate(s, c); reason != "layer_above" {
 		t.Fatalf("reason %q", reason)
 	}
+	// The dim veil is composed under the float: nothing leaves for the plane.
+	s, _ = overlayScene()
+	s.Dim = 0.3
+	if _, _, reason := overlayCandidate(s, c); reason != "dim" {
+		t.Fatalf("dim reason %q", reason)
+	}
 }
 
 // The overlay is chosen and the composed scene leaves its window out;

@@ -189,7 +189,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			continue
 		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowFloating, ActionToggleFloatingVisible, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -317,6 +317,30 @@ func (c *Core) clientRect(p Placement) Rect {
 	return p.Rect.Inset(p.Inset, c.cfg.Border.Width)
 }
 
+// onScreen reports whether a placement is drawn on its output o: not
+// hidden and not scrolled off.
+func onScreen(p Placement, o Rect) bool {
+	return !p.Hidden && p.Rect.Overlaps(Rect{W: o.W, H: o.H})
+}
+
+// floatDim is the veil opacity of a layout: dim while a float is drawn
+// over the tiles, none under a fullscreen float (nothing is seen below).
+func floatDim(layout []Placement, o Rect, dim float64) float64 {
+	shown := false
+	for _, p := range layout {
+		if p.Floating && onScreen(p, o) {
+			if p.Fullscreen {
+				return 0
+			}
+			shown = true
+		}
+	}
+	if !shown {
+		return 0
+	}
+	return dim
+}
+
 // visible reports whether the window, layer surface or popup is on screen
 // on any output.
 func (c *Core) visible(id WindowID) bool {
@@ -420,6 +444,7 @@ func (c *Core) publish(ctx context.Context) error {
 		o := sc.mon.Output()
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
 		layout := sc.mon.Layout()
+		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
 		for _, p := range layout {
@@ -429,19 +454,28 @@ func (c *Core) publish(ctx context.Context) error {
 			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset})
 			floating := p.Floating
 			if p.Hidden {
-				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {
-					old.Activated, old.Output = false, ""
-					if err := c.command(ctx, old); err != nil {
-						return err
-					}
-					c.sent[p.ID] = old
+				// A hidden window keeps its size, state and output; it is
+				// only deactivated and marked invisible. One mapped hidden
+				// is told so at once, sized by the client.
+				old, ok := c.sent[p.ID]
+				v := old
+				if !ok {
+					v = ports.ConfigureWindow{ID: p.ID, Floating: floating}
 				}
+				v.Activated, v.Visible, v.Output = false, false, sc.name()
+				if ok && v == old {
+					continue
+				}
+				if err := c.command(ctx, v); err != nil {
+					return err
+				}
+				c.sent[p.ID] = v
 				continue
 			}
 			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name()}
-			if v.Floating {
-				// A floating window picks its own size.
+			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: onScreen(p, o)}
+			if v.Floating && !sc.mon.Current().imposedFloat(p.ID) {
+				// Native floating windows pick their own size.
 				v.Width, v.Height = 0, 0
 			}
 			if old, ok := c.sent[p.ID]; !ok || old != v {

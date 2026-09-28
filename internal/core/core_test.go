@@ -73,7 +73,7 @@ func TestOwner(t *testing.T) {
 	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != 0 {
 		t.Fatal(s)
 	}
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1"}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatal(v)
 	}
 	command(t, commands)
@@ -117,7 +117,7 @@ func TestOwner(t *testing.T) {
 	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
 	}
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true, Output: "OUT-1"}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 92, Height: 72, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatal(v)
 	}
 	cfg.Layout.MaxColumns = 0
@@ -299,7 +299,7 @@ func TestBorderInset(t *testing.T) {
 	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
 	r := scene(t, scenes).Windows[0].Rect
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1"}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
 	// With a second column, the left window owns the shared separator: its
@@ -310,7 +310,7 @@ func TestBorderInset(t *testing.T) {
 	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || len(s.Separators) == 0 {
 		t.Fatal(s)
 	}
-	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1"}
+	want := ports.ConfigureWindow{ID: 1, Width: s.Windows[0].Rect.W - 2, Height: r.H, Activated: false, Output: "OUT-1", Visible: true}
 	found := false
 	for len(commands) > 0 {
 		if v := <-commands; v == want {
@@ -538,7 +538,7 @@ func TestOutputScale(t *testing.T) {
 	}
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
-	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 2560, Height: 1080, Activated: true, Output: "DP-2"}) {
+	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 2560, Height: 1080, Activated: true, Output: "DP-2", Visible: true}) {
 		t.Fatal(v)
 	}
 	for len(commands) > 0 {

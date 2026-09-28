@@ -34,9 +34,11 @@ type heldBuffer struct {
 // releaseBuffer releases a replaced buffer, or holds it until the output
 // showing its window no longer reads it.
 func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) {
+	// An invisible window is held like a shown one: a scanout plane may
+	// still read its buffer until the flip that hides it.
 	window, name := surf.root().windowID(), s.frameOutput(surf)
 	if !b.Resource.Alive() || window == 0 || name == "" {
-		// Not drawn (unmapped, hidden, a cursor): nothing reads it.
+		// Not drawn (unmapped, a cursor): nothing reads it.
 		s.release(b, sync)
 		return
 	}
@@ -73,8 +75,8 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 	if !sync.release.set() && sync.acquire == nil {
 		return
 	}
-	window := surf.root().windowID()
-	if window == 0 || s.frameOutput(surf) == "" {
+	window, name := surf.root().windowID(), s.frameOutput(surf)
+	if window == 0 || name == "" {
 		s.releaseSync(sync)
 		return
 	}
