@@ -963,7 +963,9 @@ func (w *Workspace) imposedFloat(id WindowID) bool {
 // column and row. Native floats instead become new columns.
 func (w *Workspace) ToggleWindowFloating() {
 	id, ok := w.Focused()
-	if !ok {
+	// A fullscreen window (a Wine game in scanout) keeps its place: it
+	// leaves fullscreen first, then may float.
+	if !ok || id == w.fullscreen {
 		return
 	}
 	if i := w.floatIndex(id); i >= 0 {
@@ -1013,21 +1015,20 @@ func (w *Workspace) ToggleWindowFloating() {
 }
 
 // ToggleFloatingVisible hides every float without changing its placement
-// when a float has the focus, and shows them again from any window.
+// when a float has the focus, and shows them again from any window. A
+// fullscreen float (a game in scanout) is never hidden: hiding it drops
+// scanout and VRR.
 func (w *Workspace) ToggleFloatingVisible() {
-	if len(w.Floats) == 0 || !w.floatsHidden && !w.floatFocus {
+	if len(w.Floats) == 0 {
 		return
 	}
-	w.floatsHidden = !w.floatsHidden
-	if w.floatsHidden {
-		// A hidden fullscreen float would still hide the columns.
-		w.floatFocus = false
-		w.hiddenFullscreen = 0
-		if w.floatIndex(w.fullscreen) >= 0 {
-			w.hiddenFullscreen, w.fullscreen = w.fullscreen, 0
+	if !w.floatsHidden {
+		if w.floatFocus && w.floatIndex(w.fullscreen) < 0 {
+			w.floatsHidden, w.floatFocus, w.hiddenFullscreen = true, false, 0
 		}
 		return
 	}
+	w.floatsHidden = false
 	w.floatFocus = true
 	if w.fullscreen == 0 && w.floatIndex(w.hiddenFullscreen) >= 0 {
 		w.fullscreen = w.hiddenFullscreen

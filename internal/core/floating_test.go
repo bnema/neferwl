@@ -76,6 +76,22 @@ func TestToggleFloatingVisible(t *testing.T) {
 	}
 }
 
+// A fullscreen window does not float until it leaves fullscreen.
+func TestToggleWindowFloatingIgnoresFullscreen(t *testing.T) {
+	w := workspace()
+	w.AddWindow(1)
+	w.SetFullscreen(1, true)
+	w.Apply(ActionToggleWindowFloating)
+	if len(w.Floats) != 0 || w.fullscreen != 1 {
+		t.Fatalf("fullscreen window floated: %+v", w)
+	}
+	w.SetFullscreen(1, false)
+	w.Apply(ActionToggleWindowFloating)
+	if len(w.Floats) != 1 {
+		t.Fatal("window did not float after leaving fullscreen")
+	}
+}
+
 // A lone maximized column comes back maximized.
 func TestToggleWindowFloatingKeepsFullWidth(t *testing.T) {
 	w := workspace()
@@ -128,8 +144,7 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 	}
 }
 
-// Only a focused float hides the floats; a hidden fullscreen float no
-// longer hides the columns.
+// Only a focused float hides the floats, and never over a fullscreen float.
 func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
@@ -148,17 +163,18 @@ func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
 	if id, _ := w.Focused(); id != 2 || w.floatsHidden {
 		t.Fatalf("show from column: focused %d hidden %v", id, w.floatsHidden)
 	}
+	// A fullscreen float (a game in scanout) stays shown: hiding it would
+	// drop scanout and VRR.
 	w.FocusID(2)
 	w.SetFullscreen(2, true)
 	w.Apply(ActionToggleFloatingVisible)
-	for _, p := range w.Layout() {
-		if p.ID == 1 && (p.Hidden || p.Rect.W == 0) {
-			t.Fatalf("column hidden under hidden fullscreen float: %+v", p)
-		}
+	if id, _ := w.Focused(); id != 2 || w.fullscreen != 2 || w.floatsHidden {
+		t.Fatalf("fullscreen float hidden: focused %d fullscreen %d", id, w.fullscreen)
 	}
+	w.FocusID(1)
 	w.Apply(ActionToggleFloatingVisible)
-	if id, _ := w.Focused(); id != 2 || w.fullscreen != 2 {
-		t.Fatalf("restored focus %d fullscreen %d", id, w.fullscreen)
+	if w.fullscreen != 2 || w.floatsHidden {
+		t.Fatalf("fullscreen float hidden from column: fullscreen %d", w.fullscreen)
 	}
 }
 
