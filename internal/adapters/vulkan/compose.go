@@ -299,6 +299,14 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 	return dr
 }
 
+// dimDraw is premultiplied black: blending ONE, ONE_MINUS_SRC_ALPHA
+// leaves the destination at (1-alpha) of its previous value.
+func (r *Renderer) dimDraw(rect image.Rectangle, alpha float64) draw {
+	dr := r.fillDraw(rect, [3]uint8{})
+	dr.pc.color[3] = float32(max(0, min(1, alpha)))
+	return dr
+}
+
 // contentDraw draws the visible rect of a w×h buffer mapped onto full
 // (target pixels) through the inverse of its buffer transform t. exact: the
 // buffer is drawn at its size.
