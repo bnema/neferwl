@@ -413,8 +413,8 @@ func TestStash(t *testing.T) {
 		dim     float64
 		warning bool
 	}{
-		{"stash.width = 60", 60, 3, 0.5, false}, {"stash.width = 70%", 70, 3, 0.5, false}, {"stash.width = 100", 100, 3, 0.5, false},
-		{"stash.width = 19", 80, 3, 0.5, true}, {"stash.width = 101", 80, 3, 0.5, true}, {"stash.width = 1/2", 80, 3, 0.5, true},
+		{"stash.width = 10", 10, 3, 0.5, false}, {"stash.width = 70%", 70, 3, 0.5, false}, {"stash.width = 90", 90, 3, 0.5, false},
+		{"stash.width = 9", 80, 3, 0.5, true}, {"stash.width = 91", 80, 3, 0.5, true}, {"stash.width = 0", 80, 3, 0.5, true}, {"stash.width = 1/2", 80, 3, 0.5, true},
 		{"stash.peek = 0", 80, 0, 0.5, false}, {"stash.peek = 10", 80, 10, 0.5, false},
 		{"stash.peek = 11", 80, 3, 0.5, true}, {"stash.peek = -1", 80, 3, 0.5, true}, {"stash.peek = 2.5", 80, 3, 0.5, true},
 		{"stash.dim = 0.8", 80, 3, 0.8, false}, {"stash.dim = 1.5", 80, 3, 0.5, true}, {"stash.dim = NaN", 80, 3, 0.5, true},

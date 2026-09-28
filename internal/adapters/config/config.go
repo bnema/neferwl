@@ -464,8 +464,8 @@ func set(c *ports.Config, key, v string) error {
 		c.Floating.Dim = dim
 	case "stash.width":
 		n, err := strconv.Atoi(strings.TrimSuffix(v, "%"))
-		if err != nil || n < 20 || n > 100 {
-			return fmt.Errorf("must be between 20 and 100")
+		if err != nil || n < 10 || n > 90 {
+			return fmt.Errorf("must be between 10 and 90")
 		}
 		c.Stash.Width = n
 	case "stash.peek":

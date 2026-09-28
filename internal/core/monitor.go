@@ -652,7 +652,7 @@ func (m *Monitor) SetBorder(b int)  { m.each(func(w *Workspace) { w.border = max
 // the usable width.
 func (m *Monitor) SetStash(width, peek int) {
 	if width != 0 {
-		width = min(max(width, 20), 100)
+		width = min(max(width, 10), 90)
 	}
 	m.each(func(w *Workspace) { w.stashWidth, w.peek = width, min(max(peek, 0), 10) })
 }

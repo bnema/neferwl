@@ -23,8 +23,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
 | `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window (a dialog) or the stash is visible; opacity 0 to 1 |
-| `stash.width` | `80` | Width of the selected stashed window, in percent of the usable width; 20 to 100 (`80%` works too). Its height is 80% of the usable height. At 100 the neighbors no longer peek in |
-| `stash.peek` | `3` | How far the stash neighbors of the selected window peek in from the screen sides, in percent of the usable width; 0 to 10, `0` hides them |
+| `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors peek in. Its height is 80% of the usable height |
+| `stash.peek` | `3` | How far the stash neighbors of the selected window peek in from the screen sides, in percent of the usable width; 0 to 10, `0` hides them. Capped by the room `stash.width` leaves on each side |
 | `stash.dim` | `0.5` | Black veil over the peeking stash neighbors, borders included; opacity 0 to 1 |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
 | `layout.gaps` | `0` | Space between windows |
