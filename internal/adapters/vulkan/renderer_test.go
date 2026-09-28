@@ -320,6 +320,35 @@ func TestRendererPreview(t *testing.T) {
 	}
 }
 
+// A buffer shrunk under half size averages its texels: one-pixel white
+// and black columns shrunk 4× come out an even gray, not a beat pattern.
+func TestRendererPreviewSmooth(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	px := make([]byte, 80*40*4)
+	for i := 0; i < len(px); i += 4 {
+		if (i/4)%2 == 0 {
+			px[i], px[i+1], px[i+2] = 255, 255, 255
+		}
+		px[i+3] = 255
+	}
+	c := shmContent(t, 80, 40, 320, px)
+	c.ID = 1
+	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 10}, Preview: 0.25}}}
+	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		t.Fatal(err)
+	}
+	out := r.Pixels()
+	for x := 1; x < 19; x++ {
+		if v := out.RGBAAt(x, 5).R; v < 100 || v > 155 {
+			t.Fatalf("x=%d: %d, want mid gray", x, v)
+		}
+	}
+}
+
 // solidContent is a w×h B8G8R8A8 buffer of one color.
 func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
 	px := make([]byte, w*h*4)

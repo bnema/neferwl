@@ -129,3 +129,23 @@ func TestOverviewPickAndStash(t *testing.T) {
 		t.Fatalf("pick: %d", f)
 	}
 }
+
+// Fixed overflow's spiral is laid out as a row: no preview overlaps.
+func TestOverviewFixedOverflowRow(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetOverflow(OverflowFixed)
+	m.SetMaxColumns(2)
+	for id := WindowID(1); id <= 4; id++ {
+		m.AddWindow(id)
+	}
+	m.ToggleOverview()
+	ps := m.Layout()
+	for a := WindowID(1); a <= 4; a++ {
+		for b := a + 1; b <= 4; b++ {
+			if ra, rb := previewOf(t, ps, a).Rect, previewOf(t, ps, b).Rect; ra.Overlaps(rb) {
+				t.Fatalf("%d %+v overlaps %d %+v", a, ra, b, rb)
+			}
+		}
+	}
+}

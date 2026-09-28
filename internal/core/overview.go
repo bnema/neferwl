@@ -131,17 +131,18 @@ func (w *Workspace) overviewZoom() float64 {
 }
 
 // previewTiles lays the tiles of w out unscrolled, relative to the
-// usable area's corner: every column in a row, as if the output were wide
-// enough. span is the row's width; sel is the focused column.
+// usable area's corner: every column side by side at its width, as if
+// the output were wide enough (fixed overflow's spiral included). span is
+// the row's width; sel is the focused column.
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
-	rects := w.columnRects()
 	g := w.gap()
+	h := max(w.Usable.H-2*g, 0)
 	for i, c := range w.Columns {
-		r := rects[i]
-		if w.Overflow != OverflowFixed {
-			r.X += w.ViewX
+		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
+		if w.fullscreenColumn(i) {
+			// A fullscreen column shows at the width it had in the row.
+			r.W = max(w.Usable.W-2*g, 0)
 		}
-		r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
 		for j, t := range stackRects(r, len(c.Windows), g) {
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
 		}
@@ -224,7 +225,7 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 		return false, nil
 	}
 	sc.mon.OverviewPick(id)
-	c.focusScreen = i
+	c.focusScreen, c.layerFocus = i, 0
 	if err := c.workspaceVisible(ctx, true); err != nil {
 		return true, err
 	}
@@ -244,6 +245,14 @@ func (m *Monitor) overviewSwipe(a Action) {
 	case ActionFocusWorkspaceDown:
 		m.OverviewMove(0, 1)
 	}
+}
+
+// overviewKeyboardTaken reports whether a layer surface (a launcher) or a
+// grabbing menu has the keyboard: it gets the keys, not the overview.
+func (c *Core) overviewKeyboardTaken() bool {
+	id := c.keyboardFocus()
+	_, _, layer := c.layerOf(id)
+	return layer || c.popups[id] != nil
 }
 
 // overviewKey runs an overview key: true when the key was one.

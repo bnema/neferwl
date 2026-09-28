@@ -29,6 +29,9 @@ const uint flagPQ = 4u;
 const uint flagExtendedLinear = 8u;
 const uint flagYUV = 16u;
 const uint flagP010 = 32u;
+// flagSmooth averages four samples a quarter of a target pixel around the
+// point: a thumbnail shrunk under half size keeps thin lines and text.
+const uint flagSmooth = 64u;
 
 // PQ values are absolute nits. BT.2020 is converted in linear light to
 // BT.709, then clipped to the 8-bit sRGB intermediate. Highlights above
@@ -84,26 +87,39 @@ vec4 texel(ivec2 p) {
     return unpackUnorm4x8(pixels[d.buf.x + uint(p.y) * d.buf.y + uint(p.x)]).zyxw;
 }
 
+// sampleBuffer reads the client buffer at src (buffer pixels).
+vec4 sampleBuffer(vec2 src, bool exact) {
+    if (d.misc.x == modeImage && (d.misc.y & flagYUV) != 0u) {
+        return sampleYUV(src);
+    }
+    if (d.misc.x == modeImage) {
+        ivec2 size = textureSize(tex, 0);
+        vec2 p = clamp(src, d.crop.xy + 0.5, d.crop.zw - 0.5);
+        return exact ? texelFetch(tex, clamp(ivec2(floor(p)), ivec2(0), size - 1), 0) : texture(tex, p / vec2(size));
+    }
+    if (exact) {
+        return texel(ivec2(floor(src)));
+    }
+    // Bilinear: four texel reads around the sample point.
+    vec2 p = src - 0.5;
+    ivec2 i = ivec2(floor(p));
+    vec2 f = p - vec2(i);
+    return mix(mix(texel(i), texel(i + ivec2(1, 0)), f.x), mix(texel(i + ivec2(0, 1)), texel(i + ivec2(1, 1)), f.x), f.y);
+}
+
 void main() {
     vec2 src = d.map.xy + gl_FragCoord.x * d.map.zw + gl_FragCoord.y * d.mapy.xy;
     bool exact = (d.misc.y & flagExact) != 0u;
     vec4 c;
     if (d.misc.x == modeSolid) {
         c = d.color;
-    } else if (d.misc.x == modeImage && (d.misc.y & flagYUV) != 0u) {
-        c = sampleYUV(src);
-    } else if (d.misc.x == modeImage) {
-        ivec2 size = textureSize(tex, 0);
-        vec2 p = clamp(src, d.crop.xy + 0.5, d.crop.zw - 0.5);
-        c = exact ? texelFetch(tex, clamp(ivec2(floor(p)), ivec2(0), size - 1), 0) : texture(tex, p / vec2(size));
-    } else if (exact) {
-        c = texel(ivec2(floor(src)));
+    } else if ((d.misc.y & flagSmooth) != 0u) {
+        // Premultiplied samples average without fringes.
+        vec2 dx = d.map.zw * 0.25, dy = d.mapy.xy * 0.25;
+        c = (sampleBuffer(src - dx - dy, false) + sampleBuffer(src + dx - dy, false) +
+            sampleBuffer(src - dx + dy, false) + sampleBuffer(src + dx + dy, false)) * 0.25;
     } else {
-        // Bilinear: four texel reads around the sample point.
-        vec2 p = src - 0.5;
-        ivec2 i = ivec2(floor(p));
-        vec2 f = p - vec2(i);
-        c = mix(mix(texel(i), texel(i + ivec2(1, 0)), f.x), mix(texel(i + ivec2(0, 1)), texel(i + ivec2(1, 1)), f.x), f.y);
+        c = sampleBuffer(src, exact);
     }
     if ((d.misc.y & flagOpaque) != 0u) {
         c.a = 1.0;

@@ -1112,7 +1112,8 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			// The overview takes its keys before any window; others still
 			// run binds, and are not forwarded.
-			if mon := c.cur().mon; mon.overview {
+			// A launcher or a menu holding the keyboard gets them first.
+			if mon := c.cur().mon; mon.overview && !c.overviewKeyboardTaken() {
 				if key.Pressed && mon.overviewKey(key) {
 					c.pressed[heldKey(key)] = true
 					if c.workspaceVisible(ctx, true) != nil {
@@ -1218,7 +1219,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[held] = false
 			}
-			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.overview || c.layerFocus == id || c.popups[id] != nil) {
+			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.overview || c.overviewKeyboardTaken()) {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}
