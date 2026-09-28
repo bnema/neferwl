@@ -492,6 +492,15 @@ type OutputRemoved struct{ Name string }
 
 func (OutputRemoved) outputEvent() {}
 
+// OutputShown carries output → core whether a connected display shows this
+// computer. Shown false: the monitor shows another input source.
+type OutputShown struct {
+	Name  string
+	Shown bool
+}
+
+func (OutputShown) outputEvent() {}
+
 // ConfigChanged carries config → core reloads.
 type ConfigChanged struct{ Config Config }
 

@@ -17,7 +17,7 @@ import (
 
 var components = map[string]bool{
 	"core": true, "wayland": true, "input": true, "drm": true, "seat": true,
-	"render": true, "sync": true, "config": true, "app": true,
+	"render": true, "sync": true, "config": true, "app": true, "ddc": true,
 }
 
 // categories are debug switches narrower than a component, only on when

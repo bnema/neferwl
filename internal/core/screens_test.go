@@ -854,3 +854,186 @@ func TestTerminalTokenClaimedOnce(t *testing.T) {
 		t.Fatalf("second claim: %v", got)
 	}
 }
+
+// hide sends whether an output shows this computer and returns the scenes.
+func (r *multiRig) hide(t *testing.T, name string, hidden bool) []ports.Scene {
+	t.Helper()
+	r.output <- ports.OutputShown{Name: name, Shown: !hidden}
+	return receive(t, r.scenes)
+}
+
+// A display showing another input source leaves like an unplugged one: its
+// workspaces move to a shown display and come back when it shows us again.
+func TestHiddenOutputMovesWorkspacesAndReturnsThem(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	set := r.hide(t, "DP-2", true)
+	if got := shown(set); len(got) != 1 || len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 {
+		t.Fatal(got)
+	}
+	if out := lastOutputs(t, r.commands); len(out.Outputs) != 1 || out.Outputs[0].Info.Name != "DP-1" {
+		t.Fatalf("%+v", out)
+	}
+	set = r.hide(t, "DP-2", false)
+	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+}
+
+// Workspaces of a hidden display go to the primary one, not the focused one.
+func TestHiddenOutputMovesToPrimary(t *testing.T) {
+	third := ports.OutputInfo{Name: "HDMI-A-1", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Primary: true}, {Name: "HDMI-A-1"}}
+	}, left, right, third)
+	// DP-2 (primary) has the focus at startup; fill every output, then
+	// focus DP-1.
+	r.mapWindow(t, 2)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 3)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 1)
+	r.hide(t, "HDMI-A-1", true)
+	// Cmd+2 on DP-2 shows the guest: it sits below DP-2's first workspace.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+	set := receive(t, r.scenes)
+	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt}
+	if got := shown(set); len(got) != 2 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 3 || len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 {
+		t.Fatal(got)
+	}
+}
+
+// When the primary display is hidden, its workspaces go to the focused
+// one; the focus follows them.
+func TestHiddenPrimaryMovesToFocused(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Primary: true}}
+	}, left, right)
+	r.mapWindow(t, 2) // on DP-2, focused at startup
+	r.hide(t, "DP-2", true)
+	// The guest sits below DP-1's empty workspace: Cmd+1 shows it.
+	r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt, Pressed: true}
+	set := receive(t, r.scenes)
+	r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt}
+	if got := shown(set); len(got) != 1 || len(got["DP-1"]) != 1 || got["DP-1"][0] != 2 {
+		t.Fatal(got)
+	}
+	if out := lastOutputs(t, r.commands); out.Focused != "DP-1" {
+		t.Fatalf("%+v", out)
+	}
+}
+
+// With every display hidden, the last one keeps its workspaces; the first
+// shown again takes back the others.
+func TestAllOutputsHiddenKeepsTheLast(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	r.hide(t, "DP-2", true)
+	set := r.hide(t, "DP-1", true)
+	if got := shown(set); len(got) != 1 || len(got["DP-1"]) != 1 {
+		t.Fatal(got)
+	}
+	set = r.hide(t, "DP-2", false)
+	// DP-1 is still hidden: now DP-2 is shown, DP-1 leaves and DP-2 hosts all.
+	if got := shown(set); len(got) != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+	set = r.hide(t, "DP-1", false)
+	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+}
+
+// output.<name>.hidden = keep leaves the display and its workspaces alone.
+func TestHiddenOutputKept(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", KeepHidden: true}}
+	}, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	set := r.hide(t, "DP-2", true)
+	if got := shown(set); len(got) != 2 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+}
+
+// A mode change of a hidden display keeps it away; unplugging it forgets it.
+func TestHiddenOutputModeChangeAndUnplug(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	r.hide(t, "DP-2", true)
+	bigger := right
+	bigger.Width, bigger.Height = 800, 400
+	set := r.plug(t, bigger)
+	if got := shown(set); len(got) != 1 {
+		t.Fatal(got)
+	}
+	set = r.hide(t, "DP-2", false)
+	if out := lastOutputs(t, r.commands); len(out.Outputs) != 2 || out.Outputs[1].Width != 800 {
+		t.Fatalf("%+v", out)
+	}
+	if got := shown(set); len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+		t.Fatal(got)
+	}
+	r.hide(t, "DP-2", true)
+	r.output <- ports.OutputRemoved{Name: "DP-2"}
+	receive(t, r.scenes)
+	// A late report about the unplugged display is ignored.
+	r.hide(t, "DP-2", true)
+	// Plugged again, it is a new display: shown.
+	set = r.plug(t, right)
+	if got := shown(set); len(got) != 2 {
+		t.Fatal(got)
+	}
+}
+
+// A display a client turned off keeps its workspaces when it reports
+// another input: the display only fell asleep.
+func TestHiddenOutputTurnedOffStays(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	r.client <- ports.OutputPower{Output: "DP-2", On: false}
+	receive(t, r.scenes)
+	set := r.hide(t, "DP-2", true)
+	if got := shown(set); len(got) != 2 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	// Turned on while it still shows another input: it leaves.
+	r.client <- ports.OutputPower{Output: "DP-2", On: true}
+	if got := shown(receive(t, r.scenes)); len(got) != 1 {
+		t.Fatal(got)
+	}
+}
+
+// Changing output.<name>.hidden applies at once to a hidden display.
+func TestHiddenOutputReloadKeepThenMove(t *testing.T) {
+	keep := func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", KeepHidden: true}}
+	}
+	r := startMulti(t, keep, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	if got := shown(r.hide(t, "DP-2", true)); len(got) != 2 {
+		t.Fatal(got)
+	}
+	cfg := r.cfg
+	cfg.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+	r.reload <- ports.ConfigChanged{Config: cfg}
+	if got := shown(receive(t, r.scenes)); len(got) != 1 {
+		t.Fatal(got)
+	}
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	if got := shown(receive(t, r.scenes)); len(got) != 2 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+}

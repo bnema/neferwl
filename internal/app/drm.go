@@ -12,6 +12,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/ddc"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/logging"
@@ -164,6 +165,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	}()
 	set := newOutputSet(ctx, ch.captured)
 	cards := map[string]*drmCard{}
+	// watchers stop the input source watch of each running output.
+	watchers := map[string]context.CancelFunc{}
+	defer func() {
+		for _, stop := range watchers {
+			stop()
+		}
+	}()
 	send := func(ev ports.OutputEvent) {
 		select {
 		case ch.events <- ev:
@@ -282,6 +290,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					})
 				})
 				send(ports.OutputAdded{Info: o.Info()})
+				// One watch per connector: a mode change keeps it, so no
+				// report of an older watch follows the new OutputAdded.
+				if watchers[name] == nil {
+					wctx, stopWatch := context.WithCancel(ctx)
+					watchers[name] = stopWatch
+					go ddc.Watch(wctx, c.Path(), name, b.clock, ch.events, logging.For(ctx, "ddc"))
+				}
 			}
 		}
 		publishInventory()
@@ -416,6 +431,12 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					complete(progress.scanned(running))
 					continue
 				}
+			}
+			// Core ignores reports for outputs it does not know, so a
+			// report racing OutputRemoved is harmless.
+			if stop := watchers[name]; stop != nil {
+				stop()
+				delete(watchers, name)
 			}
 			send(ports.OutputRemoved{Name: name})
 			running := map[string]<-chan error{}

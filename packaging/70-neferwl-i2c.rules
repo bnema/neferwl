@@ -1,0 +1,2 @@
+# DDC/CI: the logged-in user's session reads monitor input sources.
+SUBSYSTEM=="i2c-dev", TAG+="uaccess"
