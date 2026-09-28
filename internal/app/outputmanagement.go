@@ -1,9 +1,10 @@
 package app
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"image"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -12,8 +13,8 @@ import (
 	"github.com/bnema/zerowrap"
 )
 
-// outputOverrides owns runtime-only output settings. It is used only by the
-// app's config/apply relay goroutine; the file configuration is never mutated.
+// outputOverrides holds runtime-only output settings. Only outputApply uses
+// it; the file configuration is never mutated.
 type outputOverrides struct {
 	file      ports.Config
 	overrides map[string]ports.OutputConfig
@@ -157,131 +158,165 @@ func (o *outputOverrides) apply(req ports.OutputApply) (ports.Config, error) {
 	return o.effective(), nil
 }
 
-// relayOutputSettings serializes reloads, inventory, and protocol requests.
-// The app owns the only writer to overrides; core receives effective settings.
-func relayOutputSettings(ctx context.Context, state *outputOverrides, reloads <-chan ports.ConfigChanged, inventory <-chan ports.OutputHeads, apply <-chan ports.OutputApply, configs chan<- ports.ConfigChanged, backend chan<- ports.Config, backendDone <-chan error, replies chan<- ports.OutputApplied, log zerowrap.Logger) {
-	type operation struct {
-		cfg      ports.Config
-		req      *ports.OutputApply
-		previous map[string]ports.OutputConfig
-		rollback bool
-		failure  error
+// errApplySuperseded answers a request whose configuration a reload replaced.
+var errApplySuperseded = errors.New("output apply superseded by reload")
+
+// outputApply owns output management from request to reply: runtime
+// overrides, supersede by reload, and rollback after a failed backend apply.
+// It belongs to the backend owner loop, which starts the configuration next
+// returns, reports each result through finished and drains the outbox with
+// non-blocking sends.
+type outputApply struct {
+	state *outputOverrides
+	log   zerowrap.Logger
+	// running is set while the backend applies a configuration. The next
+	// one waits in start until it finishes: configurations never overlap.
+	running bool
+	start   ports.Config
+	pending bool
+	// req is the request behind the backend work; nil for a reload or after
+	// a reload superseded it.
+	req      *ports.OutputApply
+	previous map[string]ports.OutputConfig
+	rollback bool
+	failure  error
+	// config is the latest effective configuration core has not received.
+	config  ports.ConfigChanged
+	publish bool
+	replies []ports.OutputApplied
+}
+
+func newOutputApply(state *outputOverrides, log zerowrap.Logger) *outputApply {
+	return &outputApply{state: state, log: log}
+}
+
+// reload replaces the file configuration and supersedes the pending request.
+// Only the latest reload needs backend work.
+func (a *outputApply) reload(file ports.Config) {
+	cfg := a.state.reload(file)
+	a.setConfig(cfg)
+	if a.req != nil {
+		a.reply(a.req.ID, errApplySuperseded)
+		a.req = nil
 	}
-	var queue []operation
-	var active *operation
-	var sending chan<- ports.Config
-	var next ports.Config
-	var configSend chan<- ports.ConfigChanged
-	var pendingConfig ports.ConfigChanged
-	var pendingReplies []ports.OutputApplied
-	publish := func(cfg ports.Config) {
-		pendingConfig = ports.ConfigChanged{Config: cfg}
-		configSend = configs
+	if !a.state.headless {
+		a.due(cfg)
 	}
-	reply := func(id uint64, err error) {
-		if err != nil {
-			log.Warn().Err(err).Msg("output configuration failed")
-		}
-		pendingReplies = append(pendingReplies, ports.OutputApplied{ID: id, Err: err})
+}
+
+// heads records the backend inventory used to validate requests.
+func (a *outputApply) heads(heads ports.OutputHeads) { a.state.heads = heads }
+
+// request validates a protocol request. Test, invalid and headless requests
+// are answered at once; others wait for the backend.
+func (a *outputApply) request(req ports.OutputApply) {
+	if a.running || a.pending {
+		a.reply(req.ID, errors.New("output apply already pending"))
+		return
 	}
-	enqueue := func(op operation) {
-		if state.headless {
-			return
-		}
-		queue = append(queue, op)
+	previous := make(map[string]ports.OutputConfig, len(a.state.overrides))
+	maps.Copy(previous, a.state.overrides)
+	cfg, err := a.state.apply(req)
+	if err != nil || req.Test {
+		a.reply(req.ID, err)
+		return
 	}
-	for {
-		if active == nil && len(queue) > 0 {
-			op := queue[0]
-			active = &op
-			queue = queue[1:]
-			next = active.cfg
-			sending = backend
-		}
-		var replySend chan<- ports.OutputApplied
-		var nextReply ports.OutputApplied
-		if len(pendingReplies) > 0 {
-			replySend = replies
-			nextReply = pendingReplies[0]
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case configSend <- pendingConfig:
-			configSend = nil
-		case replySend <- nextReply:
-			pendingReplies[0] = ports.OutputApplied{}
-			pendingReplies = pendingReplies[1:]
-		case sending <- next:
-			sending = nil
-		case ev := <-reloads:
-			cfg := state.reload(ev.Config)
-			publish(cfg)
-			// The reload supersedes runtime overrides. Old backend completion cannot
-			// roll back the new file configuration.
-			if active != nil && active.req != nil {
-				reply(active.req.ID, fmt.Errorf("output apply superseded by reload"))
-				active.req = nil
-			}
-			for i := range queue {
-				if queue[i].req != nil {
-					reply(queue[i].req.ID, fmt.Errorf("output apply superseded by reload"))
-				}
-			}
-			queue = nil // Only the latest reload needs backend work.
-			if active != nil && sending != nil {
-				// The backend has not accepted the active config yet.
-				active.cfg = cfg
-				next = cfg
-			} else {
-				enqueue(operation{cfg: cfg})
-			}
-		case heads := <-inventory:
-			state.heads = heads
-		case req := <-apply:
-			if active != nil || len(queue) > 0 {
-				reply(req.ID, fmt.Errorf("output apply already pending"))
-				continue
-			}
-			previous := make(map[string]ports.OutputConfig, len(state.overrides))
-			for name, entry := range state.overrides {
-				previous[name] = entry
-			}
-			cfg, err := state.apply(req)
-			if err != nil || req.Test {
-				reply(req.ID, err)
-				continue
-			}
-			publish(cfg)
-			if state.headless {
-				reply(req.ID, nil)
-			} else {
-				enqueue(operation{cfg: cfg, req: &req, previous: previous})
-			}
-		case err := <-backendDone:
-			if active == nil || sending != nil {
-				continue
-			}
-			op := active
-			active = nil
-			if op.req == nil {
-				continue
-			}
-			if op.rollback {
-				reply(op.req.ID, op.failure)
-				continue
-			}
-			if err != nil {
-				state.overrides = op.previous
-				cfg := state.effective()
-				publish(cfg)
-				enqueue(operation{cfg: cfg, req: op.req, rollback: true, failure: err})
-				continue
-			}
-			for _, h := range op.req.Heads {
-				log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
-			}
-			reply(op.req.ID, nil)
-		}
+	a.setConfig(cfg)
+	if a.state.headless {
+		a.reply(req.ID, nil)
+		return
 	}
+	a.req, a.previous, a.rollback, a.failure = &req, previous, false, nil
+	a.due(cfg)
+}
+
+// next returns the configuration the backend must start now, once. It
+// returns nothing while the backend applies the previous one.
+func (a *outputApply) next() (ports.Config, bool) {
+	if a.running || !a.pending {
+		return ports.Config{}, false
+	}
+	cfg := a.start
+	a.start, a.pending, a.running = ports.Config{}, false, true
+	return cfg, true
+}
+
+// finished records the backend result of the running configuration. When a
+// reload is waiting, the result belongs to a superseded configuration and is
+// dropped. After a failed request the previous overrides return and the
+// rollback configuration becomes due; the request is answered with the
+// original failure once the rollback is done.
+func (a *outputApply) finished(err error) {
+	if !a.running {
+		return
+	}
+	a.running = false
+	if a.pending {
+		return
+	}
+	req := a.req
+	if req == nil {
+		return
+	}
+	if a.rollback {
+		a.req = nil
+		a.reply(req.ID, a.failure)
+		return
+	}
+	if err != nil {
+		a.state.overrides = a.previous
+		cfg := a.state.effective()
+		a.setConfig(cfg)
+		a.rollback, a.failure = true, err
+		a.due(cfg)
+		return
+	}
+	a.req = nil
+	for _, h := range req.Heads {
+		a.log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
+	}
+	a.reply(req.ID, nil)
+}
+
+// due replaces the configuration waiting to start: only the latest counts.
+func (a *outputApply) due(cfg ports.Config) {
+	a.start, a.pending = cfg, true
+}
+
+func (a *outputApply) setConfig(cfg ports.Config) {
+	a.config = ports.ConfigChanged{Config: cfg}
+	a.publish = true
+}
+
+func (a *outputApply) reply(id uint64, err error) {
+	if err != nil {
+		a.log.Warn().Err(err).Msg("output configuration failed")
+	}
+	a.replies = append(a.replies, ports.OutputApplied{ID: id, Err: err})
+}
+
+// configOut returns the core channel when a configuration waits, else nil so
+// the owner loop's send case stays disabled.
+func (a *outputApply) configOut(ch chan<- ports.ConfigChanged) chan<- ports.ConfigChanged {
+	if !a.publish {
+		return nil
+	}
+	return ch
+}
+
+// configSent records that core received the latest configuration.
+func (a *outputApply) configSent() { a.publish = false }
+
+// replyOut returns the reply channel and the oldest reply, or a nil channel.
+func (a *outputApply) replyOut(ch chan<- ports.OutputApplied) (chan<- ports.OutputApplied, ports.OutputApplied) {
+	if len(a.replies) == 0 {
+		return nil, ports.OutputApplied{}
+	}
+	return ch, a.replies[0]
+}
+
+// replySent drops the delivered reply.
+func (a *outputApply) replySent() {
+	a.replies[0] = ports.OutputApplied{}
+	a.replies = a.replies[1:]
 }

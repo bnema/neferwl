@@ -133,9 +133,11 @@ func (b *drmBackend) close() {
 
 // runOutputs drives every output of every card: one goroutine per output,
 // one flip reader per card, and a udev watcher that rescans connectors on
-// hotplug. Core learns about outputs through events. It returns when ctx
-// ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+// hotplug. Core learns about outputs through events. The loop also owns
+// output configuration: reloads and protocol requests go through apply, and
+// each configuration is finished when its outputs are ready, fail or time
+// out. It returns when ctx ends, after every output is closed.
+func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
@@ -189,10 +191,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			timer.Stop()
 			timer = nil
 		}
-		select {
-		case ch.applied <- d.err:
-		case <-ctx.Done():
-		}
+		apply.finished(d.err)
 	}
 	publishInventory := func() {
 		var inventory ports.OutputHeads
@@ -205,7 +204,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			inventory.Heads = append(inventory.Heads, lastHeads[card]...)
 		}
 		currentHeads = inventory
-		ch.sendInventory(ctx, inventory)
+		apply.heads(inventory)
+		ch.sendHeads(ctx, inventory)
 	}
 	scan := func() {
 		var scanErrors []error
@@ -286,7 +286,54 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	if len(set.outs) == 0 {
 		return errors.Join(errors.New("no connected display"), set.wait())
 	}
+	// configure starts cfg; complete reports its result to apply. apply
+	// hands out one configuration at a time, and a rollback or reload starts
+	// on a later iteration, never inside scan or another configure.
+	configure := func(cfg ports.Config) {
+		currentConfig = cfg
+		op++
+		if timer != nil {
+			timer.Stop()
+			timer = nil
+		}
+		required := map[string]bool{}
+		// Desired enabled heads, not the inventory's current mode, require a first modeset.
+		w := want(currentConfig)
+		for _, h := range currentHeads.Heads {
+			if !w.Disabled[h.Info.Name] {
+				required[h.Info.Name] = true
+			}
+		}
+		for name := range set.outs {
+			if !w.Disabled[name] {
+				required[name] = true
+			}
+		}
+		progress.start(op, required, stopping)
+		scan()
+		running := map[string]<-chan error{}
+		for name := range set.outs {
+			running[name] = readySources[name]
+		}
+		d := progress.scanned(running)
+		if progress.active {
+			id := op
+			timer = time.AfterFunc(5*time.Second, func() {
+				select {
+				case deadline <- id:
+				case <-ctx.Done():
+				}
+			})
+		}
+		complete(d)
+	}
 	for {
+		if cfg, ok := apply.next(); ok {
+			configure(cfg)
+			continue
+		}
+		configs, configNext := apply.configOut(ch.configured), apply.config
+		replies, replyNext := apply.replyOut(ch.replies)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -303,42 +350,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				complete(progress.scanned(running))
 			}
-		case currentConfig = <-ch.configs:
-			op++
-			if timer != nil {
-				timer.Stop()
-				timer = nil
-			}
-			required := map[string]bool{}
-			// Desired enabled heads, not the inventory's current mode, require a first modeset.
-			w := want(currentConfig)
-			for _, h := range currentHeads.Heads {
-				if !w.Disabled[h.Info.Name] {
-					required[h.Info.Name] = true
-				}
-			}
-			for name := range set.outs {
-				if !w.Disabled[name] {
-					required[name] = true
-				}
-			}
-			progress.start(op, required, stopping)
-			scan()
-			running := map[string]<-chan error{}
-			for name := range set.outs {
-				running[name] = readySources[name]
-			}
-			d := progress.scanned(running)
-			if progress.active {
-				id := op
-				timer = time.AfterFunc(5*time.Second, func() {
-					select {
-					case deadline <- id:
-					case <-ctx.Done():
-					}
-				})
-			}
-			complete(d)
+		case ev := <-ch.reloads:
+			apply.reload(ev.Config)
+		case req := <-ch.requests:
+			apply.request(req)
+		case configs <- configNext:
+			apply.configSent()
+		case replies <- replyNext:
+			apply.replySent()
 		case result := <-ready:
 			complete(progress.readyEvent(result.name, result.source, result.err))
 		case id := <-deadline:

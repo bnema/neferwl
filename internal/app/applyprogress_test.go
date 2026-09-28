@@ -73,7 +73,7 @@ func TestApplyProgress(t *testing.T) {
 				}
 				return
 			}
-			if !d.reply || (d.err != nil) != tc.failure || d.rollback != tc.failure {
+			if !d.reply || (d.err != nil) != tc.failure {
 				t.Fatalf("decision: %+v", d)
 			}
 			if tc.name == "scan error with previously ready output" && !errors.Is(d.err, boom) {

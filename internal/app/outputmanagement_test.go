@@ -5,13 +5,75 @@ import (
 	"errors"
 	"image"
 	"testing"
-	"time"
 
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func TestOutputSettingsRelay(t *testing.T) {
+// applyRig drives outputApply the way a backend owner loop does.
+type applyRig struct {
+	t *testing.T
+	a *outputApply
+}
+
+func newApplyRig(t *testing.T, headless bool) applyRig {
+	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	a := newOutputApply(newOutputOverrides(ports.Config{}, headless), logging.For(context.Background(), "app"))
+	a.heads(ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}})
+	return applyRig{t, a}
+}
+
+// started returns the configuration the backend must start now.
+func (r applyRig) started() ports.Config {
+	r.t.Helper()
+	cfg, ok := r.a.next()
+	if !ok {
+		r.t.Fatal("no configuration to start")
+	}
+	if _, again := r.a.next(); again {
+		r.t.Fatal("configuration started twice")
+	}
+	return cfg
+}
+
+func (r applyRig) idle() {
+	r.t.Helper()
+	if cfg, ok := r.a.next(); ok {
+		r.t.Fatalf("unexpected configuration to start: %+v", cfg)
+	}
+}
+
+// core returns the configuration waiting for core, if any.
+func (r applyRig) core() (ports.Config, bool) {
+	ch := make(chan ports.ConfigChanged, 1)
+	out := r.a.configOut(ch)
+	if out == nil {
+		return ports.Config{}, false
+	}
+	out <- r.a.config
+	r.a.configSent()
+	return (<-ch).Config, true
+}
+
+func (r applyRig) replies() []ports.OutputApplied {
+	var got []ports.OutputApplied
+	ch := make(chan ports.OutputApplied, 1)
+	for {
+		out, next := r.a.replyOut(ch)
+		if out == nil {
+			return got
+		}
+		out <- next
+		r.a.replySent()
+		got = append(got, <-ch)
+	}
+}
+
+func moveDP1(id uint64, x int) ports.OutputApply {
+	return ports.OutputApply{ID: id, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: x}}}}
+}
+
+func TestOutputApply(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		failure error
@@ -21,140 +83,78 @@ func TestOutputSettingsRelay(t *testing.T) {
 		{"timeout rollback", errTimeout},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			state := newOutputOverrides(ports.Config{}, false)
-			reloads := make(chan ports.ConfigChanged)
-			inventory := make(chan ports.OutputHeads)
-			applies := make(chan ports.OutputApply)
-			configs := make(chan ports.ConfigChanged, 4)
-			backend := make(chan ports.Config, 4)
-			backendDone := make(chan error)
-			replies := make(chan ports.OutputApplied)
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				relayOutputSettings(ctx, state, reloads, inventory, applies, configs, backend, backendDone, replies, logging.For(ctx, "app"))
-			}()
-			defer func() { cancel(); <-done }()
-			mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-			inventory <- ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
-			applies <- ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}}}
-			next := <-configs
-			if next.Config.Outputs[0].Pos.X != 100 {
-				t.Fatalf("next: %+v", next)
+			r := newApplyRig(t, false)
+			r.a.request(moveDP1(1, 100))
+			if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos.X != 100 {
+				t.Fatalf("core config: %+v", cfg)
 			}
-			<-backend
-			select {
-			case <-replies:
-				t.Fatal("replied before backend ready")
-			default:
+			if cfg := r.started(); cfg.Outputs[0].Pos.X != 100 {
+				t.Fatalf("started: %+v", cfg)
 			}
+			if got := r.replies(); len(got) != 0 {
+				t.Fatalf("replied before backend finished: %+v", got)
+			}
+			r.a.finished(tc.failure)
 			if tc.failure != nil {
-				backendDone <- tc.failure
-				rollback := <-configs
-				if len(rollback.Config.Outputs) != 0 {
-					t.Fatalf("rollback: %+v", rollback)
+				if got := r.replies(); len(got) != 0 {
+					t.Fatalf("replied before rollback: %+v", got)
 				}
-				<-backend
-				backendDone <- nil
-			} else {
-				backendDone <- nil
-			}
-			select {
-			case r := <-replies:
-				if !errors.Is(r.Err, tc.failure) || (r.Err != nil) != (tc.failure != nil) {
-					t.Fatalf("result: %+v, want %v", r, tc.failure)
+				if cfg, ok := r.core(); !ok || len(cfg.Outputs) != 0 {
+					t.Fatalf("rollback core config: %+v", cfg)
 				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("missing reply")
+				if cfg := r.started(); len(cfg.Outputs) != 0 {
+					t.Fatalf("rollback started: %+v", cfg)
+				}
+				// A failed rollback still answers with the original failure.
+				r.a.finished(errors.New("rollback failed"))
 			}
-			if tc.failure != nil && len(state.effective().Outputs) != 0 {
+			r.idle()
+			got := r.replies()
+			if len(got) != 1 || got[0].ID != 1 || !errors.Is(got[0].Err, tc.failure) || (got[0].Err != nil) != (tc.failure != nil) {
+				t.Fatalf("replies: %+v, want %v", got, tc.failure)
+			}
+			if tc.failure != nil && len(r.a.state.effective().Outputs) != 0 {
 				t.Fatal("override survived failure")
 			}
-			reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.25}}}}
-			reloaded := <-configs
-			if reloaded.Config.Outputs[0].Pos != nil || reloaded.Config.Outputs[0].Scale != 1.25 {
-				t.Fatalf("reload: %+v", reloaded)
+			r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.25}}})
+			if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil || cfg.Outputs[0].Scale != 1.25 {
+				t.Fatalf("reload core config: %+v", cfg)
 			}
-			<-backend
-			backendDone <- nil
+			r.started()
+			r.a.finished(nil)
+			if got := r.replies(); len(got) != 0 {
+				t.Fatalf("reload replied: %+v", got)
+			}
 		})
 	}
 }
 
-func TestOutputSettingsRelayBlockedConsumers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	state := newOutputOverrides(ports.Config{}, false)
-	reloads := make(chan ports.ConfigChanged)
-	inventory := make(chan ports.OutputHeads)
-	applies := make(chan ports.OutputApply)
-	configs := make(chan ports.ConfigChanged)
-	backend := make(chan ports.Config)
-	backendDone := make(chan error)
-	replies := make(chan ports.OutputApplied)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		relayOutputSettings(ctx, state, reloads, inventory, applies, configs, backend, backendDone, replies, logging.For(ctx, "app"))
-	}()
-	defer func() { cancel(); <-done }()
-
-	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-	select {
-	case inventory <- ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode}}}:
-	case <-time.After(time.Second):
-		t.Fatal("inventory blocked")
-	}
-	select {
-	case applies <- ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}}}:
-	case <-time.After(time.Second):
-		t.Fatal("apply blocked")
-	}
-	// Neither config consumer nor backend nor Wayland is reading. Reload must
-	// still supersede the apply and subsequent requests must still be answered.
-	select {
-	case reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}}:
-	case <-time.After(time.Second):
-		t.Fatal("reload blocked by unread config or backend")
-	}
-	select {
-	case reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}}:
-	case <-time.After(time.Second):
-		t.Fatal("second reload blocked by unread config or backend")
-	}
-	for _, id := range []uint64{2, 3} {
-		select {
-		case applies <- ports.OutputApply{ID: id}:
-		case <-time.After(time.Second):
-			t.Fatalf("request %d blocked by unread reply", id)
+// Consumers that do not read (core, Wayland) never block reloads or requests:
+// replies queue in order and core only gets the latest configuration.
+func TestOutputApplyOutbox(t *testing.T) {
+	r := newApplyRig(t, false)
+	r.a.request(moveDP1(1, 100))
+	r.started()
+	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	r.a.request(ports.OutputApply{ID: 2})
+	r.a.request(ports.OutputApply{ID: 3})
+	// The reloads wait for the running configuration: no overlap.
+	r.idle()
+	r.a.finished(nil)
+	for i, got := range r.replies() {
+		if got.ID != uint64(i+1) || got.Err == nil {
+			t.Fatalf("reply %d: %+v", i+1, got)
 		}
 	}
-	for _, id := range []uint64{1, 2, 3} {
-		select {
-		case result := <-replies:
-			if result.ID != id || result.Err == nil {
-				t.Fatalf("reply %d: %+v", id, result)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("missing reply %d", id)
-		}
+	if cfg, ok := r.core(); !ok || len(cfg.Outputs) != 1 || cfg.Outputs[0].Scale != 2 || cfg.Outputs[0].Pos != nil {
+		t.Fatalf("latest core config: %+v", cfg)
 	}
-	select {
-	case cfg := <-configs:
-		if len(cfg.Config.Outputs) != 1 || cfg.Config.Outputs[0].Scale != 2 || cfg.Config.Outputs[0].Pos != nil {
-			t.Fatalf("latest config: %+v", cfg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("missing latest config")
+	if _, ok := r.core(); ok {
+		t.Fatal("core config sent twice")
 	}
-	select {
-	case cfg := <-backend:
-		if len(cfg.Outputs) != 1 || cfg.Outputs[0].Scale != 2 || cfg.Outputs[0].Pos != nil {
-			t.Fatalf("latest backend config: %+v", cfg)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("missing latest backend config")
+	if cfg := r.started(); cfg.Outputs[0].Scale != 2 {
+		t.Fatalf("latest backend config: %+v", cfg)
 	}
 }
 
@@ -172,43 +172,98 @@ func TestOutputSettingsDisableAndHeadlessMode(t *testing.T) {
 	}
 }
 
+// A reload supersedes a request the backend is applying: the request fails at
+// once, and a late failure of its configuration cannot roll back the reload.
 func TestReloadDuringPendingApply(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	state := newOutputOverrides(ports.Config{}, false)
-	reloads := make(chan ports.ConfigChanged)
-	inventory := make(chan ports.OutputHeads)
-	applies := make(chan ports.OutputApply)
-	configs := make(chan ports.ConfigChanged, 4)
-	backend := make(chan ports.Config, 4)
-	backendDone := make(chan error)
-	replies := make(chan ports.OutputApplied, 2)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		relayOutputSettings(ctx, state, reloads, inventory, applies, configs, backend, backendDone, replies, logging.For(ctx, "app"))
-	}()
-	defer func() { cancel(); <-done }()
-	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
-	inventory <- ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode}}}
-	applies <- ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Pos: &image.Point{X: 100}}}}
-	<-configs
-	<-backend
-	reloads <- ports.ConfigChanged{Config: ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}}
-	select {
-	case cfg := <-configs:
-		if cfg.Config.Outputs[0].Pos != nil {
-			t.Fatal("override survived reload")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("reload blocked by backend")
+	r := newApplyRig(t, false)
+	r.a.request(moveDP1(1, 100))
+	r.core()
+	r.started()
+	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}})
+	if cfg, ok := r.core(); !ok || cfg.Outputs[0].Pos != nil {
+		t.Fatalf("override survived reload: %+v", cfg)
 	}
-	if r := <-replies; r.ID != 1 || r.Err == nil {
-		t.Fatalf("superseded reply: %+v", r)
+	if got := r.replies(); len(got) != 1 || got[0].ID != 1 || !errors.Is(got[0].Err, errApplySuperseded) {
+		t.Fatalf("superseded reply: %+v", got)
 	}
-	backendDone <- errors.New("old apply failed")
-	<-backend
-	backendDone <- nil
+	// The reload waits for the old configuration, whose failure is dropped.
+	r.idle()
+	r.a.finished(errors.New("old apply failed"))
+	if cfg := r.started(); cfg.Outputs[0].Scale != 1.5 || cfg.Outputs[0].Pos != nil {
+		t.Fatalf("reload started: %+v", cfg)
+	}
+	r.a.finished(errors.New("reload failed"))
+	r.idle()
+	if _, ok := r.core(); ok {
+		t.Fatal("failed reload rolled back")
+	}
+	if got := r.replies(); len(got) != 0 {
+		t.Fatalf("reload replied: %+v", got)
+	}
+	// A stray result with nothing running is ignored.
+	r.a.finished(errors.New("stray"))
+	r.idle()
+	// The next request is accepted.
+	r.a.request(moveDP1(2, 50))
+	r.started()
+	r.a.finished(nil)
+	if got := r.replies(); len(got) != 1 || got[0].ID != 2 || got[0].Err != nil {
+		t.Fatalf("next request: %+v", got)
+	}
+}
+
+// A reload during a rollback supersedes the failed request.
+func TestReloadDuringRollback(t *testing.T) {
+	r := newApplyRig(t, false)
+	r.a.request(moveDP1(1, 100))
+	r.started()
+	r.a.finished(errors.New("modeset failed"))
+	r.started() // rollback
+	r.a.reload(ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}})
+	if got := r.replies(); len(got) != 1 || !errors.Is(got[0].Err, errApplySuperseded) {
+		t.Fatalf("rollback superseded: %+v", got)
+	}
+	r.idle()
+	r.a.finished(nil) // rollback done
+	if cfg := r.started(); cfg.Outputs[0].Scale != 2 {
+		t.Fatalf("reload started: %+v", cfg)
+	}
+	r.a.finished(nil)
+	if got := r.replies(); len(got) != 0 {
+		t.Fatalf("extra reply: %+v", got)
+	}
+}
+
+func TestOutputApplyAnsweredAtOnce(t *testing.T) {
+	r := newApplyRig(t, false)
+	r.a.request(ports.OutputApply{ID: 1, Test: true, Heads: moveDP1(1, 10).Heads})
+	r.a.request(ports.OutputApply{ID: 2, Heads: []ports.HeadChange{{Name: "DP-9", Enabled: true}}})
+	r.idle()
+	if _, ok := r.core(); ok {
+		t.Fatal("test or invalid request changed core config")
+	}
+	got := r.replies()
+	if len(got) != 2 || got[0].ID != 1 || got[0].Err != nil || got[1].ID != 2 || got[1].Err == nil {
+		t.Fatalf("replies: %+v", got)
+	}
+	r.a.request(moveDP1(3, 10))
+	r.a.request(moveDP1(4, 20))
+	if got := r.replies(); len(got) != 1 || got[0].ID != 4 || got[0].Err == nil {
+		t.Fatalf("second request while pending: %+v", got)
+	}
+
+	h := newApplyRig(t, true)
+	h.a.request(ports.OutputApply{ID: 1, Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Scale: 2}}})
+	var gaps ports.Config
+	gaps.Layout.Gaps = 4
+	h.a.reload(gaps)
+	h.idle()
+	if cfg, ok := h.core(); !ok || cfg.Layout.Gaps != 4 {
+		t.Fatalf("headless core config: %+v", cfg)
+	}
+	if got := h.replies(); len(got) != 1 || got[0].ID != 1 || got[0].Err != nil {
+		t.Fatalf("headless reply: %+v", got)
+	}
 }
 
 // A reload that only changes output scales (a saved scale bind) keeps the

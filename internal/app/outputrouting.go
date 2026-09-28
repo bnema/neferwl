@@ -7,7 +7,8 @@ import (
 )
 
 // outputChannels is the shared app-to-backend wiring. The backend loop remains
-// the sole owner of outputSet; routing does not introduce a forwarding queue.
+// the sole owner of outputSet and outputApply; routing does not introduce a
+// forwarding queue.
 type outputChannels struct {
 	events        chan<- ports.OutputEvent
 	scenes        <-chan []ports.Scene
@@ -18,21 +19,19 @@ type outputChannels struct {
 	captured      chan<- ports.CaptureDone
 	formats       chan<- ports.OutputFormats
 	heads         chan<- ports.OutputHeads
-	report        chan<- ports.OutputHeads
-	configs       <-chan ports.Config
-	applied       chan<- error
+	// reloads carries file configuration; configured carries the effective
+	// configuration, overrides included, to core.
+	reloads    <-chan ports.ConfigChanged
+	configured chan<- ports.ConfigChanged
+	requests   <-chan ports.OutputApply
+	replies    chan<- ports.OutputApplied
 }
 
-// sendInventory preserves heads-before-report delivery; false means the
-// context interrupted either send.
-func (ch outputChannels) sendInventory(ctx context.Context, inventory ports.OutputHeads) bool {
+// sendHeads publishes the inventory to Wayland clients; false means the
+// context ended first.
+func (ch outputChannels) sendHeads(ctx context.Context, inventory ports.OutputHeads) bool {
 	select {
 	case ch.heads <- inventory:
-	case <-ctx.Done():
-		return false
-	}
-	select {
-	case ch.report <- inventory:
 		return true
 	case <-ctx.Done():
 		return false
