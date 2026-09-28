@@ -335,7 +335,7 @@ func (c *Core) settings(m *Monitor) {
 	m.SetPresets(c.presets)
 	m.SetGaps(c.cfg.Layout.Gaps)
 	m.SetBorder(c.cfg.Border.Width)
-	m.SetPeek(c.cfg.Stash.Peek)
+	m.SetStash(c.cfg.Stash.Width, c.cfg.Stash.Peek)
 	m.SetFollowMove(c.cfg.Focus.FollowMove)
 }
 

@@ -403,22 +403,25 @@ func TestTerminalResolutionAndAutoOpen(t *testing.T) {
 }
 
 func TestStash(t *testing.T) {
-	if d := Defaults(); d.Stash.Peek != 3 || d.Stash.Dim != 0.5 {
+	if d := Defaults(); d.Stash.Width != 80 || d.Stash.Peek != 3 || d.Stash.Dim != 0.5 {
 		t.Fatalf("defaults %+v", d.Stash)
 	}
 	for _, tc := range []struct {
 		line    string
+		width   int
 		peek    int
 		dim     float64
 		warning bool
 	}{
-		{"stash.peek = 0", 0, 0.5, false}, {"stash.peek = 10", 10, 0.5, false},
-		{"stash.peek = 11", 3, 0.5, true}, {"stash.peek = -1", 3, 0.5, true}, {"stash.peek = 2.5", 3, 0.5, true},
-		{"stash.dim = 0.8", 3, 0.8, false}, {"stash.dim = 1.5", 3, 0.5, true}, {"stash.dim = NaN", 3, 0.5, true},
+		{"stash.width = 60", 60, 3, 0.5, false}, {"stash.width = 70%", 70, 3, 0.5, false}, {"stash.width = 100", 100, 3, 0.5, false},
+		{"stash.width = 19", 80, 3, 0.5, true}, {"stash.width = 101", 80, 3, 0.5, true}, {"stash.width = 1/2", 80, 3, 0.5, true},
+		{"stash.peek = 0", 80, 0, 0.5, false}, {"stash.peek = 10", 80, 10, 0.5, false},
+		{"stash.peek = 11", 80, 3, 0.5, true}, {"stash.peek = -1", 80, 3, 0.5, true}, {"stash.peek = 2.5", 80, 3, 0.5, true},
+		{"stash.dim = 0.8", 80, 3, 0.8, false}, {"stash.dim = 1.5", 80, 3, 0.5, true}, {"stash.dim = NaN", 80, 3, 0.5, true},
 	} {
 		t.Run(tc.line, func(t *testing.T) {
 			c, warnings := parseString(t, tc.line)
-			if c.Stash.Peek != tc.peek || c.Stash.Dim != tc.dim || (len(warnings) != 0) != tc.warning {
+			if c.Stash.Width != tc.width || c.Stash.Peek != tc.peek || c.Stash.Dim != tc.dim || (len(warnings) != 0) != tc.warning {
 				t.Fatalf("stash %+v, warnings %v", c.Stash, warnings)
 			}
 		})

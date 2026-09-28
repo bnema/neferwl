@@ -188,3 +188,30 @@ func TestStashFromRemovedNamedWorkspace(t *testing.T) {
 		t.Fatalf("focused %d %v", id, ok)
 	}
 }
+
+// stash.width sets the selected window's width; the neighbors peek in
+// beside it, and not at all once it fills the width.
+func TestStashWidth(t *testing.T) {
+	m := stashMonitor(OverflowScroll)
+	m.SetStash(50, 10)
+	w := m.Current()
+	if p := placement(w, 3); p.Rect != (Rect{X: 25, Y: 8, W: 50, H: 64}) {
+		t.Fatalf("selected %+v", p)
+	}
+	if p := placement(w, 2); !p.Peek || p.Rect != (Rect{X: 10 - 50, Y: 8, W: 50, H: 64}) {
+		t.Fatalf("peek %+v", p)
+	}
+	m.SetStash(100, 10)
+	if p := placement(w, 2); !p.Hidden {
+		t.Fatalf("peek at full width %+v", p)
+	}
+	// 0 is the default, out-of-range values are clamped.
+	m.SetStash(0, 3)
+	if p := placement(w, 3); p.Rect.W != 80 {
+		t.Fatalf("default width %d", p.Rect.W)
+	}
+	m.SetStash(5, 3)
+	if p := placement(w, 3); p.Rect.W != 20 {
+		t.Fatalf("clamped width %d", p.Rect.W)
+	}
+}

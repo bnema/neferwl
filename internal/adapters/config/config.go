@@ -90,6 +90,7 @@ func Defaults() ports.Config {
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
+	c.Stash.Width = 80
 	c.Stash.Peek = 3
 	c.Stash.Dim = 0.5
 	c.Border.Width = 2
@@ -461,6 +462,12 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be between 0 and 1")
 		}
 		c.Floating.Dim = dim
+	case "stash.width":
+		n, err := strconv.Atoi(strings.TrimSuffix(v, "%"))
+		if err != nil || n < 20 || n > 100 {
+			return fmt.Errorf("must be between 20 and 100")
+		}
+		c.Stash.Width = n
 	case "stash.peek":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 10 {

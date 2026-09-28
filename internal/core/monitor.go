@@ -89,7 +89,7 @@ func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Gaps = m.template.Gaps
 	w.border = m.template.border
-	w.peek = m.template.peek
+	w.peek, w.stashWidth = m.template.peek, m.template.stashWidth
 	w.SetOutput(m.template.Output.W, m.template.Output.H)
 	w.SetUsable(m.template.Usable)
 	if hidden {
@@ -647,9 +647,15 @@ func (m *Monitor) SetUsable(r Rect) { m.each(func(w *Workspace) { w.SetUsable(r)
 func (m *Monitor) SetGaps(g int)    { m.each(func(w *Workspace) { w.SetGaps(g) }) }
 func (m *Monitor) SetBorder(b int)  { m.each(func(w *Workspace) { w.border = max(b, 0) }) }
 
-// SetPeek sets how far, in percent of the usable width, stash neighbors
-// peek in (stash.peek).
-func (m *Monitor) SetPeek(p int)        { m.each(func(w *Workspace) { w.peek = min(max(p, 0), 10) }) }
+// SetStash sets the width of a stashed window (stash.width; 0 is the
+// default) and how far its neighbors peek in (stash.peek), in percent of
+// the usable width.
+func (m *Monitor) SetStash(width, peek int) {
+	if width != 0 {
+		width = min(max(width, 20), 100)
+	}
+	m.each(func(w *Workspace) { w.stashWidth, w.peek = width, min(max(peek, 0), 10) })
+}
 func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
 
 // SetFollowMove makes moves to another workspace show it (focus.follow-move).

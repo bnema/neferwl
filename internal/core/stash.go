@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"math"
 	"slices"
 
@@ -9,13 +10,15 @@ import (
 
 // The stash is a workspace's strip of windows set aside with
 // toggle-window-floating, left to right in arrival order. The selected one
-// is centred at stashScale% of the usable area; its neighbors peek in from
+// is centred, stash.width% of the usable width and stashHeight% of its
+// height; its neighbors peek in from
 // the sides, dimmed; the others wait off screen. toggle-floating-visible
 // hides and shows the whole strip. Native floats (dialogs) are not in it.
 
-// stashScale is the share of the usable area, in percent, a stashed
-// window takes.
-const stashScale = 80
+// stashWidth is the default share of the usable width, in percent, a
+// stashed window takes (stash.width); stashHeight is its share of the
+// usable height.
+const stashWidth, stashHeight = 80, 80
 
 func (w *Workspace) stashIndex(id WindowID) int {
 	return slices.IndexFunc(w.Stash, func(f Float) bool { return f.ID == id })
@@ -137,8 +140,8 @@ func (w *Workspace) ToggleFloatingVisible() {
 // others hidden. cover is the covering fullscreen window, if any.
 func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 	u := w.Usable
-	fw := min(max(u.W*stashScale/100-2*w.border, 0)+2*w.border, u.W)
-	fh := min(max(u.H*stashScale/100-2*w.border, 0)+2*w.border, u.H)
+	fw := min(max(u.W*cmp.Or(w.stashWidth, stashWidth)/100-2*w.border, 0)+2*w.border, u.W)
+	fh := min(max(u.H*stashHeight/100-2*w.border, 0)+2*w.border, u.H)
 	center := Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
 	// Peeks stay in the margins: they never overlap the selected window.
 	peek := min(u.W*w.peek/100, (u.W-fw)/2)

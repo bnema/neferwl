@@ -148,8 +148,9 @@ type Workspace struct {
 	stashFocus  bool
 	stashHidden bool
 	// peek is how far, in percent of the usable width, the stash
-	// neighbors peek in.
-	peek int
+	// neighbors peek in; stashWidth is the width of a stashed window, in
+	// percent of the usable width (0: the default).
+	peek, stashWidth int
 	// hiddenFullscreen holds a stashed window's fullscreen while the stash
 	// is hidden, restored when shown.
 	hiddenFullscreen WindowID
