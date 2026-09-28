@@ -74,6 +74,7 @@ type Config struct {
 	// Startup are commands run once when the session starts, in order.
 	Startup    [][]string
 	Background struct{ Color string }
+	Floating   struct{ Dim float64 }
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {
 		Width    int

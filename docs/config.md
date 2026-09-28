@@ -22,6 +22,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
+| `floating.dim` | `0.3` | Black veil over tiles and lower layers when floats are visible; opacity 0 to 1 |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
@@ -75,6 +76,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window |
+| `toggle-window-floating` | Float a tiled window at 80% of usable area; toggle back to its former column when possible. A native dialog becomes a new tiled column |
+| `toggle-floating-visible` | Hide or show all floats on this workspace; a new float shows them again |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |
@@ -112,6 +115,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
+| `cmd+v` | `toggle-window-floating` |
+| `cmd+shift+v` | `toggle-floating-visible` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
 | `ctrl+cmd+space` | `spawn fuzzel` |

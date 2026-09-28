@@ -32,6 +32,9 @@ border.width = 2
 border.active = #808080
 border.inactive = #111111
 
+# Black veil over tiles and lower layers when a float is visible (0 to 1).
+floating.dim = 0.3
+
 layout.gaps = 0
 # Columns sharing the screen equally before new ones scroll off to the right.
 # A lone column fills the screen without separators.
@@ -110,6 +113,8 @@ bind.cmd+bracketright = consume-or-expel-window-right
 bind.cmd+r = cycle-column-width
 bind.cmd+f = maximize-column
 bind.cmd+shift+f = toggle-fullscreen
+bind.cmd+v = toggle-window-floating
+bind.cmd+shift+v = toggle-floating-visible
 bind.cmd+q = close-window
 bind.ctrl+alt+backspace = quit
 bind.ctrl+cmd+space = spawn fuzzel
