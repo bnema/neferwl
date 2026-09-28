@@ -25,6 +25,59 @@ func asyncContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.W
 	}
 }
 
+// A subsurface carries its own hint in the window's content, even when a
+// commit changes only the hint after the tree was cached (Wine presents
+// the game in a subsurface that the output scans out).
+func TestTearingHintOnSubsurface(t *testing.T) {
+	s, events, _, contents, dir := contentServer(t)
+	c := protocolClient(t, s, dir)
+	w, root, _ := surfaceMapper(t, c, events)()
+	comp := bindProtocol(t, c, "wl_compositor")
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	sub := c.AllocateID()
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, root)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	childAsync := func(want bool) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			select {
+			case got := <-contents:
+				if got.ID == w.ID && len(got.Children) == 1 && got.Children[0].Async == want {
+					if got.Async {
+						t.Fatal("child hint leaked to the root")
+					}
+					return
+				}
+			case <-deadline:
+				t.Fatalf("no content with child async=%v", want)
+			}
+		}
+	}
+	childAsync(false)
+
+	manager := bindProtocol(t, c, "wp_tearing_control_manager_v1")
+	control := c.AllocateID()
+	registerProtocol(t, c, control)
+	requestProtocol(t, c, manager, tearingcontrol.WpTearingControlManagerV1RequestGetTearingControl, control, child)
+	requestProtocol(t, c, control, tearingcontrol.WpTearingControlV1RequestSetPresentationHint, uint32(tearingcontrol.WpTearingControlV1PresentationHintAsync))
+	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, root, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	childAsync(true)
+}
+
 func TestTearingHintAppliesOnCommit(t *testing.T) {
 	s, events, _, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)

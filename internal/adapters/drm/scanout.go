@@ -100,6 +100,9 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "buffer_transform"
 	case c.Width != w || c.Height != h:
 		return c, "size_mismatch"
+	case c.Source[2] != 0 && c.Source != [4]float32{0, 0, float32(c.Width), float32(c.Height)}:
+		// A viewport crop: the plane would show the whole buffer.
+		return c, "source_crop"
 	case c.LogicalW != full.Rect.W || c.LogicalH != full.Rect.H:
 		return c, "logical_mismatch"
 	case c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0 || c.Geometry.W != c.LogicalW || c.Geometry.H != c.LogicalH):
@@ -124,6 +127,9 @@ func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
 		return c, "not_dmabuf"
 	case !ch.Opaque:
 		return c, "subsurface_translucent"
+	case ch.Below:
+		// The root is drawn over it.
+		return c, "subsurface_below"
 	case ch.X != c.Geometry.X || ch.Y != c.Geometry.Y:
 		return c, "subsurface_offset"
 	}

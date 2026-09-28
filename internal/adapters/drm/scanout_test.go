@@ -47,6 +47,10 @@ func TestScanoutCandidate(t *testing.T) {
 		{"client subsurface translucent", nil, wineTree(func(ch *ports.Subsurface) { ch.Opaque = false }), "subsurface_translucent"},
 		{"client subsurface shm", nil, wineTree(func(ch *ports.Subsurface) { ch.DMABuf, ch.SHM = nil, &ports.SHMBuffer{} }), "not_dmabuf"},
 		{"client subsurface offset", nil, wineTree(func(ch *ports.Subsurface) { ch.X = 4 }), "subsurface_offset"},
+		{"client subsurface below root", nil, wineTree(func(ch *ports.Subsurface) { ch.Below = true }), "subsurface_below"},
+		{"client subsurface cropped", nil, wineTree(func(ch *ports.Subsurface) { ch.Source = [4]float32{0, 0, 100, 50} }), "source_crop"},
+		{"client subsurface full source", nil, wineTree(func(ch *ports.Subsurface) { ch.Source = [4]float32{0, 0, 200, 100} }), ""},
+		{"root cropped", nil, func(c *ports.SurfaceContent) { c.Source = [4]float32{10, 0, 190, 100} }, "source_crop"},
 		{"client subsurface scaled", nil, wineTree(func(ch *ports.Subsurface) { ch.Width = 100 }), "size_mismatch"},
 		{"client subsurface small", nil, wineTree(func(ch *ports.Subsurface) { ch.LogicalW = 90 }), "logical_mismatch"},
 		{"two subsurfaces", nil, func(c *ports.SurfaceContent) {

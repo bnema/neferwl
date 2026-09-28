@@ -354,6 +354,10 @@ func (s *surface) applyCommit(u *update) {
 		s.opaque = u.opaque
 	}
 	hinted := s.async != u.async || s.color != u.color || s.representation != u.representation
+	if s.async != u.async {
+		// Contents carry the hint of every surface in the tree.
+		s.root().treeDirty = true
+	}
 	s.async = u.async
 	s.color = u.color
 	s.representation = u.representation
