@@ -30,8 +30,30 @@ func TestHotkey(t *testing.T) {
 	}
 }
 
+func TestSwipesIgnoreSecondTouchpad(t *testing.T) {
+	var s swipes
+	const pad, other = 1, 2
+	s.begin(pad, 3, time.Second)
+	if ev := s.begin(other, 3, time.Second); ev != nil {
+		t.Fatalf("second touchpad began: %v", ev)
+	}
+	if ev := s.update(other, 1, 1, time.Second); ev != nil {
+		t.Fatalf("second touchpad moved: %v", ev)
+	}
+	if ev := s.end(other, false, time.Second); ev != nil {
+		t.Fatalf("second touchpad ended the swipe: %v", ev)
+	}
+	if ev := s.update(pad, 1, 1, 2*time.Second); ev == nil {
+		t.Fatal("first touchpad lost its swipe")
+	}
+	s.end(pad, false, 3*time.Second)
+	if ev := s.begin(other, 3, 4*time.Second); ev == nil {
+		t.Fatal("second touchpad cannot swipe after the first ended")
+	}
+}
+
 func TestSwipesStreamThreeFingers(t *testing.T) {
-	s := swipes{}
+	var s swipes
 	const pad, other = 1, 2
 	if ev := s.begin(pad, 4, time.Second); ev != nil {
 		t.Fatalf("four fingers: %v", ev)

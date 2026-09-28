@@ -228,7 +228,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor)
-	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}, swipes: swipes{}}
+	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
@@ -344,30 +344,32 @@ func (s *inputState) release() {
 // counts are left alone.
 const swipeFingers = 3
 
-// swipes streams the three-finger swipe of each touchpad to core, which
-// follows the fingers.
-type swipes map[uintptr]bool
+// swipes streams one three-finger swipe at a time to core, which follows
+// the fingers. owner is the touchpad of the swipe in progress (0: none);
+// another touchpad's swipe is ignored until it ends, so core never sees
+// two streams interleaved.
+type swipes struct{ owner uintptr }
 
-func (s swipes) begin(dev uintptr, fingers int, at time.Duration) ports.InputEvent {
-	if fingers != swipeFingers {
+func (s *swipes) begin(dev uintptr, fingers int, at time.Duration) ports.InputEvent {
+	if fingers != swipeFingers || s.owner != 0 {
 		return nil
 	}
-	s[dev] = true
+	s.owner = dev
 	return ports.SwipeBegin{Time: at}
 }
 
-func (s swipes) update(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
-	if !s[dev] {
+func (s *swipes) update(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
+	if dev == 0 || s.owner != dev {
 		return nil
 	}
 	return ports.SwipeUpdate{DX: dx, DY: dy, Time: at}
 }
 
-func (s swipes) end(dev uintptr, cancelled bool, at time.Duration) ports.InputEvent {
-	if !s[dev] {
+func (s *swipes) end(dev uintptr, cancelled bool, at time.Duration) ports.InputEvent {
+	if dev == 0 || s.owner != dev {
 		return nil
 	}
-	delete(s, dev)
+	s.owner = 0
 	return ports.SwipeEnd{Cancelled: cancelled, Time: at}
 }
 

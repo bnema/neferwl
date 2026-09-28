@@ -422,13 +422,13 @@ func TestSlideMovesPointerFocus(t *testing.T) {
 	}
 }
 
-func TestSecondSwipeBeginSettlesTheFirst(t *testing.T) {
+func TestSwipeBeginWithoutEndSettlesTheFirst(t *testing.T) {
 	r := startSwipe(t, nil)
 	threeColumns(t, r)
 	r.begin()
 	s := r.move(t, -40, 0)
 	moved, _ := rectOf(s, 2)
-	// Another touchpad begins: the first swipe springs back.
+	// A begin without the previous end: the first swipe springs back.
 	r.begin()
 	scene(t, r.scenes)
 	s = r.settle(t)

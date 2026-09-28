@@ -76,8 +76,8 @@ func (c *Core) swipeSign() float64 {
 	return 1
 }
 
-// swipeBegin starts a swipe. One still running (a second touchpad) ends
-// cancelled first: its slide settles back.
+// swipeBegin starts a swipe. Input streams one swipe at a time; one still
+// running (its end was lost) ends cancelled first: its slide settles back.
 func (c *Core) swipeBegin(at time.Duration) bool {
 	changed := false
 	if c.swipe != nil {
