@@ -21,6 +21,7 @@ const (
 	roleSubsurface
 	roleLayer
 	roleCursor
+	roleInputPopup
 )
 
 type surface struct {

@@ -31,6 +31,8 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerCapture(d, s) },
 		func() error { return registerActivation(d, s) },
 		func() error { return registerVirtualKeyboard(d, s) },
+		func() error { return registerTextInput(d, s) },
+		func() error { return registerInputMethod(d, s) },
 		func() error {
 			return wayland.NewCompositorGlobal(d, 6, func(c server.Client, v, id uint32) { wayland.NewCompositor(c, int32(v), id, compositor{s}) })
 		},

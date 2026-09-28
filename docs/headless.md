@@ -19,4 +19,13 @@ Screenshots through `grim` are verified with `zwlr_screencopy_v1` and `ext_image
 - `move <x> <y>` (output coordinates)
 - `click [left|right|middle]`, `down <button>`, `up <button>`
 
+`examples/testime` is a minimal input method for testing text input. Each time an app enables a text input, it sends a preedit string, then commits the final text:
+
+```sh
+neferwl --backend=headless
+WAYLAND_DISPLAY=<name from the log> go run ./examples/testime -preedit nihon -commit 日本
+```
+
+`-count <n>` exits after n commits, and `-delay` sets the time between preedit and commit.
+
 The headless backend does not draw the cursor on screen. After a layout change, pointer focus updates on the next move.

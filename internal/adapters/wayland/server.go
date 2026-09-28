@@ -125,6 +125,7 @@ type Server struct {
 	modState                ports.ModState
 	keyboards               map[server.Client][]*wayland.Keyboard
 	heldKeys                map[uint32]bool
+	grabKeys                map[uint32]bool // pressed through the input method grab
 	keymapFD                int
 	keymapSize              uint32
 	keymapText              string           // the seat keymap, to compare virtual keymaps with
@@ -192,6 +193,11 @@ type Server struct {
 	constraints map[*surface]*constraint
 	constraint  *constraint // the active one
 	positioners map[*server.Resource]*positioner
+	// Text input and input method (textinput.go): activeText is the
+	// enabled text input the input method serves.
+	textInputs  []*textInput
+	activeText  *textInput
+	inputMethod *inputMethod
 }
 
 func removeItem[T comparable](list []T, v T) []T {
@@ -633,6 +639,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.changeFocus(c.ID)
 		}
 	case ports.ForwardKey:
+		if s.grabKey(c) {
+			return
+		}
 		_, keyboards := s.focusTarget(c.ID)
 		if c.ID != s.focused || len(keyboards) == 0 {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
@@ -815,6 +824,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 				}
 			}
 		}
+		s.sendGrabKeymap(false)
 		s.log.Info().Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("repeat updated")
 		return
 	}
@@ -830,7 +840,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 	s.keymapOwner = nil
 	focused := s.focused
 	s.changeFocus(0)
-	s.heldKeys = nil
+	s.heldKeys, s.grabKeys = nil, nil
 	s.modState = ports.ModState{}
 	for _, list := range s.keyboards {
 		for _, k := range list {
@@ -840,6 +850,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 			}
 		}
 	}
+	s.sendGrabKeymap(true)
 	s.changeFocus(focused)
 	s.log.Info().Uint32("size", size).Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("keymap updated")
 }
@@ -880,6 +891,7 @@ func (s *Server) changeFocus(id ports.WindowID) {
 			s.sendModifiers(k)
 		}
 	}
+	s.textInputFocus()
 	s.log.Debug().Uint64("id", uint64(s.focused)).Msg("keyboard focus")
 	s.updateConstraint()
 }

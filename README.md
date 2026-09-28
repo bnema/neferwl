@@ -27,7 +27,7 @@ The design is deliberately small, and it will stay small: no animations, no them
 - **Column tiling.** Up to `max-columns` windows share the screen, as in Sway; past that, columns scroll to the right, as in Niri. Limits are set per output or per workspace.
 - **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
 - **Multi-monitor.** Each output has its own workspaces. When an output is unplugged its workspaces move to another one, and return when it is plugged back. Fractional scale per output.
-- **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, grim, cliphist, swayidle and wlr-randr work through their standard protocols. See [Desktop integration](docs/desktop.md).
+- **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, grim, cliphist, swayidle, wlr-randr and input methods such as fcitx5 work through their standard protocols. See [Desktop integration](docs/desktop.md).
 - **Config.** One `key = value` file, reloaded on save without closing windows. A JSON state file describes outputs, workspaces and windows for scripts.
 
 Config example:
@@ -96,8 +96,8 @@ The file has one `key = value` per line, and `#` starts a comment. A missing fil
 ## Documentation
 
 - [Configuration](docs/config.md): every key, action and default bind, and HDR.
-- [Desktop integration](docs/desktop.md): running commands, clipboard, X11 apps, idle and screen off, bars, and the state file for scripts.
-- [Headless mode](docs/headless.md): run without a screen, take screenshots and play input scripts.
+- [Desktop integration](docs/desktop.md): running commands, clipboard, input methods, X11 apps, idle and screen off, bars, and the state file for scripts.
+- [Headless mode](docs/headless.md): run without a screen, take screenshots, play input scripts and test input methods.
 - [Performance](docs/performance.md): how to profile, the allocation guards, and reference numbers.
 
 ## Why not Rust?
