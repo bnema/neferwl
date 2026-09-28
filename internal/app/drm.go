@@ -135,13 +135,13 @@ func (b *drmBackend) close() {
 // one flip reader per card, and a udev watcher that rescans connectors on
 // hotplug. Core learns about outputs through events. It returns when ctx
 // ends, after every output is closed.
-func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, events chan<- ports.OutputEvent, scenes <-chan []ports.Scene, contents <-chan ports.SurfaceContent, cursorChanges <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone, formats chan<- ports.OutputFormats, heads chan<- ports.OutputHeads, report chan<- ports.OutputHeads, configs <-chan ports.Config, applied chan<- error, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm.Want, initial ports.Config, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var readers sync.WaitGroup
 	readerErr := make(chan error, len(b.cards))
 	for _, c := range b.cards {
-		c.SetFormats(formats)
+		c.SetFormats(ch.formats)
 		readers.Go(func() {
 			if err := safe("drm events", func() error { return c.ReadEvents(ctx) }); err != nil {
 				readerErr <- fmt.Errorf("%s: %w", c.Path(), err)
@@ -155,11 +155,11 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			log.Warn().Err(err).Msg("hotplug watch disabled")
 		}
 	}()
-	set := newOutputSet(ctx, captured)
+	set := newOutputSet(ctx, ch.captured)
 	cards := map[string]*drmCard{}
 	send := func(ev ports.OutputEvent) {
 		select {
-		case events <- ev:
+		case ch.events <- ev:
 		case <-ctx.Done():
 		}
 	}
@@ -190,7 +190,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			timer = nil
 		}
 		select {
-		case applied <- d.err:
+		case ch.applied <- d.err:
 		case <-ctx.Done():
 		}
 	}
@@ -205,14 +205,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			inventory.Heads = append(inventory.Heads, lastHeads[card]...)
 		}
 		currentHeads = inventory
-		select {
-		case heads <- inventory:
-		case <-ctx.Done():
-		}
-		select {
-		case report <- inventory:
-		case <-ctx.Done():
-		}
+		ch.sendInventory(ctx, inventory)
 	}
 	scan := func() {
 		var scanErrors []error
@@ -280,7 +273,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					defer b.seat.Unsubscribe(active)
 					return safe("output "+name, func() error {
 						defer o.Close()
-						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, presented, cap, captured)
+						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, ch.presented, cap, ch.captured)
 					})
 				})
 				send(ports.OutputAdded{Info: o.Info()})
@@ -310,7 +303,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				complete(progress.scanned(running))
 			}
-		case currentConfig = <-configs:
+		case currentConfig = <-ch.configs:
 			op++
 			if timer != nil {
 				timer.Stop()
@@ -350,13 +343,13 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			complete(progress.readyEvent(result.name, result.source, result.err))
 		case id := <-deadline:
 			complete(progress.timeout(id))
-		case s := <-scenes:
+		case s := <-ch.scenes:
 			set.scenes(s)
-		case c := <-contents:
+		case c := <-ch.contents:
 			set.content(c)
-		case q := <-captures:
+		case q := <-ch.captures:
 			set.routeCapture(q)
-		case c := <-cursorChanges:
+		case c := <-ch.cursorChanges:
 			set.setCursor(c)
 		case name := <-set.stopped:
 			err := set.finish(name)

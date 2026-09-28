@@ -74,12 +74,10 @@ type Core struct {
 	specs        []NamedWorkspace
 	presets      []Width
 	slots        map[slotKey]*slotState
+	placement    spawnPlacement
 	// toSpawn holds slots to start; Run sends them (apply has no context).
-	toSpawn     []slotKey
-	sentPending bool
-	// terms are the terminals spawned for empty workspaces, by SlotEnv
-	// token, until their window maps.
-	terms                 map[string]*termSpawn
+	toSpawn               []slotKey
+	sentPending           bool
 	firstTerminalResolved bool
 	// clients holds the app ID and PID of mapped windows, for State.
 	clients        map[WindowID]ports.WindowMapped
@@ -243,7 +241,6 @@ func (c *Core) apply(cfg ports.Config) error {
 	for _, s := range c.screens {
 		c.settings(s.mon)
 	}
-	c.settleGuests()
 	c.applyConfigScales()
 	return nil
 }
@@ -251,7 +248,7 @@ func (c *Core) apply(cfg ports.Config) error {
 // publishPending tells wayland at once when slots start waiting, before
 // their windows can map.
 func (c *Core) publishPending(ctx context.Context) error {
-	if p := c.anyPending(); p != c.sentPending {
+	if p := c.placement.anyPending(); p != c.sentPending {
 		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
 			return err
 		}
@@ -295,7 +292,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, terms: map[string]*termSpawn{}, clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -406,16 +403,12 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		c.sentOutputs = v
 	}
-	terms := c.fillEmpty()
-	if err := c.publishPending(ctx); err != nil {
+	// Output layout must be known before an automatic terminal can map.
+	if err := c.spawnEmpty(ctx); err != nil {
 		return err
 	}
-	for _, req := range terms {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case c.ch.Spawn <- req:
-		}
+	if err := c.publishPending(ctx); err != nil {
+		return err
 	}
 	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
@@ -675,15 +668,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.inputRegions[v.ID] = v
 			case ports.WindowMapped:
 				c.clients[v.ID] = v
-				if v.Floating {
-					if s, _ := c.screenOf(v.ID); s == nil {
-						c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
-					}
-				} else if v.Slot == "" || (!c.placeSlotWindow(v.ID, v.Slot) && !c.placeTerminal(v.ID, v.Slot)) {
-					if s, _ := c.screenOf(v.ID); s == nil {
-						c.cur().mon.AddWindow(v.ID)
-					}
-				}
+				c.placement.place(c, v)
 			case ports.WindowResized:
 				if _, w := c.screenOf(v.ID); w != nil {
 					w.ResizeFloating(v.ID, v.Width, v.Height)
@@ -753,6 +738,7 @@ func (c *Core) Run(ctx context.Context) error {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
 			case ports.WorkspaceActivate:
+				before := c.cur().mon.Current()
 				for _, id := range v.IDs {
 					for i, sc := range c.screens {
 						if sc.name() == "" {
@@ -766,6 +752,9 @@ func (c *Core) Run(ctx context.Context) error {
 							}
 						}
 					}
+				}
+				if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
+					return nil
 				}
 			case ports.WindowActivate:
 				if c.activate(ctx, v.ID) != nil {
@@ -793,6 +782,9 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			}
+			if c.workspaceVisible(ctx, false) != nil {
+				return nil
+			}
 			if err := c.publish(ctx); err != nil {
 				return nil
 			}
@@ -808,7 +800,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
-			if c.spawnSlots(ctx, false) != nil {
+			if c.workspaceVisible(ctx, false) != nil {
 				return nil
 			}
 			if err := c.publish(ctx); err != nil {
@@ -995,7 +987,7 @@ func (c *Core) Run(ctx context.Context) error {
 						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
 					}
-					if c.afterShow(ctx, before) != nil {
+					if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
 						return nil
 					}
 					if effect.Close != 0 {
@@ -1019,13 +1011,30 @@ func (c *Core) Run(ctx context.Context) error {
 	}
 }
 
-// afterShow keeps slots and guests right once a workspace came on screen;
-// before is the focused screen's workspace before the change.
-func (c *Core) afterShow(ctx context.Context, before *Workspace) error {
-	// Showing a declared workspace refills its empty slots.
+// workspaceVisible settles guests and refills slots on a show. Publication
+// subsequently decides whether visible empty workspaces need terminals.
+func (c *Core) workspaceVisible(ctx context.Context, shown bool) error {
 	c.releaseSlots()
 	c.settleGuests()
-	return c.spawnSlots(ctx, c.cur().mon.Current() != before)
+	return c.spawnSlots(ctx, shown)
+}
+
+// spawnEmpty requests terminals for visible empty workspaces. publish calls
+// it after the output layout and before scenes, so a terminal never maps
+// before wayland knows its output.
+func (c *Core) spawnEmpty(ctx context.Context) error {
+	terms := c.fillEmpty()
+	if err := c.publishPending(ctx); err != nil {
+		return err
+	}
+	for _, req := range terms {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case c.ch.Spawn <- req:
+		}
+	}
+	return nil
 }
 
 // activate brings a window forward for a valid xdg-activation token. The
@@ -1043,7 +1052,7 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 	}
 	w.Activate(id)
 	c.focusScreen = c.screenIndex(s.name())
-	return c.afterShow(ctx, before)
+	return c.workspaceVisible(ctx, c.cur().mon.Current() != before)
 }
 
 // heldKey names a key for press tracking: by physical key, since Shift

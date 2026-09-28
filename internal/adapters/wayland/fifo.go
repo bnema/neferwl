@@ -22,9 +22,9 @@ import (
 //   - wp_commit_timing_v1: a commit waits until the refresh that shows it
 //     is not before its timestamp (CLOCK_MONOTONIC).
 //
-// A commit that must wait is taken out of the surface's pending state and
-// queued; the pacer (frames.go) applies queued updates in order when they
-// are ready. wp_content_type_v1 is recorded and logged only.
+// Every commit captures its pending state into an update; the pacer (frames.go)
+// applies queued updates in order when they are ready. Requests arriving after
+// capture stay in live pending state. wp_content_type_v1 is logged only.
 
 func registerPresentationConstraints(d *server.Display, s *Server) error {
 	if err := fifo.NewWpFifoManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
@@ -197,7 +197,7 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // Content update queue
 
-// update is a surface's pending state taken out by a commit that waits.
+// update owns a captured commit until it applies or is discarded.
 type update struct {
 	inputSet, inputAll bool
 	inputRects         []ports.Rect
@@ -331,36 +331,6 @@ func (s *surface) takePending() update {
 	return u
 }
 
-// putPending makes an update the surface's pending state again. Parts
-// whose object is gone (viewport, child, role, constraint) are dropped.
-func (s *surface) putPending(u update) {
-	s.pendingInputSet, s.pendingInputAll, s.pendingInputRects = u.inputSet, u.inputAll, u.inputRects
-	s.attached, s.pending, s.callbacks = u.attached, u.buffer, u.callbacks
-	s.pendingScale, s.pendingAsync, s.pendingKind = u.scale, u.async, u.kind
-	s.pendingColor = u.color
-	s.pendingRepresentation = u.representation
-	s.pendingBarrier, s.pendingWait, s.pendingTime = u.barrier, u.wait, u.at
-	s.pendingDamage, s.pendingBufDamage = u.damage, u.bufDamage
-	s.pendingFeedback, s.pendingSync = u.feedback, u.sync
-	if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
-		s.viewport = u.vp
-		u.vp.pendingW, u.vp.pendingH, u.vp.pendingSet = u.vpW, u.vpH, u.vpSet
-		u.vp.pendingSrc, u.vp.pendingCrop = u.vpSrc, u.vpCrop
-	} else {
-		s.viewport = nil
-	}
-	s.sub.pendingLayout = u.layout
-	if u.xdg != nil && s.xdg == u.xdg {
-		u.xdg.pendingGeometry = u.geometry
-	}
-	if u.cons != nil && s.server.constraints[s] == u.cons {
-		u.cons.pending = u.region
-	}
-	if u.layer != nil && s.layer == u.layer {
-		u.layer.pending = u.layerNext
-	}
-}
-
 // tooEarly reports whether content applied now would show before at:
 // it reaches the screen one refresh later.
 func (s *surface) tooEarly(at, now time.Time) bool {
@@ -415,7 +385,7 @@ func (s *surface) queueUpdate() {
 	s.server.wakePacer()
 }
 
-// applyUpdate applies a queued update, keeping the requests made since.
+// applyUpdate applies only the captured commit; later requests remain pending.
 func (s *surface) applyUpdate(u *update) {
 	// A buffer destroyed while queued (a swapchain resize) is skipped: the
 	// surface keeps its content, and is not unmapped behind the client.
@@ -433,25 +403,11 @@ func (s *surface) applyUpdate(u *update) {
 		// The viewport change was made for that buffer: keep the crop that
 		// matches the retained content instead of validating a mismatch.
 		if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
-			if v := s.committedViewport; v != nil {
-				u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v.destW, v.destH, v.dest, v.src, v.crop
-			} else {
-				u.vpSet, u.vpCrop = false, false
-			}
+			v := &s.committedViewport
+			u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v.destW, v.destH, v.dest, v.src, v.crop
 		}
 	}
-	later := s.takePending()
-	originalViewport := s.viewport
-	originalLayout := s.sub.pendingLayout
-	s.putPending(*u)
-	s.applyCommit()
-	s.putPending(later)
-	if originalViewport != nil {
-		originalViewport.pendingW, originalViewport.pendingH, originalViewport.pendingSet = later.vpW, later.vpH, later.vpSet
-		originalViewport.pendingSrc, originalViewport.pendingCrop = later.vpSrc, later.vpCrop
-	}
-	s.viewport = originalViewport
-	s.sub.pendingLayout = originalLayout
+	s.applyCommit(u)
 	s.commitSkipped = false
 }
 

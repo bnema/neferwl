@@ -111,9 +111,6 @@ func (o *outputOverrides) validate(req ports.OutputApply) error {
 			return fmt.Errorf("unknown head %s", change.Name)
 		}
 		current := o.heads.Heads[index]
-		if change.Transform != 0 || change.AdaptiveSync != nil || change.CustomMode {
-			return fmt.Errorf("unsupported output setting on %s", change.Name)
-		}
 		if change.Scale < 0 || change.Scale > 4 || (change.Scale > 0 && change.Scale < 1) || math.IsNaN(change.Scale) || math.IsInf(change.Scale, 0) {
 			return fmt.Errorf("invalid scale on %s", change.Name)
 		}

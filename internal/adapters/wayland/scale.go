@@ -167,15 +167,22 @@ func (h viewporterHandler) GetViewport(r *viewporter.WpViewporter, id uint32, w 
 	}
 }
 
-// viewport holds double-buffered crop and destination state.
+// viewport holds requests for the next commit; the committed crop and
+// destination live by value on the surface so applying cannot allocate.
 type viewport struct {
-	surface           *surface
-	resource          *viewporter.WpViewport
-	pendingW, destW   int32
-	pendingH, destH   int32
-	pendingSet, dest  bool
-	pendingSrc, src   [4]server.Fixed
-	pendingCrop, crop bool
+	surface            *surface
+	resource           *viewporter.WpViewport
+	pendingW, pendingH int32
+	pendingSet         bool
+	pendingSrc         [4]server.Fixed
+	pendingCrop        bool
+}
+
+type viewportState struct {
+	destW, destH int32
+	dest         bool
+	src          [4]server.Fixed
+	crop         bool
 }
 
 func (*viewport) Destroy(*viewporter.WpViewport) {}
@@ -202,14 +209,10 @@ func (v *viewport) SetDestination(r *viewporter.WpViewport, w, h int32) {
 	}
 	v.pendingW, v.pendingH, v.pendingSet = w, h, w != -1
 }
-func (v *viewport) commit() {
-	v.destW, v.destH, v.dest = v.pendingW, v.pendingH, v.pendingSet
-	v.src, v.crop = v.pendingSrc, v.pendingCrop
-}
 
 // source returns buffer-pixel crop coordinates, precomputed at commit.
 func (s *surface) source(bw, bh int) ([4]float32, bool) {
-	if s.committedViewport == nil || !s.committedViewport.crop {
+	if !s.committedViewport.crop {
 		return [4]float32{}, false
 	}
 	v := s.committedViewport.src
@@ -222,8 +225,8 @@ func (s *surface) source(bw, bh int) ([4]float32, bool) {
 }
 
 func (s *surface) validateViewport(bw, bh int) bool {
-	v := s.committedViewport
-	if v == nil || !v.crop {
+	v := &s.committedViewport
+	if !v.crop {
 		return true
 	}
 	if !v.dest && (v.src[2]%256 != 0 || v.src[3]%256 != 0) {
@@ -275,13 +278,11 @@ func (s *surface) viewportError(code viewporter.WpViewportError, message string)
 // logicalSize is the surface size in logical pixels: the viewport
 // destination, else the buffer divided by its integer buffer scale.
 func (s *surface) logicalSize(bw, bh int) (int, int) {
-	if s.committedViewport != nil {
-		if s.committedViewport.dest {
-			return int(s.committedViewport.destW), int(s.committedViewport.destH)
-		}
-		if s.committedViewport.crop {
-			return int(s.committedViewport.src[2]) / 256, int(s.committedViewport.src[3]) / 256
-		}
+	if s.committedViewport.dest {
+		return int(s.committedViewport.destW), int(s.committedViewport.destH)
+	}
+	if s.committedViewport.crop {
+		return int(s.committedViewport.src[2]) / 256, int(s.committedViewport.src[3]) / 256
 	}
 	scale := max(s.bufferScale, 1)
 	return bw / scale, bh / scale

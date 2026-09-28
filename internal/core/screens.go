@@ -201,7 +201,6 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 		c.focusScreen = slices.Index(c.screens, s)
 	}
 	c.named()
-	c.settleGuests()
 }
 
 // removeScreen moves every workspace of an unplugged output to the focused

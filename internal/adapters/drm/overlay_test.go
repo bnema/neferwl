@@ -105,6 +105,9 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 	if o.testOverlay(70, ov) {
 		t.Fatal("refusal taken")
 	}
+	if o.overlayReason != "overlay_refused" {
+		t.Fatalf("refusal reason %q", o.overlayReason)
+	}
 	if ov2, rest := o.overlayFrame(s, c); ov2.fb != 0 || len(rest.Windows) != 2 {
 		t.Fatal("refused buffer tried again")
 	}
@@ -141,7 +144,7 @@ func TestOverlayCursorConflictDropsOverlay(t *testing.T) {
 	if err := o.commitWith(70, nil, false, false, pendingFrame{}, ov); err != nil {
 		t.Fatal(err)
 	}
-	o.pending = false
+	o.frame.endPending()
 	o.cursor.image = true
 	o.cursor.Move(150, 50)
 	if err := o.commitState(false); err != errOverlayDropped {

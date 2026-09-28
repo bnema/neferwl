@@ -43,7 +43,7 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	t.Helper()
 	o, k, commits, commitMu := testOutputMu(t, append([]error{nil, nil}, errs...)...)
 	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
-	o.stuckAfter = 200 * time.Millisecond
+	o.frame.stuckAfter = 200 * time.Millisecond
 	o.flipped = make(chan flipEvent) // no event ever
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -214,14 +214,14 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 // retried, not taken as the same run lasting past the limit.
 func TestLaterBusyStartsNewRun(t *testing.T) {
 	o, _, _ := testOutput(t, unix.EBUSY, unix.EBUSY)
-	o.stuckAfter = 100 * time.Millisecond
+	o.frame.stuckAfter = 100 * time.Millisecond
 	enabled := true
 	o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
 	time.Sleep(busyRetry)
 	if o.expire() {
 		t.Fatal("first EBUSY retry modesets")
 	}
-	time.Sleep(2 * o.stuckAfter)
+	time.Sleep(2 * o.frame.stuckAfter)
 	o.commitFailed(o.commitFrame(70, nil, false, false, pendingFrame{}), &enabled)
 	time.Sleep(busyRetry)
 	if o.expire() {

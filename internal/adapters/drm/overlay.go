@@ -3,7 +3,6 @@ package drm
 import (
 	"errors"
 	"os"
-	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -107,49 +106,6 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	return *pick, c, ""
 }
 
-// overlayFrame decides the overlay of a frame: the window, and the scene
-// the renderer composes (the window left out). A zero overlayWin means
-// none; the reason is logged on change.
-func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
-	reason := "no_plane"
-	var ov overlayWin
-	if o.hdrOn {
-		reason = "hdr"
-	} else if o.overlay != nil && o.scanout {
-		var w ports.SceneWindow
-		var c ports.SurfaceContent
-		w, c, reason = overlayCandidate(s, surfaces)
-		if reason == "" {
-			var fb uint32
-			if fb, reason = o.overlayFB(c.DMABuf, time.Now()); reason == "" {
-				scale := s.Scale
-				if scale <= 0 {
-					scale = 1
-				}
-				ov = overlayWin{id: w.ID, fb: fb, buf: c.DMABuf.ID, w: c.Width, h: c.Height,
-					rect:    ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
-					acquire: dupFence(c.Acquire)}
-			}
-		}
-	}
-	if reason != o.overlayReason {
-		o.log.Info().Str("component", "render").Bool("overlay", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("overlay")
-		o.overlayReason = reason
-	}
-	if ov.fb == 0 {
-		return overlayWin{}, s
-	}
-	// The composed frame leaves the window out: the overlay shows it.
-	rest := s
-	rest.Windows = make([]ports.SceneWindow, 0, len(s.Windows))
-	for _, w := range s.Windows {
-		if w.ID != ov.id {
-			rest.Windows = append(rest.Windows, w)
-		}
-	}
-	return ov, rest
-}
-
 // overlayProps puts ov on the overlay plane, or turns it off.
 func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 	p := o.overlay
@@ -201,6 +157,7 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	if cfb := o.clientFBs[ov.buf]; cfb != nil && refused(err) {
 		cfb.overlayFailed = "overlay_refused"
 	}
+	o.setOverlayReason("overlay_refused")
 	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
 }
@@ -219,7 +176,6 @@ func (o *Output) overlayConflict(err error, buf uint64) bool {
 	if cfb := o.clientFBs[buf]; cfb != nil {
 		cfb.overlayFailed = "cursor_conflict"
 	}
-	o.log.Info().Str("component", "render").Bool("overlay", false).Str("reason", "cursor_conflict").Str("connector", o.conn.name).Msg("overlay")
-	o.overlayReason = "cursor_conflict"
+	o.setOverlayReason("cursor_conflict")
 	return true
 }
