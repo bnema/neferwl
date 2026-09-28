@@ -88,7 +88,8 @@ type Config struct {
 		LayoutRules
 		Outputs []OutputLayout
 	}
-	Focus struct {
+	Touchpad TouchpadConfig
+	Focus    struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
@@ -108,6 +109,12 @@ type Config struct {
 		Level string
 		Debug []string
 	}
+}
+
+// TouchpadConfig configures touchpads. NaturalScroll moves the content with
+// the fingers, for two-finger scroll and three-finger swipes.
+type TouchpadConfig struct {
+	NaturalScroll bool
 }
 
 // WorkspaceConfig declares a bind-only named workspace, outside the numbered list.

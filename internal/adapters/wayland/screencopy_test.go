@@ -7,6 +7,7 @@ import (
 	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
 	"image"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -357,6 +358,30 @@ func deliverCapture(t *testing.T, s *Server, replies chan<- ports.CaptureDone, d
 	}
 }
 
+// applyOutputs sends a layout and waits until the display goroutine has
+// applied it, so a following Roundtrip sees its events. A no-op Do alone can
+// run before the command goroutine has even received the command.
+func applyOutputs(t *testing.T, s *Server, commands chan<- ports.ClientCommand, c ports.SetOutputs) {
+	t.Helper()
+	commands <- c
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		applied := false
+		if !s.display.Do(func() {
+			applied = len(s.outputs) == len(c.Outputs) && slices.Equal(s.outputPlaces, c.Outputs)
+		}) {
+			t.Fatal("display stopped")
+		}
+		if applied {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("outputs not applied")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // captureDetails records protocol payloads, not just the event opcodes.
 type captureDetails struct {
 	wlturbo.BaseProxy
@@ -490,10 +515,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	resized := initial
 	resized.Info.Width = 5
 	resized.Width = 5
-	commands <- ports.SetOutputs{Outputs: ports.Layout{resized}}
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
+	applyOutputs(t, s, commands, ports.SetOutputs{Outputs: ports.Layout{resized}})
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -589,25 +611,12 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	for range 4 { // initial constraint batch
 		<-p.events
 	}
-	commands <- ports.SetOutputs{}
-	// The command goroutine applies SetOutputs on its own schedule: round
-	// trip until the stopped event arrives.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case got := <-p.events:
-			if !reflect.DeepEqual(got, []uint32{5}) {
-				t.Fatalf("stopped: %v", got)
-			}
-			return
-		case <-time.After(10 * time.Millisecond):
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("session not stopped")
-		}
+	applyOutputs(t, s, commands, ports.SetOutputs{})
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-p.events; !reflect.DeepEqual(got, []uint32{5}) {
+		t.Fatalf("stopped: %v", got)
 	}
 }
 
@@ -658,10 +667,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 				t.Fatal(got)
 			}
 			if !destroy {
-				commands <- ports.SetOutputs{}
-				if !s.display.Do(func() {}) {
-					t.Fatal("display stopped")
-				}
+				applyOutputs(t, s, commands, ports.SetOutputs{})
 				shm, buf, fd := captureSmallBuffer(t, c)
 				defer unix.Close(fd)
 				_ = shm

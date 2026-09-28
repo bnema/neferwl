@@ -270,13 +270,25 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	out := make(chan ports.ConfigChanged, 1)
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
-	go relayConfig(ctx, cur, in, out, keymaps, commands, logging.For(ctx, "config"))
+	touchpads := make(chan ports.TouchpadConfig, 1)
+	go relayConfig(ctx, cur, in, out, keymaps, touchpads, commands, logging.For(ctx, "config"))
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"
 	in <- ports.ConfigChanged{Config: next}
-	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 {
+	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 || len(touchpads) != 0 {
 		t.Fatalf("non-keyboard change rebuilt keymap: %+v", got)
+	}
+
+	// Touchpad changes reach input; the newest replaces one not yet taken.
+	next.Touchpad.NaturalScroll = true
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	next.Touchpad.NaturalScroll = false
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	if tp := <-touchpads; tp.NaturalScroll || len(touchpads) != 0 {
+		t.Fatalf("touchpad: %+v", tp)
 	}
 
 	next.Keyboard.Layout, next.Keyboard.RepeatRate = "fr", 40

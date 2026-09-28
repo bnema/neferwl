@@ -3,6 +3,8 @@ package core
 import (
 	"strconv"
 	"strings"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type Action string
@@ -41,6 +43,24 @@ const (
 	ActionConsumeOrExpelLeft  Action = "consume-or-expel-window-left"
 	ActionConsumeOrExpelRight Action = "consume-or-expel-window-right"
 )
+
+// swipeAction maps a three-finger swipe to its action. Natural scroll moves
+// the content with the fingers, so it shows what lies the other way.
+func swipeAction(d ports.SwipeDir, natural bool) Action {
+	actions := [...]Action{
+		ports.SwipeUp:    ActionFocusWorkspaceUp,
+		ports.SwipeDown:  ActionFocusWorkspaceDown,
+		ports.SwipeLeft:  ActionFocusColumnLeft,
+		ports.SwipeRight: ActionFocusColumnRight,
+	}
+	if int(d) >= len(actions) {
+		return ""
+	}
+	if natural {
+		d ^= 1 // up<->down, left<->right
+	}
+	return actions[d]
+}
 
 // WorkspaceOp is what a numbered workspace action does.
 type WorkspaceOp int

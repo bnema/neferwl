@@ -28,6 +28,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
+| `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
@@ -42,6 +43,19 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `render.tearing` / `render.vrr` | `on` / `on` | Tearing: games in direct scanout. VRR: any fullscreen window covering the output |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
+
+## Touchpad
+
+A three-finger swipe runs one action when the fingers lift:
+
+| Swipe | `natural-scroll = off` | `natural-scroll = on` |
+|---|---|---|
+| Up | `focus-workspace-up` | `focus-workspace-down` |
+| Down | `focus-workspace-down` | `focus-workspace-up` |
+| Left | `focus-column-left` | `focus-column-right` |
+| Right | `focus-column-right` | `focus-column-left` |
+
+Column swipes move the focus with either overflow: `scroll` brings the column into view, `fixed` only moves the focus.
 
 ## HDR
 
