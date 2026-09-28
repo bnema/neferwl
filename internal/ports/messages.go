@@ -722,7 +722,11 @@ type Scene struct {
 	Off        bool
 	Background string
 	Border     Border
-	Windows    []SceneWindow
+	// Dim darkens the background, bottom layers and tiles (tile lines
+	// included) with black at this opacity, 0 to 1, under the first
+	// visible float. 0 draws nothing.
+	Dim     float64
+	Windows []SceneWindow
 	// Separators are the lines between windows, drawn in slice order with
 	// the Border colors: tile lines over the tiles, under the floats; a
 	// float's border right after the float.
