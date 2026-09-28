@@ -958,7 +958,7 @@ func (c *Core) Run(ctx context.Context) error {
 					// A click focuses the window and its output.
 					s, w := c.screenOf(id)
 					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
-						w.FocusID(id)
+						w.Click(id)
 						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
 							return nil

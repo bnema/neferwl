@@ -135,6 +135,15 @@ func (w *Workspace) ToggleFloatingVisible() {
 	w.stashHidden, w.stashFocus = true, false
 }
 
+// Click focuses the clicked window. A click on a tile behind the shown
+// stash hides the stash, as a click outside a menu closes it.
+func (w *Workspace) Click(id WindowID) {
+	if !w.stashHidden && len(w.Stash) > 0 && !w.isFloat(id) && w.cover() == 0 {
+		w.stashHidden = true
+	}
+	w.FocusID(id)
+}
+
 // stashLayout places the stash: the selected window centred, its
 // neighbors gap% of the usable width away, showing what the margins
 // leave of them, the others hidden. cover is the covering fullscreen
