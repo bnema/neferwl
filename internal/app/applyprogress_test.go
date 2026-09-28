@@ -15,7 +15,7 @@ func TestApplyProgress(t *testing.T) {
 		{"success", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true}, nil)
 			p.scanned(map[string]<-chan error{"A": a})
-			return p.readyEvent("A", a, nil)
+			return p.readyEvent("A", a, a, nil)
 		}, false},
 		{"scan error with previously ready output", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.completed = map[<-chan error]bool{a: true}
@@ -29,7 +29,7 @@ func TestApplyProgress(t *testing.T) {
 		{"ready error rollback", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true}, nil)
 			p.scanned(map[string]<-chan error{"A": a})
-			return p.readyEvent("A", a, boom)
+			return p.readyEvent("A", a, a, boom)
 		}, true},
 		{"timeout", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true}, nil)
@@ -48,15 +48,24 @@ func TestApplyProgress(t *testing.T) {
 		{"hotplug during apply", func(p *applyProgress, a, b <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true, "B": true}, nil)
 			p.scanned(map[string]<-chan error{"A": a, "B": b})
-			p.readyEvent("A", a, nil)
-			return p.readyEvent("B", b, nil)
+			p.readyEvent("A", a, a, nil)
+			return p.readyEvent("B", b, b, nil)
 		}, false},
 		{"stale timeout", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, map[string]bool{"A": true}, nil)
 			p.start(2, map[string]bool{"A": true}, nil)
 			p.scanned(map[string]<-chan error{"A": a})
 			p.timeout(1)
-			return p.readyEvent("A", a, nil)
+			return p.readyEvent("A", a, a, nil)
+		}, false},
+		{"stopped instance error ignored", func(p *applyProgress, a, b <-chan error) applyDecision {
+			p.start(1, map[string]bool{"A": true}, map[string]bool{"A": true})
+			p.stopped("A", a, true, nil)
+			p.scanned(map[string]<-chan error{"A": b})
+			if d := p.readyEvent("A", a, b, boom); d.reply {
+				t.Fatalf("stopped instance failed the apply: %+v", d)
+			}
+			return p.readyEvent("A", b, b, nil)
 		}, false},
 		{"disabled head stop", func(p *applyProgress, a, _ <-chan error) applyDecision {
 			p.start(1, nil, map[string]bool{"A": false})

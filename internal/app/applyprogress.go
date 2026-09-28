@@ -48,7 +48,12 @@ func (p *applyProgress) started(name string, instance <-chan error) {
 	}
 }
 
-func (p *applyProgress) readyEvent(name string, instance <-chan error, err error) applyDecision {
+// readyEvent records a readiness result. current is the connector's running
+// instance: results of a stopped instance are ignored.
+func (p *applyProgress) readyEvent(name string, instance, current <-chan error, err error) applyDecision {
+	if instance != current {
+		return applyDecision{}
+	}
 	if p.completed == nil {
 		p.completed = map[<-chan error]bool{}
 	}

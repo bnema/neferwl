@@ -361,7 +361,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		case heads <- headsNext:
 			apply.headsSent()
 		case result := <-ready:
-			complete(progress.readyEvent(result.name, result.source, result.err))
+			complete(progress.readyEvent(result.name, result.source, readySources[result.name], result.err))
 		case id := <-deadline:
 			complete(progress.timeout(id))
 		case s := <-ch.scenes:
