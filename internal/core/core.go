@@ -127,6 +127,9 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
+	// scrollX and scrollY add up two-finger scrolling in the overview
+	// until it makes a step (overviewScroll).
+	scrollX, scrollY float64
 }
 
 func keyName(s string) string {
@@ -1082,6 +1085,18 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.PointerAxis:
+				// In the overview, scrolling moves the selection.
+				if c.cur().mon.overview && !c.overviewKeyboardTaken() {
+					if c.overviewScroll(v) {
+						if c.workspaceVisible(ctx, true) != nil {
+							return nil
+						}
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					}
+					continue
+				}
 				// Scroll goes to the window under the pointer, which has the
 				// pointer focus even mid-drag.
 				if c.pointer != 0 {

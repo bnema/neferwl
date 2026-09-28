@@ -390,6 +390,62 @@ func (m *Monitor) overviewSwipe(a Action) {
 	}
 }
 
+// overviewScrollStep is the two-finger scroll distance, in libinput's
+// pointer units, that moves the selection one column or workspace.
+const overviewScrollStep = 60
+
+// overviewScroll moves the overview selection with a scroll frame: two
+// fingers step once per overviewScrollStep on the axis they move most
+// along, a wheel once per notch. Scrolling down or right selects the
+// workspace below or the column on the right; touchpad.natural-scroll
+// flips both, as libinput reports. changed is false while the distance
+// adds up.
+func (c *Core) overviewScroll(a ports.PointerAxis) (changed bool) {
+	mon := c.cur().mon
+	if a.Source == ports.AxisWheel {
+		if v := a.Vertical.V120; a.Vertical.Set && v != 0 {
+			mon.OverviewMove(0, sign(float64(v)))
+			return true
+		}
+		if v := a.Horizontal.V120; a.Horizontal.Set && v != 0 {
+			mon.OverviewMove(sign(float64(v)), 0)
+			return true
+		}
+		return false
+	}
+	if a.Vertical.Stop || a.Horizontal.Stop {
+		// Fingers lifted: the next scroll starts from zero.
+		c.scrollX, c.scrollY = 0, 0
+		return false
+	}
+	if a.Vertical.Set {
+		c.scrollY += a.Vertical.Value
+	}
+	if a.Horizontal.Set {
+		c.scrollX += a.Horizontal.Value
+	}
+	switch {
+	case math.Abs(c.scrollY) >= overviewScrollStep && math.Abs(c.scrollY) >= math.Abs(c.scrollX):
+		mon.OverviewMove(0, sign(c.scrollY))
+		c.scrollY -= float64(sign(c.scrollY)) * overviewScrollStep
+		c.scrollX = 0
+	case math.Abs(c.scrollX) >= overviewScrollStep:
+		mon.OverviewMove(sign(c.scrollX), 0)
+		c.scrollX -= float64(sign(c.scrollX)) * overviewScrollStep
+		c.scrollY = 0
+	default:
+		return false
+	}
+	return true
+}
+
+func sign(v float64) int {
+	if v < 0 {
+		return -1
+	}
+	return 1
+}
+
 // overviewKeyboardTaken reports whether a layer surface (a launcher) or a
 // grabbing menu has the keyboard: it gets the keys, not the overview.
 func (c *Core) overviewKeyboardTaken() bool {
