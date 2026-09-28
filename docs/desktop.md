@@ -47,6 +47,16 @@ cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
 
 Drag and drop is not supported yet.
 
+## Input methods
+
+NeferWL supports `zwp_text_input_v3` for apps and `zwp_input_method_v2` for one input method, such as [fcitx5](https://fcitx-im.org) or IBus. Start the input method at session start:
+
+```text
+startup = fcitx5 -d
+```
+
+Text input follows keyboard focus. The input method can grab the keyboard to compose text from keys (CJK, dead keys); the focused app then receives the composed text. A second input method gets `unavailable` until the first one exits. Candidate popups (`zwp_input_popup_surface_v2`) receive the text cursor position but are not drawn yet.
+
 ## X11 apps
 
 X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, found in `PATH`. NeferWL opens an X11 display, sets `DISPLAY` for the programs it starts, and starts xwayland-satellite when the first X11 app connects. If xwayland-satellite exits, the next X11 app starts it again.
