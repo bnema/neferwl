@@ -46,9 +46,13 @@ func TestRendererRender(t *testing.T) {
 	}
 	defer r.Close()
 	bg := color.RGBA{16, 32, 48, 255}
+	wc, c2, fc := color.RGBA{200, 10, 10, 255}, color.RGBA{10, 200, 10, 255}, color.RGBA{10, 10, 200, 255}
+	contents := map[ports.WindowID]ports.SurfaceContent{
+		1: solidContent(t, 64, 48, wc), 2: solidContent(t, 64, 48, c2), 3: solidContent(t, 64, 48, fc),
+	}
 	check := func(s ports.Scene, expected map[image.Point]color.RGBA) {
 		t.Helper()
-		if err := render(r, s, nil); err != nil {
+		if err := render(r, s, contents); err != nil {
 			t.Fatal(err)
 		}
 		for p, want := range expected {
@@ -60,8 +64,6 @@ func TestRendererRender(t *testing.T) {
 	// The client sits inside its inset sides; separators are drawn over
 	// the windows in order, with the border colors.
 	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}, Inset: ports.SideAll}
-	c := windowColor(1)
-	wc := color.RGBA{c[0], c[1], c[2], 255}
 	gray, lit := color.RGBA{0x31, 0x32, 0x44, 255}, color.RGBA{0xb4, 0xbe, 0xfe, 255}
 	s := ports.Scene{Background: "#102030", Border: ports.Border{Width: 2, Active: "#b4befe", Inactive: "#313244"}, Windows: []ports.SceneWindow{win}}
 	check(s, map[image.Point]color.RGBA{{0, 0}: bg, {9, 9}: bg, {10, 10}: wc, {16, 16}: wc, {21, 21}: wc, {22, 22}: bg, {24, 24}: bg})
@@ -78,16 +80,14 @@ func TestRendererRender(t *testing.T) {
 		{Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 2}, Active: true},
 		{Rect: ports.Rect{X: 12, Y: 4, W: 8, H: 1}, Active: true, Window: 3},
 	}
-	fc := windowColor(3)
-	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {14, 9}: {fc[0], fc[1], fc[2], 255}, {14, 4}: lit})
+	check(s, map[image.Point]color.RGBA{{9, 9}: lit, {14, 9}: fc, {14, 4}: lit})
 	s.Windows = []ports.SceneWindow{win}
 	s.Separators, s.Border.Inactive = nil, "#313244"
 	s.Windows[0].Fullscreen = true
 	check(s, map[image.Point]color.RGBA{{9, 9}: wc})
 	s.Windows[0].Fullscreen = false
 	s.Windows[0] = ports.SceneWindow{ID: 2, Rect: ports.Rect{X: -10, Y: 0, W: 20, H: 10}}
-	c = windowColor(2)
-	check(s, map[image.Point]color.RGBA{{5, 5}: {c[0], c[1], c[2], 255}, {15, 5}: bg})
+	check(s, map[image.Point]color.RGBA{{5, 5}: c2, {15, 5}: bg})
 	s.Windows[0].Hidden = true
 	check(s, map[image.Point]color.RGBA{{5, 5}: bg})
 }
@@ -130,9 +130,9 @@ func TestRendererContents(t *testing.T) {
 	copy(padded[8:12], []byte{7, 11, 23, 255})
 	render(shmContent(t, 4, 4, 20, padded))
 	check(0, 0, color.RGBA{23, 11, 7, 255})
+	// A window without a buffer yet shows the background, not a color.
 	render(nil)
-	c := windowColor(1)
-	check(0, 0, color.RGBA{c[0], c[1], c[2], 255})
+	check(0, 0, bg)
 }
 
 func TestRendererUploadOrderAndOpaque(t *testing.T) {
@@ -145,11 +145,16 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		{ID: 1, Rect: ports.Rect{X: 2, Y: 2, W: 16, H: 16}},
 		{ID: 2, Rect: ports.Rect{X: 8, Y: 8, W: 16, H: 16}},
 	}}
-	if err := render(r, scene, nil); err != nil {
+	top := color.RGBA{10, 200, 10, 255}
+	upper := map[ports.WindowID]ports.SurfaceContent{1: solidContent(t, 16, 16, color.RGBA{200, 10, 10, 255}), 2: solidContent(t, 16, 16, top)}
+	for id, c := range upper {
+		c.Version = 1 // the opaque buffer below is another commit
+		upper[id] = c
+	}
+	if err := render(r, scene, upper); err != nil {
 		t.Fatal(err)
 	}
-	c := windowColor(2)
-	if got, want := r.Pixels().RGBAAt(10, 10), (color.RGBA{c[0], c[1], c[2], 255}); got != want {
+	if got, want := r.Pixels().RGBAAt(10, 10), top; got != want {
 		t.Errorf("overlap = %v, want %v", got, want)
 	}
 	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
@@ -189,8 +194,7 @@ func TestRendererLayers(t *testing.T) {
 	layer.ID, layer.Opaque = 2, true
 	contents := map[ports.WindowID]ports.SurfaceContent{2: *layer}
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}, Layers: []ports.SceneLayer{{ID: 2, Layer: ports.LayerTop, Rect: ports.Rect{W: 64, H: 8}}}}
-	wc := windowColor(1)
-	window := color.RGBA{wc[0], wc[1], wc[2], 255}
+	window := color.RGBA{16, 32, 48, 255} // no buffer yet: background
 	check := func(want color.RGBA) {
 		t.Helper()
 		if err := render(r, scene, contents); err != nil {
@@ -368,11 +372,10 @@ func TestRendererTallFill(t *testing.T) {
 	}
 	defer r.Close()
 	scene := ports.Scene{Background: "#102030", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 1, Y: 0, W: 6, H: h}}}}
-	if err := render(r, scene, nil); err != nil {
+	wc := color.RGBA{200, 10, 10, 255}
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: solidContent(t, 6, h, wc)}); err != nil {
 		t.Fatal(err)
 	}
-	c := windowColor(1)
-	wc := color.RGBA{c[0], c[1], c[2], 255}
 	bg := color.RGBA{16, 32, 48, 255}
 	px := r.Pixels()
 	for y := 0; y < h; y++ {
