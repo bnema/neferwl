@@ -336,4 +336,13 @@ func TestActivateHiddenFloat(t *testing.T) {
 	if id, _ := w.Focused(); id != 2 || w.floatsHidden || w.fullscreen != 0 {
 		t.Fatalf("focused %d hidden %v fullscreen %d", id, w.floatsHidden, w.fullscreen)
 	}
+	// The float's own fullscreen, asked while hidden, comes back with it.
+	w.FocusID(2)
+	w.ToggleFloatingVisible()
+	w.SetFullscreen(2, true)
+	w.SetFullscreen(1, true)
+	w.Activate(2)
+	if id, _ := w.Focused(); id != 2 || w.floatsHidden || w.fullscreen != 2 {
+		t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.floatsHidden, w.fullscreen)
+	}
 }
