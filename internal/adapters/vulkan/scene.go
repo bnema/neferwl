@@ -216,6 +216,9 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 	if content.Source[2] > 0 {
 		sourceW, sourceH = int(content.Source[2]), int(content.Source[3])
 	}
+	if content.Transform.Rotated() {
+		sourceW, sourceH = sourceH, sourceW
+	}
 	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
 		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}
@@ -256,7 +259,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			// The window shows its background until a buffer imports.
 			return
 		}
-		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeImage, content.Opaque)
+		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
 		r.setContentColor(&dr, content.Color)
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
@@ -292,7 +295,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	if err != nil {
 		return
 	}
-	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, modeBuffer, content.Opaque)
+	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content.Color)
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}

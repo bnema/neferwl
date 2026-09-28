@@ -97,7 +97,7 @@ func (d *damageRegion) window(id ports.WindowID, c ports.SurfaceContent, rect im
 
 // content maps a root surface's buffer damage onto full (where its w×h
 // buffer is drawn), clipped to dst. Scaled buffers filter linearly: one
-// more pixel around each rect.
+// more pixel around each rect. A transformed buffer redraws all of dst.
 func (d *damageRegion) content(id ports.WindowID, c *ports.SurfaceContent, full, dst image.Rectangle) {
 	if d.held == nil {
 		return
@@ -109,6 +109,10 @@ func (d *damageRegion) content(id ports.WindowID, c *ports.SurfaceContent, full,
 	}
 	rects, known := c.DamageSince(held)
 	if !known || c.Width <= 0 || c.Height <= 0 {
+		return
+	}
+	if c.Transform != 0 {
+		d.add(dst)
 		return
 	}
 	// Linear filtering spreads a texel over half a buffer pixel around

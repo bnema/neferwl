@@ -210,21 +210,40 @@ func (v *viewport) SetDestination(r *viewporter.WpViewport, w, h int32) {
 	v.pendingW, v.pendingH, v.pendingSet = w, h, w != -1
 }
 
-// source returns buffer-pixel crop coordinates, precomputed at commit.
+// source returns the crop in untransformed buffer pixels, precomputed at
+// commit. The viewport source is in transformed, scaled surface
+// coordinates: its corners map back through the buffer transform.
 func (s *surface) source(bw, bh int) ([4]float32, bool) {
 	if !s.committedViewport.crop {
 		return [4]float32{}, false
 	}
 	v := s.committedViewport.src
-	scale := float32(max(s.bufferScale, 1)) / 256
-	src := [4]float32{float32(v[0]) * scale, float32(v[1]) * scale, float32(v[2]) * scale, float32(v[3]) * scale}
+	scale := float64(max(s.bufferScale, 1))
+	// Transformed buffer size, in the surface's axes.
+	tw, th := float64(bw), float64(bh)
+	if s.transform.Rotated() {
+		tw, th = th, tw
+	}
+	x0, y0 := float64(v[0])*scale/256, float64(v[1])*scale/256
+	x1, y1 := x0+float64(v[2])*scale/256, y0+float64(v[3])*scale/256
 	// validateViewport tolerates a rounding overshoot: sample inside the buffer.
-	src[2] = min(src[2], float32(bw)-src[0])
-	src[3] = min(src[3], float32(bh)-src[1])
-	return src, true
+	x1, y1 = min(x1, tw), min(y1, th)
+	ax, ay := s.transform.ToBuffer(x0, y0, tw, th)
+	bx, by := s.transform.ToBuffer(x1, y1, tw, th)
+	return [4]float32{float32(min(ax, bx)), float32(min(ay, by)), float32(math.Abs(bx - ax)), float32(math.Abs(by - ay))}, true
+}
+
+// transformedSize is the buffer size in the surface's axes: width and height
+// swap for a 90° or 270° buffer transform.
+func (s *surface) transformedSize(bw, bh int) (int, int) {
+	if s.transform.Rotated() {
+		return bh, bw
+	}
+	return bw, bh
 }
 
 func (s *surface) validateViewport(bw, bh int) bool {
+	bw, bh = s.transformedSize(bw, bh)
 	v := &s.committedViewport
 	if !v.crop {
 		return true
@@ -276,8 +295,9 @@ func (s *surface) viewportError(code viewporter.WpViewportError, message string)
 }
 
 // logicalSize is the surface size in logical pixels: the viewport
-// destination, else the buffer divided by its integer buffer scale.
+// destination, else the transformed buffer divided by its buffer scale.
 func (s *surface) logicalSize(bw, bh int) (int, int) {
+	bw, bh = s.transformedSize(bw, bh)
 	if s.committedViewport.dest {
 		return int(s.committedViewport.destW), int(s.committedViewport.destH)
 	}
