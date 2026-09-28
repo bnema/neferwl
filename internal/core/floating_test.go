@@ -76,6 +76,47 @@ func TestToggleFloatingVisible(t *testing.T) {
 	}
 }
 
+// A lone maximized column comes back maximized.
+func TestToggleWindowFloatingKeepsFullWidth(t *testing.T) {
+	w := workspace()
+	w.Overflow = OverflowFixed
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.Apply(ActionMaximizeColumn)
+	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowFloating)
+	if id, _ := w.Focused(); id != 2 || !w.Columns[w.Focus].FullWidth {
+		t.Fatalf("focused %d, column %+v", id, w.Columns[w.Focus])
+	}
+}
+
+// Hiding floats keeps the columns' focus, and a hidden fullscreen float
+// no longer hides the columns.
+func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
+	w := workspace()
+	w.Overflow = OverflowFixed
+	w.AddWindow(1)
+	w.AddFloating(2, 20, 10)
+	w.FocusID(1)
+	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleFloatingVisible)
+	if id, _ := w.Focused(); id != 1 {
+		t.Fatalf("column focus lost: %d", id)
+	}
+	w.FocusID(2)
+	w.SetFullscreen(2, true)
+	w.Apply(ActionToggleFloatingVisible)
+	for _, p := range w.Layout() {
+		if p.ID == 1 && (p.Hidden || p.Rect.W == 0) {
+			t.Fatalf("column hidden under hidden fullscreen float: %+v", p)
+		}
+	}
+	w.Apply(ActionToggleFloatingVisible)
+	if id, _ := w.Focused(); id != 2 || w.fullscreen != 2 {
+		t.Fatalf("restored focus %d fullscreen %d", id, w.fullscreen)
+	}
+}
+
 func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"

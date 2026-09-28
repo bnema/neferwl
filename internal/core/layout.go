@@ -139,6 +139,10 @@ type Workspace struct {
 	Floats       []Float
 	floatFocus   bool
 	floatsHidden bool
+	// hiddenFocus and hiddenFullscreen hold the float focus and a float's
+	// fullscreen while the floats are hidden, restored when shown.
+	hiddenFocus      bool
+	hiddenFullscreen WindowID
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
 	// its position there, where it returns.
@@ -165,7 +169,9 @@ type origPlace struct {
 	stacked  []WindowID
 	width    Width
 	expanded bool
-	float    *Float
+	// fullWidth is the column's maximize-column state.
+	fullWidth bool
+	float     *Float
 }
 
 // Float is a floating window and its client size, logical.
@@ -199,9 +205,12 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 	if id == 0 || w.has(id) {
 		return
 	}
+	if w.floatsHidden {
+		// A new float must be seen: show the hidden ones with it.
+		w.ToggleFloatingVisible()
+	}
 	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height})
 	w.floatFocus = true
-	w.floatsHidden = false
 }
 
 // ResizeFloating records the size a floating window draws.
@@ -323,9 +332,11 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 		if w.fullscreen == id {
 			w.fullscreen = 0
 		}
+		if w.hiddenFullscreen == id {
+			w.hiddenFullscreen = 0
+		}
 		if len(w.Floats) == 0 {
-			w.floatFocus = false
-			w.floatsHidden = false
+			w.floatFocus, w.floatsHidden, w.hiddenFocus = false, false, false
 		}
 		return
 	}
@@ -611,6 +622,15 @@ func (w *Workspace) Activate(id WindowID) {
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 	if w.floatIndex(id) >= 0 {
+		if w.floatsHidden {
+			// Applied when the floats are shown again.
+			if on {
+				w.hiddenFullscreen = id
+			} else if w.hiddenFullscreen == id {
+				w.hiddenFullscreen = 0
+			}
+			return
+		}
 		if on {
 			w.fullscreen = id
 		} else if w.fullscreen == id {
@@ -969,7 +989,7 @@ func (w *Workspace) ToggleWindowFloating() {
 				w.Focus = at
 				w.scroll()
 			} else {
-				w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot})
+				w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, FullWidth: back.fullWidth})
 			}
 		}
 		w.floatFocus = false
@@ -978,7 +998,7 @@ func (w *Workspace) ToggleWindowFloating() {
 	col := w.Focus
 	c := w.Columns[col]
 	row := c.Focus
-	back := &origPlace{col: col, row: row, slot: c.Slot, width: c.Width}
+	back := &origPlace{col: col, row: row, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && len(c.Windows) == 1}
 	for _, v := range c.Windows {
 		if v != id {
 			back.stacked = append(back.stacked, v)
@@ -995,5 +1015,18 @@ func (w *Workspace) ToggleFloatingVisible() {
 		return
 	}
 	w.floatsHidden = !w.floatsHidden
-	w.floatFocus = !w.floatsHidden
+	if w.floatsHidden {
+		// A hidden fullscreen float would still hide the columns.
+		w.hiddenFocus, w.floatFocus = w.floatFocus, false
+		w.hiddenFullscreen = 0
+		if w.floatIndex(w.fullscreen) >= 0 {
+			w.hiddenFullscreen, w.fullscreen = w.fullscreen, 0
+		}
+		return
+	}
+	w.floatFocus = w.hiddenFocus
+	if w.fullscreen == 0 && w.floatIndex(w.hiddenFullscreen) >= 0 {
+		w.fullscreen = w.hiddenFullscreen
+	}
+	w.hiddenFocus, w.hiddenFullscreen = false, 0
 }
