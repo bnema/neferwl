@@ -1007,6 +1007,9 @@ type SceneWindow struct {
 	Inset Sides
 	// Floating windows are drawn over the tiles and their lines.
 	Floating bool
+	// Dim darkens the window, border included, with black at this
+	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
+	Dim float64
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and
@@ -1047,4 +1050,11 @@ type WindowState struct {
 	Visible bool
 	// IdleInhibit is set while the window keeps the session from idling.
 	IdleInhibit bool `json:",omitempty"`
+	// Floating is set for native floats and stashed windows.
+	Floating bool
+	// StashIndex is the 1-based place of a stashed window in its stash of
+	// StashCount windows; both are 0 outside the stash.
+	StashIndex, StashCount int
+	// Hidden is set for a stashed window while its stash is hidden.
+	Hidden bool
 }

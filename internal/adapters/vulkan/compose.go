@@ -303,8 +303,21 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 // leaves the destination at (1-alpha) of its previous value.
 func (r *Renderer) dimDraw(rect image.Rectangle, alpha float64) draw {
 	dr := r.fillDraw(rect, [3]uint8{})
-	dr.pc.color[3] = float32(max(0, min(1, alpha)))
+	dr.pc.color[3] = float32(dimAlpha(alpha, r.hdrNits > 0))
 	return dr
+}
+
+// dimAlpha is the blend alpha of a dim. SDR blends sRGB-encoded values:
+// white becomes (1-alpha) encoded. HDR blends linear light, where the same
+// alpha looks far weaker; it gets the alpha that turns reference white into
+// the linear light of that SDR result. Brighter HDR highlights stay a
+// little brighter than an exact perceptual match.
+func dimAlpha(alpha float64, hdr bool) float64 {
+	alpha = max(0, min(1, alpha))
+	if hdr {
+		alpha = 1 - srgbToLinear(1-alpha)
+	}
+	return alpha
 }
 
 // contentDraw draws the visible rect of a w×h buffer mapped onto full

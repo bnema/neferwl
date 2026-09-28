@@ -89,6 +89,7 @@ func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Gaps = m.template.Gaps
 	w.border = m.template.border
+	w.stashWidth, w.stashGap = m.template.stashWidth, m.template.stashGap
 	w.SetOutput(m.template.Output.W, m.template.Output.H)
 	w.SetUsable(m.template.Usable)
 	if hidden {
@@ -124,6 +125,7 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.floatFocus, w.home, w.origin, w.back = nil, nil, false, "", nil, origPlace{}
+	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	(*m.nextID)++
 	w.ID = *m.nextID
 	return &w
@@ -284,8 +286,8 @@ func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 	case w.origin != nil && id != w.back.id:
 		// A dialog of a fullscreen workspace already floats above it; its
 		// own fullscreen would take the workspace from the window it holds.
-	case w.floatsHidden && w.floatIndex(id) >= 0:
-		// A hidden float stays hidden: its fullscreen waits for the show.
+	case w.stashHidden && w.stashIndex(id) >= 0:
+		// A hidden stash stays hidden: its fullscreen waits for the show.
 		w.SetFullscreen(id, on)
 	case on && m.ownWorkspace(w, id):
 		focused, _ := w.Focused()
@@ -340,6 +342,12 @@ func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 		w.RemoveWindow(id)
 		fs.AddFloating(id, fl.W, fl.H)
 		fs.Floats[len(fs.Floats)-1] = fl
+	} else if f := w.stashIndex(id); f >= 0 {
+		// It returns to its place in the stash.
+		fl := w.Stash[f]
+		fs.back.float, fs.back.stash, fs.back.col = &fl, true, f
+		w.RemoveWindow(id)
+		fs.addStash(fl)
 	} else {
 		col := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, id) })
 		c := w.Columns[col]
@@ -382,6 +390,16 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	// A closure: back.col is where the window lands, known after the switch.
 	defer func() { m.foldInto(fs, origin, back.col+1, focus, back.tiled) }()
 	switch prev := origin.Focus; {
+	case back.stash:
+		at := min(back.col, len(origin.Stash))
+		origin.Stash = slices.Insert(origin.Stash, at, *back.float)
+		if focus {
+			origin.stashAt = at
+			origin.showStash()
+		} else if at <= origin.stashAt && len(origin.Stash) > 1 {
+			origin.stashAt++
+		}
+		back.col = len(origin.Columns)
 	case back.float != nil && focus:
 		origin.AddFloating(id, back.float.W, back.float.H)
 		origin.Floats[len(origin.Floats)-1] = *back.float
@@ -401,7 +419,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		row = min(row, len(c.Windows))
 		c.Windows = slices.Insert(c.Windows, row, id)
 		if focus {
-			origin.Focus, c.Focus, origin.floatFocus = back.col, row, false
+			origin.Focus, c.Focus, origin.floatFocus, origin.stashFocus = back.col, row, false, false
 		} else if row <= c.Focus && len(c.Windows) > 1 {
 			c.Focus++
 		}
@@ -412,7 +430,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		expanded := back.expanded && !slices.ContainsFunc(origin.Columns, func(c Column) bool { return c.Expanded })
 		origin.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: expanded})
 		if focus {
-			origin.floatFocus = false
+			origin.floatFocus, origin.stashFocus = false, false
 		} else if len(origin.Columns) > 1 {
 			origin.Focus = prev
 			if at <= prev {
@@ -453,7 +471,11 @@ func (m *Monitor) foldInto(fs, origin *Workspace, at int, focus bool, tiled []Wi
 		// The user is elsewhere: below, the focused float keeps the focus.
 		origin.Floats = append(floats, origin.Floats...)
 	}
-	fs.Columns, fs.Floats = nil, nil
+	// Windows stashed there join the end of the stash.
+	for _, f := range fs.Stash {
+		origin.Stash = append(origin.Stash, f.rehome())
+	}
+	fs.Columns, fs.Floats, fs.Stash = nil, nil, nil
 	origin.scroll()
 	m.take(fs)
 	if shown {
@@ -523,6 +545,14 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 			to.Activate(id)
 		} else {
 			to.FocusID(id)
+		}
+	} else if f := cur.stashIndex(id); f >= 0 {
+		// It joins the end of the stash there, shown and selected.
+		fl := cur.Stash[f].rehome()
+		cur.RemoveWindow(id)
+		to.addStash(fl)
+		if to.origin == nil {
+			to.Activate(id)
 		}
 	} else {
 		col := Column{Windows: []WindowID{id}}
@@ -613,9 +643,19 @@ func (m *Monitor) each(f func(*Workspace)) {
 func (m *Monitor) SetOutput(width, height int) {
 	m.each(func(w *Workspace) { w.SetOutput(width, height) })
 }
-func (m *Monitor) SetUsable(r Rect)     { m.each(func(w *Workspace) { w.SetUsable(r) }) }
-func (m *Monitor) SetGaps(g int)        { m.each(func(w *Workspace) { w.SetGaps(g) }) }
-func (m *Monitor) SetBorder(b int)      { m.each(func(w *Workspace) { w.border = max(b, 0) }) }
+func (m *Monitor) SetUsable(r Rect) { m.each(func(w *Workspace) { w.SetUsable(r) }) }
+func (m *Monitor) SetGaps(g int)    { m.each(func(w *Workspace) { w.SetGaps(g) }) }
+func (m *Monitor) SetBorder(b int)  { m.each(func(w *Workspace) { w.border = max(b, 0) }) }
+
+// SetStash sets the width of a stashed window (stash.width; 0 is the
+// default) and the space between it and its neighbors (stash.gap), in
+// percent of the usable width.
+func (m *Monitor) SetStash(width, gap int) {
+	if width != 0 {
+		width = min(max(width, 10), 90)
+	}
+	m.each(func(w *Workspace) { w.stashWidth, w.stashGap = width, min(max(gap, 0), 10) })
+}
 func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
 
 // SetFollowMove makes moves to another workspace show it (focus.follow-move).
@@ -687,6 +727,9 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		for _, f := range w.Floats {
 			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
 			m.Workspaces[m.Active].Floats[len(m.Workspaces[m.Active].Floats)-1] = f
+		}
+		for _, f := range w.Stash {
+			m.Workspaces[m.Active].Stash = append(m.Workspaces[m.Active].Stash, f.rehome())
 		}
 	}
 	m.hidden = hidden

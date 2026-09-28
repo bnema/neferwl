@@ -78,6 +78,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full == nil {
 		return ports.SurfaceContent{}, "no_fullscreen"
 	}
+	if full.Dim > 0 {
+		// Its veil is composed over it: the plane would show it bright.
+		return ports.SurfaceContent{}, "dim"
+	}
 	// Core leaves the layers a fullscreen window hides out of the scene:
 	// one above the windows here is drawn.
 	for _, l := range s.Layers {

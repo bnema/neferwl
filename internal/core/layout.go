@@ -97,6 +97,8 @@ type Placement struct {
 	Fullscreen, Focused, Hidden bool
 	// Floating windows sit over the columns at their own size.
 	Floating bool
+	// Peek is a stashed window peeking in beside the selected one: dimmed.
+	Peek bool
 	// Neighbors are the sides touching another tiled window. Inset are the
 	// sides where the border takes room from the window: all sides of a
 	// float; for tiles, the right and bottom neighbors only, so two
@@ -134,13 +136,23 @@ type Workspace struct {
 	border     int
 	presets    []Width
 	fullscreen WindowID
-	// Floats are floating windows, bottom to top; floatFocus is set while
-	// the top one has the focus instead of the columns.
-	Floats       []Float
-	floatFocus   bool
-	floatsHidden bool
-	// hiddenFullscreen holds a float's fullscreen while the floats are
-	// hidden, restored when shown.
+	// Floats are native floating windows (dialogs), bottom to top;
+	// floatFocus is set while the top one has the focus.
+	Floats     []Float
+	floatFocus bool
+	// Stash holds the windows set aside by toggle-window-stash, left to
+	// right (stash.go); stashAt is the selected one. stashFocus is set
+	// while it has the focus, under a focused native float.
+	Stash       []Float
+	stashAt     int
+	stashFocus  bool
+	stashHidden bool
+	// stashWidth is the width of a stashed window (0: the default) and
+	// stashGap the space between it and its neighbors, in percent of the
+	// usable width.
+	stashWidth, stashGap int
+	// hiddenFullscreen holds a stashed window's fullscreen while the stash
+	// is hidden, restored when shown.
 	hiddenFullscreen WindowID
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
@@ -171,23 +183,31 @@ type origPlace struct {
 	// fullWidth is the column's maximize-column state.
 	fullWidth bool
 	float     *Float
+	// stash is set when float came from the stash, at index col.
+	stash bool
 }
 
 // Float is a floating window and its client size, logical.
 type Float struct {
 	ID   WindowID
 	W, H int
-	// back records the former column of a tiled window; nil for native floats.
+	// back records the former column of a stashed window; nil for native floats.
 	back *origPlace
 }
 
-func (w *Workspace) empty() bool { return len(w.Columns) == 0 && len(w.Floats) == 0 }
+func (w *Workspace) empty() bool {
+	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.Stash) == 0
+}
 
-// windows lists every window: columns first, then floating ones.
+// windows lists every window: columns first, then the stash, then native
+// floats.
 func (w *Workspace) windows() []WindowID {
 	var ids []WindowID
 	for _, c := range w.Columns {
 		ids = append(ids, c.Windows...)
+	}
+	for _, f := range w.Stash {
+		ids = append(ids, f.ID)
 	}
 	for _, f := range w.Floats {
 		ids = append(ids, f.ID)
@@ -199,14 +219,11 @@ func (w *Workspace) floatIndex(id WindowID) int {
 	return slices.IndexFunc(w.Floats, func(f Float) bool { return f.ID == id })
 }
 
-// AddFloating shows a window over the columns and focuses it.
+// AddFloating shows a native floating window over the columns and the
+// stash, and focuses it.
 func (w *Workspace) AddFloating(id WindowID, width, height int) {
 	if id == 0 || w.has(id) {
 		return
-	}
-	if w.floatsHidden {
-		// A new float must be seen: show the hidden ones with it.
-		w.showFloats()
 	}
 	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height})
 	w.floatFocus = true
@@ -215,15 +232,13 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 // ResizeFloating records the size a floating window draws.
 func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
 	if i := w.floatIndex(id); i >= 0 {
-		if w.Floats[i].back == nil {
-			w.Floats[i].W, w.Floats[i].H = width, height
-		}
+		w.Floats[i].W, w.Floats[i].H = width, height
 	}
 }
 
 // has reports whether the workspace holds the window.
 func (w *Workspace) has(id WindowID) bool {
-	if w.floatIndex(id) >= 0 {
+	if w.isFloat(id) {
 		return true
 	}
 	for _, c := range w.Columns {
@@ -241,8 +256,11 @@ func (w *Workspace) Focused() (WindowID, bool) {
 	if full := w.cover(); full != 0 {
 		return full, true
 	}
-	if w.floatFocus && !w.floatsHidden && len(w.Floats) > 0 {
+	if w.floatFocus && len(w.Floats) > 0 {
 		return w.Floats[len(w.Floats)-1].ID, true
+	}
+	if w.stashFocused() {
+		return w.Stash[w.stashAt].ID, true
 	}
 	if w.Focus < 0 || w.Focus >= len(w.Columns) {
 		return 0, false
@@ -340,16 +358,27 @@ func (w *Workspace) unslot(n int) {
 }
 
 func (w *Workspace) RemoveWindow(id WindowID) {
+	if w.fullscreen == id {
+		w.fullscreen = 0
+	}
+	if w.hiddenFullscreen == id {
+		w.hiddenFullscreen = 0
+	}
 	if i := w.floatIndex(id); i >= 0 {
 		w.Floats = slices.Delete(w.Floats, i, i+1)
-		if w.fullscreen == id {
-			w.fullscreen = 0
-		}
-		if w.hiddenFullscreen == id {
-			w.hiddenFullscreen = 0
-		}
 		if len(w.Floats) == 0 {
-			w.floatFocus, w.floatsHidden = false, false
+			w.floatFocus = false
+		}
+		return
+	}
+	if i := w.stashIndex(id); i >= 0 {
+		// The right neighbor takes the selection, else the left one.
+		w.Stash = slices.Delete(w.Stash, i, i+1)
+		if i < w.stashAt || w.stashAt == len(w.Stash) {
+			w.stashAt = max(w.stashAt-1, 0)
+		}
+		if len(w.Stash) == 0 {
+			w.stashFocus, w.stashHidden = false, false
 		}
 		return
 	}
@@ -360,9 +389,6 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			}
 			c := &w.Columns[i]
 			c.Windows = append(c.Windows[:j], c.Windows[j+1:]...)
-			if w.fullscreen == id {
-				w.fullscreen = 0
-			}
 			if len(c.Windows) == 0 {
 				w.Columns = append(w.Columns[:i], w.Columns[i+1:]...)
 				if len(w.Columns) == 0 {
@@ -386,22 +412,26 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	}
 }
 
-// FocusID selects a window and scrolls its column into view; a floating
-// window is raised.
+// FocusID selects a window and scrolls its column into view; a native
+// float is raised, a stashed window is selected.
 func (w *Workspace) FocusID(id WindowID) bool {
 	if i := w.floatIndex(id); i >= 0 {
-		if w.floatsHidden {
-			return false
-		}
 		f := w.Floats[i]
 		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
 		w.floatFocus = true
 		return true
 	}
-	w.floatFocus = false
+	if i := w.stashIndex(id); i >= 0 {
+		if w.stashHidden {
+			return false
+		}
+		w.stashAt, w.stashFocus, w.floatFocus = i, true, false
+		return true
+	}
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v == id {
+				w.floatFocus, w.stashFocus = false, false
 				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) {
 					w.Columns[w.Focus].FullWidth = false
 				}
@@ -419,8 +449,15 @@ func (w *Workspace) FocusColumn(dir int) {
 		return
 	}
 	if w.floatFocus {
-		// The first move leaves the floating window for the columns.
+		// The first move leaves the native float for the stash or columns.
 		w.floatFocus = false
+		return
+	}
+	if w.stashFocused() {
+		// Inside the stash, stopping at its ends: only hiding it leaves.
+		if (dir == -1 || dir == 1) && w.stashAt+dir >= 0 && w.stashAt+dir < len(w.Stash) {
+			w.stashAt += dir
+		}
 		return
 	}
 	if i := w.columnToward(dir); i >= 0 {
@@ -464,6 +501,10 @@ func (w *Workspace) FocusWindow(dir int) bool {
 	}
 	if w.floatFocus {
 		w.floatFocus = false
+		return true
+	}
+	if w.stashFocused() {
+		// The stash is one row: up and down do nothing there.
 		return true
 	}
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
@@ -522,7 +563,7 @@ func (w *Workspace) screenNeighbor(dx, dy int) int {
 
 func abs(n int) int { return max(n, -n) }
 func (w *Workspace) MoveColumn(dir int) {
-	if w.floatFocus {
+	if w.onFloat() {
 		return
 	}
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
@@ -535,7 +576,7 @@ func (w *Workspace) MoveColumn(dir int) {
 
 // takeColumn removes the focused column and returns it, as a normal column.
 func (w *Workspace) takeColumn() (Column, bool) {
-	if len(w.Columns) == 0 || w.floatFocus {
+	if len(w.Columns) == 0 || w.onFloat() {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]
@@ -571,7 +612,7 @@ func (w *Workspace) CycleWidth() {
 		w.toggleExpanded()
 		return
 	}
-	if len(w.Columns) == 0 || len(w.presets) == 0 || w.floatFocus {
+	if len(w.Columns) == 0 || len(w.presets) == 0 || w.onFloat() {
 		return
 	}
 	// auto → presets in order → auto.
@@ -594,7 +635,7 @@ func (w *Workspace) CycleWidth() {
 // toggleExpanded makes the focused column the expanded one, or shrinks it
 // back when it already is. One column at most is expanded.
 func (w *Workspace) toggleExpanded() {
-	if len(w.Columns) < 2 || max(w.MaxColumns, 1) < 2 || w.floatFocus {
+	if len(w.Columns) < 2 || max(w.MaxColumns, 1) < 2 || w.onFloat() {
 		return
 	}
 	on := !w.Columns[w.Focus].Expanded
@@ -607,7 +648,7 @@ func (w *Workspace) toggleExpanded() {
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
 func (w *Workspace) ToggleFullWidth() {
-	if len(w.Columns) == 0 || w.floatFocus {
+	if len(w.Columns) == 0 || w.onFloat() {
 		return
 	}
 	c := &w.Columns[w.Focus]
@@ -631,12 +672,12 @@ func (w *Workspace) ToggleFullscreen() {
 // Activate focuses a window and makes it visible: it leaves another
 // window's fullscreen, which hides everything else.
 func (w *Workspace) Activate(id WindowID) {
-	if w.floatsHidden && w.floatIndex(id) >= 0 {
-		// A hidden float must be seen: show the floats with it. Another
-		// window's fullscreen leaves first, so the float's own pending
-		// fullscreen comes back.
-		w.fullscreen = 0
-		w.showFloats()
+	if i := w.stashIndex(id); i >= 0 && w.stashHidden {
+		// A hidden stashed window must be seen: show the stash with it,
+		// selected. Another window's fullscreen leaves first, so its own
+		// pending fullscreen comes back.
+		w.fullscreen, w.stashAt = 0, i
+		w.showStash()
 	}
 	if w.fullscreen != 0 && w.fullscreen != id {
 		w.fullscreen = 0
@@ -647,9 +688,9 @@ func (w *Workspace) Activate(id WindowID) {
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
-	if w.floatIndex(id) >= 0 {
-		if w.floatsHidden {
-			// Applied when the floats are shown again.
+	if w.isFloat(id) {
+		if w.stashHidden && w.stashIndex(id) >= 0 {
+			// Applied when the stash is shown again.
 			if on {
 				w.hiddenFullscreen = id
 			} else if w.hiddenFullscreen == id {
@@ -723,7 +764,7 @@ func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 // Moves to another workspace or monitor still work.
 func (w *Workspace) pinned() bool {
 	c := w.cover()
-	return c != 0 && (w.Overflow == OverflowFixed || w.floatIndex(c) >= 0)
+	return c != 0 && (w.Overflow == OverflowFixed || w.isFloat(c))
 }
 
 // focusCover points the focus state at the covering fullscreen window,
@@ -734,12 +775,11 @@ func (w *Workspace) focusCover() {
 	if c == 0 {
 		return
 	}
-	if w.floatIndex(c) >= 0 {
-		w.floatFocus = true
+	if w.isFloat(c) {
 		w.FocusID(c)
 		return
 	}
-	w.floatFocus = false
+	w.floatFocus, w.stashFocus = false, false
 	for i, col := range w.Columns {
 		if j := slices.Index(col.Windows, c); j >= 0 {
 			w.Focus, w.Columns[i].Focus = i, j
@@ -754,7 +794,7 @@ func (w *Workspace) cover() WindowID {
 	if w.fullscreen == 0 {
 		return 0
 	}
-	if w.floatIndex(w.fullscreen) >= 0 || w.Overflow == OverflowFixed {
+	if w.isFloat(w.fullscreen) || w.Overflow == OverflowFixed {
 		return w.fullscreen
 	}
 	// Scroll overflow: only while its column is aligned on the output.
@@ -963,11 +1003,13 @@ func (w *Workspace) Layout() []Placement {
 		}
 	}
 	setNeighbors(result, gap)
-	// Floating windows go last: they are drawn and hit on top.
+	// Floating windows go last: they are drawn and hit on top, native
+	// floats (dialogs) over the stash.
+	result = append(result, w.stashLayout(focusedID, cover)...)
 	for _, f := range w.Floats {
 		// A covering fullscreen window hides every float, its own dialogs
 		// too: they show again when it leaves fullscreen.
-		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: w.floatsHidden || cover != 0 && f.ID != cover}
+		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover}
 		if p.Hidden {
 			p.Rect = Rect{}
 			result = append(result, p)
@@ -1014,106 +1056,38 @@ func setNeighbors(tiles []Placement, gap int) {
 	}
 }
 
-// floatRect centres a floating window in the usable area, its border
-// around its client size, clamped to the area.
+// floatRect centres a native floating window in the usable area, its
+// border around its client size, clamped to the area.
 func (w *Workspace) floatRect(f Float) Rect {
 	u := w.Usable
 	fw, fh := f.W, f.H
-	if f.back != nil {
-		fw, fh = max(u.W*80/100-2*w.border, 0), max(u.H*80/100-2*w.border, 0)
-	}
-	if f.back == nil && (fw <= 0 || fh <= 0) {
+	if fw <= 0 || fh <= 0 {
 		fw, fh = u.W/2, u.H/2
 	}
 	fw, fh = min(fw+2*w.border, u.W), min(fh+2*w.border, u.H)
 	return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
 }
 
-// imposedFloat reports whether core, rather than the client, owns the size.
-func (w *Workspace) imposedFloat(id WindowID) bool {
-	i := w.floatIndex(id)
-	return i >= 0 && w.Floats[i].back != nil
-}
+// imposedFloat reports whether core, rather than the client, owns the
+// size of a floating window: a stashed one.
+func (w *Workspace) imposedFloat(id WindowID) bool { return w.stashIndex(id) >= 0 }
 
-// ToggleWindowFloating converts a tile to an 80% float, remembering its
-// column and row. Native floats instead become new columns.
-func (w *Workspace) ToggleWindowFloating() {
+// ToggleWindowStash stashes the focused tile, or returns the focused
+// stashed window to its column. A native float becomes a new column.
+func (w *Workspace) ToggleWindowStash() {
 	id, ok := w.Focused()
 	// A fullscreen window (a Wine game in scanout) keeps its place: it
 	// leaves fullscreen first, then may float.
 	if !ok || id == w.fullscreen {
 		return
 	}
-	if i := w.floatIndex(id); i >= 0 {
-		f := w.Floats[i]
+	switch {
+	case w.floatIndex(id) >= 0:
 		w.RemoveWindow(id)
-		if f.back == nil {
-			w.addColumn(Column{Windows: []WindowID{id}})
-		} else {
-			back := f.back
-			at := min(back.col, len(w.Columns))
-			if i := slices.IndexFunc(w.Columns, back.holdsStack); i >= 0 {
-				at = i
-				c := &w.Columns[at]
-				row := 0
-				for _, v := range back.stacked[:back.row] {
-					if slices.Contains(c.Windows, v) {
-						row++
-					}
-				}
-				c.Windows = slices.Insert(c.Windows, row, id)
-				c.Focus = row
-				w.Focus = at
-				w.scroll()
-			} else {
-				// Its column is gone: it comes back expanded, unless another
-				// column was expanded meanwhile (as leaveFullscreen).
-				expanded := back.expanded && !slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Expanded })
-				w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, FullWidth: back.fullWidth, Expanded: expanded})
-			}
-		}
-		w.floatFocus = false
-		return
+		w.restore(id, nil)
+	case w.stashIndex(id) >= 0:
+		w.unstash(w.stashIndex(id))
+	default:
+		w.stashWindow(id)
 	}
-	col := w.Focus
-	c := w.Columns[col]
-	row := c.Focus
-	lone := len(c.Windows) == 1
-	back := &origPlace{col: col, row: row, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && lone, expanded: c.Expanded && lone}
-	for _, v := range c.Windows {
-		if v != id {
-			back.stacked = append(back.stacked, v)
-		}
-	}
-	w.RemoveWindow(id)
-	w.AddFloating(id, 0, 0)
-	w.Floats[len(w.Floats)-1].back = back
-}
-
-// ToggleFloatingVisible hides every float without changing its placement
-// when a float has the focus, and shows them again from any window. It
-// does nothing under a covering fullscreen window (a game in scanout):
-// hiding it would drop scanout and VRR.
-func (w *Workspace) ToggleFloatingVisible() {
-	if len(w.Floats) == 0 || w.cover() != 0 {
-		return
-	}
-	if !w.floatsHidden {
-		if w.floatFocus {
-			w.floatsHidden, w.floatFocus, w.hiddenFullscreen = true, false, 0
-		}
-		return
-	}
-	w.showFloats()
-}
-
-// showFloats shows the hidden floats; the top one takes the focus and a
-// hidden fullscreen float is fullscreen again.
-func (w *Workspace) showFloats() {
-	w.floatsHidden = false
-	w.floatFocus = true
-	if w.fullscreen == 0 && w.floatIndex(w.hiddenFullscreen) >= 0 {
-		w.fullscreen = w.hiddenFullscreen
-	}
-	w.hiddenFullscreen = 0
 }

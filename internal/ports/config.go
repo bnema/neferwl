@@ -75,6 +75,14 @@ type Config struct {
 	Startup    [][]string
 	Background struct{ Color string }
 	Floating   struct{ Dim float64 }
+	// Stash is the strip of windows set aside by toggle-window-stash:
+	// Width is the width of its selected window (10 to 90) and Gap the
+	// space between it and its neighbors (0 to 10), in percent of the
+	// usable width; Dim darkens the neighbors, 0 to 1.
+	Stash struct {
+		Width, Gap int
+		Dim        float64
+	}
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {
 		Width    int
