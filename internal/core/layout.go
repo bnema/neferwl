@@ -206,7 +206,7 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 	}
 	if w.floatsHidden {
 		// A new float must be seen: show the hidden ones with it.
-		w.ToggleFloatingVisible()
+		w.showFloats()
 	}
 	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height})
 	w.floatFocus = true
@@ -237,6 +237,10 @@ func (w *Workspace) has(id WindowID) bool {
 }
 
 func (w *Workspace) Focused() (WindowID, bool) {
+	// Nothing else is drawn: the covering fullscreen window has the focus.
+	if full := w.cover(); full != 0 {
+		return full, true
+	}
 	if w.floatFocus && !w.floatsHidden && len(w.Floats) > 0 {
 		return w.Floats[len(w.Floats)-1].ID, true
 	}
@@ -251,6 +255,16 @@ func (w *Workspace) Focused() (WindowID, bool) {
 }
 func (w *Workspace) AddWindow(id WindowID) {
 	if id == 0 || w.has(id) {
+		return
+	}
+	if w.cover() != 0 {
+		// A new window never moves the view off a covering fullscreen
+		// window (ADR 011): it waits, hidden, after the focused column.
+		at := len(w.Columns)
+		if w.Overflow != OverflowFixed {
+			at = w.Focus + 1
+		}
+		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}})
 		return
 	}
 	w.addColumn(Column{Windows: []WindowID{id}})
@@ -608,10 +622,10 @@ func (w *Workspace) ToggleFullscreen() {
 	w.scroll()
 }
 
-// Activate focuses a window and makes it visible: a tiled window leaves
-// another window's fullscreen, which would hide it.
+// Activate focuses a window and makes it visible: it leaves another
+// window's fullscreen, which hides everything else.
 func (w *Workspace) Activate(id WindowID) {
-	if w.fullscreen != 0 && w.fullscreen != id && w.floatIndex(id) < 0 {
+	if w.fullscreen != 0 && w.fullscreen != id {
 		w.fullscreen = 0
 	}
 	w.FocusID(id)
@@ -689,6 +703,25 @@ func (w *Workspace) SetMaxColumns(n int) {
 	w.scroll()
 }
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+// cover returns the fullscreen window that covers the output, or 0. The
+// fullscreen is exclusive: while it covers, no other window of the
+// workspace is drawn, so the output can scan it out.
+func (w *Workspace) cover() WindowID {
+	if w.fullscreen == 0 {
+		return 0
+	}
+	if w.floatIndex(w.fullscreen) >= 0 || w.Overflow == OverflowFixed {
+		return w.fullscreen
+	}
+	// Scroll overflow: only while its column is aligned on the output.
+	for i, c := range w.Columns {
+		if slices.Contains(c.Windows, w.fullscreen) && w.columnX(i)-w.ViewX == 0 {
+			return w.fullscreen
+		}
+	}
+	return 0
+}
+
 func (w *Workspace) fullscreenColumn(i int) bool {
 	for _, id := range w.Columns[i].Windows {
 		if id == w.fullscreen && id != 0 {
@@ -843,7 +876,7 @@ func (w *Workspace) Layout() []Placement {
 	gap := w.gap()
 	cols := w.columnRects()
 	focusedID, _ := w.Focused()
-	floatFocused := w.floatIndex(focusedID) >= 0
+	cover := w.cover()
 	for i, c := range w.Columns {
 		col := cols[i]
 		n := len(c.Windows)
@@ -870,7 +903,7 @@ func (w *Workspace) Layout() []Placement {
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
 			maximized := w.Overflow == OverflowFixed && w.Columns[w.Focus].FullWidth && i != w.Focus
-			hidden := ((fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full) || maximized
+			hidden := (cover != 0 && id != cover) || ((fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full) || maximized
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = Rect{X: col.X, Y: 0, W: w.Output.W, H: w.Output.H}
@@ -881,22 +914,21 @@ func (w *Workspace) Layout() []Placement {
 			if hidden {
 				r = Rect{}
 			}
-			focused := !floatFocused && i == w.Focus && j == c.Focus
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: focused, Hidden: hidden})
+			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
 			y += h + gap
 		}
 	}
 	setNeighbors(result, gap)
 	// Floating windows go last: they are drawn and hit on top.
 	for _, f := range w.Floats {
-		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: floatFocused && f.ID == focusedID, Inset: ports.SideAll, Hidden: w.floatsHidden}
+		// A covering fullscreen window hides every float, its own dialogs
+		// too: they show again when it leaves fullscreen.
+		p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: w.floatsHidden || cover != 0 && f.ID != cover}
 		if p.Hidden {
 			p.Rect = Rect{}
 			result = append(result, p)
 			continue
 		}
-		// Floats stay above a fullscreen window: a dialog opened from a
-		// fullscreen app must be seen.
 		if w.fullscreen == f.ID {
 			p.Rect, p.Fullscreen = Rect{W: w.Output.W, H: w.Output.H}, true
 		}
@@ -1015,19 +1047,25 @@ func (w *Workspace) ToggleWindowFloating() {
 }
 
 // ToggleFloatingVisible hides every float without changing its placement
-// when a float has the focus, and shows them again from any window. A
-// fullscreen float (a game in scanout) is never hidden: hiding it drops
-// scanout and VRR.
+// when a float has the focus, and shows them again from any window. It
+// does nothing under a covering fullscreen window (a game in scanout):
+// hiding it would drop scanout and VRR.
 func (w *Workspace) ToggleFloatingVisible() {
-	if len(w.Floats) == 0 {
+	if len(w.Floats) == 0 || w.cover() != 0 {
 		return
 	}
 	if !w.floatsHidden {
-		if w.floatFocus && w.floatIndex(w.fullscreen) < 0 {
+		if w.floatFocus {
 			w.floatsHidden, w.floatFocus, w.hiddenFullscreen = true, false, 0
 		}
 		return
 	}
+	w.showFloats()
+}
+
+// showFloats shows the hidden floats; the top one takes the focus and a
+// hidden fullscreen float is fullscreen again.
+func (w *Workspace) showFloats() {
 	w.floatsHidden = false
 	w.floatFocus = true
 	if w.fullscreen == 0 && w.floatIndex(w.hiddenFullscreen) >= 0 {

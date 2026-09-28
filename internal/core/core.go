@@ -377,7 +377,8 @@ func (c *Core) keyboardFocus() WindowID {
 	if g := c.grabFocus(); g != 0 {
 		return g
 	}
-	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
+	// A layer hidden by a fullscreen window loses the keyboard.
+	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !c.visible(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
 		c.layerFocus, c.layerOver = 0, nil
 	}
 	if c.layerFocus != 0 {
@@ -442,7 +443,7 @@ func (c *Core) publish(ctx context.Context) error {
 	for i, sc := range c.screens {
 		c.seq++
 		o := sc.mon.Output()
-		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
+		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
@@ -1092,6 +1093,11 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 		return nil
 	}
 	before := c.cur().mon.Current()
+	if full := w.cover(); full != 0 && full != id && w.origin != nil {
+		// The window hides under a fullscreen workspace: it goes home first.
+		s.mon.leaveFullscreen(w, false)
+		_, w = c.screenOf(id)
+	}
 	if w != s.mon.Current() {
 		s.mon.show(w)
 	}

@@ -76,6 +76,32 @@ func TestToggleFloatingVisible(t *testing.T) {
 	}
 }
 
+// A fullscreen window is exclusive: a new window waits hidden without
+// moving the view, in scroll and fixed overflow, and shows once it leaves.
+func TestExclusiveFullscreenNewWindow(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
+		w := workspace()
+		w.Overflow = overflow
+		w.AddWindow(1)
+		w.SetFullscreen(1, true)
+		w.AddWindow(2)
+		for _, p := range w.Layout() {
+			if p.ID == 1 && (!p.Fullscreen || !p.Focused || p.Hidden) || p.ID == 2 && !p.Hidden {
+				t.Fatalf("overflow %v: %+v", overflow, p)
+			}
+		}
+		if w.ToggleFloatingVisible(); w.floatsHidden {
+			t.Fatal("floats toggled under fullscreen")
+		}
+		w.SetFullscreen(1, false)
+		for _, p := range w.Layout() {
+			if p.ID == 2 && p.Hidden {
+				t.Fatalf("overflow %v: new window still hidden", overflow)
+			}
+		}
+	}
+}
+
 // A fullscreen window does not float until it leaves fullscreen.
 func TestToggleWindowFloatingIgnoresFullscreen(t *testing.T) {
 	w := workspace()
@@ -244,7 +270,7 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	w.ToggleWindowFloating()
 	w.SetFullscreen(1, true)
 	check(0)
-	// A dialog shown over a fullscreen tile dims it.
+	// A dialog of a fullscreen tile waits hidden: no veil over the game.
 	w.SetFullscreen(1, false)
 	w.RemoveWindow(1)
 	w.RemoveWindow(2)
@@ -252,5 +278,7 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	w.SetFullscreen(3, true)
 	check(0)
 	w.AddFloating(4, 20, 10)
+	check(0)
+	w.SetFullscreen(3, false)
 	check(0.3)
 }

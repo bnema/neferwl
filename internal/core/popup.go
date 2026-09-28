@@ -136,7 +136,7 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 		return sc, Rect{X: pr.X + p.rect.X, Y: pr.Y + p.rect.Y, W: p.rect.W, H: p.rect.H}, true
 	}
 	if sc, l, ok := c.layerOf(id); ok {
-		if !shown(sc, l.Layer) {
+		if !shown(sc, l) {
 			return nil, Rect{}, false
 		}
 		return sc, l.Rect, true

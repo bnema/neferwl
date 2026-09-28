@@ -232,8 +232,8 @@ func (m *Monitor) find(id WindowID) (*Workspace, int) {
 }
 
 // AddWindow places a new window on the workspace on screen. On a
-// fullscreen workspace it floats, above the fullscreen window: a tiled one
-// would be hidden behind it (fixed overflow) while it has the focus.
+// fullscreen workspace it floats, hidden until the fullscreen window
+// leaves, then tiles after it at home.
 func (m *Monitor) AddWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
 		return
@@ -530,9 +530,9 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 }
 
 // receive adds a column moved in from another workspace and focuses it: at
-// index at, or where a new window goes when at < 0. It stays visible: on a
-// fixed-overflow fullscreen workspace its windows float above, and an
-// in-place fullscreen is left.
+// index at, or where a new window goes when at < 0. An in-place fullscreen
+// is left. On a fixed-overflow fullscreen workspace its windows float,
+// hidden until the fullscreen window leaves: it stays exclusive.
 func (w *Workspace) receive(col Column, at int) {
 	id := col.Windows[col.Focus]
 	switch {
@@ -540,6 +540,7 @@ func (w *Workspace) receive(col Column, at int) {
 		for _, v := range col.Windows {
 			w.joinFullscreen(v)
 		}
+		return
 	case at < 0:
 		w.addColumn(col)
 	default:
@@ -548,12 +549,21 @@ func (w *Workspace) receive(col Column, at int) {
 	w.Activate(id)
 }
 
-// joinFullscreen adds a tiled window to a fullscreen workspace fs: it floats
-// above the fullscreen window, which would hide it (fixed overflow), and
-// tiles again once home.
+// joinFullscreen adds a tiled window to a fullscreen workspace fs: it
+// floats, hidden while the window is fullscreen, and tiles again once home.
 func (fs *Workspace) joinFullscreen(id WindowID) {
 	fs.AddFloating(id, 0, 0)
 	fs.back.tiled = append(fs.back.tiled, id)
+}
+
+// landing is the workspace on screen for a window the user moves here. A
+// fullscreen workspace hides everything but its window, so it goes home
+// first: the moved window must be seen.
+func (m *Monitor) landing() *Workspace {
+	if fs := m.Current(); fs.origin != nil {
+		m.leaveFullscreen(fs, false)
+	}
+	return m.Current()
 }
 
 func (m *Monitor) Focused() (WindowID, bool) { return m.Current().Focused() }

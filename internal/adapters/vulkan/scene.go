@@ -16,10 +16,9 @@ type sceneWalk struct {
 	contents map[ports.WindowID]ports.SurfaceContent
 	dmg      *damageRegion
 	// scale maps the scene's logical pixels to the target's physical ones.
-	scale      float64
-	bounds     image.Rectangle
-	fullscreen bool
-	draws      []draw
+	scale  float64
+	bounds image.Rectangle
+	draws  []draw
 }
 
 // draws walks the scene into quads in paint order.
@@ -29,9 +28,6 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
-	}
-	for _, win := range s.Windows {
-		w.fullscreen = w.fullscreen || (!win.Hidden && win.Fullscreen)
 	}
 	w.layers(false)
 	w.windows()
@@ -64,12 +60,11 @@ func (w *sceneWalk) dim() {
 }
 
 // layers draws the layer surfaces below the windows, or above them.
-// A fullscreen window hides the bottom and top layers.
+// The scene holds only the shown ones: core hides them under a fullscreen
+// window.
 func (w *sceneWalk) layers(afterWindows bool) {
 	for _, layer := range w.s.Layers {
-		if (layer.Layer >= ports.LayerTop) != afterWindows ||
-			(w.fullscreen && (layer.Layer == ports.LayerBottom || layer.Layer == ports.LayerTop)) ||
-			layer.Rect.W <= 0 || layer.Rect.H <= 0 {
+		if (layer.Layer >= ports.LayerTop) != afterWindows || layer.Rect.W <= 0 || layer.Rect.H <= 0 {
 			continue
 		}
 		content := w.contents[layer.ID]

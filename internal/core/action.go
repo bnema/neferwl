@@ -177,7 +177,7 @@ func (c *Core) applyAction(a Action) Effect {
 			return Effect{}
 		}
 		c.focusScreen = i
-		c.cur().mon.Current().expelTo(id, dir)
+		c.cur().mon.landing().expelTo(id, dir)
 		from.mon.normalize()
 		c.cur().mon.normalize()
 		return Effect{}
@@ -197,7 +197,7 @@ func (c *Core) applyAction(a Action) Effect {
 			}
 			from := c.cur()
 			c.focusScreen = i
-			to := c.cur().mon.Current()
+			to := c.cur().mon.landing()
 			at := 0
 			if dir < 0 {
 				at = len(to.Columns)

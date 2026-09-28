@@ -91,7 +91,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
 	}
 	for _, l := range s.Layers {
-		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 && !(pick.Fullscreen && l.Layer == ports.LayerTop) {
+		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
 		}
 	}

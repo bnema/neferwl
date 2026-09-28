@@ -215,10 +215,11 @@ func TestLayerHitOrder(t *testing.T) {
 	hit(50, 40, 1)
 	hit(50, 5, 6)
 	hit(50, 75, 7)
+	// A fullscreen window is exclusive: bars and notifications are hidden.
 	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
 	scene(t, scenes)
 	hit(50, 5, 1)
-	hit(50, 75, 7)
+	hit(50, 75, 1)
 }
 
 // The pointer moving to another output does not take the keyboard from a

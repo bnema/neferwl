@@ -89,9 +89,9 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `spawn <command>` | Run a program |
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
-| `toggle-fullscreen` | Fullscreen the focused window |
+| `toggle-fullscreen` | Fullscreen the focused window. Fullscreen is exclusive, whether from this bind or the app: nothing is drawn above it but a surface taking the keyboard (a locker). Bars, notifications and other windows, dialogs included, wait hidden until it leaves; activating one of them leaves fullscreen |
 | `toggle-window-floating` | Float a tiled window at 80% of usable area; toggle back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
-| `toggle-floating-visible` | Hide all floats on this workspace when a float has the focus and none is fullscreen, or show hidden ones again; a new float shows them too |
+| `toggle-floating-visible` | Hide all floats on this workspace when a float has the focus, or show hidden ones again; a new float shows them too. Does nothing under a fullscreen window |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |

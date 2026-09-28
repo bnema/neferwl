@@ -108,3 +108,89 @@ func TestLayerChangedChannels(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// In scroll overflow, a fullscreen column the user scrolled off no longer
+// covers the output: the layers show again.
+func TestScrolledOffFullscreenShowsLayers(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.AddWindow(1)
+	m.SetFullscreen(1, true)
+	m.AddWindow(2)
+	sc := &screen{mon: m}
+	bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
+	if shown(sc, bar) {
+		t.Fatal("bar shown over fullscreen")
+	}
+	m.Current().FocusID(2)
+	if !shown(sc, bar) {
+		t.Fatal("bar hidden with the fullscreen column scrolled off")
+	}
+}
+
+// A fullscreen window is exclusive: the scene carries only the background
+// and a layer taking the keyboard exclusively (a locker), so the output
+// can scan the window out.
+func TestFullscreenSceneLayers(t *testing.T) {
+	client := make(chan ports.ClientEvent)
+	output := make(chan ports.OutputEvent)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); _ = c.Run(ctx) }()
+	go func() {
+		for range commands {
+		}
+	}()
+	recv := func() ports.Scene {
+		t.Helper()
+		select {
+		case s := <-scenes:
+			return s[0]
+		case <-time.After(time.Second):
+			t.Fatal("scene timeout")
+			return ports.Scene{}
+		}
+	}
+	layers := func(s ports.Scene) []ports.WindowID {
+		var ids []ports.WindowID
+		for _, l := range s.Layers {
+			ids = append(ids, l.ID)
+		}
+		return ids
+	}
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	recv()
+	client <- ports.WindowMapped{ID: 1}
+	recv()
+	all := []ports.LayerSurface{
+		{ID: 5, Layer: ports.LayerBackground, Anchor: 15},
+		{ID: 6, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 10},
+		{ID: 7, Layer: ports.LayerOverlay, Width: 20, Height: 10},
+	}
+	client <- ports.LayerChanged{Layers: all}
+	if got := layers(recv()); len(got) != 3 {
+		t.Fatalf("layers %v", got)
+	}
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	if got := layers(recv()); len(got) != 1 || got[0] != 5 {
+		t.Fatalf("fullscreen layers %v, want the background", got)
+	}
+	locker := ports.LayerSurface{ID: 8, Layer: ports.LayerOverlay, Anchor: 15, Keyboard: 1}
+	client <- ports.LayerChanged{Layers: append(all, locker)}
+	if got := layers(recv()); len(got) != 2 || got[1] != 8 {
+		t.Fatalf("fullscreen layers %v, want the background and the locker", got)
+	}
+	cancel()
+	<-done
+	close(commands)
+}

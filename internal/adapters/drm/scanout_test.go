@@ -33,8 +33,11 @@ func TestScanoutCandidate(t *testing.T) {
 		{"overlay layer", func(s *ports.Scene) {
 			s.Layers = []ports.SceneLayer{{ID: 3, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 10, H: 10}}}
 		}, nil, "overlay_surface"},
-		{"top layer covered", func(s *ports.Scene) {
+		{"top layer", func(s *ports.Scene) {
 			s.Layers = []ports.SceneLayer{{ID: 3, Layer: ports.LayerTop, Rect: ports.Rect{W: 10, H: 10}}}
+		}, nil, "overlay_surface"},
+		{"background layer", func(s *ports.Scene) {
+			s.Layers = []ports.SceneLayer{{ID: 3, Layer: ports.LayerBackground, Rect: ports.Rect{W: 10, H: 10}}}
 		}, nil, ""},
 		{"shm", nil, func(c *ports.SurfaceContent) { c.DMABuf, c.SHM = nil, &ports.SHMBuffer{} }, "not_dmabuf"},
 		{"subsurface", nil, func(c *ports.SurfaceContent) { c.Children = []ports.Subsurface{{}} }, "subsurfaces"},

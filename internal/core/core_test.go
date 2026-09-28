@@ -698,7 +698,8 @@ func TestPopupChainDismissOrder(t *testing.T) {
 	}
 }
 
-// A dialog over a fullscreen window gets the pointer.
+// A dialog opened under a fullscreen window stays hidden and out of reach
+// of the pointer until the window leaves fullscreen.
 func TestFloatOverFullscreenHit(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
@@ -726,6 +727,15 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 		<-commands
 	}
 	input <- ports.PointerMotion{X: 50, Y: 40}
+	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 1 {
+		t.Fatalf("pointer went to %v, want the fullscreen window", v)
+	}
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: false}
+	scene(t, scenes)
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: 50, Y: 41}
 	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
 		t.Fatalf("pointer went to %v, want the dialog", v)
 	}

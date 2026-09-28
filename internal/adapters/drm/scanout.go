@@ -78,8 +78,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full == nil {
 		return ports.SurfaceContent{}, "no_fullscreen"
 	}
+	// Core leaves the layers a fullscreen window hides out of the scene:
+	// one above the windows here is drawn.
 	for _, l := range s.Layers {
-		if l.Layer == ports.LayerOverlay && l.Rect.W > 0 && l.Rect.H > 0 {
+		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
 			return ports.SurfaceContent{}, "overlay_surface"
 		}
 	}

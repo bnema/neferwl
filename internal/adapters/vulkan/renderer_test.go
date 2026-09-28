@@ -203,9 +203,9 @@ func TestRendererLayers(t *testing.T) {
 	check(color.RGBA{255, 0, 0, 255})
 	scene.Layers[0].Layer = ports.LayerBottom
 	check(window)
+	// Core leaves hidden layers out of the scene; the renderer draws what
+	// it gets, over a fullscreen window too.
 	scene.Windows[0].Fullscreen = true
-	scene.Layers[0].Layer = ports.LayerTop
-	check(window)
 	scene.Layers[0].Layer = ports.LayerOverlay
 	check(color.RGBA{255, 0, 0, 255})
 	scene.Windows[0].Hidden = true

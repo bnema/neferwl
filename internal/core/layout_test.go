@@ -393,15 +393,16 @@ func TestFullscreenPersistsAndScrolls(t *testing.T) {
 func TestSetFullscreenStackDeactivation(t *testing.T) {
 	w := workspace()
 	w.Columns = []Column{{Windows: []WindowID{1, 2}, Focus: 0}}
-	// A client request does not take focus; window 1 keeps it but is covered.
+	// The covering fullscreen window is the only one drawn, so it has the
+	// focus; window 1 gets it back when 2 leaves fullscreen.
 	w.SetFullscreen(2, true)
 	p := w.Layout()
-	if !p[0].Hidden || !p[1].Fullscreen || p[1].Focused || !p[0].Focused {
+	if !p[0].Hidden || !p[1].Fullscreen || !p[1].Focused || p[0].Focused {
 		t.Fatal(p)
 	}
 	w.SetFullscreen(2, false)
-	if w.Layout()[0].Hidden {
-		t.Fatal(w.Layout())
+	if p := w.Layout(); p[0].Hidden || !p[0].Focused {
+		t.Fatal(p)
 	}
 }
 
@@ -675,8 +676,8 @@ func TestFixedOverflowEdgeCases(t *testing.T) {
 	})
 }
 
-// Activating a window hidden by another's fullscreen shows it; a floating
-// target stays above the fullscreen window, which keeps it.
+// Activating a window hidden by another's fullscreen shows it: the
+// fullscreen is exclusive, so it is left, even for a float.
 func TestActivateLeavesFullscreen(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -685,7 +686,7 @@ func TestActivateLeavesFullscreen(t *testing.T) {
 	}{
 		{"fixed", func(w *Workspace) { w.Overflow = OverflowFixed; w.MaxColumns = 2; w.AddWindow(3) }, false},
 		{"same column", func(w *Workspace) { w.Columns[0].Windows = append(w.Columns[0].Windows, 3) }, false},
-		{"floating", func(w *Workspace) { w.AddFloating(3, 10, 10) }, true},
+		{"floating", func(w *Workspace) { w.AddFloating(3, 10, 10) }, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &Workspace{}

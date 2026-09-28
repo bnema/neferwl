@@ -86,30 +86,50 @@ func (c *Core) layerOf(id WindowID) (*screen, ports.SceneLayer, bool) {
 	return nil, ports.SceneLayer{}, false
 }
 
-// hasFullscreen reports whether a visible fullscreen window covers the screen.
+// hasFullscreen reports whether a fullscreen window covers the screen. In
+// scroll overflow, one scrolled off by the user no longer does.
 func hasFullscreen(sc *screen) bool {
-	for _, p := range sc.mon.Layout() {
-		if p.Fullscreen && !p.Hidden {
-			return true
+	return sc.mon.Current().cover() != 0
+}
+
+// shown reports whether a layer surface is drawn. A fullscreen window is
+// exclusive: it hides every layer above the background (bars,
+// notifications), so the output can scan it out. A surface taking the
+// keyboard exclusively (a locker, a launcher) still shows: it has the
+// keyboard and must be seen.
+func shown(sc *screen, l ports.SceneLayer) bool {
+	return l.Layer == ports.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID)
+}
+
+// exclusiveKeyboard reports whether layer surface id takes the keyboard
+// exclusively.
+func (sc *screen) exclusiveKeyboard(id WindowID) bool {
+	for _, l := range sc.layers {
+		if l.ID == id {
+			return l.Keyboard == 1
 		}
 	}
 	return false
 }
 
-// shown reports whether a layer is drawn: a fullscreen window hides the
-// bottom and top layers, as the renderer does.
-func shown(sc *screen, layer ports.Layer) bool {
-	return !(hasFullscreen(sc) && (layer == ports.LayerBottom || layer == ports.LayerTop))
+// shownLayers are the placed layer surfaces drawn on the screen.
+func shownLayers(sc *screen) []ports.SceneLayer {
+	out := make([]ports.SceneLayer, 0, len(sc.placed))
+	for _, l := range sc.placed {
+		if shown(sc, l) {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // layerAt returns the topmost shown layer surface under the output-local
 // point among those above (or below) the windows.
 func (c *Core) layerAt(sc *screen, lx, ly float64, above bool) (WindowID, float64, float64) {
-	full := hasFullscreen(sc)
 	for i := len(sc.placed) - 1; i >= 0; i-- {
 		l := sc.placed[i]
 		r := l.Rect
-		if (l.Layer >= ports.LayerTop) != above || (full && (l.Layer == ports.LayerBottom || l.Layer == ports.LayerTop)) || r.W <= 0 || r.H <= 0 {
+		if (l.Layer >= ports.LayerTop) != above || !shown(sc, l) || r.W <= 0 || r.H <= 0 {
 			continue
 		}
 		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) && c.acceptsInput(l.ID, lx-float64(r.X), ly-float64(r.Y)) {
