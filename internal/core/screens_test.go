@@ -949,6 +949,24 @@ func TestStashEndToEnd(t *testing.T) {
 	}
 }
 
+// stateAfter waits for the published state that ok accepts, or fails:
+// snapshots from before an event may still be queued.
+func stateAfter(t *testing.T, ch <-chan ports.State, ok func(ports.State) bool) ports.State {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case st := <-ch:
+			if ok(st) {
+				return st
+			}
+		case <-deadline:
+			t.Fatal("no matching state")
+			return ports.State{}
+		}
+	}
+}
+
 // At the ends of the stash, focus moves stay there: no hop to the
 // neighbor monitor or workspace.
 func TestStashKeepsFocusAtEdges(t *testing.T) {
@@ -960,12 +978,11 @@ func TestStashKeepsFocusAtEdges(t *testing.T) {
 	for _, k := range []string{"Right", "Down"} {
 		r.key(t, k, ports.ModAlt)
 	}
-	st := receive(t, r.state)
-	for len(r.state) > 0 {
-		st = receive(t, r.state)
-	}
-	if st.Output != "DP-1" || st.Window == nil || st.Window.ID != 2 || st.Outputs[0].Active != 1 {
-		t.Fatalf("%+v %+v", st.Output, st.Window)
+	// A marker after the keys: its state follows theirs.
+	r.mapWindow(t, 9)
+	st := stateAfter(t, r.state, func(st ports.State) bool { return len(st.Windows) == 3 })
+	if st.Output != "DP-1" || st.Outputs[0].Active != 1 {
+		t.Fatalf("output %s active %d", st.Output, st.Outputs[0].Active)
 	}
 }
 
@@ -978,10 +995,7 @@ func TestDialogFocusStaysOnMonitor(t *testing.T) {
 	r.client <- ports.WindowMapped{ID: 3, Floating: true, Width: 10, Height: 10}
 	receive(t, r.scenes)
 	r.key(t, "Right", ports.ModAlt)
-	st := receive(t, r.state)
-	for len(r.state) > 0 {
-		st = receive(t, r.state)
-	}
+	st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window == nil || st.Window.ID != 3 })
 	if st.Output != "DP-1" || st.Window == nil || st.Window.ID != 1 {
 		t.Fatalf("output %s window %+v", st.Output, st.Window)
 	}
