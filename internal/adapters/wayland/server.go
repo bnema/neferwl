@@ -192,6 +192,11 @@ type Server struct {
 	constraints map[*surface]*constraint
 	constraint  *constraint // the active one
 	positioners map[*server.Resource]*positioner
+	// Text input and input method (textinput.go): activeText is the
+	// enabled text input the input method serves.
+	textInputs  []*textInput
+	activeText  *textInput
+	inputMethod *inputMethod
 }
 
 func removeItem[T comparable](list []T, v T) []T {
@@ -633,6 +638,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			s.changeFocus(c.ID)
 		}
 	case ports.ForwardKey:
+		if s.grabKey(c) {
+			return
+		}
 		_, keyboards := s.focusTarget(c.ID)
 		if c.ID != s.focused || len(keyboards) == 0 {
 			s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored forward key")
@@ -815,6 +823,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 				}
 			}
 		}
+		s.sendGrabKeymap(false)
 		s.log.Info().Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("repeat updated")
 		return
 	}
@@ -840,6 +849,7 @@ func (s *Server) setKeymap(c ports.SetKeymap) {
 			}
 		}
 	}
+	s.sendGrabKeymap(true)
 	s.changeFocus(focused)
 	s.log.Info().Uint32("size", size).Int("rate", s.repeatRate).Int("delay", s.repeatDelay).Msg("keymap updated")
 }
@@ -880,6 +890,7 @@ func (s *Server) changeFocus(id ports.WindowID) {
 			s.sendModifiers(k)
 		}
 	}
+	s.textInputFocus()
 	s.log.Debug().Uint64("id", uint64(s.focused)).Msg("keyboard focus")
 	s.updateConstraint()
 }
