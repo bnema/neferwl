@@ -22,7 +22,7 @@ type idleNotification struct {
 	timeout time.Duration
 	input   bool // get_input_idle_notification: ignores idle inhibitors
 	idle    bool // idled sent, resumed not yet
-	timer   *time.Timer
+	timer   ports.Timer
 	gen     uint64 // bumped on stop: a firing timer of an older gen is stale
 }
 
@@ -93,7 +93,7 @@ func (s *Server) armIdle(n *idleNotification) {
 	gen := n.gen
 	// Core reports activity at most once per ActivityInterval: a shorter
 	// timeout would fire while the user is still typing.
-	n.timer = time.AfterFunc(max(n.timeout, ports.ActivityInterval), func() {
+	n.timer = s.clock.AfterFunc(max(n.timeout, ports.ActivityInterval), func() {
 		s.display.Do(func() {
 			// A timer stopped or replaced while it waited for Do is stale.
 			if n.gen != gen || !n.res.Resource.Alive() || n.idle || s.idleHeld(n) {
