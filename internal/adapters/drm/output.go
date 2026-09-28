@@ -628,6 +628,8 @@ func (o *Output) cursorRefused() bool {
 func (o *Output) commitState(vrr bool) error {
 	req := &atomicReq{}
 	cur := cursorState{}
+	// A move back to the applied state holds nothing.
+	o.cursorHeld = false
 	if o.cursor != nil {
 		cur = o.cursor.desired()
 		if cur != o.cursor.applied {
@@ -657,9 +659,6 @@ func (o *Output) commitState(vrr bool) error {
 	}
 	if o.cursor != nil {
 		o.cursor.committed(cur)
-		if cur == o.cursor.desired() {
-			o.cursorHeld = false
-		}
 	}
 	if vrr != o.vrrOn {
 		o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
