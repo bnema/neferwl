@@ -29,7 +29,7 @@ go tool pprof -sample_index=alloc_objects -top http://localhost:6060/debug/pprof
 GODEBUG=gctrace=1 neferwl --backend=drm
 ```
 
-`--pprof` also serves `/debug/pprof/profile` (CPU) and `/debug/pprof/trace` (scheduler and GC timeline for `go tool trace`). Escape analysis (`go build -gcflags=-m ./internal/adapters/vulkan`) shows why a value reaches the heap.
+`make tty` enables it on `localhost:6060` (`make tty PPROF=` disables it). `--pprof` also serves `/debug/pprof/profile` (CPU) and `/debug/pprof/trace` (scheduler and GC timeline for `go tool trace`). Escape analysis (`go build -gcflags=-m ./internal/adapters/vulkan`) shows why a value reaches the heap.
 
 ## Reference: 4K HDR tiled video playback
 
