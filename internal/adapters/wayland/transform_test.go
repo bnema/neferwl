@@ -157,15 +157,21 @@ func TestOpaqueRegionContent(t *testing.T) {
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, half)
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestDamage, int32(0), int32(0), int32(1), int32(1))
 	tc.commit(t)
-	if got := tc.next(t); got.Opaque {
-		t.Fatalf("partial region made the surface opaque: %+v", got)
+	prev := tc.next(t)
+	if prev.Opaque {
+		t.Fatalf("partial region made the surface opaque: %+v", prev)
 	}
 	// Two halves cover the whole surface, even through a larger rect.
+	// Opacity changes blending everywhere: the commit damages it all.
 	whole := tc.region(t, ports.Rect{W: 15, H: 20}, ports.Rect{X: 15, W: 100, H: 20})
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, whole)
 	tc.commit(t)
-	if got := tc.next(t); !got.Opaque {
+	got := tc.next(t)
+	if !got.Opaque {
 		t.Fatalf("covering region: %+v", got)
+	}
+	if rects, ok := got.DamageSince(prev.Seq); ok {
+		t.Fatalf("opacity change damaged only %v", rects)
 	}
 	// The surface grows past the region through the viewport: not opaque.
 	requestProtocol(t, tc.c, tc.vp, viewporter.WpViewportRequestSetDestination, int32(200), int32(20))

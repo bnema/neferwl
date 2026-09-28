@@ -454,9 +454,11 @@ func (s *surface) applyCommit(u *update) {
 		s.xdg.window.afterCommit()
 	}
 	reshaped := s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource || s.content.Transform != oldTransform)
-	drawn := fresh || damaged || moved || geometry || hinted || reshaped || s.sub.parent != nil || (s.has && s.content.Opaque != oldOpaque)
+	// Opacity changes how every pixel blends, so it repaints the whole surface.
+	opacity := s.has && s.content.Opaque != oldOpaque
+	drawn := fresh || damaged || moved || geometry || hinted || reshaped || opacity || s.sub.parent != nil
 	if drawn {
-		if moved || geometry || reshaped {
+		if moved || geometry || reshaped || opacity {
 			s.committed = damage{full: true}
 		}
 		if s.server.applyingGraph {
