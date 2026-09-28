@@ -631,6 +631,10 @@ func (w *Workspace) ToggleFullscreen() {
 // Activate focuses a window and makes it visible: it leaves another
 // window's fullscreen, which hides everything else.
 func (w *Workspace) Activate(id WindowID) {
+	if w.floatsHidden && w.floatIndex(id) >= 0 {
+		// A hidden float must be seen: show the floats with it.
+		w.showFloats()
+	}
 	if w.fullscreen != 0 && w.fullscreen != id {
 		w.fullscreen = 0
 	}
