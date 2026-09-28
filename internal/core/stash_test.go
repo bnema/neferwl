@@ -114,7 +114,8 @@ func TestStashAloneHasFocus(t *testing.T) {
 	if id, _ := w.Focused(); id != 3 {
 		t.Fatalf("focused %d, want the selected stashed window", id)
 	}
-	// Fixed overflow, only window stashed: a client leaving fullscreen
+	// Fixed overflow: the stashed window goes fullscreen on its own
+	// workspace, its only tile closes, then the client leaves fullscreen
 	// while the user is elsewhere.
 	m = newMonitor("", "")
 	m.SetOutput(100, 80)
@@ -123,9 +124,17 @@ func TestStashAloneHasFocus(t *testing.T) {
 	m.AddWindow(2)
 	w = m.Current()
 	w.ToggleWindowFloating()
-	w.RemoveWindow(1)
-	m.ToggleFullscreen() // 2 is alone: fullscreen in place
+	m.ToggleFullscreen()
+	fs := m.Current()
+	if fs == w || fs.origin != w {
+		t.Fatal("no fullscreen workspace")
+	}
+	m.RemoveWindow(1)
+	m.Focus(indexOf(m.Workspaces, fs) + 1)
 	m.SetFullscreen(2, false)
+	if len(w.Columns) != 0 || !slices.Equal(stashIDs(w), []WindowID{2}) || m.has(fs) {
+		t.Fatalf("origin %+v", w)
+	}
 	if id, ok := w.Focused(); !ok || id != 2 {
 		t.Fatalf("focused %d %v", id, ok)
 	}
