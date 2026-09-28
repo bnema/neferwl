@@ -94,6 +94,10 @@ type Output struct {
 	vrrOn         bool
 	vrrGame       bool
 	composedSince time.Time
+	// lastFrame is when the last frame was committed. cursorHeld: a cursor
+	// move waits for the next frame (see cursorWaits).
+	lastFrame  time.Time
+	cursorHeld bool
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
 	// follows wantOff, so a display turned off never lights up.
@@ -604,6 +608,7 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 	if !async {
 		o.overlayOn = ov.buf
 	}
+	o.lastFrame, o.cursorHeld = time.Now(), false
 	f.frame, f.async = true, async
 	f.fences = dupFences(fence, ov.acquire)
 	o.setAsync(async)
@@ -626,7 +631,12 @@ func (o *Output) commitState(vrr bool) error {
 	if o.cursor != nil {
 		cur = o.cursor.desired()
 		if cur != o.cursor.applied {
-			o.cursor.props(req, o.crtc, cur)
+			if o.cursorWaits(time.Now()) {
+				o.cursorHeld = true
+				cur = o.cursor.applied
+			} else {
+				o.cursor.props(req, o.crtc, cur)
+			}
 		}
 	}
 	if vrr != o.vrrOn {
@@ -647,6 +657,9 @@ func (o *Output) commitState(vrr bool) error {
 	}
 	if o.cursor != nil {
 		o.cursor.committed(cur)
+		if cur == o.cursor.desired() {
+			o.cursorHeld = false
+		}
 	}
 	if vrr != o.vrrOn {
 		o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
@@ -654,6 +667,18 @@ func (o *Output) commitState(vrr bool) error {
 	o.vrrOn = vrr
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
+}
+
+// cursorMinInterval bounds how long a held cursor move waits for a frame.
+const cursorMinInterval = time.Second / 24
+
+// cursorWaits reports whether a cursor move rides on the next frame
+// instead of its own commit. Under VRR a cursor-only commit refreshes the
+// panel at its slowest rate, which delays the game's next frame by up to
+// one such refresh. A game that stops drawing still gets the cursor at
+// cursorMinInterval.
+func (o *Output) cursorWaits(now time.Time) bool {
+	return o.vrrOn && o.vrrGame && now.Sub(o.lastFrame) < cursorMinInterval
 }
 
 func boolValue(b bool) uint64 {
@@ -857,11 +882,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	// guarantees a stopped/reset timer cannot deliver its old value.
 	retryTimer := time.NewTimer(time.Hour)
 	vrrTimer := time.NewTimer(time.Hour)
+	cursorTimer := time.NewTimer(time.Hour)
 	o.frame.startTimer()
 	retryTimer.Stop()
 	vrrTimer.Stop()
+	cursorTimer.Stop()
 	defer retryTimer.Stop()
 	defer vrrTimer.Stop()
+	defer cursorTimer.Stop()
 	defer o.frame.stopTimer()
 	// seen is the latest content Seq per window. It is reported only while
 	// no frame is in flight: then the GPU has finished every frame that
@@ -898,6 +926,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			vrrTimer.Stop()
 		}
+		// A held cursor move commits alone if no frame comes in time.
+		var cursorDue <-chan time.Time
+		if enabled && o.cursorHeld && !o.frame.pendingCommit() {
+			cursorTimer.Reset(max(0, cursorMinInterval-time.Since(o.lastFrame)))
+			cursorDue = cursorTimer.C
+		} else {
+			cursorTimer.Stop()
+		}
 		// A commit whose event never comes must not stop the output.
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
@@ -919,6 +955,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			dirty = haveScene
 			stateDirty = true
 		case <-vrrOff:
+			stateDirty = true
+		case <-cursorDue:
 			stateDirty = true
 		case <-cursorWake:
 			stateDirty = true
@@ -1149,7 +1187,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		return false
 	}
 	if age := time.Since(start); age > 20*time.Millisecond {
-		o.log.Info().Dur("flip_ms", age).Str("connector", o.conn.name).Msg("slow flip")
+		o.log.Info().Dur("flip_ms", age).Bool("frame", f.frame).Bool("vrr", o.vrrOn).Str("connector", o.conn.name).Msg("slow flip")
 	}
 	if o.cursor != nil {
 		o.cursor.landed()

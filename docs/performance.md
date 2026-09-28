@@ -6,6 +6,7 @@ How NeferWL keeps its CPU and memory use low, how to measure it, and the referen
 
 - **No reflection on the FFI boundary.** libwayland and Vulkan are called through `purego.Syscall6/Syscall15` (fixed arity, zero allocation) and C calls back into Go through `purego.NewCallbackInts`. The Vulkan dispatch tables are generated methods; the libwayland wrapper caches resource id, version and client, and precomputes request argument counts.
 - **No allocation per frame or per request on the steady-state path.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse owner-goroutine scratch or immutable snapshots. Surface updates (one per `wl_surface.commit`) are recycled once no queued update references them.
+- **Cursor rides on game frames under VRR.** While a fullscreen game drives VRR, a cursor move waits for the game's next frame instead of its own commit: a cursor-only commit refreshes the panel at its slowest rate (~21 ms at 48 Hz) and delays the next game frame by as much. If the game stops drawing, the cursor still commits alone at 24 Hz.
 - **Default GOGC.** The Go live heap is a few MB (client buffers live in shared and GPU memory), so the runtime default `GOGC=100` with a 256 MiB soft limit gives 2 collections on the tiled playback test where `GOGC=50` gave 13. `GOGC` and `GOMEMLIMIT` from the environment win.
 
 ## Guards
@@ -30,6 +31,8 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 ```
 
 `make tty` enables it on `localhost:6060` (`make tty PPROF=` disables it). `--pprof` also serves `/debug/pprof/profile` (CPU) and `/debug/pprof/trace` (scheduler and GC timeline for `go tool trace`). Escape analysis (`go build -gcflags=-m ./internal/adapters/vulkan`) shows why a value reaches the heap.
+
+`slow flip` log entries (flip over 20 ms) carry `frame` (false: cursor or VRR state commit) and `vrr`; `input stats` shows coalesced pointer motion and the longest wait for core.
 
 ## Reference: 4K HDR tiled video playback
 
