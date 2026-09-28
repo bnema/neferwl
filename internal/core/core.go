@@ -434,18 +434,21 @@ func (c *Core) publish(ctx context.Context) error {
 			floating := p.Floating
 			if p.Hidden {
 				// A hidden window keeps its size, state and output; it is
-				// only deactivated and marked invisible.
-				if old, ok := c.sent[p.ID]; ok {
-					v := old
-					v.Activated, v.Visible, v.Output = false, false, sc.name()
-					if v == old {
-						continue
-					}
-					if err := c.command(ctx, v); err != nil {
-						return err
-					}
-					c.sent[p.ID] = v
+				// only deactivated and marked invisible. One mapped hidden
+				// is told so at once, sized by the client.
+				old, ok := c.sent[p.ID]
+				v := old
+				if !ok {
+					v = ports.ConfigureWindow{ID: p.ID, Floating: floating}
 				}
+				v.Activated, v.Visible, v.Output = false, false, sc.name()
+				if ok && v == old {
+					continue
+				}
+				if err := c.command(ctx, v); err != nil {
+					return err
+				}
+				c.sent[p.ID] = v
 				continue
 			}
 			r := c.clientRect(p)

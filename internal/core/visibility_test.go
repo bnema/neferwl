@@ -69,4 +69,22 @@ func TestConfigureVisible(t *testing.T) {
 	visible(map[WindowID]bool{1: false, 2: false})
 	m.Focus(0)
 	visible(map[WindowID]bool{1: true, 2: true})
+	// A window mapped on a hidden workspace is told it is invisible at
+	// once, sized by the client.
+	m.Workspaces[1].AddWindow(3)
+	publish()
+	if v, ok := sent[3]; !ok || v.Visible || v.Width != 0 || v.Output != "OUT-1" {
+		t.Fatalf("hidden map: %+v %v", v, ok)
+	}
+	// A column scrolled off takes its popups off screen with it.
+	c.popups[10] = &popupState{id: 10, parent: 1, mapped: true, rect: Rect{W: 5, H: 5}}
+	c.popupOrder = append(c.popupOrder, 10)
+	w.FocusID(1)
+	if !c.visible(10) {
+		t.Fatal("popup of a visible window not on screen")
+	}
+	m.AddWindow(4)
+	if c.visible(1) || c.visible(10) {
+		t.Fatal("popup of a scrolled-off window still on screen")
+	}
 }
