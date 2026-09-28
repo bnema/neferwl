@@ -26,6 +26,6 @@ neferwl --backend=headless
 WAYLAND_DISPLAY=<name from the log> go run ./examples/testime -preedit nihon -commit 日本
 ```
 
-`-once` exits after the first commit, and `-delay` sets the time between preedit and commit.
+`-count <n>` exits after n commits, and `-delay` sets the time between preedit and commit.
 
 The headless backend does not draw the cursor on screen. After a layout change, pointer focus updates on the next move.

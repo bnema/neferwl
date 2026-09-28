@@ -20,9 +20,9 @@ func main() {
 	preedit := flag.String("preedit", "nihon", "preedit string sent first")
 	commit := flag.String("commit", "日本", "text committed after the preedit")
 	delay := flag.Duration("delay", 100*time.Millisecond, "time between preedit and commit")
-	once := flag.Bool("once", false, "exit after the first commit")
+	count := flag.Int("count", 0, "exit after this many commits; 0 runs until the compositor closes")
 	flag.Parse()
-	if err := run(*preedit, *commit, *delay, *once); err != nil {
+	if err := run(*preedit, *commit, *delay, *count); err != nil {
 		fmt.Fprintln(os.Stderr, "testime:", err)
 		os.Exit(1)
 	}
@@ -36,21 +36,25 @@ type inputMethod struct {
 	active     bool // state of the last done
 	activating bool // activate seen, not yet applied by done
 	unavail    bool
-	pending    bool // a text input to serve after done
+	activated  bool // activate seen since the last done
+	serve      bool // an activation applied by done, not yet served
 }
 
 func (m *inputMethod) Dispatch(e *wlturbo.Event) {
 	switch uint32(e.Opcode) {
 	case inputmethod.ZwpInputMethodV2EventActivate:
-		m.activating = true
+		// Every activate starts a new text input session, even while
+		// active: an app enabling its text input again gets one.
+		m.activating, m.activated = true, true
 	case inputmethod.ZwpInputMethodV2EventDeactivate:
-		m.activating = false
+		m.activating, m.activated = false, false
 	case inputmethod.ZwpInputMethodV2EventDone:
+		// Requests only count for an activation once its done is in:
+		// the compositor drops commits with an older serial.
 		m.dones++
-		if m.activating && !m.active {
-			m.pending = true
-		}
 		m.active = m.activating
+		m.serve = m.serve && m.active || m.activated
+		m.activated = false
 	case inputmethod.ZwpInputMethodV2EventUnavailable:
 		m.unavail = true
 	}
@@ -65,7 +69,7 @@ func (m *inputMethod) send(op uint32, args ...any) error {
 	return m.c.SendRequest(m.ID(), uint16(op), args...)
 }
 
-func run(preedit, commit string, delay time.Duration, once bool) error {
+func run(preedit, commit string, delay time.Duration, count int) error {
 	c, err := wlturbo.Connect("")
 	if err != nil {
 		return err
@@ -100,17 +104,17 @@ func run(preedit, commit string, delay time.Duration, once bool) error {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "testime: ready")
-	for {
+	for commits := 0; ; {
 		if err := c.Dispatch(); err != nil {
 			return err
 		}
 		if m.unavail {
 			return errors.New("another input method is running")
 		}
-		if !m.pending {
+		if !m.serve {
 			continue
 		}
-		m.pending = false
+		m.serve = false
 		if err := m.send(inputmethod.ZwpInputMethodV2RequestSetPreeditString, preedit, int32(len(preedit)), int32(len(preedit))); err != nil {
 			return err
 		}
@@ -135,7 +139,7 @@ func run(preedit, commit string, delay time.Duration, once bool) error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "testime: committed %q\n", commit)
-		if once {
+		if commits++; count > 0 && commits == count {
 			return nil
 		}
 	}

@@ -56,10 +56,9 @@ func (p *textClient) Dispatch(e *wlturbo.Event) {
 	}
 }
 
-// xdgConfigure acks configures and answers pings.
+// xdgConfigure records the last configure serial.
 type xdgConfigure struct {
 	wlturbo.BaseProxy
-	c      *wlturbo.Display
 	serial uint32
 }
 
@@ -103,11 +102,15 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	go func() {
 		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults()})
 	}()
+	stopped := false // Run's result was already received
 	defer func() {
 		cancel()
+		if stopped {
+			return
+		}
 		select {
 		case err := <-done:
-			if err != nil && !strings.Contains(strings.ToLower(err.Error()), "vulkan") {
+			if err != nil {
 				t.Errorf("Run: %v", err)
 			}
 		case <-time.After(5 * time.Second):
@@ -121,6 +124,7 @@ func TestHeadlessTextInputIME(t *testing.T) {
 		}
 		select {
 		case err := <-done:
+			stopped = true
 			if err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 				t.Skipf("Vulkan unavailable: %v", err)
 			}
@@ -132,7 +136,8 @@ func TestHeadlessTextInputIME(t *testing.T) {
 		}
 	}
 
-	cmd := exec.Command(ime, "-once", "-preedit", "nihon", "-commit", "日本")
+	// Two commits: the second comes from enabling the text input again.
+	cmd := exec.Command(ime, "-count", "2", "-preedit", "nihon", "-commit", "日本")
 	cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY=wayland-1")
 	imeOut := &lockedBuffer{}
 	cmd.Stderr = imeOut
@@ -141,9 +146,12 @@ func TestHeadlessTextInputIME(t *testing.T) {
 	}
 	imeDone := make(chan error, 1)
 	go func() { imeDone <- cmd.Wait() }()
+	imeExited := false
 	defer func() {
-		_ = cmd.Process.Kill()
-		<-imeDone
+		if !imeExited {
+			_ = cmd.Process.Kill()
+			<-imeDone
+		}
 	}()
 	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(imeOut.String(), "ready"); time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
@@ -175,12 +183,23 @@ func TestHeadlessTextInputIME(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	send(textinput.ZwpTextInputV3RequestEnable)
-	send(textinput.ZwpTextInputV3RequestSetContentType, uint32(0), uint32(0))
-	send(textinput.ZwpTextInputV3RequestCommit)
-	poll("no commit", func() bool { return len(text.commits) > 0 })
-	if len(text.preedit) == 0 || text.preedit[0] != "nihon" || text.commits[0] != "日本" {
+	for i := 1; i <= 2; i++ {
+		send(textinput.ZwpTextInputV3RequestEnable)
+		send(textinput.ZwpTextInputV3RequestSetContentType, uint32(0), uint32(0))
+		send(textinput.ZwpTextInputV3RequestCommit)
+		poll("missing commit", func() bool { return len(text.commits) == i })
+	}
+	if len(text.preedit) != 2 || text.preedit[0] != "nihon" || text.commits[0] != "日本" || text.commits[1] != "日本" {
 		t.Fatalf("preedit %q commits %q", text.preedit, text.commits)
+	}
+	select {
+	case err := <-imeDone:
+		imeExited = true
+		if err != nil {
+			t.Fatalf("testime: %v: %s", err, imeOut.String())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("testime did not exit after two commits: %s", imeOut.String())
 	}
 }
 
@@ -240,7 +259,7 @@ func mapTextClient(t *testing.T, c *wlturbo.Display) *textClient {
 	req(pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
 	surf := newID()
 	req(comp, wayland.CompositorRequestCreateSurface, surf)
-	xdg := &xdgConfigure{c: c}
+	xdg := &xdgConfigure{}
 	xdg.SetID(c.AllocateID())
 	c.Context().Register(xdg)
 	req(wm.ID(), xdgshell.WmBaseRequestGetXdgSurface, xdg.ID(), surf)
