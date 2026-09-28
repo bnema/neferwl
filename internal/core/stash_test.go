@@ -25,7 +25,7 @@ func stashMonitor(overflow Overflow) *Monitor {
 	w := m.Current()
 	for _, id := range []WindowID{2, 3} {
 		w.FocusID(id)
-		w.ToggleWindowFloating()
+		w.ToggleWindowStash()
 	}
 	return m
 }
@@ -46,7 +46,7 @@ func TestStashMoveToWorkspace(t *testing.T) {
 		}
 		to.AddWindow(9)
 		to.FocusID(3)
-		to.ToggleWindowFloating()
+		to.ToggleWindowStash()
 		if len(to.Columns) != 2 || to.Columns[1].Windows[0] != 3 {
 			t.Fatalf("%v: unstash elsewhere %+v", overflow, to.Columns)
 		}
@@ -59,7 +59,7 @@ func TestStashFollowsWorkspace(t *testing.T) {
 	m := stashMonitor(OverflowScroll)
 	w := m.Current()
 	w.FocusID(2)
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	m.take(w)
 	dst := newMonitor("", "")
 	dst.SetOutput(200, 100)
@@ -67,7 +67,7 @@ func TestStashFollowsWorkspace(t *testing.T) {
 	if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.stashAt != 0 || !w.stashHidden {
 		t.Fatalf("stash %v at %d hidden %v", stashIDs(w), w.stashAt, w.stashHidden)
 	}
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	if p := placement(w, 2); p.Rect != (Rect{X: 20, Y: 10, W: 160, H: 80}) {
 		t.Fatalf("placement on the new output %+v", p)
 	}
@@ -123,7 +123,7 @@ func TestStashAloneHasFocus(t *testing.T) {
 	m.AddWindow(1)
 	m.AddWindow(2)
 	w = m.Current()
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	m.ToggleFullscreen()
 	fs := m.Current()
 	if fs == w || fs.origin != w {
@@ -148,8 +148,8 @@ func TestStashPendingFullscreenOverTile(t *testing.T) {
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.AddWindow(3)
-	w.ToggleWindowFloating() // 3 stashed
-	w.ToggleFloatingVisible()
+	w.ToggleWindowStash() // 3 stashed
+	w.ToggleStashVisible()
 	w.SetFullscreen(3, true) // waits
 	w.FocusID(1)
 	w.SetFullscreen(1, true)
@@ -157,7 +157,7 @@ func TestStashPendingFullscreenOverTile(t *testing.T) {
 	if w.cover() != 0 {
 		t.Fatal("tile still covers")
 	}
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	if w.fullscreen != 3 || w.hiddenFullscreen != 0 {
 		t.Fatalf("fullscreen %d pending %d", w.fullscreen, w.hiddenFullscreen)
 	}
@@ -176,9 +176,9 @@ func TestStashFromRemovedNamedWorkspace(t *testing.T) {
 	m.AddWindow(1)
 	m.AddWindow(2)
 	w := m.Current()
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	w.FocusID(1)
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	m.SetNamed(nil)
 	to := m.Workspaces[m.Active]
 	if !slices.Equal(stashIDs(to), []WindowID{2, 1}) {

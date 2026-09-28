@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func TestToggleWindowFloating(t *testing.T) {
+func TestToggleWindowStash(t *testing.T) {
 	for _, stacked := range []bool{false, true} {
 		t.Run(map[bool]string{false: "column", true: "stack"}[stacked], func(t *testing.T) {
 			w := workspace()
@@ -20,7 +20,7 @@ func TestToggleWindowFloating(t *testing.T) {
 				w.Columns[1].Windows = []WindowID{3, 2}
 				w.Columns[1].Focus = 1
 			}
-			w.Apply(ActionToggleWindowFloating)
+			w.Apply(ActionToggleWindowStash)
 			if len(w.Stash) != 1 || len(w.Floats) != 0 || !w.Stash[0].back.holdsStack(Column{Windows: []WindowID{3}}) && stacked {
 				t.Fatalf("stash %+v", w.Stash)
 			}
@@ -32,7 +32,7 @@ func TestToggleWindowFloating(t *testing.T) {
 			if placement(w, 2).Rect != p.Rect {
 				t.Fatal("client resize moved stashed window")
 			}
-			w.Apply(ActionToggleWindowFloating)
+			w.Apply(ActionToggleWindowStash)
 			id, _ := w.Focused()
 			if id != 2 || len(w.Stash) != 0 || w.Focus != 1 || w.Columns[1].Width != (Width{Pixels: 35}) || !slices.Contains(w.Columns[1].Windows, 2) {
 				t.Fatalf("round trip: %+v", w)
@@ -41,7 +41,7 @@ func TestToggleWindowFloating(t *testing.T) {
 	}
 	w := workspace()
 	w.AddFloating(4, 20, 10)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	if len(w.Floats) != 0 || len(w.Columns) != 1 || w.Columns[0].Windows[0] != 4 {
 		t.Fatalf("native float: %+v", w)
 	}
@@ -68,7 +68,7 @@ func TestStashStrip(t *testing.T) {
 	}
 	for _, id := range []WindowID{4, 3, 2} {
 		w.FocusID(id)
-		w.Apply(ActionToggleWindowFloating)
+		w.Apply(ActionToggleWindowStash)
 	}
 	if got := []WindowID{w.Stash[0].ID, w.Stash[1].ID, w.Stash[2].ID}; !slices.Equal(got, []WindowID{4, 3, 2}) {
 		t.Fatalf("order %v", got)
@@ -116,17 +116,17 @@ func TestStashStrip(t *testing.T) {
 
 // Hiding the stash is the way out: tiles get the focus, a new stashed
 // window shows it again, and the native floats stay as they are.
-func TestToggleFloatingVisible(t *testing.T) {
+func TestToggleStashVisible(t *testing.T) {
 	w := workspace()
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.AddWindow(3)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	w.FocusID(2)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	w.Apply(ActionFocusColumnLeft)
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	if id, _ := w.Focused(); id != 1 || !w.stashHidden {
 		t.Fatalf("focused %d hidden %v", id, w.stashHidden)
 	}
@@ -139,19 +139,19 @@ func TestToggleFloatingVisible(t *testing.T) {
 		t.Fatal("focused hidden stash window")
 	}
 	// Shown from a tile: the stash takes the focus on its selected window.
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	if id, _ := w.Focused(); id != 3 || w.stashHidden {
 		t.Fatalf("restored focus %d", id)
 	}
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	w.FocusID(1)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	if id, _ := w.Focused(); id != 1 || w.stashHidden || w.stashAt != 2 {
 		t.Fatalf("new stashed window: focused %d hidden %v", id, w.stashHidden)
 	}
 	// A native dialog stays when the stash hides.
 	w.AddFloating(9, 10, 10)
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	if p := placement(w, 9); p.Hidden || !w.stashHidden {
 		t.Fatalf("dialog hidden with the stash: %+v", p)
 	}
@@ -169,7 +169,7 @@ func TestStashClose(t *testing.T) {
 	}
 	for _, id := range []WindowID{4, 3, 2} {
 		w.FocusID(id)
-		w.Apply(ActionToggleWindowFloating)
+		w.Apply(ActionToggleWindowStash)
 	}
 	w.FocusID(3) // the middle one
 	w.RemoveWindow(3)
@@ -200,7 +200,7 @@ func TestExclusiveFullscreenNewWindow(t *testing.T) {
 				t.Fatalf("overflow %v: %+v", overflow, p)
 			}
 		}
-		if w.ToggleFloatingVisible(); w.stashHidden {
+		if w.ToggleStashVisible(); w.stashHidden {
 			t.Fatal("floats toggled under fullscreen")
 		}
 		w.SetFullscreen(1, false)
@@ -253,37 +253,37 @@ func TestFullscreenPinsFocus(t *testing.T) {
 }
 
 // A fullscreen window does not float until it leaves fullscreen.
-func TestToggleWindowFloatingIgnoresFullscreen(t *testing.T) {
+func TestToggleWindowStashIgnoresFullscreen(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.SetFullscreen(1, true)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	if len(w.Stash) != 0 || w.fullscreen != 1 {
 		t.Fatalf("fullscreen window floated: %+v", w)
 	}
 	w.SetFullscreen(1, false)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
 	if len(w.Stash) != 1 {
 		t.Fatal("window did not float after leaving fullscreen")
 	}
 }
 
 // A lone maximized column comes back maximized.
-func TestToggleWindowFloatingKeepsFullWidth(t *testing.T) {
+func TestToggleWindowStashKeepsFullWidth(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.Apply(ActionMaximizeColumn)
-	w.Apply(ActionToggleWindowFloating)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
+	w.Apply(ActionToggleWindowStash)
 	if id, _ := w.Focused(); id != 2 || !w.Columns[w.Focus].FullWidth {
 		t.Fatalf("focused %d, column %+v", id, w.Columns[w.Focus])
 	}
 }
 
 // A lone expanded column (fixed overflow) comes back expanded.
-func TestToggleWindowFloatingKeepsExpanded(t *testing.T) {
+func TestToggleWindowStashKeepsExpanded(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
 	w.SetMaxColumns(3)
@@ -293,8 +293,8 @@ func TestToggleWindowFloatingKeepsExpanded(t *testing.T) {
 	if !w.Columns[w.Focus].Expanded {
 		t.Fatal("column not expanded")
 	}
-	w.Apply(ActionToggleWindowFloating)
-	w.Apply(ActionToggleWindowFloating)
+	w.Apply(ActionToggleWindowStash)
+	w.Apply(ActionToggleWindowStash)
 	if id, _ := w.Focused(); id != 2 || !w.Columns[w.Focus].Expanded {
 		t.Fatalf("focused %d, column %+v", id, w.Columns[w.Focus])
 	}
@@ -310,13 +310,13 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 	m.AddWindow(1)
 	m.AddWindow(2)
 	w := m.Current()
-	w.ToggleWindowFloating()
-	w.ToggleFloatingVisible()
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
 	m.SetFullscreen(2, true)
 	if m.Current() != w || w.stashIndex(2) < 0 || !w.stashHidden || w.fullscreen != 0 {
 		t.Fatalf("hidden stash left or showed: %+v", w)
 	}
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	if w.fullscreen != 2 {
 		t.Fatalf("fullscreen lost on show: %d", w.fullscreen)
 	}
@@ -324,13 +324,13 @@ func TestHiddenFloatFullscreenRequest(t *testing.T) {
 
 // A fullscreen stashed window (a game in scanout) keeps the stash shown:
 // hiding it would drop scanout and VRR.
-func TestToggleFloatingVisibleFullscreen(t *testing.T) {
+func TestToggleStashVisibleFullscreen(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	w.SetFullscreen(2, true)
-	w.Apply(ActionToggleFloatingVisible)
+	w.Apply(ActionToggleStashVisible)
 	if id, _ := w.Focused(); id != 2 || w.fullscreen != 2 || w.stashHidden {
 		t.Fatalf("fullscreen stash hidden: focused %d fullscreen %d", id, w.fullscreen)
 	}
@@ -362,7 +362,7 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 		}
 	}
 	check(0)
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	check(0.3)
 	found := false
 	for len(commands) > 0 {
@@ -393,17 +393,17 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 		t.Fatal("missing native configure")
 	}
 	// Hiding the stash leaves the dialog, and its veil.
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	check(0.3)
 	w.RemoveWindow(2)
 	check(0)
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	check(0.3)
 	w.AddFloating(2, 20, 10)
 	w.SetFullscreen(1, true)
 	check(0)
 	w.SetFullscreen(1, false)
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	w.SetFullscreen(1, true)
 	check(0)
 	// A dialog of a fullscreen tile waits hidden: no veil over the game.
@@ -425,8 +425,8 @@ func TestActivateHiddenFloat(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
-	w.ToggleWindowFloating()
-	w.ToggleFloatingVisible()
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
 	w.FocusID(1)
 	w.SetFullscreen(1, true)
 	w.Activate(2)
@@ -435,7 +435,7 @@ func TestActivateHiddenFloat(t *testing.T) {
 	}
 	// The float's own fullscreen, asked while hidden, comes back with it.
 	w.FocusID(2)
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	w.SetFullscreen(2, true)
 	w.SetFullscreen(1, true)
 	w.Activate(2)

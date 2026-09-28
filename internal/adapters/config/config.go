@@ -32,8 +32,8 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+r", "cycle-column-width"},
 	{"cmd+f", "maximize-column"},
 	{"cmd+shift+f", "toggle-fullscreen"},
-	{"cmd+s", "toggle-window-floating"},
-	{"cmd+shift+s", "toggle-floating-visible"},
+	{"cmd+s", "toggle-window-stash"},
+	{"cmd+shift+s", "toggle-stash-visible"},
 	{"cmd+q", "close-window"},
 	{"ctrl+alt+backspace", "quit"},
 	{"ctrl+cmd+space", "spawn fuzzel"},
@@ -46,7 +46,7 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+left", "move-workspace-to-monitor-left"},
 	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
 }
-var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "consume-or-expel-window-left": true, "consume-or-expel-window-right": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "maximize-column": true, "toggle-fullscreen": true, "toggle-window-floating": true, "toggle-floating-visible": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "consume-or-expel-window-left": true, "consume-or-expel-window-right": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "maximize-column": true, "toggle-fullscreen": true, "toggle-window-stash": true, "toggle-stash-visible": true, "close-window": true, "quit": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 

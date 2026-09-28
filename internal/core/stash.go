@@ -9,10 +9,10 @@ import (
 )
 
 // The stash is a workspace's strip of windows set aside with
-// toggle-window-floating, left to right in arrival order. The selected one
+// toggle-window-stash, left to right in arrival order. The selected one
 // is centred, stash.width% of the usable width and stashHeight% of its
 // height; its neighbors fill the margins beside it, stash.gap% away,
-// the sides, dimmed; the others wait off screen. toggle-floating-visible
+// the sides, dimmed; the others wait off screen. toggle-stash-visible
 // hides and shows the whole strip. Native floats (dialogs) are not in it.
 
 // stashWidth is the default share of the usable width, in percent, a
@@ -120,11 +120,11 @@ func (f Float) rehome() Float {
 	return f
 }
 
-// ToggleFloatingVisible hides the stash, or shows it and gives it the
+// ToggleStashVisible hides the stash, or shows it and gives it the
 // focus. Native floats stay as they are. It does nothing under a covering
 // fullscreen window (a game in scanout): hiding it would drop scanout and
 // VRR.
-func (w *Workspace) ToggleFloatingVisible() {
+func (w *Workspace) ToggleStashVisible() {
 	if len(w.Stash) == 0 || w.cover() != 0 {
 		return
 	}

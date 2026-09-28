@@ -10,20 +10,20 @@ import (
 type Action string
 
 const (
-	ActionSpawnTerminal         Action = "spawn-terminal"
-	ActionFocusColumnLeft       Action = "focus-column-left"
-	ActionFocusColumnRight      Action = "focus-column-right"
-	ActionFocusWindowUp         Action = "focus-window-up"
-	ActionFocusWindowDown       Action = "focus-window-down"
-	ActionMoveColumnLeft        Action = "move-column-left"
-	ActionMoveColumnRight       Action = "move-column-right"
-	ActionCycleColumnWidth      Action = "cycle-column-width"
-	ActionMaximizeColumn        Action = "maximize-column"
-	ActionToggleFullscreen      Action = "toggle-fullscreen"
-	ActionToggleWindowFloating  Action = "toggle-window-floating"
-	ActionToggleFloatingVisible Action = "toggle-floating-visible"
-	ActionCloseWindow           Action = "close-window"
-	ActionQuit                  Action = "quit"
+	ActionSpawnTerminal      Action = "spawn-terminal"
+	ActionFocusColumnLeft    Action = "focus-column-left"
+	ActionFocusColumnRight   Action = "focus-column-right"
+	ActionFocusWindowUp      Action = "focus-window-up"
+	ActionFocusWindowDown    Action = "focus-window-down"
+	ActionMoveColumnLeft     Action = "move-column-left"
+	ActionMoveColumnRight    Action = "move-column-right"
+	ActionCycleColumnWidth   Action = "cycle-column-width"
+	ActionMaximizeColumn     Action = "maximize-column"
+	ActionToggleFullscreen   Action = "toggle-fullscreen"
+	ActionToggleWindowStash  Action = "toggle-window-stash"
+	ActionToggleStashVisible Action = "toggle-stash-visible"
+	ActionCloseWindow        Action = "close-window"
+	ActionQuit               Action = "quit"
 	// Workspaces stack vertically; up/down stop at the ends.
 	ActionFocusWorkspaceUp   Action = "focus-workspace-up"
 	ActionFocusWorkspaceDown Action = "focus-workspace-down"
@@ -247,11 +247,11 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionToggleFullscreen:
 		m.ToggleFullscreen()
 		return Effect{}
-	case ActionToggleWindowFloating:
-		m.Current().ToggleWindowFloating()
+	case ActionToggleWindowStash:
+		m.Current().ToggleWindowStash()
 		return Effect{}
-	case ActionToggleFloatingVisible:
-		m.Current().ToggleFloatingVisible()
+	case ActionToggleStashVisible:
+		m.Current().ToggleStashVisible()
 		return Effect{}
 	case ActionMaximizeColumn:
 		// A client that made itself fullscreen (Wine at monitor size) goes
@@ -311,10 +311,10 @@ func (w *Workspace) Apply(a Action) Effect {
 		// In place only: binds go through Monitor.Apply, which gives a
 		// fixed-overflow fullscreen its own workspace.
 		w.ToggleFullscreen()
-	case ActionToggleWindowFloating:
-		w.ToggleWindowFloating()
-	case ActionToggleFloatingVisible:
-		w.ToggleFloatingVisible()
+	case ActionToggleWindowStash:
+		w.ToggleWindowStash()
+	case ActionToggleStashVisible:
+		w.ToggleStashVisible()
 	case ActionCloseWindow:
 		id, _ := w.Focused()
 		return Effect{Close: id}

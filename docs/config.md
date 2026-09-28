@@ -93,8 +93,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. An app that asks for fullscreen in its first second (e.g. a Wine launcher that remembered a monitor-sized window) opens in a column instead; later requests are honoured. Fullscreen is exclusive, whether from this bind or the app: nothing is drawn above it but a surface taking the keyboard (a locker). Bars, notifications and other windows, dialogs included, wait hidden until it leaves; activating one of them leaves fullscreen |
-| `toggle-window-floating` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
-| `toggle-floating-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Does nothing under a fullscreen window |
+| `toggle-window-stash` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
+| `toggle-stash-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Does nothing under a fullscreen window |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |
@@ -112,9 +112,9 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 ### Stash
 
-Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-floating`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors sit `stash.gap` beside it and show up to the screen edges, dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
+Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-stash`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors sit `stash.gap` beside it and show up to the screen edges, dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
 
-While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-floating-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
+While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
 Native floating windows (dialogs, file pickers) are not in the stash: they stay centred above it.
 
@@ -140,8 +140,8 @@ Native floating windows (dialogs, file pickers) are not in the stash: they stay 
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
-| `cmd+s` | `toggle-window-floating` |
-| `cmd+shift+s` | `toggle-floating-visible` |
+| `cmd+s` | `toggle-window-stash` |
+| `cmd+shift+s` | `toggle-stash-visible` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
 | `ctrl+cmd+space` | `spawn fuzzel` |

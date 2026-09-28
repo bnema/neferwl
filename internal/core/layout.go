@@ -140,7 +140,7 @@ type Workspace struct {
 	// floatFocus is set while the top one has the focus.
 	Floats     []Float
 	floatFocus bool
-	// Stash holds the windows set aside by toggle-window-floating, left to
+	// Stash holds the windows set aside by toggle-window-stash, left to
 	// right (stash.go); stashAt is the selected one. stashFocus is set
 	// while it has the focus, under a focused native float.
 	Stash       []Float
@@ -1072,9 +1072,9 @@ func (w *Workspace) floatRect(f Float) Rect {
 // size of a floating window: a stashed one.
 func (w *Workspace) imposedFloat(id WindowID) bool { return w.stashIndex(id) >= 0 }
 
-// ToggleWindowFloating stashes the focused tile, or returns the focused
+// ToggleWindowStash stashes the focused tile, or returns the focused
 // stashed window to its column. A native float becomes a new column.
-func (w *Workspace) ToggleWindowFloating() {
+func (w *Workspace) ToggleWindowStash() {
 	id, ok := w.Focused()
 	// A fullscreen window (a Wine game in scanout) keeps its place: it
 	// leaves fullscreen first, then may float.

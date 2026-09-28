@@ -63,11 +63,11 @@ func TestConfigureVisible(t *testing.T) {
 	visible(map[WindowID]bool{1: true, 2: false})
 	// A floated window is visible until the floats are hidden.
 	w.FocusID(2)
-	w.ToggleWindowFloating()
+	w.ToggleWindowStash()
 	visible(map[WindowID]bool{1: true, 2: true})
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	visible(map[WindowID]bool{1: true, 2: false})
-	w.ToggleFloatingVisible()
+	w.ToggleStashVisible()
 	// Another workspace hides them all; coming back shows them.
 	if len(m.Workspaces) < 2 {
 		t.Fatal("no spare workspace")
