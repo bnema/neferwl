@@ -152,7 +152,11 @@ func TestOutputApplyOutbox(t *testing.T) {
 	if out == nil || len(heads.Heads) != 1 || heads.Heads[0].Info.Name != "DP-2" {
 		t.Fatalf("latest heads: %+v", heads)
 	}
+	out <- heads
 	r.a.headsSent()
+	if got := <-headsCh; got.Heads[0].Info.Name != "DP-2" {
+		t.Fatalf("delivered heads: %+v", got)
+	}
 	if out, _ := r.a.headsOut(headsCh); out != nil {
 		t.Fatal("heads sent twice")
 	}
