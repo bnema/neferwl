@@ -89,6 +89,9 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "not_dmabuf"
 	case len(c.Children) > 0:
 		return c, "subsurfaces"
+	case c.Transform != 0:
+		// Planes show buffers as they are: rotation is composed.
+		return c, "buffer_transform"
 	case c.Width != w || c.Height != h:
 		return c, "size_mismatch"
 	case c.LogicalW != full.Rect.W || c.LogicalH != full.Rect.H:

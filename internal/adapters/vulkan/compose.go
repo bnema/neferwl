@@ -8,6 +8,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
@@ -51,6 +52,7 @@ const (
 type pushConstants struct {
 	rect  [4]int32
 	mapv  [4]float32
+	mapy  [4]float32
 	color [4]float32
 	crop  [4]float32
 	buf   [4]uint32
@@ -298,21 +300,36 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 }
 
 // contentDraw draws the visible rect of a w×h buffer mapped onto full
-// (target pixels). exact: the buffer is drawn at its size.
-func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]float32, mode uint32, opaque bool) draw {
+// (target pixels) through the inverse of its buffer transform t. exact: the
+// buffer is drawn at its size.
+func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]float32, t ports.BufferTransform, mode uint32, opaque bool) draw {
 	var dr draw
 	if source[2] <= 0 {
 		source = [4]float32{0, 0, float32(w), float32(h)}
 	}
-	sx, sy := source[2]/float32(full.Dx()), source[3]/float32(full.Dy())
+	// The crop in the surface's axes: its sides swap for a rotation.
+	cw, ch := float64(source[2]), float64(source[3])
+	if t.Rotated() {
+		cw, ch = ch, cw
+	}
+	// src maps a target point to buffer pixels: affine, so its value at
+	// the target origin and its steps along x and y define it.
+	src := func(x, y float64) (float64, float64) {
+		bx, by := t.ToBuffer((x-float64(full.Min.X))*cw/float64(full.Dx()), (y-float64(full.Min.Y))*ch/float64(full.Dy()), cw, ch)
+		return float64(source[0]) + bx, float64(source[1]) + by
+	}
+	ox, oy := src(0, 0)
+	xx, xy := src(1, 0)
+	yx, yy := src(0, 1)
 	dr.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
-	dr.pc.mapv = [4]float32{source[0] - float32(full.Min.X)*sx, source[1] - float32(full.Min.Y)*sy, sx, sy}
+	dr.pc.mapv = [4]float32{float32(ox), float32(oy), float32(xx - ox), float32(xy - oy)}
+	dr.pc.mapy = [4]float32{float32(yx - ox), float32(yy - oy), 0, 0}
 	dr.pc.crop = [4]float32{source[0], source[1], source[0] + source[2], source[1] + source[3]}
 	flags := uint32(0)
 	if opaque {
 		flags |= flagOpaque
 	}
-	if full.Dx() == int(source[2]) && full.Dy() == int(source[3]) && source[2] == float32(int(source[2])) && source[3] == float32(int(source[3])) {
+	if float64(full.Dx()) == cw && float64(full.Dy()) == ch && cw == float64(int(cw)) && ch == float64(int(ch)) {
 		flags |= flagExact
 	}
 	dr.pc.misc = [4]uint32{mode, flags, uint32(r.width), uint32(r.height)}

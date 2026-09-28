@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"os"
 	"testing"
@@ -25,6 +26,14 @@ func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uin
 // ages (A then B, then one render) and with shm double buffers
 // (render, skip, render).
 func TestRendererDamageMatchesFullRedraw(t *testing.T) {
+	for _, tr := range []ports.BufferTransform{0, 1, 6} {
+		t.Run(fmt.Sprintf("transform %d", tr), func(t *testing.T) { damageMatchesFullRedraw(t, tr) })
+	}
+}
+
+// damageMatchesFullRedraw checks partial frames of a window whose buffer
+// carries transform tr against full redraws.
+func damageMatchesFullRedraw(t *testing.T, tr ports.BufferTransform) {
 	const w, h = 32, 32
 	newR := func() *Renderer {
 		r, err := New(64, 48)
@@ -52,7 +61,7 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 	}
 	pixels := px(color.RGBA{10, 20, 30, 255}, 0, 0, w, h, make([]byte, w*h*4))
 	base := shmContent(t, w, h, w*4, pixels)
-	base.ID = 1
+	base.ID, base.Transform = 1, tr
 	f := base.SHM.File
 	scene := ports.Scene{Seq: 5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []ports.SeqDamage{{Seq: 1, Full: true}}
@@ -86,7 +95,7 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 		c = damagedContent(t, f, *base, seq, pixels, hist)
 	}
 	step(2, c)
-	if got := damaged.redrawn - before; got >= 64*48 {
+	if got := damaged.redrawn - before; tr == 0 && got >= 64*48 {
 		t.Fatalf("partial frame redrew %d pixels", got)
 	}
 	// Render, skip (no frame), render: target 1 is two contents behind.
