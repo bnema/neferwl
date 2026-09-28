@@ -386,13 +386,36 @@ func (w *Workspace) FocusColumn(dir int) {
 		w.floatFocus = false
 		return
 	}
-	if len(w.Columns) > 0 && (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
+	if i := w.columnToward(dir); i >= 0 {
 		if w.Overflow == OverflowFixed {
 			w.Columns[w.Focus].FullWidth = false
 		}
-		w.Focus += dir
+		w.Focus = i
 		w.scroll()
 	}
+}
+
+// columnToward returns the column focus-column-left/right (dir -1/1) goes
+// to, or -1 at the edge. Scroll overflow follows the column order; fixed
+// overflow stacks columns (spiral, expanded strips), so it follows the
+// screen: the column on that side.
+func (w *Workspace) columnToward(dir int) int {
+	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
+		return -1
+	}
+	if w.onScreenFocus() {
+		return w.screenNeighbor(dir, 0)
+	}
+	if i := w.Focus + dir; i >= 0 && i < len(w.Columns) {
+		return i
+	}
+	return -1
+}
+
+// onScreenFocus reports whether directional focus follows the screen:
+// fixed overflow with every column visible.
+func (w *Workspace) onScreenFocus() bool {
+	return w.Overflow == OverflowFixed && w.fullscreen == 0 && !w.Columns[w.Focus].FullWidth
 }
 
 // FocusWindow moves focus inside the column; false means it was already at the edge.
@@ -412,7 +435,10 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
-	if i := w.stackedNeighbor(dir); i >= 0 {
+	if !w.onScreenFocus() {
+		return false
+	}
+	if i := w.screenNeighbor(0, dir); i >= 0 {
 		w.Focus = i
 		w.Columns[i].Focus = 0
 		if dir < 0 {
@@ -423,34 +449,38 @@ func (w *Workspace) FocusWindow(dir int) bool {
 	return false
 }
 
-// stackedNeighbor returns the fixed-overflow column right above (dir -1) or
-// below (dir 1) the focused one on screen, or -1. The closest wins, then
-// the one sharing the most width.
-func (w *Workspace) stackedNeighbor(dir int) int {
-	if w.Overflow != OverflowFixed || w.fullscreen != 0 || w.Columns[w.Focus].FullWidth {
-		return -1
-	}
+// screenNeighbor returns the column on screen next to the focused one, left
+// or right (dx -1/1) or above or below (dy -1/1), or -1. The closest wins,
+// then the one sharing the longest edge, then the nearest in column order.
+func (w *Workspace) screenNeighbor(dx, dy int) int {
 	rects := w.columnRects()
 	cur := rects[w.Focus]
 	best, bestDist, bestOverlap := -1, 0, 0
 	for i, r := range rects {
-		overlap := min(cur.X+cur.W, r.X+r.W) - max(cur.X, r.X)
-		if i == w.Focus || overlap <= 0 {
+		var overlap, dist int
+		switch {
+		case dx < 0:
+			overlap, dist = min(cur.Y+cur.H, r.Y+r.H)-max(cur.Y, r.Y), cur.X-(r.X+r.W)
+		case dx > 0:
+			overlap, dist = min(cur.Y+cur.H, r.Y+r.H)-max(cur.Y, r.Y), r.X-(cur.X+cur.W)
+		case dy < 0:
+			overlap, dist = min(cur.X+cur.W, r.X+r.W)-max(cur.X, r.X), cur.Y-(r.Y+r.H)
+		default:
+			overlap, dist = min(cur.X+cur.W, r.X+r.W)-max(cur.X, r.X), r.Y-(cur.Y+cur.H)
+		}
+		if i == w.Focus || overlap <= 0 || dist < 0 {
 			continue
 		}
-		dist := cur.Y - (r.Y + r.H)
-		if dir > 0 {
-			dist = r.Y - (cur.Y + cur.H)
-		}
-		if dist < 0 {
-			continue
-		}
-		if best < 0 || dist < bestDist || dist == bestDist && overlap > bestOverlap {
+		closer := best >= 0 && (dist < bestDist || dist == bestDist && (overlap > bestOverlap ||
+			overlap == bestOverlap && abs(i-w.Focus) < abs(best-w.Focus)))
+		if best < 0 || closer {
 			best, bestDist, bestOverlap = i, dist, overlap
 		}
 	}
 	return best
 }
+
+func abs(n int) int { return max(n, -n) }
 func (w *Workspace) MoveColumn(dir int) {
 	if w.floatFocus {
 		return

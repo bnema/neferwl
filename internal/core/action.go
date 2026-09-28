@@ -124,12 +124,12 @@ func (c *Core) applyAction(a Action) Effect {
 		return Effect{}
 	case ActionFocusColumnLeft, ActionFocusColumnRight:
 		w := c.cur().mon.Current()
-		edge := len(w.Columns) == 0 || (a == ActionFocusColumnLeft && w.Focus == 0) || (a == ActionFocusColumnRight && w.Focus == len(w.Columns)-1)
 		if a == ActionFocusColumnLeft {
 			dir = -1
 		} else {
 			dir = 1
 		}
+		edge := w.columnToward(dir) < 0
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}

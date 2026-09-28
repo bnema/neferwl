@@ -548,6 +548,27 @@ func TestFixedFocusStackedColumns(t *testing.T) {
 			t.Fatal("full height column moved", focused(w))
 		}
 	})
+	t.Run("left and right follow the screen", func(t *testing.T) {
+		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+		w := fixedWorkspace(2, 4, 5)
+		for _, step := range []struct {
+			dir  int
+			want WindowID
+		}{{-1, 3}, {-1, 1}, {1, 2}} {
+			w.FocusColumn(step.dir)
+			if focused(w) != step.want {
+				t.Fatal(focused(w), step.want)
+			}
+		}
+		w.FocusID(3)
+		w.FocusColumn(1)
+		if focused(w) != 4 {
+			t.Fatal(focused(w))
+		}
+		if w.FocusID(2); w.columnToward(1) >= 0 {
+			t.Fatal("right edge has a neighbor")
+		}
+	})
 	t.Run("expanded strip", func(t *testing.T) {
 		// 1 wide; 2, 3 and 4 stacked on its right.
 		w := fixedWorkspace(3, 0, 4)
