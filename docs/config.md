@@ -140,8 +140,8 @@ Native floating windows (dialogs, file pickers) are not in the stash: they stay 
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
-| `cmd+v` | `toggle-window-floating` |
-| `cmd+shift+v` | `toggle-floating-visible` |
+| `cmd+s` | `toggle-window-floating` |
+| `cmd+shift+s` | `toggle-floating-visible` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
 | `ctrl+cmd+space` | `spawn fuzzel` |

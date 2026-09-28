@@ -22,7 +22,7 @@ grim -g "$(slurp)" "$file" && wl-copy < "$file"
 ```
 
 ```text
-bind.cmd+shift+s = spawn screenshot-area
+bind.cmd+shift+p = spawn screenshot-area
 ```
 
 Make the script executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. It can use any shell, including fish (`#!/usr/bin/env fish`).
