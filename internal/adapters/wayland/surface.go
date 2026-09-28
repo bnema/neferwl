@@ -160,6 +160,8 @@ func (s *surface) contentWithColor() ports.SurfaceContent {
 	c := s.content
 	c.Surface, c.Version = s.identity, s.version
 	c.Color = s.outputColor()
+	// A subsurface asks for tearing itself: the output may scan it out.
+	c.Async = s.async
 	return c
 }
 
@@ -179,7 +181,6 @@ func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	if s.xdg != nil {
 		c.Geometry = s.xdg.geometry
 	}
-	c.Async = s.async
 	return c
 }
 

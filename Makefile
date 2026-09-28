@@ -2,6 +2,8 @@
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
+# Go runtime profiles for tty runs; set PPROF= to disable.
+PPROF ?= localhost:6060
 RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/neferwl/runs
 
 # Build a fresh binary with the git revision embedded.
@@ -10,7 +12,7 @@ bin:
 
 # Run on the current TTY. Quit: Ctrl+Alt+Backspace (or the quit bind).
 tty: bin
-	./bin/neferwl --backend=drm --debug=all --timeout=$(TTY_TIMEOUT); \
+	./bin/neferwl --backend=drm --debug=all --timeout=$(TTY_TIMEOUT) $(if $(PPROF),--pprof=$(PPROF)); \
 	echo "exit $$? - log: $(RUNS)/latest.log"
 
 # Summarise the last run: lifecycle, warnings and errors.

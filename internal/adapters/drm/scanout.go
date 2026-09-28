@@ -84,6 +84,12 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		}
 	}
 	c := surfaces[full.ID]
+	if c.DMABuf == nil && len(c.Children) > 0 {
+		var reason string
+		if c, reason = clientSubsurface(c); reason != "" {
+			return c, reason
+		}
+	}
 	switch {
 	case c.DMABuf == nil:
 		return c, "not_dmabuf"
@@ -100,6 +106,30 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "geometry_crop"
 	}
 	return c, ""
+}
+
+// clientSubsurface returns the content to scan out for a window whose
+// root has no GPU buffer but one opaque subsurface over its geometry: Wine
+// draws the frame in the root (wl_shm) and presents Vulkan in a subsurface
+// on the client area. That subsurface hides the root entirely, so it is
+// what the screen shows. The returned content keeps the window's ID and
+// Seq for release and presentation.
+func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
+	if len(c.Children) != 1 {
+		return c, "subsurfaces"
+	}
+	ch := c.Children[0]
+	switch {
+	case ch.DMABuf == nil:
+		return c, "not_dmabuf"
+	case !ch.Opaque:
+		return c, "subsurface_translucent"
+	case ch.X != c.Geometry.X || ch.Y != c.Geometry.Y:
+		return c, "subsurface_offset"
+	}
+	out := ch.SurfaceContent
+	out.ID, out.Seq, out.Geometry = c.ID, c.Seq, ports.Rect{}
+	return out, ""
 }
 
 // scanoutFrame picks a fullscreen client buffer to flip directly. It

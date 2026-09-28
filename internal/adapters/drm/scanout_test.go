@@ -1,6 +1,7 @@
 package drm
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -42,6 +43,16 @@ func TestScanoutCandidate(t *testing.T) {
 		{"cropped", nil, func(c *ports.SurfaceContent) { c.Geometry = ports.Rect{X: 5, W: 90, H: 50} }, "geometry_crop"},
 		{"client ignores scale", nil, func(c *ports.SurfaceContent) { c.LogicalW = 200 }, "logical_mismatch"},
 		{"whole geometry", nil, func(c *ports.SurfaceContent) { c.Geometry = ports.Rect{W: 100, H: 50} }, ""},
+		{"wine client subsurface", nil, wineTree(nil), ""},
+		{"client subsurface translucent", nil, wineTree(func(ch *ports.Subsurface) { ch.Opaque = false }), "subsurface_translucent"},
+		{"client subsurface shm", nil, wineTree(func(ch *ports.Subsurface) { ch.DMABuf, ch.SHM = nil, &ports.SHMBuffer{} }), "not_dmabuf"},
+		{"client subsurface offset", nil, wineTree(func(ch *ports.Subsurface) { ch.X = 4 }), "subsurface_offset"},
+		{"client subsurface scaled", nil, wineTree(func(ch *ports.Subsurface) { ch.Width = 100 }), "size_mismatch"},
+		{"client subsurface small", nil, wineTree(func(ch *ports.Subsurface) { ch.LogicalW = 90 }), "logical_mismatch"},
+		{"two subsurfaces", nil, func(c *ports.SurfaceContent) {
+			wineTree(nil)(c)
+			c.Children = append(c.Children, c.Children[0])
+		}, "subsurfaces"},
 	} {
 		s := scene
 		s.Windows = append([]ports.SceneWindow(nil), scene.Windows...)
@@ -55,6 +66,35 @@ func TestScanoutCandidate(t *testing.T) {
 		if _, reason := scanoutCandidate(s, map[ports.WindowID]ports.SurfaceContent{1: c}, 200, 100); reason != tc.reason {
 			t.Errorf("%s: reason %q, want %q", tc.name, reason, tc.reason)
 		}
+	}
+}
+
+// wineTree turns the test content into Wine's layout: the root is a wl_shm
+// frame and the game is one opaque GPU subsurface over the client area.
+func wineTree(edit func(ch *ports.Subsurface)) func(c *ports.SurfaceContent) {
+	return func(c *ports.SurfaceContent) {
+		ch := ports.Subsurface{SurfaceContent: *c}
+		ch.Opaque = true
+		if edit != nil {
+			edit(&ch)
+		}
+		c.DMABuf, c.SHM = nil, &ports.SHMBuffer{}
+		c.Children = []ports.Subsurface{ch}
+	}
+}
+
+// Wine's game subsurface is scanned out in place of the window: the
+// content keeps the window's ID and Seq and takes the subsurface buffer.
+func TestScanoutCandidateClientSubsurface(t *testing.T) {
+	scene := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 50}, Fullscreen: true}}}
+	game := &ports.DMABuf{ID: 9, Width: 200, Height: 100, Format: fourccXRGB, Planes: []ports.DMABufPlane{{}}}
+	acquire := &os.File{}
+	root := ports.SurfaceContent{ID: 1, Seq: 7, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, SHM: &ports.SHMBuffer{},
+		Geometry: ports.Rect{W: 100, H: 50},
+		Children: []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Seq: 3, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, Opaque: true, DMABuf: game, Async: true, Acquire: acquire}}}}
+	c, reason := scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: root}, 200, 100)
+	if reason != "" || c.DMABuf != game || c.ID != 1 || c.Seq != 7 || !c.Async || c.Acquire != acquire || c.Geometry != (ports.Rect{}) {
+		t.Fatalf("candidate %+v, reason %q", c, reason)
 	}
 }
 
