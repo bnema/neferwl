@@ -114,14 +114,22 @@ func (h *representationSurface) SetChromaLocation(r *colorrepresentation.WpColor
 	h.surf.pendingRepresentation.chroma = uint8(chroma)
 }
 
-// The metadata is checked against the committed buffer, including when a
-// client changes representation without attaching a new buffer.
+// The metadata is checked against the buffer the commit will show,
+// including when a client changes representation without attaching a new
+// buffer: then the one of the last queued commit that attached, or the
+// current one.
 func (s *surface) checkRepresentationCommit() bool {
 	rep := s.pendingRepresentation
 	if rep.coefficients == 0 && rep.chroma == 0 {
 		return true
 	}
 	buffer := s.current
+	for i := len(s.queue) - 1; i >= 0; i-- {
+		if s.queue[i].attached {
+			buffer = s.queue[i].buffer
+			break
+		}
+	}
 	if s.attached {
 		buffer = s.pending
 	}

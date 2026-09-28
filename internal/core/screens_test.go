@@ -854,3 +854,28 @@ func TestTerminalTokenClaimedOnce(t *testing.T) {
 		t.Fatalf("second claim: %v", got)
 	}
 }
+
+// From a focused float, the first column focus move leaves the float for
+// the columns, even when the column has no neighbor on that side: it does
+// not jump to the neighbor monitor.
+func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.mapWindow(t, 1)
+	r.client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10}
+	receive(t, r.scenes)
+	set := r.key(t, "Right", ports.ModAlt)
+	var focused []ports.WindowID
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if w.Focused {
+				focused = append(focused, w.ID)
+				if s.Output != "DP-1" {
+					t.Fatalf("focused %d on %s", w.ID, s.Output)
+				}
+			}
+		}
+	}
+	if !slices.Equal(focused, []ports.WindowID{1}) {
+		t.Fatalf("focused %v", focused)
+	}
+}

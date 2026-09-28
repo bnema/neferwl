@@ -53,6 +53,7 @@ type Channels struct {
 // fullscreen and hide the windows it opens next. The user can still
 // fullscreen it (bind or taskbar), and an app can ask again later.
 const fullscreenGrace = time.Second
+
 type binding struct {
 	mods ports.Mods
 	key  string
