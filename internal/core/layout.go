@@ -709,6 +709,7 @@ func (w *Workspace) SetMaxColumns(n int) {
 	w.scroll()
 }
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+
 // pinned reports whether focus moves inside the workspace are off: the
 // covering fullscreen window hides every target. Only in scroll overflow
 // does moving to a tiled neighbor scroll it off and show the target.

@@ -72,4 +72,3 @@ func TestFloatingWindows(t *testing.T) {
 		t.Fatalf("focus after close %d", id)
 	}
 }
-
