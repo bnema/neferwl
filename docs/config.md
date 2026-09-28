@@ -138,12 +138,14 @@ Native floating windows (dialogs, file pickers) are not in the stash: they stay 
 
 | Key | Action |
 | --- | --- |
-| `h` / `l`, `left` / `right` | Select the column on the left / right |
+| `h` / `l`, `left` / `right` | Select the column on the left / right; left of the first column, the stash pile |
 | `k` / `j`, `up` / `down` | Select the workspace above / below |
 | `return` | Close the overview on the selected window |
 | `escape` | Close it and return to the window it opened on |
 
-A click on a preview picks it. Other binds still work. Stashed and floating windows are not shown.
+Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the first column. `return` or a click on a card closes the overview with the stash shown on that window.
+
+A click on a preview picks it. Other binds still work. Native floating windows (dialogs) are not shown.
 
 ### Default binds
 

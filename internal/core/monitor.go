@@ -39,6 +39,11 @@ type Monitor struct {
 	overview       bool
 	overviewFrom   *Workspace
 	overviewFromID WindowID
+	// overviewPile is set while the selection is on entry overviewPileAt
+	// of the current workspace's stash pile. The stash itself changes only
+	// when the overview closes on it.
+	overviewPile   bool
+	overviewPileAt int
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
