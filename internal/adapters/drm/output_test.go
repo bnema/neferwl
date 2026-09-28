@@ -192,6 +192,73 @@ func TestCursorCommitWaitsForEvent(t *testing.T) {
 	}
 }
 
+// Under VRR with a game shown, a cursor move rides on the next frame: a
+// cursor-only commit would hold the panel for its slowest refresh. A game
+// that stops drawing still gets the cursor after cursorMinInterval.
+func TestVRRGameCursorWaitsForFrame(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.cursor.image = true
+	o.vrrOn, o.vrrGame = true, true
+	o.lastFrame = time.Now()
+	o.cursor.Move(5, 5)
+	if err := o.commitState(o.stateVRR()); err != nil {
+		t.Fatal(err)
+	}
+	if len(*commits) != 0 || !o.cursorHeld || o.frame.pendingCommit() {
+		t.Fatalf("cursor committed alone: %d commits held=%v", len(*commits), o.cursorHeld)
+	}
+	// The next frame carries the cursor.
+	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := (*commits)[0].req.value(tCursor, 14); v != 5 || o.cursorHeld {
+		t.Fatalf("frame cursor x %d held=%v", v, o.cursorHeld)
+	}
+	o.completed(eventOf((*commits)[0]), map[ports.WindowID]uint64{})
+	// The game stalls: the cursor commits alone after the interval.
+	o.lastFrame = time.Now().Add(-cursorMinInterval)
+	o.cursor.Move(8, 8)
+	if err := o.commitState(o.stateVRR()); err != nil {
+		t.Fatal(err)
+	}
+	if len(*commits) != 2 || o.cursorHeld {
+		t.Fatalf("stalled game: %d commits held=%v", len(*commits), o.cursorHeld)
+	}
+	if v, _ := (*commits)[1].req.value(tCursor, 14); v != 8 {
+		t.Fatalf("cursor x %d", v)
+	}
+}
+
+// A held move reversed before the next frame holds nothing: the cursor
+// timer is not armed again.
+func TestHeldCursorMovedBackClearsHold(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.cursor.image = true
+	o.vrrOn, o.vrrGame, o.lastFrame = true, true, time.Now()
+	o.cursor.Move(0, 0)
+	o.cursor.applied = o.cursor.desired() // on screen at (0, 0)
+	o.cursor.Move(5, 5)
+	if err := o.commitState(o.stateVRR()); err != nil || !o.cursorHeld {
+		t.Fatalf("err %v held=%v", err, o.cursorHeld)
+	}
+	o.cursor.Move(0, 0)
+	if err := o.commitState(o.stateVRR()); err != nil || o.cursorHeld || len(*commits) != 0 {
+		t.Fatalf("err %v held=%v commits %d", err, o.cursorHeld, len(*commits))
+	}
+}
+
+// Without a game, the cursor keeps its own commits.
+func TestCursorCommitsAloneWithoutGame(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.cursor.image = true
+	o.vrrOn, o.lastFrame = true, time.Now()
+	o.composedSince = time.Now()
+	o.cursor.Move(5, 5)
+	if err := o.commitState(o.stateVRR()); err != nil || len(*commits) != 1 || o.cursorHeld {
+		t.Fatalf("err %v, %d commits held=%v", err, len(*commits), o.cursorHeld)
+	}
+}
+
 func TestBusyCommitStaysPending(t *testing.T) {
 	o, _, _ := testOutput(t, unix.EBUSY)
 	err := o.commitFrame(70, nil, false, false, pendingFrame{})
