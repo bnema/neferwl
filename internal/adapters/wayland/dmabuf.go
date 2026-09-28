@@ -170,8 +170,8 @@ func (g *dmabufGlobal) scanoutFor(surf *surface) (ports.OutputFormats, bool) {
 	if surf == nil || surf.destroyed {
 		return ports.OutputFormats{}, false
 	}
-	root := surf.root()
-	if root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast || !root.xdg.window.last.Fullscreen {
+	root := toplevelRoot(surf)
+	if g.server.invisible(surf) || root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast || !root.xdg.window.last.Fullscreen {
 		return ports.OutputFormats{}, false
 	}
 	out, ok := g.scanout[root.xdg.window.last.Output]

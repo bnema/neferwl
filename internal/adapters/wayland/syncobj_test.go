@@ -121,7 +121,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	w, surf, xdg := surfaceMapper(t, h.c, events)()
 	registerProtocol(t, h.c, xdg)
 	h.win, h.surf = w.ID, surf
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 64, Height: 16, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 64, Height: 16, Output: "HEADLESS-1", Visible: true}
 	mgr := bindProtocol(t, h.c, "wp_linux_drm_syncobj_manager_v1")
 	h.syncSurf = h.c.AllocateID()
 	requestProtocol(t, h.c, mgr, linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestGetSurface, h.syncSurf, surf)

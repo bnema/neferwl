@@ -17,10 +17,13 @@ func TestToplevelStates(t *testing.T) {
 		version int32
 		want    []xdgshell.ToplevelState
 	}{
-		{"tiled", ports.ConfigureWindow{Activated: true}, 2, append([]xdgshell.ToplevelState{xdgshell.ToplevelStateActivated, xdgshell.ToplevelStateMaximized}, tiled...)},
-		{"tiled v1", ports.ConfigureWindow{}, 1, []xdgshell.ToplevelState{xdgshell.ToplevelStateMaximized}},
-		{"floating", ports.ConfigureWindow{Floating: true, Activated: true}, 6, []xdgshell.ToplevelState{xdgshell.ToplevelStateActivated}},
-		{"fullscreen", ports.ConfigureWindow{Fullscreen: true}, 6, []xdgshell.ToplevelState{xdgshell.ToplevelStateFullscreen}},
+		{"tiled", ports.ConfigureWindow{Activated: true, Visible: true}, 2, append([]xdgshell.ToplevelState{xdgshell.ToplevelStateActivated, xdgshell.ToplevelStateMaximized}, tiled...)},
+		{"tiled v1", ports.ConfigureWindow{Visible: true}, 1, []xdgshell.ToplevelState{xdgshell.ToplevelStateMaximized}},
+		{"floating", ports.ConfigureWindow{Floating: true, Activated: true, Visible: true}, 6, []xdgshell.ToplevelState{xdgshell.ToplevelStateActivated}},
+		{"fullscreen", ports.ConfigureWindow{Fullscreen: true, Visible: true}, 6, []xdgshell.ToplevelState{xdgshell.ToplevelStateFullscreen}},
+		{"hidden tiled v6", ports.ConfigureWindow{}, 6, append([]xdgshell.ToplevelState{xdgshell.ToplevelStateSuspended, xdgshell.ToplevelStateMaximized}, tiled...)},
+		{"hidden fullscreen v6", ports.ConfigureWindow{Fullscreen: true}, 6, []xdgshell.ToplevelState{xdgshell.ToplevelStateFullscreen, xdgshell.ToplevelStateSuspended}},
+		{"hidden floating v5", ports.ConfigureWindow{Floating: true}, 5, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

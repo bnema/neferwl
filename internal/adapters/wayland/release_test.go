@@ -90,7 +90,7 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	s, events, commands, contents, dir := contentServer(t)
 	c := protocolClient(t, s, dir)
 	w, root, _ := surfaceMapper(t, c, events)()
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

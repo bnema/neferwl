@@ -68,9 +68,10 @@ type Server struct {
 	channels        Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
-	awaiting   map[string][]*wayland.Callback
-	frameDue   map[string]time.Time
-	frameReady chan struct{}
+	awaiting    map[string][]*wayland.Callback
+	frameOwners map[*wayland.Callback]*surface
+	frameDue    map[string]time.Time
+	frameReady  chan struct{}
 	// Pacer scratch: periods is used on the display goroutine, while
 	// flipped and frameReports belong to pace and its synchronous Do call.
 	framePeriods map[string]time.Duration
@@ -691,8 +692,14 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
-		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output
+		visibilityChanged := w.hasLast && w.last.Visible != c.Visible
+		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output || w.last.Visible != c.Visible
 		w.last, w.hasLast = c, true
+		if visibilityChanged {
+			s.relocateCallbacks(w.xdg.surface)
+			s.dropFeedbacks(time.Now())
+			s.wakePacer() // reconsider FIFO barriers at the new period
+		}
 		w.sendConfigure()
 		s.toplevelChanged(w)
 		if scanoutChanged && w.xdg.surface != nil {

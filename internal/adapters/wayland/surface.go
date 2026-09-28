@@ -379,7 +379,7 @@ func (s *surface) applyCommit(u *update) {
 		s.inputAll, s.inputRects = u.inputAll, u.inputRects
 	}
 	if len(u.callbacks) > 0 {
-		s.server.queueFrames(s.server.frameOutput(s), u.callbacks)
+		s.server.queueFrames(s, u.callbacks)
 	}
 	if s.role != nil {
 		if u.layer != nil && s.layer == u.layer {

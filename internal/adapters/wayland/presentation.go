@@ -94,7 +94,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 		return
 	}
 	output := srv.frameOutput(s)
-	if win == 0 || output == "" {
+	if win == 0 || output == "" || output == suspendedFrameQueue {
 		for _, fb := range pending {
 			discard(fb)
 		}
@@ -129,6 +129,8 @@ func (s *Server) presentFlip(output string, f *ports.FlipInfo) {
 		switch {
 		case !w.fb.Resource.Alive():
 		case w.surf.destroyed:
+			discard(w.fb)
+		case s.invisible(w.surf):
 			discard(w.fb)
 		case s.frameOutput(w.surf) != output || !ok || shown < w.seq:
 			kept = append(kept, w)
@@ -188,7 +190,7 @@ func (s *Server) dropFeedbacks(now time.Time) {
 		if !w.fb.Resource.Alive() {
 			continue
 		}
-		if w.surf.destroyed || s.frameOutput(w.surf) == "" || now.Sub(w.at) > feedbackTimeout {
+		if w.surf.destroyed || s.invisible(w.surf) || s.frameOutput(w.surf) == "" || now.Sub(w.at) > feedbackTimeout {
 			discard(w.fb)
 			continue
 		}

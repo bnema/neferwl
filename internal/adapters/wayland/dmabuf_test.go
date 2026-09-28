@@ -256,7 +256,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 		t.Fatalf("tiled window: %+v", r)
 	}
 	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	r := round("fullscreen")
 	for len(r) == 1 { // the formats may land after the configure
 		r = round("fullscreen with formats")
@@ -265,18 +265,18 @@ func TestDMABufScanoutTranche(t *testing.T) {
 		t.Fatalf("fullscreen: %+v", r)
 	}
 	// Fullscreen on another output: its formats (none) apply at once.
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1", Visible: true}
 	if r := round("other output"); len(r) != 1 {
 		t.Fatalf("moved output: %+v", r)
 	}
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1", Visible: true}
 	if r := round("tiled again"); len(r) != 1 || r[0].flags != 0 {
 		t.Fatalf("left fullscreen: %+v", r)
 	}
 	// A destroyed feedback gets nothing more (a protocol error would
 	// kill the connection) and leaves the server's list.
 	requestProtocol(t, c, fb, linuxdmabuf.ZwpLinuxDmabufFeedbackV1RequestDestroy)
-	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
+	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
 	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7}
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -285,5 +285,23 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	s.display.Do(func() { n = len(s.dmabuf.feedbacks) })
 	if n != 0 {
 		t.Fatalf("%d feedbacks kept", n)
+	}
+}
+
+func TestInvisibleScanoutOffer(t *testing.T) {
+	w := &window{hasLast: true, last: ports.ConfigureWindow{Fullscreen: true, Output: "DP-2", Visible: true}}
+	surf := &surface{xdg: &xdgSurface{window: w}}
+	s := &Server{}
+	g := &dmabufGlobal{server: s, scanout: map[string]ports.OutputFormats{"DP-2": {Output: "DP-2", Formats: []ports.DMABufFormat{linearARGB}}}}
+	if _, ok := g.scanoutFor(surf); !ok {
+		t.Fatal("no visible scanout")
+	}
+	w.last.Visible = false
+	if _, ok := g.scanoutFor(surf); ok {
+		t.Fatal("invisible scanout offered")
+	}
+	w.last.Visible = true
+	if _, ok := g.scanoutFor(surf); !ok {
+		t.Fatal("scanout not restored")
 	}
 }
