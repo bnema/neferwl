@@ -51,7 +51,7 @@ type Channels struct {
 // is ignored. Wine asks for fullscreen whenever a window has the monitor's
 // size, so a launcher that remembered a fullscreen size would open
 // fullscreen and hide the windows it opens next. The user can still
-// fullscreen it, and an app can ask again later.
+// fullscreen it (bind or taskbar), and an app can ask again later.
 const fullscreenGrace = time.Second
 type binding struct {
 	mods ports.Mods
@@ -788,7 +788,7 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.PointerConstrained:
 				c.constrained = v
 			case ports.WindowFullscreenRequest:
-				if v.Fullscreen && c.now().Sub(c.mappedAt[v.ID]) < fullscreenGrace {
+				if v.Fullscreen && !v.External && c.now().Sub(c.mappedAt[v.ID]) < fullscreenGrace {
 					continue
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {

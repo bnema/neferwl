@@ -774,6 +774,9 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
 	client <- ports.WindowMapped{ID: 3, Floating: true, Width: 20, Height: 10}
 	s := scene(t, scenes)
+	for !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 3 }) {
+		s = scene(t, scenes)
+	}
 	for _, w := range s.Windows {
 		if w.Fullscreen || w.Hidden {
 			t.Fatalf("startup fullscreen applied: %+v", s.Windows)
@@ -786,6 +789,33 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 	// stays here since it has no focus (ADR 011).
 	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Hidden }) {
 		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
+	}
+}
+
+// A taskbar's fullscreen request is the user's: it applies at once.
+func TestExternalFullscreenAtMapApplies(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().Return(time.Unix(0, 0))
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	s := scene(t, scenes)
+	if len(s.Windows) != 1 || !s.Windows[0].Fullscreen {
+		t.Fatalf("taskbar fullscreen ignored: %+v", s.Windows)
 	}
 }
 
