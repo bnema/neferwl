@@ -99,11 +99,9 @@ type Placement struct {
 	Floating bool
 	// Peek is a stashed window peeking in beside the selected one: dimmed.
 	Peek bool
-	// Neighbors are the sides touching another tiled window. Inset are the
-	// sides where the border takes room from the window: all sides of a
-	// float; for tiles, the right and bottom neighbors only, so two
-	// windows share one separator line (tmux style). With gaps, each tile
-	// insets all its neighbor sides.
+	// Neighbors are the sides touching a visible tile on this output.
+	// Inset reserves room for drawn lines: all sides of a float; for
+	// tiles without gaps, only the right and bottom shared sides.
 	Neighbors, Inset ports.Sides
 }
 
@@ -1002,7 +1000,7 @@ func (w *Workspace) Layout() []Placement {
 			y += h + gap
 		}
 	}
-	setNeighbors(result, gap)
+	setVisibleNeighbors(result, gap, w.Output)
 	// Floating windows go last: they are drawn and hit on top, native
 	// floats (dialogs) over the stash.
 	result = append(result, w.stashLayout(focusedID, cover)...)
@@ -1016,36 +1014,41 @@ func (w *Workspace) Layout() []Placement {
 			continue
 		}
 		if w.fullscreen == f.ID {
-			p.Rect, p.Fullscreen = Rect{W: w.Output.W, H: w.Output.H}, true
+			p.Rect, p.Fullscreen, p.Inset = Rect{W: w.Output.W, H: w.Output.H}, true, 0
 		}
 		result = append(result, p)
 	}
 	return result
 }
 
-// setNeighbors marks the sides where tiles touch across the gap, from
-// geometry alone: client sizes do not change as the view scrolls.
-func setNeighbors(tiles []Placement, gap int) {
+// setVisibleNeighbors reserves client space only for shared lines that
+// are actually on this output. A scrolled-off or hidden tile cannot give a
+// lone visible tile a border (or shrink its client).
+func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
+	visible := func(p Placement) bool {
+		return !p.Hidden && !p.Fullscreen && p.Rect.Overlaps(output)
+	}
 	overlap := func(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
 	for i := range tiles {
 		a := &tiles[i]
-		if a.Hidden || a.Fullscreen || a.Rect.W <= 0 || a.Rect.H <= 0 {
+		a.Neighbors, a.Inset = 0, 0
+		if !visible(*a) {
 			continue
 		}
 		for j := range tiles {
-			b := tiles[j].Rect
-			if i == j || tiles[j].Hidden || tiles[j].Fullscreen || b.W <= 0 || b.H <= 0 {
+			if i == j || !visible(tiles[j]) {
 				continue
 			}
-			r := a.Rect
+			b, r := tiles[j].Rect, a.Rect
+			// Only count a shared edge strictly within this output.
 			switch {
-			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H):
+			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > output.X && r.X+r.W < output.X+output.W:
 				a.Neighbors |= ports.SideRight
-			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H):
+			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > output.X && r.X < output.X+output.W:
 				a.Neighbors |= ports.SideLeft
-			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W):
+			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > output.Y && r.Y+r.H < output.Y+output.H:
 				a.Neighbors |= ports.SideBottom
-			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W):
+			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > output.Y && r.Y < output.Y+output.H:
 				a.Neighbors |= ports.SideTop
 			}
 		}

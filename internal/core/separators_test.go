@@ -13,7 +13,7 @@ func tiles(f int, rs ...Rect) []Placement {
 	for i, r := range rs {
 		ps[i] = Placement{ID: WindowID(i + 1), Rect: r, Focused: i == f}
 	}
-	setNeighbors(ps, 0)
+	setVisibleNeighbors(ps, 0, bigOutput)
 	return ps
 }
 
@@ -106,8 +106,8 @@ func TestSeparatorsFloat(t *testing.T) {
 	}
 }
 
-// Through the real layout: scroll mode keeps client sizes as the view
-// moves, and draws no line at the output edge.
+// Through the real layout: scrolling removes borders to off-output
+// neighbors and gives the client back the reserved space.
 func TestSeparatorsScroll(t *testing.T) {
 	m := monitor() // 100x80, 2 columns on screen
 	for id := WindowID(1); id <= 3; id++ {
@@ -122,13 +122,16 @@ func TestSeparatorsScroll(t *testing.T) {
 		return got
 	}
 	before := insets()
+	if before[1] != 0 || before[3]&ports.SideRight != 0 {
+		t.Fatalf("scrolled tiles reserve off-output lines: %v", before)
+	}
 	if w.ViewX == 0 {
 		t.Fatal("expected a scrolled view")
 	}
 	m.Apply(ActionFocusColumnLeft)
 	m.Apply(ActionFocusColumnLeft)
-	if after := insets(); !reflect.DeepEqual(before, after) {
-		t.Fatalf("insets change with the view: %v then %v", before, after)
+	if after := insets(); reflect.DeepEqual(before, after) || after[1]&ports.SideRight == 0 || after[3] != 0 {
+		t.Fatalf("expected visible borders to change with the view: %v then %v", before, after)
 	}
 	out := Rect{W: 100, H: 80}
 	seps := separators(w.Layout(), 2, 0, out, true)
@@ -147,7 +150,7 @@ func TestSeparatorsScroll(t *testing.T) {
 // With gaps each tile has its own line: the focused one lights it whole.
 func TestSeparatorsGaps(t *testing.T) {
 	ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
-	setNeighbors(ps, 4)
+	setVisibleNeighbors(ps, 4, bigOutput)
 	seps := separators(ps, 2, 4, bigOutput, true)
 	for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {20, 8, "gray"}, {17, 8, ""}} {
 		if got := colorAt(seps, c.x, c.y); got != c.want {
