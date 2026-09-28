@@ -78,6 +78,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full == nil {
 		return ports.SurfaceContent{}, "no_fullscreen"
 	}
+	if full.Dim > 0 {
+		// Its veil is composed over it: the plane would show it bright.
+		return ports.SurfaceContent{}, "dim"
+	}
 	// Core leaves the layers a fullscreen window hides out of the scene:
 	// one above the windows here is drawn.
 	for _, l := range s.Layers {
@@ -102,7 +106,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "buffer_transform"
 	case c.Width != w || c.Height != h:
 		return c, "size_mismatch"
-	case c.Source[2] != 0 && c.Source != [4]float32{0, 0, float32(c.Width), float32(c.Height)}:
+	case cropped(c):
 		// A viewport crop: the plane would show the whole buffer.
 		return c, "source_crop"
 	case c.LogicalW != full.Rect.W || c.LogicalH != full.Rect.H:
@@ -111,6 +115,11 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return c, "geometry_crop"
 	}
 	return c, ""
+}
+
+// cropped reports whether a viewport source shows less than the buffer.
+func cropped(c ports.SurfaceContent) bool {
+	return c.Source[2] != 0 && c.Source != [4]float32{0, 0, float32(c.Width), float32(c.Height)}
 }
 
 // clientSubsurface returns the content to scan out for a window whose

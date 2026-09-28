@@ -149,6 +149,41 @@ func TestColorRepresentationQueuedCommit(t *testing.T) {
 	})
 }
 
+// A representation-only commit is checked against the buffer of the last
+// queued commit, not the applied one it will not keep.
+func TestColorRepresentationChecksQueuedBuffer(t *testing.T) {
+	s, c, _ := colorServer(t)
+	manager := bindProtocol(t, c, "wp_color_representation_manager_v1")
+	registerProtocol(t, c, manager)
+	comp := bindProtocol(t, c, "wl_compositor")
+	registerProtocol(t, c, comp)
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	obj := c.AllocateID()
+	requestProtocol(t, c, manager, cr.WpColorRepresentationManagerV1RequestGetSurface, obj, wl)
+	registerProtocol(t, c, obj)
+	buf := shmBuffer(t, c)
+	requestProtocol(t, c, wl, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	s.display.Do(func() {
+		for res, surf := range s.surfaces {
+			if res.ID() != wl {
+				continue
+			}
+			// The RGB commit waits in the queue; the next one only sets
+			// YUV coefficients.
+			surf.queueUpdate()
+			surf.pendingRepresentation.coefficients = coefficient709
+			if surf.checkRepresentationCommit() {
+				t.Error("YUV coefficients accepted for a queued RGB buffer")
+			}
+		}
+	})
+}
+
 func TestColorRepresentationRejectsRGBWithYUVCoefficients(t *testing.T) {
 	_, c, _ := colorServer(t)
 	manager := bindProtocol(t, c, "wp_color_representation_manager_v1")

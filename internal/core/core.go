@@ -53,6 +53,7 @@ type Channels struct {
 // fullscreen and hide the windows it opens next. The user can still
 // fullscreen it (bind or taskbar), and an app can ask again later.
 const fullscreenGrace = time.Second
+
 type binding struct {
 	mods ports.Mods
 	key  string
@@ -204,7 +205,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			continue
 		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowFloating, ActionToggleFloatingVisible, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -477,7 +478,11 @@ func (c *Core) publish(ctx context.Context) error {
 			alive[p.ID] = true
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset})
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset}
+			if p.Peek {
+				sw.Dim = c.cfg.Stash.Dim
+			}
+			scene.Windows = append(scene.Windows, sw)
 			floating := p.Floating
 			if p.Hidden {
 				// A hidden window keeps its size, state and output; it is
@@ -685,7 +690,16 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	full := false
 	for _, p := range sc.mon.Layout() {
 		r := c.clientRect(p)
-		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) {
+		// A peek is clickable wherever it shows, border included: it may
+		// be narrower than its border. The point is clamped to its client.
+		box, lx, ly := r, lx, ly
+		if p.Peek {
+			box = p.Rect
+		}
+		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(box.X) && lx < float64(box.X+box.W) && ly >= float64(box.Y) && ly < float64(box.Y+box.H) {
+			if p.Peek {
+				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
+			}
 			// Floating windows come last in the layout and are on top,
 			// even of a fullscreen window; nothing else is.
 			if full && !p.Floating {
@@ -972,7 +986,7 @@ func (c *Core) Run(ctx context.Context) error {
 					// A click focuses the window and its output.
 					s, w := c.screenOf(id)
 					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
-						w.FocusID(id)
+						w.Click(id)
 						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
 							return nil

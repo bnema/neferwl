@@ -22,7 +22,7 @@ grim -g "$(slurp)" "$file" && wl-copy < "$file"
 ```
 
 ```text
-bind.cmd+shift+s = spawn screenshot-area
+bind.cmd+shift+p = spawn screenshot-area
 ```
 
 Make the script executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. It can use any shell, including fish (`#!/usr/bin/env fish`).
@@ -96,7 +96,8 @@ While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland so
 
 - every output, with its active numbered workspace, workspace count and the name of the workspace on screen;
 - the focused output and window;
-- every window, with its app ID, PID, output and workspace.
+- every window, with its app ID, PID, output, workspace and whether it is on screen (`visible`);
+- `floating: true` for floating windows. Stashed windows also have their 1-based place in their workspace's stash (`stash_index` of `stash_count`, both `0` outside it) and `hidden: true` while the stash is hidden.
 
 ```sh
 neferwl state                        # the whole state as JSON
@@ -105,3 +106,8 @@ neferwl outputs [--json]             # connected monitors: key and input source
 ```
 
 `output-of` finds application windows only, because a bar has no single output.
+
+```sh
+# Windows waiting in hidden stashes
+neferwl state | jq '[.windows[] | select(.hidden)] | length'
+```

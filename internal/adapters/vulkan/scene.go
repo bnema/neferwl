@@ -53,10 +53,13 @@ func (w *sceneWalk) fill(rect image.Rectangle, c [3]uint8) {
 	w.draws = append(w.draws, w.r.fillDraw(rect, c))
 }
 
-// dim paints a translucent black quad over the whole output. Damage clipping
-// later limits it to the region being repainted, just like other fills.
-func (w *sceneWalk) dim() {
-	w.draws = append(w.draws, w.r.dimDraw(w.bounds, w.s.Dim))
+// dim paints a translucent black quad over rect (physical), clipped to the
+// output. Damage clipping later limits it to the region being repainted,
+// just like other fills.
+func (w *sceneWalk) dim(rect image.Rectangle, alpha float64) {
+	if rect = rect.Intersect(w.bounds); !rect.Empty() {
+		w.draws = append(w.draws, w.r.dimDraw(rect, alpha))
+	}
 }
 
 // layers draws the layer surfaces below the windows, or above them.
@@ -85,7 +88,7 @@ func (w *sceneWalk) windows() {
 			w.separators(0)
 			tileLines = true
 			if w.s.Dim > 0 {
-				w.dim()
+				w.dim(w.bounds, w.s.Dim)
 			}
 		}
 		// Content sits inside the border; core sized the client to match.
@@ -97,14 +100,17 @@ func (w *sceneWalk) windows() {
 		body := w.physRect(c.X, c.Y, c.W, c.H)
 		content := w.contents[win.ID]
 		w.dmg.window(win.ID, content, w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H))
-		if content.Empty() {
-			w.fill(body, windowColor(win.ID))
-		} else {
-			w.fill(body, parseColor(w.s.Background))
+		// Until its first buffer, a window shows the background: no flash.
+		w.fill(body, parseColor(w.s.Background))
+		if !content.Empty() {
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
 		}
 		if win.Floating {
 			w.separators(win.ID)
+		}
+		if win.Dim > 0 {
+			// A stashed window peeking in: dimmed with its border.
+			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
 	}
 	if !tileLines {
@@ -334,28 +340,4 @@ func parseColor(s string) [3]uint8 {
 		c[i] = uint8(v)
 	}
 	return c
-}
-
-// windowColor is the placeholder color of a window with no content yet.
-func windowColor(id ports.WindowID) [3]uint8 {
-	h := math.Mod(float64(id)*0.618034, 1) * 6
-	sector := int(h)
-	f := h - float64(sector)
-	p, q, t := 0.4, 0.8*(1-0.5*f), 0.8*(1-0.5*(1-f))
-	var a, b, c float64
-	switch sector {
-	case 0:
-		a, b, c = 0.8, t, p
-	case 1:
-		a, b, c = q, 0.8, p
-	case 2:
-		a, b, c = p, 0.8, t
-	case 3:
-		a, b, c = p, q, 0.8
-	case 4:
-		a, b, c = t, p, 0.8
-	default:
-		a, b, c = 0.8, p, q
-	}
-	return [3]uint8{uint8(a * 255), uint8(b * 255), uint8(c * 255)}
 }

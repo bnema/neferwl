@@ -78,6 +78,40 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, reason := overlayCandidate(s, c); reason != "dim" {
 		t.Fatalf("dim reason %q", reason)
 	}
+	// A dimmed window (a peeking stashed one) needs its veil composed.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Dim = 0.5
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("dimmed window reason %q", reason)
+	}
+	// A viewport crop is composed: the plane would show the whole buffer.
+	s, c = overlayScene()
+	cropped := c[2]
+	cropped.Source = [4]float32{10, 10, 50, 50}
+	c[2] = cropped
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("cropped overlay reason %q", reason)
+	}
+	// A full-buffer source is no crop.
+	cropped.Source = [4]float32{0, 0, 100, 100}
+	c[2] = cropped
+	if _, _, reason := overlayCandidate(s, c); reason != "" {
+		t.Fatalf("full source reason %q", reason)
+	}
+}
+
+// The overlay is used only on SDR outputs: PQ content there needs the
+// renderer's tone mapping.
+func TestOverlaySkipsPQContent(t *testing.T) {
+	o, _, _ := overlayOutput(t)
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	s, c := overlayScene()
+	pq := c[2]
+	pq.Color = ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}
+	c[2] = pq
+	if ov, rest := o.overlayFrame(s, c); ov.fb != 0 || len(rest.Windows) != 2 {
+		t.Fatalf("PQ overlay %+v rest %+v", ov, rest.Windows)
+	}
 }
 
 // The overlay is chosen and the composed scene leaves its window out;

@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -60,6 +61,47 @@ func TestSceneDimOrder(t *testing.T) {
 				t.Fatalf("alpha = %v, want %v", ds[2].pc.color[3], tc.wantAlpha)
 			}
 		})
+	}
+}
+
+// A dimmed window gets a veil over its own rect, border included, right
+// after it: windows drawn later stay bright.
+func TestSceneWindowDim(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	s := ports.Scene{Border: ports.Border{Width: 1, Inactive: "#ffffff"},
+		Windows: []ports.SceneWindow{
+			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{X: -10, W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 20, W: 20, H: 20}},
+		},
+		Separators: []ports.Separator{{Window: 1, Rect: ports.Rect{X: -10, W: 20, H: 1}}},
+	}
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
+	// Window 1, its border, its veil (clipped to the output), window 2.
+	if len(ds) != 4 {
+		t.Fatalf("draws = %d, want 4", len(ds))
+	}
+	if v := ds[2].pc; v.rect != [4]int32{0, 0, 10, 20} || v.color != [4]float32{0, 0, 0, 0.5} {
+		t.Fatalf("veil = %+v", v)
+	}
+	if ds[3].pc.rect[0] != 21 {
+		t.Fatalf("window 2 not last: %+v", ds[3].pc)
+	}
+}
+
+// HDR blends linear light: the dim alpha is raised so reference white
+// lands where SDR's encoded dim puts it.
+func TestDimAlpha(t *testing.T) {
+	if got := dimAlpha(0.5, false); got != 0.5 {
+		t.Fatalf("sdr %v", got)
+	}
+	for _, a := range []float64{0, 0.3, 0.5, 1} {
+		got := dimAlpha(a, true)
+		if want := 1 - srgbToLinear(1-a); math.Abs(got-want) > 1e-12 || got < a {
+			t.Fatalf("hdr %v: %v want %v", a, got, want)
+		}
+	}
+	if dimAlpha(2, true) != 1 || dimAlpha(-1, true) != 0 {
+		t.Fatal("not clamped")
 	}
 }
 
@@ -146,5 +188,54 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 	}
 	if got := r.Pixels().RGBAAt(3, 3); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
 		t.Fatalf("damaged tile beneath veil = %v, want dark red", got)
+	}
+}
+
+// A per-window veil darkens that window and its border only, also when
+// its content alone is redrawn on a retained target.
+func TestRendererWindowDimBlendAndDamage(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	s := ports.Scene{Seq: 20, Background: "#ffffff", Border: ports.Border{Width: 1, Inactive: "#ffffff"},
+		Windows: []ports.SceneWindow{
+			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 30, W: 20, H: 20}},
+		},
+		Separators: []ports.Separator{
+			{Window: 1, Rect: ports.Rect{W: 20, H: 1}},
+			{Window: 2, Rect: ports.Rect{X: 30, W: 20, H: 1}},
+		},
+	}
+	peek := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
+	peek.Seq = 1
+	sel := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
+	contents := map[ports.WindowID]ports.SurfaceContent{1: peek, 2: sel}
+	grey, white := color.RGBA{128, 128, 128, 255}, color.RGBA{255, 255, 255, 255}
+	if err := render(r, s, contents); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{{5, 5, grey}, {5, 0, grey}, {35, 5, white}, {35, 0, white}, {25, 30, white}} {
+		if got := r.Pixels().RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
+			t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+	// Damage inside the peek replays its veil: red becomes dark red.
+	if _, err := peek.SHM.File.WriteAt([]byte{0, 0, 255, 255}, int64((3*18+3)*4)); err != nil {
+		t.Fatal(err)
+	}
+	peek.Seq, peek.Version = 2, 2
+	peek.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []ports.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
+	contents[1] = peek
+	if err := render(r, s, contents); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Pixels().RGBAAt(4, 4); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
+		t.Fatalf("damaged peek = %v, want dark red", got)
 	}
 }

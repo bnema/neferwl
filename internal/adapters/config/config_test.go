@@ -25,7 +25,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 55 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
-	if d.Binds["Cmd+v"] != "toggle-window-floating" || d.Binds["Cmd+Shift+v"] != "toggle-floating-visible" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
+	if d.Binds["Cmd+s"] != "toggle-window-stash" || d.Binds["Cmd+Shift+s"] != "toggle-stash-visible" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -403,6 +403,32 @@ func TestTerminalResolutionAndAutoOpen(t *testing.T) {
 	t.Setenv("TERMINAL", " ")
 	if got := Defaults().Terminal.Command; !reflect.DeepEqual(got, []string{"foot"}) {
 		t.Fatal(got)
+	}
+}
+
+func TestStash(t *testing.T) {
+	if d := Defaults(); d.Stash.Width != 80 || d.Stash.Gap != 2 || d.Stash.Dim != 0.5 {
+		t.Fatalf("defaults %+v", d.Stash)
+	}
+	for _, tc := range []struct {
+		line    string
+		width   int
+		gap     int
+		dim     float64
+		warning bool
+	}{
+		{"stash.width = 10", 10, 2, 0.5, false}, {"stash.width = 70%", 70, 2, 0.5, false}, {"stash.width = 90", 90, 2, 0.5, false},
+		{"stash.width = 9", 80, 2, 0.5, true}, {"stash.width = 91", 80, 2, 0.5, true}, {"stash.width = 0", 80, 2, 0.5, true}, {"stash.width = 1/2", 80, 2, 0.5, true},
+		{"stash.gap = 0", 80, 0, 0.5, false}, {"stash.gap = 10", 80, 10, 0.5, false},
+		{"stash.gap = 11", 80, 2, 0.5, true}, {"stash.gap = -1", 80, 2, 0.5, true}, {"stash.gap = 2.5", 80, 2, 0.5, true},
+		{"stash.dim = 0.8", 80, 2, 0.8, false}, {"stash.dim = 1.5", 80, 2, 0.5, true}, {"stash.dim = NaN", 80, 2, 0.5, true},
+	} {
+		t.Run(tc.line, func(t *testing.T) {
+			c, warnings := parseString(t, tc.line)
+			if c.Stash.Width != tc.width || c.Stash.Gap != tc.gap || c.Stash.Dim != tc.dim || (len(warnings) != 0) != tc.warning {
+				t.Fatalf("stash %+v, warnings %v", c.Stash, warnings)
+			}
+		})
 	}
 }
 

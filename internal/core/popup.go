@@ -130,7 +130,9 @@ func flipY(e uint32) uint32 {
 func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 	if p := c.popups[id]; p != nil {
 		sc, pr, ok := c.windowRect(p.parent)
-		if !ok {
+		// A peeking stashed window shows no popups: they would cover the
+		// selected one.
+		if !ok || c.peeking(p.parent) {
 			return nil, Rect{}, false
 		}
 		return sc, Rect{X: pr.X + p.rect.X, Y: pr.Y + p.rect.Y, W: p.rect.W, H: p.rect.H}, true
@@ -153,6 +155,18 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 		}
 	}
 	return nil, Rect{}, false
+}
+
+// peeking reports whether id is a stashed window peeking in on screen.
+func (c *Core) peeking(id WindowID) bool {
+	for _, sc := range c.screens {
+		for _, pl := range sc.mon.Layout() {
+			if pl.ID == id {
+				return pl.Peek
+			}
+		}
+	}
+	return false
 }
 
 // placePopup places a new or repositioned popup and configures it; a popup

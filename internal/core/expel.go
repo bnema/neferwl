@@ -20,7 +20,7 @@ func (w *Workspace) full() bool {
 // returns false when the window must leave for the neighbor monitor: a full
 // workspace with the window stacked in the edge column.
 func (w *Workspace) ConsumeOrExpel(dir int) bool {
-	if len(w.Columns) == 0 || w.floatFocus || (dir != -1 && dir != 1) {
+	if len(w.Columns) == 0 || w.onFloat() || (dir != -1 && dir != 1) {
 		return true
 	}
 	// A fullscreen window hides the others (fixed) or its column (scroll):
@@ -82,7 +82,7 @@ func (w *Workspace) dropSlotOf(id WindowID) {
 // workspace; its slot, if any, is released.
 func (w *Workspace) takeWindow() (WindowID, bool) {
 	id, ok := w.Focused()
-	if !ok || w.floatFocus {
+	if !ok || w.onFloat() {
 		return 0, false
 	}
 	w.dropSlotOf(id)
