@@ -136,6 +136,13 @@ func TestInvisibleWindowBufferHeldUntilReport(t *testing.T) {
 		if !held {
 			t.Errorf("replaced buffer of an invisible window released at once: held=%d", len(s.held))
 		}
+		// Without a report showing it, the hold still ends.
+		s.releaseHeld(time.Now().Add(heldTimeout), nil)
+		for _, h := range s.held {
+			if h.res != nil && h.res.ID() == b {
+				t.Error("held buffer of an invisible window never released")
+			}
+		}
 	})
 }
 
