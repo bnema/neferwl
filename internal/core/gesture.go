@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -48,12 +49,22 @@ type swipeGesture struct {
 	// tracker adds up the movement along the chosen axis, natural scroll
 	// applied: positive scrolls right or down.
 	tracker swipeTracker
-	// ws is the workspace whose columns scroll; start is where the view
-	// was when the swipe took over: its x in pixels (columns) or the
-	// monitor's fractional workspace index (workspaces). Both are absolute,
-	// so a focus change during the swipe does not move the fingers' view.
+	// ws is the workspace whose columns scroll, or the active one when a
+	// workspace slide began; start is where the view was when the swipe
+	// took over: its x in pixels (columns) or the monitor's fractional
+	// workspace index (workspaces). Both are absolute, so a focus change
+	// during the swipe does not move the fingers' view.
 	ws    *Workspace
 	start float64
+	// list is the numbered workspaces when a workspace slide began: start
+	// indexes it, so the slide ends if the list changes.
+	list []*Workspace
+}
+
+// listChanged reports whether the numbered workspaces or the active one
+// changed since a workspace slide began.
+func (g *swipeGesture) listChanged(m *Monitor) bool {
+	return m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -65,8 +76,16 @@ func (c *Core) swipeSign() float64 {
 	return 1
 }
 
-func (c *Core) swipeBegin() {
+// swipeBegin starts a swipe. One still running (a second touchpad) ends
+// cancelled first: its slide settles back.
+func (c *Core) swipeBegin(at time.Duration) bool {
+	changed := false
+	if c.swipe != nil {
+		c.swipeEnd(ports.SwipeEnd{Cancelled: true, Time: at})
+		changed = true
+	}
 	c.swipe = &swipeGesture{screen: c.cur()}
+	return changed
 }
 
 // swipeUpdate moves the swipe; it reports whether the scene changed.
@@ -100,7 +119,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		g.ws.shift = g.start + g.tracker.pos*g.ws.swipeScale() - float64(g.ws.ViewX)
 		return true
 	case swipeWorkspaces:
-		if m.shown != nil {
+		if g.listChanged(m) {
 			m.stopSwitch()
 			g.mode = swipeDropped
 			return true
@@ -124,8 +143,13 @@ func (c *Core) decide(g *swipeGesture) {
 		w.motion = nil
 		g.start = float64(w.ViewX) + w.shift
 	case !g.horizontal && m.shown == nil:
-		g.mode = swipeWorkspaces
-		m.switchMotion = nil
+		// A landing slide measured in an older list lands at once first.
+		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
+			m.stopSwitch()
+		}
+		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
+		g.list = slices.Clone(m.Workspaces)
+		m.switchMotion, m.switchList = nil, nil
 		g.start = float64(m.Active) + m.switchOff
 	default:
 		g.mode = swipeDiscrete
@@ -164,7 +188,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		w.shift = shown - float64(w.ViewX)
 		w.motion = newMotion(viewSpring(w.shift, g.tracker.velocity()*scale), now)
 	case swipeWorkspaces:
-		if m.shown != nil {
+		if g.listChanged(m) {
 			m.stopSwitch()
 			return false
 		}
@@ -175,8 +199,8 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		if !e.Cancelled {
 			idx = int(math.Round(min(max(g.start+g.tracker.projectedEnd()/workspaceSwipeMovement, 0), last)))
 		}
-		// Focus may drop the empty workspace left behind; the offset stays
-		// relative to the target.
+		// Focus may drop the empty workspace left behind and renumber the
+		// list: the slide keeps measuring in the list it began on.
 		off := cur - float64(idx)
 		if idx != m.Active {
 			m.Focus(idx)
@@ -186,7 +210,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.layerFocus = 0
 		}
-		m.switchOff = off
+		m.switchOff, m.switchList = off, g.list
 		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
 	case swipeDiscrete:
 		p := g.tracker.projectedEnd()

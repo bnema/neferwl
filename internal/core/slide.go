@@ -83,16 +83,26 @@ func (w *Workspace) snap(target float64, forward bool) (view, focus int) {
 	return view, focus
 }
 
-func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion = 0, nil }
+func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, nil, nil }
 
 // slideLayout adds the workspaces a workspace slide shows next to the
 // current one, moved by their distance, to the current layout (moved too).
+// A landing slide places them as the list was when the swipe began
+// (switchList): an empty workspace dropped since shows as background.
 func (m *Monitor) slideLayout(cur []Placement) []Placement {
 	if m.switchOff == 0 || m.shown != nil {
 		return cur
 	}
+	list := m.Workspaces
+	if m.switchList != nil {
+		list = m.switchList
+	}
+	base := indexOf(list, m.Current())
+	if base < 0 {
+		return cur
+	}
 	h := float64(m.template.Output.H)
-	pos := float64(m.Active) + m.switchOff
+	pos := float64(base) + m.switchOff
 	offset := func(p []Placement, k int) []Placement {
 		dy := int(math.Round((float64(k) - pos) * h))
 		for i := range p {
@@ -102,12 +112,12 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		}
 		return p
 	}
-	cur = offset(cur, m.Active)
+	cur = offset(cur, base)
 	for _, k := range []int{int(math.Floor(pos)), int(math.Ceil(pos))} {
-		if k == m.Active || k < 0 || k >= len(m.Workspaces) {
+		if k == base || k < 0 || k >= len(list) || !m.has(list[k]) {
 			continue
 		}
-		next := m.Workspaces[k].Layout()
+		next := list[k].Layout()
 		for i := range next {
 			next[i].Focused = false
 		}

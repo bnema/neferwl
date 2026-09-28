@@ -30,6 +30,10 @@ type Monitor struct {
 	// (switchMotion) lands.
 	switchOff    float64
 	switchMotion *motion
+	// switchList is the numbered list a landing slide measures from (the
+	// one its swipe began on); switchOff is then from the current
+	// workspace's place in it.
+	switchList []*Workspace
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty

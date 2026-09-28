@@ -123,6 +123,8 @@ type Core struct {
 	swipe     *swipeGesture
 	frameC    <-chan time.Time
 	frameStop func() bool
+	// motionMsec is the time of the last pointer motion.
+	motionMsec uint32
 }
 
 func keyName(s string) string {
@@ -563,7 +565,39 @@ func (c *Core) publish(ctx context.Context) error {
 func (c *Core) step(ctx context.Context) error {
 	c.stopFrame()
 	c.animate(c.now())
-	return c.publish(ctx)
+	return c.slid(ctx, false)
+}
+
+// slid publishes a moved view; shown reports another workspace came on
+// screen.
+func (c *Core) slid(ctx context.Context, shown bool) error {
+	if err := c.workspaceVisible(ctx, shown); err != nil {
+		return err
+	}
+	if err := c.publish(ctx); err != nil {
+		return err
+	}
+	return c.rehit(ctx)
+}
+
+// rehit points the pointer at what now lies under a still cursor, as
+// windows slide under it. A held button keeps its grab.
+func (c *Core) rehit(ctx context.Context) error {
+	if c.grab != 0 {
+		return nil
+	}
+	id, x, y := c.hit(c.cursorX, c.cursorY)
+	if id != c.pointer {
+		c.pointer = id
+		return c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
+	}
+	if id == 0 {
+		return nil
+	}
+	// The same window moved under the cursor: it moves in the window. No
+	// relative motion: the device did not move. The input clock is the
+	// device's; the last motion's time is the closest core knows.
+	return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, TimeMsec: c.motionMsec})
 }
 
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the
@@ -927,6 +961,7 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
+				c.motionMsec = v.TimeMsec
 				// A locked pointer stays still; relative motion still flows.
 				if c.constraint.Mode != ports.ConstraintLock {
 					c.cursorX, c.cursorY = c.constraint.Clamp(c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y))
@@ -1019,21 +1054,17 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.SwipeBegin:
-				c.swipeBegin()
+				if c.swipeBegin(v.Time) && c.slid(ctx, false) != nil {
+					return nil
+				}
 				continue
 			case ports.SwipeUpdate:
-				if c.swipeUpdate(v) {
-					if err := c.publish(ctx); err != nil {
-						return nil
-					}
+				if c.swipeUpdate(v) && c.slid(ctx, false) != nil {
+					return nil
 				}
 				continue
 			case ports.SwipeEnd:
-				shown := c.swipeEnd(v)
-				if c.workspaceVisible(ctx, shown) != nil {
-					return nil
-				}
-				if err := c.publish(ctx); err != nil {
+				if c.slid(ctx, c.swipeEnd(v)) != nil {
 					return nil
 				}
 				continue

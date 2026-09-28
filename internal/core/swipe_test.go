@@ -315,6 +315,139 @@ func TestKeyDuringSlideRetargets(t *testing.T) {
 	}
 }
 
+func TestSwipeFromEmptyWorkspaceLandsWithoutJump(t *testing.T) {
+	r := startSwipe(t, nil)
+	r.workspaces(t)
+	// Workspace 3 is the trailing empty one; start there and swipe up to 2.
+	r.key(t, "Next", ports.ModAlt)
+	r.key(t, "Next", ports.ModAlt)
+	r.begin()
+	var s ports.Scene
+	for range 6 {
+		s = r.move(t, 0, -40)
+	}
+	before, ok := rectOf(s, 2)
+	if !ok {
+		t.Fatal("workspace 2 not sliding in")
+	}
+	// Landing drops no numbered workspace here (the trailing one stays),
+	// but the view must not jump either way.
+	s = r.end(t, false)
+	after, _ := rectOf(s, 2)
+	if after.Y != before.Y {
+		t.Fatalf("landing jumped from %d to %d", before.Y, after.Y)
+	}
+	if got, _ := rectOf(r.settle(t), 2); got.Y != 0 {
+		t.Fatalf("workspace 2 landed at %d", got.Y)
+	}
+}
+
+func TestSwipeLandingKeepsViewWhenEmptyWorkspaceDrops(t *testing.T) {
+	r := startSwipe(t, nil)
+	// 1 on the first workspace, 2 on the third; the second is empty and
+	// active, so leaving it drops it and renumbers the third.
+	r.mapWindow(t, 1)
+	r.key(t, "Next", ports.ModAlt)
+	r.key(t, "Next", ports.ModAlt)
+	r.mapWindow(t, 2)
+	r.key(t, "Prior", ports.ModAlt)
+	r.begin()
+	var s ports.Scene
+	for range 4 {
+		s = r.move(t, 0, 20)
+	}
+	before, ok := rectOf(s, 2)
+	if !ok {
+		t.Fatal("workspace 3 not sliding in")
+	}
+	s = r.end(t, false)
+	after, ok := rectOf(s, 2)
+	if !ok || after.Y != before.Y {
+		t.Fatalf("landing moved workspace 3 from %d to %d (shown %t)", before.Y, after.Y, ok)
+	}
+	if got, _ := rectOf(r.settle(t), 2); got.Y != 0 {
+		t.Fatalf("landed at %d", got.Y)
+	}
+}
+
+func TestSwipeDropsWhenWorkspacesChange(t *testing.T) {
+	r := startSwipe(t, nil)
+	r.workspaces(t)
+	r.begin()
+	r.move(t, 0, 30)
+	// A key switches workspace mid-swipe: the swipe lets go at once.
+	r.key(t, "Next", ports.ModAlt)
+	s := r.move(t, 0, 30)
+	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
+		t.Fatalf("workspace 2 at %v %t after the key", got, ok)
+	}
+	if _, ok := rectOf(s, 1); ok {
+		t.Fatal("workspace 1 still sliding")
+	}
+}
+
+func TestSlideMovesPointerFocus(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	// The pointer rests over column 2 (x 100: the view shows 2 and 3).
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.drain()
+	r.flick(t, 10, -40, 0)
+	r.settle(t)
+	var focus ports.PointerFocus
+	var motion ports.PointerMotionTo
+	// Core sends the pointer update right after the scene: wait for it.
+	for {
+		var v ports.ClientCommand
+		select {
+		case v = <-r.commands:
+		case <-time.After(50 * time.Millisecond):
+		}
+		if v == nil {
+			break
+		}
+		switch v := v.(type) {
+		case ports.PointerFocus:
+			focus = v
+		case ports.PointerMotionTo:
+			motion = v
+		}
+	}
+	// Column 1 slid under the still pointer; it follows the window.
+	if focus.ID != 1 {
+		t.Fatalf("pointer focus %+v", focus)
+	}
+	if motion.ID != 1 || motion.X != 100 || motion.DX != 0 {
+		t.Fatalf("last motion %+v", motion)
+	}
+}
+
+func TestSecondSwipeBeginSettlesTheFirst(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	r.begin()
+	s := r.move(t, -40, 0)
+	moved, _ := rectOf(s, 2)
+	// Another touchpad begins: the first swipe springs back.
+	r.begin()
+	scene(t, r.scenes)
+	s = r.settle(t)
+	if got, _ := rectOf(s, 2); got.X == moved.X || got.X != 0 {
+		t.Fatalf("first swipe left column 2 at %d", got.X)
+	}
+}
+
+// drain waits for core to handle what was sent, then empties commands.
+func (r *swipeRig) drain() {
+	for {
+		select {
+		case <-r.commands:
+		case <-time.After(50 * time.Millisecond):
+			return
+		}
+	}
+}
+
 func TestKeyWithoutSlideMovesAtOnce(t *testing.T) {
 	r := startSwipe(t, nil)
 	threeColumns(t, r)
