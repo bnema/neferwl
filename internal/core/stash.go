@@ -27,9 +27,9 @@ func (w *Workspace) isFloat(id WindowID) bool {
 }
 
 // stashFocused reports whether the stash has the focus, under any native
-// float that has it.
+// float that has it. A shown stash without tiles always has it.
 func (w *Workspace) stashFocused() bool {
-	return w.stashFocus && !w.stashHidden && len(w.Stash) > 0
+	return (w.stashFocus || len(w.Columns) == 0) && !w.stashHidden && len(w.Stash) > 0
 }
 
 // onFloat reports whether the focus is on a floating window: column
@@ -59,10 +59,11 @@ func (w *Workspace) addStash(f Float) {
 }
 
 // showStash shows the stash and gives it the focus; a member whose
-// fullscreen waited while hidden is fullscreen again, selected.
+// fullscreen waited while hidden is fullscreen again, selected, as if it
+// asked now.
 func (w *Workspace) showStash() {
 	w.stashHidden, w.stashFocus, w.floatFocus = false, true, false
-	if i := w.stashIndex(w.hiddenFullscreen); i >= 0 && w.fullscreen == 0 {
+	if i := w.stashIndex(w.hiddenFullscreen); i >= 0 {
 		w.fullscreen, w.stashAt = w.hiddenFullscreen, i
 	}
 	w.hiddenFullscreen = 0

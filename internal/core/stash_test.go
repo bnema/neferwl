@@ -102,3 +102,80 @@ func TestStashFullscreenRoundTrip(t *testing.T) {
 		t.Fatalf("request: %v at %d", stashIDs(w), w.stashAt)
 	}
 }
+
+// A shown stash without tiles has the focus, however it got there: a
+// named workspace handing its windows over, or a fullscreen window
+// returning while the user is elsewhere.
+func TestStashAloneHasFocus(t *testing.T) {
+	m := stashMonitor(OverflowFixed)
+	w := m.Current()
+	w.FocusID(1)
+	w.RemoveWindow(1) // only stashed windows left, the tile had the focus
+	if id, _ := w.Focused(); id != 3 {
+		t.Fatalf("focused %d, want the selected stashed window", id)
+	}
+	// Fixed overflow, only window stashed: a client leaving fullscreen
+	// while the user is elsewhere.
+	m = newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w = m.Current()
+	w.ToggleWindowFloating()
+	w.RemoveWindow(1)
+	m.ToggleFullscreen() // 2 is alone: fullscreen in place
+	m.SetFullscreen(2, false)
+	if id, ok := w.Focused(); !ok || id != 2 {
+		t.Fatalf("focused %d %v", id, ok)
+	}
+}
+
+// A fullscreen request made while the stash was hidden applies on show,
+// even over an off-screen fullscreen tile.
+func TestStashPendingFullscreenOverTile(t *testing.T) {
+	w := workspace()
+	w.SetMaxColumns(1)
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.AddWindow(3)
+	w.ToggleWindowFloating() // 3 stashed
+	w.ToggleFloatingVisible()
+	w.SetFullscreen(3, true) // waits
+	w.FocusID(1)
+	w.SetFullscreen(1, true)
+	w.FocusID(2) // 1 scrolled off: it no longer covers
+	if w.cover() != 0 {
+		t.Fatal("tile still covers")
+	}
+	w.ToggleFloatingVisible()
+	if w.fullscreen != 3 || w.hiddenFullscreen != 0 {
+		t.Fatalf("fullscreen %d pending %d", w.fullscreen, w.hiddenFullscreen)
+	}
+	if id, _ := w.Focused(); id != 3 {
+		t.Fatalf("focused %d", id)
+	}
+}
+
+// A removed named workspace hands its stash to the active one; with no
+// tiles there, the stash takes the focus.
+func TestStashFromRemovedNamedWorkspace(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.SetNamed([]NamedWorkspace{{Name: "notes"}})
+	m.ToggleNamed("notes")
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w := m.Current()
+	w.ToggleWindowFloating()
+	w.FocusID(1)
+	w.ToggleWindowFloating()
+	m.SetNamed(nil)
+	to := m.Workspaces[m.Active]
+	if !slices.Equal(stashIDs(to), []WindowID{2, 1}) {
+		t.Fatalf("stash %v", stashIDs(to))
+	}
+	if id, ok := to.Focused(); !ok || id != 2 {
+		t.Fatalf("focused %d %v", id, ok)
+	}
+}

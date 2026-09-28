@@ -190,3 +190,52 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 		t.Fatalf("damaged tile beneath veil = %v, want dark red", got)
 	}
 }
+
+// A per-window veil darkens that window and its border only, also when
+// its content alone is redrawn on a retained target.
+func TestRendererWindowDimBlendAndDamage(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	s := ports.Scene{Seq: 20, Background: "#ffffff", Border: ports.Border{Width: 1, Inactive: "#ffffff"},
+		Windows: []ports.SceneWindow{
+			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 30, W: 20, H: 20}},
+		},
+		Separators: []ports.Separator{
+			{Window: 1, Rect: ports.Rect{W: 20, H: 1}},
+			{Window: 2, Rect: ports.Rect{X: 30, W: 20, H: 1}},
+		},
+	}
+	peek := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
+	peek.Seq = 1
+	sel := solidContent(t, 18, 18, color.RGBA{255, 255, 255, 255})
+	contents := map[ports.WindowID]ports.SurfaceContent{1: peek, 2: sel}
+	grey, white := color.RGBA{128, 128, 128, 255}, color.RGBA{255, 255, 255, 255}
+	if err := render(r, s, contents); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x, y int
+		want color.RGBA
+	}{{5, 5, grey}, {5, 0, grey}, {35, 5, white}, {35, 0, white}, {25, 30, white}} {
+		if got := r.Pixels().RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
+			t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+	// Damage inside the peek replays its veil: red becomes dark red.
+	if _, err := peek.SHM.File.WriteAt([]byte{0, 0, 255, 255}, int64((3*18+3)*4)); err != nil {
+		t.Fatal(err)
+	}
+	peek.Seq, peek.Version = 2, 2
+	peek.DamageHistory = []ports.SeqDamage{{Seq: 1, Full: true}, {Seq: 2, Rects: []ports.Rect{{X: 3, Y: 3, W: 1, H: 1}}}}
+	contents[1] = peek
+	if err := render(r, s, contents); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Pixels().RGBAAt(4, 4); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
+		t.Fatalf("damaged peek = %v, want dark red", got)
+	}
+}
