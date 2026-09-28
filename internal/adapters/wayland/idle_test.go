@@ -1,14 +1,18 @@
 package wayland
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/logging"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/extidlenotify"
 	"github.com/bnema/purego-libwayland/protocol/idleinhibit"
 	"github.com/bnema/purego-libwayland/protocol/wlroutputpower"
 	"github.com/bnema/wlturbo"
+	"github.com/stretchr/testify/mock"
 )
 
 // eventProxy records the opcodes, and first uint argument, of its events.
@@ -169,28 +173,80 @@ func TestOutputPower(t *testing.T) {
 	}
 }
 
+// armed is one idle timer started through the clock.
+type armed struct {
+	d    time.Duration
+	fire func()
+}
+
+// idleClockServer runs a server whose idle timers fire only when the test
+// calls them; every started timer is sent on the returned channel.
+func idleClockServer(t *testing.T) (*Server, chan ports.ClientCommand, string, chan armed) {
+	t.Helper()
+	dir := t.TempDir()
+	commands := make(chan ports.ClientCommand, 16)
+	timers := make(chan armed, 16)
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().AfterFunc(mock.Anything, mock.Anything).RunAndReturn(func(d time.Duration, f func()) ports.Timer {
+		timer := portsmocks.NewMockTimer(t)
+		timer.EXPECT().Stop().Return(true).Maybe()
+		timers <- armed{d, f}
+		return timer
+	}).Maybe()
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, Clock: clock}, Channels{Commands: commands}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	return s, commands, dir, timers
+}
+
+func nextArmed(t *testing.T, timers <-chan armed) armed {
+	t.Helper()
+	select {
+	case a := <-timers:
+		return a
+	case <-time.After(2 * time.Second):
+		t.Fatal("no idle timer started")
+		return armed{}
+	}
+}
+
 // A timeout shorter than the activity interval still waits for it, so
-// continuous input keeps the notification from idling.
+// continuous input keeps the notification from idling; a timer replaced
+// by user activity is stale when it fires.
 func TestIdleShortTimeout(t *testing.T) {
-	s, _, commands, _, dir := contentServer(t)
+	s, commands, dir, timers := idleClockServer(t)
 	c := protocolClient(t, s, dir)
 	seat := bindProtocol(t, c, "wl_seat")
 	registerProtocol(t, c, seat)
 	notifier := bindVersion(t, c, "ext_idle_notifier_v1", 2)
 	id, n := newEventProxy(c)
-	start := time.Now()
 	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(0), seat)
-	n.next(t, c, 2*time.Second)
-	if d := time.Since(start); d < ports.ActivityInterval {
-		t.Fatalf("idled after %v, before the activity interval", d)
+	first := nextArmed(t, timers)
+	if first.d != ports.ActivityInterval {
+		t.Fatalf("timer %v, want the activity interval", first.d)
+	}
+	first.fire()
+	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
+		t.Fatalf("event %v, want idled", e)
 	}
 	commands <- ports.UserActivity{}
-	n.next(t, c, 2*time.Second) // resumed
-	for range 4 {
-		time.Sleep(ports.ActivityInterval / 2)
-		commands <- ports.UserActivity{}
+	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventResumed) {
+		t.Fatalf("event %v, want resumed", e)
 	}
-	n.none(t, c, ports.ActivityInterval/2)
+	stale := nextArmed(t, timers)
+	commands <- ports.UserActivity{}
+	current := nextArmed(t, timers)
+	stale.fire()
+	n.none(t, c, 50*time.Millisecond)
+	current.fire()
+	if e := n.next(t, c, 2*time.Second); e[0] != uint32(extidlenotify.ExtIdleNotificationV1EventIdled) {
+		t.Fatalf("event %v, want idled", e)
+	}
 }
 
 // An unknown mode is a protocol error.

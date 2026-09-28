@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
@@ -161,7 +162,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), time.Second)
+			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), clock.System{}, time.Second)
 		}()
 	}
 	filtered := make(chan ports.ConfigChanged, 8)

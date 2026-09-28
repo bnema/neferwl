@@ -13,10 +13,13 @@ packages:
       pkgname: portsmocks
       filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
     interfaces:
+      Clock:
       Notifier:
       OutputScaleStore:
       Renderer:
       Seat:
+      Ticker:
+      Timer:
   # Unexported adapter seams: mocks live next to the code, in test files.
   github.com/bnema/neferwl/internal/adapters/drm:
     interfaces:

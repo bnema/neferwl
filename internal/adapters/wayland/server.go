@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
@@ -30,6 +31,8 @@ type Options struct {
 	SyncobjNode             string
 	Keymap                  string
 	RepeatRate, RepeatDelay int
+	// Clock runs idle notification timers; nil is the system clock.
+	Clock ports.Clock
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
 }
@@ -161,6 +164,7 @@ type Server struct {
 	// idleNotes and powers are the idle notifications and output power
 	// objects (idle.go); outputsOff the outputs core turned off.
 	idleNotes         []*idleNotification
+	clock             ports.Clock
 	powers            []*outputPower
 	outputsOff        map[string]bool
 	contentNotify     chan struct{}
@@ -233,6 +237,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}
+	s.clock = opts.Clock
+	if s.clock == nil {
+		s.clock = clock.System{}
+	}
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
 	s.outputReplies = map[uint64]*outputConfiguration{}
 	s.managementSerial = 1

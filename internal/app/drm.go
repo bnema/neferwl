@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/seat"
@@ -20,10 +21,14 @@ import (
 
 var errTimeout = errors.New("timeout")
 
+// applyTimeout bounds how long outputs take to apply a configuration.
+const applyTimeout = 5 * time.Second
+
 // drmBackend is the seat and the cards with at least one usable output.
 type drmBackend struct {
 	seat  *seat.Seat
 	cards []*drmCard
+	clock ports.Clock
 }
 
 type drmCard struct {
@@ -73,7 +78,7 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 	want := wantFromConfig(cfg)
 	paths, _ := filepath.Glob("/dev/dri/card[0-9]*")
 	sort.Strings(paths)
-	b := &drmBackend{seat: s}
+	b := &drmBackend{seat: s, clock: clock.System{}}
 	var errs []error
 	for _, path := range paths {
 		fd, err := s.OpenDevice(path)
@@ -180,17 +185,18 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		err    error
 	}
 	ready := make(chan readyResult)
-	deadline := make(chan uint64, 1)
-	var timer *time.Timer
+	// deadline is the pending apply's timer channel, nil while none is pending.
+	timer := b.clock.NewTimer(applyTimeout)
+	timer.Stop()
+	defer timer.Stop()
+	var deadline <-chan time.Time
 	var op uint64
 	complete := func(d applyDecision) {
 		if !d.reply {
 			return
 		}
-		if timer != nil {
-			timer.Stop()
-			timer = nil
-		}
+		timer.Stop()
+		deadline = nil
 		apply.finished(d.err)
 	}
 	publishInventory := func() {
@@ -291,10 +297,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	configure := func(cfg ports.Config) {
 		currentConfig = cfg
 		op++
-		if timer != nil {
-			timer.Stop()
-			timer = nil
-		}
+		timer.Stop()
+		deadline = nil
 		required := map[string]bool{}
 		// Desired enabled heads, not the inventory's current mode, require a first modeset.
 		w := want(currentConfig)
@@ -316,13 +320,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		}
 		d := progress.scanned(running)
 		if progress.active {
-			id := op
-			timer = time.AfterFunc(5*time.Second, func() {
-				select {
-				case deadline <- id:
-				case <-ctx.Done():
-				}
-			})
+			timer.Reset(applyTimeout)
+			deadline = timer.C()
 		}
 		complete(d)
 	}
@@ -362,8 +361,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			apply.headsSent()
 		case result := <-ready:
 			complete(progress.readyEvent(result.name, result.source, readySources[result.name], result.err))
-		case id := <-deadline:
-			complete(progress.timeout(id))
+		case <-deadline:
+			complete(progress.timeout(op))
 		case s := <-ch.scenes:
 			set.scenes(s)
 		case c := <-ch.contents:

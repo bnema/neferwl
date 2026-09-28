@@ -14,9 +14,9 @@ import (
 // debounce, so a burst of Cmd+= presses writes the config once, and tells
 // the user through notes. It runs until ctx ends; pending scales are then
 // dropped.
-func PersistScales(ctx context.Context, changes <-chan ports.ScaleChanged, store ports.OutputScaleStore, notes ports.Notifier, debounce time.Duration) {
+func PersistScales(ctx context.Context, changes <-chan ports.ScaleChanged, store ports.OutputScaleStore, notes ports.Notifier, clock ports.Clock, debounce time.Duration) {
 	pending := map[string]float64{}
-	timer := time.NewTimer(debounce)
+	timer := clock.NewTimer(debounce)
 	timer.Stop()
 	for {
 		select {
@@ -26,7 +26,7 @@ func PersistScales(ctx context.Context, changes <-chan ports.ScaleChanged, store
 		case ev := <-changes:
 			pending[ev.Output] = ev.Scale
 			timer.Reset(debounce)
-		case <-timer.C:
+		case <-timer.C():
 			// Sorted: several outputs save and notify in a stable order.
 			for _, name := range slices.Sorted(maps.Keys(pending)) {
 				scale := pending[name]
