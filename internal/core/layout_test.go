@@ -440,6 +440,177 @@ func TestFixedOverflowSpiral(t *testing.T) {
 	}
 }
 
+// In fixed overflow, cycle-column-width expands the focused column over
+// max-columns - 1 cells in its place; the others stack beside it.
+func TestFixedExpandColumn(t *testing.T) {
+	rects := func(w *Workspace) map[WindowID]Rect {
+		got := map[WindowID]Rect{}
+		for id, p := range placements(w) {
+			got[id] = p.Rect
+		}
+		return got
+	}
+	check := func(t *testing.T, w *Workspace, want map[WindowID]Rect) {
+		t.Helper()
+		if got := rects(w); !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v\nwant %v", got, want)
+		}
+	}
+	t.Run("free cell", func(t *testing.T) {
+		w := fixedWorkspace(4, 0, 2)
+		w.FocusID(1)
+		w.CycleWidth()
+		check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
+		w.CycleWidth()
+		check(t, w, map[WindowID]Rect{1: {W: 50, H: 80}, 2: {X: 50, W: 50, H: 80}})
+	})
+	t.Run("middle column keeps its place", func(t *testing.T) {
+		w := fixedWorkspace(4, 0, 4)
+		w.FocusID(2)
+		w.CycleWidth()
+		check(t, w, map[WindowID]Rect{
+			1: {W: 12, H: 80},
+			2: {X: 12, W: 75, H: 80},
+			3: {X: 87, W: 13, H: 40},
+			4: {X: 87, Y: 40, W: 13, H: 40},
+		})
+	})
+	t.Run("with gaps", func(t *testing.T) {
+		w := fixedWorkspace(2, 4, 3)
+		w.FocusID(1)
+		w.CycleWidth()
+		// Two cells of 44: the wide one keeps one, the others stack in the other.
+		check(t, w, map[WindowID]Rect{
+			1: {X: 4, Y: 4, W: 44, H: 72},
+			2: {X: 52, Y: 4, W: 44, H: 34},
+			3: {X: 52, Y: 42, W: 44, H: 34},
+		})
+	})
+	t.Run("stays on focus change and new windows", func(t *testing.T) {
+		w := fixedWorkspace(4, 0, 2)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.FocusColumn(1)
+		w.AddWindow(3)
+		check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 40}, 3: {X: 75, Y: 40, W: 25, H: 40}})
+	})
+	t.Run("moves to the focused column", func(t *testing.T) {
+		w := fixedWorkspace(4, 0, 2)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.FocusID(2)
+		w.CycleWidth()
+		check(t, w, map[WindowID]Rect{1: {W: 25, H: 80}, 2: {X: 25, W: 75, H: 80}})
+	})
+	t.Run("closing it shares again", func(t *testing.T) {
+		w := fixedWorkspace(3, 0, 3)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.RemoveWindow(1)
+		check(t, w, map[WindowID]Rect{2: {W: 50, H: 80}, 3: {X: 50, W: 50, H: 80}})
+	})
+	t.Run("no-op when it cannot grow", func(t *testing.T) {
+		for _, w := range []*Workspace{fixedWorkspace(3, 0, 1), fixedWorkspace(1, 0, 2)} {
+			before := rects(w)
+			w.CycleWidth()
+			check(t, w, before)
+		}
+	})
+	t.Run("stays on screen when gaps do not fit", func(t *testing.T) {
+		for _, w := range []*Workspace{fixedWorkspace(2, 4, 30), fixedWorkspace(4, 4, 4)} {
+			if w.MaxColumns == 4 {
+				w.SetOutput(12, 80)
+			}
+			w.FocusID(2)
+			w.CycleWidth()
+			for id, p := range placements(w) {
+				r := p.Rect
+				if r.X < 0 || r.Y < 0 || r.W < 0 || r.H < 0 || r.X+r.W > w.Output.W || r.Y+r.H > w.Output.H {
+					t.Fatal(id, r)
+				}
+			}
+		}
+	})
+	t.Run("maximize wins and gives it back", func(t *testing.T) {
+		w := fixedWorkspace(4, 0, 2)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.ToggleFullWidth()
+		if p := placements(w); p[1].Rect != (Rect{W: 100, H: 80}) || !p[2].Hidden {
+			t.Fatal(p)
+		}
+		w.ToggleFullWidth()
+		check(t, w, map[WindowID]Rect{1: {W: 75, H: 80}, 2: {X: 75, W: 25, H: 80}})
+	})
+}
+
+// Up and down cross the columns the spiral or the expanded strips stack.
+func TestFixedFocusStackedColumns(t *testing.T) {
+	focused := func(w *Workspace) WindowID { id, _ := w.Focused(); return id }
+	t.Run("spiral", func(t *testing.T) {
+		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+		w := fixedWorkspace(2, 4, 5)
+		for _, want := range []WindowID{4, 2} {
+			if !w.FocusWindow(-1) || focused(w) != want {
+				t.Fatal(focused(w), want)
+			}
+		}
+		if w.FocusWindow(-1) {
+			t.Fatal("moved past the top", focused(w))
+		}
+		w.FocusID(1)
+		if w.FocusWindow(1) {
+			t.Fatal("full height column moved", focused(w))
+		}
+	})
+	t.Run("left and right follow the screen", func(t *testing.T) {
+		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+		w := fixedWorkspace(2, 4, 5)
+		for _, step := range []struct {
+			dir  int
+			want WindowID
+		}{{-1, 3}, {-1, 1}, {1, 2}} {
+			w.FocusColumn(step.dir)
+			if focused(w) != step.want {
+				t.Fatal(focused(w), step.want)
+			}
+		}
+		w.FocusID(3)
+		w.FocusColumn(1)
+		if focused(w) != 4 {
+			t.Fatal(focused(w))
+		}
+		if w.FocusID(2); w.columnToward(1) >= 0 {
+			t.Fatal("right edge has a neighbor")
+		}
+	})
+	t.Run("expanded strip", func(t *testing.T) {
+		// 1 wide; 2, 3 and 4 stacked on its right.
+		w := fixedWorkspace(3, 0, 4)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.FocusID(2)
+		for _, want := range []WindowID{3, 4} {
+			if !w.FocusWindow(1) || focused(w) != want {
+				t.Fatal(focused(w), want)
+			}
+		}
+		if !w.FocusWindow(-1) || focused(w) != 3 {
+			t.Fatal(focused(w))
+		}
+	})
+	t.Run("lands on the nearest window of a stacked column", func(t *testing.T) {
+		// 1 left; 2 top right holds two windows; 3 bottom right.
+		w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w.SetOutput(100, 80)
+		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
+		w.Focus = 2
+		if !w.FocusWindow(-1) || focused(w) != 5 {
+			t.Fatal(focused(w))
+		}
+	})
+}
+
 func fixedWorkspace(maxCols, gaps, n int) *Workspace {
 	w := &Workspace{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}
 	w.SetOutput(100, 80)

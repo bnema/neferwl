@@ -411,6 +411,52 @@ func TestNamedWorkspaceSettings(t *testing.T) {
 	}
 }
 
+// The expanded column comes back expanded from its fullscreen workspace.
+func TestMonitorFixedFullscreenKeepsExpanded(t *testing.T) {
+	m := monitor()
+	m.SetOverflow(OverflowFixed)
+	m.SetMaxColumns(3)
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	m.Current().FocusID(2)
+	m.Apply(ActionCycleColumnWidth)
+	m.ToggleFullscreen()
+	m.ToggleFullscreen()
+	if c := m.Current().Columns; len(c) != 3 || !c[1].Expanded || c[0].Expanded || c[2].Expanded {
+		t.Fatalf("%+v", c)
+	}
+}
+
+// A window of an expanded stacked column comes back expanded when the rest
+// of its column closed meanwhile, unless another column took the expansion.
+func TestMonitorFixedFullscreenStackedExpanded(t *testing.T) {
+	for _, other := range []bool{false, true} {
+		m := monitor()
+		m.SetOverflow(OverflowFixed)
+		m.SetMaxColumns(3)
+		for id := WindowID(1); id <= 4; id++ {
+			m.AddWindow(id)
+		}
+		w := m.Current()
+		w.FocusID(2)
+		w.stack(2, 1) // column {1, 2}, then {3}, {4}
+		w.FocusID(2)
+		m.Apply(ActionCycleColumnWidth)
+		m.ToggleFullscreen()
+		w.RemoveWindow(1)
+		if other {
+			w.FocusID(3)
+			w.CycleWidth()
+		}
+		m.ToggleFullscreen()
+		c := m.Current().Columns
+		if len(c) != 3 || c[0].Windows[0] != 2 || c[0].Expanded == other || c[1].Expanded != other || c[2].Expanded {
+			t.Fatalf("other=%v %+v", other, c)
+		}
+	}
+}
+
 func TestMonitorFixedFullscreenOwnWorkspace(t *testing.T) {
 	m := monitor()
 	m.SetOverflow(OverflowFixed)

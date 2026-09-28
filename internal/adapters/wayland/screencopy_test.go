@@ -590,14 +590,24 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 		<-p.events
 	}
 	commands <- ports.SetOutputs{}
-	if !s.display.Do(func() {}) {
-		t.Fatal("display stopped")
-	}
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	if got := <-p.events; !reflect.DeepEqual(got, []uint32{5}) {
-		t.Fatalf("stopped: %v", got)
+	// The command goroutine applies SetOutputs on its own schedule: round
+	// trip until the stopped event arrives.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-p.events:
+			if !reflect.DeepEqual(got, []uint32{5}) {
+				t.Fatalf("stopped: %v", got)
+			}
+			return
+		case <-time.After(10 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session not stopped")
+		}
 	}
 }
 

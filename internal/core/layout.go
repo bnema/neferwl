@@ -83,7 +83,10 @@ type Column struct {
 	Windows   []WindowID
 	Width     Width
 	FullWidth bool
-	Focus     int
+	// Expanded is the fixed-overflow wide column: max-columns - 1 cells,
+	// the others share the last one. One column at most has it.
+	Expanded bool
+	Focus    int
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
@@ -158,9 +161,10 @@ type origPlace struct {
 	col, row, slot int
 	// stacked holds the windows left in the column: the window returns to
 	// its row in the column that still holds one of them.
-	stacked []WindowID
-	width   Width
-	float   *Float
+	stacked  []WindowID
+	width    Width
+	expanded bool
+	float    *Float
 }
 
 // Float is a floating window and its client size, logical.
@@ -382,16 +386,41 @@ func (w *Workspace) FocusColumn(dir int) {
 		w.floatFocus = false
 		return
 	}
-	if len(w.Columns) > 0 && (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
+	if i := w.columnToward(dir); i >= 0 {
 		if w.Overflow == OverflowFixed {
 			w.Columns[w.Focus].FullWidth = false
 		}
-		w.Focus += dir
+		w.Focus = i
 		w.scroll()
 	}
 }
 
+// columnToward returns the column focus-column-left/right (dir -1/1) goes
+// to, or -1 at the edge. Scroll overflow follows the column order; fixed
+// overflow stacks columns (spiral, expanded strips), so it follows the
+// screen: the column on that side.
+func (w *Workspace) columnToward(dir int) int {
+	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
+		return -1
+	}
+	if w.onScreenFocus() {
+		return w.screenNeighbor(dir, 0)
+	}
+	if i := w.Focus + dir; i >= 0 && i < len(w.Columns) {
+		return i
+	}
+	return -1
+}
+
+// onScreenFocus reports whether directional focus follows the screen:
+// fixed overflow with every column visible.
+func (w *Workspace) onScreenFocus() bool {
+	return w.Overflow == OverflowFixed && w.fullscreen == 0 && !w.Columns[w.Focus].FullWidth
+}
+
 // FocusWindow moves focus inside the column; false means it was already at the edge.
+// Fixed overflow also stacks columns (spiral, expanded strips): past the
+// column edge, focus goes to the column on screen above or below.
 func (w *Workspace) FocusWindow(dir int) bool {
 	if w.floatFocus {
 		w.floatFocus = false
@@ -406,8 +435,52 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
+	if !w.onScreenFocus() {
+		return false
+	}
+	if i := w.screenNeighbor(0, dir); i >= 0 {
+		w.Focus = i
+		w.Columns[i].Focus = 0
+		if dir < 0 {
+			w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
+		}
+		return true
+	}
 	return false
 }
+
+// screenNeighbor returns the column on screen next to the focused one, left
+// or right (dx -1/1) or above or below (dy -1/1), or -1. The closest wins,
+// then the one sharing the longest edge, then the nearest in column order.
+func (w *Workspace) screenNeighbor(dx, dy int) int {
+	rects := w.columnRects()
+	cur := rects[w.Focus]
+	best, bestDist, bestOverlap := -1, 0, 0
+	for i, r := range rects {
+		var overlap, dist int
+		switch {
+		case dx < 0:
+			overlap, dist = min(cur.Y+cur.H, r.Y+r.H)-max(cur.Y, r.Y), cur.X-(r.X+r.W)
+		case dx > 0:
+			overlap, dist = min(cur.Y+cur.H, r.Y+r.H)-max(cur.Y, r.Y), r.X-(cur.X+cur.W)
+		case dy < 0:
+			overlap, dist = min(cur.X+cur.W, r.X+r.W)-max(cur.X, r.X), cur.Y-(r.Y+r.H)
+		default:
+			overlap, dist = min(cur.X+cur.W, r.X+r.W)-max(cur.X, r.X), r.Y-(cur.Y+cur.H)
+		}
+		if i == w.Focus || overlap <= 0 || dist < 0 {
+			continue
+		}
+		closer := best >= 0 && (dist < bestDist || dist == bestDist && (overlap > bestOverlap ||
+			overlap == bestOverlap && abs(i-w.Focus) < abs(best-w.Focus)))
+		if best < 0 || closer {
+			best, bestDist, bestOverlap = i, dist, overlap
+		}
+	}
+	return best
+}
+
+func abs(n int) int { return max(n, -n) }
 func (w *Workspace) MoveColumn(dir int) {
 	if w.floatFocus {
 		return
@@ -426,7 +499,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]
-	col.Slot = 0
+	col.Slot, col.Expanded = 0, false
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
@@ -451,7 +524,13 @@ func (w *Workspace) insertColumn(at int, col Column) {
 	w.scroll()
 }
 
+// CycleWidth steps the focused column through the presets. Fixed overflow
+// ignores presets: it toggles the expanded column instead.
 func (w *Workspace) CycleWidth() {
+	if w.Overflow == OverflowFixed {
+		w.toggleExpanded()
+		return
+	}
 	if len(w.Columns) == 0 || len(w.presets) == 0 || w.floatFocus {
 		return
 	}
@@ -470,6 +549,20 @@ func (w *Workspace) CycleWidth() {
 	c.Width = next
 	c.FullWidth = false
 	w.scroll()
+}
+
+// toggleExpanded makes the focused column the expanded one, or shrinks it
+// back when it already is. One column at most is expanded.
+func (w *Workspace) toggleExpanded() {
+	if len(w.Columns) < 2 || max(w.MaxColumns, 1) < 2 || w.floatFocus {
+		return
+	}
+	on := !w.Columns[w.Focus].Expanded
+	for i := range w.Columns {
+		w.Columns[i].Expanded = false
+	}
+	w.Columns[w.Focus].Expanded = on
+	w.Columns[w.Focus].FullWidth = false
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
@@ -637,6 +730,9 @@ func (w *Workspace) columnRects() []Rect {
 		return rects
 	}
 	k := max(w.MaxColumns, 1)
+	if e := slices.IndexFunc(w.Columns, func(c Column) bool { return c.Expanded }); w.Overflow == OverflowFixed && e >= 0 && k > 1 && len(w.Columns) > 1 {
+		return w.expandedRects(e, k, y, h)
+	}
 	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
 		return rects
 	}
@@ -647,6 +743,60 @@ func (w *Workspace) columnRects() []Rect {
 	}
 	rects[len(rects)-1] = area
 	return rects
+}
+
+// expandedRects places expanded column e over k-1 cells in its place. The
+// columns before it stack in a strip on its left, those after it on its
+// right; the two strips share the last cell.
+func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
+	g := w.gap()
+	cell := max((w.Usable.W-g*(k+1))/k, 0)
+	wide := (k-1)*cell + (k-2)*g
+	rest := max(w.Usable.W-2*g-wide-g, 0)
+	before, after := w.Columns[:e], w.Columns[e+1:]
+	leftW, rightW := rest, rest
+	if len(before) > 0 && len(after) > 0 {
+		leftW = max((rest-g)/2, 0)
+		rightW = max(rest-g-leftW, 0)
+	}
+	rects := make([]Rect, 0, len(w.Columns))
+	x := w.Usable.X + g
+	if len(before) > 0 {
+		rects = append(rects, stackRects(Rect{X: x, Y: y, W: leftW, H: h}, len(before), g)...)
+		x += leftW + g
+	}
+	rects = append(rects, Rect{X: x, Y: y, W: wide, H: h})
+	if len(after) > 0 {
+		rects = append(rects, stackRects(Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)...)
+	}
+	// Gaps wider than a narrow output would push columns past its edge.
+	right := w.Usable.X + w.Usable.W
+	for i := range rects {
+		rects[i].X = min(rects[i].X, right)
+		rects[i].W = min(rects[i].W, right-rects[i].X)
+	}
+	return rects
+}
+
+// stackRects cuts r in n rows with a gap between them; the last row takes
+// the rounding remainder. Rows past the bottom (gaps taller than r) are
+// clamped to it, like windows stacked in a column.
+func stackRects(r Rect, n, gap int) []Rect {
+	rows := make([]Rect, n)
+	avail := max(r.H-(n-1)*gap, 0)
+	height := avail / n
+	yy, bottom := r.Y, r.Y+r.H
+	for i := range rows {
+		hh := height
+		if i == n-1 {
+			hh = avail - height*(n-1)
+		}
+		yy = min(yy, bottom)
+		hh = min(hh, bottom-yy)
+		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
+		yy += hh + gap
+	}
+	return rows
 }
 
 // split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
