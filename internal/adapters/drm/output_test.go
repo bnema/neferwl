@@ -384,6 +384,31 @@ func TestVRRKeptWhileFullscreenComposed(t *testing.T) {
 	}
 }
 
+// A fullscreen game on a workspace that is left keeps VRR only for the
+// hold: its hidden window no longer counts as a game frame, and its
+// commits do not draw frames.
+func TestVRRHiddenGameOnlyHolds(t *testing.T) {
+	o, _, _ := testOutput(t)
+	game := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 100, H: 50}, Fullscreen: true}
+	shown := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{game}}
+	o.vrrOn = true
+	if !o.wantVRR(fullscreenShown(&shown)) {
+		t.Fatal("VRR off while the game is shown")
+	}
+	game.Hidden, game.Rect = true, ports.Rect{}
+	left := ports.Scene{OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{game, {ID: 2, Rect: ports.Rect{W: 100, H: 50}}}}
+	if fullscreenShown(&left) || left.Shows(1) {
+		t.Fatal("hidden game still drives frames")
+	}
+	if !o.wantVRR(fullscreenShown(&left)) {
+		t.Fatal("VRR dropped before the hold")
+	}
+	o.composedSince = time.Now().Add(-vrrHold - time.Millisecond)
+	if o.stateVRR() {
+		t.Fatal("VRR kept after the hold for a hidden game")
+	}
+}
+
 // A VRR refusal on a composed frame with an overlay retries with the
 // overlay: the composed image left its window out.
 func TestVRRRefusedKeepsOverlay(t *testing.T) {
