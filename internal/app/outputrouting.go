@@ -1,14 +1,11 @@
 package app
 
-import (
-	"context"
-
-	"github.com/bnema/neferwl/internal/ports"
-)
+import "github.com/bnema/neferwl/internal/ports"
 
 // outputChannels is the shared app-to-backend wiring. The backend loop remains
 // the sole owner of outputSet and outputApply; routing does not introduce a
-// forwarding queue.
+// forwarding queue. heads, configured and replies are fed from the
+// outputApply outbox.
 type outputChannels struct {
 	events        chan<- ports.OutputEvent
 	scenes        <-chan []ports.Scene
@@ -25,15 +22,4 @@ type outputChannels struct {
 	configured chan<- ports.ConfigChanged
 	requests   <-chan ports.OutputApply
 	replies    chan<- ports.OutputApplied
-}
-
-// sendHeads publishes the inventory to Wayland clients; false means the
-// context ended first.
-func (ch outputChannels) sendHeads(ctx context.Context, inventory ports.OutputHeads) bool {
-	select {
-	case ch.heads <- inventory:
-		return true
-	case <-ctx.Done():
-		return false
-	}
 }

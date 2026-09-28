@@ -164,8 +164,9 @@ var errApplySuperseded = errors.New("output apply superseded by reload")
 // outputApply owns output management from request to reply: runtime
 // overrides, supersede by reload, and rollback after a failed backend apply.
 // It belongs to the backend owner loop, which starts the configuration next
-// returns, reports each result through finished and drains the outbox with
-// non-blocking sends.
+// returns, reports each result through finished and drains the outbox (core
+// configuration, Wayland replies and inventory) with sends that never block
+// the loop.
 type outputApply struct {
 	state *outputOverrides
 	log   zerowrap.Logger
@@ -184,6 +185,8 @@ type outputApply struct {
 	config  ports.ConfigChanged
 	publish bool
 	replies []ports.OutputApplied
+	// headsDue is set while Wayland has not received the latest inventory.
+	headsDue bool
 }
 
 func newOutputApply(state *outputOverrides, log zerowrap.Logger) *outputApply {
@@ -204,8 +207,12 @@ func (a *outputApply) reload(file ports.Config) {
 	}
 }
 
-// heads records the backend inventory used to validate requests.
-func (a *outputApply) heads(heads ports.OutputHeads) { a.state.heads = heads }
+// heads records the backend inventory: it validates requests and waits for
+// Wayland in the outbox, latest only.
+func (a *outputApply) heads(heads ports.OutputHeads) {
+	a.state.heads = heads
+	a.headsDue = true
+}
 
 // request validates a protocol request. Test, invalid and headless requests
 // are answered at once; others wait for the backend.
@@ -314,6 +321,18 @@ func (a *outputApply) replyOut(ch chan<- ports.OutputApplied) (chan<- ports.Outp
 	}
 	return ch, a.replies[0]
 }
+
+// headsOut returns the Wayland inventory channel and the latest inventory,
+// or a nil channel when Wayland has it.
+func (a *outputApply) headsOut(ch chan<- ports.OutputHeads) (chan<- ports.OutputHeads, ports.OutputHeads) {
+	if !a.headsDue {
+		return nil, ports.OutputHeads{}
+	}
+	return ch, a.state.heads
+}
+
+// headsSent records that Wayland received the latest inventory.
+func (a *outputApply) headsSent() { a.headsDue = false }
 
 // replySent drops the delivered reply.
 func (a *outputApply) replySent() {

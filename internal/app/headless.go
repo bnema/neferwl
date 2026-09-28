@@ -42,14 +42,12 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 		}
 	}
 	apply.heads(inventory)
-	if !ch.sendHeads(ctx, inventory) {
-		return set.wait()
-	}
 	// The pointer starts centred on the first output, like libinput's.
 	curs.move("HEADLESS-1", float64(sizes[0][0])/2, float64(sizes[0][1])/2)
 	for {
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
+		heads, headsNext := apply.headsOut(ch.heads)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -61,6 +59,8 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 			apply.configSent()
 		case replies <- replyNext:
 			apply.replySent()
+		case heads <- headsNext:
+			apply.headsSent()
 		case s := <-ch.scenes:
 			set.scenes(s)
 		case c := <-ch.contents:
