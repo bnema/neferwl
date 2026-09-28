@@ -884,7 +884,7 @@ func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
 // and their popups wait, a click selects a peek, and the script state
 // tells the stash and whether it is hidden.
 func TestStashEndToEnd(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Stash.Peek, c.Stash.Dim = 10, 0.5 }, left)
+	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.mapWindow(t, id)
 	}
@@ -1003,7 +1003,8 @@ func TestDialogFocusStaysOnMonitor(t *testing.T) {
 
 // A peek narrower than its border is still clickable.
 func TestStashThinPeekClick(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Stash.Peek, c.Border.Width = 1, 4 }, left)
+	// 200 wide, 80%: a 20px margin, 18px of gap, 2px of the peek.
+	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Border.Width = 9, 4 }, left)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	r.key(t, "v", ports.ModAlt) // 2 stashed

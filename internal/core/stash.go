@@ -11,7 +11,7 @@ import (
 // The stash is a workspace's strip of windows set aside with
 // toggle-window-floating, left to right in arrival order. The selected one
 // is centred, stash.width% of the usable width and stashHeight% of its
-// height; its neighbors peek in from
+// height; its neighbors fill the margins beside it, stash.gap% away,
 // the sides, dimmed; the others wait off screen. toggle-floating-visible
 // hides and shows the whole strip. Native floats (dialogs) are not in it.
 
@@ -136,15 +136,17 @@ func (w *Workspace) ToggleFloatingVisible() {
 }
 
 // stashLayout places the stash: the selected window centred, its
-// neighbors peeking in by peek% of the usable width from the sides, the
-// others hidden. cover is the covering fullscreen window, if any.
+// neighbors gap% of the usable width away, showing what the margins
+// leave of them, the others hidden. cover is the covering fullscreen
+// window, if any.
 func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 	u := w.Usable
 	fw := min(max(u.W*cmp.Or(w.stashWidth, stashWidth)/100-2*w.border, 0)+2*w.border, u.W)
 	fh := min(max(u.H*stashHeight/100-2*w.border, 0)+2*w.border, u.H)
 	center := Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
 	// Peeks stay in the margins: they never overlap the selected window.
-	peek := min(u.W*w.peek/100, (u.W-fw)/2)
+	gap := u.W * w.stashGap / 100
+	peek := max((u.W-fw)/2-gap, 0)
 	out := make([]Placement, 0, len(w.Stash))
 	for i, f := range w.Stash {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
@@ -156,9 +158,9 @@ func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 		case i == w.stashAt:
 			p.Rect = center
 		case peek > 0 && i == w.stashAt-1:
-			p.Rect, p.Peek = Rect{X: u.X + peek - fw, Y: center.Y, W: fw, H: fh}, true
+			p.Rect, p.Peek = Rect{X: center.X - gap - fw, Y: center.Y, W: fw, H: fh}, true
 		case peek > 0 && i == w.stashAt+1:
-			p.Rect, p.Peek = Rect{X: u.X + u.W - peek, Y: center.Y, W: fw, H: fh}, true
+			p.Rect, p.Peek = Rect{X: center.X + fw + gap, Y: center.Y, W: fw, H: fh}, true
 		default:
 			p.Hidden = true
 		}

@@ -189,8 +189,8 @@ func TestStashFromRemovedNamedWorkspace(t *testing.T) {
 	}
 }
 
-// stash.width sets the selected window's width; the neighbors peek in
-// beside it, never over it.
+// stash.width sets the selected window's width; the neighbors sit
+// stash.gap beside it, in what the margins show.
 func TestStashWidth(t *testing.T) {
 	m := stashMonitor(OverflowScroll)
 	m.SetStash(50, 10)
@@ -198,13 +198,19 @@ func TestStashWidth(t *testing.T) {
 	if p := placement(w, 3); p.Rect != (Rect{X: 25, Y: 8, W: 50, H: 64}) {
 		t.Fatalf("selected %+v", p)
 	}
-	if p := placement(w, 2); !p.Peek || p.Rect != (Rect{X: 10 - 50, Y: 8, W: 50, H: 64}) {
-		t.Fatalf("peek %+v", p)
+	// 25 margin - 10 gap: 15 of it shows, then the gap, then the window.
+	if p := placement(w, 2); !p.Peek || p.Rect != (Rect{X: 15 - 50, Y: 8, W: 50, H: 64}) {
+		t.Fatalf("left peek %+v", p)
 	}
-	// At 90% the 10% peek is capped to the 5% margin left on each side.
+	// At 90%, a 2% gap leaves 3% of each neighbor.
+	m.SetStash(90, 2)
+	if p := placement(w, 2); !p.Peek || p.Rect.X+p.Rect.W != 3 {
+		t.Fatalf("narrow peek %+v", p)
+	}
+	// A gap wider than the margin hides the neighbors.
 	m.SetStash(90, 10)
-	if p := placement(w, 2); !p.Peek || p.Rect.X+p.Rect.W != 5 {
-		t.Fatalf("capped peek %+v", p)
+	if p := placement(w, 2); !p.Hidden {
+		t.Fatalf("peek past the gap %+v", p)
 	}
 	// 0 is the default, out-of-range values are clamped.
 	m.SetStash(0, 3)

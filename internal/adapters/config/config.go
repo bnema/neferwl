@@ -91,7 +91,7 @@ func Defaults() ports.Config {
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
 	c.Stash.Width = 80
-	c.Stash.Peek = 3
+	c.Stash.Gap = 2
 	c.Stash.Dim = 0.5
 	c.Border.Width = 2
 	c.Border.Active = "#808080"
@@ -468,12 +468,12 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be between 10 and 90")
 		}
 		c.Stash.Width = n
-	case "stash.peek":
+	case "stash.gap":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 10 {
 			return fmt.Errorf("must be between 0 and 10")
 		}
-		c.Stash.Peek = n
+		c.Stash.Gap = n
 	case "stash.dim":
 		dim, err := strconv.ParseFloat(v, 64)
 		if err != nil || !(dim >= 0 && dim <= 1) {

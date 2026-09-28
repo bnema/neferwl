@@ -58,11 +58,11 @@ func placement(w *Workspace, id WindowID) Placement {
 }
 
 // The stash is a strip: new windows go last, selected and centred; the
-// neighbors peek in from the sides; focus moves inside it and stops at its
+// neighbors peek in beside it, stash.gap away; focus moves inside it and stops at its
 // ends; up and down do nothing there.
 func TestStashStrip(t *testing.T) {
 	w := workspace()
-	w.peek = 5
+	w.stashGap = 5
 	for id := WindowID(1); id <= 4; id++ {
 		w.AddWindow(id)
 	}
@@ -106,8 +106,9 @@ func TestStashStrip(t *testing.T) {
 	if w.Columns[0].Windows[0] != 1 || w.Columns[0].Width != (Width{}) {
 		t.Fatalf("column changed: %+v", w.Columns)
 	}
-	// Zero peek: neighbors wait off screen.
-	w.peek = 0
+	// A gap as wide as the margin leaves nothing to show: neighbors wait
+	// off screen.
+	w.stashGap = 10
 	if p := placement(w, 3); !p.Hidden || p.Peek {
 		t.Fatalf("no peek: %+v", p)
 	}

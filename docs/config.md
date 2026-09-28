@@ -23,9 +23,9 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
 | `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window (a dialog) or the stash is visible; opacity 0 to 1 |
-| `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors peek in. Its height is 80% of the usable height |
-| `stash.peek` | `3` | How far the stash neighbors of the selected window peek in from the screen sides, in percent of the usable width; 0 to 10, `0` hides them. Capped by the room `stash.width` leaves on each side |
-| `stash.dim` | `0.5` | Black veil over the peeking stash neighbors, borders included; opacity 0 to 1 |
+| `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors show. Its height is 80% of the usable height |
+| `stash.gap` | `2` | Space between the selected stashed window and its neighbors, in percent of the usable width; 0 to 10. The neighbors show from there to the screen edge: with the defaults, 8% of each. A gap as wide as the side margin hides them |
+| `stash.dim` | `0.5` | Black veil over the stash neighbors, borders included; opacity 0 to 1 |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
@@ -112,7 +112,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 ### Stash
 
-Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-floating`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors peek in from the screen sides (`stash.peek`), dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
+Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-floating`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors sit `stash.gap` beside it and show up to the screen edges, dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
 
 While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-floating-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
