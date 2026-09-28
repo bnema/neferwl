@@ -2,16 +2,18 @@ package core
 
 import "github.com/bnema/neferwl/internal/ports"
 
-// Separator lines follow tmux (screen-redraw.c): tiles share one line per
-// side where they touch, owned by the left or top tile (Placement.Inset).
-// The focused tile lights the lines along its sides, corners included.
-// With exactly two tiles one line splits them, and each lights only its
-// half of it: the left or top tile the first half. With gaps each tile
-// has lines of its own and lights them whole. Floats get a full border
-// of their own, drawn with them (Separator.Window).
-//
-// Only what is on the output counts: lines at the output edge (a column
-// scrolled off beyond it) are not drawn, and only tiles on it count.
+// Like tmux screen-redraw.c, lines separate visible panes, never outline a
+// lone tile or a fullscreen/zoomed tile. Adjacent tiles share one line,
+// owned (and inset) by the left/top tile; focus lights only the adjacent
+// sides of the focused tile, including corners. With exactly two visible
+// tiles and no gaps, each lights its own half of the shared line (left/top
+// first). With gaps, each tile owns its neighbor-facing lines and lights
+// them whole. Hidden, scrolled-off, other-workspace and other-output tiles
+// do not count. Lines at output edges are omitted. Floating windows differ
+// from tmux tiles: each gets its own full border, drawn with that window
+// (Separator.Window), even when it is the only visible window. Only the
+// focused output's focused window can light lines; keyboard grabs by popups
+// and layers do not change the underlying window's visual focus.
 
 var sides = [...]ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom}
 
@@ -24,9 +26,14 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 	}
 	var out []ports.Separator
 	add := func(p *Placement, r Rect, active bool) {
-		if !p.Floating && (r.X < o.X+width || r.X+r.W > o.X+o.W-width) && r.H > r.W {
-			return // a vertical line at the output edge
+		// A line cannot belong to a scrolled-off window or bleed onto
+		// another output, even when a neighboring tile remains visible.
+		x0, y0 := max(r.X, o.X), max(r.Y, o.Y)
+		x1, y1 := min(r.X+r.W, o.X+o.W), min(r.Y+r.H, o.Y+o.H)
+		if x0 >= x1 || y0 >= y1 {
+			return
 		}
+		r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 		var id WindowID
 		if p.Floating {
 			id = p.ID
@@ -37,10 +44,10 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 	tiles := 0
 	for i := range ps {
 		p := &ps[i]
-		if p.Hidden || p.Fullscreen || p.Rect.W <= 0 || p.Rect.H <= 0 {
+		if p.Fullscreen || !onScreen(*p, o) {
 			continue
 		}
-		if p.Neighbors != 0 && p.Rect.X < o.X+o.W && p.Rect.X+p.Rect.W > o.X {
+		if !p.Floating {
 			tiles++
 		}
 		for _, s := range sides {
