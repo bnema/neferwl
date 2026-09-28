@@ -5,7 +5,10 @@ import (
 	"errors"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -708,7 +711,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Clock: steppingClock(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -738,6 +741,51 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 	input <- ports.PointerMotion{X: 50, Y: 41}
 	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
 		t.Fatalf("pointer went to %v, want the dialog", v)
+	}
+}
+
+// A window that asks for fullscreen as it maps (Wine at a remembered
+// monitor size) stays in its column: the windows it opens next are seen.
+// A later request is honoured.
+func TestFullscreenAtMapIgnored(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Layout.Overflow = "fixed"
+	client := make(chan ports.ClientEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	// Core reads the time on its goroutine.
+	var now atomic.Int64
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Unix(now.Load(), 0) })
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 2}
+	scene(t, scenes)
+	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
+	client <- ports.WindowMapped{ID: 3, Floating: true, Width: 20, Height: 10}
+	s := scene(t, scenes)
+	for _, w := range s.Windows {
+		if w.Fullscreen || w.Hidden {
+			t.Fatalf("startup fullscreen applied: %+v", s.Windows)
+		}
+	}
+	now.Add(1)
+	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
+	s = scene(t, scenes)
+	// Honoured: under fixed overflow it gets its own workspace, and the view
+	// stays here since it has no focus (ADR 011).
+	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Hidden }) {
+		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
 	}
 }
 

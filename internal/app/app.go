@@ -103,7 +103,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		// Only real sessions save scales: headless runs never touch the config file.
 		scales = make(chan ports.ScaleChanged, 8)
 	}
-	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal}
+	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err

@@ -43,7 +43,16 @@ type Channels struct {
 	Scales chan<- ports.ScaleChanged
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
+	// Clock tells the time for fullscreenGrace; nil is the system clock.
+	Clock ports.Clock
 }
+
+// fullscreenGrace is how long after mapping a window's fullscreen request
+// is ignored. Wine asks for fullscreen whenever a window has the monitor's
+// size, so a launcher that remembered a fullscreen size would open
+// fullscreen and hide the windows it opens next. The user can still
+// fullscreen it, and an app can ask again later.
+const fullscreenGrace = time.Second
 type binding struct {
 	mods ports.Mods
 	key  string
@@ -81,6 +90,7 @@ type Core struct {
 	firstTerminalResolved bool
 	// clients holds the app ID and PID of mapped windows, for State.
 	clients        map[WindowID]ports.WindowMapped
+	mappedAt       map[WindowID]time.Time
 	inputRegions   map[WindowID]ports.InputRegionChanged
 	sentState      ports.State
 	sentWorkspaces ports.Workspaces
@@ -292,13 +302,20 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, mappedAt: map[WindowID]time.Time{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
+func (c *Core) now() time.Time {
+	if c.ch.Clock != nil {
+		return c.ch.Clock.Now()
+	}
+	return time.Now()
+}
+
 func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	select {
 	case <-ctx.Done():
@@ -703,6 +720,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.inputRegions[v.ID] = v
 			case ports.WindowMapped:
 				c.clients[v.ID] = v
+				c.mappedAt[v.ID] = c.now()
 				c.placement.place(c, v)
 			case ports.WindowResized:
 				if _, w := c.screenOf(v.ID); w != nil {
@@ -753,6 +771,7 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 				delete(c.clients, v.ID)
+				delete(c.mappedAt, v.ID)
 				delete(c.inputRegions, v.ID)
 				delete(c.inhibitors, v.ID)
 				delete(c.idle, v.ID)
@@ -769,6 +788,9 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.PointerConstrained:
 				c.constrained = v
 			case ports.WindowFullscreenRequest:
+				if v.Fullscreen && c.now().Sub(c.mappedAt[v.ID]) < fullscreenGrace {
+					continue
+				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
