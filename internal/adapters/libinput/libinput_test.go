@@ -2,6 +2,7 @@ package libinput
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -29,24 +30,35 @@ func TestHotkey(t *testing.T) {
 	}
 }
 
-func TestSwipeDir(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		s    swipe
-		dir  ports.SwipeDir
-		ok   bool
-	}{
-		{"up", swipe{fingers: 3, dx: 40, dy: -400}, ports.SwipeUp, true},
-		{"down", swipe{fingers: 3, dy: 400}, ports.SwipeDown, true},
-		{"left", swipe{fingers: 3, dx: -400, dy: 100}, ports.SwipeLeft, true},
-		{"right", swipe{fingers: 3, dx: 400}, ports.SwipeRight, true},
-		{"too short", swipe{fingers: 3, dx: 100, dy: 100}, 0, false},
-		{"four fingers", swipe{fingers: 4, dy: 400}, 0, false},
-	} {
-		d, ok := tc.s.dir()
-		if d != tc.dir || ok != tc.ok {
-			t.Errorf("%s: got %v %t", tc.name, d, ok)
-		}
+func TestSwipesStreamThreeFingers(t *testing.T) {
+	s := swipes{}
+	const pad, other = 1, 2
+	if ev := s.begin(pad, 4, time.Second); ev != nil {
+		t.Fatalf("four fingers: %v", ev)
+	}
+	if ev := s.update(pad, 1, 1, time.Second); ev != nil {
+		t.Fatalf("update without a swipe: %v", ev)
+	}
+	if ev := s.begin(pad, 3, time.Second); ev != (ports.SwipeBegin{Time: time.Second}) {
+		t.Fatalf("begin: %v", ev)
+	}
+	if ev := s.update(pad, -3, 2, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, Time: 2 * time.Second}) {
+		t.Fatalf("update: %v", ev)
+	}
+	if ev := s.end(other, false, 0); ev != nil {
+		t.Fatalf("end on another device: %v", ev)
+	}
+	if ev := s.end(pad, true, 3*time.Second); ev != (ports.SwipeEnd{Cancelled: true, Time: 3 * time.Second}) {
+		t.Fatalf("end: %v", ev)
+	}
+	if ev := s.end(pad, false, 0); ev != nil {
+		t.Fatalf("second end: %v", ev)
+	}
+}
+
+func TestTimestamps(t *testing.T) {
+	if usec(1500) != 1500*time.Microsecond || msec(1_234_567) != 1234 {
+		t.Fatal(usec(1500), msec(1_234_567))
 	}
 }
 

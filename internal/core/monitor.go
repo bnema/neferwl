@@ -25,6 +25,11 @@ type Monitor struct {
 	named      []NamedWorkspace
 	// followMove shows the target workspace after a move to it.
 	followMove bool
+	// switchOff slides the view between numbered workspaces: the view is
+	// at Active+switchOff while a swipe follows the fingers or its spring
+	// (switchMotion) lands.
+	switchOff    float64
+	switchMotion *motion
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
@@ -156,6 +161,7 @@ func (m *Monitor) normalize() {
 // Focus switches to the numbered workspace at index i, clamped to the list.
 func (m *Monitor) Focus(i int) {
 	i = min(max(i, 0), len(m.Workspaces)-1)
+	m.stopSwitch()
 	m.shown = nil
 	m.Active = i
 	m.normalize()
@@ -170,6 +176,7 @@ func (m *Monitor) show(w *Workspace) {
 		m.Focus(i)
 		return
 	}
+	m.stopSwitch()
 	m.shown = w
 	m.normalize()
 }
@@ -626,7 +633,7 @@ func (m *Monitor) Layout() []Placement {
 			result = append(result, Placement{ID: id, Hidden: true})
 		}
 	}
-	return result
+	return m.slideLayout(result)
 }
 
 func (m *Monitor) Output() Rect { return m.template.Output }

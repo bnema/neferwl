@@ -99,6 +99,7 @@ func Defaults() ports.Config {
 	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Layout.Overflow = "scroll"
+	c.Touchpad.Tap = true
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}
@@ -525,6 +526,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Touchpad.NaturalScroll = b
+	case "touchpad.tap":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Touchpad.Tap = b
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {

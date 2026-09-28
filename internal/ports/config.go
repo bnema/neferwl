@@ -121,9 +121,11 @@ type Config struct {
 }
 
 // TouchpadConfig configures touchpads. NaturalScroll moves the content with
-// the fingers, for two-finger scroll and three-finger swipes.
+// the fingers, for two-finger scroll and three-finger swipes. Tap clicks on
+// a tap: one finger left, two right, three middle.
 type TouchpadConfig struct {
 	NaturalScroll bool
+	Tap           bool
 }
 
 // WorkspaceConfig declares a bind-only named workspace, outside the numbered list.

@@ -56,6 +56,7 @@ var (
 	keyboardEvent   func(ev uintptr) uintptr
 	keyboardKey     func(kev uintptr) uint32
 	keyboardState   func(kev uintptr) int32
+	keyboardUsec    func(kev uintptr) uint64
 	pointerEvent    func(ev uintptr) uintptr
 	pointerDX       func(pev uintptr) float64
 	pointerDY       func(pev uintptr) float64
@@ -74,10 +75,14 @@ var (
 	gestureCanceled func(gev uintptr) int32
 	gestureDX       func(gev uintptr) float64
 	gestureDY       func(gev uintptr) float64
+	gestureUsec     func(gev uintptr) uint64
 	deviceRef       func(dev uintptr) uintptr
 	deviceUnref     func(dev uintptr) uintptr
 	hasNatural      func(dev uintptr) int32
 	setNatural      func(dev uintptr, on int32) int32
+	tapFingers      func(dev uintptr) int32
+	setTap          func(dev uintptr, on int32) int32
+	setTapMap       func(dev uintptr, m int32) int32
 	iface           [2]uintptr
 	active          ports.Seat
 )
@@ -117,6 +122,7 @@ func load() error {
 		reg(&keyboardEvent, "event_get_keyboard_event")
 		reg(&keyboardKey, "event_keyboard_get_key")
 		reg(&keyboardState, "event_keyboard_get_key_state")
+		reg(&keyboardUsec, "event_keyboard_get_time_usec")
 		reg(&pointerEvent, "event_get_pointer_event")
 		reg(&pointerDX, "event_pointer_get_dx")
 		reg(&pointerDY, "event_pointer_get_dy")
@@ -135,10 +141,14 @@ func load() error {
 		reg(&gestureCanceled, "event_gesture_get_cancelled")
 		reg(&gestureDX, "event_gesture_get_dx_unaccelerated")
 		reg(&gestureDY, "event_gesture_get_dy_unaccelerated")
+		reg(&gestureUsec, "event_gesture_get_time_usec")
 		reg(&deviceRef, "device_ref")
 		reg(&deviceUnref, "device_unref")
 		reg(&hasNatural, "device_config_scroll_has_natural_scroll")
 		reg(&setNatural, "device_config_scroll_set_natural_scroll_enabled")
+		reg(&tapFingers, "device_config_tap_get_finger_count")
+		reg(&setTap, "device_config_tap_set_enabled")
+		reg(&setTapMap, "device_config_tap_set_button_map")
 		iface[0] = purego.NewCallback(func(path *byte, _, _ uintptr) uintptr {
 			fd, err := active.OpenDevice(goString(path))
 			if err != nil {
@@ -218,7 +228,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor)
-	in := &inputState{touchpad: opts.Touchpad, scrollers: map[uintptr]bool{}, swipes: map[uintptr]swipe{}}
+	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}, swipes: swipes{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
@@ -254,10 +264,10 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			p.moved(opts.MoveCursor)
 		case t := <-opts.Touchpads:
 			in.touchpad = t
-			for dev := range in.scrollers {
-				in.applyNatural(dev, opts.Log)
+			for dev := range in.devices {
+				in.configure(dev, opts.Log)
 			}
-			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Msg("touchpad reloaded")
+			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Msg("touchpad reloaded")
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -286,107 +296,122 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 }
 
 // inputState is the device state Run owns: touchpad config, the devices
-// with a natural scroll setting (referenced until removed) and the swipe
-// in progress on each touchpad.
+// it configures (referenced until removed) and the swipe in progress on
+// each touchpad.
 type inputState struct {
-	touchpad  ports.TouchpadConfig
-	scrollers map[uintptr]bool
-	swipes    map[uintptr]swipe
+	touchpad ports.TouchpadConfig
+	devices  map[uintptr]bool
+	swipes   swipes
 }
 
-func (s *inputState) applyNatural(dev uintptr, log zerowrap.Logger) {
-	on := int32(0)
-	if s.touchpad.NaturalScroll {
-		on = 1
-	}
-	if setNatural(dev, on) != 0 {
+// configurable reports whether the touchpad config applies to dev: it has
+// natural scroll or tapping.
+func configurable(dev uintptr) bool { return hasNatural(dev) != 0 || tapFingers(dev) > 0 }
+
+// tapButtonMap is LIBINPUT_CONFIG_TAP_MAP_LRM: one finger taps left, two
+// right, three middle.
+const tapButtonMap = 0
+
+func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
+	if hasNatural(dev) != 0 && setNatural(dev, flag(s.touchpad.NaturalScroll)) != 0 {
 		log.Warn().Str("device", deviceName(dev)).Msg("natural scroll rejected")
 	}
+	if tapFingers(dev) > 0 {
+		if setTap(dev, flag(s.touchpad.Tap)) != 0 {
+			log.Warn().Str("device", deviceName(dev)).Msg("tap to click rejected")
+		}
+		if setTapMap(dev, tapButtonMap) != 0 {
+			log.Warn().Str("device", deviceName(dev)).Msg("tap button map rejected")
+		}
+	}
+}
+
+func flag(on bool) int32 {
+	if on {
+		return 1
+	}
+	return 0
 }
 
 func (s *inputState) release() {
-	for dev := range s.scrollers {
+	for dev := range s.devices {
 		deviceUnref(dev)
 	}
-	clear(s.scrollers)
+	clear(s.devices)
 }
 
-// swipeFingers is the finger count of the swipes neferwl handles.
+// swipeFingers is the finger count of the swipes neferwl handles; other
+// counts are left alone.
 const swipeFingers = 3
 
-// swipeMin is the unaccelerated distance a swipe must travel to count.
-// libinput normalizes touchpad deltas to 1000 dpi: 300 is about 7.5 mm, so
-// a short or hesitant swipe switches nothing.
-const swipeMin = 300
+// swipes streams the three-finger swipe of each touchpad to core, which
+// follows the fingers.
+type swipes map[uintptr]bool
 
-// swipe adds up one touchpad swipe until the fingers lift.
-type swipe struct {
-	fingers int
-	dx, dy  float64
+func (s swipes) begin(dev uintptr, fingers int, at time.Duration) ports.InputEvent {
+	if fingers != swipeFingers {
+		return nil
+	}
+	s[dev] = true
+	return ports.SwipeBegin{Time: at}
 }
 
-// dir is the direction of a finished swipe: the longer axis wins. Short
-// swipes and other finger counts return false.
-func (s swipe) dir() (ports.SwipeDir, bool) {
-	if s.fingers != swipeFingers || max(abs(s.dx), abs(s.dy)) < swipeMin {
-		return 0, false
+func (s swipes) update(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
+	if !s[dev] {
+		return nil
 	}
-	switch {
-	case abs(s.dy) >= abs(s.dx) && s.dy < 0:
-		return ports.SwipeUp, true
-	case abs(s.dy) >= abs(s.dx):
-		return ports.SwipeDown, true
-	case s.dx < 0:
-		return ports.SwipeLeft, true
-	}
-	return ports.SwipeRight, true
+	return ports.SwipeUpdate{DX: dx, DY: dy, Time: at}
 }
 
-func abs(v float64) float64 { return max(v, -v) }
+func (s swipes) end(dev uintptr, cancelled bool, at time.Duration) ports.InputEvent {
+	if !s[dev] {
+		return nil
+	}
+	delete(s, dev)
+	return ports.SwipeEnd{Cancelled: cancelled, Time: at}
+}
 
+// usec is a libinput timestamp as a duration.
+func usec(v uint64) time.Duration { return time.Duration(v) * time.Microsecond }
+
+// msec is a libinput timestamp in wayland's millisecond clock.
+func msec(v uint64) uint32 { return uint32(v / 1000) }
+
+// translate converts one libinput event. Timestamps are the device's
+// (CLOCK_MONOTONIC), so clients measure speeds (kinetic scrolling) on
+// when events happened, not when they were read.
 func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.InputEvent, error) {
-	now := uint32(time.Now().UnixMilli())
 	log := opts.Log
 	switch eventType(ev) {
 	case evDeviceAdded:
 		dev := eventDevice(ev)
 		log.Info().Str("device", deviceName(dev)).Msg("input device added")
-		if hasNatural(dev) != 0 && !in.scrollers[dev] {
-			in.scrollers[deviceRef(dev)] = true
-			in.applyNatural(dev, log)
+		if configurable(dev) && !in.devices[dev] {
+			in.devices[deviceRef(dev)] = true
+			in.configure(dev, log)
 		}
 	case evDeviceRemoved:
 		dev := eventDevice(ev)
 		log.Info().Str("device", deviceName(dev)).Msg("input device removed")
-		delete(in.swipes, dev)
-		if in.scrollers[dev] {
-			delete(in.scrollers, dev)
+		if in.devices[dev] {
+			delete(in.devices, dev)
 			deviceUnref(dev)
 		}
+		// Core waits for the end of a swipe the device began.
+		return in.swipes.end(dev, true, 0), nil
 	case evSwipeBegin:
-		in.swipes[eventDevice(ev)] = swipe{fingers: int(gestureFingers(gestureEvent(ev)))}
+		ge := gestureEvent(ev)
+		return in.swipes.begin(eventDevice(ev), int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
 	case evSwipeUpdate:
-		dev, ge := eventDevice(ev), gestureEvent(ev)
-		if s, ok := in.swipes[dev]; ok {
-			s.dx += gestureDX(ge)
-			s.dy += gestureDY(ge)
-			in.swipes[dev] = s
-		}
+		ge := gestureEvent(ev)
+		return in.swipes.update(eventDevice(ev), gestureDX(ge), gestureDY(ge), usec(gestureUsec(ge))), nil
 	case evSwipeEnd:
-		dev := eventDevice(ev)
-		s, ok := in.swipes[dev]
-		delete(in.swipes, dev)
-		if !ok || gestureCanceled(gestureEvent(ev)) != 0 {
-			return nil, nil
-		}
-		if d, ok := s.dir(); ok {
-			log.Debug().Uint8("dir", uint8(d)).Float64("dx", s.dx).Float64("dy", s.dy).Msg("swipe")
-			return ports.Swipe{Dir: d}, nil
-		}
+		ge := gestureEvent(ev)
+		return in.swipes.end(eventDevice(ev), gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
-		ke := opts.Keymap.Key(code, pressed, now)
+		ke := opts.Keymap.Key(code, pressed, msec(keyboardUsec(k)))
 		log.Debug().Uint32("code", code).Str("keysym", ke.Keysym).Bool("pressed", pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
 		switch action, vt := hotkey(ke); action {
 		case hotkeyQuit:
@@ -401,7 +426,8 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 		pe := pointerEvent(ev)
 		m := p.move(pointerDX(pe), pointerDY(pe))
 		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
-		m.TimeMsec, m.TimeUsec = now, pointerUsec(pe)
+		m.TimeUsec = pointerUsec(pe)
+		m.TimeMsec = msec(m.TimeUsec)
 		p.moved(opts.MoveCursor)
 		if opts.LogMotion {
 			log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
@@ -410,6 +436,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 	case evPointerAbs:
 		// Absolute devices (tablets, VMs) map to the whole layout.
 		pe := pointerEvent(ev)
+		now := msec(pointerUsec(pe))
 		b := p.bounds()
 		if p.constraint.Mode == ports.ConstraintLock {
 			return ports.PointerMotion{X: p.x, Y: p.y, TimeMsec: now}, nil
@@ -421,12 +448,12 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 		pe := pointerEvent(ev)
 		b, pressed := pointerButton(pe), pointerBtnState(pe) == 1
 		log.Debug().Uint32("button", b).Bool("pressed", pressed).Msg("button")
-		return ports.PointerButton{Button: b, Pressed: pressed, TimeMsec: now}, nil
+		return ports.PointerButton{Button: b, Pressed: pressed, TimeMsec: msec(pointerUsec(pe))}, nil
 	case evScrollWheel, evScrollFinger, evScrollCont:
 		pe := pointerEvent(ev)
 		// The three scroll events follow each other as the sources do.
 		source := ports.AxisSource(eventType(ev) - evScrollWheel)
-		a := ports.PointerAxis{Source: source, TimeMsec: now}
+		a := ports.PointerAxis{Source: source, TimeMsec: msec(pointerUsec(pe))}
 		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
 		for i, s := range []*ports.ScrollAxis{&a.Vertical, &a.Horizontal} {
 			if pointerHasAxis(pe, uint32(i)) == 0 {

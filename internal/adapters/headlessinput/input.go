@@ -23,7 +23,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 	var layout ports.Layout
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
-		ev := km.Key(code, down, uint32(time.Now().UnixMilli()))
+		ev := km.Key(code, down, msec(monotonic()))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -107,7 +107,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				}
 				return 0
 			}
-			now := uint32(time.Now().UnixMilli())
+			now := msec(monotonic())
 			if len(fields) > 0 && fields[0] == "move" {
 				if len(fields) == 3 {
 					x, ex := strconv.ParseFloat(fields[1], 64)
@@ -126,8 +126,8 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				continue
 			}
 			if len(fields) > 0 && fields[0] == "swipe" {
-				dirs := map[string]ports.SwipeDir{"up": ports.SwipeUp, "down": ports.SwipeDown, "left": ports.SwipeLeft, "right": ports.SwipeRight}
-				d, ok := ports.SwipeDir(0), len(fields) == 2
+				dirs := map[string][2]float64{"up": {0, -1}, "down": {0, 1}, "left": {-1, 0}, "right": {1, 0}}
+				d, ok := [2]float64{}, len(fields) == 2
 				if ok {
 					d, ok = dirs[fields[1]]
 				}
@@ -135,8 +135,10 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					log.Warn().Str("line", line).Msg("invalid swipe")
 					continue
 				}
-				if err := sendPointer(ports.Swipe{Dir: d}); err != nil {
-					return err
+				for _, ev := range swipeEvents(d[0], d[1], monotonic()) {
+					if err := sendPointer(ev); err != nil {
+						return err
+					}
 				}
 				continue
 			}

@@ -121,11 +121,15 @@ type Workspace struct {
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
-	Name       string
-	Overflow   Overflow
-	Columns    []Column
-	Focus      int
-	ViewX      int
+	Name     string
+	Overflow Overflow
+	Columns  []Column
+	Focus    int
+	ViewX    int
+	// shift slides the columns on screen past ViewX, in logical pixels,
+	// while a swipe follows the fingers or its spring (motion) lands.
+	shift      float64
+	motion     *motion
 	Output     Rect
 	Usable     Rect
 	Gaps       int
@@ -839,6 +843,8 @@ func (w *Workspace) columnX(i int) int {
 	return x
 }
 func (w *Workspace) scroll() {
+	before := w.ViewX
+	defer func() { w.retarget(before) }()
 	if w.Overflow == OverflowFixed {
 		w.ViewX = 0
 		return
@@ -866,8 +872,9 @@ func (w *Workspace) columnRects() []Rect {
 	g := w.gap()
 	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
 	rects := make([]Rect, len(w.Columns))
+	view := w.ViewX + w.shiftPixels()
 	for i := range w.Columns {
-		rects[i] = Rect{X: w.columnX(i) - w.ViewX, Y: y, W: w.columnWidth(i), H: h}
+		rects[i] = Rect{X: w.columnX(i) - view, Y: y, W: w.columnWidth(i), H: h}
 	}
 	if w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
 		rects[w.Focus].X = w.Usable.X + g

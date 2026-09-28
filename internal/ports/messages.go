@@ -368,20 +368,27 @@ type PointerAxis struct {
 
 func (PointerAxis) inputEvent() {}
 
-// SwipeDir is the way the fingers moved on the touchpad.
-type SwipeDir uint8
+// SwipeBegin starts a three-finger touchpad swipe. Time is the device
+// timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
+type SwipeBegin struct{ Time time.Duration }
 
-const (
-	SwipeUp SwipeDir = iota
-	SwipeDown
-	SwipeLeft
-	SwipeRight
-)
+// SwipeUpdate moves the fingers by the unaccelerated deltas DX, DY
+// (touchpad units, as libinput reports them, not natural-scroll inverted).
+type SwipeUpdate struct {
+	DX, DY float64
+	Time   time.Duration
+}
 
-// Swipe is a finished three-finger touchpad swipe.
-type Swipe struct{ Dir SwipeDir }
+// SwipeEnd lifts the fingers. Cancelled is set when libinput cancelled
+// the swipe (another finger landed).
+type SwipeEnd struct {
+	Cancelled bool
+	Time      time.Duration
+}
 
-func (Swipe) inputEvent() {}
+func (SwipeBegin) inputEvent()  {}
+func (SwipeUpdate) inputEvent() {}
+func (SwipeEnd) inputEvent()    {}
 
 // OutputEvent carries output → core notifications.
 type OutputEvent interface{ outputEvent() }
@@ -504,6 +511,10 @@ type FlipInfo struct {
 	Merged        int
 	Shows         map[WindowID]uint64
 }
+
+// OutputFrame carries output → core a completed page flip: the next frame
+// of a running animation is due.
+type OutputFrame struct{ Output string }
 
 // OutputRemoved carries output → core an unplugged display.
 type OutputRemoved struct{ Name string }
