@@ -2,10 +2,12 @@ package statefile
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,23 @@ func TestRunWritesAndRemoves(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("state file left behind", err)
+	}
+}
+
+// Stash fields reach the file with their script-facing names.
+func TestWindowStashFields(t *testing.T) {
+	got := window(ports.WindowState{ID: 3, Floating: true, StashIndex: 2, StashCount: 4, Hidden: true})
+	if !got.Floating || got.StashIndex != 2 || got.StashCount != 4 || !got.Hidden {
+		t.Fatalf("%+v", got)
+	}
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"floating":true`, `"stash_index":2`, `"stash_count":4`, `"hidden":true`} {
+		if !strings.Contains(string(data), key) {
+			t.Fatalf("%s missing %s", data, key)
+		}
 	}
 }
 

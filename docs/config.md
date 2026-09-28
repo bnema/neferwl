@@ -22,7 +22,9 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Separator lines between tiles, in logical pixels; `0` hides them |
-| `floating.dim` | `0.3` | Black veil over tiles and lower layers when floats are visible; opacity 0 to 1 |
+| `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window (a dialog) or the stash is visible; opacity 0 to 1 |
+| `stash.peek` | `3` | How far the stash neighbors of the selected window peek in from the screen sides, in percent of the usable width; 0 to 10, `0` hides them |
+| `stash.dim` | `0.5` | Black veil over the peeking stash neighbors, borders included; opacity 0 to 1 |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Separator colors around the focused / other windows |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
@@ -67,7 +69,7 @@ HDR-aware Wayland clients, including games through Vulkan WSI, browsers, and vid
 Hardware-decoded video can use NV12 (8-bit) or P010 (10-bit) DMA-BUF subsurfaces with BT.601/709/2020 coefficients, full or limited range, and chroma-location type 0. The Vulkan device must support sampling the format/modifier with per-plane views; planes in one DMA-BUF use one memory import, while separate plane buffers additionally require Vulkan DISJOINT support. Unsupported formats are not offered. Confirm hardware decoding and the advertised DMA-BUF formats when testing an app.
 
 - Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
-- Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending.
+- Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending. Dim veils (`floating.dim`, `stash.dim`) darken SDR white as much as on an SDR output; brighter HDR highlights stay a little brighter.
 - Screenshots and capture of HDR outputs are converted to 8-bit sRGB, clipping highlights at SDR white (only the capture is clipped).
 - The display gets the metadata from its own EDID, not the client's MaxCLL/MaxFALL.
 
@@ -90,8 +92,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. An app that asks for fullscreen in its first second (e.g. a Wine launcher that remembered a monitor-sized window) opens in a column instead; later requests are honoured. Fullscreen is exclusive, whether from this bind or the app: nothing is drawn above it but a surface taking the keyboard (a locker). Bars, notifications and other windows, dialogs included, wait hidden until it leaves; activating one of them leaves fullscreen |
-| `toggle-window-floating` | Float a tiled window at 80% of usable area; toggle back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
-| `toggle-floating-visible` | Hide all floats on this workspace when a float has the focus, or show hidden ones again; a new float shows them too. Does nothing under a fullscreen window |
+| `toggle-window-floating` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
+| `toggle-floating-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Does nothing under a fullscreen window |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |
@@ -106,6 +108,14 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `move-workspace-to-monitor-left/right` | Move the workspace; it gets a new home |
 | `scale-up` / `scale-down` | Zoom the whole display; one second after the last press, the scale is saved to `output.<name>.scale` and a notification confirms it (`notify-send`) |
 | `quit` | Exit NeferWL |
+
+### Stash
+
+Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-floating`, in the order they arrived. The selected window is centred at 80% of the usable area, over the tiles. Its left and right neighbors peek in from the screen sides (`stash.peek`), dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
+
+While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-floating-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
+
+Native floating windows (dialogs, file pickers) are not in the stash: they stay centred above it.
 
 ### Default binds
 

@@ -154,9 +154,11 @@ func (c *Core) applyAction(a Action) Effect {
 		} else {
 			dir = 1
 		}
-		// The first move from a float leaves it for the columns (FocusColumn),
-		// unless a covering fullscreen window pins the focus.
-		edge := w.columnToward(dir) < 0 && (!w.floatFocus || w.pinned())
+		// The first move from a float stays on this monitor (FocusColumn):
+		// a native float leaves for the stash or the columns, and the stash
+		// keeps the focus at its ends. A covering fullscreen window pins
+		// the focus: the move goes to the neighbor monitor.
+		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}

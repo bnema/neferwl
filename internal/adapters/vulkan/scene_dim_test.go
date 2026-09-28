@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image"
 	"image/color"
+	"math"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -60,6 +61,47 @@ func TestSceneDimOrder(t *testing.T) {
 				t.Fatalf("alpha = %v, want %v", ds[2].pc.color[3], tc.wantAlpha)
 			}
 		})
+	}
+}
+
+// A dimmed window gets a veil over its own rect, border included, right
+// after it: windows drawn later stay bright.
+func TestSceneWindowDim(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	s := ports.Scene{Border: ports.Border{Width: 1, Inactive: "#ffffff"},
+		Windows: []ports.SceneWindow{
+			{ID: 1, Floating: true, Dim: 0.5, Inset: ports.SideAll, Rect: ports.Rect{X: -10, W: 20, H: 20}},
+			{ID: 2, Floating: true, Inset: ports.SideAll, Rect: ports.Rect{X: 20, W: 20, H: 20}},
+		},
+		Separators: []ports.Separator{{Window: 1, Rect: ports.Rect{X: -10, W: 20, H: 1}}},
+	}
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
+	// Window 1, its border, its veil (clipped to the output), window 2.
+	if len(ds) != 4 {
+		t.Fatalf("draws = %d, want 4", len(ds))
+	}
+	if v := ds[2].pc; v.rect != [4]int32{0, 0, 10, 20} || v.color != [4]float32{0, 0, 0, 0.5} {
+		t.Fatalf("veil = %+v", v)
+	}
+	if ds[3].pc.rect[0] != 21 {
+		t.Fatalf("window 2 not last: %+v", ds[3].pc)
+	}
+}
+
+// HDR blends linear light: the dim alpha is raised so reference white
+// lands where SDR's encoded dim puts it.
+func TestDimAlpha(t *testing.T) {
+	if got := dimAlpha(0.5, false); got != 0.5 {
+		t.Fatalf("sdr %v", got)
+	}
+	for _, a := range []float64{0, 0.3, 0.5, 1} {
+		got := dimAlpha(a, true)
+		if want := 1 - srgbToLinear(1-a); math.Abs(got-want) > 1e-12 || got < a {
+			t.Fatalf("hdr %v: %v want %v", a, got, want)
+		}
+	}
+	if dimAlpha(2, true) != 1 || dimAlpha(-1, true) != 0 {
+		t.Fatal("not clamped")
 	}
 }
 

@@ -879,3 +879,130 @@ func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
 		t.Fatalf("focused %v", focused)
 	}
 }
+
+// The stash end to end: binds stash tiles, peeking neighbors are dimmed
+// and their popups wait, a click selects a peek, and the script state
+// tells the stash and whether it is hidden.
+func TestStashEndToEnd(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Stash.Peek, c.Stash.Dim = 10, 0.5 }, left)
+	for id := ports.WindowID(1); id <= 3; id++ {
+		r.mapWindow(t, id)
+	}
+	r.key(t, "v", ports.ModAlt)    // 3 stashed
+	r.key(t, "Left", ports.ModAlt) // stays on 3: its stash's only window
+	sc := r.key(t, "v", ports.ModAlt|ports.ModShift)
+	if got := shown(sc)["DP-1"]; !slices.Equal(got, []ports.WindowID{1, 2}) {
+		t.Fatalf("hidden stash: %v", got)
+	}
+	r.key(t, "Left", ports.ModAlt) // tiles: from 2 to 1
+	sc = r.key(t, "v", ports.ModAlt)
+	// Stash 3 1: 1 selected in the middle, 3 peeking left, dimmed.
+	var peek, sel ports.SceneWindow
+	for _, w := range sc[0].Windows {
+		switch w.ID {
+		case 3:
+			peek = w
+		case 1:
+			sel = w
+		}
+	}
+	if peek.Hidden || peek.Dim != 0.5 || !peek.Floating || sel.Dim != 0 || sel.Hidden || !sel.Focused || !sel.Floating {
+		t.Fatalf("peek %+v selected %+v", peek, sel)
+	}
+	// A popup of the peek waits until the peek is selected.
+	r.client <- ports.PopupRequest{ID: 9, Parent: 3, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: ports.Rect{W: 1, H: 1}}}
+	r.client <- ports.PopupMapped{ID: 9}
+	sc = receive(t, r.scenes)
+	for _, w := range sc[0].Windows {
+		if w.ID == 9 {
+			t.Fatalf("popup of a peek drawn: %+v", w)
+		}
+	}
+	// A click on the peek (x 0..19 of 200) selects it.
+	r.input <- ports.PointerMotion{X: 5, Y: 50}
+	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	receive(t, r.scenes)
+	st := receive(t, r.state)
+	for st.Window == nil || st.Window.ID != 3 {
+		st = receive(t, r.state)
+	}
+	byID := map[ports.WindowID]ports.WindowState{}
+	for _, w := range st.Windows {
+		byID[w.ID] = w
+	}
+	if w := byID[3]; !w.Floating || w.StashIndex != 1 || w.StashCount != 2 || w.Hidden || !w.Visible {
+		t.Fatalf("window 3 %+v", w)
+	}
+	if w := byID[2]; w.Floating || w.StashIndex != 0 || w.Hidden {
+		t.Fatalf("tile %+v", w)
+	}
+	r.input <- ports.PointerButton{Button: 0x110}
+	r.key(t, "v", ports.ModAlt|ports.ModShift)
+	st = receive(t, r.state)
+	for !st.Windows[0].Hidden {
+		st = receive(t, r.state)
+	}
+	for _, w := range st.Windows {
+		if (w.StashIndex > 0) != w.Hidden {
+			t.Fatalf("after hide %+v", w)
+		}
+	}
+}
+
+// At the ends of the stash, focus moves stay there: no hop to the
+// neighbor monitor or workspace.
+func TestStashKeepsFocusAtEdges(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl) // DP-1
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "v", ports.ModAlt)
+	for _, k := range []string{"Right", "Down"} {
+		r.key(t, k, ports.ModAlt)
+	}
+	st := receive(t, r.state)
+	for len(r.state) > 0 {
+		st = receive(t, r.state)
+	}
+	if st.Output != "DP-1" || st.Window == nil || st.Window.ID != 2 || st.Outputs[0].Active != 1 {
+		t.Fatalf("%+v %+v", st.Output, st.Window)
+	}
+}
+
+// A focused native dialog: focus-column first leaves the dialog for the
+// tiles below, it does not hop to the neighbor monitor.
+func TestDialogFocusStaysOnMonitor(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl) // DP-1
+	r.mapWindow(t, 1)
+	r.client <- ports.WindowMapped{ID: 3, Floating: true, Width: 10, Height: 10}
+	receive(t, r.scenes)
+	r.key(t, "Right", ports.ModAlt)
+	st := receive(t, r.state)
+	for len(r.state) > 0 {
+		st = receive(t, r.state)
+	}
+	if st.Output != "DP-1" || st.Window == nil || st.Window.ID != 1 {
+		t.Fatalf("output %s window %+v", st.Output, st.Window)
+	}
+}
+
+// A peek narrower than its border is still clickable.
+func TestStashThinPeekClick(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Stash.Peek, c.Border.Width = 1, 4 }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "v", ports.ModAlt) // 2 stashed
+	r.key(t, "v", ports.ModAlt|ports.ModShift)
+	r.key(t, "Left", ports.ModAlt)
+	r.key(t, "v", ports.ModAlt) // stash 2 1, 2 peeks 2px from the left
+	r.input <- ports.PointerMotion{X: 1, Y: 50}
+	for {
+		if v, ok := (<-r.commands).(ports.PointerFocus); ok {
+			if v.ID != 2 {
+				t.Fatalf("pointer focus %+v, want the peek", v)
+			}
+			break
+		}
+	}
+}

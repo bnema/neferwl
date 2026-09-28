@@ -78,6 +78,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, reason := overlayCandidate(s, c); reason != "dim" {
 		t.Fatalf("dim reason %q", reason)
 	}
+	// A dimmed window (a peeking stashed one) needs its veil composed.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Dim = 0.5
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("dimmed window reason %q", reason)
+	}
 	// A viewport crop is composed: the plane would show the whole buffer.
 	s, c = overlayScene()
 	cropped := c[2]

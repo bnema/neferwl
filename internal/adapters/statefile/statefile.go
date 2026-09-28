@@ -56,6 +56,14 @@ type Window struct {
 	Output    string `json:"output"`
 	Workspace int    `json:"workspace"`
 	Visible   bool   `json:"visible"`
+	// Floating is set for native floats (dialogs) and stashed windows.
+	Floating bool `json:"floating"`
+	// StashIndex is the 1-based place of a stashed window in its
+	// workspace's stash of StashCount windows; both are 0 outside it.
+	StashIndex int `json:"stash_index"`
+	StashCount int `json:"stash_count"`
+	// Hidden is set for a stashed window while the stash is hidden.
+	Hidden bool `json:"hidden"`
 }
 
 func fromPorts(st ports.State) State {
@@ -74,7 +82,7 @@ func fromPorts(st ports.State) State {
 }
 
 func window(w ports.WindowState) Window {
-	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, Visible: w.Visible}
+	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, Visible: w.Visible, Floating: w.Floating, StashIndex: w.StashIndex, StashCount: w.StashCount, Hidden: w.Hidden}
 }
 
 // Run writes every state it receives to path until ctx ends, then removes
