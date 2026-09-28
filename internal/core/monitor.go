@@ -34,6 +34,11 @@ type Monitor struct {
 	// one its swipe began on); switchOff is then from the current
 	// workspace's place in it.
 	switchList []*Workspace
+	// overview is set while the overview is open (overview.go);
+	// overviewFrom and overviewFromID are where it opened, for Escape.
+	overview       bool
+	overviewFrom   *Workspace
+	overviewFromID WindowID
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
@@ -626,6 +631,9 @@ func (m *Monitor) Focused() (WindowID, bool) { return m.Current().Focused() }
 
 // Layout places every window: the workspace on screen laid out, others hidden.
 func (m *Monitor) Layout() []Placement {
+	if m.overview {
+		return m.overviewLayout()
+	}
 	var result []Placement
 	cur := m.Current()
 	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {

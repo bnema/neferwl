@@ -1021,6 +1021,9 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// Preview, above 0, draws the window's surfaces that much smaller in
+	// Rect (an overview thumbnail): the client keeps its size.
+	Preview float64
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

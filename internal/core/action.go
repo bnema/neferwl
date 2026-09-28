@@ -20,6 +20,7 @@ const (
 	ActionToggleFullscreen   Action = "toggle-fullscreen"
 	ActionToggleWindowStash  Action = "toggle-window-stash"
 	ActionToggleStashVisible Action = "toggle-stash-visible"
+	ActionToggleOverview     Action = "toggle-overview"
 	ActionCloseWindow        Action = "close-window"
 	ActionQuit               Action = "quit"
 	// Workspaces stack vertically; up/down stop at the ends.
@@ -232,6 +233,9 @@ func (m *Monitor) Apply(a Action) Effect {
 		return Effect{}
 	case ActionToggleStashVisible:
 		m.Current().ToggleStashVisible()
+		return Effect{}
+	case ActionToggleOverview:
+		m.ToggleOverview()
 		return Effect{}
 	case ActionMaximizeColumn:
 		// A client that made itself fullscreen (Wine at monitor size) goes

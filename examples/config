@@ -127,6 +127,7 @@ bind.cmd+f = maximize-column
 bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+s = toggle-window-stash
 bind.cmd+shift+s = toggle-stash-visible
+bind.cmd+o = toggle-overview
 bind.cmd+q = close-window
 bind.ctrl+alt+backspace = quit
 bind.ctrl+cmd+space = spawn fuzzel

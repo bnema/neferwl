@@ -138,6 +138,9 @@ func (c *Core) decide(g *swipeGesture) {
 	m := g.screen.mon
 	w := m.Current()
 	switch {
+	case m.overview:
+		// The overview does not slide: the swipe moves its selection.
+		g.mode = swipeDiscrete
 	case g.horizontal && w.slidable():
 		g.mode, g.ws = swipeColumns, w
 		w.motion = nil
@@ -233,7 +236,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 		before := c.cur().mon.Current()
 		c.layerFocus = 0
-		c.applyAction(a)
+		if mon := c.cur().mon; mon.overview {
+			mon.overviewSwipe(a)
+		} else {
+			c.applyAction(a)
+		}
 		return c.cur().mon.Current() != before
 	}
 	return shown

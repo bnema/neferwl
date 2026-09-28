@@ -16,7 +16,10 @@ type sceneWalk struct {
 	contents map[ports.WindowID]ports.SurfaceContent
 	dmg      *damageRegion
 	// scale maps the scene's logical pixels to the target's physical ones.
-	scale  float64
+	scale float64
+	// zoom shrinks the surfaces of the window being placed: an overview
+	// preview (ports.SceneWindow.Preview); 1 otherwise.
+	zoom   float64
 	bounds image.Rectangle
 	draws  []draw
 }
@@ -24,7 +27,7 @@ type sceneWalk struct {
 // draws walks the scene into quads in paint order.
 func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
 	clear(r.scratchDraws) // release references from longer earlier scenes
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, bounds: image.Rect(0, 0, r.width, r.height), draws: r.scratchDraws[:0]}
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, bounds: image.Rect(0, 0, r.width, r.height), draws: r.scratchDraws[:0]}
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
@@ -42,6 +45,12 @@ func (w *sceneWalk) phys(v int) int { return int(math.Round(float64(v) * w.scale
 
 func (w *sceneWalk) physRect(x, y, width, height int) image.Rectangle {
 	return image.Rect(w.phys(x), w.phys(y), w.phys(x+width), w.phys(y+height))
+}
+
+// physRectF is physRect for fractional logical coordinates (zoomed surfaces).
+func (w *sceneWalk) physRectF(x, y, width, height float64) image.Rectangle {
+	p := func(v float64) int { return int(math.Round(v * w.scale)) }
+	return image.Rect(p(x), p(y), p(x+width), p(y+height))
 }
 
 // fill draws a solid rect (physical pixels).
@@ -103,7 +112,11 @@ func (w *sceneWalk) windows() {
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
 		if !content.Empty() {
+			if win.Preview > 0 {
+				w.zoom = win.Preview
+			}
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
+			w.zoom = 1
 		}
 		if win.Floating {
 			w.separators(win.ID)
@@ -152,17 +165,22 @@ func (w *sceneWalk) popups(overLayers bool) {
 // surface of the tree is keyed by its stable surface identity.
 func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y, width, height int) {
 	clip := image.Rect(x, y, x+width, y+height)
-	ox, oy := x-content.Geometry.X, y-content.Geometry.Y
+	// Offsets inside the tree shrink with a zoomed (preview) window.
+	z := w.zoom
+	ox, oy := float64(x)-float64(content.Geometry.X)*z, float64(y)-float64(content.Geometry.Y)*z
+	at := func(ch *ports.Subsurface) (float64, float64) { return ox + float64(ch.X)*z, oy + float64(ch.Y)*z }
 	covers := w.opaqueChildren(content, ox, oy, clip)
 	for i := range content.Children {
 		if ch := &content.Children[i]; ch.Below {
-			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, ch.Surface}, ch.Version, covers, false)
+			cx, cy := at(ch)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{id, ch.Surface}, ch.Version, covers, false)
 		}
 	}
 	w.surface(content, ox, oy, clip, shmKey{id, content.Surface}, content.Version, covers, true)
 	for i := range content.Children {
 		if ch := &content.Children[i]; !ch.Below {
-			w.surface(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip, shmKey{id, ch.Surface}, ch.Version, nil, false)
+			cx, cy := at(ch)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{id, ch.Surface}, ch.Version, nil, false)
 		}
 	}
 }
@@ -172,14 +190,14 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 // they hide the surfaces below them. A child whose buffer will not draw is
 // left out, so the surface below it still shows: a dmabuf that fails to
 // import (opaqueChildren pre-imports it) or an unreadable shm buffer.
-func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy int, clip image.Rectangle) []image.Rectangle {
+func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
 	covers := w.r.scratchCovers[:0]
 	for i := range content.Children {
 		ch := &content.Children[i]
 		if ch.Below || !ch.Opaque {
 			continue
 		}
-		_, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+ch.X, oy+ch.Y, clip)
+		_, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+float64(ch.X)*w.zoom, oy+float64(ch.Y)*w.zoom, clip)
 		if !ok || !w.drawable(&ch.SurfaceContent) {
 			continue
 		}
@@ -205,9 +223,9 @@ func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
 }
 
 // surfaceRects gives the physical rect of a surface buffer with its origin
-// at (x, y) logical, and the part of it clip (logical) shows. ok is false
-// when there is nothing to draw.
-func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip image.Rectangle) (full, dst image.Rectangle, ok bool) {
+// at (x, y) logical, shrunk by the walk's zoom, and the part of it clip
+// (logical) shows. ok is false when there is nothing to draw.
+func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, clip image.Rectangle) (full, dst image.Rectangle, ok bool) {
 	lw, lh := content.LogicalW, content.LogicalH
 	if lw <= 0 || lh <= 0 {
 		lw, lh = content.Width, content.Height
@@ -218,7 +236,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 	if content.DMABuf == nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
 		return full, dst, false
 	}
-	full = w.physRect(x, y, lw, lh)
+	full = w.physRectF(x, y, float64(lw)*w.zoom, float64(lh)*w.zoom)
 	// A buffer drawn at the physical size (fractional-scale clients round
 	// w*scale, we round per edge) is copied 1:1, never resampled for 1px.
 	near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
@@ -239,7 +257,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y int, clip i
 // surface draws one surface buffer with its origin at (x, y) logical,
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
-func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y int, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
+func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
 		return
