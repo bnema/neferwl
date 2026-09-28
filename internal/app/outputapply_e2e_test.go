@@ -66,8 +66,16 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	go func() {
 		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true, Sizes: [][2]int{{640, 480}}, testScenes: scenes})
 	}()
+	// A stuck loop never answers the client: the watchdog stops the app,
+	// which closes the socket, so a blocked Roundtrip fails instead of hanging.
+	watchdog := time.AfterFunc(10*time.Second, cancel)
+	exited := false
 	t.Cleanup(func() {
+		watchdog.Stop()
 		cancel()
+		if exited {
+			return
+		}
 		select {
 		case err := <-done:
 			if err != nil {
@@ -88,6 +96,7 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 					return
 				}
 			case err := <-done:
+				exited = true
 				if err != nil && strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 					t.Skipf("Vulkan unavailable: %v", err)
 				}
@@ -123,16 +132,13 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	c.Context().Register(manager)
 	roundtrip := func(until func() bool) {
 		t.Helper()
-		// The owner loops answer asynchronously: roundtrip until they do.
-		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		// The owner loops answer asynchronously: roundtrip until they do,
+		// or until the watchdog stops the app.
+		for !until() {
 			if err := c.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-			if until() {
-				return
+				t.Fatalf("no answer: %v", err)
 			}
 		}
-		t.Fatal("no answer")
 	}
 	// The inventory reaches Wayland through the owner loop's outbox.
 	roundtrip(func() bool { return manager.done != 0 && len(manager.heads) == 1 })
