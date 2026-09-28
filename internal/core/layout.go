@@ -396,6 +396,8 @@ func (w *Workspace) FocusColumn(dir int) {
 }
 
 // FocusWindow moves focus inside the column; false means it was already at the edge.
+// Fixed overflow also stacks columns (spiral, expanded strips): past the
+// column edge, focus goes to the column on screen above or below.
 func (w *Workspace) FocusWindow(dir int) bool {
 	if w.floatFocus {
 		w.floatFocus = false
@@ -410,7 +412,44 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
+	if i := w.stackedNeighbor(dir); i >= 0 {
+		w.Focus = i
+		w.Columns[i].Focus = 0
+		if dir < 0 {
+			w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
+		}
+		return true
+	}
 	return false
+}
+
+// stackedNeighbor returns the fixed-overflow column right above (dir -1) or
+// below (dir 1) the focused one on screen, or -1. The closest wins, then
+// the one sharing the most width.
+func (w *Workspace) stackedNeighbor(dir int) int {
+	if w.Overflow != OverflowFixed || w.fullscreen != 0 || w.Columns[w.Focus].FullWidth {
+		return -1
+	}
+	rects := w.columnRects()
+	cur := rects[w.Focus]
+	best, bestDist, bestOverlap := -1, 0, 0
+	for i, r := range rects {
+		overlap := min(cur.X+cur.W, r.X+r.W) - max(cur.X, r.X)
+		if i == w.Focus || overlap <= 0 {
+			continue
+		}
+		dist := cur.Y - (r.Y + r.H)
+		if dir > 0 {
+			dist = r.Y - (cur.Y + cur.H)
+		}
+		if dist < 0 {
+			continue
+		}
+		if best < 0 || dist < bestDist || dist == bestDist && overlap > bestOverlap {
+			best, bestDist, bestOverlap = i, dist, overlap
+		}
+	}
+	return best
 }
 func (w *Workspace) MoveColumn(dir int) {
 	if w.floatFocus {

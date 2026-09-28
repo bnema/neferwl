@@ -529,6 +529,52 @@ func TestFixedExpandColumn(t *testing.T) {
 	})
 }
 
+// Up and down cross the columns the spiral or the expanded strips stack.
+func TestFixedFocusStackedColumns(t *testing.T) {
+	focused := func(w *Workspace) WindowID { id, _ := w.Focused(); return id }
+	t.Run("spiral", func(t *testing.T) {
+		// 1 left, 2 top right, 3 bottom left, 4 over 5 bottom right.
+		w := fixedWorkspace(2, 4, 5)
+		for _, want := range []WindowID{4, 2} {
+			if !w.FocusWindow(-1) || focused(w) != want {
+				t.Fatal(focused(w), want)
+			}
+		}
+		if w.FocusWindow(-1) {
+			t.Fatal("moved past the top", focused(w))
+		}
+		w.FocusID(1)
+		if w.FocusWindow(1) {
+			t.Fatal("full height column moved", focused(w))
+		}
+	})
+	t.Run("expanded strip", func(t *testing.T) {
+		// 1 wide; 2, 3 and 4 stacked on its right.
+		w := fixedWorkspace(3, 0, 4)
+		w.FocusID(1)
+		w.CycleWidth()
+		w.FocusID(2)
+		for _, want := range []WindowID{3, 4} {
+			if !w.FocusWindow(1) || focused(w) != want {
+				t.Fatal(focused(w), want)
+			}
+		}
+		if !w.FocusWindow(-1) || focused(w) != 3 {
+			t.Fatal(focused(w))
+		}
+	})
+	t.Run("lands on the nearest window of a stacked column", func(t *testing.T) {
+		// 1 left; 2 top right holds two windows; 3 bottom right.
+		w := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}
+		w.SetOutput(100, 80)
+		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 5}}, {Windows: []WindowID{3}}}
+		w.Focus = 2
+		if !w.FocusWindow(-1) || focused(w) != 5 {
+			t.Fatal(focused(w))
+		}
+	})
+}
+
 func fixedWorkspace(maxCols, gaps, n int) *Workspace {
 	w := &Workspace{MaxColumns: maxCols, Overflow: OverflowFixed, Gaps: gaps}
 	w.SetOutput(100, 80)
