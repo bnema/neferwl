@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
@@ -490,6 +491,43 @@ func TestPointerFocusesOutput(t *testing.T) {
 	}
 }
 
+// The first terminal cannot launch before wayland receives its output layout.
+func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
+	cfg := config.Defaults()
+	commands := make(chan ports.ClientCommand)
+	spawn := make(chan ports.SpawnRequest)
+	output := make(chan ports.OutputEvent, 1)
+	scenes := make(chan []ports.Scene, 1)
+	state := make(chan ports.State, 1)
+	c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state, Terminal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+	t.Cleanup(func() { cancel(); receive(t, done) })
+	receive(t, state) // startup finished; next command belongs to the output event
+	output <- ports.OutputAdded{Info: left}
+	select {
+	case v := <-commands:
+		if o, ok := v.(ports.SetOutputs); !ok || len(o.Outputs) != 1 || o.Outputs[0].Info.Name != left.Name {
+			t.Fatalf("first command: %v", v)
+		}
+	case req := <-spawn:
+		t.Fatalf("terminal spawned before SetOutputs: %v", req)
+	case <-time.After(time.Second):
+		t.Fatal("no output command or spawn")
+	}
+	if v, ok := receive(t, commands).(ports.SlotsPending); !ok || !v.Pending {
+		t.Fatalf("expected pending before spawn, got %v", v)
+	}
+	if req := receive(t, spawn); len(req.Argv) == 0 {
+		t.Fatal(req)
+	}
+	receive(t, scenes)
+}
+
 func TestTerminalAutoOpenFirstOnly(t *testing.T) {
 	r := startRig(t, true, nil, left)
 	first := receive(t, r.spawn)
@@ -784,5 +822,35 @@ func TestExplicitOverlappingPositionsAndNegativeY(t *testing.T) {
 		if o.X != 20 || o.Y != -120 {
 			t.Fatalf("explicit position: %+v", o)
 		}
+	}
+}
+
+func TestTerminalTokenClaimedOnce(t *testing.T) {
+	// Plug DP-1 first so its request is unambiguously first. Then plug
+	// DP-2 and focus it before either window maps.
+	r := startRig(t, true, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+	first := receive(t, r.spawn)
+	r.plug(t, right)
+	second := receive(t, r.spawn)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.client <- ports.WindowMapped{ID: 41, Slot: token(t, first), Floating: true, Width: 20, Height: 20}
+	receive(t, r.scenes)
+	r.client <- ports.WindowMapped{ID: 42, Slot: token(t, first)}
+	set := receive(t, r.scenes)
+	if got := shown(set); !slices.Equal(got["DP-1"], []ports.WindowID{42}) || !slices.Equal(got["DP-2"], []ports.WindowID{41}) {
+		t.Fatalf("first claim: %v", got)
+	}
+	// Move back to DP-1: the duplicate must follow focus, not the token.
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	r.client <- ports.WindowMapped{ID: 43, Slot: token(t, first)}
+	set = receive(t, r.scenes)
+	if got := shown(set); !slices.Equal(got["DP-1"], []ports.WindowID{42, 43}) || !slices.Equal(got["DP-2"], []ports.WindowID{41}) {
+		t.Fatalf("duplicate claim: %v", got)
+	}
+	// The other terminal's token remains available despite the first claim.
+	r.client <- ports.WindowMapped{ID: 44, Slot: token(t, second)}
+	set = receive(t, r.scenes)
+	if got := shown(set); !slices.Equal(got["DP-1"], []ports.WindowID{42, 43}) || !slices.Equal(got["DP-2"], []ports.WindowID{44, 41}) {
+		t.Fatalf("second claim: %v", got)
 	}
 }

@@ -238,6 +238,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
+		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: presented, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, report: inventory, configs: backendConfig, applied: backendApplied}
 		newRenderer := func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
@@ -252,11 +253,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 					w.Sampled = dmabuf.Formats
 					return w
 				}
-				return hw.runOutputs(ctx, want, opts.Config, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputFormats, outputHeads, inventory, backendConfig, backendApplied, curs, newRenderer, logging.For(ctx, "drm"))
+				return hw.runOutputs(ctx, want, opts.Config, outputIO, curs, newRenderer, logging.For(ctx, "drm"))
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, outputFormats, output, renderScenes, contents, cursorChanges, presented, captures, captured, outputHeads, inventory, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, outputIO, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {

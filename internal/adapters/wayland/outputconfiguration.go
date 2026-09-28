@@ -20,6 +20,7 @@ type headConfiguration struct {
 	parent                                                *outputConfiguration
 	res                                                   *wlr.ZwlrOutputConfigurationHeadV1
 	change                                                ports.HeadChange
+	unsupported                                           bool
 	modeSet, positionSet, transformSet, scaleSet, syncSet bool
 }
 
@@ -92,6 +93,10 @@ func (c *outputConfiguration) submit(r *wlr.ZwlrOutputConfigurationV1, test bool
 			r.PostError(uint32(wlr.ZwlrOutputConfigurationV1ErrorUnconfiguredHead), "not all heads configured")
 			return
 		}
+		if change.unsupported {
+			r.SendFailed()
+			return
+		}
 		request.Heads = append(request.Heads, change.change)
 	}
 	if c.manager.s.channels.OutputApply == nil {
@@ -138,7 +143,7 @@ func (h *headConfiguration) SetCustomMode(r *wlr.ZwlrOutputConfigurationHeadV1, 
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidCustomMode), "invalid custom mode")
 		return
 	}
-	h.change.CustomMode = true
+	h.unsupported = true
 	h.change.Mode = &ports.OutputMode{Width: int(w), Height: int(height), RefreshMilli: int(refresh)}
 }
 func (h *headConfiguration) SetPosition(r *wlr.ZwlrOutputConfigurationHeadV1, x, y int32) {
@@ -154,7 +159,9 @@ func (h *headConfiguration) SetTransform(r *wlr.ZwlrOutputConfigurationHeadV1, v
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidTransform), "invalid transform")
 		return
 	}
-	h.change.Transform = int(v)
+	if v != 0 {
+		h.unsupported = true
+	}
 }
 func (h *headConfiguration) SetScale(r *wlr.ZwlrOutputConfigurationHeadV1, v server.Fixed) {
 	if !h.once(&h.scaleSet, r) {
@@ -175,6 +182,5 @@ func (h *headConfiguration) SetAdaptiveSync(r *wlr.ZwlrOutputConfigurationHeadV1
 		r.PostError(uint32(wlr.ZwlrOutputConfigurationHeadV1ErrorInvalidAdaptiveSyncState), "invalid adaptive sync")
 		return
 	}
-	enabled := v == 1
-	h.change.AdaptiveSync = &enabled
+	h.unsupported = true
 }

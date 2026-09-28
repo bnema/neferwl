@@ -64,7 +64,7 @@ func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec,
 	primary := &plane{id: tPrimary, typ: planePrimary, props: planeProps}
 	cur := newCursor(&plane{id: tCursor, typ: planeCursor, props: planeProps}, 64)
 	cur.fbs = [2]uint32{90, 91}
-	o := &Output{k: k, serials: &atomic.Uint64{}, crtc: tCrtc, conn: connector{id: tConn, name: "DP-1"}, mode: modeInfo{HDisplay: 200, VDisplay: 100, VRefresh: 60}, log: zerowrap.Default(),
+	o := &Output{k: k, frame: frameLifecycle{serials: &atomic.Uint64{}}, crtc: tCrtc, conn: connector{id: tConn, name: "DP-1"}, mode: modeInfo{HDisplay: 200, VDisplay: 100, VRefresh: 60}, log: zerowrap.Default(),
 		crtcProps: map[string]uint32{"MODE_ID": pMode, "ACTIVE": pActive, "VRR_ENABLED": pVRR}, connCrtc: pConnCrtc, vrrProp: pVRR,
 		primary: primary, cursor: cur, fbs: [2]uint32{70, 71}, clientFBs: map[uint64]*clientFB{}, scanout: true, tearing: true, asyncFence: true}
 	return o, k, &commits, commitMu
@@ -89,7 +89,7 @@ func TestFrameCommitCarriesPrimaryFenceCursorAndVRR(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := (*commits)[0]
-	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userFrame || c.user>>userKindBits != o.pendingSerial {
+	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userFrame || c.user>>userKindBits != o.frame.pendingSerial {
 		t.Fatalf("flags %#x user %d", c.flags, c.user)
 	}
 	if v, _ := c.req.value(tPrimary, pFB); v != 70 {
@@ -104,8 +104,8 @@ func TestFrameCommitCarriesPrimaryFenceCursorAndVRR(t *testing.T) {
 	if v, _ := c.req.value(tCrtc, pVRR); v != 1 {
 		t.Fatalf("vrr %d", v)
 	}
-	if !o.pending || !o.vrrOn || o.cursor.applied.x != 12 {
-		t.Fatalf("state pending=%v vrr=%v cursor=%+v", o.pending, o.vrrOn, o.cursor.applied)
+	if !o.frame.pendingCommit() || !o.vrrOn || o.cursor.applied.x != 12 {
+		t.Fatalf("state pending=%v vrr=%v cursor=%+v", o.frame.pendingCommit(), o.vrrOn, o.cursor.applied)
 	}
 }
 
@@ -177,14 +177,14 @@ func TestCursorCommitWaitsForEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := (*commits)[0]
-	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userState || !o.pending {
-		t.Fatalf("cursor commit flags %#x user %d pending %v", c.flags, c.user, o.pending)
+	if c.flags != atomicNonblock|flipEventFlag || c.user&3 != userState || !o.frame.pendingCommit() {
+		t.Fatalf("cursor commit flags %#x user %d pending %v", c.flags, c.user, o.frame.pendingCommit())
 	}
 	// Its event is not a frame: nothing is reported.
 	seen := map[ports.WindowID]uint64{}
 	o.completed(eventOf(c), seen)
-	if o.pending || len(o.unsent) != 0 || o.flips != 0 {
-		t.Fatalf("pending=%v unsent=%d flips=%d", o.pending, len(o.unsent), o.flips)
+	if o.frame.pendingCommit() || len(o.unsent) != 0 || o.flips != 0 {
+		t.Fatalf("pending=%v unsent=%d flips=%d", o.frame.pendingCommit(), len(o.unsent), o.flips)
 	}
 	// Nothing changed: no commit.
 	if err := o.commitState(false); err != nil || len(*commits) != 1 {
@@ -196,8 +196,8 @@ func TestBusyCommitStaysPending(t *testing.T) {
 	o, _, _ := testOutput(t, unix.EBUSY)
 	err := o.commitFrame(70, nil, false, false, pendingFrame{})
 	enabled := true
-	if !o.commitFailed(err, &enabled) || !o.pending || !enabled {
-		t.Fatalf("EBUSY: pending=%v enabled=%v", o.pending, enabled)
+	if !o.commitFailed(err, &enabled) || !o.frame.pendingCommit() || !enabled {
+		t.Fatalf("EBUSY: pending=%v enabled=%v", o.frame.pendingCommit(), enabled)
 	}
 }
 
@@ -423,7 +423,7 @@ func TestVRRRefusedIsDisabled(t *testing.T) {
 	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(*commits) != 2 || o.vrrProp != 0 || !o.pending {
+	if len(*commits) != 2 || o.vrrProp != 0 || !o.frame.pendingCommit() {
 		t.Fatalf("%d commits, vrrProp %d", len(*commits), o.vrrProp)
 	}
 	if v, _ := (*commits)[1].req.value(tCrtc, pVRR); v != 0 {

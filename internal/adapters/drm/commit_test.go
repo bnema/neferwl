@@ -20,14 +20,14 @@ func TestStaleEventDoesNotCompleteNewCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	old := eventOf((*commits)[0])
-	o.pending = false // a modeset dropped the commit; its event is queued
+	o.frame.endPending() // a modeset dropped the commit; its event is queued
 	if err := o.commitFrame(71, nil, false, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
-	if o.completed(old, nil) || !o.pending {
+	if o.completed(old, nil) || !o.frame.pendingCommit() {
 		t.Fatal("stale event completed the new commit")
 	}
-	if !o.completed(eventOf((*commits)[1]), nil) || o.pending {
+	if !o.completed(eventOf((*commits)[1]), nil) || o.frame.pendingCommit() {
 		t.Fatal("own event did not complete the commit")
 	}
 }
@@ -40,10 +40,10 @@ func TestBusyFrameCommitsAfterEvent(t *testing.T) {
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); !o.commitFailed(err, &enabled) {
 		t.Fatalf("EBUSY not handled: %v", err)
 	}
-	if !o.completed(flipEvent{crtc: tCrtc, user: 12345 << userKindBits}, nil) || o.pending {
+	if !o.completed(flipEvent{crtc: tCrtc, user: 12345 << userKindBits}, nil) || o.frame.pendingCommit() {
 		t.Fatal("EBUSY wait not ended by the CRTC's event")
 	}
-	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil || len(*commits) != 2 || !o.pending {
+	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil || len(*commits) != 2 || !o.frame.pendingCommit() {
 		t.Fatalf("frame after EBUSY: %v, %d commits", err, len(*commits))
 	}
 }

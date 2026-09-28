@@ -279,3 +279,61 @@ func TestShownByScene(t *testing.T) {
 		t.Fatalf("shows %v", got)
 	}
 }
+
+// The decision is callable without Run and keeps the zero-allocation
+// composition and cached direct-scanout paths cheap.
+func TestFrameDecisionAllocations(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.scanout = true
+	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: ports.Rect{W: 200, H: 100}}}}
+	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 17, Format: fourccXRGB}}
+	surfaces := map[ports.WindowID]ports.SurfaceContent{1: c}
+	o.clientFBs[17] = &clientFB{fbID: 77}
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	for _, tc := range []struct {
+		name       string
+		capture    bool
+		wantFB     uint32
+		wantReason string
+	}{
+		{"direct", false, 77, ""}, {"capture", true, 0, "capture"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := o.decideFrame(s, surfaces, tc.capture)
+			if d.fb != tc.wantFB || o.reason != tc.wantReason {
+				t.Fatalf("decision: fb=%d reason=%q", d.fb, o.reason)
+			}
+			if tc.capture && o.overlayReason != "capture" {
+				t.Fatalf("capture overlay reason %q", o.overlayReason)
+			}
+			if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, tc.capture) }); n != 0 {
+				t.Fatalf("decision: %.1f allocs", n)
+			}
+		})
+	}
+	o.primary.formats = nil
+	d := o.decideFrame(s, surfaces, false)
+	if d.fb != 0 || o.overlayReason != "no_plane" || len(d.composed.Windows) != 1 {
+		t.Fatalf("composition: %+v", d)
+	}
+	if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) }); n != 0 {
+		t.Fatalf("composition decision: %.1f allocs", n)
+	}
+}
+
+func TestFrameDecisionOverlayFallback(t *testing.T) {
+	o, k, _ := overlayOutput(t)
+	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	s, surfaces := overlayScene()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
+	d := o.decideFrame(s, surfaces, false)
+	if d.fb != 0 || d.overlay.fb != 88 || o.reason != "other_windows" || len(d.composed.Windows) != 1 {
+		t.Fatalf("overlay decision: %+v", d)
+	}
+	d.overlay.close()
+	o.clientFBs[9].overlayFailed = "overlay_refused"
+	d = o.decideFrame(s, surfaces, false)
+	if d.overlay.fb != 0 || o.overlayReason != "overlay_refused" || len(d.composed.Windows) != 2 {
+		t.Fatalf("fallback decision: %+v", d)
+	}
+}

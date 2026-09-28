@@ -233,6 +233,61 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
 }
 
+// Unsupported but well-formed settings fail the configuration, not the client,
+// and must never be sent across the app port.
+func TestOutputManagementUnsupportedSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		send func(*testing.T, *wlturbo.Display, uint32)
+	}{
+		{"custom mode", func(t *testing.T, c *wlturbo.Display, ch uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode, int32(800), int32(600), int32(60000))
+		}},
+		{"transform", func(t *testing.T, c *wlturbo.Display, ch uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetTransform, int32(1))
+		}},
+		{"adaptive sync off", func(t *testing.T, c *wlturbo.Display, ch uint32) {
+			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetAdaptiveSync, uint32(0))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, apply, _, dir := outputTestServer(t)
+			if !s.display.Do(func() { s.setOutputHeads(testHead()) }) {
+				t.Fatal("display stopped")
+			}
+			c := protocolClient(t, s, dir)
+			managerID := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+			manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
+			manager.SetID(managerID)
+			c.Context().Register(manager)
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			head := recvManagement(t, manager.events)
+			var done [2]uint32
+			for done[0] != wlr.ZwlrOutputManagerV1EventDone {
+				done = recvManagement(t, manager.events)
+			}
+			cfg := c.AllocateID()
+			proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+			proxy.SetID(cfg)
+			c.Context().Register(proxy)
+			requestProtocol(t, c, managerID, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, done[1])
+			ch := c.AllocateID()
+			registerProtocol(t, c, ch)
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestEnableHead, ch, head[1])
+			tc.send(t, c, ch)
+			requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
+			waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventFailed))
+			select {
+			case req := <-apply:
+				t.Fatalf("unsupported setting reached app: %+v", req)
+			default:
+			}
+		})
+	}
+}
+
 // Each case uses a new connection because wl_display.error terminates that client.
 func TestOutputManagementProtocolErrors(t *testing.T) {
 	const (

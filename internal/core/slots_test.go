@@ -13,13 +13,14 @@ import (
 )
 
 type slotRig struct {
-	client chan ports.ClientEvent
-	input  chan ports.InputEvent
-	reload chan ports.ConfigChanged
-	spawn  chan ports.SpawnRequest
-	scenes chan []ports.Scene
-	errs   chan error
-	cfg    ports.Config
+	client     chan ports.ClientEvent
+	input      chan ports.InputEvent
+	reload     chan ports.ConfigChanged
+	spawn      chan ports.SpawnRequest
+	scenes     chan []ports.Scene
+	workspaces chan ports.Workspaces
+	errs       chan error
+	cfg        ports.Config
 }
 
 // startSlots runs core with a hidden "dev" workspace of two slots, toggled
@@ -41,11 +42,11 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	r := &slotRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 16),
 		reload: make(chan ports.ConfigChanged, 4), spawn: make(chan ports.SpawnRequest, 16),
-		scenes: make(chan []ports.Scene, 1), errs: make(chan error, 4), cfg: cfg,
+		scenes: make(chan []ports.Scene, 1), workspaces: make(chan ports.Workspaces, 1), errs: make(chan error, 4), cfg: cfg,
 	}
 	output := make(chan ports.OutputEvent, 1)
 	commands := make(chan ports.ClientCommand, 1024)
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, ConfigErrors: r.errs})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, Workspaces: r.workspaces, ConfigErrors: r.errs})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +135,33 @@ func visible(s ports.Scene) map[ports.WindowID]ports.Rect {
 		}
 	}
 	return m
+}
+
+// Activating a workspace through the protocol must count as showing it for
+// pending-slot retry, just like switching to it with a key.
+func TestWorkspaceActivateRetriesPendingSlot(t *testing.T) {
+	r := startSlots(t)
+	first, second := receive(t, r.spawn), receive(t, r.spawn)
+	initial := receive(t, r.workspaces)
+	var dev uint64
+	for _, w := range initial.Outputs[0].Workspaces {
+		if w.Configured == "dev" {
+			dev = w.ID
+		}
+	}
+	if dev == 0 {
+		t.Fatal(initial)
+	}
+	r.client <- ports.WorkspaceActivate{IDs: []uint64{dev}}
+	scene(t, r.scenes)
+	noSpawn(t, r.spawn) // first show marks pending slots stale
+	r.press(t, "d")     // leave dev
+	r.client <- ports.WorkspaceActivate{IDs: []uint64{dev}}
+	scene(t, r.scenes)
+	again := receive(t, r.spawn)
+	if token(t, again) == token(t, first) || token(t, again) == token(t, second) {
+		t.Fatal("activation did not refresh the pending slot token")
+	}
 }
 
 func TestSlotsSpawnAtStartAndFillInOrder(t *testing.T) {
@@ -394,5 +422,24 @@ func TestSlotFollowsExpelledWindow(t *testing.T) {
 	noSpawn(t, r.spawn)
 	if got := visible(s); got[2].W != 70 {
 		t.Fatalf("slots: %v", got)
+	}
+}
+
+// A floating child keeps the pending claim for the first ordinary window.
+func TestFloatingSlotTokenDoesNotClaim(t *testing.T) {
+	r := startSlots(t)
+	code, _ := receive(t, r.spawn), receive(t, r.spawn)
+	r.client <- ports.WindowMapped{ID: 10, Slot: token(t, code), Floating: true, Width: 20, Height: 20}
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	r.client <- ports.WindowMapped{ID: 11, Slot: token(t, code)}
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 2 })
+	s := r.press(t, "d")
+	if got := visible(s); got[11].W != 70 {
+		t.Fatalf("floating child consumed slot claim: %v", got)
+	}
+	r.client <- ports.WindowMapped{ID: 12, Slot: token(t, code)}
+	s = sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
+	if got := visible(s); got[12].W == 70 {
+		t.Fatalf("duplicate token claimed slot: %v", got)
 	}
 }

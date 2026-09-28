@@ -408,14 +408,11 @@ type OutputHeads struct{ Heads []OutputHead }
 
 // HeadChange is the complete desired state of one head in a configuration.
 type HeadChange struct {
-	Name         string
-	Enabled      bool
-	Mode         *OutputMode
-	CustomMode   bool
-	Pos          *image.Point
-	Scale        float64
-	Transform    int
-	AdaptiveSync *bool
+	Name    string
+	Enabled bool
+	Mode    *OutputMode
+	Pos     *image.Point
+	Scale   float64
 }
 
 // OutputApply asks the app owner to validate or apply a runtime configuration.

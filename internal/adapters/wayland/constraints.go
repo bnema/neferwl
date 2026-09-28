@@ -169,15 +169,21 @@ func (h confineHandler) SetRegion(_ *pointerconstraints.ZwpConfinedPointerV1, re
 	h.c.pending = &r
 }
 
-// commitConstraint applies a pending region on the surface commit, after
-// the new window geometry: core receives the region window-local.
-func (s *surface) commitConstraint(geometry bool) {
-	c := s.server.constraints[s]
-	if c == nil || (c.pending == nil && !geometry) {
+// commitConstraint applies this commit's captured region after its geometry;
+// later set_region requests remain pending. Core receives window-local state.
+func (s *surface) commitConstraint(c *constraint, region *ports.Rect, geometry bool) {
+	if c == nil || s.server.constraints[s] != c {
+		if !geometry {
+			return
+		}
+		c = s.server.constraints[s]
+		region = nil // never apply an old constraint's region to its replacement
+	}
+	if c == nil || (region == nil && !geometry) {
 		return
 	}
-	if c.pending != nil {
-		c.region, c.pending = *c.pending, nil
+	if region != nil && s.server.constraints[s] == c {
+		c.region = *region
 	}
 	if c.active {
 		s.server.emitConstraint(c)

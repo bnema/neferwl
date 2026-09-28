@@ -1,7 +1,6 @@
 package core
 
 import (
-	"crypto/rand"
 	"fmt"
 	"slices"
 
@@ -28,15 +27,12 @@ type slotKey struct {
 type slotState struct {
 	argv   []string
 	width  Width
-	token  string   // SlotEnv value of the pending spawn; "" when none
 	window WindowID // 0 while empty
 	// stale is set when the workspace is shown while the spawn is pending.
 	// Shown again still pending, the command is deemed failed and respawned;
 	// a slow app therefore gets one show to map its window.
 	stale bool
 }
-
-func (s *slotState) pending() bool { return s.token != "" }
 
 // slotSpec is one parsed slot of the config.
 type slotSpec struct {
@@ -78,6 +74,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 		if _, w := c.byName(key.workspace); w != nil {
 			w.unslot(key.index)
 		}
+		c.placement.dropSlot(key)
 		delete(c.slots, key)
 	}
 	var spawn []slotKey
@@ -99,7 +96,7 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 			if st.window == 0 {
 				// A pending spawn ran the old command: its window opens as
 				// a normal one; the new command replaces it.
-				st.token = ""
+				c.placement.dropSlot(s.key)
 				spawn = append(spawn, s.key)
 			}
 		}
@@ -107,31 +104,12 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 	return spawn
 }
 
-// spawnSlot starts the slot's command with a fresh random token.
+// spawnSlot starts the slot's command with a fresh token.
 func (c *Core) spawnSlot(key slotKey) ports.SpawnRequest {
 	st := c.slots[key]
-	st.token, st.stale = rand.Text(), false
-	return ports.SpawnRequest{Argv: slices.Clone(st.argv), Env: []string{ports.SlotEnv + "=" + st.token}}
-}
-
-// placeSlotWindow puts a mapped window carrying the pending token of a slot
-// into that slot, without focus. It returns false for any other window, which
-// then follows the normal rules.
-func (c *Core) placeSlotWindow(id WindowID, token string) bool {
-	for key, st := range c.slots {
-		if !st.pending() || st.token != token || st.window != 0 {
-			continue
-		}
-		sc, w := c.byName(key.workspace)
-		if w == nil {
-			return false
-		}
-		st.window, st.token = id, ""
-		w.AddSlotWindow(id, key.index, st.width)
-		sc.mon.normalize()
-		return true
-	}
-	return false
+	c.placement.dropSlot(key)
+	st.stale = false
+	return c.placement.request(st.argv, spawnTarget{slot: key})
 }
 
 // releaseSlots empties slots whose window is gone or no longer in its slot
@@ -161,26 +139,13 @@ func (c *Core) refill() []slotKey {
 	for key, st := range c.slots {
 		switch {
 		case key.workspace != name || st.window != 0:
-		case st.pending() && !st.stale:
+		case c.placement.slotPending(key) && !st.stale:
 			st.stale = true
 		default:
-			st.token = ""
+			c.placement.dropSlot(key)
 			keys = append(keys, key)
 		}
 	}
 	slices.SortFunc(keys, func(a, b slotKey) int { return a.index - b.index })
 	return keys
-}
-
-// anyPending reports whether a slot waits for its window.
-func (c *Core) anyPending() bool {
-	if len(c.terms) > 0 {
-		return true
-	}
-	for _, st := range c.slots {
-		if st.pending() {
-			return true
-		}
-	}
-	return false
 }

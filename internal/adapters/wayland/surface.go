@@ -25,7 +25,7 @@ const (
 type surface struct {
 	wl                *wayland.Surface
 	viewport          *viewport
-	committedViewport *viewport
+	committedViewport viewportState // value snapshot; no allocation on viewport commits
 	// bufferScale is committed state; pendingScale is set by set_buffer_scale.
 	bufferScale, pendingScale int
 	kind                      roleKind
@@ -312,69 +312,65 @@ func (s *surface) Commit(*wayland.Surface) {
 	s.server.tickFifo(time.Now(), nil)
 }
 
-// applyCommit makes the pending state current.
-func (s *surface) applyCommit() {
+// applyCommit makes only the captured update current. Live pending requests
+// remain untouched, even when this update waited behind another commit.
+func (s *surface) applyCommit(u *update) {
 	oldW, oldH, oldSource := s.content.LogicalW, s.content.LogicalH, s.content.Source
 	oldColor, oldRepresentation := s.color, s.representation
-	fresh := s.attached && s.pending != nil
+	fresh := u.attached && u.buffer != nil
 	s.commitFresh = fresh
 	if !s.commitSkipped {
-		s.queuedScale = s.pendingScale
+		s.queuedScale = u.scale
 		s.queuedBuffer = 0
-		if s.pending != nil {
-			s.queuedBuffer = s.pending.ID()
+		if u.buffer != nil {
+			s.queuedBuffer = u.buffer.ID()
 		}
 	}
-	if s.pendingBarrier {
-		s.pendingBarrier = false
+	if u.barrier {
 		s.setBarrier(time.Now())
 	}
-	s.pendingWait, s.pendingTime = false, time.Time{}
-	if s.contentKind != s.pendingKind {
-		s.contentKind = s.pendingKind
+	if s.contentKind != u.kind {
+		s.contentKind = u.kind
 		s.server.log.Info().Uint64("id", uint64(s.root().windowID())).Uint32("content_type", s.contentKind).Msg("content type")
 	}
-	if s.pendingScale > 0 {
-		s.bufferScale = s.pendingScale
+	if u.scale > 0 {
+		s.bufferScale = u.scale
 	}
-	hinted := s.async != s.pendingAsync || s.color != s.pendingColor || s.representation != s.pendingRepresentation
-	s.async = s.pendingAsync
-	s.color = s.pendingColor
-	s.representation = s.pendingRepresentation
-	if s.viewport != nil {
-		s.viewport.commit()
-		v := *s.viewport
-		s.committedViewport = &v
+	hinted := s.async != u.async || s.color != u.color || s.representation != u.representation
+	s.async = u.async
+	s.color = u.color
+	s.representation = u.representation
+	if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
+		s.committedViewport.destW, s.committedViewport.destH, s.committedViewport.dest = u.vpW, u.vpH, u.vpSet
+		s.committedViewport.src, s.committedViewport.crop = u.vpSrc, u.vpCrop
 	} else {
-		s.committedViewport = nil
+		s.committedViewport.dest, s.committedViewport.crop = false, false
 	}
-	cs := s.pendingSync
-	s.pendingSync = nil
-	if s.attached {
-		if s.current != nil && (s.pending == nil || s.current.Resource != s.pending.Resource) {
+	cs := u.sync
+	if u.attached {
+		if s.current != nil && (u.buffer == nil || s.current.Resource != u.buffer.Resource) {
 			s.server.releaseBuffer(s, s.current, s.hold)
-		} else if cs != nil || s.pending == nil {
+		} else if cs != nil || u.buffer == nil {
 			// Same buffer again, or detached: the old points are done
 			// with once the new ones take over.
 			s.server.releaseBufferSync(s, s.hold)
 		}
 		s.hold = syncHold{}
-		s.current = s.pending
-		s.pending = nil
-		s.attached = false
+		s.current = u.buffer
 	}
 	s.applySync(cs)
-	if s.pendingInputSet {
-		s.inputAll, s.inputRects = s.pendingInputAll, s.pendingInputRects
-		s.pendingInputRects = nil
-		s.pendingInputSet = false
+	if u.inputSet {
+		s.inputAll, s.inputRects = u.inputAll, u.inputRects
 	}
-	if len(s.callbacks) > 0 {
-		s.server.queueFrames(s.server.frameOutput(s), s.callbacks)
+	if len(u.callbacks) > 0 {
+		s.server.queueFrames(s.server.frameOutput(s), u.callbacks)
 	}
-	s.callbacks = nil
 	if s.role != nil {
-		s.role(s.current != nil)
+		if u.layer != nil && s.layer == u.layer {
+			u.layer.commitState(u.layerNext, s.current != nil)
+		} else {
+			s.role(s.current != nil)
+		}
 	}
 	if fresh {
 		if state, ok := s.server.buffers[s.current.Resource]; ok {
@@ -385,7 +381,7 @@ func (s *surface) applyCommit() {
 				c.Source, _ = s.source(c.Width, c.Height)
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
-				s.commitDamage(true, resized, c.Width, c.Height)
+				s.commitDamage(u, true, resized, c.Width, c.Height)
 				if s.sub.parent == nil && (c.Width != s.lastW || c.Height != s.lastH) {
 					s.lastW, s.lastH = c.Width, c.Height
 					s.server.log.Info().Uint64("id", uint64(s.windowID())).Int("w", c.Width).Int("h", c.Height).Msg("buffer size")
@@ -399,9 +395,9 @@ func (s *surface) applyCommit() {
 			// replaces them.
 		}
 	}
-	damaged := !fresh && s.current != nil && (len(s.pendingDamage) > 0 || len(s.pendingBufDamage) > 0)
+	damaged := !fresh && s.current != nil && (len(u.damage) > 0 || len(u.bufDamage) > 0)
 	if !fresh {
-		s.commitDamage(false, false, 0, 0)
+		s.commitDamage(u, false, false, 0, 0)
 		// A NULL attach is exempt from out_of_buffer: its content is
 		// cleared below, so the retained buffer is not validated.
 		if s.has && s.current != nil {
@@ -420,19 +416,19 @@ func (s *surface) applyCommit() {
 		s.root().treeDirty = true
 	}
 	// The layout belongs to this update, not to the latest requests.
-	moved := !sameLayout(s.sub.layout, s.sub.pendingLayout)
+	moved := !sameLayout(s.sub.layout, u.layout)
 	if moved {
 		s.root().treeDirty = true
 	}
 	// Queued updates can still reference the previous layout. Never mutate it.
 	if moved {
-		s.sub.layout = s.sub.pendingLayout
+		s.sub.layout = u.layout
 	}
 	geometry := false
-	if s.xdg != nil && s.xdg.pendingGeometry != s.xdg.geometry {
-		s.xdg.geometry, geometry = s.xdg.pendingGeometry, true
+	if s.xdg != nil && s.xdg == u.xdg && u.geometry != s.xdg.geometry {
+		s.xdg.geometry, geometry = u.geometry, true
 	}
-	s.commitConstraint(geometry)
+	s.commitConstraint(u.cons, u.region, geometry)
 	s.emitInput()
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
@@ -448,8 +444,7 @@ func (s *surface) applyCommit() {
 			s.redraw()
 		}
 	}
-	fb := s.pendingFeedback
-	s.pendingFeedback = nil
+	fb := u.feedback
 	if s.server.applyingGraph {
 		s.server.graphFeedback = append(s.server.graphFeedback, graphFeedback{s, fb, fresh})
 	} else {
@@ -471,9 +466,8 @@ func (s *surface) DamageBuffer(_ *wayland.Surface, x, y, w, h int32) {
 // buffer. Surface damage scales by the buffer/logical ratio, rounded out.
 // A new size, too many rects or none at all with a new buffer (clients
 // that do not report damage) is a full change.
-func (s *surface) commitDamage(fresh, resized bool, bw, bh int) {
-	surf, buf := s.pendingDamage, s.pendingBufDamage
-	s.pendingDamage, s.pendingBufDamage = nil, nil
+func (s *surface) commitDamage(u *update, fresh, resized bool, bw, bh int) {
+	surf, buf := u.damage, u.bufDamage
 	if !fresh {
 		s.committed = damage{}
 		return

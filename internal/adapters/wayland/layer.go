@@ -224,6 +224,12 @@ func (l *layerSurface) sendConfigure() {
 }
 
 func (l *layerSurface) commit(buffer bool) {
+	l.commitState(l.pending, buffer)
+}
+
+// commitState applies the state captured by this surface commit, not later
+// layer-shell requests still pending on the role object.
+func (l *layerSurface) commitState(p layerState, buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
 		delete(l.shell.server.layers, l.id)
@@ -232,7 +238,6 @@ func (l *layerSurface) commit(buffer bool) {
 	if l.closed {
 		return
 	}
-	p := l.pending
 	if (p.width == 0 && p.anchor&(ports.AnchorLeft|ports.AnchorRight) != ports.AnchorLeft|ports.AnchorRight) || (p.height == 0 && p.anchor&(ports.AnchorTop|ports.AnchorBottom) != ports.AnchorTop|ports.AnchorBottom) {
 		l.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSize), "zero size requires opposing anchors")
 		return

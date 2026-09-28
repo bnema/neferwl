@@ -99,6 +99,127 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	return c, ""
 }
 
+// scanoutFrame picks a fullscreen client buffer to flip directly. It
+// returns fb 0, with the reason logged on change, when the frame must be
+// composed.
+func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent) {
+	reason := "disabled"
+	if o.scanout {
+		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
+		if reason == "" && isYUVFormat(c.DMABuf.Format) {
+			reason = "yuv"
+		}
+		if o.hdrOn && reason == "" {
+			switch {
+			case !c.Color.IsPQ2020():
+				reason = "hdr_sdr_content"
+			case !isTenBit(c.DMABuf.Format):
+				reason = "hdr_format"
+			}
+		} else if !o.hdrOn && reason == "" && c.Color.IsPQ2020() {
+			// An SDR connector must never show raw PQ values.
+			reason = "sdr_pq_content"
+		}
+	}
+	if reason == "" {
+		fb, reason = o.scanoutFB(c.DMABuf, time.Now())
+	}
+	o.setScanoutReason(reason)
+	if reason != "" {
+		return 0, c
+	}
+	return fb, c
+}
+
+// overlayFrame decides the overlay of a frame: the window, and the scene
+// the renderer composes (the window left out). A zero overlayWin means
+// none; the reason is logged on change.
+func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
+	reason := "no_plane"
+	var ov overlayWin
+	if o.hdrOn {
+		reason = "hdr"
+	} else if o.overlay != nil && o.scanout {
+		var w ports.SceneWindow
+		var c ports.SurfaceContent
+		w, c, reason = overlayCandidate(s, surfaces)
+		if reason == "" {
+			var fb uint32
+			if fb, reason = o.overlayFB(c.DMABuf, time.Now()); reason == "" {
+				scale := s.Scale
+				if scale <= 0 {
+					scale = 1
+				}
+				ov = overlayWin{id: w.ID, fb: fb, buf: c.DMABuf.ID, w: c.Width, h: c.Height,
+					rect:    ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
+					acquire: dupFence(c.Acquire)}
+			}
+		}
+	}
+	o.setOverlayReason(reason)
+	if ov.fb == 0 {
+		return overlayWin{}, s
+	}
+	// The composed frame leaves the window out: the overlay shows it.
+	rest := s
+	rest.Windows = make([]ports.SceneWindow, 0, len(s.Windows))
+	for _, w := range s.Windows {
+		if w.ID != ov.id {
+			rest.Windows = append(rest.Windows, w)
+		}
+	}
+	return ov, rest
+}
+
+// frameDecision selects the zero-copy path or the scene to compose.
+type frameDecision struct {
+	fb       uint32
+	content  ports.SurfaceContent
+	overlay  overlayWin
+	composed ports.Scene
+}
+
+// composeFrame chooses overlay or composition after direct scanout cannot commit.
+// The caller owns the returned overlay fence.
+func (o *Output) composeFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) frameDecision {
+	ov, rest := o.overlayFrame(s, surfaces)
+	if ov.fb != 0 {
+		return frameDecision{overlay: ov, composed: rest}
+	}
+	return frameDecision{composed: s}
+}
+
+// decideFrame tries direct scanout, then overlay, then composition.
+// Captures require composition; the caller owns the returned overlay fence.
+func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, capture bool) frameDecision {
+	if capture {
+		o.setScanoutReason("capture")
+		o.setOverlayReason("capture")
+		return frameDecision{composed: s}
+	}
+	fb, c := o.scanoutFrame(s, surfaces)
+	if fb != 0 {
+		return frameDecision{fb: fb, content: c}
+	}
+	return o.composeFrame(s, surfaces)
+}
+
+// setScanoutReason logs a direct-scanout transition once.
+func (o *Output) setScanoutReason(reason string) {
+	if reason != o.reason {
+		o.log.Info().Str("component", "render").Bool("direct_scanout", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("scanout")
+		o.reason = reason
+	}
+}
+
+// setOverlayReason logs an overlay transition once.
+func (o *Output) setOverlayReason(reason string) {
+	if reason != o.overlayReason {
+		o.log.Info().Str("component", "render").Bool("overlay", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("overlay")
+		o.overlayReason = reason
+	}
+}
+
 // clientFB is a client buffer imported as a KMS framebuffer.
 type clientFB struct {
 	fbID uint32
@@ -151,7 +272,7 @@ func (o *Output) planeFB(p *plane, b *ports.DMABuf, now time.Time, reason func(*
 		}
 		id, err := o.k.addFB(b, format)
 		if err != nil {
-			o.log.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
+			o.log.Info().Str("component", "render").Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
 			fb.importErr, *why = true, "import_failed"
 			return 0, *why
 		}

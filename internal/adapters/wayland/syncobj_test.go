@@ -11,6 +11,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/protocol/committiming"
+	"github.com/bnema/purego-libwayland/protocol/fifo"
 	"github.com/bnema/purego-libwayland/protocol/linuxdmabuf"
 	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
@@ -292,6 +294,64 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 	case <-h.releases[a].released:
 		t.Fatal("wl_buffer.release sent under explicit sync")
 	default:
+	}
+}
+
+// FIFO, commit timing and acquire are independent gates on the same ordered
+// update: clearing the first two cannot publish before its acquire fires.
+func TestQueuedCommitReadinessGatesInOrder(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	first, second := h.dmabuf(), h.dmabuf()
+	fm := bindProtocol(t, h.c, "wp_fifo_manager_v1")
+	f := h.c.AllocateID()
+	registerProtocol(t, h.c, f)
+	requestProtocol(t, h.c, fm, fifo.WpFifoManagerV1RequestGetFifo, f, h.surf)
+	tm := bindProtocol(t, h.c, "wp_commit_timing_manager_v1")
+	timer := h.c.AllocateID()
+	registerProtocol(t, h.c, timer)
+	requestProtocol(t, h.c, tm, committiming.WpCommitTimingManagerV1RequestGetTimer, timer, h.surf)
+
+	requestProtocol(t, h.c, f, fifo.WpFifoV1RequestSetBarrier)
+	h.commit(first, 1, 2)
+	h.fire(1)
+	one, ok := h.content(2 * time.Second)
+	if !ok {
+		t.Fatal("first update did not publish")
+	}
+	var now unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &now); err != nil {
+		t.Fatal(err)
+	}
+	target := time.Duration(now.Nano()) + 180*time.Millisecond
+	sec := uint64(target / time.Second)
+	requestProtocol(t, h.c, timer, committiming.WpCommitTimerV1RequestSetTimestamp, uint32(sec>>32), uint32(sec), uint32(target%time.Second))
+	requestProtocol(t, h.c, f, fifo.WpFifoV1RequestWaitBarrier)
+	h.commit(second, 3, 4)
+	// Even with an acquire fence available, timestamp and barrier hold it.
+	var waiting bool
+	h.s.display.Do(func() {
+		surf := h.s.windows[h.win].xdg.surface
+		waiting = len(surf.queue) == 1 && surf.barrier
+	})
+	if !waiting {
+		t.Fatal("update did not wait behind the FIFO barrier")
+	}
+	if _, ok := h.content(200 * time.Millisecond); ok {
+		t.Fatal("update published before its acquire fence")
+	}
+	var gatedByAcquire bool
+	h.s.display.Do(func() {
+		surf := h.s.windows[h.win].xdg.surface
+		gatedByAcquire = len(surf.queue) == 1 && !surf.barrier && !surf.tooEarly(surf.queue[0].at, time.Now()) && !surf.syncReady(surf.queue[0].sync)
+	})
+	if !gatedByAcquire {
+		t.Fatal("FIFO/timing did not clear while acquire still waited")
+	}
+	h.fire(3)
+	two, ok := h.content(2 * time.Second)
+	if !ok || two.Seq <= one.Seq || two.DMABuf.ID == one.DMABuf.ID {
+		t.Fatalf("ordered publication: first=%+v second=%+v", one, two)
 	}
 }
 
