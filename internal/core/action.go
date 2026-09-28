@@ -154,7 +154,9 @@ func (c *Core) applyAction(a Action) Effect {
 		} else {
 			dir = 1
 		}
-		edge := w.columnToward(dir) < 0
+		// The first move from a float leaves it for the columns (FocusColumn),
+		// unless a covering fullscreen window pins the focus.
+		edge := w.columnToward(dir) < 0 && (!w.floatFocus || w.pinned())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}
