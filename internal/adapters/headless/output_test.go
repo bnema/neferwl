@@ -70,9 +70,9 @@ func TestRun(t *testing.T) {
 	contents := make(chan ports.SurfaceContent, 8)
 	r, f := recordingRenderer(t, nil)
 	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
-	shown := []ports.SceneWindow{{ID: 1}, {ID: 2}}
-	scenes <- ports.Scene{Seq: 1, Windows: shown}
-	scenes <- ports.Scene{Seq: 2, Windows: shown}
+	shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+	scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -111,7 +111,7 @@ func TestRun(t *testing.T) {
 func TestRunSkipsContentNotShown(t *testing.T) {
 	scenes := make(chan ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 2)
-	scenes <- ports.Scene{Seq: 1, Windows: []ports.SceneWindow{{ID: 1}, {ID: 3, Hidden: true}}}
+	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
 	r, f := recordingRenderer(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

@@ -433,17 +433,23 @@ func (c *Core) publish(ctx context.Context) error {
 			scene.Windows = append(scene.Windows, ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset})
 			floating := p.Floating
 			if p.Hidden {
-				if old, ok := c.sent[p.ID]; ok && (old.Activated || old.Output != "") {
-					old.Activated, old.Output = false, ""
-					if err := c.command(ctx, old); err != nil {
+				// A hidden window keeps its size, state and output; it is
+				// only deactivated and marked invisible.
+				if old, ok := c.sent[p.ID]; ok {
+					v := old
+					v.Activated, v.Visible, v.Output = false, false, sc.name()
+					if v == old {
+						continue
+					}
+					if err := c.command(ctx, v); err != nil {
 						return err
 					}
-					c.sent[p.ID] = old
+					c.sent[p.ID] = v
 				}
 				continue
 			}
 			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name()}
+			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: p.Rect.Overlaps(Rect{W: o.W, H: o.H})}
 			if v.Floating && !sc.mon.Current().imposedFloat(p.ID) {
 				// Native floating windows pick their own size.
 				v.Width, v.Height = 0, 0

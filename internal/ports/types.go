@@ -17,6 +17,13 @@ const (
 	SideAll = SideLeft | SideRight | SideTop | SideBottom
 )
 
+// Overlaps reports whether r and o share a positive area: touching edges
+// do not overlap.
+func (r Rect) Overlaps(o Rect) bool {
+	return r.W > 0 && r.H > 0 && o.W > 0 && o.H > 0 &&
+		r.X < o.X+o.W && o.X < r.X+r.W && r.Y < o.Y+o.H && o.Y < r.Y+r.H
+}
+
 // Inset shrinks r by b on each side in s.
 func (r Rect) Inset(s Sides, b int) Rect {
 	b = min(max(b, 0), r.W/2, r.H/2)

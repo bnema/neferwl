@@ -532,7 +532,13 @@ type ConfigureWindow struct {
 	Fullscreen, Activated bool
 	// Floating windows are not tiled: no tiled states.
 	Floating bool
-	Output   string
+	// Output is the output the window belongs to, kept while it is not
+	// visible (scale, foreign toplevel).
+	Output string
+	// Visible is set while part of the window is on its output: not on a
+	// hidden workspace, scrolled off, behind a maximized column or a
+	// hidden float. An invisible window is suspended and throttled.
+	Visible bool
 }
 
 func (ConfigureWindow) clientCommand() {}
@@ -739,10 +745,11 @@ type Scene struct {
 }
 
 // Shows reports whether the scene draws the surface of id: only its
-// content changes need a new frame.
+// content changes need a new frame. A window scrolled off the output is
+// not drawn.
 func (s Scene) Shows(id WindowID) bool {
 	for _, w := range s.Windows {
-		if w.ID == id && !w.Hidden {
+		if w.ID == id && !w.Hidden && w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) {
 			return true
 		}
 	}

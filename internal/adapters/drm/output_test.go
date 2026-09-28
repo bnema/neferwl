@@ -240,7 +240,7 @@ func TestReportSeenAllocations(t *testing.T) {
 
 func TestShownBySnapshotAllocations(t *testing.T) {
 	o := &Output{}
-	s := ports.Scene{Windows: []ports.SceneWindow{{ID: 1}}}
+	s := ports.Scene{OutputWidth: 10, OutputHeight: 10, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
 	seen := map[ports.WindowID]uint64{1: 1, 2: 2}
 	previous := o.shownBy(s, seen)
 	if allocs := testing.AllocsPerRun(100, func() { o.shownBy(s, seen) }); allocs != 0 {
