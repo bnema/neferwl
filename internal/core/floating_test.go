@@ -122,6 +122,24 @@ func TestFullscreenPinsFocus(t *testing.T) {
 	if e := w.Apply(ActionCloseWindow); e.Close != 3 {
 		t.Fatalf("close %d, want the fullscreen window", e.Close)
 	}
+	// A fixed-overflow fullscreen tile pins the focus too.
+	f := workspace()
+	f.Overflow = OverflowFixed
+	f.AddWindow(1)
+	f.AddWindow(2)
+	f.SetFullscreen(2, true)
+	if f.FocusColumn(-1); f.Focus != 1 {
+		t.Fatalf("fixed: focus moved to column %d", f.Focus)
+	}
+	// Scroll overflow: moving off a fullscreen column still works; it no
+	// longer covers.
+	s := workspace()
+	s.AddWindow(1)
+	s.AddWindow(2)
+	s.SetFullscreen(2, true)
+	if s.FocusColumn(-1); s.Focus != 0 || s.cover() != 0 {
+		t.Fatalf("scroll: focus %d cover %d", s.Focus, s.cover())
+	}
 }
 
 // A fullscreen window does not float until it leaves fullscreen.

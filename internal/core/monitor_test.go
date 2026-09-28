@@ -770,4 +770,19 @@ func TestFollowMoveIntoFullscreenLands(t *testing.T) {
 			}
 		}
 	}
+	// Without follow, the fullscreen workspace keeps its window: the moved
+	// one waits there, hidden, and the view stays.
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	m.ToggleFullscreen()
+	m.Focus(len(m.Workspaces) - 1)
+	m.AddWindow(5)
+	from := m.Current()
+	m.MoveToWorkspace(1, true)
+	if fs := m.Workspaces[1]; m.Current() != from || fs.cover() != 2 || fs.floatIndex(5) < 0 {
+		t.Fatalf("no follow: workspaces %v floats %v", windows(m), fs.Floats)
+	}
 }

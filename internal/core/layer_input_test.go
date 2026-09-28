@@ -394,3 +394,39 @@ func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
 		t.Fatalf("popup interior motion: %+v", v)
 	}
 }
+
+// A grabbing popup hidden with its parent under a fullscreen window is
+// closed, and the keyboard goes to the fullscreen window.
+func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	<-scenes
+	client <- ports.WindowMapped{ID: 1}
+	<-scenes
+	pos := ports.Positioner{Width: 10, Height: 10, AnchorRect: ports.Rect{W: 1, H: 1}, Anchor: ports.EdgeBottomRight, Gravity: ports.EdgeBottomRight}
+	client <- ports.PopupRequest{ID: 3, Parent: 1, Positioner: pos, Grab: true}
+	next(t, commands, func(v ports.ConfigurePopup) bool { return v.ID == 3 })
+	client <- ports.PopupMapped{ID: 3}
+	if f := next(t, commands, anyOf[ports.FocusWindow]); f.ID != 3 {
+		t.Fatalf("focus %d, want the grabbing popup", f.ID)
+	}
+	// A new fullscreen window covers its parent: the popup is hidden.
+	client <- ports.WindowMapped{ID: 2}
+	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
+	next(t, commands, func(v ports.ClosePopup) bool { return v.ID == 3 })
+	if f := next(t, commands, func(v ports.FocusWindow) bool { return v.ID != 3 }); f.ID != 2 {
+		t.Fatalf("focus %d, want the fullscreen window", f.ID)
+	}
+}
