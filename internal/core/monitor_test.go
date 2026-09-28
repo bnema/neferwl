@@ -411,6 +411,23 @@ func TestNamedWorkspaceSettings(t *testing.T) {
 	}
 }
 
+// The expanded column comes back expanded from its fullscreen workspace.
+func TestMonitorFixedFullscreenKeepsExpanded(t *testing.T) {
+	m := monitor()
+	m.SetOverflow(OverflowFixed)
+	m.SetMaxColumns(3)
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	m.Current().FocusID(2)
+	m.Apply(ActionCycleColumnWidth)
+	m.ToggleFullscreen()
+	m.ToggleFullscreen()
+	if c := m.Current().Columns; len(c) != 3 || !c[1].Expanded || c[0].Expanded || c[2].Expanded {
+		t.Fatalf("%+v", c)
+	}
+}
+
 func TestMonitorFixedFullscreenOwnWorkspace(t *testing.T) {
 	m := monitor()
 	m.SetOverflow(OverflowFixed)

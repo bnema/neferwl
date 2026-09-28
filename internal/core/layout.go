@@ -83,7 +83,10 @@ type Column struct {
 	Windows   []WindowID
 	Width     Width
 	FullWidth bool
-	Focus     int
+	// Expanded is the fixed-overflow wide column: max-columns - 1 cells,
+	// the others share the last one. One column at most has it.
+	Expanded bool
+	Focus    int
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
@@ -158,9 +161,10 @@ type origPlace struct {
 	col, row, slot int
 	// stacked holds the windows left in the column: the window returns to
 	// its row in the column that still holds one of them.
-	stacked []WindowID
-	width   Width
-	float   *Float
+	stacked  []WindowID
+	width    Width
+	expanded bool
+	float    *Float
 }
 
 // Float is a floating window and its client size, logical.
@@ -426,7 +430,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]
-	col.Slot = 0
+	col.Slot, col.Expanded = 0, false
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
@@ -451,7 +455,13 @@ func (w *Workspace) insertColumn(at int, col Column) {
 	w.scroll()
 }
 
+// CycleWidth steps the focused column through the presets. Fixed overflow
+// ignores presets: it toggles the expanded column instead.
 func (w *Workspace) CycleWidth() {
+	if w.Overflow == OverflowFixed {
+		w.toggleExpanded()
+		return
+	}
 	if len(w.Columns) == 0 || len(w.presets) == 0 || w.floatFocus {
 		return
 	}
@@ -470,6 +480,20 @@ func (w *Workspace) CycleWidth() {
 	c.Width = next
 	c.FullWidth = false
 	w.scroll()
+}
+
+// toggleExpanded makes the focused column the expanded one, or shrinks it
+// back when it already is. One column at most is expanded.
+func (w *Workspace) toggleExpanded() {
+	if len(w.Columns) < 2 || max(w.MaxColumns, 1) < 2 || w.floatFocus {
+		return
+	}
+	on := !w.Columns[w.Focus].Expanded
+	for i := range w.Columns {
+		w.Columns[i].Expanded = false
+	}
+	w.Columns[w.Focus].Expanded = on
+	w.Columns[w.Focus].FullWidth = false
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
@@ -637,6 +661,9 @@ func (w *Workspace) columnRects() []Rect {
 		return rects
 	}
 	k := max(w.MaxColumns, 1)
+	if e := slices.IndexFunc(w.Columns, func(c Column) bool { return c.Expanded }); w.Overflow == OverflowFixed && e >= 0 && k > 1 && len(w.Columns) > 1 {
+		return w.expandedRects(e, k, y, h)
+	}
 	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
 		return rects
 	}
@@ -647,6 +674,51 @@ func (w *Workspace) columnRects() []Rect {
 	}
 	rects[len(rects)-1] = area
 	return rects
+}
+
+// expandedRects places expanded column e over k-1 cells in its place. The
+// columns before it stack in a strip on its left, those after it on its
+// right; the two strips share the last cell.
+func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
+	g := w.gap()
+	cell := max((w.Usable.W-g*(k+1))/k, 0)
+	wide := (k-1)*cell + (k-2)*g
+	rest := max(w.Usable.W-2*g-wide-g, 0)
+	before, after := w.Columns[:e], w.Columns[e+1:]
+	leftW, rightW := rest, rest
+	if len(before) > 0 && len(after) > 0 {
+		leftW = max((rest-g)/2, 0)
+		rightW = max(rest-g-leftW, 0)
+	}
+	rects := make([]Rect, 0, len(w.Columns))
+	x := w.Usable.X + g
+	if len(before) > 0 {
+		rects = append(rects, stackRects(Rect{X: x, Y: y, W: leftW, H: h}, len(before), g)...)
+		x += leftW + g
+	}
+	rects = append(rects, Rect{X: x, Y: y, W: wide, H: h})
+	if len(after) > 0 {
+		rects = append(rects, stackRects(Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)...)
+	}
+	return rects
+}
+
+// stackRects cuts r in n rows with a gap between them; the last row takes
+// the rounding remainder.
+func stackRects(r Rect, n, gap int) []Rect {
+	rows := make([]Rect, n)
+	avail := max(r.H-(n-1)*gap, 0)
+	height := avail / n
+	yy := r.Y
+	for i := range rows {
+		hh := height
+		if i == n-1 {
+			hh = avail - height*(n-1)
+		}
+		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
+		yy += hh + gap
+	}
+	return rows
 }
 
 // split cuts r in two halves with a gap: top/bottom when vertical, else left/right.

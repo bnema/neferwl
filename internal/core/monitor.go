@@ -339,7 +339,7 @@ func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 	} else {
 		col := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, id) })
 		c := w.Columns[col]
-		fs.back = origPlace{id: id, col: col, row: slices.Index(c.Windows, id), slot: c.Slot, width: c.Width}
+		fs.back = origPlace{id: id, col: col, row: slices.Index(c.Windows, id), slot: c.Slot, width: c.Width, expanded: c.Expanded && len(c.Windows) == 1}
 		for _, v := range c.Windows {
 			if v != id {
 				fs.back.stacked = append(fs.back.stacked, v)
@@ -402,7 +402,12 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		}
 	default:
 		at := min(back.col, len(origin.Columns))
-		origin.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot})
+		if back.expanded {
+			for i := range origin.Columns {
+				origin.Columns[i].Expanded = false
+			}
+		}
+		origin.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: back.expanded})
 		if focus {
 			origin.floatFocus = false
 		} else if len(origin.Columns) > 1 {
