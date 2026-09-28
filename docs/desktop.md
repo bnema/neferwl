@@ -101,6 +101,7 @@ While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland so
 ```sh
 neferwl state                        # the whole state as JSON
 neferwl state output-of "$PID"       # the output of that process's window, or its nearest parent's
+neferwl outputs [--json]             # connected monitors: key and input source
 ```
 
 `output-of` finds application windows only, because a bar has no single output.

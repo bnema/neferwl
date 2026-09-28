@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -32,10 +33,25 @@ func Path(runtimeDir, socket string) (string, error) {
 
 // State is the file format.
 type State struct {
-	Output  string   `json:"output"`
-	Outputs []Output `json:"outputs"`
-	Window  *Window  `json:"window"`
-	Windows []Window `json:"windows"`
+	Output   string    `json:"output"`
+	Outputs  []Output  `json:"outputs"`
+	Monitors []Monitor `json:"monitors"`
+	Window   *Window   `json:"window"`
+	Windows  []Window  `json:"windows"`
+}
+
+// Monitor is one connected monitor, shown or not. Key matches
+// output.<key>.* config; Input is the input source it shows and WantInput
+// output.<name>.input, as config names ("" when unknown or unset).
+type Monitor struct {
+	Name      string `json:"name"`
+	Key       string `json:"key"`
+	Make      string `json:"make"`
+	Model     string `json:"model"`
+	Serial    string `json:"serial"`
+	Input     string `json:"input"`
+	WantInput string `json:"want_input"`
+	Shown     bool   `json:"shown"`
 }
 
 // Output is one output: its active numbered workspace (0 while a hidden one
@@ -63,6 +79,10 @@ func fromPorts(st ports.State) State {
 	for _, o := range st.Outputs {
 		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace})
 	}
+	out.Monitors = make([]Monitor, 0, len(st.Monitors))
+	for _, m := range st.Monitors {
+		out.Monitors = append(out.Monitors, Monitor{Name: m.Name, Key: m.Key, Make: m.Make, Model: m.Model, Serial: m.Serial, Input: inputName(m.Input), WantInput: inputName(m.WantInput), Shown: m.Shown})
+	}
 	for _, w := range st.Windows {
 		out.Windows = append(out.Windows, window(w))
 	}
@@ -71,6 +91,13 @@ func fromPorts(st ports.State) State {
 		out.Window = &w
 	}
 	return out
+}
+
+func inputName(v uint16) string {
+	if v == 0 {
+		return ""
+	}
+	return ports.InputName(v)
 }
 
 func window(w ports.WindowState) Window {
@@ -203,4 +230,30 @@ func better(st State, a, b Window) bool {
 		return focused(a)
 	}
 	return a.Visible && !b.Visible
+}
+
+// WriteMonitors prints the monitors for `neferwl outputs`: connector, key
+// and input source, with the output.<key>.input line to add when the
+// monitor answers DDC/CI and has none yet.
+func WriteMonitors(w io.Writer, monitors []Monitor) error {
+	var b strings.Builder
+	for _, m := range monitors {
+		fmt.Fprintf(&b, "%s\n  key:   %s\n", m.Name, m.Key)
+		input := m.Input
+		switch {
+		case input == "":
+			input = "unknown (no DDC/CI answer)"
+		case !m.Shown:
+			input += " (another input: workspaces moved)"
+		}
+		fmt.Fprintf(&b, "  input: %s\n", input)
+		switch {
+		case m.WantInput != "":
+			fmt.Fprintf(&b, "  set:   output.%s.input = %s\n", m.Key, m.WantInput)
+		case m.Input != "":
+			fmt.Fprintf(&b, "  add, while it shows this computer:\n    output.%s.input = %s\n", m.Key, m.Input)
+		}
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
 }

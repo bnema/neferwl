@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -23,6 +22,8 @@ const (
 	// stableReads is how many reads in a row must agree before core hears
 	// of a change: one lost read never moves workspaces.
 	stableReads = 2
+	// openRetry is the time between two tries to open the DDC bus.
+	openRetry = 30 * time.Second
 
 	addrDDC     = 0x37
 	vcpInput    = 0x60
@@ -37,19 +38,34 @@ type bus interface {
 	close() error
 }
 
-// Watch reports whether the monitor on connector (e.g. "HDMI-A-1") of card
-// (e.g. "/dev/dri/card1") shows this computer, as ports.OutputShown on
-// events, until ctx ends. A monitor that never answers DDC/CI is never
-// reported: it counts as shown. log carries the "ddc" component.
-func Watch(ctx context.Context, card, connector string, clock ports.Clock, events chan<- ports.OutputEvent, log zerowrap.Logger) {
-	b, err := openBus(card, connector)
-	if err != nil {
-		log.Info().Str("connector", connector).Err(err).Msg("input source detection off")
-		return
+// Watch reports the input source the monitor on connector (e.g.
+// "HDMI-A-1") of card (e.g. "/dev/dri/card1") shows, as ports.OutputInput
+// through send, until ctx ends or send returns false. A value is reported
+// once stableReads reads in a row agree; a monitor that stops answering is
+// reported as 0 (unknown). While the bus cannot be opened (i2c-dev not
+// loaded, no access), Watch retries every openRetry. log carries the "ddc"
+// component.
+func Watch(ctx context.Context, card, connector string, clock ports.Clock, send func(ports.OutputInput) bool, log zerowrap.Logger) {
+	retry := clock.NewTimer(openRetry)
+	defer retry.Stop()
+	for logged := false; ; logged = true {
+		b, err := openBus(card, connector)
+		if err == nil {
+			defer b.close()
+			w := &watcher{name: connector, bus: b, clock: clock, send: send, log: log}
+			w.run(ctx)
+			return
+		}
+		if !logged {
+			log.Info().Str("connector", connector).Err(err).Msg("input source detection off")
+		}
+		retry.Reset(openRetry)
+		select {
+		case <-ctx.Done():
+			return
+		case <-retry.C():
+		}
 	}
-	defer b.close()
-	w := &watcher{name: connector, kind: connectorKind(connector), bus: b, clock: clock, events: events, log: log}
-	w.run(ctx)
 }
 
 // openBus opens the connector's DDC bus, /dev/i2c-N from sysfs.
@@ -69,18 +85,15 @@ func openBus(card, connector string) (bus, error) {
 }
 
 type watcher struct {
-	name   string
-	kind   string // "hdmi", "dp" or "other"
-	bus    bus
-	clock  ports.Clock
-	events chan<- ports.OutputEvent
-	log    zerowrap.Logger
-	// ours is the input source showing this computer, 0 until known.
-	ours uint16
-	// candidate is the latest state read and agreed reads the number of
-	// reads in a row that found it; sent is the last state reported.
-	candidate, sent, reported bool
-	agreed                    int
+	name  string
+	bus   bus
+	clock ports.Clock
+	send  func(ports.OutputInput) bool
+	log   zerowrap.Logger
+	// candidate is the latest input read (0: no answer) and agreed the
+	// number of reads in a row that found it; sent is the last reported.
+	candidate, sent uint16
+	agreed          int
 }
 
 func (w *watcher) run(ctx context.Context) {
@@ -91,16 +104,16 @@ func (w *watcher) run(ctx context.Context) {
 	defer delay.Stop()
 	for {
 		src, err := w.input(ctx, delay)
-		switch {
-		case ctx.Err() != nil:
+		if ctx.Err() != nil {
 			return
-		case err != nil:
-			// Asleep, off or busy: no answer tells nothing.
+		}
+		if err != nil {
+			// Asleep, off or busy: 0 once it lasts.
 			w.log.Debug().Str("connector", w.name).Err(err).Msg("input source read")
-		default:
-			if !w.observe(ctx, src) {
-				return
-			}
+			src = 0
+		}
+		if !w.observe(src) {
+			return
 		}
 		select {
 		case <-ctx.Done():
@@ -148,63 +161,20 @@ func parseReply(r []byte) (uint16, error) {
 	return uint16(r[8])<<8 | uint16(r[9]), nil
 }
 
-// observe classifies src and reports a state read stableReads times in a
-// row. It returns false when ctx ends.
-func (w *watcher) observe(ctx context.Context, src uint16) bool {
-	shown := w.shows(src)
-	if shown != w.candidate || w.agreed == 0 {
-		w.candidate, w.agreed = shown, 0
+// observe reports src once stableReads reads in a row found it and it
+// changed. It returns false when send gives up.
+func (w *watcher) observe(src uint16) bool {
+	if src != w.candidate {
+		w.candidate, w.agreed = src, 0
 	}
 	w.agreed++
-	if w.agreed < stableReads || (w.reported && w.sent == shown) {
+	if w.agreed < stableReads || src == w.sent {
 		return true
 	}
-	w.log.Info().Str("connector", w.name).Bool("shown", shown).Uint16("input", src).Msg("input source")
-	select {
-	case w.events <- ports.OutputShown{Name: w.name, Shown: shown}:
-		w.sent, w.reported = shown, true
-		return true
-	case <-ctx.Done():
+	w.log.Info().Str("connector", w.name).Str("input", ports.InputName(src)).Msg("input source")
+	if !w.send(ports.OutputInput{Name: w.name, Input: src}) {
 		return false
 	}
-}
-
-// shows reports whether src is this computer's input. The first source of
-// the connector's kind (HDMI for HDMI-A-1) is ours; one of another kind
-// never is. Vendor codes of no known kind are taken as they come. DDC/CI
-// does not tell which port the cable is on: a monitor started on another
-// input of the same kind (HDMI-1 for a cable in HDMI-2) is taken as ours.
-func (w *watcher) shows(src uint16) bool {
-	if w.ours != 0 {
-		return src == w.ours
-	}
-	if k := sourceKind(src); k != "" && k != w.kind {
-		return false
-	}
-	w.ours = src
+	w.sent = src
 	return true
-}
-
-// sourceKind is the kind of an MCCS input source value.
-func sourceKind(src uint16) string {
-	switch src & 0xff {
-	case 0x0f, 0x10:
-		return "dp"
-	case 0x11, 0x12:
-		return "hdmi"
-	case 0x01, 0x02, 0x03, 0x04:
-		return "other"
-	}
-	return ""
-}
-
-// connectorKind is the kind of a DRM connector name.
-func connectorKind(name string) string {
-	switch {
-	case strings.HasPrefix(name, "HDMI-"):
-		return "hdmi"
-	case strings.HasPrefix(name, "DP-"):
-		return "dp"
-	}
-	return "other"
 }

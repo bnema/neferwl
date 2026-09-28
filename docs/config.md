@@ -38,7 +38,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup, and the workspaces of displays that go away |
-| `output.<name>.hidden` | `move` | When the display shows another input source: `move` its workspaces to a shown display until it comes back, or `keep` them |
+| `output.<name>.input` | none | Input source of the monitor showing NeferWL (`hdmi-2`, `dp-1`, ...); see [Input sources](#input-sources) |
 | `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
 | `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
@@ -61,9 +61,21 @@ Column swipes move the focus with either overflow: `scroll` brings the column in
 
 ## Input sources
 
-NeferWL asks each monitor over DDC/CI which input source it shows. A display switched to another computer or console counts as gone: its workspaces move to the primary display (else the focused one) and return when it shows NeferWL again. A monitor that does not answer counts as shown.
+A monitor switched to another computer or console stays connected, so NeferWL asks it over DDC/CI which input source it shows. When a monitor with `output.<name>.input` shows another input, its workspaces move to the primary display (else the focused one, else the first shown one) and return when it shows NeferWL again. Monitors without the setting, or that do not answer, never move.
 
-This needs the `i2c-dev` module and access to `/dev/i2c-*`; the Arch package installs both (`modules-load.d` and a `uaccess` udev rule). The log reports `input source detection off` with the reason otherwise.
+A monitor cannot tell which of its inputs the cable uses, so `input` is set once per monitor. Run `neferwl outputs` while the monitor shows NeferWL: it prints each monitor's key, the input it shows and the line to add, for example:
+
+```
+HDMI-A-1
+  key:   GIGA-BYTE TECHNOLOGY CO., LTD. Gigabyte M32U 0x01010101
+  input: hdmi-2
+  add, while it shows this computer:
+    output.GIGA-BYTE TECHNOLOGY CO., LTD. Gigabyte M32U 0x01010101.input = hdmi-2
+```
+
+For `input`, `<name>` is a connector (`HDMI-A-1`) or a monitor key: make, model and serial as niri names them, so the setting follows the monitor to another port of the computer. Other `output.<name>.*` settings take the connector only. `neferwl outputs --json` prints the same as JSON. Vendor inputs take their hex value, e.g. `0x1f`.
+
+Detection needs the `i2c-dev` module and access to `/dev/i2c-*`; the Arch package installs both (`modules-load.d` and a `uaccess` udev rule). Otherwise the log reports `input source detection off` with the reason, and NeferWL tries again every 30 seconds.
 
 ## HDR
 

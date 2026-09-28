@@ -113,10 +113,10 @@ type Core struct {
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
-	// hidden are the displays showing another input source (OutputShown);
-	// stashed holds the screens they left, by connector, until they are
-	// shown again.
-	hidden  map[string]bool
+	// inputs are the input sources monitors show (OutputInput), by
+	// connector; stashed holds the screens of monitors showing another
+	// input than output.<name>.input, until they show this computer again.
+	inputs  map[string]uint16
 	stashed map[string]ports.OutputInfo
 }
 
@@ -257,6 +257,9 @@ func (c *Core) apply(cfg ports.Config) error {
 		c.settings(s.mon)
 	}
 	c.applyConfigScales()
+	for _, s := range c.screens {
+		s.primary = c.isPrimary(s.name())
+	}
 	return nil
 }
 
@@ -307,7 +310,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, mappedAt: map[WindowID]time.Time{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}, hidden: map[string]bool{}, stashed: map[string]ports.OutputInfo{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, mappedAt: map[WindowID]time.Time{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}, inputs: map[string]uint16{}, stashed: map[string]ports.OutputInfo{}}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -851,19 +854,15 @@ func (c *Core) Run(ctx context.Context) error {
 					c.addScreen(v.Info)
 				}
 			case ports.OutputRemoved:
-				delete(c.hidden, v.Name)
+				delete(c.inputs, v.Name)
 				delete(c.stashed, v.Name)
 				c.removeScreen(v.Name)
-			case ports.OutputShown:
+			case ports.OutputInput:
 				// A late report about an unplugged display is stale.
 				if _, stashed := c.stashed[v.Name]; c.screenIndex(v.Name) < 0 && !stashed {
 					break
 				}
-				if v.Shown {
-					delete(c.hidden, v.Name)
-				} else {
-					c.hidden[v.Name] = true
-				}
+				c.inputs[v.Name] = v.Input
 			}
 			c.screensChanged()
 			if c.workspaceVisible(ctx, false) != nil {
@@ -884,7 +883,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
-			// output.<name>.hidden may have changed.
+			// output.<name>.input and .primary may have changed.
 			c.screensChanged()
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil

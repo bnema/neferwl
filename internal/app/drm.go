@@ -165,11 +165,24 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	}()
 	set := newOutputSet(ctx, ch.captured)
 	cards := map[string]*drmCard{}
-	// watchers stop the input source watch of each running output.
-	watchers := map[string]context.CancelFunc{}
+	// watchers stop the input source watch of each connected output. A
+	// watch reports through inputs with its generation: a report of a
+	// stopped watch, still in flight, is dropped, so core never hears of an
+	// old monitor after OutputRemoved or a new OutputAdded.
+	type watch struct {
+		gen  uint64
+		stop context.CancelFunc
+	}
+	type inputReport struct {
+		gen uint64
+		ev  ports.OutputInput
+	}
+	watchers := map[string]watch{}
+	inputs := make(chan inputReport)
+	var watchGen uint64
 	defer func() {
-		for _, stop := range watchers {
-			stop()
+		for _, w := range watchers {
+			w.stop()
 		}
 	}()
 	send := func(ev ports.OutputEvent) {
@@ -292,10 +305,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				send(ports.OutputAdded{Info: o.Info()})
 				// One watch per connector: a mode change keeps it, so no
 				// report of an older watch follows the new OutputAdded.
-				if watchers[name] == nil {
+				if _, ok := watchers[name]; !ok {
+					watchGen++
+					gen := watchGen
 					wctx, stopWatch := context.WithCancel(ctx)
-					watchers[name] = stopWatch
-					go ddc.Watch(wctx, c.Path(), name, b.clock, ch.events, logging.For(ctx, "ddc"))
+					watchers[name] = watch{gen, stopWatch}
+					report := func(ev ports.OutputInput) bool {
+						select {
+						case inputs <- inputReport{gen, ev}:
+							return true
+						case <-wctx.Done():
+							return false
+						}
+					}
+					go ddc.Watch(wctx, c.Path(), name, b.clock, report, logging.For(ctx, "ddc"))
 				}
 			}
 		}
@@ -374,6 +397,10 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			apply.replySent()
 		case heads <- headsNext:
 			apply.headsSent()
+		case r := <-inputs:
+			if w, ok := watchers[r.ev.Name]; ok && w.gen == r.gen {
+				send(r.ev)
+			}
 		case result := <-ready:
 			complete(progress.readyEvent(result.name, result.source, readySources[result.name], result.err))
 		case <-deadline:
@@ -434,8 +461,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			}
 			// Core ignores reports for outputs it does not know, so a
 			// report racing OutputRemoved is harmless.
-			if stop := watchers[name]; stop != nil {
-				stop()
+			if w, ok := watchers[name]; ok {
+				w.stop()
 				delete(watchers, name)
 			}
 			send(ports.OutputRemoved{Name: name})

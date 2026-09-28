@@ -62,7 +62,8 @@ func startRig(t *testing.T, connector string, answers ...any) *rig {
 	clock := portsmocks.NewMockClock(t)
 	clock.EXPECT().NewTicker(Interval).Return(ticker).Once()
 	clock.EXPECT().NewTimer(replyDelay).Return(delay).Once()
-	w := &watcher{name: connector, kind: connectorKind(connector), bus: b, clock: clock, events: r.events, log: zerowrap.Default()}
+	send := func(ev ports.OutputInput) bool { r.events <- ev; return true }
+	w := &watcher{name: connector, bus: b, clock: clock, send: send, log: zerowrap.Default()}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { w.run(ctx); close(done) }()
@@ -94,15 +95,15 @@ func (r *rig) last(t *testing.T) {
 	r.stop()
 }
 
-func (r *rig) got() []ports.OutputShown {
-	var list []ports.OutputShown
+func (r *rig) got() []ports.OutputInput {
+	var list []ports.OutputInput
 	for len(r.events) > 0 {
-		list = append(list, (<-r.events).(ports.OutputShown))
+		list = append(list, (<-r.events).(ports.OutputInput))
 	}
 	return list
 }
 
-func expect(t *testing.T, got []ports.OutputShown, want ...ports.OutputShown) {
+func expect(t *testing.T, got []ports.OutputInput, want ...ports.OutputInput) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -128,39 +129,27 @@ func TestInputSourceChange(t *testing.T) {
 	}
 	r.last(t)
 	expect(t, r.got(),
-		ports.OutputShown{Name: "HDMI-A-1", Shown: true},
-		ports.OutputShown{Name: "HDMI-A-1", Shown: false},
-		ports.OutputShown{Name: "HDMI-A-1", Shown: true})
+		ports.OutputInput{Name: "HDMI-A-1", Input: hdmi2},
+		ports.OutputInput{Name: "HDMI-A-1", Input: dp2},
+		ports.OutputInput{Name: "HDMI-A-1", Input: hdmi2})
 }
 
-// One odd read between two agreeing ones moves nothing; failed reads
-// neither count nor reset the agreement.
+// One odd read between agreeing ones reports nothing; a lasting silence is
+// reported as unknown (0).
 func TestInputSourceNeedsTwoReads(t *testing.T) {
 	busy := errors.New("remote I/O error")
-	r := startRig(t, "HDMI-A-1", reply(hdmi2), reply(hdmi2), reply(dp2), reply(hdmi2), busy, reply(0x00), reply(dp2), busy, reply(dp2))
-	for range 8 {
+	r := startRig(t, "HDMI-A-1", reply(hdmi2), reply(hdmi2), reply(dp2), reply(hdmi2), busy, reply(hdmi2), busy, busy, reply(dp2), reply(dp2))
+	for range 9 {
 		r.next(t)
 	}
 	r.last(t)
 	expect(t, r.got(),
-		ports.OutputShown{Name: "HDMI-A-1", Shown: true},
-		ports.OutputShown{Name: "HDMI-A-1", Shown: false})
+		ports.OutputInput{Name: "HDMI-A-1", Input: hdmi2},
+		ports.OutputInput{Name: "HDMI-A-1", Input: 0},
+		ports.OutputInput{Name: "HDMI-A-1", Input: dp2})
 }
 
-// Started while the monitor shows a DisplayPort input, an HDMI connector
-// is hidden; the first HDMI input then becomes ours.
-func TestInputSourceStartsOnAnotherInput(t *testing.T) {
-	r := startRig(t, "HDMI-A-1", reply(dp2), reply(dp2), reply(hdmi2), reply(hdmi2))
-	for range 3 {
-		r.next(t)
-	}
-	r.last(t)
-	expect(t, r.got(),
-		ports.OutputShown{Name: "HDMI-A-1", Shown: false},
-		ports.OutputShown{Name: "HDMI-A-1", Shown: true})
-}
-
-// A monitor that never answers reports nothing: it counts as shown.
+// A monitor that never answers reports nothing: 0 is where it starts.
 func TestInputSourceNoAnswer(t *testing.T) {
 	r := startRig(t, "DP-2", errors.New("no device"), errors.New("no device"), errors.New("no device"))
 	r.next(t)

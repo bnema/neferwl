@@ -1,6 +1,7 @@
 package ports
 
 import (
+	"fmt"
 	"image"
 	"os"
 	"time"
@@ -397,13 +398,20 @@ type OutputInfo struct {
 	PhysicalW, PhysicalH int // millimetres
 }
 
-// Key identifies the monitor across connectors: make, model and serial, or
-// the connector name when EDID has no serial.
+// Key identifies the monitor across connectors, as niri does: make, model
+// and serial, "Unknown" for a missing one, or the connector name when EDID
+// has none of them.
 func (i OutputInfo) Key() string {
-	if i.Serial == "" {
+	if i.Make == "" && i.Model == "" && i.Serial == "" {
 		return i.Name
 	}
-	return i.Make + " " + i.Model + " " + i.Serial
+	unknown := func(v string) string {
+		if v == "" {
+			return "Unknown"
+		}
+		return v
+	}
+	return unknown(i.Make) + " " + unknown(i.Model) + " " + unknown(i.Serial)
 }
 
 // OutputMode describes a connected connector's physical mode.
@@ -510,14 +518,34 @@ type OutputRemoved struct{ Name string }
 
 func (OutputRemoved) outputEvent() {}
 
-// OutputShown carries output → core whether a connected display shows this
-// computer. Shown false: the monitor shows another input source.
-type OutputShown struct {
+// OutputInput carries output → core the input source a monitor shows, read
+// over DDC/CI (MCCS VCP 0x60), once it is stable. Input 0: unknown (no
+// answer). Core compares it with output.<name>.input.
+type OutputInput struct {
 	Name  string
-	Shown bool
+	Input uint16
 }
 
-func (OutputShown) outputEvent() {}
+func (OutputInput) outputEvent() {}
+
+// Input sources of MCCS VCP 0x60, by config name. Monitors number their
+// inputs from 1 like their on-screen menu.
+var InputSources = map[string]uint16{
+	"vga-1": 0x01, "vga-2": 0x02, "dvi-1": 0x03, "dvi-2": 0x04,
+	"dp-1": 0x0f, "dp-2": 0x10, "hdmi-1": 0x11, "hdmi-2": 0x12,
+	"usb-c": 0x1b,
+}
+
+// InputName is the config name of an input source value, else its hex
+// value (e.g. 0x1f) for vendor codes.
+func InputName(v uint16) string {
+	for name, code := range InputSources {
+		if code == v {
+			return name
+		}
+	}
+	return fmt.Sprintf("0x%02x", v)
+}
 
 // ConfigChanged carries config → core reloads.
 type ConfigChanged struct{ Config Config }
@@ -1029,6 +1057,9 @@ type State struct {
 	// Output is the focused output; "" before the first one.
 	Output  string
 	Outputs []OutputState
+	// Monitors are the connected monitors, by connector, including those
+	// showing another input source (not in Outputs).
+	Monitors []MonitorState
 	// Window is the focused window, nil when none.
 	Window  *WindowState
 	Windows []WindowState
@@ -1041,6 +1072,16 @@ type OutputState struct {
 	Active    int
 	Count     int
 	Workspace string // name of the workspace on screen, "" if unnamed
+}
+
+// MonitorState is one connected monitor. Input is the input source it
+// shows (0: unknown), WantInput output.<name>.input (0: unset); Shown is
+// false while it shows another input and its workspaces are elsewhere.
+type MonitorState struct {
+	Name, Key           string
+	Make, Model, Serial string
+	Input, WantInput    uint16
+	Shown               bool
 }
 
 // WindowState is one mapped window and where it is.

@@ -120,6 +120,9 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "state" {
 		return runState(os.Args[2:])
 	}
+	if len(os.Args) > 1 && os.Args[1] == "outputs" {
+		return runOutputs(os.Args[2:])
+	}
 	if len(os.Args) == 2 && os.Args[1] == "version" {
 		info, ok := debug.ReadBuildInfo()
 		if !ok {
@@ -303,17 +306,8 @@ func runState(args []string) error {
 		fmt.Fprintln(os.Stderr, usage)
 		return usage
 	}
-	path := os.Getenv(statefile.Env)
-	if path == "" {
-		var err error
-		if path, err = statefile.Path(os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("WAYLAND_DISPLAY")); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return err
-		}
-	}
-	st, err := statefile.Read(path)
+	st, err := readState()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 	var out any = st
@@ -324,6 +318,49 @@ func runState(args []string) error {
 		}
 	}
 	data, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// readState reads $NEFERWL_STATE, else the state file of $WAYLAND_DISPLAY.
+func readState() (statefile.State, error) {
+	path := os.Getenv(statefile.Env)
+	if path == "" {
+		var err error
+		if path, err = statefile.Path(os.Getenv("XDG_RUNTIME_DIR"), os.Getenv("WAYLAND_DISPLAY")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return statefile.State{}, err
+		}
+	}
+	st, err := statefile.Read(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	return st, err
+}
+
+// runOutputs prints the connected monitors of the session: connector,
+// monitor key and input source, for output.<key>.* config.
+//
+//	neferwl outputs [--json]
+func runOutputs(args []string) error {
+	asJSON := len(args) == 1 && args[0] == "--json"
+	if len(args) > 1 || (len(args) == 1 && !asJSON) {
+		err := usageError{fmt.Errorf("usage: outputs [--json]")}
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	st, err := readState()
+	if err != nil {
+		return err
+	}
+	if !asJSON {
+		return statefile.WriteMonitors(os.Stdout, st.Monitors)
+	}
+	data, err := json.Marshal(st.Monitors)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,8 +38,9 @@ func TestRunWritesAndRemoves(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- Run(ctx, path, states, zerowrap.Default()) }()
 	focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}
-	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1}}, Window: &focused, Windows: []ports.WindowState{focused}}
-	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}}}
+	monitors := []ports.MonitorState{{Name: "DP-2", Key: "Acme B 2", Make: "Acme", Model: "B", Serial: "2", Input: 0x12, WantInput: 0x12, Shown: true}, {Name: "HDMI-A-1", Key: "HDMI-A-1", Shown: true}}
+	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1}}, Monitors: monitors, Window: &focused, Windows: []ports.WindowState{focused}}
+	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1}}, Monitors: []Monitor{{Name: "DP-2", Key: "Acme B 2", Make: "Acme", Model: "B", Serial: "2", Input: "hdmi-2", WantInput: "hdmi-2", Shown: true}, {Name: "HDMI-A-1", Key: "HDMI-A-1", Shown: true}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}}}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if got, err := Read(path); err == nil && got.Output != "stale" {
@@ -116,5 +118,35 @@ func TestOutputOfPrefersFocusedWindow(t *testing.T) {
 func TestLinuxProcTreeParent(t *testing.T) {
 	if ppid, ok := (linuxProcTree{}).Parent(os.Getpid()); !ok || ppid != os.Getppid() {
 		t.Fatal(ppid, ok)
+	}
+}
+
+// The text output shows each monitor's key and input, and the config line
+// to add once the monitor answers.
+func TestWriteMonitors(t *testing.T) {
+	var b strings.Builder
+	err := WriteMonitors(&b, []Monitor{
+		{Name: "HDMI-A-1", Key: "GBT M32U 0x01010101", Input: "hdmi-2", Shown: true},
+		{Name: "DP-2", Key: "LG ULTRAGEAR+ SN1", Input: "dp-1", WantInput: "hdmi-1"},
+		{Name: "DP-3", Key: "DP-3"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `HDMI-A-1
+  key:   GBT M32U 0x01010101
+  input: hdmi-2
+  add, while it shows this computer:
+    output.GBT M32U 0x01010101.input = hdmi-2
+DP-2
+  key:   LG ULTRAGEAR+ SN1
+  input: dp-1 (another input: workspaces moved)
+  set:   output.LG ULTRAGEAR+ SN1.input = hdmi-1
+DP-3
+  key:   DP-3
+  input: unknown (no DDC/CI answer)
+`
+	if b.String() != want {
+		t.Fatalf("got\n%s\nwant\n%s", b.String(), want)
 	}
 }

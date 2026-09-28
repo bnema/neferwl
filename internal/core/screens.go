@@ -204,9 +204,28 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 	c.named()
 }
 
-// removeScreen moves every workspace of an unplugged output to the primary
-// screen, else the focused one (another one if it was focused), numbered
-// ones below its numbered workspaces, hidden ones hidden. They remember their home and position and
+// host picks the screen taking the workspaces of a screen that leaves:
+// the primary one, else focused, else the first, each preferred while its
+// display shows this computer.
+func (c *Core) host(focused *screen) *screen {
+	for _, shownOnly := range []bool{true, false} {
+		ok := func(s *screen) bool { return !shownOnly || c.shown(s) }
+		if j := slices.IndexFunc(c.screens, func(s *screen) bool { return s.primary && ok(s) }); j >= 0 {
+			return c.screens[j]
+		}
+		if slices.Contains(c.screens, focused) && ok(focused) {
+			return focused
+		}
+		if j := slices.IndexFunc(c.screens, ok); j >= 0 {
+			return c.screens[j]
+		}
+	}
+	return c.screens[0]
+}
+
+// removeScreen moves every workspace of an unplugged output to the host
+// screen (see host), numbered ones below its numbered workspaces, hidden
+// ones hidden. They remember their home and position and
 // return when it is plugged in again. The last output becomes the
 // placeholder again: it keeps its windows for the next output.
 func (c *Core) removeScreen(name string) {
@@ -222,13 +241,7 @@ func (c *Core) removeScreen(name string) {
 	gone := c.screens[i]
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
-	host := c.screens[0]
-	if j := slices.Index(c.screens, focused); j >= 0 {
-		host = focused
-	}
-	if j := slices.IndexFunc(c.screens, func(s *screen) bool { return s.primary }); j >= 0 {
-		host = c.screens[j]
-	}
+	host := c.host(focused)
 	if gone == focused {
 		focused = host
 	}
@@ -384,38 +397,49 @@ func (c *Core) moveWorkspace(dir int) {
 	c.focusScreen = to
 }
 
-// keepsHidden reports output.<name>.hidden = keep.
-func (c *Core) keepsHidden(name string) bool {
+// wantInput is output.<name>.input of the monitor, by connector or
+// monitor key; 0 when unset.
+func (c *Core) wantInput(info ports.OutputInfo) uint16 {
+	var want uint16
 	for _, o := range c.cfg.Outputs {
-		if o.Name == name && o.KeepHidden {
-			return true
+		if o.Input != 0 && (o.Name == info.Name || o.Name == info.Key()) {
+			want = o.Input
 		}
 	}
-	return false
+	return want
 }
 
-// syncHidden makes the screens follow the displays showing another input
+// showsOther reports whether the monitor is known to show another input
+// source than output.<name>.input. Unset or unknown: it shows us.
+func (c *Core) showsOther(info ports.OutputInfo) bool {
+	want, got := c.wantInput(info), c.inputs[info.Name]
+	return want != 0 && got != 0 && got != want
+}
+
+// shown reports whether a screen's display shows this computer and is on.
+func (c *Core) shown(s *screen) bool { return !s.off && !c.showsOther(s.info) }
+
+// syncHidden makes the screens follow the monitors showing another input
 // source: such a screen leaves like an unplugged output, so its workspaces
-// move to a shown one, and comes back with them when its display shows
-// this computer again. A screen stays while no shown screen is left to
-// take its workspaces.
+// move to a shown one, and comes back with them when its monitor shows
+// this computer again. A screen stays while no other screen is shown to
+// take its workspaces. A display turned off by a client stays: it may
+// stop answering or fall back to another input on its own.
 func (c *Core) syncHidden() {
 	for _, name := range slices.Sorted(maps.Keys(c.stashed)) {
-		if !c.hidden[name] || c.keepsHidden(name) {
-			info := c.stashed[name]
+		if info := c.stashed[name]; !c.showsOther(info) {
 			delete(c.stashed, name)
 			c.addScreen(info)
 		}
 	}
-	for _, name := range slices.Sorted(maps.Keys(c.hidden)) {
-		i := c.screenIndex(name)
-		shownLeft := slices.ContainsFunc(c.screens, func(s *screen) bool { return s.name() != name && !c.hidden[s.name()] })
-		// A display turned off by a client may stop answering or fall
-		// back to another input on its own: that is not the user leaving.
-		if i < 0 || !shownLeft || c.keepsHidden(name) || c.screens[i].off {
+	for _, s := range slices.Clone(c.screens) {
+		if s.name() == "" || s.off || !c.showsOther(s.info) {
 			continue
 		}
-		c.stashed[name] = c.screens[i].info
-		c.removeScreen(name)
+		if !slices.ContainsFunc(c.screens, func(o *screen) bool { return o != s && c.shown(o) }) {
+			continue
+		}
+		c.stashed[s.name()] = s.info
+		c.removeScreen(s.name())
 	}
 }

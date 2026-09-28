@@ -95,6 +95,23 @@ func TestParseEDID(t *testing.T) {
 	}
 }
 
+// Without name and serial descriptors, the product code and serial number
+// stand in, formatted like libdisplay-info.
+func TestParseEDIDNumbers(t *testing.T) {
+	d := make([]byte, 128)
+	copy(d, "\x00\xff\xff\xff\xff\xff\xff\x00")
+	d[8], d[9] = 0x1c, 0x54 // GBT
+	d[10], d[11] = 0x04, 0x32
+	d[12], d[13], d[14], d[15] = 0x01, 0x01, 0x01, 0x01
+	if m := parseEDID(d); m.Model != "0x3204" || m.Serial != "0x01010101" {
+		t.Fatalf("%+v", m)
+	}
+	d[10], d[11], d[12], d[13], d[14], d[15] = 0, 0, 0, 0, 0, 0
+	if m := parseEDID(d); m.Model != "Unknown" || m.Serial != "" {
+		t.Fatalf("%+v", m)
+	}
+}
+
 func TestParseFlips(t *testing.T) {
 	ev := func(typ, crtc uint32, user uint64, sec, usec, seq uint32) []byte {
 		b := make([]byte, 32)

@@ -13,8 +13,10 @@ const DefaultSDRBrightness = 203
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
-// KeepHidden keeps the workspaces of a display that shows another input
-// source; by default they move to a shown display until it comes back.
+// Input is the monitor input source (MCCS VCP 0x60) showing this
+// computer, 0 when unset. When the monitor shows another one, its
+// workspaces move to a shown display until it comes back. Name is then a
+// connector or a monitor key (OutputInfo.Key).
 // ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
 type OutputConfig struct {
@@ -27,7 +29,7 @@ type OutputConfig struct {
 	Primary       bool
 	HDR           bool // opt-in to HDR10 on capable outputs
 	SDRBrightness int  // nits; default DefaultSDRBrightness
-	KeepHidden    bool
+	Input         uint16
 	ScaleOnly     bool
 }
 

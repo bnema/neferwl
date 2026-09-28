@@ -2,6 +2,8 @@ package drm
 
 import (
 	"bufio"
+	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -69,6 +71,18 @@ func parseEDID(d []byte) Monitor {
 			m.Model = text
 		case 0xff:
 			m.Serial = text
+		}
+	}
+	// Without descriptors, the product code and serial number stand in,
+	// as libdisplay-info (and so niri) does: monitor keys match niri's.
+	if m.Model == "Unknown" {
+		if code := uint16(d[10]) | uint16(d[11])<<8; code != 0 {
+			m.Model = fmt.Sprintf("0x%04X", code)
+		}
+	}
+	if m.Serial == "" {
+		if n := binary.LittleEndian.Uint32(d[12:16]); n != 0 {
+			m.Serial = fmt.Sprintf("0x%08X", n)
 		}
 	}
 	return m

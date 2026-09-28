@@ -49,6 +49,19 @@ func (c *Core) state() ports.State {
 			}
 		}
 	}
+	st.Monitors = []ports.MonitorState{}
+	monitor := func(info ports.OutputInfo, shown bool) {
+		st.Monitors = append(st.Monitors, ports.MonitorState{Name: info.Name, Key: info.Key(), Make: info.Make, Model: info.Model, Serial: info.Serial, Input: c.inputs[info.Name], WantInput: c.wantInput(info), Shown: shown})
+	}
+	for _, s := range c.screens {
+		if s.name() != "" {
+			monitor(s.info, true)
+		}
+	}
+	for _, info := range c.stashed {
+		monitor(info, false)
+	}
+	slices.SortFunc(st.Monitors, func(a, b ports.MonitorState) int { return cmp.Compare(a.Name, b.Name) })
 	slices.SortFunc(st.Windows, func(a, b ports.WindowState) int { return cmp.Compare(a.ID, b.ID) })
 	for i := range st.Windows {
 		if st.Windows[i].ID == focus && focus != 0 {

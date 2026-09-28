@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -231,14 +232,15 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				entry().Primary = b
 				continue
 			}
-			if base, ok := strings.CutSuffix(name, ".hidden"); ok {
+			if base, ok := strings.CutSuffix(name, ".input"); ok {
 				name = base
-				if value != "move" && value != "keep" {
-					warn("%s: must be move or keep", key)
+				v, err := parseInput(value)
+				if err != nil {
+					warn("%s: %v", key, err)
 					continue
 				}
 				override()
-				entry().KeepHidden = value == "keep"
+				entry().Input = v
 				continue
 			}
 			if base, ok := strings.CutSuffix(name, ".hdr"); ok {
@@ -285,7 +287,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale, o.Primary, o.HDR, o.SDRBrightness, o.KeepHidden = e.Scale, e.Primary, e.HDR, e.SDRBrightness, e.KeepHidden
+			o.Scale, o.Primary, o.HDR, o.SDRBrightness, o.Input = e.Scale, e.Primary, e.HDR, e.SDRBrightness, e.Input
 			*e = o
 			continue
 		}
@@ -688,6 +690,21 @@ func positive(dst *int, v string, max int) error {
 	}
 	*dst = n
 	return nil
+}
+
+// parseInput reads an input source: a name such as hdmi-2 or dp-1, or a
+// raw MCCS VCP 0x60 value such as 0x0f for vendor inputs.
+func parseInput(v string) (uint16, error) {
+	if code, ok := ports.InputSources[strings.ToLower(v)]; ok {
+		return code, nil
+	}
+	if hex, ok := strings.CutPrefix(strings.ToLower(v), "0x"); ok {
+		if n, err := strconv.ParseUint(hex, 16, 16); err == nil && n != 0 {
+			return uint16(n), nil
+		}
+	}
+	names := slices.Sorted(maps.Keys(ports.InputSources))
+	return 0, fmt.Errorf("must be %s or a hex value such as 0x12", strings.Join(names, ", "))
 }
 
 func onOff(v string) (bool, error) {
