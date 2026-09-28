@@ -516,6 +516,21 @@ func TestFixedExpandColumn(t *testing.T) {
 			check(t, w, before)
 		}
 	})
+	t.Run("stays on screen when gaps do not fit", func(t *testing.T) {
+		for _, w := range []*Workspace{fixedWorkspace(2, 4, 30), fixedWorkspace(4, 4, 4)} {
+			if w.MaxColumns == 4 {
+				w.SetOutput(12, 80)
+			}
+			w.FocusID(2)
+			w.CycleWidth()
+			for id, p := range placements(w) {
+				r := p.Rect
+				if r.X < 0 || r.Y < 0 || r.W < 0 || r.H < 0 || r.X+r.W > w.Output.W || r.Y+r.H > w.Output.H {
+					t.Fatal(id, r)
+				}
+			}
+		}
+	})
 	t.Run("maximize wins and gives it back", func(t *testing.T) {
 		w := fixedWorkspace(4, 0, 2)
 		w.FocusID(1)

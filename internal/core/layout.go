@@ -769,21 +769,30 @@ func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
 	if len(after) > 0 {
 		rects = append(rects, stackRects(Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)...)
 	}
+	// Gaps wider than a narrow output would push columns past its edge.
+	right := w.Usable.X + w.Usable.W
+	for i := range rects {
+		rects[i].X = min(rects[i].X, right)
+		rects[i].W = min(rects[i].W, right-rects[i].X)
+	}
 	return rects
 }
 
 // stackRects cuts r in n rows with a gap between them; the last row takes
-// the rounding remainder.
+// the rounding remainder. Rows past the bottom (gaps taller than r) are
+// clamped to it, like windows stacked in a column.
 func stackRects(r Rect, n, gap int) []Rect {
 	rows := make([]Rect, n)
 	avail := max(r.H-(n-1)*gap, 0)
 	height := avail / n
-	yy := r.Y
+	yy, bottom := r.Y, r.Y+r.H
 	for i := range rows {
 		hh := height
 		if i == n-1 {
 			hh = avail - height*(n-1)
 		}
+		yy = min(yy, bottom)
+		hh = min(hh, bottom-yy)
 		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
 		yy += hh + gap
 	}
