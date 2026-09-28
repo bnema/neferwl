@@ -246,11 +246,11 @@ func (t *toplevelRequests) SetRectangle(r *wlr.ZwlrForeignToplevelHandleV1, _ *w
 }
 func (t *toplevelRequests) SetFullscreen(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Output) {
 	if w := t.window(); w != nil {
-		t.s.emit(ports.WindowFullscreenRequest{ID: w.id, Fullscreen: true})
+		t.s.emit(ports.WindowFullscreenRequest{ID: w.id, Fullscreen: true, External: true})
 	}
 }
 func (t *toplevelRequests) UnsetFullscreen(*wlr.ZwlrForeignToplevelHandleV1) {
 	if w := t.window(); w != nil {
-		t.s.emit(ports.WindowFullscreenRequest{ID: w.id})
+		t.s.emit(ports.WindowFullscreenRequest{ID: w.id, External: true})
 	}
 }

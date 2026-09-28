@@ -5,8 +5,22 @@ import (
 	"testing"
 	"time"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// laterClock moves fullscreenGrace forward on each Now: fullscreen
+// requests are past the grace.
+func laterClock(t *testing.T) *portsmocks.MockClock {
+	t.Helper()
+	now := time.Unix(0, 0)
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().RunAndReturn(func() time.Time {
+		now = now.Add(fullscreenGrace)
+		return now
+	}).Maybe()
+	return clock
+}
 
 func TestArrangeLayers(t *testing.T) {
 	bar := ports.LayerSurface{ID: 1, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 1920, Height: 30, ExclusiveZone: 30}
@@ -139,7 +153,7 @@ func TestFullscreenSceneLayers(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes})
+	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: laterClock(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

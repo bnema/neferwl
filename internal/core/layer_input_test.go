@@ -186,7 +186,7 @@ func TestLayerHitOrder(t *testing.T) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 256)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Clock: steppingClock(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes})
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: steppingClock(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

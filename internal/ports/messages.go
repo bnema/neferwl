@@ -94,9 +94,12 @@ type OutputPower struct {
 func (OutputPower) clientEvent() {}
 
 // WindowFullscreenRequest carries wayland → core fullscreen requests.
+// External is set when another client (a taskbar, through foreign
+// toplevel) asks for it, not the window itself.
 type WindowFullscreenRequest struct {
 	ID         WindowID
 	Fullscreen bool
+	External   bool
 }
 
 func (WindowFullscreenRequest) clientEvent() {}

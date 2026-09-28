@@ -129,11 +129,11 @@ func TestForeignToplevel(t *testing.T) {
 
 	// Requests reach core as the xdg-shell and xdg-activation messages.
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestSetFullscreen, uint32(0))
-	if ev := clientEvent[ports.WindowFullscreenRequest](t, events); ev != (ports.WindowFullscreenRequest{ID: w.ID, Fullscreen: true}) {
+	if ev := clientEvent[ports.WindowFullscreenRequest](t, events); ev != (ports.WindowFullscreenRequest{ID: w.ID, Fullscreen: true, External: true}) {
 		t.Fatalf("set_fullscreen = %#v", ev)
 	}
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestUnsetFullscreen)
-	if ev := clientEvent[ports.WindowFullscreenRequest](t, events); ev != (ports.WindowFullscreenRequest{ID: w.ID}) {
+	if ev := clientEvent[ports.WindowFullscreenRequest](t, events); ev != (ports.WindowFullscreenRequest{ID: w.ID, External: true}) {
 		t.Fatalf("unset_fullscreen = %#v", ev)
 	}
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestActivate, seat)
