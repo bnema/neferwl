@@ -284,6 +284,9 @@ func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 	case w.origin != nil && id != w.back.id:
 		// A dialog of a fullscreen workspace already floats above it; its
 		// own fullscreen would take the workspace from the window it holds.
+	case w.floatsHidden && w.floatIndex(id) >= 0:
+		// A hidden float stays hidden: its fullscreen waits for the show.
+		w.SetFullscreen(id, on)
 	case on && m.ownWorkspace(w, id):
 		focused, _ := w.Focused()
 		m.enterFullscreen(w, id, w == m.Current() && focused == id)

@@ -40,10 +40,17 @@ func TestConfigureVisible(t *testing.T) {
 	visible := func(want map[WindowID]bool) {
 		t.Helper()
 		publish()
+		state := map[WindowID]bool{}
+		for _, s := range c.state().Windows {
+			state[s.ID] = s.Visible
+		}
 		for id, vis := range want {
 			v := sent[id]
 			if v.Visible != vis || v.Output == "" || v.Width <= 0 {
 				t.Fatalf("window %d: %+v, want visible %v", id, v, vis)
+			}
+			if state[id] != vis {
+				t.Fatalf("window %d: state visible %v, want %v", id, state[id], vis)
 			}
 		}
 	}

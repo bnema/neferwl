@@ -317,6 +317,30 @@ func (c *Core) clientRect(p Placement) Rect {
 	return p.Rect.Inset(p.Inset, c.cfg.Border.Width)
 }
 
+// onScreen reports whether a placement is drawn on its output o: not
+// hidden and not scrolled off.
+func onScreen(p Placement, o Rect) bool {
+	return !p.Hidden && p.Rect.Overlaps(Rect{W: o.W, H: o.H})
+}
+
+// floatDim is the veil opacity of a layout: dim while a float is drawn
+// over the tiles, none under a fullscreen float (nothing is seen below).
+func floatDim(layout []Placement, o Rect, dim float64) float64 {
+	shown := false
+	for _, p := range layout {
+		if p.Floating && onScreen(p, o) {
+			if p.Fullscreen {
+				return 0
+			}
+			shown = true
+		}
+	}
+	if !shown {
+		return 0
+	}
+	return dim
+}
+
 // visible reports whether the window, layer surface or popup is on screen
 // on any output.
 func (c *Core) visible(id WindowID) bool {
@@ -420,10 +444,7 @@ func (c *Core) publish(ctx context.Context) error {
 		o := sc.mon.Output()
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: append([]ports.SceneLayer(nil), sc.placed...)}
 		layout := sc.mon.Layout()
-		w := sc.mon.Current()
-		if !w.floatsHidden && w.fullscreen == 0 && len(w.Floats) > 0 {
-			scene.Dim = c.cfg.Floating.Dim
-		}
+		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
 		for _, p := range layout {
@@ -452,7 +473,7 @@ func (c *Core) publish(ctx context.Context) error {
 				continue
 			}
 			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: p.Rect.Overlaps(Rect{W: o.W, H: o.H})}
+			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: onScreen(p, o)}
 			if v.Floating && !sc.mon.Current().imposedFloat(p.ID) {
 				// Native floating windows pick their own size.
 				v.Width, v.Height = 0, 0

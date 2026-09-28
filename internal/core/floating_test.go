@@ -90,6 +90,26 @@ func TestToggleWindowFloatingKeepsFullWidth(t *testing.T) {
 	}
 }
 
+// A client fullscreen request of a hidden float leaves it hidden on its
+// workspace, even in fixed overflow (which moves fullscreen windows out).
+func TestHiddenFloatFullscreenRequest(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddFloating(2, 20, 10)
+	w := m.Current()
+	w.ToggleFloatingVisible()
+	m.SetFullscreen(2, true)
+	if m.Current() != w || w.floatIndex(2) < 0 || !w.floatsHidden || w.fullscreen != 0 {
+		t.Fatalf("hidden float left or showed: %+v", w)
+	}
+	w.ToggleFloatingVisible()
+	if w.fullscreen != 2 {
+		t.Fatalf("fullscreen lost on show: %d", w.fullscreen)
+	}
+}
+
 // Hiding floats keeps the columns' focus, and a hidden fullscreen float
 // no longer hides the columns.
 func TestToggleFloatingVisibleFocusAndFullscreen(t *testing.T) {
@@ -183,4 +203,13 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	w.ToggleWindowFloating()
 	w.SetFullscreen(1, true)
 	check(0)
+	// A dialog shown over a fullscreen tile dims it.
+	w.SetFullscreen(1, false)
+	w.RemoveWindow(1)
+	w.RemoveWindow(2)
+	w.AddWindow(3)
+	w.SetFullscreen(3, true)
+	check(0)
+	w.AddFloating(4, 20, 10)
+	check(0.3)
 }

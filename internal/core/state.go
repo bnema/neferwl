@@ -36,11 +36,16 @@ func (c *Core) state() ports.State {
 			o.Active = i + 1
 		}
 		st.Outputs = append(st.Outputs, o)
+		// Visible follows the configures: drawn on the output.
+		shown := map[WindowID]bool{}
+		for _, p := range m.Layout() {
+			shown[p.ID] = onScreen(p, m.Output())
+		}
 		for _, w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1
 			for _, id := range w.windows() {
 				info := c.clients[id]
-				st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: w == cur && !(w.floatsHidden && w.floatIndex(id) >= 0), IdleInhibit: c.idle[id]})
+				st.Windows = append(st.Windows, ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: shown[id], IdleInhibit: c.idle[id]})
 			}
 		}
 	}

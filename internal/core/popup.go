@@ -145,8 +145,7 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 		for _, pl := range sc.mon.Layout() {
 			if pl.ID == id {
 				// Hidden or scrolled off: not on screen, like its popups.
-				o := sc.mon.Output()
-				if pl.Hidden || !pl.Rect.Overlaps(Rect{W: o.W, H: o.H}) {
+				if !onScreen(pl, sc.mon.Output()) {
 					return nil, Rect{}, false
 				}
 				return sc, c.clientRect(pl), true
