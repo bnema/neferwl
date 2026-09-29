@@ -218,6 +218,28 @@ func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
 	}
 }
 
+// A tiled fullscreen window on its own workspace (fixed overflow) is its
+// row's only preview too: the selection cannot leave it for a hidden
+// column, and Return keeps it fullscreen.
+func TestOverviewOpensOverFullscreenTile(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	m.ToggleFullscreen() // 2 to its own workspace
+	m.ToggleOverview()
+	game := previewOf(t, m.Layout(), 2)
+	if !m.overview || !game.Focused || game.Peek || !game.Fullscreen {
+		t.Fatalf("game %+v", game)
+	}
+	m.OverviewMove(-1, 0)
+	m.ToggleOverview()
+	if f, _ := m.Focused(); f != 2 || m.Active != 1 || !previewOf(t, m.Layout(), 2).Fullscreen {
+		t.Fatalf("confirm: %d on %d", f, m.Active)
+	}
+}
+
 // Only the game shows on its row: its dialogs and the columns under it
 // stay hidden, as on screen. (Under fixed overflow a new column sends
 // the game to its own workspace instead.)
