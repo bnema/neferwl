@@ -368,9 +368,12 @@ type PointerAxis struct {
 
 func (PointerAxis) inputEvent() {}
 
-// SwipeBegin starts a three-finger touchpad swipe. Time is the device
-// timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
-type SwipeBegin struct{ Time time.Duration }
+// SwipeBegin starts a three- or four-finger touchpad swipe. Time is the
+// device timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
+type SwipeBegin struct {
+	Fingers int
+	Time    time.Duration
+}
 
 // SwipeUpdate moves the fingers by the unaccelerated deltas DX, DY
 // (touchpad units, as libinput reports them, not natural-scroll inverted).

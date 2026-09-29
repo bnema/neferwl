@@ -25,7 +25,8 @@ const (
 	// workspace.
 	workspaceSwipeMovement = 300.0
 	// discreteSwipeMin is the projected distance a swipe needs to run a
-	// focus action where the view cannot slide.
+	// focus action where the view cannot slide, or a four-finger swipe to
+	// open or close the overview (half of niri's 300).
 	discreteSwipeMin = 150.0
 )
 
@@ -36,6 +37,9 @@ const (
 	swipeColumns
 	swipeWorkspaces
 	swipeDiscrete
+	// swipeOverview is a vertical four-finger swipe: up opens the
+	// overview, down closes it on the selection (niri's gesture).
+	swipeOverview
 	// swipeDropped ignores the rest of a swipe whose workspace changed.
 	swipeDropped
 )
@@ -43,6 +47,7 @@ const (
 // swipeGesture is the swipe in progress, on the screen focused when it began.
 type swipeGesture struct {
 	screen     *screen
+	fingers    int
 	mode       swipeMode
 	horizontal bool
 	cx, cy     float64
@@ -78,13 +83,13 @@ func (c *Core) swipeSign() float64 {
 
 // swipeBegin starts a swipe. Input streams one swipe at a time; one still
 // running (its end was lost) ends cancelled first: its slide settles back.
-func (c *Core) swipeBegin(at time.Duration) bool {
+func (c *Core) swipeBegin(b ports.SwipeBegin) bool {
 	changed := false
 	if c.swipe != nil {
-		c.swipeEnd(ports.SwipeEnd{Cancelled: true, Time: at})
+		c.swipeEnd(ports.SwipeEnd{Cancelled: true, Time: b.Time})
 		changed = true
 	}
-	c.swipe = &swipeGesture{screen: c.cur()}
+	c.swipe = &swipeGesture{screen: c.cur(), fingers: b.Fingers}
 	return changed
 }
 
@@ -106,6 +111,12 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	d := u.DY
 	if g.horizontal {
 		d = u.DX
+	}
+	if g.mode == swipeOverview {
+		// Like niri, the overview gesture ignores natural scroll: the
+		// fingers going up open it.
+		g.tracker.push(d, u.Time)
+		return false
 	}
 	g.tracker.push(d*c.swipeSign(), u.Time)
 	m := g.screen.mon
@@ -138,6 +149,11 @@ func (c *Core) decide(g *swipeGesture) {
 	m := g.screen.mon
 	w := m.Current()
 	switch {
+	case g.fingers == 4 && !g.horizontal:
+		g.mode = swipeOverview
+	case g.fingers == 4:
+		// Four fingers sideways do nothing.
+		g.mode = swipeDropped
 	case m.overview:
 		// The overview does not slide: the swipe moves its selection.
 		g.mode = swipeDiscrete
@@ -215,6 +231,16 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 		m.switchOff, m.switchList = off, g.list
 		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
+	case swipeOverview:
+		p := g.tracker.projectedEnd()
+		if e.Cancelled || math.Abs(p) < discreteSwipeMin || (p < 0) == m.overview {
+			return false
+		}
+		before := m.Current()
+		m.ToggleOverview()
+		c.focusScreen = c.screenIndex(g.screen.name())
+		c.layerFocus = 0
+		return m.Current() != before
 	case swipeDiscrete:
 		p := g.tracker.projectedEnd()
 		if e.Cancelled || math.Abs(p) < discreteSwipeMin {

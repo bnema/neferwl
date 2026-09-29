@@ -376,22 +376,19 @@ func (s *inputState) release() {
 	clear(s.devices)
 }
 
-// swipeFingers is the finger count of the swipes neferwl handles; other
-// counts are left alone.
-const swipeFingers = 3
-
-// swipes streams one three-finger swipe at a time to core, which follows
+// swipes streams one three- or four-finger swipe at a time to core, which
+// follows
 // the fingers. owner is the touchpad of the swipe in progress (0: none);
 // another touchpad's swipe is ignored until it ends, so core never sees
 // two streams interleaved.
 type swipes struct{ owner uintptr }
 
 func (s *swipes) begin(dev uintptr, fingers int, at time.Duration) ports.InputEvent {
-	if fingers != swipeFingers || s.owner != 0 {
+	if (fingers != 3 && fingers != 4) || s.owner != 0 {
 		return nil
 	}
 	s.owner = dev
-	return ports.SwipeBegin{Time: at}
+	return ports.SwipeBegin{Fingers: fingers, Time: at}
 }
 
 func (s *swipes) update(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {

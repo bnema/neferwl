@@ -1106,7 +1106,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.SwipeBegin:
-				if c.swipeBegin(v.Time) && c.slid(ctx, false) != nil {
+				if c.swipeBegin(v) && c.slid(ctx, false) != nil {
 					return nil
 				}
 				continue

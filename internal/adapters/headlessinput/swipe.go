@@ -15,10 +15,10 @@ const (
 	swipeEvery = 8 * time.Millisecond
 )
 
-// swipeEvents is a three-finger swipe toward (dx, dy), a unit direction,
-// starting at the device time start.
-func swipeEvents(dx, dy float64, start time.Duration) []ports.InputEvent {
-	evs := []ports.InputEvent{ports.SwipeBegin{Time: start}}
+// swipeEvents is a swipe of fingers fingers toward (dx, dy), a unit
+// direction, starting at the device time start.
+func swipeEvents(fingers int, dx, dy float64, start time.Duration) []ports.InputEvent {
+	evs := []ports.InputEvent{ports.SwipeBegin{Fingers: fingers, Time: start}}
 	at := start
 	for range swipeSteps {
 		at += swipeEvery
