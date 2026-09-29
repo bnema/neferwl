@@ -67,9 +67,9 @@ type swipeGesture struct {
 }
 
 // listChanged reports whether the numbered workspaces or the active one
-// changed since a workspace slide began.
+// changed since a workspace slide began, or the overview opened over it.
 func (g *swipeGesture) listChanged(m *Monitor) bool {
-	return m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
+	return m.overview || m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -122,7 +122,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	m := g.screen.mon
 	switch g.mode {
 	case swipeColumns:
-		if m.Current() != g.ws || !g.ws.slidable() {
+		if m.overview || m.Current() != g.ws || !g.ws.slidable() {
 			g.ws.stopSlide()
 			g.mode = swipeDropped
 			return true
@@ -190,7 +190,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	switch g.mode {
 	case swipeColumns:
 		w := g.ws
-		if m.Current() != w || !w.slidable() {
+		if m.overview || m.Current() != w || !w.slidable() {
 			w.stopSlide()
 			return false
 		}

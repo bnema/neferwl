@@ -46,14 +46,19 @@ func (m *Monitor) ToggleOverview() {
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.overview, m.overviewFrom = true, w
 	m.overviewFromID, _ = w.Focused()
+	m.scrollX, m.scrollY = 0, 0
 	m.selectRow()
 }
 
-// selectRow selects the stash card of a workspace with only stashed
-// windows, else its focused column.
+// selectRow selects the stash card of a workspace whose stash has the
+// focus (or only stashed windows), else its focused column. The overview
+// hides native floats, so a float's focus moves to its column; Escape
+// gives it back.
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
-	if w := m.Current(); len(w.Columns) == 0 && len(w.Stash) > 0 {
+	w := m.Current()
+	w.floatFocus = false
+	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused()) {
 		m.selectCard(w, w.stashAt)
 	}
 }
@@ -396,47 +401,42 @@ const overviewScrollStep = 60
 
 // overviewScroll moves the overview selection with a scroll frame: two
 // fingers step once per overviewScrollStep on the axis they move most
-// along, a wheel once per notch. Scrolling down or right selects the
-// workspace below or the column on the right; touchpad.natural-scroll
-// flips both, as libinput reports. changed is false while the distance
-// adds up.
-func (c *Core) overviewScroll(a ports.PointerAxis) (changed bool) {
-	mon := c.cur().mon
-	if a.Source == ports.AxisWheel {
-		if v := a.Vertical.V120; a.Vertical.Set && v != 0 {
-			mon.OverviewMove(0, sign(float64(v)))
-			return true
-		}
-		if v := a.Horizontal.V120; a.Horizontal.Set && v != 0 {
-			mon.OverviewMove(sign(float64(v)), 0)
-			return true
-		}
-		return false
-	}
+// along, a wheel once per notch (high-resolution wheels add up their
+// fractions of a notch). Scrolling down or right selects the workspace
+// below or the column on the right; touchpad.natural-scroll flips both,
+// as libinput reports. changed is false while the distance adds up.
+func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
 		// Fingers lifted: the next scroll starts from zero.
-		c.scrollX, c.scrollY = 0, 0
+		m.scrollX, m.scrollY = 0, 0
 		return false
 	}
-	if a.Vertical.Set {
-		c.scrollY += a.Vertical.Value
+	add := func(acc *float64, ax ports.ScrollAxis) {
+		switch {
+		case !ax.Set:
+		case a.Source == ports.AxisWheel:
+			*acc += float64(ax.V120) / 120 * overviewScrollStep
+		default:
+			*acc += ax.Value
+		}
 	}
-	if a.Horizontal.Set {
-		c.scrollX += a.Horizontal.Value
+	add(&m.scrollY, a.Vertical)
+	add(&m.scrollX, a.Horizontal)
+	for {
+		switch {
+		case math.Abs(m.scrollY) >= overviewScrollStep && math.Abs(m.scrollY) >= math.Abs(m.scrollX):
+			m.OverviewMove(0, sign(m.scrollY))
+			m.scrollY -= float64(sign(m.scrollY)) * overviewScrollStep
+			m.scrollX = 0
+		case math.Abs(m.scrollX) >= overviewScrollStep:
+			m.OverviewMove(sign(m.scrollX), 0)
+			m.scrollX -= float64(sign(m.scrollX)) * overviewScrollStep
+			m.scrollY = 0
+		default:
+			return changed
+		}
+		changed = true
 	}
-	switch {
-	case math.Abs(c.scrollY) >= overviewScrollStep && math.Abs(c.scrollY) >= math.Abs(c.scrollX):
-		mon.OverviewMove(0, sign(c.scrollY))
-		c.scrollY -= float64(sign(c.scrollY)) * overviewScrollStep
-		c.scrollX = 0
-	case math.Abs(c.scrollX) >= overviewScrollStep:
-		mon.OverviewMove(sign(c.scrollX), 0)
-		c.scrollX -= float64(sign(c.scrollX)) * overviewScrollStep
-		c.scrollY = 0
-	default:
-		return false
-	}
-	return true
 }
 
 func sign(v float64) int {

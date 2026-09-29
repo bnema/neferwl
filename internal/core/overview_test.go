@@ -3,6 +3,8 @@ package core
 import (
 	"math"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // overviewMonitor has workspace 1 with columns 1, 2, 3 (a third of the
@@ -349,5 +351,69 @@ func TestOverviewPileTinyOutput(t *testing.T) {
 	}
 	if w := m.Current(); w.pileWidth() > 10 {
 		t.Fatalf("pile %d of 30", w.pileWidth())
+	}
+}
+
+// The overview opens on what has the focus: a shown stash's card, else
+// the column under a focused native float (hidden in the overview), and
+// Return keeps it. Escape gives the float its focus back.
+func TestOverviewOpensOnFocus(t *testing.T) {
+	m := pileMonitor()
+	w := m.Current()
+	w.ToggleStashVisible()
+	m.ToggleOverview()
+	if at := m.cardAt(w); at != w.stashAt {
+		t.Fatalf("opened on card %d, want the stash's %d", at, w.stashAt)
+	}
+	m.ToggleOverview()
+
+	m = overviewMonitor()
+	w = m.Current()
+	col, _ := w.Focused()
+	w.AddFloating(9, 10, 10)
+	w.FocusID(9)
+	m.ToggleOverview()
+	if f, _ := m.Focused(); f != col || !previewOf(t, m.Layout(), col).Focused {
+		t.Fatalf("opened on %d, want column %d", f, col)
+	}
+	m.CancelOverview()
+	if f, _ := m.Focused(); f != 9 {
+		t.Fatalf("escape on %d, want the float", f)
+	}
+	w.FocusID(9)
+	m.ToggleOverview()
+	m.ToggleOverview()
+	if f, _ := m.Focused(); f != col {
+		t.Fatalf("return on %d, want column %d", f, col)
+	}
+}
+
+// Scrolling adds up to steps: what is left when the overview closes does
+// not count when it opens again, and a wheel frame of two notches moves
+// twice.
+func TestOverviewScrollSteps(t *testing.T) {
+	m := overviewMonitor()
+	w := m.Current()
+	finger := func(dx float64) ports.PointerAxis {
+		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+	}
+	m.ToggleOverview()
+	start, _ := m.Focused()
+	if m.overviewScroll(finger(-50)) {
+		t.Fatal("a partial scroll moved")
+	}
+	m.CancelOverview()
+	m.ToggleOverview()
+	if m.overviewScroll(finger(-50)) {
+		t.Fatal("the last session's scroll carried over")
+	}
+	m.CancelOverview()
+	w.FocusID(3)
+	m.ToggleOverview()
+	if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Horizontal: ports.ScrollAxis{Set: true, V120: -240}}) {
+		t.Fatal("wheel did not move")
+	}
+	if f, _ := m.Focused(); f != 1 {
+		t.Fatalf("two notches from 3 landed on %d, want 1 (started on %d)", f, start)
 	}
 }

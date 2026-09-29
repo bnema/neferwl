@@ -84,6 +84,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
 		t.Fatalf("dimmed window reason %q", reason)
 	}
+	// An overview preview is drawn smaller than its buffer: composed.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Preview = 0.5
+	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
+		t.Fatalf("preview reason %q", reason)
+	}
 	// A viewport crop is composed: the plane would show the whole buffer.
 	s, c = overlayScene()
 	cropped := c[2]

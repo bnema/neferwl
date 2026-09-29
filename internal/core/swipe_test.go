@@ -644,3 +644,35 @@ func TestFourFingerSwipeOverview(t *testing.T) {
 		}
 	}
 }
+
+// Opening the overview during a column swipe drops the swipe: the rest
+// of it neither slides the columns under the overview nor lands them, so
+// Escape shows the view as it was.
+func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
+	r := startSwipe(t, nil)
+	settled := threeColumns(t, r)
+	r.begin()
+	r.move(t, -40, 0)
+	r.move(t, -40, 0)
+	r.key(t, "o", ports.ModAlt)
+	for range 20 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -80, Time: r.at}
+	}
+	r.end(t, false)
+	r.input <- ports.KeyEvent{Keysym: "Escape", Pressed: true}
+	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool {
+		for _, w := range s.Windows {
+			if w.Preview > 0 {
+				return false
+			}
+		}
+		return true
+	})
+	for _, id := range []ports.WindowID{1, 2, 3} {
+		before, _ := rectOf(settled, id)
+		if after, _ := rectOf(s, id); before != after {
+			t.Fatalf("window %d moved: %+v then %+v", id, before, after)
+		}
+	}
+}
