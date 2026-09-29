@@ -93,12 +93,9 @@ type Core struct {
 	toSpawn               []slotKey
 	sentPending           bool
 	firstTerminalResolved bool
-	// clients holds the app ID and PID of mapped windows, for State.
-	clients        map[WindowID]ports.WindowMapped
-	mappedAt       map[WindowID]time.Time
-	inputRegions   map[WindowID]ports.InputRegionChanged
-	sentState      ports.State
-	sentWorkspaces ports.Workspaces
+	windows               windowRegistry
+	sentState             ports.State
+	sentWorkspaces        ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -109,12 +106,8 @@ type Core struct {
 	// pointer moving to another output does not.
 	layerFocus WindowID
 	layerOver  map[*screen]WindowID
-	// inhibitors are the windows asking to keep compositor binds while
-	// focused, inhibiting the one active now (0: none); idle are those
-	// keeping the session awake.
-	inhibitors map[WindowID]bool
+	// inhibiting is the shortcuts inhibitor active now (0: none).
 	inhibiting WindowID
-	idle       map[WindowID]bool
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -316,7 +309,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, mappedAt: map[WindowID]time.Time{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -438,7 +431,7 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 		sc.layers = append(sc.layers, l)
 	}
 	for id := range previous {
-		delete(c.inputRegions, id)
+		c.windows.layerGone(id)
 	}
 	for _, sc := range c.screens {
 		sc.arrange()
@@ -628,7 +621,7 @@ func (c *Core) rehit(ctx context.Context) error {
 // active one and tells wayland when it changes.
 func (c *Core) updateInhibit(ctx context.Context) error {
 	want := WindowID(0)
-	if f := c.keyboardFocus(); f != 0 && c.inhibitors[f] {
+	if f := c.keyboardFocus(); f != 0 && c.windows.lookup(f).inhibitShortcuts {
 		want = f
 	}
 	if want == c.inhibiting {
@@ -715,16 +708,7 @@ func (c *Core) allLayers() []ports.LayerSurface {
 }
 
 func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
-	r, ok := c.inputRegions[id]
-	if !ok || r.All {
-		return true
-	}
-	for _, box := range r.Rects {
-		if x >= float64(box.X) && x < float64(box.X+box.W) && y >= float64(box.Y) && y < float64(box.Y+box.H) {
-			return true
-		}
-	}
-	return false
+	return c.windows.acceptsInput(id, x, y)
 }
 
 // hit returns the surface under the global logical point and the point in
@@ -819,10 +803,9 @@ func (c *Core) Run(ctx context.Context) error {
 				c.layerChanged = true
 				c.setLayers(v.Layers)
 			case ports.InputRegionChanged:
-				c.inputRegions[v.ID] = v
+				c.windows.setRegion(v)
 			case ports.WindowMapped:
-				c.clients[v.ID] = v
-				c.mappedAt[v.ID] = c.now()
+				c.windows.mapped(v, c.now())
 				c.placement.place(c, v)
 			case ports.WindowResized:
 				if _, w := c.screenOf(v.ID); w != nil {
@@ -837,11 +820,7 @@ func (c *Core) Run(ctx context.Context) error {
 					p.mapped = true
 				}
 			case ports.ShortcutsInhibit:
-				if v.Active {
-					c.inhibitors[v.Window] = true
-				} else {
-					delete(c.inhibitors, v.Window)
-				}
+				c.windows.setInhibitShortcuts(v.Window, v.Active)
 				if err := c.updateInhibit(ctx); err != nil {
 					return nil
 				}
@@ -851,18 +830,11 @@ func (c *Core) Run(ctx context.Context) error {
 					c.screens[i].off = !v.On
 				}
 			case ports.IdleInhibit:
-				if v.Active {
-					c.idle[v.Window] = true
-				} else {
-					delete(c.idle, v.Window)
-				}
+				c.windows.setIdleInhibit(v.Window, v.Active)
 				c.publishState()
 				continue
 			case ports.WindowAppID:
-				if info, ok := c.clients[v.ID]; ok {
-					info.AppID = v.AppID
-					c.clients[v.ID] = info
-				}
+				c.windows.setAppID(v.ID, v.AppID)
 			case ports.WindowUnmapped:
 				if c.popups[v.ID] != nil {
 					if err := c.dropPopup(ctx, v.ID); err != nil {
@@ -872,11 +844,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if err := c.closePopupsOf(ctx, v.ID); err != nil {
 					return nil
 				}
-				delete(c.clients, v.ID)
-				delete(c.mappedAt, v.ID)
-				delete(c.inputRegions, v.ID)
-				delete(c.inhibitors, v.ID)
-				delete(c.idle, v.ID)
+				c.windows.drop(v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
 				}
@@ -890,7 +858,7 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.PointerConstrained:
 				c.constrained = v
 			case ports.WindowFullscreenRequest:
-				if v.Fullscreen && !v.External && c.now().Sub(c.mappedAt[v.ID]) < fullscreenGrace {
+				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
 					continue
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {

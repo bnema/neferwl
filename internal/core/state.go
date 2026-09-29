@@ -44,8 +44,8 @@ func (c *Core) state() ports.State {
 		for _, w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1
 			for _, id := range w.windows() {
-				info := c.clients[id]
-				v := ports.WindowState{ID: id, AppID: info.AppID, PID: info.PID, Output: s.name(), Workspace: n, Visible: shown[id], IdleInhibit: c.idle[id], Floating: w.isFloat(id)}
+				rec := c.windows.lookup(id)
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id)}
 				if i := w.stashIndex(id); i >= 0 {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}
