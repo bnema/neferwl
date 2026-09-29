@@ -888,14 +888,14 @@ func TestStashEndToEnd(t *testing.T) {
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.mapWindow(t, id)
 	}
-	r.key(t, "s", ports.ModAlt)    // 3 stashed
-	r.key(t, "Left", ports.ModAlt) // stays on 3: its stash's only window
-	sc := r.key(t, "s", ports.ModAlt|ports.ModShift)
+	r.key(t, "s", ports.ModAlt|ports.ModShift) // 3 stashed
+	r.key(t, "Left", ports.ModAlt)             // stays on 3: its stash's only window
+	sc := r.key(t, "s", ports.ModAlt)
 	if got := shown(sc)["DP-1"]; !slices.Equal(got, []ports.WindowID{1, 2}) {
 		t.Fatalf("hidden stash: %v", got)
 	}
 	r.key(t, "Left", ports.ModAlt) // tiles: from 2 to 1
-	sc = r.key(t, "s", ports.ModAlt)
+	sc = r.key(t, "s", ports.ModAlt|ports.ModShift)
 	// Stash 3 1: 1 selected in the middle, 3 peeking left, dimmed.
 	var peek, sel ports.SceneWindow
 	for _, w := range sc[0].Windows {
@@ -937,7 +937,7 @@ func TestStashEndToEnd(t *testing.T) {
 		t.Fatalf("tile %+v", w)
 	}
 	r.input <- ports.PointerButton{Button: 0x110}
-	r.key(t, "s", ports.ModAlt|ports.ModShift)
+	r.key(t, "s", ports.ModAlt)
 	st = receive(t, r.state)
 	for !st.Windows[0].Hidden {
 		st = receive(t, r.state)
@@ -974,7 +974,7 @@ func TestStashKeepsFocusAtEdges(t *testing.T) {
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl) // DP-1
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
-	r.key(t, "s", ports.ModAlt)
+	r.key(t, "s", ports.ModAlt|ports.ModShift)
 	for _, k := range []string{"Right", "Down"} {
 		r.key(t, k, ports.ModAlt)
 	}
@@ -1008,7 +1008,7 @@ func TestStashHidesOnBackgroundClick(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap = 10 }, left)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
-	r.key(t, "s", ports.ModAlt) // 2 stashed and focused, over tile 1
+	r.key(t, "s", ports.ModAlt|ports.ModShift) // 2 stashed and focused, over tile 1
 	r.input <- ports.PointerMotion{X: 5, Y: 50}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID == 1 })
@@ -1025,10 +1025,10 @@ func TestStashThinPeekClick(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Border.Width = 9, 4 }, left)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
-	r.key(t, "s", ports.ModAlt) // 2 stashed
-	r.key(t, "s", ports.ModAlt|ports.ModShift)
+	r.key(t, "s", ports.ModAlt|ports.ModShift) // 2 stashed
+	r.key(t, "s", ports.ModAlt)
 	r.key(t, "Left", ports.ModAlt)
-	r.key(t, "s", ports.ModAlt) // stash 2 1, 2 peeks 2px from the left
+	r.key(t, "s", ports.ModAlt|ports.ModShift) // stash 2 1, 2 peeks 2px from the left
 	r.input <- ports.PointerMotion{X: 1, Y: 50}
 	for {
 		if v, ok := (<-r.commands).(ports.PointerFocus); ok {

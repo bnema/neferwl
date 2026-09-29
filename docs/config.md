@@ -173,8 +173,8 @@ A click on a preview picks it. Other binds still work. Native floating windows (
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
-| `cmd+s` | `toggle-window-stash` |
-| `cmd+shift+s` | `toggle-stash-visible` |
+| `cmd+s` | `toggle-stash-visible` |
+| `cmd+shift+s` | `toggle-window-stash` |
 | `cmd+o` | `toggle-overview` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
