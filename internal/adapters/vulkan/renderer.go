@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -87,6 +88,14 @@ type Renderer struct {
 	frameAcquires map[*imported]*os.File
 	frameWaits    []vk.Semaphore
 	frameStages   []vk.PipelineStageFlags
+}
+
+// priorityAttempts falls back to an ordinary queue when elevated priority is unavailable.
+func priorityAttempts(supported bool) []vk.QueueGlobalPriority {
+	if supported {
+		return []vk.QueueGlobalPriority{vk.QueueGlobalPriorityRealtime, vk.QueueGlobalPriorityHigh, 0}
+	}
+	return []vk.QueueGlobalPriority{0}
 }
 
 func checked(name string, result vk.Result) error {
@@ -185,7 +194,14 @@ func New(width, height int) (r *Renderer, err error) {
 	// dmabuf import needs every extension; without them clients use wl_shm.
 	var extNames [][]byte
 	var extPtrs []*byte
-	if r.hasExtensions(physical) {
+	have := r.extensions(physical)
+	dmabufSupported := true
+	for _, e := range deviceExtensions {
+		if !have[e] {
+			dmabufSupported = false
+		}
+	}
+	if dmabufSupported {
 		for _, e := range deviceExtensions {
 			extNames = append(extNames, append([]byte(e), 0))
 			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
@@ -193,9 +209,53 @@ func New(width, height int) (r *Renderer, err error) {
 		di.EnabledExtensionCount = uint32(len(extPtrs))
 		di.PpEnabledExtensionNames = &extPtrs[0]
 	}
-	if err = checked("vkCreateDevice", r.id.CreateDevice(physical, &di, nil, &r.device)); err != nil {
-		return
+	globalExt := ""
+	if have[vk.KHRGlobalPriorityExtensionName] {
+		globalExt = vk.KHRGlobalPriorityExtensionName
+	} else if have[vk.EXTGlobalPriorityExtensionName] {
+		globalExt = vk.EXTGlobalPriorityExtensionName
 	}
+	var global vk.DeviceQueueGlobalPriorityCreateInfo
+	chosen := "default"
+	for _, attempt := range priorityAttempts(globalExt != "") {
+		qi.Next = nil
+		count := len(extPtrs)
+		if attempt != 0 {
+			global = vk.DeviceQueueGlobalPriorityCreateInfo{SType: vk.StructureTypeDeviceQueueGlobalPriorityCreateInfo, GlobalPriority: attempt}
+			qi.Next = unsafe.Pointer(&global)
+			extNames = append(extNames, append([]byte(globalExt), 0))
+			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
+			chosen = "realtime"
+			if attempt == vk.QueueGlobalPriorityHigh {
+				chosen = "high"
+			}
+		} else {
+			chosen = "default"
+		}
+		di.EnabledExtensionCount = uint32(len(extPtrs))
+		if len(extPtrs) > 0 {
+			di.PpEnabledExtensionNames = &extPtrs[0]
+		} else {
+			di.PpEnabledExtensionNames = nil
+		}
+		result := r.id.CreateDevice(physical, &di, nil, &r.device)
+		runtime.KeepAlive(global)
+		runtime.KeepAlive(qi)
+		runtime.KeepAlive(extNames)
+		runtime.KeepAlive(extPtrs)
+		extPtrs = extPtrs[:count]
+		extNames = extNames[:count]
+		if result == vk.Success {
+			err = nil
+			break
+		}
+		err = checked("vkCreateDevice", result)
+		if attempt == 0 {
+			return
+		}
+	}
+	log := zerowrap.Default()
+	log.Info().Str("component", "render").Str("queue priority", chosen).Msg("Vulkan queue priority")
 	r.dd, err = vk.LoadDeviceDispatch(r.id, r.device)
 	if err != nil {
 		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
@@ -203,7 +263,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	runtime.KeepAlive(extNames)
 	runtime.KeepAlive(extPtrs)
-	if len(extPtrs) > 0 {
+	if dmabufSupported {
 		// Clients need the render node to allocate on the right GPU.
 		if sup := r.probeDMABuf(physical); sup.Device != 0 {
 			r.dmabuf = sup
