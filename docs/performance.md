@@ -38,6 +38,8 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 `slow flip` log entries (flip over 20 ms) carry `frame` (false: cursor or VRR state commit) and `vrr`; `input stats` shows coalesced pointer motion and the longest wait for core.
 
+Logs go to `$XDG_STATE_HOME/neferwl/runs/<backend>/`, one file per run with `latest.log` pointing at the newest; each backend keeps its last 20 runs, so headless test runs never rotate a DRM session's log away.
+
 ## Reference: 4K HDR tiled video playback
 
 Workload: a browser playing 4K HDR video with 65 tiled subsurfaces committing every frame, DRM backend, `perf record -g` for 8 s. Percentages are the share of the process's own samples (inclusive).

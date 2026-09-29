@@ -34,11 +34,11 @@ func TestParseDebug(t *testing.T) {
 
 func TestComponentLevelsAndRotation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs")
+	dir := filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "drm")
 	path := filepath.Join(dir, "latest.log")
 	for run := 0; run < keepRuns+2; run++ {
 		time.Sleep(2 * time.Millisecond) // distinct millisecond timestamps
-		ctx, closeLog, err := Open(context.Background(), "info", "core")
+		ctx, closeLog, err := Open(context.Background(), "drm", "info", "core")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -84,10 +84,39 @@ func splitLines(data []byte) [][]byte {
 	return lines
 }
 
+// Headless runs rotate in their own directory: they never prune a DRM run.
+func TestBackendsRotateSeparately(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	runs := filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs")
+	open := func(backend string) {
+		time.Sleep(2 * time.Millisecond) // distinct millisecond timestamps
+		_, closeLog, err := Open(context.Background(), backend, "info", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := closeLog(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open("drm")
+	for range keepRuns + 2 {
+		open("headless")
+	}
+	if drm, _ := filepath.Glob(filepath.Join(runs, "drm", "2*.log")); len(drm) != 1 {
+		t.Fatalf("drm runs %v", drm)
+	}
+	if _, err := os.Stat(filepath.Join(runs, "drm", "latest.log")); err != nil {
+		t.Fatal(err)
+	}
+	if headless, _ := filepath.Glob(filepath.Join(runs, "headless", "2*.log")); len(headless) != keepRuns {
+		t.Fatalf("kept %d headless runs", len(headless))
+	}
+}
+
 // A category alone raises its component to debug, so its lines are written.
 func TestCategoryEnablesComponentDebug(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	ctx, closeLog, err := Open(context.Background(), "info", "input-motion")
+	ctx, closeLog, err := Open(context.Background(), "drm", "info", "input-motion")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +126,7 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	if err := closeLog(); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "latest.log"))
+	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "drm", "latest.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

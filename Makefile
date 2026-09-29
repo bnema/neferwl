@@ -4,7 +4,7 @@
 TTY_TIMEOUT ?= 0
 # Go runtime profiles for tty runs; set PPROF= to disable.
 PPROF ?= localhost:6060
-RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/neferwl/runs
+RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/neferwl/runs/drm
 
 # Build a fresh binary with the git revision embedded.
 bin:

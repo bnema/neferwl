@@ -235,7 +235,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ctx, closeLog, err := logging.Open(ctx, cfg.Log.Level, selected)
+	ctx, closeLog, err := logging.Open(ctx, *backend, cfg.Log.Level, selected)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return err
