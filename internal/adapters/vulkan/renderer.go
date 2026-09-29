@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/zerowrap"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -18,6 +17,9 @@ import (
 // Renderer is owned by one goroutine; its methods must not be called concurrently.
 type Renderer struct {
 	width, height int
+	// queuePriority is the global priority the queue got: realtime, high
+	// or default.
+	queuePriority string
 	instance      vk.Instance
 	id            *vk.InstanceDispatch
 	device        vk.Device
@@ -254,8 +256,7 @@ func New(width, height int) (r *Renderer, err error) {
 			return
 		}
 	}
-	log := zerowrap.Default()
-	log.Info().Str("component", "render").Str("queue priority", chosen).Msg("Vulkan queue priority")
+	r.queuePriority = chosen
 	r.dd, err = vk.LoadDeviceDispatch(r.id, r.device)
 	if err != nil {
 		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
@@ -385,6 +386,10 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 // CopiedBytes reports cumulative wl_shm bytes copied into GPU storage.
 // It is diagnostic only and must be read by the renderer's owner goroutine.
 func (r *Renderer) CopiedBytes() int { return r.copied }
+
+// QueuePriority is the global priority the queue got: realtime, high or
+// default.
+func (r *Renderer) QueuePriority() string { return r.queuePriority }
 
 func (r *Renderer) Pixels() *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))

@@ -249,11 +249,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer workers.Done()
 		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
 		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
+		renderLog := logging.For(ctx, "render")
 		newRenderer := func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
 			if err != nil {
 				return nil, err
 			}
+			renderLog.Info().Str("queue_priority", r.QueuePriority()).Msg("vulkan queue")
 			return r, nil
 		}
 		if hw != nil {
