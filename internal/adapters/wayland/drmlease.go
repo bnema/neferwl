@@ -50,6 +50,20 @@ type leaseConnectorHandler struct{}
 func (leaseConnectorHandler) Destroy(*drmlease.WpDrmLeaseConnectorV1) {}
 
 func (s *Server) forwardLeases(ctx context.Context) {
+	// Messages own their fds: close those still queued when the display stops.
+	defer func() {
+		for {
+			select {
+			case event, ok := <-s.channels.LeaseEvents:
+				if !ok {
+					return
+				}
+				ports.CloseLeaseFiles(event)
+			default:
+				return
+			}
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -61,6 +75,7 @@ func (s *Server) forwardLeases(ctx context.Context) {
 				return
 			}
 			if !s.display.Do(func() { s.applyLeaseEvent(event) }) {
+				ports.CloseLeaseFiles(event)
 				return
 			}
 		}

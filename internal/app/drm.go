@@ -175,6 +175,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		select {
 		case ch.leaseEvents <- msg:
 		case <-ctx.Done():
+			ports.CloseLeaseFiles(msg)
 		}
 	}
 	publishLeases := func(c *drmCard) {

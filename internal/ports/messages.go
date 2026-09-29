@@ -1123,6 +1123,21 @@ type LeaseConnectors struct {
 
 func (LeaseConnectors) leaseMessage() {}
 
+// CloseLeaseFiles closes the fd a lease message owns, for a message that is
+// dropped instead of delivered.
+func CloseLeaseFiles(msg LeaseMessage) {
+	switch m := msg.(type) {
+	case LeaseConnectors:
+		if m.Device != nil {
+			m.Device.Close()
+		}
+	case LeaseReply:
+		if m.FD != nil {
+			m.FD.Close()
+		}
+	}
+}
+
 type LeaseRequest struct {
 	ID         uint64
 	Card       string
