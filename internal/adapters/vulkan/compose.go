@@ -360,6 +360,8 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 		flags |= flagSmooth
 	}
 	dr.pc.misc = [4]uint32{mode, flags, uint32(r.width), uint32(r.height)}
+	// color.a is the opacity of a content draw (wp_alpha_modifier_v1).
+	dr.pc.color[3] = 1
 	return dr
 }
 

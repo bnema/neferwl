@@ -68,6 +68,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		},
 		func() error { return registerClipboard(d, s) },
 		func() error { return registerFixes(d) },
+		func() error { return registerAlphaModifier(d, s) },
 	} {
 		if err := register(); err != nil {
 			return err

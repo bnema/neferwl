@@ -891,8 +891,11 @@ type SurfaceContent struct {
 	// buffer: readers apply its inverse. Width and Height stay the buffer's.
 	Transform BufferTransform
 	// Opaque ignores the alpha byte: an x format, or an opaque region that
-	// covers the whole surface.
+	// covers the whole surface. It is false while Fade is set.
 	Opaque bool
+	// Fade is how much wp_alpha_modifier_v1 fades the surface: 0 none,
+	// 1 invisible. Its opacity is multiplied by 1-Fade.
+	Fade   float32
 	Color  SurfaceColor
 	SHM    *SHMBuffer
 	DMABuf *DMABuf

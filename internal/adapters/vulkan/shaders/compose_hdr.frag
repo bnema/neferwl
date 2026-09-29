@@ -130,5 +130,9 @@ void main() {
             (d.misc.y & flagExtendedLinear) != 0u ? c.rgb / c.a * (80.0 / d.color.x) : decodeSRGB(c.rgb / c.a);
         c.rgb = linearRGB * c.a;
     }
+    if (d.misc.x != modeSolid) {
+        // The surface's alpha modifier; premultiplied, it scales all four.
+        c *= d.color.a;
+    }
     color = c;
 }

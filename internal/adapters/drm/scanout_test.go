@@ -26,6 +26,7 @@ func TestScanoutCandidate(t *testing.T) {
 		}, nil, ""},
 		{"no window", func(s *ports.Scene) { s.Windows = nil }, nil, "no_fullscreen"},
 		{"dimmed", func(s *ports.Scene) { s.Windows[0].Dim = 0.5 }, nil, "dim"},
+		{"faded", nil, func(c *ports.SurfaceContent) { c.Fade = 0.5 }, "fade"},
 		{"tiled", func(s *ports.Scene) { s.Windows[0].Fullscreen = false }, nil, "other_windows"},
 		{"float above", func(s *ports.Scene) {
 			s.Windows = append(s.Windows, ports.SceneWindow{ID: 2, Rect: ports.Rect{W: 10, H: 10}})

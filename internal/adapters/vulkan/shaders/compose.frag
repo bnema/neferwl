@@ -132,5 +132,9 @@ void main() {
             c.rgb = mix(v * 12.92, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, greaterThan(v, vec3(0.0031308))) * c.a;
         }
     }
+    if (d.misc.x != modeSolid) {
+        // The surface's alpha modifier; premultiplied, it scales all four.
+        c *= d.color.a;
+    }
     color = c;
 }

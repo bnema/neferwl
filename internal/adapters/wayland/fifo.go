@@ -294,7 +294,7 @@ func sameLayout(a, b []childLayout) bool {
 func (s *surface) takePending() update {
 	u := update{pendingCommit: s.next}
 	// One-shot requests apply once; sticky ones carry over.
-	s.next = pendingCommit{scale: s.next.scale, transform: s.next.transform, async: s.next.async, color: s.next.color, representation: s.next.representation, kind: s.next.kind}
+	s.next = pendingCommit{scale: s.next.scale, transform: s.next.transform, async: s.next.async, color: s.next.color, representation: s.next.representation, kind: s.next.kind, fade: s.next.fade}
 	if v := s.viewport; v != nil {
 		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}
