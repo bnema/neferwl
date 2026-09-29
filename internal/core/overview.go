@@ -7,14 +7,11 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// The overview shows every column of the workspace on screen in one row,
-// each tile scaled by the same factor so windows keep their shape, with
-// the workspaces above and below it dimmed. A workspace pinned under a
-// covering fullscreen window (a game) shows only that window, as on
-// screen. The previews
-// are the windows' last buffers: clients are not resized. h/l (or left/right) select a
-// column, j/k (or down/up) a workspace, Return keeps the selection and
-// Escape returns to where the overview opened.
+// The overview scales each workspace row without resizing clients. Covering
+// native floats and the columns form a stack of cards in screen order; small
+// floats remain hidden. A pinned fullscreen window remains the only preview.
+// Left/right navigate the front item and rotate its stack at the edges;
+// up/down change rows. Return commits the selection, Escape restores it.
 
 // A workspace's stash shows as a pile of cards pinned to the left edge of
 // its row: the selected stashed window in front at overviewCardZoom, up to
@@ -46,25 +43,27 @@ func (m *Monitor) ToggleOverview() {
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.overview, m.overviewFrom = true, w
 	m.overviewFromID, _ = w.Focused()
+	m.overviewFloats = append([]Float(nil), w.Floats...)
 	m.scrollX, m.scrollY = 0, 0
 	m.overviewOpens++
 	m.selectRow()
 }
 
-// selectRow selects the stash card of a workspace whose stash has the
-// focus (or only stashed windows), else its focused column. The overview
-// hides native floats, so a float's focus moves to its column; Escape
-// gives it back. A pinning fullscreen window is the exception: it is the
-// row.
+// selectRow resets provisional stack and stash selection for a new row.
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
+	m.overviewStack, m.overviewStackOf = 0, nil
 	w := m.Current()
 	if w.pinned() {
 		// The covering window is the row's only preview: it keeps the focus.
 		return
 	}
-	w.floatFocus = false
-	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused()) {
+	// A float's focus moves to the selected column for keyboard navigation,
+	// without calling FocusID (which would change the real stack order).
+	if w.floatFocus && len(w.Columns) > 0 && (len(w.stackItems()) < 2 || m.stackFront(w) == 0) {
+		w.floatFocus = false
+	}
+	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused() && !w.floatFocus) {
 		m.selectCard(w, w.stashAt)
 	}
 }
@@ -104,9 +103,18 @@ func (m *Monitor) closeOverview() {
 		}
 		w.stashAt = i
 		w.showStash()
+	} else {
+		if id := m.stackFront(w); id != 0 && len(w.stackItems()) > 1 {
+			w.FocusID(id)
+		} else if len(w.Columns) > 0 && !w.pinned() {
+			c := w.Columns[w.Focus]
+			w.FocusID(c.Windows[c.Focus])
+		}
 	}
 	m.overview, m.overviewFrom = false, nil
 	m.overviewCard, m.overviewCardOf = 0, nil
+	m.overviewStack, m.overviewStackOf = 0, nil
+	m.overviewFloats = nil
 }
 
 // CancelOverview closes the overview and returns to the workspace and
@@ -115,19 +123,38 @@ func (m *Monitor) CancelOverview() {
 	from, id := m.overviewFrom, m.overviewFromID
 	m.overview, m.overviewFrom = false, nil
 	m.overviewCard, m.overviewCardOf = 0, nil
-	if from == nil || !m.has(from) {
-		return
+	m.overviewStack, m.overviewStackOf = 0, nil
+	if from != nil && m.has(from) {
+		m.show(from)
+		if id != 0 {
+			from.FocusID(id)
+		} else {
+			from.floatFocus, from.stashFocus = false, false
+		}
+		// FocusID on a float raises it; restore the initial order and below
+		// flags for floats still present, leaving new floats in their order.
+		initial := m.overviewFloats
+		current := from.Floats
+		from.Floats = nil
+		for _, f := range initial {
+			for i, now := range current {
+				if now.ID == f.ID {
+					now.below = f.below
+					from.Floats = append(from.Floats, now)
+					current = append(current[:i], current[i+1:]...)
+					break
+				}
+			}
+		}
+		from.Floats = append(from.Floats, current...)
 	}
-	m.show(from)
-	if id != 0 {
-		from.FocusID(id)
-	}
+	m.overviewFloats = nil
 }
 
-// OverviewMove selects the neighbor column (dx) or numbered workspace
-// (dy). It stops at the ends and never enters an empty workspace, which
-// would open a terminal there. Left of the first column is the stash
-// pile; right of its last entry, the first column again.
+// OverviewMove selects a column, stash card, or covering-float card (dx),
+// or a numbered workspace (dy). It stops before empty workspaces. Left
+// of the first column enters the stash; at the right edge the stack rotates
+// provisionally. Right past the stash's last card returns to the columns.
 func (m *Monitor) OverviewMove(dx, dy int) {
 	if dy != 0 {
 		i := m.Active + dy
@@ -148,7 +175,16 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 			m.selectCard(w, at+dx)
 		case dx > 0 && len(w.Columns) > 0:
 			m.overviewCard, m.overviewCardOf = 0, nil
-			w.FocusID(w.Columns[0].Windows[w.Columns[0].Focus])
+			w.selectOverviewColumn(0)
+		}
+		return
+	}
+	front := m.stackFront(w)
+	if front != 0 && len(w.stackItems()) > 1 {
+		if dx < 0 && len(w.Stash) > 0 {
+			m.selectCard(w, w.stashAt)
+		} else {
+			m.rotateStack(w, dx)
 		}
 		return
 	}
@@ -159,8 +195,11 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 	if len(w.Columns) == 0 {
 		return
 	}
-	c := w.Columns[min(max(w.Focus+dx, 0), len(w.Columns)-1)]
-	w.FocusID(c.Windows[c.Focus])
+	if dx > 0 && w.Focus == len(w.Columns)-1 && len(w.stackItems()) > 1 {
+		m.rotateStack(w, dx)
+		return
+	}
+	w.selectOverviewColumn(min(max(w.Focus+dx, 0), len(w.Columns)-1))
 }
 
 // OverviewPick closes the overview on the clicked window.
@@ -173,15 +212,30 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	if i := w.stashIndex(id); i >= 0 {
 		m.selectCard(w, i)
-	} else {
+	} else if i := w.floatIndex(id); i >= 0 && w.coversFloat(w.Floats[i]) && !w.pinned() {
+		m.overviewStackOf, m.overviewStack = w, id
+	} else if w.pinned() {
 		w.FocusID(id)
+	} else if w.floatIndex(id) >= 0 {
+		// A non-covering float is never a preview to pick.
+		return
+	} else {
+		m.overviewStackOf, m.overviewStack = w, 0
+		for i, c := range w.Columns {
+			for j, v := range c.Windows {
+				if v == id {
+					w.selectOverviewColumn(i)
+					w.Columns[i].Focus = j
+				}
+			}
+		}
 	}
 	m.closeOverview()
 }
 
 // overviewLayout places the current workspace's row in the middle of the
 // usable area and its numbered neighbors above and below, dimmed, each
-// with its stash pile. Other workspaces and native floats are hidden.
+// with its stash pile and covering-float stack. Other workspaces are hidden.
 func (m *Monitor) overviewLayout() []Placement {
 	cur := m.Current()
 	u := cur.Usable
@@ -215,11 +269,13 @@ func (m *Monitor) overviewLayout() []Placement {
 		}
 		if shown {
 			at := m.cardAt(w)
-			result = append(result, w.previewRow(ry, w != cur, at < 0)...)
+			result = append(result, m.stackRow(w, ry, w != cur, at < 0)...)
 			result = append(result, w.pile(ry, w != cur, at)...)
 		}
 		for _, f := range w.Floats {
-			result = append(result, Placement{ID: f.ID, Hidden: true})
+			if !shown || len(w.stackItems()) < 2 || !w.coversFloat(f) {
+				result = append(result, Placement{ID: f.ID, Hidden: true})
+			}
 		}
 		if !shown {
 			for _, id := range w.windows() {
@@ -331,6 +387,10 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 // false).
 func (w *Workspace) previewRow(y int, dim, lit bool) []Placement {
 	tiles, span, sel := w.previewTiles()
+	return w.previewRowTiles(y, dim, lit, tiles, span, sel)
+}
+
+func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
 	u := w.Usable
 	left := w.pileWidth()
 	u.X, u.W = u.X+left, u.W-left
@@ -369,9 +429,18 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 	return nil
 }
 
-// overviewAt is the preview under the output-local point, if any.
+// overviewAt is the preview under the output-local point, if any. Front
+// cards take priority over peeks, including peeks appended after a front
+// tile in another row's layout.
 func (m *Monitor) overviewAt(x, y float64) WindowID {
 	layout := m.Layout()
+	for i := len(layout) - 1; i >= 0; i-- {
+		p := layout[i]
+		r := p.Rect
+		if p.Preview > 0 && !p.Hidden && !p.Peek && x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
+			return p.ID
+		}
+	}
 	for i := len(layout) - 1; i >= 0; i-- {
 		p := layout[i]
 		r := p.Rect

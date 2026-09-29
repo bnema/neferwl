@@ -30,6 +30,8 @@ func TestConfiguresNext(t *testing.T) {
 		{name: "fullscreen preview keeps size and state", first: &Placement{ID: 1, Rect: area, Floating: true, Fullscreen: true}, p: Placement{ID: 1, Rect: Rect{W: 100, H: 80}, Preview: 0.1}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 496, Height: 796, Fullscreen: true, Output: "A", Visible: true}, send: true},
 		{name: "hidden float made fullscreen previews fullscreen", first: &Placement{ID: 1, Hidden: true, Floating: true}, p: Placement{ID: 1, Rect: Rect{W: 100, H: 80}, Preview: 0.1, Fullscreen: true}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 1000, Height: 800, Fullscreen: true, Output: "A", Visible: true}, send: true},
 		{name: "preview keeps size", first: &tiled, p: Placement{ID: 1, Rect: Rect{W: 100, H: 100}, Preview: 0.5}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 496, Height: 796, Output: "A", Visible: true}, send: true},
+		{name: "covering float preview keeps native size", first: &Placement{ID: 1, Rect: area, Floating: true}, p: Placement{ID: 1, Rect: Rect{W: 600, H: 480}, Preview: 0.6, Floating: true}, t: target, want: ports.ConfigureWindow{ID: 1, Floating: true, Activated: true, Output: "A", Visible: true}},
+		{name: "covering float peek keeps native size", first: &Placement{ID: 1, Rect: area, Floating: true}, p: Placement{ID: 1, Rect: Rect{X: 20, Y: 20, W: 600, H: 480}, Preview: 0.6, Floating: true, Peek: true}, t: target, want: ports.ConfigureWindow{ID: 1, Floating: true, Activated: true, Output: "A", Visible: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

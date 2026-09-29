@@ -39,11 +39,17 @@ type Monitor struct {
 	overview       bool
 	overviewFrom   *Workspace
 	overviewFromID WindowID
+	// Initial float order/below flags for Escape; FocusID can raise a float.
+	overviewFloats []Float
 	// overviewCard is the selected stash card and overviewCardOf its
 	// workspace; 0 while the selection is on a column. The stash itself
 	// changes only when the overview closes on the card.
 	overviewCard   WindowID
 	overviewCardOf *Workspace
+	// overviewStack is the provisional front item (0 means columns).
+	// nil means the row's real top item is front.
+	overviewStackOf *Workspace
+	overviewStack   WindowID
 	// scrollX and scrollY add up scrolling in the overview until it makes
 	// a step (overviewScroll); opening the overview starts from zero.
 	scrollX, scrollY float64

@@ -136,20 +136,20 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 ### Overview
 
-`toggle-overview` shows every column of the current workspace in one row, shrunk by the same factor so each window keeps its shape, as small as needed to fit (down to a quarter, then the row scrolls). The workspaces above and below show dimmed. Windows are not resized: the previews are their last frames. Native floating windows are hidden. The overview opens over a fullscreen window too. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; with `scroll` overflow the other columns stay selectable.
+`toggle-overview` shows the current workspace as a row of scaled previews (down to a quarter, then the columns scroll). Windows keep their size and previews show their last frames. The dimmed workspaces above and below show their on-screen front too. Columns form one stack card alongside native floats that cover the usable area: the front matches the screen, with up to two cards peeking up and right behind it. Smaller floats, such as dialogs, stay hidden. A pinned fullscreen window remains its row's only preview; with `scroll` overflow the other columns stay selectable.
 
 | Key | Action |
 | --- | --- |
-| `h` / `l`, `left` / `right` | Select the column on the left / right; left of the first column, the stash pile |
+| `h` / `l`, `left` / `right` | Move within the front columns; left of the first column (or float), the stash pile if present; right of the last column (or float), rotate the next stack card to the front |
 | `k` / `j`, `up` / `down` | Select the workspace above / below |
-| `return` | Close the overview on the selected window |
-| `escape` | Close it and return to the window it opened on |
+| `return` | Close on the selected column or front float, bringing its card to the front |
+| `escape` | Close without changing the original focus or stack order |
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the first column. `return` or a click on a card closes the overview with the stash shown on that window.
 
 A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through the workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
 
-A click on a preview picks it. Other binds still work. Native floating windows (dialogs) are not shown.
+A click on a front preview picks it; a click on a peeking card brings that card to the front and focuses it. Rotation changes the screen only on Return or click. Other binds still work.
 
 ### Default binds
 
