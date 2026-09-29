@@ -161,14 +161,14 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 	m.CancelOverview()
 }
 
-// Escape restores the opening column state even when an active bind changes it.
-func TestOverviewCancelRestoresFullWidthAfterBind(t *testing.T) {
+// Escape restores the opening column state after a real workspace mutation.
+func TestOverviewCancelRestoresFullWidthAfterMutation(t *testing.T) {
 	m := maximizedOverview()
 	w := m.Current()
 	m.ToggleOverview()
-	m.Apply(ActionMaximizeColumn)
+	w.ToggleFullWidth()
 	if w.Columns[1].FullWidth {
-		t.Fatal("maximize bind did not toggle while overview was open")
+		t.Fatal("workspace mutation did not toggle maximization")
 	}
 	m.CancelOverview()
 	if w.Focus != 1 || !w.Columns[1].FullWidth {
@@ -177,7 +177,7 @@ func TestOverviewCancelRestoresFullWidthAfterBind(t *testing.T) {
 	// The snapshot follows a surviving column if another column disappears.
 	m.ToggleOverview()
 	w.RemoveWindow(1)
-	m.Apply(ActionMaximizeColumn)
+	w.ToggleFullWidth()
 	m.CancelOverview()
 	if id, _ := w.Focused(); id != 2 || !w.Columns[0].FullWidth {
 		t.Fatalf("cancel after removal: focus %d columns %+v", id, w.Columns)

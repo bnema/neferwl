@@ -147,11 +147,11 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys.
 
-Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. `return` or a click on a card closes the overview with the stash shown on that window.
+Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. A successful up/down move through the stack leaves the stash and selects the new front card. `return` or a click on a card closes the overview with the stash shown on that window.
 
 A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
 
-Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. Other binds still work.
+Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Window mutation binds (moving, resizing, maximizing, fullscreen and stash toggles) and workspace moves are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
 
 ### Default binds
 

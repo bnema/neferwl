@@ -88,7 +88,7 @@ func (m *Monitor) selectRow() {
 	if w.floatFocus && len(w.Columns) > 0 && (len(w.stack()) < 2 || m.stackFront(w).kind == stackColumns) {
 		w.floatFocus = false
 	}
-	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused() && !w.floatFocus) {
+	if len(w.Stash) > 0 && (len(w.stack()) == 0 || w.stashFocused() && !w.floatFocus) {
 		m.selectCard(w, w.stashAt)
 	}
 }
@@ -117,6 +117,65 @@ func (m *Monitor) cardAt(w *Workspace) int {
 	return -1
 }
 
+// overviewTarget resolves the active preview to one window for validation
+// and window actions. Presentation state never falls back to a covering float.
+func (m *Monitor) overviewTarget() WindowID {
+	if id := m.card(); id != 0 {
+		return id
+	}
+	w := m.Current()
+	if w.pinned() {
+		return w.cover()
+	}
+	item := m.stackFront(w)
+	switch item.kind {
+	case stackFloat:
+		return item.id
+	case stackColumn:
+		i := w.columnOf(item.id)
+		if i >= 0 {
+			if w.columnOf(m.ov.selected) == i {
+				return m.ov.selected
+			}
+			c := w.Columns[i]
+			return c.Windows[c.Focus]
+		}
+	case stackColumns:
+		i := w.columnOf(m.ov.selected)
+		if w.overviewMaximized() && (i < 0 || i == w.Focus) {
+			i = m.hiddenColumn(w)
+		} else if i < 0 && len(w.Columns) > 0 {
+			i = w.Focus
+		}
+		if i >= 0 {
+			if w.columnOf(m.ov.selected) == i {
+				return m.ov.selected
+			}
+			c := w.Columns[i]
+			return c.Windows[c.Focus]
+		}
+	}
+	return 0
+}
+
+// overviewBlocks makes window mutations explicit: they are disabled while
+// selection is provisional. Workspace and monitor navigation remain active.
+func overviewBlocks(a Action) bool {
+	if _, op, ok := WorkspaceArg(a); ok {
+		return op != FocusWorkspace
+	}
+	switch a {
+	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
+		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
+		ActionToggleStashVisible, ActionMoveColumnToWorkspaceUp,
+		ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp,
+		ActionMoveWindowToWorkspaceDown, ActionConsumeOrExpelLeft,
+		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+		return true
+	}
+	return false
+}
+
 // closeOverview closes the overview on the selection: a card shows the
 // stash on it. A fullscreen request another stashed window made while
 // the stash was hidden is dropped: the picked card stays in front.
@@ -129,21 +188,7 @@ func (m *Monitor) closeOverview() {
 		w.stashAt = i
 		w.showStash()
 	} else if !w.pinned() && len(w.stack()) > 0 {
-		item := m.stackFront(w)
-		selected := m.ov.selected
-		if item.kind == stackColumns && len(w.Columns) > 0 {
-			i := w.columnOf(selected)
-			if w.overviewMaximized() && (i < 0 || i == w.Focus) {
-				i = m.hiddenColumn(w)
-			} else if i < 0 {
-				i = w.Focus
-			}
-			if i >= 0 && w.columnOf(selected) != i {
-				c := w.Columns[i]
-				selected = c.Windows[c.Focus]
-			}
-		}
-		w.apply(item, selected)
+		w.apply(m.stackFront(w), m.overviewTarget())
 	}
 	m.ov = overviewState{}
 }
@@ -353,7 +398,7 @@ func (m *Monitor) overviewLayout() []Placement {
 			result = append(result, w.pile(ry, w != cur, at)...)
 		}
 		for _, f := range w.Floats {
-			if !shown || len(w.stack()) < 2 || !w.coversFloat(f) {
+			if _, drawn := w.itemOf(f.ID); !shown || !drawn {
 				result = append(result, Placement{ID: f.ID, Hidden: true})
 			}
 		}

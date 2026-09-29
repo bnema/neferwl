@@ -429,7 +429,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		}
 		back.col = len(origin.Columns)
 	case back.float != nil:
-		// Restore the float's original position, not a new user raise.
+		// Restore the original position before an optional focus-driven raise.
 		at := min(back.floatAt, len(origin.Floats))
 		origin.Floats = slices.Insert(origin.Floats, at, *back.float)
 		origin.reconcileFloats()

@@ -116,6 +116,7 @@ func (m *Monitor) moveStack(d int) bool {
 		return false
 	}
 	m.setFront(w, items[at])
+	m.ov.cardOf, m.ov.card = nil, 0
 	return true
 }
 
@@ -283,8 +284,11 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 // stackRow draws up to two cards on each side of the provisional front.
 func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
 	items := w.stack()
-	if len(items) < 2 {
+	if len(items) == 0 {
 		return w.previewRow(y, dim, lit)
+	}
+	if len(items) == 1 {
+		return m.previewItem(w, items[0], y, dim, lit)
 	}
 	at := 0
 	if w == m.Current() {

@@ -110,6 +110,57 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 	sceneMatch(t, scenes, focused(9))
 }
 
+// Closing through a real bind follows the preview, not the covering float.
+func TestOverviewCloseBindTargetsPreview(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+	scene(t, scenes)
+	for _, id := range []ports.WindowID{1, 2} {
+		client <- ports.WindowMapped{ID: id}
+		scene(t, scenes)
+	}
+	client <- ports.WindowMapped{ID: 9, Floating: true, Width: 300, Height: 200}
+	scene(t, scenes)
+	press := func(key string, mods ports.Mods) {
+		input <- ports.KeyEvent{Keysym: key, Mods: mods, Pressed: true}
+		input <- ports.KeyEvent{Keysym: key, Mods: mods}
+	}
+	press("o", ports.ModSuper)
+	sceneMatch(t, scenes, func(s ports.Scene) bool {
+		for _, w := range s.Windows {
+			if w.ID == 9 && w.Focused && w.Preview > 0 {
+				return true
+			}
+		}
+		return false
+	})
+	press("Up", 0)
+	sceneMatch(t, scenes, func(s ports.Scene) bool {
+		for _, w := range s.Windows {
+			if w.ID == 2 && w.Focused && w.Preview > 0 {
+				return true
+			}
+		}
+		return false
+	})
+	press("q", ports.ModSuper)
+	if got := next(t, commands, anyOf[ports.CloseWindow]); got.ID != 2 {
+		t.Fatalf("close target %d, want preview 2", got.ID)
+	}
+}
+
 // Two-finger scrolling moves the overview selection one column per step,
 // along the axis the fingers move most; a small scroll does nothing and
 // lifting the fingers starts over. Outside the overview it goes to the

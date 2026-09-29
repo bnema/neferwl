@@ -100,7 +100,7 @@ func TestOverviewConfigureUsesRealLayoutAfterMaximize(t *testing.T) {
 	before := c.configures.sent[3]
 	m.ToggleOverview()
 	publish()
-	m.Apply(ActionMaximizeColumn)
+	m.Current().ToggleFullWidth() // a real workspace mutation, not an overview bind
 	real := previewOf(t, m.Current().Layout(), 3)
 	expected := c.clientRect(real)
 	ps := m.Layout()
