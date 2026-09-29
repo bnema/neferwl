@@ -67,12 +67,39 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 			})
 		},
 		func() error { return registerClipboard(d, s) },
+		func() error { return registerFixes(d) },
 	} {
 		if err := register(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// registerFixes advertises wl_fixes: clients can destroy their registry,
+// and acknowledge removed globals (v2, libwayland 1.26+).
+func registerFixes(d *server.Display) error {
+	version := int32(1)
+	if server.AckGlobalRemove(nil, nil, 0) {
+		version = 2
+	}
+	return wayland.NewFixesGlobal(d, version, func(c server.Client, v, id uint32) {
+		_, _ = wayland.NewFixes(c, int32(v), id, fixes{})
+	})
+}
+
+type fixes struct{}
+
+func (fixes) Destroy(*wayland.Fixes) {}
+func (fixes) DestroyRegistry(_ *wayland.Fixes, r *wayland.Registry) {
+	if r != nil && r.Resource != nil {
+		r.Destroy()
+	}
+}
+func (fixes) AckGlobalRemove(f *wayland.Fixes, r *wayland.Registry, name uint32) {
+	if r != nil {
+		server.AckGlobalRemove(f.Resource, r.Resource, name)
+	}
 }
 
 type compositor struct{ server *Server }

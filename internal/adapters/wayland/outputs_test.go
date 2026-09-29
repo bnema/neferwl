@@ -70,6 +70,42 @@ func (p *closedProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+// wl_fixes: a client acknowledges a removed output global and destroys its
+// registry; a bogus acknowledgement is a protocol error.
+func TestFixesAckAndDestroyRegistry(t *testing.T) {
+	s, _, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	g, ok := c.Registry().FindGlobal("wl_fixes")
+	if !ok || g.Version != 2 {
+		t.Fatalf("wl_fixes %+v", g)
+	}
+	fixes := bindVersion(t, c, "wl_fixes", 2)
+	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0], second}, Focused: "HEADLESS-1"}
+	waitOutputs(t, c, 2)
+	var name uint32
+	for n, g := range c.Registry().GetGlobals() {
+		if g.Interface == "wl_output" && n > name {
+			name = n
+		}
+	}
+	commands <- ports.SetOutputs{Outputs: ports.Layout{testOutputs[0]}, Focused: "HEADLESS-1"}
+	waitOutputs(t, c, 1)
+	requestProtocol(t, c, fixes, wayland.FixesRequestAckGlobalRemove, c.Registry().ID(), name)
+	requestProtocol(t, c, fixes, wayland.FixesRequestDestroyRegistry, c.Registry().ID())
+	if err := c.Roundtrip(); err != nil {
+		t.Fatalf("valid ack and destroy: %v", err)
+	}
+
+	// A global that is still announced cannot be acknowledged.
+	c2 := protocolClient(t, s, dir)
+	fixes2 := bindVersion(t, c2, "wl_fixes", 2)
+	out, _ := c2.Registry().FindGlobal("wl_output")
+	requestProtocol(t, c2, fixes2, wayland.FixesRequestAckGlobalRemove, c2.Registry().ID(), out.Name)
+	if err := c2.Roundtrip(); err == nil {
+		t.Fatal("ack of a live global accepted")
+	}
+}
+
 func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	s, _, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)
