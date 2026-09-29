@@ -584,12 +584,14 @@ func (w *Workspace) previewRow(y int, dim, lit bool) []Placement {
 
 func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
 	u := w.Usable
-	left := w.pileWidth()
-	u.X, u.W = u.X+left, u.W-left
 	z := w.overviewZoom()
 	scale := func(v int) int { return int(math.Round(float64(v) * z)) }
 	width := scale(span)
-	x := u.X + (u.W-width)/2
+	// Rows stay centred on the output like rows without a stash; the pile
+	// only pushes a row right when they would overlap.
+	x := max(u.X+(u.W-width)/2, u.X+w.pileWidth())
+	left := w.pileWidth()
+	u.X, u.W = u.X+left, u.W-left
 	if width > u.W {
 		x = u.X + u.W/2 - scale(sel.X+sel.W/2)
 		x = min(max(x, u.X+u.W-width), u.X)
@@ -675,15 +677,31 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 // must not enter the empty workspace below the last one.
 func (m *Monitor) overviewSwipe(a Action) {
 	switch a {
+	case ActionFocusWorkspaceUp:
+		a = ActionFocusWindowUp
+	case ActionFocusWorkspaceDown:
+		a = ActionFocusWindowDown
+	}
+	m.overviewFocus(a)
+}
+
+// overviewFocus runs a focus bind as an overview move, so the focus binds
+// and the bare keys navigate the overview the same way: true when a was
+// one of them.
+func (m *Monitor) overviewFocus(a Action) bool {
+	switch a {
 	case ActionFocusColumnLeft:
 		m.OverviewMove(-1, 0)
 	case ActionFocusColumnRight:
 		m.OverviewMove(1, 0)
-	case ActionFocusWorkspaceUp:
+	case ActionFocusWindowUp:
 		m.OverviewMove(0, -1)
-	case ActionFocusWorkspaceDown:
+	case ActionFocusWindowDown:
 		m.OverviewMove(0, 1)
+	default:
+		return false
 	}
+	return true
 }
 
 // overviewScrollStep is the two-finger scroll distance, in libinput's

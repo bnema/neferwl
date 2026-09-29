@@ -330,6 +330,30 @@ func TestOverviewPileLayout(t *testing.T) {
 	}
 }
 
+// A stash pile does not shift a row that fits beside it: the row stays
+// centred like the same workspace without a stash.
+func TestOverviewPileKeepsRowCentred(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(3000, 1200)
+	m.SetOverflow(OverflowFixed)
+	m.SetMaxColumns(3)
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	m.ToggleOverview()
+	want := previewOf(t, m.Layout(), 1).Rect
+	m.CancelOverview()
+	w := m.Current()
+	w.AddWindow(4)
+	w.FocusID(4)
+	w.ToggleWindowStash()
+	w.FocusID(1)
+	m.ToggleOverview()
+	if got := previewOf(t, m.Layout(), 1).Rect; got != want {
+		t.Fatalf("row with a stash at %+v, without at %+v", got, want)
+	}
+}
+
 // h from column 1 enters the pile on the stash's selection, h/l browse
 // it, l past its end returns to column 1; Return shows the stash on the
 // chosen window.

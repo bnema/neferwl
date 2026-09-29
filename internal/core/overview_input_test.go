@@ -61,6 +61,55 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 	})
 }
 
+// The focus binds (cmd+arrows) move the overview selection like the bare
+// keys, over a covering float too: cmd+up brings the columns card in
+// front, cmd+left then selects a column, cmd+down returns to the float.
+func TestOverviewFocusBindsNavigate(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 300, Height: 200}}
+	scene(t, scenes)
+	for id := ports.WindowID(1); id <= 2; id++ {
+		client <- ports.WindowMapped{ID: id}
+		scene(t, scenes)
+	}
+	client <- ports.WindowMapped{ID: 9, Floating: true, Width: 300, Height: 200}
+	scene(t, scenes)
+	focused := func(id ports.WindowID) func(ports.Scene) bool {
+		return func(s ports.Scene) bool {
+			for _, w := range s.Windows {
+				if w.ID == id && w.Focused && w.Preview > 0 && w.Dim == 0 {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	press := func(key string) {
+		input <- ports.KeyEvent{Keysym: key, Mods: ports.ModSuper, Pressed: true}
+		input <- ports.KeyEvent{Keysym: key, Mods: ports.ModSuper}
+	}
+	press("o")
+	sceneMatch(t, scenes, focused(9))
+	press("Up")
+	sceneMatch(t, scenes, focused(2))
+	press("Left")
+	sceneMatch(t, scenes, focused(1))
+	press("Down")
+	sceneMatch(t, scenes, focused(9))
+}
+
 // Two-finger scrolling moves the overview selection one column per step,
 // along the axis the fingers move most; a small scroll does nothing and
 // lifting the fingers starts over. Outside the overview it goes to the
