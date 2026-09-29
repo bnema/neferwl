@@ -60,17 +60,22 @@ type Channels struct {
 	OutputApplied <-chan ports.OutputApplied
 }
 type Server struct {
-	nextCapture     uint64
-	captureReplies  map[uint64]func(ports.CaptureDone)
-	captureSources  map[*server.Resource]*output
-	captureSessions map[*captureSession]struct{}
-	display         *server.Display
-	env             procEnv
-	slotsPending    bool // core waits for a slot window
-	name            string
-	cleanup         func()
-	log             zerowrap.Logger
-	channels        Channels
+	leaseDevices      map[string]*leaseDevice
+	pendingLeases     map[uint64]*leaseObject
+	pendingLeaseCards map[uint64]string
+	activeLeases      map[uint32]*leaseObject
+	nextLeaseID       uint64
+	nextCapture       uint64
+	captureReplies    map[uint64]func(ports.CaptureDone)
+	captureSources    map[*server.Resource]*output
+	captureSessions   map[*captureSession]struct{}
+	display           *server.Display
+	env               procEnv
+	slotsPending      bool // core waits for a slot window
+	name              string
+	cleanup           func()
+	log               zerowrap.Logger
+	channels          Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -219,6 +224,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, seat: seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}}
+	s.leaseDevices = map[string]*leaseDevice{}
+	s.pendingLeases = map[uint64]*leaseObject{}
+	s.pendingLeaseCards = map[uint64]string{}
+	s.activeLeases = map[uint32]*leaseObject{}
 	s.clock = opts.Clock
 	if s.clock == nil {
 		s.clock = clock.System{}
@@ -304,7 +313,8 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(10)
+	wg.Add(11)
+	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
 	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
