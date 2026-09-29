@@ -142,6 +142,24 @@ func TestScrolledOffFullscreenShowsLayers(t *testing.T) {
 	}
 }
 
+// In the overview a fullscreen window is a preview: the layers show.
+func TestOverviewOverFullscreenShowsLayers(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.AddWindow(1)
+	m.SetFullscreen(1, true)
+	sc := &screen{mon: m}
+	bar := ports.SceneLayer{ID: 6, Layer: ports.LayerTop}
+	m.ToggleOverview()
+	if !shown(sc, bar) {
+		t.Fatal("bar hidden in the overview")
+	}
+	m.ToggleOverview()
+	if shown(sc, bar) {
+		t.Fatal("bar shown over fullscreen after the overview")
+	}
+}
+
 // A fullscreen window is exclusive: the scene carries only the background
 // and a layer taking the keyboard exclusively (a locker), so the output
 // can scan the window out.

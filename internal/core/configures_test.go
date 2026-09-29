@@ -27,6 +27,8 @@ func TestConfiguresNext(t *testing.T) {
 		{name: "hidden new", p: Placement{ID: 1, Hidden: true, Floating: true}, t: target, want: ports.ConfigureWindow{ID: 1, Floating: true, Output: "A"}, send: true},
 		{name: "hidden keeps size", first: &tiled, p: Placement{ID: 1, Hidden: true}, t: configureTarget{output: "B"}, want: ports.ConfigureWindow{ID: 1, Width: 496, Height: 796, Output: "B"}, send: true},
 		{name: "preview new", p: Placement{ID: 1, Rect: Rect{W: 250, H: 200}, Preview: 0.5}, t: target, want: ports.ConfigureWindow{ID: 1, Width: 500, Height: 400, Activated: true, Output: "A", Visible: true}, send: true},
+		{name: "fullscreen preview keeps size and state", first: &Placement{ID: 1, Rect: area, Floating: true, Fullscreen: true}, p: Placement{ID: 1, Rect: Rect{W: 100, H: 80}, Preview: 0.1}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 496, Height: 796, Fullscreen: true, Output: "A", Visible: true}, send: true},
+		{name: "hidden float made fullscreen previews fullscreen", first: &Placement{ID: 1, Hidden: true, Floating: true}, p: Placement{ID: 1, Rect: Rect{W: 100, H: 80}, Preview: 0.1, Fullscreen: true}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 1000, Height: 800, Fullscreen: true, Output: "A", Visible: true}, send: true},
 		{name: "preview keeps size", first: &tiled, p: Placement{ID: 1, Rect: Rect{W: 100, H: 100}, Preview: 0.5}, t: configureTarget{output: "A", area: area}, want: ports.ConfigureWindow{ID: 1, Width: 496, Height: 796, Output: "A", Visible: true}, send: true},
 	}
 	for _, tt := range tests {
