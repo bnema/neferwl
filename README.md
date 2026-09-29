@@ -74,7 +74,14 @@ NeferWL runs on Linux. It needs a GPU and kernel driver with atomic KMS, and a V
 
 ## Install (Arch Linux)
 
-Building needs Go 1.27.
+From the AUR:
+
+```sh
+paru -S neferwl-bin   # latest release, pre-built for x86_64 and aarch64
+paru -S neferwl-git   # latest main, built from source
+```
+
+From a checkout (needs Go 1.27):
 
 ```sh
 make pkg                                  # builds dist/neferwl-*.pkg.tar.zst from HEAD
@@ -83,7 +90,13 @@ sudo pacman -U dist/neferwl-*.pkg.tar.zst
 
 The package installs `neferwl` and a **NeferWL** session for display managers such as Ly, GDM and SDDM. The session runs `neferwl-session`, which starts `neferwl.service` under systemd. This starts `graphical-session.target` and services bound to it (bars, notification daemons, portals, and XDG autostart) with NeferWL and stops them with it. Running `neferwl --session` alone still exports the display environment to D-Bus and systemd user services.
 
-On other distributions, `make build` builds `bin/neferwl`.
+On other distributions, download a `linux_amd64` or `linux_arm64` archive from [Releases](https://github.com/bnema/neferwl/releases) and check it against `checksums.txt`, or run `make bin` to build `bin/neferwl`.
+
+## Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It runs the CI checks, then GoReleaser builds the archives, `checksums.txt`, a provenance attestation and the GitHub release. Last, `packaging/aur/publish.sh` builds `neferwl-bin` and `neferwl-git` with makepkg, checks every source checksum for x86_64 and aarch64, and pushes them to the AUR. Pre-release tags (`v0.2.0-rc1`) get a GitHub release and are kept off the AUR.
+
+The workflow needs the `AUR_SSH_PRIVATE_KEY`, `AUR_USERNAME` and `AUR_EMAIL` repository secrets.
 
 ## Configuration
 
