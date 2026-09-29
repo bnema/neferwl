@@ -21,9 +21,10 @@ var components = map[string]bool{
 }
 
 // categories are debug switches narrower than a component, only on when
-// named: "all" leaves them off (input-motion logs every pointer motion).
-// Naming one turns on debug for its component.
-var categories = map[string]string{"input-motion": "input"}
+// named: "all" leaves them off. input-motion logs every pointer motion,
+// input-keys every key (typed text), drm-flip every frame and commit
+// completion with its timing. Naming one turns on debug for its component.
+var categories = map[string]string{"input-motion": "input", "input-keys": "input", "drm-flip": "drm"}
 
 type debugKey struct{}
 type levelKey struct{}
@@ -50,10 +51,12 @@ func ParseDebug(value string) (map[string]bool, error) {
 // keepRuns is how many per-run log files Open retains.
 const keepRuns = 20
 
-// Open creates runs/<timestamp>.log, points runs/latest.log at it, prunes old runs
-// and attaches the logger to ctx.
+// Open creates runs/<backend>/<timestamp>.log, points latest.log in that
+// directory at it, prunes old runs of that backend and attaches the logger
+// to ctx. Each backend keeps its own runs: headless test runs never rotate
+// a DRM session's log away.
 // The caller must invoke close after all logging is complete.
-func Open(ctx context.Context, level, debug string) (context.Context, func() error, error) {
+func Open(ctx context.Context, backend, level, debug string) (context.Context, func() error, error) {
 	selected, err := ParseDebug(debug)
 	if err != nil {
 		return nil, nil, err
@@ -66,7 +69,7 @@ func Open(ctx context.Context, level, debug string) (context.Context, func() err
 		}
 		state = filepath.Join(home, ".local", "state")
 	}
-	dir := filepath.Join(state, "neferwl", "runs")
+	dir := filepath.Join(state, "neferwl", "runs", backend)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}

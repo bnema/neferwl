@@ -4,6 +4,7 @@ package drm
 import (
 	"fmt"
 	"math"
+	"time"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -108,6 +109,12 @@ type Want struct {
 	Sampled []ports.DMABufFormat
 	// Device is the KMS device (dev_t) offered in scanout tranches.
 	Device uint64
+	// TraceFlips logs each frame and commit completion with its timing
+	// (--debug=drm-flip).
+	TraceFlips bool
+	// VRRFlipGap delays a game frame after the previous flip under VRR
+	// (render.vrr-flip-gap, 0: off; see vrr_flip_gap.go).
+	VRRFlipGap time.Duration
 }
 
 // HDRSettings is the requested HDR state and SDR reference white (nits).

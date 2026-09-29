@@ -207,6 +207,9 @@ type Options struct {
 	// LogMotion logs every pointer motion (--debug=input-motion); motions
 	// are otherwise only counted in the input stats.
 	LogMotion bool
+	// LogKeys logs every key (--debug=input-keys): typed text, off by
+	// default.
+	LogKeys bool
 }
 
 // statsEvery is how often Run logs input throughput.
@@ -447,7 +450,9 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
 		ke := opts.Keymap.Key(code, pressed, msec(keyboardUsec(k)))
-		log.Debug().Uint32("code", code).Str("keysym", ke.Keysym).Bool("pressed", pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
+		if opts.LogKeys {
+			log.Debug().Uint32("code", code).Str("keysym", ke.Keysym).Bool("pressed", pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
+		}
 		switch action, vt := hotkey(ke); action {
 		case hotkeyQuit:
 			log.Warn().Str("reason", "emergency-key").Msg("quit")

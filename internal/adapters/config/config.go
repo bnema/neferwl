@@ -13,10 +13,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// maxVRRFlipGap bounds render.vrr-flip-gap below one refresh of a slow
+// VRR panel (48 Hz: 20.8 ms).
+const maxVRRFlipGap = 10 * time.Millisecond
 
 // defaultBinds use the config syntax and go through the same parser as user binds.
 var defaultBinds = []struct{ combo, action string }{
@@ -135,6 +140,7 @@ func Defaults() ports.Config {
 	c.Render.DirectScanout = true
 	c.Render.Tearing = true
 	c.Render.VRR = true
+	c.Render.VRRFlipGap = time.Millisecond
 	c.Performance.Realtime = true
 	c.Log.Level = "info"
 	c.Log.Debug = []string{}
@@ -577,6 +583,15 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Render.VRR = b
+	case "render.vrr-flip-gap":
+		d, err := time.ParseDuration(v)
+		if v == "0" {
+			d, err = 0, nil
+		}
+		if err != nil || d < 0 || d > maxVRRFlipGap {
+			return fmt.Errorf("must be a duration between 0 and %s, e.g. 1ms", maxVRRFlipGap)
+		}
+		c.Render.VRRFlipGap = d
 	case "performance.realtime":
 		b, err := onOff(v)
 		if err != nil {

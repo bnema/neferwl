@@ -7,6 +7,7 @@ How NeferWL keeps its CPU and memory use low, how to measure it, and the referen
 - **No reflection on the FFI boundary.** libwayland and Vulkan are called through `purego.Syscall6/Syscall15` (fixed arity, zero allocation) and C calls back into Go through `purego.NewCallbackInts`. The Vulkan dispatch tables are generated methods; the libwayland wrapper caches resource id, version and client, and precomputes request argument counts.
 - **No allocation per frame or per request on the steady-state path.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse owner-goroutine scratch or immutable snapshots. Surface updates (one per `wl_surface.commit`) are recycled once no queued update references them.
 - **Cursor rides on game frames under VRR.** While a fullscreen game drives VRR, a cursor move waits for the game's next frame instead of its own commit: a cursor-only commit refreshes the panel at its slowest rate (~21 ms at 48 Hz) and delays the next game frame by as much. If the game stops drawing, the cursor still commits alone at 24 Hz.
+- **Game frames keep a short gap after each VRR flip.** On amdgpu, a flip committed right after the previous flip event can miss the early refresh and wait for the panel's slowest rate (~21 ms at 48 Hz); the next frame then lands at the same point, and the screen stays at 48 Hz while the game renders at 150 fps. Game frames under VRR therefore commit at least `render.vrr-flip-gap` (default 1 ms) after the previous flip. `internal/adapters/drm/vrr_flip_gap.go` has the measurements.
 - **Default GOGC.** The Go live heap is a few MB (client buffers live in shared and GPU memory), so the runtime default `GOGC=100` with a 256 MiB soft limit gives 2 collections on the tiled playback test where `GOGC=50` gave 13. `GOGC` and `GOMEMLIMIT` from the environment win.
 
 Output and input threads request real-time scheduling, and the Vulkan queue requests elevated priority. Both require CAP_SYS_NICE, which the Arch packages set on `/usr/bin/neferwl` at install. Apps launched by NeferWL inherit neither. Set `performance.realtime = false` to opt out. A binary built with `make bin` runs at normal priority unless you grant it: `sudo setcap cap_sys_nice+ep bin/neferwl`.
@@ -37,6 +38,10 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 `make tty` enables it on `localhost:6060` (`make tty PPROF=` disables it). `--pprof` also serves `/debug/pprof/profile` (CPU) and `/debug/pprof/trace` (scheduler and GC timeline for `go tool trace`). Escape analysis (`go build -gcflags=-m ./internal/adapters/vulkan`) shows why a value reaches the heap.
 
 `slow flip` log entries (flip over 20 ms) carry `frame` (false: cursor or VRR state commit) and `vrr`; `input stats` shows coalesced pointer motion and the longest wait for core.
+
+`--debug=drm-flip` (or `make tty TTY_DEBUG=drm-flip`) logs every commit completion as a `flip` entry: `commit_to_flip_ms`, `flip_interval_ms` (between frame flips), `fence_ready_at_commit`, and, when the client fence reports its signal time, `commit_to_fence_ms` and `fence_to_flip_ms`. A negative `commit_to_fence_ms` means the client finished before the commit.
+
+Logs go to `$XDG_STATE_HOME/neferwl/runs/<backend>/`, one file per run with `latest.log` pointing at the newest; each backend keeps its last 20 runs, so headless test runs never rotate a DRM session's log away. `--debug=all` leaves out the per-event categories `drm-flip`, `input-motion` and `input-keys` (typed text); name them to turn them on.
 
 ## Reference: 4K HDR tiled video playback
 

@@ -140,8 +140,10 @@ func (s *Server) setCursor(c ports.CursorChange) {
 	if s.channels.Cursors == nil {
 		return
 	}
-	s.log.Debug().Str("shape", c.Shape).Bool("client", c.Image != nil).Bool("hidden", c.Hidden).Msg("cursor")
 	s.cursorMu.Lock()
+	if c.Image == nil && (c.Shape != s.cursorLatest.Shape || c.Hidden != s.cursorLatest.Hidden || s.cursorLatest.Image != nil) {
+		s.log.Debug().Str("shape", c.Shape).Bool("hidden", c.Hidden).Msg("cursor")
+	}
 	s.cursorLatest, s.cursorQueued = c, true
 	s.cursorMu.Unlock()
 	select {

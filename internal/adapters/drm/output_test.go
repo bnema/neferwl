@@ -31,6 +31,7 @@ type commitRec struct {
 	req   atomicReq
 	flags uint32
 	user  uint64
+	at    time.Time // when the commit was made
 }
 
 // testOutput returns an output on a mocked kms that records commits;
@@ -49,7 +50,7 @@ func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec,
 	k.EXPECT().commit(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(r *atomicReq, flags uint32, user uint64) error {
 		commitMu.Lock()
 		defer commitMu.Unlock()
-		c := commitRec{flags: flags, user: user}
+		c := commitRec{flags: flags, user: user, at: time.Now()}
 		c.req.objs = append([]uint32(nil), r.objs...)
 		for _, ps := range r.props {
 			c.req.props = append(c.req.props, append([]propValue(nil), ps...))

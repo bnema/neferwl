@@ -35,6 +35,8 @@ type pendingFrame struct {
 	// the commit ends. composed is set when the frame was rendered.
 	fences   []*os.File
 	composed bool
+	// fenceReady: every fence had signalled at commit (flip tracing only).
+	fenceReady bool
 }
 
 func (f *pendingFrame) closeFences() {
@@ -118,6 +120,12 @@ func (l *frameLifecycle) busy(now time.Time) bool {
 	}
 	l.lastBusy = now
 	return newRun
+}
+
+// ours reports whether user is the event of the pending commit with a
+// known serial (not the end of an EBUSY wait).
+func (l *frameLifecycle) ours(user uint64) bool {
+	return l.pending && l.pendingSerial != 0 && user>>userKindBits == l.pendingSerial
 }
 
 // flip consumes only the event for the pending commit; while waiting after
