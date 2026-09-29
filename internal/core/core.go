@@ -451,6 +451,15 @@ func (c *Core) publish(ctx context.Context) error {
 		o := sc.mon.Output()
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
+		var real map[WindowID]Placement
+		if sc.mon.ov.open {
+			real = make(map[WindowID]Placement)
+			for _, w := range sc.mon.all() {
+				for _, p := range w.Layout() {
+					real[p.ID] = p
+				}
+			}
+		}
 		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
@@ -470,6 +479,11 @@ func (c *Core) publish(ctx context.Context) error {
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
 				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+			} else if p.Preview > 0 && !p.Hidden {
+				if rp, ok := real[p.ID]; ok && !rp.Hidden {
+					t.real, t.hasReal = rp, true
+					t.client = c.clientRect(rp)
+				}
 			}
 			if v, send := c.configures.next(p, t); send {
 				if err := c.command(ctx, v); err != nil {

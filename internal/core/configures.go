@@ -11,6 +11,10 @@ type configureTarget struct {
 	// floating window (native floats pick their own size).
 	client  Rect
 	imposed bool
+	// real is the non-overview placement of this preview; only visible
+	// real windows are sized by it, never by their scaled preview rect.
+	real    Placement
+	hasReal bool
 }
 
 // configures owns the last configure sent to each window and decides the
@@ -54,6 +58,9 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 			// A float made fullscreen off screen: its preview row shows
 			// it fullscreen, sized for the output, never the preview.
 			v.Width, v.Height, v.Fullscreen, v.Floating = t.area.W, t.area.H, true, false
+		}
+		if t.hasReal && !t.real.Hidden && !t.real.Floating {
+			v.Width, v.Height = t.client.W, t.client.H
 		}
 		v.Activated, v.Visible, v.Output = t.focused, onScreen(p, t.area), t.output
 	default:
