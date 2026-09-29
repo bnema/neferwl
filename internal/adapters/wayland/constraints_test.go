@@ -95,6 +95,14 @@ func TestPointerWarp(t *testing.T) {
 		ev = next(t, c, p.events)
 	}
 	serial := uint32(ev[1])
+	// A second pointer gets its own enter serial: the first pointer's
+	// serial does not validate it.
+	pointer2 := c.AllocateID()
+	p2 := &eventLog{events: make(chan []float64, 64), pointer: true}
+	p2.SetID(pointer2)
+	c.Context().Register(p2)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer2)
+	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer2, wlturbo.Fixed(10*256), wlturbo.Fixed(10*256), serial)
 	// A stale serial is ignored; the enter serial moves the pointer.
 	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer, wlturbo.Fixed(10*256), wlturbo.Fixed(10*256), serial+100)
 	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer, wlturbo.Fixed(14*256), wlturbo.Fixed(26*256), serial)

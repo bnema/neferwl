@@ -45,14 +45,17 @@ func (m relativeManager) GetRelativePointer(r *relativepointer.ZwpRelativePointe
 }
 
 // pointerWarp is wp_pointer_warp_v1: a client with the pointer moves it on
-// its window (Wine's SetCursorPos). Warps without the pointer, with a
-// stale enter serial or outside the window are ignored.
+// its window (Wine's SetCursorPos). Warps without the pointer, with a serial
+// other than that pointer's current enter, or outside the window are ignored.
 type pointerWarp struct{ server *Server }
 
 func (pointerWarp) Destroy(*pointerwarp.WpPointerWarpV1) {}
-func (h pointerWarp) WarpPointer(r *pointerwarp.WpPointerWarpV1, surf *wayland.Surface, _ *wayland.Pointer, x, y server.Fixed, serial uint32) {
+func (h pointerWarp) WarpPointer(r *pointerwarp.WpPointerWarpV1, surf *wayland.Surface, p *wayland.Pointer, x, y server.Fixed, serial uint32) {
 	s := h.server
-	if surf == nil || serial < s.seat.enterFirst || serial > s.seat.enterLast {
+	if surf == nil || p == nil || p.Client() != r.Client() {
+		return
+	}
+	if enter, ok := s.seat.enters[p.Resource]; !ok || enter != serial {
 		return
 	}
 	w := s.windows[s.seat.pointerFocus]
