@@ -81,6 +81,7 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 		return nil, fmt.Errorf("open seat: %w", err)
 	}
 	want := wantFromConfig(cfg)
+	want.TraceFlips = logging.Enabled(ctx, "drm-flip")
 	paths, _ := filepath.Glob("/dev/dri/card[0-9]*")
 	sort.Strings(paths)
 	b := &drmBackend{seat: s, clock: clock.System{}}

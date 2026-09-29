@@ -200,7 +200,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
 					}
 				}
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion")}, input)
+				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
 			})
 			return
 		}
@@ -265,6 +265,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				want := func(cfg ports.Config) drm.Want {
 					w := wantFromConfig(cfg)
 					w.Sampled = dmabuf.Formats
+					w.TraceFlips = logging.Enabled(ctx, "drm-flip")
 					return w
 				}
 				return hw.runOutputs(ctx, want, opts.Config, apply, outputIO, curs, newRenderer, logging.For(ctx, "drm"))

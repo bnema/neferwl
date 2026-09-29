@@ -144,7 +144,7 @@ func run() error {
 	noXwayland := flags.Bool("no-xwayland", false, "no X11 display for X11 apps")
 	headlessHDR := flags.Bool("headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
-	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; input-motion logs every pointer motion)")
+	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion and input-keys, which log every flip, pointer motion or key)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
 	session := flags.Bool("session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services; notify systemd when ready")
 	pprofAddr := flags.String("pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")

@@ -106,6 +106,10 @@ type Output struct {
 	// move waits for the next frame (see cursorWaits).
 	lastFrame  time.Time
 	cursorHeld bool
+	// traceFlips logs every completion with its timing; lastFlipAt is
+	// the previous frame flip's kernel timestamp.
+	traceFlips bool
+	lastFlipAt time.Duration
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
 	// follows wantOff, so a display turned off never lights up.
@@ -217,7 +221,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1)}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), traceFlips: card.want.TraceFlips}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -384,6 +388,8 @@ func (o *Output) modeset() error {
 	}
 	o.modeBlob = blob
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, o.wantOff
+	// The traced flip interval belonged to the old state.
+	o.lastFlipAt = 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.planeRect = fullPlaneRect(o.Width(), o.Height())
 	if o.cursor != nil {
@@ -678,6 +684,9 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.lastFrame, o.cursorHeld = time.Now(), false
 	f.frame, f.async = true, async
 	f.fences = dupFences(fence, ov.acquire)
+	if o.traceFlips {
+		f.fenceReady = signalled(f.fences)
+	}
 	o.setAsync(async)
 	o.frame.begin(f, time.Now())
 	return nil
@@ -1210,6 +1219,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		dirty = false
 		frame++
+		if !o.traceFlips {
+			continue
+		}
 		o.log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Bool("direct", direct).Dur("took", time.Since(start)).Msg("frame")
 	}
 }
@@ -1238,9 +1250,19 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 // reported with its kernel timestamp. It reports false for an event of
 // another commit, which is dropped.
 func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
+	// Only a commit of ours is traced: not a stale event, nor the end of
+	// an EBUSY wait. Its fences are read before flip closes them.
+	trace := o.traceFlips && o.frame.ours(ev.user)
+	var fenceAt time.Duration
+	if trace {
+		fenceAt = fencesSignalledAt(o.frame.pendingFrame.fences)
+	}
 	f, start, ok := o.frame.flip(ev.user)
 	if !ok {
 		return false
+	}
+	if trace {
+		o.traceFlip(ev, f, start, fenceAt)
 	}
 	if age := time.Since(start); age > 20*time.Millisecond {
 		o.log.Info().Dur("flip_ms", age).Bool("frame", f.frame).Bool("vrr", o.vrrOn).Str("connector", o.conn.name).Msg("slow flip")
@@ -1282,7 +1304,11 @@ func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorCh
 		o.log.Warn().Err(err).Msg("cursor")
 		return
 	}
-	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Bool("client", c.Image != nil).Int("w", img.W).Int("h", img.H).Msg("cursor image")
+	if c.Image != nil {
+		// Client cursors (games) reload on every change: too many to log.
+		return
+	}
+	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }
 
 // maxUnsent bounds reports waiting for wayland; past it the oldest flip is

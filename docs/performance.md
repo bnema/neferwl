@@ -38,7 +38,9 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 `slow flip` log entries (flip over 20 ms) carry `frame` (false: cursor or VRR state commit) and `vrr`; `input stats` shows coalesced pointer motion and the longest wait for core.
 
-Logs go to `$XDG_STATE_HOME/neferwl/runs/<backend>/`, one file per run with `latest.log` pointing at the newest; each backend keeps its last 20 runs, so headless test runs never rotate a DRM session's log away.
+`--debug=drm-flip` (or `make tty TTY_DEBUG=drm-flip`) logs every commit completion as a `flip` entry: `commit_to_flip_ms`, `flip_interval_ms` (between frame flips), `fence_ready_at_commit`, and, when the client fence reports its signal time, `commit_to_fence_ms` and `fence_to_flip_ms`. A negative `commit_to_fence_ms` means the client finished before the commit.
+
+Logs go to `$XDG_STATE_HOME/neferwl/runs/<backend>/`, one file per run with `latest.log` pointing at the newest; each backend keeps its last 20 runs, so headless test runs never rotate a DRM session's log away. `--debug=all` leaves out the per-event categories `drm-flip`, `input-motion` and `input-keys` (typed text); name them to turn them on.
 
 ## Reference: 4K HDR tiled video playback
 

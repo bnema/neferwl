@@ -108,6 +108,9 @@ type Want struct {
 	Sampled []ports.DMABufFormat
 	// Device is the KMS device (dev_t) offered in scanout tranches.
 	Device uint64
+	// TraceFlips logs each frame and commit completion with its timing
+	// (--debug=drm-flip).
+	TraceFlips bool
 }
 
 // HDRSettings is the requested HDR state and SDR reference white (nits).

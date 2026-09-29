@@ -2,6 +2,7 @@
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
+comma := ,
 # Go runtime profiles for tty runs; set PPROF= to disable.
 PPROF ?= localhost:6060
 RUNS := $(or $(XDG_STATE_HOME),$(HOME)/.local/state)/neferwl/runs/drm
@@ -11,8 +12,9 @@ bin:
 	CGO_ENABLED=0 go build -o bin/neferwl ./cmd/neferwl
 
 # Run on the current TTY. Quit: Ctrl+Alt+Backspace (or the quit bind).
+# TTY_DEBUG adds narrow categories, e.g. TTY_DEBUG=drm-flip.
 tty: bin
-	./bin/neferwl --backend=drm --debug=all --timeout=$(TTY_TIMEOUT) $(if $(PPROF),--pprof=$(PPROF)); \
+	./bin/neferwl --backend=drm --debug=all$(if $(TTY_DEBUG),$(comma)$(TTY_DEBUG)) --timeout=$(TTY_TIMEOUT) $(if $(PPROF),--pprof=$(PPROF)); \
 	echo "exit $$? - log: $(RUNS)/latest.log"
 
 # Summarise the last run: lifecycle, warnings and errors.

@@ -137,17 +137,20 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 
 // Narrow categories are on only when named, never through "all".
 func TestEnabledCategories(t *testing.T) {
-	for _, tc := range []struct {
-		debug string
-		want  bool
-	}{{"all", false}, {"input", false}, {"input-motion", true}, {"all,input-motion", true}} {
-		sel, err := ParseDebug(tc.debug)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx := context.WithValue(context.Background(), debugKey{}, debugSet(sel))
-		if got := Enabled(ctx, "input-motion"); got != tc.want {
-			t.Errorf("%q: %v", tc.debug, got)
+	for _, category := range []string{"input-motion", "input-keys", "drm-flip"} {
+		component := categories[category]
+		for _, tc := range []struct {
+			debug string
+			want  bool
+		}{{"all", false}, {component, false}, {category, true}, {"all," + category, true}} {
+			sel, err := ParseDebug(tc.debug)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.WithValue(context.Background(), debugKey{}, debugSet(sel))
+			if got := Enabled(ctx, category); got != tc.want {
+				t.Errorf("%s with %q: %v", category, tc.debug, got)
+			}
 		}
 	}
 }
