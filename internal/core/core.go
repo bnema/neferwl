@@ -123,8 +123,10 @@ type Core struct {
 	swipe     *swipeGesture
 	frameC    <-chan time.Time
 	frameStop func() bool
-	// motionMsec is the time of the last pointer motion.
+	// motionMsec is the time of the last pointer motion; pointerAt is the
+	// last position sent in the pointer's window.
 	motionMsec uint32
+	pointerAt  [2]float64
 }
 
 func keyName(s string) string {
@@ -588,12 +590,13 @@ func (c *Core) rehit(ctx context.Context) error {
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	if id != c.pointer {
-		c.pointer = id
+		c.pointer, c.pointerAt = id, [2]float64{x, y}
 		return c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
 	}
-	if id == 0 {
+	if id == 0 || c.pointerAt == [2]float64{x, y} {
 		return nil
 	}
+	c.pointerAt = [2]float64{x, y}
 	// The same window moved under the cursor: it moves in the window. No
 	// relative motion: the device did not move. The input clock is the
 	// device's; the last motion's time is the closest core knows.
@@ -987,6 +990,7 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 				}
+				c.pointerAt = [2]float64{x, y}
 				if id != 0 {
 					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec}); err != nil {
 						return nil
@@ -1147,6 +1151,9 @@ func (c *Core) Run(ctx context.Context) error {
 							return nil
 						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
+					}
+					if c.cur().mon.Current() != before {
+						c.dropSwipe()
 					}
 					if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
 						return nil

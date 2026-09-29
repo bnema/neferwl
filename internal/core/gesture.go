@@ -226,12 +226,34 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		case p < 0:
 			a = ActionFocusWorkspaceUp
 		}
+		// Focus actions act on the focused screen: the swipe's, unless the
+		// pointer took the focus to another output meanwhile.
+		if c.cur() != g.screen {
+			return false
+		}
 		before := c.cur().mon.Current()
 		c.layerFocus = 0
 		c.applyAction(a)
 		return c.cur().mon.Current() != before
 	}
 	return shown
+}
+
+// dropSwipe lets go of the swipe in progress: a bind changed the workspace
+// on screen. Its slide stops where the bind left the view; the rest of the
+// swipe is ignored, even if a later bind shows its workspace again.
+func (c *Core) dropSwipe() {
+	g := c.swipe
+	if g == nil {
+		return
+	}
+	switch g.mode {
+	case swipeColumns:
+		g.ws.stopSlide()
+	case swipeWorkspaces:
+		g.screen.mon.stopSwitch()
+	}
+	g.mode = swipeDropped
 }
 
 func (c *Core) hasScreen(s *screen) bool {

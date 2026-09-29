@@ -376,13 +376,18 @@ func TestSwipeDropsWhenWorkspacesChange(t *testing.T) {
 	r.begin()
 	r.move(t, 0, 30)
 	// A key switches workspace mid-swipe: the swipe lets go at once.
-	r.key(t, "Next", ports.ModAlt)
-	s := r.move(t, 0, 30)
+	s := r.key(t, "Next", ports.ModAlt)[0]
 	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
 		t.Fatalf("workspace 2 at %v %t after the key", got, ok)
 	}
 	if _, ok := rectOf(s, 1); ok {
 		t.Fatal("workspace 1 still sliding")
+	}
+	// The rest of the swipe moves nothing: its end leaves the view as is.
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DY: 30, Time: r.at}
+	if got, ok := rectOf(r.end(t, false), 2); !ok || got.Y != 0 {
+		t.Fatalf("workspace 2 at %v %t after the swipe", got, ok)
 	}
 }
 
@@ -434,6 +439,59 @@ func TestSwipeBeginWithoutEndSettlesTheFirst(t *testing.T) {
 	s = r.settle(t)
 	if got, _ := rectOf(s, 2); got.X == moved.X || got.X != 0 {
 		t.Fatalf("first swipe left column 2 at %d", got.X)
+	}
+}
+
+func TestSwipeIgnoredAfterSwitchingAwayAndBack(t *testing.T) {
+	r := startSwipe(t, nil)
+	before, _ := rectOf(threeColumns(t, r), 2)
+	r.begin()
+	r.move(t, -30, 0)
+	r.key(t, "Next", ports.ModAlt)
+	r.key(t, "Prior", ports.ModAlt)
+	// The same workspace is back, but the swipe was let go.
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DX: -30, Time: r.at}
+	if got, _ := rectOf(r.end(t, false), 2); got != before {
+		t.Fatalf("column 2 at %v, want %v", got, before)
+	}
+}
+
+func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
+	r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+	// Windows 3 and 4 on DP-2, 4 focused there.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	scene(t, r.scenes)
+	r.mapWindow(t, 3)
+	r.mapWindow(t, 4)
+	// The swipe starts on DP-1 ...
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	scene(t, r.scenes)
+	r.begin()
+	for range 10 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	}
+	// ... and the pointer takes the focus to DP-2 before the fingers lift.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	scene(t, r.scenes)
+	r.drain()
+	r.input <- ports.SwipeEnd{Time: r.at}
+	for {
+		var v ports.ClientCommand
+		select {
+		case v = <-r.commands:
+		case <-time.After(50 * time.Millisecond):
+		}
+		if v == nil {
+			break
+		}
+		if f, ok := v.(ports.FocusWindow); ok && f.ID == 3 {
+			t.Fatal("swipe from DP-1 moved the focus on DP-2")
+		}
 	}
 }
 
