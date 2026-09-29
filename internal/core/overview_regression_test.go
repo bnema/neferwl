@@ -87,6 +87,40 @@ func TestOverviewCloseTargetsFront(t *testing.T) {
 	}
 }
 
+func TestOverviewTargetAfterUnmaximizeMutation(t *testing.T) {
+	for _, add := range []bool{false, true} {
+		m := maximizedOverview()
+		w := m.Current()
+		m.ToggleOverview()
+		m.OverviewMove(0, -1)
+		m.OverviewMove(1, 0)
+		if m.ov.selected != 3 {
+			t.Fatalf("setup selection %d, want 3", m.ov.selected)
+		}
+		if add {
+			w.AddWindow(7)
+		} else {
+			w.RemoveWindow(2)
+		}
+		var highlighted WindowID
+		for _, p := range m.Layout() {
+			if p.Focused && !p.Hidden {
+				if highlighted != 0 {
+					t.Fatal("multiple highlighted previews")
+				}
+				highlighted = p.ID
+			}
+		}
+		if highlighted == 0 || m.overviewTarget() != highlighted || m.Apply(ActionCloseWindow).Close != highlighted {
+			t.Fatalf("add %v: highlighted %d, target %d, close %d", add, highlighted, m.overviewTarget(), m.Apply(ActionCloseWindow).Close)
+		}
+		m.ToggleOverview()
+		if id, _ := w.Focused(); id != highlighted {
+			t.Fatalf("accepted %d, want highlighted %d", id, highlighted)
+		}
+	}
+}
+
 func TestOverviewWindowMutationsDisabled(t *testing.T) {
 	actions := []Action{
 		ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,

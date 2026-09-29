@@ -141,11 +141,15 @@ func (m *Monitor) overviewTarget() WindowID {
 			return c.Windows[c.Focus]
 		}
 	case stackColumns:
-		i := w.columnOf(m.ov.selected)
-		if w.overviewMaximized() && (i < 0 || i == w.Focus) {
-			i = m.hiddenColumn(w)
-		} else if i < 0 && len(w.Columns) > 0 {
-			i = w.Focus
+		i := w.Focus
+		if len(w.Columns) == 0 {
+			return 0
+		}
+		if w.overviewMaximized() {
+			i = w.columnOf(m.ov.selected)
+			if i < 0 || i == w.Focus {
+				i = m.hiddenColumn(w)
+			}
 		}
 		if i >= 0 {
 			if w.columnOf(m.ov.selected) == i {
