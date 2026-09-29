@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
@@ -188,7 +189,7 @@ func (s *surface) pendingIsSHM() bool {
 }
 
 // syncWaiter watches acquire points: each gets an eventfd the kernel
-// writes once the point has a fence, and the pacer is woken to apply the
+// writes once the point is signalled, and the pacer is woken to apply the
 // commits that waited for it.
 type syncWaiter struct {
 	mu    sync.Mutex
@@ -216,6 +217,10 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 
 // watch registers an eventfd for p; the wait is ready once it fires.
 func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
+	ready, err := p.tl.dev.signalled(p.tl.handle, p.point)
+	if err != nil || ready {
+		return &syncWait{efd: -1, done: ready}, err
+	}
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
 		return nil, err
@@ -224,15 +229,45 @@ func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
 		unix.Close(efd)
 		return nil, err
 	}
-	w := &syncWait{efd: efd}
+	return sw.add(efd), nil
+}
+
+// watchImplicit waits for a dma-buf's exclusive fences without blocking dispatch.
+func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error {
+	var fds [4]unix.PollFd
+	for i, p := range b.Planes {
+		if i >= len(fds) {
+			break
+		}
+		fds[i] = unix.PollFd{Fd: int32(p.File.Fd()), Events: unix.POLLIN}
+	}
+	planes := fds[:min(len(b.Planes), len(fds))]
+	_, err := unix.Poll(planes, 0)
+	if err != nil {
+		return err
+	}
+	for i, fd := range planes {
+		if fd.Revents == 0 {
+			dup, err := unix.FcntlInt(uintptr(fd.Fd), unix.F_DUPFD_CLOEXEC, 0)
+			if err != nil {
+				return err
+			}
+			waits[i] = sw.add(dup)
+		}
+	}
+	return nil
+}
+
+func (sw *syncWaiter) add(fd int) *syncWait {
+	w := &syncWait{efd: fd}
 	sw.mu.Lock()
 	sw.added = append(sw.added, w)
 	sw.mu.Unlock()
 	_, _ = sw.pipeW.Write([]byte{0})
-	return w, nil
+	return w
 }
 
-// fired reports whether w's point has a fence, and forgets w once it has.
+// fired reports whether w's point is signalled, and forgets w once it has.
 func (sw *syncWaiter) fired(w *syncWait) bool {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
@@ -245,6 +280,9 @@ func (sw *syncWaiter) fired(w *syncWait) bool {
 
 // cancel stops watching w (the commit was dropped).
 func (sw *syncWaiter) cancel(w *syncWait) {
+	if w == nil || w.efd < 0 {
+		return
+	}
 	w.cancelled.Store(true)
 	sw.mu.Lock()
 	delete(sw.ready, w)

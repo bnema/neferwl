@@ -344,3 +344,69 @@ func (_c *mocksyncobjDevice_signal_Call) RunAndReturn(run func(h uint32, point u
 	_c.Call.Return(run)
 	return _c
 }
+
+// signalled provides a mock function for the type mocksyncobjDevice
+func (_mock *mocksyncobjDevice) signalled(h uint32, point uint64) (bool, error) {
+	ret := _mock.Called(h, point)
+
+	if len(ret) == 0 {
+		panic("no return value specified for signalled")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint32, uint64) (bool, error)); ok {
+		return returnFunc(h, point)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint32, uint64) bool); ok {
+		r0 = returnFunc(h, point)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint32, uint64) error); ok {
+		r1 = returnFunc(h, point)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mocksyncobjDevice_signalled_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'signalled'
+type mocksyncobjDevice_signalled_Call struct {
+	*mock.Call
+}
+
+// signalled is a helper method to define mock.On call
+//   - h uint32
+//   - point uint64
+func (_e *mocksyncobjDevice_Expecter) signalled(h any, point any) *mocksyncobjDevice_signalled_Call {
+	return &mocksyncobjDevice_signalled_Call{Call: _e.mock.On("signalled", h, point)}
+}
+
+func (_c *mocksyncobjDevice_signalled_Call) Run(run func(h uint32, point uint64)) *mocksyncobjDevice_signalled_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		var arg1 uint64
+		if args[1] != nil {
+			arg1 = args[1].(uint64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mocksyncobjDevice_signalled_Call) Return(b bool, err error) *mocksyncobjDevice_signalled_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *mocksyncobjDevice_signalled_Call) RunAndReturn(run func(h uint32, point uint64) (bool, error)) *mocksyncobjDevice_signalled_Call {
+	_c.Call.Return(run)
+	return _c
+}

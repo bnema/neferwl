@@ -31,6 +31,7 @@ func TestSyncobjStructSizes(t *testing.T) {
 		{"handle_to_fd", unsafe.Sizeof(syncobjHandle{}), ioctlSyncobjHandleToFD},
 		{"fd_to_handle", unsafe.Sizeof(syncobjHandle{}), ioctlSyncobjFDToHandle},
 		{"timeline_signal", unsafe.Sizeof(syncobjTimelineArray{}), ioctlSyncobjTimelineSignal},
+		{"timeline_wait", unsafe.Sizeof(syncobjTimelineWait{}), ioctlSyncobjTimelineWait},
 		{"eventfd", unsafe.Sizeof(syncobjEventfd{}), ioctlSyncobjEventfd},
 		{"get_cap", unsafe.Sizeof(drmCap{}), ioctlGetCap},
 	} {
@@ -66,6 +67,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	h.dev = newMocksyncobjDevice(t)
 	h.dev.EXPECT().fdToHandle(mock.Anything).Return(7, nil).Maybe()
 	h.dev.EXPECT().destroy(mock.Anything).Return(nil).Maybe()
+	h.dev.EXPECT().signalled(uint32(7), mock.Anything).Return(false, nil).Maybe()
 	h.dev.EXPECT().eventfd(uint32(7), mock.Anything, mock.Anything).RunAndReturn(func(_ uint32, point uint64, efd int) error {
 		// Keep a duplicate: the waiter closes its own when it fires.
 		dup, err := unix.Dup(efd)

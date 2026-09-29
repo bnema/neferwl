@@ -208,6 +208,7 @@ type update struct {
 	layout          []childLayout
 	deps            []*update
 	owner           *surface
+	implicit        [4]*syncWait
 	prev            *update
 	synced, bound   bool
 	xdg             *xdgSurface
@@ -344,6 +345,15 @@ func (s *surface) queueUpdate() {
 	*u = s.takePending()
 	u.deps = deps
 	u.owner, u.synced = s, s.effectivelySynced()
+	if s.server.syncWait != nil && u.attached && u.buffer != nil && u.sync == nil {
+		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
+			var err error
+			err = s.server.syncWait.watchImplicit(b.buf, &u.implicit)
+			if err != nil {
+				s.server.log.Warn().Str("component", "wayland").Err(err).Msg("implicit buffer wait")
+			}
+		}
+	}
 	for _, ch := range s.sub.children {
 		for i := len(ch.queue) - 1; i >= 0; i-- {
 			candidate := ch.queue[i]
@@ -407,6 +417,9 @@ func (s *surface) dropQueue() {
 			discard(fb)
 		}
 		s.dropSync(u.sync)
+		for _, w := range u.implicit {
+			s.server.syncWait.cancel(w)
+		}
 		if u.sync != nil {
 			continue // explicit sync: the release point replaced release
 		}
@@ -584,6 +597,11 @@ func (u *update) graphReady(now time.Time) bool {
 	}
 	if u.wait && s.barrier || !s.syncReady(u.sync) || s.tooEarly(u.at, now) {
 		return false
+	}
+	for _, w := range u.implicit {
+		if w != nil && !s.server.syncWait.fired(w) {
+			return false
+		}
 	}
 	for _, dep := range u.deps {
 		if !dep.owner.destroyed && !dep.graphReady(now) {

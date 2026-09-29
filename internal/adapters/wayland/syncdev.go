@@ -18,7 +18,9 @@ type syncobjDevice interface {
 	exportSyncFile(h uint32, point uint64) (*os.File, error)
 	// signal signals a timeline point (a release point).
 	signal(h uint32, point uint64) error
-	// eventfd writes efd once the point has a fence (WAIT_AVAILABLE).
+	// signalled checks a point without blocking.
+	signalled(h uint32, point uint64) (bool, error)
+	// eventfd writes efd once the point is signalled.
 	eventfd(h uint32, point uint64, efd int) error
 	destroy(h uint32) error
 }
@@ -27,13 +29,13 @@ const (
 	ioctlSyncobjDestroy        = 0xC00864C0 // DRM_IOWR(0xC0, struct drm_syncobj_destroy)
 	ioctlSyncobjHandleToFD     = 0xC01864C1 // DRM_IOWR(0xC1, struct drm_syncobj_handle)
 	ioctlSyncobjFDToHandle     = 0xC01864C2 // DRM_IOWR(0xC2, struct drm_syncobj_handle)
+	ioctlSyncobjTimelineWait   = 0xC02864CA // DRM_IOWR(0xCA, struct drm_syncobj_timeline_wait)
 	ioctlSyncobjTimelineSignal = 0xC01864CD // DRM_IOWR(0xCD, struct drm_syncobj_timeline_array)
 	ioctlSyncobjEventfd        = 0xC01864CF // DRM_IOWR(0xCF, struct drm_syncobj_eventfd)
 	ioctlGetCap                = 0xC010640C // DRM_IOWR(0x0C, struct drm_get_cap)
 
 	syncobjExportSyncFile = 1 << 0
 	syncobjTimeline       = 1 << 1
-	syncobjWaitAvailable  = 1 << 2
 	capSyncobjTimeline    = 0x14
 )
 
@@ -49,6 +51,14 @@ type syncobjDestroy struct{ handle, pad uint32 }
 type syncobjTimelineArray struct {
 	handles, points uint64
 	count, flags    uint32
+}
+
+type syncobjTimelineWait struct {
+	handles, points uint64
+	timeout         int64
+	count, flags    uint32
+	first           uint32
+	pad             uint32
 }
 
 type syncobjEventfd struct {
@@ -117,8 +127,20 @@ func (n *renderNode) signal(h uint32, point uint64) error {
 	return err
 }
 
+func (n *renderNode) signalled(h uint32, point uint64) (bool, error) {
+	handles, points := [1]uint32{h}, [1]uint64{point}
+	a := syncobjTimelineWait{handles: uint64(uintptr(unsafe.Pointer(&handles))), points: uint64(uintptr(unsafe.Pointer(&points))), count: 1}
+	err := ioctl(n.fd, ioctlSyncobjTimelineWait, unsafe.Pointer(&a))
+	runtime.KeepAlive(&handles)
+	runtime.KeepAlive(&points)
+	if err == unix.ETIME {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (n *renderNode) eventfd(h uint32, point uint64, efd int) error {
-	a := syncobjEventfd{handle: h, flags: syncobjWaitAvailable, point: point, fd: int32(efd)}
+	a := syncobjEventfd{handle: h, point: point, fd: int32(efd)}
 	return ioctl(n.fd, ioctlSyncobjEventfd, unsafe.Pointer(&a))
 }
 
