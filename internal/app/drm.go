@@ -283,7 +283,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 						defer o.Close()
 						if realtime {
 							runtime.LockOSThread()
-							defer runtime.UnlockOSThread()
+							// Keep the thread locked until this goroutine exits: an RT
+							// thread must not return to Go's general-purpose pool.
 							if err := sched.Realtime(log); err != nil {
 								log.Warn().Str("component", "sched").Err(err).Msg("output scheduling")
 							}
