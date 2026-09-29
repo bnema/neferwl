@@ -3,14 +3,15 @@ package core_test
 import (
 	"context"
 	"errors"
-	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/neferwl/internal/core"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
-	"github.com/bnema/neferwl/internal/ports"
 	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/core"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func receive[T any](t *testing.T, ch <-chan T) T {

@@ -207,7 +207,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			// A column wider than the view aligns as focus moves align it.
 			w.scroll()
 			c.focusScreen = c.screenIndex(g.screen.name())
-			c.layerFocus = 0
+			c.keyboard.takeBack()
 		}
 		w.shift = shown - float64(w.ViewX)
 		w.motion = newMotion(viewSpring(w.shift, g.tracker.velocity()*scale), now)
@@ -232,7 +232,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 		if !e.Cancelled {
 			c.focusScreen = c.screenIndex(g.screen.name())
-			c.layerFocus = 0
+			c.keyboard.takeBack()
 		}
 		m.switchOff, m.switchList = off, g.list
 		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
@@ -244,7 +244,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		before := m.Current()
 		m.ToggleOverview()
 		c.focusScreen = c.screenIndex(g.screen.name())
-		c.layerFocus = 0
+		c.keyboard.takeBack()
 		return m.Current() != before
 	case swipeDiscrete:
 		p := g.tracker.projectedEnd()
@@ -266,7 +266,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			return false
 		}
 		before := c.cur().mon.Current()
-		c.layerFocus = 0
+		c.keyboard.takeBack()
 		if mon := c.cur().mon; mon.overview {
 			mon.overviewSwipe(a)
 		} else {

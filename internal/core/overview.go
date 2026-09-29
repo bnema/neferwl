@@ -374,7 +374,8 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 		return false, nil
 	}
 	sc.mon.OverviewPick(id)
-	c.focusScreen, c.layerFocus = i, 0
+	c.focusScreen = i
+	c.keyboard.takeBack()
 	if err := c.workspaceVisible(ctx, true); err != nil {
 		return true, err
 	}

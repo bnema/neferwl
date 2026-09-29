@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 var ErrQuit = errors.New("quit requested")
@@ -71,7 +71,6 @@ type Core struct {
 	binds            map[binding]Action
 	pressed          map[string]bool
 	configures       configures
-	focus            WindowID
 	pointer          WindowID
 	grab             WindowID
 	buttons          map[uint32]bool
@@ -99,15 +98,7 @@ type Core struct {
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
-	// layerFocus is the on-demand layer surface the user clicked; it keeps
-	// the keyboard while it stays mapped on-demand and no window focus
-	// changes on any output (layerOver, taken at the click): any click
-	// elsewhere, bind, activation or new window takes the keyboard back. The
-	// pointer moving to another output does not.
-	layerFocus WindowID
-	layerOver  map[*screen]WindowID
-	// inhibiting is the shortcuts inhibitor active now (0: none).
-	inhibiting WindowID
+	keyboard   keyboard
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -381,35 +372,26 @@ func (c *Core) windowFocus() map[*screen]WindowID {
 	return m
 }
 
-// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
-// interactivity and the highest ID on any output, else a grabbing popup,
-// else a clicked on-demand layer (see layerFocus), else the focused window
-// of the focused output.
+// keyboardFocus is the surface holding the keyboard (see keyboard.focus).
 func (c *Core) keyboardFocus() WindowID {
-	var layer WindowID
+	var exclusive WindowID
 	for _, sc := range c.screens {
 		for _, l := range sc.layers {
-			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
-				layer = l.ID
+			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > exclusive {
+				exclusive = l.ID
 			}
 		}
 	}
-	if layer != 0 {
-		return layer
-	}
-	// A menu with a grab takes the keyboard until it closes.
-	if g := c.grabFocus(); g != 0 {
-		return g
-	}
-	// A layer hidden by a fullscreen window loses the keyboard.
-	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !c.visible(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
-		c.layerFocus, c.layerOver = 0, nil
-	}
-	if c.layerFocus != 0 {
-		return c.layerFocus
-	}
-	id, _ := c.cur().mon.Focused()
-	return id
+	window, _ := c.cur().mon.Focused()
+	return c.keyboard.focus(keyboardCandidates{
+		exclusive: exclusive,
+		grab:      c.grabFocus(),
+		window:    window,
+		layerShown: func(id WindowID) bool {
+			return c.onDemand(id) && c.visible(id)
+		},
+		windows: c.windowFocus,
+	})
 }
 
 // setLayers splits the mapped layer surfaces by output. A surface without an
@@ -509,11 +491,11 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 	}
-	if focus != c.focus {
+	if focus != c.keyboard.sent {
 		if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
 			return err
 		}
-		c.focus = focus
+		c.keyboard.sent = focus
 	}
 	if err := c.updateInhibit(ctx); err != nil {
 		return err
@@ -576,21 +558,18 @@ func (c *Core) rehit(ctx context.Context) error {
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the
 // active one and tells wayland when it changes.
 func (c *Core) updateInhibit(ctx context.Context) error {
-	want := WindowID(0)
-	if f := c.keyboardFocus(); f != 0 && c.windows.lookup(f).inhibitShortcuts {
-		want = f
-	}
-	if want == c.inhibiting {
+	f := c.keyboardFocus()
+	release, activate, changed := c.keyboard.inhibit(f, c.windows.lookup(f).inhibitShortcuts)
+	if !changed {
 		return nil
 	}
-	if c.inhibiting != 0 {
-		if err := c.command(ctx, ports.ShortcutsInhibitState{Window: c.inhibiting}); err != nil {
+	if release != 0 {
+		if err := c.command(ctx, ports.ShortcutsInhibitState{Window: release}); err != nil {
 			return err
 		}
 	}
-	c.inhibiting = want
-	if want != 0 {
-		return c.command(ctx, ports.ShortcutsInhibitState{Window: want, Active: true})
+	if activate != 0 {
+		return c.command(ctx, ports.ShortcutsInhibitState{Window: activate, Active: true})
 	}
 	return nil
 }
@@ -978,22 +957,20 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 					// A click on an on-demand layer gives it the keyboard.
-					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
-						c.layerFocus = id
-						c.layerOver = c.windowFocus()
+					if v.Pressed && c.onDemand(id) && c.keyboard.clickLayer(id, c.windowFocus()) {
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
-					} else if v.Pressed && c.layerFocus != 0 && id != c.layerFocus && c.popupRoot(id) != c.layerFocus {
+					} else if l := c.keyboard.layer; v.Pressed && l != 0 && id != l && c.popupRoot(id) != l {
 						// A click anywhere else takes the keyboard back.
-						c.layerFocus = 0
+						c.keyboard.takeBack()
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
 					}
 					// A click focuses the window and its output.
 					s, w := c.screenOf(id)
-					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
+					if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
 						w.Click(id)
 						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
@@ -1064,14 +1041,14 @@ func (c *Core) Run(ctx context.Context) error {
 			// A focused window inhibiting shortcuts gets every key:
 			// no bind runs (emergency quit and VT switch are handled by
 			// input before core).
-			if c.inhibiting != 0 && c.inhibiting == c.keyboardFocus() {
+			if c.keyboard.inhibited(c.keyboardFocus()) {
 				if held := heldKey(key); !key.Pressed && c.pressed[held] {
 					// Its press ran a bind before inhibiting began: the
 					// window never saw it.
 					delete(c.pressed, held)
 					continue
 				}
-				if err := c.command(ctx, ports.ForwardKey{ID: c.inhibiting, Key: key}); err != nil {
+				if err := c.command(ctx, ports.ForwardKey{ID: c.keyboard.inhibiting, Key: key}); err != nil {
 					return nil
 				}
 				continue
@@ -1121,7 +1098,7 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 					before := c.cur().mon.Current()
 					swiped := c.swipedWorkspace()
-					c.layerFocus = 0 // a bind acts on the windows
+					c.keyboard.takeBack() // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
 						return ErrQuit
