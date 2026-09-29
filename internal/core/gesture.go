@@ -64,12 +64,16 @@ type swipeGesture struct {
 	// list is the numbered workspaces when a workspace slide began: start
 	// indexes it, so the slide ends if the list changes.
 	list []*Workspace
+	// opens is the monitor's overviewOpens when the swipe picked its
+	// mode: a slide the overview opened over is dropped, even once the
+	// overview closed again.
+	opens int
 }
 
 // listChanged reports whether the numbered workspaces or the active one
 // changed since a workspace slide began, or the overview opened over it.
 func (g *swipeGesture) listChanged(m *Monitor) bool {
-	return m.overview || m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
+	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -122,7 +126,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	m := g.screen.mon
 	switch g.mode {
 	case swipeColumns:
-		if m.overview || m.Current() != g.ws || !g.ws.slidable() {
+		if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() {
 			g.ws.stopSlide()
 			g.mode = swipeDropped
 			return true
@@ -147,6 +151,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 func (c *Core) decide(g *swipeGesture) {
 	g.horizontal = math.Abs(g.cx) > math.Abs(g.cy)
 	m := g.screen.mon
+	g.opens = m.overviewOpens
 	w := m.Current()
 	switch {
 	case g.fingers == 4 && !g.horizontal:
@@ -190,7 +195,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	switch g.mode {
 	case swipeColumns:
 		w := g.ws
-		if m.overview || m.Current() != w || !w.slidable() {
+		if m.overviewOpens != g.opens || m.Current() != w || !w.slidable() {
 			w.stopSlide()
 			return false
 		}

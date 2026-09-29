@@ -47,6 +47,9 @@ type Monitor struct {
 	// scrollX and scrollY add up scrolling in the overview until it makes
 	// a step (overviewScroll); opening the overview starts from zero.
 	scrollX, scrollY float64
+	// overviewOpens counts the overview's openings: a swipe sliding when
+	// one happens is dropped (gesture.go).
+	overviewOpens int
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty

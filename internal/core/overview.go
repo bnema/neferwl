@@ -47,6 +47,7 @@ func (m *Monitor) ToggleOverview() {
 	m.overview, m.overviewFrom = true, w
 	m.overviewFromID, _ = w.Focused()
 	m.scrollX, m.scrollY = 0, 0
+	m.overviewOpens++
 	m.selectRow()
 }
 
