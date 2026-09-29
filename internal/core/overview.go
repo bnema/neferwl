@@ -9,8 +9,9 @@ import (
 
 // The overview shows every column of the workspace on screen in one row,
 // each tile scaled by the same factor so windows keep their shape, with
-// the workspaces above and below it dimmed. The previews are the windows'
-// last buffers: clients are not resized. h/l (or left/right) select a
+// the workspaces above and below it dimmed. A workspace covered by a
+// fullscreen native float (a game) shows only that window. The previews
+// are the windows' last buffers: clients are not resized. h/l (or left/right) select a
 // column, j/k (or down/up) a workspace, Return keeps the selection and
 // Escape returns to where the overview opened.
 
@@ -54,7 +55,7 @@ func (m *Monitor) ToggleOverview() {
 // selectRow selects the stash card of a workspace whose stash has the
 // focus (or only stashed windows), else its focused column. The overview
 // hides native floats, so a float's focus moves to its column; Escape
-// gives it back.
+// gives it back. A covering float is the exception: it is the row.
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	w := m.Current()
@@ -301,9 +302,9 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 	h := max(w.Usable.H-2*g, 0)
 	if id := w.floatCover(); id != 0 {
 		// A covering native float (a game) is the row's only tile, at
-		// the size of a fullscreen column.
+		// the size of a fullscreen column. It stays fullscreen.
 		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: h}
-		return []Placement{{ID: id, Rect: r, Focused: true}}, r.X + r.W + g, r
+		return []Placement{{ID: id, Rect: r, Focused: true, Fullscreen: true}}, r.X + r.W + g, r
 	}
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}

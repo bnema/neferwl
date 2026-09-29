@@ -204,6 +204,8 @@ func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
 func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
 	m := gameMonitor(OverflowScroll, true)
 	m.Focus(1)
+	m.AddWindow(5)
+	m.Current().FocusID(2) // back on the game, over column 5
 	m.AddWindow(3)
 	m.AddFloating(4, 50, 50)
 	m.Focus(0)
@@ -212,7 +214,7 @@ func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
 	if previewOf(t, ps, 2).Hidden {
 		t.Fatal("game hidden")
 	}
-	for _, id := range []WindowID{3, 4} {
+	for _, id := range []WindowID{3, 4, 5} {
 		if p := previewOf(t, ps, id); !p.Hidden {
 			t.Fatalf("%d shown: %+v", id, p)
 		}

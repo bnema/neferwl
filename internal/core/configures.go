@@ -46,6 +46,11 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		if !ok {
 			v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
 		}
+		if p.Fullscreen && !v.Fullscreen {
+			// A float made fullscreen off screen: its preview row shows
+			// it fullscreen, sized for the output, never the preview.
+			v.Width, v.Height, v.Fullscreen, v.Floating = t.area.W, t.area.H, true, false
+		}
 		v.Activated, v.Visible, v.Output = t.focused, onScreen(p, t.area), t.output
 	default:
 		v = ports.ConfigureWindow{ID: p.ID, Width: t.client.W, Height: t.client.H, Fullscreen: p.Fullscreen, Activated: t.focused, Floating: p.Floating && !p.Fullscreen, Output: t.output, Visible: onScreen(p, t.area)}
