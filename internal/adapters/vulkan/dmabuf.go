@@ -72,26 +72,21 @@ func vkFormat(f uint32) (vk.Format, bool, bool) {
 	return 0, false, false
 }
 
-// hasExtensions reports whether the device offers every dmabuf extension.
-func (r *Renderer) hasExtensions(physical vk.PhysicalDevice) bool {
+// extensions lists the device extensions supported by the selected GPU.
+func (r *Renderer) extensions(physical vk.PhysicalDevice) map[string]bool {
 	var n uint32
 	if r.id.EnumerateDeviceExtensionProperties(physical, nil, &n, nil) != vk.Success || n == 0 {
-		return false
+		return nil
 	}
 	props := make([]vk.ExtensionProperties, n)
 	if r.id.EnumerateDeviceExtensionProperties(physical, nil, &n, &props[0]) != vk.Success {
-		return false
+		return nil
 	}
 	have := map[string]bool{}
 	for _, p := range props[:n] {
 		have[cstring(p.ExtensionName[:])] = true
 	}
-	for _, e := range deviceExtensions {
-		if !have[e] {
-			return false
-		}
-	}
-	return true
+	return have
 }
 
 func cstring(b []byte) string {

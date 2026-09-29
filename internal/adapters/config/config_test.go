@@ -48,6 +48,20 @@ func TestDefaultsAndLoad(t *testing.T) {
 	}
 }
 
+func TestRealtime(t *testing.T) {
+	if !Defaults().Performance.Realtime {
+		t.Fatal("realtime default disabled")
+	}
+	c, w := parseString(t, "performance.realtime = off\n")
+	if c.Performance.Realtime || len(w) != 0 {
+		t.Fatal(c.Performance, w)
+	}
+	c, w = parseString(t, "performance.realtime = invalid\n")
+	if !c.Performance.Realtime || len(w) != 1 {
+		t.Fatal(c.Performance, w)
+	}
+}
+
 func TestFollowMove(t *testing.T) {
 	c, w := parseString(t, "focus.follow-move = on\n")
 	if !c.Focus.FollowMove || len(w) != 0 {

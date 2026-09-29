@@ -31,6 +31,7 @@ func TestSyncobjStructSizes(t *testing.T) {
 		{"handle_to_fd", unsafe.Sizeof(syncobjHandle{}), ioctlSyncobjHandleToFD},
 		{"fd_to_handle", unsafe.Sizeof(syncobjHandle{}), ioctlSyncobjFDToHandle},
 		{"timeline_signal", unsafe.Sizeof(syncobjTimelineArray{}), ioctlSyncobjTimelineSignal},
+		{"timeline_wait", unsafe.Sizeof(syncobjTimelineWait{}), ioctlSyncobjTimelineWait},
 		{"eventfd", unsafe.Sizeof(syncobjEventfd{}), ioctlSyncobjEventfd},
 		{"get_cap", unsafe.Sizeof(drmCap{}), ioctlGetCap},
 	} {
@@ -66,6 +67,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	h.dev = newMocksyncobjDevice(t)
 	h.dev.EXPECT().fdToHandle(mock.Anything).Return(7, nil).Maybe()
 	h.dev.EXPECT().destroy(mock.Anything).Return(nil).Maybe()
+	h.dev.EXPECT().signalled(uint32(7), mock.Anything).Return(false, nil).Maybe()
 	h.dev.EXPECT().eventfd(uint32(7), mock.Anything, mock.Anything).RunAndReturn(func(_ uint32, point uint64, efd int) error {
 		// Keep a duplicate: the waiter closes its own when it fires.
 		dup, err := unix.Dup(efd)
@@ -352,6 +354,42 @@ func TestQueuedCommitReadinessGatesInOrder(t *testing.T) {
 	two, ok := h.content(2 * time.Second)
 	if !ok || two.Seq <= one.Seq || two.DMABuf.ID == one.DMABuf.ID {
 		t.Fatalf("ordered publication: first=%+v second=%+v", one, two)
+	}
+}
+
+// A destroyed queued buffer must not hold later commits behind its acquire.
+// Its release point cannot be advanced before the acquire is ready.
+func TestSyncobjDestroyedQueuedAcquire(t *testing.T) {
+	h := newSyncHarness(t)
+	h.releases = map[uint32]*syncReleaseProxy{}
+	first, dead, next := h.dmabuf(), h.dmabuf(), h.dmabuf()
+	h.commit(first, 1, 2)
+	h.fire(1)
+	if _, ok := h.content(2 * time.Second); !ok {
+		t.Fatal("initial content missing")
+	}
+	fm := bindProtocol(t, h.c, "wp_fifo_manager_v1")
+	f := h.c.AllocateID()
+	registerProtocol(t, h.c, f)
+	requestProtocol(t, h.c, fm, fifo.WpFifoManagerV1RequestGetFifo, f, h.surf)
+	requestProtocol(t, h.c, f, fifo.WpFifoV1RequestSetBarrier)
+	h.commit(dead, 3, 4)
+	requestProtocol(t, h.c, dead, wayland.BufferRequestDestroy)
+	if err := h.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	// The dead attachment is skipped; it does not replace the current one.
+	// A later attachment is queued while the old fence remains unsignalled.
+	h.commit(next, 5, 6)
+	h.fire(5)
+	got, ok := h.content(2 * time.Second)
+	if !ok || got.DMABuf == nil {
+		t.Fatalf("later content blocked: %+v", got)
+	}
+	for _, p := range h.signalled() {
+		if p == 4 {
+			t.Fatal("skipped buffer release signalled before acquire")
+		}
 	}
 }
 

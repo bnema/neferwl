@@ -17,6 +17,9 @@ import (
 // Renderer is owned by one goroutine; its methods must not be called concurrently.
 type Renderer struct {
 	width, height int
+	// queuePriority is the global priority the queue got: realtime, high
+	// or default.
+	queuePriority string
 	instance      vk.Instance
 	id            *vk.InstanceDispatch
 	device        vk.Device
@@ -87,6 +90,14 @@ type Renderer struct {
 	frameAcquires map[*imported]*os.File
 	frameWaits    []vk.Semaphore
 	frameStages   []vk.PipelineStageFlags
+}
+
+// priorityAttempts falls back to an ordinary queue when elevated priority is unavailable.
+func priorityAttempts(supported bool) []vk.QueueGlobalPriority {
+	if supported {
+		return []vk.QueueGlobalPriority{vk.QueueGlobalPriorityRealtime, vk.QueueGlobalPriorityHigh, 0}
+	}
+	return []vk.QueueGlobalPriority{0}
 }
 
 func checked(name string, result vk.Result) error {
@@ -185,7 +196,14 @@ func New(width, height int) (r *Renderer, err error) {
 	// dmabuf import needs every extension; without them clients use wl_shm.
 	var extNames [][]byte
 	var extPtrs []*byte
-	if r.hasExtensions(physical) {
+	have := r.extensions(physical)
+	dmabufSupported := true
+	for _, e := range deviceExtensions {
+		if !have[e] {
+			dmabufSupported = false
+		}
+	}
+	if dmabufSupported {
 		for _, e := range deviceExtensions {
 			extNames = append(extNames, append([]byte(e), 0))
 			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
@@ -193,9 +211,52 @@ func New(width, height int) (r *Renderer, err error) {
 		di.EnabledExtensionCount = uint32(len(extPtrs))
 		di.PpEnabledExtensionNames = &extPtrs[0]
 	}
-	if err = checked("vkCreateDevice", r.id.CreateDevice(physical, &di, nil, &r.device)); err != nil {
-		return
+	globalExt := ""
+	if have[vk.KHRGlobalPriorityExtensionName] {
+		globalExt = vk.KHRGlobalPriorityExtensionName
+	} else if have[vk.EXTGlobalPriorityExtensionName] {
+		globalExt = vk.EXTGlobalPriorityExtensionName
 	}
+	var global vk.DeviceQueueGlobalPriorityCreateInfo
+	chosen := "default"
+	for _, attempt := range priorityAttempts(globalExt != "") {
+		qi.Next = nil
+		count := len(extPtrs)
+		if attempt != 0 {
+			global = vk.DeviceQueueGlobalPriorityCreateInfo{SType: vk.StructureTypeDeviceQueueGlobalPriorityCreateInfo, GlobalPriority: attempt}
+			qi.Next = unsafe.Pointer(&global)
+			extNames = append(extNames, append([]byte(globalExt), 0))
+			extPtrs = append(extPtrs, &extNames[len(extNames)-1][0])
+			chosen = "realtime"
+			if attempt == vk.QueueGlobalPriorityHigh {
+				chosen = "high"
+			}
+		} else {
+			chosen = "default"
+		}
+		di.EnabledExtensionCount = uint32(len(extPtrs))
+		if len(extPtrs) > 0 {
+			di.PpEnabledExtensionNames = &extPtrs[0]
+		} else {
+			di.PpEnabledExtensionNames = nil
+		}
+		result := r.id.CreateDevice(physical, &di, nil, &r.device)
+		runtime.KeepAlive(global)
+		runtime.KeepAlive(qi)
+		runtime.KeepAlive(extNames)
+		runtime.KeepAlive(extPtrs)
+		extPtrs = extPtrs[:count]
+		extNames = extNames[:count]
+		if result == vk.Success {
+			err = nil
+			break
+		}
+		err = checked("vkCreateDevice", result)
+		if attempt == 0 {
+			return
+		}
+	}
+	r.queuePriority = chosen
 	r.dd, err = vk.LoadDeviceDispatch(r.id, r.device)
 	if err != nil {
 		err = fmt.Errorf("LoadDeviceDispatch: %w", err)
@@ -203,7 +264,7 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	runtime.KeepAlive(extNames)
 	runtime.KeepAlive(extPtrs)
-	if len(extPtrs) > 0 {
+	if dmabufSupported {
 		// Clients need the render node to allocate on the right GPU.
 		if sup := r.probeDMABuf(physical); sup.Device != 0 {
 			r.dmabuf = sup
@@ -325,6 +386,10 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 // CopiedBytes reports cumulative wl_shm bytes copied into GPU storage.
 // It is diagnostic only and must be read by the renderer's owner goroutine.
 func (r *Renderer) CopiedBytes() int { return r.copied }
+
+// QueuePriority is the global priority the queue got: realtime, high or
+// default.
+func (r *Renderer) QueuePriority() string { return r.queuePriority }
 
 func (r *Renderer) Pixels() *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))

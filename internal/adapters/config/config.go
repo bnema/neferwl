@@ -135,6 +135,7 @@ func Defaults() ports.Config {
 	c.Render.DirectScanout = true
 	c.Render.Tearing = true
 	c.Render.VRR = true
+	c.Performance.Realtime = true
 	c.Log.Level = "info"
 	c.Log.Debug = []string{}
 	return c
@@ -576,6 +577,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Render.VRR = b
+	case "performance.realtime":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Performance.Realtime = b
 	case "log.level":
 		if v != "debug" && v != "info" && v != "warn" && v != "error" {
 			return fmt.Errorf("must be debug, info, warn or error")

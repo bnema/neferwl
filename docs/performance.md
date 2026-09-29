@@ -9,6 +9,8 @@ How NeferWL keeps its CPU and memory use low, how to measure it, and the referen
 - **Cursor rides on game frames under VRR.** While a fullscreen game drives VRR, a cursor move waits for the game's next frame instead of its own commit: a cursor-only commit refreshes the panel at its slowest rate (~21 ms at 48 Hz) and delays the next game frame by as much. If the game stops drawing, the cursor still commits alone at 24 Hz.
 - **Default GOGC.** The Go live heap is a few MB (client buffers live in shared and GPU memory), so the runtime default `GOGC=100` with a 256 MiB soft limit gives 2 collections on the tiled playback test where `GOGC=50` gave 13. `GOGC` and `GOMEMLIMIT` from the environment win.
 
+Output and input threads request real-time scheduling, and the Vulkan queue requests elevated priority. Both require CAP_SYS_NICE: `sudo setcap cap_sys_nice+ep /usr/bin/neferwl`. Without it NeferWL runs at normal priority.
+
 ## Guards
 
 `make perf-check` runs `testing.AllocsPerRun` guards that fail when a hot path starts allocating: tiled SHM scene walk, tiled commit publication, headless tiled playback, steady-state `Render`, DRM report and flip snapshots, frame lifecycle transitions, scanout/overlay frame decision, pacer bookkeeping, output message routing, surface update recycling and input-region traversal. Run it with `make check`.

@@ -61,6 +61,43 @@ func objProps(fd int, obj, typ uint32) (map[string][2]uint64, error) {
 	return out, nil
 }
 
+// readContentTypeProp records the connector's content type enum values.
+func readContentTypeProp(fd int, props map[string][2]uint64) (uint32, [5]uint64) {
+	id := uint32(props["content type"][0])
+	var values [5]uint64
+	if id == 0 {
+		return 0, values
+	}
+	p := getProp{propID: id}
+	if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) != nil || p.countEn == 0 {
+		return 0, values
+	}
+	enums := make([]propEnum, p.countEn)
+	v := make([]uint64, max(p.countValues, 1))
+	p.enumBlobs = uint64(uintptr(unsafe.Pointer(&enums[0])))
+	p.values = uint64(uintptr(unsafe.Pointer(&v[0])))
+	if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) != nil {
+		return 0, values
+	}
+	for _, e := range enums[:min(int(p.countEn), len(enums))] {
+		switch unix.ByteSliceToString(e.name[:]) {
+		case "No Data":
+			values[0] = e.value
+		case "Graphics":
+			values[1] = e.value
+		case "Photo":
+			values[2] = e.value
+		case "Cinema":
+			values[3] = e.value
+		case "Game":
+			values[4] = e.value
+		}
+	}
+	runtime.KeepAlive(enums)
+	runtime.KeepAlive(v)
+	return id, values
+}
+
 // connectorHDRProps retains connector property IDs, enum values and the
 // original max bpc for SDR modesets and restoration.
 type connectorHDRProps struct {

@@ -845,6 +845,16 @@ func (c SurfaceColor) IsExtendedLinear() bool {
 	return c.TF == ColorTFExtendedLinear && c.Primaries == ColorPrimariesSRGB
 }
 
+// ContentType is the committed wp_content_type_v1 hint.
+type ContentType uint8
+
+const (
+	ContentNone ContentType = iota
+	ContentPhoto
+	ContentVideo
+	ContentGame
+)
+
 // SurfaceContent carries wayland → output the latest committed content of a
 // window: SHM, a client shared-memory buffer, or DMABuf, a GPU buffer.
 // Renderers read both in place and never modify them. Empty means the window
@@ -853,7 +863,8 @@ func (c SurfaceColor) IsExtendedLinear() bool {
 // Geometry is the part of the surface that is the window (xdg window
 // geometry), the rest being client shadows.
 type SurfaceContent struct {
-	ID WindowID
+	ID          WindowID
+	ContentType ContentType
 	// Surface is a never-reused wl_surface identity; Version identifies its
 	// applied buffer content independently of the window publication Seq.
 	Surface, Version uint64
