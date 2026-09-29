@@ -133,7 +133,7 @@ func TestOverviewStackClickAndHitPriority(t *testing.T) {
 			t.Fatalf("peek hit %d want %d", got, back.ID)
 		}
 		m.OverviewPick(back.ID)
-		if id, _ := w.Focused(); id != back.ID || m.overview {
+		if id, _ := w.Focused(); id != back.ID || m.ov.open {
 			t.Fatalf("picked %d, focus %d", back.ID, id)
 		}
 	}
@@ -231,12 +231,12 @@ func TestOverviewStackRowChangeResetsRotation(t *testing.T) {
 	m := stackMonitor()
 	m.ToggleOverview()
 	m.OverviewMove(1, 0)
-	if m.stackFront(m.Current()) != 0 {
+	if m.stackFront(m.Current()).kind != stackColumns {
 		t.Fatal("columns did not rotate to front")
 	}
 	m.OverviewMove(0, 1)
 	m.OverviewMove(0, -1)
-	if m.stackFront(m.Current()) != 9 {
+	if m.stackFront(m.Current()) != (stackItem{stackFloat, 9}) {
 		t.Fatal("row change kept provisional rotation")
 	}
 	m.CancelOverview()

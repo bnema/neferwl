@@ -100,13 +100,13 @@ func TestOverviewNavigation(t *testing.T) {
 		t.Fatalf("entered empty workspace %d", m.Active)
 	}
 	m.CancelOverview()
-	if id, _ := m.Focused(); id != 3 || m.Active != 0 || m.overview {
+	if id, _ := m.Focused(); id != 3 || m.Active != 0 || m.ov.open {
 		t.Fatalf("cancel: %d on %d", id, m.Active)
 	}
 	m.ToggleOverview()
 	m.OverviewMove(0, 1)
 	m.ToggleOverview()
-	if id, _ := m.Focused(); id != 4 || m.Active != 1 || m.overview {
+	if id, _ := m.Focused(); id != 4 || m.Active != 1 || m.ov.open {
 		t.Fatalf("confirm: %d on %d", id, m.Active)
 	}
 }
@@ -121,7 +121,7 @@ func TestOverviewPick(t *testing.T) {
 		t.Fatalf("hit %d", id)
 	}
 	m.OverviewPick(id)
-	if f, _ := m.Focused(); f != 4 || m.overview {
+	if f, _ := m.Focused(); f != 4 || m.ov.open {
 		t.Fatalf("pick: %d", f)
 	}
 }
@@ -170,7 +170,7 @@ func TestOverviewFullscreenFloat(t *testing.T) {
 			}
 			m.OverviewMove(-1, 0) // nothing else on its row
 			m.ToggleOverview()
-			if f, _ := m.Focused(); f != 2 || m.overview || m.Active != 1 || !previewOf(t, m.Layout(), 2).Fullscreen {
+			if f, _ := m.Focused(); f != 2 || m.ov.open || m.Active != 1 || !previewOf(t, m.Layout(), 2).Fullscreen {
 				t.Fatalf("confirm: %d on %d", f, m.Active)
 			}
 		})
@@ -193,7 +193,7 @@ func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
 	}
 	m.ToggleOverview()
 	m.OverviewPick(2)
-	if f, _ := m.Focused(); f != 2 || m.overview {
+	if f, _ := m.Focused(); f != 2 || m.ov.open {
 		t.Fatalf("pick: %d", f)
 	}
 }
@@ -204,7 +204,7 @@ func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
 	m := gameMonitor(OverflowFixed, false)
 	m.Focus(1)
 	m.ToggleOverview()
-	if !m.overview {
+	if !m.ov.open {
 		t.Fatal("overview did not open")
 	}
 	ps := m.Layout()
@@ -213,7 +213,7 @@ func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
 		t.Fatalf("game %+v, above %+v", game, above)
 	}
 	m.CancelOverview()
-	if f, _ := m.Focused(); f != 2 || m.Active != 1 || m.overview || !previewOf(t, m.Layout(), 2).Fullscreen {
+	if f, _ := m.Focused(); f != 2 || m.Active != 1 || m.ov.open || !previewOf(t, m.Layout(), 2).Fullscreen {
 		t.Fatalf("cancel: %d on %d", f, m.Active)
 	}
 }
@@ -230,7 +230,7 @@ func TestOverviewOpensOverFullscreenTile(t *testing.T) {
 	m.ToggleFullscreen() // 2 to its own workspace
 	m.ToggleOverview()
 	game := previewOf(t, m.Layout(), 2)
-	if !m.overview || !game.Focused || game.Peek || !game.Fullscreen {
+	if !m.ov.open || !game.Focused || game.Peek || !game.Fullscreen {
 		t.Fatalf("game %+v", game)
 	}
 	m.OverviewMove(-1, 0)
@@ -355,7 +355,7 @@ func TestOverviewPileNavigation(t *testing.T) {
 	}
 	m.OverviewMove(1, 0)
 	m.ToggleOverview()
-	if f, _ := m.Focused(); f != 6 || w.stashHidden || m.overview {
+	if f, _ := m.Focused(); f != 6 || w.stashHidden || m.ov.open {
 		t.Fatalf("confirm on %d, hidden %v", f, w.stashHidden)
 	}
 	// Back in on the stash's selection (6), then l past the last entry

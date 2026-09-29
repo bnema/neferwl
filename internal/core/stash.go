@@ -107,7 +107,10 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 	// Its column is gone: it comes back expanded, unless another column
 	// was expanded meanwhile (as leaveFullscreen).
 	expanded := back.expanded && !slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Expanded })
-	w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, FullWidth: back.fullWidth, Expanded: expanded})
+	w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: expanded})
+	if back.fullWidth {
+		w.maximize(w.Focus)
+	}
 }
 
 // rehome is a stashed window moved to another workspace: its former column

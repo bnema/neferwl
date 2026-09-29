@@ -454,7 +454,7 @@ func (c *Core) publish(ctx context.Context) error {
 		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
-		if sc.mon.overview {
+		if sc.mon.ov.open {
 			// Previews have no lines: the selected one is framed.
 			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 		}
@@ -705,7 +705,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
 	}
-	if sc.mon.overview {
+	if sc.mon.ov.open {
 		// Previews and the layers under them take no input: a click
 		// picks a preview (overviewClick).
 		return 0, 0, 0
@@ -1016,7 +1016,7 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			case ports.PointerAxis:
 				// In the overview, scrolling moves the selection.
-				if c.cur().mon.overview && !c.overviewKeyboardTaken() {
+				if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
 					if c.cur().mon.overviewScroll(v) {
 						if c.workspaceVisible(ctx, true) != nil {
 							return nil
@@ -1058,7 +1058,7 @@ func (c *Core) Run(ctx context.Context) error {
 			// The overview takes its keys before any window; others still
 			// run binds, and are not forwarded.
 			// A launcher or a menu holding the keyboard gets them first.
-			if mon := c.cur().mon; mon.overview && !c.overviewKeyboardTaken() {
+			if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
 				if key.Pressed && mon.overviewKey(key) {
 					c.pressed[heldKey(key)] = true
 					if c.workspaceVisible(ctx, true) != nil {
@@ -1164,7 +1164,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[held] = false
 			}
-			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.overview || c.overviewKeyboardTaken()) {
+			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.ov.open || c.overviewKeyboardTaken()) {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}

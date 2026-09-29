@@ -8,6 +8,24 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// overviewState owns the provisional selection and opening snapshot. row is
+// the workspace whose stack has a provisional front; nil uses its real front.
+type overviewState struct {
+	open             bool
+	from             *Workspace
+	fromID           WindowID
+	floats           []Float
+	fullWidth        WindowID
+	row              *Workspace
+	front            stackItem
+	frontAt          int
+	cardOf           *Workspace
+	card             WindowID
+	selected         WindowID
+	selectedAt       int
+	scrollX, scrollY float64
+}
+
 // The overview scales each workspace row without resizing clients. Covering
 // native floats and the columns form a stack of cards in screen order; small
 // floats remain hidden. A pinned fullscreen window remains the only preview.
@@ -33,7 +51,7 @@ const overviewMaxZoom, overviewMinZoom = 0.6, 0.25
 // a covering fullscreen window (a game) too: its row shows it, composed
 // rather than scanned out while the overview is open.
 func (m *Monitor) ToggleOverview() {
-	if m.overview {
+	if m.ov.open {
 		m.closeOverview()
 		return
 	}
@@ -42,24 +60,24 @@ func (m *Monitor) ToggleOverview() {
 	// settled state.
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
-	m.overview, m.overviewFrom = true, w
-	m.overviewFromID, _ = w.Focused()
-	m.overviewFloats = append([]Float(nil), w.Floats...)
-	m.overviewFullWidth = 0
+	m.ov.open, m.ov.from = true, w
+	m.ov.fromID, _ = w.Focused()
+	m.ov.floats = append([]Float(nil), w.Floats...)
+	m.ov.fullWidth = 0
 	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
 		c := w.Columns[w.Focus]
-		m.overviewFullWidth = c.Windows[c.Focus]
+		m.ov.fullWidth = c.Windows[c.Focus]
 	}
-	m.scrollX, m.scrollY = 0, 0
+	m.ov.scrollX, m.ov.scrollY = 0, 0
 	m.overviewOpens++
 	m.selectRow()
 }
 
 // selectRow resets provisional stack and stash selection for a new row.
 func (m *Monitor) selectRow() {
-	m.overviewCard, m.overviewCardOf = 0, nil
-	m.overviewStack, m.overviewStackOf = 0, nil
-	m.overviewHiddenID, m.overviewHiddenAt = 0, -1
+	m.ov.card, m.ov.cardOf = 0, nil
+	m.ov.front, m.ov.row, m.ov.frontAt = stackItem{}, nil, 0
+	m.ov.selected, m.ov.selectedAt = 0, -1
 	w := m.Current()
 	if w.overviewMaximized() {
 		m.selectHiddenColumn(w, -1)
@@ -70,7 +88,7 @@ func (m *Monitor) selectRow() {
 	}
 	// A float's focus moves to the selected column for keyboard navigation,
 	// without calling FocusID (which would change the real stack order).
-	if w.floatFocus && len(w.Columns) > 0 && (len(w.stackItems()) < 2 || m.stackFront(w) == 0) {
+	if w.floatFocus && len(w.Columns) > 0 && (len(w.stack()) < 2 || m.stackFront(w).kind == stackColumns) {
 		w.floatFocus = false
 	}
 	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused() && !w.floatFocus) {
@@ -80,23 +98,23 @@ func (m *Monitor) selectRow() {
 
 // selectCard selects stash entry i of w.
 func (m *Monitor) selectCard(w *Workspace, i int) {
-	m.overviewCard, m.overviewCardOf = w.Stash[i].ID, w
+	m.ov.card, m.ov.cardOf = w.Stash[i].ID, w
 }
 
 // card is the selected stash card, 0 when there is none: the overview is
 // closed, the selection is on a column, or its window left the stash on
 // screen (unmapped, unstashed, or another workspace shown by a bind).
 func (m *Monitor) card() WindowID {
-	w := m.overviewCardOf
-	if !m.overview || w == nil || w != m.Current() || w.stashIndex(m.overviewCard) < 0 {
+	w := m.ov.cardOf
+	if !m.ov.open || w == nil || w != m.Current() || w.stashIndex(m.ov.card) < 0 {
 		return 0
 	}
-	return m.overviewCard
+	return m.ov.card
 }
 
 // cardAt is the pile entry of w that is selected, -1 when none.
 func (m *Monitor) cardAt(w *Workspace) int {
-	if id := m.card(); id != 0 && w == m.overviewCardOf {
+	if id := m.card(); id != 0 && w == m.ov.cardOf {
 		return w.stashIndex(id)
 	}
 	return -1
@@ -113,33 +131,31 @@ func (m *Monitor) closeOverview() {
 		}
 		w.stashAt = i
 		w.showStash()
-	} else {
-		front := m.stackFront(w)
-		if front != 0 && front != overviewMaxColumn && len(w.stackItems()) > 1 {
-			w.FocusID(front)
-		} else if len(w.Columns) > 0 && !w.pinned() {
-			i := w.Focus
-			if front == 0 && w.overviewMaximized() {
-				i = m.hiddenColumn(w)
+	} else if w.pinned() {
+		// The pinned row keeps its current focus.
+	} else if len(w.stack()) > 0 {
+		item := m.stackFront(w)
+		selected := WindowID(0)
+		if item.kind == stackColumns && w.overviewMaximized() {
+			i := m.hiddenColumn(w)
+			selected = w.Columns[i].Windows[w.Columns[i].Focus]
+		} else if item.kind == stackColumns && len(w.Columns) > 0 {
+			c := w.Columns[w.Focus]
+			selected = c.Windows[c.Focus]
+		} else if item.kind == stackColumn {
+			if i := w.columnOf(item.id); i >= 0 {
+				selected = w.Columns[i].Windows[w.Columns[i].Focus]
 			}
-			c := w.Columns[i]
-			w.FocusID(c.Windows[c.Focus])
 		}
+		w.apply(item, selected)
 	}
-	m.overview, m.overviewFrom = false, nil
-	m.overviewCard, m.overviewCardOf = 0, nil
-	m.overviewStack, m.overviewStackOf = 0, nil
-	m.overviewFloats = nil
-	m.overviewFullWidth = 0
+	m.ov = overviewState{}
 }
 
 // CancelOverview closes the overview and returns to the workspace and
 // window it opened on, if they are still there.
 func (m *Monitor) CancelOverview() {
-	from, id := m.overviewFrom, m.overviewFromID
-	m.overview, m.overviewFrom = false, nil
-	m.overviewCard, m.overviewCardOf = 0, nil
-	m.overviewStack, m.overviewStackOf = 0, nil
+	from, id := m.ov.from, m.ov.fromID
 	if from != nil && m.has(from) {
 		m.show(from)
 		if id != 0 {
@@ -149,7 +165,7 @@ func (m *Monitor) CancelOverview() {
 		}
 		// FocusID on a float raises it; restore the initial order and below
 		// flags for floats still present, leaving new floats in their order.
-		initial := m.overviewFloats
+		initial := m.ov.floats
 		current := from.Floats
 		from.Floats = nil
 		for _, f := range initial {
@@ -166,15 +182,18 @@ func (m *Monitor) CancelOverview() {
 		// Fixed overflow maximizes at most one column: only the one holding
 		// the anchor window, wherever active binds moved it. Scroll overflow
 		// keeps each column's own width.
-		for i := range from.Columns {
-			if from.Overflow == OverflowFixed {
-				from.Columns[i].FullWidth = m.overviewFullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.overviewFullWidth)
+		if from.Overflow == OverflowFixed {
+			from.unmaximize()
+			for i := range from.Columns {
+				if m.ov.fullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.ov.fullWidth) {
+					from.maximize(i)
+					break
+				}
 			}
 		}
 		from.scroll()
 	}
-	m.overviewFloats = nil
-	m.overviewFullWidth = 0
+	m.ov = overviewState{}
 }
 
 // OverviewMove selects a column, stash card, or covering-float card (dx),
@@ -200,9 +219,9 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		case at+dx >= 0 && at+dx < len(w.Stash):
 			m.selectCard(w, at+dx)
 		case dx > 0 && len(w.Columns) > 0:
-			m.overviewCard, m.overviewCardOf = 0, nil
+			m.ov.card, m.ov.cardOf = 0, nil
 			// The columns come to the front of the stack.
-			m.overviewStackOf, m.overviewStack = w, 0
+			m.setFront(w, stackItem{kind: stackColumns})
 			if w.overviewMaximized() {
 				m.selectHiddenColumn(w, -1)
 			} else {
@@ -212,7 +231,7 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		return
 	}
 	front := m.stackFront(w)
-	if front == 0 && w.overviewMaximized() {
+	if front.kind == stackColumns && w.overviewMaximized() {
 		i := m.hiddenColumn(w)
 		if dx == 0 {
 			return
@@ -234,8 +253,8 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		}
 		return
 	}
-	if front != 0 && len(w.stackItems()) > 1 {
-		if front != overviewMaxColumn && dx < 0 && len(w.Stash) > 0 {
+	if front.kind != stackColumns && len(w.stack()) > 1 {
+		if front.kind != stackColumn && dx < 0 && len(w.Stash) > 0 {
 			m.selectCard(w, w.stashAt)
 		} else {
 			m.rotateStack(w, dx)
@@ -249,7 +268,7 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 	if len(w.Columns) == 0 {
 		return
 	}
-	if dx > 0 && w.Focus == len(w.Columns)-1 && len(w.stackItems()) > 1 {
+	if dx > 0 && w.Focus == len(w.Columns)-1 && len(w.stack()) > 1 {
 		m.rotateStack(w, dx)
 		return
 	}
@@ -262,33 +281,31 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	if w == nil {
 		return
 	}
+	if w.floatIndex(id) >= 0 && w.stashIndex(id) < 0 {
+		i := w.floatIndex(id)
+		if !w.coversFloat(w.Floats[i]) && !w.pinned() {
+			return
+		}
+	}
 	m.show(w)
-	m.overviewCard, m.overviewCardOf = 0, nil
+	m.ov.card, m.ov.cardOf = 0, nil
 	if i := w.stashIndex(id); i >= 0 {
 		m.selectCard(w, i)
-	} else if i := w.floatIndex(id); i >= 0 && w.coversFloat(w.Floats[i]) && !w.pinned() {
-		m.overviewStackOf, m.overviewStack = w, id
 	} else if w.pinned() {
 		w.FocusID(id)
-	} else if w.floatIndex(id) >= 0 {
-		// A non-covering float is never a preview to pick.
-		return
-	} else {
-		for i, c := range w.Columns {
-			for j, v := range c.Windows {
+	} else if item, ok := w.itemOf(id); ok {
+		m.setFront(w, item)
+		if i := w.columnOf(id); i >= 0 {
+			if item.kind == stackColumns && w.overviewMaximized() {
+				m.selectHiddenColumn(w, i)
+			}
+			if item.kind == stackColumns && !w.overviewMaximized() {
+				w.selectOverviewColumn(i)
+			}
+			for j, v := range w.Columns[i].Windows {
 				if v == id {
-					if w.overviewMaximized() {
-						if i == w.Focus {
-							m.overviewStackOf, m.overviewStack = w, overviewMaxColumn
-						} else {
-							m.overviewStackOf, m.overviewStack = w, 0
-							m.selectHiddenColumn(w, i)
-						}
-					} else {
-						m.overviewStackOf, m.overviewStack = w, 0
-						w.selectOverviewColumn(i)
-					}
 					w.Columns[i].Focus = j
+					break
 				}
 			}
 		}
@@ -336,7 +353,7 @@ func (m *Monitor) overviewLayout() []Placement {
 			result = append(result, w.pile(ry, w != cur, at)...)
 		}
 		for _, f := range w.Floats {
-			if !shown || len(w.stackItems()) < 2 || !w.coversFloat(f) {
+			if !shown || len(w.stack()) < 2 || !w.coversFloat(f) {
 				result = append(result, Placement{ID: f.ID, Hidden: true})
 			}
 		}
@@ -349,6 +366,60 @@ func (m *Monitor) overviewLayout() []Placement {
 		}
 	}
 	return result
+}
+
+// fan places front and neighboring cards, farthest visible first and front
+// last. A card may contain several tiles; omitted cards stay in the layout
+// hidden so their clients are not left showing on screen.
+func fan(cards [][]Placement, front, maxBehind, maxBefore int,
+	behind, before func(int) (int, int), dim, lit bool) []Placement {
+	n := len(cards)
+	if n == 0 {
+		return nil
+	}
+	front = min(max(front, 0), n-1)
+	out := make([]Placement, 0, n)
+	add := func(i, distance int, offset func(int) (int, int), peek bool) {
+		dx, dy := offset(distance)
+		for _, p := range cards[i] {
+			if !p.Hidden {
+				p.Rect.X += dx
+				p.Rect.Y += dy
+				p.Peek = p.Peek || peek || dim
+				p.Focused = p.Focused && !peek && !dim && lit
+			}
+			out = append(out, p)
+		}
+	}
+	shown := make([]bool, n)
+	// Behind and before are in nearest-first order; paint farthest first.
+	for d := min(maxBehind, n-1); d >= 1; d-- {
+		i := (front - d + n) % n
+		add(i, d, behind, true)
+		shown[i] = true
+	}
+	for d := min(maxBefore, n-1); d >= 1; d-- {
+		i := (front + d) % n
+		if shown[i] {
+			continue
+		}
+		add(i, d, before, true)
+		shown[i] = true
+	}
+	add(front, 0, behind, false)
+	shown[front] = true
+	for i, card := range cards {
+		if shown[i] {
+			continue
+		}
+		for _, p := range card {
+			p.Hidden = true
+			p.Preview = 0
+			p.Focused = false
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // pileWidth is the room the stash pile of w takes on the left of its row,
@@ -387,18 +458,14 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 	ch := int(math.Round(float64(r.H) * overviewCardZoom))
 	rowH := int(math.Round(float64(u.H) * w.overviewZoom()))
 	x0, y0 := u.X+u.W/100, y+(rowH-ch)/2
-	shown := min(n, overviewCards)
-	out := make([]Placement, 0, n)
-	// Farthest card first: the front one is drawn and hit on top.
-	for k := shown - 1; k >= 0; k-- {
-		i := (front + k) % n
-		step := k * w.cardStep()
-		out = append(out, Placement{ID: w.Stash[i].ID, Rect: Rect{X: x0 + step, Y: y0 - step, W: cw, H: ch}, Preview: overviewCardZoom, Peek: dim || k > 0, Focused: k == 0 && selected})
+	cards := make([][]Placement, n)
+	for i := range w.Stash {
+		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected}}
 	}
-	for k := shown; k < n; k++ {
-		out = append(out, Placement{ID: w.Stash[(front+k)%n].ID, Hidden: true})
-	}
-	return out
+	step := w.cardStep()
+	return fan(cards, front, min(n, overviewCards)-1, 0,
+		func(d int) (int, int) { return d * step, -d * step },
+		func(int) (int, int) { return 0, 0 }, dim, selected)
 }
 
 // overviewZoom is the scale that fits every column of w in the usable
@@ -545,7 +612,7 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	}
 	i := c.screenIndex(o.Info.Name)
 	sc := c.screens[i]
-	if !sc.mon.overview {
+	if !sc.mon.ov.open {
 		return false, nil
 	}
 	id := sc.mon.overviewAt(c.cursorX-float64(o.X), c.cursorY-float64(o.Y))
@@ -589,7 +656,7 @@ const overviewScrollStep = 60
 func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
 		// Fingers lifted: the next scroll starts from zero.
-		m.scrollX, m.scrollY = 0, 0
+		m.ov.scrollX, m.ov.scrollY = 0, 0
 		return false
 	}
 	add := func(acc *float64, ax ports.ScrollAxis) {
@@ -601,18 +668,18 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			*acc += ax.Value
 		}
 	}
-	add(&m.scrollY, a.Vertical)
-	add(&m.scrollX, a.Horizontal)
+	add(&m.ov.scrollY, a.Vertical)
+	add(&m.ov.scrollX, a.Horizontal)
 	for {
 		switch {
-		case math.Abs(m.scrollY) >= overviewScrollStep && math.Abs(m.scrollY) >= math.Abs(m.scrollX):
-			m.OverviewMove(0, sign(m.scrollY))
-			m.scrollY -= float64(sign(m.scrollY)) * overviewScrollStep
-			m.scrollX = 0
-		case math.Abs(m.scrollX) >= overviewScrollStep:
-			m.OverviewMove(sign(m.scrollX), 0)
-			m.scrollX -= float64(sign(m.scrollX)) * overviewScrollStep
-			m.scrollY = 0
+		case math.Abs(m.ov.scrollY) >= overviewScrollStep && math.Abs(m.ov.scrollY) >= math.Abs(m.ov.scrollX):
+			m.OverviewMove(0, sign(m.ov.scrollY))
+			m.ov.scrollY -= float64(sign(m.ov.scrollY)) * overviewScrollStep
+			m.ov.scrollX = 0
+		case math.Abs(m.ov.scrollX) >= overviewScrollStep:
+			m.OverviewMove(sign(m.ov.scrollX), 0)
+			m.ov.scrollX -= float64(sign(m.ov.scrollX)) * overviewScrollStep
+			m.ov.scrollY = 0
 		default:
 			return changed
 		}

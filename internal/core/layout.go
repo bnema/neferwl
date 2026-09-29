@@ -354,7 +354,7 @@ func (w *Workspace) addColumn(col Column) {
 		at = w.Focus + 1
 	}
 	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
-		w.Columns[w.Focus].FullWidth = false
+		w.unmaximize()
 	}
 	w.Columns = append(w.Columns, Column{})
 	copy(w.Columns[at+1:], w.Columns[at:])
@@ -491,7 +491,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 				w.floatFocus, w.stashFocus = false, false
 				w.raiseColumns()
 				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) {
-					w.Columns[w.Focus].FullWidth = false
+					w.unmaximize()
 				}
 				w.Focus = i
 				w.Columns[i].Focus = j
@@ -522,7 +522,7 @@ func (w *Workspace) FocusColumn(dir int) {
 	if i := w.columnToward(dir); i >= 0 {
 		w.raiseColumns()
 		if w.Overflow == OverflowFixed {
-			w.Columns[w.Focus].FullWidth = false
+			w.unmaximize()
 		}
 		w.Focus = i
 		w.scroll()
@@ -666,7 +666,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 func (w *Workspace) insertColumn(at int, col Column) {
 	at = min(max(at, 0), len(w.Columns))
 	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
-		w.Columns[w.Focus].FullWidth = false
+		w.unmaximize()
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)
 	w.Focus = at
@@ -696,7 +696,7 @@ func (w *Workspace) CycleWidth() {
 		}
 	}
 	c.Width = next
-	c.FullWidth = false
+	w.unmaximize()
 	w.scroll()
 }
 
@@ -711,7 +711,24 @@ func (w *Workspace) toggleExpanded() {
 		w.Columns[i].Expanded = false
 	}
 	w.Columns[w.Focus].Expanded = on
-	w.Columns[w.Focus].FullWidth = false
+	w.unmaximize()
+}
+
+// maximize sets FullWidth on column i; unlike ToggleFullWidth it never toggles.
+func (w *Workspace) maximize(i int) {
+	if i >= 0 && i < len(w.Columns) {
+		w.Columns[i].FullWidth = true
+	}
+}
+
+// unmaximize clears the focused column in scroll mode, or the single
+// maximized column in fixed mode (including after Escape changed focus).
+func (w *Workspace) unmaximize() {
+	for i := range w.Columns {
+		if w.Overflow == OverflowFixed || i == w.Focus {
+			w.Columns[i].FullWidth = false
+		}
+	}
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.
@@ -719,8 +736,11 @@ func (w *Workspace) ToggleFullWidth() {
 	if len(w.Columns) == 0 || w.onFloat() {
 		return
 	}
-	c := &w.Columns[w.Focus]
-	c.FullWidth = !c.FullWidth
+	if w.Columns[w.Focus].FullWidth {
+		w.unmaximize()
+	} else {
+		w.maximize(w.Focus)
+	}
 	w.scroll()
 }
 

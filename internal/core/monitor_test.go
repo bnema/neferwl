@@ -440,7 +440,7 @@ func TestMonitorFixedFullscreenStackedExpanded(t *testing.T) {
 		}
 		w := m.Current()
 		w.FocusID(2)
-		w.stack(2, 1) // column {1, 2}, then {3}, {4}
+		w.stackWindow(2, 1) // column {1, 2}, then {3}, {4}
 		w.FocusID(2)
 		m.Apply(ActionCycleColumnWidth)
 		m.ToggleFullscreen()

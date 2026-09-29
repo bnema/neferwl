@@ -34,32 +34,8 @@ type Monitor struct {
 	// one its swipe began on); switchOff is then from the current
 	// workspace's place in it.
 	switchList []*Workspace
-	// overview is set while the overview is open (overview.go);
-	// overviewFrom and overviewFromID are where it opened, for Escape.
-	overview       bool
-	overviewFrom   *Workspace
-	overviewFromID WindowID
-	// Initial float order/below flags for Escape, and the focused window
-	// of the maximized column (0 when none): at most one column is
-	// maximized, and a window ID survives column index changes.
-	overviewFloats    []Float
-	overviewFullWidth WindowID
-	// overviewCard is the selected stash card and overviewCardOf its
-	// workspace; 0 while the selection is on a column. The stash itself
-	// changes only when the overview closes on the card.
-	overviewCard   WindowID
-	overviewCardOf *Workspace
-	// overviewStack is the provisional front item (0 means columns,
-	// overviewMaxColumn means the maximized column). nil means real top.
-	overviewStackOf *Workspace
-	overviewStack   WindowID
-	// Selected focused window within the hidden card; the index is only a
-	// nearest-column fallback if that window disappears.
-	overviewHiddenID WindowID
-	overviewHiddenAt int
-	// scrollX and scrollY add up scrolling in the overview until it makes
-	// a step (overviewScroll); opening the overview starts from zero.
-	scrollX, scrollY float64
+	// ov holds the overview selection and its Escape snapshot.
+	ov overviewState
 	// overviewOpens counts the overview's openings: a swipe sliding when
 	// one happens is dropped (gesture.go).
 	overviewOpens int
@@ -680,7 +656,7 @@ func (m *Monitor) Focused() (WindowID, bool) {
 
 // Layout places every window: the workspace on screen laid out, others hidden.
 func (m *Monitor) Layout() []Placement {
-	if m.overview {
+	if m.ov.open {
 		return m.overviewLayout()
 	}
 	var result []Placement

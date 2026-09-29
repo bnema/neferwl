@@ -49,7 +49,7 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 		t.Fatalf("front hit %d", got)
 	}
 	m.OverviewMove(1, 0)
-	if m.stackFront(w) != 0 || m.hiddenColumn(w) != 0 || !w.Columns[1].FullWidth || w.Focus != 1 {
+	if m.stackFront(w).kind != stackColumns || m.hiddenColumn(w) != 0 || !w.Columns[1].FullWidth || w.Focus != 1 {
 		t.Fatal("rotation changed the workspace")
 	}
 	m.OverviewMove(1, 0)
@@ -111,28 +111,28 @@ func TestOverviewMaximizedFloatWrapAndNeighbor(t *testing.T) {
 	m.Current().ToggleFullWidth()
 	m.Focus(0)
 	m.ToggleOverview()
-	if got := w.stackItems(); !slices.Equal(got, []WindowID{0, overviewMaxColumn, 9}) {
+	if got := w.stack(); !slices.Equal(got, []stackItem{{kind: stackColumns}, {stackColumn, 2}, {stackFloat, 9}}) {
 		t.Fatalf("items %v", got)
 	}
 	if p, q := previewOf(t, m.Layout(), 10), previewOf(t, m.Layout(), 11); !p.Peek || !q.Peek || p.Focused || q.Focused {
 		t.Fatalf("neighbor max %+v hidden %+v", p, q)
 	}
 	m.OverviewMove(1, 0) // max
-	if m.stackFront(w) != overviewMaxColumn {
+	if m.stackFront(w) != (stackItem{stackColumn, 2}) {
 		t.Fatal("max not front")
 	}
 	m.OverviewMove(1, 0) // hidden
-	if m.stackFront(w) != 0 {
+	if m.stackFront(w).kind != stackColumns {
 		t.Fatal("hidden not front")
 	}
 	m.OverviewMove(1, 0) // skip max, column 3
 	m.OverviewMove(1, 0) // column 4
 	m.OverviewMove(1, 0) // float
-	if m.stackFront(w) != 9 {
+	if m.stackFront(w) != (stackItem{stackFloat, 9}) {
 		t.Fatalf("float not front: %d", m.stackFront(w))
 	}
 	m.OverviewMove(1, 0) // max
-	if m.stackFront(w) != overviewMaxColumn {
+	if m.stackFront(w) != (stackItem{stackColumn, 2}) {
 		t.Fatal("wrap did not reach max")
 	}
 	m.ToggleOverview()
@@ -146,7 +146,7 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 	w := m.Current()
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0)
-	if m.stackFront(w) != 0 || w.Columns[1].FullWidth == false {
+	if m.stackFront(w).kind != stackColumns || w.Columns[1].FullWidth == false {
 		t.Fatal("left did not rotate backwards to the hidden card")
 	}
 	m.CancelOverview()
@@ -156,7 +156,7 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 	w.ToggleFullWidth()
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0) // maximized -> hidden, not stash
-	if m.cardAt(w) >= 0 || m.stackFront(w) != 0 {
+	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns {
 		t.Fatal("maximized left skipped hidden card")
 	}
 	m.OverviewMove(-1, 0) // first hidden column -> stash
@@ -164,7 +164,7 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 		t.Fatal("hidden card did not enter stash")
 	}
 	m.OverviewMove(1, 0)
-	if m.stackFront(w) != 0 || w.Columns[1].FullWidth == false {
+	if m.stackFront(w).kind != stackColumns || w.Columns[1].FullWidth == false {
 		t.Fatal("stash return changed maximization")
 	}
 	m.CancelOverview()
@@ -304,7 +304,7 @@ func TestOverviewScrollFullWidthUnchanged(t *testing.T) {
 	w := m.Current()
 	w.Overflow = OverflowScroll
 	m.ToggleOverview()
-	if got := w.stackItems(); !slices.Equal(got, []WindowID{0}) {
+	if got := w.stack(); !slices.Equal(got, []stackItem{{kind: stackColumns}}) {
 		t.Fatalf("scroll items %v", got)
 	}
 	for _, id := range []WindowID{1, 3, 4} {

@@ -38,7 +38,7 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 		// Consume at the edge: move-column already crosses monitors.
 	case len(col.Windows) == 1:
 		// The column goes away, and a slot with it.
-		w.stack(id, w.Columns[next].Windows[0])
+		w.stackWindow(id, w.Columns[next].Windows[0])
 	case !w.full():
 		c := Column{Windows: []WindowID{id}, Width: col.Width}
 		if col.Focus == 0 && col.Slot != 0 {
@@ -53,14 +53,14 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 	case edge:
 		return false
 	default:
-		w.stack(id, w.Columns[next].Windows[0])
+		w.stackWindow(id, w.Columns[next].Windows[0])
 	}
 	return true
 }
 
 // stack moves tiled window id to the bottom of the column holding target
 // and focuses it. Leaving a slot column's first row releases the slot.
-func (w *Workspace) stack(id, target WindowID) {
+func (w *Workspace) stackWindow(id, target WindowID) {
 	w.dropSlotOf(id)
 	w.RemoveWindow(id)
 	i := slices.IndexFunc(w.Columns, func(c Column) bool { return slices.Contains(c.Windows, target) })
