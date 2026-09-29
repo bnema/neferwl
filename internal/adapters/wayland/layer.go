@@ -1,12 +1,13 @@
 package wayland
 
 import (
+	"sort"
+
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/purego-libwayland/server"
-	"sort"
 )
 
 type layerShell struct{ server *Server }
@@ -43,7 +44,7 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		return
 	}
 	state := h.server.surfaces[w.Resource]
-	if state.kind != roleNone || (state.attached && state.pending != nil) || state.current != nil {
+	if state.kind != roleNone || (state.next.attached && state.next.buffer != nil) || state.current != nil {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed), "surface already constructed")
 		return
 	}
@@ -77,8 +78,8 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		state.layer = nil
 		state.role = nil
 		state.dropQueue()
-		state.current, state.pending = nil, nil
-		state.attached = false
+		state.current, state.next.buffer = nil, nil
+		state.next.attached = false
 	}
 }
 func (l *layerSurface) SetSize(_ *wlrlayershell.ZwlrLayerSurfaceV1, w, h uint32) {
@@ -156,10 +157,10 @@ func (l *layerSurface) unmap() {
 	if !l.mapped {
 		return
 	}
-	if s := l.shell.server; s.focused == l.id {
+	if s := l.shell.server; s.seat.focused == l.id {
 		s.changeFocus(0)
 	}
-	if s := l.shell.server; s.pointerFocus == l.id {
+	if s := l.shell.server; s.seat.pointerFocus == l.id {
 		s.changePointerFocus(0, 0, 0)
 	}
 	l.mapped = false

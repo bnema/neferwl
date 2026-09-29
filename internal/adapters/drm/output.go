@@ -1091,68 +1091,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		// shows is what the frame puts on screen: presentation feedback
-		// of windows it does not draw is discarded, not presented.
-		f := pendingFrame{shows: o.shownBy(scene, seen)}
-		decision := o.decideFrame(scene, surfaces, len(requests) > 0)
-		direct := false
-		if decision.fb != 0 {
-			c := decision.content
-			direct, err = o.commitScanout(decision.fb, c, pendingFrame{shows: o.directShownBy(c.ID, seen[c.ID])})
-		}
-		if !direct {
-			ov, composed := decision.overlay, decision.composed
-			if decision.fb != 0 {
-				decision = o.composeFrame(scene, surfaces)
-				ov, composed = decision.overlay, decision.composed
-			}
-			r.UseTarget(o.back)
-			done, rerr := r.Render(composed, surfaces)
-			if rerr != nil {
-				ov.close()
-				return fmt.Errorf("render frame: %w", rerr)
-			}
-			if ov.fb != 0 && !o.testOverlay(o.fbs[o.back], ov) {
-				// Refused: compose the window too (cached per buffer).
-				if done != nil {
-					done.Close()
-				}
-				ov.close()
-				ov = overlayWin{}
-				if done, rerr = r.Render(scene, surfaces); rerr != nil {
-					return fmt.Errorf("render frame: %w", rerr)
-				}
-			}
-			if len(requests) > 0 {
-				// Scanout and the overlay plane were skipped for this frame.
-				o.log.Debug().Str("connector", o.conn.name).Int("captures", len(requests)).Msg("capture frame composed")
-			}
-			for _, q := range requests {
-				capture.Write(ctx, q, r, captured)
-			}
-			requests = nil
-			// The overlay buffer is on screen like a scanned-out one: it
-			// is reported shown, so it is not released under the plane.
-			f.queued, f.zeroCopy, f.composed = ov.buf, ov.id, true
-			// A covering fullscreen window keeps VRR while composed
-			// (overlay layer, subsurfaces, size mismatch).
-			game := o.vrrProp != 0 && fullscreenShown(&scene)
-			err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(game), f, ov)
-			if err != nil {
-				// The GPU may still read client buffers for this frame.
-				o.holdRead(done)
-			}
-			if done != nil {
-				done.Close()
-			}
-			ov.close()
-			if err != nil && o.overlayConflict(err, ov.buf) {
-				err = errOverlayDropped
-			}
-			if err == nil {
-				o.queued = ov.buf
-				o.back = 1 - o.back
-			}
+		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, captured)
+		requests = nil
+		var fatal renderError
+		if errors.As(err, &fatal) {
+			return err
 		}
 		if err != nil {
 			if errors.Is(err, errOverlayDropped) {

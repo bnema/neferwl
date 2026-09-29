@@ -2,9 +2,10 @@ package wayland
 
 import (
 	"context"
-	"golang.org/x/sys/unix"
 	"slices"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/bnema/neferwl/internal/ports"
 

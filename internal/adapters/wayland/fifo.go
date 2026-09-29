@@ -8,7 +8,6 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/committiming"
 	"github.com/bnema/purego-libwayland/protocol/contenttype"
 	"github.com/bnema/purego-libwayland/protocol/fifo"
-	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
@@ -78,12 +77,12 @@ func (h *fifoHandler) live(r *fifo.WpFifoV1) bool {
 }
 func (h *fifoHandler) SetBarrier(r *fifo.WpFifoV1) {
 	if h.live(r) {
-		h.surface.pendingBarrier = true
+		h.surface.next.barrier = true
 	}
 }
 func (h *fifoHandler) WaitBarrier(r *fifo.WpFifoV1) {
 	if h.live(r) {
-		h.surface.pendingWait = true
+		h.surface.next.wait = true
 	}
 }
 func (*fifoHandler) Destroy(*fifo.WpFifoV1) {}
@@ -121,10 +120,10 @@ func (h *timerHandler) SetTimestamp(r *committiming.WpCommitTimerV1, secHi, secL
 		r.PostError(uint32(committiming.WpCommitTimerV1ErrorSurfaceDestroyed), "surface destroyed")
 	case nsec >= 1e9:
 		r.PostError(uint32(committiming.WpCommitTimerV1ErrorInvalidTimestamp), "tv_nsec out of range")
-	case !h.surface.pendingTime.IsZero():
+	case !h.surface.next.at.IsZero():
 		r.PostError(uint32(committiming.WpCommitTimerV1ErrorTimestampExists), "timestamp already set")
 	default:
-		h.surface.pendingTime = monotonicTime(uint64(secHi)<<32|uint64(secLo), int64(nsec))
+		h.surface.next.at = monotonicTime(uint64(secHi)<<32|uint64(secLo), int64(nsec))
 	}
 }
 func (*timerHandler) Destroy(*committiming.WpCommitTimerV1) {}
@@ -174,7 +173,7 @@ func (m contentTypeManager) GetSurfaceContentType(r *contenttype.WpContentTypeMa
 		// Destroying it sets the type back to none, double-buffered.
 		if state.contentType == h {
 			state.contentType = nil
-			state.pendingKind = 0
+			state.next.kind = 0
 		}
 	}
 }
@@ -183,7 +182,7 @@ type contentTypeHandler struct{ surface *surface }
 
 func (h *contentTypeHandler) SetContentType(_ *contenttype.WpContentTypeV1, kind uint32) {
 	if h.surface != nil && !h.surface.destroyed && h.surface.contentType == h {
-		h.surface.pendingKind = kind
+		h.surface.next.kind = kind
 	}
 }
 func (*contentTypeHandler) Destroy(*contenttype.WpContentTypeV1) {}
@@ -199,44 +198,26 @@ func (s *Server) surfaceOf(w *wayland.Surface) *surface {
 
 // update owns a captured commit until it applies or is discarded.
 type update struct {
-	inputSet, inputAll bool
-	inputRects         []ports.Rect
-	attached           bool
-	buffer             *wayland.Buffer
-	scale              int
-	transform          ports.BufferTransform
-	opaque             []ports.Rect
-	opaqueSet          bool
-	async              bool
-	kind               uint32
-	callbacks          []*wayland.Callback
-	vp                 *viewport
-	vpW, vpH           int32
-	vpSet              bool
-	vpSrc              [4]server.Fixed
-	vpCrop             bool
-	layout             []childLayout
-	deps               []*update
-	owner              *surface
-	prev               *update
-	synced, bound      bool
-	xdg                *xdgSurface
-	geometry           ports.Rect
-	cons               *constraint
-	region             *ports.Rect
-	layer              *layerSurface
-	layerNext          layerState
-	barrier            bool
-	wait               bool
-	at                 time.Time
-	feedback           []*presentationtime.WpPresentationFeedback
-	sync               *commitSync
-	color              SurfaceColor
-	representation     surfaceRepresentation
-	damage             []ports.Rect
-	bufDamage          []ports.Rect
-	readyGeneration    uint64
-	readyResult        bool
+	// pendingCommit is the wl_surface state captured by the commit.
+	pendingCommit
+	vp              *viewport
+	vpW, vpH        int32
+	vpSet           bool
+	vpSrc           [4]server.Fixed
+	vpCrop          bool
+	layout          []childLayout
+	deps            []*update
+	owner           *surface
+	prev            *update
+	synced, bound   bool
+	xdg             *xdgSurface
+	geometry        ports.Rect
+	cons            *constraint
+	region          *ports.Rect
+	layer           *layerSurface
+	layerNext       layerState
+	readyGeneration uint64
+	readyResult     bool
 	// refs counts incoming deps and prev links. Retired updates remain readable
 	// until their last incoming link goes away, even after dropQueue.
 	refs    int
@@ -310,17 +291,9 @@ func sameLayout(a, b []childLayout) bool {
 // takePending moves the pending state into an update: one-shot state is
 // cleared, sticky state (scale, hints, viewport, geometry, layer) kept.
 func (s *surface) takePending() update {
-	u := update{attached: s.attached, buffer: s.pending, scale: s.pendingScale, async: s.pendingAsync, kind: s.pendingKind, callbacks: s.callbacks, barrier: s.pendingBarrier, wait: s.pendingWait, at: s.pendingTime, damage: s.pendingDamage, bufDamage: s.pendingBufDamage, feedback: s.pendingFeedback, sync: s.pendingSync, color: s.pendingColor, representation: s.pendingRepresentation}
-	u.inputSet, u.inputAll, u.inputRects = s.pendingInputSet, s.pendingInputAll, s.pendingInputRects
-	s.pendingInputSet = false
-	s.pendingInputRects = nil
-	u.transform = s.pendingTransform
-	u.opaque, u.opaqueSet = s.pendingOpaque, s.pendingOpaqueSet
-	s.pendingOpaque, s.pendingOpaqueSet = nil, false
-	s.attached, s.pending, s.callbacks = false, nil, nil
-	s.pendingFeedback, s.pendingSync = nil, nil
-	s.pendingDamage, s.pendingBufDamage = nil, nil
-	s.pendingBarrier, s.pendingWait, s.pendingTime = false, false, time.Time{}
+	u := update{pendingCommit: s.next}
+	// One-shot requests apply once; sticky ones carry over.
+	s.next = pendingCommit{scale: s.next.scale, transform: s.next.transform, async: s.next.async, color: s.next.color, representation: s.next.representation, kind: s.next.kind}
 	if v := s.viewport; v != nil {
 		u.vp, u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v, v.pendingW, v.pendingH, v.pendingSet, v.pendingSrc, v.pendingCrop
 	}

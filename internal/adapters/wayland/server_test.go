@@ -3,7 +3,6 @@ package wayland
 import (
 	"bytes"
 	"context"
-	"github.com/bnema/neferwl/internal/ports"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
 
 	"github.com/bnema/neferwl/internal/logging"
 )

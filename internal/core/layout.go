@@ -2,12 +2,13 @@ package core
 
 import (
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
 	"math/bits"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type WindowID = ports.WindowID

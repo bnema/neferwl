@@ -73,7 +73,7 @@ func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format
 	k.fd, k.size = copyFD, copySize
 	old := k.server.activeKeymapText()
 	k.text = text
-	if s := k.server; s.keymapOwner == k && text != old {
+	if s := k.server; s.seat.keymapOwner == k && text != old {
 		// Clients must see the new layout before the next key.
 		s.sendKeymapAll(k.fd, k.size)
 	}
@@ -107,13 +107,13 @@ func (k *virtualKeyboard) keyboards(r *virtualkeyboard.ZwpVirtualKeyboardV1) []*
 		return nil
 	}
 	s := k.server
-	_, keyboards := s.focusTarget(s.focused)
+	_, keyboards := s.focusTarget(s.seat.focused)
 	if len(keyboards) == 0 {
 		return nil
 	}
-	if k.focus != s.focused {
+	if k.focus != s.seat.focused {
 		clear(k.pressed)
-		k.focus = s.focused
+		k.focus = s.seat.focused
 	}
 	s.useKeymap(k)
 	s.serial++
@@ -148,8 +148,8 @@ func (*virtualKeyboard) Destroy(*virtualkeyboard.ZwpVirtualKeyboardV1) {}
 // keys still held on the focused client are released.
 func (k *virtualKeyboard) release() {
 	s := k.server
-	if len(k.pressed) > 0 && k.focus == s.focused {
-		_, keyboards := s.focusTarget(s.focused)
+	if len(k.pressed) > 0 && k.focus == s.seat.focused {
+		_, keyboards := s.focusTarget(s.seat.focused)
 		var ts unix.Timespec
 		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 		// Input events carry CLOCK_MONOTONIC milliseconds (libinput's clock).
@@ -161,7 +161,7 @@ func (k *virtualKeyboard) release() {
 			}
 		}
 	}
-	if s.keymapOwner == k {
+	if s.seat.keymapOwner == k {
 		s.useKeymap(nil)
 	}
 	if k.fd >= 0 {
@@ -173,11 +173,11 @@ func (k *virtualKeyboard) release() {
 // useKeymap makes every keyboard carry the keymap of k, or the seat keymap
 // when k is nil. Switching back restores the seat modifiers too.
 func (s *Server) useKeymap(k *virtualKeyboard) {
-	if s.keymapOwner == k {
+	if s.seat.keymapOwner == k {
 		return
 	}
 	old := s.activeKeymapText()
-	s.keymapOwner = k
+	s.seat.keymapOwner = k
 	// Like wlroots and smithay, a keymap equal to the active one is not
 	// sent again: tools such as dictation apps create a virtual keyboard
 	// with the seat layout per use, and each resend makes every client
@@ -188,7 +188,7 @@ func (s *Server) useKeymap(k *virtualKeyboard) {
 	// Modifiers follow the keyboard that types: a skipped keymap no longer
 	// resets them, so a virtual keyboard never types through seat Shift or
 	// Caps Lock, and the seat gets its own back.
-	m := s.modState
+	m := s.seat.modState
 	if k != nil {
 		m = k.mods
 	}
@@ -200,7 +200,7 @@ func (s *Server) useKeymap(k *virtualKeyboard) {
 }
 
 func (s *Server) sendKeymapAll(fd int, size uint32) {
-	for _, list := range s.keyboards {
+	for _, list := range s.seat.keyboards {
 		for _, kb := range list {
 			if kb.Resource.Alive() {
 				kb.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), fd, size)
@@ -211,16 +211,16 @@ func (s *Server) sendKeymapAll(fd int, size uint32) {
 
 // activeKeymapText is the text of the keymap keyboards carry.
 func (s *Server) activeKeymapText() string {
-	if k := s.keymapOwner; k != nil {
+	if k := s.seat.keymapOwner; k != nil {
 		return k.text
 	}
-	return s.keymapText
+	return s.seat.keymapText
 }
 
 // currentKeymap is the keymap a new keyboard must start with.
 func (s *Server) currentKeymap() (int, uint32) {
-	if k := s.keymapOwner; k != nil {
+	if k := s.seat.keymapOwner; k != nil {
 		return k.fd, k.size
 	}
-	return s.keymapFD, s.keymapSize
+	return s.seat.keymapFD, s.seat.keymapSize
 }

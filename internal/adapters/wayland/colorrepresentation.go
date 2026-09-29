@@ -58,7 +58,7 @@ func (m representationManager) GetSurface(r *colorrepresentation.WpColorRepresen
 		res.OnDestroy = func() {
 			if surf.representationControl == h {
 				surf.representationControl = nil
-				surf.pendingRepresentation = surfaceRepresentation{}
+				surf.next.representation = surfaceRepresentation{}
 			}
 		}
 	}
@@ -71,7 +71,7 @@ type representationSurface struct {
 
 func (h *representationSurface) Destroy(*colorrepresentation.WpColorRepresentationSurfaceV1) {
 	if h.surf != nil && !h.surf.destroyed {
-		h.surf.pendingRepresentation = surfaceRepresentation{}
+		h.surf.next.representation = surfaceRepresentation{}
 	}
 }
 func (h *representationSurface) live(r *colorrepresentation.WpColorRepresentationSurfaceV1) bool {
@@ -89,7 +89,7 @@ func (h *representationSurface) SetAlphaMode(r *colorrepresentation.WpColorRepre
 		r.PostError(uint32(colorrepresentation.WpColorRepresentationSurfaceV1ErrorAlphaMode), "unsupported alpha mode")
 		return
 	}
-	h.surf.pendingRepresentation.alpha = uint8(mode)
+	h.surf.next.representation.alpha = uint8(mode)
 }
 func (h *representationSurface) SetCoefficientsAndRange(r *colorrepresentation.WpColorRepresentationSurfaceV1, coeff, ran uint32) {
 	if !h.live(r) {
@@ -101,7 +101,7 @@ func (h *representationSurface) SetCoefficientsAndRange(r *colorrepresentation.W
 		r.PostError(uint32(colorrepresentation.WpColorRepresentationSurfaceV1ErrorCoefficients), "unsupported coefficients or range")
 		return
 	}
-	h.surf.pendingRepresentation.coefficients, h.surf.pendingRepresentation.rangeValue = uint8(coeff), uint8(ran)
+	h.surf.next.representation.coefficients, h.surf.next.representation.rangeValue = uint8(coeff), uint8(ran)
 }
 func (h *representationSurface) SetChromaLocation(r *colorrepresentation.WpColorRepresentationSurfaceV1, chroma uint32) {
 	if !h.live(r) {
@@ -111,7 +111,7 @@ func (h *representationSurface) SetChromaLocation(r *colorrepresentation.WpColor
 		r.PostError(uint32(colorrepresentation.WpColorRepresentationSurfaceV1ErrorChromaLocation), "unsupported chroma location")
 		return
 	}
-	h.surf.pendingRepresentation.chroma = uint8(chroma)
+	h.surf.next.representation.chroma = uint8(chroma)
 }
 
 // The metadata is checked against the buffer the commit will show,
@@ -119,7 +119,7 @@ func (h *representationSurface) SetChromaLocation(r *colorrepresentation.WpColor
 // buffer: then the one of the last queued commit that attached, or the
 // current one.
 func (s *surface) checkRepresentationCommit() bool {
-	rep := s.pendingRepresentation
+	rep := s.next.representation
 	if rep.coefficients == 0 && rep.chroma == 0 {
 		return true
 	}
@@ -130,8 +130,8 @@ func (s *surface) checkRepresentationCommit() bool {
 			break
 		}
 	}
-	if s.attached {
-		buffer = s.pending
+	if s.next.attached {
+		buffer = s.next.buffer
 	}
 	if buffer == nil {
 		return true

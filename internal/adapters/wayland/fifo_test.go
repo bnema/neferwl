@@ -222,10 +222,10 @@ func TestQueuedParentRetainsRetiredChild(t *testing.T) {
 			child := &surface{server: srv}
 			child.sub.parent, child.sub.synced = parent, true
 			parent.sub.children = []*surface{child}
-			child.pendingScale = 2
+			child.next.scale = 2
 			child.queueUpdate()
 			old := child.queue[0]
-			parent.pendingScale = 3
+			parent.next.scale = 3
 			parent.queueUpdate()
 			pu := parent.queue[0]
 			if old.refs != 1 || len(pu.deps) != 1 || pu.deps[0] != old {
@@ -239,7 +239,7 @@ func TestQueuedParentRetainsRetiredChild(t *testing.T) {
 			if !old.retired || old.refs != 1 {
 				t.Fatalf("retired child ref count: retired=%v refs=%d", old.retired, old.refs)
 			}
-			child.pendingScale = 7
+			child.next.scale = 7
 			child.queueUpdate()
 			if child.queue[0] == old || old.scale != 2 || pu.deps[0] != old {
 				t.Fatal("live dependency was recycled as a new child commit")

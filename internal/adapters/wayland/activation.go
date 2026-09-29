@@ -102,8 +102,8 @@ func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 	t.used = true
 	s := t.server
 	c := r.Client()
-	fresh := time.Since(s.pressAt) <= tokenLifetime && !s.pressAt.Before(s.focusAt)
-	valid := s.focusClient() == c || (t.hasSerial && t.serial == s.press && s.pressClient == c && fresh)
+	fresh := time.Since(s.seat.pressAt) <= tokenLifetime && !s.seat.pressAt.Before(s.seat.focusAt)
+	valid := s.focusClient() == c || (t.hasSerial && t.serial == s.seat.press && s.seat.pressClient == c && fresh)
 	token := rand.Text()
 	if valid {
 		s.pruneTokens()
@@ -114,10 +114,10 @@ func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 
 // focusClient is the client with the keyboard focus.
 func (s *Server) focusClient() server.Client {
-	if w := s.windows[s.focused]; w != nil && w.xdg.resource.Resource.Alive() {
+	if w := s.windows[s.seat.focused]; w != nil && w.xdg.resource.Resource.Alive() {
 		return w.xdg.resource.Client()
 	}
-	if l := s.layers[s.focused]; l != nil && l.resource.Resource.Alive() {
+	if l := s.layers[s.seat.focused]; l != nil && l.resource.Resource.Alive() {
 		return l.resource.Client()
 	}
 	return server.Client{}

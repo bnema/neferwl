@@ -125,7 +125,7 @@ func (s *Server) bufferReferenced(b *wayland.Buffer) bool {
 		return false
 	}
 	for _, surf := range s.surfaces {
-		if surf.attached && sameBuffer(surf.pending, b) {
+		if surf.next.attached && sameBuffer(surf.next.buffer, b) {
 			return true
 		}
 		for _, u := range surf.queue {

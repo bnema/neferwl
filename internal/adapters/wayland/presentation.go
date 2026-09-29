@@ -63,7 +63,7 @@ func (p presentation) Feedback(r *presentationtime.WpPresentation, surf *wayland
 		fb.Destroy()
 		return
 	}
-	state.pendingFeedback = append(state.pendingFeedback, fb)
+	state.next.feedback = append(state.next.feedback, fb)
 }
 
 type feedbackHandler struct{}

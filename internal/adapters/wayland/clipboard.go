@@ -79,7 +79,7 @@ func registerClipboard(d *server.Display, s *Server) error {
 
 // focusedClient is the client with keyboard focus.
 func (s *Server) focusedClient() (server.Client, bool) {
-	surf, _ := s.focusTarget(s.focused)
+	surf, _ := s.focusTarget(s.seat.focused)
 	if surf == nil {
 		return server.Client{}, false
 	}

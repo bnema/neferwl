@@ -142,8 +142,8 @@ func TestColorRepresentationQueuedCommit(t *testing.T) {
 				surf.queue = nil
 				surf.applyUpdate(u)
 			}
-			if surf.representation.coefficients != coefficient709 || surf.pendingRepresentation.coefficients != coefficient2020 {
-				t.Errorf("applied=%+v pending=%+v", surf.representation, surf.pendingRepresentation)
+			if surf.representation.coefficients != coefficient709 || surf.next.representation.coefficients != coefficient2020 {
+				t.Errorf("applied=%+v pending=%+v", surf.representation, surf.next.representation)
 			}
 		}
 	})
@@ -176,7 +176,7 @@ func TestColorRepresentationChecksQueuedBuffer(t *testing.T) {
 			// The RGB commit waits in the queue; the next one only sets
 			// YUV coefficients.
 			surf.queueUpdate()
-			surf.pendingRepresentation.coefficients = coefficient709
+			surf.next.representation.coefficients = coefficient709
 			if surf.checkRepresentationCommit() {
 				t.Error("YUV coefficients accepted for a queued RGB buffer")
 			}

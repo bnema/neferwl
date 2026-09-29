@@ -67,7 +67,7 @@ func (m textInputManager) GetTextInput(r *textinput.ZwpTextInputManagerV3, id ui
 		}
 		t.focus = nil
 	}
-	if surf, _ := s.focusTarget(s.focused); surf != nil && surf.Client() == t.client {
+	if surf, _ := s.focusTarget(s.seat.focused); surf != nil && surf.Client() == t.client {
 		t.enter(surf)
 	}
 }
@@ -168,7 +168,7 @@ func (s *Server) textCommitted(t *textInput, reenabled bool) {
 // text inputs on another surface, then enter for those of the focused
 // client, as the spec orders them.
 func (s *Server) textInputFocus() {
-	surf, _ := s.focusTarget(s.focused)
+	surf, _ := s.focusTarget(s.seat.focused)
 	for _, t := range s.textInputs {
 		if t.focus != nil && (surf == nil || t.focus.Resource != surf.Resource) {
 			t.leave()
@@ -417,12 +417,12 @@ func (im *inputMethod) GrabKeyboard(r *inputmethod.ZwpInputMethodV2, id uint32) 
 		}
 	}
 	s := im.server
-	if s.keymapFD >= 0 {
-		res.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.keymapFD, s.keymapSize)
+	if s.seat.keymapFD >= 0 {
+		res.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.seat.keymapFD, s.seat.keymapSize)
 	}
-	res.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+	res.SendRepeatInfo(int32(s.seat.repeatRate), int32(s.seat.repeatDelay))
 	s.serial++
-	m := s.modState
+	m := s.seat.modState
 	res.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 	s.log.Debug().Msg("input method grabbed keyboard")
 }
@@ -468,29 +468,29 @@ func (s *Server) grab() *keyboardGrab {
 func (s *Server) grabKey(c ports.ForwardKey) bool {
 	code := c.Key.Keycode
 	g := s.grab()
-	owned := !c.Key.Pressed && s.grabKeys[code]
+	owned := !c.Key.Pressed && s.seat.grabKeys[code]
 	if owned {
-		delete(s.grabKeys, code)
+		delete(s.seat.grabKeys, code)
 		if g == nil {
 			s.grabReleaseDropped(c.Key.State)
 			return true
 		}
-	} else if g == nil || c.ID != s.focused || !c.Key.Pressed && s.heldKeys[code] {
+	} else if g == nil || c.ID != s.seat.focused || !c.Key.Pressed && s.seat.heldKeys[code] {
 		return false
 	}
 	state := uint32(0)
 	if c.Key.Pressed {
 		state = 1
-		if s.grabKeys == nil {
-			s.grabKeys = make(map[uint32]bool)
+		if s.seat.grabKeys == nil {
+			s.seat.grabKeys = make(map[uint32]bool)
 		}
-		s.grabKeys[code] = true
+		s.seat.grabKeys[code] = true
 	}
 	s.serial++
 	g.res.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
-	if c.Key.State != s.modState {
-		s.modState = c.Key.State
-		m := s.modState
+	if c.Key.State != s.seat.modState {
+		s.seat.modState = c.Key.State
+		m := s.seat.modState
 		s.serial++
 		g.res.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 	}
@@ -500,10 +500,10 @@ func (s *Server) grabKey(c ports.ForwardKey) bool {
 // grabReleaseDropped keeps the focused client's modifiers right when the
 // release of a grab-owned key is dropped.
 func (s *Server) grabReleaseDropped(m ports.ModState) {
-	if m == s.modState {
+	if m == s.seat.modState {
 		return
 	}
-	s.modState = m
+	s.seat.modState = m
 	s.serial++
 	for _, k := range s.clientKeyboards(s.focusClient()) {
 		s.sendModifiers(k)
@@ -525,8 +525,8 @@ func (s *Server) sendGrabKeymap(keymap bool) {
 	if g == nil {
 		return
 	}
-	if keymap && s.keymapFD >= 0 {
-		g.res.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.keymapFD, s.keymapSize)
+	if keymap && s.seat.keymapFD >= 0 {
+		g.res.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), s.seat.keymapFD, s.seat.keymapSize)
 	}
-	g.res.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+	g.res.SendRepeatInfo(int32(s.seat.repeatRate), int32(s.seat.repeatDelay))
 }

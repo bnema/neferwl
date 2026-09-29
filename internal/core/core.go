@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 var ErrQuit = errors.New("quit requested")
@@ -70,8 +70,7 @@ type Core struct {
 	focusScreen      int
 	binds            map[binding]Action
 	pressed          map[string]bool
-	sent             map[WindowID]ports.ConfigureWindow
-	focus            WindowID
+	configures       configures
 	pointer          WindowID
 	grab             WindowID
 	buttons          map[uint32]bool
@@ -93,28 +92,13 @@ type Core struct {
 	toSpawn               []slotKey
 	sentPending           bool
 	firstTerminalResolved bool
-	// clients holds the app ID and PID of mapped windows, for State.
-	clients        map[WindowID]ports.WindowMapped
-	mappedAt       map[WindowID]time.Time
-	inputRegions   map[WindowID]ports.InputRegionChanged
-	sentState      ports.State
-	sentWorkspaces ports.Workspaces
+	windows               windowRegistry
+	sentState             ports.State
+	sentWorkspaces        ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
-	// layerFocus is the on-demand layer surface the user clicked; it keeps
-	// the keyboard while it stays mapped on-demand and no window focus
-	// changes on any output (layerOver, taken at the click): any click
-	// elsewhere, bind, activation or new window takes the keyboard back. The
-	// pointer moving to another output does not.
-	layerFocus WindowID
-	layerOver  map[*screen]WindowID
-	// inhibitors are the windows asking to keep compositor binds while
-	// focused, inhibiting the one active now (0: none); idle are those
-	// keeping the session awake.
-	inhibitors map[WindowID]bool
-	inhibiting WindowID
-	idle       map[WindowID]bool
+	keyboard   keyboard
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
@@ -316,7 +300,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), clients: map[WindowID]ports.WindowMapped{}, mappedAt: map[WindowID]time.Time{}, inputRegions: map[WindowID]ports.InputRegionChanged{}, popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}, inhibitors: map[WindowID]bool{}, idle: map[WindowID]bool{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, configures: newConfigures()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -388,35 +372,26 @@ func (c *Core) windowFocus() map[*screen]WindowID {
 	return m
 }
 
-// keyboardFocus is the mapped top/overlay layer with exclusive keyboard
-// interactivity and the highest ID on any output, else a grabbing popup,
-// else a clicked on-demand layer (see layerFocus), else the focused window
-// of the focused output.
+// keyboardFocus is the surface holding the keyboard (see keyboard.focus).
 func (c *Core) keyboardFocus() WindowID {
-	var layer WindowID
+	var exclusive WindowID
 	for _, sc := range c.screens {
 		for _, l := range sc.layers {
-			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > layer {
-				layer = l.ID
+			if l.Keyboard == 1 && (l.Layer == ports.LayerTop || l.Layer == ports.LayerOverlay) && l.ID > exclusive {
+				exclusive = l.ID
 			}
 		}
 	}
-	if layer != 0 {
-		return layer
-	}
-	// A menu with a grab takes the keyboard until it closes.
-	if g := c.grabFocus(); g != 0 {
-		return g
-	}
-	// A layer hidden by a fullscreen window loses the keyboard.
-	if c.layerFocus != 0 && (!c.onDemand(c.layerFocus) || !c.visible(c.layerFocus) || !maps.Equal(c.layerOver, c.windowFocus())) {
-		c.layerFocus, c.layerOver = 0, nil
-	}
-	if c.layerFocus != 0 {
-		return c.layerFocus
-	}
-	id, _ := c.cur().mon.Focused()
-	return id
+	window, _ := c.cur().mon.Focused()
+	return c.keyboard.focus(keyboardCandidates{
+		exclusive: exclusive,
+		grab:      c.grabFocus(),
+		window:    window,
+		layerShown: func(id WindowID) bool {
+			return c.onDemand(id) && c.visible(id)
+		},
+		windows: c.windowFocus,
+	})
 }
 
 // setLayers splits the mapped layer surfaces by output. A surface without an
@@ -438,7 +413,7 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 		sc.layers = append(sc.layers, l)
 	}
 	for id := range previous {
-		delete(c.inputRegions, id)
+		c.windows.layerGone(id)
 	}
 	for _, sc := range c.screens {
 		sc.arrange()
@@ -466,7 +441,6 @@ func (c *Core) publish(ctx context.Context) error {
 	if err := c.publishPending(ctx); err != nil {
 		return err
 	}
-	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
@@ -484,7 +458,6 @@ func (c *Core) publish(ctx context.Context) error {
 			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 		}
 		for _, p := range layout {
-			alive[p.ID] = true
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
 			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset, Preview: p.Preview}
@@ -492,64 +465,22 @@ func (c *Core) publish(ctx context.Context) error {
 				sw.Dim = c.cfg.Stash.Dim
 			}
 			scene.Windows = append(scene.Windows, sw)
-			floating := p.Floating
-			if p.Hidden {
-				// A hidden window keeps its size, state and output; it is
-				// only deactivated and marked invisible. One mapped hidden
-				// is told so at once, sized by the client.
-				old, ok := c.sent[p.ID]
-				v := old
-				if !ok {
-					v = ports.ConfigureWindow{ID: p.ID, Floating: floating}
-				}
-				v.Activated, v.Visible, v.Output = false, false, sc.name()
-				if ok && v == old {
-					continue
-				}
+			t := configureTarget{output: sc.name(), area: o, focused: focused}
+			if !p.Hidden && p.Preview == 0 {
+				// Only a sized configure needs the client size.
+				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+			}
+			if v, send := c.configures.next(p, t); send {
 				if err := c.command(ctx, v); err != nil {
 					return err
 				}
-				c.sent[p.ID] = v
-				continue
-			}
-			if p.Preview > 0 {
-				// A preview keeps its client's size: only its focus changes.
-				old, ok := c.sent[p.ID]
-				v := old
-				if !ok {
-					v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
-				}
-				v.Activated, v.Visible, v.Output = focused, onScreen(p, o), sc.name()
-				if ok && v == old {
-					continue
-				}
-				if err := c.command(ctx, v); err != nil {
-					return err
-				}
-				c.sent[p.ID] = v
-				continue
-			}
-			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: onScreen(p, o)}
-			if v.Floating && !sc.mon.Current().imposedFloat(p.ID) {
-				// Native floating windows pick their own size.
-				v.Width, v.Height = 0, 0
-			}
-			if old, ok := c.sent[p.ID]; !ok || old != v {
-				if err := c.command(ctx, v); err != nil {
-					return err
-				}
-				c.sent[p.ID] = v
+				c.configures.mark(v)
 			}
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scenes = append(scenes, scene)
 	}
-	for id := range c.sent {
-		if !alive[id] {
-			delete(c.sent, id)
-		}
-	}
+	c.configures.prune()
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
 	if c.pointer != 0 && !c.visible(c.pointer) {
@@ -560,11 +491,11 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 	}
-	if focus != c.focus {
+	if focus != c.keyboard.sent {
 		if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
 			return err
 		}
-		c.focus = focus
+		c.keyboard.sent = focus
 	}
 	if err := c.updateInhibit(ctx); err != nil {
 		return err
@@ -627,21 +558,18 @@ func (c *Core) rehit(ctx context.Context) error {
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the
 // active one and tells wayland when it changes.
 func (c *Core) updateInhibit(ctx context.Context) error {
-	want := WindowID(0)
-	if f := c.keyboardFocus(); f != 0 && c.inhibitors[f] {
-		want = f
-	}
-	if want == c.inhibiting {
+	f := c.keyboardFocus()
+	release, activate, changed := c.keyboard.inhibit(f, c.windows.lookup(f).inhibitShortcuts)
+	if !changed {
 		return nil
 	}
-	if c.inhibiting != 0 {
-		if err := c.command(ctx, ports.ShortcutsInhibitState{Window: c.inhibiting}); err != nil {
+	if release != 0 {
+		if err := c.command(ctx, ports.ShortcutsInhibitState{Window: release}); err != nil {
 			return err
 		}
 	}
-	c.inhibiting = want
-	if want != 0 {
-		return c.command(ctx, ports.ShortcutsInhibitState{Window: want, Active: true})
+	if activate != 0 {
+		return c.command(ctx, ports.ShortcutsInhibitState{Window: activate, Active: true})
 	}
 	return nil
 }
@@ -715,16 +643,7 @@ func (c *Core) allLayers() []ports.LayerSurface {
 }
 
 func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
-	r, ok := c.inputRegions[id]
-	if !ok || r.All {
-		return true
-	}
-	for _, box := range r.Rects {
-		if x >= float64(box.X) && x < float64(box.X+box.W) && y >= float64(box.Y) && y < float64(box.Y+box.H) {
-			return true
-		}
-	}
-	return false
+	return c.windows.acceptsInput(id, x, y)
 }
 
 // hit returns the surface under the global logical point and the point in
@@ -819,10 +738,9 @@ func (c *Core) Run(ctx context.Context) error {
 				c.layerChanged = true
 				c.setLayers(v.Layers)
 			case ports.InputRegionChanged:
-				c.inputRegions[v.ID] = v
+				c.windows.setRegion(v)
 			case ports.WindowMapped:
-				c.clients[v.ID] = v
-				c.mappedAt[v.ID] = c.now()
+				c.windows.mapped(v, c.now())
 				c.placement.place(c, v)
 			case ports.WindowResized:
 				if _, w := c.screenOf(v.ID); w != nil {
@@ -837,11 +755,7 @@ func (c *Core) Run(ctx context.Context) error {
 					p.mapped = true
 				}
 			case ports.ShortcutsInhibit:
-				if v.Active {
-					c.inhibitors[v.Window] = true
-				} else {
-					delete(c.inhibitors, v.Window)
-				}
+				c.windows.setInhibitShortcuts(v.Window, v.Active)
 				if err := c.updateInhibit(ctx); err != nil {
 					return nil
 				}
@@ -851,18 +765,11 @@ func (c *Core) Run(ctx context.Context) error {
 					c.screens[i].off = !v.On
 				}
 			case ports.IdleInhibit:
-				if v.Active {
-					c.idle[v.Window] = true
-				} else {
-					delete(c.idle, v.Window)
-				}
+				c.windows.setIdleInhibit(v.Window, v.Active)
 				c.publishState()
 				continue
 			case ports.WindowAppID:
-				if info, ok := c.clients[v.ID]; ok {
-					info.AppID = v.AppID
-					c.clients[v.ID] = info
-				}
+				c.windows.setAppID(v.ID, v.AppID)
 			case ports.WindowUnmapped:
 				if c.popups[v.ID] != nil {
 					if err := c.dropPopup(ctx, v.ID); err != nil {
@@ -872,11 +779,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if err := c.closePopupsOf(ctx, v.ID); err != nil {
 					return nil
 				}
-				delete(c.clients, v.ID)
-				delete(c.mappedAt, v.ID)
-				delete(c.inputRegions, v.ID)
-				delete(c.inhibitors, v.ID)
-				delete(c.idle, v.ID)
+				c.windows.drop(v.ID)
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
 				}
@@ -890,7 +793,7 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.PointerConstrained:
 				c.constrained = v
 			case ports.WindowFullscreenRequest:
-				if v.Fullscreen && !v.External && c.now().Sub(c.mappedAt[v.ID]) < fullscreenGrace {
+				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
 					continue
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
@@ -1054,22 +957,20 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 					// A click on an on-demand layer gives it the keyboard.
-					if v.Pressed && c.onDemand(id) && c.layerFocus != id {
-						c.layerFocus = id
-						c.layerOver = c.windowFocus()
+					if v.Pressed && c.onDemand(id) && c.keyboard.clickLayer(id, c.windowFocus()) {
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
-					} else if v.Pressed && c.layerFocus != 0 && id != c.layerFocus && c.popupRoot(id) != c.layerFocus {
+					} else if l := c.keyboard.layer; v.Pressed && l != 0 && id != l && c.popupRoot(id) != l {
 						// A click anywhere else takes the keyboard back.
-						c.layerFocus = 0
+						c.keyboard.takeBack()
 						if err := c.publish(ctx); err != nil {
 							return nil
 						}
 					}
 					// A click focuses the window and its output.
 					s, w := c.screenOf(id)
-					if v.Pressed && s != nil && w == s.mon.Current() && (c.focus != id || s != c.cur()) {
+					if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
 						w.Click(id)
 						c.focusScreen = c.screenIndex(s.name())
 						if err := c.publish(ctx); err != nil {
@@ -1140,14 +1041,14 @@ func (c *Core) Run(ctx context.Context) error {
 			// A focused window inhibiting shortcuts gets every key:
 			// no bind runs (emergency quit and VT switch are handled by
 			// input before core).
-			if c.inhibiting != 0 && c.inhibiting == c.keyboardFocus() {
+			if c.keyboard.inhibited(c.keyboardFocus()) {
 				if held := heldKey(key); !key.Pressed && c.pressed[held] {
 					// Its press ran a bind before inhibiting began: the
 					// window never saw it.
 					delete(c.pressed, held)
 					continue
 				}
-				if err := c.command(ctx, ports.ForwardKey{ID: c.inhibiting, Key: key}); err != nil {
+				if err := c.command(ctx, ports.ForwardKey{ID: c.keyboard.inhibiting, Key: key}); err != nil {
 					return nil
 				}
 				continue
@@ -1197,7 +1098,7 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 					before := c.cur().mon.Current()
 					swiped := c.swipedWorkspace()
-					c.layerFocus = 0 // a bind acts on the windows
+					c.keyboard.takeBack() // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
 						return ErrQuit
