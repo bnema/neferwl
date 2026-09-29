@@ -24,9 +24,12 @@ type Card struct {
 	log   zerowrap.Logger
 	crtcs []uint32
 	// outputs by connector name; owned by the goroutine that calls Scan.
-	outputs map[string]*Output
-	flips   map[uint32]chan flipEvent // by CRTC; set before the reader starts
-	k       kmsDevice
+	outputs  map[string]*Output
+	leasable map[string]connector
+	leases   map[uint32]leaseRecord
+	finished []uint32
+	flips    map[uint32]chan flipEvent // by CRTC; set before the reader starts
+	k        kms
 	// taken are planes driven by an output, by plane ID.
 	taken map[uint32]bool
 	// async is DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP.
@@ -53,7 +56,7 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 		flips[c] = make(chan flipEvent, 4)
 	}
 	k := kmsDevice{fd: fd, gemMu: &sync.Mutex{}, modifiers: hasCap(fd, capAddFB2Modifiers)}
-	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
+	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.
@@ -84,15 +87,20 @@ func (c *Card) SetWant(w Want) {
 // names to stop because they need a new mode. A stopped output must be
 // closed by its goroutine before its CRTC is reused: call Release.
 func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
-	_, ids, err := resources(c.fd)
+	_, ids, err := c.k.resources()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	seen := map[string]bool{}
+	available := map[string]connector{}
 	for _, id := range ids {
-		conn, err := readConnector(c.fd, id)
+		conn, err := c.k.connector(id)
 		if err != nil {
 			c.log.Warn().Err(err).Uint32("connector", id).Msg("read connector")
+			continue
+		}
+		if conn.nonDesktop && conn.connected {
+			available[conn.name] = conn
 			continue
 		}
 		if !c.want.usable(conn) {
@@ -115,6 +123,19 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 		c.outputs[conn.name] = o
 		added = append(added, o)
 	}
+	for id, lease := range c.leases {
+		for _, name := range lease.names {
+			if _, ok := available[name]; !ok {
+				if err := c.Revoke(id); err != nil {
+					c.log.Warn().Err(err).Uint32("lease", id).Msg("revoke disconnected lease")
+				} else {
+					c.finished = append(c.finished, id)
+				}
+				break
+			}
+		}
+	}
+	c.leasable = available
 	for name := range c.outputs {
 		if !seen[name] {
 			removed = append(removed, name)
@@ -128,13 +149,13 @@ func (c *Card) Scan() (added []*Output, removed, replaced []string, err error) {
 // ConnectedHeads inventories physical connectors independently of the desired
 // enabled state. The caller owns Scan and must invoke this on the same goroutine.
 func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
-	_, ids, err := resources(c.fd)
+	_, ids, err := c.k.resources()
 	if err != nil {
 		return nil, err
 	}
 	var heads []ports.OutputHead
 	for _, id := range ids {
-		conn, err := readConnector(c.fd, id)
+		conn, err := c.k.connector(id)
 		if err != nil {
 			c.log.Warn().Err(err).Uint32("connector", id).Msg("read connector for inventory")
 			continue
@@ -195,7 +216,12 @@ func (c *Card) open(conn connector, mode modeInfo) (*Output, error) {
 	for _, o := range c.outputs {
 		used[o.crtc] = true
 	}
-	crtc, err := pickCrtc(c.fd, conn, c.crtcs, used)
+	for _, lease := range c.leases {
+		for _, crtc := range lease.crtcs {
+			used[crtc] = true
+		}
+	}
+	crtc, err := c.k.pickCrtc(conn, c.crtcs, used)
 	if err != nil {
 		return nil, err
 	}

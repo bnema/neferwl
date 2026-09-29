@@ -3,6 +3,7 @@ package drm
 import (
 	"encoding/binary"
 	"errors"
+	"os"
 	"runtime"
 	"slices"
 	"sync"
@@ -85,6 +86,11 @@ type kms interface {
 	// addFB imports a single-plane dmabuf as a framebuffer of format.
 	addFB(b *ports.DMABuf, format uint32) (uint32, error)
 	rmFB(id uint32) error
+	createLease(objects []uint32) (*os.File, uint32, error)
+	revokeLease(id uint32) error
+	resources() ([]uint32, []uint32, error)
+	connector(id uint32) (connector, error)
+	pickCrtc(c connector, crtcs []uint32, used map[uint32]bool) (uint32, error)
 }
 
 // planeRes is one plane of the card: possible is a bitmask of CRTC indices.

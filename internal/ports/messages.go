@@ -1101,3 +1101,9 @@ type WindowState struct {
 	// Hidden is set for a stashed window while its stash is hidden.
 	Hidden bool
 }
+
+// LeaseConnector identifies a non-desktop connector available for DRM leasing.
+type LeaseConnector struct {
+	Card, Name, Description string
+	ConnectorID             uint32
+}
