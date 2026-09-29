@@ -162,6 +162,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	defer readers.Wait()
 	active := b.seat.Subscribe()
 	defer b.seat.Unsubscribe(active)
+	seatActive := true // openDRM waits for the first seat enable
 	clientFDs := map[*drmCard]*os.File{}
 	lastLeaseConnectors := map[*drmCard][]ports.LeaseConnector{}
 	defer func() {
@@ -179,11 +180,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		for _, id := range c.FinishedLeases() {
 			sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 		}
-		next := c.Leasable()
-		if slices.Equal(lastLeaseConnectors[c], next) && clientFDs[c] != nil {
+		var next []ports.LeaseConnector
+		if seatActive {
+			next = c.Leasable()
+		}
+		if len(next) == 0 {
+			if clientFDs[c] != nil {
+				sendLease(ports.LeaseConnectors{Card: c.Path()})
+				clientFDs[c].Close()
+				delete(clientFDs, c)
+			}
+			delete(lastLeaseConnectors, c)
 			return
 		}
-		if len(next) == 0 && clientFDs[c] == nil {
+		if slices.Equal(lastLeaseConnectors[c], next) && clientFDs[c] != nil {
 			return
 		}
 		if clientFDs[c] == nil {
@@ -401,6 +411,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				complete(progress.scanned(running))
 			}
 		case enabled := <-active:
+			seatActive = enabled
 			if !enabled {
 				for _, c := range b.cards {
 					for _, id := range c.LeaseIDs() {
@@ -412,11 +423,20 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					}
 					publishLeases(c)
 				}
+			} else {
+				for _, c := range b.cards {
+					publishLeases(c)
+				}
 			}
 		case event := <-ch.leaseRequests:
 			switch req := event.(type) {
 			case ports.LeaseRequest:
 				reply := ports.LeaseReply{ID: req.ID, Err: fmt.Errorf("unknown card %s", req.Card)}
+				if !seatActive {
+					reply.Err = errors.New("DRM seat inactive")
+					sendLease(reply)
+					break
+				}
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
 						reply.FD, reply.LeaseID, reply.Err = c.Lease(req.Connectors)

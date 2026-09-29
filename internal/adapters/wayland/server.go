@@ -63,7 +63,10 @@ type Server struct {
 	leaseDevices      map[string]*leaseDevice
 	pendingLeases     map[uint64]*leaseObject
 	pendingLeaseCards map[uint64]string
-	activeLeases      map[uint32]*leaseObject
+	activeLeases      map[leaseKey]*leaseObject
+	leaseMu           sync.Mutex // only the outbound lease queue; never window state
+	leaseOut          []ports.LeaseMessage
+	leaseReady        chan struct{}
 	nextLeaseID       uint64
 	nextCapture       uint64
 	captureReplies    map[uint64]func(ports.CaptureDone)
@@ -227,7 +230,8 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
-	s.activeLeases = map[uint32]*leaseObject{}
+	s.activeLeases = map[leaseKey]*leaseObject{}
+	s.leaseReady = make(chan struct{}, 1)
 	s.clock = opts.Clock
 	if s.clock == nil {
 		s.clock = clock.System{}
@@ -320,8 +324,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(11)
+	wg.Add(12)
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
+	go func() { defer wg.Done(); s.forwardLeaseRequests(ctx) }()
 	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()

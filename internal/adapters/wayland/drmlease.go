@@ -30,6 +30,13 @@ type leaseRequestHandler struct {
 	names     []string
 	withdrawn bool
 }
+
+// DRM lessee IDs are allocated independently on each card.
+type leaseKey struct {
+	card string
+	id   uint32
+}
+
 type leaseObject struct {
 	server   *Server
 	res      *drmlease.WpDrmLeaseV1
@@ -65,14 +72,15 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 		s.updateLeaseConnectors(v)
 	case ports.LeaseReply:
 		obj := s.pendingLeases[v.ID]
+		card := s.pendingLeaseCards[v.ID]
 		delete(s.pendingLeases, v.ID)
-		defer delete(s.pendingLeaseCards, v.ID)
+		delete(s.pendingLeaseCards, v.ID)
 		if obj == nil || !obj.res.Alive() {
 			if v.FD != nil {
 				v.FD.Close()
 			}
-			if v.LeaseID != 0 {
-				s.sendLeaseRequest(ports.LeaseRevoke{Card: s.pendingLeaseCards[v.ID], LeaseID: v.LeaseID})
+			if v.LeaseID != 0 && card != "" {
+				s.sendLeaseRequest(ports.LeaseRevoke{Card: card, LeaseID: v.LeaseID})
 			}
 			return
 		}
@@ -84,29 +92,57 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 			return
 		}
 		obj.id = v.LeaseID
-		s.activeLeases[v.LeaseID] = obj
+		s.activeLeases[leaseKey{obj.card, v.LeaseID}] = obj
 		obj.res.SendLeaseFd(int(v.FD.Fd()))
 		v.FD.Close()
 	case ports.LeaseFinished:
-		if obj := s.activeLeases[v.LeaseID]; obj != nil && obj.card == v.Card {
+		if obj := s.activeLeases[leaseKey{v.Card, v.LeaseID}]; obj != nil {
 			obj.finish()
 		}
 	}
 }
+
+// sendLeaseRequest enqueues without blocking the display. One sender drains
+// this queue in order even when the backend channel is full.
 func (s *Server) sendLeaseRequest(event ports.LeaseMessage) {
 	if s.channels.LeaseRequests == nil {
 		return
 	}
+	s.leaseMu.Lock()
+	s.leaseOut = append(s.leaseOut, event)
+	s.leaseMu.Unlock()
 	select {
-	case s.channels.LeaseRequests <- event:
+	case s.leaseReady <- struct{}{}:
 	default:
-		// Never block the display goroutine on a backend doing a KMS ioctl.
-		go func() {
+	}
+}
+func (s *Server) forwardLeaseRequests(ctx context.Context) {
+	for {
+		s.leaseMu.Lock()
+		if len(s.leaseOut) == 0 {
+			s.leaseMu.Unlock()
 			select {
-			case s.channels.LeaseRequests <- event:
-			case <-s.ctx.Done():
+			case <-s.leaseReady:
+				continue
+			case <-ctx.Done():
+				return
+			case <-s.display.Stopped():
+				return
 			}
-		}()
+		}
+		event := s.leaseOut[0]
+		s.leaseMu.Unlock()
+		select {
+		case s.channels.LeaseRequests <- event:
+			s.leaseMu.Lock()
+			s.leaseOut[0] = nil
+			s.leaseOut = s.leaseOut[1:]
+			s.leaseMu.Unlock()
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		}
 	}
 }
 func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
@@ -139,7 +175,10 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 		d.global = g
 		s.leaseDevices[msg.Card] = d
 	}
-	if copyFD == nil {
+	if copyFD == nil || len(msg.Connectors) == 0 {
+		if copyFD != nil {
+			copyFD.Close()
+		}
 		d.global.Remove()
 		if d.fd != nil {
 			d.fd.Close()
@@ -151,6 +190,7 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 			}
 			b.res.SendDone()
 			b.res.SendReleased()
+			b.res.Destroy()
 		}
 		delete(s.leaseDevices, msg.Card)
 		return
@@ -287,12 +327,14 @@ func (o *leaseObject) destroy() {
 	}
 	o.finished = true
 	if o.id != 0 {
-		delete(o.server.activeLeases, o.id)
+		delete(o.server.activeLeases, leaseKey{o.card, o.id})
 		o.server.sendLeaseRequest(ports.LeaseRevoke{Card: o.card, LeaseID: o.id})
 	}
 	for id, p := range o.server.pendingLeases {
 		if p == o {
 			delete(o.server.pendingLeases, id)
+			// Keep pendingLeaseCards as a tombstone for a late successful
+			// reply; applyLeaseEvent revokes it and then removes the tombstone.
 		}
 	}
 }
@@ -302,7 +344,7 @@ func (o *leaseObject) finish() {
 	}
 	o.finished = true
 	if o.id != 0 {
-		delete(o.server.activeLeases, o.id)
+		delete(o.server.activeLeases, leaseKey{o.card, o.id})
 	}
 	if o.res.Alive() {
 		o.res.SendFinished()
