@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
+	"github.com/bnema/purego-libwayland/protocol/pointerwarp"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
@@ -15,17 +16,21 @@ import (
 // eventLog records the opcodes (and first fixed args) a proxy receives.
 type eventLog struct {
 	wlturbo.BaseProxy
-	events chan []float64 // opcode, then fixed args for relative motion
+	events  chan []float64 // opcode, then fixed args for relative motion
+	pointer bool           // a wl_pointer: enter events carry their serial
 }
 
 func (p *eventLog) Dispatch(e *wlturbo.Event) {
 	ev := []float64{float64(e.Opcode)}
-	if e.Opcode == uint16(relativepointer.ZwpRelativePointerV1EventRelativeMotion) && e.ProxyID == p.ID() {
+	if e.Opcode == uint16(relativepointer.ZwpRelativePointerV1EventRelativeMotion) && e.ProxyID == p.ID() && !p.pointer {
 		e.Uint32()
 		e.Uint32()
 		for range 4 {
 			ev = append(ev, e.Fixed().Float64())
 		}
+	}
+	if e.Opcode == uint16(wayland.PointerEventEnter) && p.pointer {
+		ev = append(ev, float64(e.Uint32())) // the enter serial
 	}
 	p.events <- ev
 }
@@ -61,6 +66,48 @@ func constrained(t *testing.T, events <-chan ports.ClientEvent) ports.PointerCon
 	for {
 		if v, ok := waitEvent(t, events, 2*time.Second).(ports.PointerConstrained); ok {
 			return v
+		}
+	}
+}
+
+// A warp from the client with the pointer, with its enter serial and on
+// its window, reaches core window-local; others are ignored.
+func TestPointerWarp(t *testing.T) {
+	s, events, commands, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	pointer := c.AllocateID()
+	p := &eventLog{events: make(chan []float64, 64), pointer: true}
+	p.SetID(pointer)
+	c.Context().Register(p)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+	w, surf, xdgID := surfaceMapper(t, c, events)()
+	requestProtocol(t, c, xdgID, xdgshell.SurfaceRequestSetWindowGeometry, int32(4), int32(6), int32(50), int32(50))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	warp := bindProtocol(t, c, "wp_pointer_warp_v1")
+
+	// Without the pointer, a warp is ignored.
+	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer, wlturbo.Fixed(10*256), wlturbo.Fixed(10*256), uint32(0))
+	commands <- ports.PointerFocus{ID: w.ID}
+	ev := next(t, c, p.events)
+	for ev[0] != float64(wayland.PointerEventEnter) {
+		ev = next(t, c, p.events)
+	}
+	serial := uint32(ev[1])
+	// A stale serial is ignored; the enter serial moves the pointer.
+	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer, wlturbo.Fixed(10*256), wlturbo.Fixed(10*256), serial+100)
+	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer, wlturbo.Fixed(14*256), wlturbo.Fixed(26*256), serial)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if v, ok := waitEvent(t, events, 2*time.Second).(ports.PointerWarp); ok {
+			// Surface-local minus the window geometry origin.
+			if v != (ports.PointerWarp{ID: w.ID, X: 10, Y: 20}) {
+				t.Fatalf("warp %+v", v)
+			}
+			break
 		}
 	}
 }

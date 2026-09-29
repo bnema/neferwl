@@ -20,19 +20,22 @@ type seatState struct {
 	// pointerX, pointerY is the pointer as core placed it in pointerFocus;
 	// pointerSurface and surfacePoint turn it into surface coordinates.
 	pointerX, pointerY float64
-	wheelRest          [2]int32   // v120 not yet sent as axis_discrete, per axis
-	wheelHeld          [2]float64 // axis value held back with it for pre-v8 clients
-	pointers           map[server.Client][]*wayland.Pointer
-	keyboards          map[server.Client][]*wayland.Keyboard
-	modState           ports.ModState
-	heldKeys           map[uint32]bool
-	grabKeys           map[uint32]bool // pressed through the input method grab
-	keymapFD           int
-	keymapSize         uint32
-	keymapText         string           // the seat keymap, to compare virtual keymaps with
-	keymapOwner        *virtualKeyboard // nil: keyboards carry the seat keymap
-	repeatRate         int
-	repeatDelay        int
+	// enterFirst..enterLast are the serials of the pointer enter events
+	// sent to pointerFocus's client; pointer warps must name one of them.
+	enterFirst, enterLast uint32
+	wheelRest             [2]int32   // v120 not yet sent as axis_discrete, per axis
+	wheelHeld             [2]float64 // axis value held back with it for pre-v8 clients
+	pointers              map[server.Client][]*wayland.Pointer
+	keyboards             map[server.Client][]*wayland.Keyboard
+	modState              ports.ModState
+	heldKeys              map[uint32]bool
+	grabKeys              map[uint32]bool // pressed through the input method grab
+	keymapFD              int
+	keymapSize            uint32
+	keymapText            string           // the seat keymap, to compare virtual keymaps with
+	keymapOwner           *virtualKeyboard // nil: keyboards carry the seat keymap
+	repeatRate            int
+	repeatDelay           int
 	// press is the serial of the last button or key press, sent to
 	// pressClient: popup grabs must come from it.
 	press       uint32
@@ -435,8 +438,10 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	s.seat.pointerFocus = 0
 	if surface, pointers, sx, sy := s.pointerSurface(id, x, y); surface != nil {
 		s.seat.pointerFocus, s.seat.pointerX, s.seat.pointerY = id, x, y
+		s.seat.enterFirst = s.serial + 1
 		for _, p := range pointers {
 			s.serial++
+			s.seat.enterLast = s.serial
 			p.SendEnter(s.serial, surface, server.FixedFromFloat(sx), server.FixedFromFloat(sy))
 			pointerFrame(p)
 		}

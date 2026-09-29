@@ -255,11 +255,13 @@ const (
 // PointerConstraint is an active pointer constraint. Rect is logical: in
 // PointerConstrained it is window-local and empty means the whole window;
 // core sends input the resolved global rectangle, and in X, Y its cursor
-// position, where input holds a locked pointer.
+// position, where input holds a locked pointer. Warp moves input's
+// pointer to X, Y whatever the mode (wp_pointer_warp_v1).
 type PointerConstraint struct {
 	Mode ConstraintMode
 	Rect Rect
 	X, Y float64
+	Warp bool
 }
 
 // Clamp keeps a global point inside the rectangle of a lock or confine;
@@ -283,6 +285,16 @@ type PointerConstrained struct {
 }
 
 func (PointerConstrained) clientEvent() {}
+
+// PointerWarp carries wayland → core a client's request to move the
+// pointer to X, Y, window-local logical (wp_pointer_warp_v1). Wayland has
+// checked that the window has the pointer and the point is on it.
+type PointerWarp struct {
+	ID   WindowID
+	X, Y float64
+}
+
+func (PointerWarp) clientEvent() {}
 
 // Mods carries input → core modifier flags.
 type Mods uint8

@@ -169,4 +169,9 @@ func TestPointerConstraints(t *testing.T) {
 	if p.x != 21 || p.y != 31 {
 		t.Fatal(p.x, p.y)
 	}
+	// A warp moves a free pointer to core's cursor.
+	p.constrain(ports.PointerConstraint{X: 70, Y: 40, Warp: true})
+	if p.x != 70 || p.y != 40 {
+		t.Fatal(p.x, p.y)
+	}
 }

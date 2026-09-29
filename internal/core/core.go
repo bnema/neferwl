@@ -578,26 +578,16 @@ func (c *Core) updateInhibit(ctx context.Context) error {
 // and sends it to input when it changed. A hidden window holds nothing.
 func (c *Core) resolveConstraint() {
 	var g ports.PointerConstraint
-	if id := c.constrained.ID; id != 0 {
-		if s, _ := c.screenOf(id); s != nil {
-			for _, p := range s.mon.Layout() {
-				if p.ID != id || p.Hidden || p.Preview > 0 {
-					continue
-				}
-				r := c.clientRect(p)
-				r.X += s.x
-				r.Y += s.y
-				if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
-					// The region is clipped to the window.
-					x0, y0 := max(r.X, r.X+w.X), max(r.Y, r.Y+w.Y)
-					x1, y1 := min(r.X+r.W, r.X+w.X+w.W), min(r.Y+r.H, r.Y+w.Y+w.H)
-					if x1 > x0 && y1 > y0 {
-						r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
-					}
-				}
-				g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
+	if r, ok := c.shownClientRect(c.constrained.ID); ok {
+		if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
+			// The region is clipped to the window.
+			x0, y0 := max(r.X, r.X+w.X), max(r.Y, r.Y+w.Y)
+			x1, y1 := min(r.X+r.W, r.X+w.X+w.W), min(r.Y+r.H, r.Y+w.Y+w.H)
+			if x1 > x0 && y1 > y0 {
+				r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 			}
 		}
+		g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
 	}
 	// The cursor follows core; input resyncs to it only on a change.
 	if g.Mode == c.constraint.Mode && g.Rect == c.constraint.Rect {
@@ -610,6 +600,52 @@ func (c *Core) resolveConstraint() {
 	if c.ch.Constraints != nil {
 		latest(c.ch.Constraints, g)
 	}
+}
+
+// shownClientRect is the global logical client rectangle of a window
+// drawn on its output; false when it is hidden or a preview.
+func (c *Core) shownClientRect(id WindowID) (Rect, bool) {
+	if id == 0 {
+		return Rect{}, false
+	}
+	s, _ := c.screenOf(id)
+	if s == nil {
+		return Rect{}, false
+	}
+	for _, p := range s.mon.Layout() {
+		if p.ID != id || p.Hidden || p.Preview > 0 {
+			continue
+		}
+		r := c.clientRect(p)
+		r.X += s.x
+		r.Y += s.y
+		return r, true
+	}
+	return Rect{}, false
+}
+
+// warpPointer moves the cursor to a window-local point of the window under
+// it (wp_pointer_warp_v1). Input takes the new position, and the window
+// gets the motion; the active constraint still bounds the point.
+func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
+	if v.ID == 0 || v.ID != c.pointer || c.grab != 0 && c.grab != v.ID {
+		return nil
+	}
+	r, ok := c.shownClientRect(v.ID)
+	if !ok || v.X < 0 || v.Y < 0 || v.X >= float64(r.W) || v.Y >= float64(r.H) {
+		return nil
+	}
+	c.cursorX, c.cursorY = c.constraint.Clamp(float64(r.X)+v.X, float64(r.Y)+v.Y)
+	if c.ch.Constraints != nil {
+		g := c.constraint
+		g.X, g.Y, g.Warp = c.cursorX, c.cursorY, true
+		latest(c.ch.Constraints, g)
+	}
+	// A locked pointer moved: the client knows where it put it.
+	if c.constraint.Mode == ports.ConstraintLock {
+		return nil
+	}
+	return c.rehit(ctx)
 }
 
 // latest replaces any unread value: only the owner sends and drains;
@@ -792,6 +828,10 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 			case ports.PointerConstrained:
 				c.constrained = v
+			case ports.PointerWarp:
+				if c.warpPointer(ctx, v) != nil {
+					return nil
+				}
 			case ports.WindowFullscreenRequest:
 				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
 					continue

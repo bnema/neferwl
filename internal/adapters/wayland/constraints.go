@@ -3,6 +3,7 @@ package wayland
 import (
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
+	"github.com/bnema/purego-libwayland/protocol/pointerwarp"
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
@@ -11,6 +12,11 @@ import (
 func registerPointerConstraints(d *server.Display, s *Server) error {
 	if err := relativepointer.NewZwpRelativePointerManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
 		_, _ = relativepointer.NewZwpRelativePointerManagerV1(c, int32(v), id, relativeManager{s})
+	}); err != nil {
+		return err
+	}
+	if err := pointerwarp.NewWpPointerWarpV1Global(d, 1, func(c server.Client, v, id uint32) {
+		_, _ = pointerwarp.NewWpPointerWarpV1(c, int32(v), id, pointerWarp{s})
 	}); err != nil {
 		return err
 	}
@@ -36,6 +42,26 @@ func (m relativeManager) GetRelativePointer(r *relativepointer.ZwpRelativePointe
 			delete(s.relatives, c)
 		}
 	}
+}
+
+// pointerWarp is wp_pointer_warp_v1: a client with the pointer moves it on
+// its window (Wine's SetCursorPos). Warps without the pointer, with a
+// stale enter serial or outside the window are ignored.
+type pointerWarp struct{ server *Server }
+
+func (pointerWarp) Destroy(*pointerwarp.WpPointerWarpV1) {}
+func (h pointerWarp) WarpPointer(r *pointerwarp.WpPointerWarpV1, surf *wayland.Surface, _ *wayland.Pointer, x, y server.Fixed, serial uint32) {
+	s := h.server
+	if surf == nil || serial < s.seat.enterFirst || serial > s.seat.enterLast {
+		return
+	}
+	w := s.windows[s.seat.pointerFocus]
+	if w == nil || !w.mapped || w.xdg.resource.Client() != r.Client() || s.surfaces[surf.Resource] != w.xdg.surface {
+		return
+	}
+	// Surface-local to window-local (core's, from the geometry origin).
+	g := w.xdg.geometry
+	s.emit(ports.PointerWarp{ID: w.id, X: x.Float() - float64(g.X), Y: y.Float() - float64(g.Y)})
 }
 
 type relativeHandler struct{}
