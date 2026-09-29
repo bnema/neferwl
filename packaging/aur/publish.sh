@@ -14,6 +14,8 @@ pkgname=$1
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cp "$2" "$work/PKGBUILD"
+# The install script sets CAP_SYS_NICE; the AUR repo carries it too.
+cp "$(dirname "$0")/../neferwl.install" "$work/"
 cd "$work"
 
 makepkg --syncdeps --force --noconfirm
@@ -52,9 +54,9 @@ echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6Nc
 export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ssh_dir/known_hosts"
 
 git clone "ssh://aur@aur.archlinux.org/$pkgname.git" aur
-cp PKGBUILD .SRCINFO aur/
+cp PKGBUILD .SRCINFO neferwl.install aur/
 cd aur
-git add PKGBUILD .SRCINFO
+git add PKGBUILD .SRCINFO neferwl.install
 if git diff --cached --quiet; then
 	echo "$pkgname $pkgver is already on the AUR"
 	exit 0
