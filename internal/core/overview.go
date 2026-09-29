@@ -53,7 +53,11 @@ func (m *Monitor) ToggleOverview() {
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	m.overviewStack, m.overviewStackOf = 0, nil
+	m.overviewHiddenColumn = -1
 	w := m.Current()
+	if w.overviewMaximized() {
+		m.selectHiddenColumn(w, -1)
+	}
 	if w.pinned() {
 		// The covering window is the row's only preview: it keeps the focus.
 		return
@@ -104,10 +108,16 @@ func (m *Monitor) closeOverview() {
 		w.stashAt = i
 		w.showStash()
 	} else {
-		if id := m.stackFront(w); id != 0 && len(w.stackItems()) > 1 {
-			w.FocusID(id)
+		front := m.stackFront(w)
+		if front != 0 && front != overviewMaxColumn && len(w.stackItems()) > 1 {
+			w.FocusID(front)
 		} else if len(w.Columns) > 0 && !w.pinned() {
-			c := w.Columns[w.Focus]
+			i := w.Focus
+			if front == 0 && w.overviewMaximized() {
+				m.selectHiddenColumn(w, m.overviewHiddenColumn)
+				i = m.overviewHiddenColumn
+			}
+			c := w.Columns[i]
 			w.FocusID(c.Windows[c.Focus])
 		}
 	}
@@ -177,13 +187,41 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 			m.overviewCard, m.overviewCardOf = 0, nil
 			// The columns come to the front of the stack.
 			m.overviewStackOf, m.overviewStack = w, 0
-			w.selectOverviewColumn(0)
+			if w.overviewMaximized() {
+				m.selectHiddenColumn(w, -1)
+			} else {
+				w.selectOverviewColumn(0)
+			}
 		}
 		return
 	}
 	front := m.stackFront(w)
+	if front == 0 && w.overviewMaximized() {
+		i := m.overviewHiddenColumn
+		m.selectHiddenColumn(w, i)
+		i = m.overviewHiddenColumn
+		if dx == 0 {
+			return
+		}
+		for next := i + dx; next >= 0 && next < len(w.Columns); next += dx {
+			if next != w.Focus {
+				m.selectHiddenColumn(w, next)
+				return
+			}
+		}
+		first := 0
+		if w.Focus == 0 {
+			first = 1
+		}
+		if dx < 0 && len(w.Stash) > 0 && i == first {
+			m.selectCard(w, w.stashAt)
+		} else {
+			m.rotateStack(w, dx)
+		}
+		return
+	}
 	if front != 0 && len(w.stackItems()) > 1 {
-		if dx < 0 && len(w.Stash) > 0 {
+		if front != overviewMaxColumn && dx < 0 && len(w.Stash) > 0 {
 			m.selectCard(w, w.stashAt)
 		} else {
 			m.rotateStack(w, dx)
@@ -222,11 +260,20 @@ func (m *Monitor) OverviewPick(id WindowID) {
 		// A non-covering float is never a preview to pick.
 		return
 	} else {
-		m.overviewStackOf, m.overviewStack = w, 0
 		for i, c := range w.Columns {
 			for j, v := range c.Windows {
 				if v == id {
-					w.selectOverviewColumn(i)
+					if w.overviewMaximized() {
+						if i == w.Focus {
+							m.overviewStackOf, m.overviewStack = w, overviewMaxColumn
+						} else {
+							m.overviewStackOf, m.overviewStack = w, 0
+							m.selectHiddenColumn(w, i)
+						}
+					} else {
+						m.overviewStackOf, m.overviewStack = w, 0
+						w.selectOverviewColumn(i)
+					}
 					w.Columns[i].Focus = j
 				}
 			}

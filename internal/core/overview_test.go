@@ -480,7 +480,7 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 	}
 }
 
-func TestOverviewFixedFullWidthShowsOnlyOnScreenColumn(t *testing.T) {
+func TestOverviewFixedFullWidthShowsHiddenColumnsCard(t *testing.T) {
 	m := newMonitor("", "")
 	m.SetOutput(600, 400)
 	m.SetOverflow(OverflowFixed)
@@ -492,16 +492,20 @@ func TestOverviewFixedFullWidthShowsOnlyOnScreenColumn(t *testing.T) {
 	w.ToggleFullWidth()
 	m.ToggleOverview()
 	for id := WindowID(1); id <= 4; id++ {
-		if p := previewOf(t, m.Layout(), id); !p.Hidden || p.Preview != 0 {
-			t.Fatalf("hidden column %d: %+v", id, p)
+		if p := previewOf(t, m.Layout(), id); p.Hidden || !p.Peek || p.Preview <= 0 {
+			t.Fatalf("peeking column %d: %+v", id, p)
 		}
 	}
 	if p := previewOf(t, m.Layout(), 5); p.Hidden || !p.Focused || p.Rect.W != int(math.Round(float64(previewOf(t, w.Layout(), 5).Rect.W)*p.Preview)) {
 		t.Fatalf("maximized preview: %+v", p)
 	}
-	m.OverviewMove(-1, 0)
-	if w.Columns[4].FullWidth || previewOf(t, m.Layout(), 4).Hidden {
-		t.Fatal("navigating away did not restore the spiral")
+	m.OverviewMove(1, 0)
+	if !w.Columns[4].FullWidth || w.Focus != 4 || previewOf(t, m.Layout(), 4).Peek {
+		t.Fatal("rotation changed maximization or did not reveal the hidden card")
+	}
+	m.ToggleOverview()
+	if w.Columns[4].FullWidth || previewOf(t, w.Layout(), 4).Hidden {
+		t.Fatal("confirm did not restore the spiral")
 	}
 }
 

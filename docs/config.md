@@ -136,14 +136,14 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 ### Overview
 
-`toggle-overview` shows the current workspace as a row of scaled previews (down to a quarter, then the columns scroll). Windows keep their size and previews show their last frames. The dimmed workspaces above and below show their on-screen front too. Columns form one stack card alongside native floats that cover the usable area: the front matches the screen, with up to two cards peeking up and right behind it. Smaller floats, such as dialogs, stay hidden. A pinned fullscreen window remains its row's only preview; with `scroll` overflow the other columns stay selectable.
+`toggle-overview` shows the current workspace as a row of scaled previews (down to a quarter, then the columns scroll). Windows keep their size and previews show their last frames. The dimmed workspaces above and below show their on-screen front too. Windows hidden behind a maximized column in `fixed` overflow or a covering native float show as cards behind the on-screen front, with up to two cards peeking up and right. Smaller floats, such as dialogs, stay hidden. A pinned fullscreen window remains its row's only preview; with `scroll` overflow the other columns stay selectable.
 
 | Key | Action |
 | --- | --- |
-| `h` / `l`, `left` / `right` | Move within the front columns; left of the first column (or float), the stash pile if present; right of the last column (or float), rotate the next stack card to the front |
+| `h` / `l`, `left` / `right` | Move within the front columns; at the edges bring another card to the front (or enter the stash pile on the left if present) |
 | `k` / `j`, `up` / `down` | Select the workspace above / below |
 | `return` | Close on the selected column or front float, bringing its card to the front |
-| `escape` | Close without changing the original focus or stack order |
+| `escape` | Close without changing the original focus, maximization or stack order |
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the first column. `return` or a click on a card closes the overview with the stash shown on that window.
 

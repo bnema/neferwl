@@ -885,7 +885,11 @@ func (w *Workspace) fullscreenColumn(i int) bool {
 	return false
 }
 func (w *Workspace) columnWidth(i int) int {
-	if w.Columns[i].FullWidth {
+	return w.columnWidthFor(i, false)
+}
+
+func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
+	if w.Columns[i].FullWidth && !ignoreFullWidth {
 		return max(w.Usable.W-2*w.gap(), 0)
 	}
 	if w.fullscreenColumn(i) {
@@ -937,14 +941,23 @@ func (w *Workspace) scroll() {
 
 // columnRects returns each column's area on screen, before stacking windows.
 func (w *Workspace) columnRects() []Rect {
+	return w.columnRectsFor(false)
+}
+
+// columnRectsFor shares the fixed layout geometry with the overview's hidden
+// columns card, without changing FullWidth or the clients' saved buffers.
+func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
 	g := w.gap()
 	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
 	rects := make([]Rect, len(w.Columns))
 	view := w.ViewX + w.shiftPixels()
+	x := w.Usable.X + g
 	for i := range w.Columns {
-		rects[i] = Rect{X: w.columnX(i) - view, Y: y, W: w.columnWidth(i), H: h}
+		width := w.columnWidthFor(i, ignoreFullWidth)
+		rects[i] = Rect{X: x - view, Y: y, W: width, H: h}
+		x += width + g
 	}
-	if w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
+	if !ignoreFullWidth && w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
 		rects[w.Focus].X = w.Usable.X + g
 		return rects
 	}

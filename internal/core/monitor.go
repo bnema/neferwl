@@ -46,10 +46,12 @@ type Monitor struct {
 	// changes only when the overview closes on the card.
 	overviewCard   WindowID
 	overviewCardOf *Workspace
-	// overviewStack is the provisional front item (0 means columns).
-	// nil means the row's real top item is front.
+	// overviewStack is the provisional front item (0 means columns,
+	// overviewMaxColumn means the maximized column). nil means real top.
 	overviewStackOf *Workspace
 	overviewStack   WindowID
+	// Selected column within a hidden-columns card; never changes layout.
+	overviewHiddenColumn int
 	// scrollX and scrollY add up scrolling in the overview until it makes
 	// a step (overviewScroll); opening the overview starts from zero.
 	scrollX, scrollY float64
