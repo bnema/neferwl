@@ -193,6 +193,35 @@ func TestOverviewCancelRestoresFullWidthAfterBind(t *testing.T) {
 	}
 }
 
+// Escape maximizes only the column holding the window focused at opening,
+// where the focus returns, even when binds split its column meanwhile.
+func TestOverviewCancelFullWidthAfterSplit(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	w.FocusID(3)
+	w.ConsumeOrExpel(-1) // column 2 holds [2 3]
+	w.FocusID(3)
+	w.ToggleFullWidth()
+	m.ToggleOverview()
+	w.FocusID(3)
+	w.ConsumeOrExpel(1) // 3 leaves for another column
+	w.FocusID(2)
+	w.ToggleFullWidth() // 2's column maximized instead
+	m.CancelOverview()
+	maxed := 0
+	for _, c := range w.Columns {
+		if c.FullWidth {
+			maxed++
+			if !slices.Contains(c.Windows, 3) {
+				t.Fatalf("wrong column maximized: %+v", w.Columns)
+			}
+		}
+	}
+	if id, _ := w.Focused(); maxed != 1 || id != 3 {
+		t.Fatalf("%d maximized, focus %d: %+v", maxed, id, w.Columns)
+	}
+}
+
 // The selected hidden card follows its window when earlier columns disappear.
 func TestOverviewHiddenSelectionFollowsWindowAfterRemoval(t *testing.T) {
 	m := maximizedOverview()

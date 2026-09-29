@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"math"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -44,11 +45,10 @@ func (m *Monitor) ToggleOverview() {
 	m.overview, m.overviewFrom = true, w
 	m.overviewFromID, _ = w.Focused()
 	m.overviewFloats = append([]Float(nil), w.Floats...)
-	m.overviewFullWidth = make(map[WindowID]bool)
-	for _, c := range w.Columns {
-		for _, id := range c.Windows {
-			m.overviewFullWidth[id] = c.FullWidth
-		}
+	m.overviewFullWidth = 0
+	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
+		c := w.Columns[w.Focus]
+		m.overviewFullWidth = c.Windows[c.Focus]
 	}
 	m.scrollX, m.scrollY = 0, 0
 	m.overviewOpens++
@@ -130,7 +130,7 @@ func (m *Monitor) closeOverview() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	m.overviewStack, m.overviewStackOf = 0, nil
 	m.overviewFloats = nil
-	m.overviewFullWidth = nil
+	m.overviewFullWidth = 0
 }
 
 // CancelOverview closes the overview and returns to the workspace and
@@ -163,20 +163,15 @@ func (m *Monitor) CancelOverview() {
 			}
 		}
 		from.Floats = append(from.Floats, current...)
-		// Restore by surviving window membership, not by the old index:
-		// columns may have been removed or reordered by active binds.
+		// Only the column holding the anchor window is maximized, wherever
+		// active binds moved it: columns may have split, merged or moved.
 		for i := range from.Columns {
-			for _, window := range from.Columns[i].Windows {
-				if full, ok := m.overviewFullWidth[window]; ok {
-					from.Columns[i].FullWidth = full
-					break
-				}
-			}
+			from.Columns[i].FullWidth = m.overviewFullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.overviewFullWidth)
 		}
 		from.scroll()
 	}
 	m.overviewFloats = nil
-	m.overviewFullWidth = nil
+	m.overviewFullWidth = 0
 }
 
 // OverviewMove selects a column, stash card, or covering-float card (dx),
