@@ -6,6 +6,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
@@ -39,6 +40,30 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	}
 	if !bytes.Contains(log.Bytes(), []byte("scale_refused")) {
 		t.Fatalf("refusal not logged: %s", log.String())
+	}
+}
+
+func TestModesetInvalidatesScaleDecision(t *testing.T) {
+	o, k, commits := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+	fb := &clientFB{fbID: 87}
+	o.clientFBs[9] = fb
+	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
+	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
+	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	if got, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 1 || !fb.scaleTestedOK {
+		t.Fatalf("initial scale: %d, commits: %d", got, len(*commits))
+	}
+	k.EXPECT().createBlob(mock.Anything).Return(uint32(77), nil).Once()
+	if err := o.modeset(); err != nil {
+		t.Fatal(err)
+	}
+	if fb.scaleTestedOK || fb.scaleRefused {
+		t.Fatal("cached scale survived modeset")
+	}
+	if got, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 3 || (*commits)[2].flags != atomicTestOnly {
+		t.Fatalf("scale not retested: fb %d commits %+v", got, *commits)
 	}
 }
 

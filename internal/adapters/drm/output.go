@@ -374,6 +374,10 @@ func (o *Output) modeset() error {
 	// Only now is nothing of ours pending or on screen: on failure the
 	// previous buffers may still show.
 	o.frame.resetAfterModeset()
+	// Plane scaling capabilities may change after a modeset or VT resume.
+	for _, fb := range o.clientFBs {
+		fb.scaleTestedOK, fb.scaleRefused = false, false
+	}
 	o.shown, o.queued = 0, 0
 	if o.modeBlob != 0 {
 		_ = o.k.destroyBlob(o.modeBlob)
