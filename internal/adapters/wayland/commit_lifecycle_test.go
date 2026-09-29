@@ -1,11 +1,13 @@
 package wayland
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/fifo"
+	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"github.com/bnema/purego-libwayland/protocol/viewporter"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
@@ -22,30 +24,30 @@ func TestCapturedCommitKeepsLaterRequests(t *testing.T) {
 	srv.constraints[surf] = cons
 	firstRegion := &ports.Rect{W: 2}
 	cons.pending = firstRegion
-	surf.pendingScale, surf.pendingAsync, surf.pendingKind = 2, true, 1
+	surf.next.scale, surf.next.async, surf.next.kind = 2, true, 1
 	surf.xdg.pendingGeometry = ports.Rect{W: 10}
-	surf.pendingInputSet, surf.pendingInputAll = true, true
-	surf.pendingDamage = []ports.Rect{{W: 2}}
-	surf.pendingBarrier = true
+	surf.next.inputSet, surf.next.inputAll = true, true
+	surf.next.damage = []ports.Rect{{W: 2}}
+	surf.next.barrier = true
 	surf.queueUpdate()
 
 	laterRegion := &ports.Rect{W: 3}
 	cons.pending = laterRegion
-	surf.pendingScale, surf.pendingAsync, surf.pendingKind = 3, false, 2
+	surf.next.scale, surf.next.async, surf.next.kind = 3, false, 2
 	surf.sub.pendingLayout = []childLayout{{x: 7}}
 	surf.xdg.pendingGeometry = ports.Rect{W: 20}
-	surf.pendingInputSet, surf.pendingInputAll = true, false
-	surf.pendingInputRects = []ports.Rect{{W: 3}}
-	surf.pendingDamage = []ports.Rect{{W: 3}}
-	surf.pendingBarrier = true
+	surf.next.inputSet, surf.next.inputAll = true, false
+	surf.next.inputRects = []ports.Rect{{W: 3}}
+	surf.next.damage = []ports.Rect{{W: 3}}
+	surf.next.barrier = true
 	laterTime := time.Now().Add(time.Second)
-	surf.pendingTime = laterTime
+	surf.next.at = laterTime
 
 	surf.queue[0].applyGraph()
 	if surf.bufferScale != 2 || !surf.async || surf.contentKind != 1 || len(surf.sub.layout) != 0 || surf.xdg.geometry.W != 10 || cons.region.W != 2 || !surf.inputAll || !surf.barrier {
 		t.Fatalf("captured state changed: scale=%d async=%v kind=%d geometry=%v region=%v input=%v barrier=%v", surf.bufferScale, surf.async, surf.contentKind, surf.xdg.geometry, cons.region, surf.inputAll, surf.barrier)
 	}
-	if surf.pendingScale != 3 || surf.pendingAsync || surf.pendingKind != 2 || len(surf.sub.pendingLayout) != 1 || surf.xdg.pendingGeometry.W != 20 || cons.pending != laterRegion || !surf.pendingInputSet || surf.pendingInputAll || len(surf.pendingInputRects) != 1 || len(surf.pendingDamage) != 1 || !surf.pendingBarrier || !surf.pendingTime.Equal(laterTime) {
+	if surf.next.scale != 3 || surf.next.async || surf.next.kind != 2 || len(surf.sub.pendingLayout) != 1 || surf.xdg.pendingGeometry.W != 20 || cons.pending != laterRegion || !surf.next.inputSet || surf.next.inputAll || len(surf.next.inputRects) != 1 || len(surf.next.damage) != 1 || !surf.next.barrier || !surf.next.at.Equal(laterTime) {
 		t.Fatal("application consumed a later request")
 	}
 	surf.queueUpdate()
@@ -131,13 +133,13 @@ func TestQueuedAttachKeepsLaterBuffer(t *testing.T) {
 				surf = candidate
 			}
 		}
-		if surf == nil || len(surf.queue) != 1 || surf.queue[0].buffer.ID() != first || surf.pending.ID() != second {
+		if surf == nil || len(surf.queue) != 1 || surf.queue[0].buffer.ID() != first || surf.next.buffer.ID() != second {
 			t.Error("queued attach lost its captured or later buffer")
 			return
 		}
 		surf.barrier = false
 		s.tickFifo(time.Now(), nil)
-		if surf.current == nil || surf.current.ID() != first || surf.pending == nil || surf.pending.ID() != second {
+		if surf.current == nil || surf.current.ID() != first || surf.next.buffer == nil || surf.next.buffer.ID() != second {
 			t.Error("applying captured attach consumed later request")
 		}
 	})
@@ -247,17 +249,17 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 			s.display.Do(func() {
 				for _, surf := range s.surfaces {
 					if surf.wl != nil && surf.wl.ID() == surfID {
-						surf.pendingScale = 3
-						surf.pendingDamage = []ports.Rect{{W: 3}}
+						surf.next.scale = 3
+						surf.next.damage = []ports.Rect{{W: 3}}
 						if kind == "viewport" {
 							surf.viewport.SetDestination(surf.viewport.resource, 2, 2)
 						}
-						surf.pendingTime = time.Now().Add(time.Second)
+						surf.next.at = time.Now().Add(time.Second)
 						if kind == "buffer" {
 							for resource := range s.buffers {
 								if resource.ID() == bufferID {
-									surf.pending = wayland.WrapBuffer(resource)
-									surf.attached = true
+									surf.next.buffer = wayland.WrapBuffer(resource)
+									surf.next.attached = true
 								}
 							}
 						}
@@ -312,7 +314,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 // A dropped update must be cleared before a different surface reuses it.
 func TestDroppedUpdateRecycledWithoutState(t *testing.T) {
 	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
-	old := &surface{server: srv, pendingScale: 2, pendingBarrier: true, pendingDamage: []ports.Rect{{W: 2}}}
+	old := &surface{server: srv, next: pendingCommit{scale: 2, barrier: true, damage: []ports.Rect{{W: 2}}}}
 	old.queueUpdate()
 	old.destroyed = true
 	old.dropQueue()
@@ -388,5 +390,27 @@ func TestCapturedCommitApplyAllocations(t *testing.T) {
 	apply() // warm pool and queue backing storage
 	if allocs := testing.AllocsPerRun(100, apply); allocs != 0 {
 		t.Errorf("steady-state queue/apply: %.1f allocs/commit; want 0", allocs)
+	}
+}
+
+// Capture takes every requested field; only sticky hints carry over.
+func TestTakePendingKeepsStickyState(t *testing.T) {
+	srv := &Server{constraints: map[*surface]*constraint{}}
+	surf := &surface{server: srv}
+	all := pendingCommit{
+		buffer: &wayland.Buffer{}, attached: true, scale: 2, transform: 1,
+		opaque: []ports.Rect{{W: 1}}, opaqueSet: true, inputAll: true, inputSet: true, inputRects: []ports.Rect{{W: 1}},
+		callbacks: []*wayland.Callback{{}}, async: true, color: SurfaceColor{Set: true}, representation: surfaceRepresentation{alpha: 1}, kind: 3,
+		barrier: true, wait: true, at: time.Unix(1, 0), damage: []ports.Rect{{W: 1}}, bufDamage: []ports.Rect{{W: 1}},
+		feedback: []*presentationtime.WpPresentationFeedback{{}}, sync: &commitSync{},
+	}
+	surf.next = all
+	u := surf.takePending()
+	if !reflect.DeepEqual(u.pendingCommit, all) {
+		t.Fatalf("captured = %+v", u.pendingCommit)
+	}
+	want := pendingCommit{scale: 2, transform: 1, async: true, color: SurfaceColor{Set: true}, representation: surfaceRepresentation{alpha: 1}, kind: 3}
+	if !reflect.DeepEqual(surf.next, want) {
+		t.Fatalf("left pending = %+v, want %+v", surf.next, want)
 	}
 }

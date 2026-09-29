@@ -245,8 +245,8 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	t.OnDestroy = func() {
 		w.unmap()
 		x.surface.dropQueue()
-		x.surface.current, x.surface.pending = nil, nil
-		x.surface.attached = false
+		x.surface.current, x.surface.next.buffer = nil, nil
+		x.surface.next.attached = false
 		delete(x.server.windows, w.id)
 		x.window = nil
 		x.surface.role = nil

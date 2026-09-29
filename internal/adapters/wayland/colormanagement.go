@@ -110,7 +110,7 @@ func (m colorManager) GetSurface(r *cm.WpColorManagerV1, id uint32, wl *wayland.
 		res.OnDestroy = func() {
 			if surf.colorControl == h {
 				surf.colorControl = nil
-				surf.pendingColor = SurfaceColor{}
+				surf.next.color = SurfaceColor{}
 			}
 		}
 	}
@@ -164,7 +164,7 @@ type colorSurface struct{ surf *surface }
 
 func (h *colorSurface) Destroy(*cm.WpColorManagementSurfaceV1) {
 	if h.surf != nil && !h.surf.destroyed {
-		h.surf.pendingColor = SurfaceColor{}
+		h.surf.next.color = SurfaceColor{}
 	}
 }
 func (h *colorSurface) SetImageDescription(r *cm.WpColorManagementSurfaceV1, desc *cm.WpImageDescriptionV1, intent uint32) {
@@ -185,7 +185,7 @@ func (h *colorSurface) SetImageDescription(r *cm.WpColorManagementSurfaceV1, des
 		r.PostError(uint32(cm.WpColorManagementSurfaceV1ErrorImageDescription), "description not ready")
 		return
 	}
-	h.surf.pendingColor = d.SurfaceColor
+	h.surf.next.color = d.SurfaceColor
 	h.surf.server.log.Debug().Str("component", "wayland").Uint32("tf", d.TF).Uint32("primaries", d.Primaries).Msg("surface color description set")
 }
 func (h *colorSurface) UnsetImageDescription(r *cm.WpColorManagementSurfaceV1) {
@@ -193,7 +193,7 @@ func (h *colorSurface) UnsetImageDescription(r *cm.WpColorManagementSurfaceV1) {
 		r.PostError(uint32(cm.WpColorManagementSurfaceV1ErrorInert), "surface destroyed")
 		return
 	}
-	h.surf.pendingColor = SurfaceColor{}
+	h.surf.next.color = SurfaceColor{}
 	h.surf.server.log.Debug().Str("component", "wayland").Msg("surface color description unset")
 }
 

@@ -111,12 +111,12 @@ func (s *surface) emitInput() {
 }
 
 func (s *surface) SetInputRegion(_ *wayland.Surface, reg *wayland.Region) {
-	s.pendingInputSet = true
-	s.pendingInputAll = reg == nil || reg.Resource == nil
-	s.pendingInputRects = nil
-	if !s.pendingInputAll {
+	s.next.inputSet = true
+	s.next.inputAll = reg == nil || reg.Resource == nil
+	s.next.inputRects = nil
+	if !s.next.inputAll {
 		if g := s.server.regions[reg.Resource]; g != nil {
-			s.pendingInputRects = slices.Clone(g.rects)
+			s.next.inputRects = slices.Clone(g.rects)
 		}
 	}
 }

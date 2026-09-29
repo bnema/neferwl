@@ -149,7 +149,7 @@ func (s *surface) checkSyncCommit() bool {
 	}
 	a, r := st.acquire, st.release
 	// Points belong only to a commit that attaches a non-null buffer.
-	hasBuffer := s.attached && s.pending != nil
+	hasBuffer := s.next.attached && s.next.buffer != nil
 	res := st.resource
 	switch {
 	case !a.set() && !r.set():
@@ -176,8 +176,8 @@ func (s *surface) checkSyncCommit() bool {
 
 // pendingIsSHM reports whether the buffer of the next commit is wl_shm.
 func (s *surface) pendingIsSHM() bool {
-	b := s.pending
-	if !s.attached {
+	b := s.next.buffer
+	if !s.next.attached {
 		b = s.current
 	}
 	if b == nil {
@@ -373,7 +373,7 @@ func (s *surface) takeSyncPoints() {
 	} else {
 		cs.wait = w
 	}
-	s.pendingSync = cs
+	s.next.sync = cs
 }
 
 // syncReady reports whether a commit's acquire point has its fence.

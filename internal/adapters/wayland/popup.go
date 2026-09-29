@@ -82,8 +82,8 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 		w.unmap()
 		pp.done = true
 		x.surface.dropQueue()
-		x.surface.current, x.surface.pending = nil, nil
-		x.surface.attached = false
+		x.surface.current, x.surface.next.buffer = nil, nil
+		x.surface.next.attached = false
 		delete(s.windows, w.id)
 		x.window = nil
 		x.surface.role = nil

@@ -39,7 +39,7 @@ func (m tearingManager) GetTearingControl(r *tearingcontrol.WpTearingControlMana
 		// Back to vsync on the next commit.
 		if state.tearing == h {
 			state.tearing = nil
-			state.pendingAsync = false
+			state.next.async = false
 		}
 	}
 }
@@ -48,7 +48,7 @@ type tearingHandler struct{ surface *surface }
 
 func (h *tearingHandler) SetPresentationHint(_ *tearingcontrol.WpTearingControlV1, hint uint32) {
 	if h.surface != nil && h.surface.tearing == h {
-		h.surface.pendingAsync = hint == uint32(tearingcontrol.WpTearingControlV1PresentationHintAsync)
+		h.surface.next.async = hint == uint32(tearingcontrol.WpTearingControlV1PresentationHintAsync)
 	}
 }
 

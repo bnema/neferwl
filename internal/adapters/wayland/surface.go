@@ -28,27 +28,22 @@ type surface struct {
 	wl                *wayland.Surface
 	viewport          *viewport
 	committedViewport viewportState // value snapshot; no allocation on viewport commits
-	// bufferScale is committed state; pendingScale is set by set_buffer_scale.
-	bufferScale, pendingScale int
-	// transform is committed; pendingTransform is set by set_buffer_transform
-	// and, like the buffer scale, copied by every commit.
-	transform, pendingTransform ports.BufferTransform
-	// opaque is the committed opaque region (surface-local, logical);
-	// pendingOpaque is set by set_opaque_region. formatOpaque is the
-	// current buffer's own opacity (x formats).
-	opaque, pendingOpaque []ports.Rect
-	pendingOpaqueSet      bool
-	formatOpaque          bool
-	kind                  roleKind
-	xdg                   *xdgSurface
-	layer                 *layerSurface
-	server                *Server
-	current, pending      *wayland.Buffer
-	attached              bool
-	lastW, lastH          int // last logged buffer size
-	callbacks             []*wayland.Callback
-	role                  func(bool)
-	destroyed             bool
+	// next is the state requested since the last commit (see pendingCommit).
+	next pendingCommit
+	// bufferScale, transform and opaque are committed state. formatOpaque is
+	// the current buffer's own opacity (x formats).
+	bufferScale  int
+	transform    ports.BufferTransform
+	opaque       []ports.Rect
+	formatOpaque bool
+	kind         roleKind
+	xdg          *xdgSurface
+	layer        *layerSurface
+	server       *Server
+	current      *wayland.Buffer
+	lastW, lastH int // last logged buffer size
+	role         func(bool)
+	destroyed    bool
 	// hotX, hotY is the click point of a cursor surface (logical).
 	hotX, hotY int
 	// on is the output the surface entered; scale is the last scale sent.
@@ -56,14 +51,14 @@ type surface struct {
 	scale float64
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
-	inputAll, pendingInputAll, pendingInputSet bool
-	inputRects, pendingInputRects              []ports.Rect
-	sentInput, lastInputAll                    bool
-	lastInputRects                             []ports.Rect
-	content                                    ports.SurfaceContent
-	has                                        bool
-	identity                                   uint64
-	version                                    uint64
+	inputAll                bool
+	inputRects              []ports.Rect
+	sentInput, lastInputAll bool
+	lastInputRects          []ports.Rect
+	content                 ports.SurfaceContent
+	has                     bool
+	identity                uint64
+	version                 uint64
 	// cachedTree is never modified once returned to emitContent.
 	cachedTree                 []ports.Subsurface
 	treeDirty                  bool
@@ -71,39 +66,64 @@ type surface struct {
 	queuedScale                int
 	queuedBuffer               uint32
 	sub                        subState
-	// tearing is the surface's wp_tearing_control_v1; async is the
-	// committed hint, pendingAsync the requested one.
-	tearing                               *tearingHandler
-	async, pendingAsync                   bool
-	colorControl                          *colorSurface
-	color, pendingColor                   SurfaceColor
-	representation, pendingRepresentation surfaceRepresentation
-	representationControl                 *representationSurface
-	// Presentation constraints (fifo.go): pending fifo requests and commit
-	// timestamp, the barrier, and the commits waiting to apply.
-	fifo                        *fifoHandler
-	timer                       *timerHandler
-	pendingBarrier, pendingWait bool
-	pendingTime                 time.Time
-	barrier                     bool
-	barrierAt                   time.Time
-	queue                       []*update
+	// tearing is the surface's wp_tearing_control_v1; async the committed
+	// hint.
+	tearing               *tearingHandler
+	async                 bool
+	colorControl          *colorSurface
+	color                 SurfaceColor
+	representation        surfaceRepresentation
+	representationControl *representationSurface
+	// Presentation constraints (fifo.go): the barrier, and the commits
+	// waiting to apply.
+	fifo      *fifoHandler
+	timer     *timerHandler
+	barrier   bool
+	barrierAt time.Time
+	queue     []*update
 	// contentType is the wp_content_type_v1; contentKind the committed type.
-	contentType              *contentTypeHandler
-	contentKind, pendingKind uint32
-	// Damage requested since the last commit: in surface (logical) and
-	// buffer pixels; committed is what the last commit changed, in buffer
-	// pixels (full: everything), read by the window's damage history.
-	pendingDamage, pendingBufDamage []ports.Rect
-	committed                       damage
-	// pendingFeedback are wp_presentation feedbacks for the next commit.
-	pendingFeedback []*presentationtime.WpPresentationFeedback
-	// Explicit sync (syncobj.go): the surface's syncobj object; the
-	// committed points of the pending commit (pendingSync, with the wait
-	// for its acquire point); and the current buffer's hold.
-	sync        *syncState
-	pendingSync *commitSync
-	hold        syncHold
+	contentType *contentTypeHandler
+	contentKind uint32
+	// committed is what the last commit changed, in buffer pixels (full:
+	// everything), read by the window's damage history.
+	committed damage
+	// Explicit sync (syncobj.go): the surface's syncobj object and the
+	// current buffer's hold.
+	sync *syncState
+	hold syncHold
+}
+
+// pendingCommit is the double-buffered wl_surface state requested since the
+// last commit. A commit captures it whole into an update (takePending):
+// one-shot parts are cleared, sticky parts (scale, transform, hints, color)
+// carry over to the next commit.
+type pendingCommit struct {
+	// buffer is attached (attached reports an attach request, nil detaches).
+	buffer   *wayland.Buffer
+	attached bool
+	// scale is set by set_buffer_scale, transform by set_buffer_transform.
+	scale     int
+	transform ports.BufferTransform
+	// opaque and the input region are set by their requests (the Set flags).
+	opaque             []ports.Rect
+	opaqueSet          bool
+	inputAll, inputSet bool
+	inputRects         []ports.Rect
+	callbacks          []*wayland.Callback
+	async              bool
+	color              SurfaceColor
+	representation     surfaceRepresentation
+	kind               uint32
+	// barrier and wait are fifo requests; at the commit timestamp.
+	barrier, wait bool
+	at            time.Time
+	// damage is in surface (logical) pixels, bufDamage in buffer pixels.
+	damage, bufDamage []ports.Rect
+	// feedback are wp_presentation feedbacks for this commit.
+	feedback []*presentationtime.WpPresentationFeedback
+	// sync is the commit's explicit-sync points, with the wait for its
+	// acquire point.
+	sync *commitSync
 }
 
 // commitSync is a commit's explicit-sync points and acquire wait.
@@ -255,10 +275,10 @@ func (s *surface) detach() {
 
 func (s *surface) Destroy(*wayland.Surface) {
 	s.destroyed = true
-	for _, fb := range s.pendingFeedback {
+	for _, fb := range s.next.feedback {
 		discard(fb)
 	}
-	s.pendingFeedback = nil
+	s.next.feedback = nil
 	s.tearing = nil // the control becomes inert
 	s.colorControl = nil
 	s.representationControl = nil
@@ -276,18 +296,18 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 	s.sub.children = nil
 	s.sub.layout, s.sub.pendingLayout = nil, nil
-	for _, cb := range s.callbacks {
+	for _, cb := range s.next.callbacks {
 		cb.Destroy()
 	}
-	s.callbacks = nil
+	s.next.callbacks = nil
 	// The client may reuse the buffer on another surface.
-	s.dropSync(s.pendingSync)
-	s.pendingSync = nil
+	s.dropSync(s.next.sync)
+	s.next.sync = nil
 	if s.current != nil {
 		s.server.releaseBuffer(s, s.current, s.hold)
 		s.hold = syncHold{}
 	}
-	s.current, s.pending = nil, nil
+	s.current, s.next.buffer = nil, nil
 	if s.role != nil {
 		s.role(false)
 	}
@@ -296,21 +316,21 @@ func (s *surface) Destroy(*wayland.Surface) {
 	}
 }
 func (s *surface) Attach(_ *wayland.Surface, b *wayland.Buffer, _, _ int32) {
-	s.pending = b
-	s.attached = true
+	s.next.buffer = b
+	s.next.attached = true
 }
 func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	cb, err := wayland.NewCallback(r.Client(), 1, id, struct{}{})
 	if err == nil {
-		s.callbacks = append(s.callbacks, cb)
+		s.next.callbacks = append(s.next.callbacks, cb)
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
-	if s.layer != nil && s.attached && s.pending != nil && !s.layer.acked {
+	if s.layer != nil && s.next.attached && s.next.buffer != nil && !s.layer.acked {
 		s.layer.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "buffer before configure ack")
 		return
 	}
-	if s.xdg != nil && s.attached && s.pending != nil && !s.xdg.acked {
+	if s.xdg != nil && s.next.attached && s.next.buffer != nil && !s.xdg.acked {
 		s.xdg.resource.PostError(uint32(xdgshell.SurfaceErrorUnconfiguredBuffer), "buffer before initial configure ack")
 		return
 	}
@@ -481,13 +501,13 @@ func (s *surface) applyCommit(u *update) {
 	}
 }
 func (s *surface) Damage(_ *wayland.Surface, x, y, w, h int32) {
-	if w > 0 && h > 0 && len(s.pendingDamage) <= maxDamageRects {
-		s.pendingDamage = append(s.pendingDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+	if w > 0 && h > 0 && len(s.next.damage) <= maxDamageRects {
+		s.next.damage = append(s.next.damage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
 	}
 }
 func (s *surface) DamageBuffer(_ *wayland.Surface, x, y, w, h int32) {
-	if w > 0 && h > 0 && len(s.pendingBufDamage) <= maxDamageRects {
-		s.pendingBufDamage = append(s.pendingBufDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
+	if w > 0 && h > 0 && len(s.next.bufDamage) <= maxDamageRects {
+		s.next.bufDamage = append(s.next.bufDamage, ports.Rect{X: int(x), Y: int(y), W: int(w), H: int(h)})
 	}
 }
 
@@ -542,11 +562,11 @@ func (s *surface) commitDamage(u *update, fresh, resized bool, bw, bh int) {
 
 // SetOpaqueRegion copies the region: a nil region means nothing is opaque.
 func (s *surface) SetOpaqueRegion(_ *wayland.Surface, reg *wayland.Region) {
-	s.pendingOpaqueSet = true
-	s.pendingOpaque = nil
+	s.next.opaqueSet = true
+	s.next.opaque = nil
 	if reg != nil && reg.Resource != nil {
 		if g := s.server.regions[reg.Resource]; g != nil {
-			s.pendingOpaque = slices.Clone(g.rects)
+			s.next.opaque = slices.Clone(g.rects)
 		}
 	}
 }
@@ -556,7 +576,7 @@ func (s *surface) SetBufferTransform(r *wayland.Surface, v int32) {
 		r.PostError(uint32(wayland.SurfaceErrorInvalidTransform), "invalid buffer transform")
 		return
 	}
-	s.pendingTransform = ports.BufferTransform(v)
+	s.next.transform = ports.BufferTransform(v)
 }
 
 // opaqueCovers reports whether the committed opaque region covers the whole
@@ -612,7 +632,7 @@ func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
 		r.PostError(uint32(wayland.SurfaceErrorInvalidScale), "buffer scale must be positive")
 		return
 	}
-	s.pendingScale = int(v)
+	s.next.scale = int(v)
 }
 func (*surface) Offset(*wayland.Surface, int32, int32) {}
 func (*surface) GetRelease(*wayland.Surface, uint32)   {}

@@ -43,7 +43,7 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		return
 	}
 	state := h.server.surfaces[w.Resource]
-	if state.kind != roleNone || (state.attached && state.pending != nil) || state.current != nil {
+	if state.kind != roleNone || (state.next.attached && state.next.buffer != nil) || state.current != nil {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed), "surface already constructed")
 		return
 	}
@@ -77,8 +77,8 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		state.layer = nil
 		state.role = nil
 		state.dropQueue()
-		state.current, state.pending = nil, nil
-		state.attached = false
+		state.current, state.next.buffer = nil, nil
+		state.next.attached = false
 	}
 }
 func (l *layerSurface) SetSize(_ *wlrlayershell.ZwlrLayerSurfaceV1, w, h uint32) {

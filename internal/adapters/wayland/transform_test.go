@@ -196,16 +196,16 @@ func TestOpaqueRegionContent(t *testing.T) {
 func TestCapturedTransformAndOpaqueKeepLaterRequests(t *testing.T) {
 	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1), constraints: map[*surface]*constraint{}}
 	surf := &surface{server: srv}
-	surf.pendingTransform = 1
-	surf.pendingOpaque, surf.pendingOpaqueSet = []ports.Rect{{W: 4, H: 4}}, true
+	surf.next.transform = 1
+	surf.next.opaque, surf.next.opaqueSet = []ports.Rect{{W: 4, H: 4}}, true
 	surf.queueUpdate()
-	surf.pendingTransform = 2
-	surf.pendingOpaque, surf.pendingOpaqueSet = nil, true
+	surf.next.transform = 2
+	surf.next.opaque, surf.next.opaqueSet = nil, true
 	surf.queue[0].applyGraph()
 	if surf.transform != 1 || len(surf.opaque) != 1 {
 		t.Fatalf("captured state: transform %d opaque %v", surf.transform, surf.opaque)
 	}
-	if surf.pendingTransform != 2 || !surf.pendingOpaqueSet || surf.pendingOpaque != nil {
+	if surf.next.transform != 2 || !surf.next.opaqueSet || surf.next.opaque != nil {
 		t.Fatal("application consumed a later request")
 	}
 	surf.queueUpdate()
