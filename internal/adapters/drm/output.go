@@ -110,6 +110,11 @@ type Output struct {
 	// the previous frame flip's kernel timestamp.
 	traceFlips bool
 	lastFlipAt time.Duration
+	// vrrFlipGap is the minimum time between a game frame's flip event
+	// and the next frame commit under VRR (render.vrr-flip-gap, 0: off);
+	// flipGapUntil is when the next frame may commit. See vrr_flip_gap.go.
+	vrrFlipGap   time.Duration
+	flipGapUntil time.Time
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
 	// follows wantOff, so a display turned off never lights up.
@@ -221,7 +226,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.Cu
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), traceFlips: card.want.TraceFlips}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -388,8 +393,8 @@ func (o *Output) modeset() error {
 	}
 	o.modeBlob = blob
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, o.wantOff
-	// The traced flip interval belonged to the old state.
-	o.lastFlipAt = 0
+	// The gap and the traced flip interval belonged to the old state.
+	o.flipGapUntil, o.lastFlipAt = time.Time{}, 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.planeRect = fullPlaneRect(o.Width(), o.Height())
 	if o.cursor != nil {
@@ -1000,6 +1005,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	vrrTimer := time.NewTimer(time.Hour)
 	cursorTimer := time.NewTimer(time.Hour)
 	o.frame.startTimer()
+	gapTimer := time.NewTimer(time.Hour)
+	gapTimer.Stop()
+	defer gapTimer.Stop()
 	retryTimer.Stop()
 	vrrTimer.Stop()
 	cursorTimer.Stop()
@@ -1050,6 +1058,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			cursorTimer.Stop()
 		}
+		// A game frame waiting out the VRR flip gap commits when it ends.
+		var gapDue <-chan time.Time
+		if enabled && dirty && !o.frame.pendingCommit() && !o.flipGapUntil.IsZero() {
+			gapTimer.Reset(max(0, time.Until(o.flipGapUntil)))
+			gapDue = gapTimer.C
+		} else {
+			gapTimer.Stop()
+		}
 		// A commit whose event never comes must not stop the output.
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
@@ -1076,6 +1092,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			stateDirty = true
 		case <-cursorWake:
 			stateDirty = true
+		case <-gapDue:
 		case <-ctx.Done():
 			return nil
 		case q := <-captures:
@@ -1200,6 +1217,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			continue
 		}
+		if !o.flipGapUntil.IsZero() {
+			if time.Now().Before(o.flipGapUntil) {
+				continue // gapDue commits it
+			}
+			o.flipGapUntil = time.Time{}
+		}
 		start := time.Now()
 		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, captured)
 		requests = nil
@@ -1264,6 +1287,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if trace {
 		o.traceFlip(ev, f, start, fenceAt)
 	}
+	o.startFlipGap(f)
 	if age := time.Since(start); age > 20*time.Millisecond {
 		o.log.Info().Dur("flip_ms", age).Bool("frame", f.frame).Bool("vrr", o.vrrOn).Str("connector", o.conn.name).Msg("slow flip")
 	}

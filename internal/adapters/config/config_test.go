@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -474,6 +475,24 @@ func TestStash(t *testing.T) {
 			c, warnings := parseString(t, tc.line)
 			if c.Stash.Width != tc.width || c.Stash.Gap != tc.gap || c.Stash.Dim != tc.dim || (len(warnings) != 0) != tc.warning {
 				t.Fatalf("stash %+v, warnings %v", c.Stash, warnings)
+			}
+		})
+	}
+}
+
+func TestVRRFlipGap(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		want    time.Duration
+		warning bool
+	}{
+		{"0", 0, false}, {"0ms", 0, false}, {"500us", 500 * time.Microsecond, false}, {"2ms", 2 * time.Millisecond, false}, {"10ms", 10 * time.Millisecond, false},
+		{"11ms", time.Millisecond, true}, {"-1ms", time.Millisecond, true}, {"1", time.Millisecond, true}, {"fast", time.Millisecond, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			c, warnings := parseString(t, "render.vrr-flip-gap = "+tc.value)
+			if c.Render.VRRFlipGap != tc.want || (len(warnings) != 0) != tc.warning {
+				t.Fatalf("gap %v, warnings %v", c.Render.VRRFlipGap, warnings)
 			}
 		})
 	}

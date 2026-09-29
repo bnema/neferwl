@@ -1,6 +1,9 @@
 package ports
 
-import "image"
+import (
+	"image"
+	"time"
+)
 
 // DefaultSDRBrightness is the BT.2408 SDR reference white in HDR, in nits.
 const DefaultSDRBrightness = 203
@@ -113,6 +116,10 @@ type Config struct {
 		// Tearing honours wp_tearing_control_v1 in direct scanout; VRR
 		// turns variable refresh on while a buffer is scanned out.
 		Tearing, VRR bool
+		// VRRFlipGap is the minimum time between a game frame's flip and
+		// the next frame commit under VRR (0: off). It works around
+		// flips that land at the panel's slowest refresh.
+		VRRFlipGap time.Duration
 	}
 	Performance struct{ Realtime bool }
 	Log         struct {
