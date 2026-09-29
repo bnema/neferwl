@@ -344,12 +344,10 @@ func (m *Monitor) OverviewPick(id WindowID) {
 				w.selectOverviewColumn(i)
 			}
 			m.ov.selected = id
-			if item.kind == stackColumns {
-				for j, v := range w.Columns[i].Windows {
-					if v == id {
-						w.Columns[i].Focus = j
-						break
-					}
+			for j, v := range w.Columns[i].Windows {
+				if v == id {
+					w.Columns[i].Focus = j
+					break
 				}
 			}
 		}

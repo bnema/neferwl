@@ -96,6 +96,23 @@ func TestOverviewMaximizedPreviewAfterAnchorRemoval(t *testing.T) {
 	}
 }
 
+func TestOverviewPickStackedColumnWindow(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		m := maximizedOverview()
+		w := m.Current()
+		i := w.Focus
+		if hidden {
+			i = 2
+		}
+		w.Columns[i].Windows = append(w.Columns[i].Windows, 6)
+		m.ToggleOverview()
+		m.OverviewPick(6)
+		if id, _ := w.Focused(); id != 6 || m.ov.open {
+			t.Fatalf("hidden %v: picked focus %d, overview %v", hidden, id, m.ov.open)
+		}
+	}
+}
+
 func TestOverviewTargetAfterColumnActivation(t *testing.T) {
 	for _, maximized := range []bool{false, true} {
 		m := overviewMonitor()
@@ -104,9 +121,13 @@ func TestOverviewTargetAfterColumnActivation(t *testing.T) {
 		w.ConsumeOrExpel(-1)
 		w.FocusID(3)
 		if maximized {
+			m.SetOverflow(OverflowFixed)
 			w.ToggleFullWidth()
 		}
 		m.ToggleOverview()
+		if maximized && w.stack()[0].kind != stackColumn {
+			t.Fatalf("expected maximized column card: %+v", w.stack())
+		}
 		w.Activate(5)
 		var highlighted WindowID
 		for _, p := range m.Layout() {

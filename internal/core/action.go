@@ -143,7 +143,7 @@ func (c *Core) applyAction(a Action) Effect {
 		} else {
 			dir = 1
 		}
-		// The first move from a float stays on this monitor (FocusColumn):
+		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends. A covering fullscreen window pins
 		// the focus: the move goes to the neighbor monitor.

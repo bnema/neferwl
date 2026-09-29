@@ -245,7 +245,8 @@ func (w *Workspace) coversFloat(f Float) bool {
 }
 
 // reconcileFloats promotes floats that no longer cover, without raising
-// existing covering floats on automatic geometry changes.
+// existing covering floats on automatic geometry changes. It also drops
+// float focus when no raised float remains on top.
 func (w *Workspace) reconcileFloats() {
 	for i := range w.Floats {
 		if w.Floats[i].below && !w.coversFloat(w.Floats[i]) && w.fullscreen != w.Floats[i].ID {
@@ -257,6 +258,7 @@ func (w *Workspace) reconcileFloats() {
 	}
 }
 
+// canLeaveFloat reports whether columns or a shown stash can receive focus.
 func (w *Workspace) canLeaveFloat() bool {
 	return len(w.Columns) > 0 || !w.stashHidden && len(w.Stash) > 0
 }
