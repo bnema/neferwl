@@ -82,6 +82,15 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 - Keys are what the active layout prints: `cmd+é` on AZERTY. Write `=`, `#` and space by name: `cmd+equal`, `cmd+numbersign`, `cmd+space`.
 - `code:N` is a physical key (evdev code), the same on every layout: `code:2` to `code:10` are the digit row 1 to 9.
+- Other keys use their xkb keysym name, case-sensitive (`wev` shows it). Media keys have no default bind:
+
+  ```
+  bind.XF86AudioRaiseVolume = spawn wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+  bind.XF86AudioLowerVolume = spawn wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+  bind.XF86AudioMute = spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+  bind.XF86MonBrightnessUp = spawn brightnessctl set +5%
+  bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
+  ```
 - `none` removes a default bind.
 - `spawn <command>` runs a program without a shell; see [Running commands](desktop.md#running-commands).
 

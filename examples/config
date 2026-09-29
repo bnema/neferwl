@@ -164,3 +164,13 @@ bind.cmd+ctrl+shift+l = move-workspace-to-monitor-right
 # Zoom: the whole display, live.
 bind.cmd+code:13 = scale-up
 bind.cmd+code:12 = scale-down
+
+# Media keys have no default. Bind them by their exact xkb keysym name
+# (case-sensitive; `wev` shows it) to your own tools:
+# bind.XF86AudioRaiseVolume = spawn wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+# bind.XF86AudioLowerVolume = spawn wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+# bind.XF86AudioMute = spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+# bind.XF86AudioMicMute = spawn wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+# bind.XF86MonBrightnessUp = spawn brightnessctl set +5%
+# bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
+# bind.XF86AudioPlay = spawn playerctl play-pause
