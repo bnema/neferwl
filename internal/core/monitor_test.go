@@ -579,6 +579,43 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 			t.Fatal(got, m.Active)
 		}
 	})
+	t.Run("arrivals over a lone fullscreen: slot, named workspace, float", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			setup func(m *Monitor) *Workspace
+			add   func(w *Workspace)
+		}{
+			{"slot", func(m *Monitor) *Workspace { m.AddWindow(1); return m.Current() },
+				func(w *Workspace) { w.AddSlotWindow(2, 1, Width{}) }},
+			{"hidden named", func(m *Monitor) *Workspace {
+				m.SetNamed([]NamedWorkspace{{Name: "dev", Overflow: OverflowFixed}})
+				m.Apply("workspace dev")
+				m.AddWindow(1)
+				return m.Current()
+			}, func(w *Workspace) { w.AddWindow(2) }},
+			{"float", func(m *Monitor) *Workspace { m.AddFloating(1, 10, 10); return m.Current() },
+				func(w *Workspace) { w.AddWindow(2) }},
+		} {
+			m := monitor()
+			m.SetOverflow(OverflowFixed)
+			home := tc.setup(m)
+			m.SetFullscreen(1, true)
+			m.arrive(home, tc.add)
+			if fs := m.Current(); fs == home || fs.cover() != 1 || fs.origin != home {
+				t.Fatal(tc.name, "fullscreen not on its own workspace", windows(m))
+			}
+			if id, _ := m.Focused(); id != 1 || !home.has(2) || home.has(1) {
+				t.Fatal(tc.name, "focus", id, home.windows())
+			}
+			m.SetFullscreen(1, false)
+			if m.Current() != home || !home.has(1) || !home.has(2) {
+				t.Fatal(tc.name, "not home", windows(m), home.windows())
+			}
+			if id, _ := m.Focused(); id != 1 {
+				t.Fatal(tc.name, "focus after", id)
+			}
+		}
+	})
 	t.Run("a joined window lands after its stack when columns shifted", func(t *testing.T) {
 		m := fixed()
 		w := m.Current()
