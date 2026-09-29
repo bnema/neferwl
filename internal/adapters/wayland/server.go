@@ -39,10 +39,12 @@ type Options struct {
 
 // Channels carries client notifications and commands. Events may be unbuffered.
 type Channels struct {
-	Events     chan<- ports.ClientEvent
-	Contents   chan<- ports.SurfaceContent
-	Commands   <-chan ports.ClientCommand
-	Workspaces <-chan ports.Workspaces
+	LeaseRequests chan<- ports.LeaseMessage
+	LeaseEvents   <-chan ports.LeaseMessage
+	Events        chan<- ports.ClientEvent
+	Contents      chan<- ports.SurfaceContent
+	Commands      <-chan ports.ClientCommand
+	Workspaces    <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
 	Cursors chan<- ports.CursorChange
 	// Presented paces frame callbacks on the outputs' page flips; outputs
