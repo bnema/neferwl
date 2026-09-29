@@ -309,6 +309,13 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 func (s *Server) SocketName() string { return s.name }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.cleanup()
+	defer func() {
+		for _, device := range s.leaseDevices {
+			if device.fd != nil {
+				device.fd.Close()
+			}
+		}
+	}()
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
 	s.started = time.Now()
 	s.ctx = ctx

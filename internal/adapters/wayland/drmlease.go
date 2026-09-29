@@ -15,7 +15,7 @@ type leaseDevice struct {
 	server     *Server
 	card       string
 	global     *server.Global
-	fd         *os.File // borrowed from DRM; do not close
+	fd         *os.File // owned by the display after receiving a duplicated DRM fd
 	connectors map[string]ports.LeaseConnector
 	binds      map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind
 }
@@ -110,22 +110,41 @@ func (s *Server) sendLeaseRequest(event ports.LeaseMessage) {
 	}
 }
 func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
-	d := s.leaseDevices[msg.Card]
-	if d == nil {
-		if msg.Device == nil || len(msg.Connectors) == 0 {
+	// The backend owns Device and may close it as soon as it stops. Keep a
+	// display-owned duplicate, so binds cannot race shutdown or a rescan.
+	var copyFD *os.File
+	if msg.Device != nil {
+		fd, err := unix.FcntlInt(msg.Device.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			s.log.Warn().Err(err).Str("card", msg.Card).Msg("duplicate lease device")
 			return
 		}
-		d = &leaseDevice{server: s, card: msg.Card, fd: msg.Device, connectors: map[string]ports.LeaseConnector{}, binds: map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind{}}
+		copyFD = os.NewFile(uintptr(fd), msg.Card)
+	}
+	d := s.leaseDevices[msg.Card]
+	if d == nil {
+		if copyFD == nil || len(msg.Connectors) == 0 {
+			if copyFD != nil {
+				copyFD.Close()
+			}
+			return
+		}
+		d = &leaseDevice{server: s, card: msg.Card, fd: copyFD, connectors: map[string]ports.LeaseConnector{}, binds: map[*drmlease.WpDrmLeaseDeviceV1]*leaseBind{}}
 		g, err := s.display.AddGlobal(drmlease.WpDrmLeaseDeviceV1Interface, 1, func(c server.Client, v, id uint32) { d.bind(c, v, id) })
 		if err != nil {
+			copyFD.Close()
 			s.log.Warn().Err(err).Str("card", msg.Card).Msg("drm lease global")
 			return
 		}
 		d.global = g
 		s.leaseDevices[msg.Card] = d
 	}
-	if msg.Device == nil {
+	if copyFD == nil {
 		d.global.Remove()
+		if d.fd != nil {
+			d.fd.Close()
+			d.fd = nil
+		}
 		for _, b := range d.binds {
 			for r := range b.connectors {
 				drmlease.WrapWpDrmLeaseConnectorV1(r).SendWithdrawn()
@@ -136,7 +155,12 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 		delete(s.leaseDevices, msg.Card)
 		return
 	}
-	d.fd = msg.Device
+	if d.fd != copyFD {
+		if d.fd != nil {
+			d.fd.Close()
+		}
+		d.fd = copyFD
+	}
 	next := map[string]ports.LeaseConnector{}
 	for _, c := range msg.Connectors {
 		next[c.Name] = c
