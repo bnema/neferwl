@@ -114,7 +114,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |
-| `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first |
+| `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first. Up at the top brings back a covering float put behind the columns |
 | `move-column-left/right` | Move the focused column |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
@@ -132,7 +132,7 @@ Each workspace has a stash: a horizontal strip of windows set aside with `toggle
 
 While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
-Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile, and rises again when you focus the float. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive.
+Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile; `focus-window-up` at the top of a column raises it again. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive.
 
 ### Overview
 

@@ -219,7 +219,8 @@ func (m *Monitor) Apply(a Action) Effect {
 	}
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown:
-		// Past the top or bottom window of the column, move to the next workspace.
+		// Past the column and any on-screen neighbor or demoted float,
+		// move to the next workspace.
 		dir := 1
 		if a == ActionFocusWindowUp {
 			dir = -1

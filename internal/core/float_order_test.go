@@ -135,6 +135,86 @@ func TestDemotedFloatMoveAndAdopt(t *testing.T) {
 	}
 }
 
+// Up from the top of a column raises the last demoted covering float;
+// down leaves it for the columns again without changing workspaces.
+func TestFocusWindowReturnsToDemotedCoveringFloat(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
+		t.Run(string(overflow), func(t *testing.T) {
+			m := monitor()
+			m.SetOverflow(overflow)
+			m.SetBorder(2)
+			m.AddWindow(1)            // kitty
+			m.AddFloating(2, 100, 80) // covering game
+			m.AddFloating(3, 100, 80) // last demoted float is on top
+			w := m.Current()
+			w.FocusID(1)
+			wantOrder(t, w, 2, 3, 1)
+			m.Apply(ActionFocusWindowUp)
+			if id, _ := w.Focused(); id != 3 || m.Active != 0 || w.Floats[len(w.Floats)-1].below {
+				t.Fatalf("up focused %d on workspace %d, floats %+v", id, m.Active, w.Floats)
+			}
+			wantOrder(t, w, 2, 1, 3)
+			m.Apply(ActionFocusWindowDown)
+			if id, _ := w.Focused(); id != 1 || m.Active != 0 {
+				t.Fatalf("down focused %d on workspace %d", id, m.Active)
+			}
+			wantOrder(t, w, 2, 3, 1)
+		})
+	}
+}
+
+func TestFocusWindowDemotedFloatAfterColumnAndScreenNeighbors(t *testing.T) {
+	m := monitor()
+	m.SetOverflow(OverflowFixed)
+	m.SetBorder(2)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w := m.Current()
+	w.ConsumeOrExpel(-1) // two windows in the same column
+	w.AddFloating(9, 100, 80)
+	w.FocusID(1) // top of the column
+	w.FocusID(2) // bottom of the column
+	if !w.FocusWindow(-1) {
+		t.Fatal("up inside column failed")
+	}
+	if id, _ := w.Focused(); id != 1 || !w.Floats[0].below {
+		t.Fatalf("up inside column focused %d, float %+v", id, w.Floats[0])
+	}
+	if !w.FocusWindow(-1) {
+		t.Fatal("up to float failed")
+	}
+	if id, _ := w.Focused(); id != 9 {
+		t.Fatalf("up to float focused %d", id)
+	}
+
+	m = monitor()
+	m.SetOverflow(OverflowFixed)
+	m.SetMaxColumns(2)
+	for id := WindowID(1); id <= 4; id++ {
+		m.AddWindow(id)
+	}
+	w = m.Current()
+	w.AddFloating(9, 100, 80)
+	w.FocusID(4)
+	if !w.FocusWindow(-1) {
+		t.Fatal("up to on-screen column failed")
+	}
+	if id, _ := w.Focused(); id != 2 || !w.Floats[0].below {
+		t.Fatalf("up focused %d, float %+v", id, w.Floats[0])
+	}
+}
+
+func TestFocusWindowWithoutDemotedFloatChangesWorkspace(t *testing.T) {
+	m := monitor()
+	m.AddWindow(1)
+	m.Focus(1)
+	m.AddWindow(2)
+	m.Apply(ActionFocusWindowUp)
+	if m.Active != 0 {
+		t.Fatalf("up on workspace %d", m.Active)
+	}
+}
+
 // Directional focus on a covering float with nothing under it keeps the
 // float focused.
 func TestCoveringFloatAloneKeepsFocus(t *testing.T) {

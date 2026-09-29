@@ -552,9 +552,9 @@ func (w *Workspace) onScreenFocus() bool {
 	return w.Overflow == OverflowFixed && w.fullscreen == 0 && !w.Columns[w.Focus].FullWidth
 }
 
-// FocusWindow moves focus inside the column; false means it was already at the edge.
-// Fixed overflow also stacks columns (spiral, expanded strips): past the
-// column edge, focus goes to the column on screen above or below.
+// FocusWindow moves focus inside the column, then to a fixed-overflow column
+// above or below on screen. Up at the top raises the topmost demoted covering
+// float; false means no window is available in that direction.
 func (w *Workspace) FocusWindow(dir int) bool {
 	if w.pinned() {
 		return false
@@ -577,17 +577,23 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
-	if !w.onScreenFocus() {
-		return false
-	}
-	if i := w.screenNeighbor(0, dir); i >= 0 {
-		w.Focus = i
-		w.raiseColumns()
-		w.Columns[i].Focus = 0
-		if dir < 0 {
-			w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
+	if w.onScreenFocus() {
+		if i := w.screenNeighbor(0, dir); i >= 0 {
+			w.Focus = i
+			w.raiseColumns()
+			w.Columns[i].Focus = 0
+			if dir < 0 {
+				w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
+			}
+			return true
 		}
-		return true
+	}
+	if dir < 0 {
+		for i := len(w.Floats) - 1; i >= 0; i-- {
+			if f := w.Floats[i]; f.below && w.coversFloat(f) {
+				return w.FocusID(f.ID)
+			}
+		}
 	}
 	return false
 }
