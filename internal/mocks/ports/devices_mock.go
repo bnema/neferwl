@@ -7,6 +7,7 @@ package portsmocks
 import (
 	"image"
 	"os"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
@@ -425,6 +426,57 @@ func (_c *MockRenderer_SetHDR_Call) Return() *MockRenderer_SetHDR_Call {
 
 func (_c *MockRenderer_SetHDR_Call) RunAndReturn(run func(sdrNits float64)) *MockRenderer_SetHDR_Call {
 	_c.Run(run)
+	return _c
+}
+
+// Trim provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) Trim(now time.Time) error {
+	ret := _mock.Called(now)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Trim")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(time.Time) error); ok {
+		r0 = returnFunc(now)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRenderer_Trim_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Trim'
+type MockRenderer_Trim_Call struct {
+	*mock.Call
+}
+
+// Trim is a helper method to define mock.On call
+//   - now time.Time
+func (_e *MockRenderer_Expecter) Trim(now any) *MockRenderer_Trim_Call {
+	return &MockRenderer_Trim_Call{Call: _e.mock.On("Trim", now)}
+}
+
+func (_c *MockRenderer_Trim_Call) Run(run func(now time.Time)) *MockRenderer_Trim_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 time.Time
+		if args[0] != nil {
+			arg0 = args[0].(time.Time)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_Trim_Call) Return(err error) *MockRenderer_Trim_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRenderer_Trim_Call) RunAndReturn(run func(now time.Time) error) *MockRenderer_Trim_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

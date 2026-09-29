@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"image"
 	"os"
 	"sync"
@@ -698,6 +699,50 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// The stats tick lets the renderer free what the output no longer draws,
+// even while nothing renders; a failed trim stops the output.
+func TestRunTrimsRendererOnStatsTick(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+	ticks := make(chan time.Time)
+	clk := portsmocks.NewMockClock(t)
+	tk := portsmocks.NewMockTicker(t)
+	clk.EXPECT().NewTicker(10 * time.Second).Return(tk).Once()
+	tk.EXPECT().C().Return(ticks)
+	tk.EXPECT().Stop().Return().Once()
+	now := time.Unix(1000, 0)
+	clk.EXPECT().Now().Return(now)
+	o.clock = clk
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().Close().Return().Once()
+	trimmed := make(chan struct{}, 2)
+	failure := os.ErrInvalid
+	calls := 0 // Run's goroutine only
+	r.EXPECT().Trim(now).RunAndReturn(func(time.Time) error {
+		trimmed <- struct{}{}
+		if calls++; calls == 2 {
+			return failure
+		}
+		return nil
+	}).Twice()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	// Switched away from the start: no target, no frame.
+	active := make(chan bool, 1)
+	active <- false
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
+	}()
+	ticks <- now
+	<-trimmed
+	ticks <- now
+	if err := <-done; !errors.Is(err, failure) {
+		t.Fatalf("run: %v", err)
 	}
 }
 

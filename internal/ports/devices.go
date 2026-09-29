@@ -3,6 +3,7 @@ package ports
 import (
 	"image"
 	"os"
+	"time"
 )
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
@@ -33,6 +34,10 @@ type Renderer interface {
 	Pixels() *image.RGBA
 	// Capture copies a region of the last rendered frame as opaque BGRA.
 	Capture(region image.Rectangle, dst []byte, stride int) error
+	// Trim frees client buffer caches left undrawn for a while and what
+	// finished frames held, without rendering. Outputs call it
+	// periodically: an idle output renders no frame to free them.
+	Trim(now time.Time) error
 	Close()
 }
 
