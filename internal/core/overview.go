@@ -30,17 +30,15 @@ const (
 // scroll to keep the selected column in view.
 const overviewMaxZoom, overviewMinZoom = 0.6, 0.25
 
-// ToggleOverview opens the overview, or closes it on the selection. It
-// does not open under a covering fullscreen window (a game in scanout).
+// ToggleOverview opens the overview, or closes it on the selection. Over
+// a covering fullscreen window (a game) too: its row shows it, composed
+// rather than scanned out while the overview is open.
 func (m *Monitor) ToggleOverview() {
 	if m.overview {
 		m.closeOverview()
 		return
 	}
 	w := m.Current()
-	if w.cover() != 0 {
-		return
-	}
 	// A slide in progress lands at once: the overview lays out the
 	// settled state.
 	m.stopSwitch()

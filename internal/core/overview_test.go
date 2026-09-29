@@ -198,6 +198,26 @@ func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
 	}
 }
 
+// The overview opens over the game too: the game is the selected row,
+// the workspace above shows dimmed, and Escape returns to the game.
+func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
+	m := gameMonitor(OverflowFixed, false)
+	m.Focus(1)
+	m.ToggleOverview()
+	if !m.overview {
+		t.Fatal("overview did not open")
+	}
+	ps := m.Layout()
+	game, above := previewOf(t, ps, 2), previewOf(t, ps, 1)
+	if !game.Focused || game.Peek || game.Preview <= 0 || !above.Peek || above.Rect.Y >= game.Rect.Y {
+		t.Fatalf("game %+v, above %+v", game, above)
+	}
+	m.CancelOverview()
+	if f, _ := m.Focused(); f != 2 || m.Active != 1 || m.overview || !previewOf(t, m.Layout(), 2).Fullscreen {
+		t.Fatalf("cancel: %d on %d", f, m.Active)
+	}
+}
+
 // Only the game shows on its row: its dialogs and the columns under it
 // stay hidden, as on screen. (Under fixed overflow a new column sends
 // the game to its own workspace instead.)

@@ -136,7 +136,7 @@ Native floating windows (dialogs, file pickers) are not in the stash: they stay 
 
 ### Overview
 
-`toggle-overview` shows every column of the current workspace in one row, shrunk by the same factor so each window keeps its shape, as small as needed to fit (down to a quarter, then the row scrolls). The workspaces above and below show dimmed. Windows are not resized: the previews are their last frames. Native floating windows are hidden, except a fullscreen one (a game): its workspace's row shows only it.
+`toggle-overview` shows every column of the current workspace in one row, shrunk by the same factor so each window keeps its shape, as small as needed to fit (down to a quarter, then the row scrolls). The workspaces above and below show dimmed. Windows are not resized: the previews are their last frames. Native floating windows are hidden, except a fullscreen one (a game): its workspace's row shows only it. It also opens over a fullscreen window.
 
 | Key | Action |
 | --- | --- |
