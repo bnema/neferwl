@@ -78,6 +78,12 @@ func TestSwipesStreamThreeFingers(t *testing.T) {
 	}
 }
 
+func TestAccelProfile(t *testing.T) {
+	if accelProfile(ports.AccelFlat) != 1 || accelProfile(ports.AccelAdaptive) != 2 {
+		t.Fatal(accelProfile(ports.AccelFlat), accelProfile(ports.AccelAdaptive))
+	}
+}
+
 func TestTimestamps(t *testing.T) {
 	if usec(1500) != 1500*time.Microsecond || msec(1_234_567) != 1234 {
 		t.Fatal(usec(1500), msec(1_234_567))

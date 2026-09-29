@@ -122,11 +122,22 @@ type Config struct {
 
 // TouchpadConfig configures touchpads. NaturalScroll moves the content with
 // the fingers, for two-finger scroll and three-finger swipes. Tap clicks on
-// a tap: one finger left, two right, three middle.
+// a tap: one finger left, two right, three middle. AccelSpeed (-1 to 1) and
+// AccelProfile (AccelAdaptive or AccelFlat) set the pointer speed;
+// ScrollFactor multiplies two-finger scroll.
 type TouchpadConfig struct {
 	NaturalScroll bool
 	Tap           bool
+	AccelSpeed    float64
+	AccelProfile  string
+	ScrollFactor  float64
 }
+
+// Touchpad pointer acceleration profiles.
+const (
+	AccelAdaptive = "adaptive"
+	AccelFlat     = "flat"
+)
 
 // WorkspaceConfig declares a bind-only named workspace, outside the numbered list.
 // Zero MaxColumns and an empty Overflow use the layout.* defaults.

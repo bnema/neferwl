@@ -34,6 +34,9 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
 | `touchpad.tap` | `on` | Tap to click: one finger left, two right, three middle |
+| `touchpad.accel-speed` | `0` | Touchpad pointer speed, from `-1` (slowest) to `1` (fastest) |
+| `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
+| `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |

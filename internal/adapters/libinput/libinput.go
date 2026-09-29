@@ -83,6 +83,10 @@ var (
 	tapFingers      func(dev uintptr) int32
 	setTap          func(dev uintptr, on int32) int32
 	setTapMap       func(dev uintptr, m int32) int32
+	accelAvailable  func(dev uintptr) int32
+	setAccelSpeed   func(dev uintptr, speed float64) int32
+	accelProfiles   func(dev uintptr) uint32
+	setAccelProfile func(dev uintptr, profile uint32) int32
 	iface           [2]uintptr
 	active          ports.Seat
 )
@@ -149,6 +153,10 @@ func load() error {
 		reg(&tapFingers, "device_config_tap_get_finger_count")
 		reg(&setTap, "device_config_tap_set_enabled")
 		reg(&setTapMap, "device_config_tap_set_button_map")
+		reg(&accelAvailable, "device_config_accel_is_available")
+		reg(&setAccelSpeed, "device_config_accel_set_speed")
+		reg(&accelProfiles, "device_config_accel_get_profiles")
+		reg(&setAccelProfile, "device_config_accel_set_profile")
 		iface[0] = purego.NewCallback(func(path *byte, _, _ uintptr) uintptr {
 			fd, err := active.OpenDevice(goString(path))
 			if err != nil {
@@ -267,7 +275,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			for dev := range in.devices {
 				in.configure(dev, opts.Log)
 			}
-			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Msg("touchpad reloaded")
+			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Float64("scroll_factor", t.ScrollFactor).Msg("touchpad reloaded")
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -323,7 +331,25 @@ func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
 		if setTapMap(dev, tapButtonMap) != 0 {
 			log.Warn().Str("device", deviceName(dev)).Msg("tap button map rejected")
 		}
+		// Pointer speed is a touchpad setting: mice keep libinput's own.
+		if accelAvailable(dev) != 0 {
+			if setAccelSpeed(dev, s.touchpad.AccelSpeed) != 0 {
+				log.Warn().Str("device", deviceName(dev)).Msg("accel speed rejected")
+			}
+			if p := accelProfile(s.touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
+				log.Warn().Str("device", deviceName(dev)).Msg("accel profile rejected")
+			}
+		}
 	}
+}
+
+// accelProfile is the libinput accel profile bit: LIBINPUT_CONFIG_ACCEL_
+// PROFILE_FLAT (1) or _ADAPTIVE (2).
+func accelProfile(name string) uint32 {
+	if name == ports.AccelFlat {
+		return 1
+	}
+	return 2
 }
 
 func flag(on bool) int32 {
@@ -462,6 +488,10 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 				continue
 			}
 			s.Set, s.Value = true, scrollValue(pe, uint32(i))
+			if source == ports.AxisFinger {
+				// Two-finger scroll is the touchpad's only scroll source.
+				s.Value *= in.touchpad.ScrollFactor
+			}
 			if source == ports.AxisWheel {
 				s.V120 = int32(scrollV120(pe, uint32(i)))
 			} else {
