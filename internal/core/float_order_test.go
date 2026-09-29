@@ -1,0 +1,136 @@
+package core
+
+import (
+	"slices"
+	"testing"
+)
+
+func order(w *Workspace) []WindowID {
+	ids := []WindowID{}
+	for _, p := range w.Layout() {
+		if !p.Hidden {
+			ids = append(ids, p.ID)
+		}
+	}
+	return ids
+}
+
+func wantOrder(t *testing.T, w *Workspace, want ...WindowID) {
+	t.Helper()
+	if got := order(w); !slices.Equal(got, want) {
+		t.Fatalf("order %v, want %v", got, want)
+	}
+}
+
+func TestCoveringFloatOrder(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
+		t.Run(string(overflow), func(t *testing.T) {
+			w := workspace()
+			w.Overflow = overflow
+			w.border = 2
+			w.AddWindow(1)
+			w.AddWindow(2)
+			w.AddFloating(3, 98, 79) // placed rect fills the 100x81 usable area
+			wantOrder(t, w, 1, 2, 3)
+			w.FocusID(2)
+			wantOrder(t, w, 3, 1, 2)
+			if id, _ := w.Focused(); id != 2 {
+				t.Fatalf("focus %d", id)
+			}
+			w.RemoveWindow(2)
+			wantOrder(t, w, 3, 1)
+			if id, _ := w.Focused(); id != 1 {
+				t.Fatalf("after close focus %d", id)
+			}
+			w.AddFloating(4, 20, 20) // new dialogs map on top
+			wantOrder(t, w, 3, 1, 4)
+			w.FocusID(3)
+			wantOrder(t, w, 1, 3, 4) // user-selected float rises only within its allowed group
+			w.FocusID(1)
+			wantOrder(t, w, 3, 1, 4)
+			w.ResizeFloating(3, 99, 80)
+			wantOrder(t, w, 3, 1, 4)
+			w.SetOutput(102, 83)
+			w.SetUsable(Rect{W: 102, H: 83})
+			wantOrder(t, w, 3, 1, 4)
+			w.ResizeFloating(3, 20, 20)
+			wantOrder(t, w, 1, 4, 3)
+		})
+	}
+}
+
+func TestCoveringFloatGeometryAndGroup(t *testing.T) {
+	w := workspace()
+	w.border = 2
+	w.AddWindow(1)
+	w.AddFloating(2, 94, 75) // two border widths plus two pixels on each axis
+	if !w.coversFloat(w.Floats[0]) {
+		t.Fatal("rounding tolerance")
+	}
+	w.FocusID(1)
+	wantOrder(t, w, 2, 1)
+	w.SetUsable(Rect{X: 5, Y: 4, W: 90, H: 73})
+	wantOrder(t, w, 2, 1)
+	w.SetUsable(Rect{W: 100, H: 81})
+	wantOrder(t, w, 2, 1)
+	w.border = 0
+	w.reconcileFloats()
+	wantOrder(t, w, 1, 2)
+}
+
+func TestDemotedFloatFullscreenRoundTrip(t *testing.T) {
+	m := monitor()
+	m.SetBorder(2)
+	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
+		m = monitor()
+		m.SetBorder(2)
+		m.Current().Overflow = overflow
+		m.AddWindow(1)
+		m.AddFloating(2, 100, 80)
+		w := m.Current()
+		w.FocusID(1)
+		wantOrder(t, w, 2, 1)
+		m.SetFullscreen(2, true)
+		if overflow == OverflowFixed {
+			fs := m.Workspaces[1]
+			if fs.origin != w || fs.back.float == nil || !fs.back.float.below {
+				t.Fatalf("fullscreen origin %+v", fs.back)
+			}
+			m.SetFullscreen(2, false)
+		} else {
+			if p := placement(w, 2); !p.Fullscreen {
+				t.Fatalf("fullscreen %+v", p)
+			}
+			m.SetFullscreen(2, false)
+		}
+		wantOrder(t, w, 2, 1)
+		if id, _ := w.Focused(); id != 1 {
+			t.Fatalf("focus %d", id)
+		}
+	}
+}
+
+func TestDemotedFloatMoveAndAdopt(t *testing.T) {
+	m := monitor()
+	m.SetBorder(2)
+	m.AddWindow(1)
+	m.AddFloating(2, 100, 80)
+	w := m.Current()
+	w.FocusID(1)
+	other := monitor()
+	other.SetOutput(102, 82)
+	other.SetBorder(2)
+	m.take(w)
+	other.adopt(w, false, 0)
+	if !w.Floats[0].below {
+		t.Fatal("adopt raised float")
+	}
+	wantOrder(t, w, 2, 1)
+	// A user moving the selected float to a workspace raises it there.
+	other.show(w)
+	w.FocusID(2)
+	other.MoveToWorkspace(1, false)
+	if w.has(2) || !other.Workspaces[1].has(2) {
+		t.Fatal("move lost float")
+	}
+}

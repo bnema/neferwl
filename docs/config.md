@@ -22,7 +22,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Lines between visible neighboring tiles and around non-fullscreen floats, in logical pixels; `0` hides them |
-| `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window (a dialog) or the stash is visible; opacity 0 to 1 |
+| `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window above the tiles or the stash is visible; opacity 0 to 1 |
 | `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors show. Its height is 80% of the usable height |
 | `stash.gap` | `2` | Space between the selected stashed window and its neighbors, in percent of the usable width; 0 to 10. The neighbors show from there to the screen edge: with the defaults, 8% of each. A gap as wide as the side margin hides them |
 | `stash.dim` | `0.5` | Black veil over the stash neighbors, borders included; opacity 0 to 1 |
@@ -132,7 +132,7 @@ Each workspace has a stash: a horizontal strip of windows set aside with `toggle
 
 While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
-Native floating windows (dialogs, file pickers) are not in the stash: they stay centred above it.
+Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile, and rises again when you focus the float. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive.
 
 ### Overview
 

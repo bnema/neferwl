@@ -84,6 +84,7 @@ func (w *Workspace) unstash(i int) {
 // index. It takes the focus.
 func (w *Workspace) restore(id WindowID, back *origPlace) {
 	w.floatFocus, w.stashFocus = false, false
+	w.raiseColumns()
 	if back == nil {
 		w.addColumn(Column{Windows: []WindowID{id}})
 		return

@@ -338,12 +338,12 @@ func onScreen(p Placement, o Rect) bool {
 	return !p.Hidden && p.Rect.Overlaps(Rect{W: o.W, H: o.H})
 }
 
-// floatDim is the veil opacity of a layout: dim while a float is drawn
-// over the tiles, none under a fullscreen float (nothing is seen below).
+// floatDim is the veil opacity of a layout: dim only when a float is
+// drawn above the tiles, never for a demoted covering float alone.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
 	shown := false
 	for _, p := range layout {
-		if p.Floating && onScreen(p, o) {
+		if p.Floating && !p.Below && onScreen(p, o) {
 			if p.Fullscreen {
 				return 0
 			}
@@ -460,7 +460,7 @@ func (c *Core) publish(ctx context.Context) error {
 		for _, p := range layout {
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset, Preview: p.Preview}
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
 			}
@@ -684,8 +684,8 @@ func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
 
 // hit returns the surface under the global logical point and the point in
 // its surface coordinates: popups, then overlay and top layers, then
-// windows (fullscreen wins; otherwise the last visible placement is
-// topmost), then bottom and background layers.
+// windows (last visible placement is topmost), then bottom and
+// background layers.
 func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	o, ok := c.layout().At(x, y)
 	if !ok {
@@ -711,7 +711,6 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
-	full := false
 	for _, p := range sc.mon.Layout() {
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
@@ -724,18 +723,10 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			if p.Peek {
 				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
 			}
-			// Floating windows come last in the layout and are on top,
-			// even of a fullscreen window; nothing else is.
-			if full && !p.Floating {
-				continue
-			}
-			if !c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
-				continue
-			}
-			if id == 0 || p.Fullscreen || p.Floating {
+			if c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
+				// Layout is bottom to top, including fullscreen and floats.
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
-			full = full || p.Fullscreen
 		}
 	}
 	if id == 0 {
