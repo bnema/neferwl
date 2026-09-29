@@ -61,9 +61,9 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 	})
 }
 
-// The focus binds (cmd+arrows) move the overview selection like the bare
-// keys, over a covering float too: cmd+up brings the columns card in
-// front, cmd+left then selects a column, cmd+down returns to the float.
+// Focus binds (cmd+arrows and their Vim twins) navigate the overview over
+// a covering float: cmd+k/j round-trips through the columns card, then
+// cmd+up brings it forward, cmd+left selects a column and cmd+down returns.
 func TestOverviewFocusBindsNavigate(t *testing.T) {
 	cfg := config.Defaults()
 	client := make(chan ports.ClientEvent, 8)
