@@ -91,6 +91,9 @@ render.direct-scanout = on
 render.tearing = on
 render.vrr = on
 
+# Run output and input threads with SCHED_RR when permitted.
+performance.realtime = on
+
 # log.level: debug, info, warn or error. log.debug: components or all.
 log.level = info
 log.debug =

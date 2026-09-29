@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
+	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
@@ -274,10 +276,18 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					curs.set(name, cur)
 				}
 				active := b.seat.Subscribe()
+				realtime := currentConfig.Performance.Realtime
 				set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest) error {
 					defer b.seat.Unsubscribe(active)
 					return safe("output "+name, func() error {
 						defer o.Close()
+						if realtime {
+							runtime.LockOSThread()
+							defer runtime.UnlockOSThread()
+							if err := sched.Realtime(log); err != nil {
+								log.Warn().Str("component", "sched").Err(err).Msg("output scheduling")
+							}
+						}
 						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, ch.presented, cap, ch.captured)
 					})
 				})

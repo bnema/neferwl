@@ -61,7 +61,7 @@ These protocols and kernel features cut copies, waits and latency between the ap
 - **Explicit sync.** `wp_linux_drm_syncobj_v1` passes GPU fences from the app to KMS. NVIDIA drivers need it.
 - **Frame pacing.** Apps get real flip times through `wp_presentation`, and can queue frames with `wp_fifo_v1` and `wp_commit_timing_v1`.
 - **Only what changed.** NeferWL redraws only damaged regions, skips surfaces hidden behind opaque ones, and leaves idle outputs alone. Frame, cursor, overlay and VRR go to the kernel in one atomic commit.
-- **Input.** Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. Input at 1 kHz and more never waits on rendering, and the cursor has its own hardware plane.
+- **Input.** Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. Input at 1 kHz and more never waits on rendering, and the cursor has its own hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling.
 - **X11 games.** Steam and X11-only games run through xwayland-satellite, started on the first X11 connection. Wine with its Wayland driver does not need it.
 
 ## Hardware support

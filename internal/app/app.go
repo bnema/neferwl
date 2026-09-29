@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
+	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
@@ -189,6 +191,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				return
 			}
 			done <- safe("input", func() error {
+				if opts.Config.Performance.Realtime {
+					runtime.LockOSThread()
+					defer runtime.UnlockOSThread()
+					if err := sched.Realtime(logging.For(ctx, "sched")); err != nil {
+						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
+					}
+				}
 				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion")}, input)
 			})
 			return

@@ -114,7 +114,8 @@ type Config struct {
 		// turns variable refresh on while a buffer is scanned out.
 		Tearing, VRR bool
 	}
-	Log struct {
+	Performance struct{ Realtime bool }
+	Log         struct {
 		Level string
 		Debug []string
 	}
