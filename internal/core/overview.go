@@ -175,6 +175,8 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 			m.selectCard(w, at+dx)
 		case dx > 0 && len(w.Columns) > 0:
 			m.overviewCard, m.overviewCardOf = 0, nil
+			// The columns come to the front of the stack.
+			m.overviewStackOf, m.overviewStack = w, 0
 			w.selectOverviewColumn(0)
 		}
 		return

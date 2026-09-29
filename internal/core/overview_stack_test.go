@@ -27,7 +27,7 @@ func TestOverviewCoveringStackNavigation(t *testing.T) {
 			m.ToggleOverview()
 			ps := m.Layout()
 			float, col := previewOf(t, ps, 9), previewOf(t, ps, 3)
-			if float.Hidden || col.Hidden || float.Fullscreen || !float.Floating || float.Peek != start.column || col.Peek == start.column {
+			if float.Hidden || col.Hidden || float.Fullscreen || float.Floating || float.Peek != start.column || col.Peek == start.column {
 				t.Fatalf("front/peek: float %+v, column %+v", float, col)
 			}
 			if !slices.Equal(order(w), before) {
@@ -160,7 +160,8 @@ func TestOverviewStackStashDialogNeighbor(t *testing.T) {
 	if m.cardAt(w) >= 0 {
 		t.Fatal("stash right did not return to columns")
 	}
-	m.OverviewMove(1, 0)
+	// First column in front: the next two columns, then the right edge
+	// rotates the float to the front.
 	m.OverviewMove(1, 0)
 	m.OverviewMove(1, 0)
 	m.OverviewMove(1, 0)
@@ -250,5 +251,39 @@ func TestOverviewStackInvalidatedOnRemoval(t *testing.T) {
 	m.ToggleOverview()
 	if id, _ := w.Focused(); id != 3 {
 		t.Fatalf("removed selection focused %d", id)
+	}
+}
+
+// Right past the last stash card brings the columns to the front of the
+// stack, even when a covering float was in front; Return focuses the first
+// column and puts the float below.
+func TestOverviewStashRightBringsColumnsFront(t *testing.T) {
+	m := stackMonitor()
+	w := m.Current()
+	w.FocusID(1)
+	w.ToggleWindowStash()
+	w.FocusID(9)
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0) // float front, left: the stash
+	if m.cardAt(w) < 0 {
+		t.Fatal("not in the stash")
+	}
+	m.OverviewMove(1, 0)
+	ps := m.Layout()
+	if f, c := previewOf(t, ps, 9), previewOf(t, ps, 2); !f.Peek || c.Peek || !c.Focused {
+		t.Fatalf("float %+v, first column %+v", f, c)
+	}
+	m.ToggleOverview()
+	if id, _ := w.Focused(); id != 2 || order(w)[0] != 9 {
+		t.Fatalf("focus %d, order %v", id, order(w))
+	}
+}
+
+// Stack previews are not floats: the overview draws no float veil.
+func TestOverviewStackNoFloatVeil(t *testing.T) {
+	m := stackMonitor()
+	m.ToggleOverview()
+	if d := floatDim(m.Layout(), Rect{W: 300, H: 200}, 0.3); d != 0 {
+		t.Fatalf("veil %v in the overview", d)
 	}
 }
