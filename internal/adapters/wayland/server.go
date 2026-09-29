@@ -249,6 +249,14 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			s.syncDev = node
 		}
 	}
+	// Implicit dma-buf fences also need this waiter when explicit sync is off.
+	if s.syncWait == nil {
+		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+			cleanup()
+			d.Close()
+			return nil, err
+		}
+	}
 	s.colorIdentity = map[string]uint64{}
 	s.colorDescriptions = map[*server.Resource]colorDescription{}
 	s.colorOutputs = map[*colorOutput]struct{}{}
