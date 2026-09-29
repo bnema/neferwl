@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/bnema/neferwl/internal/ports"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
 
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"

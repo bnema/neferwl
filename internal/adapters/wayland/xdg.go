@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"encoding/binary"
+
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
@@ -185,10 +186,10 @@ func toplevelStates(c ports.ConfigureWindow, version int32) []byte {
 }
 
 func (w *window) unmap() {
-	if w.xdg.server.pointerFocus == w.id {
+	if w.xdg.server.seat.pointerFocus == w.id {
 		w.xdg.server.changePointerFocus(0, 0, 0)
 	}
-	if w.xdg.server.focused == w.id {
+	if w.xdg.server.seat.focused == w.id {
 		w.xdg.server.changeFocus(0)
 	}
 	if !w.mapped {

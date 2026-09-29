@@ -103,7 +103,7 @@ func (pointer) Release(r *wayland.Pointer) { r.Destroy() }
 // hasPointerFocus reports whether the client owns the window or layer
 // under the pointer.
 func (s *Server) hasPointerFocus(c server.Client) bool {
-	owner, _, ok := s.pointerTarget(s.pointerFocus)
+	owner, _, ok := s.pointerTarget(s.seat.pointerFocus)
 	return ok && owner == c
 }
 

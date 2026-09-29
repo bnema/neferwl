@@ -1,10 +1,11 @@
 package wayland
 
 import (
+	"os"
+
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
-	"os"
 )
 
 func registerGlobals(d *server.Display, o Options, s *Server) error {
@@ -55,7 +56,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				r, e := wayland.NewSeat(c, int32(v), id, seat{s})
 				if e == nil {
 					capabilities := uint32(wayland.SeatCapabilityPointer)
-					if s.keymapFD >= 0 {
+					if s.seat.keymapFD >= 0 {
 						capabilities |= uint32(wayland.SeatCapabilityKeyboard)
 					}
 					r.SendCapabilities(capabilities)
@@ -383,9 +384,9 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 		return
 	}
 	s := h.server
-	s.pointers[r.Client()] = append(s.pointers[r.Client()], p)
+	s.seat.pointers[r.Client()] = append(s.seat.pointers[r.Client()], p)
 	p.OnDestroy = func() {
-		list := s.pointers[r.Client()]
+		list := s.seat.pointers[r.Client()]
 		for i, item := range list {
 			if item == p {
 				list = append(list[:i], list[i+1:]...)
@@ -393,13 +394,13 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 			}
 		}
 		if len(list) == 0 {
-			delete(s.pointers, r.Client())
+			delete(s.seat.pointers, r.Client())
 		} else {
-			s.pointers[r.Client()] = list
+			s.seat.pointers[r.Client()] = list
 		}
 	}
 	if s.hasPointerFocus(r.Client()) {
-		if surf, _, x, y := s.pointerSurface(s.pointerFocus, s.pointerX, s.pointerY); surf != nil {
+		if surf, _, x, y := s.pointerSurface(s.seat.pointerFocus, s.seat.pointerX, s.seat.pointerY); surf != nil {
 			s.serial++
 			p.SendEnter(s.serial, surf, server.FixedFromFloat(x), server.FixedFromFloat(y))
 			pointerFrame(p)
@@ -413,7 +414,7 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 	}
 	s := h.server
 	k.OnDestroy = func() {
-		list := s.keyboards[r.Client()]
+		list := s.seat.keyboards[r.Client()]
 		for i, item := range list {
 			if item == k {
 				list = append(list[:i], list[i+1:]...)
@@ -421,21 +422,21 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 			}
 		}
 		if len(list) == 0 {
-			delete(s.keyboards, r.Client())
+			delete(s.seat.keyboards, r.Client())
 		} else {
-			s.keyboards[r.Client()] = list
+			s.seat.keyboards[r.Client()] = list
 		}
 	}
-	if s.keymapFD < 0 {
+	if s.seat.keymapFD < 0 {
 		return
 	}
-	s.keyboards[r.Client()] = append(s.keyboards[r.Client()], k)
+	s.seat.keyboards[r.Client()] = append(s.seat.keyboards[r.Client()], k)
 	fd, size := s.currentKeymap()
 	k.SendKeymap(uint32(wayland.KeyboardKeymapFormatXkbV1), fd, size)
 	if r.Version() >= 4 {
-		k.SendRepeatInfo(int32(s.repeatRate), int32(s.repeatDelay))
+		k.SendRepeatInfo(int32(s.seat.repeatRate), int32(s.seat.repeatDelay))
 	}
-	if surf, _ := s.focusTarget(s.focused); surf != nil && surf.Client() == r.Client() {
+	if surf, _ := s.focusTarget(s.seat.focused); surf != nil && surf.Client() == r.Client() {
 		s.serial++
 		k.SendEnter(s.serial, surf, []byte{})
 		s.sendModifiers(k)

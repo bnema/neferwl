@@ -222,7 +222,7 @@ func TestVirtualKeyboardSameKeymapOwnModifiers(t *testing.T) {
 	target, proxy := focusedTarget(t, s, events, commands, dir)
 	const capsLocked = 2
 	set := make(chan struct{})
-	s.display.Do(func() { s.modState = ports.ModState{Locked: capsLocked}; close(set) })
+	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; close(set) })
 	<-set
 	proxy.locked = nil
 	typer, kb := virtualTyper(t, s, dir)

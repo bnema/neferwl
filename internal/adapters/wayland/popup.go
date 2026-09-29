@@ -115,7 +115,7 @@ func (p *popup) Grab(r *xdgshell.Popup, _ *wayland.Seat, serial uint32) {
 	// Only a grab answering the client's last press may take the keyboard,
 	// and a popup over a popup grabs only if its parent does.
 	s := p.w.xdg.server
-	fresh := serial == s.press && s.pressClient == r.Client()
+	fresh := serial == s.seat.press && s.seat.pressClient == r.Client()
 	if !fresh || p.parentID() == 0 || !s.topGrab(r.Client(), p.parent) {
 		p.dismiss()
 		return

@@ -1,10 +1,11 @@
 package wayland
 
 import (
+	"testing"
+
 	"github.com/bnema/neferwl/internal/ports"
 	cm "github.com/bnema/purego-libwayland/protocol/colormanagement"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"testing"
 )
 
 func TestColorManagerErrors(t *testing.T) {

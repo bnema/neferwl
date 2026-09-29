@@ -1,12 +1,13 @@
 package wayland
 
 import (
+	"sort"
+
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/purego-libwayland/server"
-	"sort"
 )
 
 type layerShell struct{ server *Server }
@@ -156,10 +157,10 @@ func (l *layerSurface) unmap() {
 	if !l.mapped {
 		return
 	}
-	if s := l.shell.server; s.focused == l.id {
+	if s := l.shell.server; s.seat.focused == l.id {
 		s.changeFocus(0)
 	}
-	if s := l.shell.server; s.pointerFocus == l.id {
+	if s := l.shell.server; s.seat.pointerFocus == l.id {
 		s.changePointerFocus(0, 0, 0)
 	}
 	l.mapped = false

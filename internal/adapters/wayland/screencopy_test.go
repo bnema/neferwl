@@ -3,14 +3,15 @@ package wayland
 import (
 	"context"
 	"fmt"
-	source "github.com/bnema/purego-libwayland/protocol/extimagecapturesource"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
 	"image"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	source "github.com/bnema/purego-libwayland/protocol/extimagecapturesource"
+	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
 
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"

@@ -235,7 +235,7 @@ func (s *Server) deactivateConstraint() {
 // pointer and keyboard focus, and deactivates any other.
 func (s *Server) updateConstraint() {
 	var want *constraint
-	if w := s.windows[s.pointerFocus]; w != nil && w.mapped && s.pointerFocus == s.focused {
+	if w := s.windows[s.seat.pointerFocus]; w != nil && w.mapped && s.seat.pointerFocus == s.seat.focused {
 		if c := s.constraints[w.xdg.surface]; c != nil && !c.defunct && (c.active || c.contains(w)) {
 			want = c
 		}
@@ -301,7 +301,7 @@ func (s *Server) emitConstraint(c *constraint) {
 // activates only there, so it never warps the pointer.
 func (c *constraint) contains(w *window) bool {
 	r := c.region
-	x, y := w.surfacePoint(w.xdg.server.pointerX, w.xdg.server.pointerY)
+	x, y := w.surfacePoint(w.xdg.server.seat.pointerX, w.xdg.server.seat.pointerY)
 	all, rects := c.surface.effectiveInput()
 	if !all {
 		localX, localY := x-float64(w.xdg.geometry.X), y-float64(w.xdg.geometry.Y)

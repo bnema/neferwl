@@ -1,11 +1,12 @@
 package wayland
 
 import (
-	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 	"image"
 	"math"
 	"slices"
 	"time"
+
+	"github.com/bnema/purego-libwayland/protocol/presentationtime"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"

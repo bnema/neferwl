@@ -148,7 +148,7 @@ func TestActivationPressSerial(t *testing.T) {
 		done := make(chan struct{})
 		s.display.Do(func() {
 			s.serial++
-			s.press, s.pressClient, s.pressAt = s.serial, s.windows[w.ID].xdg.resource.Client(), time.Now()
+			s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, s.windows[w.ID].xdg.resource.Client(), time.Now()
 			serial = s.serial
 			close(done)
 		})
@@ -189,7 +189,7 @@ func waitFocus(t *testing.T, s *Server, id ports.WindowID) {
 	t.Helper()
 	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 		done := make(chan ports.WindowID, 1)
-		s.display.Do(func() { done <- s.focused })
+		s.display.Do(func() { done <- s.seat.focused })
 		if <-done == id {
 			return
 		}

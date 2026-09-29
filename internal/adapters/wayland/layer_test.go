@@ -2,16 +2,17 @@ package wayland
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"testing"
+	"time"
+
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
-	"os"
-	"os/exec"
-	"testing"
-	"time"
 )
 
 type layerProxy struct {

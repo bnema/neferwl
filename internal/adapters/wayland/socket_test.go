@@ -1,10 +1,11 @@
 package wayland
 
 import (
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestListen(t *testing.T) {
