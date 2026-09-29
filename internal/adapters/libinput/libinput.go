@@ -83,6 +83,7 @@ var (
 	tapFingers      func(dev uintptr) int32
 	setTap          func(dev uintptr, on int32) int32
 	setTapMap       func(dev uintptr, m int32) int32
+	hasCapability   func(dev uintptr, capability int32) int32
 	accelAvailable  func(dev uintptr) int32
 	setAccelSpeed   func(dev uintptr, speed float64) int32
 	accelProfiles   func(dev uintptr) uint32
@@ -153,6 +154,7 @@ func load() error {
 		reg(&tapFingers, "device_config_tap_get_finger_count")
 		reg(&setTap, "device_config_tap_set_enabled")
 		reg(&setTapMap, "device_config_tap_set_button_map")
+		reg(&hasCapability, "device_has_capability")
 		reg(&accelAvailable, "device_config_accel_is_available")
 		reg(&setAccelSpeed, "device_config_accel_set_speed")
 		reg(&accelProfiles, "device_config_accel_get_profiles")
@@ -313,8 +315,16 @@ type inputState struct {
 }
 
 // configurable reports whether the touchpad config applies to dev: it has
-// natural scroll or tapping.
-func configurable(dev uintptr) bool { return hasNatural(dev) != 0 || tapFingers(dev) > 0 }
+// natural scroll or tapping, or is a touchpad.
+func configurable(dev uintptr) bool {
+	return hasNatural(dev) != 0 || tapFingers(dev) > 0 || touchpad(dev)
+}
+
+// capGesture is LIBINPUT_DEVICE_CAP_GESTURE: libinput gives it to
+// touchpads, with or without tapping.
+const capGesture = 5
+
+func touchpad(dev uintptr) bool { return hasCapability(dev, capGesture) != 0 }
 
 // tapButtonMap is LIBINPUT_CONFIG_TAP_MAP_LRM: one finger taps left, two
 // right, three middle.
@@ -331,14 +341,14 @@ func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
 		if setTapMap(dev, tapButtonMap) != 0 {
 			log.Warn().Str("device", deviceName(dev)).Msg("tap button map rejected")
 		}
-		// Pointer speed is a touchpad setting: mice keep libinput's own.
-		if accelAvailable(dev) != 0 {
-			if setAccelSpeed(dev, s.touchpad.AccelSpeed) != 0 {
-				log.Warn().Str("device", deviceName(dev)).Msg("accel speed rejected")
-			}
-			if p := accelProfile(s.touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
-				log.Warn().Str("device", deviceName(dev)).Msg("accel profile rejected")
-			}
+	}
+	// Pointer speed is a touchpad setting: mice keep libinput's own.
+	if touchpad(dev) && accelAvailable(dev) != 0 {
+		if setAccelSpeed(dev, s.touchpad.AccelSpeed) != 0 {
+			log.Warn().Str("device", deviceName(dev)).Msg("accel speed rejected")
+		}
+		if p := accelProfile(s.touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
+			log.Warn().Str("device", deviceName(dev)).Msg("accel profile rejected")
 		}
 	}
 }
