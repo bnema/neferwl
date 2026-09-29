@@ -75,6 +75,7 @@ type Output struct {
 	scanout       bool
 	clientFBs     map[uint64]*clientFB
 	shown, queued uint64
+	planeRect     planeRect
 	reason        string // why the last frame was composed ("" = scanout)
 	unsent        []ports.OutputPresented
 	// Last immutable snapshot sent in a report. Never mutate it: wayland may
@@ -96,6 +97,10 @@ type Output struct {
 	vrrProp       uint32
 	vrrOn         bool
 	vrrGame       bool
+	contentProp   uint32
+	contentValues [5]uint64
+	contentValue  uint64
+	contentWanted uint64
 	composedSince time.Time
 	// lastFrame is when the last frame was committed. cursorHeld: a cursor
 	// move waits for the next frame (see cursorWaits).
@@ -252,6 +257,9 @@ func (o *Output) readProps(fd, pipe int, taken map[uint32]bool, cursorSide int) 
 	o.connCrtc = uint32(np["CRTC_ID"][0])
 	// The connector's property metadata is needed for enum/range capability.
 	o.hdrProps = readConnectorHDRProps(fd, np)
+	o.contentProp, o.contentValues = readContentTypeProp(fd, np)
+	o.contentValue = np["content type"][1]
+	o.contentWanted = o.contentValue
 	if o.crtcProps["MODE_ID"] == 0 || o.crtcProps["ACTIVE"] == 0 || o.connCrtc == 0 {
 		return errors.New("crtc or connector lacks atomic properties")
 	}
@@ -336,18 +344,19 @@ func (o *Output) Height() int { return int(o.mode.VDisplay) }
 
 // primaryProps shows fb full screen on the primary plane.
 func (o *Output) primaryProps(req *atomicReq, fb uint32) {
+	o.primaryRectProps(req, fb, fullPlaneRect(o.Width(), o.Height()))
+}
+
+func (o *Output) primaryRectProps(req *atomicReq, fb uint32, rect planeRect) {
 	p := o.primary
-	w, h := uint64(o.Width()), uint64(o.Height())
 	req.set(p.id, p.prop("FB_ID"), uint64(fb))
 	req.set(p.id, p.prop("CRTC_ID"), uint64(o.crtc))
-	req.set(p.id, p.prop("SRC_X"), 0)
-	req.set(p.id, p.prop("SRC_Y"), 0)
-	req.set(p.id, p.prop("SRC_W"), w<<16)
-	req.set(p.id, p.prop("SRC_H"), h<<16)
-	req.set(p.id, p.prop("CRTC_X"), 0)
-	req.set(p.id, p.prop("CRTC_Y"), 0)
-	req.set(p.id, p.prop("CRTC_W"), w)
-	req.set(p.id, p.prop("CRTC_H"), h)
+	for i, name := range [...]string{"SRC_X", "SRC_Y", "SRC_W", "SRC_H"} {
+		req.set(p.id, p.prop(name), rect.src[i])
+	}
+	for i, name := range [...]string{"CRTC_X", "CRTC_Y", "CRTC_W", "CRTC_H"} {
+		req.set(p.id, p.prop(name), rect.crtc[i])
+	}
 }
 
 // modeset shows the front image with the output's mode, turning off every
@@ -371,6 +380,8 @@ func (o *Output) modeset() error {
 	}
 	o.modeBlob = blob
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, o.wantOff
+	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
+	o.planeRect = fullPlaneRect(o.Width(), o.Height())
 	if o.cursor != nil {
 		o.cursor.applied = cursorState{}
 		o.cursor.screen, o.cursor.flying = 0, false
@@ -395,10 +406,12 @@ func (o *Output) powerOff() error {
 	req := &atomicReq{}
 	req.set(o.crtc, o.crtcProps["ACTIVE"], 0)
 	req.set(o.crtc, o.vrrProp, 0)
+	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("power off: %w", err)
 	}
 	o.off, o.vrrOn, o.vrrGame = true, false, false
+	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
 	// An inactive output offers neither HDR nor direct scanout.
 	o.sendFormats()
@@ -481,6 +494,7 @@ func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 	req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(blob))
 	req.set(o.crtc, o.crtcProps["ACTIVE"], boolValue(active))
 	req.set(o.crtc, o.vrrProp, 0)
+	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
 	o.hdrConnectorProps(req, o.hdrOn)
 	o.primaryProps(req, o.fbs[1-o.back])
@@ -546,21 +560,59 @@ func (o *Output) wantVRR(game bool) bool {
 // be a tiled window on the overlay plane.
 func (o *Output) stateVRR() bool { return o.wantVRR(o.vrrGame) }
 
+// contentProps changes the connector hint only when it differs from the applied value.
+func (o *Output) contentProps(req *atomicReq) {
+	if o.contentProp != 0 && o.contentWanted != o.contentValue {
+		req.set(o.conn.id, o.contentProp, o.contentWanted)
+	}
+}
+
+// wantContent chooses a content hint for the only visible fullscreen window.
+func (o *Output) wantContent(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) {
+	o.contentWanted = o.contentValues[0]
+	var full *ports.SceneWindow
+	for i := range s.Windows {
+		w := &s.Windows[i]
+		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
+			continue
+		}
+		if !w.Fullscreen || !covers(&s, w) || full != nil {
+			return
+		}
+		full = w
+	}
+	if full == nil {
+		return
+	}
+	switch surfaces[full.ID].ContentType {
+	case ports.ContentPhoto:
+		o.contentWanted = o.contentValues[2]
+	case ports.ContentVideo:
+		o.contentWanted = o.contentValues[3]
+	case ports.ContentGame:
+		o.contentWanted = o.contentValues[4]
+	}
+}
+
 // commitFrame flips fb in one commit with the cursor and VRR. An async
 // commit carries only the primary plane (kernel rule): a frame that must
 // also move the cursor or change VRR flips at vblank. fence is the
 // frame's GPU fence (nil: none); the caller keeps and closes it.
 func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame) error {
-	return o.commitWith(fb, fence, async, vrr, f, overlayWin{})
+	return o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, fullPlaneRect(o.Width(), o.Height()))
 }
 
 // commitWith is commitFrame with ov on the overlay plane (zero: off).
 func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin) error {
+	return o.commitWithRect(fb, fence, async, vrr, f, ov, fullPlaneRect(o.Width(), o.Height()))
+}
+
+func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect) error {
 	cur := cursorState{}
 	if o.cursor != nil {
 		cur = o.cursor.desired()
 	}
-	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn) {
+	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn || rect != o.planeRect || o.contentWanted != o.contentValue) {
 		async = false
 	}
 	req := &atomicReq{}
@@ -569,7 +621,7 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 		flags |= flipAsyncFlag
 		req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(fb))
 	} else {
-		o.primaryProps(req, fb)
+		o.primaryRectProps(req, fb, rect)
 		req.set(o.crtc, o.vrrProp, boolValue(vrr))
 		if o.cursor != nil {
 			o.cursor.props(req, o.crtc, cur)
@@ -578,19 +630,25 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 			o.overlayProps(req, ov)
 		}
 	}
+	o.contentProps(req)
 	if fence != nil {
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
 	}
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.frame.userData(userFrame)); err != nil {
 		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
-			return o.commitWith(fb, fence, false, vrr, f, ov)
+			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect)
+		}
+		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.contentRefused(fb, fence, vrr, cur, ov, rect) {
+			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
+			o.contentProp = 0
+			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect)
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
 			// refuses VRR on this output. The overlay stays: the composed
 			// image left its window out.
-			if o.commitWith(fb, fence, false, false, f, ov) == nil {
+			if o.commitWithRect(fb, fence, false, false, f, ov, rect) == nil {
 				o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr refused; disabled")
 				o.vrrProp = 0
 				return nil
@@ -611,12 +669,31 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 	if !async {
 		o.overlayOn = ov.buf
 	}
+	o.contentValue = o.contentWanted
+	o.planeRect = rect
 	o.lastFrame, o.cursorHeld = time.Now(), false
 	f.frame, f.async = true, async
 	f.fences = dupFences(fence, ov.acquire)
 	o.setAsync(async)
 	o.frame.begin(f, time.Now())
 	return nil
+}
+
+// contentRefused tests the same frame without the connector hint before disabling it.
+func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect) bool {
+	req := &atomicReq{}
+	o.primaryRectProps(req, fb, rect)
+	req.set(o.crtc, o.vrrProp, boolValue(vrr))
+	if o.cursor != nil {
+		o.cursor.props(req, o.crtc, cur)
+	}
+	if ov.buf != 0 || o.overlayOn != 0 {
+		o.overlayProps(req, ov)
+	}
+	if fence != nil {
+		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
+	}
+	return o.k.commit(req, atomicTestOnly, 0) == nil
 }
 
 // cursorRefused reports, after a commit carrying the cursor failed with
@@ -647,6 +724,7 @@ func (o *Output) commitState(vrr bool) error {
 	if vrr != o.vrrOn {
 		req.set(o.crtc, o.vrrProp, boolValue(vrr))
 	}
+	o.contentProps(req)
 	if len(req.objs) == 0 {
 		return nil
 	}
@@ -658,6 +736,20 @@ func (o *Output) commitState(vrr bool) error {
 		if cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
 			return o.commitState(vrr)
 		}
+		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) {
+			without := &atomicReq{}
+			if o.cursor != nil && cur != o.cursor.applied {
+				o.cursor.props(without, o.crtc, cur)
+			}
+			if vrr != o.vrrOn {
+				without.set(o.crtc, o.vrrProp, boolValue(vrr))
+			}
+			if len(without.objs) == 0 || o.k.commit(without, atomicTestOnly, 0) == nil {
+				o.contentProp = 0
+				o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
+				return o.commitState(vrr)
+			}
+		}
 		return err
 	}
 	if o.cursor != nil {
@@ -667,6 +759,7 @@ func (o *Output) commitState(vrr bool) error {
 		o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
 	}
 	o.vrrOn = vrr
+	o.contentValue = o.contentWanted
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
 }
@@ -693,6 +786,10 @@ func boolValue(b bool) uint64 {
 // commitScanout flips a client buffer. It reports false when KMS refused
 // the buffer: the frame must be composed.
 func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame) (bool, error) {
+	return o.commitScanoutRect(fb, c, f, fullPlaneRect(o.Width(), o.Height()))
+}
+
+func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingFrame, rect planeRect) (bool, error) {
 	cfb := o.clientFBs[c.DMABuf.ID]
 	// Drivers refuse async flips that change the format or modifier: the
 	// flip from the composed image into scanout waits for vblank.
@@ -706,13 +803,13 @@ func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame
 	if fence != nil {
 		defer fence.Close()
 	}
-	err := o.commitFrame(fb, fence, async, vrr, f)
+	err := o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, rect)
 	if err != nil && async && errors.Is(err, unix.EINVAL) {
 		// Refused (e.g. not a fast update): this buffer flips at vblank
 		// from now on.
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
 		cfb.noAsync = true
-		err = o.commitFrame(fb, fence, false, vrr, f)
+		err = o.commitWithRect(fb, fence, false, vrr, f, overlayWin{}, rect)
 	}
 	if err != nil && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)) {
 		// KMS refuses this buffer on the plane: compose it instead.

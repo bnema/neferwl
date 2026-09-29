@@ -67,7 +67,7 @@ func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec,
 	cur.fbs = [2]uint32{90, 91}
 	o := &Output{k: k, frame: frameLifecycle{serials: &atomic.Uint64{}}, crtc: tCrtc, conn: connector{id: tConn, name: "DP-1"}, mode: modeInfo{HDisplay: 200, VDisplay: 100, VRefresh: 60}, log: zerowrap.Default(),
 		crtcProps: map[string]uint32{"MODE_ID": pMode, "ACTIVE": pActive, "VRR_ENABLED": pVRR}, connCrtc: pConnCrtc, vrrProp: pVRR,
-		primary: primary, cursor: cur, fbs: [2]uint32{70, 71}, clientFBs: map[uint64]*clientFB{}, scanout: true, tearing: true, asyncFence: true}
+		primary: primary, cursor: cur, fbs: [2]uint32{70, 71}, clientFBs: map[uint64]*clientFB{}, scanout: true, tearing: true, asyncFence: true, planeRect: fullPlaneRect(200, 100)}
 	return o, k, &commits, commitMu
 }
 

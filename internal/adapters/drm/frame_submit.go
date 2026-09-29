@@ -26,10 +26,11 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	// shows is what the frame puts on screen: presentation feedback of
 	// windows it does not draw is discarded, not presented.
 	f := pendingFrame{shows: o.shownBy(scene, seen)}
+	o.wantContent(scene, surfaces)
 	decision := o.decideFrame(scene, surfaces, len(requests) > 0)
 	if decision.fb != 0 {
 		c := decision.content
-		if direct, err = o.commitScanout(decision.fb, c, pendingFrame{shows: o.directShownBy(c.ID, seen[c.ID])}); direct {
+		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect); direct {
 			return true, err
 		}
 		decision = o.composeFrame(scene, surfaces)

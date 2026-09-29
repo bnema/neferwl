@@ -190,6 +190,7 @@ func (s *surface) contentWithColor() ports.SurfaceContent {
 func (s *surface) tree(id ports.WindowID) ports.SurfaceContent {
 	c := s.contentWithColor()
 	c.ID = id
+	c.ContentType = ports.ContentType(s.contentKind)
 	if s.treeDirty || s.cachedTree == nil {
 		count := s.treeCount()
 		children := make([]ports.Subsurface, 0, count)
@@ -364,7 +365,7 @@ func (s *surface) applyCommit(u *update) {
 	}
 	if s.contentKind != u.kind {
 		s.contentKind = u.kind
-		s.server.log.Info().Uint64("id", uint64(s.root().windowID())).Uint32("content_type", s.contentKind).Msg("content type")
+		s.server.log.Info().Str("component", "wayland").Uint64("id", uint64(s.root().windowID())).Uint32("content_type", s.contentKind).Msg("content type")
 	}
 	if u.scale > 0 {
 		s.bufferScale = u.scale

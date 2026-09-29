@@ -2,6 +2,7 @@ package drm
 
 import (
 	"errors"
+	"math"
 	"os"
 	"slices"
 	"time"
@@ -12,12 +13,11 @@ import (
 )
 
 // Direct scanout (ADR 006): when one fullscreen window covers the output
-// with a GPU buffer of the output's size, the output flips to that buffer
+// with a GPU buffer whose source can fill the plane, the output flips to that buffer
 // instead of compositing it. The buffer becomes a KMS framebuffer once
 // (PRIME import + ADDFB2) and is cached by DMABuf ID while the client
 // keeps using it. KMS waits on the buffer's implicit fences before showing
-// it. Anything else on screen, a scale, or a buffer KMS refuses falls back
-// to composition.
+// it. Anything else on screen or a buffer KMS refuses falls back to composition.
 
 const (
 	ioctlGemClose        = 0x40086409
@@ -41,6 +41,27 @@ type fbCmd2 struct {
 	fbID, width, height, format, flags uint32
 	handles, pitches, offsets          [4]uint32
 	modifiers                          [4]uint64
+}
+
+// planeRect contains source coordinates in 16.16 and destination pixels.
+type planeRect struct {
+	src  [4]uint64
+	crtc [4]uint64
+}
+
+func fullPlaneRect(w, h int) planeRect {
+	return planeRect{src: [4]uint64{0, 0, uint64(w) << 16, uint64(h) << 16}, crtc: [4]uint64{0, 0, uint64(w), uint64(h)}}
+}
+
+func scanoutRect(c ports.SurfaceContent, w, h int) planeRect {
+	r := fullPlaneRect(w, h)
+	r.src = [4]uint64{0, 0, uint64(c.Width) << 16, uint64(c.Height) << 16}
+	if c.Source[2] != 0 {
+		for i, value := range c.Source {
+			r.src[i] = uint64(float64(value) * 65536)
+		}
+	}
+	return r
 }
 
 // covers reports whether win fills the output of scene s.
@@ -104,17 +125,26 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	case c.Transform != 0:
 		// Planes show buffers as they are: rotation is composed.
 		return c, "buffer_transform"
-	case c.Width != w || c.Height != h:
-		return c, "size_mismatch"
-	case cropped(c):
-		// A viewport crop: the plane would show the whole buffer.
-		return c, "source_crop"
 	case c.LogicalW != full.Rect.W || c.LogicalH != full.Rect.H:
-		return c, "logical_mismatch"
+		return c, "letterbox"
+	case c.Width <= 0 || c.Height <= 0 || c.Source[2] < 0 || c.Source[3] < 0 || !finiteSource(c.Source):
+		return c, "source_crop"
 	case c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0 || c.Geometry.W != c.LogicalW || c.Geometry.H != c.LogicalH):
 		return c, "geometry_crop"
 	}
+	if c.Source[2] != 0 && (c.Source[0] < 0 || c.Source[1] < 0 || c.Source[2] <= 0 || c.Source[3] <= 0 || c.Source[0]+c.Source[2] > float32(c.Width) || c.Source[1]+c.Source[3] > float32(c.Height)) {
+		return c, "source_crop"
+	}
 	return c, ""
+}
+
+func finiteSource(src [4]float32) bool {
+	for _, n := range src {
+		if math.IsNaN(float64(n)) || math.IsInf(float64(n), 0) {
+			return false
+		}
+	}
+	return true
 }
 
 // cropped reports whether a viewport source shows less than the buffer.
@@ -173,6 +203,25 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 	}
 	if reason == "" {
 		fb, reason = o.scanoutFB(c.DMABuf, time.Now())
+		if reason == "" {
+			rect := scanoutRect(c, o.Width(), o.Height())
+			cfb := o.clientFBs[c.DMABuf.ID]
+			if cfb.scaleRefused && cfb.scaleFailed == rect {
+				reason = "scale_refused"
+			} else if rect != fullPlaneRect(o.Width(), o.Height()) && (!cfb.scaleTestedOK || cfb.scaleTested != rect) {
+				req := &atomicReq{}
+				o.primaryRectProps(req, fb, rect)
+				if err := o.k.commit(req, atomicTestOnly, 0); err != nil {
+					cfb.scaleFailed = rect
+					cfb.scaleRefused = true
+					reason = "scale_refused"
+					o.log.Info().Str("component", "render").Err(err).Str("reason", reason).Str("connector", o.conn.name).Msg("scanout scaling refused")
+				} else {
+					cfb.scaleTested = rect
+					cfb.scaleTestedOK = true
+				}
+			}
+		}
 	}
 	o.setScanoutReason(reason)
 	if reason != "" {
@@ -225,6 +274,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 type frameDecision struct {
 	fb       uint32
 	content  ports.SurfaceContent
+	rect     planeRect
 	overlay  overlayWin
 	composed ports.Scene
 }
@@ -249,7 +299,7 @@ func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 	}
 	fb, c := o.scanoutFrame(s, surfaces)
 	if fb != 0 {
-		return frameDecision{fb: fb, content: c}
+		return frameDecision{fb: fb, content: c, rect: scanoutRect(c, o.Width(), o.Height())}
 	}
 	return o.composeFrame(s, surfaces)
 }
@@ -277,7 +327,9 @@ type clientFB struct {
 	// failed is the reason KMS refused the buffer; it is not retried.
 	failed string
 	// noAsync: KMS refused an async flip to it; it flips at vblank.
-	noAsync bool
+	noAsync                     bool
+	scaleTested, scaleFailed    planeRect
+	scaleRefused, scaleTestedOK bool
 	// overlayFailed is why the overlay plane refused it; kept apart from
 	// failed, so a refusal on one plane does not bar the other.
 	overlayFailed string
