@@ -8,12 +8,13 @@ url='https://github.com/bnema/neferwl'
 license=('GPL-3.0-only')
 # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
 depends=('glibc' 'libinput' 'libxkbcommon' 'seatd' 'systemd-libs' 'vulkan-icd-loader'
-	'vulkan-driver' 'wayland' 'dbus')
+	'vulkan-driver' 'wayland' 'dbus' 'libcap')
 makedepends=('go')
 optdepends=('xwayland-satellite>=0.7: X11 apps'
 	'foot: default terminal'
 	'fuzzel: launcher'
 	'xdg-desktop-portal-gtk: file pickers and settings for apps')
+install=neferwl.install
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 

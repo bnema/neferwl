@@ -123,6 +123,8 @@ aurs:
     license: GPL-3.0-only
     # The release workflow verifies and publishes the generated PKGBUILD.
     skip_upload: true
+    # publish.sh ships the file next to the PKGBUILD.
+    install: ./packaging/neferwl.install
     provides: [neferwl]
     conflicts: [neferwl, neferwl-git]
     # Loaded at runtime (purego, no cgo): not seen by makepkg's library scan.
@@ -136,6 +138,7 @@ aurs:
       - vulkan-driver
       - wayland
       - dbus
+      - libcap
     optdepends:
       - "xwayland-satellite>=0.7: X11 apps"
       - "foot: default terminal"

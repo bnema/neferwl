@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check perf-check bin tty logs pkg
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check perf-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -66,7 +66,11 @@ pkg:
 		echo "$${t:-0.0.0}.r$$(git rev-list --count HEAD).g$$(git rev-parse --short HEAD)"); \
 	d=$$(mktemp -d /tmp/neferwl-pkg.XXXXXX); trap 'rm -rf "$$d"' EXIT; \
 	git archive --prefix=neferwl-$$v/ -o "$$d/neferwl-$$v.tar.gz" HEAD; \
-	cp packaging/arch/PKGBUILD "$$d/"; \
+	cp packaging/arch/PKGBUILD packaging/neferwl.install "$$d/"; \
 	cd "$$d" && sed -i "s/^pkgver=.*/pkgver=$$v/; s/^sha256sums=.*/sha256sums=('$$(sha256sum *.tar.gz | cut -d' ' -f1)')/" PKGBUILD; \
 	makepkg -f --noconfirm; mkdir -p $(CURDIR)/dist; rm -f $(CURDIR)/dist/neferwl-*.pkg.tar.zst; mv *.pkg.tar.zst $(CURDIR)/dist/
 	@ls dist/*.pkg.tar.zst
+
+# Build the package, then install it with pacman (asks for sudo).
+install: pkg
+	sudo pacman -U dist/neferwl-*.pkg.tar.zst
