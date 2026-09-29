@@ -260,19 +260,31 @@ func (m *Monitor) find(id WindowID) (*Workspace, int) {
 	return nil, -1
 }
 
-// AddWindow places a new window on the workspace on screen. On a
-// fullscreen workspace it floats, hidden until the fullscreen window
-// leaves, then tiles after it at home.
+// AddWindow places a new window on the workspace on screen (see arrive).
 func (m *Monitor) AddWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
-	if cur := m.Current(); cur.origin != nil {
-		cur.joinFullscreen(id)
-		m.normalize()
-		return
+	m.arrive(m.Current(), func(w *Workspace) { w.AddWindow(id) })
+}
+
+// arrive adds a new tiled window to w with add. Under fixed overflow a
+// fullscreen window hides every other one of its workspace and keeps the
+// view (ADR 011), so the new window goes to its home workspace instead:
+// the origin of a fullscreen workspace, or w itself once a fullscreen
+// window still in place there has moved to its own workspace.
+func (m *Monitor) arrive(w *Workspace, add func(*Workspace)) {
+	switch {
+	case w.origin != nil:
+		add(w.origin)
+	case w.Overflow == OverflowFixed && w.fullscreen != 0 && m.has(w):
+		// Added first, hidden and unfocused: w is never left empty,
+		// which normalize would drop.
+		add(w)
+		m.enterFullscreen(w, w.fullscreen, m.Current() == w)
+	default:
+		add(w)
 	}
-	m.Current().AddWindow(id)
 	m.normalize()
 }
 

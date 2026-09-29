@@ -523,17 +523,97 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 		return m
 	}
-	t.Run("a window opened there floats, then tiles after it at home", func(t *testing.T) {
+	t.Run("a window opened there tiles at home, the view stays", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
 		m.AddWindow(4)
-		if fs := m.Current(); fs.floatIndex(4) != 0 || fs.fullscreen != 2 {
-			t.Fatal(fs.Floats, fs.fullscreen)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3, 4}, {2}, {}}) || m.Active != 1 {
+			t.Fatal(got, m.Active)
+		}
+		if id, _ := m.Focused(); id != 2 {
+			t.Fatal("focus", id)
 		}
 		m.SetFullscreen(2, false)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 4, 3}, {}}) || m.Active != 0 {
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Active != 0 {
 			t.Fatal(got, m.Active)
+		}
+	})
+	t.Run("a window opened over a lone fullscreen moves it to its own workspace", func(t *testing.T) {
+		for _, client := range []bool{false, true} {
+			m := monitor()
+			m.SetOverflow(OverflowFixed)
+			m.AddWindow(1)
+			if client {
+				m.SetFullscreen(1, true)
+			} else {
+				m.ToggleFullscreen()
+			}
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {}}) || m.Current().fullscreen != 1 {
+				t.Fatal("in place", got)
+			}
+			m.AddWindow(2)
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}, {}}) || m.Active != 1 {
+				t.Fatal(client, got, m.Active)
+			}
+			if id, _ := m.Focused(); id != 1 || m.Current().cover() != 1 {
+				t.Fatal("focus", id)
+			}
+			m.SetFullscreen(1, false)
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {}}) || m.Active != 0 {
+				t.Fatal(client, got, m.Active)
+			}
+			if id, _ := m.Focused(); id != 1 {
+				t.Fatal("focus after", id)
+			}
+		}
+	})
+	t.Run("a window opened over a lone fullscreen off screen stays there", func(t *testing.T) {
+		m := monitor()
+		m.SetOverflow(OverflowFixed)
+		m.AddWindow(1)
+		m.ToggleFullscreen()
+		m.Focus(1)
+		m.AddWindow(2)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}, {}}) || m.Active != 1 {
+			t.Fatal(got, m.Active)
+		}
+	})
+	t.Run("arrivals over a lone fullscreen: slot, named workspace, float", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			setup func(m *Monitor) *Workspace
+			add   func(w *Workspace)
+		}{
+			{"slot", func(m *Monitor) *Workspace { m.AddWindow(1); return m.Current() },
+				func(w *Workspace) { w.AddSlotWindow(2, 1, Width{}) }},
+			{"hidden named", func(m *Monitor) *Workspace {
+				m.SetNamed([]NamedWorkspace{{Name: "dev", Overflow: OverflowFixed}})
+				m.Apply("workspace dev")
+				m.AddWindow(1)
+				return m.Current()
+			}, func(w *Workspace) { w.AddWindow(2) }},
+			{"float", func(m *Monitor) *Workspace { m.AddFloating(1, 10, 10); return m.Current() },
+				func(w *Workspace) { w.AddWindow(2) }},
+		} {
+			m := monitor()
+			m.SetOverflow(OverflowFixed)
+			home := tc.setup(m)
+			m.SetFullscreen(1, true)
+			m.arrive(home, tc.add)
+			if fs := m.Current(); fs == home || fs.cover() != 1 || fs.origin != home {
+				t.Fatal(tc.name, "fullscreen not on its own workspace", windows(m))
+			}
+			if id, _ := m.Focused(); id != 1 || !home.has(2) || home.has(1) {
+				t.Fatal(tc.name, "focus", id, home.windows())
+			}
+			m.SetFullscreen(1, false)
+			if m.Current() != home || !home.has(1) || !home.has(2) {
+				t.Fatal(tc.name, "not home", windows(m), home.windows())
+			}
+			if id, _ := m.Focused(); id != 1 {
+				t.Fatal(tc.name, "focus after", id)
+			}
 		}
 	})
 	t.Run("a joined window lands after its stack when columns shifted", func(t *testing.T) {
@@ -542,7 +622,7 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{5}}, {Windows: []WindowID{2, 3}}, {Windows: []WindowID{6}}}
 		w.FocusID(3)
 		m.ToggleFullscreen()
-		m.AddWindow(7)
+		m.Current().joinFullscreen(7)
 		m.RemoveWindow(1)
 		m.ToggleFullscreen()
 		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{5, 2, 3, 7, 6}, {}}) {

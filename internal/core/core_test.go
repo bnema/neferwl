@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -842,6 +843,37 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 	// stays here since it has no focus (ADR 011).
 	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Hidden }) {
 		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
+	}
+}
+
+// Under fixed overflow, a window opening over a fullscreen game tiles on
+// its home workspace: the game keeps the screen and the keyboard, and an
+// activation (a user action in the new client) shows the window there.
+func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	set := r.mapWindow(t, 2)
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("game disturbed:", got, focused)
+	}
+	r.client <- ports.WindowActivate{ID: 2}
+	set = receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("after activate:", got, focused)
+	}
+	for {
+		if f, ok := command(t, r.commands).(ports.FocusWindow); ok && f.ID == 2 {
+			break
+		}
+	}
+	// The game still waits fullscreen one workspace down.
+	set = r.key(t, "Next", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("game workspace:", got, focused)
 	}
 }
 
