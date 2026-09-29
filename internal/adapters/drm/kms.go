@@ -82,6 +82,7 @@ type connector struct {
 	id, encoderID uint32
 	name          string
 	connected     bool
+	nonDesktop    bool
 	mmW, mmH      int
 	modes         []modeInfo
 	encoders      []uint32
@@ -117,7 +118,7 @@ type HDRSettings struct {
 
 // usable reports whether a connector should be driven.
 func (w Want) usable(c connector) bool {
-	return c.connected && len(c.modes) > 0 && !w.Disabled[c.name]
+	return c.connected && !c.nonDesktop && len(c.modes) > 0 && !w.Disabled[c.name]
 }
 
 // refreshMilli is the exact refresh in mHz, computed from the timings like wlroots.
@@ -216,9 +217,14 @@ func readConnector(fd int, id uint32) (connector, error) {
 	if name == "" {
 		name = "Unknown"
 	}
+	props, err := objProps(fd, id, objConnector)
+	if err != nil {
+		return connector{}, fmt.Errorf("connector %d properties: %w", id, err)
+	}
 	return connector{
 		id: id, encoderID: g2.encoderID, name: fmt.Sprintf("%s-%d", name, g2.typeID),
-		connected: g2.connection == connected, mmW: int(g2.mmW), mmH: int(g2.mmH),
+		connected: g2.connection == connected, nonDesktop: props["non-desktop"][1] == 1,
+		mmW: int(g2.mmW), mmH: int(g2.mmH),
 		modes:    modes[:min(int(g2.countModes), len(modes))],
 		encoders: encs[:min(int(g2.countEncoders), len(encs))],
 	}, nil

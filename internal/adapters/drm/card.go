@@ -139,7 +139,7 @@ func (c *Card) ConnectedHeads() ([]ports.OutputHead, error) {
 			c.log.Warn().Err(err).Uint32("connector", id).Msg("read connector for inventory")
 			continue
 		}
-		if !conn.connected || len(conn.modes) == 0 {
+		if !conn.connected || conn.nonDesktop || len(conn.modes) == 0 {
 			continue
 		}
 		monitor := readMonitor(c.path, conn.name)
