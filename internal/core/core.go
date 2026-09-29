@@ -481,7 +481,7 @@ func (c *Core) publish(ctx context.Context) error {
 				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
 			} else if p.Preview > 0 && !p.Hidden {
 				if rp, ok := real[p.ID]; ok && !rp.Hidden {
-					t.real, t.hasReal = rp, true
+					t.realTiled = !rp.Floating
 					t.client = c.clientRect(rp)
 				}
 			}

@@ -252,13 +252,19 @@ func (w *Workspace) reconcileFloats() {
 			w.Floats[i].below = false
 		}
 	}
+	if len(w.Floats) == 0 || w.Floats[len(w.Floats)-1].below {
+		w.floatFocus = false
+	}
 }
 
-// leaveFloat moves the focus from the native float to the columns or the
-// stash under it, raising them over covering floats. Without either, the
-// float keeps the focus and it reports false.
+func (w *Workspace) canLeaveFloat() bool {
+	return len(w.Columns) > 0 || !w.stashHidden && len(w.Stash) > 0
+}
+
+// leaveFloat moves focus to the columns or shown stash under the float.
+// Without either, it keeps focus and reports false.
 func (w *Workspace) leaveFloat() bool {
-	if len(w.Columns) == 0 && (w.stashHidden || len(w.Stash) == 0) {
+	if !w.canLeaveFloat() {
 		return false
 	}
 	w.floatFocus = false
@@ -564,8 +570,7 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		return false
 	}
 	if w.floatFocus {
-		w.leaveFloat()
-		return true
+		return w.leaveFloat()
 	}
 	if w.stashFocused() {
 		// The stash is one row: up and down do nothing there.
@@ -1132,16 +1137,21 @@ func (w *Workspace) Layout() []Placement {
 	// floats above it. Keep the order within each group stable.
 	tiles := result
 	result = nil
+	const (
+		belowTiles = iota
+		coveringFloats
+		dialogs
+	)
 	appendFloats := func(group int) {
 		for _, f := range w.Floats {
-			below := f.below && w.coversFloat(f) && w.fullscreen != f.ID
+			below := f.below && w.coversFloat(f)
 			// Dialogs stay over covering floats even when the latter is
 			// selected. Fullscreen floats remain in the upper group.
-			order := 2
+			order := dialogs
 			if below {
-				order = 0
+				order = belowTiles
 			} else if w.coversFloat(f) || w.fullscreen == f.ID {
-				order = 1
+				order = coveringFloats
 			}
 			if order != group {
 				continue
@@ -1160,11 +1170,11 @@ func (w *Workspace) Layout() []Placement {
 			result = append(result, p)
 		}
 	}
-	appendFloats(0)
+	appendFloats(belowTiles)
 	result = append(result, tiles...)
 	result = append(result, w.stashLayout(focusedID, cover)...)
-	appendFloats(1)
-	appendFloats(2)
+	appendFloats(coveringFloats)
+	appendFloats(dialogs)
 	return result
 }
 

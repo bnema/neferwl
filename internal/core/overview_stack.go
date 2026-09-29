@@ -254,14 +254,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 		return nil
 	}
 	c := w.Columns[i]
-	r := w.columnRectsFor(true)[i]
-	for _, id := range w.maximized {
-		if w.columnOf(id) == i {
-			r.W = max(w.Usable.W-2*g, 0)
-			r.H = max(w.Usable.H-2*g, 0)
-			break
-		}
-	}
+	r := Rect{W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
 	tiles := make([]Placement, 0, len(c.Windows))

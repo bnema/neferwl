@@ -431,9 +431,12 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 	case back.float != nil:
 		// Restore the original position before an optional focus-driven raise.
 		at := min(back.floatAt, len(origin.Floats))
+		if !focus && origin.floatFocus && len(origin.Floats) > 0 {
+			at = min(at, len(origin.Floats)-1)
+		}
 		origin.Floats = slices.Insert(origin.Floats, at, *back.float)
 		origin.reconcileFloats()
-		if focus && !origin.Floats[at].below {
+		if focus {
 			origin.FocusID(id)
 		}
 	case slices.ContainsFunc(origin.Columns, back.holdsStack):
@@ -573,7 +576,6 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 		cur.RemoveWindow(id)
 		to.AddFloating(id, fl.W, fl.H)
 		to.Floats[len(to.Floats)-1] = fl
-		to.reconcileFloats()
 		if to.origin == nil {
 			// As receive: an in-place fullscreen would hide it.
 			to.Activate(id)
@@ -773,8 +775,8 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 		for _, f := range w.Floats {
 			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
 			m.Workspaces[m.Active].Floats[len(m.Workspaces[m.Active].Floats)-1] = f
-			m.Workspaces[m.Active].reconcileFloats()
 		}
+		m.Workspaces[m.Active].reconcileFloats()
 		for _, f := range w.Stash {
 			m.Workspaces[m.Active].Stash = append(m.Workspaces[m.Active].Stash, f.rehome())
 		}

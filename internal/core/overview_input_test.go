@@ -161,6 +161,27 @@ func TestOverviewCloseBindTargetsPreview(t *testing.T) {
 	}
 }
 
+func TestFloatOnlyMonitorDirectionalExit(t *testing.T) {
+	for _, dir := range []int{-1, 1} {
+		r := startMulti(t, nil, left, right)
+		if dir < 0 {
+			r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+		}
+		r.client <- ports.WindowMapped{ID: 9, Floating: true, Width: 20, Height: 20}
+		receive(t, r.scenes)
+		key := "Right"
+		want := right.Name
+		if dir < 0 {
+			key, want = "Left", left.Name
+		}
+		r.key(t, key, ports.ModAlt)
+		out := lastOutputs(t, r.commands)
+		if out.Focused != want {
+			t.Fatalf("direction %d: focused output %q, want %q", dir, out.Focused, want)
+		}
+	}
+}
+
 // Two-finger scrolling moves the overview selection one column per step,
 // along the axis the fingers move most; a small scroll does nothing and
 // lifting the fingers starts over. Outside the overview it goes to the

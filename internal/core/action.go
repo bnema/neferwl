@@ -147,7 +147,7 @@ func (c *Core) applyAction(a Action) Effect {
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends. A covering fullscreen window pins
 		// the focus: the move goes to the neighbor monitor.
-		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned())
+		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned() || w.floatFocus && !w.canLeaveFloat())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}

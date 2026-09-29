@@ -134,9 +134,6 @@ func (m *Monitor) overviewTarget() WindowID {
 	case stackColumn:
 		i := w.columnOf(item.id)
 		if i >= 0 {
-			if w.columnOf(m.ov.selected) == i {
-				return m.ov.selected
-			}
 			c := w.Columns[i]
 			return c.Windows[c.Focus]
 		}
@@ -152,9 +149,6 @@ func (m *Monitor) overviewTarget() WindowID {
 			}
 		}
 		if i >= 0 {
-			if w.columnOf(m.ov.selected) == i {
-				return m.ov.selected
-			}
 			c := w.Columns[i]
 			return c.Windows[c.Focus]
 		}
