@@ -49,15 +49,15 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 		t.Fatalf("front hit %d", got)
 	}
 	m.OverviewMove(1, 0)
-	if m.stackFront(w) != 0 || m.overviewHiddenColumn != 0 || !w.Columns[1].FullWidth || w.Focus != 1 {
+	if m.stackFront(w) != 0 || m.hiddenColumn(w) != 0 || !w.Columns[1].FullWidth || w.Focus != 1 {
 		t.Fatal("rotation changed the workspace")
 	}
 	m.OverviewMove(1, 0)
-	if m.overviewHiddenColumn != 2 || !previewOf(t, m.Layout(), 3).Focused {
+	if m.hiddenColumn(w) != 2 || !previewOf(t, m.Layout(), 3).Focused {
 		t.Fatal("right did not select column 3")
 	}
 	m.OverviewMove(-1, 0)
-	if m.overviewHiddenColumn != 0 {
+	if m.hiddenColumn(w) != 0 {
 		t.Fatal("left did not skip the maximized column")
 	}
 	m.OverviewMove(1, 0)
@@ -168,6 +168,62 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 		t.Fatal("stash return changed maximization")
 	}
 	m.CancelOverview()
+}
+
+// Escape restores the opening column state even when an active bind changes it.
+func TestOverviewCancelRestoresFullWidthAfterBind(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	m.ToggleOverview()
+	m.Apply(ActionMaximizeColumn)
+	if w.Columns[1].FullWidth {
+		t.Fatal("maximize bind did not toggle while overview was open")
+	}
+	m.CancelOverview()
+	if w.Focus != 1 || !w.Columns[1].FullWidth {
+		t.Fatalf("cancel lost maximization: focus %d columns %+v", w.Focus, w.Columns)
+	}
+	// The snapshot follows a surviving column if another column disappears.
+	m.ToggleOverview()
+	w.RemoveWindow(1)
+	m.Apply(ActionMaximizeColumn)
+	m.CancelOverview()
+	if id, _ := w.Focused(); id != 2 || !w.Columns[0].FullWidth {
+		t.Fatalf("cancel after removal: focus %d columns %+v", id, w.Columns)
+	}
+}
+
+// The selected hidden card follows its window when earlier columns disappear.
+func TestOverviewHiddenSelectionFollowsWindowAfterRemoval(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	m.ToggleOverview()
+	m.OverviewMove(1, 0) // hidden card, selects column 1
+	m.OverviewMove(1, 0) // column 3
+	w.RemoveWindow(1)
+	if p := previewOf(t, m.Layout(), 3); !p.Focused || p.Peek {
+		t.Fatalf("selection moved after removal: %+v", p)
+	}
+	m.ToggleOverview()
+	if id, _ := w.Focused(); id != 3 || w.Columns[0].FullWidth {
+		t.Fatalf("confirm after removal: focus %d columns %+v", id, w.Columns)
+	}
+}
+
+func TestOverviewHiddenSelectionRemovedFallsBack(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	m.ToggleOverview()
+	m.OverviewMove(1, 0)
+	m.OverviewMove(1, 0) // selected column 3
+	w.RemoveWindow(3)
+	if m.hiddenColumn(w) != 2 || !previewOf(t, m.Layout(), 4).Focused {
+		t.Fatal("removed selection did not fall back to nearest hidden column")
+	}
+	m.ToggleOverview()
+	if id, _ := w.Focused(); id != 4 {
+		t.Fatalf("fallback confirmed %d, want 4", id)
+	}
 }
 
 func TestOverviewMaximizedPreviewsKeepConfigures(t *testing.T) {

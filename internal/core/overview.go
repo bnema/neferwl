@@ -44,6 +44,12 @@ func (m *Monitor) ToggleOverview() {
 	m.overview, m.overviewFrom = true, w
 	m.overviewFromID, _ = w.Focused()
 	m.overviewFloats = append([]Float(nil), w.Floats...)
+	m.overviewFullWidth = make(map[WindowID]bool)
+	for _, c := range w.Columns {
+		for _, id := range c.Windows {
+			m.overviewFullWidth[id] = c.FullWidth
+		}
+	}
 	m.scrollX, m.scrollY = 0, 0
 	m.overviewOpens++
 	m.selectRow()
@@ -53,7 +59,7 @@ func (m *Monitor) ToggleOverview() {
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	m.overviewStack, m.overviewStackOf = 0, nil
-	m.overviewHiddenColumn = -1
+	m.overviewHiddenID, m.overviewHiddenAt = 0, -1
 	w := m.Current()
 	if w.overviewMaximized() {
 		m.selectHiddenColumn(w, -1)
@@ -114,8 +120,7 @@ func (m *Monitor) closeOverview() {
 		} else if len(w.Columns) > 0 && !w.pinned() {
 			i := w.Focus
 			if front == 0 && w.overviewMaximized() {
-				m.selectHiddenColumn(w, m.overviewHiddenColumn)
-				i = m.overviewHiddenColumn
+				i = m.hiddenColumn(w)
 			}
 			c := w.Columns[i]
 			w.FocusID(c.Windows[c.Focus])
@@ -125,6 +130,7 @@ func (m *Monitor) closeOverview() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	m.overviewStack, m.overviewStackOf = 0, nil
 	m.overviewFloats = nil
+	m.overviewFullWidth = nil
 }
 
 // CancelOverview closes the overview and returns to the workspace and
@@ -157,8 +163,20 @@ func (m *Monitor) CancelOverview() {
 			}
 		}
 		from.Floats = append(from.Floats, current...)
+		// Restore by surviving window membership, not by the old index:
+		// columns may have been removed or reordered by active binds.
+		for i := range from.Columns {
+			for _, window := range from.Columns[i].Windows {
+				if full, ok := m.overviewFullWidth[window]; ok {
+					from.Columns[i].FullWidth = full
+					break
+				}
+			}
+		}
+		from.scroll()
 	}
 	m.overviewFloats = nil
+	m.overviewFullWidth = nil
 }
 
 // OverviewMove selects a column, stash card, or covering-float card (dx),
@@ -197,9 +215,7 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 	}
 	front := m.stackFront(w)
 	if front == 0 && w.overviewMaximized() {
-		i := m.overviewHiddenColumn
-		m.selectHiddenColumn(w, i)
-		i = m.overviewHiddenColumn
+		i := m.hiddenColumn(w)
 		if dx == 0 {
 			return
 		}

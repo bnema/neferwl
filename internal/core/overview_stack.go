@@ -65,7 +65,7 @@ func (m *Monitor) rotateStack(w *Workspace, dir int) {
 			m.overviewStackOf, m.overviewStack = w, items[(i-dir+len(items))%len(items)]
 			if m.overviewStack == 0 {
 				if w.overviewMaximized() {
-					m.selectHiddenColumn(w, m.overviewHiddenColumn)
+					m.selectHiddenColumn(w, m.hiddenColumn(w))
 				} else {
 					w.selectOverviewColumn(w.Focus)
 				}
@@ -75,16 +75,52 @@ func (m *Monitor) rotateStack(w *Workspace, dir int) {
 	}
 }
 
-// selectHiddenColumn keeps a selection inside the hidden card without
-// changing the maximized column, its focus, or any client's geometry.
-func (m *Monitor) selectHiddenColumn(w *Workspace, i int) {
-	if i < 0 || i >= len(w.Columns) || i == w.Focus {
+// hiddenColumn resolves the selected window on every use. If it was removed
+// or moved out of the hidden card, choose the nearest surviving column to
+// its last position, excluding the maximized column.
+func (m *Monitor) hiddenColumn(w *Workspace) int {
+	if !w.overviewMaximized() {
+		return -1
+	}
+	for i, c := range w.Columns {
+		if i != w.Focus {
+			for _, id := range c.Windows {
+				if id == m.overviewHiddenID && id != 0 {
+					return i
+				}
+			}
+		}
+	}
+	i := m.overviewHiddenAt
+	if i < 0 {
 		i = w.Focus - 1
 		if i < 0 {
 			i = 1
 		}
 	}
-	m.overviewHiddenColumn = i
+	i = min(max(i, 0), len(w.Columns)-1)
+	if i == w.Focus {
+		if i > 0 {
+			i--
+		} else {
+			i++
+		}
+	}
+	return i
+}
+
+// selectHiddenColumn keeps a selection inside the hidden card without
+// changing the maximized column, its focus, or any client's geometry.
+func (m *Monitor) selectHiddenColumn(w *Workspace, i int) {
+	if !w.overviewMaximized() {
+		return
+	}
+	if i < 0 || i >= len(w.Columns) || i == w.Focus {
+		i = m.hiddenColumn(w)
+	}
+	m.overviewHiddenAt = i
+	c := w.Columns[i]
+	m.overviewHiddenID = c.Windows[c.Focus]
 }
 
 // selectOverviewColumn navigates without raising columns or floats. In an
@@ -113,7 +149,7 @@ func (m *Monitor) previewColumnCard(w *Workspace, id WindowID, y int, dim, lit b
 		r.X -= w.Usable.X
 		r.Y -= w.Usable.Y
 		for j, tile := range stackRects(r, len(c.Windows), g) {
-			selected := i == w.Focus && id == overviewMaxColumn || i == m.overviewHiddenColumn && id == 0
+			selected := i == w.Focus && id == overviewMaxColumn || i == m.hiddenColumn(w) && id == 0
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: tile, Focused: selected && j == c.Focus})
 		}
 	}

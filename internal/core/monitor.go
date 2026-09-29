@@ -39,8 +39,10 @@ type Monitor struct {
 	overview       bool
 	overviewFrom   *Workspace
 	overviewFromID WindowID
-	// Initial float order/below flags for Escape; FocusID can raise a float.
-	overviewFloats []Float
+	// Initial float order/below flags and per-window column FullWidth for
+	// Escape. Window IDs survive column index changes while the overview is open.
+	overviewFloats    []Float
+	overviewFullWidth map[WindowID]bool
 	// overviewCard is the selected stash card and overviewCardOf its
 	// workspace; 0 while the selection is on a column. The stash itself
 	// changes only when the overview closes on the card.
@@ -50,8 +52,10 @@ type Monitor struct {
 	// overviewMaxColumn means the maximized column). nil means real top.
 	overviewStackOf *Workspace
 	overviewStack   WindowID
-	// Selected column within a hidden-columns card; never changes layout.
-	overviewHiddenColumn int
+	// Selected focused window within the hidden card; the index is only a
+	// nearest-column fallback if that window disappears.
+	overviewHiddenID WindowID
+	overviewHiddenAt int
 	// scrollX and scrollY add up scrolling in the overview until it makes
 	// a step (overviewScroll); opening the overview starts from zero.
 	scrollX, scrollY float64
