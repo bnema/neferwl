@@ -70,7 +70,7 @@ type Core struct {
 	focusScreen      int
 	binds            map[binding]Action
 	pressed          map[string]bool
-	sent             map[WindowID]ports.ConfigureWindow
+	configures       configures
 	focus            WindowID
 	pointer          WindowID
 	grab             WindowID
@@ -309,7 +309,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, sent: map[WindowID]ports.ConfigureWindow{}}
+	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, configures: newConfigures()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -459,7 +459,6 @@ func (c *Core) publish(ctx context.Context) error {
 	if err := c.publishPending(ctx); err != nil {
 		return err
 	}
-	alive := map[WindowID]bool{}
 	focus := c.keyboardFocus()
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
@@ -477,7 +476,6 @@ func (c *Core) publish(ctx context.Context) error {
 			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 		}
 		for _, p := range layout {
-			alive[p.ID] = true
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
 			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset, Preview: p.Preview}
@@ -485,64 +483,22 @@ func (c *Core) publish(ctx context.Context) error {
 				sw.Dim = c.cfg.Stash.Dim
 			}
 			scene.Windows = append(scene.Windows, sw)
-			floating := p.Floating
-			if p.Hidden {
-				// A hidden window keeps its size, state and output; it is
-				// only deactivated and marked invisible. One mapped hidden
-				// is told so at once, sized by the client.
-				old, ok := c.sent[p.ID]
-				v := old
-				if !ok {
-					v = ports.ConfigureWindow{ID: p.ID, Floating: floating}
-				}
-				v.Activated, v.Visible, v.Output = false, false, sc.name()
-				if ok && v == old {
-					continue
-				}
+			t := configureTarget{output: sc.name(), area: o, focused: focused}
+			if !p.Hidden && p.Preview == 0 {
+				// Only a sized configure needs the client size.
+				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+			}
+			if v, send := c.configures.next(p, t); send {
 				if err := c.command(ctx, v); err != nil {
 					return err
 				}
-				c.sent[p.ID] = v
-				continue
-			}
-			if p.Preview > 0 {
-				// A preview keeps its client's size: only its focus changes.
-				old, ok := c.sent[p.ID]
-				v := old
-				if !ok {
-					v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
-				}
-				v.Activated, v.Visible, v.Output = focused, onScreen(p, o), sc.name()
-				if ok && v == old {
-					continue
-				}
-				if err := c.command(ctx, v); err != nil {
-					return err
-				}
-				c.sent[p.ID] = v
-				continue
-			}
-			r := c.clientRect(p)
-			v := ports.ConfigureWindow{ID: p.ID, Width: r.W, Height: r.H, Fullscreen: p.Fullscreen, Activated: focused, Floating: floating && !p.Fullscreen, Output: sc.name(), Visible: onScreen(p, o)}
-			if v.Floating && !sc.mon.Current().imposedFloat(p.ID) {
-				// Native floating windows pick their own size.
-				v.Width, v.Height = 0, 0
-			}
-			if old, ok := c.sent[p.ID]; !ok || old != v {
-				if err := c.command(ctx, v); err != nil {
-					return err
-				}
-				c.sent[p.ID] = v
+				c.configures.mark(v)
 			}
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scenes = append(scenes, scene)
 	}
-	for id := range c.sent {
-		if !alive[id] {
-			delete(c.sent, id)
-		}
-	}
+	c.configures.prune()
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
 	if c.pointer != 0 && !c.visible(c.pointer) {
