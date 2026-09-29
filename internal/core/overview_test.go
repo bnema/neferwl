@@ -240,6 +240,26 @@ func TestOverviewOpensOverFullscreenTile(t *testing.T) {
 	}
 }
 
+// Under scroll overflow a fullscreen column does not pin the row: another
+// column can be selected and picked, as scrolling would on screen.
+func TestOverviewOverScrollFullscreenPicksColumn(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetOverflow(OverflowScroll)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	m.SetFullscreen(2, true)
+	m.ToggleOverview()
+	if p := previewOf(t, m.Layout(), 1); p.Hidden {
+		t.Fatalf("column 1 hidden: %+v", p)
+	}
+	m.OverviewMove(-1, 0)
+	m.ToggleOverview()
+	if f, _ := m.Focused(); f != 1 {
+		t.Fatalf("focused %d", f)
+	}
+}
+
 // Only the game shows on its row: its dialogs and the columns under it
 // stay hidden, as on screen. (Under fixed overflow a new column sends
 // the game to its own workspace instead.)
