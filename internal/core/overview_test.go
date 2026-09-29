@@ -420,23 +420,88 @@ func TestOverviewPileOnly(t *testing.T) {
 	}
 }
 
-// Fixed overflow's spiral is laid out as a row: no preview overlaps.
-func TestOverviewFixedOverflowRow(t *testing.T) {
+// Fixed overflow previews use the actual buffer geometry, including the
+// spiral and window stacks, rather than laying full-height columns in a row.
+func TestOverviewFixedOverflowGeometry(t *testing.T) {
+	for _, expanded := range []bool{false, true} {
+		t.Run(map[bool]string{false: "spiral", true: "expanded"}[expanded], func(t *testing.T) {
+			m := newMonitor("", "")
+			m.SetOutput(600, 400)
+			m.SetOverflow(OverflowFixed)
+			m.SetMaxColumns(3)
+			for id := WindowID(1); id <= 5; id++ {
+				m.AddWindow(id)
+			}
+			w := m.Current()
+			if expanded {
+				w.Columns[2].Expanded = true
+			}
+			w.Columns[3].Windows = append(w.Columns[3].Windows, 6)
+			w.Columns[3].Focus = 1
+			w.FocusID(6)
+			screen := w.Layout()
+			m.ToggleOverview()
+			if _, span, _ := w.previewTiles(); span != w.Usable.W {
+				t.Fatalf("span %d, usable %d", span, w.Usable.W)
+			}
+			ps := m.Layout()
+			z := previewOf(t, ps, 6).Preview
+			scale := func(v int) int { return int(math.Round(float64(v) * z)) }
+			anchor, previewAnchor := previewOf(t, screen, 1).Rect, previewOf(t, ps, 1).Rect
+			for _, id := range []WindowID{1, 2, 3, 4, 5, 6} {
+				r, p := previewOf(t, screen, id).Rect, previewOf(t, ps, id)
+				if p.Hidden || p.Preview != z || math.Abs(float64(p.Rect.W-scale(r.W))) > 1 || math.Abs(float64(p.Rect.H-scale(r.H))) > 1 || math.Abs(float64(p.Rect.X-previewAnchor.X-scale(r.X-anchor.X))) > 1 || math.Abs(float64(p.Rect.Y-previewAnchor.Y-scale(r.Y-anchor.Y))) > 1 {
+					t.Fatalf("%d: screen %+v preview %+v anchor %+v %+v", id, r, p, anchor, previewAnchor)
+				}
+				if p.Focused != (id == 6) {
+					t.Fatalf("%d focus: %+v", id, p)
+				}
+				for _, other := range []WindowID{1, 2, 3, 4, 5, 6} {
+					if other > id && p.Rect.Overlaps(previewOf(t, ps, other).Rect) {
+						t.Fatalf("%d overlaps %d", id, other)
+					}
+				}
+				if p.Rect.W > 0 && p.Rect.H > 0 && m.overviewAt(float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2)) != id {
+					t.Fatalf("%d not hit at %+v", id, p.Rect)
+				}
+			}
+			if len(overviewOutline(ps, 2)) != 4 {
+				t.Fatal("missing selection outline")
+			}
+			m.OverviewMove(-1, 0)
+			if id, _ := m.Focused(); id != 3 {
+				t.Fatalf("left selected %d", id)
+			}
+			m.OverviewMove(1, 0)
+			if id, _ := m.Focused(); id != 6 {
+				t.Fatalf("right selected %d", id)
+			}
+		})
+	}
+}
+
+func TestOverviewFixedFullWidthShowsOnlyOnScreenColumn(t *testing.T) {
 	m := newMonitor("", "")
-	m.SetOutput(300, 200)
+	m.SetOutput(600, 400)
 	m.SetOverflow(OverflowFixed)
-	m.SetMaxColumns(2)
-	for id := WindowID(1); id <= 4; id++ {
+	m.SetMaxColumns(3)
+	for id := WindowID(1); id <= 5; id++ {
 		m.AddWindow(id)
 	}
+	w := m.Current()
+	w.ToggleFullWidth()
 	m.ToggleOverview()
-	ps := m.Layout()
-	for a := WindowID(1); a <= 4; a++ {
-		for b := a + 1; b <= 4; b++ {
-			if ra, rb := previewOf(t, ps, a).Rect, previewOf(t, ps, b).Rect; ra.Overlaps(rb) {
-				t.Fatalf("%d %+v overlaps %d %+v", a, ra, b, rb)
-			}
+	for id := WindowID(1); id <= 4; id++ {
+		if p := previewOf(t, m.Layout(), id); !p.Hidden || p.Preview != 0 {
+			t.Fatalf("hidden column %d: %+v", id, p)
 		}
+	}
+	if p := previewOf(t, m.Layout(), 5); p.Hidden || !p.Focused || p.Rect.W != int(math.Round(float64(previewOf(t, w.Layout(), 5).Rect.W)*p.Preview)) {
+		t.Fatalf("maximized preview: %+v", p)
+	}
+	m.OverviewMove(-1, 0)
+	if w.Columns[4].FullWidth || previewOf(t, m.Layout(), 4).Hidden {
+		t.Fatal("navigating away did not restore the spiral")
 	}
 }
 

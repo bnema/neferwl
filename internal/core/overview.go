@@ -351,10 +351,9 @@ func (w *Workspace) overviewZoom() float64 {
 	return min(max(room/float64(span), overviewMinZoom), overviewMaxZoom)
 }
 
-// previewTiles lays the tiles of w out unscrolled, relative to the
-// usable area's corner: every column side by side at its width, as if
-// the output were wide enough (fixed overflow's spiral included). span is
-// the row's width; sel is the focused column.
+// previewTiles lays tiles out unscrolled, relative to the usable area's
+// corner. Fixed overflow uses its on-screen geometry; scroll overflow uses
+// an unscrolled row. span is the row's width; sel is the focused column.
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 	g := w.gap()
 	h := max(w.Usable.H-2*g, 0)
@@ -365,16 +364,36 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: h}
 		return []Placement{{ID: w.cover(), Rect: r, Focused: true, Fullscreen: true}}, r.X + r.W + g, r
 	}
+	var rects []Rect
+	if w.Overflow == OverflowFixed {
+		rects = w.columnRects()
+		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
+	}
+	maximized := w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
-		if w.fullscreenColumn(i) {
+		if w.Overflow == OverflowFixed {
+			r = rects[i]
+			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
+		} else if w.fullscreenColumn(i) {
 			// A fullscreen column shows at the width it had in the row.
 			r.W = max(w.Usable.W-2*g, 0)
+		}
+		if maximized && i != w.Focus {
+			// FullWidth hides other columns on screen. Their old buffers
+			// cannot fit their current spiral rects; show only the maximized
+			// column until navigation restores the normal layout.
+			for _, id := range c.Windows {
+				tiles = append(tiles, Placement{ID: id, Hidden: true})
+			}
+			continue
 		}
 		for j, t := range stackRects(r, len(c.Windows), g) {
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
 		}
-		span = max(span, r.X+r.W+g)
+		if w.Overflow != OverflowFixed {
+			span = max(span, r.X+r.W+g)
+		}
 		if i == w.Focus {
 			sel = r
 		}
@@ -405,6 +424,9 @@ func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, spa
 		x = min(max(x, u.X+u.W-width), u.X)
 	}
 	for i := range tiles {
+		if tiles[i].Hidden {
+			continue
+		}
 		r := tiles[i].Rect
 		x0, y0 := scale(r.X), scale(r.Y)
 		tiles[i].Rect = Rect{X: x + x0, Y: y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
