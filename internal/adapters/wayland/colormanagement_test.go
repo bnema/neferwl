@@ -135,6 +135,58 @@ func TestColorMesaFlow(t *testing.T) {
 		t.Fatal("unset not committed")
 	}
 }
+
+// v3 advertises windows_bt2100; its description is PQ BT.2020, applies to
+// a surface, and allows no get_information.
+func TestColorWindowsBT2100(t *testing.T) {
+	s, c, _ := colorServer(t)
+	manager := bindVersion(t, c, "wp_color_manager_v1", 3)
+	caps := watchColor(c, manager)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var bt2100 bool
+	for i, op := range caps.events {
+		if uint32(op) == cm.WpColorManagerV1EventSupportedFeature && caps.values[i][0] == uint32(cm.WpColorManagerV1FeatureWindowsBt2100) {
+			bt2100 = true
+		}
+	}
+	if !bt2100 {
+		t.Fatalf("windows_bt2100 not advertised: %v", caps.values)
+	}
+	comp := bindProtocol(t, c, "wl_compositor")
+	wl := c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, wl)
+	registerProtocol(t, c, wl)
+	surfaceID := c.AllocateID()
+	requestProtocol(t, c, manager, cm.WpColorManagerV1RequestGetSurface, surfaceID, wl)
+	registerProtocol(t, c, surfaceID)
+	image := c.AllocateID()
+	requestProtocol(t, c, manager, cm.WpColorManagerV1RequestCreateWindowsBt2100, image)
+	ready := watchColor(c, image)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(ready.events) != 1 || uint32(ready.events[0]) != cm.WpImageDescriptionV1EventReady2 {
+		t.Fatalf("ready %v", ready.events)
+	}
+	requestProtocol(t, c, surfaceID, cm.WpColorManagementSurfaceV1RequestSetImageDescription, image, uint32(cm.WpColorManagerV1RenderIntentPerceptual))
+	requestProtocol(t, c, wl, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var got SurfaceColor
+	s.display.Do(func() { got = s.surfaceColor(wl) })
+	if got != (SurfaceColor{Set: true, TF: pq, Primaries: bt2020}) {
+		t.Fatalf("committed color %+v", got)
+	}
+	info := c.AllocateID()
+	requestProtocol(t, c, image, cm.WpImageDescriptionV1RequestGetInformation, info)
+	if err := c.Roundtrip(); err == nil {
+		t.Fatal("get_information allowed")
+	}
+}
+
 func (s *Server) surfaceColor(id uint32) SurfaceColor {
 	for r, v := range s.surfaces {
 		if r.ID() == id {

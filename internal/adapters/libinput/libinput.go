@@ -605,9 +605,9 @@ func (p *pointer) set(x, y float64) (float64, float64) {
 
 // constrain applies a new constraint. Entering or leaving a lock resyncs
 // the pointer to core's cursor, which stood still meanwhile; a confined
-// pointer moves inside.
+// pointer moves inside. A warp moves it to core's cursor.
 func (p *pointer) constrain(c ports.PointerConstraint) {
-	if c.Mode == ports.ConstraintLock || p.constraint.Mode == ports.ConstraintLock {
+	if c.Warp || c.Mode == ports.ConstraintLock || p.constraint.Mode == ports.ConstraintLock {
 		p.x, p.y = p.layout.Clamp(c.X, c.Y, c.X, c.Y)
 	}
 	p.constraint = c

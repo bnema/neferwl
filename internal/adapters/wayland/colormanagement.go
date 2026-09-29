@@ -60,13 +60,16 @@ func (s *Server) outputColor(o *output) colorDescription {
 	return d
 }
 func registerColorManagement(d *server.Display, s *Server) error {
-	return cm.NewWpColorManagerV1Global(d, 2, func(c server.Client, v, id uint32) {
+	return cm.NewWpColorManagerV1Global(d, 3, func(c server.Client, v, id uint32) {
 		r, err := cm.NewWpColorManagerV1(c, int32(v), id, colorManager{s})
 		if err != nil {
 			return
 		}
 		r.SendSupportedIntent(uint32(cm.WpColorManagerV1RenderIntentPerceptual))
 		r.SendSupportedFeature(uint32(cm.WpColorManagerV1FeatureParametric))
+		if v >= 3 {
+			r.SendSupportedFeature(uint32(cm.WpColorManagerV1FeatureWindowsBt2100))
+		}
 		for _, tf := range []uint32{pq, extLinear, uint32(cm.WpColorManagerV1TransferFunctionSrgb)} {
 			r.SendSupportedTfNamed(tf)
 		}
@@ -138,8 +141,15 @@ func (m colorManager) CreateParametricCreator(r *cm.WpColorManagerV1, id uint32)
 func (colorManager) CreateWindowsScrgb(r *cm.WpColorManagerV1, _ uint32) {
 	r.PostError(uint32(cm.WpColorManagerV1ErrorUnsupportedFeature), "scRGB unsupported")
 }
-func (colorManager) CreateWindowsBt2100(r *cm.WpColorManagerV1, _ uint32) {
-	r.PostError(uint32(cm.WpColorManagerV1ErrorUnsupportedFeature), "BT2100 unsupported")
+
+// CreateWindowsBt2100 is BT.2020 primaries with the PQ transfer function,
+// as Windows drives HDR screens (DXGI HDR10 swapchains through Wine or
+// DXVK). Its reference white is BT.2408's 203 cd/m²; it has no
+// get_information.
+func (m colorManager) CreateWindowsBt2100(r *cm.WpColorManagerV1, id uint32) {
+	d := colorDescription{SurfaceColor: SurfaceColor{TF: pq, Primaries: bt2020, Set: true}, min: 50, max: 10000, white: 203}
+	d.targetMin, d.targetMax = d.min, d.max
+	m.s.createColorDescription(r.Client(), r.Version(), id, d, 0, false)
 }
 func (colorManager) GetImageDescription(r *cm.WpColorManagerV1, _ uint32, _ *cm.WpImageDescriptionReferenceV1) {
 	r.PostError(uint32(cm.WpColorManagerV1ErrorUnsupportedFeature), "references unsupported")

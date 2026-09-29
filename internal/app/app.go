@@ -102,6 +102,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	captured := make(chan ports.CaptureDone, 64)
 	outputFormats := make(chan ports.OutputFormats, 8)
 	outputHeads := make(chan ports.OutputHeads, 8)
+	leaseRequests := make(chan ports.LeaseMessage, 32)
+	leaseEvents := make(chan ports.LeaseMessage, 32)
 	applyOutput := make(chan ports.OutputApply, 8)
 	appliedOutput := make(chan ports.OutputApplied, 8)
 	var scales chan ports.ScaleChanged
@@ -123,7 +125,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -247,7 +249,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
-		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
+		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, leaseRequests: leaseRequests, leaseEvents: leaseEvents, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
 		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		renderLog := logging.For(ctx, "render")
 		newRenderer := func(w, h int) (ports.Renderer, error) {

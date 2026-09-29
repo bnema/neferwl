@@ -5,6 +5,8 @@
 package drm
 
 import (
+	"os"
+
 	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -174,6 +176,66 @@ func (_c *mockkms_commit_Call) RunAndReturn(run func(req *atomicReq, flags uint3
 	return _c
 }
 
+// connector provides a mock function for the type mockkms
+func (_mock *mockkms) connector(id uint32) (connector, error) {
+	ret := _mock.Called(id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for connector")
+	}
+
+	var r0 connector
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint32) (connector, error)); ok {
+		return returnFunc(id)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint32) connector); ok {
+		r0 = returnFunc(id)
+	} else {
+		r0 = ret.Get(0).(connector)
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint32) error); ok {
+		r1 = returnFunc(id)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_connector_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'connector'
+type mockkms_connector_Call struct {
+	*mock.Call
+}
+
+// connector is a helper method to define mock.On call
+//   - id uint32
+func (_e *mockkms_Expecter) connector(id any) *mockkms_connector_Call {
+	return &mockkms_connector_Call{Call: _e.mock.On("connector", id)}
+}
+
+func (_c *mockkms_connector_Call) Run(run func(id uint32)) *mockkms_connector_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_connector_Call) Return(connectorMoqParam connector, err error) *mockkms_connector_Call {
+	_c.Call.Return(connectorMoqParam, err)
+	return _c
+}
+
+func (_c *mockkms_connector_Call) RunAndReturn(run func(id uint32) (connector, error)) *mockkms_connector_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // createBlob provides a mock function for the type mockkms
 func (_mock *mockkms) createBlob(data []byte) (uint32, error) {
 	ret := _mock.Called(data)
@@ -230,6 +292,74 @@ func (_c *mockkms_createBlob_Call) Return(v uint32, err error) *mockkms_createBl
 }
 
 func (_c *mockkms_createBlob_Call) RunAndReturn(run func(data []byte) (uint32, error)) *mockkms_createBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// createLease provides a mock function for the type mockkms
+func (_mock *mockkms) createLease(objects []uint32) (*os.File, uint32, error) {
+	ret := _mock.Called(objects)
+
+	if len(ret) == 0 {
+		panic("no return value specified for createLease")
+	}
+
+	var r0 *os.File
+	var r1 uint32
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func([]uint32) (*os.File, uint32, error)); ok {
+		return returnFunc(objects)
+	}
+	if returnFunc, ok := ret.Get(0).(func([]uint32) *os.File); ok {
+		r0 = returnFunc(objects)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*os.File)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func([]uint32) uint32); ok {
+		r1 = returnFunc(objects)
+	} else {
+		r1 = ret.Get(1).(uint32)
+	}
+	if returnFunc, ok := ret.Get(2).(func([]uint32) error); ok {
+		r2 = returnFunc(objects)
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// mockkms_createLease_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'createLease'
+type mockkms_createLease_Call struct {
+	*mock.Call
+}
+
+// createLease is a helper method to define mock.On call
+//   - objects []uint32
+func (_e *mockkms_Expecter) createLease(objects any) *mockkms_createLease_Call {
+	return &mockkms_createLease_Call{Call: _e.mock.On("createLease", objects)}
+}
+
+func (_c *mockkms_createLease_Call) Run(run func(objects []uint32)) *mockkms_createLease_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []uint32
+		if args[0] != nil {
+			arg0 = args[0].([]uint32)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_createLease_Call) Return(file *os.File, v uint32, err error) *mockkms_createLease_Call {
+	_c.Call.Return(file, v, err)
+	return _c
+}
+
+func (_c *mockkms_createLease_Call) RunAndReturn(run func(objects []uint32) (*os.File, uint32, error)) *mockkms_createLease_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -415,6 +545,78 @@ func (_c *mockkms_objProps_Call) RunAndReturn(run func(obj uint32, typ uint32) (
 	return _c
 }
 
+// pickCrtc provides a mock function for the type mockkms
+func (_mock *mockkms) pickCrtc(c connector, crtcs []uint32, used map[uint32]bool) (uint32, error) {
+	ret := _mock.Called(c, crtcs, used)
+
+	if len(ret) == 0 {
+		panic("no return value specified for pickCrtc")
+	}
+
+	var r0 uint32
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(connector, []uint32, map[uint32]bool) (uint32, error)); ok {
+		return returnFunc(c, crtcs, used)
+	}
+	if returnFunc, ok := ret.Get(0).(func(connector, []uint32, map[uint32]bool) uint32); ok {
+		r0 = returnFunc(c, crtcs, used)
+	} else {
+		r0 = ret.Get(0).(uint32)
+	}
+	if returnFunc, ok := ret.Get(1).(func(connector, []uint32, map[uint32]bool) error); ok {
+		r1 = returnFunc(c, crtcs, used)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_pickCrtc_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'pickCrtc'
+type mockkms_pickCrtc_Call struct {
+	*mock.Call
+}
+
+// pickCrtc is a helper method to define mock.On call
+//   - c connector
+//   - crtcs []uint32
+//   - used map[uint32]bool
+func (_e *mockkms_Expecter) pickCrtc(c any, crtcs any, used any) *mockkms_pickCrtc_Call {
+	return &mockkms_pickCrtc_Call{Call: _e.mock.On("pickCrtc", c, crtcs, used)}
+}
+
+func (_c *mockkms_pickCrtc_Call) Run(run func(c connector, crtcs []uint32, used map[uint32]bool)) *mockkms_pickCrtc_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 connector
+		if args[0] != nil {
+			arg0 = args[0].(connector)
+		}
+		var arg1 []uint32
+		if args[1] != nil {
+			arg1 = args[1].([]uint32)
+		}
+		var arg2 map[uint32]bool
+		if args[2] != nil {
+			arg2 = args[2].(map[uint32]bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_pickCrtc_Call) Return(v uint32, err error) *mockkms_pickCrtc_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *mockkms_pickCrtc_Call) RunAndReturn(run func(c connector, crtcs []uint32, used map[uint32]bool) (uint32, error)) *mockkms_pickCrtc_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // planes provides a mock function for the type mockkms
 func (_mock *mockkms) planes() ([]planeRes, error) {
 	ret := _mock.Called()
@@ -466,6 +668,120 @@ func (_c *mockkms_planes_Call) Return(planeResMoqParams []planeRes, err error) *
 }
 
 func (_c *mockkms_planes_Call) RunAndReturn(run func() ([]planeRes, error)) *mockkms_planes_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// resources provides a mock function for the type mockkms
+func (_mock *mockkms) resources() ([]uint32, []uint32, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for resources")
+	}
+
+	var r0 []uint32
+	var r1 []uint32
+	var r2 error
+	if returnFunc, ok := ret.Get(0).(func() ([]uint32, []uint32, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() []uint32); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]uint32)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func() []uint32); ok {
+		r1 = returnFunc()
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).([]uint32)
+		}
+	}
+	if returnFunc, ok := ret.Get(2).(func() error); ok {
+		r2 = returnFunc()
+	} else {
+		r2 = ret.Error(2)
+	}
+	return r0, r1, r2
+}
+
+// mockkms_resources_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'resources'
+type mockkms_resources_Call struct {
+	*mock.Call
+}
+
+// resources is a helper method to define mock.On call
+func (_e *mockkms_Expecter) resources() *mockkms_resources_Call {
+	return &mockkms_resources_Call{Call: _e.mock.On("resources")}
+}
+
+func (_c *mockkms_resources_Call) Run(run func()) *mockkms_resources_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *mockkms_resources_Call) Return(uint32s []uint32, uint32s1 []uint32, err error) *mockkms_resources_Call {
+	_c.Call.Return(uint32s, uint32s1, err)
+	return _c
+}
+
+func (_c *mockkms_resources_Call) RunAndReturn(run func() ([]uint32, []uint32, error)) *mockkms_resources_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// revokeLease provides a mock function for the type mockkms
+func (_mock *mockkms) revokeLease(id uint32) error {
+	ret := _mock.Called(id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for revokeLease")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(uint32) error); ok {
+		r0 = returnFunc(id)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// mockkms_revokeLease_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'revokeLease'
+type mockkms_revokeLease_Call struct {
+	*mock.Call
+}
+
+// revokeLease is a helper method to define mock.On call
+//   - id uint32
+func (_e *mockkms_Expecter) revokeLease(id any) *mockkms_revokeLease_Call {
+	return &mockkms_revokeLease_Call{Call: _e.mock.On("revokeLease", id)}
+}
+
+func (_c *mockkms_revokeLease_Call) Run(run func(id uint32)) *mockkms_revokeLease_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_revokeLease_Call) Return(err error) *mockkms_revokeLease_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *mockkms_revokeLease_Call) RunAndReturn(run func(id uint32) error) *mockkms_revokeLease_Call {
 	_c.Call.Return(run)
 	return _c
 }

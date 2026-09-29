@@ -120,6 +120,9 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	switch {
 	case c.DMABuf == nil:
 		return c, "not_dmabuf"
+	case c.Fade > 0:
+		// The plane would show it unfaded (wp_alpha_modifier_v1).
+		return c, "fade"
 	case len(c.Children) > 0:
 		return c, "subsurfaces"
 	case c.Transform != 0:

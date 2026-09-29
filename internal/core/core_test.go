@@ -583,6 +583,58 @@ func TestOutputScale(t *testing.T) {
 	}
 }
 
+// A pointer warp moves the cursor on the window under it: input takes the
+// position and the window gets the motion. Other windows cannot warp.
+func TestPointerWarp(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	cfg.Layout.Gaps = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	constraints := make(chan ports.PointerConstraint, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	r := receive(t, scenes)[0].Windows[0].Rect
+	input <- ports.PointerMotion{X: 50, Y: 40}
+	for {
+		if _, ok := command(t, commands).(ports.PointerMotionTo); ok {
+			break
+		}
+	}
+	// Another window cannot move the pointer.
+	client <- ports.PointerWarp{ID: 2, X: 5, Y: 5}
+	client <- ports.PointerWarp{ID: 1, X: 10, Y: 20}
+	got := receive(t, constraints)
+	if !got.Warp || got.X != float64(r.X+10) || got.Y != float64(r.Y+20) {
+		t.Fatalf("warp %+v, window %+v", got, r)
+	}
+	for {
+		if v, ok := command(t, commands).(ports.PointerMotionTo); ok {
+			if v.ID != 1 || v.X != 10 || v.Y != 20 || v.DX != 0 || v.DY != 0 {
+				t.Fatalf("motion %+v", v)
+			}
+			break
+		}
+	}
+	// A point outside the window is refused.
+	client <- ports.PointerWarp{ID: 1, X: float64(r.W), Y: 0}
+	client <- ports.PointerWarp{ID: 1, X: 1, Y: 1}
+	if got := receive(t, constraints); got.X != float64(r.X+1) || got.Y != float64(r.Y+1) {
+		t.Fatalf("warp %+v", got)
+	}
+}
+
 func TestPointerConstraint(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 0

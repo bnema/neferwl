@@ -68,8 +68,10 @@ func TestWantPicksMode(t *testing.T) {
 			t.Errorf("%s: got %s", tc.name, m)
 		}
 	}
-	if (Want{}).usable(off) || !(Want{}).usable(lg) || (Want{Disabled: map[string]bool{"DP-2": true}}).usable(lg) {
-		t.Fatal("usable")
+	vr := lg
+	vr.nonDesktop = true
+	if (Want{}).usable(off) || !(Want{}).usable(lg) || (Want{Disabled: map[string]bool{"DP-2": true}}).usable(lg) || (Want{}).usable(vr) {
+		t.Fatal("usable: non-desktop connectors must not be modeset")
 	}
 }
 

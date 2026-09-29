@@ -288,7 +288,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			return
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
-		r.setContentColor(&dr, content.Color)
+		r.setContentColor(&dr, content)
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
 			if content.DMABuf.Format == fourcc('P', '0', '1', '0') {
@@ -324,14 +324,17 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
-	r.setContentColor(&dr, content.Color)
+	r.setContentColor(&dr, content)
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)
 }
 
-// setContentColor selects only color encodings the protocol accepts.
-func (r *Renderer) setContentColor(dr *draw, c ports.SurfaceColor) {
+// setContentColor selects only color encodings the protocol accepts, and
+// the surface's fade.
+func (r *Renderer) setContentColor(dr *draw, content *ports.SurfaceContent) {
+	dr.pc.color[3] = 1 - max(0, min(1, content.Fade))
+	c := content.Color
 	if c.IsPQ2020() {
 		dr.pc.misc[1] |= flagPQ
 	} else if c.IsExtendedLinear() {

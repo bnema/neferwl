@@ -92,6 +92,25 @@ func TestRendererRender(t *testing.T) {
 	check(s, map[image.Point]color.RGBA{{5, 5}: bg})
 }
 
+// A faded window blends with the background (wp_alpha_modifier_v1).
+func TestRendererFade(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	c := solidContent(t, 64, 48, color.RGBA{200, 0, 0, 255})
+	c.Fade = 0.5
+	c.Opaque = false
+	s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}}}}
+	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Pixels().At(10, 10).(color.RGBA); got.R < 99 || got.R > 101 || got.G != 0 || got.B != 0 {
+		t.Fatalf("faded pixel %v", got)
+	}
+}
+
 func TestRendererContents(t *testing.T) {
 	r, err := New(64, 48)
 	if err != nil {

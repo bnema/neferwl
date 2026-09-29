@@ -84,6 +84,8 @@ type surface struct {
 	queue     []*update
 	// contentType is the wp_content_type_v1; contentKind the committed type.
 	contentType *contentTypeHandler
+	// alpha is the surface's wp_alpha_modifier_surface_v1.
+	alpha       *alphaHandler
 	contentKind uint32
 	// committed is what the last commit changed, in buffer pixels (full:
 	// everything), read by the window's damage history.
@@ -115,6 +117,8 @@ type pendingCommit struct {
 	color              SurfaceColor
 	representation     surfaceRepresentation
 	kind               uint32
+	// fade is 1 - the wp_alpha_modifier_v1 multiplier (sticky).
+	fade float32
 	// barrier and wait are fifo requests; at the commit timestamp.
 	barrier, wait bool
 	at            time.Time
@@ -375,6 +379,7 @@ func (s *surface) applyCommit(u *update) {
 	if u.opaqueSet {
 		s.opaque = u.opaque
 	}
+	oldFade := s.content.Fade
 	hinted := s.async != u.async || s.color != u.color || s.representation != u.representation
 	if s.async != u.async {
 		// Contents carry the hint of every surface in the tree.
@@ -425,7 +430,8 @@ func (s *surface) applyCommit(u *update) {
 				c.Source, _ = s.source(c.Width, c.Height)
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				s.formatOpaque = c.Opaque
-				c.Opaque = c.Opaque || s.opaqueCovers(c.LogicalW, c.LogicalH)
+				c.Opaque = (c.Opaque || s.opaqueCovers(c.LogicalW, c.LogicalH)) && u.fade == 0
+				c.Fade = u.fade
 				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
 				s.commitDamage(u, true, resized, c.Width, c.Height)
 				if s.sub.parent == nil && (c.Width != s.lastW || c.Height != s.lastH) {
@@ -453,13 +459,14 @@ func (s *surface) applyCommit(u *update) {
 			s.content.Transform = s.transform
 			s.content.Source, _ = s.source(s.content.Width, s.content.Height)
 			s.content.LogicalW, s.content.LogicalH = s.logicalSize(s.content.Width, s.content.Height)
-			s.content.Opaque = s.formatOpaque || s.opaqueCovers(s.content.LogicalW, s.content.LogicalH)
+			s.content.Opaque = (s.formatOpaque || s.opaqueCovers(s.content.LogicalW, s.content.LogicalH)) && u.fade == 0
+			s.content.Fade = u.fade
 		}
 	}
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
 	}
-	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque {
+	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque || oldFade != s.content.Fade {
 		s.version++
 		s.root().treeDirty = true
 	}
@@ -483,7 +490,7 @@ func (s *surface) applyCommit(u *update) {
 	}
 	reshaped := s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource || s.content.Transform != oldTransform)
 	// Opacity changes how every pixel blends, so it repaints the whole surface.
-	opacity := s.has && s.content.Opaque != oldOpaque
+	opacity := s.has && (s.content.Opaque != oldOpaque || s.content.Fade != oldFade)
 	drawn := fresh || damaged || moved || geometry || hinted || reshaped || opacity || s.sub.parent != nil
 	if drawn {
 		if moved || geometry || reshaped || opacity {

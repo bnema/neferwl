@@ -7,6 +7,8 @@ import "github.com/bnema/neferwl/internal/ports"
 // forwarding queue. heads, configured and replies are fed from the
 // outputApply outbox.
 type outputChannels struct {
+	leaseRequests <-chan ports.LeaseMessage
+	leaseEvents   chan<- ports.LeaseMessage
 	events        chan<- ports.OutputEvent
 	scenes        <-chan []ports.Scene
 	contents      <-chan ports.SurfaceContent

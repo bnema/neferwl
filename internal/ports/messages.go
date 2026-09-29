@@ -255,11 +255,13 @@ const (
 // PointerConstraint is an active pointer constraint. Rect is logical: in
 // PointerConstrained it is window-local and empty means the whole window;
 // core sends input the resolved global rectangle, and in X, Y its cursor
-// position, where input holds a locked pointer.
+// position, where input holds a locked pointer. Warp moves input's
+// pointer to X, Y whatever the mode (wp_pointer_warp_v1).
 type PointerConstraint struct {
 	Mode ConstraintMode
 	Rect Rect
 	X, Y float64
+	Warp bool
 }
 
 // Clamp keeps a global point inside the rectangle of a lock or confine;
@@ -283,6 +285,16 @@ type PointerConstrained struct {
 }
 
 func (PointerConstrained) clientEvent() {}
+
+// PointerWarp carries wayland → core a client's request to move the
+// pointer to X, Y, window-local logical (wp_pointer_warp_v1). Wayland has
+// checked that the window has the pointer and the point is on it.
+type PointerWarp struct {
+	ID   WindowID
+	X, Y float64
+}
+
+func (PointerWarp) clientEvent() {}
 
 // Mods carries input → core modifier flags.
 type Mods uint8
@@ -879,8 +891,11 @@ type SurfaceContent struct {
 	// buffer: readers apply its inverse. Width and Height stay the buffer's.
 	Transform BufferTransform
 	// Opaque ignores the alpha byte: an x format, or an opaque region that
-	// covers the whole surface.
+	// covers the whole surface. It is false while Fade is set.
 	Opaque bool
+	// Fade is how much wp_alpha_modifier_v1 fades the surface: 0 none,
+	// 1 invisible. Its opacity is multiplied by 1-Fade.
+	Fade   float32
 	Color  SurfaceColor
 	SHM    *SHMBuffer
 	DMABuf *DMABuf
@@ -1086,3 +1101,71 @@ type WindowState struct {
 	// Hidden is set for a stashed window while its stash is hidden.
 	Hidden bool
 }
+
+// LeaseConnector identifies a non-desktop connector available for DRM leasing.
+type LeaseConnector struct {
+	Card, Name, Description string
+	ConnectorID             uint32
+}
+
+// LeaseMessage is an adapter-to-adapter DRM lease channel message.
+type LeaseMessage interface{ leaseMessage() }
+
+// LeaseConnectors replaces the available connector inventory for Card.
+// Device is a non-master DRM fd owned by the receiver, which closes it.
+// An empty Connectors list with nil Device removes the card's global and closes
+// the display's fd. A later nonempty inventory creates a new global.
+type LeaseConnectors struct {
+	Card       string
+	Device     *os.File
+	Connectors []LeaseConnector
+}
+
+func (LeaseConnectors) leaseMessage() {}
+
+// CloseLeaseFiles closes the fd a lease message owns, for a message that is
+// dropped instead of delivered.
+func CloseLeaseFiles(msg LeaseMessage) {
+	switch m := msg.(type) {
+	case LeaseConnectors:
+		if m.Device != nil {
+			m.Device.Close()
+		}
+	case LeaseReply:
+		if m.FD != nil {
+			m.FD.Close()
+		}
+	}
+}
+
+type LeaseRequest struct {
+	ID         uint64
+	Card       string
+	Connectors []string
+}
+
+func (LeaseRequest) leaseMessage() {}
+
+// LeaseReply transfers ownership of FD to Wayland.
+type LeaseReply struct {
+	ID      uint64
+	FD      *os.File
+	LeaseID uint32
+	Err     error
+}
+
+func (LeaseReply) leaseMessage() {}
+
+type LeaseRevoke struct {
+	Card    string
+	LeaseID uint32
+}
+
+func (LeaseRevoke) leaseMessage() {}
+
+type LeaseFinished struct {
+	Card    string
+	LeaseID uint32
+}
+
+func (LeaseFinished) leaseMessage() {}
