@@ -246,6 +246,9 @@ func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error 
 	}
 	planes := fds[:min(len(b.Planes), len(fds))]
 	_, err := unix.Poll(planes, 0)
+	for errors.Is(err, unix.EINTR) { // a signal, not a fence error
+		_, err = unix.Poll(planes, 0)
+	}
 	if err != nil {
 		return err
 	}
