@@ -140,6 +140,21 @@ func TestStashAloneHasFocus(t *testing.T) {
 	}
 }
 
+// A window opening under a fullscreen stashed window, with no tiles left,
+// waits as the only column.
+func TestStashFullscreenWithoutTilesAddWindow(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(100, 80)
+	m.AddWindow(1)
+	w := m.Current()
+	w.ToggleWindowStash()
+	w.ToggleFullscreen()
+	w.AddWindow(2)
+	if len(w.Columns) != 1 || w.Columns[0].Windows[0] != 2 || w.cover() != 1 {
+		t.Fatalf("columns %+v cover %d", w.Columns, w.cover())
+	}
+}
+
 // A fullscreen request made while the stash was hidden applies on show,
 // even over an off-screen fullscreen tile.
 func TestStashPendingFullscreenOverTile(t *testing.T) {

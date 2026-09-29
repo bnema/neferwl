@@ -287,7 +287,7 @@ func (w *Workspace) AddWindow(id WindowID) {
 		// window (ADR 011): it waits, hidden, after the focused column.
 		at := len(w.Columns)
 		if w.Overflow != OverflowFixed {
-			// A covering float may have no column under it.
+			// A covering float or stashed window may have no column under it.
 			at = min(w.Focus+1, len(w.Columns))
 		}
 		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}})
