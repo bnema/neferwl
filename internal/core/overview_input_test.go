@@ -102,6 +102,10 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 	}
 	press("o")
 	sceneMatch(t, scenes, focused(9))
+	press("k")
+	sceneMatch(t, scenes, focused(2))
+	press("j")
+	sceneMatch(t, scenes, focused(9))
 	press("Up")
 	sceneMatch(t, scenes, focused(2))
 	press("Left")
