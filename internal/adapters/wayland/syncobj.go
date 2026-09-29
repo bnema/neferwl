@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
+	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -192,12 +193,14 @@ func (s *surface) pendingIsSHM() bool {
 // writes once the point is signalled, and the pacer is woken to apply the
 // commits that waited for it.
 type syncWaiter struct {
-	mu    sync.Mutex
-	ready map[*syncWait]bool
-	wake  func()
-	pipeR *os.File
-	pipeW *os.File
-	added []*syncWait // new waits for run (under mu)
+	mu        sync.Mutex
+	ready     map[*syncWait]bool
+	wake      func()
+	pipeR     *os.File
+	pipeW     *os.File
+	added     []*syncWait // new waits for run (under mu)
+	log       zerowrap.Logger
+	pollError sync.Once
 }
 
 // syncWait is one acquire point a queued commit waits for.
@@ -212,7 +215,7 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w}, nil
+	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
 
 // watch registers an eventfd for p; the wait is ready once it fires.
@@ -247,15 +250,30 @@ func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error 
 		return err
 	}
 	for i, fd := range planes {
-		if fd.Revents == 0 {
-			dup, err := unix.FcntlInt(uintptr(fd.Fd), unix.F_DUPFD_CLOEXEC, 0)
-			if err != nil {
-				return err
-			}
-			waits[i] = sw.add(dup)
+		if fd.Revents&unix.POLLIN != 0 {
+			continue
 		}
+		if fd.Revents&(unix.POLLERR|unix.POLLNVAL|unix.POLLHUP) != 0 {
+			sw.warnPollError()
+			continue
+		}
+		dup, err := unix.FcntlInt(uintptr(fd.Fd), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			for j, w := range waits {
+				sw.cancel(w)
+				waits[j] = nil
+			}
+			return err
+		}
+		waits[i] = sw.add(dup)
 	}
 	return nil
+}
+
+func (sw *syncWaiter) warnPollError() {
+	sw.pollError.Do(func() {
+		sw.log.Warn().Str("component", "wayland").Msg("implicit fence poll error")
+	})
 }
 
 func (sw *syncWaiter) add(fd int) *syncWait {
@@ -332,15 +350,21 @@ func (sw *syncWaiter) run(ctx context.Context) {
 				unix.Close(w.efd)
 				continue
 			}
-			if fds[i+1].Revents == 0 {
+			revents := fds[i+1].Revents
+			if revents&unix.POLLIN == 0 && revents&(unix.POLLERR|unix.POLLNVAL|unix.POLLHUP) == 0 {
 				kept = append(kept, w)
 				continue
 			}
+			if revents&unix.POLLIN == 0 {
+				sw.warnPollError()
+			}
 			unix.Close(w.efd)
 			sw.mu.Lock()
-			sw.ready[w] = true
+			if !w.cancelled.Load() {
+				sw.ready[w] = true
+				fired = true
+			}
 			sw.mu.Unlock()
-			fired = true
 		}
 		waits = kept
 		// New waits join the next poll.

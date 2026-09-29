@@ -1,12 +1,14 @@
 package wayland
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 func TestSyncWaitAlreadySignalled(t *testing.T) {
@@ -21,6 +23,67 @@ func TestSyncWaitAlreadySignalled(t *testing.T) {
 	w, err := sw.watch(syncPoint{tl: &timeline{dev: dev, handle: 7}, point: 4})
 	if err != nil || !sw.fired(w) {
 		t.Fatalf("wait: %v, ready: %v", err, sw.fired(w))
+	}
+}
+
+// An invalid poll result is not readiness; it must not hold the surface.
+func TestImplicitPollErrorReadyAndWarnOnce(t *testing.T) {
+	sw, err := newSyncWaiter(func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sw.pipeR.Close()
+	defer sw.close()
+	var output bytes.Buffer
+	sw.log = zerowrap.New(zerowrap.Config{Output: &output})
+	r, wr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wr.Close()
+	fd := int(r.Fd())
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: os.NewFile(uintptr(fd), "closed")}}}
+	var waits [4]*syncWait
+	for range 2 {
+		if err := sw.watchImplicit(b, &waits); err != nil || waits[0] != nil {
+			t.Fatalf("poll error should not register wait: %v %+v", err, waits)
+		}
+	}
+	if n := bytes.Count(output.Bytes(), []byte("implicit fence poll error")); n != 1 {
+		t.Fatalf("poll warnings %d: %s", n, output.String())
+	}
+}
+
+// POLLHUP with no POLLIN on a watched fd must wake the surface too.
+func TestImplicitPollHangupWakes(t *testing.T) {
+	sw, err := newSyncWaiter(func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { sw.run(ctx); close(done) }()
+	defer func() { cancel(); sw.close(); <-done }()
+	r, wr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: r}}}
+	var waits [4]*syncWait
+	if err := sw.watchImplicit(b, &waits); err != nil || waits[0] == nil {
+		t.Fatalf("watch: %v", err)
+	}
+	wr.Close()
+	deadline := time.Now().Add(time.Second)
+	for !sw.fired(waits[0]) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !sw.fired(waits[0]) {
+		t.Fatal("hangup never woke waiter")
 	}
 }
 

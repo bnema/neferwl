@@ -271,6 +271,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		}
 		s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, opts.Keymap
 	}
+	s.syncWait.log = log
 	s.cleanup = func() {
 		if s.seat.keymapFD >= 0 {
 			unix.Close(s.seat.keymapFD)

@@ -349,6 +349,7 @@ func (s *surface) queueUpdate() {
 		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
 			err := s.server.syncWait.watchImplicit(b.buf, &u.implicit)
 			if err != nil {
+				// Partial registrations were cancelled; do not block this update.
 				s.server.log.Warn().Str("component", "wayland").Err(err).Msg("implicit buffer wait")
 			}
 		}
@@ -385,6 +386,10 @@ func (s *surface) applyUpdate(u *update) {
 	}
 	if u.buffer != nil && !u.buffer.Resource.Alive() {
 		s.commitSkipped = true
+		// No reader takes this buffer. A release point is safe to signal
+		// only if the acquire has already signalled; dropSync owns that rule.
+		s.dropSync(u.sync)
+		u.sync = nil
 		u.buffer, u.attached = nil, false
 		// Scale, transform and crop describe the same retained buffer.
 		u.scale = s.bufferScale
@@ -594,12 +599,26 @@ func (u *update) graphReady(now time.Time) bool {
 	if u.prev != nil && !u.prev.graphReady(now) {
 		return false
 	}
-	if u.wait && s.barrier || !s.syncReady(u.sync) || s.tooEarly(u.at, now) {
+	if u.wait && s.barrier || s.tooEarly(u.at, now) {
 		return false
 	}
-	for _, w := range u.implicit {
-		if w != nil && !s.server.syncWait.fired(w) {
+	// A dead attachment is skipped by applyUpdate; waiting for its fence
+	// would leave this update and every later one stuck behind it.
+	if u.buffer != nil && !u.buffer.Resource.Alive() {
+		for i, w := range u.implicit {
+			if w != nil {
+				s.server.syncWait.cancel(w)
+				u.implicit[i] = nil
+			}
+		}
+	} else {
+		if !s.syncReady(u.sync) {
 			return false
+		}
+		for _, w := range u.implicit {
+			if w != nil && !s.server.syncWait.fired(w) {
+				return false
+			}
 		}
 	}
 	for _, dep := range u.deps {
