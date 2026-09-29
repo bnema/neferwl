@@ -215,6 +215,40 @@ func TestFocusWindowWithoutDemotedFloatChangesWorkspace(t *testing.T) {
 	}
 }
 
+// Up from a shown stash stays in the stash, even with a demoted covering
+// float; from a pinned fullscreen window it goes to the workspace above,
+// as without covering floats.
+func TestFocusWindowUpStashAndPinned(t *testing.T) {
+	m := monitor()
+	m.SetBorder(2)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w := m.Current()
+	w.AddFloating(9, 100, 80)
+	w.FocusID(2)
+	w.ToggleWindowStash() // 2 to the shown stash, focused
+	if !w.Floats[0].below {
+		t.Fatalf("float not below: %+v", w.Floats[0])
+	}
+	m.Apply(ActionFocusWindowUp)
+	if id, _ := w.Focused(); id != 2 || !w.Floats[0].below || m.Active != 0 {
+		t.Fatalf("stash up focused %d on %d, float %+v", id, m.Active, w.Floats[0])
+	}
+
+	m = monitor()
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddFloating(2, 50, 40)
+	m.SetFullscreen(2, true) // own workspace below
+	if m.Active != 1 || !m.Current().pinned() {
+		t.Fatalf("setup: active %d", m.Active)
+	}
+	m.Apply(ActionFocusWindowUp)
+	if id, _ := m.Current().Focused(); id != 1 || m.Active != 0 {
+		t.Fatalf("pinned up focused %d on %d", id, m.Active)
+	}
+}
+
 // Directional focus on a covering float with nothing under it keeps the
 // float focused.
 func TestCoveringFloatAloneKeepsFocus(t *testing.T) {
