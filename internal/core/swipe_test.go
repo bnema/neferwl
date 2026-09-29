@@ -457,6 +457,48 @@ func TestSwipeIgnoredAfterSwitchingAwayAndBack(t *testing.T) {
 	}
 }
 
+func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
+	r := startSwipe(t, nil)
+	before, _ := rectOf(threeColumns(t, r), 2)
+	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+	// Window 4 on DP-2, so it has a workspace below to switch to.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	scene(t, r.scenes)
+	r.mapWindow(t, 4)
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	scene(t, r.scenes)
+	r.drain()
+	r.begin()
+	r.move(t, -30, 0)
+	// The pointer goes to DP-2 and a bind switches its workspace.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	scene(t, r.scenes)
+	for _, sc := range r.key(t, "Next", ports.ModAlt) {
+		if _, ok := rectOf(sc, 4); ok {
+			t.Fatal("DP-2 did not switch workspace")
+		}
+	}
+	// The swipe on DP-1 still follows the fingers.
+	var got ports.Rect
+	for _, sc := range receiveMove(t, r, -30) {
+		if sc.Output == wide.Name {
+			got, _ = rectOf(sc, 2)
+		}
+	}
+	// 60 units at 2/3 px each: 40 px.
+	if got.X-before.X != 40 {
+		t.Fatalf("column 2 moved %d px", got.X-before.X)
+	}
+}
+
+// receiveMove sends one swipe update and returns every output's scene.
+func receiveMove(t *testing.T, r *swipeRig, dx float64) []ports.Scene {
+	t.Helper()
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DX: dx, Time: r.at}
+	return receive(t, r.scenes)
+}
+
 func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
 	r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
 	r.mapWindow(t, 1)

@@ -1136,6 +1136,7 @@ func (c *Core) Run(ctx context.Context) error {
 						continue
 					}
 					before := c.cur().mon.Current()
+					swiped := c.swipedWorkspace()
 					c.layerFocus = 0 // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
@@ -1152,7 +1153,7 @@ func (c *Core) Run(ctx context.Context) error {
 						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
 					}
-					if c.cur().mon.Current() != before {
+					if c.swipedWorkspace() != swiped {
 						c.dropSwipe()
 					}
 					if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {

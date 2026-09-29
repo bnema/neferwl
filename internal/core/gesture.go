@@ -239,9 +239,18 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	return shown
 }
 
+// swipedWorkspace is the workspace on the swipe's screen, or nil without
+// a swipe.
+func (c *Core) swipedWorkspace() *Workspace {
+	if c.swipe == nil {
+		return nil
+	}
+	return c.swipe.screen.mon.Current()
+}
+
 // dropSwipe lets go of the swipe in progress: a bind changed the workspace
-// on screen. Its slide stops where the bind left the view; the rest of the
-// swipe is ignored, even if a later bind shows its workspace again.
+// on its screen. Its slide stops where the bind left the view; the rest of
+// the swipe is ignored, even if a later bind shows its workspace again.
 func (c *Core) dropSwipe() {
 	g := c.swipe
 	if g == nil {
