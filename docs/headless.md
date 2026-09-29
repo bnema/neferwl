@@ -18,7 +18,7 @@ Screenshots through `grim` are verified with `zwlr_screencopy_v1` and `ext_image
 - `sleep 1s`
 - `move <x> <y>` (output coordinates)
 - `click [left|right|middle]`, `down <button>`, `up <button>`
-- `swipe up|down|left|right` (three-finger touchpad swipe)
+- `swipe up|down|left|right` (a quick three-finger touchpad flick)
 
 `examples/testime` is a minimal input method for testing text input. Each time an app enables a text input, it sends a preedit string, then commits the final text:
 

@@ -73,6 +73,43 @@ func TestTouchpadNaturalScroll(t *testing.T) {
 	}
 }
 
+func TestTouchpadTap(t *testing.T) {
+	if !Defaults().Touchpad.Tap {
+		t.Fatal("tap to click off by default")
+	}
+	c, w := parseString(t, "touchpad.tap = off\n")
+	if c.Touchpad.Tap || len(w) != 0 {
+		t.Fatal(c.Touchpad, w)
+	}
+	c, w = parseString(t, "touchpad.tap = sometimes\n")
+	if !c.Touchpad.Tap || len(w) != 1 {
+		t.Fatal(c.Touchpad, w)
+	}
+}
+
+func TestTouchpadSpeed(t *testing.T) {
+	d := Defaults().Touchpad
+	if d.AccelSpeed != 0 || d.AccelProfile != ports.AccelAdaptive || d.ScrollFactor != 1 {
+		t.Fatal(d)
+	}
+	c, w := parseString(t, "touchpad.accel-speed = -0.5\ntouchpad.accel-profile = flat\ntouchpad.scroll-factor = 0.5\n")
+	if c.Touchpad.AccelSpeed != -0.5 || c.Touchpad.AccelProfile != ports.AccelFlat || c.Touchpad.ScrollFactor != 0.5 || len(w) != 0 {
+		t.Fatal(c.Touchpad, w)
+	}
+	for _, bad := range []string{
+		"touchpad.accel-speed = 2",
+		"touchpad.accel-speed = NaN",
+		"touchpad.accel-profile = fast",
+		"touchpad.scroll-factor = 0",
+		"touchpad.scroll-factor = 11",
+	} {
+		c, w := parseString(t, bad+"\n")
+		if c.Touchpad != d || len(w) != 1 {
+			t.Errorf("%s: %+v %v", bad, c.Touchpad, w)
+		}
+	}
+}
+
 func TestParse(t *testing.T) {
 	c, w := parseString(t, `
 # comment

@@ -33,6 +33,10 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
+| `touchpad.tap` | `on` | Tap to click: one finger left, two right, three middle |
+| `touchpad.accel-speed` | `0` | Touchpad pointer speed, from `-1` (slowest) to `1` (fastest) |
+| `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
+| `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
@@ -50,16 +54,16 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 ## Touchpad
 
-A three-finger swipe runs one action when the fingers lift:
+A three-finger swipe follows the fingers:
 
-| Swipe | `natural-scroll = off` | `natural-scroll = on` |
-|---|---|---|
-| Up | `focus-workspace-up` | `focus-workspace-down` |
-| Down | `focus-workspace-down` | `focus-workspace-up` |
-| Left | `focus-column-left` | `focus-column-right` |
-| Right | `focus-column-right` | `focus-column-left` |
+- Left or right scrolls the columns (`scroll` overflow). When the fingers lift, the view keeps the swipe's speed, slows down and settles on a column edge; the focus moves to a column fully on screen.
+- Up or down slides between numbered workspaces and settles on the nearest one the swipe's speed reaches. It stops with some resistance at the first and last workspace.
 
-Column swipes move the focus with either overflow: `scroll` brings the column into view, `fixed` only moves the focus.
+With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
+
+Where the view cannot scroll (`fixed` overflow, the stash, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
+
+Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
 ## HDR
 

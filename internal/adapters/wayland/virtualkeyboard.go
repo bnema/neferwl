@@ -150,7 +150,10 @@ func (k *virtualKeyboard) release() {
 	s := k.server
 	if len(k.pressed) > 0 && k.focus == s.focused {
 		_, keyboards := s.focusTarget(s.focused)
-		now := uint32(time.Now().UnixMilli())
+		var ts unix.Timespec
+		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
+		// Input events carry CLOCK_MONOTONIC milliseconds (libinput's clock).
+		now := uint32(ts.Nano() / int64(time.Millisecond))
 		for key := range k.pressed {
 			s.serial++
 			for _, kb := range keyboards {

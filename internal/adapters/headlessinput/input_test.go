@@ -66,11 +66,11 @@ func TestPointerScript(t *testing.T) {
 		script <- line
 	}
 	close(script)
-	input := make(chan ports.InputEvent, 8)
+	input := make(chan ports.InputEvent, 32)
 	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
 		t.Fatal(err)
 	}
-	if len(input) != 6 {
+	if len(input) != 5+swipeSteps+2 {
 		t.Fatalf("events: %d", len(input))
 	}
 	m := (<-input).(ports.PointerMotion)
@@ -83,7 +83,16 @@ func TestPointerScript(t *testing.T) {
 			t.Fatalf("got %+v want %+v", got, want)
 		}
 	}
-	if s := (<-input).(ports.Swipe); s.Dir != ports.SwipeLeft {
-		t.Fatal(s)
+	begin := (<-input).(ports.SwipeBegin)
+	last := begin.Time
+	for range swipeSteps {
+		u := (<-input).(ports.SwipeUpdate)
+		if u.DX >= 0 || u.DY != 0 || u.Time <= last {
+			t.Fatalf("update %+v after %v", u, last)
+		}
+		last = u.Time
+	}
+	if e := (<-input).(ports.SwipeEnd); e.Cancelled || e.Time != last {
+		t.Fatal(e)
 	}
 }

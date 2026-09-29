@@ -43,8 +43,12 @@ type Channels struct {
 	Scales chan<- ports.ScaleChanged
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
-	// Clock tells the time for fullscreenGrace; nil is the system clock.
+	// Clock tells the time for fullscreenGrace and slides; nil is the
+	// system clock.
 	Clock ports.Clock
+	// Frames, when set, reports outputs' page flips: a running slide moves
+	// one step per flip. Without flips it moves on a timer.
+	Frames <-chan ports.OutputFrame
 }
 
 // fullscreenGrace is how long after mapping a window's fullscreen request
@@ -114,6 +118,15 @@ type Core struct {
 	// activity is when core last told wayland about user input
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
+	// swipe is the touchpad swipe in progress. frameC fires when no page
+	// flip came in time to move a running slide (frameStop stops it).
+	swipe     *swipeGesture
+	frameC    <-chan time.Time
+	frameStop func() bool
+	// motionMsec is the time of the last pointer motion; pointerAt is the
+	// last position sent in the pointer's window.
+	motionMsec uint32
+	pointerAt  [2]float64
 }
 
 func keyName(s string) string {
@@ -539,7 +552,55 @@ func (c *Core) publish(ctx context.Context) error {
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	c.publishWorkspaces()
+	// A running slide moves on the next flip, or on the fallback timer.
+	if c.animating() {
+		if c.frameC == nil {
+			c.armFrame()
+		}
+	} else {
+		c.stopFrame()
+	}
 	return nil
+}
+
+// step moves the running slides to now and publishes the frame.
+func (c *Core) step(ctx context.Context) error {
+	c.stopFrame()
+	c.animate(c.now())
+	return c.slid(ctx, false)
+}
+
+// slid publishes a moved view; shown reports another workspace came on
+// screen.
+func (c *Core) slid(ctx context.Context, shown bool) error {
+	if err := c.workspaceVisible(ctx, shown); err != nil {
+		return err
+	}
+	if err := c.publish(ctx); err != nil {
+		return err
+	}
+	return c.rehit(ctx)
+}
+
+// rehit points the pointer at what now lies under a still cursor, as
+// windows slide under it. A held button keeps its grab.
+func (c *Core) rehit(ctx context.Context) error {
+	if c.grab != 0 {
+		return nil
+	}
+	id, x, y := c.hit(c.cursorX, c.cursorY)
+	if id != c.pointer {
+		c.pointer, c.pointerAt = id, [2]float64{x, y}
+		return c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
+	}
+	if id == 0 || c.pointerAt == [2]float64{x, y} {
+		return nil
+	}
+	c.pointerAt = [2]float64{x, y}
+	// The same window moved under the cursor: it moves in the window. No
+	// relative motion: the device did not move. The input clock is the
+	// device's; the last motion's time is the closest core knows.
+	return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, TimeMsec: c.motionMsec})
 }
 
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the
@@ -703,6 +764,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 }
 
 func (c *Core) Run(ctx context.Context) error {
+	defer c.stopFrame()
 	// Startup commands run once per session; a config reload does not
 	// run them again.
 	for _, argv := range c.cfg.Startup {
@@ -835,6 +897,21 @@ func (c *Core) Run(ctx context.Context) error {
 			if err := c.publish(ctx); err != nil {
 				return nil
 			}
+		case f, ok := <-c.ch.Frames:
+			if !ok {
+				c.ch.Frames = nil
+				continue
+			}
+			if c.sliding(f.Output) && c.step(ctx) != nil {
+				return nil
+			}
+			continue
+		case <-c.frameC:
+			c.frameC, c.frameStop = nil, nil
+			if c.step(ctx) != nil {
+				return nil
+			}
+			continue
 		case ev, ok := <-c.ch.Output:
 			if !ok {
 				c.ch.Output = nil
@@ -887,6 +964,7 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			switch v := ev.(type) {
 			case ports.PointerMotion:
+				c.motionMsec = v.TimeMsec
 				// A locked pointer stays still; relative motion still flows.
 				if c.constraint.Mode != ports.ConstraintLock {
 					c.cursorX, c.cursorY = c.constraint.Clamp(c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y))
@@ -912,6 +990,7 @@ func (c *Core) Run(ctx context.Context) error {
 						return nil
 					}
 				}
+				c.pointerAt = [2]float64{x, y}
 				if id != 0 {
 					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec}); err != nil {
 						return nil
@@ -978,14 +1057,18 @@ func (c *Core) Run(ctx context.Context) error {
 					}
 				}
 				continue
-			case ports.Swipe:
-				before := c.cur().mon.Current()
-				c.layerFocus = 0
-				c.applyAction(swipeAction(v.Dir, c.cfg.Touchpad.NaturalScroll))
-				if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
+			case ports.SwipeBegin:
+				if c.swipeBegin(v.Time) && c.slid(ctx, false) != nil {
 					return nil
 				}
-				if err := c.publish(ctx); err != nil {
+				continue
+			case ports.SwipeUpdate:
+				if c.swipeUpdate(v) && c.slid(ctx, false) != nil {
+					return nil
+				}
+				continue
+			case ports.SwipeEnd:
+				if c.slid(ctx, c.swipeEnd(v)) != nil {
 					return nil
 				}
 				continue
@@ -1053,6 +1136,7 @@ func (c *Core) Run(ctx context.Context) error {
 						continue
 					}
 					before := c.cur().mon.Current()
+					swiped := c.swipedWorkspace()
 					c.layerFocus = 0 // a bind acts on the windows
 					effect := c.applyAction(action)
 					if effect.Quit {
@@ -1068,6 +1152,9 @@ func (c *Core) Run(ctx context.Context) error {
 							return nil
 						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
 						}
+					}
+					if c.swipedWorkspace() != swiped {
+						c.dropSwipe()
 					}
 					if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
 						return nil

@@ -92,6 +92,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	contents := make(chan ports.SurfaceContent, 64)
 	cursorChanges := make(chan ports.CursorChange, 1)
 	presented := make(chan ports.OutputPresented, 64)
+	// Outputs report on flips; relayPresented passes them to wayland and
+	// tells core about each flip (frames) to move running slides.
+	flips := make(chan ports.OutputPresented, 64)
+	frames := make(chan ports.OutputFrame, 8)
 	captures := make(chan ports.CaptureRequest, 32)
 	captured := make(chan ports.CaptureDone, 64)
 	outputFormats := make(chan ports.OutputFormats, 8)
@@ -103,7 +107,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		// Only real sessions save scales: headless runs never touch the config file.
 		scales = make(chan ports.ScaleChanged, 8)
 	}
-	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}}
+	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}, Frames: frames}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -229,10 +233,12 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}()
 	}
 	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes, renderScenes) }()
+	workers.Add(1)
+	go func() { defer workers.Done(); relayPresented(ctx, flips, presented, frames) }()
 
 	go func() {
 		defer workers.Done()
-		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: presented, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
+		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
 		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		newRenderer := func(w, h int) (ports.Renderer, error) {
 			r, err := vulkan.New(w, h)
@@ -352,6 +358,31 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 		}
 		select {
 		case out <- ev:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// relayPresented passes output reports to wayland in order. Each flip is
+// also a frame for core; a frame core has not read yet is enough, so
+// frames never wait.
+func relayPresented(ctx context.Context, in <-chan ports.OutputPresented, out chan<- ports.OutputPresented, frames chan<- ports.OutputFrame) {
+	for {
+		var p ports.OutputPresented
+		select {
+		case <-ctx.Done():
+			return
+		case p = <-in:
+		}
+		if p.Flip != nil {
+			select {
+			case frames <- ports.OutputFrame{Output: p.Output}:
+			default:
+			}
+		}
+		select {
+		case out <- p:
 		case <-ctx.Done():
 			return
 		}

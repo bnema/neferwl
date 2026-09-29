@@ -45,10 +45,17 @@ layout.overflow = scroll
 # cycle-column-width steps through these, then back to the equal share.
 layout.presets = 1/3, 1/2, 2/3, 1
 
-# Touchpad. A three-finger swipe up or down changes workspace, left or right
-# changes column. natural-scroll = on moves the content with the fingers,
-# for scroll and swipes.
+# Touchpad. A three-finger swipe up or down slides between workspaces, left
+# or right scrolls the columns. natural-scroll = on moves the content with
+# the fingers, for scroll and swipes. tap = on clicks on a tap: one finger
+# left, two right, three middle.
 touchpad.natural-scroll = off
+touchpad.tap = on
+# Pointer speed from -1 to 1; adaptive speeds up quick moves, flat does not.
+touchpad.accel-speed = 0
+touchpad.accel-profile = adaptive
+# Two-finger scroll distance multiplier.
+touchpad.scroll-factor = 1
 
 # on: moving a column or window to another workspace shows that workspace.
 focus.follow-move = off

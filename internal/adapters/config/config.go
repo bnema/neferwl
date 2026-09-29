@@ -99,6 +99,9 @@ func Defaults() ports.Config {
 	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Layout.Overflow = "scroll"
+	c.Touchpad.Tap = true
+	c.Touchpad.AccelProfile = ports.AccelAdaptive
+	c.Touchpad.ScrollFactor = 1
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}
@@ -525,6 +528,29 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Touchpad.NaturalScroll = b
+	case "touchpad.tap":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Touchpad.Tap = b
+	case "touchpad.accel-speed":
+		s, err := strconv.ParseFloat(v, 64)
+		if err != nil || !(s >= -1 && s <= 1) {
+			return fmt.Errorf("must be between -1 and 1")
+		}
+		c.Touchpad.AccelSpeed = s
+	case "touchpad.accel-profile":
+		if v != ports.AccelAdaptive && v != ports.AccelFlat {
+			return fmt.Errorf("must be adaptive or flat")
+		}
+		c.Touchpad.AccelProfile = v
+	case "touchpad.scroll-factor":
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || !(f > 0 && f <= 10) {
+			return fmt.Errorf("must be above 0 and at most 10")
+		}
+		c.Touchpad.ScrollFactor = f
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {
