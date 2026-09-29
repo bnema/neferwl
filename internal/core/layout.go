@@ -97,8 +97,12 @@ type Placement struct {
 	Fullscreen, Focused, Hidden bool
 	// Floating windows sit over the columns at their own size.
 	Floating bool
-	// Peek is a stashed window peeking in beside the selected one: dimmed.
+	// Peek is a stashed window peeking in beside the selected one, or an
+	// overview preview of a neighbor workspace: dimmed.
 	Peek bool
+	// Preview is the scale of an overview preview: its buffer is drawn
+	// that much smaller in Rect, the client keeps its size. 0 otherwise.
+	Preview float64
 	// Neighbors are the sides touching a visible tile on this output.
 	// Inset reserves room for drawn lines: all sides of a float; for
 	// tiles without gaps, only the right and bottom shared sides.

@@ -283,6 +283,72 @@ func TestRendererScale(t *testing.T) {
 	}
 }
 
+// An overview preview draws the whole buffer shrunk into its rect, not
+// the buffer's corner.
+func TestRendererPreview(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	// 40x20 buffer: left half red, right half blue, drawn at half size.
+	px := make([]byte, 40*20*4)
+	for i := 0; i < len(px); i += 4 {
+		if (i/4)%40 < 20 {
+			px[i+2] = 200
+		} else {
+			px[i] = 200
+		}
+		px[i+3] = 255
+	}
+	c := shmContent(t, 40, 20, 160, px)
+	c.ID = 1
+	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 20, H: 10}, Preview: 0.5}}}
+	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		t.Fatal(err)
+	}
+	out := r.Pixels()
+	for p, want := range map[image.Point]color.RGBA{
+		{5, 5}:   {200, 0, 0, 255},
+		{22, 12}: {0, 0, 200, 255},
+		{25, 5}:  {0, 0, 0, 255},
+		{5, 15}:  {0, 0, 0, 255},
+	} {
+		if got := out.At(p.X, p.Y); got != want {
+			t.Errorf("%v = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// A buffer shrunk under half size averages its texels: one-pixel white
+// and black columns shrunk 4× come out an even gray, not a beat pattern.
+func TestRendererPreviewSmooth(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	px := make([]byte, 80*40*4)
+	for i := 0; i < len(px); i += 4 {
+		if (i/4)%2 == 0 {
+			px[i], px[i+1], px[i+2] = 255, 255, 255
+		}
+		px[i+3] = 255
+	}
+	c := shmContent(t, 80, 40, 320, px)
+	c.ID = 1
+	s := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 10}, Preview: 0.25}}}
+	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
+		t.Fatal(err)
+	}
+	out := r.Pixels()
+	for x := 1; x < 19; x++ {
+		if v := out.RGBAAt(x, 5).R; v < 100 || v > 155 {
+			t.Fatalf("x=%d: %d, want mid gray", x, v)
+		}
+	}
+}
+
 // solidContent is a w×h B8G8R8A8 buffer of one color.
 func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
 	px := make([]byte, w*h*4)

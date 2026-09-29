@@ -368,9 +368,12 @@ type PointerAxis struct {
 
 func (PointerAxis) inputEvent() {}
 
-// SwipeBegin starts a three-finger touchpad swipe. Time is the device
-// timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
-type SwipeBegin struct{ Time time.Duration }
+// SwipeBegin starts a three- or four-finger touchpad swipe. Time is the
+// device timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
+type SwipeBegin struct {
+	Fingers int
+	Time    time.Duration
+}
 
 // SwipeUpdate moves the fingers by the unaccelerated deltas DX, DY
 // (touchpad units, as libinput reports them, not natural-scroll inverted).
@@ -1021,6 +1024,9 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// Preview, above 0, draws the window's surfaces that much smaller in
+	// Rect (an overview thumbnail): the client keeps its size.
+	Preview float64
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

@@ -20,6 +20,7 @@ const (
 	ActionToggleFullscreen   Action = "toggle-fullscreen"
 	ActionToggleWindowStash  Action = "toggle-window-stash"
 	ActionToggleStashVisible Action = "toggle-stash-visible"
+	ActionToggleOverview     Action = "toggle-overview"
 	ActionCloseWindow        Action = "close-window"
 	ActionQuit               Action = "quit"
 	// Workspaces stack vertically; up/down stop at the ends.
@@ -200,6 +201,10 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
+	// In the overview, close-window closes the selected stash card.
+	if id := m.card(); id != 0 && a == ActionCloseWindow {
+		return Effect{Close: id}
+	}
 	if n, op, ok := WorkspaceArg(a); ok {
 		if op == FocusWorkspace {
 			m.FocusNumber(n)
@@ -232,6 +237,9 @@ func (m *Monitor) Apply(a Action) Effect {
 		return Effect{}
 	case ActionToggleStashVisible:
 		m.Current().ToggleStashVisible()
+		return Effect{}
+	case ActionToggleOverview:
+		m.ToggleOverview()
 		return Effect{}
 	case ActionMaximizeColumn:
 		// A client that made itself fullscreen (Wine at monitor size) goes

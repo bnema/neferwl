@@ -76,7 +76,7 @@ func (r *swipeRig) advance(d time.Duration) {
 // begin starts a swipe; nothing moves until it picks an axis.
 func (r *swipeRig) begin() {
 	r.at += time.Second
-	r.input <- ports.SwipeBegin{Time: r.at}
+	r.input <- ports.SwipeBegin{Fingers: 3, Time: r.at}
 }
 
 // move sends one swipe update and returns the scene it produced.
@@ -555,5 +555,134 @@ func TestKeyWithoutSlideMovesAtOnce(t *testing.T) {
 	s := r.key(t, "Left", ports.ModAlt)[0]
 	if got, _ := rectOf(s, 1); got.X != 0 {
 		t.Fatalf("column 1 at %d", got.X)
+	}
+}
+
+// In the overview a three-finger swipe does not slide the view: nothing
+// is drawn while the fingers move, and when they lift the selection moves
+// one column, the previews where they were.
+func TestSwipeInOverview(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	opened := r.key(t, "o", ports.ModAlt)[0]
+	selected := func(s ports.Scene) ports.WindowID {
+		for _, w := range s.Windows {
+			if w.Focused && w.Preview > 0 {
+				return w.ID
+			}
+		}
+		return 0
+	}
+	r.begin()
+	for range 3 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	}
+	s := r.end(t, false)
+	if id := selected(s); id != 2 {
+		t.Fatalf("selected %d after a left swipe, want 2", id)
+	}
+	before, _ := rectOf(opened, 2)
+	if after, _ := rectOf(s, 2); before != after {
+		t.Fatalf("preview moved: %+v then %+v", before, after)
+	}
+	// A small swipe does nothing: the l after it moves from 2 to 3.
+	r.begin()
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DX: -20, Time: r.at}
+	if id := selected(r.end(t, false)); id != 2 {
+		t.Fatalf("selected %d after a small swipe", id)
+	}
+	if id := selected(r.key(t, "l", 0)[0]); id != 3 {
+		t.Fatalf("selected %d after a small swipe and l, want 3", id)
+	}
+}
+
+// A four-finger swipe up opens the overview and down closes it on the
+// selection, whatever natural-scroll says (as niri). A short one or one
+// sideways does nothing.
+func TestFourFingerSwipeOverview(t *testing.T) {
+	for _, natural := range []bool{false, true} {
+		r := startSwipe(t, func(c *ports.Config) { c.Touchpad.NaturalScroll = natural })
+		threeColumns(t, r)
+		four := func(dx, dy float64, n int) ports.Scene {
+			r.at += time.Second
+			r.input <- ports.SwipeBegin{Fingers: 4, Time: r.at}
+			for range n {
+				r.at += 8 * time.Millisecond
+				r.input <- ports.SwipeUpdate{DX: dx, DY: dy, Time: r.at}
+			}
+			return r.end(t, false)
+		}
+		inOverview := func(s ports.Scene) bool {
+			for _, w := range s.Windows {
+				if w.Preview > 0 {
+					return true
+				}
+			}
+			return false
+		}
+		if inOverview(four(0, -5, 4)) {
+			t.Fatalf("natural=%v: short swipe opened the overview", natural)
+		}
+		if inOverview(four(-40, 0, 10)) {
+			t.Fatalf("natural=%v: sideways swipe opened the overview", natural)
+		}
+		if !inOverview(four(0, -40, 10)) {
+			t.Fatalf("natural=%v: swipe up did not open the overview", natural)
+		}
+		if !inOverview(four(0, -40, 10)) {
+			t.Fatalf("natural=%v: a second swipe up closed it", natural)
+		}
+		r.key(t, "h", 0)
+		s := four(0, 40, 10)
+		if inOverview(s) {
+			t.Fatalf("natural=%v: swipe down did not close the overview", natural)
+		}
+		if id := r.focused(t); id != 2 {
+			t.Fatalf("natural=%v: closed on %d, want the selection 2", natural, id)
+		}
+	}
+}
+
+// Opening the overview during a column swipe drops the swipe: the rest
+// of it neither slides the columns under the overview nor lands them,
+// also once the overview closed again (escape before the rest).
+func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
+	for _, closeFirst := range []bool{false, true} {
+		r := startSwipe(t, nil)
+		settled := threeColumns(t, r)
+		r.begin()
+		r.move(t, -40, 0)
+		r.move(t, -40, 0)
+		r.key(t, "o", ports.ModAlt)
+		if closeFirst {
+			r.key(t, "Escape", 0)
+		}
+		for range 20 {
+			r.at += 8 * time.Millisecond
+			r.input <- ports.SwipeUpdate{DX: -80, Time: r.at}
+		}
+		r.input <- ports.SwipeEnd{Time: r.at}
+		if !closeFirst {
+			r.input <- ports.KeyEvent{Keysym: "Escape", Pressed: true}
+		}
+		// Past any spring: the view shows where it settled.
+		r.advance(5 * time.Second)
+		r.frames <- ports.OutputFrame{Output: wide.Name}
+		s := sceneMatch(t, r.scenes, func(s ports.Scene) bool {
+			for _, w := range s.Windows {
+				if w.Preview > 0 {
+					return false
+				}
+			}
+			return true
+		})
+		for _, id := range []ports.WindowID{1, 2, 3} {
+			before, _ := rectOf(settled, id)
+			if after, _ := rectOf(s, id); before != after {
+				t.Fatalf("closeFirst=%v: window %d moved: %+v then %+v", closeFirst, id, before, after)
+			}
+		}
 	}
 }

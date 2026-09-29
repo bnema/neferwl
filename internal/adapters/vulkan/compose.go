@@ -46,6 +46,9 @@ const (
 	flagExtendedLinear = 8
 	flagYUV            = 16
 	flagP010           = 32
+	// flagSmooth supersamples a buffer shrunk under half size (overview
+	// previews): four bilinear samples per pixel instead of one.
+	flagSmooth = 64
 )
 
 // pushConstants is struct Draw of the shaders (std430 push constant block).
@@ -352,6 +355,9 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 	}
 	if float64(full.Dx()) == cw && float64(full.Dy()) == ch && cw == float64(int(cw)) && ch == float64(int(ch)) {
 		flags |= flagExact
+	}
+	if float64(full.Dx()) < cw/2 || float64(full.Dy()) < ch/2 {
+		flags |= flagSmooth
 	}
 	dr.pc.misc = [4]uint32{mode, flags, uint32(r.width), uint32(r.height)}
 	return dr

@@ -55,13 +55,13 @@ func TestSwipesIgnoreSecondTouchpad(t *testing.T) {
 func TestSwipesStreamThreeFingers(t *testing.T) {
 	var s swipes
 	const pad, other = 1, 2
-	if ev := s.begin(pad, 4, time.Second); ev != nil {
-		t.Fatalf("four fingers: %v", ev)
+	if ev := s.begin(pad, 2, time.Second); ev != nil {
+		t.Fatalf("two fingers: %v", ev)
 	}
 	if ev := s.update(pad, 1, 1, time.Second); ev != nil {
 		t.Fatalf("update without a swipe: %v", ev)
 	}
-	if ev := s.begin(pad, 3, time.Second); ev != (ports.SwipeBegin{Time: time.Second}) {
+	if ev := s.begin(pad, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
 	if ev := s.update(pad, -3, 2, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, Time: 2 * time.Second}) {
@@ -75,6 +75,16 @@ func TestSwipesStreamThreeFingers(t *testing.T) {
 	}
 	if ev := s.end(pad, false, 0); ev != nil {
 		t.Fatalf("second end: %v", ev)
+	}
+}
+
+func TestSwipesStreamFourFingers(t *testing.T) {
+	var s swipes
+	if ev := s.begin(1, 4, time.Second); ev != (ports.SwipeBegin{Fingers: 4, Time: time.Second}) {
+		t.Fatalf("four fingers: %v", ev)
+	}
+	if ev := s.begin(1, 5, time.Second); ev != nil {
+		t.Fatalf("five fingers during a swipe: %v", ev)
 	}
 }
 

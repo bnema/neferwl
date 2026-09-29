@@ -144,15 +144,22 @@ func (w *Workspace) Click(id WindowID) {
 	w.FocusID(id)
 }
 
+// stashRect is where the selected stashed window is, border included.
+func (w *Workspace) stashRect() Rect {
+	u := w.Usable
+	fw := min(max(u.W*cmp.Or(w.stashWidth, stashWidth)/100-2*w.border, 0)+2*w.border, u.W)
+	fh := min(max(u.H*stashHeight/100-2*w.border, 0)+2*w.border, u.H)
+	return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
+}
+
 // stashLayout places the stash: the selected window centred, its
 // neighbors gap% of the usable width away, showing what the margins
 // leave of them, the others hidden. cover is the covering fullscreen
 // window, if any.
 func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 	u := w.Usable
-	fw := min(max(u.W*cmp.Or(w.stashWidth, stashWidth)/100-2*w.border, 0)+2*w.border, u.W)
-	fh := min(max(u.H*stashHeight/100-2*w.border, 0)+2*w.border, u.H)
-	center := Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
+	center := w.stashRect()
+	fw, fh := center.W, center.H
 	// Peeks stay in the margins: they never overlap the selected window.
 	gap := u.W * w.stashGap / 100
 	peek := max((u.W-fw)/2-gap, 0)

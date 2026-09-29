@@ -125,7 +125,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				log.Warn().Str("line", line).Msg("invalid move")
 				continue
 			}
-			if len(fields) > 0 && fields[0] == "swipe" {
+			if len(fields) > 0 && (fields[0] == "swipe" || fields[0] == "swipe4") {
 				dirs := map[string][2]float64{"up": {0, -1}, "down": {0, 1}, "left": {-1, 0}, "right": {1, 0}}
 				d, ok := [2]float64{}, len(fields) == 2
 				if ok {
@@ -135,7 +135,11 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					log.Warn().Str("line", line).Msg("invalid swipe")
 					continue
 				}
-				for _, ev := range swipeEvents(d[0], d[1], monotonic()) {
+				fingers := 3
+				if fields[0] == "swipe4" {
+					fingers = 4
+				}
+				for _, ev := range swipeEvents(fingers, d[0], d[1], monotonic()) {
 					if err := sendPointer(ev); err != nil {
 						return err
 					}

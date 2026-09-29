@@ -34,6 +34,22 @@ type Monitor struct {
 	// one its swipe began on); switchOff is then from the current
 	// workspace's place in it.
 	switchList []*Workspace
+	// overview is set while the overview is open (overview.go);
+	// overviewFrom and overviewFromID are where it opened, for Escape.
+	overview       bool
+	overviewFrom   *Workspace
+	overviewFromID WindowID
+	// overviewCard is the selected stash card and overviewCardOf its
+	// workspace; 0 while the selection is on a column. The stash itself
+	// changes only when the overview closes on the card.
+	overviewCard   WindowID
+	overviewCardOf *Workspace
+	// scrollX and scrollY add up scrolling in the overview until it makes
+	// a step (overviewScroll); opening the overview starts from zero.
+	scrollX, scrollY float64
+	// overviewOpens counts the overview's openings: a swipe sliding when
+	// one happens is dropped (gesture.go).
+	overviewOpens int
 }
 
 // NamedWorkspace configures a named workspace. Zero MaxColumns and an empty
@@ -622,10 +638,20 @@ func (m *Monitor) landing() *Workspace {
 	return m.Current()
 }
 
-func (m *Monitor) Focused() (WindowID, bool) { return m.Current().Focused() }
+// Focused is the focused window of the workspace on screen; in the
+// overview, the selected stash card when it is one.
+func (m *Monitor) Focused() (WindowID, bool) {
+	if id := m.card(); id != 0 {
+		return id, true
+	}
+	return m.Current().Focused()
+}
 
 // Layout places every window: the workspace on screen laid out, others hidden.
 func (m *Monitor) Layout() []Placement {
+	if m.overview {
+		return m.overviewLayout()
+	}
 	var result []Placement
 	cur := m.Current()
 	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {

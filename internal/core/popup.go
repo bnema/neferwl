@@ -147,7 +147,8 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 		for _, pl := range sc.mon.Layout() {
 			if pl.ID == id {
 				// Hidden or scrolled off: not on screen, like its popups.
-				if !onScreen(pl, sc.mon.Output()) {
+				// A preview takes no input and shows no popups.
+				if !onScreen(pl, sc.mon.Output()) || pl.Preview > 0 {
 					return nil, Rect{}, false
 				}
 				return sc, c.clientRect(pl), true

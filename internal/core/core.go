@@ -213,7 +213,7 @@ func (c *Core) apply(cfg ports.Config) error {
 			continue
 		}
 		switch Action(a) {
-		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
+		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspaceUp, ActionFocusWorkspaceDown, ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -479,11 +479,15 @@ func (c *Core) publish(ctx context.Context) error {
 		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
+		if sc.mon.overview {
+			// Previews have no lines: the selected one is framed.
+			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
+		}
 		for _, p := range layout {
 			alive[p.ID] = true
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset}
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset, Preview: p.Preview}
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
 			}
@@ -499,6 +503,23 @@ func (c *Core) publish(ctx context.Context) error {
 					v = ports.ConfigureWindow{ID: p.ID, Floating: floating}
 				}
 				v.Activated, v.Visible, v.Output = false, false, sc.name()
+				if ok && v == old {
+					continue
+				}
+				if err := c.command(ctx, v); err != nil {
+					return err
+				}
+				c.sent[p.ID] = v
+				continue
+			}
+			if p.Preview > 0 {
+				// A preview keeps its client's size: only its focus changes.
+				old, ok := c.sent[p.ID]
+				v := old
+				if !ok {
+					v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
+				}
+				v.Activated, v.Visible, v.Output = focused, onScreen(p, o), sc.name()
 				if ok && v == old {
 					continue
 				}
@@ -632,7 +653,7 @@ func (c *Core) resolveConstraint() {
 	if id := c.constrained.ID; id != 0 {
 		if s, _ := c.screenOf(id); s != nil {
 			for _, p := range s.mon.Layout() {
-				if p.ID != id || p.Hidden {
+				if p.ID != id || p.Hidden || p.Preview > 0 {
 					continue
 				}
 				r := c.clientRect(p)
@@ -727,6 +748,11 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
+	}
+	if sc.mon.overview {
+		// Previews and the layers under them take no input: a click
+		// picks a preview (overviewClick).
+		return 0, 0, 0
 	}
 	var id WindowID
 	var sx, sy float64
@@ -998,6 +1024,13 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.PointerButton:
+				if v.Pressed && c.pointer == 0 && c.grab == 0 && len(c.buttons) == 0 {
+					if picked, err := c.overviewClick(ctx); err != nil {
+						return nil
+					} else if picked {
+						continue
+					}
+				}
 				id := c.pointer
 				if c.grab != 0 {
 					id = c.grab
@@ -1049,6 +1082,18 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.PointerAxis:
+				// In the overview, scrolling moves the selection.
+				if c.cur().mon.overview && !c.overviewKeyboardTaken() {
+					if c.cur().mon.overviewScroll(v) {
+						if c.workspaceVisible(ctx, true) != nil {
+							return nil
+						}
+						if err := c.publish(ctx); err != nil {
+							return nil
+						}
+					}
+					continue
+				}
 				// Scroll goes to the window under the pointer, which has the
 				// pointer focus even mid-drag.
 				if c.pointer != 0 {
@@ -1058,7 +1103,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			case ports.SwipeBegin:
-				if c.swipeBegin(v.Time) && c.slid(ctx, false) != nil {
+				if c.swipeBegin(v) && c.slid(ctx, false) != nil {
 					return nil
 				}
 				continue
@@ -1076,6 +1121,21 @@ func (c *Core) Run(ctx context.Context) error {
 			key, ok := ev.(ports.KeyEvent)
 			if !ok {
 				continue
+			}
+			// The overview takes its keys before any window; others still
+			// run binds, and are not forwarded.
+			// A launcher or a menu holding the keyboard gets them first.
+			if mon := c.cur().mon; mon.overview && !c.overviewKeyboardTaken() {
+				if key.Pressed && mon.overviewKey(key) {
+					c.pressed[heldKey(key)] = true
+					if c.workspaceVisible(ctx, true) != nil {
+						return nil
+					}
+					if err := c.publish(ctx); err != nil {
+						return nil
+					}
+					continue
+				}
 			}
 			// A focused window inhibiting shortcuts gets every key:
 			// no bind runs (emergency quit and VT switch are handled by
@@ -1171,7 +1231,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[held] = false
 			}
-			if id := c.keyboardFocus(); id != 0 {
+			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.overview || c.overviewKeyboardTaken()) {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}
