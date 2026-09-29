@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"slices"
 	"testing"
 
@@ -23,33 +24,56 @@ func maximizedOverview() *Monitor {
 func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 	m := maximizedOverview()
 	w := m.Current()
+	w.Columns[2].Windows = append(w.Columns[2].Windows, 5)
+	rects := w.columnRectsFor(true)
 	m.ToggleOverview()
-	if got := w.stack(); !slices.Equal(got, []stackItem{{stackColumn, 2}, {stackColumn, 1}, {stackColumn, 3}, {stackColumn, 4}}) {
-		t.Fatalf("stack %v", got)
+	if got := w.stack(); !slices.Equal(got, []stackItem{{stackColumn, 2}, {kind: stackColumns}}) {
+		t.Fatalf("items %v", got)
 	}
-	front := previewOf(t, m.Layout(), 2)
-	if front.Peek || !front.Focused {
-		t.Fatalf("front %+v", front)
+	if p := previewOf(t, m.Layout(), 2); p.Hidden || p.Peek || !p.Focused {
+		t.Fatalf("maximized front %+v", p)
 	}
-	for _, id := range []WindowID{1, 3} {
-		if p := previewOf(t, m.Layout(), id); !p.Peek || p.Hidden {
-			t.Fatalf("peek %d %+v", id, p)
+	ps := m.Layout()
+	for _, id := range []WindowID{1, 3, 4, 5} {
+		p := previewOf(t, ps, id)
+		i := w.columnOf(id)
+		r := rects[i]
+		if id == 3 || id == 5 {
+			r = stackRects(r, 2, w.gap())[map[WindowID]int{3: 0, 5: 1}[id]]
+		}
+		if p.Hidden || !p.Peek || p.Focused || math.Abs(float64(p.Rect.W)-float64(r.W)*p.Preview) > 1 || math.Abs(float64(p.Rect.H)-float64(r.H)*p.Preview) > 1 {
+			t.Fatalf("hidden tile %d: %+v cell %+v", id, p, r)
+		}
+		for _, other := range []WindowID{1, 3, 4, 5} {
+			if id < other && p.Rect.Overlaps(previewOf(t, ps, other).Rect) {
+				t.Fatalf("hidden tiles %d/%d overlap", id, other)
+			}
 		}
 	}
-	if p := previewOf(t, m.Layout(), 4); !p.Hidden {
-		t.Fatalf("fourth should be hidden %+v", p)
+	m.OverviewMove(0, -1)
+	if m.stackFront(w).kind != stackColumns || m.hiddenColumn(w) != 0 || !previewOf(t, m.Layout(), 1).Focused || w.Focus != 1 || !w.Columns[1].FullWidth {
+		t.Fatal("up changed real maximization or failed to select hidden card")
+	}
+	m.OverviewMove(1, 0)
+	if m.hiddenColumn(w) != 2 || !previewOf(t, m.Layout(), 3).Focused || w.Focus != 1 {
+		t.Fatal("right did not select column 3 provisionally")
+	}
+	m.OverviewMove(-1, 0)
+	if m.hiddenColumn(w) != 0 {
+		t.Fatal("left did not skip maximized slot")
+	}
+	m.OverviewMove(1, 0)
+	m.ToggleOverview()
+	if id, _ := w.Focused(); id != 3 || !w.Columns[2].FullWidth || w.Columns[1].FullWidth || !previewOf(t, w.Layout(), 1).Hidden {
+		t.Fatalf("confirm focus %d columns %+v", id, w.Columns)
+	}
+	m.ToggleOverview()
+	if m.hiddenColumn(w) != 1 || m.stackFront(w).kind != stackColumn {
+		t.Fatal("previously maximized column not selected behind front")
 	}
 	m.OverviewMove(0, -1)
-	if m.stackFront(w) != (stackItem{stackColumn, 1}) || !previewOf(t, m.Layout(), 1).Focused {
-		t.Fatal("up did not select first hidden column")
-	}
-	m.ToggleOverview()
-	if id, _ := w.Focused(); id != 1 || !w.Columns[0].FullWidth || w.Columns[1].FullWidth {
-		t.Fatalf("transfer focus %d cols %+v", id, w.Columns)
-	}
-	m.ToggleOverview()
-	if got := w.stack()[1]; got != (stackItem{stackColumn, 2}) {
-		t.Fatalf("MRU behind: %v", got)
+	if p := previewOf(t, m.Layout(), 2); !p.Focused || p.Peek {
+		t.Fatalf("MRU selection %+v", p)
 	}
 	m.CancelOverview()
 }
@@ -89,7 +113,7 @@ func TestOverviewMaximizedFloatWrapAndNeighbor(t *testing.T) {
 	m.Current().ToggleFullWidth()
 	m.Focus(0)
 	m.ToggleOverview()
-	if got := w.stack(); !slices.Equal(got, []stackItem{{stackFloat, 9}, {stackColumn, 2}, {stackColumn, 1}, {stackColumn, 3}, {stackColumn, 4}}) {
+	if got := w.stack(); !slices.Equal(got, []stackItem{{stackFloat, 9}, {stackColumn, 2}, {kind: stackColumns}}) {
 		t.Fatalf("stack %v", got)
 	}
 	if p, q := previewOf(t, m.Layout(), 10), previewOf(t, m.Layout(), 11); !p.Peek || !q.Peek || p.Focused || q.Focused {
@@ -115,7 +139,7 @@ func TestOverviewMaximizedLeftAndStash(t *testing.T) {
 	w.ToggleFullWidth()
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0)
-	if m.cardAt(w) >= 0 || m.stackFront(w) != (stackItem{stackColumn, 1}) {
+	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns {
 		t.Fatalf("left should send card behind: %v", m.stackFront(w))
 	}
 	m.OverviewMove(0, 1)
@@ -199,7 +223,7 @@ func TestOverviewHiddenSelectionFollowsWindowAfterRemoval(t *testing.T) {
 	w := m.Current()
 	m.ToggleOverview()
 	m.OverviewMove(0, -1)
-	m.OverviewMove(0, -1) // column 3
+	m.OverviewMove(1, 0) // select column 3 inside the group
 	w.RemoveWindow(1)
 	if p := previewOf(t, m.Layout(), 3); !p.Focused || p.Peek {
 		t.Fatalf("selection moved: %+v", p)
@@ -215,7 +239,7 @@ func TestOverviewHiddenSelectionRemovedFallsBack(t *testing.T) {
 	w := m.Current()
 	m.ToggleOverview()
 	m.OverviewMove(0, -1)
-	m.OverviewMove(0, -1)
+	m.OverviewMove(1, 0) // select column 3 inside the group
 	w.RemoveWindow(3)
 	if p := previewOf(t, m.Layout(), 4); !p.Focused {
 		t.Fatalf("fallback %+v", p)

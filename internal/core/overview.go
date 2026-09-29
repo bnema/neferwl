@@ -131,9 +131,17 @@ func (m *Monitor) closeOverview() {
 	} else if !w.pinned() && len(w.stack()) > 0 {
 		item := m.stackFront(w)
 		selected := m.ov.selected
-		if item.kind == stackColumns && w.columnOf(selected) < 0 && len(w.Columns) > 0 {
-			c := w.Columns[w.Focus]
-			selected = c.Windows[c.Focus]
+		if item.kind == stackColumns && len(w.Columns) > 0 {
+			i := w.columnOf(selected)
+			if w.overviewMaximized() && (i < 0 || i == w.Focus) {
+				i = m.hiddenColumn(w)
+			} else if i < 0 {
+				i = w.Focus
+			}
+			if i >= 0 && w.columnOf(selected) != i {
+				c := w.Columns[i]
+				selected = c.Windows[c.Focus]
+			}
 		}
 		w.apply(item, selected)
 	}
@@ -213,8 +221,13 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 			m.ov.card, m.ov.cardOf = 0, nil
 			item := m.stackFront(w)
 			if item.kind == stackColumns {
-				w.selectOverviewColumn(0)
-				m.ov.selected = w.Columns[0].Windows[w.Columns[0].Focus]
+				if w.overviewMaximized() {
+					i := m.hiddenColumn(w)
+					m.ov.selected, m.ov.selectedAt = w.Columns[i].Windows[w.Columns[i].Focus], i
+				} else {
+					w.selectOverviewColumn(0)
+					m.ov.selected = w.Columns[0].Windows[w.Columns[0].Focus]
+				}
 			}
 		}
 		return
@@ -233,18 +246,34 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		return
 	}
 	i := w.columnOf(m.ov.selected)
-	if i < 0 {
-		i = w.Focus
+	if i < 0 || w.overviewMaximized() && i == w.Focus {
+		if w.overviewMaximized() {
+			i = m.hiddenColumn(w)
+		} else {
+			i = w.Focus
+		}
 	}
-	if dx < 0 && i == 0 && len(w.Stash) > 0 {
+	first := 0
+	if w.overviewMaximized() && w.Focus == 0 {
+		first = 1
+	}
+	if dx < 0 && i == first && len(w.Stash) > 0 {
 		m.selectCard(w, w.stashAt)
 		return
 	}
 	next := min(max(i+dx, 0), len(w.Columns)-1)
+	if w.overviewMaximized() && next == w.Focus {
+		next = min(max(next+dx, 0), len(w.Columns)-1)
+		if next == w.Focus {
+			return
+		}
+	}
 	m.ov.selected = w.Columns[next].Windows[w.Columns[next].Focus]
 	m.ov.selectedAt = next
-	// Ordinary group navigation retains its existing scroll-to-selection.
-	w.selectOverviewColumn(next)
+	if !w.overviewMaximized() {
+		// Ordinary group navigation retains its existing scroll-to-selection.
+		w.selectOverviewColumn(next)
+	}
 }
 
 // OverviewPick closes the overview on the clicked window.

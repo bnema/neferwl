@@ -136,7 +136,7 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 ### Overview
 
-`toggle-overview` shows scaled previews of the current workspace. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Smaller floats, such as dialogs, stay hidden. Pinned fullscreen remains its row's only preview; `scroll` overflow keeps its columns in one card.
+`toggle-overview` shows scaled previews of the current workspace. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Smaller floats, such as dialogs, stay hidden. Pinned fullscreen remains its row's only preview; `scroll` overflow keeps its columns in one card.
 
 | Key | Action |
 | --- | --- |

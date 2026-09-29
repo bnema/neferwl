@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -116,13 +117,14 @@ func TestOverviewStackMRUAndSize(t *testing.T) {
 	m.OverviewMove(0, -1)
 	m.ToggleOverview()
 	m.ToggleOverview()
-	items := w.stack()
-	if len(items) < 3 || items[0] != (stackItem{stackColumn, 1}) || items[1] != (stackItem{stackColumn, 2}) {
-		t.Fatalf("MRU %v", items)
+	if got := w.stack(); !slices.Equal(got, []stackItem{{stackColumn, 1}, {kind: stackColumns}}) {
+		t.Fatalf("stack %v", got)
 	}
-	p := previewOf(t, m.Layout(), 2)
-	if math.Abs(float64(p.Rect.W)-float64(w.Usable.W-2*w.gap())*p.Preview) > 1 {
-		t.Fatalf("prior maximized size %+v", p)
+	if m.hiddenColumn(w) != 1 {
+		t.Fatalf("MRU preselection %d, want Firefox column", m.hiddenColumn(w))
+	}
+	if p := previewOf(t, m.Layout(), 2); math.Abs(float64(p.Rect.W)-float64(w.columnRectsFor(true)[1].W)*p.Preview) > 1 {
+		t.Fatalf("prior maximized buffer not fitted to cell: %+v", p)
 	}
 	m.CancelOverview()
 }

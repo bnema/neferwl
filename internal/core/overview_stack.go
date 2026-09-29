@@ -10,8 +10,9 @@ const (
 	stackColumn
 )
 
-// A stackItem identifies a covering float, all columns, or one column by a
-// window it contains. Only stackColumns has a zero ID.
+// A stackItem identifies a covering float, a column group (all columns, or
+// all except the maximized column), or the maximized column by one of its
+// windows. Only stackColumns has a zero ID.
 type stackItem struct {
 	kind stackKind
 	id   WindowID
@@ -44,20 +45,8 @@ func (w *Workspace) stack() []stackItem {
 	}
 	if w.overviewMaximized() {
 		items = append(items, stackItem{stackColumn, w.Columns[w.Focus].Windows[0]})
-		seen := map[int]bool{w.Focus: true}
-		for _, id := range w.maximized {
-			i := w.columnOf(id)
-			if i >= 0 && !seen[i] {
-				items = append(items, stackItem{stackColumn, w.Columns[i].Windows[0]})
-				seen[i] = true
-			}
-		}
-		for i, c := range w.Columns {
-			if !seen[i] {
-				items = append(items, stackItem{stackColumn, c.Windows[0]})
-			}
-		}
-	} else if len(w.Columns) > 0 {
+	}
+	if len(w.Columns) > 0 {
 		items = append(items, stackItem{kind: stackColumns})
 	}
 	for i := len(w.Floats) - 1; i >= 0; i-- {
@@ -82,7 +71,7 @@ func (w *Workspace) itemOf(id WindowID) (stackItem, bool) {
 				return item, true
 			}
 		case stackColumns:
-			if w.columnOf(id) >= 0 {
+			if i := w.columnOf(id); i >= 0 && (!w.overviewMaximized() || i != w.Focus) {
 				return item, true
 			}
 		}
@@ -130,6 +119,43 @@ func (m *Monitor) moveStack(d int) bool {
 	return true
 }
 
+// hiddenColumn resolves the provisional selection by window, not column
+// index. With no surviving selection, prefer the most recently maximized
+// hidden column, then the nearest prior non-maximized focus, then first.
+func (m *Monitor) hiddenColumn(w *Workspace) int {
+	if !w.overviewMaximized() {
+		return -1
+	}
+	if i := w.columnOf(m.ov.selected); i >= 0 && i != w.Focus && m.ov.row == w {
+		return i
+	}
+	if m.ov.row == w && m.ov.selectedAt >= 0 {
+		i := min(m.ov.selectedAt, len(w.Columns)-1)
+		if i == w.Focus {
+			if i > 0 {
+				i--
+			} else {
+				i++
+			}
+		}
+		return i
+	}
+	for _, id := range w.maximized {
+		if i := w.columnOf(id); i >= 0 && i != w.Focus {
+			return i
+		}
+	}
+	if i := w.columnOf(m.ov.fromID); w == m.ov.from && i >= 0 && i != w.Focus {
+		return i
+	}
+	for i := range w.Columns {
+		if i != w.Focus {
+			return i
+		}
+	}
+	return -1
+}
+
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
 func (w *Workspace) selectOverviewColumn(i int) {
 	w.floatFocus, w.stashFocus = false, false
@@ -146,11 +172,27 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 	case stackFloat:
 		w.FocusID(item.id)
 	case stackColumns:
-		if w.columnOf(selected) < 0 && len(w.Columns) > 0 {
-			c := w.Columns[w.Focus]
+		i := w.columnOf(selected)
+		if w.overviewMaximized() && i == w.Focus {
+			i = -1
+		}
+		if i < 0 && len(w.Columns) > 0 {
+			i = w.Focus
+			if w.overviewMaximized() {
+				for next := range w.Columns {
+					if next != w.Focus {
+						i = next
+						break
+					}
+				}
+			}
+			c := w.Columns[i]
 			selected = c.Windows[c.Focus]
 		}
 		if selected != 0 {
+			if w.overviewMaximized() && i != w.Focus {
+				w.transferMaximization(i)
+			}
 			w.FocusID(selected)
 		}
 	case stackColumn:
@@ -173,7 +215,30 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 // configured size. A prior maximized column retains its full-width buffer.
 func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool) []Placement {
 	if item.kind == stackColumns {
-		return w.previewRow(y, dim, lit)
+		if !w.overviewMaximized() {
+			return w.previewRow(y, dim, lit)
+		}
+		// Keep the normal fixed spiral geometry, but omit the maximized
+		// column's slot: it belongs to the other card. In particular, an
+		// earlier maximized buffer scales into its unmaximized cell here.
+		g := w.gap()
+		rects := w.columnRectsFor(true)
+		var tiles []Placement
+		selected := m.hiddenColumn(w)
+		for i, c := range w.Columns {
+			if i == w.Focus {
+				continue
+			}
+			r := rects[i]
+			r.X -= w.Usable.X
+			r.Y -= w.Usable.Y
+			for j, t := range stackRects(r, len(c.Windows), g) {
+				tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == selected && j == c.Focus})
+			}
+		}
+		sel := rects[selected]
+		sel.X -= w.Usable.X
+		return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, sel)
 	}
 	g := w.gap()
 	if item.kind == stackFloat {
