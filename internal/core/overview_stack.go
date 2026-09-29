@@ -94,12 +94,10 @@ func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
 		if id == 0 {
 			tiles = w.previewRow(y, dim || k > 0, lit && k == 0)
 		} else {
-			// A preview, like a stash card: not a float, so no float
-			// veil or float border.
 			g := w.gap()
 			r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 			tiles = w.previewRowTiles(y, dim || k > 0, lit && k == 0,
-				[]Placement{{ID: id, Rect: r, Focused: true}}, r.X+r.W+g, r)
+				[]Placement{{ID: id, Rect: r, Floating: true, Focused: true}}, r.X+r.W+g, r)
 		}
 		step := k * max(w.cardStep()*2, w.Usable.H/40)
 		for i := range tiles {

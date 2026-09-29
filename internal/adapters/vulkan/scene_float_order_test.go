@@ -24,4 +24,15 @@ func TestSceneBelowFloatBoundary(t *testing.T) {
 	if len(ds) != 5 || ds[3].pc.color != [4]float32{0, 0, 0, 0.4} || ds[4].pc.rect[0] != 50 {
 		t.Fatalf("veil boundary: %+v", ds)
 	}
+	// An overview preview of a float is not a float above the tiles: the
+	// tile lines follow the last window.
+	s.Dim = 0
+	s.Windows = []ports.SceneWindow{
+		{ID: 1, Floating: true, Preview: 0.5, Rect: ports.Rect{W: 40, H: 30}},
+		{ID: 2, Preview: 0.5, Rect: ports.Rect{X: 40, W: 40, H: 30}},
+	}
+	ds = draws()
+	if len(ds) != 3 || ds[2].pc.rect[3] != 1 {
+		t.Fatalf("preview boundary: %+v", ds)
+	}
 }

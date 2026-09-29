@@ -44,7 +44,11 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		// A preview keeps its client's size: only its focus changes.
 		v = old
 		if !ok {
-			v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
+			v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview), Floating: p.Floating}
+			if p.Floating {
+				// A native float picks its own size.
+				v.Width, v.Height = 0, 0
+			}
 		}
 		if p.Fullscreen && !v.Fullscreen {
 			// A float made fullscreen off screen: its preview row shows

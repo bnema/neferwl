@@ -339,11 +339,12 @@ func onScreen(p Placement, o Rect) bool {
 }
 
 // floatDim is the veil opacity of a layout: dim only when a float is
-// drawn above the tiles, never for a demoted covering float alone.
+// drawn above the tiles, never for a demoted covering float alone nor for
+// an overview preview.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
 	shown := false
 	for _, p := range layout {
-		if p.Floating && !p.Below && onScreen(p, o) {
+		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
 			if p.Fullscreen {
 				return 0
 			}

@@ -27,7 +27,7 @@ func TestOverviewCoveringStackNavigation(t *testing.T) {
 			m.ToggleOverview()
 			ps := m.Layout()
 			float, col := previewOf(t, ps, 9), previewOf(t, ps, 3)
-			if float.Hidden || col.Hidden || float.Fullscreen || float.Floating || float.Peek != start.column || col.Peek == start.column {
+			if float.Hidden || col.Hidden || float.Fullscreen || !float.Floating || float.Peek != start.column || col.Peek == start.column {
 				t.Fatalf("front/peek: float %+v, column %+v", float, col)
 			}
 			if !slices.Equal(order(w), before) {
