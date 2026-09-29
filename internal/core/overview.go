@@ -163,10 +163,13 @@ func (m *Monitor) CancelOverview() {
 			}
 		}
 		from.Floats = append(from.Floats, current...)
-		// Only the column holding the anchor window is maximized, wherever
-		// active binds moved it: columns may have split, merged or moved.
+		// Fixed overflow maximizes at most one column: only the one holding
+		// the anchor window, wherever active binds moved it. Scroll overflow
+		// keeps each column's own width.
 		for i := range from.Columns {
-			from.Columns[i].FullWidth = m.overviewFullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.overviewFullWidth)
+			if from.Overflow == OverflowFixed {
+				from.Columns[i].FullWidth = m.overviewFullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.overviewFullWidth)
+			}
 		}
 		from.scroll()
 	}

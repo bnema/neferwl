@@ -222,6 +222,22 @@ func TestOverviewCancelFullWidthAfterSplit(t *testing.T) {
 	}
 }
 
+// In scroll overflow, Escape leaves a maximized column the focus left.
+func TestOverviewCancelKeepsScrollFullWidth(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	w.Overflow = OverflowScroll
+	w.FocusID(3) // column 2 stays maximized in scroll overflow
+	if !w.Columns[1].FullWidth {
+		t.Fatal("setup: column 2 not maximized")
+	}
+	m.ToggleOverview()
+	m.CancelOverview()
+	if !w.Columns[1].FullWidth {
+		t.Fatalf("escape cleared column 2: %+v", w.Columns)
+	}
+}
+
 // The selected hidden card follows its window when earlier columns disappear.
 func TestOverviewHiddenSelectionFollowsWindowAfterRemoval(t *testing.T) {
 	m := maximizedOverview()
