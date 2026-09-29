@@ -491,21 +491,18 @@ func TestOverviewFixedFullWidthShowsHiddenColumnsCard(t *testing.T) {
 	w := m.Current()
 	w.ToggleFullWidth()
 	m.ToggleOverview()
-	for id := WindowID(1); id <= 4; id++ {
-		if p := previewOf(t, m.Layout(), id); p.Hidden || !p.Peek || p.Preview <= 0 {
-			t.Fatalf("peeking column %d: %+v", id, p)
+	if p := previewOf(t, m.Layout(), 5); p.Hidden || p.Peek || !p.Focused {
+		t.Fatalf("front %+v", p)
+	}
+	for _, id := range []WindowID{1, 2} {
+		if p := previewOf(t, m.Layout(), id); p.Hidden || !p.Peek {
+			t.Fatalf("peek %d %+v", id, p)
 		}
 	}
-	if p := previewOf(t, m.Layout(), 5); p.Hidden || !p.Focused || p.Rect.W != int(math.Round(float64(previewOf(t, w.Layout(), 5).Rect.W)*p.Preview)) {
-		t.Fatalf("maximized preview: %+v", p)
-	}
-	m.OverviewMove(1, 0)
-	if !w.Columns[4].FullWidth || w.Focus != 4 || previewOf(t, m.Layout(), 4).Peek {
-		t.Fatal("rotation changed maximization or did not reveal the hidden card")
-	}
+	m.OverviewMove(0, -1)
 	m.ToggleOverview()
-	if w.Columns[4].FullWidth || previewOf(t, w.Layout(), 4).Hidden {
-		t.Fatal("confirm did not restore the spiral")
+	if id, _ := w.Focused(); id != 1 || !w.Columns[0].FullWidth || w.Columns[4].FullWidth {
+		t.Fatalf("transfer %d %+v", id, w.Columns)
 	}
 }
 

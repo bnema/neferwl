@@ -30,26 +30,39 @@ func (w *Workspace) columnOf(id WindowID) int {
 	return -1
 }
 
-// stack preserves the current bottom-to-top layout order. The column group
-// and the maximized column are separate cards in fixed overflow.
+// stack lists what is on screen followed by what it hides, top to bottom.
 func (w *Workspace) stack() []stackItem {
 	if w.pinned() {
 		return nil
 	}
 	var items []stackItem
-	for _, f := range w.Floats {
-		if f.below && w.coversFloat(f) {
+	for i := len(w.Floats) - 1; i >= 0; i-- {
+		f := w.Floats[i]
+		if !f.below && w.coversFloat(f) {
 			items = append(items, stackItem{stackFloat, f.ID})
 		}
 	}
-	if len(w.Columns) > 0 {
-		items = append(items, stackItem{kind: stackColumns})
-		if w.overviewMaximized() {
-			items = append(items, stackItem{stackColumn, w.Columns[w.Focus].Windows[0]})
+	if w.overviewMaximized() {
+		items = append(items, stackItem{stackColumn, w.Columns[w.Focus].Windows[0]})
+		seen := map[int]bool{w.Focus: true}
+		for _, id := range w.maximized {
+			i := w.columnOf(id)
+			if i >= 0 && !seen[i] {
+				items = append(items, stackItem{stackColumn, w.Columns[i].Windows[0]})
+				seen[i] = true
+			}
 		}
+		for i, c := range w.Columns {
+			if !seen[i] {
+				items = append(items, stackItem{stackColumn, c.Windows[0]})
+			}
+		}
+	} else if len(w.Columns) > 0 {
+		items = append(items, stackItem{kind: stackColumns})
 	}
-	for _, f := range w.Floats {
-		if !f.below && w.coversFloat(f) {
+	for i := len(w.Floats) - 1; i >= 0; i-- {
+		f := w.Floats[i]
+		if f.below && w.coversFloat(f) {
 			items = append(items, stackItem{stackFloat, f.ID})
 		}
 	}
@@ -69,7 +82,7 @@ func (w *Workspace) itemOf(id WindowID) (stackItem, bool) {
 				return item, true
 			}
 		case stackColumns:
-			if i := w.columnOf(id); i >= 0 && (!w.overviewMaximized() || i != w.Focus) {
+			if w.columnOf(id) >= 0 {
 				return item, true
 			}
 		}
@@ -92,7 +105,7 @@ func (m *Monitor) stackFront(w *Workspace) stackItem {
 		}
 		return items[min(max(m.ov.frontAt, 0), len(items)-1)]
 	}
-	return items[len(items)-1]
+	return items[0]
 }
 
 // setFront records a provisional card and its index for removal fallback.
@@ -101,66 +114,20 @@ func (m *Monitor) setFront(w *Workspace, item stackItem) {
 	m.ov.frontAt = slices.Index(w.stack(), item)
 }
 
-func (m *Monitor) rotateStack(w *Workspace, dir int) {
+// moveStack moves only within the current row. The caller changes workspace
+// when the linear stack has no item in that direction.
+func (m *Monitor) moveStack(d int) bool {
+	w := m.Current()
 	items := w.stack()
 	if len(items) < 2 {
-		return
+		return false
 	}
-	for i, item := range items {
-		if item == m.stackFront(w) {
-			at := (i - dir + len(items)) % len(items)
-			m.setFront(w, items[at])
-			if m.ov.front.kind == stackColumns {
-				if w.overviewMaximized() {
-					m.selectHiddenColumn(w, m.hiddenColumn(w))
-				} else {
-					w.selectOverviewColumn(w.Focus)
-				}
-			}
-			return
-		}
+	at := slices.Index(items, m.stackFront(w)) + d
+	if at < 0 || at >= len(items) {
+		return false
 	}
-}
-
-// hiddenColumn keeps the current hidden-group selection stable across column
-// reordering. If its window vanished, choose the nearest surviving column.
-func (m *Monitor) hiddenColumn(w *Workspace) int {
-	if !w.overviewMaximized() {
-		return -1
-	}
-	for i, c := range w.Columns {
-		if i != w.Focus && slices.Contains(c.Windows, m.ov.selected) && m.ov.selected != 0 {
-			return i
-		}
-	}
-	i := m.ov.selectedAt
-	if i < 0 {
-		i = w.Focus - 1
-		if i < 0 {
-			i = 1
-		}
-	}
-	i = min(max(i, 0), len(w.Columns)-1)
-	if i == w.Focus {
-		if i > 0 {
-			i--
-		} else {
-			i++
-		}
-	}
-	return i
-}
-
-func (m *Monitor) selectHiddenColumn(w *Workspace, i int) {
-	if !w.overviewMaximized() {
-		return
-	}
-	if i < 0 || i >= len(w.Columns) || i == w.Focus {
-		i = m.hiddenColumn(w)
-	}
-	m.ov.selectedAt = i
-	c := w.Columns[i]
-	m.ov.selected = c.Windows[c.Focus]
+	m.setFront(w, items[at])
+	return true
 }
 
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
@@ -173,73 +140,89 @@ func (w *Workspace) selectOverviewColumn(i int) {
 	w.scroll()
 }
 
-// apply commits a stack selection. A hidden column currently ends
-// maximization through FocusID, just as it did before this refactor.
+// apply commits the selected front card without changing other stack items.
 func (w *Workspace) apply(item stackItem, selected WindowID) {
 	switch item.kind {
 	case stackFloat:
 		w.FocusID(item.id)
-	case stackColumn:
-		if i := w.columnOf(item.id); i >= 0 {
-			if w.columnOf(selected) != i {
-				selected = w.Columns[i].Windows[w.Columns[i].Focus]
-			}
-			w.FocusID(selected)
-		}
 	case stackColumns:
-		if i := w.columnOf(selected); i >= 0 {
-			w.FocusID(selected)
-		} else if len(w.Columns) > 0 {
+		if w.columnOf(selected) < 0 && len(w.Columns) > 0 {
 			c := w.Columns[w.Focus]
-			w.FocusID(c.Windows[c.Focus])
+			selected = c.Windows[c.Focus]
 		}
+		if selected != 0 {
+			w.FocusID(selected)
+		}
+	case stackColumn:
+		i := w.columnOf(item.id)
+		if i < 0 {
+			return
+		}
+		if w.columnOf(selected) != i {
+			c := w.Columns[i]
+			selected = c.Windows[c.Focus]
+		}
+		if w.overviewMaximized() && i != w.Focus {
+			w.transferMaximization(i)
+		}
+		w.FocusID(selected)
 	}
 }
 
-// previewItem draws the card's existing geometry without changing any client.
+// previewItem draws a group using screen geometry and a single card at its
+// configured size. A prior maximized column retains its full-width buffer.
 func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool) []Placement {
-	if item.kind == stackColumns && !w.overviewMaximized() {
+	if item.kind == stackColumns {
 		return w.previewRow(y, dim, lit)
 	}
-	if item.kind == stackFloat {
-		g := w.gap()
-		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
-		return w.previewRowTiles(y, dim, lit,
-			[]Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, r.X+r.W+g, r)
-	}
 	g := w.gap()
-	rects := w.columnRectsFor(item.kind == stackColumns)
-	var tiles []Placement
-	for i, c := range w.Columns {
-		if (i == w.Focus) != (item.kind == stackColumn) {
-			continue
-		}
-		r := rects[i]
+	if item.kind == stackFloat {
+		f := w.Floats[w.floatIndex(item.id)]
+		r := w.floatRect(f)
 		r.X -= w.Usable.X
 		r.Y -= w.Usable.Y
-		for j, tile := range stackRects(r, len(c.Windows), g) {
-			selected := i == w.Focus && item.kind == stackColumn || i == m.hiddenColumn(w) && item.kind == stackColumns
-			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: tile, Focused: selected && j == c.Focus})
+		return w.previewRowTiles(y, dim, lit, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
+	}
+	i := w.columnOf(item.id)
+	if i < 0 {
+		return nil
+	}
+	c := w.Columns[i]
+	r := w.columnRectsFor(true)[i]
+	for _, id := range w.maximized {
+		if w.columnOf(id) == i {
+			r.W = max(w.Usable.W-2*g, 0)
+			r.H = max(w.Usable.H-2*g, 0)
+			break
 		}
 	}
-	sel := rects[w.Focus]
-	sel.X -= w.Usable.X
-	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, sel)
+	r.X = (w.Usable.W - r.W) / 2
+	r.Y = (w.Usable.H - r.H) / 2
+	tiles := make([]Placement, 0, len(c.Windows))
+	for j, t := range stackRects(r, len(c.Windows), g) {
+		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus})
+	}
+	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, r)
 }
 
-// stackRow draws two cards behind the front; stash is separate on the left.
+// stackRow draws up to two cards on each side of the provisional front.
 func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
 	items := w.stack()
 	if len(items) < 2 {
 		return w.previewRow(y, dim, lit)
 	}
-	front := m.stackFront(w)
-	idx := slices.Index(items, front)
-	cards := make([][]Placement, len(items))
-	for i, item := range items {
-		cards[i] = m.previewItem(w, item, y, dim, lit)
+	at := 0
+	if w == m.Current() {
+		at = slices.Index(items, m.stackFront(w))
 	}
-	step := max(w.cardStep()*2, w.Usable.H/40)
-	return fan(cards, idx, 2, 0, func(distance int) (int, int) { return distance * step, -distance * step },
-		func(distance int) (int, int) { return 0, 0 }, dim, lit)
+	cards := make([][]Placement, len(items))
+	step := max(1, int(float64(w.Usable.H)*w.overviewZoom()*overviewPeekStep+0.5))
+	for i, item := range items {
+		cards[i] = m.previewItem(w, item, y+2*step, dim, lit)
+	}
+
+	// fan's behind side advances through the linear stack.
+	return fan(cards, at, 2, 2, false,
+		func(d int) (int, int) { return 0, -d * step },
+		func(d int) (int, int) { return 0, d * step }, dim, lit)
 }

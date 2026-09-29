@@ -1,0 +1,102 @@
+package core
+
+import (
+	"math"
+	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
+)
+
+func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
+	m := stackMonitor()
+	w := m.Current()
+	m.ToggleOverview()
+	if m.stackFront(w) != (stackItem{stackFloat, 9}) {
+		t.Fatal("screen front")
+	}
+	m.overviewSwipe(ActionFocusWorkspaceUp)
+	if m.stackFront(w).kind != stackColumns || m.Active != 0 {
+		t.Fatal("swipe did not visit card")
+	}
+	m.overviewSwipe(ActionFocusWorkspaceUp)
+	if m.Active != 0 {
+		t.Fatal("up at top crossed workspace boundary")
+	}
+	m.overviewSwipe(ActionFocusWorkspaceDown)
+	if m.stackFront(w).kind != stackFloat || m.Active != 0 {
+		t.Fatal("down did not return to front")
+	}
+	m.OverviewMove(0, 1)
+	if m.Active != 1 {
+		t.Fatal("down did not reach workspace below")
+	}
+	m.OverviewMove(0, -1)
+	if m.Active != 0 || m.stackFront(w).kind != stackFloat {
+		t.Fatal("row change kept stack cursor")
+	}
+	if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) || m.stackFront(w).kind != stackColumns {
+		t.Fatal("wheel did not visit card")
+	}
+	m.CancelOverview()
+}
+
+func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
+	m := stackMonitor()
+	w := m.Current()
+	w.AddFloating(8, 300, 200)
+	w.AddFloating(7, 300, 200)
+	m.ToggleOverview()
+	front := previewOf(t, m.Layout(), 7)
+	back := previewOf(t, m.Layout(), 8)
+	step := float64(front.Rect.Y - back.Rect.Y)
+	if step < float64(w.Usable.H)*w.overviewZoom()*0.06 {
+		t.Fatalf("peek step %.1f", step)
+	}
+	y := w.Usable.Y + (w.Usable.H-w.rowHeight())/2
+	if back.Rect.Y < y || front.Rect.Y+front.Rect.H > y+w.rowHeight() {
+		t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+w.rowHeight())
+	}
+	m.OverviewMove(1, 0)
+	if m.stackFront(w) != (stackItem{stackFloat, 7}) {
+		t.Fatal("right moved single card")
+	}
+	m.OverviewMove(-1, 0)
+	if m.stackFront(w) != (stackItem{stackFloat, 8}) {
+		t.Fatal("left did not send single card behind")
+	}
+	m.CancelOverview()
+}
+
+func TestOverviewSingleCardLeftFallsBackToStash(t *testing.T) {
+	m := stackMonitor()
+	w := m.Current()
+	w.FocusID(1)
+	w.ToggleWindowStash()
+	w.RemoveWindow(2)
+	w.RemoveWindow(3)
+	// A covering float is the only stack item; stash stays independently reachable.
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	if m.cardAt(w) < 0 {
+		t.Fatal("left with no card behind did not enter stash")
+	}
+	m.CancelOverview()
+}
+
+func TestOverviewStackMRUAndSize(t *testing.T) {
+	m := maximizedOverview()
+	w := m.Current()
+	m.ToggleOverview()
+	m.OverviewMove(0, -1)
+	m.ToggleOverview()
+	m.ToggleOverview()
+	items := w.stack()
+	if len(items) < 3 || items[0] != (stackItem{stackColumn, 1}) || items[1] != (stackItem{stackColumn, 2}) {
+		t.Fatalf("MRU %v", items)
+	}
+	p := previewOf(t, m.Layout(), 2)
+	if math.Abs(float64(p.Rect.W)-float64(w.Usable.W-2*w.gap())*p.Preview) > 1 {
+		t.Fatalf("prior maximized size %+v", p)
+	}
+	m.CancelOverview()
+}

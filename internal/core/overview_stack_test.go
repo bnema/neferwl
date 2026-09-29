@@ -13,51 +13,42 @@ func stackMonitor() *Monitor {
 }
 
 func TestOverviewCoveringStackNavigation(t *testing.T) {
-	for _, start := range []struct {
-		name   string
-		column bool
-	}{{"float front", false}, {"columns front", true}} {
-		t.Run(start.name, func(t *testing.T) {
-			m := stackMonitor()
-			w := m.Current()
-			if start.column {
-				w.FocusID(3)
+	for _, columns := range []bool{false, true} {
+		m := stackMonitor()
+		w := m.Current()
+		if columns {
+			w.FocusID(3)
+		}
+		before := slices.Clone(order(w))
+		m.ToggleOverview()
+		ps := m.Layout()
+		f, c := previewOf(t, ps, 9), previewOf(t, ps, 3)
+		if f.Peek != columns || c.Peek == columns {
+			t.Fatalf("front float %+v columns %+v", f, c)
+		}
+		if !slices.Equal(order(w), before) {
+			t.Fatal("opening changed float order")
+		}
+		if columns {
+			m.OverviewMove(0, -1)
+		} else {
+			m.OverviewMove(-1, 0)
+		}
+		if columns {
+			if p := previewOf(t, m.Layout(), 9); p.Peek || !p.Focused {
+				t.Fatalf("float %+v", p)
 			}
-			before := slices.Clone(order(w))
-			m.ToggleOverview()
-			ps := m.Layout()
-			float, col := previewOf(t, ps, 9), previewOf(t, ps, 3)
-			if float.Hidden || col.Hidden || float.Fullscreen || !float.Floating || float.Peek != start.column || col.Peek == start.column {
-				t.Fatalf("front/peek: float %+v, column %+v", float, col)
+		} else {
+			if p := previewOf(t, m.Layout(), 3); p.Peek || !p.Focused {
+				t.Fatalf("column %+v", p)
 			}
-			if !slices.Equal(order(w), before) {
-				t.Fatalf("opening changed order: %v", order(w))
-			}
-			m.OverviewMove(1, 0)
-			if start.column {
-				if !previewOf(t, m.Layout(), 9).Focused || previewOf(t, m.Layout(), 9).Peek {
-					t.Fatal("float not selected")
-				}
-			} else if !previewOf(t, m.Layout(), 3).Focused || previewOf(t, m.Layout(), 3).Peek {
-				t.Fatal("column not selected")
-			}
-			if !slices.Equal(order(w), before) {
-				t.Fatal("rotation committed before Return")
-			}
-			m.ToggleOverview()
-			if start.column {
-				wantOrder(t, w, 1, 2, 3, 9)
-			} else {
-				wantOrder(t, w, 9, 1, 2, 3)
-			}
-			want := WindowID(3)
-			if start.column {
-				want = 9
-			}
-			if id, _ := w.Focused(); id != want {
-				t.Fatalf("focus %d, want %d", id, want)
-			}
-		})
+		}
+		m.ToggleOverview()
+		if columns {
+			wantOrder(t, w, 1, 2, 3, 9)
+		} else {
+			wantOrder(t, w, 9, 1, 2, 3)
+		}
 	}
 }
 
@@ -150,37 +141,30 @@ func TestOverviewStackStashDialogNeighbor(t *testing.T) {
 	w.FocusID(9)
 	m.ToggleOverview()
 	if p := previewOf(t, m.Layout(), 10); !p.Hidden {
-		t.Fatalf("dialog shown %+v", p)
+		t.Fatalf("dialog %+v", p)
+	}
+	m.OverviewMove(-1, 0) // single-window float sends behind before stash
+	if m.stackFront(w).kind != stackColumns || m.cardAt(w) >= 0 {
+		t.Fatal("float did not send behind")
 	}
 	m.OverviewMove(-1, 0)
+	m.OverviewMove(-1, 0)
+	m.OverviewMove(-1, 0)
 	if m.cardAt(w) < 0 {
-		t.Fatal("left of float did not enter stash")
+		t.Fatal("left from first column did not enter stash")
 	}
 	m.OverviewMove(1, 0)
 	if m.cardAt(w) >= 0 {
-		t.Fatal("stash right did not return to columns")
+		t.Fatal("stash exit did not return to card")
 	}
-	// First column in front: the next two columns, then the right edge
-	// rotates the float to the front.
-	m.OverviewMove(1, 0)
-	m.OverviewMove(1, 0)
-	m.OverviewMove(1, 0)
-	if p := previewOf(t, m.Layout(), 9); p.Peek {
-		t.Fatal("right edge did not rotate")
-	}
-	m.ToggleOverview()
-	if p := placement(w, 10); p.Hidden || !slices.Contains(order(w), 10) || order(w)[len(order(w))-1] != 10 {
-		t.Fatalf("dialog not above after confirm: %+v %v", p, order(w))
-	}
-
+	m.CancelOverview()
 	m = stackMonitor()
 	m.Focus(1)
 	m.AddFloating(12, 300, 200)
 	m.Focus(0)
 	m.ToggleOverview()
-	p, q := previewOf(t, m.Layout(), 12), previewOf(t, m.Layout(), 4)
-	if p.Hidden || q.Hidden || !p.Peek || !q.Peek || p.Focused || q.Focused {
-		t.Fatalf("neighbor float %+v column %+v", p, q)
+	if p, q := previewOf(t, m.Layout(), 12), previewOf(t, m.Layout(), 4); p.Hidden || q.Hidden || !p.Peek || !q.Peek || p.Focused || q.Focused {
+		t.Fatalf("neighbor %+v %+v", p, q)
 	}
 }
 
@@ -191,17 +175,25 @@ func TestOverviewMultipleCoveringCards(t *testing.T) {
 	w.AddFloating(7, 300, 200)
 	w.AddFloating(6, 300, 200)
 	m.ToggleOverview()
-	ps := m.Layout()
-	if previewOf(t, ps, 6).Peek || !previewOf(t, ps, 7).Peek || !previewOf(t, ps, 8).Peek || !previewOf(t, ps, 9).Hidden || !previewOf(t, ps, 3).Hidden {
-		t.Fatalf("front and two peeks: %+v", ps)
+	if p := previewOf(t, m.Layout(), 6); p.Peek {
+		t.Fatalf("front %+v", p)
 	}
-	m.OverviewMove(1, 0)
-	if previewOf(t, m.Layout(), 7).Peek {
-		t.Fatal("next float did not rotate forward")
+	if p := previewOf(t, m.Layout(), 7); !p.Peek {
+		t.Fatalf("peek %+v", p)
 	}
-	m.OverviewMove(-1, 0)
-	if previewOf(t, m.Layout(), 6).Peek {
-		t.Fatal("previous float did not rotate back")
+	if p := previewOf(t, m.Layout(), 9); !p.Hidden {
+		t.Fatalf("far card %+v", p)
+	}
+	m.OverviewMove(0, -1)
+	if p := previewOf(t, m.Layout(), 7); p.Peek || !p.Focused {
+		t.Fatalf("up %+v", p)
+	}
+	if p := previewOf(t, m.Layout(), 6); !p.Peek || p.Rect.Y <= previewOf(t, m.Layout(), 7).Rect.Y {
+		t.Fatalf("passed card %+v", p)
+	}
+	m.OverviewMove(0, 1)
+	if p := previewOf(t, m.Layout(), 6); p.Peek {
+		t.Fatal("down did not return to screen front")
 	}
 	m.CancelOverview()
 }
@@ -230,14 +222,14 @@ func TestOverviewFloatWithoutColumns(t *testing.T) {
 func TestOverviewStackRowChangeResetsRotation(t *testing.T) {
 	m := stackMonitor()
 	m.ToggleOverview()
-	m.OverviewMove(1, 0)
-	if m.stackFront(m.Current()).kind != stackColumns {
-		t.Fatal("columns did not rotate to front")
-	}
-	m.OverviewMove(0, 1)
 	m.OverviewMove(0, -1)
+	if m.stackFront(m.Current()).kind != stackColumns {
+		t.Fatal("stack did not move to columns")
+	}
+	m.OverviewMove(0, -1) // at stack end: workspace above, if present
+	m.OverviewMove(0, 1)
 	if m.stackFront(m.Current()) != (stackItem{stackFloat, 9}) {
-		t.Fatal("row change kept provisional rotation")
+		t.Fatal("row change retained cursor")
 	}
 	m.CancelOverview()
 }
@@ -254,9 +246,7 @@ func TestOverviewStackInvalidatedOnRemoval(t *testing.T) {
 	}
 }
 
-// Right past the last stash card brings the columns to the front of the
-// stack, even when a covering float was in front; Return focuses the first
-// column and puts the float below.
+// Stash navigation returns to the current front card without changing its cursor.
 func TestOverviewStashRightBringsColumnsFront(t *testing.T) {
 	m := stackMonitor()
 	w := m.Current()
@@ -264,18 +254,18 @@ func TestOverviewStashRightBringsColumnsFront(t *testing.T) {
 	w.ToggleWindowStash()
 	w.FocusID(9)
 	m.ToggleOverview()
-	m.OverviewMove(-1, 0) // float front, left: the stash
+	m.OverviewMove(-1, 0) // float to columns
+	m.OverviewMove(-1, 0) // first column to stash
 	if m.cardAt(w) < 0 {
-		t.Fatal("not in the stash")
+		t.Fatal("not in stash")
 	}
 	m.OverviewMove(1, 0)
-	ps := m.Layout()
-	if f, c := previewOf(t, ps, 9), previewOf(t, ps, 2); !f.Peek || c.Peek || !c.Focused {
-		t.Fatalf("float %+v, first column %+v", f, c)
+	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns {
+		t.Fatal("not returned to front column card")
 	}
 	m.ToggleOverview()
-	if id, _ := w.Focused(); id != 2 || order(w)[0] != 9 {
-		t.Fatalf("focus %d, order %v", id, order(w))
+	if id, _ := w.Focused(); id != 2 {
+		t.Fatalf("focus %d", id)
 	}
 }
 

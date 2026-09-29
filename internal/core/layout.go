@@ -130,8 +130,11 @@ type Workspace struct {
 	Name     string
 	Overflow Overflow
 	Columns  []Column
-	Focus    int
-	ViewX    int
+	// maximized remembers recently maximized columns by window ID, newest
+	// first; stack() filters removed windows at read time.
+	maximized []WindowID
+	Focus     int
+	ViewX     int
 	// shift slides the columns on screen past ViewX, in logical pixels,
 	// while a swipe follows the fingers or its spring (motion) lands.
 	shift      float64
@@ -414,6 +417,7 @@ func (w *Workspace) unslot(n int) {
 }
 
 func (w *Workspace) RemoveWindow(id WindowID) {
+	w.maximized = slices.DeleteFunc(w.maximized, func(v WindowID) bool { return v == id })
 	if w.fullscreen == id {
 		w.fullscreen = 0
 	}
@@ -490,7 +494,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 			if v == id {
 				w.floatFocus, w.stashFocus = false, false
 				w.raiseColumns()
-				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) {
+				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
 					w.unmaximize()
 				}
 				w.Focus = i
@@ -718,17 +722,32 @@ func (w *Workspace) toggleExpanded() {
 func (w *Workspace) maximize(i int) {
 	if i >= 0 && i < len(w.Columns) {
 		w.Columns[i].FullWidth = true
+		id := w.Columns[i].Windows[w.Columns[i].Focus]
+		w.maximized = slices.DeleteFunc(w.maximized, func(v WindowID) bool { return v == id })
+		w.maximized = slices.Insert(w.maximized, 0, id)
 	}
 }
 
-// unmaximize clears the focused column in scroll mode, or the single
-// maximized column in fixed mode (including after Escape changed focus).
+// unmaximize clears the focused column in scroll mode, or all maximized
+// columns in fixed mode (including after Escape changed focus).
 func (w *Workspace) unmaximize() {
 	for i := range w.Columns {
 		if w.Overflow == OverflowFixed || i == w.Focus {
 			w.Columns[i].FullWidth = false
 		}
 	}
+	if w.Overflow == OverflowFixed {
+		w.maximized = nil
+	}
+}
+
+// transferMaximization changes the maximized column without forgetting MRU.
+func (w *Workspace) transferMaximization(i int) {
+	if i == w.Focus || i < 0 || i >= len(w.Columns) {
+		return
+	}
+	w.Columns[w.Focus].FullWidth = false
+	w.maximize(i)
 }
 
 // ToggleFullWidth expands the focused tiled column without changing its saved width.

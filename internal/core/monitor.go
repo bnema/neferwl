@@ -138,7 +138,7 @@ func (m *Monitor) Current() *Workspace {
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
-	w.Columns, w.Floats, w.floatFocus, w.home, w.origin, w.back = nil, nil, false, "", nil, origPlace{}
+	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home, w.origin, w.back = nil, nil, nil, false, "", nil, origPlace{}
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	(*m.nextID)++
 	w.ID = *m.nextID
