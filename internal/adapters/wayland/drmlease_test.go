@@ -60,11 +60,22 @@ func (p *leaseResultEvents) Dispatch(e *wlturbo.Event) {
 		p.finished++
 	}
 }
-func leaseServer(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan ports.LeaseMessage, *os.File) {
-	c, requests, events, f, _ := leaseServerWithState(t)
-	return c, requests, events, f
+
+// leaseFD opens a device fd for one LeaseConnectors message; the server
+// owns and closes it.
+func leaseFD(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.Open("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
 }
-func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan ports.LeaseMessage, *os.File, *Server) {
+func leaseServer(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan ports.LeaseMessage) {
+	c, requests, events, _ := leaseServerWithState(t)
+	return c, requests, events
+}
+func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessage, chan ports.LeaseMessage, *Server) {
 	t.Helper()
 	dir := t.TempDir()
 	requests := make(chan ports.LeaseMessage, 16)
@@ -88,26 +99,21 @@ func leaseServerWithState(t *testing.T) (*wlturbo.Display, chan ports.LeaseMessa
 		}
 	})
 	c := protocolClient(t, s, dir)
-	f, err := os.Open("/dev/null")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// f is borrowed by the server; close it after Run has stopped.
-	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: f, Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", Description: "VR headset", ConnectorID: 42}}}
+	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", Description: "VR headset", ConnectorID: 42}}}
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
 		if _, ok := c.Registry().FindGlobal("wp_drm_lease_device_v1"); ok {
-			return c, requests, events, f, s
+			return c, requests, events, s
 		}
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("no lease global")
-	return nil, nil, nil, nil, nil
+	return nil, nil, nil, nil
 }
 func TestDRMLeaseFlow(t *testing.T) {
-	c, requests, events, _ := leaseServer(t)
+	c, requests, events := leaseServer(t)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
@@ -184,7 +190,7 @@ func TestDRMLeaseErrors(t *testing.T) {
 		code      uint32
 	}{{"empty", false, uint32(dl.WpDrmLeaseRequestV1ErrorEmptyLease)}, {"duplicate", true, uint32(dl.WpDrmLeaseRequestV1ErrorDuplicateConnector)}} {
 		t.Run(tc.name, func(t *testing.T) {
-			c, _, _, _ := leaseServer(t)
+			c, _, _ := leaseServer(t)
 			dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 			p := &leaseDeviceEvents{c: c}
 			p.SetID(dev)
@@ -212,7 +218,7 @@ func TestDRMLeaseErrors(t *testing.T) {
 	}
 }
 func TestDRMLeaseFinished(t *testing.T) {
-	c, requests, events, _ := leaseServer(t)
+	c, requests, events := leaseServer(t)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
@@ -321,13 +327,8 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 		}
 	})
 	c := protocolClient(t, s, dir)
-	f, err := os.Open("/dev/null")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { f.Close() }) // registered before server cleanup; closed afterwards
 	for i, card := range []string{"card-one", "card-two"} {
-		events <- ports.LeaseConnectors{Card: card, Device: f, Connectors: []ports.LeaseConnector{{Card: card, Name: fmt.Sprintf("DP-%d", i+1), ConnectorID: uint32(i + 40)}}}
+		events <- ports.LeaseConnectors{Card: card, Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: card, Name: fmt.Sprintf("DP-%d", i+1), ConnectorID: uint32(i + 40)}}}
 	}
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
 		if err := c.Roundtrip(); err != nil {
@@ -442,7 +443,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 }
 
 func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
-	c, requests, events, _, s := leaseServerWithState(t)
+	c, requests, events, s := leaseServerWithState(t)
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
@@ -515,7 +516,7 @@ func safelyLeaseMaps(t *testing.T, c *wlturbo.Display, events chan ports.LeaseMe
 }
 
 func TestLeaseGlobalRemoveAndReadd(t *testing.T) {
-	c, _, events, f := leaseServer(t)
+	c, _, events := leaseServer(t)
 	count := func() int {
 		n := 0
 		for _, g := range c.Registry().GetGlobals() {
@@ -537,7 +538,7 @@ func TestLeaseGlobalRemoveAndReadd(t *testing.T) {
 	if count() != 0 {
 		t.Fatal("lease global not removed")
 	}
-	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: f, Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", ConnectorID: 42}}}
+	events <- ports.LeaseConnectors{Card: "/dev/dri/card-test", Device: leaseFD(t), Connectors: []ports.LeaseConnector{{Card: "/dev/dri/card-test", Name: "DP-1", ConnectorID: 42}}}
 	for deadline := time.Now().Add(2 * time.Second); count() != 1 && time.Now().Before(deadline); {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)

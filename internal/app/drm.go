@@ -21,6 +21,7 @@ import (
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 var errTimeout = errors.New("timeout")
@@ -204,8 +205,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			}
 			clientFDs[c] = f
 		}
+		// Each message owns its fd: a queued inventory outlives clientFDs[c].
+		fd, err := unix.FcntlInt(clientFDs[c].Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			log.Warn().Err(err).Str("card", c.Path()).Msg("lease client fd")
+			return
+		}
 		lastLeaseConnectors[c] = next
-		sendLease(ports.LeaseConnectors{Card: c.Path(), Device: clientFDs[c], Connectors: next})
+		sendLease(ports.LeaseConnectors{Card: c.Path(), Device: os.NewFile(uintptr(fd), c.Path()), Connectors: next})
 	}
 	hotplug := make(chan struct{}, 1)
 	go func() {

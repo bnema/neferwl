@@ -1112,9 +1112,9 @@ type LeaseConnector struct {
 type LeaseMessage interface{ leaseMessage() }
 
 // LeaseConnectors replaces the available connector inventory for Card.
-// Device remains owned by the sender; the Wayland display duplicates it for events.
+// Device is a non-master DRM fd owned by the receiver, which closes it.
 // An empty Connectors list with nil Device removes the card's global and closes
-// the display's duplicate. A later nonempty inventory creates a new global.
+// the display's fd. A later nonempty inventory creates a new global.
 type LeaseConnectors struct {
 	Card       string
 	Device     *os.File

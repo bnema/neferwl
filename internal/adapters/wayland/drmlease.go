@@ -146,17 +146,8 @@ func (s *Server) forwardLeaseRequests(ctx context.Context) {
 	}
 }
 func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
-	// The backend owns Device and may close it as soon as it stops. Keep a
-	// display-owned duplicate, so binds cannot race shutdown or a rescan.
-	var copyFD *os.File
-	if msg.Device != nil {
-		fd, err := unix.FcntlInt(msg.Device.Fd(), unix.F_DUPFD_CLOEXEC, 0)
-		if err != nil {
-			s.log.Warn().Err(err).Str("card", msg.Card).Msg("duplicate lease device")
-			return
-		}
-		copyFD = os.NewFile(uintptr(fd), msg.Card)
-	}
+	// The display owns Device from here on.
+	copyFD := msg.Device
 	d := s.leaseDevices[msg.Card]
 	if d == nil {
 		if copyFD == nil || len(msg.Connectors) == 0 {
@@ -184,13 +175,14 @@ func (s *Server) updateLeaseConnectors(msg ports.LeaseConnectors) {
 			d.fd.Close()
 			d.fd = nil
 		}
+		// Bound devices stay until the client sends release, as the
+		// protocol asks after global_remove; they offer nothing meanwhile.
 		for _, b := range d.binds {
 			for r := range b.connectors {
 				drmlease.WrapWpDrmLeaseConnectorV1(r).SendWithdrawn()
+				delete(b.connectors, r)
 			}
 			b.res.SendDone()
-			b.res.SendReleased()
-			b.res.Destroy()
 		}
 		delete(s.leaseDevices, msg.Card)
 		return
