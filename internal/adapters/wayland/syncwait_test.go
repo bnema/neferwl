@@ -3,6 +3,7 @@ package wayland
 import (
 	"bytes"
 	"context"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -36,16 +37,9 @@ func TestImplicitPollErrorReadyAndWarnOnce(t *testing.T) {
 	defer sw.close()
 	var output bytes.Buffer
 	sw.log = zerowrap.New(zerowrap.Config{Output: &output})
-	r, wr, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer wr.Close()
-	fd := int(r.Fd())
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: os.NewFile(uintptr(fd), "closed")}}}
+	// An fd number no process can own polls as POLLNVAL; its finalizer
+	// cannot close a reused descriptor.
+	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: os.NewFile(uintptr(math.MaxInt32), "invalid")}}}
 	var waits [4]*syncWait
 	for range 2 {
 		if err := sw.watchImplicit(b, &waits); err != nil || waits[0] != nil {
