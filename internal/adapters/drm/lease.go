@@ -157,14 +157,21 @@ func (c *Card) Lease(names []string) (*os.File, uint32, error) {
 		c.leases = map[uint32]leaseRecord{}
 	}
 	c.leases[id] = record
+	for _, plane := range record.planes {
+		c.taken[plane] = true
+	}
 	return fd, id, nil
 }
 func (c *Card) Revoke(id uint32) error {
-	if _, ok := c.leases[id]; !ok {
+	record, ok := c.leases[id]
+	if !ok {
 		return nil
 	}
 	if err := c.k.revokeLease(id); err != nil {
 		return err
+	}
+	for _, plane := range record.planes {
+		delete(c.taken, plane)
 	}
 	delete(c.leases, id)
 	return nil
