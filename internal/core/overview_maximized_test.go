@@ -25,7 +25,7 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 	m := maximizedOverview()
 	w := m.Current()
 	w.Columns[2].Windows = append(w.Columns[2].Windows, 5)
-	rects := w.columnRectsFor(true)
+	rects := w.hiddenColumnRects()
 	m.ToggleOverview()
 	if got := w.stack(); !slices.Equal(got, []stackItem{{stackColumn, 2}, {kind: stackColumns}}) {
 		t.Fatalf("items %v", got)
@@ -49,6 +49,18 @@ func TestOverviewMaximizedGeometryAndNavigation(t *testing.T) {
 				t.Fatalf("hidden tiles %d/%d overlap", id, other)
 			}
 		}
+	}
+	// The hidden columns fill the card as if the maximized column were
+	// gone: no hole where it was.
+	area := 0
+	for _, id := range []WindowID{1, 3, 4, 5} {
+		r := previewOf(t, ps, id).Rect
+		area += r.W * r.H
+	}
+	z := previewOf(t, ps, 1).Preview
+	full := float64(w.Usable.W) * float64(w.Usable.H) * z * z
+	if float64(area) < 0.8*full {
+		t.Fatalf("hidden tiles cover %d of %.0f: hole left by the maximized column", area, full)
 	}
 	m.OverviewMove(0, -1)
 	if m.stackFront(w).kind != stackColumns || m.hiddenColumn(w) != 0 || !previewOf(t, m.Layout(), 1).Focused || w.Focus != 1 || !w.Columns[1].FullWidth {

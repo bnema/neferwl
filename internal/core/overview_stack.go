@@ -218,11 +218,11 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 		if !w.overviewMaximized() {
 			return w.previewRow(y, dim, lit)
 		}
-		// Keep the normal fixed spiral geometry, but omit the maximized
-		// column's slot: it belongs to the other card. In particular, an
-		// earlier maximized buffer scales into its unmaximized cell here.
+		// The hidden columns fill the screen as if the maximized column,
+		// shown on its own card, were not there. In particular, an earlier
+		// maximized buffer scales into its unmaximized cell here.
 		g := w.gap()
-		rects := w.columnRectsFor(true)
+		rects := w.hiddenColumnRects()
 		var tiles []Placement
 		selected := m.hiddenColumn(w)
 		for i, c := range w.Columns {
@@ -268,6 +268,16 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus})
 	}
 	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, r)
+}
+
+// hiddenColumnRects lays out the columns behind the maximized one with the
+// fixed layout rules, without the maximized column, so no hole is left
+// where it was. The maximized column's own entry is an empty Rect.
+func (w *Workspace) hiddenColumnRects() []Rect {
+	v := *w
+	v.Columns = slices.Delete(slices.Clone(w.Columns), w.Focus, w.Focus+1)
+	v.Focus = 0
+	return slices.Insert(v.columnRectsFor(true), w.Focus, Rect{})
 }
 
 // stackRow draws up to two cards on each side of the provisional front.
