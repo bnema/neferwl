@@ -84,8 +84,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
 					if slices.Contains(s.mon.all(), target.terminal) {
-						target.terminal.AddWindow(v.ID)
-						s.mon.normalize()
+						s.mon.arrive(target.terminal, func(w *Workspace) { w.AddWindow(v.ID) })
 						return
 					}
 				}
@@ -93,8 +92,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 				if sc, w := c.byName(target.slot.workspace); w != nil {
 					p.dropSlot(target.slot)
 					st.window = v.ID
-					w.AddSlotWindow(v.ID, target.slot.index, st.width)
-					sc.mon.normalize()
+					sc.mon.arrive(w, func(w *Workspace) { w.AddSlotWindow(v.ID, target.slot.index, st.width) })
 					return
 				}
 			}

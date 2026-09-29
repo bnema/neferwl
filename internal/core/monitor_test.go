@@ -523,16 +523,59 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		}
 		return m
 	}
-	t.Run("a window opened there floats, then tiles after it at home", func(t *testing.T) {
+	t.Run("a window opened there tiles at home, the view stays", func(t *testing.T) {
 		m := fixed()
 		m.Current().FocusID(2)
 		m.ToggleFullscreen()
 		m.AddWindow(4)
-		if fs := m.Current(); fs.floatIndex(4) != 0 || fs.fullscreen != 2 {
-			t.Fatal(fs.Floats, fs.fullscreen)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 3, 4}, {2}, {}}) || m.Active != 1 {
+			t.Fatal(got, m.Active)
+		}
+		if id, _ := m.Focused(); id != 2 {
+			t.Fatal("focus", id)
 		}
 		m.SetFullscreen(2, false)
-		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 4, 3}, {}}) || m.Active != 0 {
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Active != 0 {
+			t.Fatal(got, m.Active)
+		}
+	})
+	t.Run("a window opened over a lone fullscreen moves it to its own workspace", func(t *testing.T) {
+		for _, client := range []bool{false, true} {
+			m := monitor()
+			m.SetOverflow(OverflowFixed)
+			m.AddWindow(1)
+			if client {
+				m.SetFullscreen(1, true)
+			} else {
+				m.ToggleFullscreen()
+			}
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {}}) || m.Current().fullscreen != 1 {
+				t.Fatal("in place", got)
+			}
+			m.AddWindow(2)
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}, {}}) || m.Active != 1 {
+				t.Fatal(client, got, m.Active)
+			}
+			if id, _ := m.Focused(); id != 1 || m.Current().cover() != 1 {
+				t.Fatal("focus", id)
+			}
+			m.SetFullscreen(1, false)
+			if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {}}) || m.Active != 0 {
+				t.Fatal(client, got, m.Active)
+			}
+			if id, _ := m.Focused(); id != 1 {
+				t.Fatal("focus after", id)
+			}
+		}
+	})
+	t.Run("a window opened over a lone fullscreen off screen stays there", func(t *testing.T) {
+		m := monitor()
+		m.SetOverflow(OverflowFixed)
+		m.AddWindow(1)
+		m.ToggleFullscreen()
+		m.Focus(1)
+		m.AddWindow(2)
+		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1}, {2}, {}}) || m.Active != 1 {
 			t.Fatal(got, m.Active)
 		}
 	})
@@ -542,7 +585,7 @@ func TestMonitorFixedFullscreenEdges(t *testing.T) {
 		w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{5}}, {Windows: []WindowID{2, 3}}, {Windows: []WindowID{6}}}
 		w.FocusID(3)
 		m.ToggleFullscreen()
-		m.AddWindow(7)
+		m.Current().joinFullscreen(7)
 		m.RemoveWindow(1)
 		m.ToggleFullscreen()
 		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{5, 2, 3, 7, 6}, {}}) {
