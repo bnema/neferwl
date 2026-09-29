@@ -126,6 +126,99 @@ func TestOverviewPick(t *testing.T) {
 	}
 }
 
+// gameMonitor has workspace 1 with column 1 on a 300x200 output and a
+// floating game 2 (fixed size) fullscreen on its own workspace below, or
+// alone in place on workspace 2 when inPlace is set.
+func gameMonitor(o Overflow, inPlace bool) *Monitor {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetOverflow(o)
+	m.AddWindow(1)
+	if inPlace {
+		m.Focus(1)
+	}
+	m.AddFloating(2, 300, 200)
+	m.SetFullscreen(2, true)
+	m.Focus(0)
+	return m
+}
+
+// A floating game covering its workspace shows as that row's preview,
+// dedicated or in place: the row is not empty.
+func TestOverviewFullscreenFloat(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		o       Overflow
+		inPlace bool
+	}{
+		{"own workspace", OverflowFixed, false},
+		{"in place fixed", OverflowFixed, true},
+		{"in place scroll", OverflowScroll, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := gameMonitor(tt.o, tt.inPlace)
+			m.ToggleOverview()
+			ps := m.Layout()
+			cur, game := previewOf(t, ps, 1), previewOf(t, ps, 2)
+			if game.Hidden || !game.Peek || game.Focused || game.Preview <= 0 || game.Rect.Y <= cur.Rect.Y {
+				t.Fatalf("game %+v under row %+v", game, cur)
+			}
+			// Selected below, then picked: fullscreen and focused.
+			m.OverviewMove(0, 1)
+			if g := previewOf(t, m.Layout(), 2); !g.Focused || g.Peek {
+				t.Fatalf("selected game %+v", g)
+			}
+			m.OverviewMove(-1, 0) // nothing else on its row
+			m.ToggleOverview()
+			if f, _ := m.Focused(); f != 2 || m.overview || m.Active != 1 || !previewOf(t, m.Layout(), 2).Fullscreen {
+				t.Fatalf("confirm: %d on %d", f, m.Active)
+			}
+		})
+	}
+}
+
+// A click picks the game; Escape from its row returns where the overview
+// opened.
+func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
+	m := gameMonitor(OverflowFixed, false)
+	m.ToggleOverview()
+	r := previewOf(t, m.Layout(), 2).Rect
+	if id := m.overviewAt(float64(r.X+1), float64(r.Y+1)); id != 2 {
+		t.Fatalf("hit %d", id)
+	}
+	m.OverviewMove(0, 1)
+	m.CancelOverview()
+	if f, _ := m.Focused(); f != 1 || m.Active != 0 {
+		t.Fatalf("cancel: %d on %d", f, m.Active)
+	}
+	m.ToggleOverview()
+	m.OverviewPick(2)
+	if f, _ := m.Focused(); f != 2 || m.overview {
+		t.Fatalf("pick: %d", f)
+	}
+}
+
+// Only the game shows on its row: its dialogs and the columns under it
+// stay hidden, as on screen. (Under fixed overflow a new column sends
+// the game to its own workspace instead.)
+func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
+	m := gameMonitor(OverflowScroll, true)
+	m.Focus(1)
+	m.AddWindow(3)
+	m.AddFloating(4, 50, 50)
+	m.Focus(0)
+	m.ToggleOverview()
+	ps := m.Layout()
+	if previewOf(t, ps, 2).Hidden {
+		t.Fatal("game hidden")
+	}
+	for _, id := range []WindowID{3, 4} {
+		if p := previewOf(t, ps, id); !p.Hidden {
+			t.Fatalf("%d shown: %+v", id, p)
+		}
+	}
+}
+
 // pileMonitor is overviewMonitor with 5, 6 and 7 stashed on workspace 1
 // (7 selected) and the stash hidden.
 func pileMonitor() *Monitor {

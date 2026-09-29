@@ -212,6 +212,21 @@ func TestExclusiveFullscreenNewWindow(t *testing.T) {
 	}
 }
 
+// A window mapped under a covering fullscreen float with no column waits
+// hidden as the first column.
+func TestFullscreenFloatNewWindowNoColumns(t *testing.T) {
+	w := workspace()
+	w.AddFloating(1, 300, 200)
+	w.SetFullscreen(1, true)
+	w.AddWindow(2)
+	if len(w.Columns) != 1 || w.Columns[0].Windows[0] != 2 {
+		t.Fatalf("columns %+v", w.Columns)
+	}
+	if id, _ := w.Focused(); id != 1 {
+		t.Fatalf("focus %d", id)
+	}
+}
+
 // Under a covering fullscreen float, or any fixed-overflow fullscreen,
 // focus moves inside the workspace are off and binds act on the window on
 // screen, never on a column it hides.

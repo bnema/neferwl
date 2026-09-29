@@ -58,6 +58,10 @@ func (m *Monitor) ToggleOverview() {
 func (m *Monitor) selectRow() {
 	m.overviewCard, m.overviewCardOf = 0, nil
 	w := m.Current()
+	if w.floatCover() != 0 {
+		// The covering float is the row's only preview: it keeps the focus.
+		return
+	}
 	w.floatFocus = false
 	if len(w.Stash) > 0 && (len(w.Columns) == 0 || w.stashFocused()) {
 		m.selectCard(w, w.stashAt)
@@ -134,6 +138,9 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		return
 	}
 	w := m.Current()
+	if w.floatCover() != 0 {
+		return
+	}
 	if at := m.cardAt(w); at >= 0 {
 		switch {
 		case at+dx >= 0 && at+dx < len(w.Stash):
@@ -195,6 +202,16 @@ func (m *Monitor) overviewLayout() []Placement {
 	}
 	for _, w := range m.all() {
 		ry, shown := rows[w]
+		if shown && w.floatCover() != 0 {
+			// Only the covering float shows, as on screen.
+			result = append(result, w.previewRow(ry, w != cur, true)...)
+			for _, id := range w.windows() {
+				if id != w.fullscreen {
+					result = append(result, Placement{ID: id, Hidden: true})
+				}
+			}
+			continue
+		}
 		if shown {
 			at := m.cardAt(w)
 			result = append(result, w.previewRow(ry, w != cur, at < 0)...)
@@ -217,7 +234,7 @@ func (m *Monitor) overviewLayout() []Placement {
 // pileWidth is the room the stash pile of w takes on the left of its row,
 // its margin included; 0 without a stash.
 func (w *Workspace) pileWidth() int {
-	if len(w.Stash) == 0 {
+	if len(w.Stash) == 0 || w.floatCover() != 0 {
 		return 0
 	}
 	card := int(math.Round(float64(w.stashRect().W) * overviewCardZoom))
@@ -282,6 +299,12 @@ func (w *Workspace) overviewZoom() float64 {
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 	g := w.gap()
 	h := max(w.Usable.H-2*g, 0)
+	if id := w.floatCover(); id != 0 {
+		// A covering native float (a game) is the row's only tile, at
+		// the size of a fullscreen column.
+		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: h}
+		return []Placement{{ID: id, Rect: r, Focused: true}}, r.X + r.W + g, r
+	}
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
 		if w.fullscreenColumn(i) {
@@ -325,6 +348,15 @@ func (w *Workspace) previewRow(y int, dim, lit bool) []Placement {
 		tiles[i].Focused = tiles[i].Focused && !dim && lit
 	}
 	return tiles
+}
+
+// floatCover is the native floating window covering w (a fullscreen
+// game), 0 when none. The overview shows only it on the row of w.
+func (w *Workspace) floatCover() WindowID {
+	if id := w.cover(); id != 0 && w.floatIndex(id) >= 0 {
+		return id
+	}
+	return 0
 }
 
 // overviewOutline frames the selected preview with active lines of width
