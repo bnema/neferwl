@@ -251,6 +251,18 @@ func (w *Workspace) reconcileFloats() {
 	}
 }
 
+// leaveFloat moves the focus from the native float to the columns or the
+// stash under it, raising them over covering floats. Without either, the
+// float keeps the focus and it reports false.
+func (w *Workspace) leaveFloat() bool {
+	if len(w.Columns) == 0 && (w.stashHidden || len(w.Stash) == 0) {
+		return false
+	}
+	w.floatFocus = false
+	w.raiseColumns()
+	return true
+}
+
 // raiseColumns moves only covering floats above the columns behind them.
 // The user-selected column group rises as one; dialogs remain above it.
 func (w *Workspace) raiseColumns() {
@@ -495,9 +507,9 @@ func (w *Workspace) FocusColumn(dir int) {
 		return
 	}
 	if w.floatFocus {
-		// The first move leaves the native float for the stash or columns.
-		w.floatFocus = false
-		w.raiseColumns()
+		// The first move leaves the native float for the stash or columns,
+		// if there is one: otherwise the float keeps the focus.
+		w.leaveFloat()
 		return
 	}
 	if w.stashFocused() {
@@ -548,8 +560,7 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		return false
 	}
 	if w.floatFocus {
-		w.floatFocus = false
-		w.raiseColumns()
+		w.leaveFloat()
 		return true
 	}
 	if w.stashFocused() {

@@ -134,3 +134,43 @@ func TestDemotedFloatMoveAndAdopt(t *testing.T) {
 		t.Fatal("move lost float")
 	}
 }
+
+// Directional focus on a covering float with nothing under it keeps the
+// float focused.
+func TestCoveringFloatAloneKeepsFocus(t *testing.T) {
+	w := workspace()
+	w.border = 2
+	w.AddFloating(3, 98, 79)
+	w.FocusColumn(-1)
+	w.FocusWindow(1)
+	if id, ok := w.Focused(); !ok || id != 3 {
+		t.Fatalf("focus %d %v", id, ok)
+	}
+	wantOrder(t, w, 3)
+}
+
+// A tile returning from its own fullscreen workspace with the focus comes
+// back in front of a covering float mapped in its origin meanwhile.
+func TestFullscreenReturnRaisesColumns(t *testing.T) {
+	for _, stacked := range []bool{false, true} {
+		m := monitor()
+		m.SetBorder(2)
+		m.SetOverflow(OverflowFixed)
+		m.AddWindow(1)
+		m.AddWindow(2)
+		if stacked {
+			m.Current().ConsumeOrExpel(-1)
+		}
+		w := m.Current()
+		w.FocusID(2)
+		m.ToggleFullscreen() // 2 to its own workspace
+		w.AddFloating(3, 100, 80)
+		m.ToggleFullscreen() // back, focused
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatalf("stacked %v: focus %d", stacked, id)
+		}
+		if got := order(w); got[0] != 3 {
+			t.Fatalf("stacked %v: order %v, covering float not below", stacked, got)
+		}
+	}
+}

@@ -461,6 +461,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		c.Windows = slices.Insert(c.Windows, row, id)
 		if focus {
 			origin.Focus, c.Focus, origin.floatFocus, origin.stashFocus = back.col, row, false, false
+			origin.raiseColumns()
 		} else if row <= c.Focus && len(c.Windows) > 1 {
 			c.Focus++
 		}
@@ -472,6 +473,7 @@ func (m *Monitor) leaveFullscreen(fs *Workspace, focus bool) {
 		origin.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: expanded})
 		if focus {
 			origin.floatFocus, origin.stashFocus = false, false
+			origin.raiseColumns()
 		} else if len(origin.Columns) > 1 {
 			origin.Focus = prev
 			if at <= prev {
