@@ -89,17 +89,6 @@ func (r *Renderer) extensions(physical vk.PhysicalDevice) map[string]bool {
 	return have
 }
 
-// hasExtensions reports whether the device offers every dmabuf extension.
-func (r *Renderer) hasExtensions(physical vk.PhysicalDevice) bool {
-	have := r.extensions(physical)
-	for _, e := range deviceExtensions {
-		if !have[e] {
-			return false
-		}
-	}
-	return true
-}
-
 func cstring(b []byte) string {
 	if i := slices.Index(b, 0); i >= 0 {
 		b = b[:i]

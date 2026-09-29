@@ -347,8 +347,7 @@ func (s *surface) queueUpdate() {
 	u.owner, u.synced = s, s.effectivelySynced()
 	if s.server.syncWait != nil && u.attached && u.buffer != nil && u.sync == nil {
 		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
-			var err error
-			err = s.server.syncWait.watchImplicit(b.buf, &u.implicit)
+			err := s.server.syncWait.watchImplicit(b.buf, &u.implicit)
 			if err != nil {
 				s.server.log.Warn().Str("component", "wayland").Err(err).Msg("implicit buffer wait")
 			}
