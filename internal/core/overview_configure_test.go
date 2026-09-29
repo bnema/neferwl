@@ -7,6 +7,64 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
+// A neighbor workspace is visible only as an overview preview; its real
+// placement on the output is hidden. Its last configure must not be resized.
+func TestOverviewNeighborPreviewKeepsHiddenConfigureSize(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 3
+	commands := make(chan ports.ClientCommand, 256)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "OUT-1", Width: 600, Height: 400})
+	m := c.cur().mon
+	m.AddWindow(1)
+	m.Focus(1)
+	m.AddWindow(2)
+	ctx := context.Background()
+	publish := func() []ports.ConfigureWindow {
+		t.Helper()
+		if err := c.publish(ctx); err != nil {
+			t.Fatal(err)
+		}
+		<-scenes
+		var sent []ports.ConfigureWindow
+		for len(commands) > 0 {
+			if v, ok := (<-commands).(ports.ConfigureWindow); ok {
+				sent = append(sent, v)
+			}
+		}
+		return sent
+	}
+	publish() // establish a sized configure while workspace 2 is on screen
+	before := c.configures.sent[2]
+	if before.Width == 0 || before.Height == 0 {
+		t.Fatalf("missing prior size: %+v", before)
+	}
+	m.Focus(0)
+	publish() // the workspace is hidden on the output
+	if c.configures.sent[2].Visible {
+		t.Fatal("neighbor was not hidden before overview")
+	}
+	m.ToggleOverview()
+	preview := previewOf(t, m.Layout(), 2)
+	if preview.Hidden || preview.Preview <= 0 {
+		t.Fatalf("neighbor not shown as preview: %+v", preview)
+	}
+	for _, v := range publish() {
+		if v.ID == 2 && (v.Width != before.Width || v.Height != before.Height) {
+			t.Fatalf("hidden neighbor resized from %+v to %+v", before, v)
+		}
+	}
+	got := c.configures.sent[2]
+	if got.Width != before.Width || got.Height != before.Height {
+		t.Fatalf("neighbor size from %+v to %+v", before, got)
+	}
+}
+
 func TestOverviewConfigureUsesRealLayoutAfterMaximize(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"

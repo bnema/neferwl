@@ -440,7 +440,9 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 	cw := int(math.Round(float64(r.W) * overviewCardZoom))
 	ch := int(math.Round(float64(r.H) * overviewCardZoom))
 	rowH := int(math.Round(float64(u.H) * w.overviewZoom()))
-	x0, y0 := u.X+u.W/100, y+(rowH-ch)/2
+	// Stack rows reserve two peek steps above the front card. Align the
+	// stash with that front band, not with the top of its envelope.
+	x0, y0 := u.X+u.W/100, w.frontRowY(y)+(rowH-ch)/2
 	cards := make([][]Placement, n)
 	for i := range w.Stash {
 		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected}}
@@ -467,13 +469,26 @@ func (w *Workspace) overviewZoom() float64 {
 	return z
 }
 
+// peekStep is the shared step for a stack row and its front-card inset.
+func (w *Workspace) peekStep() int {
+	return max(1, int(math.Round(float64(w.Usable.H)*w.overviewZoom()*overviewPeekStep)))
+}
+
+// frontRowY skips the space reserved for two cards peeking above the front.
+// A single-card row starts at y, as before.
+func (w *Workspace) frontRowY(y int) int {
+	if len(w.stack()) > 1 {
+		return y + 2*w.peekStep()
+	}
+	return y
+}
+
 // rowHeight includes the largest possible stack envelope (two peeks above
 // and two below). Neighbor rows use the same measure as the current row.
 func (w *Workspace) rowHeight() int {
 	h := int(math.Round(float64(w.Usable.H) * w.overviewZoom()))
 	if len(w.stack()) > 1 {
-		step := max(1, int(math.Round(float64(h)*overviewPeekStep)))
-		h += 4 * step
+		h += 4 * w.peekStep()
 	}
 	return h
 }

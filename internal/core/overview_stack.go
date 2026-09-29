@@ -216,9 +216,9 @@ func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
 		at = slices.Index(items, m.stackFront(w))
 	}
 	cards := make([][]Placement, len(items))
-	step := max(1, int(float64(w.Usable.H)*w.overviewZoom()*overviewPeekStep+0.5))
+	step := w.peekStep()
 	for i, item := range items {
-		cards[i] = m.previewItem(w, item, y+2*step, dim, lit)
+		cards[i] = m.previewItem(w, item, w.frontRowY(y), dim, lit)
 	}
 
 	// fan's behind side advances through the linear stack.

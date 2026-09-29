@@ -67,6 +67,32 @@ func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
 	m.CancelOverview()
 }
 
+// The stash front is centred on the same row band as the stack's front,
+// whether that row has peeking cards or just one column-group card.
+func TestOverviewPileAlignedWithRowFront(t *testing.T) {
+	for _, stacked := range []bool{false, true} {
+		m := pileMonitor()
+		w := m.Current()
+		if stacked {
+			m.SetBorder(2)
+			w.AddFloating(9, 300, 200)
+		}
+		m.ToggleOverview()
+		ps := m.Layout()
+		pile := previewOf(t, ps, 7)
+		frontID := WindowID(1)
+		if stacked {
+			frontID = 9
+		}
+		front := previewOf(t, ps, frontID)
+		pileCentre := float64(pile.Rect.Y) + float64(pile.Rect.H)/2
+		frontBandCentre := float64(front.Rect.Y) + float64(w.Usable.H)*front.Preview/2
+		if math.Abs(pileCentre-frontBandCentre) > 1.5 {
+			t.Fatalf("stacked %v: pile centre %.1f, front band centre %.1f: pile %+v front %+v", stacked, pileCentre, frontBandCentre, pile, front)
+		}
+	}
+}
+
 func TestOverviewSingleCardLeftFallsBackToStash(t *testing.T) {
 	m := stackMonitor()
 	w := m.Current()
