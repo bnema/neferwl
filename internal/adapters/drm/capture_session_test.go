@@ -230,15 +230,22 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 
 	seen := map[ports.WindowID]uint64{1: 9, 5: 7} // window 1 belongs to the display
 	o.report(nil, seen)
-	require.True(t, o.capped, "a limited report is repeated")
+	require.True(t, o.capped, "an outstanding child read is reported repeatedly")
 	require.Equal(t, map[ports.WindowID]uint64{1: 9, 5: 2}, o.unsent[0].Seen)
 	require.Equal(t, uint64(7), seen[5], "the caller's map is untouched")
+	require.Equal(t, map[ports.WindowID]uint64{5: 2}, o.unsent[0].ChildReads)
+	previous := o.unsent[0].ChildReads
+	allocs := testing.AllocsPerRun(100, func() { o.report(nil, seen) })
+	require.LessOrEqual(t, allocs, float64(1), "only the fence poll may allocate")
+	t.Logf("unchanged child report: %.1f allocs", allocs)
 
 	_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
 	require.NoError(t, err)
 	o.report(nil, seen)
 	require.False(t, o.capped)
 	require.Equal(t, map[ports.WindowID]uint64{1: 9, 5: 7}, o.unsent[0].Seen, "limit lifted")
+	require.Empty(t, o.unsent[0].ChildReads)
+	require.Equal(t, map[ports.WindowID]uint64{5: 2}, previous, "sent snapshot remains immutable")
 	pipeline.Close(nil)
 }
 
@@ -265,6 +272,7 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 2)
 	pipeline := capture.NewPipeline(context.Background(), replies)
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+	o.capHidden = pipeline.CapHiddenSeen
 	s, c := fullscreenScene()
 	s.Capture = &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, Revision: 1, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}
 	s.CaptureScene = &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}
@@ -277,6 +285,9 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	direct, err := o.submitFrame(context.Background(), display, s, c, map[ports.WindowID]uint64{}, []ports.CaptureRequest{req}, pipeline)
 	require.NoError(t, err)
 	require.True(t, direct, "the displayed fullscreen window stays scanned out")
+	require.True(t, o.frame.pendingCommit(), "display flip has not completed")
+	require.Equal(t, map[ports.WindowID]uint64{5: 0}, o.unsent[0].ChildReads, "child hold published before the display flip")
+	require.Empty(t, o.unsent[0].Seen, "display reads are not advanced early")
 	require.NoError(t, (<-replies).Err)
 	_, err = writeEnd.Write([]byte{1})
 	require.NoError(t, err)

@@ -133,6 +133,9 @@ func TestStandardCaptureDuringSessionUsesOneComposition(t *testing.T) {
 // A hidden workspace is drawn by the child renderer (made by the factory),
 // not by the display's; the display still renders the scene it shows.
 func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
+	read, write, err := os.Pipe()
+	require.NoError(t, err)
+	defer write.Close()
 	display := portsmocks.NewMockRenderer(t)
 	display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	display.EXPECT().Close().Return().Once()
@@ -143,7 +146,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		require.Nil(t, s.Capture)
 		require.Len(t, s.Layers, 0, "HUD left out of the child frame")
-		return nil, nil
+		return read, nil
 	}).Once()
 	child.EXPECT().BeginCapture().Return(frame, nil).Once()
 	child.EXPECT().EndCapture(frame).Return().Maybe()
@@ -151,7 +154,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	scene := sessionScene()
 	scene.OutputWidth, scene.OutputHeight, scene.Scale = 2, 2, 1
 	scene.Capture.TargetRect = ports.Rect{W: 2, H: 2}
-	scene.CaptureScene = &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}}}
+	scene.CaptureScene = &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 5}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scenes := make(chan ports.Scene, 1)
@@ -159,8 +162,9 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 2)
 	done := make(chan error, 1)
 	var made [2]int
+	presented := make(chan ports.OutputPresented, 4)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies,
+		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, Presented: presented,
 			NewRenderer:        func(int, int) (ports.Renderer, error) { return display, nil },
 			NewCaptureRenderer: func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil },
 		}, scenes, nil, nil, incoming)
@@ -168,6 +172,33 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	q := ports.CaptureRequest{ID: 1, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	incoming <- q
 	scenes <- scene
+	// The owner may report an idle frame before receiving the first scene.
+	deadline := time.After(3 * time.Second)
+waitHold:
+	for {
+		select {
+		case report := <-presented:
+			if len(report.ChildReads) > 0 {
+				require.Equal(t, map[ports.WindowID]uint64{5: 0}, report.ChildReads, "hold published before waiting")
+				break waitHold
+			}
+		case <-deadline:
+			t.Fatal("no child hold report")
+		}
+	}
+	select {
+	case <-presented:
+		t.Fatal("child hold lifted before its fence signalled")
+	case <-time.After(120 * time.Millisecond): // beyond Wayland's 100ms timeout
+	}
+	_, err = write.Write([]byte{1})
+	require.NoError(t, err)
+	select {
+	case report := <-presented:
+		require.Empty(t, report.ChildReads, "completed render lifts child hold")
+	case <-time.After(3 * time.Second):
+		t.Fatal("no completed render report")
+	}
 	select {
 	case d := <-replies:
 		require.NoError(t, d.Err)

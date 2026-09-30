@@ -500,6 +500,10 @@ type OutputPresented struct {
 	Flip          *FlipInfo
 	Shown, Queued uint64
 	Seen          map[WindowID]uint64
+	// ChildReads is the oldest content Seq per window still read by a child
+	// renderer on a separate device. Unlike Seen, these holds never time out:
+	// they end only with a completed render or device shutdown.
+	ChildReads map[WindowID]uint64
 }
 
 // OutputFormats carries output → wayland the dmabuf formats an output can

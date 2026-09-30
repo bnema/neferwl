@@ -76,6 +76,8 @@ type offscreen struct {
 	clean cleaner
 	// capped is the scratch map CapHiddenSeen returns.
 	capped map[ports.WindowID]uint64
+	// reads is the scratch map of the oldest outstanding child reads.
+	reads map[ports.WindowID]uint64
 }
 
 // EnableOffscreen lets the pipeline serve clean requests of a hidden
@@ -117,28 +119,37 @@ func (p *Pipeline) HiddenReading() bool {
 // are capped, each by the lowest ceiling among the unfinished renders that
 // drew it (a window the render drew without content is capped at 0); every
 // other window is untouched, so the display's own reads are never held back.
-// It returns seen itself, and false, when nothing is capped. Otherwise the
-// result is a scratch map owned by the pipeline, valid until the next call;
-// copy it to keep it.
-func (p *Pipeline) CapHiddenSeen(seen map[ports.WindowID]uint64) (map[ports.WindowID]uint64, bool) {
+// The second result records the oldest outstanding read per window, even
+// when Seen needs no cap: those buffers must not be released by a stale-report
+// timeout. The last result says whether child reads remain, so the owner keeps
+// reporting until they finish. Both maps are pipeline scratch, valid until
+// the next call; copy them to keep them.
+func (p *Pipeline) CapHiddenSeen(seen map[ports.WindowID]uint64) (map[ports.WindowID]uint64, map[ports.WindowID]uint64, bool) {
 	if p == nil || p.off == nil {
-		return seen, false
+		return seen, nil, false
 	}
 	o := p.off
 	o.reap()
 	if o.nf == 0 {
-		return seen, false
+		return seen, nil, false
 	}
+	if o.reads == nil {
+		o.reads = make(map[ports.WindowID]uint64)
+	}
+	clear(o.reads)
 	hit := false
 	for i := range o.nf {
 		for id, c := range o.slots[i].ceil {
+			if prev, ok := o.reads[id]; !ok || c < prev {
+				o.reads[id] = c
+			}
 			if seen[id] > c {
 				hit = true
 			}
 		}
 	}
 	if !hit {
-		return seen, false
+		return seen, o.reads, true
 	}
 	if o.capped == nil {
 		o.capped = make(map[ports.WindowID]uint64, len(seen))
@@ -152,7 +163,7 @@ func (p *Pipeline) CapHiddenSeen(seen map[ports.WindowID]uint64) (map[ports.Wind
 			}
 		}
 	}
-	return o.capped, true
+	return o.capped, o.reads, true
 }
 
 // WaitHidden blocks until the child finished reading (headless outputs, which

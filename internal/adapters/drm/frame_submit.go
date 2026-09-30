@@ -37,6 +37,12 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		// does (scanout included). Failures answer the requests and never stop
 		// the output.
 		pipeline.SubmitHidden(scene, surfaces, clean)
+		// Publish child holds before queuing a display flip, which may stall
+		// past the stale-report timeout. Do not advance the display's Seen
+		// until its own GPU work finishes.
+		if o.capHidden != nil {
+			o.report(nil, o.seenSnapshot)
+		}
 		clear(clean)
 		clean = nil
 	}

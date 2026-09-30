@@ -231,6 +231,19 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			// fences do not cover the child, so wait for it before reporting.
 			pipeline.SubmitHidden(scene, surfaces, clean)
 			clear(clean)
+			// A slow child may outlive Wayland's stale-report timeout even
+			// though this owner waits. Publish its non-expiring holds first.
+			if opts.Presented != nil {
+				_, reads, _ := pipeline.CapHiddenSeen(seen)
+				if len(reads) > 0 {
+					r := &ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), ChildReads: maps.Clone(reads)}
+					select {
+					case opts.Presented <- *r:
+					case <-ctx.Done():
+						return nil
+					}
+				}
+			}
 			if err := pipeline.WaitHidden(ctx); err != nil {
 				if ctx.Err() != nil {
 					return nil

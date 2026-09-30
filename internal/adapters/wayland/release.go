@@ -15,7 +15,8 @@ import (
 // that window and neither shows nor queues the buffer. Outputs keep only
 // the latest content of a window, so they never draw an older buffer
 // again. heldTimeout guards against an output that stopped reporting
-// (switched away, stalled): a buffer it does not scan out is released then.
+// (switched away, stalled): a buffer it does not scan out or read on a
+// separate child device is released then.
 
 // heldTimeout releases held buffers of an output that stopped reporting.
 const heldTimeout = 100 * time.Millisecond
@@ -90,7 +91,8 @@ func (s *Server) releaseBufferSync(surf *surface, sync syncHold) {
 // releaseHeld records the output reports and releases the buffers no
 // output reads. Every output reads every window's content, so a buffer
 // waits until no live output shows or queues it and all of them have seen
-// a later content of its window (or heldTimeout passed). It reports
+// a later content of its window (or heldTimeout passed, without child reads).
+// It reports
 // whether buffers are still held.
 func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) bool {
 	for _, r := range reports {
@@ -138,12 +140,17 @@ func (s *Server) bufferReferenced(b *wayland.Buffer) bool {
 }
 
 // keepHeld reports whether an output may still read a held buffer: one
-// scans it out or queued it, or one has not got a later content of its
-// window yet and heldTimeout has not passed.
+// scans it out or queued it, a child renderer still reads its content, or
+// one has not got a later content of its window yet and heldTimeout has
+// not passed. Child reads are exempt from the timeout until the render
+// finishes or its device shuts down.
 func keepHeld(h heldBuffer, reports []ports.OutputPresented, now time.Time) bool {
 	seen := true
 	for _, r := range reports {
 		if h.id != 0 && (r.Shown == h.id || r.Queued == h.id) {
+			return true
+		}
+		if seq, ok := r.ChildReads[h.window]; ok && seq <= h.after {
 			return true
 		}
 		if r.Seen[h.window] <= h.after {

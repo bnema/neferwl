@@ -1,12 +1,20 @@
 package wayland
 
 import (
+	"context"
+	"errors"
+	"image"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/capture"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/protocol/fifo"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // A cached child buffer is not released until its role is destroyed;
@@ -82,6 +90,80 @@ func TestKeepHeld(t *testing.T) {
 			t.Errorf("%s: %v", tc.name, got)
 		}
 	}
+}
+
+// Child reads on a separate device outlive the stale display report timeout.
+// The same predicate protects wl_buffer.release and explicit release points.
+func TestKeepHeldChildReadsBeyondTimeout(t *testing.T) {
+	now := time.Unix(100, 0)
+	report := ports.OutputPresented{
+		Seen:       map[ports.WindowID]uint64{1: 20, 2: 20},
+		ChildReads: map[ports.WindowID]uint64{1: 5},
+	}
+	for _, id := range []uint64{0, 7} { // SHM / explicit points only, and dmabuf
+		h := heldBuffer{window: 1, id: id, after: 5, at: now}
+		if !keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+			t.Fatal("unfinished child read released after 100ms")
+		}
+		h.window = 2
+		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+			t.Fatal("unrelated display window held by child")
+		}
+		h.window, h.after = 1, 4
+		if keepHeld(h, []ports.OutputPresented{report}, now.Add(time.Second)) {
+			t.Fatal("buffer older than child's content held")
+		}
+		h.after = 5
+		finished := report
+		finished.ChildReads = nil // render completed, or device closed
+		if keepHeld(h, []ports.OutputPresented{finished}, now.Add(time.Second)) {
+			t.Fatal("finished child read still holds buffer")
+		}
+	}
+	allocs := testing.AllocsPerRun(100, func() {
+		keepHeld(heldBuffer{window: 1, after: 5, at: now}, []ports.OutputPresented{report}, now.Add(time.Second))
+	})
+	if allocs != 0 {
+		t.Fatalf("child release guard: %.1f allocs, want 0", allocs)
+	}
+	t.Logf("child release guard: %.1f allocs", allocs)
+}
+
+// An actual unfinished child fence protects releases after the stale timeout,
+// even when the display's Seen is unchanged (so no cap was necessary).
+func TestKeepHeldUntilChildFenceCompletes(t *testing.T) {
+	read, write, err := os.Pipe()
+	require.NoError(t, err)
+	defer write.Close()
+	child := portsmocks.NewMockRenderer(t)
+	child.EXPECT().Render(mock.Anything, mock.Anything).Return(read, nil).Once()
+	// A failed readback does not finish the render's client-buffer reads.
+	child.EXPECT().BeginCapture().Return(nil, errors.New("readback unavailable")).Once()
+	child.EXPECT().Close().Return().Once()
+	p := capture.NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	defer p.Close(nil)
+	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+	s := ports.Scene{
+		Capture:      &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 2, H: 2}},
+		CaptureScene: &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}}},
+	}
+	p.SubmitHidden(s, map[ports.WindowID]ports.SurfaceContent{1: {Seq: 5}}, []ports.CaptureRequest{{
+		ID: 1, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2),
+	}})
+	now := time.Unix(100, 0)
+	h := heldBuffer{window: 1, after: 5, at: now}
+	seen := map[ports.WindowID]uint64{1: 5}
+	got, reads, pending := p.CapHiddenSeen(seen)
+	require.True(t, pending)
+	require.Equal(t, seen, got)
+	reports := []ports.OutputPresented{{Seen: got, ChildReads: reads}}
+	require.True(t, keepHeld(h, reports, now.Add(time.Second)), "unsignalled fence outlives 100ms timeout")
+	_, err = write.Write([]byte{1})
+	require.NoError(t, err)
+	got, reads, pending = p.CapHiddenSeen(seen)
+	require.False(t, pending)
+	reports[0] = ports.OutputPresented{Seen: got, ChildReads: reads}
+	require.False(t, keepHeld(h, reports, now.Add(time.Second)), "signalled fence lifts child hold")
 }
 
 // A buffer replaced just after its window becomes invisible is still held:

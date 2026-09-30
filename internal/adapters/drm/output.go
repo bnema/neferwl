@@ -73,8 +73,8 @@ type Output struct {
 	// capHidden limits a report to what the child renderer of a hidden
 	// workspace was given, window by window, while it may still read (its
 	// device is not ordered with the display's fences). capped is set when
-	// the last report was limited: it is repeated until the limits lift.
-	capHidden func(map[ports.WindowID]uint64) (map[ports.WindowID]uint64, bool)
+	// the last report had child reads: it is repeated until they finish.
+	capHidden func(map[ports.WindowID]uint64) (map[ports.WindowID]uint64, map[ports.WindowID]uint64, bool)
 	capped    bool
 	// readFences are fences of frames rendered but not committed: the
 	// GPU may still read client buffers until they signal, so what was
@@ -91,6 +91,7 @@ type Output struct {
 	// Last immutable snapshot sent in a report. Never mutate it: wayland may
 	// still be reading a prior report on another goroutine.
 	seenSnapshot        map[ports.WindowID]uint64
+	childReadsSnapshot  map[ports.WindowID]uint64
 	showsSnapshot       map[ports.WindowID]uint64
 	directShowsSnapshot map[ports.WindowID]uint64
 	showsScratch        map[ports.WindowID]uint64
@@ -1386,13 +1387,17 @@ const maxUnsent = 16
 // queued one; flips are never merged unless maxUnsent is reached.
 func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	o.capped = false
+	var reads map[ports.WindowID]uint64
 	if o.capHidden != nil {
-		seen, o.capped = o.capHidden(seen)
+		seen, reads, o.capped = o.capHidden(seen)
 	}
 	if !maps.Equal(o.seenSnapshot, seen) {
 		o.seenSnapshot = maps.Clone(seen)
 	}
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot}
+	if !maps.Equal(o.childReadsSnapshot, reads) {
+		o.childReadsSnapshot = maps.Clone(reads)
+	}
+	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot, ChildReads: o.childReadsSnapshot}
 	if n := len(o.unsent); n > 0 && (flip == nil || o.unsent[n-1].Flip == nil) {
 		if flip == nil {
 			r.Flip = o.unsent[n-1].Flip

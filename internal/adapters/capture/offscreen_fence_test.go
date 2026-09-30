@@ -109,21 +109,24 @@ func TestCapHiddenSeenPerFenceCeilings(t *testing.T) {
 	// 5 is capped by the lowest ceiling among the unfinished renders that drew
 	// it; 6 by the second; the display's window 1 and an unrelated 9 are free.
 	seen := map[ports.WindowID]uint64{1: 40, 5: 8, 6: 8, 9: 50}
-	got, capped := p.CapHiddenSeen(seen)
+	got, reads, capped := p.CapHiddenSeen(seen)
+	require.Equal(t, map[ports.WindowID]uint64{5: 2, 6: 3}, reads)
 	require.True(t, capped)
 	require.Equal(t, map[ports.WindowID]uint64{1: 40, 5: 2, 6: 3, 9: 50}, got)
 	require.Equal(t, uint64(8), seen[5], "input untouched")
 
 	// Render 1 finishes: window 5 is now limited by render 2 only.
 	signalFence(t, w1)
-	got, capped = p.CapHiddenSeen(seen)
+	got, reads, capped = p.CapHiddenSeen(seen)
+	require.Equal(t, map[ports.WindowID]uint64{5: 6, 6: 3}, reads)
 	require.True(t, capped)
 	require.Equal(t, map[ports.WindowID]uint64{1: 40, 5: 6, 6: 3, 9: 50}, got)
 
 	// A window the earlier render never saw is not capped by it: a display
 	// window that is new to the child releases at once.
 	signalFence(t, w2)
-	got, capped = p.CapHiddenSeen(seen)
+	got, reads, capped = p.CapHiddenSeen(seen)
+	require.Empty(t, reads)
 	require.False(t, capped)
 	require.Equal(t, seen, got)
 	for range 2 {
@@ -138,7 +141,8 @@ func TestCapHiddenSeenMissingContentCapsToZero(t *testing.T) {
 	p, replies, _ := hiddenPipeline(t, f1)
 	defer p.Close(nil)
 	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{}, 1)
-	got, capped := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 4, 7: 4})
+	got, reads, capped := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 4, 7: 4})
+	require.Equal(t, map[ports.WindowID]uint64{5: 0}, reads)
 	require.True(t, capped)
 	require.Equal(t, map[ports.WindowID]uint64{5: 0, 7: 4}, got)
 	awaitCapture(t, replies)
@@ -151,12 +155,13 @@ func TestCapHiddenSeenNoAllocationInSteadyState(t *testing.T) {
 	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}, 1)
 	seen := map[ports.WindowID]uint64{1: 40, 5: 8}
 	p.CapHiddenSeen(seen) // warm the scratch map
-	if allocs := testing.AllocsPerRun(100, func() { p.CapHiddenSeen(seen) }); allocs > 1 {
-		t.Fatalf("capped report: %.1f allocs, want <=1 (the poll descriptor)", allocs)
-	}
+	allocs := testing.AllocsPerRun(100, func() { p.CapHiddenSeen(seen) })
+	require.LessOrEqual(t, allocs, float64(1), "only the poll descriptor may allocate")
+	t.Logf("outstanding child report: %.1f allocs", allocs)
 	awaitCapture(t, replies)
 	var none *Pipeline
-	got, capped := none.CapHiddenSeen(seen)
+	got, reads, capped := none.CapHiddenSeen(seen)
+	require.Nil(t, reads)
 	require.False(t, capped)
 	require.Equal(t, seen, got)
 }
