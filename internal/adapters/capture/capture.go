@@ -88,20 +88,19 @@ func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.Captu
 		err = fmt.Errorf("capture too large")
 		return
 	}
-	st, e := req.Dst.File.Stat()
-	if e != nil {
-		err = e
+	var st unix.Stat_t
+	if e := unix.Fstat(int(req.Dst.File.Fd()), &st); e != nil {
+		err = fmt.Errorf("fstat capture destination: %w", e)
 		return
 	}
-	if st.Size() < size {
+	if st.Size < size {
 		err = fmt.Errorf("capture buffer truncated")
 		return
 	}
 	// Map only for the duration of this capture; the renderer copies BGRA rows
 	// directly from its readback buffer into the selected shm region.
-	data, e = unix.Mmap(int(req.Dst.File.Fd()), 0, int(size), unix.PROT_WRITE, unix.MAP_SHARED)
-	if e != nil {
-		err = e
+	data, err = unix.Mmap(int(req.Dst.File.Fd()), 0, int(size), unix.PROT_WRITE, unix.MAP_SHARED)
+	if err != nil {
 		return
 	}
 	err = frame.Read(req.Region, data[req.Dst.Offset:], req.Stride)
