@@ -485,8 +485,9 @@ func (c *Core) publish(ctx context.Context) error {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		if sc.mon.ov.open {
-			// Previews have no lines: the selected one is framed.
-			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
+			// Frame the selection and separate numbered and named row groups.
+			_, scene.Separators = sc.mon.overviewRows()
+			scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
 		}
 		for _, p := range layout {
 			// Only the focused output has an activated window.

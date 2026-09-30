@@ -263,8 +263,9 @@ func (c *Core) removeScreen(name string) {
 func (c *Core) settleGuests() {
 	for _, home := range c.screens {
 		type guest struct {
-			w      *Workspace
-			hidden bool
+			w, anchor *Workspace
+			host      *Monitor
+			hidden    bool
 		}
 		var list []guest
 		for _, host := range c.screens {
@@ -273,10 +274,14 @@ func (c *Core) settleGuests() {
 			}
 			for _, w := range host.mon.all() {
 				if home.mon.matches(w.home) && host.mon.Current() != w {
-					list = append(list, guest{w, host.mon.isHidden(w)})
-					host.mon.take(w)
+					list = append(list, guest{w: w, anchor: w.overviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
 				}
 			}
+		}
+		// Snapshot every anchor before take normalizes a host and clears
+		// references to numbered workspaces returning alongside named rows.
+		for _, g := range list {
+			g.host.take(g.w)
 		}
 		slices.SortStableFunc(list, func(a, b guest) int { return a.w.homePos - b.w.homePos })
 		// A monitor showing an empty workspace (just plugged in) shows
@@ -288,6 +293,11 @@ func (c *Core) settleGuests() {
 			if idle && !g.hidden {
 				home.mon.show(g.w)
 				idle = false
+			}
+		}
+		for _, g := range list {
+			if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
+				g.w.overviewAfter = g.anchor
 			}
 		}
 	}
