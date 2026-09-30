@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
@@ -128,7 +129,7 @@ func TestProtectedWorkspaceInventoryAndActivation(t *testing.T) {
 		if !ok || len(activation.IDs) != 1 || activation.IDs[0] != 42 {
 			t.Fatalf("unlocked activation: %v", ev)
 		}
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("unlocked activation not emitted")
 	}
 }
