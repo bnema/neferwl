@@ -74,6 +74,8 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 	h.server.layers[l.id] = l
 	if gone {
 		l.close()
+	} else if out != nil {
+		state.sendTreeScale()
 	}
 	resource.OnDestroy = func() {
 		l.unmap()
