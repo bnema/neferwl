@@ -66,6 +66,16 @@ type Output struct {
 	back  int
 	frame frameLifecycle // pending commit, serials, deadlines and timer
 	flips int
+	// NewCaptureRenderer makes the child renderer of a hidden workspace
+	// capture session (Scene.CaptureScene). Nil: such captures fail closed.
+	// Set before Run.
+	NewCaptureRenderer func(w, h int) (ports.Renderer, error)
+	// capHidden limits a report to what the child renderer of a hidden
+	// workspace was given, window by window, while it may still read (its
+	// device is not ordered with the display's fences). capped is set when
+	// the last report had child reads: it is repeated until they finish.
+	capHidden func(map[ports.WindowID]uint64) (map[ports.WindowID]uint64, map[ports.WindowID]uint64, bool)
+	capped    bool
 	// readFences are fences of frames rendered but not committed: the
 	// GPU may still read client buffers until they signal, so what was
 	// seen is reported only then (or after a later frame flipped).
@@ -81,6 +91,7 @@ type Output struct {
 	// Last immutable snapshot sent in a report. Never mutate it: wayland may
 	// still be reading a prior report on another goroutine.
 	seenSnapshot        map[ports.WindowID]uint64
+	childReadsSnapshot  map[ports.WindowID]uint64
 	showsSnapshot       map[ports.WindowID]uint64
 	directShowsSnapshot map[ports.WindowID]uint64
 	showsScratch        map[ports.WindowID]uint64
@@ -981,6 +992,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	pipeline := capture.NewPipeline(ctx, captured)
+	if o.NewCaptureRenderer != nil {
+		pipeline.EnableOffscreen(o.NewCaptureRenderer)
+		o.capHidden = pipeline.CapHiddenSeen
+	}
 	defer func() {
 		cancelCaptures()
 		pipeline.Close(r)
@@ -1031,10 +1046,22 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 	for {
 		readWait := false
-		if reportDirty && !o.frame.pendingCommit() {
-			if readWait = !o.readDone(); !readWait {
-				o.report(nil, seen)
-				reportDirty = false
+		if reportDirty || o.capped {
+			published := false
+			if !o.frame.pendingCommit() {
+				if readWait = !o.readDone(); !readWait {
+					o.report(nil, seen)
+					reportDirty, published = false, true
+					// A report limited by the child's reads is repeated soon.
+					readWait = o.capped
+				}
+			}
+			if !published && o.capped {
+				// A display frame or fence that has not finished must not
+				// keep a finished child read held: child holds do not expire.
+				// Report them alone, at the last Seen that was safe.
+				o.report(nil, o.seenSnapshot)
+				readWait = readWait || o.capped
 			}
 		}
 		o.flushReport(presented)
@@ -1102,6 +1129,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			return nil
 		case b := <-pipeline.Completed():
 			pipeline.Recycle(b, r)
+			continue
+		case b := <-pipeline.HiddenCompleted():
+			pipeline.RecycleHidden(b)
+			pipeline.Retire(scene)
 			continue
 		case q := <-captures:
 			if !enabled || o.off || o.wantOff {
@@ -1173,9 +1204,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				reportDirty = true
 			}
 			// Windows on other outputs or workspaces do not need a frame.
-			dirty = dirty || scene.Shows(c.ID)
+			dirty = dirty || capture.Shows(scene, c.ID)
 		case <-stats.C():
 			now := clk.Now()
+			pipeline.Retire(scene) // an idle child of an ended session goes
 			o.dropClientFBs(now, false)
 			// An idle output renders nothing: free what windows that left
 			// it held.
@@ -1240,6 +1272,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if errors.As(err, &fatal) {
 			// A failed render did not hand these requests to the worker.
 			for _, q := range requests {
+				if capture.Handed(q) {
+					continue // already owned by the worker, or answered
+				}
 				capture.Fail(ctx, q, err, captured)
 			}
 		}
@@ -1361,10 +1396,18 @@ const maxUnsent = 16
 // buffers can be released. A flip-less report merges into the newest
 // queued one; flips are never merged unless maxUnsent is reached.
 func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
+	o.capped = false
+	var reads map[ports.WindowID]uint64
+	if o.capHidden != nil {
+		seen, reads, o.capped = o.capHidden(seen)
+	}
 	if !maps.Equal(o.seenSnapshot, seen) {
 		o.seenSnapshot = maps.Clone(seen)
 	}
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot}
+	if !maps.Equal(o.childReadsSnapshot, reads) {
+		o.childReadsSnapshot = maps.Clone(reads)
+	}
+	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot, ChildReads: o.childReadsSnapshot}
 	if n := len(o.unsent); n > 0 && (flip == nil || o.unsent[n-1].Flip == nil) {
 		if flip == nil {
 			r.Flip = o.unsent[n-1].Flip

@@ -11,6 +11,9 @@ type configureTarget struct {
 	// floating window (native floats pick their own size).
 	client  Rect
 	imposed bool
+	// captureArea is the viewport of the workspace a capture session renders
+	// off screen, when this window belongs to it (captureConfigure).
+	captureArea Rect
 	// realTiled sizes a visible tiled preview from its real client rect.
 	realTiled bool
 }
@@ -20,6 +23,8 @@ type configureTarget struct {
 type configures struct {
 	sent map[WindowID]ports.ConfigureWindow
 	seen map[WindowID]bool
+	// cw is the workspace a capture session renders off screen, if any.
+	cw captureWorkspace
 }
 
 func newConfigures() configures {
@@ -31,6 +36,43 @@ func newConfigures() configures {
 func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow, bool) {
 	s.seen[p.ID] = true
 	old, ok := s.sent[p.ID]
+	v := build(p, t, old, ok)
+	return v, !ok || v != old
+}
+
+// nextWithCapture is next for a window of a workspace a capture session
+// renders off screen. p is its placement on the physical layout; cp is its
+// real placement on its own workspace, laid out in the viewport
+// t.captureArea (nil: not captured, exactly next).
+//
+// A hidden p is sized from cp like a shown window and stays physically
+// invisible and deactivated (Visible false). Any other p (an overview
+// preview) is configured as usual, keeping its real size; only when the
+// display does not show it does it get Captured, so a capture that draws it
+// does not see it suspended. Captured is set when cp is drawn in the
+// viewport.
+func (s *configures) nextWithCapture(p Placement, t configureTarget, cp *Placement) (ports.ConfigureWindow, bool) {
+	if cp == nil {
+		return s.next(p, t)
+	}
+	s.seen[p.ID] = true
+	old, ok := s.sent[p.ID]
+	var v ports.ConfigureWindow
+	if p.Hidden {
+		t.focused = false
+		v = build(*cp, t, old, ok)
+		v.Activated, v.Visible = false, false
+	} else {
+		v = build(p, t, old, ok)
+	}
+	v.Captured = !v.Visible && !cp.Hidden && cp.Rect.Overlaps(t.captureArea)
+	return v, !ok || v != old
+}
+
+// build is the configure for p at t given the last one sent, if any. It
+// never sets Captured: only nextWithCapture does, so a window that leaves a
+// capture session drops the flag with its next configure.
+func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) ports.ConfigureWindow {
 	var v ports.ConfigureWindow
 	switch {
 	case p.Hidden:
@@ -41,7 +83,7 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		if !ok {
 			v = ports.ConfigureWindow{ID: p.ID, Floating: p.Floating}
 		}
-		v.Activated, v.Visible, v.Output = false, false, t.output
+		v.Activated, v.Visible, v.Output, v.Captured = false, false, t.output, false
 	case p.Preview > 0:
 		// A preview keeps its client's size: only its focus changes.
 		v = old
@@ -60,14 +102,14 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		if t.realTiled {
 			v.Width, v.Height = t.client.W, t.client.H
 		}
-		v.Activated, v.Visible, v.Output = t.focused, onScreen(p, t.area), t.output
+		v.Activated, v.Visible, v.Output, v.Captured = t.focused, onScreen(p, t.area), t.output, false
 	default:
 		v = ports.ConfigureWindow{ID: p.ID, Width: t.client.W, Height: t.client.H, Fullscreen: p.Fullscreen, Activated: t.focused, Floating: p.Floating && !p.Fullscreen, Output: t.output, Visible: onScreen(p, t.area)}
 		if v.Floating && !t.imposed {
 			v.Width, v.Height = 0, 0
 		}
 	}
-	return v, !ok || v != old
+	return v
 }
 
 // mark records v as sent.

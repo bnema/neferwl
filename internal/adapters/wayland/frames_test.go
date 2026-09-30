@@ -122,3 +122,25 @@ func TestInvisibleFramePacingAndMigration(t *testing.T) {
 		t.Fatalf("resume: fire %v queues %+v", fire, s.awaiting)
 	}
 }
+
+// A window only a capture session draws is physically invisible (no scanout,
+// no presentation feedback) but is not throttled: its callbacks stay on its
+// output's queue and move when Captured changes.
+func TestCapturedWindowKeepsOutputFramePacing(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
+	root := &surface{xdg: &xdgSurface{window: w}}
+	a := new(wayland.Callback)
+	s.queueFrames(root, []*wayland.Callback{a})
+	w.last = ports.ConfigureWindow{Output: "DP-2", Captured: true}
+	s.relocateCallbacks(root)
+	if !s.invisible(root) || s.suspended(root) || s.frameOutput(root) != "DP-2" || len(s.awaiting["DP-2"]) != 1 || len(s.awaiting[suspendedFrameQueue]) != 0 {
+		t.Fatalf("captured: invisible %v suspended %v queues %+v", s.invisible(root), s.suspended(root), s.awaiting)
+	}
+	w.last = ports.ConfigureWindow{Output: "DP-2"}
+	s.relocateCallbacks(root)
+	if !s.suspended(root) || len(s.awaiting[suspendedFrameQueue]) != 1 || len(s.awaiting["DP-2"]) != 0 {
+		t.Fatalf("released: queues %+v", s.awaiting)
+	}
+}

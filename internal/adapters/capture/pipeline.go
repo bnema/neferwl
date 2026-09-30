@@ -33,6 +33,8 @@ type Pipeline struct {
 	jobs      chan *batch
 	completed chan *batch
 	batches   [pipelineSlots]batch
+	clean     cleaner // scratch of CleanScene, owner only
+	off       *offscreen
 	worker    sync.WaitGroup
 }
 
@@ -146,4 +148,7 @@ func (p *Pipeline) Close(r ports.Renderer) {
 	p.cancel()
 	p.worker.Wait()
 	p.reclaim(r)
+	if p.off != nil {
+		p.off.close()
+	}
 }

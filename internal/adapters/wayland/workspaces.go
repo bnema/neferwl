@@ -131,6 +131,7 @@ func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
 	for _, m := range s.workspaceManagers {
 		m.update(snapshot)
 	}
+	s.updateCaptureWorkspaces(snapshot)
 }
 func workspaceState(w ports.WorkspaceInfo) uint32 {
 	var state uint32

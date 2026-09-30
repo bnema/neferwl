@@ -31,6 +31,9 @@ type layerSurface struct {
 	// creation. The surface is closed when it is unplugged.
 	output *output
 	closed bool // output gone: commits are ignored until destroy
+	// capture is the private capture session this surface is attached to.
+	capture    *privateSession
+	attachment *layerAttachment
 }
 
 func registerLayer(d *server.Display, s *Server) error {
@@ -71,9 +74,12 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 	h.server.layers[l.id] = l
 	if gone {
 		l.close()
+	} else if out != nil {
+		state.sendTreeScale()
 	}
 	resource.OnDestroy = func() {
 		l.unmap()
+		l.captureDetach()
 		delete(h.server.layers, l.id)
 		state.layer = nil
 		state.role = nil
@@ -103,6 +109,10 @@ func (l *layerSurface) SetKeyboardInteractivity(r *wlrlayershell.ZwlrLayerSurfac
 	if k > 2 {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidKeyboardInteractivity), "invalid keyboard interactivity")
 		return
+	}
+	if l.capture != nil {
+		// A capture HUD never takes the keyboard, whatever it asks for.
+		k = 0
 	}
 	l.pending.keyboard = k
 }
@@ -175,6 +185,9 @@ func (l *layerSurface) unmap() {
 // close tells the client its output is gone; the surface stays unmapped
 // until the client destroys it.
 func (l *layerSurface) close() {
+	if l.closed {
+		return
+	}
 	l.unmap()
 	l.output = nil
 	l.closed = true
@@ -190,6 +203,10 @@ func (s *Server) layerChanged() {
 			continue
 		}
 		v := ports.LayerSurface{ID: l.id, Layer: l.current.layer, Anchor: l.current.anchor, ExclusiveZone: l.current.zone, Margin: l.current.margin, Namespace: l.namespace, Keyboard: l.current.keyboard}
+		if l.capture != nil {
+			// A capture HUD never takes the keyboard.
+			v.Keyboard = 0
+		}
 		if l.output != nil {
 			v.Output = l.output.name()
 		}
@@ -233,11 +250,23 @@ func (l *layerSurface) commit(buffer bool) {
 func (l *layerSurface) commitState(p layerState, buffer bool) {
 	if l.surface.destroyed {
 		l.unmap()
+		l.captureDetach()
 		delete(l.shell.server.layers, l.id)
 		return
 	}
 	if l.closed {
 		return
+	}
+	if l.capture != nil {
+		p.keyboard = 0
+		if p.layer != ports.LayerTop && p.layer != ports.LayerOverlay {
+			// Only top and overlay layers may be attached: closing unmaps the
+			// surface (its LayerChanged is queued first), then it is detached,
+			// so core keeps it excluded until it is gone.
+			l.close()
+			l.captureDetach()
+			return
+		}
 	}
 	if (p.width == 0 && p.anchor&(ports.AnchorLeft|ports.AnchorRight) != ports.AnchorLeft|ports.AnchorRight) || (p.height == 0 && p.anchor&(ports.AnchorTop|ports.AnchorBottom) != ports.AnchorTop|ports.AnchorBottom) {
 		l.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSize), "zero size requires opposing anchors")

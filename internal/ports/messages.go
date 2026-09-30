@@ -15,6 +15,16 @@ type CaptureRequest struct {
 	Dst                   SHMBuffer
 	Width, Height, Stride int
 	Format                uint32
+	// Clean asks for a capture without the private session's HUD layers
+	// and native border (SceneCapture). Wayland sets it, with Session, only
+	// on requests of the connection that owns the active session; every
+	// other capture is false/0 and sees the scene as shown.
+	Clean   bool
+	Session uint64
+	// CaptureRevision is the session Revision last confirmed by core
+	// (CaptureSessionState); a renderer fails a Clean request whose scene
+	// has Capture nil or Capture.Revision below it. 0 when not Clean.
+	CaptureRevision uint64
 }
 
 // CaptureDone is attempted once after the output closes the destination.
@@ -128,6 +138,10 @@ type WorkspaceInfo struct {
 	Name           string
 	Index          int // zero-based vertical coordinate
 	Active, Hidden bool
+	// Frame is the workspace viewport in output-local logical pixels
+	// (Monitor.Frame geometry: the whole output unless the workspace has a
+	// size override). It is where a capture session of it lies.
+	Frame Rect
 }
 
 // WindowAppID carries wayland → core an app ID set after the window mapped.
@@ -486,6 +500,10 @@ type OutputPresented struct {
 	Flip          *FlipInfo
 	Shown, Queued uint64
 	Seen          map[WindowID]uint64
+	// ChildReads is the oldest content Seq per window still read by a child
+	// renderer on a separate device. Unlike Seen, these holds never time out:
+	// they end only with a completed render or device shutdown.
+	ChildReads map[WindowID]uint64
 }
 
 // OutputFormats carries output → wayland the dmabuf formats an output can
@@ -583,6 +601,9 @@ type ConfigureWindow struct {
 	// hidden workspace, scrolled off, behind a maximized column or a
 	// hidden float. An invisible window is suspended and throttled.
 	Visible bool
+	// Captured marks a window drawn only for a capture session (its
+	// workspace is not on screen): Visible stays the physical truth.
+	Captured bool
 }
 
 func (ConfigureWindow) clientCommand() {}
@@ -793,6 +814,13 @@ type Scene struct {
 	// Window popups are drawn after the windows, layer popups
 	// (SceneWindow.OverLayers) last, over every layer.
 	Layers []SceneLayer
+	// Capture is the active private capture session on this output, nil
+	// when none (capture_session.go).
+	Capture *SceneCapture
+	// CaptureScene is the workspace of the active session drawn for
+	// capture only (a workspace that is not on screen). Only the root scene
+	// carries it; CaptureScene.Capture and .CaptureScene are nil.
+	CaptureScene *Scene
 }
 
 // Shows reports whether the scene draws the surface of id: only its

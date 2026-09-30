@@ -31,7 +31,7 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 		}
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: hdr, Formats: ch.formats, Log: log, NewRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
+		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: hdr, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
 		set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest) error {
 			return headless.Run(octx, opts, sc, cc, cu, cap)
 		})

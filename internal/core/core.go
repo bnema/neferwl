@@ -111,6 +111,11 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
+	// capture is the live private capture session (capture_session.go);
+	// captureC fires when its owner stopped pinging.
+	capture     *captureSession
+	captureC    <-chan time.Time
+	captureStop func() bool
 }
 
 func keyName(s string) string {
@@ -416,12 +421,21 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 	for id := range previous {
 		c.windows.layerGone(id)
 	}
+	c.pruneRetained()
+	c.clampCaptureKeyboard()
 	for _, sc := range c.screens {
 		sc.arrange()
 	}
 }
 
 func (c *Core) publish(ctx context.Context) error {
+	capture, err := c.captureEvaluate(ctx)
+	if err != nil {
+		return err
+	}
+	// The workspace a session renders off screen keeps its real layout for
+	// the configures, popups and CaptureScene of this publish.
+	c.captureTrack(capture)
 	if err := c.closeHiddenPopups(ctx); err != nil {
 		return err
 	}
@@ -493,7 +507,8 @@ func (c *Core) publish(ctx context.Context) error {
 					t.client = c.clientRect(rp)
 				}
 			}
-			if v, send := c.configures.next(p, t); send {
+			cp, t := c.captureConfigure(sc, p, t)
+			if v, send := c.configures.nextWithCapture(p, t, cp); send {
 				if err := c.command(ctx, v); err != nil {
 					return err
 				}
@@ -501,6 +516,10 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
+		if capture != nil && capture.scene != nil && sc.name() == capture.output {
+			scene.Capture = capture.scene
+			scene.CaptureScene = c.captureScene(scene.Seq)
+		}
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
@@ -799,6 +818,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 
 func (c *Core) Run(ctx context.Context) error {
 	defer c.stopFrame()
+	defer c.stopCapture()
 	// Startup commands run once per session; a config reload does not
 	// run them again.
 	for _, argv := range c.cfg.Startup {
@@ -823,6 +843,17 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			}
 			switch v := ev.(type) {
+			case ports.CaptureSessionBegin:
+				if c.captureBegin(ctx, v) != nil {
+					return nil
+				}
+			case ports.CaptureSessionLayer:
+				c.captureLayer(v)
+			case ports.CaptureSessionPing:
+				c.capturePing(v.ID)
+				continue
+			case ports.CaptureSessionEnd:
+				c.captureEnd(v.ID)
 			case ports.LayerChanged:
 				c.layerChanged = true
 				c.setLayers(v.Layers)
@@ -931,6 +962,12 @@ func (c *Core) Run(ctx context.Context) error {
 		case <-c.frameC:
 			c.frameC, c.frameStop = nil, nil
 			if c.step(ctx) != nil {
+				return nil
+			}
+			continue
+		case <-c.captureC:
+			c.captureExpired()
+			if c.publish(ctx) != nil {
 				return nil
 			}
 			continue

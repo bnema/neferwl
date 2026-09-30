@@ -43,8 +43,31 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
+	w.captureBorder()
 	r.scratchDraws = w.draws
 	return w.draws
+}
+
+// captureBorder draws the native border of a recording session over
+// everything: four fills on the inside edge of Capture.TargetRect, so it stays
+// visible on a monitor edge. Sizes are logical like the rest of the scene and
+// scale with it; the width is at most half the smaller side. A scene without
+// Capture, or without border, draws nothing (clean captures never carry it).
+func (w *sceneWalk) captureBorder() {
+	c := w.s.Capture
+	if c == nil || c.BorderColor == "" {
+		return
+	}
+	t := c.TargetRect
+	b := min(c.BorderWidth, t.W/2, t.H/2)
+	if b <= 0 {
+		return
+	}
+	col := parseColor(c.BorderColor)
+	w.fill(w.physRect(t.X, t.Y, t.W, b), col)
+	w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
+	w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
+	w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
 }
 
 func (w *sceneWalk) phys(v int) int { return int(math.Round(float64(v) * w.scale)) }

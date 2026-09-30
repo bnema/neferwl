@@ -173,7 +173,7 @@ func (c *Core) peeking(id WindowID) bool {
 // placePopup places a new or repositioned popup and configures it; a popup
 // whose parent is not on screen is dismissed.
 func (c *Core) placePopup(ctx context.Context, v ports.PopupRequest) error {
-	sc, pr, ok := c.windowRect(v.Parent)
+	sc, pr, physical, ok := c.popupRect(v.Parent)
 	if !ok {
 		if c.popups[v.ID] != nil {
 			return c.closePopup(ctx, v.ID)
@@ -184,6 +184,9 @@ func (c *Core) placePopup(ctx context.Context, v ports.PopupRequest) error {
 	o := sc.mon.Output()
 	if !c.onLayer(c.popupRoot(v.Parent)) {
 		o = sc.mon.Frame()
+		if !physical {
+			o = c.configures.cw.frame // the captured workspace's viewport
+		}
 	}
 	bounds := Rect{X: o.X - pr.X, Y: o.Y - pr.Y, W: o.W, H: o.H}
 	p := c.popups[v.ID]
@@ -249,7 +252,8 @@ func (c *Core) closeHiddenPopups(ctx context.Context) error {
 		if c.popups[id] == nil {
 			continue
 		}
-		if _, _, ok := c.windowRect(id); !ok {
+		// A popup of a window a capture session renders off screen stays.
+		if _, _, _, ok := c.popupRect(id); !ok {
 			if err := c.closePopup(ctx, id); err != nil {
 				return err
 			}

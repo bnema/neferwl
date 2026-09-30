@@ -118,9 +118,23 @@ func toplevelRoot(surf *surface) *surface {
 	return surf
 }
 
+// invisible reports that no display shows the toplevel tree: the physical
+// truth, used for scanout and presentation feedback. A tree rendered only
+// for a capture session is invisible.
 func (s *Server) invisible(surf *surface) bool {
 	root := toplevelRoot(surf)
 	return root.xdg != nil && root.xdg.window != nil && root.xdg.window.hasLast && !root.xdg.window.last.Visible
+}
+
+// suspended reports that nothing draws the toplevel tree, not even a capture
+// session: it is throttled and marked suspended. A captured tree keeps the
+// frame callbacks of its output so the capture keeps moving.
+func (s *Server) suspended(surf *surface) bool {
+	root := toplevelRoot(surf)
+	if root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast {
+		return false
+	}
+	return !root.xdg.window.last.Visible && !root.xdg.window.last.Captured
 }
 
 // frameOutput is the pacing class for a surface; "" is the 60 Hz
@@ -129,7 +143,7 @@ func (s *Server) frameOutput(surf *surface) string {
 	surf = toplevelRoot(surf)
 	switch {
 	case surf.xdg != nil && surf.xdg.window != nil:
-		if s.invisible(surf) {
+		if s.suspended(surf) {
 			return suspendedFrameQueue
 		}
 		return surf.xdg.window.last.Output

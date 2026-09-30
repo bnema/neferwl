@@ -186,6 +186,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 				session.res.SendStopped()
 			}
 		}
+		s.stopCaptureOnOutput(o.name())
 		s.log.Info().Str("output", o.name()).Msg("output removed")
 		for _, l := range s.layers {
 			if l.output == o {

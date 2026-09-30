@@ -18,6 +18,9 @@ type screen struct {
 	off             bool // turned off by a client (output power management)
 	layers          []ports.LayerSurface
 	placed          []ports.SceneLayer
+	// capture holds the layer surfaces of the active capture session on
+	// this output: shown over a fullscreen window (capture_session.go).
+	capture map[WindowID]bool
 }
 
 func (s *screen) name() string { return s.info.Name }
@@ -212,6 +215,10 @@ func (c *Core) removeScreen(name string) {
 	i := c.screenIndex(name)
 	if i < 0 {
 		return
+	}
+	// A capture session's off-screen workspace of this output goes with it.
+	if c.configures.cw.sc == c.screens[i] {
+		c.configures.cw.reset()
 	}
 	if len(c.screens) == 1 {
 		c.screens[0].info = ports.OutputInfo{}
