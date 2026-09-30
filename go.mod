@@ -2,19 +2,11 @@ module github.com/bnema/neferwl
 
 go 1.27
 
-replace github.com/bnema/purego-libwayland => ../../../purego-libwayland
-
-replace github.com/bnema/wlturbo => ../../../wlturbo/.worktrees/session-lock
-
-replace github.com/bnema/purego => ../../../purego
-
-replace github.com/bnema/purego-vulkan => ../../../purego-vulkan
-
 require (
 	github.com/bnema/purego v0.13.0-bnema.1
 	github.com/bnema/purego-libwayland v0.7.0
 	github.com/bnema/purego-vulkan v0.6.0
-	github.com/bnema/wlturbo v0.2.0
+	github.com/bnema/wlturbo v0.5.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
