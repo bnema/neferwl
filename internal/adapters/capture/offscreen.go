@@ -15,11 +15,11 @@ import (
 )
 
 // Offscreen capture: a session of a workspace that is not on screen is drawn
-// by a dedicated child renderer from Scene.CaptureScene, only for clean
-// requests and never shown. The child is a separate renderer instance: it has
+// by a dedicated child renderer from Scene.CaptureScene, only for requests
+// of that workspace and never shown. The child is a separate renderer instance: it has
 // its own Vulkan device, so its fences are not ordered against the display's.
-// It is created on the first clean request of the session and closed when the
-// scene stops carrying CaptureScene (once idle), when the session or the frame
+// It is created on the first request of the workspace and closed when the
+// scene stops carrying CaptureScene (once idle), when the workspace or the frame
 // size changes, and with the output.
 
 const (
@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	// ErrOffscreenUnavailable fails a clean request whose source is a hidden
+	// ErrOffscreenUnavailable fails a request whose source is a hidden
 	// workspace that this output cannot draw (no child renderer factory).
 	ErrOffscreenUnavailable = errors.New("workspace capture source is unavailable")
 	// ErrOffscreenGeometry fails a request the child frame cannot serve.
@@ -65,22 +65,21 @@ func (s *fenceSlot) release() {
 
 // offscreen is owned by the goroutine of its Pipeline.
 type offscreen struct {
-	factory func(w, h int) (ports.Renderer, error)
-	r       ports.Renderer
-	p       *Pipeline // leases of r
-	w, h    int
-	session uint64
+	factory   func(w, h int) (ports.Renderer, error)
+	r         ports.Renderer
+	p         *Pipeline // leases of r
+	w, h      int
+	workspace uint64
 	// slots[:nf] are the unfinished child renders, oldest first.
 	slots [maxChildFences]fenceSlot
 	nf    int
-	clean cleaner
 	// capped is the scratch map CapHiddenSeen returns.
 	capped map[ports.WindowID]uint64
 	// reads is the scratch map of the oldest outstanding child reads.
 	reads map[ports.WindowID]uint64
 }
 
-// EnableOffscreen lets the pipeline serve clean requests of a hidden
+// EnableOffscreen lets the pipeline serve requests of a hidden
 // workspace with renderers made by factory. Without it they fail closed
 // with ErrOffscreenUnavailable.
 func (p *Pipeline) EnableOffscreen(factory func(w, h int) (ports.Renderer, error)) {
@@ -208,7 +207,7 @@ const (
 // A terminal fence error cannot be waited out, and its hold does not expire:
 // the child pipeline is cancelled and joined, then the device is closed (which
 // waits for the GPU), and only then are the holds cleared, so every later
-// report lifts them. The next clean request builds a new child.
+// report lifts them. The next request builds a new child.
 func (o *offscreen) reap() {
 	k := 0
 	failed := false
@@ -293,7 +292,7 @@ func (o *offscreen) close() {
 	for i := range o.slots {
 		o.slots[i].release()
 	}
-	o.nf, o.w, o.h, o.session = 0, 0, 0, 0
+	o.nf, o.w, o.h, o.workspace = 0, 0, 0, 0
 }
 
 // childSize is the physical child image: the workspace frame at the scene
@@ -328,12 +327,11 @@ func (o *offscreen) track(done *os.File, drawn ports.Scene, surfaces map[ports.W
 	o.nf++
 }
 
-// SubmitHidden serves the clean requests of s from the child renderer, which
-// draws s.CaptureScene without the session's excluded surfaces. It consumes
+// SubmitHidden serves the workspace requests of s from the child renderer, which
+// draws s.CaptureScene without the capture indicator. It consumes
 // every request: answered by the worker, or failed here (the display is not
 // stopped by a child failure). Request regions are physical output pixels and
-// must cover the whole child frame; they are rebased to its origin. The target
-// must be the whole workspace frame too. Anything smaller needs the viewport
+// must cover the whole child frame; they are rebased to its origin. Anything smaller needs the viewport
 // origin in output coordinates, which the scene does not carry, and fails with
 // ErrOffscreenGeometry.
 func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, reqs []ports.CaptureRequest) {
@@ -352,7 +350,7 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	case s.Off:
 		fail(errors.New("output off"), reqs)
 		return
-	case s.CaptureScene == nil || s.Capture == nil:
+	case s.CaptureScene == nil || s.Capture == nil || s.Capture.Workspace == 0:
 		fail(ErrOffscreenUnavailable, reqs)
 		return
 	case o == nil || o.factory == nil:
@@ -364,17 +362,11 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	}
 	cs := s.CaptureScene
 	w, h, err := childSize(cs)
-	if err == nil {
-		t := s.Capture.TargetRect
-		if t.W != cs.OutputWidth || t.H != cs.OutputHeight {
-			err = fmt.Errorf("%w: target %dx%d is not the frame %dx%d", ErrOffscreenGeometry, t.W, t.H, cs.OutputWidth, cs.OutputHeight)
-		}
-	}
 	if err != nil {
 		fail(err, reqs)
 		return
 	}
-	if o.r != nil && (o.session != s.Capture.Session || o.w != w || o.h != h) {
+	if o.r != nil && (o.workspace != s.Capture.Workspace || o.w != w || o.h != h) {
 		if o.busy() {
 			fail(ErrOffscreenBusy, reqs)
 			return
@@ -393,15 +385,15 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 			fail(fmt.Errorf("%w: %v", ErrOffscreenUnavailable, err), reqs)
 			return
 		}
-		o.r, o.p, o.w, o.h, o.session = r, NewPipeline(p.ctx, p.replies), w, h, s.Capture.Session
+		o.r, o.p, o.w, o.h, o.workspace = r, NewPipeline(p.ctx, p.replies), w, h, s.Capture.Workspace
 		o.p.Security = p.Security
 	}
-	// Request regions are physical pixels of the output; TargetRect is
-	// relative to the workspace viewport, so it cannot place them. The child
-	// image is the whole target (checked above): a request for all of it has
-	// the child's size and starts at the child's origin. A smaller region
-	// would need the viewport origin in output coordinates, which the scene
-	// does not carry; guessing it would return the wrong crop, so it fails.
+	// Request regions are physical pixels of the output, and the scene does
+	// not carry the workspace viewport's origin in output coordinates, so they
+	// cannot place a crop. The child image is the whole frame: a request for
+	// all of it has the child's size and starts at the child's origin. A
+	// smaller region would need that origin; guessing it would return the
+	// wrong crop, so it fails.
 	k := 0
 	for _, q := range reqs {
 		if q.Region.Dx() != w || q.Region.Dy() != h {
@@ -417,10 +409,9 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	if k == 0 {
 		return
 	}
-	// The child never shows the session's own surfaces or border.
-	child := *cs
-	child.Capture = &ports.SceneCapture{Excluded: s.Capture.Excluded}
-	child = o.clean.scene(child)
+	// The child never shows the indicator; it has no layers, so nothing of
+	// an exclusion can be in it.
+	child := plain(*cs)
 	if !p.captureAllowed(s.Security) {
 		fail(ErrSecurityState, reqs)
 		return

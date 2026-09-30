@@ -99,10 +99,14 @@ type Server struct {
 	// captureInflight counts accepted captures until the backend completes
 	// them, independent of client resources; only the display loop touches it.
 	captureInflight map[uint64]struct{}
-	captureSources  map[*server.Resource]*output
+	captureSources  map[*server.Resource]*captureSource
 	captureSessions map[*captureSession]struct{}
-	// private is the private capture session state (capture_session.go).
-	private      privateCapture
+	// sessionsByID are the sessions registered with core (imagecopy.go);
+	// excl is the one live exclusion (exclusion.go); ownUID the compositor's.
+	sessionsByID map[uint64]*captureSession
+	nextSession  uint64
+	excl         *exclusion
+	ownUID       uint32
 	display      *server.Display
 	env          procEnv
 	slotsPending bool // core waits for a slot window
@@ -195,6 +199,7 @@ type Server struct {
 	workspaceManagers []*workspaceManager
 	toplevelManagers  []*toplevelManager
 	workspaceSnapshot ports.Workspaces
+	workspaceFrames   []*workspaceFrame
 	workspaceIDs      *workspaceid.IDs
 	outputHeads       ports.OutputHeads
 	outputPlaces      ports.Layout
@@ -276,7 +281,8 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
 	s.managementSerial = 1
-	s.captureSources = map[*server.Resource]*output{}
+	s.captureSources = map[*server.Resource]*captureSource{}
+	s.sessionsByID = map[uint64]*captureSession{}
 	s.captureSessions = map[*captureSession]struct{}{}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}

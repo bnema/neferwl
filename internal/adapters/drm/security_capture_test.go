@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestSecurityEngageDuringCleanRenderRejectsCaptureTransfer(t *testing.T) {
+func TestSecurityEngageDuringExcludeRenderRejectsCaptureTransfer(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.cursor = nil
 	var state atomic.Uint64

@@ -121,11 +121,9 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
-	// capture is the live private capture session (capture_session.go);
-	// captureC fires when its owner stopped pinging.
-	capture     *captureSession
-	captureC    <-chan time.Time
-	captureStop func() bool
+	// capSessions and capExcl are the capture state (capture.go).
+	capSessions []*capSession
+	capExcl     *capExclusion
 }
 
 func keyName(s string) string {
@@ -557,8 +555,7 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
-		if capture != nil && capture.scene != nil && sc.name() == capture.output {
-			scene.Capture = capture.scene
+		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil && capture.hiddenScr == sc {
 			scene.CaptureScene = c.captureScene(scene.Seq)
 		}
 		scenes = append(scenes, scene)
@@ -872,7 +869,6 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
-	defer c.stopCapture()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -914,17 +910,16 @@ func (c *Core) Run(ctx context.Context) error {
 				if !c.applyLockChanged(v) {
 					continue
 				}
-			case ports.CaptureSessionBegin:
-				if c.captureBegin(ctx, v) != nil {
-					return nil
-				}
-			case ports.CaptureSessionLayer:
-				c.captureLayer(v)
-			case ports.CaptureSessionPing:
-				c.capturePing(v.ID)
-				continue
-			case ports.CaptureSessionEnd:
-				c.captureEnd(v.ID)
+			case ports.CaptureSessionOpen:
+				c.captureOpen(v)
+			case ports.CaptureSessionClose:
+				c.captureClose(v.ID)
+			case ports.CaptureExclusionBegin:
+				c.captureExclusionBegin(v)
+			case ports.CaptureExclusionLayer:
+				c.captureExclusionLayer(v)
+			case ports.CaptureExclusionEnd:
+				c.captureExclusionEnd(v.Session)
 			case ports.LayerChanged:
 				c.layerChanged = true
 				c.setLayers(v.Layers)
@@ -1039,15 +1034,6 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC, c.frameStop = nil, nil
 			if c.step(ctx) != nil {
-				return nil
-			}
-			continue
-		case <-c.captureC:
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			c.captureExpired()
-			if c.publish(ctx) != nil {
 				return nil
 			}
 			continue

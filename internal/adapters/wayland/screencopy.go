@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
-	source "github.com/bnema/purego-libwayland/protocol/extimagecapturesource"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	wlr "github.com/bnema/purego-libwayland/protocol/wlrscreencopy"
 	"github.com/bnema/purego-libwayland/server"
@@ -43,14 +41,7 @@ func registerCapture(d *server.Display, s *Server) error {
 	}); err != nil {
 		return err
 	}
-	if err := source.NewExtOutputImageCaptureSourceManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
-		_, _ = source.NewExtOutputImageCaptureSourceManagerV1(c, int32(v), id, outputCaptureSource{s})
-	}); err != nil {
-		return err
-	}
-	return ext.NewExtImageCopyCaptureManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
-		_, _ = ext.NewExtImageCopyCaptureManagerV1(c, int32(v), id, copyCaptureManager{s})
-	})
+	return registerImageCopy(d, s)
 }
 
 type screencopyManager struct{ s *Server }
@@ -135,7 +126,7 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 		}
 		hi, lo, ns := captureTime(done.Time)
 		f.res.SendReady(hi, lo, ns)
-	}, f.res.Resource)
+	}, f.res.Resource, captureTag{})
 	f.replyID = id
 	if !ok {
 		f.res.SendFailed()
@@ -151,13 +142,19 @@ func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, for
 	return ok && (format == uint32(wayland.ShmFormatArgb8888) || format == uint32(wayland.ShmFormatXrgb8888)) && buf.width == rect.Dx() && buf.height == rect.Dy() && buf.stride >= rect.Dx()*4 && buf.format == format && fileHolds(buf.pool.file, int64(buf.offset)+int64(buf.height-1)*int64(buf.stride)+int64(buf.width)*4)
 }
 
+// captureTag says what a capture is for the renderer: the registered session
+// (0 for wlr-screencopy), the exclusion fence and the workspace.
+type captureTag struct {
+	session   uint64
+	exclude   bool
+	revision  uint64
+	workspace uint64
+	offscreen bool
+}
+
 // requestCapture duplicates the pool descriptor, so destroying the wl_buffer
 // cannot invalidate a capture in flight.
-func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b *wayland.Buffer, format uint32, reply func(ports.CaptureDone), life *server.Resource) (uint64, bool) {
-	if s.protected() {
-		s.log.Debug().Str("component", "wayland").Msg("capture refused: session protected")
-		return 0, false
-	}
+func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b *wayland.Buffer, format uint32, reply func(ports.CaptureDone), life *server.Resource, tag captureTag) (uint64, bool) {
 	if o == nil || b == nil || s.channels.Captures == nil || s.channels.Captured == nil || s.outputByNameExact(o.name()) != o {
 		return 0, false
 	}
@@ -169,9 +166,8 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		s.log.Debug().Str("output", o.name()).Int("inflight", len(s.captureInflight)).Msg("capture refused: too many captures in flight")
 		return 0, false
 	}
-	clean, session, revision, allowed := s.captureTag(life, o)
-	if !allowed {
-		s.log.Debug().Str("output", o.name()).Msg("capture refused: private session not active")
+	if life == nil || !s.mayCapture(life.Client()) {
+		s.log.Debug().Str("output", o.name()).Msg("capture refused: client may not capture")
 		return 0, false
 	}
 	buf := s.buffers[b.Resource].(*buffer)
@@ -194,7 +190,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Clean: clean, Session: session, CaptureRevision: revision}
+	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, OffScreen: tag.offscreen}
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")
@@ -228,189 +224,6 @@ func (s *Server) forwardCaptured(ctxDone <-chan struct{}) {
 			}) {
 				return
 			}
-		}
-	}
-}
-
-type outputCaptureSource struct{ s *Server }
-
-func (outputCaptureSource) Destroy(*source.ExtOutputImageCaptureSourceManagerV1) {}
-func (m outputCaptureSource) CreateSource(r *source.ExtOutputImageCaptureSourceManagerV1, id uint32, out *wayland.Output) {
-	src, err := source.NewExtImageCaptureSourceV1(r.Client(), 1, id, captureSourceHandler{})
-	if err != nil {
-		return
-	}
-	m.s.captureSources[src.Resource] = m.s.outputOf(out)
-	src.OnDestroy = func() { delete(m.s.captureSources, src.Resource) }
-}
-
-type captureSourceHandler struct{}
-
-func (captureSourceHandler) Destroy(*source.ExtImageCaptureSourceV1) {}
-
-type copyCaptureManager struct{ s *Server }
-
-func (copyCaptureManager) Destroy(*ext.ExtImageCopyCaptureManagerV1) {}
-func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, id uint32, src *source.ExtImageCaptureSourceV1, options uint32) {
-	var o *output
-	if options&^1 != 0 {
-		r.PostError(uint32(ext.ExtImageCopyCaptureManagerV1ErrorInvalidOption), "invalid capture option")
-		return
-	}
-	if src != nil {
-		o = m.s.captureSources[src.Resource]
-	}
-	state := &captureSession{s: m.s, o: o, cursor: options&1 != 0}
-	res, err := ext.NewExtImageCopyCaptureSessionV1(r.Client(), 1, id, state)
-	if err != nil {
-		return
-	}
-	state.res = res
-	m.s.captureSessions[state] = struct{}{}
-	// Frames outlive their session (the spec): each frame drops its own reply.
-	res.OnDestroy = func() { delete(m.s.captureSessions, state) }
-	if m.s.protected() || o == nil {
-		res.SendStopped()
-		state.stopped = true
-		return
-	}
-	state.sendConstraints(o.place.Info.Width, o.place.Info.Height)
-}
-
-// sendConstraints sends one complete constraint batch: formats, size, done.
-func (c *captureSession) sendConstraints(w, h int) {
-	if c.s.protected() {
-		if !c.stopped {
-			c.stopped = true
-			c.res.SendStopped()
-		}
-		return
-	}
-	c.res.SendBufferSize(uint32(w), uint32(h))
-	c.res.SendShmFormat(uint32(wayland.ShmFormatXrgb8888))
-	c.res.SendShmFormat(uint32(wayland.ShmFormatArgb8888))
-	c.res.SendDone()
-}
-func (m copyCaptureManager) CreatePointerCursorSession(r *ext.ExtImageCopyCaptureManagerV1, id uint32, _ *source.ExtImageCaptureSourceV1, _ *wayland.Pointer) {
-	state := &cursorCaptureSession{}
-	res, err := ext.NewExtImageCopyCaptureCursorSessionV1(r.Client(), 1, id, state)
-	if err == nil {
-		state.res = res
-	}
-}
-
-type cursorCaptureSession struct {
-	res  *ext.ExtImageCopyCaptureCursorSessionV1
-	used bool
-}
-
-func (*cursorCaptureSession) Destroy(*ext.ExtImageCopyCaptureCursorSessionV1) {}
-func (c *cursorCaptureSession) GetCaptureSession(_ *ext.ExtImageCopyCaptureCursorSessionV1, id uint32) {
-	if c.used {
-		c.res.PostError(uint32(ext.ExtImageCopyCaptureCursorSessionV1ErrorDuplicateSession), "session already created")
-		return
-	}
-	c.used = true
-	state := &captureSession{stopped: true}
-	res, err := ext.NewExtImageCopyCaptureSessionV1(c.res.Client(), 1, id, state)
-	if err == nil {
-		state.res = res
-		res.SendStopped()
-	}
-}
-
-type captureSession struct {
-	s               *Server
-	o               *output
-	res             *ext.ExtImageCopyCaptureSessionV1
-	cursor, stopped bool
-	frame           *captureExtFrame
-}
-
-func (*captureSession) Destroy(*ext.ExtImageCopyCaptureSessionV1) {}
-func (c *captureSession) CreateFrame(r *ext.ExtImageCopyCaptureSessionV1, id uint32) {
-	if c.frame != nil {
-		r.PostError(uint32(ext.ExtImageCopyCaptureSessionV1ErrorDuplicateFrame), "frame still alive")
-		return
-	}
-	state := &captureExtFrame{session: c}
-	res, err := ext.NewExtImageCopyCaptureFrameV1(r.Client(), 1, id, state)
-	if err == nil {
-		state.res = res
-		c.frame = state
-		res.OnDestroy = func() {
-			if c.frame == state {
-				c.frame = nil
-			}
-			if c.s != nil {
-				delete(c.s.captureReplies, state.replyID)
-			}
-		}
-	}
-}
-
-type captureExtFrame struct {
-	session *captureSession
-	res     *ext.ExtImageCopyCaptureFrameV1
-	buf     *wayland.Buffer
-	used    bool
-	replyID uint64
-}
-
-func (*captureExtFrame) Destroy(*ext.ExtImageCopyCaptureFrameV1) {}
-func (f *captureExtFrame) AttachBuffer(_ *ext.ExtImageCopyCaptureFrameV1, b *wayland.Buffer) {
-	if f.used {
-		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
-		return
-	}
-	f.buf = b
-}
-func (f *captureExtFrame) DamageBuffer(_ *ext.ExtImageCopyCaptureFrameV1, x, y, w, h int32) {
-	if f.used {
-		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
-		return
-	}
-	if x < 0 || y < 0 || w <= 0 || h <= 0 {
-		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorInvalidBufferDamage), "invalid damage")
-	}
-}
-func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
-	if f.used {
-		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorAlreadyCaptured), "already captured")
-		return
-	}
-	f.used = true
-	c := f.session
-	if c.stopped || c.o == nil || c.s.protected() || c.s.outputByNameExact(c.o.name()) != c.o {
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonStopped))
-		return
-	}
-	region := image.Rect(0, 0, c.o.place.Info.Width, c.o.place.Info.Height)
-	if f.buf == nil {
-		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorNoBuffer), "no buffer attached")
-		return
-	}
-	buf, ok := c.s.buffers[f.buf.GetResource()].(*buffer)
-	if !ok {
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
-		return
-	}
-	f.replyID, ok = c.s.requestCapture(c.o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
-		if done.Err != nil {
-			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
-			return
-		}
-		f.res.SendTransform(0)
-		f.res.SendDamage(0, 0, int32(region.Dx()), int32(region.Dy()))
-		hi, lo, ns := captureTime(done.Time)
-		f.res.SendPresentationTime(hi, lo, ns)
-		f.res.SendReady()
-	}, f.res.Resource)
-	if !ok {
-		if !c.s.validCaptureBuffer(f.buf, region, buf.format) {
-			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonBufferConstraints))
-		} else {
-			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 		}
 	}
 }

@@ -416,20 +416,19 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		}
 		start := time.Now()
-		// Clean requests of a session the scene does not carry are failed
-		// here. The others draw the clean frame first (same renderer, queue
-		// order), then the displayed one; see capture.Pipeline.Split.
-		normal, clean := pipeline.Split(scene, requests)
+		// Requests the scene cannot serve (exclusion of another session, a
+		// workspace that moved) are failed here; see capture.Pipeline.Split.
+		normal, clean, hidden := pipeline.Split(scene, requests)
 		pipeline.Retire(scene)
-		if len(clean) > 0 && scene.CaptureScene != nil {
+		if len(hidden) > 0 {
 			// A hidden workspace: a child renderer draws it. The display's
 			// fences do not cover the child, so wait for it before reporting.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests("security epoch changed")
 				continue
 			}
-			pipeline.SubmitHidden(scene, surfaces, clean)
-			clear(clean)
+			pipeline.SubmitHidden(scene, surfaces, hidden)
+			clear(hidden)
 			// A slow child may outlive Wayland's stale-report timeout even
 			// though this owner waits. Publish its non-expiring holds first.
 			if opts.Presented != nil {
@@ -449,7 +448,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 				return fmt.Errorf("workspace frame fence: %w", err)
 			}
-		} else if len(clean) > 0 {
+		}
+		if len(clean) > 0 {
+			// Exclude requests: the frame without the excluded surfaces is
+			// drawn first (same renderer, queue order), then the displayed one.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests("security epoch changed")
 				continue

@@ -33,32 +33,30 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	// windows it does not draw is discarded, not presented.
 	f := pendingFrame{security: scene.Security, shows: o.shownBy(scene, seen)}
 	o.wantContent(scene, surfaces)
-	// Clean requests that cannot be served (their session is not the
-	// scene's) are failed here, never answered from the displayed frame.
-	normal, clean := pipeline.Split(scene, requests)
+	// Requests that cannot be served (exclusion of another session, a
+	// workspace that moved) are failed here, never answered from the
+	// displayed frame.
+	normal, clean, hidden := pipeline.Split(scene, requests)
 	pipeline.Retire(scene)
-	hiddenClean := len(clean) > 0 && scene.CaptureScene != nil
-	if hiddenClean {
+	if len(hidden) > 0 && scene.CaptureScene != nil {
 		if !o.sceneCurrent(scene) || o.protected {
 			return false, errSecurityScene
 		}
 		// A hidden workspace: the child renderer draws it, whatever the display
 		// does (scanout included). Failures answer the requests and never stop
 		// the output.
-		pipeline.SubmitHidden(scene, surfaces, clean)
+		pipeline.SubmitHidden(scene, surfaces, hidden)
 		// Publish child holds before queuing a display flip, which may stall
 		// past the stale-report timeout. Do not advance the display's Seen
 		// until its own GPU work finishes.
 		if o.capHidden != nil {
 			o.report(nil, o.seenSnapshot)
 		}
-		clear(clean)
-		clean = nil
+		clear(hidden)
 	}
-	// Captures of the displayed frame, and a visible native session border,
-	// force composition: scanout and the overlay plane would skip them. The
+	// Captures of the displayed frame, force composition: scanout and the overlay plane would skip them. The
 	// hidden-workspace child needs none, so it keeps direct scanout.
-	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(clean) > 0 || capture.BorderVisible(scene))
+	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(clean) > 0)
 	if !o.sceneCurrent(scene) || o.protected {
 		decision.overlay.close()
 		return false, errSecurityScene

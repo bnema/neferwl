@@ -40,7 +40,7 @@ func (c *Core) syncSecurity() bool {
 	}
 	c.stopFrame()
 	if state.Protected {
-		c.dropCapture()
+		c.dropCaptureSessions()
 	}
 	return true
 }
@@ -73,7 +73,7 @@ func blockedProtectedEvent(ev ports.ClientEvent) bool {
 	switch ev.(type) {
 	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained,
 		ports.PopupRequest, ports.ShortcutsInhibit, ports.WindowFullscreenRequest,
-		ports.CaptureSessionBegin, ports.CaptureSessionLayer, ports.CaptureSessionPing:
+		ports.CaptureSessionOpen, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer:
 		return true
 	}
 	return false

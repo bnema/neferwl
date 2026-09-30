@@ -15,27 +15,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func sessionRequest(t *testing.T, id uint64, clean bool) ports.CaptureRequest {
+// sessionRequest is a capture request; exclude sets the exclusion of session 7.
+func sessionRequest(t *testing.T, id uint64, exclude bool) ports.CaptureRequest {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 	require.NoError(t, f.Truncate(16))
 	q := ports.CaptureRequest{ID: id, Dst: ports.SHMBuffer{File: f}, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1}
-	if clean {
-		q.Clean, q.Session = true, 7
+	if exclude {
+		q.Exclude, q.Session, q.CaptureRevision = true, 7, 1
 	}
 	return q
 }
 
 func drmSessionScene() ports.Scene {
 	return ports.Scene{Seq: 4, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}},
-		Capture: &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, Excluded: []ports.WindowID{10}, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}}
+		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}}
 }
 
-// The clean frame is drawn and copied before the displayed frame, on the
+// The excluded frame is drawn and copied before the displayed frame, on the
 // same target; the standard capture is taken after the displayed frame.
-func TestSubmitFrameCleanBeforeDisplayedThenStandard(t *testing.T) {
+func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor = nil
 	var order []string
@@ -74,24 +75,30 @@ func TestSubmitFrameCleanBeforeDisplayedThenStandard(t *testing.T) {
 	require.Len(t, replies, 2)
 }
 
-// A fullscreen window would be scanned out (no border): a session forces
-// composition even when no capture is requested this frame.
-func TestSessionScenePreventsDirectScanoutDecision(t *testing.T) {
+// A fullscreen window would be scanned out: a capture request of the
+// displayed frame forces composition.
+func TestCaptureRequestPreventsDirectScanout(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().UseTarget(0).Return().Once()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-	pipeline := capture.NewPipeline(context.Background(), nil)
-	defer pipeline.Close(r)
-	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, nil, pipeline)
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil).Maybe()
+	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
+	replies := make(chan ports.CaptureDone, 2)
+	pipeline := capture.NewPipeline(context.Background(), replies)
+	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 2, false)}, pipeline)
 	require.NoError(t, err)
 	require.False(t, direct)
 	require.Equal(t, "capture", o.reason)
+	pipeline.Close(r)
 }
 
-// A full render failing after the clean group was handed off: the caller
-// still owns only the standard request; the clean one is zeroed, so it is
+// A full render failing after the Exclude group was handed off: the caller
+// still owns only the standard request; the Exclude one is zeroed, so it is
 // never answered twice.
 func TestSubmitFrameRenderErrorKeepsOnlyUnhandedRequests(t *testing.T) {
 	o, _, _ := testOutput(t)
@@ -121,12 +128,12 @@ func TestSubmitFrameRenderErrorKeepsOnlyUnhandedRequests(t *testing.T) {
 	}
 	require.Equal(t, 1, owned)
 	pipeline.Close(r)
-	require.Len(t, replies, 1) // the clean capture, answered once by the worker
+	require.Len(t, replies, 1) // the Exclude capture, answered once by the worker
 }
 
-// A clean request of a session the scene no longer carries fails closed
+// An Exclude request of a session the scene no longer carries fails closed
 // and is never captured from the displayed frame.
-func TestSubmitFrameCleanRequestWithoutSessionFails(t *testing.T) {
+func TestSubmitFrameExcludeRequestWithoutSessionFails(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
@@ -145,19 +152,17 @@ func TestSubmitFrameCleanRequestWithoutSessionFails(t *testing.T) {
 	require.True(t, capture.Handed(requests[0]))
 }
 
-// A session with no visible border (and no HUD in the scene) must not cost
-// the fullscreen window its direct scanout; a visible border must.
-func TestSessionMetadataWithoutBorderKeepsDirectScanout(t *testing.T) {
+// Capture state alone (a session, an exclusion, a hidden workspace) must
+// not cost a fullscreen window its direct scanout: only requests that read
+// the displayed frame do.
+func TestCaptureStateKeepsDirectScanout(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		capture    *ports.SceneCapture
-		wantDirect bool
+		name    string
+		capture *ports.SceneCapture
 	}{
-		{"no session", nil, true},
-		{"session, no border", &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, Excluded: []ports.WindowID{10}}, true},
-		{"session, zero width", &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, BorderColor: ports.CaptureBorderColor}, true},
-		{"session, border wider than the target allows", &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 1, H: 100}, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}, true},
-		{"session, visible border", &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}, false},
+		{"no session", nil},
+		{"session", &ports.SceneCapture{Shown: 3}},
+		{"exclusion", &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o, k, _ := testOutput(t)
@@ -166,22 +171,17 @@ func TestSessionMetadataWithoutBorderKeepsDirectScanout(t *testing.T) {
 			r := portsmocks.NewMockRenderer(t)
 			s, c := fullscreenScene()
 			s.Capture = tc.capture
-			if tc.wantDirect {
-				k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
-			} else {
-				r.EXPECT().UseTarget(0).Return().Once()
-				r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
-			}
+			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 			pipeline := capture.NewPipeline(context.Background(), nil)
 			defer pipeline.Close(r)
 			direct, err := o.submitFrame(context.Background(), r, s, c, map[ports.WindowID]uint64{}, nil, pipeline)
 			require.NoError(t, err)
-			require.Equal(t, tc.wantDirect, direct)
+			require.True(t, direct)
 		})
 	}
 }
 
-// A clean request for a hidden workspace with no child renderer factory
+// A request for a hidden workspace with no child renderer factory
 // fails closed; it is neither served from the displayed frame nor does it
 // stop the output.
 func TestSubmitFrameHiddenWorkspaceWithoutFactoryFailsClosed(t *testing.T) {
@@ -195,10 +195,38 @@ func TestSubmitFrameHiddenWorkspaceWithoutFactoryFailsClosed(t *testing.T) {
 	defer pipeline.Close(r)
 	scene := drmSessionScene()
 	scene.CaptureScene = &ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
-	requests := []ports.CaptureRequest{sessionRequest(t, 1, true)}
+	scene.Capture.Workspace = 9
+	requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
+	requests[0].Workspace, requests[0].OffScreen = 9, true
 	_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
 	require.NoError(t, err)
 	require.ErrorIs(t, (<-replies).Err, capture.ErrOffscreenUnavailable)
+}
+
+// A hidden request whose scene carries no CaptureScene still goes to the
+// hidden path, which fails it closed: it is neither dropped unanswered nor
+// served from the displayed frame.
+func TestSubmitFrameHiddenWorkspaceWithoutCaptureSceneFails(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.cursor = nil
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().UseTarget(0).Return().Once()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once() // the display only
+	replies := make(chan ports.CaptureDone, 2)
+	pipeline := capture.NewPipeline(context.Background(), replies)
+	defer pipeline.Close(r)
+	scene := drmSessionScene()
+	scene.Capture.Workspace = 9
+	requests := []ports.CaptureRequest{sessionRequest(t, 1, false)}
+	requests[0].Workspace, requests[0].OffScreen = 9, true
+	_, err := o.submitFrame(context.Background(), r, scene, nil, nil, requests, pipeline)
+	require.NoError(t, err)
+	select {
+	case d := <-replies:
+		require.ErrorIs(t, d.Err, capture.ErrOffscreenUnavailable)
+	case <-time.After(3 * time.Second):
+		t.Fatal("hidden request without CaptureScene was dropped unanswered")
+	}
 }
 
 // A report caps only the windows an unfinished child render drew; the display's
@@ -222,10 +250,11 @@ func TestReportCapsPerWindowWhileChildReads(t *testing.T) {
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	o.capHidden = pipeline.CapHiddenSeen
 	scene := ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2,
-		Capture:      &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 2, H: 2}},
+		Capture:      &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 2, H: 2}}}}}
 	surfaces := map[ports.WindowID]ports.SurfaceContent{5: {ID: 5, Seq: 2}}
-	req := sessionRequest(t, 1, true)
+	req := sessionRequest(t, 1, false)
+	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height = image.Rect(0, 0, 2, 2), 2, 2
 	pipeline.SubmitHidden(scene, surfaces, []ports.CaptureRequest{req})
 
@@ -275,12 +304,10 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	pipeline.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
 	o.capHidden = pipeline.CapHiddenSeen
 	s, c := fullscreenScene()
-	s.Capture = &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}, Revision: 1, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}
+	s.Capture = &ports.SceneCapture{Workspace: 9}
 	s.CaptureScene = &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}
-	// Hidden workspace: core sends the on-screen border off (BorderWidth 0).
-	s.Capture.BorderWidth, s.Capture.BorderColor = 0, ""
-	req := sessionRequest(t, 1, true)
-	req.CaptureRevision = 1
+	req := sessionRequest(t, 1, false)
+	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
 	require.NoError(t, req.Dst.File.Truncate(800*100))
 	direct, err := o.submitFrame(context.Background(), display, s, c, map[ports.WindowID]uint64{}, []ports.CaptureRequest{req}, pipeline)
@@ -352,12 +379,13 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 	contents <- ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}}
 	// The request waits for the scene; once a display frame is pending no
 	// request is served, so it must be queued before the scene arrives.
-	req := sessionRequest(t, 1, true)
+	req := sessionRequest(t, 1, false)
+	req.Workspace, req.OffScreen = 9, true
 	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
 	require.NoError(t, req.Dst.File.Truncate(800*100))
 	captures <- req
 	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100,
-		Capture:      &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}},
+		Capture:      &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}}
 
 	next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {

@@ -64,7 +64,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 				done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
-			incoming <- ports.CaptureRequest{ID: 91, Clean: clean, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
+			incoming <- ports.CaptureRequest{ID: 91, Exclude: clean, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
 			scene := ports.Scene{Security: admitted, Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 			if clean {
 				scene = sessionScene()

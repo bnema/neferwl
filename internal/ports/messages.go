@@ -15,16 +15,28 @@ type CaptureRequest struct {
 	Dst                   SHMBuffer
 	Width, Height, Stride int
 	Format                uint32
-	// Clean asks for a capture without the private session's HUD layers
-	// and native border (SceneCapture). Wayland sets it, with Session, only
-	// on requests of the connection that owns the active session; every
-	// other capture is false/0 and sees the scene as shown.
-	Clean   bool
+	// Session is the registered capture session (CaptureSessionOpen) the
+	// request belongs to, 0 for wlr-screencopy. It is informational, except
+	// with Exclude.
 	Session uint64
-	// CaptureRevision is the session Revision last confirmed by core
-	// (CaptureSessionState); a renderer fails a Clean request whose scene
-	// has Capture nil or Capture.Revision below it. 0 when not Clean.
+	// Exclude asks for a capture without the exclusion's HUD layers and
+	// popups (SceneCapture.Excluded). Wayland sets it, with Session and
+	// CaptureRevision, only on requests of the session that owns the
+	// exclusion. A renderer fails such a request unless its scene's
+	// Capture.Session is Session and Capture.Revision at least
+	// CaptureRevision (CaptureSessionState).
+	Exclude         bool
 	CaptureRevision uint64
+	// Workspace is not 0 for the capture of a workspace's frame. On screen
+	// (OffScreen false) it is an ordinary region of the displayed frame, and
+	// fails unless the scene's Capture.Shown is Workspace. OffScreen is set
+	// when the workspace was not on screen when the request was made: it is
+	// served from Scene.CaptureScene, whole (Region is the whole child
+	// image), and fails unless the scene's Capture.Workspace is Workspace.
+	// Either way a workspace that moved since fails instead of returning
+	// another crop.
+	Workspace uint64
+	OffScreen bool
 }
 
 // CaptureDone is attempted once after the output closes the destination.
@@ -821,12 +833,12 @@ type Scene struct {
 	// Window popups are drawn after the windows, layer popups
 	// (SceneWindow.OverLayers) last, over every layer.
 	Layers []SceneLayer
-	// Capture is the active private capture session on this output, nil
-	// when none (capture_session.go).
+	// Capture is the capture state of this output: exclusion and hidden
+	// workspace; nil while nothing is captured (capture.go).
 	Capture *SceneCapture
-	// CaptureScene is the workspace of the active session drawn for
-	// capture only (a workspace that is not on screen). Only the root scene
-	// carries it; CaptureScene.Capture and .CaptureScene are nil.
+	// CaptureScene is the workspace captured off screen (Capture.Workspace)
+	// drawn for capture only: a workspace that is not on screen. Only the
+	// root scene carries it; CaptureScene.Capture and .CaptureScene are nil.
 	CaptureScene *Scene
 }
 

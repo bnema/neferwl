@@ -31,8 +31,8 @@ type layerSurface struct {
 	// creation. The surface is closed when it is unplugged.
 	output *output
 	closed bool // output gone: commits are ignored until destroy
-	// capture is the private capture session this surface is attached to.
-	capture    *privateSession
+	// capture is the exclusion this surface is attached to.
+	capture    *exclusion
 	attachment *layerAttachment
 }
 

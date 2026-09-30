@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
+func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 	for _, finish := range []string{"signal", "cancel", "render-error"} {
 		t.Run(finish, func(t *testing.T) {
 			admitted := ports.SecurityState{Generation: 2}
@@ -59,7 +59,7 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 				done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: presented, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
-			incoming <- ports.CaptureRequest{ID: 99, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
+			incoming <- ports.CaptureRequest{ID: 99, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
 			contents <- ports.SurfaceContent{ID: 1, Seq: 8, SHM: &ports.SHMBuffer{Pool: 1}}
 			scene := sessionScene()
 			scene.Security = admitted

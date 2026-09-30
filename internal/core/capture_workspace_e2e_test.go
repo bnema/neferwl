@@ -20,7 +20,7 @@ func (r *captureRig) configureOf(t *testing.T, id ports.WindowID) ports.Configur
 // stays active, the scene carries a sibling CaptureScene, and the window is
 // configured Captured (sized, physically invisible) until the session stops.
 func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
-	r := captureCore(t, nil)
+	r := captureCore(t)
 	r.client <- ports.WindowMapped{ID: 1}
 	scene(t, r.scenes)
 	// Mapping the window adds a spare workspace: wait for the inventory that lists it.
@@ -28,7 +28,7 @@ func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
 	for len(ws) < 2 {
 		ws = receive(t, r.workspaces).Outputs[0].Workspaces
 	}
-	r.client <- ports.CaptureSessionBegin{ID: 1, Output: "OUT-1", Workspace: ws[0].ID}
+	r.client <- ports.CaptureSessionOpen{ID: 1, Workspace: ws[0].ID}
 	if st := r.state(t); !st.Active {
 		t.Fatalf("state %+v", st)
 	}
@@ -72,7 +72,7 @@ func TestCaptureSessionSurvivesWorkspaceSwitch(t *testing.T) {
 	}
 
 	// Stopping the session hides the window for real again.
-	r.client <- ports.CaptureSessionEnd{ID: 1}
+	r.client <- ports.CaptureSessionClose{ID: 1}
 	var after ports.Scene
 	for {
 		if after = scene(t, r.scenes); after.Capture == nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 
+	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
 	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
@@ -139,7 +140,6 @@ func (s *Server) forwardWorkspaces(ctx context.Context) {
 func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
 	s.workspaceSnapshot = snapshot
 	s.updateWorkspaceManagers(snapshot)
-	s.updateCaptureWorkspaces(snapshot)
 }
 
 // updateWorkspaceManagers also refreshes inventory on protection transitions.
@@ -149,7 +149,71 @@ func (s *Server) updateWorkspaceManagers(snapshot ports.Workspaces) {
 	for _, m := range s.workspaceManagers {
 		m.update(snapshot)
 	}
+	s.updateWorkspaceFrames()
+	s.refreshSessions()
 }
+
+// workspaceFrame is a neferwl_workspace_frame_v1: the frame of one workspace,
+// output-local logical, sent when it is created and when it changes. Nothing
+// is sent for a workspace that is gone, nor while the session is protected.
+type workspaceFrame struct {
+	res    *imagecapture.NeferwlWorkspaceFrameV1
+	handle *server.Resource
+	id     uint64
+	sent   bool
+	last   ports.Rect
+}
+
+func (*workspaceFrame) Destroy(*imagecapture.NeferwlWorkspaceFrameV1) {}
+
+func (s *Server) newWorkspaceFrame(c server.Client, id uint32, ws *ext.ExtWorkspaceHandleV1) {
+	f := &workspaceFrame{}
+	known := false
+	if ws != nil {
+		f.handle = ws.Resource
+		f.id, known = s.workspaceIDOf(ws.Resource)
+	}
+	r, err := imagecapture.NewNeferwlWorkspaceFrameV1(c, 1, id, f)
+	if err != nil {
+		return
+	}
+	f.res = r
+	if !known {
+		return
+	}
+	s.workspaceFrames = append(s.workspaceFrames, f)
+	r.OnDestroy = func() { s.workspaceFrames = removeItem(s.workspaceFrames, f) }
+	s.updateWorkspaceFrames()
+}
+
+// updateWorkspaceFrames sends the frame of each workspace whose last sent one
+// differs. A removed workspace gets nothing and its entry is dropped.
+func (s *Server) updateWorkspaceFrames() {
+	if s.protected() {
+		return
+	}
+	kept := s.workspaceFrames[:0]
+	for _, f := range s.workspaceFrames {
+		// The handle must still exist: a removed or renamed handle never
+		// returns, so its frame object is dropped.
+		if id, ok := s.workspaceIDOf(f.handle); !ok || id != f.id {
+			continue
+		}
+		kept = append(kept, f)
+		if !f.res.Alive() {
+			continue
+		}
+		_, w, ok := s.workspaceInfo(f.id)
+		if !ok || (f.sent && f.last == w.Frame) {
+			continue
+		}
+		f.sent, f.last = true, w.Frame
+		f.res.SendFrame(int32(w.Frame.X), int32(w.Frame.Y), int32(w.Frame.W), int32(w.Frame.H))
+	}
+	clear(s.workspaceFrames[len(kept):])
+	s.workspaceFrames = kept
+}
+
 func workspaceState(w ports.WorkspaceInfo) uint32 {
 	var state uint32
 	if w.Active {

@@ -99,12 +99,12 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 
 func sessionScene() ports.Scene {
 	return ports.Scene{Seq: 2, Windows: []ports.SceneWindow{{ID: 1}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}},
-		Capture: &ports.SceneCapture{Session: 7, Excluded: []ports.WindowID{10}, BorderWidth: 2, BorderColor: ports.CaptureBorderColor}}
+		Capture: &ports.SceneCapture{Session: 7, Revision: 1, Excluded: []ports.WindowID{10}}}
 }
 
-func TestCleanCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
-	order, replies := runSession(t, sessionScene(), []ports.CaptureRequest{{ID: 1, Clean: true, Session: 7}, {ID: 2}}, 2)
-	// Clean composition and its copy come first; the displayed frame and
+func TestExcludeCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
+	order, replies := runSession(t, sessionScene(), []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
+	// The Exclude composition and its copy come first; the displayed frame and
 	// the standard capture (HUD and border included) follow.
 	require.Equal(t, []string{"render:clean", "begin", "render:full", "begin"}, order)
 	for _, d := range replies {
@@ -112,10 +112,10 @@ func TestCleanCaptureOrderedBeforeDisplayedFrame(t *testing.T) {
 	}
 }
 
-func TestCleanCaptureFailsClosedWithoutMatchingSession(t *testing.T) {
+func TestExcludeCaptureFailsClosedWithoutMatchingSession(t *testing.T) {
 	scene := sessionScene()
 	scene.Capture = nil
-	order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 1, Clean: true, Session: 7}, {ID: 2}}, 2)
+	order, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}}, 2)
 	require.Equal(t, []string{"render:full", "begin"}, order) // one frame, the standard capture only
 	byID := map[uint64]error{}
 	for _, d := range replies {
@@ -146,7 +146,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
 	child.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		require.Nil(t, s.Capture)
-		require.Len(t, s.Layers, 0, "HUD left out of the child frame")
+		require.Len(t, s.Layers, 0, "a workspace rendered off screen has no layers")
 		return read, nil
 	}).Once()
 	child.EXPECT().BeginCapture().Return(frame, nil).Once()
@@ -154,8 +154,8 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	child.EXPECT().Close().Return().Once()
 	scene := sessionScene()
 	scene.OutputWidth, scene.OutputHeight, scene.Scale = 2, 2, 1
-	scene.Capture.TargetRect = ports.Rect{W: 2, H: 2}
-	scene.CaptureScene = &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 5}}, Layers: []ports.SceneLayer{{ID: 10, Layer: ports.LayerTop}}}
+	scene.Capture.Workspace = 9
+	scene.CaptureScene = &ports.Scene{OutputWidth: 2, OutputHeight: 2, Scale: 1, Windows: []ports.SceneWindow{{ID: 5}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scenes := make(chan ports.Scene, 1)
@@ -170,7 +170,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 			NewCaptureRenderer: func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil },
 		}, scenes, nil, nil, incoming)
 	}()
-	q := ports.CaptureRequest{ID: 1, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+	q := ports.CaptureRequest{ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	incoming <- q
 	scenes <- scene
 	// The owner may report an idle frame before receiving the first scene.
@@ -211,7 +211,16 @@ waitHold:
 	require.Equal(t, [2]int{2, 2}, made)
 }
 
-// GO007: a render error while a clean request was already handed to a worker
+// A hidden request whose scene carries no CaptureScene fails closed instead of
+// being dropped or served from the displayed frame.
+func TestHiddenWorkspaceCaptureWithoutCaptureSceneFails(t *testing.T) {
+	scene := sessionScene()
+	scene.Capture.Workspace = 9
+	_, replies := runSession(t, scene, []ports.CaptureRequest{{ID: 1, Workspace: 9, OffScreen: true}}, 1)
+	require.ErrorIs(t, replies[0].Err, capture.ErrOffscreenUnavailable)
+}
+
+// GO007: a render error while an Exclude request was already handed to a worker
 // must not answer it a second time as request 0.
 func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 	display := portsmocks.NewMockRenderer(t)
@@ -234,7 +243,7 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies,
 			NewRenderer: func(int, int) (ports.Renderer, error) { return display, nil }}, scenes, nil, nil, incoming)
 	}()
-	incoming <- ports.CaptureRequest{ID: 1, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
+	incoming <- ports.CaptureRequest{ID: 1, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	scenes <- sessionScene()
 	select {
 	case err := <-done:
