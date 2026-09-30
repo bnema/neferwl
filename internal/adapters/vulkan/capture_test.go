@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -20,9 +21,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// requireCaptureSync skips only integration tests that need kernel sync-file
+// export. Software Vulkan devices can still exercise Pixels and rendering.
+func requireCaptureSync(t *testing.T, r *Renderer) {
+	t.Helper()
+	if !r.syncFD || !r.dd.HasGetSemaphoreFdKHR() {
+		t.Skip("Vulkan sync-file export unavailable")
+	}
+}
+
 // captureWait leases a capture of the last frame and waits for it.
 func captureWait(t *testing.T, r *Renderer) ports.CaptureFrame {
 	t.Helper()
+	requireCaptureSync(t, r)
 	cf, err := r.BeginCapture()
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +194,30 @@ func TestCaptureReturnedSlotWaitsForFence(t *testing.T) {
 	}
 }
 
+// A device without sync-file export refuses protocol capture before allocating
+// slots, but keeps synchronous debug screenshots functional (e.g. lavapipe).
+func TestCaptureWithoutSyncFileExport(t *testing.T) {
+	r, err := New(8, 8)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	r.syncFD = false
+	if err := render(r, ports.Scene{Background: "#123456"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.BeginCapture(); err == nil || !strings.Contains(err.Error(), "sync file export") {
+		t.Fatalf("capture without sync-file export: %v", err)
+	}
+	if r.captures != nil {
+		t.Fatal("unsupported capture allocated slots")
+	}
+	pixels := r.Pixels()
+	if pixels == nil || pixels.RGBAAt(0, 0) != (color.RGBA{0x12, 0x34, 0x56, 255}) {
+		t.Fatalf("debug screenshot without sync-file export: %v", pixels)
+	}
+}
+
 // The capture size cap admits two 5K slots and rejects 8K.
 func TestCaptureSizeCap(t *testing.T) {
 	r := &Renderer{width: 5120, height: 2880}
@@ -304,6 +339,7 @@ func TestCaptureExportFailureKeepsSlotPending(t *testing.T) {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
+	requireCaptureSync(t, r)
 	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
 		t.Fatal(err)
 	}

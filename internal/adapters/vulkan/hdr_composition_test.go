@@ -120,15 +120,17 @@ func TestHDRWindowedComposition(t *testing.T) {
 	if px := readPixels(t, r).RGBAAt(5, 8); !near(px, color.RGBA{want[0], want[1], want[2], 255}, 2) {
 		t.Fatalf("tone-mapped capture pixel %v, want %v", px, want)
 	}
-	cf := captureWait(t, r)
-	dst := make([]byte, 8)
-	if err := cf.Read(image.Rect(5, 8, 7, 9), dst, 8); err != nil {
-		t.Fatal(err)
-	}
-	r.EndCapture(cf)
-	if !near(color.RGBA{dst[2], dst[1], dst[0], 255}, color.RGBA{want[0], want[1], want[2], 255}, 2) || dst[3] != 255 {
-		t.Fatalf("capture %v, want %v", dst, want)
-	}
+	t.Run("async capture", func(t *testing.T) {
+		cf := captureWait(t, r)
+		defer r.EndCapture(cf)
+		dst := make([]byte, 8)
+		if err := cf.Read(image.Rect(5, 8, 7, 9), dst, 8); err != nil {
+			t.Fatal(err)
+		}
+		if !near(color.RGBA{dst[2], dst[1], dst[0], 255}, color.RGBA{want[0], want[1], want[2], 255}, 2) || dst[3] != 255 {
+			t.Fatalf("capture %v, want %v", dst, want)
+		}
+	})
 	// The BT.2020 red (negative BT.709 green and blue) matches the
 	// reference gamut reduction and shoulder, not a per-channel clip.
 	red := readPixels(t, r).RGBAAt(25, 8)
