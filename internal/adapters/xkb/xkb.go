@@ -27,18 +27,23 @@ type Keymap struct {
 	contextUnref       func(uintptr)
 	keymapUnref        func(uintptr)
 	stateUnref         func(uintptr)
-	keymapString       func(uintptr, uint32) unsafe.Pointer
-	free               func(uintptr)
-	getSym             func(uintptr, uint32) uint32
-	symName            func(uint32, uintptr, uintptr) int32
-	updateKey          func(uintptr, uint32, uint32) uint32
-	serializeMods      func(uintptr, uint32) uint32
-	serializeLayout    func(uintptr, uint32) uint32
-	modActive          func(uintptr, uintptr, uint32) int32
-	minCode            func(uintptr) uint32
-	maxCode            func(uintptr) uint32
-	symsLevel          func(uintptr, uint32, uint32, uint32, *unsafe.Pointer) int32
-	fromName           func(uintptr, uint32) uint32
+	stateNew           func(uintptr) uintptr
+	// Secure tracking belongs to the same producer goroutine as native state.
+	epoch             ports.SecurityState
+	epochSet          bool
+	held, quarantined map[uint32]bool
+	keymapString      func(uintptr, uint32) unsafe.Pointer
+	free              func(uintptr)
+	getSym            func(uintptr, uint32) uint32
+	symName           func(uint32, uintptr, uintptr) int32
+	updateKey         func(uintptr, uint32, uint32) uint32
+	serializeMods     func(uintptr, uint32) uint32
+	serializeLayout   func(uintptr, uint32) uint32
+	modActive         func(uintptr, uintptr, uint32) int32
+	minCode           func(uintptr) uint32
+	maxCode           func(uintptr) uint32
+	symsLevel         func(uintptr, uint32, uint32, uint32, *unsafe.Pointer) int32
+	fromName          func(uintptr, uint32) uint32
 }
 
 type ruleNames struct{ rules, model, layout, variant, options uintptr }
@@ -60,13 +65,12 @@ func New(names RMLVO) (_ *Keymap, err error) {
 	}
 	var contextNew func(uint32) uintptr
 	var keymapNew func(uintptr, *ruleNames, uint32) uintptr
-	var stateNew func(uintptr) uintptr
 	bind := func(fn any, name string) { purego.RegisterLibFunc(fn, k.lib, "xkb_"+name) }
 	bind(&contextNew, "context_new")
 	bind(&k.contextUnref, "context_unref")
 	bind(&keymapNew, "keymap_new_from_names")
 	bind(&k.keymapUnref, "keymap_unref")
-	bind(&stateNew, "state_new")
+	bind(&k.stateNew, "state_new")
 	bind(&k.stateUnref, "state_unref")
 	bind(&k.keymapString, "keymap_get_as_string")
 	bind(&k.getSym, "state_key_get_one_sym")
@@ -104,7 +108,7 @@ func New(names RMLVO) (_ *Keymap, err error) {
 	if k.mapPtr == 0 {
 		return nil, fmt.Errorf("xkb_keymap_new_from_names failed")
 	}
-	k.state = stateNew(k.mapPtr)
+	k.state = k.stateNew(k.mapPtr)
 	if k.state == 0 {
 		return nil, fmt.Errorf("xkb_state_new failed")
 	}
@@ -158,6 +162,63 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 		runtime.KeepAlive(b)
 	}
 	return event
+}
+
+// KeySecure resets native modifier/lock/layout state before translating in a
+// new security epoch. Keys physically held across a transition are suppressed
+// (including repeats and their eventual release), never replayed into XKB.
+// On reset failure no event is translated against the old native state.
+func (k *Keymap) KeySecure(code uint32, pressed bool, timeMsec uint32, epoch ports.SecurityState) (ports.KeyEvent, bool, error) {
+	if !k.epochSet || k.epoch != epoch {
+		next := k.stateNew(k.mapPtr)
+		if next == 0 {
+			// Even a failed translation must remember physical presses so a
+			// later successful reset cannot admit their repeats.
+			if k.held == nil {
+				k.held = make(map[uint32]bool)
+			}
+			if pressed {
+				k.held[code] = true
+			} else {
+				delete(k.held, code)
+			}
+			return ports.KeyEvent{}, false, fmt.Errorf("xkb_state_new failed during security reset")
+		}
+		old := k.state
+		k.state = next
+		k.stateUnref(old)
+		k.epoch, k.epochSet = epoch, true
+		if k.held == nil {
+			k.held = make(map[uint32]bool)
+		}
+		k.quarantined = make(map[uint32]bool, len(k.held))
+		for held := range k.held {
+			k.quarantined[held] = true
+		}
+	}
+	blocked := k.quarantined[code]
+	if pressed {
+		k.held[code] = true
+	} else {
+		delete(k.held, code)
+		delete(k.quarantined, code)
+	}
+	if blocked {
+		return ports.KeyEvent{}, false, nil
+	}
+	return k.Key(code, pressed, timeMsec), true, nil
+}
+
+// QuarantineFrom transfers physical held-key tracking when a producer replaces
+// its keymap. No old native state or key presses are replayed into the new map.
+// Call before closing previous; both maps belong to the calling goroutine.
+func (k *Keymap) QuarantineFrom(previous *Keymap) {
+	k.epoch, k.epochSet = previous.epoch, previous.epochSet
+	k.held = make(map[uint32]bool, len(previous.held))
+	k.quarantined = make(map[uint32]bool, len(previous.held))
+	for code := range previous.held {
+		k.held[code], k.quarantined[code] = true, true
+	}
 }
 
 // levelName is the first keysym name of a key at one shift level, or "".

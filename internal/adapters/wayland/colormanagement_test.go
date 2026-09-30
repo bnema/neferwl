@@ -31,7 +31,7 @@ func (p *colorEvent) Dispatch(e *wlturbo.Event) {
 func watchColor(c *wlturbo.Display, id uint32) *colorEvent {
 	p := &colorEvent{}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	return p
 }
 func colorServer(t *testing.T) (*Server, *wlturbo.Display, chan ports.OutputFormats) {
@@ -205,7 +205,7 @@ func TestColorOutputAndFeedback(t *testing.T) {
 			name = id
 		}
 	}
-	out, err := c.Registry().BindID(name, "wl_output", 4)
+	out, err := bindWireID(c, name, "wl_output", 4)
 	if err != nil {
 		t.Fatal(err)
 	}

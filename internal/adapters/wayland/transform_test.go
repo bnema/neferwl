@@ -26,7 +26,7 @@ func newTransformClient(t *testing.T) transformClient {
 	c := protocolClient(t, s, dir)
 	// set_buffer_transform needs wl_compositor v2.
 	g, _ := c.Registry().FindGlobal("wl_compositor")
-	comp, err := c.Registry().BindID(g.Name, g.Interface, 6)
+	comp, err := bindWireID(c, g.Name, g.Interface, 6)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func newTransformClient(t *testing.T) transformClient {
 	serials := make(chan uint32, 4)
 	cp := &configureProxy{serial: serials}
 	cp.SetID(xdg)
-	c.Context().Register(cp)
+	registerWireProxy(c, cp)
 	requestProtocol(t, c, wm, xdgshell.WmBaseRequestGetXdgSurface, xdg, surf)
 	top := c.AllocateID()
 	registerProtocol(t, c, top)
@@ -66,7 +66,7 @@ func newTransformClient(t *testing.T) transformClient {
 	pool, bf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, bf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
 		t.Fatal(err)
 	}
 	// argb8888: not opaque by format.

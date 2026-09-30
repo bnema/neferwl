@@ -14,7 +14,7 @@ func TestOutputRouting(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 2)
 	set := newOutputSet(ctx, replies)
 	for _, name := range []string{"A", "B"} {
-		set.start(ctx, name, func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest) error {
+		set.start(ctx, name, func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 			<-ctx.Done()
 			return nil
 		})
@@ -78,7 +78,7 @@ func TestOutputRoutingAllocations(t *testing.T) {
 	set.content(content)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest) error {
+	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	})

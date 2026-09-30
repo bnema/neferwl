@@ -4,8 +4,8 @@ github.com/bnema/purego-libwayland v0.7.0 h1:Q25nd/KmcivEucUceEmmNt1EgiryugAXnI4
 github.com/bnema/purego-libwayland v0.7.0/go.mod h1:+2zIEBX+iNlRB27xrm5Z8Dnd+cmqX+1AYvuwguxK2dg=
 github.com/bnema/purego-vulkan v0.6.0 h1:SJgu0smuDC2vtBv0dJ6dmRKewJW5EUXQwTXyb/p9JSE=
 github.com/bnema/purego-vulkan v0.6.0/go.mod h1:7kFoR1p01JbknuZlfA20oeImryBe8Fx+Zd9hm2uSUM4=
-github.com/bnema/wlturbo v0.2.0 h1:gZPe81TrrrYW8xrbZpEvZnDI7VQBm60+dgAapbXJyRQ=
-github.com/bnema/wlturbo v0.2.0/go.mod h1:4i1k1wyw7FDWOkh2hg1ZwPfrPRn3+E6WrYg9Qrt74CA=
+github.com/bnema/wlturbo v0.5.0 h1:AUP3IAd4ZXM3ZrJ8zu65lAejKtYMwSoSDE2TS6k3mn4=
+github.com/bnema/wlturbo v0.5.0/go.mod h1:4i1k1wyw7FDWOkh2hg1ZwPfrPRn3+E6WrYg9Qrt74CA=
 github.com/bnema/zerowrap v1.4.1 h1:v70w8LDU2+FU+EX/etY9DjVwOAWN0fUKShwZyZHnyLU=
 github.com/bnema/zerowrap v1.4.1/go.mod h1:8M8Qz3uRpbszYkXqi0Dnr1TZ4lDrQY8/orGm30zwKKg=
 github.com/mattn/go-colorable v0.1.15 h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=

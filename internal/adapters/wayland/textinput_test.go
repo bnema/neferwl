@@ -63,7 +63,7 @@ func newIMELog(c *wlturbo.Display, id uint32, sigs ...string) *imeLog {
 		l.sigs = append(l.sigs, struct{ name, args string }{name, args})
 	}
 	l.SetID(id)
-	c.Context().Register(l)
+	registerWireProxy(c, l)
 	return l
 }
 
@@ -90,7 +90,7 @@ func newTextApp(t *testing.T, s *Server, events chan ports.ClientEvent, commands
 	registerProtocol(t, c, seat)
 	keys := &eventsProxy{}
 	keys.SetID(c.AllocateID())
-	c.Context().Register(keys)
+	registerWireProxy(c, keys)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, keys.ID())
 	w, surf, xdg := surfaceMapper(t, c, events)()
 	manager := bindProtocol(t, c, "zwp_text_input_manager_v3")
@@ -459,7 +459,7 @@ func TestTextInputLeaveBeforeEnter(t *testing.T) {
 	for _, tag := range []string{"t1", "t2"} {
 		p := &tagged{tag: tag, into: log}
 		p.SetID(c.AllocateID())
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 		requestProtocol(t, c, manager, textinput.ZwpTextInputManagerV3RequestGetTextInput, p.ID(), seat)
 	}
 	commands <- ports.FocusWindow{ID: a.ID}

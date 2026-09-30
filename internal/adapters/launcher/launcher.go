@@ -16,8 +16,10 @@ import (
 )
 
 type Launcher struct {
-	env []string
-	log zerowrap.Logger
+	// Security is the optional defensive admission gate. Set before Run.
+	Security ports.SessionSecurity
+	env      []string
+	log      zerowrap.Logger
 }
 
 func New(env []string, log zerowrap.Logger) *Launcher {
@@ -64,6 +66,9 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 			if !ok {
 				return nil
 			}
+			if !l.admitted(req) {
+				continue
+			}
 			if len(req.Argv) == 0 {
 				l.log.Warn().Msg("empty spawn argv")
 				continue
@@ -79,6 +84,12 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 			cmd.Stdout = nil
 			cmd.Stderr = nil
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			// Path lookup and environment construction may race a transition.
+			// Recheck at the native process-start boundary using the original
+			// owner epoch, never relabel a delayed request.
+			if !l.admitted(req) {
+				continue
+			}
 			if err := cmd.Start(); err != nil {
 				l.log.Warn().Err(err).Str("binary", req.Argv[0]).Msg("spawn failed")
 				continue
@@ -87,6 +98,14 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 			go func() { l.log.Debug().Err(cmd.Wait()).Str("binary", req.Argv[0]).Msg("child exited") }()
 		}
 	}
+}
+
+func (l *Launcher) admitted(req ports.SpawnRequest) bool {
+	if l.Security == nil {
+		return true
+	}
+	state := l.Security.Snapshot()
+	return !state.Protected && req.Security == state
 }
 
 func childLookPath(name string, env []string) (string, error) {

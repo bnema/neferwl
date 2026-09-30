@@ -19,6 +19,8 @@ packages:
       OutputScaleStore:
       Renderer:
       Seat:
+      SessionSecurity:
+      SessionSecurityController:
       Ticker:
       Timer:
   # Unexported adapter seams: mocks live next to the code, in test files.
@@ -43,11 +45,23 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: proc_env_mock_test.go
+      acquirePoller:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: acquire_poller_mock_test.go
       syncobjDevice:
         config:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: syncobj_device_mock_test.go
+  github.com/bnema/neferwl/internal/app:
+    interfaces:
+      securityLeaseCard:
+        config:
+          dir: internal/app
+          pkgname: app
+          filename: securitylease_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:

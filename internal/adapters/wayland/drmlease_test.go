@@ -31,7 +31,7 @@ func (p *leaseDeviceEvents) Dispatch(e *wlturbo.Event) {
 		p.connectors = append(p.connectors, id)
 		child := &leaseConnectorEvents{}
 		child.SetID(id)
-		p.c.Context().Register(child)
+		registerWireProxy(p.c, child)
 	}
 }
 
@@ -117,7 +117,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestDRMLeaseFlow(t *testing.T) {
 	lease := c.AllocateID()
 	l := &leaseResultEvents{}
 	l.SetID(lease)
-	c.Context().Register(l)
+	registerWireProxy(c, l)
 	requestProtocol(t, c, req, dl.WpDrmLeaseRequestV1RequestSubmit, lease)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestDRMLeaseErrors(t *testing.T) {
 			dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 			p := &leaseDeviceEvents{c: c}
 			p.SetID(dev)
-			c.Context().Register(p)
+			registerWireProxy(c, p)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
@@ -222,7 +222,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestDRMLeaseFinished(t *testing.T) {
 	lease := c.AllocateID()
 	l := &leaseResultEvents{}
 	l.SetID(lease)
-	c.Context().Register(l)
+	registerWireProxy(c, l)
 	requestProtocol(t, c, req, dl.WpDrmLeaseRequestV1RequestSubmit, lease)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -347,7 +347,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	var devices []uint32
 	for _, g := range c.Registry().GetGlobals() {
 		if g.Interface == "wp_drm_lease_device_v1" {
-			id, err := c.Registry().BindID(g.Name, g.Interface, 1)
+			id, err := bindWireID(c, g.Name, g.Interface, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -361,7 +361,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 	for _, dev := range devices {
 		p := &leaseDeviceEvents{c: c}
 		p.SetID(dev)
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 		bound = append(bound, p)
 	}
 	if err := c.Roundtrip(); err != nil {
@@ -380,7 +380,7 @@ func TestLeaseIDsAreScopedToCard(t *testing.T) {
 		id := c.AllocateID()
 		l := &leaseResultEvents{}
 		l.SetID(id)
-		c.Context().Register(l)
+		registerWireProxy(c, l)
 		requestProtocol(t, c, req, dl.WpDrmLeaseRequestV1RequestSubmit, id)
 	}
 	if err := c.Roundtrip(); err != nil {
@@ -447,7 +447,7 @@ func TestLeaseDestroyPendingRevokesLateReply(t *testing.T) {
 	dev := bindProtocol(t, c, "wp_drm_lease_device_v1")
 	p := &leaseDeviceEvents{c: c}
 	p.SetID(dev)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

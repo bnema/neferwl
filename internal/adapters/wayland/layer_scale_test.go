@@ -56,7 +56,7 @@ func TestLayerTargetScaleBeforeConfigure(t *testing.T) {
 					name = first
 				}
 				var err error
-				out, err = c.Registry().BindID(name, "wl_output", 4)
+				out, err = bindWireID(c, name, "wl_output", 4)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -73,13 +73,13 @@ func TestLayerTargetScaleBeforeConfigure(t *testing.T) {
 			integers := make(chan int32, 4)
 			sp := &surfaceScaleProxy{scales: integers}
 			sp.SetID(surf)
-			c.Context().Register(sp)
+			registerWireProxy(c, sp)
 			requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
 			frac := c.AllocateID()
 			events := make(chan [3]uint32, 8)
 			fp := &layerScaleOrderProxy{events: events}
 			fp.SetID(frac)
-			c.Context().Register(fp)
+			registerWireProxy(c, fp)
 			requestProtocol(t, c, fm, fractionalscale.WpFractionalScaleManagerV1RequestGetFractionalScale, frac, surf)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
@@ -93,7 +93,7 @@ func TestLayerTargetScaleBeforeConfigure(t *testing.T) {
 			layer := c.AllocateID()
 			lp := &layerScaleOrderProxy{layer: true, events: events}
 			lp.SetID(layer)
-			c.Context().Register(lp)
+			registerWireProxy(c, lp)
 			requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(ports.LayerOverlay), "scale-test")
 			requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetAnchor, uint32(15))
 			requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(0), uint32(0))

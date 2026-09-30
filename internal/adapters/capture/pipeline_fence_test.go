@@ -40,7 +40,7 @@ func TestPipelineWaitsForFenceBeforeRead(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.Submit(r, []ports.CaptureRequest{q})
+	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
 	// Longer than one syncfile poll slice: the worker has polled at least once.
 	select {
 	case <-entered:
@@ -79,7 +79,7 @@ func TestPipelinePropagatesReadError(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.Submit(r, []ports.CaptureRequest{q})
+	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
 	done := awaitCapture(t, replies)
 	if !errors.Is(done.Err, boom) || done.ID != q.ID {
 		t.Fatalf("result %+v", done)

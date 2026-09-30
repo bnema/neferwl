@@ -3,6 +3,7 @@ package wayland
 import (
 	"image"
 	"math"
+	"os"
 	"slices"
 	"time"
 
@@ -23,6 +24,7 @@ const (
 	roleLayer
 	roleCursor
 	roleInputPopup
+	roleSessionLock
 )
 
 type surface struct {
@@ -40,11 +42,14 @@ type surface struct {
 	kind         roleKind
 	xdg          *xdgSurface
 	layer        *layerSurface
-	server       *Server
-	current      *wayland.Buffer
-	lastW, lastH int // last logged buffer size
-	role         func(bool)
-	destroyed    bool
+	lock         *lockSurface
+	// bufferCommitted is permanent, including commits later discarded by FIFO.
+	bufferCommitted bool
+	server          *Server
+	current         *wayland.Buffer
+	lastW, lastH    int // last logged buffer size
+	role            func(bool)
+	destroyed       bool
 	// hotX, hotY is the click point of a cursor surface (logical).
 	hotX, hotY int
 	// on is the output the surface entered; scale is the last scale sent.
@@ -135,6 +140,7 @@ type pendingCommit struct {
 type commitSync struct {
 	acquire, release syncPoint
 	wait             *syncWait
+	fence            *os.File // exported before application; owned until apply/drop
 }
 
 // damage is what one commit changed in a surface's buffer.
@@ -172,6 +178,9 @@ func (s *surface) windowID() ports.WindowID {
 	}
 	if s.layer != nil && s.layer.mapped {
 		return s.layer.id
+	}
+	if s.lock != nil && s.lock.mapped {
+		return s.lock.id
 	}
 	return 0
 }
@@ -332,6 +341,12 @@ func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	}
 }
 func (s *surface) Commit(*wayland.Surface) {
+	if s.next.attached && s.next.buffer != nil {
+		s.bufferCommitted = true
+	}
+	if s.lock != nil && !s.lock.checkCommit() {
+		return
+	}
 	if s.layer != nil && s.next.attached && s.next.buffer != nil && !s.layer.acked {
 		s.layer.resource.PostError(uint32(wlrlayershell.ZwlrLayerSurfaceV1ErrorInvalidSurfaceState), "buffer before configure ack")
 		return
@@ -388,7 +403,10 @@ func (s *surface) applyCommit(u *update) {
 	s.async = u.async
 	s.color = u.color
 	s.representation = u.representation
-	if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
+	if s.lock != nil && s.commitSkipped {
+		// A discarded replacement cannot change retained lock geometry, even
+		// if its viewport was destroyed before capture or before application.
+	} else if u.vp != nil && (s.lock != nil || u.vp.resource != nil && u.vp.resource.Resource.Alive()) {
 		s.committedViewport.destW, s.committedViewport.destH, s.committedViewport.dest = u.vpW, u.vpH, u.vpSet
 		s.committedViewport.src, s.committedViewport.crop = u.vpSrc, u.vpCrop
 	} else {
@@ -412,6 +430,9 @@ func (s *surface) applyCommit(u *update) {
 	}
 	if len(u.callbacks) > 0 {
 		s.server.queueFrames(s, u.callbacks)
+	}
+	if s.lock != nil && !s.commitSkipped && !s.lock.checkCaptured(u) {
+		return
 	}
 	if s.role != nil {
 		if u.layer != nil && s.layer == u.layer {
@@ -487,6 +508,11 @@ func (s *surface) applyCommit(u *update) {
 	s.emitInput()
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
+	}
+	if s.lock != nil {
+		// Role callbacks precede content construction; publish lock placement
+		// only once validated current dimensions are available.
+		s.server.lockSurfaceChanged()
 	}
 	reshaped := s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource || s.content.Transform != oldTransform)
 	// Opacity changes how every pixel blends, so it repaints the whole surface.

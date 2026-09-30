@@ -133,14 +133,14 @@ func (h *privateHarness) client(t *testing.T) *privateClient {
 	if !ok {
 		t.Fatal("output missing")
 	}
-	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	out, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 	registerProtocol(t, c, out)
 	pc := &privateClient{c: c, output: out, manager: bindProtocol(t, c, "neferwl_capture_manager_v1"), mgr: &managerEvents{msgs: make(chan sessionMsg, 32)}}
 	pc.mgr.SetID(pc.manager)
-	c.Context().Register(pc.mgr)
+	registerWireProxy(c, pc.mgr)
 	return pc
 }
 
@@ -150,7 +150,7 @@ func (pc *privateClient) begin(t *testing.T, x, y, w, h int32, workspace uint64,
 	id := pc.c.AllocateID()
 	ev := &sessionEvents{msgs: make(chan sessionMsg, 32)}
 	ev.SetID(id)
-	pc.c.Context().Register(ev)
+	registerWireProxy(pc.c, ev)
 	requestProtocol(t, pc.c, pc.manager, capturesession.NeferwlCaptureManagerV1RequestBeginSession, id, pc.output, x, y, w, h, uint32(workspace>>32), uint32(workspace), record)
 	if err := pc.c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func (hd *hud) attachSurface(t *testing.T, token string, surface uint32) chan se
 	id := hd.c.AllocateID()
 	ev := &attachEvents{msgs: make(chan sessionMsg, 8)}
 	ev.SetID(id)
-	hd.c.Context().Register(ev)
+	registerWireProxy(hd.c, ev)
 	requestProtocol(t, hd.c, hd.manager, capturesession.NeferwlCaptureManagerV1RequestAttachSurface, id, token, surface)
 	if err := hd.c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -452,7 +452,7 @@ func mapLayer(t *testing.T, hd *hud) {
 	requestProtocol(t, hd.c, hd.surface, wayland.SurfaceRequestCommit)
 	cfg := &layerProxy{configured: make(chan [3]uint32, 4)}
 	cfg.SetID(hd.layer)
-	hd.c.Context().Register(cfg)
+	registerWireProxy(hd.c, cfg)
 	if err := hd.c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestPrivateCaptureStopClosesLayers(t *testing.T) {
 	closed := make(chan sessionMsg, 4)
 	lp := &layerClosedProxy{msgs: closed}
 	lp.SetID(hd.layer)
-	hd.c.Context().Register(lp)
+	registerWireProxy(hd.c, lp)
 	confirmed := hd.attach(t, token)
 	layer := nextEvent[ports.CaptureSessionLayer](t, h.events)
 	h.send(ports.CaptureSessionState{ID: begin.ID, Output: "HEADLESS-1", Active: true, Revision: 2, Layers: []ports.WindowID{layer.Layer}})
@@ -611,7 +611,7 @@ func captureOnce(t *testing.T, h *privateHarness, pc *privateClient) (*captureEv
 	frame := pc.c.AllocateID()
 	ev := &captureEvents{events: make(chan uint16, 16)}
 	ev.SetID(frame)
-	pc.c.Context().Register(ev)
+	registerWireProxy(pc.c, ev)
 	requestProtocol(t, pc.c, mgr, wlr.ZwlrScreencopyManagerV1RequestCaptureOutput, frame, int32(0), pc.output)
 	requestProtocol(t, pc.c, frame, wlr.ZwlrScreencopyFrameV1RequestCopy, buf)
 	if err := pc.c.Roundtrip(); err != nil {
@@ -761,7 +761,7 @@ func TestPrivateCaptureLayerMovedBelowTop(t *testing.T) {
 	closed := make(chan sessionMsg, 4)
 	lp := &layerClosedProxy{msgs: closed}
 	lp.SetID(hd.layer)
-	hd.c.Context().Register(lp)
+	registerWireProxy(hd.c, lp)
 	requestProtocol(t, hd.c, hd.layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetLayer, uint32(ports.LayerBottom))
 	requestProtocol(t, hd.c, hd.surface, wayland.SurfaceRequestCommit)
 	if err := hd.c.Roundtrip(); err != nil {

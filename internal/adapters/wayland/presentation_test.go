@@ -109,7 +109,7 @@ func TestPresentationFeedback(t *testing.T) {
 		fb := c.AllocateID()
 		p := &feedbackEvents{out: make(chan presentedEvent, 4)}
 		p.SetID(fb)
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 		requestProtocol(t, c, pres, presentationtime.WpPresentationRequestFeedback, surf, fb)
 		return p
 	}
@@ -142,7 +142,7 @@ func TestPresentationFeedback(t *testing.T) {
 	}
 	pool := c.AllocateID()
 	registerProtocol(t, c, pool)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	commit := func() {
@@ -218,7 +218,7 @@ func TestPresentationFeedback(t *testing.T) {
 	cfb := c.AllocateID()
 	cp := &feedbackEvents{out: make(chan presentedEvent, 1)}
 	cp.SetID(cfb)
-	c.Context().Register(cp)
+	registerWireProxy(c, cp)
 	requestProtocol(t, c, pres, presentationtime.WpPresentationRequestFeedback, child, cfb)
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	commit() // the parent applies the subsurface
@@ -248,7 +248,7 @@ func TestPresentationHiddenDiscarded(t *testing.T) {
 	fb := c.AllocateID()
 	p := &feedbackEvents{out: make(chan presentedEvent, 1)}
 	p.SetID(fb)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, pres, presentationtime.WpPresentationRequestFeedback, surf, fb)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {

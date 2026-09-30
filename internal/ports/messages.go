@@ -775,7 +775,10 @@ type CursorChange struct {
 
 // SpawnRequest carries core → launcher process arguments.
 type SpawnRequest struct {
-	Argv []string
+	// Security retains the admitting owner epoch through launcher backpressure.
+	// A wired launcher rejects stale or protected requests before execution.
+	Security SecurityState
+	Argv     []string
 	// Env adds KEY=value entries to the child environment.
 	Env []string
 }
@@ -784,6 +787,10 @@ type SpawnRequest struct {
 // one per output. Rects and the output size are logical and local to the
 // output; the renderer multiplies by Scale.
 type Scene struct {
+	// Security is the owner epoch captured when this scene was published.
+	// Output owners reject stale scenes rather than showing a queued desktop
+	// or accepting old locker buffers across acquisition/release.
+	Security                  SecurityState
 	Output                    string
 	Seq                       uint64
 	OutputWidth, OutputHeight int

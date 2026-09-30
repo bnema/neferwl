@@ -53,7 +53,7 @@ func TestPipelineCopiesOffOwnerAndRecycles(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.Submit(r, []ports.CaptureRequest{q})
+	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
 	select {
 	case <-entered:
 	case <-time.After(time.Second):
@@ -92,10 +92,10 @@ func TestPipelineSaturationAndShutdownWithoutGPUCompletion(t *testing.T) {
 		frame.EXPECT().Done().Return(read).Maybe()
 		r.EXPECT().BeginCapture().Return(frame, nil).Once()
 		r.EXPECT().EndCapture(frame).Return().Once()
-		p.Submit(r, []ports.CaptureRequest{pipelineRequest(t, id)})
+		p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{pipelineRequest(t, id)})
 	}
 	q := pipelineRequest(t, 3)
-	p.Submit(r, []ports.CaptureRequest{q})
+	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
 	if done := awaitCapture(t, replies); done.ID != 3 || done.Err == nil {
 		t.Fatalf("saturation result %+v", done)
 	}
@@ -120,7 +120,7 @@ func TestPipelineBeginFailureClosesRequest(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	p := NewPipeline(context.Background(), replies)
 	q := pipelineRequest(t, 1)
-	p.Submit(r, []ports.CaptureRequest{q})
+	p.SubmitScoped(ports.SecurityState{}, r, []ports.CaptureRequest{q})
 	if done := awaitCapture(t, replies); !errors.Is(done.Err, boom) {
 		t.Fatalf("result %+v", done)
 	}
@@ -138,7 +138,7 @@ func TestPipelineRejectsOversizedBatch(t *testing.T) {
 	for i := range requests {
 		requests[i] = pipelineRequest(t, uint64(i))
 	}
-	p.Submit(r, requests)
+	p.SubmitScoped(ports.SecurityState{}, r, requests)
 	for range requests {
 		if done := awaitCapture(t, replies); done.Err == nil {
 			t.Fatal("oversized batch accepted")

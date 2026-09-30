@@ -28,6 +28,11 @@ func (s *Server) outputOfSurface(surf *surface) *output {
 		name = surf.xdg.window.last.Output
 	case surf.layer != nil && surf.layer.output != nil:
 		return surf.layer.output
+	case surf.lock != nil:
+		if !surf.lock.closed {
+			return surf.lock.output
+		}
+		return nil
 	}
 	return s.outputByName(name)
 }

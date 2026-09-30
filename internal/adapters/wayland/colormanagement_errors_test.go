@@ -72,7 +72,7 @@ func TestColorSurfaceErrors(t *testing.T) {
 						global = name
 					}
 				}
-				out, err := c.Registry().BindID(global, "wl_output", 4)
+				out, err := bindWireID(c, global, "wl_output", 4)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -26,6 +26,17 @@ import (
 // it with EBUSY (it retries soon), and an event that never comes is
 // bounded (stuckTimeout, then a modeset).
 type Output struct {
+	// Set before Run. The backend owns instance registration and wake routing.
+	Security         ports.SessionSecurity
+	SecurityChanges  <-chan ports.SecurityState
+	Instance         ports.OutputInstance
+	SecurityEvents   chan<- ports.SecurityBackendEvent
+	securityState    ports.SecurityState
+	securityPrepared bool
+	securityInvalid  bool
+	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
+	runContext       context.Context // bounds compositor clear waits during Run startup
+
 	k           kms
 	flipped     <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
 	crtc        uint32
@@ -130,6 +141,14 @@ type Output struct {
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
 	// follows wantOff, so a display turned off never lights up.
 	wantOff, off bool
+	// protected is an output-owned latch. Ordinary modesets must not expose
+	// a previous desktop target while it is set; only protectedModeset may
+	// activate a target after clearing it and waiting for the GPU.
+	protected bool
+	// protectBackoff is the current retry delay after a refused protected
+	// commit; protectNotBefore the earliest next attempt (zero: none).
+	protectBackoff   time.Duration
+	protectNotBefore time.Time
 	// kind is how the images were made.
 	kind imageKind
 	// formats receives the direct scanout formats after each modeset;
@@ -383,12 +402,58 @@ func (o *Output) primaryRectProps(req *atomicReq, fb uint32, rect planeRect) {
 // other plane on the CRTC; needed at start and after every VT resume.
 // It blocks until the kernel applied it.
 func (o *Output) modeset() error {
+	o.observeSecurity()
+	return o.modesetImage(o.fbs[1-o.back], !o.wantOff && !o.protected)
+}
+
+// modesetImage is called with an active protected image only by
+// protectedModeset, after its clear fence has signalled.
+func (o *Output) modesetImage(fb uint32, active bool) error {
+	if o.protected && o.frame.pendingCommit() {
+		return errProtectionPending
+	}
+	if o.protected && !active {
+		if err := o.disableProtected(); err != nil {
+			return err
+		}
+		o.frame.resetAfterModeset()
+		o.planeRect = fullPlaneRect(o.Width(), o.Height())
+		o.signalReady()
+		return nil
+	}
 	blob, err := o.modeBlobFor(o.mode)
 	if err != nil {
+		if o.protected {
+			return protectedCommitError{err}
+		}
 		return err
 	}
-	if err := o.k.commit(o.modesetReq(blob, !o.wantOff), atomicAllowModes, 0); err != nil {
+	var req *atomicReq
+	if o.protected {
+		req = o.modesetBaseReq(blob, active)
+		if err := o.detachProtectedPlanes(req); err != nil {
+			_ = o.k.destroyBlob(blob)
+			return protectedCommitError{err}
+		}
+		if active {
+			o.primaryProps(req, fb)
+		}
+	} else {
+		req = o.modesetReq(blob, active)
+	}
+	// Do not admit a desktop-front modeset after an engage observed while
+	// constructing the request. Protected activation only contains black.
+	wasProtected := o.protected
+	o.observeSecurity()
+	if active && !wasProtected && o.protected {
 		_ = o.k.destroyBlob(blob)
+		return errSecurityScene
+	}
+	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
+		_ = o.k.destroyBlob(blob)
+		if o.protected {
+			return protectedCommitError{fmt.Errorf("modeset: %w", err)}
+		}
 		return fmt.Errorf("modeset: %w", err)
 	}
 	// Only now is nothing of ours pending or on screen: on failure the
@@ -403,7 +468,7 @@ func (o *Output) modeset() error {
 		_ = o.k.destroyBlob(o.modeBlob)
 	}
 	o.modeBlob = blob
-	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, o.wantOff
+	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, !active
 	// The gap and the traced flip interval belonged to the old state.
 	o.flipGapUntil, o.lastFlipAt = time.Time{}, 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
@@ -413,16 +478,22 @@ func (o *Output) modeset() error {
 		o.cursor.screen, o.cursor.flying = 0, false
 	}
 	o.log.Info().Str("connector", o.conn.name).Bool("off", o.off).Msg("modeset")
-	if !o.off {
-		// An inactive CRTC tells nothing about the cursor plane.
+	if !o.off && !o.protected {
+		// An inactive CRTC tells nothing about the cursor plane. Protected
+		// activation keeps it detached; do not test desktop cursor images.
 		o.testCursor()
 	}
 	o.sendFormats()
+	o.signalReady()
+	return nil
+}
+
+// signalReady reports the first successful modeset once.
+func (o *Output) signalReady() {
 	if o.ready != nil && !o.readySent {
 		o.ready <- nil
 		o.readySent = true
 	}
-	return nil
 }
 
 // powerOff turns the display off: the CRTC goes inactive and keeps its
@@ -513,9 +584,8 @@ func (o *Output) cursorOff(err error) {
 	o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("cursor plane refused; hardware cursor off")
 }
 
-// modesetReq is the modeset of the front image with mode blob; active
-// false keeps the display off (output power).
-func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
+// modesetBaseReq sets the CRTC and connector without attaching any plane.
+func (o *Output) modesetBaseReq(blob uint32, active bool) *atomicReq {
 	req := &atomicReq{}
 	req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(blob))
 	req.set(o.crtc, o.crtcProps["ACTIVE"], boolValue(active))
@@ -523,6 +593,13 @@ func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
 	o.hdrConnectorProps(req, o.hdrOn)
+	return req
+}
+
+// modesetReq is the unlocked modeset of the front image with mode blob;
+// active false keeps the display off (output power).
+func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
+	req := o.modesetBaseReq(blob, active)
 	o.primaryProps(req, o.fbs[1-o.back])
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cursorState{})
@@ -634,9 +711,16 @@ func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f p
 }
 
 func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect) error {
+	o.observeSecurity()
+	if o.Security != nil && (f.security != o.securityState || o.protected && !o.securityPrepared) {
+		return errSecurityScene
+	}
 	cur := cursorState{}
-	if o.cursor != nil {
+	if o.cursor != nil && !o.protected {
 		cur = o.cursor.desired()
+	}
+	if o.protected {
+		async, vrr, ov = false, false, overlayWin{}
 	}
 	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn || rect != o.planeRect || o.contentWanted != o.contentValue) {
 		async = false
@@ -659,6 +743,12 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.contentProps(req)
 	if fence != nil {
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
+	}
+	// Admission linearizes at this last defensive snapshot. An already
+	// admitted native ioctl can complete, but precedes the black proof.
+	o.observeSecurity()
+	if o.Security != nil && (f.security != o.securityState || o.protected && !o.securityPrepared) {
+		return errSecurityScene
 	}
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.frame.userData(userFrame)); err != nil {
@@ -735,6 +825,10 @@ func (o *Output) cursorRefused() bool {
 
 // commitState commits a cursor or VRR change without a new frame.
 func (o *Output) commitState(vrr bool) error {
+	o.observeSecurity()
+	if o.protected {
+		return errSecurityScene
+	}
 	req := &atomicReq{}
 	cur := cursorState{}
 	// A move back to the applied state holds nothing.
@@ -756,6 +850,10 @@ func (o *Output) commitState(vrr bool) error {
 	o.contentProps(req)
 	if len(req.objs) == 0 {
 		return nil
+	}
+	o.observeSecurity()
+	if o.protected {
+		return errSecurityScene
 	}
 	if err := o.k.commit(req, atomicNonblock|flipEventFlag, o.frame.userData(userState)); err != nil {
 		if o.overlayConflict(err, o.overlayOn) {
@@ -864,9 +962,13 @@ func (o *Output) setAsync(on bool) {
 	}
 }
 
-// Close restores the CRTC state found at startup, when it had a mode, and
-// frees buffers.
+// Close frees buffers and disables scanout. Without a security gate it
+// retains legacy restoration of the CRTC state found at startup; a wired
+// gate never admits saved desktop pixels, even if its snapshot is unlocked.
 func (o *Output) Close() {
+	o.inactiveOnClose = false
+	// Close may run after Run stopped, without receiving the engage wake.
+	o.observeSecurity()
 	req := &atomicReq{}
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cursorState{})
@@ -878,7 +980,7 @@ func (o *Output) Close() {
 	var blob uint32
 	p := o.primary
 	restored := false
-	if s.crtcID != 0 && s.modeValid != 0 && s.fbID != 0 {
+	if o.Security == nil && !o.protected && s.crtcID != 0 && s.modeValid != 0 && s.fbID != 0 {
 		if b, err := o.modeBlobFor(s.mode); err == nil {
 			blob, restored = b, true
 			req.set(o.crtc, o.crtcProps["MODE_ID"], uint64(b))
@@ -904,6 +1006,16 @@ func (o *Output) Close() {
 		req.set(p.id, p.prop("CRTC_ID"), 0)
 		req.set(o.conn.id, o.connCrtc, 0)
 	}
+	// Only the validated detachment path can certify terminal inactivity.
+	// Legacy nil-gate restoration/disable remains best effort, not evidence.
+	detached := false
+	if o.protected || o.Security != nil {
+		if err := o.detachProtectedPlanes(req); err != nil {
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("protected close plane detachment")
+		} else {
+			detached = o.primary != nil && o.crtc != 0 && o.crtcProps["ACTIVE"] != 0
+		}
+	}
 	// A live metadata blob means an HDR modeset may still be on screen, even
 	// after a failed SDR fallback (hdrOn is then false): it is freed only once
 	// an SDR modeset succeeds.
@@ -916,8 +1028,12 @@ func (o *Output) Close() {
 			ev = o.log.Warn()
 		}
 		ev.Err(err).Str("connector", o.conn.name).Bool("hdr", hdrShown).Msg("restore crtc")
-	} else if hdrShown {
-		o.log.Info().Str("connector", o.conn.name).Msg("HDR10 off")
+	} else {
+		active, hasActive := req.value(o.crtc, o.crtcProps["ACTIVE"])
+		o.inactiveOnClose = !restored && detached && hasActive && active == 0
+		if hdrShown {
+			o.log.Info().Str("connector", o.conn.name).Msg("HDR10 off")
+		}
 	}
 	if blob != 0 {
 		_ = o.k.destroyBlob(blob)
@@ -940,6 +1056,12 @@ func (o *Output) Close() {
 	o.dropClientFBs(time.Now(), true)
 }
 
+// InactiveOnClose reports affirmative terminal inactivity, not cached power
+// state. Call only after Close's owner has finished and a done channel (or
+// equivalent owner-completion synchronization) has been observed. It is not
+// safe to read concurrently with the output owner; no shared mutation is added.
+func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
+
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is reported on presented.
 func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
@@ -956,6 +1078,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			panic(p)
 		}
 	}()
+	o.runContext = ctx
+	o.observeSecurity()
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -978,9 +1102,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	// While switched away they are made on the first enable.
 	if enabled {
 		if err := o.showImages(r, imagesDriver, nil); err != nil {
-			return err
+			// While protected, a recoverable KMS failure keeps the output
+			// registered and dark; the loop retries with bounded backoff.
+			if !o.protected || !o.commitFailed(err, &enabled) {
+				return err
+			}
 		}
-		o.probeAsync(r)
+		if !o.protected {
+			o.probeAsync(r)
+		}
 	}
 	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
 	var scene ports.Scene
@@ -992,6 +1122,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	pipeline := capture.NewPipeline(ctx, captured)
+	pipeline.Security = o.Security
 	if o.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(o.NewCaptureRenderer)
 		o.capHidden = pipeline.CapHiddenSeen
@@ -1024,6 +1155,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	retryTimer := time.NewTimer(time.Hour)
 	vrrTimer := time.NewTimer(time.Hour)
 	cursorTimer := time.NewTimer(time.Hour)
+	protectTimer := time.NewTimer(time.Hour)
 	o.frame.startTimer()
 	gapTimer := time.NewTimer(time.Hour)
 	gapTimer.Stop()
@@ -1031,6 +1163,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	retryTimer.Stop()
 	vrrTimer.Stop()
 	cursorTimer.Stop()
+	protectTimer.Stop()
+	defer protectTimer.Stop()
 	defer retryTimer.Stop()
 	defer vrrTimer.Stop()
 	defer cursorTimer.Stop()
@@ -1044,7 +1178,42 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	if o.cursor != nil {
 		cursorWake = o.cursor.wake
 	}
+	securityChanges := o.SecurityChanges
 	for {
+		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
+			scene, haveScene, dirty = ports.Scene{}, false, false
+			want, cursorScale = ports.CursorChange{}, -1
+			if o.cursor != nil {
+				o.cursor.image, o.cursor.later = false, nil
+			}
+		}
+		if o.protected && len(requests) > 0 {
+			for _, q := range requests {
+				capture.Fail(ctx, q, fmt.Errorf("session protected"), captured)
+			}
+			clear(requests)
+			requests = requestStorage[:0]
+		}
+		if o.protected && enabled && !o.frame.pendingCommit() && !o.securityPrepared && !o.protectBackoffActive() {
+			if err := o.prepareSecurity(ctx, r); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				if !o.commitFailed(err, &enabled) {
+					return err
+				}
+			}
+			// Recheck immediately: a takeover during the clear needs its own
+			// transaction, not another scene or wake to make progress.
+			if enabled && !o.frame.pendingCommit() && !o.securityPrepared && !o.protectBackoffActive() {
+				continue
+			}
+		}
+		if o.securityInvalid {
+			if err := o.sendSecurityInvalid(ctx); err != nil {
+				return nil
+			}
+		}
 		readWait := false
 		if reportDirty || o.capped {
 			published := false
@@ -1084,7 +1253,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		// A held cursor move commits alone if no frame comes in time.
 		var cursorDue <-chan time.Time
-		if enabled && o.cursorHeld && !o.frame.pendingCommit() {
+		if enabled && !o.protected && o.cursorHeld && !o.frame.pendingCommit() {
 			cursorTimer.Reset(max(0, cursorMinInterval-time.Since(o.lastFrame)))
 			cursorDue = cursorTimer.C
 		} else {
@@ -1098,17 +1267,37 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			gapTimer.Stop()
 		}
+		// A refused protected commit is retried after a bounded backoff.
+		var protectDue <-chan time.Time
+		if o.protected && enabled && !o.securityPrepared && o.protectBackoffActive() {
+			protectTimer.Reset(max(0, time.Until(o.protectNotBefore)))
+			protectDue = protectTimer.C
+		} else {
+			protectTimer.Stop()
+		}
 		// A commit whose event never comes must not stop the output.
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
 		select {
+		case _, ok := <-securityChanges:
+			if !ok {
+				securityChanges = nil
+			}
+			continue // gate is authoritative, not the queued wake payload
 		case <-retry:
 			continue
+		case <-protectDue:
+			continue
 		case <-stuck:
+			o.observeSecurity()
 			if !o.frame.deadlineReached(time.Now()) {
 				continue // waits for a fence
 			}
 			if o.expire() {
+				if o.protected {
+					o.invalidateSecurity()
+					continue // fresh black transaction at the top of the loop
+				}
 				if err := o.modeset(); err != nil {
 					if !o.commitFailed(err, &enabled) {
 						return fmt.Errorf("recovery modeset: %w", err)
@@ -1135,7 +1324,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			pipeline.Retire(scene)
 			continue
 		case q := <-captures:
-			if !enabled || o.off || o.wantOff {
+			o.observeSecurity()
+			if o.protected || !enabled || o.off || o.wantOff {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
 			} else if len(requests) == cap(requests) {
 				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), captured)
@@ -1144,22 +1334,37 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				dirty = haveScene
 			}
 		case on := <-active:
+			o.observeSecurity()
+			if o.protected {
+				o.invalidateSecurity()
+				enabled = on
+				if on && o.fbs[0] == 0 {
+					if err := o.showImages(r, imagesDriver, nil); err != nil {
+						if !o.commitFailed(err, &enabled) {
+							return err
+						}
+					}
+				}
+				continue
+			}
 			// Modeset on every enable: a fast disable+enable can coalesce to one true.
 			if on {
+				enabled = true // this enable may supersede a previous master loss
 				var err error
 				if o.fbs[0] == 0 {
 					err = o.showImages(r, imagesDriver, nil)
 				} else {
 					err = o.modeset()
 				}
-				if lostMaster(err) {
-					// The seat took DRM master back: wait for the next enable.
-					o.log.Warn().Err(err).Msg("resume")
-					continue
-				}
 				if err != nil {
-					o.log.Error().Err(err).Msg("resume")
-					return err
+					if !o.commitFailed(err, &enabled) {
+						return err
+					}
+					continue // epoch retry or wait disabled for master reacquisition
+				}
+				o.observeSecurity()
+				if o.protected {
+					continue
 				}
 				o.probeAsync(r)
 				dirty = haveScene
@@ -1168,18 +1373,29 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			enabled = on
 			o.log.Info().Bool("enabled", on).Msg("output")
 		case ev := <-o.flipped:
+			o.observeSecurity()
 			if !o.completed(ev, seen) {
 				continue // stale event from before a modeset
 			}
 			stateDirty = true
-			if o.cursor != nil {
+			if o.cursor != nil && !o.protected {
 				// An image that waited for a free slot loads now.
 				if _, err := o.cursor.flushLater(r); err != nil {
 					o.log.Warn().Err(err).Msg("cursor")
 				}
 			}
 		case s := <-scenes:
-			if o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
+			o.observeSecurity()
+			if !o.sceneCurrent(s) {
+				continue
+			}
+			if o.protected {
+				s.CaptureScene = nil
+				if o.wantOff != s.Off {
+					o.invalidateSecurity()
+				}
+			}
+			if !o.protected && o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
 				cursorScale = s.Scale
 				o.setCursor(r, loadCursor, want, s.Scale)
 				stateDirty = true
@@ -1187,6 +1403,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			scene, haveScene, dirty = s, true, true
 			o.wantOff = s.Off
 		case c := <-cursor:
+			o.observeSecurity()
+			if o.protected {
+				continue
+			}
 			want = c
 			// Before the first scene the scale is unknown: loaded then.
 			if o.cursor != nil && loadCursor != nil && cursorScale > 0 {
@@ -1221,7 +1441,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			ev.Msg("stats")
 		}
-		if len(requests) > 0 && (!enabled || o.off || o.wantOff) {
+		o.observeSecurity()
+		if haveScene && !o.sceneCurrent(scene) {
+			continue
+		}
+		if o.protected && o.wantOff != o.off {
+			o.invalidateSecurity()
+		}
+		if o.protected && !o.securityPrepared {
+			continue
+		}
+		if len(requests) > 0 && (o.protected || !enabled || o.off || o.wantOff) {
 			for _, q := range requests {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
 			}
@@ -1248,8 +1478,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		if !dirty || !haveScene {
-			if stateDirty {
+			if stateDirty && !o.protected {
 				err := o.commitState(o.stateVRR())
+				if errors.Is(err, errSecurityScene) {
+					continue
+				}
 				if errors.Is(err, errOverlayDropped) {
 					dirty = haveScene
 					continue
@@ -1266,11 +1499,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			o.flipGapUntil = time.Time{}
 		}
+		if !o.sceneCurrent(scene) {
+			continue
+		}
 		start := time.Now()
 		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, pipeline)
 		var fatal renderError
-		if errors.As(err, &fatal) {
-			// A failed render did not hand these requests to the worker.
+		if errors.As(err, &fatal) || errors.Is(err, errSecurityScene) {
+			// A failed render or epoch rejection did not hand these requests to the worker.
 			for _, q := range requests {
 				if capture.Handed(q) {
 					continue // already owned by the worker, or answered
@@ -1284,6 +1520,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			return err
 		}
 		if err != nil {
+			if errors.Is(err, errSecurityScene) {
+				continue
+			}
 			if errors.Is(err, errOverlayDropped) {
 				dirty = true
 				continue
@@ -1307,13 +1546,29 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 // lost mid-switch (the seat disable follows).
 func (o *Output) commitFailed(err error, enabled *bool) bool {
 	switch {
+	case errors.Is(err, errSecurityScene), errors.Is(err, errProtectionPending):
+		return true // retry at the owner boundary, never certify stale work
 	case errors.Is(err, unix.EBUSY):
 		// Any CRTC event can unblock a refusal; absent one, retry on time.
 		if o.frame.busy(time.Now()) {
 			o.log.Info().Err(err).Str("connector", o.conn.name).Msg("commit busy")
 		}
+		if o.protected && !o.securityPrepared {
+			o.deferProtection() // bounded: a busy protected attempt never spins
+		}
+		return true
+	case retryableProtected(err):
+		// Protection stays latched and the output stays registered, dark.
+		// Never stop the output: that would remove it from Wayland while the
+		// session stays locked. Retry later; no proof is sent meanwhile.
+		o.deferProtection()
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Dur("retry_in", o.protectBackoff).Msg("protected commit refused; output stays protected, retrying")
 		return true
 	case lostMaster(err):
+		o.observeSecurity()
+		if o.protected {
+			o.invalidateSecurity()
+		}
 		o.log.Warn().Err(err).Msg("commit refused")
 		*enabled = false
 		return true
@@ -1370,7 +1625,8 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 
 // setCursor loads a cursor for scale into the cursor images.
 func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorChange, scale float64) {
-	if o.cursor.off {
+	o.observeSecurity()
+	if o.protected || o.cursor.off {
 		return
 	}
 	img, err := load(c, scale, o.cursor.Limit())
@@ -1486,6 +1742,21 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 			r.SetHDR(float64(o.hdrSettings.SDRBrightness))
 			err = o.showImageKind(r, imagesDriver, nil)
 		}
+		var pe protectedCommitError
+		if errors.As(err, &pe) {
+			// A protected KMS failure is not an HDR failure: images exist and
+			// the owner retries the protected modeset. Never fall back to SDR
+			// or latch hdrFailed for it.
+			if created {
+				if oldBlob != 0 {
+					_ = o.k.destroyBlob(o.hdrBlob)
+					o.hdrBlob = oldBlob
+				} else {
+					o.hdrBlobData = meta
+				}
+			}
+			return err
+		}
 		if err == nil {
 			if created {
 				o.hdrBlobData = meta
@@ -1530,7 +1801,19 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 		}
 		o.kind = got
 		if err = o.testModeset(); err == nil {
-			return o.modeset()
+			err = o.modeset()
+			if err != nil && o.protected && !errors.Is(err, errSecurityScene) && !errors.Is(err, errProtectionPending) && !errors.As(err, new(protectedCommitError)) {
+				err = protectedCommitError{err}
+			}
+			// A protected failure is not an image refusal: never fall back to
+			// another image kind or SDR for it. The caller hands it to the
+			// bounded retry (commitFailed).
+			return err
+		}
+		if o.protected && !refused(err) {
+			// EBUSY, lost master or a blob failure of the test: the images
+			// are fine; retry the protected modeset later.
+			return protectedCommitError{err}
 		}
 		if !refused(err) || got == imagesLinear {
 			o.freeImages()
@@ -1558,6 +1841,9 @@ func lostMaster(err error) bool {
 func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (imageKind, error) {
 	err := cause
 	for ; kind <= imagesLinear; kind++ {
+		if o.runContext != nil && o.runContext.Err() != nil {
+			return kind, o.runContext.Err()
+		}
 		mods := []uint64(nil)
 		if o.hdrOn {
 			for _, f := range o.primary.formats {
@@ -1611,7 +1897,11 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 		var done *os.File
 		if done, err = r.Render(ports.Scene{Background: "#000000"}, nil); done != nil {
 			// The modeset is a blocking commit: wait for the clear.
-			err = errors.Join(err, syncfile.Wait(context.Background(), done))
+			waitCtx := o.runContext
+			if waitCtx == nil {
+				waitCtx = context.Background()
+			}
+			err = errors.Join(err, syncfile.Wait(waitCtx, done))
 			done.Close()
 		}
 	}

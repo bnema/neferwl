@@ -184,6 +184,10 @@ func goString(p *byte) string {
 
 // Options configures the input adapter.
 type Options struct {
+	// Security gates credential logging and emergency quit and stamps input
+	// before forwarding. Nil preserves raw unlocked behavior; core remains
+	// responsible for input admission.
+	Security ports.SessionSecurity
 	Seat     ports.Seat
 	SeatName string
 	Keymap   *xkb.Keymap
@@ -266,6 +270,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			}
 			opts.Log.Info().Bool("active", on).Msg("input")
 		case km := <-opts.Keymaps:
+			if opts.Security != nil {
+				km.QuarantineFrom(opts.Keymap)
+			}
 			opts.Keymap.Close()
 			opts.Keymap = km
 			opts.Log.Info().Msg("keymap replaced")
@@ -418,7 +425,28 @@ func msec(v uint64) uint32 { return uint32(v / 1000) }
 // translate converts one libinput event. Timestamps are the device's
 // (CLOCK_MONOTONIC), so clients measure speeds (kinetic scrolling) on
 // when events happened, not when they were read.
+// It snapshots admission before translating and queueing any input kind.
 func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.InputEvent, error) {
+	state := securitySnapshot(opts.Security)
+	out, err := translateEvent(ev, opts, p, in, state)
+	return secureInput(out, opts.Security, state), err
+}
+
+func securitySnapshot(security ports.SessionSecurity) ports.SecurityState {
+	if security != nil {
+		return security.Snapshot()
+	}
+	return ports.SecurityState{}
+}
+
+func secureInput(ev ports.InputEvent, security ports.SessionSecurity, state ports.SecurityState) ports.InputEvent {
+	if ev == nil || security == nil {
+		return ev
+	}
+	return ports.SecurityInput{State: state, Event: ev}
+}
+
+func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state ports.SecurityState) (ports.InputEvent, error) {
 	log := opts.Log
 	switch eventType(ev) {
 	case evDeviceAdded:
@@ -449,19 +477,7 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
-		ke := opts.Keymap.Key(code, pressed, msec(keyboardUsec(k)))
-		if opts.LogKeys {
-			log.Debug().Uint32("code", code).Str("keysym", ke.Keysym).Bool("pressed", pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
-		}
-		switch action, vt := hotkey(ke); action {
-		case hotkeyQuit:
-			log.Warn().Str("reason", "emergency-key").Msg("quit")
-			return nil, ErrEmergencyQuit
-		case hotkeyVT:
-			opts.Seat.SwitchVT(vt)
-			return nil, nil
-		}
-		return ke, nil
+		return translateKeyboard(code, pressed, msec(keyboardUsec(k)), opts, state)
 	case evPointerMotion:
 		pe := pointerEvent(ev)
 		m := p.move(pointerDX(pe), pointerDY(pe))
@@ -516,6 +532,41 @@ func translate(ev uintptr, opts Options, p *pointer, in *inputState) (ports.Inpu
 	return nil, nil
 }
 
+// translateKeyboard applies the production epoch before native translation.
+// Quarantined events never reach logging, reserved hotkeys or core.
+func translateKeyboard(code uint32, pressed bool, timeMsec uint32, opts Options, state ports.SecurityState) (ports.InputEvent, error) {
+	var ke ports.KeyEvent
+	if opts.Security != nil {
+		var deliver bool
+		var err error
+		ke, deliver, err = opts.Keymap.KeySecure(code, pressed, timeMsec, state)
+		if err != nil || !deliver {
+			return nil, err
+		}
+	} else {
+		ke = opts.Keymap.Key(code, pressed, timeMsec)
+	}
+	return translateKey(ke, opts, state)
+}
+
+// translateKey applies the keyboard policy without native calls. One coherent
+// snapshot governs both logging and reserved hotkeys; protected keys still go
+// to core for the locker. VT switching is allowed and does not release the lock.
+func translateKey(ke ports.KeyEvent, opts Options, security ports.SecurityState) (ports.InputEvent, error) {
+	if opts.LogKeys && !security.Protected {
+		opts.Log.Debug().Str("component", "input").Uint32("code", ke.Keycode).Str("keysym", ke.Keysym).Bool("pressed", ke.Pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
+	}
+	switch action, vt := hotkey(ke, security.Protected); action {
+	case hotkeyQuit:
+		opts.Log.Warn().Str("component", "input").Str("reason", "emergency-key").Msg("quit")
+		return nil, ErrEmergencyQuit
+	case hotkeyVT:
+		opts.Seat.SwitchVT(vt)
+		return nil, nil
+	}
+	return ke, nil
+}
+
 type hotkeyAction int
 
 const (
@@ -524,8 +575,9 @@ const (
 	hotkeyVT
 )
 
-// hotkey detects compositor-reserved keys on press: Ctrl+Alt+Backspace and Ctrl+Alt+F1..F12.
-func hotkey(ke ports.KeyEvent) (hotkeyAction, int) {
+// hotkey detects compositor-reserved keys on press: Ctrl+Alt+Backspace and
+// Ctrl+Alt+F1..F12. Protection disables emergency quit, but not VT switching.
+func hotkey(ke ports.KeyEvent, protected bool) (hotkeyAction, int) {
 	if !ke.Pressed {
 		return hotkeyNone, 0
 	}
@@ -540,7 +592,9 @@ func hotkey(ke ports.KeyEvent) (hotkeyAction, int) {
 	}
 	switch {
 	case ke.Keysym == "BackSpace" || ke.Keycode == 14:
-		return hotkeyQuit, 0
+		if !protected {
+			return hotkeyQuit, 0
+		}
 	case ke.Keycode >= 59 && ke.Keycode <= 68: // F1..F10
 		return hotkeyVT, int(ke.Keycode) - 58
 	case ke.Keycode == 87 || ke.Keycode == 88: // F11, F12

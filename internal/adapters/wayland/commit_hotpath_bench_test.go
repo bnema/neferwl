@@ -31,7 +31,10 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer c.Close()
+	defer func() {
+		_ = c.Close()
+		forgetWireClient(c)
+	}()
 	if err := c.Roundtrip(); err != nil {
 		b.Fatal(err)
 	}
@@ -40,14 +43,14 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 		if !ok {
 			b.Fatalf("missing %s", name)
 		}
-		id, err := c.Registry().BindID(g.Name, g.Interface, 1)
+		id, err := bindWireID(c, g.Name, g.Interface, 1)
 		if err != nil {
 			b.Fatal(err)
 		}
 		return id
 	}
 	send := func(id, op uint32, args ...any) {
-		if err := c.SendRequest(id, uint16(op), args...); err != nil {
+		if err := wireRequest(c, id, uint16(op), nil, args...); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -56,7 +59,7 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	register := func(id uint32) {
 		p := &protocolProxy{}
 		p.SetID(id)
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 	}
 	register(shm)
 	surf := c.AllocateID()
@@ -80,7 +83,7 @@ func BenchmarkProtocolQueuedCommit(b *testing.B) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	register(pool)
 	register(buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		b.Fatal(err)
 	}
 	send(pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(0))

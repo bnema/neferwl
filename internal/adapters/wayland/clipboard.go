@@ -15,6 +15,11 @@ import (
 // both without focus. Like wlroots, any client may bind it. Pasting hands the reader's pipe to the source client:
 // the data never goes through neferwl. Drag and drop is not implemented.
 
+// protected is a defensive DISPLAY admission check, not lock ownership.
+func (s *Server) protected() bool {
+	return s.security != nil && s.security.Snapshot().Protected
+}
+
 const (
 	selClipboard = iota
 	selPrimary
@@ -89,6 +94,12 @@ func (s *Server) focusedClient() (server.Client, bool) {
 // setSelection makes src the selection of kind and announces it. A
 // replaced source is cancelled.
 func (s *Server) setSelection(kind int, src *clipSource) {
+	if s.protected() {
+		if src != nil && src != s.selections[kind] && src.alive() {
+			src.cancel()
+		}
+		return
+	}
 	old := s.selections[kind]
 	if old == src {
 		return
@@ -109,6 +120,9 @@ func (s *Server) announceAll(kind int) {
 
 // announce sends the selection of kind to the devices matching want.
 func (s *Server) announce(kind int, want func(*clipDevice) bool) {
+	if s.protected() {
+		return
+	}
 	src := s.selections[kind]
 	if src != nil && !src.alive() {
 		src, s.selections[kind] = nil, nil
@@ -142,6 +156,9 @@ func (s *Server) focusSelections() {
 // addClipDevice tracks a device and sends it the selections it may see.
 func (s *Server) addClipDevice(d *clipDevice) {
 	s.clipDevices = append(s.clipDevices, d)
+	if s.protected() {
+		return
+	}
 	c, ok := s.focusedClient()
 	if !d.control && (!ok || d.client != c) {
 		return
@@ -170,7 +187,7 @@ func (s *Server) sourceGone(src *clipSource) {
 // focused one. Any client holding an offer may read it.
 func (s *Server) maySet(c server.Client) bool {
 	f, ok := s.focusedClient()
-	return ok && f == c
+	return !s.protected() && ok && f == c
 }
 
 // setFocused sets a selection from a focus-bound device. A used source is
@@ -193,10 +210,12 @@ func (s *Server) setFocused(c server.Client, kind int, src *clipSource) {
 }
 
 // receive hands the reader's pipe to the source if it is still the
-// selection; the fd is always closed here (the event dups it).
+// selection; the fd is always closed here (the event dups it). Protection
+// rejects even previously announced offers. Transfers accepted before protection
+// are client-to-client: their already handed-off pipes cannot be revoked here.
 func (s *Server) receive(kind int, src *clipSource, mime string, fd int) {
 	defer unix.Close(fd)
-	if s.selections[kind] != src || !src.alive() {
+	if s.protected() || s.selections[kind] != src || !src.alive() {
 		return
 	}
 	for _, m := range src.mimes {

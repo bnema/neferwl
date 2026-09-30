@@ -377,6 +377,12 @@ func (r *Renderer) freeCapture() (*captureSlot, error) {
 	return nil, nil
 }
 
+// CaptureSupported reports whether BeginCapture can work on this device: it
+// needs sync-file export, which software devices such as lavapipe lack.
+func (r *Renderer) CaptureSupported() bool {
+	return r.dd != nil && r.syncFD && r.dd.HasGetSemaphoreFdKHR()
+}
+
 // BeginCapture submits a GPU copy of the last frame and leases its slot.
 // The lease is valid until EndCapture and no longer: the same object
 // serves the slot's next lease.

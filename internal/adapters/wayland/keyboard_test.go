@@ -109,7 +109,7 @@ func TestKeyboardKeymapProtocol(t *testing.T) {
 	id := c.AllocateID()
 	proxy := &keymapProxy{result: make(chan error, 1)}
 	proxy.SetID(id)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestSetKeymap(t *testing.T) {
 	if !ok {
 		t.Fatal("missing wl_seat")
 	}
-	seat, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	seat, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestSetKeymap(t *testing.T) {
 	id := c.AllocateID()
 	proxy := &eventsProxy{}
 	proxy.SetID(id)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestSetKeymap(t *testing.T) {
 	id2 := c.AllocateID()
 	late := &eventsProxy{}
 	late.SetID(id2)
-	c.Context().Register(late)
+	registerWireProxy(c, late)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id2)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)

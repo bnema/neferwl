@@ -60,7 +60,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	c := protocolClient(t, s, dir)
 	// wl_surface.preferred_buffer_scale needs wl_compositor v6.
 	g, _ := c.Registry().FindGlobal("wl_compositor")
-	comp, err := c.Registry().BindID(g.Name, g.Interface, 6)
+	comp, err := bindWireID(c, g.Name, g.Interface, 6)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +74,13 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	bufferScales := make(chan int32, 4)
 	sp := &surfaceScaleProxy{scales: bufferScales}
 	sp.SetID(surf)
-	c.Context().Register(sp)
+	registerWireProxy(c, sp)
 	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
 	frac := c.AllocateID()
 	values := make(chan uint32, 4)
 	proxy := &scaleProxy{values: values}
 	proxy.SetID(frac)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, fm, fractionalscale.WpFractionalScaleManagerV1RequestGetFractionalScale, frac, surf)
 	vp := c.AllocateID()
 	requestProtocol(t, c, vpm, viewporter.WpViewporterRequestGetViewport, vp, surf)
@@ -121,7 +121,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	serials := make(chan uint32, 4)
 	cp := &configureProxy{serial: serials}
 	cp.SetID(xdg)
-	c.Context().Register(cp)
+	registerWireProxy(c, cp)
 	top := c.AllocateID()
 	registerProtocol(t, c, top)
 	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
@@ -142,7 +142,7 @@ func TestFractionalScaleAndViewport(t *testing.T) {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(30), int32(15), int32(120), uint32(0))
@@ -270,7 +270,7 @@ func TestViewportApplyErrors(t *testing.T) {
 			pool, buf := c.AllocateID(), c.AllocateID()
 			registerProtocol(t, c, pool)
 			registerProtocol(t, c, buf)
-			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+			if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 				t.Fatal(err)
 			}
 			requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -321,7 +321,7 @@ func TestViewportSourceEdgeRounding(t *testing.T) {
 			pool, buf := c.AllocateID(), c.AllocateID()
 			registerProtocol(t, c, pool)
 			registerProtocol(t, c, buf)
-			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(w*h*4)); err != nil {
+			if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(w*h*4)); err != nil {
 				t.Fatal(err)
 			}
 			requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(w), int32(h), int32(w*4), uint32(0))

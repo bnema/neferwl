@@ -79,7 +79,7 @@ func (h *admissionHarness) client(t *testing.T) *admissionClient {
 	if !ok {
 		t.Fatal("output missing")
 	}
-	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	out, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func (a *admissionClient) newFrame() (uint32, *captureEvents) {
 	frame := a.c.AllocateID()
 	ev := &captureEvents{events: make(chan uint16, 8)}
 	ev.SetID(frame)
-	a.c.Context().Register(ev)
+	registerWireProxy(a.c, ev)
 	return frame, ev
 }
 

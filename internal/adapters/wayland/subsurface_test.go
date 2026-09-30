@@ -171,7 +171,7 @@ func TestSubsurfaceSupersededBufferReleased(t *testing.T) {
 	first := shmBuffer(t, c)
 	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
 	p.SetID(first)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	for _, b := range []uint32{first, shmBuffer(t, c)} {
 		requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
 		requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
@@ -479,7 +479,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, big)
 	registerProtocol(t, c, small)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, big, int32(0), int32(4), int32(4), int32(16), uint32(0))
@@ -498,7 +498,7 @@ func TestSubsurfaceContent(t *testing.T) {
 	serials := make(chan uint32, 4)
 	xp := &configureProxy{serial: serials}
 	xp.SetID(xdg)
-	c.Context().Register(xp)
+	registerWireProxy(c, xp)
 	top := c.AllocateID()
 	registerProtocol(t, c, top)
 	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
@@ -615,7 +615,7 @@ func TestSubsurfaceGraphSupersededFeedback(t *testing.T) {
 	first := &feedbackEvents{out: make(chan presentedEvent, 2)}
 	id := c.AllocateID()
 	first.SetID(id)
-	c.Context().Register(first)
+	registerWireProxy(c, first)
 	requestProtocol(t, c, pres, presentationtime.WpPresentationRequestFeedback, child, id)
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, shmBuffer(t, c), int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)

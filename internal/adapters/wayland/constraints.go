@@ -52,7 +52,7 @@ type pointerWarp struct{ server *Server }
 func (pointerWarp) Destroy(*pointerwarp.WpPointerWarpV1) {}
 func (h pointerWarp) WarpPointer(r *pointerwarp.WpPointerWarpV1, surf *wayland.Surface, p *wayland.Pointer, x, y server.Fixed, serial uint32) {
 	s := h.server
-	if surf == nil || p == nil || p.Client() != r.Client() {
+	if s.protected() || surf == nil || p == nil || p.Client() != r.Client() {
 		return
 	}
 	if enter, ok := s.seat.enters[p.Resource]; !ok || enter != serial {
@@ -75,7 +75,7 @@ func (relativeHandler) Destroy(*relativepointer.ZwpRelativePointerV1) {}
 // pointers. Absolute devices have no deltas and send nothing.
 // It reports whether any event was sent.
 func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) bool {
-	if c.DX == 0 && c.DY == 0 && c.UnaccelDX == 0 && c.UnaccelDY == 0 {
+	if s.protected() || c.DX == 0 && c.DY == 0 && c.UnaccelDX == 0 && c.UnaccelDY == 0 {
 		return false
 	}
 	if !w.mapped || !w.xdg.resource.Resource.Alive() {
@@ -142,7 +142,7 @@ func (m constraintManager) ConfinePointer(r *pointerconstraints.ZwpPointerConstr
 // create validates the request and registers the constraint on the surface.
 func (m constraintManager) create(r *pointerconstraints.ZwpPointerConstraintsV1, surf *wayland.Surface, reg *wayland.Region, lifetime uint32) *constraint {
 	s := m.server
-	if surf == nil {
+	if s.protected() || surf == nil {
 		return nil
 	}
 	state := s.surfaces[surf.Resource]
@@ -263,6 +263,10 @@ func (s *Server) deactivateConstraint() {
 // updateConstraint activates the constraint of the window holding both
 // pointer and keyboard focus, and deactivates any other.
 func (s *Server) updateConstraint() {
+	if s.protected() {
+		s.deactivateConstraint()
+		return
+	}
 	var want *constraint
 	if w := s.windows[s.seat.pointerFocus]; w != nil && w.mapped && s.seat.pointerFocus == s.seat.focused {
 		if c := s.constraints[w.xdg.surface]; c != nil && !c.defunct && (c.active || c.contains(w)) {
@@ -288,6 +292,9 @@ func (s *Server) updateConstraint() {
 
 // emitConstraint tells core about the active constraint, window-local.
 func (s *Server) emitConstraint(c *constraint) {
+	if s.protected() {
+		return
+	}
 	x := c.surface.xdg
 	if x == nil || x.window == nil {
 		return
@@ -353,5 +360,5 @@ func (c *constraint) contains(w *window) bool {
 
 // locked reports whether the window's pointer is locked.
 func (s *Server) locked(w *window) bool {
-	return s.constraint != nil && s.constraint.lock != nil && s.constraint.surface == w.xdg.surface
+	return !s.protected() && s.constraint != nil && s.constraint.lock != nil && s.constraint.surface == w.xdg.surface
 }

@@ -24,7 +24,7 @@ func newToken(t *testing.T, c *wlturbo.Display, manager uint32, serialSeat ...ui
 	id := c.AllocateID()
 	p := &tokenProxy{tokens: make(chan string, 1)}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestGetActivationToken, id)
 	if len(serialSeat) == 2 {
 		requestProtocol(t, c, id, xdgactivation.ActivationTokenV1RequestSetSerial, serialSeat[0], serialSeat[1])

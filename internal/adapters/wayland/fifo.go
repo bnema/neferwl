@@ -217,12 +217,14 @@ type update struct {
 	region          *ports.Rect
 	layer           *layerSurface
 	layerNext       layerState
+	lockAck         lockConfigure
 	readyGeneration uint64
 	readyResult     bool
 	// refs counts incoming deps and prev links. Retired updates remain readable
 	// until their last incoming link goes away, even after dropQueue.
 	refs    int
 	retired bool
+	failed  bool // acquire observation failed: discard, never publish
 }
 
 // updatePool contains only retired updates with no incoming graph links. A
@@ -308,6 +310,9 @@ func (s *surface) takePending() update {
 	if s.layer != nil {
 		u.layer, u.layerNext = s.layer, s.layer.pending
 	}
+	if s.lock != nil {
+		u.lockAck = s.lock.ack
+	}
 	return u
 }
 
@@ -349,7 +354,8 @@ func (s *surface) queueUpdate() {
 		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
 			err := s.server.syncWait.watchImplicit(b.buf, &u.implicit)
 			if err != nil {
-				// Partial registrations were cancelled; do not block this update.
+				// Partial registrations were cancelled; discard this update.
+				u.failed = true
 				s.server.log.Warn().Str("component", "wayland").Err(err).Msg("implicit buffer wait")
 			}
 		}
@@ -396,7 +402,7 @@ func (s *surface) applyUpdate(u *update) {
 		u.transform = s.transform
 		// The viewport change was made for that buffer: keep the crop that
 		// matches the retained content instead of validating a mismatch.
-		if u.vp != nil && u.vp.resource != nil && u.vp.resource.Resource.Alive() {
+		if u.vp != nil && (s.lock != nil || u.vp.resource != nil && u.vp.resource.Alive()) {
 			v := &s.committedViewport
 			u.vpW, u.vpH, u.vpSet, u.vpSrc, u.vpCrop = v.destW, v.destH, v.dest, v.src, v.crop
 		}
@@ -408,8 +414,19 @@ func (s *surface) applyUpdate(u *update) {
 // dropQueue discards the queued updates of a destroyed surface or role.
 // A live surface still gets its queued frame callbacks.
 func (s *surface) dropQueue() {
+	if s.kind == roleSessionLock {
+		s.dropLockDeps()
+	}
+	s.dropQueuePrefix(len(s.queue))
+}
+
+// dropQueuePrefix retires only the first n updates. Leave the preserved suffix
+// visible to release checks: a buffer shared with it is still client-owned work.
+func (s *surface) dropQueuePrefix(n int) {
+	queue := s.queue[:n]
+	s.queue = s.queue[n:]
 	released := map[*server.Resource]bool{}
-	for _, u := range s.queue {
+	for _, u := range queue {
 		if s.destroyed {
 			for _, cb := range u.callbacks {
 				cb.Destroy()
@@ -432,20 +449,22 @@ func (s *surface) dropQueue() {
 			u.buffer.SendRelease()
 		}
 	}
-	for i, u := range s.queue {
-		s.queue[i] = nil // do not retain retired objects in the queue backing array
+	for i, u := range queue {
+		queue[i] = nil // do not retain retired objects in the queue backing array
 		u.retireUpdate()
 	}
-	s.queue = s.queue[:0]
-	delete(s.server.fifoSurfaces, s)
+	if len(s.queue) == 0 {
+		s.queue = queue[:0] // preserve steady-state capacity when all were retired
+		delete(s.server.fifoSurfaces, s)
+	}
 }
 
 func (s *surface) bufferQueuedElsewhere(b *wayland.Buffer) bool {
 	for _, other := range s.server.surfaces {
-		if other == s {
-			continue
+		if sameBuffer(other.next.buffer, b) {
+			return true
 		}
-		if sameBuffer(other.current, b) {
+		if other != s && sameBuffer(other.current, b) {
 			return true
 		}
 		for _, u := range other.queue {
@@ -611,15 +630,31 @@ func (u *update) graphReady(now time.Time) bool {
 				u.implicit[i] = nil
 			}
 		}
-	} else {
+	} else if !u.failed {
 		if !s.syncReady(u.sync) {
 			return false
 		}
+		if u.sync != nil && u.sync.wait != nil && u.sync.wait.failed {
+			u.failed = true
+		}
+		waiting := false
 		for _, w := range u.implicit {
-			if w != nil && !s.server.syncWait.fired(w) {
-				return false
+			if w == nil {
+				continue
+			}
+			if !s.server.syncWait.fired(w) {
+				waiting = true
+			} else if w.failed {
+				u.failed = true
 			}
 		}
+		if waiting && !u.failed {
+			return false
+		}
+	}
+	if u.failed {
+		u.readyResult = true // ready only to retire, never to apply
+		return true
 	}
 	for _, dep := range u.deps {
 		if !dep.owner.destroyed && !dep.graphReady(now) {
@@ -635,6 +670,24 @@ func (u *update) applyGraph() {
 		return
 	}
 	s := u.owner
+	if !u.failed && u.sync != nil && (u.buffer == nil || u.buffer.Alive()) && !s.prepareSync(u.sync) {
+		u.failed = true
+	}
+	if u.failed {
+		// Earlier commits still apply in order; only this update is discarded.
+		for len(s.queue) > 0 && s.queue[0] != u {
+			s.queue[0].applyGraph()
+		}
+		// Retire captured children too, cancelling their waits without replay.
+		u.dropFailedDeps()
+		for i, queued := range s.queue {
+			if queued == u {
+				s.dropQueuePrefix(i + 1)
+				break
+			}
+		}
+		return
+	}
 	for len(s.queue) > 0 && s.queue[0] != u {
 		s.queue[0].applyGraph()
 	}
@@ -659,6 +712,32 @@ func (u *update) applyGraph() {
 	}
 	s.applyUpdate(u)
 	u.retireUpdate()
+}
+
+// dropFailedDeps retires just the child prefixes owned by a rejected commit.
+// Incoming graph refs retain their storage until the failed parent retires.
+func (u *update) dropFailedDeps() {
+	for _, dep := range u.deps {
+		if dep.retired {
+			continue
+		}
+		// Every predecessor in the retired prefix can own a different
+		// dependency graph. Traverse it before severing any incoming refs.
+		for _, prefix := range dep.owner.queue {
+			if !prefix.retired {
+				prefix.dropFailedDeps()
+			}
+			if prefix == dep {
+				break
+			}
+		}
+		for i, queued := range dep.owner.queue {
+			if queued == dep {
+				dep.owner.dropQueuePrefix(i + 1)
+				break
+			}
+		}
+	}
 }
 
 // sameBuffer reports whether two wrappers are the same wl_buffer.

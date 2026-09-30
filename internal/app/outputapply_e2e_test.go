@@ -11,49 +11,8 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 	wlr "github.com/bnema/purego-libwayland/protocol/wlroutputmanagement"
 	"github.com/bnema/wlturbo"
+	client "github.com/bnema/wlturbo/protocol/outputmanagement"
 )
-
-// managerEvents records zwlr_output_manager_v1 head and done events.
-type managerEvents struct {
-	wlturbo.BaseProxy
-	c     *wlturbo.Display
-	heads []uint32
-	done  uint32
-}
-
-func (p *managerEvents) Dispatch(e *wlturbo.Event) {
-	switch uint32(e.Opcode) {
-	case wlr.ZwlrOutputManagerV1EventHead:
-		h := &ignoredEvents{c: p.c}
-		h.SetID(e.Uint32())
-		p.c.Context().Register(h)
-		p.heads = append(p.heads, h.ID())
-	case wlr.ZwlrOutputManagerV1EventDone:
-		p.done = e.Uint32()
-	}
-}
-
-// ignoredEvents drops the events of head, mode and configuration head objects.
-type ignoredEvents struct {
-	wlturbo.BaseProxy
-	c *wlturbo.Display
-}
-
-func (p *ignoredEvents) Dispatch(e *wlturbo.Event) {
-	if e.Opcode == uint16(wlr.ZwlrOutputHeadV1EventMode) {
-		m := &ignoredEvents{c: p.c}
-		m.SetID(e.Uint32())
-		p.c.Context().Register(m)
-	}
-}
-
-// configurationEvents records the result of a zwlr_output_configuration_v1.
-type configurationEvents struct {
-	wlturbo.BaseProxy
-	result int // 0 pending, then 1 + the event opcode
-}
-
-func (p *configurationEvents) Dispatch(e *wlturbo.Event) { p.result = int(e.Opcode) + 1 }
 
 // A wlr-output-management client goes through Wayland, the headless owner
 // loop and core: an accepted scale reaches the scene, a disable is refused.
@@ -119,17 +78,12 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	g, ok := c.Registry().FindGlobal("zwlr_output_manager_v1")
-	if !ok {
-		t.Fatal("no zwlr_output_manager_v1")
-	}
-	id, err := c.Registry().BindID(g.Name, g.Interface, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	manager := &managerEvents{c: c}
-	manager.SetID(id)
-	c.Context().Register(manager)
+	manager := client.NewOutputManager(c.Context())
+	var heads []*client.OutputHead
+	var serial uint32
+	manager.OnHead(func(head *client.OutputHead) { heads = append(heads, head) })
+	manager.OnDone(func(value uint32) { serial = value })
+	bindTestClient(t, c, client.OutputManagerInterface, 4, manager)
 	roundtrip := func(until func() bool) {
 		t.Helper()
 		// The owner loops answer asynchronously: roundtrip until they do,
@@ -141,44 +95,72 @@ func TestHeadlessOutputManagementEndToEnd(t *testing.T) {
 		}
 	}
 	// The inventory reaches Wayland through the owner loop's outbox.
-	roundtrip(func() bool { return manager.done != 0 && len(manager.heads) == 1 })
-	head, serial := manager.heads[0], manager.done
-	configure := func(set func(cfg uint32)) int {
+	roundtrip(func() bool { return serial != 0 && len(heads) == 1 })
+	head, initialSerial := heads[0], serial
+	configure := func(set func(*client.OutputConfiguration) *client.OutputConfigurationHead) int {
 		t.Helper()
-		cfg := &configurationEvents{}
-		cfg.SetID(c.AllocateID())
-		c.Context().Register(cfg)
-		if err := c.SendRequest(id, uint16(wlr.ZwlrOutputManagerV1RequestCreateConfiguration), cfg.ID(), manager.done); err != nil {
-			t.Fatal(err)
+		// Inventory and core layout are independent startup publications. A
+		// done serial can become stale before create_configuration reaches the
+		// server. Only protocol cancellation is retryable, never a failed apply.
+		for attempt := 0; attempt < 3; attempt++ {
+			requested := serial
+			cfg, err := manager.CreateConfiguration(requested)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := -1
+			cfg.OnSucceeded(func() { result = int(wlr.ZwlrOutputConfigurationV1EventSucceeded) })
+			cfg.OnFailed(func() { result = int(wlr.ZwlrOutputConfigurationV1EventFailed) })
+			cfg.OnCancelled(func() { result = int(wlr.ZwlrOutputConfigurationV1EventCancelled) })
+			// A configuration cancelled on creation accepts only its destructor.
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			var child *client.OutputConfigurationHead
+			if result < 0 {
+				child = set(cfg)
+				if err := cfg.Apply(); err != nil {
+					t.Fatal(err)
+				}
+				roundtrip(func() bool { return result >= 0 })
+			}
+			// Configuration heads have no destructor request of their own.
+			if err := cfg.Destroy(); err != nil {
+				t.Fatal(err)
+			}
+			if child != nil {
+				c.Context().Unregister(child)
+			}
+			if result != int(wlr.ZwlrOutputConfigurationV1EventCancelled) {
+				return result
+			}
+			if serial == requested {
+				t.Fatalf("configuration cancelled without a newer inventory serial: %d", requested)
+			}
 		}
-		set(cfg.ID())
-		if err := c.SendRequest(cfg.ID(), uint16(wlr.ZwlrOutputConfigurationV1RequestApply)); err != nil {
-			t.Fatal(err)
-		}
-		roundtrip(func() bool { return cfg.result != 0 })
-		return cfg.result - 1
+		t.Fatal("output inventory kept changing across three configurations")
+		return -1
 	}
-	got := configure(func(cfg uint32) {
-		ch := &ignoredEvents{c: c}
-		ch.SetID(c.AllocateID())
-		c.Context().Register(ch)
-		if err := c.SendRequest(cfg, uint16(wlr.ZwlrOutputConfigurationV1RequestEnableHead), ch.ID(), head); err != nil {
+	got := configure(func(cfg *client.OutputConfiguration) *client.OutputConfigurationHead {
+		ch, err := cfg.EnableHead(head)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if err := c.SendRequest(ch.ID(), uint16(wlr.ZwlrOutputConfigurationHeadV1RequestSetScale), int32(512)); err != nil {
+		if err := ch.SetScale(wlturbo.NewFixed(2)); err != nil {
 			t.Fatal(err)
 		}
+		return ch
 	})
 	if got != int(wlr.ZwlrOutputConfigurationV1EventSucceeded) {
 		t.Fatalf("scale 2: event %d", got)
 	}
 	scene(func(s ports.Scene) bool { return s.Scale == 2 })
-	// A headless output cannot be disabled. The new scale gives a new serial.
-	roundtrip(func() bool { return manager.done != serial })
-	got = configure(func(cfg uint32) {
-		if err := c.SendRequest(cfg, uint16(wlr.ZwlrOutputConfigurationV1RequestDisableHead), head); err != nil {
+	roundtrip(func() bool { return serial != initialSerial })
+	got = configure(func(cfg *client.OutputConfiguration) *client.OutputConfigurationHead {
+		if err := cfg.DisableHead(head); err != nil {
 			t.Fatal(err)
 		}
+		return nil
 	})
 	if got != int(wlr.ZwlrOutputConfigurationV1EventFailed) {
 		t.Fatalf("disable: event %d", got)

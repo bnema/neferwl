@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -46,6 +47,18 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 		reqs = append(reqs, c.placement.request(c.cfg.Terminal.Command, spawnTarget{terminal: w, at: now}))
 	}
 	return reqs
+}
+
+// cancelTerminal removes a claim minted for a send suppressed by the gate.
+func (c *Core) cancelTerminal(req ports.SpawnRequest) {
+	for _, env := range req.Env {
+		if token, ok := strings.CutPrefix(env, ports.SlotEnv+"="); ok {
+			if target, ok := c.placement.pending[token]; ok && target.terminal != nil {
+				target.terminal.termAt = time.Time{}
+				delete(c.placement.pending, token)
+			}
+		}
+	}
 }
 
 func (c *Core) hasSlots(w *Workspace) bool {

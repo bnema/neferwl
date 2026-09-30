@@ -16,6 +16,7 @@ import (
 // are fixed, so apply answers every configuration without backend work.
 func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
 	set := newOutputSet(ctx, ch.captured)
+	set.wireSecurity(ch)
 	inventory := ports.OutputHeads{}
 	for i, size := range sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
@@ -32,14 +33,22 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
 		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: hdr, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
-		set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest) error {
+		started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
+			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, secure, instance
 			return headless.Run(octx, opts, sc, cc, cu, cap)
-		})
+		}, &opts.SecurityEvents)
+		if !started {
+			return set.wait()
+		}
 		select {
 		case ch.events <- ports.OutputAdded{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1]}}:
 		case <-ctx.Done():
 			return set.wait()
 		}
+	}
+	// All virtual lifetimes have registered before this no-lease barrier.
+	if set.state.Protected {
+		set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation})
 	}
 	apply.heads(inventory)
 	// The pointer starts centred on the first output, like libinput's.
@@ -48,9 +57,18 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
 		heads, headsNext := apply.headsOut(ch.heads)
+		contents, contentOut, contentNext, contentOwner := set.contentOut(ch.contents)
 		select {
 		case <-ctx.Done():
 			return set.wait()
+		case state, ok := <-ch.securityChanges:
+			if !ok {
+				ch.securityChanges = nil
+				continue
+			}
+			if set.setSecurity(state) && set.state.Protected {
+				set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation})
+			}
 		case ev := <-ch.reloads:
 			apply.reload(ev.Config)
 		case req := <-ch.requests:
@@ -63,15 +81,20 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 			apply.headsSent()
 		case s := <-ch.scenes:
 			set.scenes(s)
-		case c := <-ch.contents:
+		case c := <-contents:
 			set.content(c)
+		case contentOut <- contentNext:
+			contentOwner.contentSent()
 		case q := <-ch.captures:
 			set.routeCapture(q)
 		case c := <-ch.cursorChanges:
 			set.setCursor(c)
-		case name := <-set.stopped:
-			// A headless output only stops on error: the run ends.
-			err := set.finish(name)
+		case stopped := <-set.stopped:
+			if !set.stoppedCurrent(stopped) {
+				continue
+			}
+			// An owner error is not protection or removal evidence.
+			err := set.finish(stopped.name)
 			return joinErr(err, set.wait())
 		}
 	}

@@ -68,6 +68,10 @@ xwayland = off                  # no X11 display
 
 Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` takes effect at the next start.
 
+## Session locking
+
+External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and captures, covers every output, and stays protected if the locker dies. Authentication belongs to the locker; screen-off and a visual cover do not replace locking. See [Session locking](session-lock.md) for confirmation, recovery and security limits.
+
 ## Idle and screen off
 
 NeferWL supports `ext_idle_notifier_v1` and `zwlr_output_power_management_v1`, so [swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay. A window that inhibits idle, such as a video player or a game, keeps them on.
@@ -88,7 +92,7 @@ exec wlopm --off '*'
 
 NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
 
-NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. Every client can see window titles and app IDs.
+NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. While unlocked, clients can see window titles and app IDs. Workspace and window inventory updates are withheld during session protection.
 
 ## State for scripts
 

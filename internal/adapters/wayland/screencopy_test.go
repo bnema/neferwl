@@ -66,7 +66,7 @@ func TestScreencopyProtocol(t *testing.T) {
 	if out == 0 {
 		t.Fatal("output global missing")
 	}
-	outputID, err := c.Registry().BindID(out, "wl_output", 4)
+	outputID, err := bindWireID(c, out, "wl_output", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestScreencopyProtocol(t *testing.T) {
 	frame := c.AllocateID()
 	events := &captureEvents{events: make(chan uint16, 8)}
 	events.SetID(frame)
-	c.Context().Register(events)
+	registerWireProxy(c, events)
 	requestProtocol(t, c, manager, wlr.ZwlrScreencopyManagerV1RequestCaptureOutputRegion, frame, int32(0), outputID, int32(1), int32(1), int32(2), int32(2))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestScreencopyProtocol(t *testing.T) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(2), int32(2), int32(8), uint32(wayland.ShmFormatXrgb8888))
@@ -153,7 +153,7 @@ func captureTestClient(t *testing.T) (*Server, *wlturbo.Display, uint32) {
 	if !ok {
 		t.Fatal("wl_output missing")
 	}
-	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	out, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func captureTestExt(t *testing.T, c *wlturbo.Display, out uint32) (uint32, uint3
 	requestProtocol(t, c, sourceManager, source.ExtOutputImageCaptureSourceManagerV1RequestCreateSource, src, out)
 	events := &captureEvents{events: make(chan uint16, 16)}
 	events.SetID(session)
-	c.Context().Register(events)
+	registerWireProxy(c, events)
 	requestProtocol(t, c, manager, ext.ExtImageCopyCaptureManagerV1RequestCreateSession, session, src, uint32(0))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 				registerProtocol(t, c, pool)
 				registerProtocol(t, c, buf)
 				registerProtocol(t, c, shm)
-				if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(testOutputs[0].Info.Width*testOutputs[0].Info.Height*4)); err != nil {
+				if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(testOutputs[0].Info.Width*testOutputs[0].Info.Height*4)); err != nil {
 					t.Fatal(err)
 				}
 				w := int32(1)
@@ -282,7 +282,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 			frame := c.AllocateID()
 			frameEvents := &captureDetails{events: make(chan []uint32, 4)}
 			frameEvents.SetID(frame)
-			c.Context().Register(frameEvents)
+			registerWireProxy(c, frameEvents)
 			requestProtocol(t, c, session, ext.ExtImageCopyCaptureSessionV1RequestCreateFrame, frame)
 			switch tc.object {
 			case "frame":
@@ -301,7 +301,7 @@ func TestCaptureProtocolErrors(t *testing.T) {
 				pool, buf := c.AllocateID(), c.AllocateID()
 				registerProtocol(t, c, pool)
 				registerProtocol(t, c, buf)
-				if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+				if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 					t.Fatal(err)
 				}
 				requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(wayland.ShmFormatXrgb8888))
@@ -436,7 +436,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatal("output missing")
 	}
-	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	out, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	registerProtocol(t, c, src)
 	p := &captureDetails{events: make(chan []uint32, 16)}
 	p.SetID(session)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, srcMgr, source.ExtOutputImageCaptureSourceManagerV1RequestCreateSource, src, out)
 	requestProtocol(t, c, mgr, ext.ExtImageCopyCaptureManagerV1RequestCreateSession, session, src, uint32(0))
 	if err := c.Roundtrip(); err != nil {
@@ -473,14 +473,14 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(80)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(80)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(4), int32(4), int32(16), uint32(wayland.ShmFormatXrgb8888))
 	frame := c.AllocateID()
 	fp := &captureDetails{events: make(chan []uint32, 16)}
 	fp.SetID(frame)
-	c.Context().Register(fp)
+	registerWireProxy(c, fp)
 	requestProtocol(t, c, session, ext.ExtImageCopyCaptureSessionV1RequestCreateFrame, frame)
 	requestProtocol(t, c, frame, ext.ExtImageCopyCaptureFrameV1RequestAttachBuffer, buf)
 	requestProtocol(t, c, frame, ext.ExtImageCopyCaptureFrameV1RequestCapture)
@@ -534,7 +534,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf2, int32(0), int32(5), int32(4), int32(20), uint32(wayland.ShmFormatXrgb8888))
 	fp2 := &captureDetails{events: make(chan []uint32, 16)}
 	fp2.SetID(frame2)
-	c.Context().Register(fp2)
+	registerWireProxy(c, fp2)
 	requestProtocol(t, c, session, ext.ExtImageCopyCaptureSessionV1RequestCreateFrame, frame2)
 	requestProtocol(t, c, frame2, ext.ExtImageCopyCaptureFrameV1RequestAttachBuffer, buf2)
 	requestProtocol(t, c, frame2, ext.ExtImageCopyCaptureFrameV1RequestCapture)
@@ -592,7 +592,7 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	if !ok {
 		t.Fatal("output missing")
 	}
-	out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+	out, err := bindWireID(c, g.Name, g.Interface, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -603,7 +603,7 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	registerProtocol(t, c, src)
 	p := &captureDetails{events: make(chan []uint32, 16)}
 	p.SetID(session)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, srcMgr, source.ExtOutputImageCaptureSourceManagerV1RequestCreateSource, src, out)
 	requestProtocol(t, c, mgr, ext.ExtImageCopyCaptureManagerV1RequestCreateSession, session, src, uint32(0))
 	if err := c.Roundtrip(); err != nil {
@@ -647,7 +647,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			if !ok {
 				t.Fatal("output missing")
 			}
-			out, err := c.Registry().BindID(g.Name, g.Interface, 4)
+			out, err := bindWireID(c, g.Name, g.Interface, 4)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -656,7 +656,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			frame := c.AllocateID()
 			events := &captureEvents{events: make(chan uint16, 8)}
 			events.SetID(frame)
-			c.Context().Register(events)
+			registerWireProxy(c, events)
 			requestProtocol(t, c, manager, wlr.ZwlrScreencopyManagerV1RequestCaptureOutput, frame, int32(0), out)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
@@ -732,7 +732,7 @@ func captureSmallBuffer(t *testing.T, c *wlturbo.Display) (uint32, uint32, int) 
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(2), int32(2), int32(8), uint32(wayland.ShmFormatXrgb8888))

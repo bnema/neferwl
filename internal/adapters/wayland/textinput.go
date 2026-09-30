@@ -87,6 +87,9 @@ func (t *textInput) Disable(*textinput.ZwpTextInputV3) {
 // SetSurroundingText ignores text past the spec limit or a cursor or
 // anchor outside it.
 func (t *textInput) SetSurroundingText(_ *textinput.ZwpTextInputV3, text string, cursor, anchor int32) {
+	if t.server.protected() {
+		return
+	}
 	if len(text) > maxIMEText || cursor < 0 || anchor < 0 || int(cursor) > len(text) || int(anchor) > len(text) {
 		t.server.log.Debug().Int("bytes", len(text)).Msg("surrounding text ignored")
 		return
@@ -111,6 +114,10 @@ func (t *textInput) SetCursorRectangle(_ *textinput.ZwpTextInputV3, x, y, w, h i
 // serial, but after leave the state is ignored until the next enter.
 func (t *textInput) Commit(*textinput.ZwpTextInputV3) {
 	t.serial++
+	if t.server.protected() {
+		t.pending, t.current, t.toggled = textState{}, textState{}, false
+		return
+	}
 	if t.focus == nil {
 		return
 	}
@@ -128,6 +135,9 @@ func (*textInput) HideInputPanel(*textinput.ZwpTextInputV3)              {}
 
 // enter focuses the text input on surf; its state starts over.
 func (t *textInput) enter(surf *wayland.Surface) {
+	if t.server.protected() {
+		return
+	}
 	t.focus = surf
 	t.pending, t.current, t.toggled = textState{}, textState{}, false
 	t.res.SendEnter(surf)
@@ -149,6 +159,9 @@ func (t *textInput) leave() {
 // textCommitted activates, updates or deactivates the input method for a
 // committed text input. Enabling a second text input is ignored.
 func (s *Server) textCommitted(t *textInput, reenabled bool) {
+	if s.protected() {
+		return
+	}
 	switch {
 	case t.current.enabled && s.activeText == nil:
 		s.activeText = t
@@ -198,7 +211,7 @@ func (s *Server) deactivateText() {
 // activateIM sends activate and the active text input's state.
 func (s *Server) activateIM() {
 	im := s.inputMethod
-	if im == nil || s.activeText == nil {
+	if s.protected() || im == nil || s.activeText == nil {
 		return
 	}
 	im.pending = imState{}
@@ -210,7 +223,7 @@ func (s *Server) activateIM() {
 // sendIMState sends the active text input's state, then done.
 func (s *Server) sendIMState() {
 	im, t := s.inputMethod, s.activeText
-	if im == nil || t == nil {
+	if s.protected() || im == nil || t == nil {
 		return
 	}
 	c := t.current
@@ -304,14 +317,14 @@ func (im *inputMethod) done() {
 }
 
 func (im *inputMethod) CommitString(_ *inputmethod.ZwpInputMethodV2, text string) {
-	if im.inert || !im.fits(text) {
+	if im.server.protected() || im.inert || !im.fits(text) {
 		return
 	}
 	im.pending.commit, im.pending.hasCommit = text, true
 }
 
 func (im *inputMethod) SetPreeditString(_ *inputmethod.ZwpInputMethodV2, text string, begin, end int32) {
-	if im.inert || !im.fits(text) {
+	if im.server.protected() || im.inert || !im.fits(text) {
 		return
 	}
 	p := &im.pending
@@ -327,7 +340,7 @@ func (im *inputMethod) fits(text string) bool {
 }
 
 func (im *inputMethod) DeleteSurroundingText(_ *inputmethod.ZwpInputMethodV2, before, after uint32) {
-	if im.inert {
+	if im.server.protected() || im.inert {
 		return
 	}
 	im.pending.before, im.pending.after = before, after
@@ -345,6 +358,9 @@ func (im *inputMethod) Commit(_ *inputmethod.ZwpInputMethodV2, serial uint32) {
 	st := im.pending
 	im.pending = imState{}
 	s := im.server
+	if s.protected() {
+		return
+	}
 	t := s.activeText
 	if t == nil {
 		return
@@ -406,7 +422,7 @@ func (im *inputMethod) GetInputPopupSurface(r *inputmethod.ZwpInputMethodV2, id 
 func (im *inputMethod) GrabKeyboard(r *inputmethod.ZwpInputMethodV2, id uint32) {
 	g := &keyboardGrab{}
 	res, err := inputmethod.NewZwpInputMethodKeyboardGrabV2(r.Client(), r.Version(), id, g)
-	if err != nil || im.inert || im.grab != nil {
+	if err != nil || im.server.protected() || im.inert || im.grab != nil {
 		return
 	}
 	g.res, im.grab = res, g
@@ -439,6 +455,9 @@ func (*inputPopup) Destroy(*inputmethod.ZwpInputPopupSurfaceV2) {}
 
 // sendRect tells the popup where the active text cursor is.
 func (p *inputPopup) sendRect() {
+	if p.im.server.protected() {
+		return
+	}
 	t := p.im.server.activeText
 	if t == nil || !t.current.hasRect {
 		return
@@ -455,6 +474,9 @@ func (*keyboardGrab) Release(*inputmethod.ZwpInputMethodKeyboardGrabV2) {}
 
 // grab is the live keyboard grab, nil without one.
 func (s *Server) grab() *keyboardGrab {
+	if s.protected() {
+		return nil
+	}
 	if im := s.inputMethod; im != nil {
 		return im.grab
 	}
@@ -467,6 +489,13 @@ func (s *Server) grab() *keyboardGrab {
 // does, even after the grab ends.
 func (s *Server) grabKey(c ports.ForwardKey) bool {
 	code := c.Key.Keycode
+	if s.protected() {
+		if !c.Key.Pressed && s.seat.grabKeys[code] {
+			delete(s.seat.grabKeys, code)
+			return true
+		}
+		return false // protected seat routing belongs to the parent
+	}
 	g := s.grab()
 	owned := !c.Key.Pressed && s.seat.grabKeys[code]
 	if owned {
@@ -500,6 +529,9 @@ func (s *Server) grabKey(c ports.ForwardKey) bool {
 // grabReleaseDropped keeps the focused client's modifiers right when the
 // release of a grab-owned key is dropped.
 func (s *Server) grabReleaseDropped(m ports.ModState) {
+	if s.protected() {
+		return
+	}
 	if m == s.seat.modState {
 		return
 	}
@@ -512,6 +544,9 @@ func (s *Server) grabReleaseDropped(m ports.ModState) {
 
 // grabEnded gives the focused client the seat modifiers it missed.
 func (s *Server) grabEnded() {
+	if s.protected() {
+		return
+	}
 	s.serial++
 	for _, k := range s.clientKeyboards(s.focusClient()) {
 		s.sendModifiers(k)

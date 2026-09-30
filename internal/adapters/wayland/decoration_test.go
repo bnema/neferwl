@@ -31,7 +31,7 @@ func TestKDEDecorationAcknowledgesMode(t *testing.T) {
 	deco := c.AllocateID()
 	proxy := &kdeModeProxy{modes: make(chan uint32, 8)}
 	proxy.SetID(deco)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, mgr, kdedecoration.OrgKdeKwinServerDecorationManagerRequestCreate, deco, surf)
 	requestProtocol(t, c, deco, kdedecoration.OrgKdeKwinServerDecorationRequestRequestMode, uint32(kdedecoration.OrgKdeKwinServerDecorationModeClient))
 	// An undefined mode gets no answer.

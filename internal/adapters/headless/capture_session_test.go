@@ -249,7 +249,7 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 	require.Equal(t, []uint64{1}, ids, "request 1 answered once by its worker, no pseudo request 0")
 }
 
-// GO-003: an unchanged child-hold publication reuses its immutable snapshots;
+// An unchanged child-hold publication reuses its immutable snapshots;
 // a change clones, and earlier reports keep their maps.
 func TestHoldSnapshotsCloneOnlyOnChange(t *testing.T) {
 	var h holdSnapshots

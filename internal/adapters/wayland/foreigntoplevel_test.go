@@ -29,7 +29,7 @@ func (p *toplevelManagerEvents) Dispatch(e *wlturbo.Event) {
 	id := e.Uint32()
 	h := &toplevelHandleEvents{events: p.events}
 	h.SetID(id)
-	p.client.Context().Register(h)
+	registerWireProxy(p.client, h)
 	p.handles <- id
 }
 
@@ -105,7 +105,7 @@ func TestForeignToplevel(t *testing.T) {
 	manager := bindVersion(t, c, "zwlr_foreign_toplevel_manager_v1", 3)
 	p := &toplevelManagerEvents{client: c, handles: make(chan uint32, 4), events: make(chan string, 64)}
 	p.SetID(manager)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if got, want := takeEvents(t, c, p.events), []string{"title editor", "app_id app.editor", "state []", "done"}; !slices.Equal(got, want) {
 		t.Fatalf("announce = %q, want %q", got, want)
 	}
@@ -154,7 +154,7 @@ func TestForeignToplevel(t *testing.T) {
 	serials := make(chan uint32, 8)
 	xp := &configureProxy{serial: serials}
 	xp.SetID(xdg)
-	c.Context().Register(xp)
+	registerWireProxy(c, xp)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	ackAndAttach(t, c, surf, xdg, shmBuffer(t, c), serials)
 	if again := mapped(t, events, 2*time.Second); again.ID != w.ID {
@@ -200,7 +200,7 @@ func TestForeignToplevelV1HidesFullscreen(t *testing.T) {
 	manager := bindVersion(t, c, "zwlr_foreign_toplevel_manager_v1", 1)
 	p := &toplevelManagerEvents{client: c, handles: make(chan uint32, 4), events: make(chan string, 64)}
 	p.SetID(manager)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	takeEvents(t, c, p.events)
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Activated: true}
 	want := []string{fmt.Sprint("state ", []uint32{uint32(wlr.ZwlrForeignToplevelHandleV1StateActivated)}), "done"}
@@ -216,7 +216,7 @@ func TestForeignToplevelInvalidRectangle(t *testing.T) {
 	manager := bindVersion(t, c, "zwlr_foreign_toplevel_manager_v1", 3)
 	p := &toplevelManagerEvents{client: c, handles: make(chan uint32, 4), events: make(chan string, 64)}
 	p.SetID(manager)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	takeEvents(t, c, p.events)
 	handle := <-p.handles
 	requestProtocol(t, c, handle, wlr.ZwlrForeignToplevelHandleV1RequestSetRectangle, surf, int32(0), int32(0), int32(-1), int32(1))

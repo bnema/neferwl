@@ -192,7 +192,19 @@ func (s *surface) pendingIsSHM() bool {
 // syncWaiter watches acquire points: each gets an eventfd the kernel
 // writes once the point is signalled, and the pacer is woken to apply the
 // commits that waited for it.
+type acquirePoller interface {
+	poll([]unix.PollFd, int) (int, error)
+}
+
+type unixAcquirePoller struct{}
+
+func (unixAcquirePoller) poll(fds []unix.PollFd, timeout int) (int, error) {
+	return unix.Poll(fds, timeout)
+}
+
 type syncWaiter struct {
+	poller    acquirePoller
+	terminal  bool // polling ended in failure; protected by mu
 	mu        sync.Mutex
 	ready     map[*syncWait]bool
 	wake      func()
@@ -207,6 +219,7 @@ type syncWaiter struct {
 type syncWait struct {
 	efd       int
 	done      bool        // the eventfd fired or the wait was cancelled (pacer, under Do)
+	failed    bool        // observation failed; done must not authorize publication
 	cancelled atomic.Bool // run stops polling it and closes efd
 }
 
@@ -215,28 +228,38 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &syncWaiter{ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
+	return &syncWaiter{poller: unixAcquirePoller{}, ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
 
 // watch registers an eventfd for p; the wait is ready once it fires.
 func (sw *syncWaiter) watch(p syncPoint) (*syncWait, error) {
+	if sw.stopped() {
+		return &syncWait{efd: -1, done: true, failed: true}, unix.EIO
+	}
 	ready, err := p.tl.dev.signalled(p.tl.handle, p.point)
 	if err != nil || ready {
-		return &syncWait{efd: -1, done: ready}, err
+		return &syncWait{efd: -1, done: true, failed: err != nil}, err
 	}
 	efd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
 	if err != nil {
-		return nil, err
+		return &syncWait{efd: -1, done: true, failed: true}, err
 	}
 	if err := p.tl.dev.eventfd(p.tl.handle, p.point, efd); err != nil {
 		unix.Close(efd)
-		return nil, err
+		return &syncWait{efd: -1, done: true, failed: true}, err
 	}
-	return sw.add(efd), nil
+	w := sw.add(efd)
+	if w.failed {
+		return w, unix.EIO
+	}
+	return w, nil
 }
 
 // watchImplicit waits for a dma-buf's exclusive fences without blocking dispatch.
 func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error {
+	if sw.stopped() {
+		return unix.EIO
+	}
 	var fds [4]unix.PollFd
 	for i, p := range b.Planes {
 		if i >= len(fds) {
@@ -258,7 +281,7 @@ func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error 
 		}
 		if fd.Revents&(unix.POLLERR|unix.POLLNVAL|unix.POLLHUP) != 0 {
 			sw.warnPollError()
-			continue
+			return unix.EIO
 		}
 		dup, err := unix.FcntlInt(uintptr(fd.Fd), unix.F_DUPFD_CLOEXEC, 0)
 		if err != nil {
@@ -269,6 +292,15 @@ func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error 
 			return err
 		}
 		waits[i] = sw.add(dup)
+		if waits[i].failed {
+			for j, w := range waits {
+				if w != nil {
+					sw.cancel(w)
+					waits[j] = nil
+				}
+			}
+			return unix.EIO
+		}
 	}
 	return nil
 }
@@ -282,6 +314,11 @@ func (sw *syncWaiter) warnPollError() {
 func (sw *syncWaiter) add(fd int) *syncWait {
 	w := &syncWait{efd: fd}
 	sw.mu.Lock()
+	if sw.terminal {
+		sw.mu.Unlock()
+		unix.Close(fd)
+		return &syncWait{efd: -1, done: true, failed: true}
+	}
 	sw.added = append(sw.added, w)
 	sw.mu.Unlock()
 	_, _ = sw.pipeW.Write([]byte{0})
@@ -292,9 +329,9 @@ func (sw *syncWaiter) add(fd int) *syncWait {
 func (sw *syncWaiter) fired(w *syncWait) bool {
 	sw.mu.Lock()
 	defer sw.mu.Unlock()
-	if sw.ready[w] {
+	if ready, ok := sw.ready[w]; ok {
 		delete(sw.ready, w)
-		w.done = true
+		w.done, w.failed = true, !ready
 	}
 	return w.done
 }
@@ -310,6 +347,28 @@ func (sw *syncWaiter) cancel(w *syncWait) {
 	sw.mu.Unlock()
 	w.done = true
 	_, _ = sw.pipeW.Write([]byte{0}) // run closes its eventfd
+}
+
+func (sw *syncWaiter) stopped() bool {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.terminal
+}
+
+// fail publishes terminal observations before run closes its descriptors.
+// add checks the same mutex, so no new wait can miss this failure handoff.
+func (sw *syncWaiter) fail(waits []*syncWait) {
+	sw.mu.Lock()
+	sw.terminal = true
+	for _, group := range [][]*syncWait{waits, sw.added} {
+		for _, w := range group {
+			if !w.cancelled.Load() {
+				sw.ready[w] = false
+			}
+		}
+	}
+	sw.mu.Unlock()
+	sw.wake()
 }
 
 // run polls every watched eventfd; it owns and closes them.
@@ -339,8 +398,9 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		for _, w := range waits {
 			fds = append(fds, unix.PollFd{Fd: int32(w.efd), Events: unix.POLLIN})
 		}
-		n, err := unix.Poll(fds, 100)
+		n, err := sw.poller.poll(fds, 100)
 		if err != nil && !errors.Is(err, unix.EINTR) {
+			sw.fail(waits)
 			return
 		}
 		if n <= 0 {
@@ -364,7 +424,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 			unix.Close(w.efd)
 			sw.mu.Lock()
 			if !w.cancelled.Load() {
-				sw.ready[w] = true
+				sw.ready[w] = revents&unix.POLLIN != 0
 				fired = true
 			}
 			sw.mu.Unlock()
@@ -432,12 +492,11 @@ func (s *surface) takeSyncPoints() {
 	cs.release.tl.uses++
 	w, err := s.server.syncWait.watch(cs.acquire)
 	if err != nil {
-		// The point cannot be watched: apply now, readers wait on the
-		// fence (or its absence) when they read the buffer.
+		// Keep points owned by the captured commit for safe discard. An
+		// unobservable acquire must never reach native rendering.
 		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire point")
-	} else {
-		cs.wait = w
 	}
+	cs.wait = w
 	s.next.sync = cs
 }
 
@@ -453,7 +512,11 @@ func (s *surface) dropSync(cs *commitSync) {
 	if cs == nil {
 		return
 	}
-	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait)
+	if cs.fence != nil {
+		cs.fence.Close()
+		cs.fence = nil
+	}
+	ready := cs.wait != nil && s.server.syncWait.fired(cs.wait) && !cs.wait.failed
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
 	}
@@ -467,6 +530,24 @@ func (s *surface) dropSync(cs *commitSync) {
 	s.server.dropTimeline(cs.release.tl)
 }
 
+// prepareSync exports only after observed readiness, before any current state
+// changes. Export failure must not fall back to native implicit synchronization.
+func (s *surface) prepareSync(cs *commitSync) bool {
+	if cs == nil || cs.fence != nil {
+		return true
+	}
+	f, err := cs.acquire.tl.dev.exportSyncFile(cs.acquire.tl.handle, cs.acquire.point)
+	if err != nil || f == nil {
+		if f != nil {
+			f.Close()
+		}
+		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire fence export rejected")
+		return false
+	}
+	cs.fence = f
+	return true
+}
+
 // applySync makes a commit's points the current buffer's: its acquire
 // fence goes with the content, its release point waits for release.
 func (s *surface) applySync(cs *commitSync) {
@@ -476,11 +557,8 @@ func (s *surface) applySync(cs *commitSync) {
 	if cs.wait != nil {
 		s.server.syncWait.cancel(cs.wait)
 	}
-	f, err := cs.acquire.tl.dev.exportSyncFile(cs.acquire.tl.handle, cs.acquire.point)
-	if err != nil {
-		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire fence")
-		f = nil
-	}
+	f := cs.fence
+	cs.fence = nil
 	cs.acquire.tl.uses--
 	s.server.dropTimeline(cs.acquire.tl)
 	s.hold = syncHold{acquire: f, release: cs.release}

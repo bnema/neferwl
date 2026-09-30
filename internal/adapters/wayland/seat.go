@@ -47,10 +47,40 @@ type seatState struct {
 
 // applyInput delivers a core input command to the focused client.
 func (s *Server) applyInput(cmd ports.ClientCommand) {
+	if s.security != nil && s.security.Snapshot().Protected {
+		var target ports.WindowID
+		switch c := cmd.(type) {
+		case ports.SetKeymap:
+			// Configuration updates do not authorize normal-client input.
+		case ports.PointerFocus:
+			target = c.ID
+		case ports.PointerMotionTo:
+			target = c.ID
+		case ports.PointerButtonTo:
+			target = c.ID
+		case ports.PointerAxisTo:
+			target = c.ID
+		case ports.FocusWindow:
+			target = c.ID
+		case ports.ForwardKey:
+			target = c.ID
+		}
+		if target != 0 && !s.lockInputTarget(target) {
+			return
+		}
+	}
 	switch c := cmd.(type) {
 	case ports.PointerFocus:
 		s.changePointerFocus(c.ID, c.X, c.Y)
 	case ports.PointerMotionTo:
+		if l := s.lockSurfaces[c.ID]; l != nil && s.lockInputTarget(c.ID) && c.ID == s.seat.pointerFocus {
+			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
+			for _, p := range s.clientPointers(l.resource.Client()) {
+				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				pointerFrame(p)
+			}
+			return
+		}
 		if l := s.layers[c.ID]; l != nil && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.layerPointers(l) {
@@ -111,7 +141,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			s.changeFocus(c.ID)
 		}
 	case ports.ForwardKey:
-		if s.grabKey(c) {
+		if !(s.security != nil && s.security.Snapshot().Protected) && s.grabKey(c) {
 			return
 		}
 		_, keyboards := s.focusTarget(c.ID)
@@ -170,6 +200,11 @@ func (s *Server) clientKeyboards(c server.Client) []*wayland.Keyboard {
 
 // focusTarget resolves a window or layer ID to its wl_surface and keyboards.
 func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Keyboard) {
+	if l := s.lockSurfaces[id]; l != nil && !l.closed && l.surface.wl.Alive() {
+		// Outgoing leaves also resolve a role whose OnDestroy resource is
+		// already dead. Admission is enforced before entering or delivering.
+		return l.surface.wl, s.clientKeyboards(l.surface.wl.Client())
+	}
 	if w := s.windows[id]; w != nil && w.mapped {
 		if surf := w.xdg.surfaceResource(); surf != nil {
 			return surf, s.windowKeyboards(w)
@@ -186,6 +221,9 @@ func (s *Server) focusTarget(id ports.WindowID) (*wayland.Surface, []*wayland.Ke
 // pointerTarget resolves a mapped window or layer ID to its client and
 // live pointers.
 func (s *Server) pointerTarget(id ports.WindowID) (server.Client, []*wayland.Pointer, bool) {
+	if l := s.lockSurfaces[id]; l != nil && s.lockInputTarget(id) {
+		return l.resource.Client(), s.clientPointers(l.resource.Client()), true
+	}
 	if w := s.windows[id]; w != nil && w.mapped && w.xdg.resource.Resource.Alive() {
 		return w.xdg.resource.Client(), s.windowPointers(w), true
 	}
@@ -198,6 +236,9 @@ func (s *Server) pointerTarget(id ports.WindowID) (server.Client, []*wayland.Poi
 // pointerSurface is the wl_surface of a mapped window or layer and the
 // point in its surface coordinates.
 func (s *Server) pointerSurface(id ports.WindowID, x, y float64) (*wayland.Surface, []*wayland.Pointer, float64, float64) {
+	if l := s.lockSurfaces[id]; l != nil && !l.closed && l.surface.wl.Alive() {
+		return l.surface.wl, s.clientPointers(l.surface.wl.Client()), x, y
+	}
 	if w := s.windows[id]; w != nil {
 		if surf := w.xdg.surfaceResource(); surf != nil && surf.Resource.Alive() {
 			x, y := w.surfacePoint(x, y)
@@ -285,6 +326,9 @@ func (s *Server) sendModifiers(k *wayland.Keyboard) {
 }
 
 func (s *Server) changeFocus(id ports.WindowID) {
+	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
+		return
+	}
 	// Enter carries seat held keys and modifiers: they need the seat keymap.
 	s.useKeymap(nil)
 	old := s.focusClient()
@@ -421,6 +465,9 @@ func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
 	return result
 }
 func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
+	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
+		return
+	}
 	if id == s.seat.pointerFocus {
 		return
 	}

@@ -25,8 +25,10 @@ type virtualKeyboard struct {
 	text   string         // the keymap, compared with the active one
 	mods   ports.ModState // last modifiers request, zero before one
 	// pressed are keys held on focus; a focus change releases them by leave.
-	pressed map[uint32]bool
-	focus   ports.WindowID
+	pressed      map[uint32]bool
+	focus        ports.WindowID
+	generation   ports.LockGeneration // epoch of held keys; never release across protection
+	dropReleases bool                 // after an epoch change, ignore releases without a new press
 }
 
 // registerVirtualKeyboard exposes the global to every client, as wlroots
@@ -52,6 +54,17 @@ func (m virtualKeyboardManager) CreateVirtualKeyboard(r *virtualkeyboard.ZwpVirt
 // Keymap copies the client keymap into a sealed memfd: other clients never
 // see the client's fd. An unreadable or malformed keymap is ignored.
 func (k *virtualKeyboard) Keymap(_ *virtualkeyboard.ZwpVirtualKeyboardV1, format uint32, fd int, size uint32) {
+	if k.server.protected() {
+		unix.Close(fd)
+		k.admitted() // discard held state and ownership without delivery
+		if k.fd >= 0 {
+			unix.Close(k.fd)
+		}
+		k.fd, k.size, k.text = -1, 0, ""
+		// A rejected replacement must not leave an old layout usable after
+		// unlock. The client must send a fresh keymap before typing again.
+		return
+	}
 	text, ok := readKeymap(fd, size)
 	unix.Close(fd)
 	if format != uint32(wayland.KeyboardKeymapFormatXkbV1) || !ok {
@@ -102,6 +115,9 @@ func readKeymap(fd int, size uint32) (string, bool) {
 // keyboards switches the focused client to k's keymap and returns its
 // keyboards, or nil after a no_keymap error or without focus.
 func (k *virtualKeyboard) keyboards(r *virtualkeyboard.ZwpVirtualKeyboardV1) []*wayland.Keyboard {
+	if !k.admitted() {
+		return nil
+	}
 	if k.fd < 0 {
 		r.PostError(uint32(virtualkeyboard.ZwpVirtualKeyboardV1ErrorNoKeymap), "no keymap")
 		return nil
@@ -121,6 +137,9 @@ func (k *virtualKeyboard) keyboards(r *virtualkeyboard.ZwpVirtualKeyboardV1) []*
 }
 
 func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key, state uint32) {
+	if !k.admitted() || state != 1 && k.dropReleases && !k.pressed[key] {
+		return
+	}
 	keyboards := k.keyboards(r)
 	if keyboards == nil {
 		return
@@ -136,10 +155,35 @@ func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key
 }
 
 func (k *virtualKeyboard) Modifiers(r *virtualkeyboard.ZwpVirtualKeyboardV1, depressed, latched, locked, group uint32) {
+	if !k.admitted() {
+		return
+	}
 	k.mods = ports.ModState{Depressed: depressed, Latched: latched, Locked: locked, Group: group}
 	for _, kb := range k.keyboards(r) {
 		kb.SendModifiers(k.server.serial, depressed, latched, locked, group)
 	}
+}
+
+// admitted forgets old held state even if protection began and ended between
+// this keyboard's requests. Snapshot is coherent; DISPLAY owns admission.
+func (k *virtualKeyboard) admitted() bool {
+	state := ports.SecurityState{}
+	if k.server.security != nil {
+		state = k.server.security.Snapshot()
+	}
+	if state.Protected || state.Generation != k.generation {
+		clear(k.pressed)
+		k.mods = ports.ModState{}
+		k.focus = 0
+		k.generation = state.Generation
+		k.dropReleases = true
+		if k.server.seat.keymapOwner == k {
+			// Forget ownership silently; the parent resets focus and restores
+			// the seat layout at the lock transition.
+			k.server.seat.keymapOwner = nil
+		}
+	}
+	return !state.Protected
 }
 
 func (*virtualKeyboard) Destroy(*virtualkeyboard.ZwpVirtualKeyboardV1) {}
@@ -148,7 +192,9 @@ func (*virtualKeyboard) Destroy(*virtualkeyboard.ZwpVirtualKeyboardV1) {}
 // keys still held on the focused client are released.
 func (k *virtualKeyboard) release() {
 	s := k.server
-	if len(k.pressed) > 0 && k.focus == s.seat.focused {
+	generation := k.generation
+	admitted := k.admitted() && generation == k.generation
+	if admitted && len(k.pressed) > 0 && k.focus == s.seat.focused {
 		_, keyboards := s.focusTarget(s.seat.focused)
 		var ts unix.Timespec
 		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
@@ -162,7 +208,12 @@ func (k *virtualKeyboard) release() {
 		}
 	}
 	if s.seat.keymapOwner == k {
-		s.useKeymap(nil)
+		if admitted {
+			s.useKeymap(nil)
+		} else {
+			// Drop ownership without delivering keymap/modifiers into the locker.
+			s.seat.keymapOwner = nil
+		}
 	}
 	if k.fd >= 0 {
 		unix.Close(k.fd)

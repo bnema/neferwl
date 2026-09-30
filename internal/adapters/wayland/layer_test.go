@@ -52,7 +52,7 @@ func TestLayerLifecycle(t *testing.T) {
 	surf, layer := layerProtocol(t, c)
 	proxy := &layerProxy{configured: make(chan [3]uint32, 2)}
 	proxy.SetID(layer)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetAnchor, uint32(13))
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(0), uint32(30))
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetExclusiveZone, int32(30))
@@ -83,7 +83,7 @@ func TestLayerLifecycle(t *testing.T) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err = c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(1920*30*4)); err != nil {
+	if err = wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(1920*30*4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1920), int32(30), int32(1920*4), uint32(wayland.ShmFormatArgb8888))
@@ -199,18 +199,18 @@ func TestXDGOutputDone(t *testing.T) {
 			if !ok {
 				t.Fatal("missing wl_output")
 			}
-			output, err := c.Registry().BindID(global.Name, global.Interface, version)
+			output, err := bindWireID(c, global.Name, global.Interface, version)
 			if err != nil {
 				t.Fatal(err)
 			}
 			op := &doneProxy{opcode: uint16(wayland.OutputEventDone)}
 			op.SetID(output)
-			c.Context().Register(op)
+			registerWireProxy(c, op)
 			global, ok = c.Registry().FindGlobal("zxdg_output_manager_v1")
 			if !ok {
 				t.Fatal("missing xdg output manager")
 			}
-			manager, err := c.Registry().BindID(global.Name, global.Interface, 3)
+			manager, err := bindWireID(c, global.Name, global.Interface, 3)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -222,7 +222,7 @@ func TestXDGOutputDone(t *testing.T) {
 			xdg := c.AllocateID()
 			xp := &doneProxy{opcode: 2}
 			xp.SetID(xdg)
-			c.Context().Register(xp)
+			registerWireProxy(c, xp)
 			requestProtocol(t, c, manager, 1, xdg, output)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
@@ -260,7 +260,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 	pointer := c.AllocateID()
 	pp := &layerPointerProxy{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 1)}
 	pp.SetID(pointer)
-	c.Context().Register(pp)
+	registerWireProxy(c, pp)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
 	comp := bindProtocol(t, c, "wl_compositor")
 	wm := bindProtocol(t, c, "xdg_wm_base")
@@ -277,7 +277,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err = c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err = wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -285,7 +285,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 	surf, layer := layerProtocol(t, c)
 	lp := &layerProxy{configured: make(chan [3]uint32, 2)}
 	lp.SetID(layer)
-	c.Context().Register(lp)
+	registerWireProxy(c, lp)
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(1), uint32(1))
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	if err = c.Roundtrip(); err != nil {
@@ -334,7 +334,7 @@ func TestLayerPointerAndPopup(t *testing.T) {
 		popup := c.AllocateID()
 		proxy := &popupDoneProxy{done: done}
 		proxy.SetID(popup)
-		c.Context().Register(proxy)
+		registerWireProxy(c, proxy)
 		requestProtocol(t, c, pxdg, xdgshell.SurfaceRequestGetPopup, popup, uint32(0), positioner)
 		requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestGetPopup, popup)
 		requestProtocol(t, c, popup, xdgshell.PopupRequestGrab, seat, press)

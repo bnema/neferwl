@@ -1,10 +1,16 @@
 package libinput
 
 import (
+	"bytes"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 func TestHotkey(t *testing.T) {
@@ -23,9 +29,15 @@ func TestHotkey(t *testing.T) {
 		{"ctrl alt f12 raw", ports.KeyEvent{Keysym: "F12", Keycode: 88, Mods: ca, Pressed: true}, hotkeyVT, 12},
 		{"plain f2", ports.KeyEvent{Keysym: "F2", Keycode: 60, Pressed: true}, hotkeyNone, 0},
 	} {
-		a, vt := hotkey(tc.ev)
-		if a != tc.action || vt != tc.vt {
-			t.Errorf("%s: got %v %d", tc.name, a, vt)
+		for _, protected := range []bool{false, true} {
+			want := tc.action
+			if protected && want == hotkeyQuit {
+				want = hotkeyNone
+			}
+			a, vt := hotkey(tc.ev, protected)
+			if a != want || vt != tc.vt {
+				t.Errorf("%s protected=%v: got %v %d", tc.name, protected, a, vt)
+			}
 		}
 	}
 }
@@ -173,5 +185,155 @@ func TestPointerConstraints(t *testing.T) {
 	p.constrain(ports.PointerConstraint{X: 70, Y: 40, Warp: true})
 	if p.x != 70 || p.y != 40 {
 		t.Fatal(p.x, p.y)
+	}
+}
+
+func TestProtectedKeyboardPolicy(t *testing.T) {
+	ca := ports.ModCtrl | ports.ModAlt
+	for _, key := range []ports.KeyEvent{
+		{Keysym: "credential-secret", Base: "raw-secret", Keycode: 424242, Pressed: true},
+		{Keysym: "credential-secret", Keycode: 424242},
+		{Keysym: "BackSpace", Mods: ca, Pressed: true},
+		{Keysym: "raw-secret", Keycode: 14, Mods: ca, Pressed: true},
+	} {
+		t.Run(key.Keysym, func(t *testing.T) {
+			var buf bytes.Buffer
+			security := portsmocks.NewMockSessionSecurity(t)
+			state := ports.SecurityState{Generation: 7, Protected: true}
+			security.EXPECT().Snapshot().Return(state).Once()
+			opts := Options{Security: security, LogKeys: true, Log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})}
+			produced := securitySnapshot(opts.Security)
+			ev, err := translateKey(key, opts, produced)
+			if err != nil || errors.Is(err, ErrEmergencyQuit) || ev != key {
+				t.Fatalf("protected key lost/quit: event=%#v err=%v", ev, err)
+			}
+			if got := secureInput(ev, opts.Security, produced); got != (ports.SecurityInput{State: state, Event: key}) {
+				t.Fatalf("wrong production epoch: %#v", got)
+			}
+			if buf.Len() != 0 {
+				t.Fatalf("protected key logged identifiers: %s", &buf)
+			}
+		})
+	}
+}
+
+func TestKeyboardPolicyUnlockedAndVT(t *testing.T) {
+	ca := ports.ModCtrl | ports.ModAlt
+	for _, protected := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unlocked", true: "protected"}[protected], func(t *testing.T) {
+			var buf bytes.Buffer
+			security := portsmocks.NewMockSessionSecurity(t)
+			state := ports.SecurityState{Generation: 9, Protected: protected}
+			security.EXPECT().Snapshot().Return(state).Once()
+			seat := portsmocks.NewMockSeat(t)
+			seat.EXPECT().SwitchVT(2).Once()
+			opts := Options{Security: security, Seat: seat, LogKeys: true, Log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})}
+			ev, err := translateKey(ports.KeyEvent{Keysym: "XF86Switch_VT_2", Keycode: 60, Mods: ca, Pressed: true}, opts, securitySnapshot(opts.Security))
+			if ev != nil || err != nil {
+				t.Fatalf("VT not consumed: %#v %v", ev, err)
+			}
+			if protected && buf.Len() != 0 {
+				t.Fatalf("protected VT key logged: %s", &buf)
+			}
+			if !protected && !strings.Contains(buf.String(), "XF86Switch_VT_2") {
+				t.Fatalf("unlocked debug logging changed: %s", &buf)
+			}
+		})
+	}
+	var buf bytes.Buffer
+	opts := Options{LogKeys: true, Log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})}
+	key := ports.KeyEvent{Keysym: "q", Keycode: 16, Pressed: true}
+	state := securitySnapshot(nil)
+	ev, err := translateKey(key, opts, state)
+	if err != nil || secureInput(ev, nil, state) != key || !strings.Contains(buf.String(), `"keysym":"q"`) {
+		t.Fatalf("nil gate changed unlocked behavior: %#v %v %s", ev, err, &buf)
+	}
+	ev, err = translateKey(ports.KeyEvent{Keysym: "BackSpace", Mods: ca, Pressed: true}, opts, state)
+	if ev != nil || !errors.Is(err, ErrEmergencyQuit) || !strings.Contains(buf.String(), "emergency-key") {
+		t.Fatalf("unlocked emergency quit changed: %#v %v %s", ev, err, &buf)
+	}
+}
+
+func TestSecurityInputAllKindsProductionEpoch(t *testing.T) {
+	security := portsmocks.NewMockSessionSecurity(t)
+	old := ports.SecurityState{Generation: 11, Protected: true}
+	newState := ports.SecurityState{Generation: 12}
+	events := []ports.InputEvent{
+		ports.KeyEvent{Keysym: "secret", Pressed: true}, ports.PointerMotion{X: 1},
+		ports.PointerButton{Button: 272}, ports.PointerAxis{},
+		ports.SwipeBegin{}, ports.SwipeUpdate{}, ports.SwipeEnd{},
+	}
+	security.EXPECT().Snapshot().Return(old).Times(len(events))
+	security.EXPECT().Snapshot().Return(newState).Once()
+	f := newForwarder(zerowrap.Default())
+	for _, ev := range events {
+		f.push(secureInput(ev, security, securitySnapshot(security)))
+	}
+	if securitySnapshot(security) != newState {
+		t.Fatal("did not transition")
+	}
+	for _, want := range events {
+		got, ok := f.pop()
+		if !ok || got != (ports.SecurityInput{State: old, Event: want}) {
+			t.Fatalf("queued event changed epoch: %#v", got)
+		}
+	}
+	if secureInput(nil, security, old) != nil {
+		t.Fatal("nil translated event was wrapped")
+	}
+}
+
+func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer km.Close()
+	initial := ports.SecurityState{}
+	locked := ports.SecurityState{Generation: 1, Protected: true}
+	unlocked := ports.SecurityState{Generation: 2}
+	security := portsmocks.NewMockSessionSecurity(t)
+	security.EXPECT().Snapshot().Return(initial).Times(3)
+	security.EXPECT().Snapshot().Return(locked).Times(4)
+	security.EXPECT().Snapshot().Return(unlocked).Times(5)
+	var buf bytes.Buffer
+	opts := Options{Keymap: km, Security: security, LogKeys: true, Log: zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &buf})}
+	produce := func(code uint32, down bool) ports.InputEvent {
+		t.Helper()
+		state := securitySnapshot(opts.Security)
+		ev, err := translateKeyboard(code, down, 123, opts, state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secureInput(ev, opts.Security, state)
+	}
+	for _, code := range []uint32{125, 29, 56} {
+		produce(code, true)
+	}
+	buf.Reset()
+	for _, code := range []uint32{125, 29, 56} {
+		if ev := produce(code, true); ev != nil {
+			t.Fatalf("inherited repeat delivered: %#v", ev)
+		}
+	}
+	// Ctrl+Alt held before lock must not activate emergency quit, even on a
+	// fresh Backspace. Super must not contaminate the credential either.
+	if ev := produce(14, true).(ports.SecurityInput).Event.(ports.KeyEvent); ev.Mods != 0 || ev.State != (ports.ModState{}) {
+		t.Fatalf("protected fresh key inherited native state: %+v", ev)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("protected keyboard logged: %s", &buf)
+	}
+	if ev := produce(16, true).(ports.SecurityInput); ev.State != unlocked || ev.Event.(ports.KeyEvent).Mods != 0 || ev.Event.(ports.KeyEvent).State != (ports.ModState{}) {
+		t.Fatalf("unlocked q inherited state: %#v", ev)
+	}
+	buf.Reset()
+	for _, code := range []uint32{14, 56, 29, 125} {
+		if ev := produce(code, false); ev != nil {
+			t.Fatalf("inherited release delivered: %#v", ev)
+		}
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("quarantined release logged: %s", &buf)
 	}
 }

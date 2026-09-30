@@ -32,7 +32,7 @@ func TestYUVParams(t *testing.T) {
 			requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
 			proxy := &paramsProxy{result: make(chan uint16, 2)}
 			proxy.SetID(p)
-			c.Context().Register(proxy)
+			registerWireProxy(c, proxy)
 			fd, err := unix.MemfdCreate("yuv-params", 0)
 			if err != nil {
 				t.Fatal(err)
@@ -43,7 +43,7 @@ func TestYUVParams(t *testing.T) {
 			}
 			add := func(idx, offset, stride, mod uint32) {
 				t.Helper()
-				if err := c.SendRequestWithFDs(p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, idx, offset, stride, uint32(0), mod); err != nil {
+				if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, idx, offset, stride, uint32(0), mod); err != nil {
 					t.Fatal(err)
 				}
 			}

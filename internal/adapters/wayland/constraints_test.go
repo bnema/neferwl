@@ -39,7 +39,7 @@ func logProxy(t *testing.T, c *wlturbo.Display, id uint32) chan []float64 {
 	t.Helper()
 	p := &eventLog{events: make(chan []float64, 64)}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	return p.events
 }
 
@@ -80,7 +80,7 @@ func TestPointerWarp(t *testing.T) {
 	pointer := c.AllocateID()
 	p := &eventLog{events: make(chan []float64, 64), pointer: true}
 	p.SetID(pointer)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
 	w, surf, xdgID := surfaceMapper(t, c, events)()
 	requestProtocol(t, c, xdgID, xdgshell.SurfaceRequestSetWindowGeometry, int32(4), int32(6), int32(50), int32(50))
@@ -100,7 +100,7 @@ func TestPointerWarp(t *testing.T) {
 	pointer2 := c.AllocateID()
 	p2 := &eventLog{events: make(chan []float64, 64), pointer: true}
 	p2.SetID(pointer2)
-	c.Context().Register(p2)
+	registerWireProxy(c, p2)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer2)
 	requestProtocol(t, c, warp, pointerwarp.WpPointerWarpV1RequestWarpPointer, surf, pointer2, wlturbo.Fixed(10*256), wlturbo.Fixed(10*256), serial)
 	// A stale serial is ignored; the enter serial moves the pointer.

@@ -59,7 +59,7 @@ func (d cursorShapeDevice) SetShape(r *cursorshape.WpCursorShapeDeviceV1, _ uint
 		return
 	}
 	s := d.server
-	if !s.hasPointerFocus(r.Client()) {
+	if s.protected() || !s.hasPointerFocus(r.Client()) {
 		return
 	}
 	s.cursorSurface = nil
@@ -70,6 +70,9 @@ type pointer struct{ server *Server }
 
 func (p pointer) SetCursor(r *wayland.Pointer, _ uint32, surf *wayland.Surface, hotX, hotY int32) {
 	s := p.server
+	if s.protected() {
+		return
+	}
 	var state *surface
 	if surf != nil {
 		state = s.surfaces[surf.Resource]
@@ -137,7 +140,7 @@ func (s *surface) cursorImage() ports.CursorChange {
 
 // setCursor queues a cursor change; only the latest is delivered.
 func (s *Server) setCursor(c ports.CursorChange) {
-	if s.channels.Cursors == nil {
+	if s.protected() || s.channels.Cursors == nil {
 		return
 	}
 	s.cursorMu.Lock()
@@ -163,7 +166,7 @@ func (s *Server) forwardCursors(ctx context.Context) {
 		c, ok := s.cursorLatest, s.cursorQueued
 		s.cursorQueued = false
 		s.cursorMu.Unlock()
-		if !ok {
+		if !ok || s.protected() {
 			continue
 		}
 		select {

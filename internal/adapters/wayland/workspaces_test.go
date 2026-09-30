@@ -48,7 +48,7 @@ func (p *workspaceEvents) Dispatch(e *wlturbo.Event) {
 		v[1] = e.Uint32()
 		child := &workspaceChildEvents{events: p.events, idEvents: p.idEvents, order: p.order, group: e.Opcode == uint16(ext.ExtWorkspaceManagerV1EventWorkspaceGroup)}
 		child.SetID(v[1])
-		p.client.Context().Register(child)
+		registerWireProxy(p.client, child)
 	}
 	p.order.add(v[0])
 	p.events <- v
@@ -107,7 +107,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 	managerID := bindProtocol(t, c, "ext_workspace_manager_v1")
 	p := &workspaceEvents{client: c, events: make(chan [2]uint32, 128), idEvents: make(chan string, 16)}
 	p.SetID(managerID)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	var handle, secondHandle uint32
 	for i := 0; i < 8 && secondHandle == 0; i++ {
 		if err := c.Roundtrip(); err != nil {
@@ -246,7 +246,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	managerID := bindProtocol(t, c, "ext_workspace_manager_v1")
 	p := &workspaceEvents{client: c, events: make(chan [2]uint32, 128), idEvents: make(chan string, 16), order: &workspaceEventOrder{}}
 	p.SetID(managerID)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

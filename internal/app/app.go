@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/sched"
+	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
@@ -78,6 +79,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}
 		defer hw.close()
 	}
+	security := &sessionsecurity.Gate{}
+	securityChanges := make(chan ports.SecurityState, 8)
+	securityEvents := make(chan ports.SecurityBackendEvent, 64)
 	client := make(chan ports.ClientEvent, 32)
 	input := make(chan ports.InputEvent, 32)
 	output := make(chan ports.OutputEvent, 32)
@@ -113,7 +117,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		// Only real sessions save scales: headless runs never touch the config file.
 		scales = make(chan ports.ScaleChanged, 8)
 	}
-	ch := core.Channels{Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}, Frames: frames}
+	ch := core.Channels{Security: security, Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}, Frames: frames}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -127,7 +131,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -151,6 +155,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer launcher.UnexportSession(childEnv, logging.For(ctx, "launcher"))
 	}
 	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
+	child.Security = security
 	if inject != nil {
 		inject(input)
 	}
@@ -202,11 +207,16 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
 					}
 				}
-				return libinput.Run(ctx, libinput.Options{Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
+				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
 			})
 			return
 		}
-		_ = headlessinput.Run(ctx, km, keymaps, script, input, layouts, curs.move, logging.For(ctx, "input"))
+		if err := headlessinput.RunSecure(ctx, km, keymaps, script, input, layouts, curs.move, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+			select {
+			case done <- err:
+			case <-ctx.Done():
+			}
+		}
 	}()
 	if opts.Script != nil {
 		go func() { <-ctx.Done(); _ = opts.Script.Close() }()
@@ -251,7 +261,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 
 	go func() {
 		defer workers.Done()
-		outputIO := outputChannels{events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, leaseRequests: leaseRequests, leaseEvents: leaseEvents, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
+		outputIO := outputChannels{security: security, securityChanges: securityChanges, securityEvents: securityEvents, events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, leaseRequests: leaseRequests, leaseEvents: leaseEvents, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
 		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		renderLog := logging.For(ctx, "render")
 		newRenderer := func(w, h int) (ports.Renderer, error) {
