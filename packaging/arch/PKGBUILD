@@ -13,7 +13,9 @@ makedepends=('go')
 optdepends=('xwayland-satellite>=0.7: X11 apps'
 	'foot: default terminal'
 	'fuzzel: launcher'
-	'xdg-desktop-portal-gtk: file pickers and settings for apps')
+	'xdg-desktop-portal-gtk: file pickers and settings for apps'
+	'xdg-desktop-portal-wlr: screen sharing and screenshots through the portal'
+	'nefercap: screenshots and screen recording')
 install=neferwl.install
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
@@ -46,6 +48,7 @@ package() {
 	install -Dm644 packaging/neferwl.desktop "$pkgdir/usr/share/wayland-sessions/neferwl.desktop"
 	install -Dm644 packaging/neferwl-portals.conf "$pkgdir/usr/share/xdg-desktop-portal/neferwl-portals.conf"
 	install -Dm644 examples/config "$pkgdir/usr/share/doc/neferwl/config.example"
+	install -Dm644 examples/capture-allow "$pkgdir/usr/share/doc/neferwl/capture-allow.example"
 	install -Dm644 README.md "$pkgdir/usr/share/doc/neferwl/README.md"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/neferwl/LICENSE"
 }
