@@ -107,6 +107,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	seen := map[ports.WindowID]uint64{}
+	var holds holdSnapshots
 	// pending is a report the channel could not take, retried soon.
 	var pending *ports.OutputPresented
 	update := func(c ports.SurfaceContent) {
@@ -236,9 +237,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					r := &ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), ChildReads: maps.Clone(reads)}
+					r := holds.report(opts.Name, seen, reads)
 					select {
-					case opts.Presented <- *r:
+					case opts.Presented <- r:
 					case <-ctx.Done():
 						return nil
 					}
@@ -303,6 +304,24 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		}
 		opts.Log.Debug().Str("component", "render").Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
 	}
+}
+
+// holdSnapshots caches the immutable maps of the child-hold reports. The
+// receiver may still read an earlier report on another goroutine, so a cached
+// map is never mutated: it is replaced by a clone when the content changes,
+// and an unchanged publication allocates nothing.
+type holdSnapshots struct {
+	seen, reads map[ports.WindowID]uint64
+}
+
+func (h *holdSnapshots) report(output string, seen, reads map[ports.WindowID]uint64) ports.OutputPresented {
+	if !maps.Equal(h.seen, seen) {
+		h.seen = maps.Clone(seen)
+	}
+	if !maps.Equal(h.reads, reads) {
+		h.reads = maps.Clone(reads)
+	}
+	return ports.OutputPresented{Output: output, Seen: h.seen, ChildReads: h.reads}
 }
 
 func writePNG(path string, img *image.RGBA) error {
