@@ -83,7 +83,12 @@ func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap
 
 func (h *admissionHarness) client(t *testing.T) *admissionClient {
 	t.Helper()
-	c := protocolClient(t, h.s, h.dir)
+	return h.clientOn(t, protocolClient(t, h.s, h.dir))
+}
+
+// clientOn binds the capture globals on an already connected client.
+func (h *admissionHarness) clientOn(t *testing.T, c *wlturbo.Display) *admissionClient {
+	t.Helper()
 	g, ok := c.Registry().FindGlobal("wl_output")
 	if !ok {
 		t.Fatal("output missing")

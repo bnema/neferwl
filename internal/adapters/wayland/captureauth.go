@@ -17,7 +17,12 @@ import (
 //
 //  1. While the session is protected (ext-session-lock) no client may
 //     capture, so nothing of the locked session reaches a buffer.
-//  2. The executable allowlist (captureallow; /etc/neferwl/capture-allow): no
+//  2. A sandboxed client (one that connected through a
+//     wp_security_context_v1 listener, securitycontext.go) never captures,
+//     whatever the allowlist says: it goes through the desktop portal. The
+//     display cannot hide globals per client, so the capture globals stay
+//     visible to it and its requests are refused here.
+//  3. The executable allowlist (captureallow; /etc/neferwl/capture-allow): no
 //     `*` line lets every client through, an invalid file lets none,
 //     otherwise the executable actually running behind the client's
 //     connection must be listed (in the file, or in the built-in list while
@@ -28,7 +33,33 @@ import (
 //
 // Display goroutine only.
 func (s *Server) mayCapture(c server.Client) bool {
+	return s.mayCaptureWith(c, s.peerIdentity)
+}
+
+// mayCaptureFrame is mayCapture for the frames of an ext-image-copy-capture
+// session: a frame does not read /proc again but uses the executable resolved
+// at the client's latest check (the session's creation, or a later wlr request
+// or session on the same connection). The current policy and the lock are
+// still checked each time. Display goroutine only.
+func (s *Server) mayCaptureFrame(c server.Client) bool {
+	return s.mayCaptureWith(c, func(c server.Client) *peerID {
+		id := s.peerEntry(c)
+		if id.exe == "" && id.err == nil {
+			// Never resolved: the policy was off when the session began.
+			id = s.peerIdentity(c)
+		}
+		return id
+	})
+}
+
+// mayCaptureWith is the rule chain of mayCapture; resolve names the client's
+// executable once the policy needs it.
+func (s *Server) mayCaptureWith(c server.Client, resolve func(server.Client) *peerID) bool {
 	if s.protected() {
+		return false
+	}
+	if s.sandboxed[c] != nil {
+		s.refuseOnce(c, "sandboxed client", "", 0)
 		return false
 	}
 	if s.captureAllow == nil {
@@ -44,43 +75,7 @@ func (s *Server) mayCapture(c server.Client) bool {
 		s.refuseOnce(c, "allowlist invalid", "", 0)
 		return false
 	}
-	id := s.peerIdentity(c)
-	if id.err != nil {
-		s.refuseOnce(c, "executable unknown: "+id.err.Error(), "", id.pid)
-		return false
-	}
-	if !pol.Allows(id.exe) {
-		s.refuseOnce(c, "executable not in allowlist", id.exe, id.pid)
-		return false
-	}
-	return true
-}
-
-// mayCaptureFrame is mayCapture for the frames of an ext-image-copy-capture
-// session: a frame does not read /proc again but uses the executable resolved
-// at the client's latest check (the session's creation, or a later wlr request
-// or session on the same connection). The current policy and the lock are
-// still checked each time. Display goroutine only.
-func (s *Server) mayCaptureFrame(c server.Client) bool {
-	if s.protected() {
-		return false
-	}
-	if s.captureAllow == nil {
-		return true
-	}
-	pol := s.captureAllow.Policy()
-	switch pol.Mode() {
-	case captureallow.ModeDisabled:
-		return true
-	case captureallow.ModeClosed:
-		s.refuseOnce(c, "allowlist invalid", "", 0)
-		return false
-	}
-	id := s.peerEntry(c)
-	if id.exe == "" && id.err == nil {
-		// Never resolved: the policy was off when the session began.
-		id = s.peerIdentity(c)
-	}
+	id := resolve(c)
 	if id.err != nil {
 		s.refuseOnce(c, "executable unknown: "+id.err.Error(), "", id.pid)
 		return false

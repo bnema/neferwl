@@ -36,6 +36,7 @@ import (
 	wire_presentationtime "github.com/bnema/purego-libwayland/protocol/presentationtime"
 	wire_primaryselection "github.com/bnema/purego-libwayland/protocol/primaryselection"
 	wire_relativepointer "github.com/bnema/purego-libwayland/protocol/relativepointer"
+	wire_securitycontext "github.com/bnema/purego-libwayland/protocol/securitycontext"
 	wire_tearingcontrol "github.com/bnema/purego-libwayland/protocol/tearingcontrol"
 	wire_textinput "github.com/bnema/purego-libwayland/protocol/textinput"
 	wire_viewporter "github.com/bnema/purego-libwayland/protocol/viewporter"
@@ -180,6 +181,8 @@ var wireSchemas = map[string]wireSchema{
 	"wp_pointer_warp_v1":                                   {wire_pointerwarp.WpPointerWarpV1Interface, &client_pointerwarp.WpPointerWarp{}, map[uint16]bool{0: true}, nil},
 	"wp_presentation":                                      {wire_presentationtime.WpPresentationInterface, &client_presentation.WpPresentation{}, map[uint16]bool{0: true}, nil},
 	"wp_presentation_feedback":                             {wire_presentationtime.WpPresentationFeedbackInterface, &client_presentation.WpPresentationFeedback{}, nil, map[uint16]bool{1: true, 2: true}},
+	"wp_security_context_manager_v1":                       {wire_securitycontext.WpSecurityContextManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"wp_security_context_v1":                               {wire_securitycontext.WpSecurityContextV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"wp_tearing_control_manager_v1":                        {wire_tearingcontrol.WpTearingControlManagerV1Interface, &client_tearingcontrol.WpTearingControlManager{}, map[uint16]bool{0: true}, nil},
 	"wp_tearing_control_v1":                                {wire_tearingcontrol.WpTearingControlV1Interface, &client_tearingcontrol.WpTearingControl{}, map[uint16]bool{1: true}, nil},
 	"wp_viewport":                                          {wire_viewporter.WpViewportInterface, &client_viewporter.WpViewport{}, map[uint16]bool{0: true}, nil},

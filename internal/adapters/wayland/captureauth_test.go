@@ -79,6 +79,15 @@ func TestCaptureAllowlistEveryPath(t *testing.T) {
 	if _, ok := h.accepted(t, a.captureWlr(t)); ok {
 		t.Fatal("wlr capture allowed")
 	}
+	if !a.extSessionStopped(t) {
+		t.Fatal("ext session not refused")
+	}
+}
+
+// extSessionStopped opens an ext capture session and reports whether the
+// compositor stopped it at once, as it does for a client that may not capture.
+func (a *admissionClient) extSessionStopped(t *testing.T) bool {
+	t.Helper()
 	c := a.c
 	sourceManager := bindProtocol(t, c, "ext_output_image_capture_source_manager_v1")
 	manager := bindProtocol(t, c, "ext_image_copy_capture_manager_v1")
@@ -92,9 +101,7 @@ func TestCaptureAllowlistEveryPath(t *testing.T) {
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	if got := <-events.events; got != uint16(ext.ExtImageCopyCaptureSessionV1EventStopped) {
-		t.Fatalf("first session event %d, want stopped", got)
-	}
+	return <-events.events == uint16(ext.ExtImageCopyCaptureSessionV1EventStopped)
 }
 
 func TestCaptureAllowlistModes(t *testing.T) {

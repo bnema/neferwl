@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
@@ -121,13 +122,21 @@ type Server struct {
 	peers        map[server.Client]*peerID
 	// noPidfdWarned: the missing SO_PEERPIDFD is logged once.
 	noPidfdWarned bool
-	display       *server.Display
-	env           procEnv
-	slotsPending  bool // core waits for a slot window
-	name          string
-	cleanup       func()
-	log           zerowrap.Logger
-	channels      Channels
+	// sandboxed are the clients that connected through a security context
+	// (securitycontext.go); display goroutine only. securityStop is
+	// written once at shutdown to end the listeners, securityWG waits for
+	// them, securityLive counts them.
+	sandboxed    map[server.Client]*sandbox
+	securityStop int
+	securityWG   sync.WaitGroup
+	securityLive atomic.Int32
+	display      *server.Display
+	env          procEnv
+	slotsPending bool // core waits for a slot window
+	name         string
+	cleanup      func()
+	log          zerowrap.Logger
+	channels     Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -295,6 +304,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	if s.peer == nil {
 		s.peer = linuxPeerExe{}
 	}
+	s.sandboxed, s.securityStop = map[server.Client]*sandbox{}, -1
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
@@ -349,6 +359,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s.syncWait.log = log
 	s.cleanup = func() {
+		if s.securityStop >= 0 {
+			unix.Close(s.securityStop)
+		}
 		if s.seat.keymapFD >= 0 {
 			unix.Close(s.seat.keymapFD)
 		}
@@ -360,6 +373,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			node.close()
 		}
 		cleanup()
+	}
+	if s.securityStop, err = unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK); err != nil {
+		s.cleanup()
+		d.Close()
+		return nil, err
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
 		s.cleanup()
@@ -436,6 +454,7 @@ func (s *Server) Run(ctx context.Context) error {
 		go func() { defer wg.Done(); s.syncWait.run(ctx) }()
 	}
 	err := s.display.Run(ctx)
+	s.stopSecurityContexts()
 	wg.Wait()
 	return err
 }
