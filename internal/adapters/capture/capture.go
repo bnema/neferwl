@@ -7,20 +7,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
 )
 
+const maxMappedBytes = 1 << 30
+
+// Wayland SHM format identifiers; all capture pixels are opaque BGRA.
+const (
+	shmARGB8888 = 0
+	shmXRGB8888 = 1
+)
+
 func reply(ctx context.Context, req ports.CaptureRequest, err error, replies chan<- ports.CaptureDone) {
+	replyAt(ctx, req, err, monotonicNow(), replies)
+}
+
+func replyAt(ctx context.Context, req ports.CaptureRequest, err error, at time.Time, replies chan<- ports.CaptureDone) {
 	if req.Dst.File != nil {
 		err = errors.Join(err, req.Dst.File.Close())
+	}
+	done := ports.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: at}
+	// Prefer a ready reply even after output cancellation: Wayland needs the
+	// completion to release admission credit while the session is still alive.
+	select {
+	case replies <- done:
+		return
+	default:
 	}
 	// A nil channel is allowed: cancellation still releases the sender.
 	select {
 	case <-ctx.Done():
-	case replies <- ports.CaptureDone{ID: req.ID, Output: req.Output, Err: err, Time: monotonicNow()}:
+	case replies <- done:
 	}
 }
 
@@ -37,21 +58,33 @@ func Fail(ctx context.Context, req ports.CaptureRequest, err error, replies chan
 	reply(ctx, req, err, replies)
 }
 
-func Write(ctx context.Context, req ports.CaptureRequest, r ports.Renderer, replies chan<- ports.CaptureDone) {
+func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.CaptureFrame, at time.Time, replies chan<- ports.CaptureDone) {
 	var err error
 	var data []byte
+	// A client can truncate its file after Stat while it is still mapped.
+	// Turn SIGBUS into an error on this worker, not a compositor crash.
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("capture read panic: %v\n%s", p, debug.Stack())
+		}
 		if data != nil {
 			err = errors.Join(err, unix.Munmap(data))
 		}
-		reply(ctx, req, err, replies)
+		replyAt(ctx, req, err, at, replies)
 	}()
-	if req.Dst.File == nil || req.Width <= 0 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 {
+	if req.Dst.File == nil || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888) {
 		err = fmt.Errorf("invalid capture destination")
 		return
 	}
-	size := int64(req.Dst.Offset) + int64(req.Height-1)*int64(req.Stride) + int64(req.Width)*4
-	if size <= 0 || size > int64(^uint(0)>>1) || size > 1<<30 {
+	rowBytes := int64(req.Width) * 4
+	// Validate the bound before multiplication: padding must not wrap size.
+	if int64(req.Dst.Offset) > maxMappedBytes-rowBytes || (req.Height > 1 && int64(req.Stride) > (maxMappedBytes-int64(req.Dst.Offset)-rowBytes)/int64(req.Height-1)) {
+		err = fmt.Errorf("capture too large")
+		return
+	}
+	size := int64(req.Dst.Offset) + int64(req.Height-1)*int64(req.Stride) + rowBytes
+	if size <= 0 || size > int64(^uint(0)>>1) || size > maxMappedBytes {
 		err = fmt.Errorf("capture too large")
 		return
 	}
@@ -71,5 +104,5 @@ func Write(ctx context.Context, req ports.CaptureRequest, r ports.Renderer, repl
 		err = e
 		return
 	}
-	err = r.Capture(req.Region, data[req.Dst.Offset:], req.Stride)
+	err = frame.Read(req.Region, data[req.Dst.Offset:], req.Stride)
 }

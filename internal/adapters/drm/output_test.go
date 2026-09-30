@@ -747,6 +747,71 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 	}
 }
 
+// A render failure must complete captures queued before the first frame.
+func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor, o.tearing = nil, false
+	r := portsmocks.NewMockRenderer(t)
+	boom := errors.New("render failed")
+	r.EXPECT().SetHDR(float64(0)).Return().Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	makeBuf := func() ports.DMABuf {
+		f, err := os.CreateTemp(t.TempDir(), "target")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = f.Close() })
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+	r.EXPECT().Render(ports.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
+	r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scenes := make(chan ports.Scene, 1)
+	requests := make(chan ports.CaptureRequest)
+	replies := make(chan ports.CaptureDone, 1)
+	f, err := os.CreateTemp(t.TempDir(), "capture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, requests, replies)
+	}()
+	// The unbuffered handoff proves Run owns the request before any scene.
+	select {
+	case requests <- ports.CaptureRequest{ID: 9, Dst: ports.SHMBuffer{File: f}}:
+	case <-time.After(2 * time.Second):
+		t.Fatal("output did not accept capture")
+	}
+	scenes <- ports.Scene{Seq: 1, Scale: 1}
+	select {
+	case err := <-done:
+		if !errors.Is(err, boom) {
+			t.Fatalf("run error %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("output did not stop after render failure")
+	}
+	select {
+	case result := <-replies:
+		if result.ID != 9 || result.Err == nil {
+			t.Fatalf("capture result %+v", result)
+		}
+	default:
+		t.Fatal("render failure lost capture completion")
+	}
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("render failure leaked capture descriptor")
+	}
+}
+
 // A request must render even when the output already has an unchanged scene.
 func TestCaptureForcesDRMComposition(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
@@ -767,7 +832,11 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		rendered <- s
 		return nil, nil
 	})
-	r.EXPECT().Capture(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{3, 4, 5, 255}); return nil }).Once()
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil)
+	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{3, 4, 5, 255}); return nil }).Once()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
@@ -813,7 +882,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("capture did not render")
 	}
-	r.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+	frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
 	if _, err := f.Stat(); err == nil {
 		t.Fatal("fd not closed")
 	}

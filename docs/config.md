@@ -77,7 +77,7 @@ Hardware-decoded video can use NV12 (8-bit) or P010 (10-bit) DMA-BUF subsurfaces
 
 - Fullscreen HDR buffers (10-bit, PQ) go straight to the display unchanged.
 - Windowed and otherwise composed HDR content keeps its full range in a linear fp16 image before PQ output; the display tone-maps it according to its EDID metadata. SDR surfaces are blended in linear light on HDR outputs, so antialiased edges may look slightly different than sRGB-space blending. Dim veils (`floating.dim`, `stash.dim`) darken SDR white as much as on an SDR output; brighter HDR highlights stay a little brighter.
-- Screenshots and capture of HDR outputs are converted to 8-bit sRGB, clipping highlights at SDR white (only the capture is clipped).
+- Screenshots and capture use opaque 8-bit sRGB. HDR capture applies GPU tone mapping and reduces out-of-sRGB gamut: values below 90% of SDR reference white stay unchanged, while brighter values are compressed to preserve highlight differences (SDR reference white maps to about 245/255 when capturing an HDR output, versus 255/255 on an SDR output). This capture-only transform does not change HDR display output.
 - The display gets the metadata from its own EDID, not the client's MaxCLL/MaxFALL.
 
 HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 composition and 10-bit export formats/features. Unsupported capabilities fall back to SDR. NVIDIA is not supported yet (tested status).

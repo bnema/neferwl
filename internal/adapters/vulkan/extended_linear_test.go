@@ -102,7 +102,7 @@ func TestExtendedLinearClient(t *testing.T) {
 					x int
 					v byte
 				}{{5, 168}, {25, 255}, {45, 0}} {
-					got := r.Pixels().RGBAAt(tc.x, 8)
+					got := readPixels(t, r).RGBAAt(tc.x, 8)
 					if !near(got, color.RGBA{tc.v, tc.v, tc.v, 255}, 3) {
 						t.Errorf("x=%d got %v want %d", tc.x, got, tc.v)
 					}

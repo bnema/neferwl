@@ -198,9 +198,11 @@ func (s *outputSet) routeCapture(req ports.CaptureRequest) {
 	case r.captures <- req:
 	case <-r.done:
 		r.stop()
-		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+		capture.Fail(s.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
 	case <-r.ctx.Done():
-		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+		capture.Fail(s.ctx, req, fmt.Errorf("output %q stopped", req.Output), s.captured)
+	default:
+		capture.Fail(s.ctx, req, fmt.Errorf("output %q capture queue full", req.Output), s.captured)
 	}
 }
 
@@ -208,7 +210,7 @@ func (s *outputSet) failQueued(r *runningOutput) {
 	for {
 		select {
 		case req := <-r.captures:
-			capture.Fail(r.ctx, req, fmt.Errorf("output stopped"), s.captured)
+			capture.Fail(s.ctx, req, fmt.Errorf("output stopped"), s.captured)
 		default:
 			return
 		}

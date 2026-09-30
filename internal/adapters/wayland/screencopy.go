@@ -15,6 +15,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// maxCaptureInflight caps accepted captures that the backend has not completed
+// yet, across all clients. Destroying a client frame or resource does not
+// release its slot: only the backend completion does.
+const maxCaptureInflight = ports.MaxCaptureInflight
+
 // The renderer's scene and wl_output modes are already in physical orientation;
 // this compositor does not advertise rotated wl_output transforms.
 func captureRegion(o *output, logical image.Rectangle) image.Rectangle {
@@ -156,6 +161,10 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		s.log.Debug().Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Msg("capture buffer rejected")
 		return 0, false
 	}
+	if len(s.captureInflight) >= maxCaptureInflight {
+		s.log.Debug().Str("output", o.name()).Int("inflight", len(s.captureInflight)).Msg("capture refused: too many captures in flight")
+		return 0, false
+	}
 	buf := s.buffers[b.Resource].(*buffer)
 	fd, err := unix.Dup(int(buf.pool.file.Fd()))
 	if err != nil {
@@ -164,6 +173,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	}
 	s.nextCapture++
 	id := s.nextCapture
+	s.captureInflight[id] = struct{}{}
 	start := time.Now()
 	s.captureReplies[id] = func(done ports.CaptureDone) {
 		ev := s.log.Debug()
@@ -182,8 +192,9 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		return id, true
 	default:
 		delete(s.captureReplies, id)
+		delete(s.captureInflight, id)
 		req.Dst.File.Close()
-		s.log.Warn().Str("output", o.name()).Msg("capture refused: request queue full")
+		s.log.Debug().Str("output", o.name()).Msg("capture refused: request queue full")
 		return 0, false
 	}
 }
@@ -199,6 +210,7 @@ func (s *Server) forwardCaptured(ctxDone <-chan struct{}) {
 				return
 			}
 			if !s.display.Do(func() {
+				delete(s.captureInflight, done.ID)
 				if fn := s.captureReplies[done.ID]; fn != nil {
 					delete(s.captureReplies, done.ID)
 					fn(done)

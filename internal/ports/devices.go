@@ -1,10 +1,32 @@
 package ports
 
 import (
+	"errors"
 	"image"
 	"os"
 	"time"
 )
+
+// MaxCaptureInflight bounds the capture requests admitted but not yet
+// answered, across outputs. The reply channel of the production app has
+// at least this capacity, so an output never blocks on a reply.
+const MaxCaptureInflight = 32
+
+// ErrCaptureBusy: every capture slot of the renderer is leased.
+var ErrCaptureBusy = errors.New("capture: no free slot")
+
+// CaptureFrame is a lease on one renderer readback slot holding a GPU
+// copy of a rendered frame. Done and Read make no Vulkan call: a worker
+// goroutine waits on Done, then reads. EndCapture returns the lease.
+type CaptureFrame interface {
+	// Done is the sync file signalled when the copy finished; nil means it
+	// had finished when BeginCapture returned. The frame owns it.
+	Done() *os.File
+	// Read copies region (output pixels) as opaque sRGB8 BGRA rows into
+	// dst, stride bytes per row. Valid after Done signalled and before
+	// EndCapture.
+	Read(region image.Rectangle, dst []byte, stride int) error
+}
 
 // Renderer draws scenes for an output. One goroutine owns it. Frames go
 // to its own image until ExportTargets gives it scanout images; then each
@@ -30,10 +52,18 @@ type Renderer interface {
 	// WriteCursor fills cursor image i with premultiplied ARGB8888 pixels
 	// (w×h, w*4 per row), cropped to the image and cleared around it.
 	WriteCursor(i int, pixels []byte, w, h int) error
-	// Pixels reads the last frame back (headless screenshots, tests).
+	// Pixels reads the last frame back (headless screenshots, tests). It
+	// waits for the GPU: debug only. Nil when it cannot (every capture
+	// slot leased, or the copy failed).
 	Pixels() *image.RGBA
-	// Capture copies a region of the last rendered frame as opaque BGRA.
-	Capture(region image.Rectangle, dst []byte, stride int) error
+	// BeginCapture submits a GPU copy of the last rendered frame into a
+	// free slot and returns without waiting. ErrCaptureBusy when every
+	// slot is leased; another error when the copy cannot be tracked (no
+	// sync file): the caller fails the request.
+	BeginCapture() (CaptureFrame, error)
+	// EndCapture returns a lease. It never waits: a slot whose copy may
+	// still run is reused only once the renderer sees it finished.
+	EndCapture(CaptureFrame)
 	// Trim frees client buffer caches left undrawn for a while and what
 	// finished frames held, without rendering. Outputs call it
 	// periodically: an idle output renders no frame to free them.

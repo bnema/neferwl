@@ -80,7 +80,7 @@ func TestTrimFreesUndrawnSHMWithoutRender(t *testing.T) {
 	if r.copied != copied+16*16*4 {
 		t.Fatalf("returning window copied %d bytes", r.copied-copied)
 	}
-	if got := r.Pixels().RGBAAt(4, 4); got != (color.RGBA{255, 0, 0, 255}) {
+	if got := readPixels(t, r).RGBAAt(4, 4); got != (color.RGBA{255, 0, 0, 255}) {
 		t.Fatalf("returning window shows %v", got)
 	}
 }

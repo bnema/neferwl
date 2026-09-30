@@ -54,23 +54,14 @@ func (r *Renderer) SetHDR(nits float64) {
 	if r.hdrOwn.image == 0 {
 		r.hdrError = r.createHDROwn()
 		if r.hdrError != nil {
-			r.freeTarget(&r.hdrOwn)
-			return
-		}
-	}
-	if r.readbackBytes < 8 {
-		// SetHDR is called before rendering on the owner goroutine. On
-		// transitions the device has already been drained above.
-		r.hdrError = r.createReadback(8)
-		if r.hdrError != nil {
-			r.freeTarget(&r.hdrOwn)
+			r.dropHDROwn()
 			return
 		}
 	}
 	if r.compose.hdrPipeline == 0 {
 		r.hdrError = r.createGraphicsPipeline(composeVert, composeHDRFrag, vk.FormatR16g16b16a16Sfloat, r.compose.layout, true, &r.compose.hdrPipeline)
 		if r.hdrError != nil {
-			r.freeTarget(&r.hdrOwn)
+			r.dropHDROwn()
 			return
 		}
 	}
@@ -81,7 +72,7 @@ func (r *Renderer) SetHDR(nits float64) {
 	r.hdrError = r.createHDR()
 	if r.hdrError != nil {
 		r.destroyHDR()
-		r.freeTarget(&r.hdrOwn)
+		r.dropHDROwn()
 	}
 }
 
@@ -201,4 +192,21 @@ func (r *Renderer) recordHDR(cmd vk.CommandBuffer, out *target) {
 	in.SrcAccessMask, in.DstAccessMask = vk.AccessShaderReadBit, vk.AccessTransferReadBit
 	in.OldLayout, in.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutTransferSrcOptimal
 	d.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &in)
+}
+
+// dropHDROwn frees the HDR composition image with the capture pass that
+// samples it (its descriptor set refers to the view). Pending captures
+// finish first: this runs on SetHDR failures, never per frame.
+func (r *Renderer) dropHDROwn() {
+	if r.capturePass.pipeline != 0 {
+		for _, s := range r.captures {
+			if s.pending {
+				_ = checked("vkDeviceWaitIdle", r.dd.DeviceWaitIdle(r.device))
+				r.idle()
+				break
+			}
+		}
+		r.destroyCapturePass()
+	}
+	r.freeTarget(&r.hdrOwn)
 }

@@ -50,7 +50,7 @@ func TestRendererBufferTransform(t *testing.T) {
 				for x := range sw {
 					bx, by := tr.ToBuffer(float64(x)+0.5, float64(y)+0.5, float64(sw), float64(sh))
 					want := colours[int(by)][bx0+int(bx)]
-					if got := r.Pixels().RGBAAt(x, y); !near(got, want, 2) {
+					if got := readPixels(t, r).RGBAAt(x, y); !near(got, want, 2) {
 						t.Errorf("crop=%v transform %d: surface (%d,%d) = %v, want %v", crop, tr, x, y, got, want)
 					}
 				}

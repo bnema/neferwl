@@ -30,6 +30,30 @@ func TestFailClosesBeforeReplyAndUsesMonotonic(t *testing.T) {
 	}
 }
 
+func TestFailCancelledStillDeliversReadyReply(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	replies := make(chan ports.CaptureDone, 1)
+	for id := range uint64(100) {
+		f, err := os.CreateTemp(t.TempDir(), "capture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		Fail(ctx, ports.CaptureRequest{ID: id, Dst: ports.SHMBuffer{File: f}}, nil, replies)
+		select {
+		case result := <-replies:
+			if result.ID != id {
+				t.Fatalf("reply ID %d, want %d", result.ID, id)
+			}
+		default:
+			t.Fatal("cancelled output lost ready completion")
+		}
+		if _, err := f.Stat(); err == nil {
+			t.Fatal("descriptor open at reply")
+		}
+	}
+}
+
 func TestFailCancelledWithFullReplies(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

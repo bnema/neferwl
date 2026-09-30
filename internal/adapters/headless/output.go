@@ -76,10 +76,13 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
-	var requests []ports.CaptureRequest
+	var requestStorage [capture.MaxRequests]ports.CaptureRequest
+	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
+	pipeline := capture.NewPipeline(ctx, opts.Captured)
 	defer func() {
 		cancelCaptures()
+		pipeline.Close(r)
 		for _, q := range requests {
 			capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
 		}
@@ -123,9 +126,14 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		select {
 		case <-ctx.Done():
 			return nil
+		case b := <-pipeline.Completed():
+			pipeline.Recycle(b, r)
+			continue
 		case q := <-incoming:
 			if scene.Off {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
+			} else if len(requests) == cap(requests) {
+				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), opts.Captured)
 			} else {
 				requests = append(requests, q)
 				dirty = haveScene
@@ -180,7 +188,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			for _, q := range requests {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
 			}
-			requests = nil
+			clear(requests)
+			requests = requestStorage[:0]
 		}
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
@@ -217,14 +226,17 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if len(requests) > 0 {
 			opts.Log.Debug().Str("output", opts.Name).Int("captures", len(requests)).Msg("capture frame composed")
 		}
-		for _, q := range requests {
-			capture.Write(ctx, q, r, opts.Captured)
-		}
-		requests = nil
+		pipeline.Submit(r, requests)
+		clear(requests)
+		requests = requestStorage[:0]
 		frame++
 		pending = opts.flipped(pending, seen, scene, surfaces)
 		if opts.ScreenshotDir != "" {
 			shot := r.Pixels()
+			if shot == nil {
+				opts.Log.Debug().Str("component", "headless").Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
+				continue
+			}
 			if opts.Cursor != nil {
 				opts.Cursor.draw(shot)
 			}

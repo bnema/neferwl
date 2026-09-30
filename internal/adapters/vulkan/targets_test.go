@@ -4,7 +4,6 @@ import (
 	"image/color"
 	"math"
 	"testing"
-	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
@@ -38,7 +37,7 @@ func TestExportTargets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := r.Pixels().At(3, 3); got != (color.RGBA{0, 0, 255, 255}) {
+	if got := readPixels(t, r).At(3, 3); got != (color.RGBA{0, 0, 255, 255}) {
 		t.Fatalf("readback of the last target %v", got)
 	}
 	// Import target 0 as a client buffer, like the display would.
@@ -61,7 +60,7 @@ func TestExportTargets(t *testing.T) {
 	if err := render(viewer, scene, contents); err != nil {
 		t.Fatal(err)
 	}
-	if got := viewer.Pixels().At(10, 10); got != (color.RGBA{255, 0, 0, 255}) {
+	if got := readPixels(t, viewer).At(10, 10); got != (color.RGBA{255, 0, 0, 255}) {
 		t.Fatalf("target 0 as seen by the display %v", got)
 	}
 }
@@ -123,7 +122,7 @@ func TestHDRExportTarget(t *testing.T) {
 	if r.hdrOwn.layout != vk.ImageLayoutTransferSrcOptimal {
 		t.Fatalf("internal layout after HDR: %v", r.hdrOwn.layout)
 	}
-	if got := r.Pixels().RGBAAt(0, 0); got.R != 128 || got.G != 128 || got.B != 128 {
+	if got := readPixels(t, r).RGBAAt(0, 0); got.R != 128 || got.G != 128 || got.B != 128 {
 		t.Fatalf("SDR readback: %v", got)
 	}
 }
@@ -131,25 +130,7 @@ func TestHDRExportTarget(t *testing.T) {
 // Test-only target readback: production HDR images do not have transfer-src.
 func checkHDRPixel(t *testing.T, r *Renderer, rgb [3]float64) {
 	t.Helper()
-	if err := r.waitFrame(r.submitted); err != nil {
-		t.Fatal(err)
-	}
-	target := r.targets[0]
-	err := r.oneShot(func(cmd vk.CommandBuffer) {
-		d := r.dd
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: target.image, SubresourceRange: colorRange}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
-		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-		d.CmdCopyImageToBuffer(cmd, target.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
-		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
-		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	v := *(*uint32)(unsafe.Pointer(r.mapped))
+	v := pqTargetWords(t, r)[0]
 	red, green, blue := hdrPixel(rgb[0], rgb[1], rgb[2], 203)
 	for i, want := range []float64{blue, green, red} {
 		got := float64(v>>uint(i*10)&1023) / 1023

@@ -50,8 +50,14 @@ type Channels struct {
 	// Presented paces frame callbacks on the outputs' page flips; outputs
 	// that do not flip (idle, headless) are paced at their refresh rate.
 	Presented <-chan ports.OutputPresented
-	Captures  chan<- ports.CaptureRequest
-	Captured  <-chan ports.CaptureDone
+	// Captures carries accepted capture requests, never blocking. Each
+	// accepted request holds one of ports.MaxCaptureInflight credits until its
+	// CaptureDone arrives on Captured, whether or not the client is still
+	// there; the backend must complete every request it takes. In production
+	// both channels have capacity >= ports.MaxCaptureInflight, so replies
+	// never block the backend; standalone tests may use smaller channels.
+	Captures chan<- ports.CaptureRequest
+	Captured <-chan ports.CaptureDone
 	// OutputFormats are the outputs' direct scanout formats, offered in
 	// dmabuf feedback to fullscreen surfaces.
 	OutputFormats <-chan ports.OutputFormats
@@ -70,15 +76,18 @@ type Server struct {
 	nextLeaseID       uint64
 	nextCapture       uint64
 	captureReplies    map[uint64]func(ports.CaptureDone)
-	captureSources    map[*server.Resource]*output
-	captureSessions   map[*captureSession]struct{}
-	display           *server.Display
-	env               procEnv
-	slotsPending      bool // core waits for a slot window
-	name              string
-	cleanup           func()
-	log               zerowrap.Logger
-	channels          Channels
+	// captureInflight counts accepted captures until the backend completes
+	// them, independent of client resources; only the display loop touches it.
+	captureInflight map[uint64]struct{}
+	captureSources  map[*server.Resource]*output
+	captureSessions map[*captureSession]struct{}
+	display         *server.Display
+	env             procEnv
+	slotsPending    bool // core waits for a slot window
+	name            string
+	cleanup         func()
+	log             zerowrap.Logger
+	channels        Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -237,6 +246,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.clock = clock.System{}
 	}
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
+	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
 	s.managementSerial = 1
 	s.captureSources = map[*server.Resource]*output{}

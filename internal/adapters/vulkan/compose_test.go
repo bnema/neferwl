@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"context"
+	"image"
 	"image/color"
 	"os"
 	"slices"
@@ -34,11 +35,11 @@ func TestRendererScaledSHMFiltersLinearly(t *testing.T) {
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
-	got := r.Pixels().RGBAAt(32, 8)
+	got := readPixels(t, r).RGBAAt(32, 8)
 	if !near(got, color.RGBA{128, 128, 128, 255}, 8) {
 		t.Fatalf("midpoint %v, want grey", got)
 	}
-	if got := r.Pixels().RGBAAt(2, 8); !near(got, color.RGBA{0, 0, 0, 255}, 2) {
+	if got := readPixels(t, r).RGBAAt(2, 8); !near(got, color.RGBA{0, 0, 0, 255}, 2) {
 		t.Fatalf("left edge %v, want black (clamped)", got)
 	}
 }
@@ -61,7 +62,7 @@ func TestRendererSourceCrop(t *testing.T) {
 		x    int
 		want color.RGBA
 	}{{0, color.RGBA{0, 255, 0, 255}}, {15, color.RGBA{0, 0, 255, 255}}} {
-		if got := r.Pixels().RGBAAt(tc.x, 4); !near(got, tc.want, 5) {
+		if got := readPixels(t, r).RGBAAt(tc.x, 4); !near(got, tc.want, 5) {
 			t.Errorf("crop x=%d: %v want %v", tc.x, got, tc.want)
 		}
 	}
@@ -93,7 +94,7 @@ func TestRendererScaledDMABufFiltersLinearly(t *testing.T) {
 	}
 	// Target x=64 (centre 64.5) maps to buffer 32.25: between texel 31
 	// (black, centre 31.5) and 32 (white, centre 32.5), 75% white.
-	if got := r.Pixels().RGBAAt(64, 2); !near(got, color.RGBA{191, 191, 191, 255}, 10) {
+	if got := readPixels(t, r).RGBAAt(64, 2); !near(got, color.RGBA{191, 191, 191, 255}, 10) {
 		t.Fatalf("boundary %v, want a linear mix", got)
 	}
 }
@@ -184,7 +185,7 @@ func TestRendererSkipsOccludedSurface(t *testing.T) {
 	if r.copied != 16*16*4 {
 		t.Fatalf("copied %d bytes, want only the subsurface's %d", r.copied, 16*16*4)
 	}
-	if got := r.Pixels().At(8, 8); got != green {
+	if got := readPixels(t, r).At(8, 8); got != green {
 		t.Fatalf("At(8,8)=%v want %v", got, green)
 	}
 	// A smaller opaque child leaves part of the root visible: it is copied.
@@ -222,7 +223,7 @@ func TestRendererKeepsSurfaceBelowFailedCover(t *testing.T) {
 	if r.copied != 16*16*4 {
 		t.Fatalf("copied %d bytes, want the root's %d", r.copied, 16*16*4)
 	}
-	if got := r.Pixels().At(8, 8); got != red {
+	if got := readPixels(t, r).At(8, 8); got != red {
 		t.Fatalf("At(8,8)=%v want %v", got, red)
 	}
 }
@@ -268,7 +269,7 @@ func TestRendererSHMDoubleBufferWaitsForReaders(t *testing.T) {
 			t.Fatalf("buffer of frame %d rewritten with completed=%d", readers[0], r.completed)
 		}
 	}
-	if got := r.Pixels().RGBAAt(4, 4); got != (color.RGBA{180, 0, 0, 255}) {
+	if got := readPixels(t, r).RGBAAt(4, 4); got != (color.RGBA{180, 0, 0, 255}) {
 		t.Fatalf("pixel %v", got)
 	}
 }
@@ -301,4 +302,14 @@ func TestRendererImportsAcquireFence(t *testing.T) {
 	if sem := r.importFence(f); sem != 0 {
 		t.Fatal("pipe imported as a fence")
 	}
+}
+
+// readPixels reads the frame back, failing the test when Pixels cannot.
+func readPixels(t *testing.T, r *Renderer) *image.RGBA {
+	t.Helper()
+	img := r.Pixels()
+	if img == nil {
+		t.Fatal("Pixels: no free capture slot or copy failed")
+	}
+	return img
 }
