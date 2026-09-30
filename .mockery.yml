@@ -45,6 +45,11 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: proc_env_mock_test.go
+      peerExe:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: peer_exe_mock_test.go
       acquirePoller:
         config:
           dir: internal/adapters/wayland

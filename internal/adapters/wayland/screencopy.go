@@ -185,7 +185,8 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		s.log.Debug().Str("output", o.name()).Int("inflight", len(s.captureInflight)).Msg("capture refused: too many captures in flight")
 		return 0, false
 	}
-	if life == nil || !s.mayCapture(life.Client()) {
+	// An ext frame (tag.session set) rides on the session's resolution.
+	if life == nil || (tag.session != 0 && !s.mayCaptureFrame(life.Client())) || (tag.session == 0 && !s.mayCapture(life.Client())) {
 		s.log.Debug().Str("output", o.name()).Msg("capture refused: client may not capture")
 		return 0, false
 	}

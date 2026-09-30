@@ -43,7 +43,7 @@ func TestScreencopyProtocol(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)
 	replies := make(chan ports.CaptureDone, 1)
-	s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}}}, Channels{Captures: requests, Captured: replies}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}}}, Channels{Captures: requests, Captured: replies}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestExtCaptureLifecycle(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	commands := make(chan ports.ClientCommand, 4)
 	initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
-	s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +574,7 @@ func TestExtCaptureStoppedOnOutputRemoval(t *testing.T) {
 	dir := t.TempDir()
 	commands := make(chan ports.ClientCommand, 4)
 	initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 4, Height: 4}, Width: 4, Height: 4, Scale: 1}
-	s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{initial}}, Channels{Captures: make(chan ports.CaptureRequest, 1), Captured: make(chan ports.CaptureDone, 1), Commands: commands}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: make(chan ports.CaptureRequest, 1), Captured: make(chan ports.CaptureDone, 1), Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,7 +629,7 @@ func TestWlrOutputGoneAndDestroyedBeforeReply(t *testing.T) {
 			replies := make(chan ports.CaptureDone, 1)
 			commands := make(chan ports.ClientCommand, 2)
 			initial := ports.OutputPlacement{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}
-			s, err := New(Options{RuntimeDir: dir, Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
+			s, err := New(Options{RuntimeDir: dir, CaptureAllow: allowStore(t, "*\n"), Outputs: ports.Layout{initial}}, Channels{Captures: requests, Captured: replies, Commands: commands}, logging.For(context.Background(), "wayland"))
 			if err != nil {
 				t.Fatal(err)
 			}

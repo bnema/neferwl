@@ -35,7 +35,7 @@ func newBarrierServer(t *testing.T) *barrierServer {
 	h := &barrierServer{gate: &sessionsecurity.Gate{}, changes: make(chan ports.SecurityState, 1), captures: make(chan ports.CaptureRequest, 4), captured: make(chan ports.CaptureDone, 4), stopped: make(chan struct{}), dir: t.TempDir()}
 	layout := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
 	var err error
-	h.s, err = New(Options{RuntimeDir: h.dir, Outputs: layout, Security: h.gate}, Channels{SecurityChanges: h.changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captures: h.captures, Captured: h.captured}, logging.For(context.Background(), "wayland"))
+	h.s, err = New(Options{RuntimeDir: h.dir, Outputs: layout, Security: h.gate, CaptureAllow: allowStore(t, "*\n")}, Channels{SecurityChanges: h.changes, SecurityEvents: make(chan ports.SecurityBackendEvent, 16), Captures: h.captures, Captured: h.captured}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}

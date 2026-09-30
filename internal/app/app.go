@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
@@ -54,6 +55,11 @@ type Options struct {
 	// Run closes Script on shutdown; the reader goroutine exits after Close.
 	Script     io.ReadCloser
 	testScenes chan<- []ports.Scene
+	// captureAllowPath replaces the fixed allowlist path (tests).
+	captureAllowPath string
+	// captureAllowOwner is the uid that must own that file (tests use their
+	// own; root, 0, otherwise).
+	captureAllowOwner uint32
 }
 
 func Run(ctx context.Context, opts Options) error { return run(ctx, opts, nil) }
@@ -134,7 +140,18 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
 	// One launch prefix for ext-workspace ids and the state file.
 	wsIDs := workspaceid.New()
-	server, err := wayland.New(wayland.Options{WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	// The path is fixed: a config key would let a program of the same user
+	// widen who may capture.
+	// Production: the fixed path, a root-owned file. Only tests set a path,
+	// and an owner for it.
+	captureAllowLog := logging.For(ctx, "captureallow")
+	var captureAllow *captureallow.Store
+	if opts.captureAllowPath != "" {
+		captureAllow = captureallow.NewStoreOwnedBy(opts.captureAllowPath, opts.captureAllowOwner, captureAllowLog)
+	} else {
+		captureAllow = captureallow.NewStore(captureallow.DefaultPath, captureAllowLog)
+	}
+	server, err := wayland.New(wayland.Options{CaptureAllow: captureAllow, WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -163,7 +180,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		inject(input)
 	}
 	var workers sync.WaitGroup
-	workers.Add(7)
+	workers.Add(8)
 	done := make(chan error, 8)
 	path := opts.ConfigPath
 	if path == "" {
@@ -241,6 +258,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		close(script)
 	}
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
+	go func() {
+		defer workers.Done()
+		// Without a watch the allowlist stays as loaded: restart to apply.
+		if err := captureAllow.Run(ctx); err != nil {
+			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
+		}
+	}()
 	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
 	if xdisplay != nil {

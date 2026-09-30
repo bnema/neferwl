@@ -480,7 +480,7 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 	}
 	f.used = true
 	c := f.session
-	if c.stopped || c.src == nil || !c.s.mayCapture(f.res.Client()) {
+	if c.stopped || c.src == nil || !c.s.mayCaptureFrame(f.res.Client()) {
 		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonStopped))
 		return
 	}

@@ -90,7 +90,7 @@ func newCaptureHarnessWith(t *testing.T, tune func(*Options, *Channels)) *captur
 		captures:   make(chan ports.CaptureRequest, 8),
 		captured:   make(chan ports.CaptureDone, 8),
 	}
-	opts := Options{RuntimeDir: h.dir, Outputs: ports.Layout{captureOutput}}
+	opts := Options{RuntimeDir: h.dir, Outputs: ports.Layout{captureOutput}, CaptureAllow: allowStore(t, "*\n")}
 	ch := Channels{Events: h.events, Commands: h.commands, Workspaces: h.workspaces, Captures: h.captures, Captured: h.captured}
 	if tune != nil {
 		tune(&opts, &ch)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 
+	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
@@ -41,8 +42,14 @@ type Options struct {
 	// WorkspaceIDs names workspaces (ext-workspace id); nil draws a fresh
 	// launch prefix. The state file must share the one of the session.
 	WorkspaceIDs *workspaceid.IDs
+	// CaptureAllow is the executable allowlist for screen capture (captureauth.go);
+	// nil lets every client capture, unless the session is protected. The
+	// caller keeps it current (captureallow.Store.Run).
+	CaptureAllow *captureallow.Store
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
+	// peer replaces the peer executable lookup (tests).
+	peer peerExe
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -107,13 +114,20 @@ type Server struct {
 	nextSession  uint64
 	excl         *exclusion
 	ownUID       uint32
-	display      *server.Display
-	env          procEnv
-	slotsPending bool // core waits for a slot window
-	name         string
-	cleanup      func()
-	log          zerowrap.Logger
-	channels     Channels
+	// captureAllow, peer and peers decide mayCapture (captureauth.go):
+	// peers keeps each client's pidfd until it is destroyed.
+	captureAllow *captureallow.Store
+	peer         peerExe
+	peers        map[server.Client]*peerID
+	// noPidfdWarned: the missing SO_PEERPIDFD is logged once.
+	noPidfdWarned bool
+	display       *server.Display
+	env           procEnv
+	slotsPending  bool // core waits for a slot window
+	name          string
+	cleanup       func()
+	log           zerowrap.Logger
+	channels      Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -276,6 +290,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.clock = opts.Clock
 	if s.clock == nil {
 		s.clock = clock.System{}
+	}
+	s.captureAllow, s.peer, s.peers = opts.CaptureAllow, opts.peer, map[server.Client]*peerID{}
+	if s.peer == nil {
+		s.peer = linuxPeerExe{}
 	}
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}

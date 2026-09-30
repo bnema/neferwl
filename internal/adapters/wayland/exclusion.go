@@ -168,7 +168,7 @@ func (m *exclusionManager) AttachSurface(r *imagecapture.NeferwlCaptureExclusion
 	// same check by holding the token.
 	ex := s.excl
 	switch {
-	case s.protected() || !m.trusted: // DISPLAY protection; the UID of this connection, checked once at bind
+	case s.protected() || !m.trusted || !s.mayCapture(r.Client()): // DISPLAY protection; the UID of this connection, checked once at bind; the capture allowlist
 		att.fail(imagecapture.NeferwlCaptureLayerV1FailureUnauthorized)
 		return
 	case ex == nil || subtle.ConstantTimeCompare([]byte(token), []byte(ex.token)) != 1:
