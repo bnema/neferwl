@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	clientcore "github.com/bnema/wlturbo/protocol/core"
@@ -177,17 +178,24 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	}
 	// Positive control: the same ordinary client and valid SHM destination
 	// can capture before acquisition, so refusal is not a malformed request.
-	control, err := captures.CaptureOutputRegion(0, outputs[0], 0, 0, 1, 1)
-	check(err)
-	controlReady, controlFailed := false, false
-	control.OnReady(func(_, _, _ uint32) { controlReady = true })
-	control.OnFailed(func() { controlFailed = true })
-	control.OnBufferDone(func() { check(control.Copy(sessionLockBuffer(t, shm, 1, 1, clientcore.FORMAT_XRGB8888))) })
-	until(desktop, "unlocked capture control", func() bool { return controlReady || controlFailed })
-	if !controlReady || controlFailed {
-		t.Fatal("valid unlocked capture failed")
+	// Software Vulkan without sync-file export (lavapipe) refuses every
+	// protocol capture by design, so the control only holds where the device
+	// can capture; the protection assertions below still run everywhere.
+	if captureSupported(t) {
+		control, err := captures.CaptureOutputRegion(0, outputs[0], 0, 0, 1, 1)
+		check(err)
+		controlReady, controlFailed := false, false
+		control.OnReady(func(_, _, _ uint32) { controlReady = true })
+		control.OnFailed(func() { controlFailed = true })
+		control.OnBufferDone(func() { check(control.Copy(sessionLockBuffer(t, shm, 1, 1, clientcore.FORMAT_XRGB8888))) })
+		until(desktop, "unlocked capture control", func() bool { return controlReady || controlFailed })
+		if !controlReady || controlFailed {
+			t.Fatal("valid unlocked capture failed")
+		}
+		check(control.Destroy())
+	} else {
+		t.Log("Vulkan device cannot capture (no sync-file export): positive control skipped")
 	}
-	check(control.Destroy())
 	// Protocol focus/capture completion is not completion of asynchronous PNG
 	// writes. Establish both screenshot baselines before engaging protection.
 	until(desktop, "initial screenshots on both outputs", func() bool {
@@ -376,4 +384,15 @@ func equalSessionLockShots(a, b map[string][]byte) bool {
 		}
 	}
 	return true
+}
+
+// captureSupported probes the device the headless outputs will render on.
+func captureSupported(t *testing.T) bool {
+	t.Helper()
+	r, err := vulkan.New(16, 16)
+	if err != nil {
+		return false
+	}
+	defer r.Close()
+	return r.CaptureSupported()
 }
