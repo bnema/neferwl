@@ -83,6 +83,43 @@ func TestWaitHiddenClosesEveryFenceOnCancel(t *testing.T) {
 	}
 }
 
+// A terminal fence error must cancel and join readback before closing the
+// device. Holds remain in place until Close has made GPU reads impossible.
+func TestTerminalChildFenceClosesPipelineBeforeClearingHolds(t *testing.T) {
+	read, failed, err := os.Pipe()
+	require.NoError(t, err)
+	defer failed.Close()
+	pending, _ := fencePipe(t)
+	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 2))
+	defer p.Close(nil)
+	child := portsmocks.NewMockRenderer(t)
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(pending).Maybe()
+	child.EXPECT().Render(mock.Anything, mock.Anything).Return(failed, nil).Once()
+	child.EXPECT().BeginCapture().Return(frame, nil).Once()
+	ended := false
+	child.EXPECT().EndCapture(frame).Run(func(ports.CaptureFrame) { ended = true }).Once()
+	child.EXPECT().Close().Run(func() {
+		require.True(t, ended, "worker joined and lease returned before device closes")
+		require.Equal(t, 1, p.off.nf, "hold retained until device closes")
+	}).Once()
+	p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+	submitHiddenOne(t, p, hiddenSceneWindows(5), map[ports.WindowID]ports.SurfaceContent{5: {Seq: 2}}, 1)
+	_, reads, busy := p.CapHiddenSeen(map[ports.WindowID]uint64{5: 7})
+	require.True(t, busy)
+	require.Equal(t, map[ports.WindowID]uint64{5: 2}, reads)
+	require.NoError(t, read.Close()) // write end now polls POLLERR
+	p.Retire(ports.Scene{})          // session end must not wait forever on the error
+	require.Nil(t, p.off.r, "failed device closed")
+	require.Nil(t, p.HiddenCompleted(), "failed worker joined")
+	seen := map[ports.WindowID]uint64{5: 7}
+	got, reads, busy := p.CapHiddenSeen(seen)
+	require.False(t, busy)
+	require.Empty(t, reads, "closed device lifts non-expiring holds")
+	require.Equal(t, seen, got)
+	require.True(t, fenceClosed(failed))
+}
+
 func TestWaitHiddenWaitsForSignalledFences(t *testing.T) {
 	f1, w1 := fencePipe(t)
 	p, replies, _ := hiddenPipeline(t, f1)
@@ -217,24 +254,25 @@ func TestRetireClosesIdleChildOnce(t *testing.T) {
 	p.Close(nil)
 }
 
-// GO006: only a readable fence (or an invalid descriptor) is finished.
+// GO006: a readable fence (or an invalid descriptor) is done; POLLERR and poll
+// failures are terminal; timeouts and interrupts stay pending.
 func TestPollResult(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		n       int
 		err     error
 		revents int16
-		want    bool
+		want    fenceState
 	}{
-		{"readable", 1, nil, unix.POLLIN, true},
-		{"timeout", 0, nil, 0, false},
-		{"interrupted", -1, unix.EINTR, 0, false},
-		{"other poll error", -1, unix.EIO, 0, false},
-		{"invalid poll descriptor", -1, unix.EBADF, 0, true},
-		{"invalid descriptor event", 1, nil, unix.POLLNVAL, true},
-		{"gpu error status", 1, nil, unix.POLLERR, false},
-		{"error with data", 1, nil, unix.POLLIN | unix.POLLERR, false},
-		{"hangup only", 1, nil, unix.POLLHUP, false},
+		{"readable", 1, nil, unix.POLLIN, fenceDone},
+		{"timeout", 0, nil, 0, fencePending},
+		{"interrupted", -1, unix.EINTR, 0, fencePending},
+		{"other poll error", -1, unix.EIO, 0, fenceFailed},
+		{"invalid poll descriptor", -1, unix.EBADF, 0, fenceDone},
+		{"invalid descriptor event", 1, nil, unix.POLLNVAL, fenceDone},
+		{"gpu error status", 1, nil, unix.POLLERR, fenceFailed},
+		{"error with data", 1, nil, unix.POLLIN | unix.POLLERR, fenceFailed},
+		{"hangup only", 1, nil, unix.POLLHUP, fencePending},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, pollResult(tc.n, tc.err, tc.revents))
@@ -242,12 +280,15 @@ func TestPollResult(t *testing.T) {
 	}
 }
 
-func TestPollReadyOnRealDescriptors(t *testing.T) {
+func TestPollFenceOnRealDescriptors(t *testing.T) {
 	r, w := fencePipe(t)
-	require.False(t, pollReady(r), "nothing written yet")
+	require.Equal(t, fencePending, pollFence(r), "nothing written yet")
 	signalFence(t, w)
-	require.True(t, pollReady(r))
+	require.Equal(t, fenceDone, pollFence(r))
 	closed, _ := fencePipe(t)
 	require.NoError(t, closed.Close())
-	require.True(t, pollReady(closed), "a closed descriptor has nothing to wait for")
+	require.Equal(t, fenceDone, pollFence(closed), "a closed descriptor has nothing to wait for")
+	allocs := testing.AllocsPerRun(100, func() { pollFence(r) })
+	require.Zero(t, allocs, "polling a fence does not allocate")
+	t.Logf("pollFence: %.1f allocs", allocs)
 }

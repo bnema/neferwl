@@ -195,13 +195,30 @@ func (p *Pipeline) Retire(s ports.Scene) {
 	}
 }
 
+// fenceState is what a zero-timeout poll says about a child render fence.
+type fenceState int
+
+const (
+	fencePending fenceState = iota // GPU work still running (or poll interrupted)
+	fenceDone                      // finished: nothing is left to read
+	fenceFailed                    // terminal: the GPU failed the work or poll broke
+)
+
 // reap forgets the renders whose fence signalled, oldest first kept in order.
+// A terminal fence error cannot be waited out, and its hold does not expire:
+// the child pipeline is cancelled and joined, then the device is closed (which
+// waits for the GPU), and only then are the holds cleared, so every later
+// report lifts them. The next clean request builds a new child.
 func (o *offscreen) reap() {
 	k := 0
+	failed := false
 	for i := range o.nf {
-		if pollReady(o.slots[i].fd) {
+		switch pollFence(o.slots[i].fd) {
+		case fenceDone:
 			o.slots[i].release()
 			continue
+		case fenceFailed:
+			failed = true
 		}
 		if k != i {
 			o.slots[k], o.slots[i] = o.slots[i], o.slots[k]
@@ -209,32 +226,43 @@ func (o *offscreen) reap() {
 		k++
 	}
 	o.nf = k
+	if failed {
+		o.close()
+	}
 }
 
-// pollReady reports whether a sync file signalled, without waiting.
-func pollReady(f *os.File) bool {
+// pollFence polls a sync file without waiting. It does not allocate.
+func pollFence(f *os.File) fenceState {
 	fd := int32(f.Fd())
 	if fd < 0 {
-		return true // closed: poll would skip it, and nothing is left to wait for
+		return fenceDone // closed: poll would skip it, and nothing is left to wait for
 	}
-	pfd := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
-	n, err := unix.Poll(pfd, 0)
+	var pfd [1]unix.PollFd
+	pfd[0] = unix.PollFd{Fd: fd, Events: unix.POLLIN}
+	n, err := unix.Poll(pfd[:], 0)
 	return pollResult(n, err, pfd[0].Revents)
 }
 
-// pollResult decides from a zero-timeout poll. Only a readable fence is
-// finished (an invalid descriptor has nothing left to wait for). An
-// interrupted poll, a timeout, and an error status (POLLERR: the GPU failed
-// the work) are not finished: the fence keeps holding what it protects until
-// the device is closed.
-func pollResult(n int, err error, revents int16) bool {
+// pollResult decides from a zero-timeout poll. A readable fence (or an invalid
+// descriptor, which has nothing left to wait for) is done. An interrupted poll
+// and a timeout are pending. An error status (POLLERR: the GPU failed the
+// work) or any other poll error is terminal: it will never signal.
+func pollResult(n int, err error, revents int16) fenceState {
 	switch {
 	case errors.Is(err, unix.EBADF):
-		return true
-	case err != nil || n <= 0:
-		return false
+		return fenceDone
+	case errors.Is(err, unix.EINTR):
+		return fencePending
+	case err != nil:
+		return fenceFailed
+	case n <= 0:
+		return fencePending
+	case revents&unix.POLLERR != 0:
+		return fenceFailed
+	case revents&(unix.POLLIN|unix.POLLNVAL) != 0:
+		return fenceDone
 	}
-	return revents&(unix.POLLIN|unix.POLLNVAL) != 0 && revents&unix.POLLERR == 0
+	return fencePending
 }
 
 func (o *offscreen) busy() bool {
