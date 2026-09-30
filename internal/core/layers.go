@@ -99,7 +99,7 @@ func hasFullscreen(sc *screen) bool {
 // keyboard exclusively (a locker, a launcher) still shows: it has the
 // keyboard and must be seen.
 func shown(sc *screen, l ports.SceneLayer) bool {
-	return l.Layer == ports.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID)
+	return l.Layer == ports.LayerBackground || !hasFullscreen(sc) || sc.exclusiveKeyboard(l.ID) || sc.capture[l.ID]
 }
 
 // exclusiveKeyboard reports whether layer surface id takes the keyboard

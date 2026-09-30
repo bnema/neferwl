@@ -94,7 +94,9 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 		return
 	}
 	output := srv.frameOutput(s)
-	if win == 0 || output == "" || output == suspendedFrameQueue {
+	// A tree only a capture session draws gets no presentation feedback: no
+	// display presents it.
+	if win == 0 || output == "" || output == suspendedFrameQueue || srv.invisible(s) {
 		for _, fb := range pending {
 			discard(fb)
 		}

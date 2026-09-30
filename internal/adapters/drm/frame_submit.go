@@ -27,7 +27,23 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	// windows it does not draw is discarded, not presented.
 	f := pendingFrame{shows: o.shownBy(scene, seen)}
 	o.wantContent(scene, surfaces)
-	decision := o.decideFrame(scene, surfaces, len(requests) > 0)
+	// Clean requests that cannot be served (their session is not the
+	// scene's) are failed here, never answered from the displayed frame.
+	normal, clean := pipeline.Split(scene, requests)
+	pipeline.Retire(scene)
+	hiddenClean := len(clean) > 0 && scene.CaptureScene != nil
+	if hiddenClean {
+		// A hidden workspace: the child renderer draws it, whatever the display
+		// does (scanout included). Failures answer the requests and never stop
+		// the output.
+		pipeline.SubmitHidden(scene, surfaces, clean)
+		clear(clean)
+		clean = nil
+	}
+	// Captures of the displayed frame, and a visible native session border,
+	// force composition: scanout and the overlay plane would skip them. The
+	// hidden-workspace child needs none, so it keeps direct scanout.
+	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(clean) > 0 || capture.BorderVisible(scene))
 	if decision.fb != 0 {
 		c := decision.content
 		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect); direct {
@@ -37,6 +53,21 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	ov, composed := decision.overlay, decision.composed
 	r.UseTarget(o.back)
+	if len(clean) > 0 {
+		// The clean frame goes first to the same target and is copied by
+		// the capture; the displayed frame is drawn over it in queue order.
+		// Cost: a second composition on frames with a clean request.
+		cdone, cerr := r.Render(pipeline.CleanScene(composed), surfaces)
+		if cerr != nil {
+			return false, renderError{cerr}
+		}
+		if cdone != nil {
+			cdone.Close()
+		}
+		pipeline.Submit(r, clean)
+		// Ownership moved to the worker (or an immediate failure reply).
+		clear(clean)
+	}
 	done, rerr := r.Render(composed, surfaces)
 	if rerr != nil {
 		ov.close()
@@ -53,13 +84,13 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 			return false, renderError{rerr}
 		}
 	}
-	if len(requests) > 0 {
+	if len(normal) > 0 {
 		// Scanout and the overlay plane were skipped for this frame.
-		o.log.Debug().Str("connector", o.conn.name).Int("captures", len(requests)).Msg("capture frame composed")
-		pipeline.Submit(r, requests)
+		o.log.Debug().Str("connector", o.conn.name).Int("captures", len(normal)).Msg("capture frame composed")
+		pipeline.Submit(r, normal)
 		// Ownership moved to the worker (or an immediate failure reply).
 		// A later commit panic must not fail the same requests again.
-		clear(requests)
+		clear(normal)
 	}
 	// The overlay buffer is on screen like a scanned-out one: it is
 	// reported shown, so it is not released under the plane.

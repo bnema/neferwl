@@ -165,6 +165,11 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		s.log.Debug().Str("output", o.name()).Int("inflight", len(s.captureInflight)).Msg("capture refused: too many captures in flight")
 		return 0, false
 	}
+	clean, session, revision, allowed := s.captureTag(life, o)
+	if !allowed {
+		s.log.Debug().Str("output", o.name()).Msg("capture refused: private session not active")
+		return 0, false
+	}
 	buf := s.buffers[b.Resource].(*buffer)
 	fd, err := unix.Dup(int(buf.pool.file.Fd()))
 	if err != nil {
@@ -185,7 +190,7 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format}
+	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Clean: clean, Session: session, CaptureRevision: revision}
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")

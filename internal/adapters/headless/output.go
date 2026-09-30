@@ -29,6 +29,9 @@ type Options struct {
 	Formats       chan<- ports.OutputFormats // confirmed color state; nil disables reporting
 	Log           zerowrap.Logger
 	NewRenderer   func(w, h int) (ports.Renderer, error)
+	// NewCaptureRenderer makes the child renderer of a hidden workspace
+	// capture session (Scene.CaptureScene). Nil: such captures fail closed.
+	NewCaptureRenderer func(w, h int) (ports.Renderer, error)
 	// Name and Presented report what the output has read after each
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
@@ -80,10 +83,16 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
+	if opts.NewCaptureRenderer != nil {
+		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
+	}
 	defer func() {
 		cancelCaptures()
 		pipeline.Close(r)
 		for _, q := range requests {
+			if capture.Handed(q) {
+				continue // already answered, or owned by a worker
+			}
 			capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
 		}
 		for {
@@ -102,7 +111,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var pending *ports.OutputPresented
 	update := func(c ports.SurfaceContent) {
 		seen[c.ID] = max(seen[c.ID], c.Seq)
-		dirty = dirty || scene.Shows(c.ID)
+		dirty = dirty || capture.Shows(scene, c.ID)
 		if c.Empty() {
 			delete(surfaces, c.ID)
 		} else {
@@ -129,6 +138,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		case b := <-pipeline.Completed():
 			pipeline.Recycle(b, r)
 			continue
+		case b := <-pipeline.HiddenCompleted():
+			pipeline.RecycleHidden(b)
+			pipeline.Retire(scene)
+			continue
 		case q := <-incoming:
 			if scene.Off {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
@@ -143,7 +156,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		case <-trim.C():
 			// An idle output renders nothing: free what windows that left
-			// it held.
+			// it held, and the child of an ended session.
+			pipeline.Retire(scene)
 			if err := r.Trim(clk.Now()); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
@@ -207,6 +221,33 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		start := time.Now()
+		// Clean requests of a session the scene does not carry are failed
+		// here. The others draw the clean frame first (same renderer, queue
+		// order), then the displayed one; see capture.Pipeline.Split.
+		normal, clean := pipeline.Split(scene, requests)
+		pipeline.Retire(scene)
+		if len(clean) > 0 && scene.CaptureScene != nil {
+			// A hidden workspace: a child renderer draws it. The display's
+			// fences do not cover the child, so wait for it before reporting.
+			pipeline.SubmitHidden(scene, surfaces, clean)
+			clear(clean)
+			if err := pipeline.WaitHidden(ctx); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("workspace frame fence: %w", err)
+			}
+		} else if len(clean) > 0 {
+			cdone, err := r.Render(pipeline.CleanScene(scene), surfaces)
+			if err != nil {
+				return fmt.Errorf("render clean frame: %w", err)
+			}
+			if cdone != nil {
+				cdone.Close()
+			}
+			pipeline.Submit(r, clean)
+			clear(clean)
+		}
 		done, err := r.Render(scene, surfaces)
 		if err != nil {
 			return fmt.Errorf("render frame: %w", err)
@@ -223,10 +264,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("frame fence: %w", err)
 			}
 		}
-		if len(requests) > 0 {
-			opts.Log.Debug().Str("output", opts.Name).Int("captures", len(requests)).Msg("capture frame composed")
+		if len(normal) > 0 {
+			opts.Log.Debug().Str("output", opts.Name).Int("captures", len(normal)).Msg("capture frame composed")
 		}
-		pipeline.Submit(r, requests)
+		pipeline.Submit(r, normal)
 		clear(requests)
 		requests = requestStorage[:0]
 		frame++

@@ -81,13 +81,15 @@ type Server struct {
 	captureInflight map[uint64]struct{}
 	captureSources  map[*server.Resource]*output
 	captureSessions map[*captureSession]struct{}
-	display         *server.Display
-	env             procEnv
-	slotsPending    bool // core waits for a slot window
-	name            string
-	cleanup         func()
-	log             zerowrap.Logger
-	channels        Channels
+	// private is the private capture session state (capture_session.go).
+	private      privateCapture
+	display      *server.Display
+	env          procEnv
+	slotsPending bool // core waits for a slot window
+	name         string
+	cleanup      func()
+	log          zerowrap.Logger
+	channels     Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
@@ -625,7 +627,9 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			return
 		}
 		s.log.Info().Uint64("id", uint64(c.ID)).Int("w", c.Width).Int("h", c.Height).Bool("fullscreen", c.Fullscreen).Bool("activated", c.Activated).Msg("configure")
-		visibilityChanged := w.hasLast && w.last.Visible != c.Visible
+		// Callbacks move when the tree stops or starts being throttled: on
+		// Visible or on Captured.
+		visibilityChanged := w.hasLast && (w.last.Visible != c.Visible || w.last.Captured != c.Captured)
 		scanoutChanged := !w.hasLast || w.last.Fullscreen != c.Fullscreen || w.last.Output != c.Output || w.last.Visible != c.Visible
 		w.last, w.hasLast = c, true
 		if visibilityChanged {
@@ -651,6 +655,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 			off[name] = true
 		}
 		s.setOutputsOff(off)
+	case ports.CaptureSessionState:
+		s.captureState(c)
 	case ports.UserActivity:
 		s.userActivity()
 	case ports.SlotsPending:

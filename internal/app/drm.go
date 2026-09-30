@@ -330,6 +330,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					case <-ctx.Done():
 					}
 				}()
+				o.NewCaptureRenderer = newRenderer
 				progress.started(name, source)
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
