@@ -252,7 +252,11 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	r, frames := recordingRenderer(t, nil)
 
-	r.EXPECT().Capture(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{1, 2, 3, 255}); return nil }).Once()
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil)
+	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.MatchedBy(func(p []byte) bool { return len(p) >= 16 }), 8).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error { copy(dst, []byte{1, 2, 3, 255}); return nil }).Once()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -276,7 +280,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("no capture")
 	}
-	r.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
+	frame.Calls = nil // Testify must not inspect unmapped slice during expectation cleanup.
 	if _, err := f.Stat(); err == nil {
 		t.Fatal("descriptor not closed")
 	}

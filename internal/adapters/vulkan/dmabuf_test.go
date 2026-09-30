@@ -85,7 +85,7 @@ func TestRendererImportsDMABuf(t *testing.T) {
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
-	px := r.Pixels()
+	px := readPixels(t, r)
 	for _, c := range []struct {
 		x, y int
 		want color.RGBA

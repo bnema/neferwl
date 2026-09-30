@@ -977,12 +977,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	frame := 0
-	var requests []ports.CaptureRequest
+	var requestStorage [capture.MaxRequests]ports.CaptureRequest
+	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
+	pipeline := capture.NewPipeline(ctx, captured)
 	defer func() {
 		cancelCaptures()
+		pipeline.Close(r)
 		for _, q := range requests {
-			capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
+			if q.ID != 0 || q.Dst.File != nil {
+				capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
+			}
 		}
 		for {
 			select {
@@ -1095,9 +1100,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case <-gapDue:
 		case <-ctx.Done():
 			return nil
+		case b := <-pipeline.Completed():
+			pipeline.Recycle(b, r)
+			continue
 		case q := <-captures:
 			if !enabled || o.off || o.wantOff {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
+			} else if len(requests) == cap(requests) {
+				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), captured)
 			} else {
 				requests = append(requests, q)
 				dirty = haveScene
@@ -1183,7 +1193,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			for _, q := range requests {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
 			}
-			requests = nil
+			clear(requests)
+			requests = requestStorage[:0]
 		}
 		if !enabled || o.frame.pendingCommit() {
 			continue
@@ -1224,9 +1235,16 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			o.flipGapUntil = time.Time{}
 		}
 		start := time.Now()
-		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, captured)
-		requests = nil
+		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, pipeline)
 		var fatal renderError
+		if errors.As(err, &fatal) {
+			// A failed render did not hand these requests to the worker.
+			for _, q := range requests {
+				capture.Fail(ctx, q, err, captured)
+			}
+		}
+		clear(requests)
+		requests = requestStorage[:0]
 		if errors.As(err, &fatal) {
 			return err
 		}

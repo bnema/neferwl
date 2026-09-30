@@ -16,13 +16,13 @@ func (e renderError) Unwrap() error { return e.err }
 // submitFrame puts one frame of the scene on screen: the fullscreen window
 // scanned out directly when the kernel takes it, else a composed frame with
 // an optional overlay plane, dropped when the kernel refuses it. Captures
-// force composition and are answered from the composed frame (they are
-// consumed either way). direct reports a scanned-out frame.
+// force composition and are answered from the composed frame; on renderError
+// the caller still owns the requests and must fail them. direct reports scanout.
 //
 // On success the frame is in flight; errOverlayDropped asks for a new frame
 // without the overlay; a renderError stops the output; other errors are
 // commit errors for commitFailed.
-func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, seen map[ports.WindowID]uint64, requests []ports.CaptureRequest, captured chan<- ports.CaptureDone) (direct bool, err error) {
+func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, seen map[ports.WindowID]uint64, requests []ports.CaptureRequest, pipeline *capture.Pipeline) (direct bool, err error) {
 	// shows is what the frame puts on screen: presentation feedback of
 	// windows it does not draw is discarded, not presented.
 	f := pendingFrame{shows: o.shownBy(scene, seen)}
@@ -56,9 +56,10 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	if len(requests) > 0 {
 		// Scanout and the overlay plane were skipped for this frame.
 		o.log.Debug().Str("connector", o.conn.name).Int("captures", len(requests)).Msg("capture frame composed")
-	}
-	for _, q := range requests {
-		capture.Write(ctx, q, r, captured)
+		pipeline.Submit(r, requests)
+		// Ownership moved to the worker (or an immediate failure reply).
+		// A later commit panic must not fail the same requests again.
+		clear(requests)
 	}
 	// The overlay buffer is on screen like a scanned-out one: it is
 	// reported shown, so it is not released under the plane.

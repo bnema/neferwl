@@ -161,7 +161,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 			{43, 5, color.RGBA{255, 255, 255, 255}},  // window popup
 			{53, 5, color.RGBA{255, 255, 255, 255}},  // top layer
 		} {
-			if got := r.Pixels().RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
+			if got := readPixels(t, r).RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
 				t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
 			}
 		}
@@ -186,7 +186,7 @@ func TestRendererDimBlendAndDamage(t *testing.T) {
 	if r.redrawn-before >= 64*48 {
 		t.Fatal("content change unexpectedly triggered full redraw")
 	}
-	if got := r.Pixels().RGBAAt(3, 3); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
+	if got := readPixels(t, r).RGBAAt(3, 3); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
 		t.Fatalf("damaged tile beneath veil = %v, want dark red", got)
 	}
 }
@@ -221,7 +221,7 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 		x, y int
 		want color.RGBA
 	}{{5, 5, grey}, {5, 0, grey}, {35, 5, white}, {35, 0, white}, {25, 30, white}} {
-		if got := r.Pixels().RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
+		if got := readPixels(t, r).RGBAAt(tc.x, tc.y); !near(got, tc.want, 2) {
 			t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
 		}
 	}
@@ -235,7 +235,7 @@ func TestRendererWindowDimBlendAndDamage(t *testing.T) {
 	if err := render(r, s, contents); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().RGBAAt(4, 4); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
+	if got := readPixels(t, r).RGBAAt(4, 4); !near(got, color.RGBA{128, 0, 0, 255}, 2) {
 		t.Fatalf("damaged peek = %v, want dark red", got)
 	}
 }

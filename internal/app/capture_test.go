@@ -30,6 +30,93 @@ func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	}
 }
 
+func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	replies := make(chan ports.CaptureDone, 1)
+	set := newOutputSet(ctx, replies)
+	queued := make(chan ports.CaptureRequest, 1)
+	queued <- ports.CaptureRequest{ID: 1}
+	set.outs["test"] = &runningOutput{ctx: ctx, captures: queued, done: make(chan struct{}), stop: func() {}}
+	f, err := os.CreateTemp(t.TempDir(), "capture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routed := make(chan struct{})
+	go func() {
+		set.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: ports.SHMBuffer{File: f}})
+		close(routed)
+	}()
+	select {
+	case <-routed:
+	case <-time.After(time.Second):
+		cancel()
+		<-routed
+		t.Fatal("full capture queue blocked output routing")
+	}
+	result := <-replies
+	if result.ID != 2 || result.Err == nil {
+		t.Fatalf("rejected capture: %+v", result)
+	}
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("rejected descriptor still open")
+	}
+	if got := <-queued; got.ID != 1 {
+		t.Fatalf("queued request replaced: %+v", got)
+	}
+}
+
+func TestStoppedOutputCaptureStillReplies(t *testing.T) {
+	ctx := context.Background()
+	outputCtx, stop := context.WithCancel(ctx)
+	stop()
+	replies := make(chan ports.CaptureDone, 1)
+	set := newOutputSet(ctx, replies)
+	set.outs["test"] = &runningOutput{ctx: outputCtx, captures: make(chan ports.CaptureRequest)}
+	f, err := os.CreateTemp(t.TempDir(), "capture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: ports.SHMBuffer{File: f}})
+	select {
+	case result := <-replies:
+		if result.ID != 7 || result.Err == nil {
+			t.Fatalf("stopped output reply: %+v", result)
+		}
+	default:
+		t.Fatal("stopped output lost capture completion")
+	}
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("stopped output kept descriptor open")
+	}
+}
+
+func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
+	ctx := context.Background()
+	outputCtx, stop := context.WithCancel(ctx)
+	stop()
+	replies := make(chan ports.CaptureDone, 1)
+	set := newOutputSet(ctx, replies)
+	queued := make(chan ports.CaptureRequest, 1)
+	f, err := os.CreateTemp(t.TempDir(), "capture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued <- ports.CaptureRequest{ID: 8, Dst: ports.SHMBuffer{File: f}}
+	set.failQueued(&runningOutput{ctx: outputCtx, captures: queued})
+	select {
+	case result := <-replies:
+		if result.ID != 8 || result.Err == nil {
+			t.Fatalf("drained capture reply: %+v", result)
+		}
+	default:
+		t.Fatal("drained capture lost completion")
+	}
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("drained descriptor still open")
+	}
+}
+
 func TestDrainCapturesClosesQueuedFDs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

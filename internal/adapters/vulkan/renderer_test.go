@@ -19,7 +19,7 @@ func TestRendererClear(t *testing.T) {
 	if err := r.Clear([3]uint8{0x10, 0x20, 0x30}); err != nil {
 		t.Fatal(err)
 	}
-	pixels := r.Pixels()
+	pixels := readPixels(t, r)
 	want := color.RGBA{0x10, 0x20, 0x30, 255}
 	for _, p := range [][2]int{{0, 0}, {63, 47}} {
 		if got := pixels.At(p[0], p[1]); got != want {
@@ -56,7 +56,7 @@ func TestRendererRender(t *testing.T) {
 			t.Fatal(err)
 		}
 		for p, want := range expected {
-			if got := r.Pixels().At(p.X, p.Y); got != want {
+			if got := readPixels(t, r).At(p.X, p.Y); got != want {
 				t.Errorf("pixel %v=%v want %v", p, got, want)
 			}
 		}
@@ -106,7 +106,7 @@ func TestRendererFade(t *testing.T) {
 	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().At(10, 10).(color.RGBA); got.R < 99 || got.R > 101 || got.G != 0 || got.B != 0 {
+	if got := readPixels(t, r).At(10, 10).(color.RGBA); got.R < 99 || got.R > 101 || got.G != 0 || got.B != 0 {
 		t.Fatalf("faded pixel %v", got)
 	}
 }
@@ -135,7 +135,7 @@ func TestRendererContents(t *testing.T) {
 	}
 	check := func(x, y int, want color.RGBA) {
 		t.Helper()
-		if got := r.Pixels().At(x, y); got != want {
+		if got := readPixels(t, r).At(x, y); got != want {
 			t.Errorf("At(%d,%d)=%v want %v", x, y, got, want)
 		}
 	}
@@ -173,7 +173,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 	if err := render(r, scene, upper); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := r.Pixels().RGBAAt(10, 10), top; got != want {
+	if got, want := readPixels(t, r).RGBAAt(10, 10), top; got != want {
 		t.Errorf("overlap = %v, want %v", got, want)
 	}
 	scene.Border = ports.Border{Width: 4, Active: "#ffffff"}
@@ -193,7 +193,7 @@ func TestRendererUploadOrderAndOpaque(t *testing.T) {
 		x, y int
 		want color.RGBA
 	}{{3, 3, color.RGBA{255, 255, 255, 255}}, {10, 10, color.RGBA{7, 5, 3, 255}}} {
-		if got := r.Pixels().RGBAAt(tc.x, tc.y); got != tc.want {
+		if got := readPixels(t, r).RGBAAt(tc.x, tc.y); got != tc.want {
 			t.Errorf("pixel (%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
 		}
 	}
@@ -219,7 +219,7 @@ func TestRendererLayers(t *testing.T) {
 		if err := render(r, scene, contents); err != nil {
 			t.Fatal(err)
 		}
-		if got := r.Pixels().RGBAAt(5, 2); got != want {
+		if got := readPixels(t, r).RGBAAt(5, 2); got != want {
 			t.Errorf("pixel = %v, want %v", got, want)
 		}
 	}
@@ -263,7 +263,7 @@ func TestRendererScale(t *testing.T) {
 	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
-	px := r.Pixels()
+	px := readPixels(t, r)
 	want := color.RGBA{200, 0, 0, 255}
 	for _, p := range []image.Point{{8, 8}, {27, 27}} {
 		if got := px.At(p.X, p.Y); got != want {
@@ -281,7 +281,7 @@ func TestRendererScale(t *testing.T) {
 	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
-	px = r.Pixels()
+	px = readPixels(t, r)
 	for _, p := range []image.Point{{6, 6}, {20, 20}} {
 		if got := px.At(p.X, p.Y); got != want {
 			t.Errorf("1.5 %v = %v", p, got)
@@ -297,7 +297,7 @@ func TestRendererScale(t *testing.T) {
 	if err := render(r, s, content); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().At(21, 10); got != (color.RGBA{0, 0, 0, 255}) {
+	if got := readPixels(t, r).At(21, 10); got != (color.RGBA{0, 0, 0, 255}) {
 		t.Errorf("clipped column = %v", got)
 	}
 }
@@ -326,7 +326,7 @@ func TestRendererPreview(t *testing.T) {
 	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
-	out := r.Pixels()
+	out := readPixels(t, r)
 	for p, want := range map[image.Point]color.RGBA{
 		{5, 5}:   {200, 0, 0, 255},
 		{22, 12}: {0, 0, 200, 255},
@@ -360,7 +360,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 	if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
-	out := r.Pixels()
+	out := readPixels(t, r)
 	for x := 1; x < 19; x++ {
 		if v := out.RGBAAt(x, 5).R; v < 100 || v > 155 {
 			t.Fatalf("x=%d: %d, want mid gray", x, v)
@@ -425,7 +425,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
 		t.Fatal(err)
 	}
-	px := r.Pixels()
+	px := readPixels(t, r)
 	for _, c := range []struct {
 		x, y int
 		want color.RGBA
@@ -443,7 +443,7 @@ func TestRendererGeometryAndSubsurfaces(t *testing.T) {
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: only}); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().At(20, 15); got != blue {
+	if got := readPixels(t, r).At(20, 15); got != blue {
 		t.Errorf("child only: %v", got)
 	}
 }
@@ -462,7 +462,7 @@ func TestRendererTallFill(t *testing.T) {
 		t.Fatal(err)
 	}
 	bg := color.RGBA{16, 32, 48, 255}
-	px := r.Pixels()
+	px := readPixels(t, r)
 	for y := 0; y < h; y++ {
 		if got := px.At(1, y); got != wc {
 			t.Fatalf("At(1,%d)=%v want %v", y, got, wc)
@@ -517,7 +517,7 @@ func TestRendererAlphaBlend(t *testing.T) {
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
-	px := r.Pixels()
+	px := readPixels(t, r)
 	near := func(a, b uint8) bool { d := int(a) - int(b); return d >= -1 && d <= 1 }
 	for _, tc := range []struct {
 		name    string

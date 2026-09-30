@@ -13,6 +13,7 @@ packages:
       pkgname: portsmocks
       filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
     interfaces:
+      CaptureFrame:
       Clock:
       Notifier:
       OutputScaleStore:
@@ -28,6 +29,13 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/vulkan:
+    interfaces:
+      captureSync:
+        config:
+          dir: internal/adapters/vulkan
+          pkgname: vulkan
+          filename: capture_sync_mock_test.go
   github.com/bnema/neferwl/internal/adapters/wayland:
     interfaces:
       procEnv:

@@ -148,12 +148,15 @@ func TestYUVComposition(t *testing.T) {
 						t.Fatalf("PQ %v want %v", got, want)
 					}
 				}
-				if px := r.Pixels().RGBAAt(8, 8); px != (color.RGBA{255, 255, 255, 255}) {
-					t.Fatalf("capture %v", px)
+				// SDR capture tone-maps the 1000-nit white onto the shoulder.
+				linear := pqDecode(code) / 203
+				sdr := captureSDR([3]float64{linear, linear, linear})
+				if px := readPixels(t, r).RGBAAt(8, 8); !near(px, color.RGBA{sdr[0], sdr[1], sdr[2], 255}, 2) || px.A != 255 {
+					t.Fatalf("capture %v want %v", px, sdr)
 				}
 				return
 			}
-			got := r.Pixels().RGBAAt(8, 8)
+			got := readPixels(t, r).RGBAAt(8, 8)
 			want := color.RGBA{uint8(math.Round(tc.rgb[0] * 255)), uint8(math.Round(tc.rgb[1] * 255)), uint8(math.Round(tc.rgb[2] * 255)), 255}
 			if !near(got, want, 8) {
 				t.Errorf("got %v want %v", got, want)
@@ -184,7 +187,7 @@ func TestYUVSourceCropEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, y := range []int{0, 1, 8, 15} {
-		if got := r.Pixels().RGBAAt(8, y); !near(got, color.RGBA{255, 255, 255, 255}, 8) {
+		if got := readPixels(t, r).RGBAAt(8, y); !near(got, color.RGBA{255, 255, 255, 255}, 8) {
 			t.Errorf("cropped edge y=%d: %v, want white", y, got)
 		}
 	}

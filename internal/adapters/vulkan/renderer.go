@@ -40,17 +40,17 @@ type Renderer struct {
 	physical    vk.PhysicalDevice
 	// One converted cursor image is kept; changes replace it in bounded memory.
 	cursorCache cursorConversion
-	// last is the target of the last frame; readback copies it into
-	// buffer only when Pixels asks (stale until then).
-	last          *target
-	readBack      bool
-	buffer        vk.Buffer
-	bufferMemory  vk.DeviceMemory
-	readbackBytes int // bytes per pixel allocated for the mapped readback buffer
-	mapped        unsafe.Pointer
-	pool          vk.CommandPool
-	memory        vk.PhysicalDeviceMemoryProperties
-	family        uint32
+	// last is the target of the last frame: what captures copy.
+	last *target
+	// captures are the readback slots (capture.go), allocated on the
+	// first capture; capturePass converts HDR frames into captureSDR.
+	captures    []*captureSlot
+	capturePass hdrPass
+	captureSDR  target
+	sync        captureSync
+	pool        vk.CommandPool
+	memory      vk.PhysicalDeviceMemoryProperties
+	family      uint32
 	// Frames in flight (frame.go): frame is the last frame recorded,
 	// submitted the last submitted, completed the last known finished.
 	slots                       [frameSlots]frameSlot
@@ -295,9 +295,6 @@ func New(width, height int) (r *Renderer, err error) {
 	if err = checked("vkBindImageMemory", r.dd.BindImageMemory(r.device, r.own.image, r.own.memory, 0)); err != nil {
 		return
 	}
-	if err = r.createReadback(4); err != nil {
-		return
-	}
 	pi := vk.CommandPoolCreateInfo{SType: vk.StructureTypeCommandPoolCreateInfo, Flags: vk.CommandPoolCreateResetCommandBufferBit, QueueFamilyIndex: family}
 	if err = checked("vkCreateCommandPool", r.dd.CreateCommandPool(r.device, &pi, nil, &r.pool)); err != nil {
 		return
@@ -313,65 +310,6 @@ func New(width, height int) (r *Renderer, err error) {
 	}
 	runtime.KeepAlive(priority)
 	return
-}
-
-// createReadback replaces the host buffer only while the device is idle (at
-// construction or on an SDR→HDR transition). The current buffer stays in use
-// until the replacement is mapped, so a failed transition keeps SDR readback.
-func (r *Renderer) createReadback(bytesPerPixel int) (err error) {
-	d := r.dd
-	var (
-		buffer vk.Buffer
-		memory vk.DeviceMemory
-		mapped unsafe.Pointer
-	)
-	defer func() {
-		if err == nil {
-			return
-		}
-		if buffer != 0 {
-			d.DestroyBuffer(r.device, buffer, nil)
-		}
-		if memory != 0 {
-			d.FreeMemory(r.device, memory, nil)
-		}
-	}()
-	size := vk.DeviceSize(r.width) * vk.DeviceSize(r.height) * vk.DeviceSize(bytesPerPixel)
-	bi := vk.BufferCreateInfo{SType: vk.StructureTypeBufferCreateInfo, Size: size, Usage: vk.BufferUsageTransferDstBit, SharingMode: vk.SharingModeExclusive}
-	if err := checked("vkCreateBuffer", d.CreateBuffer(r.device, &bi, nil, &buffer)); err != nil {
-		return err
-	}
-	var req vk.MemoryRequirements
-	d.GetBufferMemoryRequirements(r.device, buffer, &req)
-	// Readback (screenshots) reads this buffer: prefer cached host memory.
-	kind, err := r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit|vk.MemoryPropertyHostCachedBit)
-	if err != nil {
-		kind, err = r.findMemoryType(req.MemoryTypeBits, vk.MemoryPropertyHostVisibleBit|vk.MemoryPropertyHostCoherentBit)
-	}
-	if err != nil {
-		return err
-	}
-	alloc := vk.MemoryAllocateInfo{SType: vk.StructureTypeMemoryAllocateInfo, AllocationSize: req.Size, MemoryTypeIndex: kind}
-	if err := checked("vkAllocateMemory(buffer)", d.AllocateMemory(r.device, &alloc, nil, &memory)); err != nil {
-		return err
-	}
-	if err := checked("vkBindBufferMemory", d.BindBufferMemory(r.device, buffer, memory, 0)); err != nil {
-		return err
-	}
-	if err := checked("vkMapMemory", d.MapMemory(r.device, memory, 0, size, 0, &mapped)); err != nil {
-		return err
-	}
-	if r.mapped != nil {
-		d.UnmapMemory(r.device, r.bufferMemory)
-	}
-	if r.buffer != 0 {
-		d.DestroyBuffer(r.device, r.buffer, nil)
-	}
-	if r.bufferMemory != 0 {
-		d.FreeMemory(r.device, r.bufferMemory, nil)
-	}
-	r.buffer, r.bufferMemory, r.mapped, r.readbackBytes = buffer, memory, mapped, bytesPerPixel
-	return nil
 }
 
 func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (uint32, error) {
@@ -391,50 +329,24 @@ func (r *Renderer) CopiedBytes() int { return r.copied }
 // default.
 func (r *Renderer) QueuePriority() string { return r.queuePriority }
 
+// Pixels reads the last frame back through a capture slot, waiting for
+// the GPU on the calling goroutine (slot fence, no sync file needed):
+// headless screenshots and tests only. Nil when no slot is free (both
+// leased to captures) or the copy failed: never a silent black image.
 func (r *Renderer) Pixels() *image.RGBA {
-	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
-	if r.mapped == nil || r.readback() != nil {
-		return out
-	}
-	if r.last == &r.hdrOwn {
-		r.hdrRegion(out.Pix, out.Stride, 0, 0, r.width, r.height, true)
-		return out
-	}
-	src := unsafe.Slice((*byte)(r.mapped), len(out.Pix))
-	for i := 0; i < len(src); i += 4 {
-		// The output is opaque: x-format client buffers leave alpha undefined.
-		out.Pix[i], out.Pix[i+1], out.Pix[i+2], out.Pix[i+3] = src[i+2], src[i+1], src[i], 255
-	}
-	return out
-}
-
-// Capture reads the last rendered image without changing the renderer's target.
-func (r *Renderer) Capture(region image.Rectangle, dst []byte, stride int) error {
-	bounds := image.Rect(0, 0, r.width, r.height)
-	w, h := region.Dx(), region.Dy()
-	if region.Empty() || !region.In(bounds) || stride < w*4 || len(dst) < (h-1)*stride+w*4 {
-		return fmt.Errorf("invalid capture region or destination")
-	}
-	if r.mapped == nil || r.last == nil || r.last.image == 0 {
-		return fmt.Errorf("no rendered frame")
-	}
-	if err := r.readback(); err != nil {
-		return err
-	}
-	if r.last == &r.hdrOwn {
-		r.hdrRegion(dst, stride, region.Min.X, region.Min.Y, w, h, false)
+	cf, err := r.debugCapture()
+	if err != nil {
 		return nil
 	}
-	src := unsafe.Slice((*byte)(r.mapped), r.width*r.height*4)
-	for y := range h {
-		start := ((region.Min.Y+y)*r.width + region.Min.X) * 4
-		row := dst[y*stride : y*stride+w*4]
-		copy(row, src[start:start+w*4])
-		for x := 3; x < len(row); x += 4 {
-			row[x] = 255
-		}
+	defer r.EndCapture(cf)
+	out := image.NewRGBA(image.Rect(0, 0, r.width, r.height))
+	if err := cf.Read(image.Rect(0, 0, r.width, r.height), out.Pix, out.Stride); err != nil {
+		return nil
 	}
-	return nil
+	for i := 0; i < len(out.Pix); i += 4 {
+		out.Pix[i], out.Pix[i+2] = out.Pix[i+2], out.Pix[i]
+	}
+	return out
 }
 
 // Missing from the bindings: VK_QUEUE_FAMILY_IGNORED, VK_WHOLE_SIZE.
@@ -442,46 +354,6 @@ const (
 	queueFamilyIgnored = ^uint32(0)
 	wholeSize          = ^vk.DeviceSize(0)
 )
-
-// readback copies the last frame into the host buffer, once per frame
-// (screenshots only).
-func (r *Renderer) readback() error {
-	if r.readBack || r.last == nil || r.last.image == 0 {
-		return nil
-	}
-	// The copy reads the frame: wait for it, and keep the ring ordered.
-	if err := r.waitFrame(r.submitted); err != nil {
-		return err
-	}
-	t := r.last
-	err := r.oneShot(func(cmd vk.CommandBuffer) {
-		d := r.dd
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: t.layout, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: t.image, SubresourceRange: colorRange}
-		if t.exported {
-			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
-		}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
-		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-		d.CmdCopyImageToBuffer(cmd, t.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
-		// Make the copy visible to host reads of the mapped buffer.
-		hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: r.buffer, Size: wholeSize}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
-		if t.exported {
-			b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
-			b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
-			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-			d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
-		}
-	})
-	if err != nil {
-		return err
-	}
-	if !t.exported {
-		t.layout = vk.ImageLayoutTransferSrcOptimal
-	}
-	r.readBack = true
-	return nil
-}
 
 func (r *Renderer) Close() {
 	if r == nil {
@@ -504,21 +376,10 @@ func (r *Renderer) Close() {
 		r.dropPools()
 		r.dropShm()
 		r.destroySlots()
+		r.destroyCaptures()
 		if r.pool != 0 {
 			d.DestroyCommandPool(r.device, r.pool, nil)
 			r.pool = 0
-		}
-		if r.mapped != nil {
-			d.UnmapMemory(r.device, r.bufferMemory)
-			r.mapped = nil
-		}
-		if r.buffer != 0 {
-			d.DestroyBuffer(r.device, r.buffer, nil)
-			r.buffer = 0
-		}
-		if r.bufferMemory != 0 {
-			d.FreeMemory(r.device, r.bufferMemory, nil)
-			r.bufferMemory = 0
 		}
 		r.destroyComposer()
 		r.freeTarget(&r.hdrOwn)

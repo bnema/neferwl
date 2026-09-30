@@ -19,13 +19,7 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	t.Cleanup(r.Close)
-	if r.readbackBytes != 4 {
-		t.Fatalf("SDR readback bytes/pixel = %d", r.readbackBytes)
-	}
 	r.SetHDR(203)
-	if r.hdrError == nil && r.readbackBytes != 8 {
-		t.Fatalf("HDR readback bytes/pixel = %d", r.readbackBytes)
-	}
 	r.hdrReadback = true
 	if r.physical == 0 {
 		t.Skip("no exportable GPU")
@@ -42,11 +36,19 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 	return r
 }
 
-// Readback of a test-only PQ target (production targets are not transfer-src).
-func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
+// pqTargetWords reads a test-only PQ target back (production targets are
+// not transfer-src), staging through a capture slot's buffer.
+func pqTargetWords(t *testing.T, r *Renderer) []uint32 {
 	t.Helper()
 	if err := r.waitFrame(r.submitted); err != nil {
 		t.Fatal(err)
+	}
+	if err := r.createCaptureSlots(); err != nil {
+		t.Fatal(err)
+	}
+	slot := r.captures[0]
+	if slot.leased {
+		t.Fatal("capture slot 0 leased")
 	}
 	target := r.targets[0]
 	err := r.oneShot(func(cmd vk.CommandBuffer) {
@@ -54,7 +56,9 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: target.image, SubresourceRange: colorRange}
 		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
 		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-		d.CmdCopyImageToBuffer(cmd, target.image, vk.ImageLayoutTransferSrcOptimal, r.buffer, 1, &region)
+		d.CmdCopyImageToBuffer(cmd, target.image, vk.ImageLayoutTransferSrcOptimal, slot.buffer, 1, &region)
+		hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: slot.buffer, Size: wholeSize}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
 		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
 		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
 		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
@@ -63,8 +67,12 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	words := unsafe.Slice((*uint32)(r.mapped), r.width*r.height)
-	pixel := words[y*r.width+x]
+	return unsafe.Slice((*uint32)(slot.mapped), r.width*r.height)
+}
+
+func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
+	t.Helper()
+	pixel := pqTargetWords(t, r)[y*r.width+x]
 	return [3]float64{float64(pixel>>20&1023) / 1023, float64(pixel>>10&1023) / 1023, float64(pixel&1023) / 1023}
 }
 
@@ -106,15 +114,33 @@ func TestHDRWindowedComposition(t *testing.T) {
 	if math.Abs(neutral[0]-pqEncode(1000)) > .008 {
 		t.Fatalf("1000 nits clipped: %v", neutral)
 	}
-	if px := r.Pixels().RGBAAt(5, 8); !near(px, color.RGBA{255, 255, 255, 255}, 2) {
-		t.Fatalf("clipped capture pixel %v", px)
+	// SDR capture tone-maps: the 1000-nit white lands on the shoulder
+	// (bright, not saturated) and the primaries keep their hue.
+	want := captureSDR([3]float64{1000.0 / 203, 1000.0 / 203, 1000.0 / 203})
+	if px := readPixels(t, r).RGBAAt(5, 8); !near(px, color.RGBA{want[0], want[1], want[2], 255}, 2) {
+		t.Fatalf("tone-mapped capture pixel %v, want %v", px, want)
 	}
-	dst := make([]byte, 8)
-	if err := r.Capture(image.Rect(5, 8, 7, 9), dst, 8); err != nil {
-		t.Fatal(err)
+	t.Run("async capture", func(t *testing.T) {
+		cf := captureWait(t, r)
+		defer r.EndCapture(cf)
+		dst := make([]byte, 8)
+		if err := cf.Read(image.Rect(5, 8, 7, 9), dst, 8); err != nil {
+			t.Fatal(err)
+		}
+		if !near(color.RGBA{dst[2], dst[1], dst[0], 255}, color.RGBA{want[0], want[1], want[2], 255}, 2) || dst[3] != 255 {
+			t.Fatalf("capture %v, want %v", dst, want)
+		}
+	})
+	// The BT.2020 red (negative BT.709 green and blue) matches the
+	// reference gamut reduction and shoulder, not a per-channel clip.
+	red := readPixels(t, r).RGBAAt(25, 8)
+	lin := [3]float64{1.660491, -0.124550, -0.018151}
+	for i := range lin {
+		lin[i] *= 1000.0 / 203
 	}
-	if dst[0] != 255 || dst[1] != 255 || dst[2] != 255 || dst[3] != 255 {
-		t.Fatalf("capture %v", dst)
+	wantRed := captureSDR(lin)
+	if !near(red, color.RGBA{wantRed[0], wantRed[1], wantRed[2], 255}, 3) || red.G != 0 {
+		t.Fatalf("bright BT.2020 red captured as %v, want %v", red, wantRed)
 	}
 	before := r.redrawn
 	if err := render(r, scene, contents); err != nil {

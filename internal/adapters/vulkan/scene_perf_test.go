@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"image"
 	"image/color"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 	for _, count := range []int{16, 64} {
 		contents[1] = ports.SurfaceContent{ID: 1, Seq: root.Seq, Surface: root.Surface, Version: root.Version, Children: root.Children[:count]}
 		walk := func() {
-			dmg := newDamage(&target{}, scene, r.Pixels().Bounds())
+			dmg := newDamage(&target{}, scene, image.Rect(0, 0, r.width, r.height))
 			_ = r.draws(scene, contents, dmg)
 		}
 		walk()
@@ -101,7 +102,7 @@ func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.Pixels().RGBAAt(4, 4); got != (color.RGBA{R: 2, A: 255}) {
+	if got := readPixels(t, r).RGBAAt(4, 4); got != (color.RGBA{R: 2, A: 255}) {
 		t.Fatalf("restacked tile has pixels %v, want second child's colour", got)
 	}
 }

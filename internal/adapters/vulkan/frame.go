@@ -303,7 +303,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	oldWindows := tg.windows
 	tg.hold(s, dmg)
 	r.damageDrawn = oldWindows
-	r.last, r.readBack = tg, false
+	r.last = tg
 	r.dropUnused()
 	r.dropShm()
 	if !r.syncFD {

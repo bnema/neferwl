@@ -76,7 +76,7 @@ func damageMatchesFullRedraw(t *testing.T, tr ports.BufferTransform) {
 		if err := render(full, ports.Scene{Background: scene.Background, Windows: scene.Windows}, contents); err != nil {
 			t.Fatal(err)
 		}
-		if a, b := damaged.Pixels(), full.Pixels(); !bytes.Equal(a.Pix, b.Pix) {
+		if a, b := readPixels(t, damaged), readPixels(t, full); !bytes.Equal(a.Pix, b.Pix) {
 			t.Fatalf("frame %d differs from a full redraw", i)
 		}
 	}
@@ -135,7 +135,7 @@ func TestRendererDamageWindowLeftOutAndBack(t *testing.T) {
 		if err := render(full, plain, contents); err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(damaged.Pixels().Pix, full.Pixels().Pix) {
+		if !bytes.Equal(readPixels(t, damaged).Pix, readPixels(t, full).Pix) {
 			t.Fatalf("%s differs from a full redraw", what)
 		}
 	}

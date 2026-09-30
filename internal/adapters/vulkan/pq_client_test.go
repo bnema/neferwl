@@ -92,7 +92,7 @@ func TestPQClientComposition(t *testing.T) {
 					// Composition blends premultiplied source onto a black opaque fill.
 					*channels[j] = uint8(math.Round(v * alpha * 255))
 				}
-				got := r.Pixels().RGBAAt(i*10+5, 2)
+				got := readPixels(t, r).RGBAAt(i*10+5, 2)
 				if !near(got, want, 4) {
 					t.Errorf("sample %d: got %v want %v", i, got, want)
 				}

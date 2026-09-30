@@ -98,8 +98,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// tells core about each flip (frames) to move running slides.
 	flips := make(chan ports.OutputPresented, 64)
 	frames := make(chan ports.OutputFrame, 8)
-	captures := make(chan ports.CaptureRequest, 32)
-	captured := make(chan ports.CaptureDone, 64)
+	captures := make(chan ports.CaptureRequest, ports.MaxCaptureInflight)
+	// Every admitted capture owns one reply slot until Wayland consumes it.
+	// Keep this capacity tied to admission so output routing never waits.
+	captured := make(chan ports.CaptureDone, ports.MaxCaptureInflight)
 	outputFormats := make(chan ports.OutputFormats, 8)
 	outputHeads := make(chan ports.OutputHeads, 8)
 	leaseRequests := make(chan ports.LeaseMessage, 32)
