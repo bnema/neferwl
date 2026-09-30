@@ -226,8 +226,9 @@
 
     <event name="stopped">
       <description summary="the session ended">
-        Final. The token is void, the attached layers are ordinary again.
-        Destroy the object.
+        Final. The token is void. The compositor closes the attached layer
+        surfaces (zwlr_layer_surface_v1.closed) and ends their attachments
+        with detached. Destroy the object.
       </description>
       <arg name="reason" type="uint" enum="stop_reason"/>
     </event>
