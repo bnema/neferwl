@@ -338,12 +338,13 @@ func onScreen(p Placement, o Rect) bool {
 	return !p.Hidden && p.Rect.Overlaps(Rect{W: o.W, H: o.H})
 }
 
-// floatDim is the veil opacity of a layout: dim while a float is drawn
-// over the tiles, none under a fullscreen float (nothing is seen below).
+// floatDim is the veil opacity of a layout: dim only when a float is
+// drawn above the tiles, never for a demoted covering float alone nor for
+// an overview preview.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
 	shown := false
 	for _, p := range layout {
-		if p.Floating && onScreen(p, o) {
+		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
 			if p.Fullscreen {
 				return 0
 			}
@@ -450,17 +451,26 @@ func (c *Core) publish(ctx context.Context) error {
 		o := sc.mon.Output()
 		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
+		var real map[WindowID]Placement
+		if sc.mon.ov.open {
+			real = make(map[WindowID]Placement)
+			for _, w := range sc.mon.all() {
+				for _, p := range w.Layout() {
+					real[p.ID] = p
+				}
+			}
+		}
 		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
-		if sc.mon.overview {
+		if sc.mon.ov.open {
 			// Previews have no lines: the selected one is framed.
 			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 		}
 		for _, p := range layout {
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Inset: p.Inset, Preview: p.Preview}
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
 			}
@@ -469,6 +479,11 @@ func (c *Core) publish(ctx context.Context) error {
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
 				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+			} else if p.Preview > 0 && !p.Hidden {
+				if rp, ok := real[p.ID]; ok && !rp.Hidden {
+					t.realTiled = !rp.Floating
+					t.client = c.clientRect(rp)
+				}
 			}
 			if v, send := c.configures.next(p, t); send {
 				if err := c.command(ctx, v); err != nil {
@@ -684,8 +699,8 @@ func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
 
 // hit returns the surface under the global logical point and the point in
 // its surface coordinates: popups, then overlay and top layers, then
-// windows (fullscreen wins; otherwise the last visible placement is
-// topmost), then bottom and background layers.
+// windows (last visible placement is topmost), then bottom and
+// background layers.
 func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	o, ok := c.layout().At(x, y)
 	if !ok {
@@ -704,14 +719,13 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
 	}
-	if sc.mon.overview {
+	if sc.mon.ov.open {
 		// Previews and the layers under them take no input: a click
 		// picks a preview (overviewClick).
 		return 0, 0, 0
 	}
 	var id WindowID
 	var sx, sy float64
-	full := false
 	for _, p := range sc.mon.Layout() {
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
@@ -724,18 +738,10 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 			if p.Peek {
 				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
 			}
-			// Floating windows come last in the layout and are on top,
-			// even of a fullscreen window; nothing else is.
-			if full && !p.Floating {
-				continue
-			}
-			if !c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
-				continue
-			}
-			if id == 0 || p.Fullscreen || p.Floating {
+			if c.acceptsInput(p.ID, lx-float64(r.X), ly-float64(r.Y)) {
+				// Layout is bottom to top, including fullscreen and floats.
 				id, sx, sy = p.ID, lx-float64(r.X), ly-float64(r.Y)
 			}
-			full = full || p.Fullscreen
 		}
 	}
 	if id == 0 {
@@ -1024,7 +1030,7 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			case ports.PointerAxis:
 				// In the overview, scrolling moves the selection.
-				if c.cur().mon.overview && !c.overviewKeyboardTaken() {
+				if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
 					if c.cur().mon.overviewScroll(v) {
 						if c.workspaceVisible(ctx, true) != nil {
 							return nil
@@ -1066,7 +1072,7 @@ func (c *Core) Run(ctx context.Context) error {
 			// The overview takes its keys before any window; others still
 			// run binds, and are not forwarded.
 			// A launcher or a menu holding the keyboard gets them first.
-			if mon := c.cur().mon; mon.overview && !c.overviewKeyboardTaken() {
+			if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
 				if key.Pressed && mon.overviewKey(key) {
 					c.pressed[heldKey(key)] = true
 					if c.workspaceVisible(ctx, true) != nil {
@@ -1172,7 +1178,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				c.pressed[held] = false
 			}
-			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.overview || c.overviewKeyboardTaken()) {
+			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.ov.open || c.overviewKeyboardTaken()) {
 				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
 					return nil
 				}

@@ -22,7 +22,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Lines between visible neighboring tiles and around non-fullscreen floats, in logical pixels; `0` hides them |
-| `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window (a dialog) or the stash is visible; opacity 0 to 1 |
+| `floating.dim` | `0.3` | Black veil over tiles and lower layers when a native floating window above the tiles or the stash is visible; opacity 0 to 1 |
 | `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors show. Its height is 80% of the usable height |
 | `stash.gap` | `2` | Space between the selected stashed window and its neighbors, in percent of the usable width; 0 to 10. The neighbors show from there to the screen edge: with the defaults, 8% of each. A gap as wide as the side margin hides them |
 | `stash.dim` | `0.5` | Black veil over the stash neighbors, borders included; opacity 0 to 1 |
@@ -114,7 +114,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen |
-| `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first |
+| `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first. Up at the top brings back a covering float put behind the columns |
 | `move-column-left/right` | Move the focused column |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
@@ -132,24 +132,26 @@ Each workspace has a stash: a horizontal strip of windows set aside with `toggle
 
 While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
-Native floating windows (dialogs, file pickers) are not in the stash: they stay centred above it.
+Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile; `focus-window-up` at the top of a column raises it again. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive.
 
 ### Overview
 
-`toggle-overview` shows every column of the current workspace in one row, shrunk by the same factor so each window keeps its shape, as small as needed to fit (down to a quarter, then the row scrolls). The workspaces above and below show dimmed. Windows are not resized: the previews are their last frames. Native floating windows are hidden. The overview opens over a fullscreen window too. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; with `scroll` overflow the other columns stay selectable.
+`toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; `scroll` overflow keeps its columns selectable in one card.
 
 | Key | Action |
 | --- | --- |
-| `h` / `l`, `left` / `right` | Select the column on the left / right; left of the first column, the stash pile |
-| `k` / `j`, `up` / `down` | Select the workspace above / below |
-| `return` | Close the overview on the selected window |
-| `escape` | Close it and return to the window it opened on |
+| `h` / `l`, `left` / `right` | Move within a front column-group card; left of its first tile enters the stash. Left on a single-window card sends it behind, or enters the stash when none is behind; right does nothing on a single card. |
+| `k` / `j`, `up` / `down` | Bring the next card above / previous card below to the front, then change workspace at the stack boundary |
+| `return` | Show the selected front card; picking a hidden column moves the maximization to it |
+| `escape` | Restore the original focus, maximization and float order |
 
-Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the first column. `return` or a click on a card closes the overview with the stash shown on that window.
+The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys.
 
-A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through the workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
+Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. A successful up/down move through the stack leaves the stash and selects the new front card. `return` or a click on a card closes the overview with the stash shown on that window.
 
-A click on a preview picks it. Other binds still work. Native floating windows (dialogs) are not shown.
+A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
+
+Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Window mutation binds (moving, resizing, maximizing, fullscreen and stash toggles) and workspace moves are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
 
 ### Default binds
 

@@ -11,6 +11,8 @@ type configureTarget struct {
 	// floating window (native floats pick their own size).
 	client  Rect
 	imposed bool
+	// realTiled sizes a visible tiled preview from its real client rect.
+	realTiled bool
 }
 
 // configures owns the last configure sent to each window and decides the
@@ -44,12 +46,19 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 		// A preview keeps its client's size: only its focus changes.
 		v = old
 		if !ok {
-			v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview)}
+			v = ports.ConfigureWindow{ID: p.ID, Width: int(float64(p.Rect.W) / p.Preview), Height: int(float64(p.Rect.H) / p.Preview), Floating: p.Floating}
+			if p.Floating {
+				// A native float picks its own size.
+				v.Width, v.Height = 0, 0
+			}
 		}
 		if p.Fullscreen && !v.Fullscreen {
 			// A float made fullscreen off screen: its preview row shows
 			// it fullscreen, sized for the output, never the preview.
 			v.Width, v.Height, v.Fullscreen, v.Floating = t.area.W, t.area.H, true, false
+		}
+		if t.realTiled {
+			v.Width, v.Height = t.client.W, t.client.H
 		}
 		v.Activated, v.Visible, v.Output = t.focused, onScreen(p, t.area), t.output
 	default:

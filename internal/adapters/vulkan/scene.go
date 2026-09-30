@@ -85,15 +85,16 @@ func (w *sceneWalk) layers(afterWindows bool) {
 	}
 }
 
-// windows draws the tiled then floating windows with their borders.
-// Tile lines (Window 0) go over the tiles, a float's border with it.
+// windows draws ordered placements with borders. Tile lines go after
+// the column group, before the first float above it; an overview preview
+// of a float is not one.
 func (w *sceneWalk) windows() {
 	tileLines := false
 	for _, win := range w.s.Windows {
 		if win.Hidden || win.Popup || win.Rect.W <= 0 || win.Rect.H <= 0 {
 			continue
 		}
-		if win.Floating && !tileLines {
+		if !win.Below && win.Floating && win.Preview == 0 && !tileLines {
 			w.separators(0)
 			tileLines = true
 			if w.s.Dim > 0 {

@@ -1045,8 +1045,9 @@ type SceneWindow struct {
 	// Inset sides carry a separator line inside Rect: the client is drawn
 	// inside it.
 	Inset Sides
-	// Floating windows are drawn over the tiles and their lines.
-	Floating bool
+	// Floating windows draw at their placed size. Below marks a native
+	// covering float behind the column group.
+	Floating, Below bool
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64

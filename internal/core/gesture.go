@@ -159,7 +159,7 @@ func (c *Core) decide(g *swipeGesture) {
 	case g.fingers == 4:
 		// Four fingers sideways do nothing.
 		g.mode = swipeDropped
-	case m.overview:
+	case m.ov.open:
 		// The overview does not slide: the swipe moves its selection.
 		g.mode = swipeDiscrete
 	case g.horizontal && w.slidable():
@@ -238,7 +238,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
 	case swipeOverview:
 		p := g.tracker.projectedEnd()
-		if e.Cancelled || math.Abs(p) < discreteSwipeMin || (p < 0) == m.overview {
+		if e.Cancelled || math.Abs(p) < discreteSwipeMin || (p < 0) == m.ov.open {
 			return false
 		}
 		before := m.Current()
@@ -267,7 +267,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 		before := c.cur().mon.Current()
 		c.keyboard.takeBack()
-		if mon := c.cur().mon; mon.overview {
+		if mon := c.cur().mon; mon.ov.open {
 			mon.overviewSwipe(a)
 		} else {
 			c.applyAction(a)

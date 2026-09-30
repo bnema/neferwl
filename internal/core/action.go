@@ -109,6 +109,14 @@ type Effect struct {
 // screen; column focus past the edge column moves to the neighbor screen;
 // everything else applies to the focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
+	if m := c.cur().mon; m.ov.open {
+		if m.overviewFocus(a) || overviewBlocks(a) {
+			return Effect{}
+		}
+		if a == ActionCloseWindow {
+			return m.Apply(a)
+		}
+	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
 	c.cur().mon.Current().focusCover()
@@ -135,11 +143,11 @@ func (c *Core) applyAction(a Action) Effect {
 		} else {
 			dir = 1
 		}
-		// The first move from a float stays on this monitor (FocusColumn):
+		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends. A covering fullscreen window pins
 		// the focus: the move goes to the neighbor monitor.
-		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned())
+		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned() || w.floatFocus && !w.canLeaveFloat())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}
@@ -201,9 +209,13 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
-	// In the overview, close-window closes the selected stash card.
-	if id := m.card(); id != 0 && a == ActionCloseWindow {
-		return Effect{Close: id}
+	if m.ov.open {
+		if a == ActionCloseWindow {
+			return Effect{Close: m.overviewTarget()}
+		}
+		if overviewBlocks(a) {
+			return Effect{}
+		}
 	}
 	if n, op, ok := WorkspaceArg(a); ok {
 		if op == FocusWorkspace {
@@ -219,7 +231,8 @@ func (m *Monitor) Apply(a Action) Effect {
 	}
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown:
-		// Past the top or bottom window of the column, move to the next workspace.
+		// Past the column and any on-screen neighbor or demoted float,
+		// move to the next workspace.
 		dir := 1
 		if a == ActionFocusWindowUp {
 			dir = -1
