@@ -231,11 +231,11 @@ func (c *Core) apply(cfg ports.Config) error {
 		if err != nil {
 			return err
 		}
-		if ws.Name == "" || seen[ws.Name] || ws.MaxColumns < 0 {
+		if ws.Name == "" || seen[ws.Name] || ws.MaxColumns < 0 || ws.Size[0] < 0 || ws.Size[1] < 0 {
 			return fmt.Errorf("invalid workspace %q", ws.Name)
 		}
 		seen[ws.Name] = true
-		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o})
+		named = append(named, NamedWorkspace{Name: ws.Name, Monitor: ws.Monitor, MaxColumns: ws.MaxColumns, Overflow: o, Size: ws.Size})
 	}
 	specs, err := parseSlots(cfg.Workspaces)
 	if err != nil {
@@ -335,7 +335,7 @@ func (c *Core) clientRect(p Placement) Rect {
 // onScreen reports whether a placement is drawn on its output o: not
 // hidden and not scrolled off.
 func onScreen(p Placement, o Rect) bool {
-	return !p.Hidden && p.Rect.Overlaps(Rect{W: o.W, H: o.H})
+	return !p.Hidden && p.Rect.Overlaps(o)
 }
 
 // floatDim is the veil opacity of a layout: dim only when a float is
@@ -449,7 +449,14 @@ func (c *Core) publish(ctx context.Context) error {
 	for i, sc := range c.screens {
 		c.seq++
 		o := sc.mon.Output()
-		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
+		// frame is the viewport of the workspace on screen: the whole output
+		// unless it has a size override (never in the overview).
+		frame := sc.mon.Frame()
+		var clip Rect
+		if frame != (Rect{W: o.W, H: o.H}) {
+			clip = frame
+		}
+		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
@@ -460,9 +467,9 @@ func (c *Core) publish(ctx context.Context) error {
 				}
 			}
 		}
-		scene.Dim = floatDim(layout, o, c.cfg.Floating.Dim)
+		scene.Dim = floatDim(layout, frame, c.cfg.Floating.Dim)
 		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), Rect{W: o.W, H: o.H}, i == c.focusScreen)
+		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		if sc.mon.ov.open {
 			// Previews have no lines: the selected one is framed.
 			scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
@@ -475,7 +482,7 @@ func (c *Core) publish(ctx context.Context) error {
 				sw.Dim = c.cfg.Stash.Dim
 			}
 			scene.Windows = append(scene.Windows, sw)
-			t := configureTarget{output: sc.name(), area: o, focused: focused}
+			t := configureTarget{output: sc.name(), area: frame, focused: focused}
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
 				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
@@ -593,16 +600,24 @@ func (c *Core) updateInhibit(ctx context.Context) error {
 // and sends it to input when it changed. A hidden window holds nothing.
 func (c *Core) resolveConstraint() {
 	var g ports.PointerConstraint
-	if r, ok := c.shownClientRect(c.constrained.ID); ok {
+	if full, vis, ok := c.shownClient(c.constrained.ID); ok {
+		r := full
 		if w := c.constrained.Rect; w.W > 0 && w.H > 0 {
-			// The region is clipped to the window.
-			x0, y0 := max(r.X, r.X+w.X), max(r.Y, r.Y+w.Y)
-			x1, y1 := min(r.X+r.W, r.X+w.X+w.W), min(r.Y+r.H, r.Y+w.Y+w.H)
+			// The region is window-local: placed from the full client origin,
+			// clipped to the window, then to what the viewport shows.
+			x0, y0 := max(full.X, full.X+w.X), max(full.Y, full.Y+w.Y)
+			x1, y1 := min(full.X+full.W, full.X+w.X+w.W), min(full.Y+full.H, full.Y+w.Y+w.H)
 			if x1 > x0 && y1 > y0 {
 				r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 			}
 		}
-		g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
+		r = intersect(r, vis)
+		if r.W > 0 && r.H > 0 {
+			g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: r}
+		} else {
+			// The region lies outside the viewport: hold the visible client.
+			g = ports.PointerConstraint{Mode: c.constrained.Mode, Rect: vis}
+		}
 	}
 	// The cursor follows core; input resyncs to it only on a change.
 	if g.Mode == c.constraint.Mode && g.Rect == c.constraint.Rect {
@@ -617,26 +632,49 @@ func (c *Core) resolveConstraint() {
 	}
 }
 
-// shownClientRect is the global logical client rectangle of a window
-// drawn on its output; false when it is hidden or a preview.
-func (c *Core) shownClientRect(id WindowID) (Rect, bool) {
+// intersect is the overlap of a and b, empty (zero size) when disjoint.
+func intersect(a, b Rect) Rect {
+	x0, y0 := max(a.X, b.X), max(a.Y, b.Y)
+	x1, y1 := min(a.X+a.W, b.X+b.W), min(a.Y+a.H, b.Y+b.H)
+	if x1 <= x0 || y1 <= y0 {
+		return Rect{}
+	}
+	return Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+}
+
+// shownClient is the global logical client rectangle of a window drawn on
+// its output, whole (window-local coordinates start at its origin), and the
+// part of it inside the workspace viewport, which alone takes the pointer.
+// ok is false when it is hidden, a preview or entirely outside the viewport.
+func (c *Core) shownClient(id WindowID) (full, visible Rect, ok bool) {
 	if id == 0 {
-		return Rect{}, false
+		return Rect{}, Rect{}, false
 	}
 	s, _ := c.screenOf(id)
 	if s == nil {
-		return Rect{}, false
+		return Rect{}, Rect{}, false
 	}
 	for _, p := range s.mon.Layout() {
 		if p.ID != id || p.Hidden || p.Preview > 0 {
 			continue
 		}
 		r := c.clientRect(p)
-		r.X += s.x
-		r.Y += s.y
-		return r, true
+		full = Rect{X: r.X + s.x, Y: r.Y + s.y, W: r.W, H: r.H}
+		f := s.mon.Frame()
+		visible = intersect(r, f)
+		visible.X, visible.Y = visible.X+s.x, visible.Y+s.y
+		if visible.W <= 0 || visible.H <= 0 {
+			return Rect{}, Rect{}, false
+		}
+		return full, visible, true
 	}
-	return Rect{}, false
+	return Rect{}, Rect{}, false
+}
+
+// shownClientRect is the visible part of shownClient.
+func (c *Core) shownClientRect(id WindowID) (Rect, bool) {
+	_, vis, ok := c.shownClient(id)
+	return vis, ok
 }
 
 // warpPointer moves the cursor to a window-local point of the window under
@@ -646,11 +684,16 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 	if v.ID == 0 || v.ID != c.pointer || c.grab != 0 && c.grab != v.ID {
 		return nil
 	}
-	r, ok := c.shownClientRect(v.ID)
-	if !ok || v.X < 0 || v.Y < 0 || v.X >= float64(r.W) || v.Y >= float64(r.H) {
+	full, vis, ok := c.shownClient(v.ID)
+	if !ok || v.X < 0 || v.Y < 0 || v.X >= float64(full.W) || v.Y >= float64(full.H) {
 		return nil
 	}
-	c.cursorX, c.cursorY = c.constraint.Clamp(float64(r.X)+v.X, float64(r.Y)+v.Y)
+	// Local to the whole client, and refused outside the viewport.
+	gx, gy := float64(full.X)+v.X, float64(full.Y)+v.Y
+	if gx < float64(vis.X) || gy < float64(vis.Y) || gx >= float64(vis.X+vis.W) || gy >= float64(vis.Y+vis.H) {
+		return nil
+	}
+	c.cursorX, c.cursorY = c.constraint.Clamp(gx, gy)
 	if c.ch.Constraints != nil {
 		g := c.constraint
 		g.X, g.Y, g.Warp = c.cursorX, c.cursorY, true
@@ -723,6 +766,9 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 		// Previews and the layers under them take no input: a click
 		// picks a preview (overviewClick).
 		return 0, 0, 0
+	}
+	if !sc.mon.frameHas(lx, ly) {
+		return c.layerAt(sc, lx, ly, false)
 	}
 	var id WindowID
 	var sx, sy float64

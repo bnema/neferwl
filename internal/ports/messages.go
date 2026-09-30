@@ -772,8 +772,13 @@ type Scene struct {
 	Off        bool
 	Background string
 	Border     Border
+	// WorkspaceClip bounds workspace windows, their popups and separators
+	// in logical output coordinates. Zero inherits the full output. Layers
+	// remain output-wide; overview previews do not use this clip.
+	WorkspaceClip Rect
 	// Dim darkens the background, bottom layers and tiles (tile lines
-	// included) with black at this opacity, 0 to 1, under the first
+	// included) inside WorkspaceClip when set, with black at this opacity,
+	// 0 to 1, under the first
 	// visible float. 0 draws nothing.
 	Dim     float64
 	Windows []SceneWindow
@@ -792,10 +797,12 @@ type Scene struct {
 
 // Shows reports whether the scene draws the surface of id: only its
 // content changes need a new frame. A window scrolled off the output is
-// not drawn.
+// not drawn. WorkspaceClip also excludes off-viewport windows; OverLayers
+// popups remain output-wide.
 func (s Scene) Shows(id WindowID) bool {
 	for _, w := range s.Windows {
-		if w.ID == id && !w.Hidden && w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+		if w.ID == id && !w.Hidden && w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) &&
+			(w.OverLayers || s.WorkspaceClip == (Rect{}) || w.Rect.Overlaps(s.WorkspaceClip)) {
 			return true
 		}
 	}

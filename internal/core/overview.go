@@ -360,7 +360,7 @@ func (m *Monitor) OverviewPick(id WindowID) {
 // with its stash pile and covering-float stack. Other workspaces are hidden.
 func (m *Monitor) overviewLayout() []Placement {
 	cur := m.Current()
-	u := cur.Usable
+	u := cur.overviewArea()
 	gap := u.H * 3 / 100
 	var result []Placement
 	hc := cur.rowHeight()
@@ -483,12 +483,14 @@ func (w *Workspace) pileWidth() int {
 	}
 	card := int(math.Round(float64(w.stashRect().W) * overviewCardZoom))
 	// Never more than a third of the width: the columns keep the rest.
-	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+w.Usable.W*2/100, w.Usable.W/3)
+	a := w.overviewArea()
+	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
 }
 
 // cardStep is the offset between stacked cards, smaller on tiny outputs.
 func (w *Workspace) cardStep() int {
-	return min(overviewCardStep, w.Usable.W/100, w.Usable.H/50)
+	a := w.overviewArea()
+	return min(overviewCardStep, a.W/100, a.H/50)
 }
 
 // pile places the stash of w as cards on the left of the row whose top is
@@ -506,10 +508,10 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 	}
 	front = min(max(front, 0), n-1)
 	r := w.stashRect()
-	u := w.Usable
+	u := w.overviewArea()
 	cw := int(math.Round(float64(r.W) * overviewCardZoom))
 	ch := int(math.Round(float64(r.H) * overviewCardZoom))
-	rowH := int(math.Round(float64(u.H) * w.overviewZoom()))
+	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom()))
 	// Stack rows reserve two peek steps above the front card. Align the
 	// stash with that front band, not with the top of its envelope.
 	x0, y0 := u.X+u.W/100, w.frontRowY(y)+(rowH-ch)/2
@@ -530,7 +532,7 @@ func (w *Workspace) overviewZoom() float64 {
 	if span <= 0 {
 		return overviewMaxZoom
 	}
-	room := float64(w.Usable.W-w.pileWidth()) * 0.96
+	room := float64(w.overviewArea().W-w.pileWidth()) * 0.96
 	z := min(max(room/float64(span), overviewMinZoom), overviewMaxZoom)
 	if len(w.stack()) > 1 {
 		// Reserve two clear peeks on either side of the front row.
@@ -624,7 +626,7 @@ func (w *Workspace) previewRow(y int, dim, lit bool) []Placement {
 }
 
 func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
-	u := w.Usable
+	u := w.overviewArea()
 	z := w.overviewZoom()
 	scale := func(v int) int { return int(math.Round(float64(v) * z)) }
 	width := scale(span)

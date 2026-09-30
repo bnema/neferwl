@@ -49,6 +49,9 @@ type NamedWorkspace struct {
 	Monitor    string
 	MaxColumns int
 	Overflow   Overflow
+	// Size overrides the logical width and height; a zero side inherits
+	// the monitor and the scale is always the monitor's.
+	Size [2]int
 }
 
 func NewMonitor() *Monitor { return newMonitor("", "") }
@@ -362,6 +365,7 @@ func (m *Monitor) ownWorkspace(w *Workspace, id WindowID) bool {
 func (m *Monitor) enterFullscreen(w *Workspace, id WindowID, show bool) {
 	fs := m.newWorkspace()
 	fs.Overflow, fs.MaxColumns = w.Overflow, w.MaxColumns
+	fs.SetSize(w.size[0], w.size[1])
 	fs.origin = w
 	fs.back.id = id
 	if f := w.floatIndex(id); f >= 0 {
@@ -675,7 +679,24 @@ func (m *Monitor) Layout() []Placement {
 	return m.slideLayout(result)
 }
 
+// Output is the whole logical monitor, whatever the workspaces' sizes.
 func (m *Monitor) Output() Rect { return m.template.Output }
+
+// Frame is where the workspace on screen draws and takes input, in monitor
+// coordinates: its viewport, or the whole monitor in the overview. Slides
+// involving a sized workspace remain settled inside the current frame.
+func (m *Monitor) Frame() Rect {
+	if m.ov.open {
+		return m.Output()
+	}
+	return m.Current().Output
+}
+
+// frameHas reports whether the output-local point is inside the frame.
+func (m *Monitor) frameHas(x, y float64) bool {
+	f := m.Frame()
+	return x >= float64(f.X) && x < float64(f.X+f.W) && y >= float64(f.Y) && y < float64(f.Y+f.H)
+}
 
 func (m *Monitor) each(f func(*Workspace)) {
 	f(&m.template)
@@ -737,6 +758,16 @@ func (m *Monitor) applyNamed() {
 		if s.MaxColumns > 0 {
 			w.SetMaxColumns(s.MaxColumns)
 		}
+		// Named workspaces take their configured size, a fullscreen sibling
+		// that of its named origin. Any other workspace keeps its own: a
+		// sibling detached from its origin must not resize on reload.
+		switch {
+		case w.Name != "":
+			w.SetSize(s.Size[0], s.Size[1])
+		case w.origin != nil && w.origin.Name != "":
+			size := specs[w.origin.Name].Size
+			w.SetSize(size[0], size[1])
+		}
 	})
 }
 
@@ -748,10 +779,20 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 	for _, s := range specs {
 		want[s.Name] = s
 	}
+	// A sibling inherits its named origin's override only while that
+	// declaration exists. Removing it restores monitor-sized geometry.
+	for _, w := range m.Workspaces {
+		if w.origin != nil && w.origin.Name != "" {
+			if _, ok := want[w.origin.Name]; !ok {
+				w.SetSize(0, 0)
+			}
+		}
+	}
 	byName := map[string]*Workspace{}
 	for _, w := range m.Workspaces {
 		if _, ok := want[w.Name]; w.Name != "" && !ok {
 			w.Name = ""
+			w.SetSize(0, 0)
 		}
 		if w.Name != "" {
 			byName[w.Name] = w

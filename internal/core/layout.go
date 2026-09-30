@@ -137,12 +137,20 @@ type Workspace struct {
 	ViewX     int
 	// shift slides the columns on screen past ViewX, in logical pixels,
 	// while a swipe follows the fingers or its spring (motion) lands.
-	shift      float64
-	motion     *motion
-	Output     Rect
-	Usable     Rect
-	Gaps       int
-	MaxColumns int
+	shift  float64
+	motion *motion
+	// Output is the effective viewport in monitor coordinates: the whole
+	// monitor unless the workspace has a size override, then a centered
+	// rectangle no larger than the monitor. Fullscreen fills it.
+	Output Rect
+	// Usable is the layer reservations of the monitor intersected with Output.
+	Usable Rect
+	// monitor is the full logical monitor and reserved its area left by
+	// layer surfaces, both from the monitor; size is the override (0 inherits).
+	monitor, reserved Rect
+	size              [2]int
+	Gaps              int
+	MaxColumns        int
 	// border is drawn around floating windows, inside their rect.
 	border     int
 	presets    []Width
@@ -834,29 +842,54 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 		}
 	}
 }
+
+// SetOutput sets the logical size of the monitor. The workspace viewport
+// follows: the whole monitor, or the centered size override.
 func (w *Workspace) SetOutput(width, height int) {
-	if width < 0 {
-		width = 0
+	old := w.monitor
+	w.monitor = Rect{W: max(width, 0), H: max(height, 0)}
+	if w.reserved == old {
+		w.reserved = w.monitor
 	}
-	if height < 0 {
-		height = 0
-	}
-	old := w.Output
-	w.Output = Rect{W: width, H: height}
-	if w.Usable == old {
-		w.Usable = w.Output
-	}
-	w.SetUsable(w.Usable)
+	w.SetUsable(w.reserved)
 }
 
-// SetUsable clamps negative dimensions to zero and clips the usable rectangle
-// to the output. Effective gaps shrink to fit the available area.
+// SetUsable takes the monitor area left by layer surfaces, clamps negative
+// dimensions to zero and clips it to the monitor. The usable rectangle is
+// its intersection with the viewport. Effective gaps shrink to fit it.
 func (w *Workspace) SetUsable(r Rect) {
-	r.X = min(max(r.X, 0), w.Output.W)
-	r.Y = min(max(r.Y, 0), w.Output.H)
-	r.W = min(max(r.W, 0), w.Output.W-r.X)
-	r.H = min(max(r.H, 0), w.Output.H-r.Y)
-	w.Usable = r
+	r.X = min(max(r.X, 0), w.monitor.W)
+	r.Y = min(max(r.Y, 0), w.monitor.H)
+	r.W = min(max(r.W, 0), w.monitor.W-r.X)
+	r.H = min(max(r.H, 0), w.monitor.H-r.Y)
+	w.reserved = r
+	w.fit()
+}
+
+// SetSize overrides the logical size of the workspace; a zero side inherits
+// the monitor, one larger than it is clamped to it.
+func (w *Workspace) SetSize(width, height int) {
+	w.size = [2]int{max(width, 0), max(height, 0)}
+	w.fit()
+}
+
+// fit derives the viewport and usable area from the monitor, its reservations
+// and the size override.
+func (w *Workspace) fit() {
+	side := func(want, have int) int {
+		if want <= 0 {
+			return have
+		}
+		return min(want, have)
+	}
+	vw, vh := side(w.size[0], w.monitor.W), side(w.size[1], w.monitor.H)
+	w.Output = Rect{X: (w.monitor.W - vw) / 2, Y: (w.monitor.H - vh) / 2, W: vw, H: vh}
+	r, o := w.reserved, w.Output
+	x0, y0 := max(r.X, o.X), max(r.Y, o.Y)
+	x1, y1 := min(r.X+r.W, o.X+o.W), min(r.Y+r.H, o.Y+o.H)
+	u := Rect{X: min(max(x0, o.X), o.X+o.W), Y: min(max(y0, o.Y), o.Y+o.H)}
+	u.W, u.H = max(x1-u.X, 0), max(y1-u.Y, 0)
+	w.Usable = u
 	w.reconcileFloats()
 	w.scroll()
 }
@@ -872,6 +905,12 @@ func (w *Workspace) SetMaxColumns(n int) {
 	w.MaxColumns = n
 	w.scroll()
 }
+
+// overviewArea is the monitor area the overview lays rows out in: the whole
+// area left by layer surfaces, whatever the workspace's size. Tiles keep the
+// workspace's own geometry, scaled uniformly.
+func (w *Workspace) overviewArea() Rect { return w.reserved }
+
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 
 // pinned reports whether focus moves inside the workspace are off: the
@@ -973,7 +1012,7 @@ func (w *Workspace) scroll() {
 	left := w.columnX(w.Focus) - w.ViewX
 	width := w.columnWidth(w.Focus)
 	if w.fullscreenColumn(w.Focus) {
-		w.ViewX += left
+		w.ViewX += left - w.Output.X
 		return
 	}
 	minX := w.Usable.X + w.gap()
@@ -1122,9 +1161,9 @@ func (w *Workspace) Layout() []Placement {
 			hidden := (cover != 0 && id != cover) || ((fullColumn || w.Overflow == OverflowFixed && w.fullscreen != 0) && !full) || maximized
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
-				r = Rect{X: col.X, Y: 0, W: w.Output.W, H: w.Output.H}
-				if w.Overflow == OverflowFixed {
-					r.X = 0
+				r = w.Output
+				if w.Overflow != OverflowFixed {
+					r.X = col.X
 				}
 			}
 			if hidden {
@@ -1167,7 +1206,7 @@ func (w *Workspace) Layout() []Placement {
 				continue
 			}
 			if w.fullscreen == f.ID {
-				p.Rect, p.Fullscreen, p.Inset = Rect{W: w.Output.W, H: w.Output.H}, true, 0
+				p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
 			}
 			result = append(result, p)
 		}

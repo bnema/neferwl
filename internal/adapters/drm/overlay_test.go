@@ -40,6 +40,29 @@ func overlayScene() (ports.Scene, map[ports.WindowID]ports.SurfaceContent) {
 	}
 }
 
+func TestScanoutWorkspaceClipCannotBeBypassed(t *testing.T) {
+	s, contents := fullscreenScene()
+	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
+	if _, reason := scanoutCandidate(s, contents, 200, 100); reason != "workspace_clip" {
+		t.Fatalf("fullscreen bypassed clip: %q", reason)
+	}
+	if fullscreenShown(&s) {
+		t.Fatal("clipped fullscreen counted as output-covering")
+	}
+}
+
+func TestOverlayWorkspaceClip(t *testing.T) {
+	s, contents := overlayScene()
+	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
+	if _, _, reason := overlayCandidate(s, contents); reason != "workspace_clip" {
+		t.Fatalf("overflowing workspace overlay: %q", reason)
+	}
+	s.WorkspaceClip = ports.Rect{X: 100, W: 100, H: 100}
+	if win, _, reason := overlayCandidate(s, contents); reason != "" || win.ID != 2 {
+		t.Fatalf("contained workspace overlay: %v %q", win.ID, reason)
+	}
+}
+
 func TestOverlayCandidate(t *testing.T) {
 	s, c := overlayScene()
 	if w, _, reason := overlayCandidate(s, c); reason != "" || w.ID != 2 {

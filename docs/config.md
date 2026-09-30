@@ -40,6 +40,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
+| `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
@@ -53,6 +54,15 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `performance.realtime` | `on` | Request real-time scheduling for output and input threads |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
+
+## Workspace size
+
+A workspace inherits its monitor size unless `workspace.<name>.size` sets a logical `WxH`. Its viewport is centered, and columns, maximization, floating windows and fullscreen use that real layout size—not scaled overview previews. Oversized dimensions are limited to the monitor; reserved layer zones still reduce usable space. Monitor mode and scale stay unchanged. Omit `size` or use `inherit` to restore the default. Workspace transitions involving a smaller viewport switch without the vertical slide, keeping scrolling columns inside their frame. Fullscreen inside a smaller viewport uses composition rather than output-covering direct scanout, so fullscreen-game VRR/tearing eligibility does not apply.
+
+```ini
+workspace.presentation.size = 1920x1080
+bind.Cmd+p = workspace presentation
+```
 
 ## Touchpad
 
