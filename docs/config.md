@@ -38,7 +38,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
 | `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `workspace.<name>.*` | none | Named workspaces are outside the numbered list; each needs a `workspace <name>` bind to show it and toggle back |
+| `workspace.<name>.*` | none | Named workspaces are outside the numbered list; use the overview to show an occupied one, or a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
 | `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
@@ -146,7 +146,7 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 ### Overview
 
-`toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; `scroll` overflow keeps its columns selectable in one card.
+`toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Each monitor has one vertical overview. A named workspace appears directly below the numbered workspace from which its `workspace <name>` bind was invoked. Invoking it from another numbered workspace updates this placement; browsing the overview does not. Several named workspaces attached to the same numbered workspace follow configuration order, with horizontal rules separating their group from numbered rows. Named-to-named binds reuse the source's numbered attachment. Unattached named workspaces follow the last occupied numbered row, or the first row if all numbered workspaces are empty. The selected workspace stays centred and its immediate neighbors appear above and below; rows and stash previews keep their full width. Empty workspaces are skipped unless currently selected or serving as the invocation anchor of a visible named row. Named workspaces remain outside the numbered list and normal workspace up/down navigation. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; `scroll` overflow keeps its columns selectable in one card.
 
 | Key | Action |
 | --- | --- |
@@ -155,7 +155,7 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 | `return` | Show the selected front card; picking a hidden column moves the maximization to it |
 | `escape` | Restore the original focus, maximization and float order |
 
-The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys.
+The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys. In the overview, `focus-workspace-up/down` also traverse cards before crossing workspace rows, including named ones.
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. A successful up/down move through the stack leaves the stash and selects the new front card. `return` or a click on a card closes the overview with the stash shown on that window.
 

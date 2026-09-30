@@ -213,20 +213,28 @@ func (m *Monitor) Apply(a Action) Effect {
 		if a == ActionCloseWindow {
 			return Effect{Close: m.overviewTarget()}
 		}
-		if overviewBlocks(a) {
+		if m.overviewFocus(a) || overviewBlocks(a) {
 			return Effect{}
 		}
 	}
 	if n, op, ok := WorkspaceArg(a); ok {
 		if op == FocusWorkspace {
+			before := m.Current()
 			m.FocusNumber(n)
+			if m.ov.open && m.Current() != before {
+				m.selectRow()
+			}
 		} else {
 			m.MoveToWorkspace(n-1, op == MoveColumnToWorkspace)
 		}
 		return Effect{}
 	}
 	if name, ok := NamedArg(a); ok {
+		before := m.Current()
 		m.ToggleNamed(name)
+		if m.ov.open && m.Current() != before {
+			m.selectRow()
+		}
 		return Effect{}
 	}
 	switch a {

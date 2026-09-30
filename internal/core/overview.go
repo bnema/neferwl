@@ -13,6 +13,7 @@ import (
 type overviewState struct {
 	open       bool
 	from       *Workspace
+	back       *Workspace
 	fromID     WindowID
 	floats     []Float
 	fullWidth  WindowID
@@ -62,7 +63,7 @@ func (m *Monitor) ToggleOverview() {
 	// settled state.
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
-	m.ov.open, m.ov.from = true, w
+	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
 	m.ov.fromID, _ = w.Focused()
 	m.ov.floats = append([]Float(nil), w.Floats...)
 	m.ov.maximized = slices.Clone(w.maximized)
@@ -233,7 +234,67 @@ func (m *Monitor) CancelOverview() {
 		from.maximized = slices.Clone(m.ov.maximized)
 		from.scroll()
 	}
+	m.back = m.ov.back
+	if m.back != nil && !m.has(m.back) {
+		m.back = nil
+	}
 	m.ov = overviewState{}
+}
+
+// overviewWorkspaces inserts named rows below their invocation workspace,
+// in configured order within each group. Unattached rows follow the last
+// occupied numbered row (or the first). Empty invocation anchors stay visible;
+// other empty rows are skipped unless current.
+func (m *Monitor) overviewWorkspaces() []*Workspace {
+	fallback := m.Workspaces[0]
+	for _, w := range m.Workspaces {
+		if !w.empty() {
+			fallback = w
+		}
+	}
+	groups := make(map[*Workspace][]*Workspace)
+	named := slices.Clone(m.hidden)
+	rank := func(w *Workspace) int {
+		for i, spec := range m.named {
+			if spec.Name == w.Name {
+				return i
+			}
+		}
+		return len(m.named)
+	}
+	slices.SortStableFunc(named, func(a, b *Workspace) int { return rank(a) - rank(b) })
+	for _, w := range named {
+		if w.empty() && w != m.Current() {
+			continue
+		}
+		anchor := w.overviewAfter
+		if indexOf(m.Workspaces, anchor) < 0 {
+			anchor = fallback
+		}
+		groups[anchor] = append(groups[anchor], w)
+	}
+	var rows []*Workspace
+	for _, w := range m.Workspaces {
+		if !w.empty() || w == m.Current() || len(groups[w]) > 0 {
+			rows = append(rows, w)
+			rows = append(rows, groups[w]...)
+		}
+	}
+	return rows
+}
+
+// showOverview changes rows without committing the provisional stack. Entering
+// a named group uses its invocation anchor as the toggle return target, not
+// rows merely browsed in the overview.
+func (m *Monitor) showOverview(w *Workspace) {
+	if w != m.Current() && m.isHidden(w) && !m.isHidden(m.Current()) {
+		m.back = m.Current()
+		if indexOf(m.Workspaces, w.overviewAfter) >= 0 {
+			m.back = w.overviewAfter
+		}
+	}
+	m.show(w)
+	m.selectRow()
 }
 
 // OverviewMove routes every vertical input through moveStack, then falls
@@ -245,12 +306,12 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		if m.moveStack(-dy) {
 			return
 		}
-		i := m.Active + dy
-		if m.shown != nil || i < 0 || i >= len(m.Workspaces) || m.Workspaces[i].empty() {
+		rows := m.overviewWorkspaces()
+		i := indexOf(rows, w) + dy
+		if i < 0 || i >= len(rows) {
 			return
 		}
-		m.Focus(i)
-		m.selectRow()
+		m.showOverview(rows[i])
 		return
 	}
 	if w.pinned() {
@@ -331,7 +392,7 @@ func (m *Monitor) OverviewPick(id WindowID) {
 			return
 		}
 	}
-	m.show(w)
+	m.showOverview(w)
 	m.ov.card, m.ov.cardOf = 0, nil
 	if i := w.stashIndex(id); i >= 0 {
 		m.selectCard(w, i)
@@ -355,27 +416,51 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	m.closeOverview()
 }
 
-// overviewLayout places the current workspace's row in the middle of the
-// usable area and its numbered neighbors above and below, dimmed, each
-// with its stash pile and covering-float stack. Other workspaces are hidden.
-func (m *Monitor) overviewLayout() []Placement {
+// overviewRows centers the selected row with its neighbors above and below.
+// The numbered/named boundary gets extra spacing and an inactive horizontal
+// rule. Row widths, stash piles and preview scales remain unchanged.
+func (m *Monitor) overviewRows() (map[*Workspace]int, []ports.Separator) {
 	cur := m.Current()
 	u := cur.overviewArea()
-	gap := u.H * 3 / 100
-	var result []Placement
+	gap := max(1, u.H*3/100)
 	hc := cur.rowHeight()
 	y := u.Y + (u.H-hc)/2
-	rows := map[*Workspace]int{}
-	rows[cur] = y
-	if i := indexOf(m.Workspaces, cur); i >= 0 && m.shown == nil {
-		if i > 0 {
-			up := m.Workspaces[i-1]
-			rows[up] = y - gap - up.rowHeight()
+	rows := map[*Workspace]int{cur: y}
+	var dividers []ports.Separator
+	list := m.overviewWorkspaces()
+	i := indexOf(list, cur)
+	for _, next := range []int{i - 1, i + 1} {
+		if next < 0 || next >= len(list) {
+			continue
 		}
-		if i+1 < len(m.Workspaces) {
-			rows[m.Workspaces[i+1]] = y + hc + gap
+		w := list[next]
+		spacing := gap
+		boundary := m.isHidden(w) != m.isHidden(cur)
+		if boundary {
+			spacing *= 2
+		}
+		top := y + hc
+		if next < i {
+			rows[w] = y - spacing - w.rowHeight()
+			top = y - spacing
+		} else {
+			rows[w] = y + hc + spacing
+		}
+		if boundary {
+			margin := u.W * 4 / 100
+			dividers = append(dividers, ports.Separator{Rect: Rect{X: u.X + margin, Y: top + spacing/2, W: u.W - 2*margin, H: 1}})
 		}
 	}
+	return rows, dividers
+}
+
+// overviewLayout places the current workspace and its overview neighbors,
+// each with its full-width stash pile and covering-float stack. Other rows
+// stay hidden; numbered and named workspaces share the same preview geometry.
+func (m *Monitor) overviewLayout() []Placement {
+	cur := m.Current()
+	rows, _ := m.overviewRows()
+	var result []Placement
 	for _, w := range m.all() {
 		ry, shown := rows[w]
 		if shown && w.pinned() {
@@ -716,15 +801,8 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	return true, c.publish(ctx)
 }
 
-// overviewSwipe moves the selection like the keys: a workspace swipe
-// must not enter the empty workspace below the last one.
+// overviewSwipe moves the selection like the keys, through stacks and rows.
 func (m *Monitor) overviewSwipe(a Action) {
-	switch a {
-	case ActionFocusWorkspaceUp:
-		a = ActionFocusWindowUp
-	case ActionFocusWorkspaceDown:
-		a = ActionFocusWindowDown
-	}
 	m.overviewFocus(a)
 }
 
@@ -737,9 +815,9 @@ func (m *Monitor) overviewFocus(a Action) bool {
 		m.OverviewMove(-1, 0)
 	case ActionFocusColumnRight:
 		m.OverviewMove(1, 0)
-	case ActionFocusWindowUp:
+	case ActionFocusWindowUp, ActionFocusWorkspaceUp:
 		m.OverviewMove(0, -1)
-	case ActionFocusWindowDown:
+	case ActionFocusWindowDown, ActionFocusWorkspaceDown:
 		m.OverviewMove(0, 1)
 	default:
 		return false
