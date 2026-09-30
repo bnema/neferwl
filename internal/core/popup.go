@@ -148,7 +148,7 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 			if pl.ID == id {
 				// Hidden or scrolled off: not on screen, like its popups.
 				// A preview takes no input and shows no popups.
-				if !onScreen(pl, sc.mon.Output()) || pl.Preview > 0 {
+				if !onScreen(pl, sc.mon.Frame()) || pl.Preview > 0 {
 					return nil, Rect{}, false
 				}
 				return sc, c.clientRect(pl), true
@@ -180,7 +180,11 @@ func (c *Core) placePopup(ctx context.Context, v ports.PopupRequest) error {
 		}
 		return c.command(ctx, ports.ClosePopup{ID: v.ID})
 	}
+	// Window popups stay in the workspace viewport, layer popups in the output.
 	o := sc.mon.Output()
+	if !c.onLayer(c.popupRoot(v.Parent)) {
+		o = sc.mon.Frame()
+	}
 	bounds := Rect{X: o.X - pr.X, Y: o.Y - pr.Y, W: o.W, H: o.H}
 	p := c.popups[v.ID]
 	if p == nil {
@@ -306,6 +310,9 @@ func (c *Core) popupAt(sc *screen, lx, ly float64, overLayers bool) (WindowID, f
 		}
 		s, r, ok := c.windowRect(p.id)
 		if !ok || s != sc {
+			continue
+		}
+		if !overLayers && !sc.mon.frameHas(lx, ly) {
 			continue
 		}
 		if lx >= float64(r.X) && lx < float64(r.X+r.W) && ly >= float64(r.Y) && ly < float64(r.Y+r.H) && c.acceptsInput(p.id, lx-float64(r.X), ly-float64(r.Y)) {

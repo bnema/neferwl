@@ -172,7 +172,7 @@ func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
 		switch {
 		case f.ID == cover:
-			p.Rect, p.Fullscreen, p.Inset = Rect{W: w.Output.W, H: w.Output.H}, true, 0
+			p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
 		case w.stashHidden || cover != 0:
 			p.Hidden = true
 		case i == w.stashAt:

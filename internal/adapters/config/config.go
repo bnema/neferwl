@@ -713,12 +713,22 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
 		}
 		w.Monitor = v
+	case "size":
+		if v == "inherit" {
+			w.Size = [2]int{}
+			return nil
+		}
+		width, height, _, err := ParseMode(v)
+		if err != nil || width == 0 || strings.Contains(v, "@") {
+			return fmt.Errorf("must be inherit or WxH in logical pixels")
+		}
+		w.Size = [2]int{width, height}
 	case "max-columns", "overflow":
 		return setLayoutRule(&w.LayoutRules, field, v)
 	default:
 		n, ok := strings.CutPrefix(field, "column.")
 		if !ok {
-			return fmt.Errorf("unknown key (monitor, max-columns, overflow, column.N)")
+			return fmt.Errorf("unknown key (monitor, size, max-columns, overflow, column.N)")
 		}
 		index, err := strconv.Atoi(n)
 		if err != nil || index < 1 || index > 16 {

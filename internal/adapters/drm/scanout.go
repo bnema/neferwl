@@ -66,7 +66,8 @@ func scanoutRect(c ports.SurfaceContent, w, h int) planeRect {
 
 // covers reports whether win fills the output of scene s.
 func covers(s *ports.Scene, win *ports.SceneWindow) bool {
-	return win.Rect.X == 0 && win.Rect.Y == 0 && win.Rect.W == s.OutputWidth && win.Rect.H == s.OutputHeight
+	return (s.WorkspaceClip == (ports.Rect{}) || s.WorkspaceClip == (ports.Rect{W: s.OutputWidth, H: s.OutputHeight})) &&
+		win.Rect.X == 0 && win.Rect.Y == 0 && win.Rect.W == s.OutputWidth && win.Rect.H == s.OutputHeight
 }
 
 // fullscreenShown reports whether a visible fullscreen window covers the
@@ -85,6 +86,9 @@ func fullscreenShown(s *ports.Scene) bool {
 // directly, or a reason why it cannot. w, h are the output's physical size.
 // The plane's formats are checked by scanoutFB.
 func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int) (ports.SurfaceContent, string) {
+	if s.WorkspaceClip != (ports.Rect{}) && s.WorkspaceClip != (ports.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+		return ports.SurfaceContent{}, "workspace_clip"
+	}
 	var full *ports.SceneWindow
 	for i := range s.Windows {
 		win := &s.Windows[i]

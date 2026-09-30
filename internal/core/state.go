@@ -39,7 +39,7 @@ func (c *Core) state() ports.State {
 		// Visible follows the configures: drawn on the output.
 		shown := map[WindowID]bool{}
 		for _, p := range m.Layout() {
-			shown[p.ID] = onScreen(p, m.Output())
+			shown[p.ID] = onScreen(p, m.Frame())
 		}
 		for _, w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1

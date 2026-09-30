@@ -154,6 +154,9 @@ type WorkspaceConfig struct {
 	// Monitor is the home monitor: a connector name (DP-2) or a monitor key
 	// ("make model serial"); empty means the first output.
 	Monitor string
+	// Size overrides the workspace's logical width and height. Zero inherits
+	// the monitor; its scale is always inherited.
+	Size [2]int
 	// Slots are the declared columns (workspace.<name>.column.N), by N.
 	Slots []SlotConfig
 	LayoutRules

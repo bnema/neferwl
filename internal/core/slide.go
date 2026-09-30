@@ -85,12 +85,36 @@ func (w *Workspace) snap(target float64, forward bool) (view, focus int) {
 
 func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, nil, nil }
 
+// framedSwitch keeps transitions involving a sized workspace settled. A
+// monitor-wide animation has no per-workspace crop; it must not expose
+// columns outside their viewport while sliding between different frames.
+func (m *Monitor) framedSwitch() bool {
+	if m.Current().Output != m.Output() {
+		return true
+	}
+	list := m.Workspaces
+	if m.switchList != nil {
+		list = m.switchList
+	}
+	base := indexOf(list, m.Current())
+	if base < 0 {
+		return false
+	}
+	pos := float64(base) + m.switchOff
+	for _, i := range [2]int{int(math.Floor(pos)), int(math.Ceil(pos))} {
+		if i >= 0 && i < len(list) && m.has(list[i]) && list[i].Output != m.Output() {
+			return true
+		}
+	}
+	return false
+}
+
 // slideLayout adds the workspaces a workspace slide shows next to the
 // current one, moved by their distance, to the current layout (moved too).
 // A landing slide places them as the list was when the swipe began
 // (switchList): an empty workspace dropped since shows as background.
 func (m *Monitor) slideLayout(cur []Placement) []Placement {
-	if m.switchOff == 0 || m.shown != nil {
+	if m.switchOff == 0 || m.shown != nil || m.framedSwitch() {
 		return cur
 	}
 	list := m.Workspaces

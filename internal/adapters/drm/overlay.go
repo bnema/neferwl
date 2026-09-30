@@ -103,6 +103,11 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// The overlay shows the buffer alone; the lines would go with it.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
 	}
+	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
+		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
+		// The plane cannot apply the workspace's logical viewport crop.
+		return ports.SceneWindow{}, ports.SurfaceContent{}, "workspace_clip"
+	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
 	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {

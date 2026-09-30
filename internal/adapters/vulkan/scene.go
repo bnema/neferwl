@@ -33,8 +33,14 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 		w.scale = 1
 	}
 	w.layers(false)
+	outputBounds := w.bounds
+	if s.WorkspaceClip != (ports.Rect{}) {
+		c := s.WorkspaceClip
+		w.bounds = w.bounds.Intersect(w.physRect(c.X, c.Y, c.W, c.H))
+	}
 	w.windows()
 	w.popups(false)
+	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
 	r.scratchDraws = w.draws
@@ -251,7 +257,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
 		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}
-	dst = full.Intersect(w.physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy()))
+	dst = full.Intersect(w.physRect(clip.Min.X, clip.Min.Y, clip.Dx(), clip.Dy())).Intersect(w.bounds)
 	return full, dst, !dst.Empty()
 }
 
@@ -278,7 +284,7 @@ func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip im
 // that dst shows. key names the surface, seq its content.
 func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceContent, key shmKey, seq uint64, root bool) {
 	r := w.r
-	rect := dst.Intersect(w.bounds)
+	rect := dst
 	if rect.Empty() {
 		return
 	}
