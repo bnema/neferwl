@@ -55,6 +55,8 @@ func (a activation) Activate(_ *xdgactivation.ActivationV1, token string, surf *
 	state := s.surfaceOf(surf)
 	reason := ""
 	switch {
+	case s.protected():
+		reason = "session_protected"
 	case !ok:
 		reason = "unknown_token"
 	case time.Since(t.at) > tokenLifetime:
@@ -105,7 +107,7 @@ func (t *tokenRequest) Commit(r *xdgactivation.ActivationTokenV1) {
 	fresh := time.Since(s.seat.pressAt) <= tokenLifetime && !s.seat.pressAt.Before(s.seat.focusAt)
 	valid := s.focusClient() == c || (t.hasSerial && t.serial == s.seat.press && s.seat.pressClient == c && fresh)
 	token := rand.Text()
-	if valid {
+	if valid && !s.protected() {
 		s.pruneTokens()
 		s.tokens[token] = activationToken{client: c, at: time.Now()}
 	}

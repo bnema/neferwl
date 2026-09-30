@@ -92,6 +92,8 @@ func TestFixesAckAndDestroyRegistry(t *testing.T) {
 	waitOutputs(t, c, 1)
 	requestProtocol(t, c, fixes, wayland.FixesRequestAckGlobalRemove, c.Registry().ID(), name)
 	requestProtocol(t, c, fixes, wayland.FixesRequestDestroyRegistry, c.Registry().ID())
+	// wl_fixes destroys another object, not the request's own proxy.
+	c.Context().UnregisterID(c.Registry().ID())
 	if err := c.Roundtrip(); err != nil {
 		t.Fatalf("valid ack and destroy: %v", err)
 	}
@@ -121,7 +123,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 			name = n
 		}
 	}
-	out, err := c.Registry().BindID(name, "wl_output", 4)
+	out, err := bindWireID(c, name, "wl_output", 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func TestOutputHotplugAndLayerOutput(t *testing.T) {
 	layer := c.AllocateID()
 	proxy := &closedProxy{configured: make(chan [3]uint32, 2), closed: make(chan struct{})}
 	proxy.SetID(layer)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, layer, surf, out, uint32(ports.LayerTop), "bar")
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetAnchor, uint32(13))
 	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(0), uint32(30))

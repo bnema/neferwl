@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/neferwl/internal/sessionlock"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
 	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
@@ -33,18 +34,25 @@ type Options struct {
 	RepeatRate, RepeatDelay int
 	// Clock runs idle notification timers; nil is the system clock.
 	Clock ports.Clock
+	// Security is display-owned protection control. Nil leaves session-lock
+	// unadvertised; independent protocol tests remain unlocked.
+	Security ports.SessionSecurityController
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
 type Channels struct {
-	LeaseRequests chan<- ports.LeaseMessage
-	LeaseEvents   <-chan ports.LeaseMessage
-	Events        chan<- ports.ClientEvent
-	Contents      chan<- ports.SurfaceContent
-	Commands      <-chan ports.ClientCommand
-	Workspaces    <-chan ports.Workspaces
+	// SecurityChanges requests ordered backend protection/release. The
+	// backend echoes actual inventory/proofs/barriers on SecurityEvents.
+	SecurityChanges chan<- ports.SecurityState
+	SecurityEvents  <-chan ports.SecurityBackendEvent
+	LeaseRequests   chan<- ports.LeaseMessage
+	LeaseEvents     <-chan ports.LeaseMessage
+	Events          chan<- ports.ClientEvent
+	Contents        chan<- ports.SurfaceContent
+	Commands        <-chan ports.ClientCommand
+	Workspaces      <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
 	Cursors chan<- ports.CursorChange
 	// Presented paces frame callbacks on the outputs' page flips; outputs
@@ -65,17 +73,25 @@ type Channels struct {
 	OutputApply   chan<- ports.OutputApply
 	OutputApplied <-chan ports.OutputApplied
 }
+
 type Server struct {
-	leaseDevices      map[string]*leaseDevice
-	pendingLeases     map[uint64]*leaseObject
-	pendingLeaseCards map[uint64]string
-	activeLeases      map[leaseKey]*leaseObject
-	leaseMu           sync.Mutex // only the outbound lease queue; never window state
-	leaseOut          []ports.LeaseMessage
-	leaseReady        chan struct{}
-	nextLeaseID       uint64
-	nextCapture       uint64
-	captureReplies    map[uint64]func(ports.CaptureDone)
+	security           ports.SessionSecurity
+	securityController ports.SessionSecurityController
+	securityPending    []ports.SecurityState // display-owned ordered backend outbox
+	securityWake       chan struct{}
+	sessionLock        *sessionLock
+	lockReadiness      sessionlock.Readiness
+	lockSurfaces       map[ports.WindowID]*lockSurface
+	leaseDevices       map[string]*leaseDevice
+	pendingLeases      map[uint64]*leaseObject
+	pendingLeaseCards  map[uint64]string
+	activeLeases       map[leaseKey]*leaseObject
+	leaseMu            sync.Mutex // only the outbound lease queue; never window state
+	leaseOut           []ports.LeaseMessage
+	leaseReady         chan struct{}
+	nextLeaseID        uint64
+	nextCapture        uint64
+	captureReplies     map[uint64]func(ports.CaptureDone)
 	// captureInflight counts accepted captures until the backend completes
 	// them, independent of client resources; only the display loop touches it.
 	captureInflight map[uint64]struct{}
@@ -237,7 +253,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
-	s := &Server{display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, seat: seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}}
+	s := &Server{securityWake: make(chan struct{}, 1), security: opts.Security, securityController: opts.Security, display: d, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1), reports: map[string]ports.OutputPresented{}, env: linuxProcEnv{}, name: name, cleanup: cleanup, log: log, channels: ch, surfaces: make(map[*server.Resource]*surface), buffers: make(map[*server.Resource]clientBuffer), windows: make(map[ports.WindowID]*window), layers: make(map[ports.WindowID]*layerSurface), nextWindow: 1, eventReady: make(chan struct{}, 1), contents: make(map[ports.WindowID]ports.SurfaceContent), contentSeq: make(map[ports.WindowID]uint64), damage: map[ports.WindowID][]ports.SeqDamage{}, contentReady: make(chan struct{}, 1), cursorReady: make(chan struct{}, 1), dataSources: map[*server.Resource]*clipSource{}, primarySources: map[*server.Resource]*clipSource{}, controlSources: map[*server.Resource]*clipSource{}, contentNotify: make(chan struct{}), regions: map[*server.Resource]*region{}, relatives: map[server.Client][]*relativepointer.ZwpRelativePointerV1{}, constraints: map[*surface]*constraint{}, positioners: map[*server.Resource]*positioner{}, seat: seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay}}
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
@@ -336,7 +352,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(12)
+	wg.Add(14)
+	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
+	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeaseRequests(ctx) }()
 	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
@@ -609,6 +627,19 @@ func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (
 }
 
 func (s *Server) apply(cmd ports.ClientCommand) {
+	if envelope, ok := cmd.(ports.SecurityCommand); ok {
+		if s.security == nil || envelope.State != s.security.Snapshot() {
+			return
+		}
+		cmd = envelope.Command
+	} else if s.security != nil && s.security.Snapshot().Generation != 0 {
+		// Only input/focus commands require an owner envelope. Config relay
+		// also produces SetKeymap and other epoch-independent commands.
+		switch cmd.(type) {
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.FocusWindow, ports.ForwardKey:
+			return
+		}
+	}
 	switch c := cmd.(type) {
 	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey:
 		s.applyInput(c)

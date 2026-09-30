@@ -346,6 +346,9 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	switch {
 	case len(reqs) == 0:
 		return
+	case !p.captureAllowed(s.Security):
+		fail(ErrSecurityState, reqs)
+		return
 	case s.Off:
 		fail(errors.New("output off"), reqs)
 		return
@@ -391,6 +394,7 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 			return
 		}
 		o.r, o.p, o.w, o.h, o.session = r, NewPipeline(p.ctx, p.replies), w, h, s.Capture.Session
+		o.p.Security = p.Security
 	}
 	// Request regions are physical pixels of the output; TargetRect is
 	// relative to the workspace viewport, so it cannot place them. The child
@@ -417,13 +421,21 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	child := *cs
 	child.Capture = &ports.SceneCapture{Excluded: s.Capture.Excluded}
 	child = o.clean.scene(child)
+	if !p.captureAllowed(s.Security) {
+		fail(ErrSecurityState, reqs)
+		return
+	}
 	done, err := o.r.Render(child, surfaces)
+	// This device's reads are independent of the display. Even a rejected
+	// capture retains its render fence/ceilings until GPU completion.
+	if done != nil {
+		o.track(done, child, surfaces)
+	}
 	if err != nil {
 		fail(fmt.Errorf("render workspace: %w", err), reqs)
 		return
 	}
-	if done != nil {
-		o.track(done, child, surfaces)
-	}
-	o.p.Submit(o.r, reqs)
+	// Immutable parent scene epoch, not the cleaner's rewritten child scene.
+	// SubmitScoped rechecks immediately before native BeginCapture.
+	o.p.SubmitScoped(s.Security, o.r, reqs)
 }

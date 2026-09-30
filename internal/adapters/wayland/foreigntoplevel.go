@@ -62,10 +62,14 @@ func (m *toplevelManager) Stop(*wlr.ZwlrForeignToplevelManagerV1) {
 
 // refresh announces w or sends what changed since the last done.
 func (m *toplevelManager) refresh(w *window) {
-	if !m.res.Alive() {
+	if m.s.protected() || !m.res.Alive() {
 		return
 	}
 	h := m.handles[w.id]
+	if h != nil && h.req.closed {
+		m.closed(w.id)
+		h = nil
+	}
 	fresh := h == nil
 	if fresh {
 		req := &toplevelRequests{s: m.s, id: w.id}
@@ -110,9 +114,14 @@ func (m *toplevelManager) closed(id ports.WindowID) {
 	if h == nil {
 		return
 	}
-	delete(m.handles, id)
-	// A remapped window keeps its ID but gets a new handle.
+	// A remapped window keeps its ID but gets a new handle. Mark requests
+	// inert immediately, but defer the wire event to avoid leaking lock-time
+	// unmap/disconnect timing. Keep the handle for the unlock refresh.
 	h.req.closed = true
+	if m.s.protected() {
+		return
+	}
+	delete(m.handles, id)
 	if h.res.Alive() {
 		h.res.SendClosed()
 	}
@@ -192,14 +201,29 @@ func (s *Server) toplevelClosed(id ports.WindowID) {
 	}
 }
 
-// refreshToplevels resends the output events of every handle after a
-// wl_output was bound or an output removed.
+// refreshToplevels reconciles inventory after output changes or unlock:
+// retire handles closed during protection, then announce current windows,
+// including those mapped (or managers bound) while inventory was suppressed.
 func (s *Server) refreshToplevels() {
+	if s.protected() {
+		return
+	}
+	ids := make([]ports.WindowID, 0, len(s.windows))
+	for id, w := range s.windows {
+		if w.toplevel != nil && w.mapped {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
 	for _, m := range s.toplevelManagers {
-		for id := range m.handles {
-			if w := s.windows[id]; w != nil {
-				m.refresh(w)
+		for id, h := range m.handles {
+			w := s.windows[id]
+			if h.req.closed || w == nil || w.toplevel == nil || !w.mapped {
+				m.closed(id)
 			}
+		}
+		for _, id := range ids {
+			m.refresh(s.windows[id])
 		}
 	}
 }
@@ -213,7 +237,7 @@ type toplevelRequests struct {
 }
 
 func (t *toplevelRequests) window() *window {
-	if t.closed {
+	if t.s.protected() || t.closed {
 		return nil
 	}
 	if w := t.s.windows[t.id]; w != nil && w.toplevel != nil && w.mapped && w.toplevel.Resource.Alive() {

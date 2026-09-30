@@ -147,7 +147,7 @@ func TestSetCursorSurface(t *testing.T) {
 	pool, buf := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buf)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(12)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(12)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buf, int32(0), int32(2), int32(1), int32(12), uint32(wayland.ShmFormatArgb8888))

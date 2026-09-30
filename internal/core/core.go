@@ -15,10 +15,14 @@ import (
 
 var ErrQuit = errors.New("quit requested")
 
+var errSecurityChanged = errors.New("security epoch changed during input")
+
 // Channels connects the owner to adapters. Scenes must have capacity 1: core is
 // its only sender and may drain a stale set; consumers only receive. Each
 // send holds one scene per output.
 type Channels struct {
+	// Security is the defensive session gate; nil preserves standalone operation.
+	Security ports.SessionSecurity
 	Client   <-chan ports.ClientEvent
 	Input    <-chan ports.InputEvent
 	Output   <-chan ports.OutputEvent
@@ -63,6 +67,12 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	security         ports.SecurityState
+	lockSurfaces     []ports.LockSurfacePlacement
+	lockFocus        WindowID
+	inputKeys        map[string]bool
+	inputActive      bool
+	startup          [][]string
 	nextWorkspaceID  uint64
 	ch               Channels
 	cfg              ports.Config
@@ -274,13 +284,20 @@ func (c *Core) publishPending(ctx context.Context) error {
 // just switched to another workspace), it also refills the empty slots of
 // the workspace now on screen.
 func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
+	if c.protectionRequested() {
+		return nil
+	}
 	keys := c.toSpawn
 	c.toSpawn = nil
 	if shown {
 		keys = append(keys, c.refill()...)
 	}
 	started := map[slotKey]bool{}
-	for _, key := range keys {
+	for i, key := range keys {
+		if c.protectionRequested() {
+			c.toSpawn = append(c.toSpawn, keys[i:]...)
+			return nil
+		}
 		st, ok := c.slots[key]
 		// A key can be queued twice (new slot on the workspace on screen).
 		if !ok || started[key] || st.window != 0 {
@@ -289,13 +306,18 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 		started[key] = true
 		req := c.spawnSlot(key)
 		// Wayland must read slot tokens before this window can map.
-		if err := c.publishPending(ctx); err != nil {
-			return err
+		pendingErr := c.publishPending(ctx)
+		if pendingErr != nil || c.protectionRequested() {
+			c.placement.dropSlot(key)
+			st.stale = false
+			c.toSpawn = append(c.toSpawn, keys[i:]...)
+			return pendingErr
 		}
-		select {
-		case <-ctx.Done():
+		if !c.trySpawn(ctx, req) {
+			c.placement.dropSlot(key)
+			st.stale = false
+			c.toSpawn = append(c.toSpawn, keys[i:]...)
 			return ctx.Err()
-		case c.ch.Spawn <- req:
 		}
 	}
 	return nil
@@ -305,7 +327,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, configures: newConfigures()}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, configures: newConfigures()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -320,10 +342,19 @@ func (c *Core) now() time.Time {
 }
 
 func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
+	if c.inputEpochChanged() {
+		return errSecurityChanged
+	}
+	if c.ch.Security != nil {
+		v = ports.SecurityCommand{State: c.security, Command: v}
+	}
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case c.ch.Commands <- v:
+		if c.inputEpochChanged() {
+			return errSecurityChanged
+		}
 		return nil
 	}
 }
@@ -380,6 +411,9 @@ func (c *Core) windowFocus() map[*screen]WindowID {
 
 // keyboardFocus is the surface holding the keyboard (see keyboard.focus).
 func (c *Core) keyboardFocus() WindowID {
+	if c.security.Protected {
+		return c.lockKeyboardFocus()
+	}
 	var exclusive WindowID
 	for _, sc := range c.screens {
 		for _, l := range sc.layers {
@@ -429,6 +463,13 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 }
 
 func (c *Core) publish(ctx context.Context) error {
+	if c.inputEpochChanged() {
+		return errSecurityChanged
+	}
+	c.syncSecurity()
+	if c.security.Protected {
+		return c.publishProtected(ctx)
+	}
 	capture, err := c.captureEvaluate(ctx)
 	if err != nil {
 		return err
@@ -470,7 +511,7 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
@@ -543,6 +584,12 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	c.resolveConstraint()
+	if c.inputEpochChanged() {
+		return errSecurityChanged
+	}
+	if c.syncSecurity() {
+		return c.publish(ctx)
+	}
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	c.publishWorkspaces()
@@ -600,6 +647,9 @@ func (c *Core) rehit(ctx context.Context) error {
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the
 // active one and tells wayland when it changes.
 func (c *Core) updateInhibit(ctx context.Context) error {
+	if c.security.Protected {
+		return nil
+	}
 	f := c.keyboardFocus()
 	release, activate, changed := c.keyboard.inhibit(f, c.windows.lookup(f).inhibitShortcuts)
 	if !changed {
@@ -765,6 +815,9 @@ func (c *Core) acceptsInput(id WindowID, x, y float64) bool {
 // windows (last visible placement is topmost), then bottom and
 // background layers.
 func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
+	if c.security.Protected {
+		return c.lockHit(x, y)
+	}
 	o, ok := c.layout().At(x, y)
 	if !ok {
 		return 0, 0, 0
@@ -817,32 +870,50 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 }
 
 func (c *Core) Run(ctx context.Context) error {
+	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCapture()
-	// Startup commands run once per session; a config reload does not
-	// run them again.
-	for _, argv := range c.cfg.Startup {
-		select {
-		case <-ctx.Done():
-			return nil
-		case c.ch.Spawn <- ports.SpawnRequest{Argv: slices.Clone(argv)}:
-		}
+	// Startup commands run once per session. Full launcher queues retain a
+	// bounded remainder, selectable alongside owner events without polling.
+	c.startup = make([][]string, len(c.cfg.Startup))
+	for i, argv := range c.cfg.Startup {
+		c.startup[i] = slices.Clone(argv)
 	}
+	c.spawnStartup(ctx)
 	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
 		return nil
 	}
 	c.publishState()
 	c.publishWorkspaces()
 	for {
+		if c.securityCheckpoint(ctx) != nil {
+			return nil
+		}
+		startupC, startupRequest := c.pendingStartup()
 		select {
 		case <-ctx.Done():
 			return nil
+		case startupC <- startupRequest:
+			// Successful transfer consumes startup once. Only the receiver can
+			// decide execution admission; a later gate read cannot infer it.
+			c.startup = c.startup[1:]
+			continue
 		case ev, ok := <-c.ch.Client:
 			if !ok {
 				c.ch.Client = nil
 				continue
 			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.security.Protected && blockedProtectedEvent(ev) {
+				continue
+			}
 			switch v := ev.(type) {
+			case ports.SessionLockChanged:
+				if !c.applyLockChanged(v) {
+					continue
+				}
 			case ports.CaptureSessionBegin:
 				if c.captureBegin(ctx, v) != nil {
 					return nil
@@ -951,6 +1022,9 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 		case f, ok := <-c.ch.Frames:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
 			if !ok {
 				c.ch.Frames = nil
 				continue
@@ -960,12 +1034,18 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			continue
 		case <-c.frameC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
 			c.frameC, c.frameStop = nil, nil
 			if c.step(ctx) != nil {
 				return nil
 			}
 			continue
 		case <-c.captureC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
 			c.captureExpired()
 			if c.publish(ctx) != nil {
 				return nil
@@ -975,6 +1055,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if !ok {
 				c.ch.Output = nil
 				continue
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
 			}
 			switch v := ev.(type) {
 			case ports.OutputAdded:
@@ -1000,6 +1083,9 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Config = nil
 				continue
 			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
 			if err := c.apply(ev.Config); err != nil {
 				select {
 				case c.ch.ConfigErrors <- err:
@@ -1018,254 +1104,27 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Input = nil
 				continue
 			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			// Even stale input is activity, but never becomes client input.
 			if err := c.userActivity(ctx); err != nil {
 				return nil
 			}
-			switch v := ev.(type) {
-			case ports.PointerMotion:
-				c.motionMsec = v.TimeMsec
-				// A locked pointer stays still; relative motion still flows.
-				if c.constraint.Mode != ports.ConstraintLock {
-					c.cursorX, c.cursorY = c.constraint.Clamp(c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y))
-				}
-				// The focused screen follows the pointer, so new windows
-				// and launchers open where the user is.
-				// Only a pointer entering another output switches: keyboard
-				// moves to another screen stick until then. Not mid-drag.
-				if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.pointerOutput && c.grab == 0 {
-					c.pointerOutput = o.Info.Name
-					if o.Info.Name != c.cur().name() {
-						c.focusScreen = c.screenIndex(o.Info.Name)
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-					}
-				}
-				id, x, y := c.hit(c.cursorX, c.cursorY)
-				// Layout changes are intentionally re-hit-tested only on motion.
-				if id != c.pointer {
-					c.pointer = id
-					if err := c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
-						return nil
-					}
-				}
-				c.pointerAt = [2]float64{x, y}
-				if id != 0 {
-					if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec}); err != nil {
-						return nil
-					}
-				}
+			// Commands can backpressure; recheck after activity before admits/binds.
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			var admitted bool
+			ev, admitted = c.admitInput(ev)
+			if !admitted {
 				continue
-			case ports.PointerButton:
-				if v.Pressed && c.pointer == 0 && c.grab == 0 && len(c.buttons) == 0 {
-					if picked, err := c.overviewClick(ctx); err != nil {
-						return nil
-					} else if picked {
-						continue
-					}
-				}
-				id := c.pointer
-				if c.grab != 0 {
-					id = c.grab
-				}
-				if v.Pressed && len(c.buttons) == 0 {
-					// A click outside an open menu closes it.
-					if err := c.dismissGrabs(ctx, id); err != nil {
-						return nil
-					}
-				}
-				if v.Pressed {
-					if len(c.buttons) == 0 {
-						c.grab = id
-					}
-					c.buttons[v.Button] = true
-				} else {
-					delete(c.buttons, v.Button)
-				}
-				if id != 0 {
-					if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
-						return nil
-					}
-					// A click on an on-demand layer gives it the keyboard.
-					if v.Pressed && c.onDemand(id) && c.keyboard.clickLayer(id, c.windowFocus()) {
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-					} else if l := c.keyboard.layer; v.Pressed && l != 0 && id != l && c.popupRoot(id) != l {
-						// A click anywhere else takes the keyboard back.
-						c.keyboard.takeBack()
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-					}
-					// A click focuses the window and its output.
-					s, w := c.screenOf(id)
-					if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
-						w.Click(id)
-						c.focusScreen = c.screenIndex(s.name())
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-					}
-				}
-				if len(c.buttons) == 0 {
-					c.grab = 0
-				}
-				continue
-			case ports.PointerAxis:
-				// In the overview, scrolling moves the selection.
-				if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
-					if c.cur().mon.overviewScroll(v) {
-						if c.workspaceVisible(ctx, true) != nil {
-							return nil
-						}
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-					}
+			}
+			if err := c.handleInput(ctx, ev); err != nil {
+				if errors.Is(err, errSecurityChanged) {
 					continue
 				}
-				// Scroll goes to the window under the pointer, which has the
-				// pointer focus even mid-drag.
-				if c.pointer != 0 {
-					if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
-						return nil
-					}
-				}
-				continue
-			case ports.SwipeBegin:
-				if c.swipeBegin(v) && c.slid(ctx, false) != nil {
-					return nil
-				}
-				continue
-			case ports.SwipeUpdate:
-				if c.swipeUpdate(v) && c.slid(ctx, false) != nil {
-					return nil
-				}
-				continue
-			case ports.SwipeEnd:
-				if c.slid(ctx, c.swipeEnd(v)) != nil {
-					return nil
-				}
-				continue
-			}
-			key, ok := ev.(ports.KeyEvent)
-			if !ok {
-				continue
-			}
-			// The overview takes its keys before any window; others still
-			// run binds, and are not forwarded.
-			// A launcher or a menu holding the keyboard gets them first.
-			if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
-				if key.Pressed && mon.overviewKey(key) {
-					c.pressed[heldKey(key)] = true
-					if c.workspaceVisible(ctx, true) != nil {
-						return nil
-					}
-					if err := c.publish(ctx); err != nil {
-						return nil
-					}
-					continue
-				}
-			}
-			// A focused window inhibiting shortcuts gets every key:
-			// no bind runs (emergency quit and VT switch are handled by
-			// input before core).
-			if c.keyboard.inhibited(c.keyboardFocus()) {
-				if held := heldKey(key); !key.Pressed && c.pressed[held] {
-					// Its press ran a bind before inhibiting began: the
-					// window never saw it.
-					delete(c.pressed, held)
-					continue
-				}
-				if err := c.command(ctx, ports.ForwardKey{ID: c.keyboard.inhibiting, Key: key}); err != nil {
-					return nil
-				}
-				continue
-			}
-			name := keyName(key.Keysym)
-			// A bind on the keysym wins; then the unshifted keysym (Cmd+Shift+1
-			// prints exclam on US); then the physical key (code:N).
-			action, bound := c.binds[binding{key: name, mods: key.Mods}]
-			if !bound && key.Base != "" {
-				action, bound = c.binds[binding{key: keyName(key.Base), mods: key.Mods}]
-			}
-			if !bound && key.Keycode != 0 {
-				action, bound = c.binds[binding{key: "code:" + strconv.FormatUint(uint64(key.Keycode), 10), mods: key.Mods}]
-			}
-			// Track presses by physical key: Shift may be released before the key.
-			held := heldKey(key)
-			if !key.Pressed {
-				consumed := c.pressed[held]
-				delete(c.pressed, held)
-				if consumed {
-					continue
-				}
-			}
-			if key.Pressed {
-				if bound {
-					c.pressed[held] = true
-					if action == ActionScaleUp || action == ActionScaleDown {
-						dir := 1
-						if action == ActionScaleDown {
-							dir = -1
-						}
-						sc := c.cur()
-						prev := sc.scale
-						sc.setScale(StepScale(sc.info.Width, sc.info.Height, sc.scale, dir))
-						c.order()
-						if c.ch.Scales != nil && sc.scale != prev && sc.name() != "" {
-							// Never wait on persistence: a stalled save drops the change.
-							select {
-							case c.ch.Scales <- ports.ScaleChanged{Output: sc.name(), Scale: sc.scale}:
-							default:
-							}
-						}
-						if err := c.publish(ctx); err != nil {
-							return nil
-						}
-						continue
-					}
-					before := c.cur().mon.Current()
-					swiped := c.swipedWorkspace()
-					c.keyboard.takeBack() // a bind acts on the windows
-					effect := c.applyAction(action)
-					if effect.Quit {
-						return ErrQuit
-					}
-					if effect.Spawn {
-						argv := effect.Argv
-						if argv == nil {
-							argv = append([]string(nil), c.cfg.Terminal.Command...)
-						}
-						select {
-						case <-ctx.Done():
-							return nil
-						case c.ch.Spawn <- ports.SpawnRequest{Argv: argv}:
-						}
-					}
-					if c.swipedWorkspace() != swiped {
-						c.dropSwipe()
-					}
-					if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
-						return nil
-					}
-					if effect.Close != 0 {
-						if err := c.command(ctx, ports.CloseWindow{ID: effect.Close}); err != nil {
-							return nil
-						}
-					}
-					if err := c.publish(ctx); err != nil {
-						return nil
-					}
-					continue
-				}
-				c.pressed[held] = false
-			}
-			if id := c.keyboardFocus(); id != 0 && (!c.cur().mon.ov.open || c.overviewKeyboardTaken()) {
-				if err := c.command(ctx, ports.ForwardKey{ID: id, Key: key}); err != nil {
-					return nil
-				}
+				return err
 			}
 		}
 	}
@@ -1283,18 +1142,24 @@ func (c *Core) workspaceVisible(ctx context.Context, shown bool) error {
 // it after the output layout and before scenes, so a terminal never maps
 // before wayland knows its output.
 func (c *Core) spawnEmpty(ctx context.Context) error {
-	terms := c.fillEmpty()
-	if err := c.publishPending(ctx); err != nil {
-		return err
+	if c.protectionRequested() {
+		return nil
 	}
-	for _, req := range terms {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case c.ch.Spawn <- req:
+	first := c.firstTerminalResolved
+	terms := c.fillEmpty()
+	err := c.publishPending(ctx)
+	for i, req := range terms {
+		if err != nil || !c.trySpawn(ctx, req) {
+			for _, suppressed := range terms[i:] {
+				c.cancelTerminal(suppressed)
+			}
+			if i == 0 {
+				c.firstTerminalResolved = first
+			}
+			return err
 		}
 	}
-	return nil
+	return err
 }
 
 // activate brings a window forward for a valid xdg-activation token. The

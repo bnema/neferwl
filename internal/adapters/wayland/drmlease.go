@@ -90,12 +90,15 @@ func (s *Server) applyLeaseEvent(event ports.LeaseMessage) {
 		card := s.pendingLeaseCards[v.ID]
 		delete(s.pendingLeases, v.ID)
 		delete(s.pendingLeaseCards, v.ID)
-		if obj == nil || !obj.res.Alive() {
+		if obj == nil || !obj.res.Alive() || s.security != nil && s.security.Snapshot().Protected {
 			if v.FD != nil {
 				v.FD.Close()
 			}
 			if v.LeaseID != 0 && card != "" {
 				s.sendLeaseRequest(ports.LeaseRevoke{Card: card, LeaseID: v.LeaseID})
+			}
+			if obj != nil {
+				obj.finish()
 			}
 			return
 		}
@@ -316,6 +319,10 @@ func (r *leaseRequestHandler) Submit(self *drmlease.WpDrmLeaseRequestV1, id uint
 	}
 	obj.res = res
 	res.OnDestroy = func() { obj.destroy() }
+	if s.security != nil && s.security.Snapshot().Protected {
+		obj.finish()
+		return
+	}
 	for _, name := range r.names {
 		if _, ok := r.bind.device.connectors[name]; !ok || r.withdrawn {
 			obj.finish()

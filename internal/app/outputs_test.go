@@ -17,7 +17,7 @@ func TestOutputSetCursor(t *testing.T) {
 	run := func(name string) outputRun {
 		got[name] = make(chan ports.CursorChange, 8)
 		out := got[name]
-		return func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, _ <-chan ports.CaptureRequest) error {
+		return func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 			for {
 				select {
 				case <-ctx.Done():

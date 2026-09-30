@@ -23,7 +23,7 @@ func protocolClient(t *testing.T, s *Server, dir string) *wlturbo.Display {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = c.Close() })
+	t.Cleanup(func() { _ = c.Close(); forgetWireClient(c) })
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func bindVersion(t *testing.T, c *wlturbo.Display, iface string, version uint32)
 	if !ok {
 		t.Fatalf("missing %s", iface)
 	}
-	id, err := c.Registry().BindID(g.Name, g.Interface, version)
+	id, err := bindWireID(c, g.Name, g.Interface, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func bindVersion(t *testing.T, c *wlturbo.Display, iface string, version uint32)
 
 func requestProtocol(t *testing.T, c *wlturbo.Display, id uint32, op uint32, args ...any) {
 	t.Helper()
-	if err := c.SendRequest(id, uint16(op), args...); err != nil {
+	if err := wireRequest(c, id, uint16(op), nil, args...); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -89,7 +89,7 @@ func registerProtocol(t *testing.T, c *wlturbo.Display, id uint32) {
 	t.Helper()
 	p := &protocolProxy{}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 }
 
 func TestXDGProtocolErrors(t *testing.T) {
@@ -134,7 +134,7 @@ func TestXDGProtocolErrors(t *testing.T) {
 				}
 				pool := c.AllocateID()
 				registerProtocol(t, c, shm)
-				if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+				if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 					t.Fatal(err)
 				}
 				buffer := c.AllocateID()
@@ -199,7 +199,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	serials := make(chan uint32, 4)
 	proxy := &configureProxy{serial: serials}
 	proxy.SetID(xdg)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	fd, err := unix.MemfdCreate("recreated-buffer", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestRecreatedToplevelRequiresNewBuffer(t *testing.T) {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -292,7 +292,7 @@ func TestSHMInvalidStride(t *testing.T) {
 	pool := c.AllocateID()
 	registerProtocol(t, c, shm)
 	registerProtocol(t, c, pool)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(16)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, c.AllocateID(), int32(0), int32(2), int32(1), int32(4), uint32(wayland.ShmFormatArgb8888))
@@ -320,7 +320,7 @@ func TestSHMUnpaddedLastRow(t *testing.T) {
 			pool := c.AllocateID()
 			registerProtocol(t, c, shm)
 			registerProtocol(t, c, pool)
-			if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, tc.size); err != nil {
+			if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, tc.size); err != nil {
 				t.Fatal(err)
 			}
 			buffer := c.AllocateID()
@@ -390,7 +390,7 @@ func TestSHMBufferReleasedOnReplaceAndDestroy(t *testing.T) {
 	pool := c.AllocateID()
 	registerProtocol(t, c, shm)
 	registerProtocol(t, c, pool)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(64)); err != nil {
 		t.Fatal(err)
 	}
 	released := make(chan uint32, 4)
@@ -399,7 +399,7 @@ func TestSHMBufferReleasedOnReplaceAndDestroy(t *testing.T) {
 		bufs[i] = c.AllocateID()
 		p := &releaseProxy{released: released}
 		p.SetID(bufs[i])
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 		requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, bufs[i], int32(i*32), int32(2), int32(2), int32(8), uint32(wayland.ShmFormatXrgb8888))
 	}
 	surf := c.AllocateID()
@@ -466,7 +466,7 @@ func TestPointerProtocol(t *testing.T) {
 	pointer := c.AllocateID()
 	p := &pointerEvents{enters: make(chan [2]float64, 1), buttons: make(chan uint32, 8), axes: make(chan string, 16)}
 	p.SetID(pointer)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
 	comp := bindProtocol(t, c, "wl_compositor")
 	wm := bindProtocol(t, c, "xdg_wm_base")
@@ -479,7 +479,7 @@ func TestPointerProtocol(t *testing.T) {
 	serials := make(chan uint32, 1)
 	xp := &configureProxy{serial: serials}
 	xp.SetID(xdg)
-	c.Context().Register(xp)
+	registerWireProxy(c, xp)
 	top := c.AllocateID()
 	registerProtocol(t, c, top)
 	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
@@ -499,7 +499,7 @@ func TestPointerProtocol(t *testing.T) {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -577,7 +577,7 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 	keyboard := c.AllocateID()
 	kp := &heldKeyProxy{enters: make(chan []byte, 4)}
 	kp.SetID(keyboard)
-	c.Context().Register(kp)
+	registerWireProxy(c, kp)
 	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, keyboard)
 	mapWindow := toplevelMapper(t, c, events)
 	a := mapWindow().ID
@@ -642,7 +642,7 @@ func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientE
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -654,7 +654,7 @@ func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientE
 		serials := make(chan uint32, 1)
 		xp := &configureProxy{serial: serials}
 		xp.SetID(xdg)
-		c.Context().Register(xp)
+		registerWireProxy(c, xp)
 		registerProtocol(t, c, top)
 		requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
 		requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
@@ -697,7 +697,7 @@ func xdgWindow(t *testing.T, c *wlturbo.Display, comp, wm, buffer uint32, role f
 	serials = make(chan uint32, 4)
 	proxy := &configureProxy{serial: serials}
 	proxy.SetID(xdg)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	role(xdg)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {
@@ -746,7 +746,7 @@ func TestPopupAndFloatingLifecycle(t *testing.T) {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
@@ -777,7 +777,7 @@ func TestPopupAndFloatingLifecycle(t *testing.T) {
 		popup := c.AllocateID()
 		proxy := &popupDoneProxy{done: done}
 		proxy.SetID(popup)
-		c.Context().Register(proxy)
+		registerWireProxy(c, proxy)
 		requestProtocol(t, c, pxdg, xdgshell.SurfaceRequestGetPopup, popup, xdg, positioner)
 	})
 	req, ok := waitEvent(t, events, 2*time.Second).(ports.PopupRequest)

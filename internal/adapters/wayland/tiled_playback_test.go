@@ -47,7 +47,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 	}
 	pool := c.AllocateID()
 	registerProtocol(t, c, pool)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(size)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(size)); err != nil {
 		t.Fatal(err)
 	}
 	children := make([]uint32, tiles+1)
@@ -112,7 +112,7 @@ func TestHeadlessTiledSHMCallbackAndCopyBudget(t *testing.T) {
 		cb := c.AllocateID()
 		p := &callbackBudgetProxy{done: done}
 		p.SetID(cb)
-		c.Context().Register(p)
+		registerWireProxy(c, p)
 		requestProtocol(t, c, children[tiles], wayland.SurfaceRequestFrame, cb)
 		requestProtocol(t, c, children[tiles], wayland.SurfaceRequestAttach, buffers[tiles], int32(0), int32(0))
 		requestProtocol(t, c, children[tiles], wayland.SurfaceRequestCommit)

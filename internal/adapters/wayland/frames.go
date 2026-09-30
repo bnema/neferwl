@@ -149,6 +149,8 @@ func (s *Server) frameOutput(surf *surface) string {
 		return surf.xdg.window.last.Output
 	case surf.layer != nil && surf.layer.output != nil:
 		return surf.layer.output.name()
+	case surf.lock != nil && surf.lock.output != nil && !surf.lock.closed:
+		return surf.lock.output.name()
 	}
 	return ""
 }

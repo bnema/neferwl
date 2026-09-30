@@ -26,6 +26,7 @@ type frameLifecycle struct {
 
 // pendingFrame is what the pending frame commit shows.
 type pendingFrame struct {
+	security ports.SecurityState // admission epoch checked again at KMS boundary
 	frame    bool
 	queued   uint64
 	zeroCopy ports.WindowID // window shown without composition

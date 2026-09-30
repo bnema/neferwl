@@ -66,7 +66,7 @@ func TestDMABufParams(t *testing.T) {
 	if !ok || g.Version != dmabufVersion {
 		t.Fatalf("global %+v", g)
 	}
-	dm, err := c.Registry().BindID(g.Name, g.Interface, dmabufVersion)
+	dm, err := bindWireID(c, g.Name, g.Interface, dmabufVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +83,8 @@ func TestDMABufParams(t *testing.T) {
 		requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
 		proxy := &paramsProxy{result: make(chan uint16, 2)}
 		proxy.SetID(p)
-		c.Context().Register(proxy)
-		if err := c.SendRequestWithFDs(p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+		registerWireProxy(c, proxy)
+		if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
 			t.Fatal(err)
 		}
 		requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), height, format, uint32(0))
@@ -106,7 +106,7 @@ func TestDMABufParams(t *testing.T) {
 	// Taller than the file: out of bounds.
 	big := c.AllocateID()
 	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, big)
-	if err := c.SendRequestWithFDs(big, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+	if err := wireRequest(c, big, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, big, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(17), linearARGB.Format, uint32(0))
@@ -118,7 +118,7 @@ func TestDMABufParamsReuse(t *testing.T) {
 	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
 	c := protocolClient(t, s, dir)
 	g, _ := c.Registry().FindGlobal("zwp_linux_dmabuf_v1")
-	dm, err := c.Registry().BindID(g.Name, g.Interface, dmabufVersion)
+	dm, err := bindWireID(c, g.Name, g.Interface, dmabufVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,8 +134,8 @@ func TestDMABufParamsReuse(t *testing.T) {
 	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
 	proxy := &paramsProxy{result: make(chan uint16, 2)}
 	proxy.SetID(p)
-	c.Context().Register(proxy)
-	if err := c.SendRequestWithFDs(p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+	registerWireProxy(c, proxy)
+	if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(16), linearARGB.Format, uint32(0))
@@ -232,7 +232,7 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	fb := c.AllocateID()
 	proxy := &feedbackProxy{rounds: make(chan []tranche, 8)}
 	proxy.SetID(fb)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestGetSurfaceFeedback, fb, surf)
 	round := func(what string) []tranche {
 		t.Helper()

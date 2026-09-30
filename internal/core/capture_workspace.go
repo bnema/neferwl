@@ -154,7 +154,8 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 	f := cw.frame
 	rebase := func(r Rect) Rect { r.X, r.Y = r.X-f.X, r.Y-f.Y; return r }
 	s := &ports.Scene{
-		Output: cw.sc.name(), Seq: seq, OutputWidth: f.W, OutputHeight: f.H, WorkspaceClip: Rect{W: f.W, H: f.H},
+		Security: c.security,
+		Output:   cw.sc.name(), Seq: seq, OutputWidth: f.W, OutputHeight: f.H, WorkspaceClip: Rect{W: f.W, H: f.H},
 		Scale: cw.sc.scale, Background: c.cfg.Background.Color,
 		Border:  ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
 		Windows: make([]ports.SceneWindow, 0, len(cw.placements)),

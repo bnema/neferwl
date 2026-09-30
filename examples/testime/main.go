@@ -14,6 +14,8 @@ import (
 
 	"github.com/bnema/purego-libwayland/protocol/inputmethod"
 	"github.com/bnema/wlturbo"
+	clientcore "github.com/bnema/wlturbo/protocol/core"
+	clientime "github.com/bnema/wlturbo/protocol/inputmethod"
 )
 
 func main() {
@@ -40,6 +42,12 @@ type inputMethod struct {
 	serve      bool // an activation applied by done, not yet served
 }
 
+// EventSignature delegates to the generated client schema, including events
+// this example intentionally ignores and their descriptor ownership.
+func (*inputMethod) EventSignature(op uint16) (string, bool) {
+	return (&clientime.InputMethod{}).EventSignature(op)
+}
+
 func (m *inputMethod) Dispatch(e *wlturbo.Event) {
 	switch uint32(e.Opcode) {
 	case inputmethod.ZwpInputMethodV2EventActivate:
@@ -64,6 +72,10 @@ func (m *inputMethod) Dispatch(e *wlturbo.Event) {
 type ignored struct{ wlturbo.BaseProxy }
 
 func (*ignored) Dispatch(*wlturbo.Event) {}
+
+func (*ignored) EventSignature(op uint16) (string, bool) {
+	return (&clientcore.Seat{}).EventSignature(op)
+}
 
 func (m *inputMethod) send(op uint32, args ...any) error {
 	return m.c.SendRequest(m.ID(), uint16(op), args...)
@@ -92,6 +104,8 @@ func run(preedit, commit string, delay time.Duration, count int) error {
 	// wlturbo fails on events for unregistered objects: the seat sends some.
 	seatProxy := &ignored{}
 	seatProxy.SetID(seat)
+	seatProxy.SetContext(c.Context())
+	seatProxy.SetVersion(1)
 	c.Context().Register(seatProxy)
 	manager, err := bind("zwp_input_method_manager_v2")
 	if err != nil {
@@ -99,6 +113,8 @@ func run(preedit, commit string, delay time.Duration, count int) error {
 	}
 	m := &inputMethod{c: c}
 	m.SetID(c.AllocateID())
+	m.SetContext(c.Context())
+	m.SetVersion(1)
 	c.Context().Register(m)
 	if err := c.SendRequest(manager, uint16(inputmethod.ZwpInputMethodManagerV2RequestGetInputMethod), seat, m.ID()); err != nil {
 		return err

@@ -139,3 +139,39 @@ func (l *lockedBuffer) String() string {
 	defer l.mu.Unlock()
 	return l.b.String()
 }
+
+func TestForwarderSecurityMotionEpochs(t *testing.T) {
+	states := []ports.SecurityState{
+		{Generation: 1}, {Generation: 2, Protected: true}, {Generation: 3},
+		{Generation: 3, Protected: true}, // exact state, not just generation
+	}
+	f := newForwarder(zerowrap.Default())
+	for _, state := range states {
+		for i := range 1000 {
+			f.push(ports.SecurityInput{State: state, Event: ports.PointerMotion{X: float64(i), DX: 0.5, DY: 2, UnaccelDX: 3, UnaccelDY: 4}})
+		}
+	}
+	// An unwrapped motion must not absorb or be absorbed by wrapped motion.
+	f.push(ports.PointerMotion{X: 5})
+	f.push(ports.SecurityInput{State: states[len(states)-1], Event: ports.PointerMotion{X: 6}})
+	if len(f.queue) != len(states)+2 {
+		t.Fatalf("wrong epoch coalescing: %d entries", len(f.queue))
+	}
+	for _, state := range states {
+		ev, ok := f.pop()
+		want := ports.SecurityInput{State: state, Event: ports.PointerMotion{X: 999, DX: 500, DY: 2000, UnaccelDX: 3000, UnaccelDY: 4000}}
+		if !ok || ev != want {
+			t.Fatalf("lost epoch/deltas: got %#v, want %#v", ev, want)
+		}
+	}
+	if ev, _ := f.pop(); ev != (ports.PointerMotion{X: 5}) {
+		t.Fatalf("raw motion changed: %#v", ev)
+	}
+	if ev, _ := f.pop(); ev != (ports.SecurityInput{State: states[len(states)-1], Event: ports.PointerMotion{X: 6}}) {
+		t.Fatalf("wrapped tail changed: %#v", ev)
+	}
+	s := f.take()
+	if s.Motions != 4002 || s.Coalesced != 3996 {
+		t.Fatalf("stats %+v", s)
+	}
+}

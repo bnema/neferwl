@@ -42,16 +42,20 @@ func newForwarder(log zerowrap.Logger) *forwarder {
 // push queues ev without blocking.
 func (f *forwarder) push(ev ports.InputEvent) {
 	f.mu.Lock()
-	if m, ok := ev.(ports.PointerMotion); ok {
+	if m, state, wrapped, ok := queuedMotion(ev); ok {
 		f.stats.Motions++
 		if n := len(f.queue); n > 0 {
-			if prev, tail := f.queue[n-1].(ports.PointerMotion); tail {
+			if prev, prevState, prevWrapped, tail := queuedMotion(f.queue[n-1]); tail && wrapped == prevWrapped && state == prevState {
 				// Relative deltas add up: games read them, not the position.
 				m.DX += prev.DX
 				m.DY += prev.DY
 				m.UnaccelDX += prev.UnaccelDX
 				m.UnaccelDY += prev.UnaccelDY
-				f.queue[n-1] = m
+				if wrapped {
+					f.queue[n-1] = ports.SecurityInput{State: state, Event: m}
+				} else {
+					f.queue[n-1] = m
+				}
 				f.stats.Coalesced++
 				f.mu.Unlock()
 				return
@@ -68,6 +72,18 @@ func (f *forwarder) push(ev ports.InputEvent) {
 	case f.wake <- struct{}{}:
 	default:
 	}
+}
+
+// queuedMotion exposes only motion, retaining its exact production epoch.
+// Raw and stamped events never coalesce with each other or across transitions.
+func queuedMotion(ev ports.InputEvent) (ports.PointerMotion, ports.SecurityState, bool, bool) {
+	var state ports.SecurityState
+	wrapped := false
+	if secure, ok := ev.(ports.SecurityInput); ok {
+		state, ev, wrapped = secure.State, secure.Event, true
+	}
+	m, ok := ev.(ports.PointerMotion)
+	return m, state, wrapped, ok
 }
 
 func (f *forwarder) pop() (ports.InputEvent, bool) {

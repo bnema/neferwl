@@ -27,8 +27,8 @@ func TestSyncWaitAlreadySignalled(t *testing.T) {
 	}
 }
 
-// An invalid poll result is not readiness; it must not hold the surface.
-func TestImplicitPollErrorReadyAndWarnOnce(t *testing.T) {
+// An invalid poll result is an error, never permission to publish.
+func TestImplicitPollErrorRejectedAndWarnOnce(t *testing.T) {
 	sw, err := newSyncWaiter(func() {})
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +42,8 @@ func TestImplicitPollErrorReadyAndWarnOnce(t *testing.T) {
 	b := &ports.DMABuf{Planes: []ports.DMABufPlane{{File: os.NewFile(uintptr(math.MaxInt32), "invalid")}}}
 	var waits [4]*syncWait
 	for range 2 {
-		if err := sw.watchImplicit(b, &waits); err != nil || waits[0] != nil {
-			t.Fatalf("poll error should not register wait: %v %+v", err, waits)
+		if err := sw.watchImplicit(b, &waits); err == nil || waits[0] != nil {
+			t.Fatalf("poll error should reject without registering wait: %v %+v", err, waits)
 		}
 	}
 	if n := bytes.Count(output.Bytes(), []byte("implicit fence poll error")); n != 1 {
@@ -76,8 +76,8 @@ func TestImplicitPollHangupWakes(t *testing.T) {
 	for !sw.fired(waits[0]) && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if !sw.fired(waits[0]) {
-		t.Fatal("hangup never woke waiter")
+	if !sw.fired(waits[0]) || !waits[0].failed {
+		t.Fatal("hangup must wake waiter as failed, not ready to publish")
 	}
 }
 

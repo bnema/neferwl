@@ -295,7 +295,7 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	pipeline.Close(display)
 }
 
-// GO-002: child holds do not expire, so a finished child read must lift its
+// Child holds do not expire, so a finished child read must lift its
 // hold even while the display's own commit never completes. The display's
 // Seen stays at the last safe value and the output is not stopped.
 func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {

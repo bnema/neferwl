@@ -34,7 +34,7 @@ func sendVirtualKeymap(t *testing.T, c *wlturbo.Display, kb uint32, keymap strin
 		t.Fatal(err)
 	}
 	defer unix.Close(fd)
-	if err := c.SendRequestWithFDs(kb, uint16(virtualkeyboard.ZwpVirtualKeyboardV1RequestKeymap), []int{fd}, uint32(wayland.KeyboardKeymapFormatXkbV1), size); err != nil {
+	if err := wireRequest(c, kb, uint16(virtualkeyboard.ZwpVirtualKeyboardV1RequestKeymap), []int{fd}, uint32(wayland.KeyboardKeymapFormatXkbV1), size); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -48,7 +48,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	registerProtocol(t, target, seat)
 	proxy := &eventsProxy{}
 	proxy.SetID(target.AllocateID())
-	target.Context().Register(proxy)
+	registerWireProxy(target, proxy)
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
@@ -104,7 +104,7 @@ func focusedTarget(t *testing.T, s *Server, events chan ports.ClientEvent, comma
 	registerProtocol(t, target, seat)
 	proxy := &eventsProxy{}
 	proxy.SetID(target.AllocateID())
-	target.Context().Register(proxy)
+	registerWireProxy(target, proxy)
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, proxy.ID())
 	w := toplevelMapper(t, target, events)()
 	commands <- ports.FocusWindow{ID: w.ID}
@@ -167,7 +167,7 @@ func TestVirtualKeymapLateKeyboardAndRejected(t *testing.T) {
 	registerProtocol(t, target, seat)
 	late := &eventsProxy{}
 	late.SetID(target.AllocateID())
-	target.Context().Register(late)
+	registerWireProxy(target, late)
 	requestProtocol(t, target, seat, wayland.SeatRequestGetKeyboard, late.ID())
 	roundtrip(t, target)
 	if len(late.keymaps) != 1 || late.keymaps[0] != virtual {

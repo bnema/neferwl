@@ -121,7 +121,7 @@ type captureManager struct {
 // update sends the workspaces that are new or changed, and the ones gone.
 // Untrusted peers get no inventory.
 func (m *captureManager) update(snapshot ports.Workspaces) {
-	if !m.trusted || !m.res.Alive() {
+	if m.s.protected() || !m.trusted || !m.res.Alive() {
 		return
 	}
 	now := map[uint64]privateWorkspace{}
@@ -176,7 +176,7 @@ func (m *captureManager) BeginSession(r *capturesession.NeferwlCaptureManagerV1,
 	stop := func(reason capturesession.NeferwlCaptureSessionV1StopReason) { res.SendStopped(uint32(reason)) }
 	o := s.outputOf(out)
 	switch {
-	case !m.trusted:
+	case s.protected() || !m.trusted:
 		s.log.Info().Str("reason", string(ports.CaptureReasonUnauthorized)).Msg("capture session refused")
 		stop(capturesession.NeferwlCaptureSessionV1StopReasonUnauthorized)
 		return
@@ -221,7 +221,7 @@ func (m *captureManager) AttachSurface(r *capturesession.NeferwlCaptureManagerV1
 	// the same check): nothing else can attach.
 	ps := s.private.session
 	switch {
-	case !m.trusted: // the UID of this connection, checked once at bind
+	case s.protected() || !m.trusted: // DISPLAY protection and bind-time UID
 		att.fail(capturesession.NeferwlCaptureLayerV1FailureUnauthorized)
 		return
 	case ps == nil || subtle.ConstantTimeCompare([]byte(token), []byte(ps.token)) != 1:

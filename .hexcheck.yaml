@@ -2,7 +2,8 @@ version: 1
 components:
   core: { role: core, paths: [internal/core/**] }
   ports: { role: ports, paths: [internal/ports/**] }
-  adapters: { role: adapter, paths: [internal/adapters/**, internal/logging/**] }
+  # sessionlock is the display owner's proof ledger, not core placement policy.
+  adapters: { role: adapter, paths: [internal/adapters/**, internal/logging/**, internal/sessionlock/**] }
   # app is the composition root: it wires adapters to core, like cmd.
   entrypoints: { role: entrypoint, paths: [cmd/**, internal/app/**] }
   generated: { role: ignore, paths: [internal/mocks/**] }
@@ -15,10 +16,17 @@ rules:
 mocking:
   generatedMockPaths: [internal/mocks/**]
   generatedMockNamePatterns: ['Mock{{Interface}}', '{{Interface}}Mock']
+allow:
+  - rule: suspicious-business-logic-in-adapter
+    path: internal/adapters/wayland/seat.go
+    reason: Seat dispatch resolves live Wayland targets and enforces protected input delivery at the display owner.
+  - rule: suspicious-business-logic-in-adapter
+    path: internal/adapters/wayland/server.go
+    reason: Display command dispatch validates immutable security epochs before converting port messages to wire events.
 ruleSettings:
   missing-generated-mock-for-port:
     # Sealed message unions are channel data, not ports; tested by sending messages (ADR 005).
-    excludePaths: [internal/ports/messages.go]
+    excludePaths: [internal/ports/messages.go, internal/ports/session_lock_messages.go, internal/ports/session_backend.go]
   suspicious-business-logic-in-adapter:
     # app is the composition root; starting core and wiring channels is its job.
     excludePaths: [internal/app/app.go]

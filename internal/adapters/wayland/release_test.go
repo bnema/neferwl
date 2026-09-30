@@ -35,7 +35,7 @@ func TestCachedSubsurfaceBufferReleaseOnRoleDestroy(t *testing.T) {
 	b := shmBuffer(t, c)
 	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
 	p.SetID(b)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, child, wayland.SurfaceRequestAttach, b, int32(0), int32(0))
 	requestProtocol(t, c, child, wayland.SurfaceRequestCommit)
 	if err := c.Roundtrip(); err != nil {
@@ -245,7 +245,7 @@ func TestHeldBufferRequeuedBeforeOutputAck(t *testing.T) {
 	b, other := shmBuffer(t, c), shmBuffer(t, c)
 	p := &syncReleaseProxy{released: make(chan struct{}, 4)}
 	p.SetID(b)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	attach := func(buf uint32) {
 		requestProtocol(t, c, root, wayland.SurfaceRequestAttach, buf, int32(0), int32(0))
 		requestProtocol(t, c, root, wayland.SurfaceRequestCommit)

@@ -12,7 +12,7 @@ import (
 
 // outputRun drives one output until ctx ends: it renders the scenes and
 // surface contents it receives, with the cursor the client asks for.
-type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures <-chan ports.CaptureRequest) error
+type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
 // per output; each goes to its output, latest first. Surface contents go to
@@ -20,48 +20,179 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // each window is kept so a new output starts with every window drawn.
 // Only the goroutine running loop touches the set.
 type outputSet struct {
-	outs     map[string]*runningOutput
-	latest   map[ports.WindowID]ports.SurfaceContent
-	cursor   ports.CursorChange
-	stopped  chan string
-	captured chan<- ports.CaptureDone
-	ctx      context.Context
-	quit     chan struct{} // closed by wait: nobody reads stopped any more
+	outs           map[string]*runningOutput
+	latest         map[ports.WindowID]ports.SurfaceContent
+	cursor         ports.CursorChange
+	stopped        chan outputStopped
+	captured       chan<- ports.CaptureDone
+	ctx            context.Context
+	quit           chan struct{} // closed by wait: nobody reads stopped any more
+	security       ports.SessionSecurity
+	securityEvents chan<- ports.SecurityBackendEvent
+	state          ports.SecurityState
+	nextInstance   ports.OutputInstance
+	startErr       error
+	barriers       chan ports.SecurityBackendEvent
+	forwarders     sync.WaitGroup
+}
+
+// A stop is tied to a lifetime, never just a reusable connector name.
+type outputStopped struct {
+	name     string
+	instance ports.OutputInstance
 }
 
 type runningOutput struct {
-	scenes   chan ports.Scene
-	contents chan ports.SurfaceContent
-	cursor   chan ports.CursorChange
-	captures chan ports.CaptureRequest
-	ctx      context.Context
-	stop     context.CancelFunc
-	err      error
-	done     chan struct{}
+	instance       ports.OutputInstance
+	security       chan ports.SecurityState
+	securityEvents chan ports.SecurityBackendEvent
+	pending        []ports.SurfaceContent
+	scenes         chan ports.Scene
+	contents       chan ports.SurfaceContent
+	cursor         chan ports.CursorChange
+	captures       chan ports.CaptureRequest
+	ctx            context.Context
+	stop           context.CancelFunc
+	err            error
+	done           chan struct{}
 }
 
 func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
-	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan string), quit: make(chan struct{})}
+	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan outputStopped), quit: make(chan struct{})}
 }
 
 // start runs an output in its own goroutine and replays the window contents.
-func (s *outputSet) start(ctx context.Context, name string, run outputRun) {
+func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire ...*chan<- ports.SecurityBackendEvent) bool {
+	// Exhaustion is permanent: never wrap to zero or reuse a lifetime.
+	if s.nextInstance == ^ports.OutputInstance(0) {
+		s.startErr = fmt.Errorf("output instance exhausted")
+		return false
+	}
+	// Register authoritatively before an owner can render or replay contents.
+	s.nextInstance++
+	instance := s.nextInstance
+	if !s.securityEvent(ports.SecurityOutputAdded{Instance: instance, Output: name}) {
+		return false
+	}
+	if s.security != nil {
+		s.setSecurity(s.security.Snapshot())
+	}
 	octx, stop := context.WithCancel(ctx)
-	r := &runningOutput{scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: octx, stop: stop, done: make(chan struct{})}
+	r := &runningOutput{instance: instance, security: make(chan ports.SecurityState, 1), scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: octx, stop: stop, done: make(chan struct{})}
+	r.security <- s.state // available before any old scene/content replay
+	r.securityEvents = s.forwardSecurity()
+	for _, destination := range wire {
+		*destination = r.securityEvents
+	}
+	for _, c := range s.latest {
+		select {
+		case r.contents <- c:
+		default:
+			r.pending = append(r.pending, c)
+		}
+	}
 	s.outs[name] = r
 	go func() {
-		r.err = run(octx, r.scenes, r.contents, r.cursor, r.captures)
+		r.err = run(octx, r.scenes, r.contents, r.cursor, r.captures, r.security, r.instance)
+		if r.securityEvents != nil {
+			close(r.securityEvents)
+		}
 		stop()
 		close(r.done)
 		select {
-		case s.stopped <- name:
+		case s.stopped <- outputStopped{name: name, instance: instance}:
 		case <-s.quit:
 		}
 	}()
 	r.cursor <- s.cursor
-	for _, c := range s.latest {
-		r.send(c)
+	return true
+}
+
+func (s *outputSet) wireSecurity(ch outputChannels) {
+	s.security, s.securityEvents = ch.security, ch.securityEvents
+	if ch.securityEvents != nil {
+		s.barriers = s.forwardSecurity()
 	}
+	if s.security != nil {
+		s.setSecurity(s.security.Snapshot())
+	}
+}
+
+// securityEvent registers/removes directly, while barriers use a bounded FIFO.
+// No authoritative event is merged or discarded during an active backend.
+func (s *outputSet) securityEvent(ev ports.SecurityBackendEvent) bool {
+	if s.securityEvents == nil {
+		return true // security disabled
+	}
+	destination := s.securityEvents
+	if _, ok := ev.(ports.SecurityBackendBarrier); ok && s.barriers != nil {
+		destination = s.barriers
+	}
+	select {
+	case destination <- ev:
+		return true
+	case <-s.ctx.Done():
+		return false
+	}
+}
+
+// Each producer has a finite, FIFO outbox. Saturation applies backpressure;
+// events are never merged. Registration/removal bypass it for lifecycle ordering.
+func (s *outputSet) forwardSecurity() chan ports.SecurityBackendEvent {
+	if s.securityEvents == nil {
+		return nil
+	}
+	incoming := make(chan ports.SecurityBackendEvent, 16)
+	s.forwarders.Add(1)
+	go func() {
+		defer s.forwarders.Done()
+		for {
+			select {
+			case ev, ok := <-incoming:
+				if !ok {
+					return
+				}
+				select {
+				case s.securityEvents <- ev:
+				case <-s.ctx.Done():
+					return
+				case <-s.quit:
+					return
+				}
+			case <-s.ctx.Done():
+				return
+			case <-s.quit:
+				return
+			}
+		}
+	}()
+	return incoming
+}
+
+func (s *outputSet) setSecurity(state ports.SecurityState) bool {
+	if s.security != nil {
+		if newest := s.security.Snapshot(); newest.Generation > state.Generation {
+			state = newest
+		}
+	}
+	if state.Generation < s.state.Generation || state == s.state {
+		return false
+	}
+	s.state = state
+	for _, r := range s.outs {
+		select {
+		case <-r.security:
+		default:
+		}
+		r.security <- state
+	}
+	return true
+}
+
+// stoppedCurrent rejects delayed stop messages from a previous incarnation.
+func (s *outputSet) stoppedCurrent(stopped outputStopped) bool {
+	r := s.outs[stopped.name]
+	return r != nil && r.instance == stopped.instance
 }
 
 // setCursor gives every output the latest cursor, replacing an unread one.
@@ -73,15 +204,6 @@ func (s *outputSet) setCursor(c ports.CursorChange) {
 		default:
 		}
 		r.cursor <- c
-	}
-}
-
-// send hands content to the output unless it has stopped.
-func (r *runningOutput) send(c ports.SurfaceContent) {
-	select {
-	case r.contents <- c:
-	case <-r.ctx.Done():
-	case <-r.done:
 	}
 }
 
@@ -105,7 +227,41 @@ func (s *outputSet) content(c ports.SurfaceContent) {
 		s.latest[c.ID] = c
 	}
 	for _, r := range s.outs {
-		r.send(c)
+		if r.ctx.Err() != nil {
+			continue
+		}
+		if len(r.pending) == 0 {
+			select {
+			case r.contents <- c:
+				continue
+			default:
+			}
+		}
+		// The backend disabled intake until the preceding broadcast drained.
+		if cap(r.pending) == 0 {
+			r.pending = make([]ports.SurfaceContent, 0, 1)
+		}
+		r.pending = append(r.pending, c)
+	}
+}
+
+// At most one admitted broadcast waits behind each owner's finite replay.
+// Disable new content intake until all copies have been delivered.
+func (s *outputSet) contentOut(incoming <-chan ports.SurfaceContent) (<-chan ports.SurfaceContent, chan<- ports.SurfaceContent, ports.SurfaceContent, *runningOutput) {
+	for _, r := range s.outs {
+		if len(r.pending) != 0 && r.ctx.Err() == nil {
+			return nil, r.contents, r.pending[0], r
+		}
+	}
+	return incoming, nil, ports.SurfaceContent{}, nil
+}
+
+func (r *runningOutput) contentSent() {
+	r.pending[0] = ports.SurfaceContent{}
+	if len(r.pending) == 1 {
+		r.pending = r.pending[:0] // retain the one-slot broadcast buffer
+	} else {
+		r.pending = r.pending[1:]
 	}
 }
 
@@ -124,8 +280,14 @@ func (s *outputSet) finish(name string) error {
 
 // wait stops every output and returns the first error.
 func (s *outputSet) wait() error {
-	var first error
+	var first error = s.startErr
+	// Cancel producers before closing the forwarding quit path. Owners may
+	// be backpressured on a full FIFO, and need their context to exit.
+	for _, r := range s.outs {
+		r.stop()
+	}
 	close(s.quit)
+	s.forwarders.Wait()
 	for name, r := range s.outs {
 		r.stop()
 		<-r.done

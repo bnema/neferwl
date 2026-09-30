@@ -44,7 +44,7 @@ func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 {
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
 		t.Fatal(err)
 	}
 	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))

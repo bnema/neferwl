@@ -26,7 +26,7 @@ func TestDamageHistory(t *testing.T) {
 	serials := make(chan uint32, 8)
 	xp := &configureProxy{serial: serials}
 	xp.SetID(xdg)
-	c.Context().Register(xp)
+	registerWireProxy(c, xp)
 	registerProtocol(t, c, top)
 	requestProtocol(t, c, xdg, xdgshell.SurfaceRequestGetToplevel, top)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
@@ -44,7 +44,7 @@ func TestDamageHistory(t *testing.T) {
 	}
 	pool := c.AllocateID()
 	registerProtocol(t, c, pool)
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(2*16*16*4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(2*16*16*4)); err != nil {
 		t.Fatal(err)
 	}
 	bufs := [2]uint32{c.AllocateID(), c.AllocateID()}

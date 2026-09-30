@@ -26,6 +26,87 @@ import (
 
 var errTimeout = errors.New("timeout")
 
+// securityLeaseCard keeps the native operation and its tracked lease inventory
+// together. A failed revoke must remain in LeaseIDs for the next barrier attempt.
+type securityLeaseCard interface {
+	Path() string
+	Lease([]string) (*os.File, uint32, error)
+	LeaseIDs() []uint32
+	Revoke(uint32) error
+}
+
+func securitySnapshot(gate ports.SessionSecurity) ports.SecurityState {
+	if gate == nil {
+		return ports.SecurityState{}
+	}
+	return gate.Snapshot()
+}
+
+// guardedLease denies requests pending at acquisition and closes any FD created
+// across a transition, even when the native call succeeds. Failed revocations
+// stay tracked by the card and prevent the later backend barrier.
+func guardedLease(c securityLeaseCard, gate ports.SessionSecurity, connectors []string) (*os.File, uint32, error) {
+	before := securitySnapshot(gate)
+	if before.Protected {
+		return nil, 0, errors.New("session protected")
+	}
+	fd, id, err := c.Lease(connectors)
+	if err != nil {
+		return fd, id, err
+	}
+	after := securitySnapshot(gate)
+	if after.Protected || after.Generation != before.Generation {
+		if fd != nil {
+			fd.Close()
+		}
+		return nil, 0, errors.Join(errors.New("session transition during lease"), c.Revoke(id))
+	}
+	return fd, id, nil
+}
+
+func revokeSecurityLeases(c securityLeaseCard, finished func(uint32)) error {
+	var errs []error
+	for _, id := range c.LeaseIDs() {
+		if err := c.Revoke(id); err != nil {
+			errs = append(errs, fmt.Errorf("%s lease %d: %w", c.Path(), id, err))
+		} else {
+			finished(id)
+		}
+	}
+	if ids := c.LeaseIDs(); len(ids) != 0 {
+		errs = append(errs, fmt.Errorf("%s leases still active: %v", c.Path(), ids))
+	}
+	return errors.Join(errs...)
+}
+
+// registerDiscardedOutput accounts for physical output lifetimes that cannot
+// enter connector-name routing. They still require protection just like owners.
+// The same backend-owned counter is used by outputSet.start; no instance reuse.
+func registerDiscardedOutput(set *outputSet, name string) (ports.OutputInstance, error) {
+	if set.nextInstance == ^ports.OutputInstance(0) {
+		set.startErr = errors.New("output instance exhausted")
+		return 0, set.startErr
+	}
+	set.nextInstance++
+	instance := set.nextInstance
+	if !set.securityEvent(ports.SecurityOutputAdded{Instance: instance, Output: name}) {
+		return instance, set.ctx.Err()
+	}
+	return instance, nil
+}
+
+// retireDiscardedOutput consumes only affirmative terminal evidence. A failed
+// close remains in authoritative inventory, even though it has no render owner.
+func retireDiscardedOutput(set *outputSet, instance ports.OutputInstance, inactive bool) error {
+	if !inactive {
+		return fmt.Errorf("discarded output %d shutdown inactivity unconfirmed", instance)
+	}
+	if !set.securityEvent(ports.SecurityOutputRemoved{Instance: instance}) {
+		return set.ctx.Err()
+	}
+	return nil
+}
+
 // applyTimeout bounds how long outputs take to apply a configuration.
 const applyTimeout = 5 * time.Second
 
@@ -165,6 +246,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	active := b.seat.Subscribe()
 	defer b.seat.Unsubscribe(active)
 	seatActive := true // openDRM waits for the first seat enable
+	set := newOutputSet(ctx, ch.captured)
+	set.wireSecurity(ch)
+	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
 	clientFDs := map[*drmCard]*os.File{}
 	lastLeaseConnectors := map[*drmCard][]ports.LeaseConnector{}
 	defer func() {
@@ -184,12 +268,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 		}
 		var next []ports.LeaseConnector
-		if seatActive {
+		if seatActive && !protected() {
 			next = c.Leasable()
 		}
 		if len(next) == 0 {
-			if clientFDs[c] != nil {
+			if protected() || clientFDs[c] != nil {
 				sendLease(ports.LeaseConnectors{Card: c.Path()})
+			}
+			if clientFDs[c] != nil {
 				clientFDs[c].Close()
 				delete(clientFDs, c)
 			}
@@ -222,8 +308,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			log.Warn().Err(err).Msg("hotplug watch disabled")
 		}
 	}()
-	set := newOutputSet(ctx, ch.captured)
 	cards := map[string]*drmCard{}
+	outputs := map[string]*drm.Output{} // owner result, read only after done
 	send := func(ev ports.OutputEvent) {
 		select {
 		case ch.events <- ev:
@@ -250,6 +336,38 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	timer.Stop()
 	defer timer.Stop()
 	var deadline <-chan time.Time
+	// A small bounded retry budget avoids a busy loop on failed KMS revokes.
+	revokeTimer := b.clock.NewTimer(time.Second)
+	revokeTimer.Stop()
+	defer revokeTimer.Stop()
+	var revokeDeadline <-chan time.Time
+	var revokeAttempts int
+	var discardedOutputErr error // first unconfirmed lifetime; inventory retains every instance
+	barrier := func() {
+		if !set.state.Protected {
+			return
+		}
+		var errs []error
+		for _, c := range b.cards {
+			errs = append(errs, revokeSecurityLeases(c, func(id uint32) {
+				sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+			}))
+			publishLeases(c)
+		}
+		errs = append(errs, discardedOutputErr)
+		err := errors.Join(errs...)
+		// Registration runs synchronously in scan before any barrier. A gate
+		// transition racing native revocation belongs to a later round.
+		if securitySnapshot(ch.security).Generation > set.state.Generation {
+			return
+		}
+		set.securityEvent(ports.SecurityBackendBarrier{Generation: set.state.Generation, Err: err})
+		revokeAttempts++
+		if err != nil && revokeAttempts < 3 {
+			revokeTimer.Reset(time.Second)
+			revokeDeadline = revokeTimer.C()
+		}
+	}
 	var op uint64
 	complete := func(d applyDecision) {
 		if !d.reply {
@@ -303,15 +421,37 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				stop(name, true)
 			}
 			for _, o := range added {
+				// Every physical lifetime gets the gate before any early exit:
+				// Close must not restore saved desktop, even on a name collision.
+				o.Security = ch.security
 				name := o.Info().Name
 				if other := cards[name]; other != nil && other != c {
 					// Core and clients know outputs by connector name.
 					log.Warn().Str("connector", name).Str("card", c.Path()).Msg("connector name already used by another card; ignored")
-					o.Close()
+					instance, registerErr := registerDiscardedOutput(set, name)
+					o.Instance = instance
+					o.Close() // synchronous final KMS disable; never starts a renderer
+					var shutdownErr error
+					if registerErr == nil {
+						shutdownErr = retireDiscardedOutput(set, instance, o.InactiveOnClose())
+					}
+					if err := errors.Join(registerErr, shutdownErr); err != nil {
+						if discardedOutputErr == nil {
+							discardedOutputErr = err
+						}
+						scanErrors = append(scanErrors, err)
+						log.Error().Err(err).Str("connector", name).Str("card", c.Path()).Msg("discarded output protection unconfirmed")
+						// An exhausted instance cannot represent an unsafe lifetime.
+						// Stop the backend rather than ever acknowledge this inventory.
+						if instance == 0 {
+							cancel()
+						}
+					}
 					c.Release(name)
 					continue
 				}
 				cards[name] = c
+				outputs[name] = o
 				readySources[name] = o.Ready()
 				if progress.active && !want(currentConfig).Disabled[name] {
 					progress.required[name] = true
@@ -337,8 +477,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				active := b.seat.Subscribe()
 				realtime := currentConfig.Performance.Realtime
-				set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest) error {
+				started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
 					defer b.seat.Unsubscribe(active)
+					o.Security, o.SecurityChanges, o.Instance = ch.security, secure, instance
 					return safe("output "+name, func() error {
 						defer o.Close()
 						if realtime {
@@ -351,12 +492,19 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 						}
 						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, ch.presented, cap, ch.captured)
 					})
-				})
+				}, &o.SecurityEvents)
+				if !started {
+					b.seat.Unsubscribe(active)
+					o.Close()
+					c.Release(name)
+					continue
+				}
 				send(ports.OutputAdded{Info: o.Info()})
 			}
 		}
 		publishInventory()
 		complete(progress.scanError(errors.Join(scanErrors...)))
+		barrier()
 	}
 	scan()
 	if len(set.outs) == 0 {
@@ -404,12 +552,38 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
 		heads, headsNext := apply.headsOut(ch.heads)
+		contents, contentOut, contentNext, contentOwner := set.contentOut(ch.contents)
 		select {
 		case <-ctx.Done():
 			return set.wait()
 		case err := <-readerErr:
 			// No more flips on that card: its outputs would freeze.
 			return errors.Join(err, set.wait())
+		case state, ok := <-ch.securityChanges:
+			if !ok {
+				ch.securityChanges = nil
+				continue
+			}
+			if state.Generation < set.state.Generation {
+				continue
+			}
+			if set.setSecurity(state) {
+				revokeAttempts = 0
+			}
+			// start can refresh the gate while scanning; its queued transition
+			// must still receive a barrier even if forwarding already occurred.
+			revokeTimer.Stop()
+			revokeDeadline = nil
+			if set.state.Protected {
+				barrier()
+			} else {
+				for _, c := range b.cards {
+					publishLeases(c)
+				}
+			}
+		case <-revokeDeadline:
+			revokeDeadline = nil
+			barrier()
 		case <-hotplug:
 			log.Info().Msg("hotplug")
 			scan()
@@ -442,14 +616,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			switch req := event.(type) {
 			case ports.LeaseRequest:
 				reply := ports.LeaseReply{ID: req.ID, Err: fmt.Errorf("unknown card %s", req.Card)}
-				if !seatActive {
-					reply.Err = errors.New("DRM seat inactive")
+				if !seatActive || protected() {
+					reply.Err = errors.New("DRM seat inactive or session protected")
 					sendLease(reply)
 					break
 				}
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
-						reply.FD, reply.LeaseID, reply.Err = c.Lease(req.Connectors)
+						reply.FD, reply.LeaseID, reply.Err = guardedLease(c, ch.security, req.Connectors)
 						publishLeases(c)
 						break
 					}
@@ -483,14 +657,28 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			complete(progress.timeout(op))
 		case s := <-ch.scenes:
 			set.scenes(s)
-		case c := <-ch.contents:
+		case c := <-contents:
 			set.content(c)
+		case contentOut <- contentNext:
+			contentOwner.contentSent()
 		case q := <-ch.captures:
 			set.routeCapture(q)
 		case c := <-ch.cursorChanges:
 			set.setCursor(c)
-		case name := <-set.stopped:
+		case stopped := <-set.stopped:
+			if !set.stoppedCurrent(stopped) {
+				continue
+			}
+			name := stopped.name
+			output := outputs[name]
 			err := set.finish(name)
+			// finish observes done after the deferred Close. Only affirmative
+			// terminal KMS inactivity retires this exact lifetime; renderer
+			// errors and missing connector inventory are not physical proof.
+			if output != nil && output.InactiveOnClose() {
+				set.securityEvent(ports.SecurityOutputRemoved{Instance: stopped.instance})
+			}
+			delete(outputs, name)
 			if ctx.Err() != nil {
 				return errors.Join(err, set.wait())
 			}

@@ -20,10 +20,53 @@ import (
 // software cursor of the output under them (physical position on it), using
 // the latest layout from layouts.
 func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger) error {
+	return RunSecure(ctx, km, keymaps, script, input, layouts, moveCursor, log, nil)
+}
+
+// RunSecure snapshots the protection epoch before each event enters the input
+// queue. Scripts are a headless test transport, never an unlock authority.
+func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script <-chan string, input chan<- ports.InputEvent, layouts <-chan ports.Layout, moveCursor func(output string, x, y float64), log zerowrap.Logger, security ports.SessionSecurity) error {
+	snapshot := func() ports.SecurityState {
+		if security != nil {
+			return security.Snapshot()
+		}
+		return ports.SecurityState{}
+	}
+	stamp := func(ev ports.InputEvent, state ports.SecurityState) ports.InputEvent {
+		if security == nil {
+			return ev
+		}
+		return ports.SecurityInput{State: state, Event: ev}
+	}
+	// Script payloads can contain credentials even when parsing fails. Keep a
+	// useful generic warning while protected, never input-derived fields.
+	warnInput := func(field, value, message string) {
+		entry := log.Warn()
+		if snapshot().Protected {
+			entry.Msg("invalid script input")
+			return
+		}
+		entry.Str(field, value).Msg(message)
+	}
 	var layout ports.Layout
 	defer func() { km.Close() }()
 	emit := func(code uint32, down bool) error {
-		ev := km.Key(code, down, msec(monotonic()))
+		state := snapshot()
+		var key ports.KeyEvent
+		if security != nil {
+			var deliver bool
+			var err error
+			key, deliver, err = km.KeySecure(code, down, msec(monotonic()), state)
+			if err != nil {
+				return err
+			}
+			if !deliver {
+				return nil
+			}
+		} else {
+			key = km.Key(code, down, msec(monotonic()))
+		}
+		ev := stamp(key, state)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -41,7 +84,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 	stroke := func(name string, mods []uint32) error {
 		code, shift, ok := km.KeycodeFor(name)
 		if !ok {
-			log.Warn().Str("key", name).Msg("unknown key")
+			warnInput("key", name, "unknown key")
 			return nil
 		}
 		if shift {
@@ -79,6 +122,9 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 		case <-ctx.Done():
 			return ctx.Err()
 		case next := <-keymaps:
+			if security != nil {
+				next.QuarantineFrom(km)
+			}
 			km.Close()
 			km = next
 			log.Info().Msg("keymap replaced")
@@ -89,6 +135,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 			}
 			fields := strings.Fields(line)
 			sendPointer := func(ev ports.InputEvent) error {
+				ev = stamp(ev, snapshot())
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -122,7 +169,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 						continue
 					}
 				}
-				log.Warn().Str("line", line).Msg("invalid move")
+				warnInput("line", line, "invalid move")
 				continue
 			}
 			if len(fields) > 0 && (fields[0] == "swipe" || fields[0] == "swipe4") {
@@ -132,7 +179,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					d, ok = dirs[fields[1]]
 				}
 				if !ok {
-					log.Warn().Str("line", line).Msg("invalid swipe")
+					warnInput("line", line, "invalid swipe")
 					continue
 				}
 				fingers := 3
@@ -153,7 +200,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				}
 				code := buttonCode(name)
 				if len(fields) > 2 || (len(fields) != 2 && fields[0] != "click") || code == 0 {
-					log.Warn().Str("line", line).Msg("invalid button")
+					warnInput("line", line, "invalid button")
 					continue
 				}
 				if fields[0] != "up" {
@@ -176,7 +223,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 						name = string(r)
 					}
 					if name == "" {
-						log.Warn().Str("rune", string(r)).Msg("unknown rune")
+						warnInput("rune", string(r), "unknown rune")
 						continue
 					}
 					if err := stroke(name, nil); err != nil {
@@ -202,7 +249,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 					}
 				}
 				if !valid {
-					log.Warn().Str("combo", line).Msg("unknown modifier")
+					warnInput("combo", line, "unknown modifier")
 					continue
 				}
 				if err := stroke(parts[len(parts)-1], mods); err != nil {
@@ -211,7 +258,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 			case strings.HasPrefix(line, "sleep "):
 				d, err := time.ParseDuration(strings.TrimPrefix(line, "sleep "))
 				if err != nil || d < 0 {
-					log.Warn().Str("line", line).Msg("invalid sleep")
+					warnInput("line", line, "invalid sleep")
 					continue
 				}
 				timer := time.NewTimer(d)
@@ -222,7 +269,7 @@ func Run(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, script
 				case <-timer.C:
 				}
 			default:
-				log.Warn().Str("line", line).Msg("unknown script line")
+				warnInput("line", line, "unknown script line")
 			}
 		}
 	}

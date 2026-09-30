@@ -19,6 +19,12 @@ import (
 )
 
 type Options struct {
+	// Security is the defensive gate. SecurityChanges wakes an idle owner;
+	// the snapshot, not the queued notification payload, is authoritative.
+	Security        ports.SessionSecurity
+	SecurityChanges <-chan ports.SecurityState
+	Instance        ports.OutputInstance
+	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Cursor, when set, is drawn into screenshots with the image from
 	// LoadCursor at the scene scale.
 	Cursor        *Cursor
@@ -83,6 +89,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	requests := requestStorage[:0]
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
+	pipeline.Security = opts.Security
 	if opts.NewCaptureRenderer != nil {
 		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 	}
@@ -97,7 +104,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		}
 		for {
 			select {
-			case q := <-incoming:
+			case q, ok := <-incoming:
+				if !ok {
+					return
+				}
 				capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
 			default:
 				return
@@ -110,6 +120,77 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var holds holdSnapshots
 	// pending is a report the channel could not take, retried soon.
 	var pending *ports.OutputPresented
+	var security ports.SecurityState
+	securityKnown := false
+	failRequests := func(reason string) {
+		for _, q := range requests {
+			if !capture.Handed(q) {
+				capture.Fail(ctx, q, fmt.Errorf("%s", reason), opts.Captured)
+			}
+		}
+		clear(requests)
+		requests = requestStorage[:0]
+	}
+	// A transition is its own frame, never a locker-buffer-dependent frame.
+	// Keep its epoch through the fence wait and report only actual completion.
+	checkSecurity := func() error {
+		if opts.Security == nil {
+			return nil
+		}
+		for {
+			next := opts.Security.Snapshot()
+			if securityKnown && next == security {
+				return nil
+			}
+			// No hardware scanout exists: an already applied Off scene is
+			// confirmed software inactivity, independent of its old epoch.
+			inactive := haveScene && scene.Off
+			security, securityKnown = next, true
+			pending = nil
+			haveScene, dirty = false, false
+			if !security.Protected {
+				continue
+			}
+			black := ports.Scene{Security: security, Output: opts.Name, OutputWidth: opts.Width, OutputHeight: opts.Height, Scale: 1, Background: "#000000"}
+			black.Off = inactive
+			scene = black
+			kind := ports.ProtectionInactiveOutput
+			if !inactive {
+				kind = ports.ProtectionProtectedFrame
+				done, err := r.Render(black, nil)
+				if err != nil {
+					return fmt.Errorf("render protection: %w", err)
+				}
+				if done != nil {
+					err = syncfile.Wait(ctx, done)
+					_ = done.Close()
+					if err != nil {
+						return fmt.Errorf("protection fence: %w", err)
+					}
+				}
+			}
+			if opts.Security.Snapshot() != security {
+				continue
+			}
+			if opts.SecurityEvents != nil {
+				proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: security.Generation, Instance: opts.Instance, Kind: kind}}
+				select {
+				case opts.SecurityEvents <- proof:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			// Capture reply backpressure must not postpone the first black
+			// completion/proof. Capture drainage is a separate parent barrier.
+			failRequests("session protected")
+		}
+	}
+	acceptScene := func(s ports.Scene) {
+		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
+			return
+		}
+		scene, haveScene, dirty = s, true, true
+	}
 	update := func(c ports.SurfaceContent) {
 		seen[c.ID] = max(seen[c.ID], c.Seq)
 		dirty = dirty || capture.Shows(scene, c.ID)
@@ -129,6 +210,12 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if ctx.Err() != nil {
 			return nil
 		}
+		if err := checkSecurity(); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
 		var retry <-chan time.Time
 		if pending != nil {
 			retry = time.After(time.Millisecond)
@@ -136,15 +223,54 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		select {
 		case <-ctx.Done():
 			return nil
+		case _, ok := <-opts.SecurityChanges:
+			if !ok {
+				opts.SecurityChanges = nil
+			}
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			continue
 		case b := <-pipeline.Completed():
+			// The completed token has left the pipeline's queue. Return its
+			// lease before any transition path can error or block.
 			pipeline.Recycle(b, r)
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			continue
 		case b := <-pipeline.HiddenCompleted():
 			pipeline.RecycleHidden(b)
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			pipeline.Retire(scene)
 			continue
-		case q := <-incoming:
-			if scene.Off {
+		case q, ok := <-incoming:
+			if !ok {
+				incoming = nil
+				continue
+			}
+			if err := checkSecurity(); err != nil {
+				// q has left incoming but is not yet owned by requests/workers.
+				capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			if opts.protected() {
+				capture.Fail(ctx, q, fmt.Errorf("session protected"), opts.Captured)
+			} else if scene.Off {
 				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
 			} else if len(requests) == cap(requests) {
 				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), opts.Captured)
@@ -153,9 +279,23 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				dirty = haveScene
 			}
 		case <-retry:
-			pending = opts.send(pending)
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			if pending != nil {
+				pending = opts.send(pending)
+			}
 			continue
 		case <-trim.C():
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			// An idle output renders nothing: free what windows that left
 			// it held, and the child of an ended session.
 			pipeline.Retire(scene)
@@ -168,14 +308,36 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				scenes = nil
 				continue
 			}
-			scene, haveScene, dirty = s, true, true
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			acceptScene(s)
 		case c, ok := <-contents:
 			if !ok {
 				contents = nil
 				continue
 			}
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			update(c)
-		case c := <-cursor:
+		case c, ok := <-cursor:
+			if !ok {
+				cursor = nil
+				continue
+			}
+			if err := checkSecurity(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
 			// The cursor is only drawn into screenshots: no new frame.
 			want, cursorScale = c, -1
 		}
@@ -187,17 +349,38 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				if !ok {
 					scenes = nil
 				} else {
-					scene, haveScene, dirty = s, true, true
+					if err := checkSecurity(); err != nil {
+						if ctx.Err() != nil {
+							return nil
+						}
+						return err
+					}
+					acceptScene(s)
 				}
 			case c, ok := <-contents:
 				if !ok {
 					contents = nil
 				} else {
+					if err := checkSecurity(); err != nil {
+						if ctx.Err() != nil {
+							return nil
+						}
+						return err
+					}
 					update(c)
 				}
 			default:
 				break drain
 			}
+		}
+		if err := checkSecurity(); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		if opts.protected() {
+			failRequests("session protected")
 		}
 		if scene.Off && len(requests) > 0 {
 			for _, q := range requests {
@@ -213,13 +396,24 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		}
 		dirty = false
-		if opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
+		if !opts.protected() && opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
 			cursorScale = scene.Scale
 			if img, err := opts.LoadCursor(want, scene.Scale, 256); err == nil {
-				opts.Cursor.set(img)
+				if !opts.protected() {
+					opts.Cursor.set(img)
+				}
 			} else {
 				opts.Log.Warn().Err(err).Msg("cursor")
 			}
+		}
+		if err := checkSecurity(); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		if !haveScene {
+			continue
 		}
 		start := time.Now()
 		// Clean requests of a session the scene does not carry are failed
@@ -230,6 +424,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if len(clean) > 0 && scene.CaptureScene != nil {
 			// A hidden workspace: a child renderer draws it. The display's
 			// fences do not cover the child, so wait for it before reporting.
+			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+				failRequests("security epoch changed")
+				continue
+			}
 			pipeline.SubmitHidden(scene, surfaces, clean)
 			clear(clean)
 			// A slow child may outlive Wayland's stale-report timeout even
@@ -252,15 +450,37 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("workspace frame fence: %w", err)
 			}
 		} else if len(clean) > 0 {
-			cdone, err := r.Render(pipeline.CleanScene(scene), surfaces)
-			if err != nil {
-				return fmt.Errorf("render clean frame: %w", err)
+			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+				failRequests("security epoch changed")
+				continue
 			}
+			cdone, renderErr := r.Render(pipeline.CleanScene(scene), surfaces)
 			if cdone != nil {
-				cdone.Close()
+				// Clean composition reads client buffers even when the displayed
+				// frame is skipped by a gate/off transition. Own and wait its
+				// fence before any Seen report or protection check can proceed.
+				waitErr := syncfile.Wait(ctx, cdone)
+				_ = cdone.Close()
+				if waitErr != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
+					return fmt.Errorf("clean frame fence: %w", waitErr)
+				}
 			}
-			pipeline.Submit(r, clean)
+			if renderErr != nil {
+				return fmt.Errorf("render clean frame: %w", renderErr)
+			}
+			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+				failRequests("security epoch changed")
+				continue
+			}
+			pipeline.SubmitScoped(scene.Security, r, clean)
 			clear(clean)
+		}
+		if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+			failRequests("security epoch changed")
+			continue
 		}
 		done, err := r.Render(scene, surfaces)
 		if err != nil {
@@ -281,24 +501,36 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if len(normal) > 0 {
 			opts.Log.Debug().Str("output", opts.Name).Int("captures", len(normal)).Msg("capture frame composed")
 		}
-		pipeline.Submit(r, normal)
+		// Do not capture or report a frame that crossed a transition during
+		// Render/fence wait. The next loop establishes the new black proof.
+		if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+			failRequests("security epoch changed")
+			continue
+		}
+		pipeline.SubmitScoped(scene.Security, r, normal)
 		clear(requests)
 		requests = requestStorage[:0]
 		frame++
 		pending = opts.flipped(pending, seen, scene, surfaces)
-		if opts.ScreenshotDir != "" {
+		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
+			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+				continue
+			}
 			if shot == nil {
 				opts.Log.Debug().Str("component", "headless").Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
 				continue
 			}
 			if opts.Cursor != nil {
-				opts.Cursor.draw(shot)
+				opts.Cursor.drawSecure(shot, opts.Security)
 			}
-			if err := writePNG(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), shot); err != nil {
+			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+				continue
+			}
+			if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), shot, opts.Security, scene.Security); err != nil {
 				return fmt.Errorf("screenshot: %w", err)
 			}
-			if err := writePNG(filepath.Join(opts.ScreenshotDir, "latest.png"), shot); err != nil {
+			if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security); err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
 		}
@@ -324,7 +556,14 @@ func (h *holdSnapshots) report(output string, seen, reads map[ports.WindowID]uin
 	return ports.OutputPresented{Output: output, Seen: h.seen, ChildReads: h.reads}
 }
 
-func writePNG(path string, img *image.RGBA) error {
+func (opts Options) protected() bool {
+	return opts.Security != nil && opts.Security.Snapshot().Protected
+}
+
+func writePNGSecure(path string, img *image.RGBA, security ports.SessionSecurity, state ports.SecurityState) error {
+	if security != nil && (state.Protected || security.Snapshot() != state) {
+		return nil
+	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".frame-*.png")
 	if err != nil {
 		return err
@@ -336,6 +575,9 @@ func writePNG(path string, img *image.RGBA) error {
 	}
 	if err := f.Close(); err != nil {
 		return err
+	}
+	if security != nil && security.Snapshot() != state {
+		return nil
 	}
 	return os.Rename(f.Name(), path)
 }

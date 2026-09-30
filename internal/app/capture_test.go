@@ -144,7 +144,7 @@ func TestOutputStopWithFullReplies(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
 	replies <- ports.CaptureDone{}
 	set := newOutputSet(ctx, replies)
-	set.start(ctx, "test", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, requests <-chan ports.CaptureRequest) error {
+	set.start(ctx, "test", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, requests <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	})

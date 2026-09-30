@@ -193,7 +193,7 @@ func TestWritePNGAtomic(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
 	for _, name := range []string{"frame-000001.png", "latest.png"} {
 		path := filepath.Join(dir, name)
-		if err := writePNG(path, img); err != nil {
+		if err := writePNGSecure(path, img, nil, ports.SecurityState{}); err != nil {
 			t.Fatal(err)
 		}
 		f, err := os.Open(path)

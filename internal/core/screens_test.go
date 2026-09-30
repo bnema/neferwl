@@ -495,7 +495,9 @@ func TestPointerFocusesOutput(t *testing.T) {
 func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 	cfg := config.Defaults()
 	commands := make(chan ports.ClientCommand)
-	spawn := make(chan ports.SpawnRequest)
+	// The launcher handoff is deliberately nonblocking. A ready buffered
+	// queue tests ordering without requiring core to wait for this reader.
+	spawn := make(chan ports.SpawnRequest, 1)
 	output := make(chan ports.OutputEvent, 1)
 	scenes := make(chan []ports.Scene, 1)
 	state := make(chan ports.State, 1)

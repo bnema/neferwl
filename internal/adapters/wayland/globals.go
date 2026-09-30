@@ -12,6 +12,15 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 	for _, register := range []func() error{
 		func() error { return registerXDG(d, s) },
 		func() error { return registerLayer(d, s) },
+		func() error {
+			// Advertise only with the production owner gate and authoritative
+			// backend proof/barrier channels. Standalone adapters cannot claim
+			// protection from composed-frame submission alone.
+			if s.securityController == nil || s.channels.SecurityChanges == nil || s.channels.SecurityEvents == nil {
+				return nil
+			}
+			return registerSessionLock(d, s)
+		},
 		func() error { return registerXDGOutput(d, s) },
 		func() error { return registerOutputManagement(d, s) },
 		func() error { return registerWorkspaces(d, s) },

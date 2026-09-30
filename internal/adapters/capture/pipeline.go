@@ -2,6 +2,7 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -15,6 +16,9 @@ const MaxRequests = 8
 
 const pipelineSlots = 2
 
+// ErrSecurityState rejects capture admission across an epoch or while protected.
+var ErrSecurityState = errors.New("capture security epoch changed or session protected")
+
 // batch remains owned by the worker until it is returned through completed.
 // Both batches and their request storage are reused for the output's lifetime.
 type batch struct {
@@ -27,6 +31,8 @@ type batch struct {
 // Pipeline moves fence waiting and SHM copies off the renderer's owner.
 // Submit, Recycle and Close belong to that owner; one worker handles all jobs.
 type Pipeline struct {
+	// Set before owner use; no mutation or worker access to this dependency.
+	Security  ports.SessionSecurity
 	ctx       context.Context
 	cancel    context.CancelFunc
 	replies   chan<- ports.CaptureDone
@@ -55,9 +61,9 @@ func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
 	*b = batch{}
 }
 
-// Submit consumes all requests. Saturation fails explicitly instead of
-// waiting, growing a queue, or starting another worker.
-func (p *Pipeline) Submit(r ports.Renderer, requests []ports.CaptureRequest) {
+// SubmitScoped consumes requests with explicit immutable scene admission. The
+// final gate read precedes BeginCapture, not the render that produced pixels.
+func (p *Pipeline) SubmitScoped(state ports.SecurityState, r ports.Renderer, requests []ports.CaptureRequest) {
 	if len(requests) == 0 {
 		return
 	}
@@ -75,6 +81,8 @@ func (p *Pipeline) Submit(r ports.Renderer, requests []ports.CaptureRequest) {
 	var err error
 	if b == nil {
 		err = fmt.Errorf("capture pipeline full or stopped")
+	} else if !p.captureAllowed(state) {
+		err = ErrSecurityState
 	} else {
 		b.frame, err = r.BeginCapture()
 		if err == nil && b.frame == nil {
@@ -92,6 +100,10 @@ func (p *Pipeline) Submit(r ports.Renderer, requests []ports.CaptureRequest) {
 	// There are exactly two reusable batches and two queue slots, so this
 	// send cannot wait: no batch can be queued twice before recycling.
 	p.jobs <- b
+}
+
+func (p *Pipeline) captureAllowed(state ports.SecurityState) bool {
+	return p.Security == nil || !state.Protected && p.Security.Snapshot() == state
 }
 
 func (p *Pipeline) reclaim(r ports.Renderer) {

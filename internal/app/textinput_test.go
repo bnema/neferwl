@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
-	"github.com/bnema/purego-libwayland/protocol/textinput"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 	"github.com/bnema/wlturbo"
+	clientcore "github.com/bnema/wlturbo/protocol/core"
+	clienttext "github.com/bnema/wlturbo/protocol/textinput"
+	clientxdg "github.com/bnema/wlturbo/protocol/xdgshell"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,51 +37,12 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-// textClient records what a text input receives.
+// textClient retains observations from an ordinary generated text-input proxy.
 type textClient struct {
-	wlturbo.BaseProxy
+	*clienttext.TextInputV3
 	entered bool
 	preedit []string
 	commits []string
-}
-
-func (p *textClient) Dispatch(e *wlturbo.Event) {
-	switch uint32(e.Opcode) {
-	case textinput.ZwpTextInputV3EventEnter:
-		p.entered = true
-	case textinput.ZwpTextInputV3EventPreeditString:
-		p.preedit = append(p.preedit, e.String())
-	case textinput.ZwpTextInputV3EventCommitString:
-		p.commits = append(p.commits, e.String())
-	}
-}
-
-// xdgConfigure records the last configure serial.
-type xdgConfigure struct {
-	wlturbo.BaseProxy
-	serial uint32
-}
-
-func (p *xdgConfigure) Dispatch(e *wlturbo.Event) {
-	if uint32(e.Opcode) == xdgshell.SurfaceEventConfigure {
-		p.serial = e.Uint32()
-	}
-}
-
-// quiet ignores the events of objects the test does not inspect.
-type quiet struct{ wlturbo.BaseProxy }
-
-func (*quiet) Dispatch(*wlturbo.Event) {}
-
-type wmPing struct {
-	wlturbo.BaseProxy
-	c *wlturbo.Display
-}
-
-func (p *wmPing) Dispatch(e *wlturbo.Event) {
-	if uint32(e.Opcode) == xdgshell.WmBaseEventPing {
-		_ = p.c.SendRequest(p.ID(), uint16(xdgshell.WmBaseRequestPong), e.Uint32())
-	}
 }
 
 // NeferWL headless, the examples/testime input method and a text input
@@ -177,16 +138,16 @@ func TestHeadlessTextInputIME(t *testing.T) {
 		}
 	}
 	poll("no text input enter", func() bool { return text.entered })
-	send := func(op uint32, args ...any) {
-		t.Helper()
-		if err := c.SendRequest(text.ID(), uint16(op), args...); err != nil {
+	for i := 1; i <= 2; i++ {
+		if err := text.Enable(); err != nil {
 			t.Fatal(err)
 		}
-	}
-	for i := 1; i <= 2; i++ {
-		send(textinput.ZwpTextInputV3RequestEnable)
-		send(textinput.ZwpTextInputV3RequestSetContentType, uint32(0), uint32(0))
-		send(textinput.ZwpTextInputV3RequestCommit)
+		if err := text.SetContentType(0, 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := text.Commit(); err != nil {
+			t.Fatal(err)
+		}
 		poll("missing commit", func() bool { return len(text.commits) == i })
 	}
 	if len(text.preedit) != 2 || text.preedit[0] != "nihon" || text.commits[0] != "日本" || text.commits[1] != "日本" {
@@ -206,80 +167,61 @@ func TestHeadlessTextInputIME(t *testing.T) {
 // mapTextClient maps a 1x1 toplevel with a text input on c.
 func mapTextClient(t *testing.T, c *wlturbo.Display) *textClient {
 	t.Helper()
-	if err := c.Roundtrip(); err != nil {
-		t.Fatal(err)
-	}
-	bind := func(iface string) uint32 {
+	check := func(err error) {
 		t.Helper()
-		g, ok := c.Registry().FindGlobal(iface)
-		if !ok {
-			t.Fatalf("missing %s", iface)
-		}
-		id, err := c.Registry().BindID(g.Name, g.Interface, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return id
 	}
-	// New IDs are used in allocation order; every object gets a proxy.
-	newID := func() uint32 {
-		p := &quiet{}
-		p.SetID(c.AllocateID())
-		c.Context().Register(p)
-		return p.ID()
-	}
-	req := func(id, op uint32, args ...any) {
-		t.Helper()
-		if err := c.SendRequest(id, uint16(op), args...); err != nil {
-			t.Fatal(err)
-		}
-	}
-	comp, shm, seat, tim := bind("wl_compositor"), bind("wl_shm"), bind("wl_seat"), bind("zwp_text_input_manager_v3")
-	for _, id := range []uint32{comp, shm, seat, tim} {
-		p := &quiet{}
-		p.SetID(id)
-		c.Context().Register(p)
-	}
-	wm := &wmPing{c: c}
-	wm.SetID(bind("xdg_wm_base"))
-	c.Context().Register(wm)
+	check(c.Roundtrip())
+	comp := clientcore.NewCompositor(c.Context())
+	shm := clientcore.NewShm(c.Context())
+	seat := clientcore.NewSeat(c.Context())
+	tim := clienttext.NewTextInputManagerV3(c.Context())
+	wm := clientxdg.NewXdgWmBase(c.Context())
+	wm.OnPing(func(serial uint32) { check(wm.Pong(serial)) })
+	bindTestClient(t, c, clientcore.CompositorInterface, 1, comp)
+	bindTestClient(t, c, clientcore.ShmInterface, 1, shm)
+	bindTestClient(t, c, clientcore.SeatInterface, 1, seat)
+	bindTestClient(t, c, clienttext.TextInputManagerV3Interface, 1, tim)
+	bindTestClient(t, c, clientxdg.XdgWmBaseInterface, 1, wm)
 	fd, err := unix.MemfdCreate("text-client", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unix.Close(fd)
+	check(err)
 	if err := unix.Ftruncate(fd, 4); err != nil {
+		_ = unix.Close(fd)
 		t.Fatal(err)
 	}
-	pool := newID()
-	if err := c.SendRequestWithFDs(shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	// CreatePool owns the sent descriptor on success; only close it on error.
+	pool, err := shm.CreatePool(fd, 4)
+	if err != nil {
+		_ = unix.Close(fd)
 		t.Fatal(err)
 	}
-	buffer := newID()
-	req(pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
-	surf := newID()
-	req(comp, wayland.CompositorRequestCreateSurface, surf)
-	xdg := &xdgConfigure{}
-	xdg.SetID(c.AllocateID())
-	c.Context().Register(xdg)
-	req(wm.ID(), xdgshell.WmBaseRequestGetXdgSurface, xdg.ID(), surf)
-	top := newID()
-	req(xdg.ID(), xdgshell.SurfaceRequestGetToplevel, top)
-	text := &textClient{}
-	text.SetID(c.AllocateID())
-	c.Context().Register(text)
-	req(tim, textinput.ZwpTextInputManagerV3RequestGetTextInput, text.ID(), seat)
-	req(surf, wayland.SurfaceRequestCommit)
-	for deadline := time.Now().Add(5 * time.Second); xdg.serial == 0; time.Sleep(10 * time.Millisecond) {
+	buffer, err := pool.CreateBuffer(0, 1, 1, 4, clientcore.FORMAT_ARGB8888)
+	check(err)
+	surf, err := comp.CreateSurface()
+	check(err)
+	xdg, err := wm.GetXdgSurface(surf)
+	check(err)
+	var serial uint32
+	xdg.OnConfigure(func(value uint32) { serial = value })
+	_, err = xdg.GetToplevel()
+	check(err)
+	proxy, err := tim.GetTextInput(seat)
+	check(err)
+	text := &textClient{TextInputV3: proxy}
+	proxy.OnEnter(func(uint32) { text.entered = true })
+	proxy.OnPreeditString(func(value string, _, _ int32) { text.preedit = append(text.preedit, value) })
+	proxy.OnCommitString(func(value string) { text.commits = append(text.commits, value) })
+	check(surf.Commit())
+	for deadline := time.Now().Add(5 * time.Second); serial == 0; time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("no configure")
 		}
-		if err := c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
+		check(c.Roundtrip())
 	}
-	req(xdg.ID(), xdgshell.SurfaceRequestAckConfigure, xdg.serial)
-	req(surf, wayland.SurfaceRequestAttach, buffer, int32(0), int32(0))
-	req(surf, wayland.SurfaceRequestCommit)
+	check(xdg.AckConfigure(serial))
+	check(surf.Attach(buffer, 0, 0))
+	check(surf.Commit())
 	return text
 }

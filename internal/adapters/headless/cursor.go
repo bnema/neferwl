@@ -37,9 +37,13 @@ func (c *Cursor) set(img ports.CursorImage) {
 
 // draw blends the premultiplied cursor over dst with its hotspot at (x, y).
 func (c *Cursor) draw(dst *image.RGBA) {
+	c.drawSecure(dst, nil)
+}
+
+func (c *Cursor) drawSecure(dst *image.RGBA, security ports.SessionSecurity) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.hidden {
+	if c.hidden || security != nil && security.Snapshot().Protected {
 		return
 	}
 	img := c.img

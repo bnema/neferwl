@@ -44,6 +44,12 @@ func testOutput(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec) {
 // testOutputMu is testOutput with the mutex that guards the recorded
 // commits (Run commits on its goroutine).
 func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec, *sync.Mutex) {
+	return testOutputRules(t, nil, errs...)
+}
+
+// testOutputRules is testOutputMu with an optional driver rule: a non-nil
+// rule sees every commit (under the commit mutex) and may refuse it.
+func testOutputRules(t *testing.T, rule func(*atomicReq, uint32) error, errs ...error) (*Output, *mockkms, *[]commitRec, *sync.Mutex) {
 	k := newMockkms(t)
 	var commits []commitRec
 	commitMu := &sync.Mutex{}
@@ -56,6 +62,11 @@ func testOutputMu(t *testing.T, errs ...error) (*Output, *mockkms, *[]commitRec,
 			c.req.props = append(c.req.props, append([]propValue(nil), ps...))
 		}
 		commits = append(commits, c)
+		if rule != nil {
+			if err := rule(r, flags); err != nil {
+				return err
+			}
+		}
 		if len(errs) > 0 {
 			err := errs[0]
 			errs = errs[1:]

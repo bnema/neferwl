@@ -87,7 +87,7 @@ func TestQuitJoinsWorkers(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: config.Defaults(), NoTerminal: true}, func(input chan<- ports.InputEvent) {
-			input <- ports.KeyEvent{Keysym: "BackSpace", Mods: ports.ModCtrl | ports.ModAlt, Pressed: true}
+			input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "BackSpace", Mods: ports.ModCtrl | ports.ModAlt, Pressed: true}}
 		})
 	}()
 	select {
@@ -133,7 +133,7 @@ func TestHeadlessSpawnClose(t *testing.T) {
 			t.Error("Run did not stop")
 		}
 	}()
-	input <- ports.KeyEvent{Keysym: "Return", Mods: ports.ModSuper, Pressed: true}
+	input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "Return", Mods: ports.ModSuper, Pressed: true}}
 	waitScene := func(count int, timeout time.Duration) {
 		t.Helper()
 		timer := time.NewTimer(timeout)
@@ -157,7 +157,7 @@ func TestHeadlessSpawnClose(t *testing.T) {
 		}
 	}
 	waitScene(1, 10*time.Second)
-	input <- ports.KeyEvent{Keysym: "q", Mods: ports.ModSuper, Pressed: true}
+	input <- ports.SecurityInput{State: ports.SecurityState{}, Event: ports.KeyEvent{Keysym: "q", Mods: ports.ModSuper, Pressed: true}}
 	waitScene(0, 5*time.Second)
 }
 

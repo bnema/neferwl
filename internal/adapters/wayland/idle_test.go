@@ -33,7 +33,7 @@ func newEventProxy(c *wlturbo.Display) (uint32, *eventProxy) {
 	id := c.AllocateID()
 	p := &eventProxy{events: make(chan [2]uint32, 16)}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	return id, p
 }
 

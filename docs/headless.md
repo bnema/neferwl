@@ -15,7 +15,7 @@ The compositor draws a red border around the visible recording target. An explic
 
 Offscreen frame callbacks keep clients running, but no physical presentation feedback is invented for hidden windows. The child renderer and its readback storage retire when unused and idle, are recreated for session or frame-size changes, and close with the output. Clean capture can require two compositions to preserve the displayed z-order.
 
-`/tmp/neferwl-shots/latest.png` shows the current frame, including the recording border and HUD. `--timeout 5s` stops NeferWL after 5 seconds.
+`/tmp/neferwl-shots/latest.png` shows the current unlocked frame, including the recording border and HUD. During session protection, protocol captures are refused and debug PNG files stop updating; an existing file still contains an earlier unlocked frame. See [Session locking](session-lock.md). `--timeout 5s` stops NeferWL after 5 seconds.
 
 `--input <path>`, or `--input -` for stdin, plays an input script. One command per line:
 

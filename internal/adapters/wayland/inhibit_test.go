@@ -47,7 +47,7 @@ func TestShortcutsInhibitor(t *testing.T) {
 	in := c.AllocateID()
 	p := &inhibitorProxy{states: make(chan bool, 4)}
 	p.SetID(in)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, mgr, keyboardshortcutsinhibit.ZwpKeyboardShortcutsInhibitManagerV1RequestInhibitShortcuts, in, surf, seat)
 	if v := clientEvent[ports.ShortcutsInhibit](t, events); v != (ports.ShortcutsInhibit{Window: w.ID, Active: true}) {
 		t.Fatal(v)

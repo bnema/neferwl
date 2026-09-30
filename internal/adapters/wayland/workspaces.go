@@ -41,6 +41,10 @@ func registerWorkspaces(d *server.Display, s *Server) error {
 	})
 }
 func (m *workspaceManager) Commit(*ext.ExtWorkspaceManagerV1) {
+	if m.s.protected() {
+		m.pending = nil
+		return
+	}
 	ids := make([]uint64, 0, len(m.pending))
 	for _, id := range m.pending {
 		if h := m.handles[id]; h != nil && h.res.Alive() {
@@ -59,6 +63,9 @@ func (m *workspaceManager) Stop(*ext.ExtWorkspaceManagerV1) {
 func (*workspaceManager) CreateWorkspace(*ext.ExtWorkspaceGroupHandleV1, string) {}
 func (*workspaceManager) Destroy(*ext.ExtWorkspaceGroupHandleV1)                 {}
 func (m *workspaceManager) Activate(r *ext.ExtWorkspaceHandleV1) {
+	if m.s.protected() {
+		return
+	}
 	for id, h := range m.handles {
 		if h.res.Resource == r.Resource {
 			m.pending = append(m.pending, id)
@@ -79,6 +86,9 @@ func (*workspaceRequests) Remove(*ext.ExtWorkspaceHandleV1)                     
 // outputBound announces every wl_output resource bound by this client for an
 // assigned output. A client may bind the same global more than once.
 func (m *workspaceManager) outputBound(name string) bool {
+	if m.s.protected() {
+		return false
+	}
 	g := m.groups[name]
 	o := m.s.outputByNameExact(name)
 	if g == nil || !g.res.Alive() || o == nil {
@@ -128,10 +138,17 @@ func (s *Server) forwardWorkspaces(ctx context.Context) {
 }
 func (s *Server) updateWorkspaces(snapshot ports.Workspaces) {
 	s.workspaceSnapshot = snapshot
+	s.updateWorkspaceManagers(snapshot)
+	s.updateCaptureWorkspaces(snapshot)
+}
+
+// updateWorkspaceManagers also refreshes inventory on protection transitions.
+// Keep the last sent state while protected: old client knowledge cannot be
+// revoked, but an unlock refresh must compare against it, not suppressed updates.
+func (s *Server) updateWorkspaceManagers(snapshot ports.Workspaces) {
 	for _, m := range s.workspaceManagers {
 		m.update(snapshot)
 	}
-	s.updateCaptureWorkspaces(snapshot)
 }
 func workspaceState(w ports.WorkspaceInfo) uint32 {
 	var state uint32
@@ -149,6 +166,10 @@ func (m *workspaceManager) sendCoordinates(r *ext.ExtWorkspaceHandleV1, index in
 	r.SendCoordinates(b[:])
 }
 func (m *workspaceManager) update(snapshot ports.Workspaces) {
+	if m.s.protected() {
+		m.pending = nil
+		return
+	}
 	if !m.res.Alive() {
 		return
 	}

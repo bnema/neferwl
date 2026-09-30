@@ -52,7 +52,7 @@ func (p *sourceEvents) Dispatch(e *wlturbo.Event) {
 func registerOffer(c *wlturbo.Display, id uint32) {
 	p := &protocolProxy{}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 }
 
 // clipClient is a client with a toplevel, a data device and a pointer to
@@ -70,13 +70,13 @@ func newClipClient(t *testing.T, s *Server, dir string, events chan ports.Client
 	seat := bindProtocol(t, c, "wl_seat")
 	registerProtocol(t, c, seat)
 	g, _ := c.Registry().FindGlobal("wl_data_device_manager")
-	manager, err := c.Registry().BindID(g.Name, g.Interface, 3)
+	manager, err := bindWireID(c, g.Name, g.Interface, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	device := &clipEvents{c: c, offers: make(chan uint32, 8)}
 	device.SetID(c.AllocateID())
-	c.Context().Register(device)
+	registerWireProxy(c, device)
 	requestProtocol(t, c, manager, wayland.DataDeviceManagerRequestGetDataDevice, device.ID(), seat)
 	w := toplevelMapper(t, c, events)()
 	return &clipClient{c: c, manager: manager, device: device, window: w.ID}
@@ -100,7 +100,7 @@ func (cc *clipClient) copy(t *testing.T) *sourceEvents {
 	t.Helper()
 	src := &sourceEvents{sends: make(chan int, 4), cancelled: make(chan struct{}, 4)}
 	src.SetID(cc.c.AllocateID())
-	cc.c.Context().Register(src)
+	registerWireProxy(cc.c, src)
 	requestProtocol(t, cc.c, cc.manager, wayland.DataDeviceManagerRequestCreateDataSource, src.ID())
 	requestProtocol(t, cc.c, src.ID(), wayland.DataSourceRequestOffer, "text/plain")
 	requestProtocol(t, cc.c, cc.device.ID(), wayland.DataDeviceRequestSetSelection, src.ID(), uint32(0))
@@ -161,7 +161,7 @@ func TestClipboardFollowsFocus(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unix.Close(fds[0])
-	if err := b.c.SendRequestWithFDs(offer, uint16(wayland.DataOfferRequestReceive), []int{fds[1]}, "text/plain"); err != nil {
+	if err := wireRequest(b.c, offer, uint16(wayland.DataOfferRequestReceive), []int{fds[1]}, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
 	_ = unix.Close(fds[1])
@@ -208,7 +208,7 @@ func TestDataControlSeesSelection(t *testing.T) {
 	offers := make(chan uint32, 8)
 	dev := &controlEvents{c: m, offers: offers}
 	dev.SetID(m.AllocateID())
-	m.Context().Register(dev)
+	registerWireProxy(m, dev)
 	requestProtocol(t, m, manager, extdatacontrol.ExtDataControlManagerV1RequestGetDataDevice, dev.ID(), seat)
 	next := func() uint32 {
 		t.Helper()
@@ -294,7 +294,7 @@ func TestDataControlUsedSource(t *testing.T) {
 	manager := bindProtocol(t, m, "ext_data_control_manager_v1")
 	dev := &controlEvents{c: m, offers: make(chan uint32, 8)}
 	dev.SetID(m.AllocateID())
-	m.Context().Register(dev)
+	registerWireProxy(m, dev)
 	requestProtocol(t, m, manager, extdatacontrol.ExtDataControlManagerV1RequestGetDataDevice, dev.ID(), seat)
 	src := m.AllocateID()
 	registerProtocol(t, m, src)
@@ -330,7 +330,7 @@ func TestPrimarySelectionFromManager(t *testing.T) {
 	registerProtocol(t, a.c, seat)
 	pdev := &primaryEvents{c: a.c, offers: make(chan uint32, 8)}
 	pdev.SetID(a.c.AllocateID())
-	a.c.Context().Register(pdev)
+	registerWireProxy(a.c, pdev)
 	requestProtocol(t, a.c, pm, primaryselection.ZwpPrimarySelectionDeviceManagerV1RequestGetDevice, pdev.ID(), seat)
 	a.focus(t, commands)
 
@@ -340,7 +340,7 @@ func TestPrimarySelectionFromManager(t *testing.T) {
 	manager := bindProtocol(t, m, "ext_data_control_manager_v1")
 	dev := &controlEvents{c: m, offers: make(chan uint32, 8)}
 	dev.SetID(m.AllocateID())
-	m.Context().Register(dev)
+	registerWireProxy(m, dev)
 	requestProtocol(t, m, manager, extdatacontrol.ExtDataControlManagerV1RequestGetDataDevice, dev.ID(), mseat)
 	src := m.AllocateID()
 	registerProtocol(t, m, src)

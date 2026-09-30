@@ -27,7 +27,7 @@ func (p *managementEvents) Dispatch(e *wlturbo.Event) {
 	if e.Opcode == uint16(wlr.ZwlrOutputManagerV1EventHead) {
 		h := &managementHeadEvents{client: p.client, modes: p.modes, events: p.headEvents}
 		h.SetID(msg[1])
-		p.client.Context().Register(h)
+		registerWireProxy(p.client, h)
 	}
 	p.events <- msg
 }
@@ -51,7 +51,7 @@ func (p *managementHeadEvents) Dispatch(e *wlturbo.Event) {
 	if e.Opcode == uint16(wlr.ZwlrOutputHeadV1EventMode) {
 		mode := &protocolProxy{}
 		mode.SetID(e.Uint32())
-		p.client.Context().Register(mode)
+		registerWireProxy(p.client, mode)
 		if p.modes != nil {
 			p.modes <- mode.ID()
 		}
@@ -118,7 +118,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
 	manager.SetID(id)
-	c.Context().Register(manager)
+	registerWireProxy(c, manager)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestOutputManagementStaleSerialAndLayout(t *testing.T) {
 	configID := c.AllocateID()
 	proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
 	proxy.SetID(configID)
-	c.Context().Register(proxy)
+	registerWireProxy(c, proxy)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, first[1])
 	waitManagementEvent(t, c, proxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventCancelled))
 	if !s.display.Do(func() { s.setOutputHeads(ports.OutputHeads{}) }) {
@@ -169,7 +169,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
 	manager.SetID(id)
-	c.Context().Register(manager)
+	registerWireProxy(c, manager)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	configID := c.AllocateID()
 	configProxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
 	configProxy.SetID(configID)
-	c.Context().Register(configProxy)
+	registerWireProxy(c, configProxy)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, serial[1])
 	chID := c.AllocateID()
 	registerProtocol(t, c, chID)
@@ -211,7 +211,7 @@ func TestOutputManagementHeadsAndApply(t *testing.T) {
 	configID = c.AllocateID()
 	configProxy = &managementEvents{events: make(chan [2]uint32, 8), client: c}
 	configProxy.SetID(configID)
-	c.Context().Register(configProxy)
+	registerWireProxy(c, configProxy)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, serial[1])
 	chID = c.AllocateID()
 	registerProtocol(t, c, chID)
@@ -259,7 +259,7 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 			managerID := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 			manager := &managementEvents{events: make(chan [2]uint32, 32), client: c}
 			manager.SetID(managerID)
-			c.Context().Register(manager)
+			registerWireProxy(c, manager)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
@@ -271,7 +271,7 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 			cfg := c.AllocateID()
 			proxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
 			proxy.SetID(cfg)
-			c.Context().Register(proxy)
+			registerWireProxy(c, proxy)
 			requestProtocol(t, c, managerID, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, done[1])
 			ch := c.AllocateID()
 			registerProtocol(t, c, ch)
@@ -373,7 +373,7 @@ func TestOutputManagementProtocolErrors(t *testing.T) {
 			managerID := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 			p := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
 			p.SetID(managerID)
-			c.Context().Register(p)
+			registerWireProxy(c, p)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
@@ -390,7 +390,7 @@ func TestOutputManagementProtocolErrors(t *testing.T) {
 				other := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 				otherEvents := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
 				otherEvents.SetID(other)
-				c.Context().Register(otherEvents)
+				registerWireProxy(c, otherEvents)
 				if err := c.Roundtrip(); err != nil {
 					t.Fatal(err)
 				}
@@ -434,7 +434,7 @@ func TestOutputManagementInitialHeadState(t *testing.T) {
 			id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 			p := &managementEvents{events: make(chan [2]uint32, 32), headEvents: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
 			p.SetID(id)
-			c.Context().Register(p)
+			registerWireProxy(c, p)
 			if err := c.Roundtrip(); err != nil {
 				t.Fatal(err)
 			}
@@ -465,7 +465,7 @@ func TestOutputManagementStopDestroysManager(t *testing.T) {
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	p := &managementEvents{events: make(chan [2]uint32, 8), client: c}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestStop)
 	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputManagerV1EventDone)
 	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputManagerV1EventFinished)
@@ -487,7 +487,7 @@ func TestOutputManagementReleasedModeNotReused(t *testing.T) {
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	p := &managementEvents{events: make(chan [2]uint32, 32), headEvents: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func managementSetup(t *testing.T) (*Server, *wlturbo.Display, uint32, uint32, u
 	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
 	p := &managementEvents{events: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
 	p.SetID(id)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -585,6 +585,7 @@ func TestOutputManagementDestroyConfigurationChildren(t *testing.T) {
 		t.Fatal("no child resource")
 	}
 	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestDestroy)
+	retireWireObject(c, ch) // the parent destructor also destroys its configuration heads
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +603,7 @@ func TestOutputManagementStaleConfigurationSingleTerminal(t *testing.T) {
 	cfg := c.AllocateID()
 	p := &managementEvents{events: make(chan [2]uint32, 8), client: c}
 	p.SetID(cfg)
-	c.Context().Register(p)
+	registerWireProxy(c, p)
 	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, cfg, serial-1)
 	waitManagementEvent(t, c, p.events, wlr.ZwlrOutputConfigurationV1EventCancelled)
 	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestApply)
@@ -634,6 +635,7 @@ func TestOutputManagementDestroyDropsPendingReply(t *testing.T) {
 		t.Fatal("display stopped")
 	}
 	requestProtocol(t, c, cfg, wlr.ZwlrOutputConfigurationV1RequestDestroy)
+	retireWireObject(c, ch) // the parent destructor also destroys its configuration heads
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}

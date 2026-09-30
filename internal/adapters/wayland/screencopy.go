@@ -154,6 +154,10 @@ func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, for
 // requestCapture duplicates the pool descriptor, so destroying the wl_buffer
 // cannot invalidate a capture in flight.
 func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b *wayland.Buffer, format uint32, reply func(ports.CaptureDone), life *server.Resource) (uint64, bool) {
+	if s.protected() {
+		s.log.Debug().Str("component", "wayland").Msg("capture refused: session protected")
+		return 0, false
+	}
 	if o == nil || b == nil || s.channels.Captures == nil || s.channels.Captured == nil || s.outputByNameExact(o.name()) != o {
 		return 0, false
 	}
@@ -220,6 +224,7 @@ func (s *Server) forwardCaptured(ctxDone <-chan struct{}) {
 					delete(s.captureReplies, done.ID)
 					fn(done)
 				}
+				s.maybeLocked()
 			}) {
 				return
 			}
@@ -264,7 +269,7 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 	m.s.captureSessions[state] = struct{}{}
 	// Frames outlive their session (the spec): each frame drops its own reply.
 	res.OnDestroy = func() { delete(m.s.captureSessions, state) }
-	if o == nil {
+	if m.s.protected() || o == nil {
 		res.SendStopped()
 		state.stopped = true
 		return
@@ -274,6 +279,13 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 
 // sendConstraints sends one complete constraint batch: formats, size, done.
 func (c *captureSession) sendConstraints(w, h int) {
+	if c.s.protected() {
+		if !c.stopped {
+			c.stopped = true
+			c.res.SendStopped()
+		}
+		return
+	}
 	c.res.SendBufferSize(uint32(w), uint32(h))
 	c.res.SendShmFormat(uint32(wayland.ShmFormatXrgb8888))
 	c.res.SendShmFormat(uint32(wayland.ShmFormatArgb8888))
@@ -369,7 +381,7 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 	}
 	f.used = true
 	c := f.session
-	if c.stopped || c.o == nil || c.s.outputByNameExact(c.o.name()) != c.o {
+	if c.stopped || c.o == nil || c.s.protected() || c.s.outputByNameExact(c.o.name()) != c.o {
 		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonStopped))
 		return
 	}

@@ -193,6 +193,11 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 				l.close()
 			}
 		}
+		for _, l := range s.lockSurfaces {
+			if l.output == o {
+				l.unmap()
+			}
+		}
 		for _, surf := range s.surfaces {
 			surf.leave(o)
 		}
@@ -211,7 +216,16 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		}
 		scaleChanged := o.place.Scale != p.Scale
 		sizeChanged := o.place.Info.Width != p.Info.Width || o.place.Info.Height != p.Info.Height
+		logicalChanged := o.place.Width != p.Width || o.place.Height != p.Height
 		o.place = p
+		if logicalChanged {
+			for _, l := range s.lockSurfaces {
+				if l.output == o && !l.closed {
+					l.sendConfigure()
+				}
+			}
+			s.lockSurfaceChanged()
+		}
 		if sizeChanged {
 			for session := range s.captureSessions {
 				if session.o == o && !session.stopped {

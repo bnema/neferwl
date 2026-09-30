@@ -135,7 +135,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	defer unix.Close(fd)
 	h.timeline = h.c.AllocateID()
 	registerProtocol(t, h.c, h.timeline)
-	if err := h.c.SendRequestWithFDs(mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, h.timeline); err != nil {
+	if err := wireRequest(h.c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, h.timeline); err != nil {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(2 * time.Second); ; {
@@ -167,13 +167,13 @@ func (h *syncHarness) dmabuf() uint32 {
 	p := c.AllocateID()
 	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
 	registerProtocol(t, c, p)
-	if err := c.SendRequestWithFDs(p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+	if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
 		t.Fatal(err)
 	}
 	b := c.AllocateID()
 	rel := &syncReleaseProxy{released: make(chan struct{}, 4)}
 	rel.SetID(b)
-	c.Context().Register(rel)
+	registerWireProxy(c, rel)
 	requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreateImmed, b, int32(64), int32(16), linearARGB.Format, uint32(0))
 	h.releases[b] = rel
 	return b
@@ -479,7 +479,7 @@ func TestSyncobjInvalidTimeline(t *testing.T) {
 	mgr := bindProtocol(t, c, "wp_linux_drm_syncobj_manager_v1")
 	fd, _ := unix.MemfdCreate("bad", 0)
 	defer unix.Close(fd)
-	if err := c.SendRequestWithFDs(mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, c.AllocateID()); err != nil {
+	if err := wireRequest(c, mgr, uint16(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1RequestImportTimeline), []int{fd}, c.AllocateID()); err != nil {
 		t.Fatal(err)
 	}
 	expectProtocolError(t, c, mgr, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjManagerV1ErrorInvalidTimeline))
