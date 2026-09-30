@@ -183,8 +183,10 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 	}
 	// Move existing workspaces before retiring their old output group.
 	for id, h := range m.handles {
-		info, exists := infos[id]
-		if !exists || info.Configured != h.info.Configured {
+		// A handle's id is fixed: a workspace that became configured or
+		// unconfigured (a rename in the config) is a removed handle and a
+		// new one.
+		if info, exists := infos[id]; !exists || info.Configured != h.info.Configured {
 			if g := m.groups[h.group]; g != nil && g.res.Alive() && h.res.Alive() {
 				g.res.SendWorkspaceLeave(h.res)
 			}
@@ -220,9 +222,7 @@ func (m *workspaceManager) update(snapshot ports.Workspaces) {
 				h = &workspaceHandle{res: r}
 				m.handles[w.ID] = h
 				m.res.SendWorkspace(r)
-				if w.Configured != "" {
-					r.SendId(w.Configured)
-				}
+				r.SendId(m.s.workspaceIDs.ID(w.ID, w.Configured))
 				r.SendName(w.Name)
 				m.sendCoordinates(r, w.Index)
 				r.SendState(workspaceState(w))

@@ -90,7 +90,7 @@ exec wlopm --off '*'
 
 ## Bars
 
-NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
+NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling. Every workspace sends an `id`, the same string as its `workspace_id` in the state file. A configured (named) workspace has `name:<configured name>`, stable across launches; renaming it in the config removes its handle and sends a new one. A numbered or dynamic workspace has `<prefix>-<n>`: the prefix is 8 lowercase hex characters drawn once per compositor launch, so the `id` is unique per launch, stable while the workspace exists (across reordering and moves between outputs), and never repeats in the next launch. Numbered workspaces carry an `id` too, so a bar or script can target them during the session, but it is unique for the current launch only: do not store preferences keyed on it across launches. Only named workspaces have an `id` that is stable across launches.
 
 NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. While unlocked, clients can see window titles and app IDs. Workspace and window inventory updates are withheld during session protection.
 
@@ -98,9 +98,9 @@ NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, foc
 
 While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:
 
-- every output, with its active numbered workspace, workspace count and the name of the workspace on screen;
+- every output, with its active numbered workspace, workspace count, and the name (`workspace`) and ID string (`workspace_id`) of the workspace on screen;
 - the focused output and window;
-- every window, with its app ID, PID, output, workspace and whether it is on screen (`visible`);
+- every window, with its app ID, PID, output, workspace, `workspace_id` (the ID string of its workspace, numbered or hidden) and whether it is on screen (`visible`);
 - `floating: true` for floating windows. Stashed windows also have their 1-based place in their workspace's stash (`stash_index` of `stash_count`, both `0` outside it) and `hidden: true` while the stash is hidden.
 
 ```sh

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -39,13 +40,16 @@ type State struct {
 }
 
 // Output is one output: its active numbered workspace (0 while a hidden one
-// is shown), how many numbered workspaces it has, and the name of the
-// workspace on screen.
+// is shown), how many numbered workspaces it has, and the name and ID of the
+// workspace on screen. WorkspaceID is the same string ext_workspace_handle_v1
+// sends as its id (package workspaceid): "name:<name>" for a configured
+// workspace, else "<launch prefix>-<core ID>".
 type Output struct {
-	Name      string `json:"name"`
-	Active    int    `json:"active"`
-	Count     int    `json:"count"`
-	Workspace string `json:"workspace"`
+	Name        string `json:"name"`
+	Active      int    `json:"active"`
+	Count       int    `json:"count"`
+	Workspace   string `json:"workspace"`
+	WorkspaceID string `json:"workspace_id"`
 }
 
 // Window is one mapped window.
@@ -55,7 +59,10 @@ type Window struct {
 	PID       int    `json:"pid"`
 	Output    string `json:"output"`
 	Workspace int    `json:"workspace"`
-	Visible   bool   `json:"visible"`
+	// WorkspaceID is the ID of the window's workspace, numbered or hidden
+	// (see Output.WorkspaceID).
+	WorkspaceID string `json:"workspace_id"`
+	Visible     bool   `json:"visible"`
 	// Floating is set for native floats (dialogs) and stashed windows.
 	Floating bool `json:"floating"`
 	// StashIndex is the 1-based place of a stashed window in its
@@ -66,28 +73,28 @@ type Window struct {
 	Hidden bool `json:"hidden"`
 }
 
-func fromPorts(st ports.State) State {
+func fromPorts(st ports.State, ids *workspaceid.IDs) State {
 	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows))}
 	for _, o := range st.Outputs {
-		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace})
+		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
 	}
 	for _, w := range st.Windows {
-		out.Windows = append(out.Windows, window(w))
+		out.Windows = append(out.Windows, window(w, ids))
 	}
 	if st.Window != nil {
-		w := window(*st.Window)
+		w := window(*st.Window, ids)
 		out.Window = &w
 	}
 	return out
 }
 
-func window(w ports.WindowState) Window {
-	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, Visible: w.Visible, Floating: w.Floating, StashIndex: w.StashIndex, StashCount: w.StashCount, Hidden: w.Hidden}
+func window(w ports.WindowState, ids *workspaceid.IDs) Window {
+	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, Floating: w.Floating, StashIndex: w.StashIndex, StashCount: w.StashCount, Hidden: w.Hidden}
 }
 
 // Run writes every state it receives to path until ctx ends, then removes
 // the file: a stale state must not outlive the session.
-func Run(ctx context.Context, path string, states <-chan ports.State, log zerowrap.Logger) error {
+func Run(ctx context.Context, path string, states <-chan ports.State, ids *workspaceid.IDs, log zerowrap.Logger) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -99,7 +106,7 @@ func Run(ctx context.Context, path string, states <-chan ports.State, log zerowr
 		case <-ctx.Done():
 			return nil
 		case st := <-states:
-			if err := write(path, fromPorts(st)); err != nil {
+			if err := write(path, fromPorts(st, ids)); err != nil {
 				// Scripts lose their state; the session goes on.
 				log.Warn().Err(err).Str("path", path).Msg("write state")
 			}

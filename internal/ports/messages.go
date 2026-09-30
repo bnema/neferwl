@@ -134,7 +134,7 @@ type WorkspaceOutput struct {
 }
 type WorkspaceInfo struct {
 	ID             uint64
-	Configured     string // stable configured name; empty for dynamic workspaces
+	Configured     string // configured name; empty for dynamic workspaces. ID, not this, identifies the workspace
 	Name           string
 	Index          int // zero-based vertical coordinate
 	Active, Hidden bool
@@ -1120,7 +1120,9 @@ type OutputState struct {
 	Name      string
 	Active    int
 	Count     int
-	Workspace string // name of the workspace on screen, "" if unnamed
+	Workspace string // configured name of the workspace on screen, "" if unnamed
+	// WorkspaceID is the core ID of the workspace on screen (WorkspaceInfo.ID).
+	WorkspaceID uint64
 }
 
 // WindowState is one mapped window and where it is.
@@ -1131,6 +1133,11 @@ type WindowState struct {
 	Output string
 	// Workspace is the window's numbered workspace, 0 for a hidden one.
 	Workspace int
+	// WorkspaceID is the core ID of the window's workspace, numbered or not
+	// (WorkspaceInfo.ID); WorkspaceName is its configured name, "" for a
+	// dynamic one (WorkspaceInfo.Configured).
+	WorkspaceID   uint64
+	WorkspaceName string
 	// Visible means on the workspace on screen (it may be behind a
 	// fullscreen window).
 	Visible bool

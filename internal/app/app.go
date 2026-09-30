@@ -23,6 +23,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/adapters/xwayland"
 	"github.com/bnema/neferwl/internal/core"
@@ -131,7 +132,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	// Every output renders on the same GPU: its formats are the clients'.
 	dmabuf := vulkan.Probe()
 	log.Info().Int("formats", len(dmabuf.Formats)).Msg("dmabuf")
-	server, err := wayland.New(wayland.Options{Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	// One launch prefix for ext-workspace ids and the state file.
+	wsIDs := workspaceid.New()
+	server, err := wayland.New(wayland.Options{WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -249,7 +252,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			if err := statefile.Run(ctx, statePath, states, logging.For(ctx, "statefile")); err != nil {
+			if err := statefile.Run(ctx, statePath, states, wsIDs, logging.For(ctx, "statefile")); err != nil {
 				// Scripts lose their state; the session goes on.
 				log.Warn().Err(err).Msg("state file disabled")
 			}

@@ -10,6 +10,7 @@ import (
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/neferwl/internal/sessionlock"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
@@ -37,6 +38,9 @@ type Options struct {
 	// Security is display-owned protection control. Nil leaves session-lock
 	// unadvertised; independent protocol tests remain unlocked.
 	Security ports.SessionSecurityController
+	// WorkspaceIDs names workspaces (ext-workspace id); nil draws a fresh
+	// launch prefix. The state file must share the one of the session.
+	WorkspaceIDs *workspaceid.IDs
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
 }
@@ -191,6 +195,7 @@ type Server struct {
 	workspaceManagers []*workspaceManager
 	toplevelManagers  []*toplevelManager
 	workspaceSnapshot ports.Workspaces
+	workspaceIDs      *workspaceid.IDs
 	outputHeads       ports.OutputHeads
 	outputPlaces      ports.Layout
 	managementSerial  uint32
@@ -259,6 +264,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.pendingLeaseCards = map[uint64]string{}
 	s.activeLeases = map[leaseKey]*leaseObject{}
 	s.leaseReady = make(chan struct{}, 1)
+	s.workspaceIDs = opts.WorkspaceIDs
+	if s.workspaceIDs == nil {
+		s.workspaceIDs = workspaceid.New()
+	}
 	s.clock = opts.Clock
 	if s.clock == nil {
 		s.clock = clock.System{}
