@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -292,4 +293,102 @@ func TestHiddenWorkspaceChildKeepsDirectScanout(t *testing.T) {
 	_, err = writeEnd.Write([]byte{1})
 	require.NoError(t, err)
 	pipeline.Close(display)
+}
+
+// GO-002: child holds do not expire, so a finished child read must lift its
+// hold even while the display's own commit never completes. The display's
+// Seen stays at the last safe value and the output is not stopped.
+func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t, nil, nil)
+	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
+	o.frame.stuckAfter = 30 * time.Second // the display commit stays in flight
+	o.flipped = make(chan flipEvent)      // no flip event ever
+	display := portsmocks.NewMockRenderer(t)
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	display.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	display.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	display.EXPECT().UseTarget(mock.Anything).Return()
+	display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	display.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+
+	readEnd, writeEnd, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = writeEnd.Close() })
+	child := portsmocks.NewMockRenderer(t)
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil).Maybe()
+	frame.EXPECT().Read(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	child.EXPECT().Render(mock.Anything, mock.Anything).Return(readEnd, nil).Once()
+	child.EXPECT().BeginCapture().Return(frame, nil).Once()
+	child.EXPECT().EndCapture(frame).Return().Maybe()
+	child.EXPECT().Close().Return().Once()
+	o.NewCaptureRenderer = func(int, int) (ports.Renderer, error) { return child, nil }
+
+	scenes := make(chan ports.Scene)
+	contents := make(chan ports.SurfaceContent) // unbuffered: taken before the scene
+	captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
+	captured := make(chan ports.CaptureDone, 4)
+	presented := make(chan ports.OutputPresented, 64)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents, nil, presented, captures, captured)
+	}()
+	count := func() int {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return len(*commits)
+	}
+	waitFor(t, func() bool { return count() == 2 })
+
+	contents <- ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}}
+	// The request waits for the scene; once a display frame is pending no
+	// request is served, so it must be queued before the scene arrives.
+	req := sessionRequest(t, 1, true)
+	req.Region, req.Width, req.Height, req.Stride = image.Rect(0, 0, 200, 100), 200, 100, 800
+	require.NoError(t, req.Dst.File.Truncate(800*100))
+	captures <- req
+	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 200, OutputHeight: 100,
+		Capture:      &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 200, H: 100}},
+		CaptureScene: &ports.Scene{Scale: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 5, Rect: ports.Rect{W: 200, H: 100}}}}}
+
+	next := func(match func(ports.OutputPresented) bool) ports.OutputPresented {
+		t.Helper()
+		timeout := time.After(2 * time.Second)
+		for {
+			select {
+			case r := <-presented:
+				if match(r) {
+					return r
+				}
+			case <-timeout:
+				t.Fatal("no matching report")
+			}
+		}
+	}
+	held := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) > 0 })
+	require.Equal(t, map[ports.WindowID]uint64{5: 2}, held.ChildReads)
+	require.Equal(t, 3, count(), "display frame committed, never completes")
+
+	// A newer buffer of a display window arrives while the display commit is
+	// pending: the GPU may still read the older one, so it is not reported.
+	contents <- ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}}
+	_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
+	require.NoError(t, err)
+	lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
+	require.Empty(t, lifted.ChildReads)
+	require.NotContains(t, lifted.Seen, ports.WindowID(1), "display Seen does not advance while its commit is pending: only the child hold is lifted")
+	require.Nil(t, lifted.Flip)
+	require.Equal(t, 3, count(), "no extra commit")
+	require.NoError(t, (<-captured).Err)
+	cancel()
+	require.NoError(t, <-done)
 }

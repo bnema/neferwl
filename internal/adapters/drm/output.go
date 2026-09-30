@@ -1046,12 +1046,22 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 	for {
 		readWait := false
-		if (reportDirty || o.capped) && !o.frame.pendingCommit() {
-			if readWait = !o.readDone(); !readWait {
-				o.report(nil, seen)
-				reportDirty = false
-				// A report limited by the child's reads is repeated soon.
-				readWait = o.capped
+		if reportDirty || o.capped {
+			published := false
+			if !o.frame.pendingCommit() {
+				if readWait = !o.readDone(); !readWait {
+					o.report(nil, seen)
+					reportDirty, published = false, true
+					// A report limited by the child's reads is repeated soon.
+					readWait = o.capped
+				}
+			}
+			if !published && o.capped {
+				// A display frame or fence that has not finished must not
+				// keep a finished child read held: child holds do not expire.
+				// Report them alone, at the last Seen that was safe.
+				o.report(nil, o.seenSnapshot)
+				readWait = readWait || o.capped
 			}
 		}
 		o.flushReport(presented)
