@@ -16,13 +16,12 @@ Pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no spe
 
 ```sh
 #!/bin/sh
-# ~/.local/bin/screenshot-area: select an area, save it and copy it.
-file="$HOME/Pictures/$(date +%F-%T).png"
-grim -g "$(slurp)" "$file" && wl-copy < "$file"
+# ~/.local/bin/screenshot-main: save the main monitor with a dated name.
+nefercap screenshot -output DP-1 -file "$HOME/Pictures/$(date +%F-%T).png"
 ```
 
 ```text
-bind.cmd+shift+p = spawn screenshot-area
+bind.cmd+shift+p = spawn screenshot-main
 ```
 
 Make the script executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. It can use any shell, including fish (`#!/usr/bin/env fish`).
@@ -71,6 +70,10 @@ Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` tak
 ## Session locking
 
 External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and captures, covers every output, and stays protected if the locker dies. Authentication belongs to the locker; screen-off and a visual cover do not replace locking. See [Session locking](session-lock.md) for confirmation, recovery and security limits.
+
+## Screen capture
+
+nefercap, `grim`, recorders and screen sharing use `zwlr_screencopy_v1` and `ext_image_copy_capture_v1`. Every capture shows a red border, only the executables on the built-in list (`grim`, `nefercap`, `xdg-desktop-portal-wlr`) or in `/etc/neferwl/capture-allow`, which replaces it, may capture, and sandboxed clients use the portal. See [Screen capture](capture.md).
 
 ## Idle and screen off
 
