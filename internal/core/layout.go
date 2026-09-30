@@ -127,9 +127,12 @@ type Workspace struct {
 	// ID stays with the workspace across reorder and monitor moves.
 	ID uint64
 	// Name is set for workspaces declared in config; empty for dynamic ones.
-	Name     string
-	Overflow Overflow
-	Columns  []Column
+	Name string
+	// overviewAfter is the numbered workspace from which this named workspace
+	// was invoked. It only orders overview rows; numbering stays unchanged.
+	overviewAfter *Workspace
+	Overflow      Overflow
+	Columns       []Column
 	// maximized remembers recently maximized columns by window ID, newest
 	// first; stack() filters removed windows at read time.
 	maximized []WindowID

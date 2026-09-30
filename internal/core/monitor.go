@@ -8,8 +8,8 @@ import "slices"
 // except the first. Output-wide settings apply to every workspace.
 //
 // Named workspaces come from config and are never removed while configured.
-// Each named workspace is not numbered and not reachable by up/down: only its
-// `workspace <name>` bind shows it.
+// Named workspaces are outside normal numbered up/down navigation. Their
+// `workspace <name>` binds and the overview can show them.
 type Monitor struct {
 	// Name is the connector; Key identifies the physical monitor (make,
 	// model and serial, else the connector). Workspaces remember the Key of
@@ -142,6 +142,7 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home, w.origin, w.back = nil, nil, nil, false, "", nil, origPlace{}
+	w.overviewAfter = nil
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
 	(*m.nextID)++
 	w.ID = *m.nextID
@@ -167,6 +168,11 @@ func (m *Monitor) normalize() {
 	}
 	if n := len(m.Workspaces); n == 0 || !spare(n-1) {
 		m.Workspaces = append(m.Workspaces, m.newWorkspace())
+	}
+	for _, w := range m.hidden {
+		if indexOf(m.Workspaces, w.overviewAfter) < 0 {
+			w.overviewAfter = nil
+		}
 	}
 }
 
@@ -200,6 +206,14 @@ func (m *Monitor) ToggleNamed(name string) {
 	switch cur := m.Current(); {
 	case target == nil:
 	case target != cur:
+		anchor := cur
+		if m.isHidden(cur) {
+			anchor = cur.overviewAfter
+		}
+		if indexOf(m.Workspaces, anchor) < 0 {
+			anchor = m.Workspaces[m.Active]
+		}
+		target.overviewAfter = anchor
 		m.back = cur
 		m.show(target)
 	case m.back != nil && m.has(m.back):
