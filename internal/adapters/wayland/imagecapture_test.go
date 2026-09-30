@@ -632,7 +632,7 @@ func TestWorkspaceSourceSurvivesConfiguredRename(t *testing.T) {
 	handles := h.handles(t, cc, 1)
 	_, ev := cc.session(t, cc.workspaceSource(t, handles[0]))
 	constraints(t, cc, ev)
-	open := h.open(t)
+	h.open(t)
 	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "dev", Configured: "dev", Active: true, Frame: ports.Rect{W: 4, H: 4}})
 	h.settle(t, cc)
 	noSession(t, cc, ev)
@@ -641,7 +641,6 @@ func TestWorkspaceSourceSurvivesConfiguredRename(t *testing.T) {
 		t.Fatalf("event %+v after a rename", e)
 	default:
 	}
-	_ = open
 }
 
 // frameEvents decodes the events of a neferwl_workspace_frame_v1.
@@ -848,7 +847,7 @@ func (h *captureHarness) exclusionOwner(t *testing.T) (*cclient, uint32, ports.C
 // another connection, and is not reported to core.
 func TestExclusionTokenAndBusy(t *testing.T) {
 	h := newCaptureHarness(t)
-	cc, _, open, _, _ := h.exclusionOwner(t)
+	_, _, open, _, _ := h.exclusionOwner(t)
 	other := h.client(t)
 	session2, sev2 := other.session(t, other.outputSource(t))
 	constraints(t, other, sev2)
@@ -862,8 +861,6 @@ func TestExclusionTokenAndBusy(t *testing.T) {
 			t.Fatalf("a refused exclusion reached core: %+v (owner %d)", b, open.ID)
 		}
 	}
-	// Destroying the exclusion frees the slot for the next one.
-	_ = cc
 }
 
 // get_exclusion on a session that already stopped answers
@@ -1343,5 +1340,120 @@ func TestExclusionLayerKeyboardNone(t *testing.T) {
 	l := nextEvent[ports.LayerChanged](t, h.events)
 	if len(l.Layers) != 1 || l.Layers[0].Keyboard != 0 {
 		t.Fatalf("layer reported with keyboard: %+v", l.Layers)
+	}
+}
+
+// frameTaken waits for the next CaptureFrameTaken core is told of.
+func (h *captureHarness) frameTaken(t *testing.T) ports.CaptureFrameTaken {
+	t.Helper()
+	return nextEvent[ports.CaptureFrameTaken](t, h.events)
+}
+
+// Every capture is reported to core, which shows the indicator for it: a
+// wlr-screencopy frame (no session) and a frame of each kind of ext source,
+// with the target the client asked for.
+func TestEveryCaptureFrameIsReportedToCore(t *testing.T) {
+	h := newCaptureHarness(t)
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	cc := h.client(t)
+	// wlr-screencopy, whole output.
+	cc.wlrFrame(t)
+	r := receiveCapture(t, h.captures)
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Output: "HEADLESS-1"}) {
+		t.Fatalf("wlr frame reported %+v", got)
+	}
+	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Output: "HEADLESS-1"}) {
+		t.Fatalf("wlr completion reported %+v", got)
+	}
+	// ext output source.
+	session, ev := cc.session(t, cc.outputSource(t))
+	constraints(t, cc, ev)
+	open := h.open(t)
+	cc.extFrame(t, session, 4, 4)
+	receiveCapture(t, h.captures)
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Session: open.ID, Output: "HEADLESS-1"}) {
+		t.Fatalf("ext output frame reported %+v", got)
+	}
+	// ext region source: the logical rectangle as asked.
+	session, ev = cc.session(t, cc.regionSource(t, 1, 1, 2, 2))
+	constraints(t, cc, ev)
+	open = h.open(t)
+	cc.extFrame(t, session, 2, 2)
+	receiveCapture(t, h.captures)
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Session: open.ID, Output: "HEADLESS-1", Region: ports.Rect{X: 1, Y: 1, W: 2, H: 2}}) {
+		t.Fatalf("ext region frame reported %+v", got)
+	}
+	// ext workspace source.
+	handles := h.handles(t, cc, 1)
+	session, ev = cc.session(t, cc.workspaceSource(t, handles[0]))
+	constraints(t, cc, ev)
+	open = h.open(t)
+	cc.extFrame(t, session, 4, 4)
+	receiveCapture(t, h.captures)
+	if got := h.frameTaken(t); got != (ports.CaptureFrameTaken{Session: open.ID, Workspace: 42}) {
+		t.Fatalf("ext workspace frame reported %+v", got)
+	}
+}
+
+// Every capture request asks the output owner to hold it until the indicator
+// is on screen, whatever protocol or source made it.
+func TestEveryCaptureRequestAsksForItsIndicator(t *testing.T) {
+	h := newCaptureHarness(t)
+	h.snapshot(t, ports.WorkspaceInfo{ID: 42, Name: "1", Active: true, Frame: ports.Rect{W: 4, H: 4}})
+	cc := h.client(t)
+	cc.wlrFrame(t)
+	if r := receiveCapture(t, h.captures); !r.Indicate {
+		t.Fatalf("wlr request %+v", r)
+	}
+	session, ev := cc.session(t, cc.outputSource(t))
+	constraints(t, cc, ev)
+	h.open(t)
+	cc.extFrame(t, session, 4, 4)
+	if r := receiveCapture(t, h.captures); !r.Indicate {
+		t.Fatalf("ext output request %+v", r)
+	}
+	handles := h.handles(t, cc, 1)
+	session, ev = cc.session(t, cc.workspaceSource(t, handles[0]))
+	constraints(t, cc, ev)
+	h.open(t)
+	cc.extFrame(t, session, 4, 4)
+	if r := receiveCapture(t, h.captures); !r.Indicate || r.Workspace != 42 {
+		t.Fatalf("ext workspace request %+v", r)
+	}
+}
+
+// A capture the compositor refuses is not reported: nothing was captured.
+func TestRefusedCaptureIsNotReported(t *testing.T) {
+	h := newCaptureHarness(t)
+	cc := h.client(t)
+	session, ev := cc.session(t, cc.outputSource(t))
+	constraints(t, cc, ev)
+	h.open(t)
+	// A wrong-sized buffer is refused before it reaches the renderer.
+	cc.extFrame(t, session, 2, 2)
+	noCapture(t, h.captures)
+	h.settle(t, cc)
+	for len(h.events) > 0 {
+		if v, ok := (<-h.events).(ports.CaptureFrameTaken); ok {
+			t.Fatalf("refused capture reported: %+v", v)
+		}
+	}
+}
+
+// logicalRegion gives core the logical rectangle of a physical region.
+func TestLogicalRegion(t *testing.T) {
+	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 8, Height: 8}, Scale: 2}}
+	for _, tc := range []struct {
+		phys image.Rectangle
+		want ports.Rect
+	}{
+		{image.Rect(0, 0, 8, 8), ports.Rect{}},
+		{image.Rect(2, 2, 6, 4), ports.Rect{X: 1, Y: 1, W: 2, H: 1}},
+		{image.Rect(1, 1, 5, 3), ports.Rect{X: 0, Y: 0, W: 3, H: 2}}, // rounded outwards
+	} {
+		if got := logicalRegion(o, tc.phys); got != tc.want {
+			t.Errorf("%v: %+v, want %+v", tc.phys, got, tc.want)
+		}
 	}
 }

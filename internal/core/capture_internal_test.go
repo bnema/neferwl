@@ -56,3 +56,21 @@ func TestExclusionKeepIsSharedAndBuiltOncePerChange(t *testing.T) {
 		t.Fatalf("exclusion survived its last listed layer: %+v", c.capExcl)
 	}
 }
+
+// sameCaptureState compares every field of the session state, by hand. A new
+// field must be compared there, or a change of it is never sent to wayland.
+func TestSameCaptureStateComparesEveryField(t *testing.T) {
+	const compared = 10 // ID Output Rect Workspace Hidden Active Reason Exclusion Revision Layers
+	if n := reflect.TypeFor[ports.CaptureSessionState]().NumField(); n != compared {
+		t.Fatalf("ports.CaptureSessionState has %d fields, sameCaptureState compares %d: compare the new field in sameCaptureState (capture.go), then update this count", n, compared)
+	}
+	base := ports.CaptureSessionState{}
+	for _, v := range []ports.CaptureSessionState{
+		{ID: 1}, {Output: "A"}, {Rect: Rect{W: 1}}, {Workspace: 1}, {Hidden: true}, {Active: true},
+		{Reason: ports.CaptureReasonOutputGone}, {Exclusion: true}, {Revision: 1}, {Layers: []WindowID{1}},
+	} {
+		if sameCaptureState(base, v) {
+			t.Fatalf("a change of %+v is not seen", v)
+		}
+	}
+}

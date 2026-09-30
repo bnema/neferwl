@@ -5,6 +5,8 @@ import (
 	"errors"
 	"image"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,8 +47,8 @@ func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		if s.Capture == nil {
 			require.Zero(t, s.Seq)
-			require.Len(t, s.Layers, 0, "excluded HUD layer left out of the clean frame")
-			order = append(order, "clean")
+			require.Len(t, s.Layers, 0, "excluded HUD layer left out of the excluded frame")
+			order = append(order, "excluded")
 		} else {
 			require.Len(t, s.Layers, 1, "displayed frame keeps the HUD")
 			order = append(order, "shown")
@@ -67,7 +69,7 @@ func TestSubmitFrameExcludeBeforeDisplayedThenStandard(t *testing.T) {
 	direct, err := o.submitFrame(context.Background(), r, drmSessionScene(), nil, nil, requests, pipeline)
 	require.NoError(t, err)
 	require.False(t, direct)
-	require.Equal(t, []string{"clean", "copy", "shown", "copy"}, order)
+	require.Equal(t, []string{"excluded", "copy", "shown", "copy"}, order)
 	for _, q := range requests {
 		require.True(t, capture.Handed(q), "requests handed to the worker")
 	}
@@ -419,4 +421,246 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 	require.NoError(t, (<-captured).Err)
 	cancel()
 	require.NoError(t, <-done)
+}
+
+// A capture requested before the scene that shows its indicator is held: the
+// frame on screen is not redrawn for it and nothing is copied. The first scene
+// that shows the border draws the frame without it, copies that, then draws
+// and commits the frame with the border.
+func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
+	flips := make(chan flipEvent, 4)
+	o.flipped = flips
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	// Only what the renderer draws for scenes after the modeset's black frame.
+	var mu sync.Mutex
+	var order []string
+	note := func(what string) {
+		mu.Lock()
+		defer mu.Unlock()
+		order = append(order, what)
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		switch {
+		case s.OutputWidth == 0:
+			// The modeset's black frame.
+		case s.Seq == 0:
+			note("plain")
+		case len(s.CaptureIndicators) > 0:
+			note("indicated")
+		default:
+			note("bare")
+		}
+		return nil, nil
+	})
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil).Maybe()
+	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).Return(nil).Maybe()
+	r.EXPECT().BeginCapture().RunAndReturn(func() (ports.CaptureFrame, error) {
+		note("copy")
+		return frame, nil
+	}).Once()
+	r.EXPECT().EndCapture(frame).Return().Maybe()
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+
+	scenes := make(chan ports.Scene, 2)
+	captures := make(chan ports.CaptureRequest)
+	captured := make(chan ports.CaptureDone, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 16), captures, captured)
+	}()
+	count := func() int {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return len(*commits)
+	}
+	last := func() commitRec {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return (*commits)[len(*commits)-1]
+	}
+	waitFor(t, func() bool { return count() == 2 }) // modeset
+	bare := ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}}}
+	scenes <- bare
+	waitFor(t, func() bool { return count() == 3 })
+	flips <- eventOf(last())
+
+	req := sessionRequest(t, 1, false)
+	req.Indicate = true
+	captures <- req
+	select {
+	case d := <-captured:
+		t.Fatalf("served from a scene without the indicator: %+v", d)
+	case <-time.After(60 * time.Millisecond):
+	}
+	require.Equal(t, 3, count(), "no frame is drawn for a held request")
+
+	indicated := bare
+	indicated.Seq = 2
+	indicated.CaptureIndicators = []ports.CaptureIndicator{{Rect: ports.Rect{W: 2, H: 2}}}
+	scenes <- indicated
+	waitFor(t, func() bool { return count() == 4 })
+	select {
+	case d := <-captured:
+		require.NoError(t, d.Err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("not served once the indicator scene exists")
+	}
+	flips <- eventOf(last())
+	cancel()
+	require.NoError(t, <-done)
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"bare", "plain", "copy", "indicated"}, order, "copied from the frame without the indicator, committed together with the indicated frame")
+}
+
+// A request whose indicator never comes fails after the bounded wait, and no
+// frame is drawn or copied for it.
+func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
+	flips := make(chan flipEvent, 2)
+	o.flipped = flips
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	scenes := make(chan ports.Scene, 1)
+	captures := make(chan ports.CaptureRequest)
+	captured := make(chan ports.CaptureDone, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 16), captures, captured)
+	}()
+	count := func() int {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return len(*commits)
+	}
+	waitFor(t, func() bool { return count() == 2 })
+	scenes <- ports.Scene{Seq: 1, Scale: 1, OutputWidth: 2, OutputHeight: 2}
+	waitFor(t, func() bool { return count() == 3 })
+	commitMu.Lock()
+	flips <- eventOf((*commits)[2])
+	commitMu.Unlock()
+	start := time.Now()
+	req := sessionRequest(t, 1, false)
+	req.Indicate = true
+	captures <- req
+	select {
+	case d := <-captured:
+		require.ErrorIs(t, d.Err, capture.ErrIndicatorMissing)
+		require.GreaterOrEqual(t, time.Since(start), capture.HoldFor-20*time.Millisecond)
+	case <-time.After(3 * time.Second):
+		t.Fatal("a held request was never answered")
+	}
+	require.Equal(t, 3, count())
+	cancel()
+	require.NoError(t, <-done)
+}
+
+func indicatedScene() ports.Scene {
+	return ports.Scene{Seq: 4, OutputWidth: 200, OutputHeight: 100, Scale: 1, Windows: []ports.SceneWindow{{ID: 1}},
+		CaptureIndicators: []ports.CaptureIndicator{{Rect: ports.Rect{W: 200, H: 100}}}}
+}
+
+// A capture is delivered only when the frame that carries its indicator is
+// committed: the plain frame is rendered and copied, but the pixels stay
+// behind the gate and the capture fails when that frame fails to render or to
+// commit. The mock frame has no Read: a delivery would panic.
+func TestSubmitFrameFailedIndicatedFrameDeliversNothing(t *testing.T) {
+	boom := errors.New("boom")
+	for _, tc := range []struct {
+		name    string
+		renders []error // plain, then indicated
+		commit  []error
+	}{
+		{"render error", []error{nil, boom}, nil},
+		{"commit error", []error{nil, nil}, []error{boom}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _, _ := testOutput(t, tc.commit...)
+			o.cursor = nil
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().UseTarget(0).Return().Once()
+			for _, err := range tc.renders {
+				r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, err).Once()
+			}
+			frame := portsmocks.NewMockCaptureFrame(t)
+			frame.EXPECT().Done().Return(nil).Maybe()
+			r.EXPECT().BeginCapture().Return(frame, nil).Once()
+			r.EXPECT().EndCapture(frame).Return().Once()
+			replies := make(chan ports.CaptureDone, 4)
+			pipeline := capture.NewPipeline(context.Background(), replies)
+			q := sessionRequest(t, 1, false)
+			_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{q}, pipeline)
+			require.Error(t, err)
+			var done ports.CaptureDone
+			select {
+			case done = <-replies:
+			case <-time.After(5 * time.Second):
+				t.Fatal("no reply")
+			}
+			pipeline.Close(r)
+			require.ErrorIs(t, done.Err, capture.ErrIndicatorMissing)
+			require.ErrorIs(t, done.Err, boom)
+		})
+	}
+}
+
+// The same frame committed: the capture is delivered.
+func TestSubmitFrameIndicatedFrameCommittedDelivers(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.cursor = nil
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().UseTarget(0).Return().Once()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Twice()
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return(nil).Maybe()
+	var reads atomic.Int32
+	frame.EXPECT().Read(mock.Anything, mock.Anything, 8).RunAndReturn(func(image.Rectangle, []byte, int) error {
+		reads.Add(1)
+		return nil
+	}).Maybe()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
+	replies := make(chan ports.CaptureDone, 4)
+	pipeline := capture.NewPipeline(context.Background(), replies)
+	_, err := o.submitFrame(context.Background(), r, indicatedScene(), nil, nil, []ports.CaptureRequest{sessionRequest(t, 1, false)}, pipeline)
+	require.NoError(t, err)
+	select {
+	case done := <-replies:
+		require.NoError(t, done.Err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no reply")
+	}
+	pipeline.Close(r)
+	require.Equal(t, int32(1), reads.Load())
 }

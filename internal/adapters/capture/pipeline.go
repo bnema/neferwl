@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,11 @@ type batch struct {
 	requests [MaxRequests]ports.CaptureRequest
 	count    int
 	at       time.Time
+	// gated: the worker delivers the requests only when the owner releases
+	// the batch (see Pipeline.BeginGate). release carries its verdict; it is
+	// made once and lives as long as the batch.
+	gated   bool
+	release chan error
 }
 
 // Pipeline moves fence waiting and SHM copies off the renderer's owner.
@@ -39,14 +45,22 @@ type Pipeline struct {
 	jobs      chan *batch
 	completed chan *batch
 	batches   [pipelineSlots]batch
-	clean     cleaner // scratch of CleanScene, owner only
-	off       *offscreen
-	worker    sync.WaitGroup
+	// gating is set between BeginGate and EndGate; held are the batches
+	// submitted meanwhile, waiting for their verdict. Owner only.
+	gating bool
+	held   [pipelineSlots]*batch
+	nheld  int
+	excl   excluder // scratch of ExcludedScene, owner only
+	off    *offscreen
+	worker sync.WaitGroup
 }
 
 func NewPipeline(ctx context.Context, replies chan<- ports.CaptureDone) *Pipeline {
 	ctx, cancel := context.WithCancel(ctx)
 	p := &Pipeline{ctx: ctx, cancel: cancel, replies: replies, jobs: make(chan *batch, pipelineSlots), completed: make(chan *batch, pipelineSlots)}
+	for i := range p.batches {
+		p.batches[i].release = make(chan error, 1)
+	}
 	p.worker.Go(p.run)
 	return p
 }
@@ -58,7 +72,55 @@ func (p *Pipeline) Completed() <-chan *batch { return p.completed }
 // Recycle returns a completed GPU readback lease on the renderer's owner.
 func (p *Pipeline) Recycle(b *batch, r ports.Renderer) {
 	r.EndCapture(b.frame)
-	*b = batch{}
+	rel := b.release
+	select { // a verdict nobody took (the worker was cancelled) must not leak to the next use
+	case <-rel:
+	default:
+	}
+	*b = batch{release: rel}
+}
+
+// GateVerdict is what a batch held by the indicator gate is failed with when
+// the frame that carries the indicator did not reach the display: err wrapped
+// in ErrIndicatorMissing; nil stays nil (released).
+func GateVerdict(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", ErrIndicatorMissing, err)
+}
+
+// ErrFrameNotPresented fails a gated batch whose owner never gave a verdict:
+// the frame it waited for was dropped on a path that did not present it.
+var ErrFrameNotPresented = fmt.Errorf("%w: frame not presented", ErrIndicatorMissing)
+
+// BeginGate makes the batches submitted from now on wait for EndGate: their
+// worker does its fence wait, then holds the pixels back until the owner says
+// the frame that carries the capture indicator is on screen. See EndGate.
+func (p *Pipeline) BeginGate() { p.gating = true }
+
+// EndGate gives the verdict on the batches held since BeginGate and stops
+// gating. A nil err releases them: their captures are written and answered. A
+// non-nil err fails every one of their requests with it: no pixel is
+// delivered. It covers the child pipeline of a hidden workspace too. Nothing
+// held, nothing done: no allocation, no cost while no capture is gated.
+func (p *Pipeline) EndGate(err error) {
+	if p == nil {
+		return
+	}
+	p.gating = false
+	for i := range p.nheld {
+		b := p.held[i]
+		p.held[i] = nil
+		select {
+		case b.release <- err:
+		default: // the verdict is already there
+		}
+	}
+	p.nheld = 0
+	if p.off != nil && p.off.p != nil {
+		p.off.p.EndGate(err)
+	}
 }
 
 // SubmitScoped consumes requests with explicit immutable scene admission. The
@@ -97,6 +159,10 @@ func (p *Pipeline) SubmitScoped(state ports.SecurityState, r ports.Renderer, req
 	}
 	b.count = copy(b.requests[:], requests)
 	b.at = monotonicNow()
+	if b.gated = p.gating; b.gated {
+		p.held[p.nheld] = b
+		p.nheld++
+	}
 	// There are exactly two reusable batches and two queue slots, so this
 	// send cannot wait: no batch can be queued twice before recycling.
 	p.jobs <- b
@@ -139,6 +205,21 @@ func (p *Pipeline) process(b *batch) {
 	err := p.ctx.Err()
 	if err == nil && b.frame.Done() != nil {
 		err = syncfile.Wait(p.ctx, b.frame.Done())
+	}
+	if b.gated {
+		// The verdict is always taken, so none is left in the channel. The
+		// owner's verdict, when it gave one, says why the capture failed
+		// better than a cancelled context.
+		var v error
+		select {
+		case v = <-b.release:
+		case <-p.ctx.Done():
+			select {
+			case v = <-b.release:
+			default:
+			}
+		}
+		err = cmp.Or(v, err, p.ctx.Err())
 	}
 	for i := range b.count {
 		q := b.requests[i]

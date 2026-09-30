@@ -2,11 +2,14 @@ package core_test
 
 import (
 	"context"
+	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -493,4 +496,106 @@ func TestCaptureExclusionUnmapThenDetach(t *testing.T) {
 			return
 		}
 	}
+}
+
+// A captured frame shows the indicator for one second on the clock core
+// reads, then the scene goes back without it, whoever asked for the frame.
+func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	fire := make(chan time.Time)
+	timer := portsmocks.NewMockTimer(t)
+	timer.EXPECT().C().Return((<-chan time.Time)(fire))
+	timer.EXPECT().Stop().Return(true).Maybe()
+	var now atomic.Int64
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Unix(now.Load(), 0) }).Maybe()
+	clock.EXPECT().NewTimer(ports.CaptureFlash).Return(timer).Once()
+	client := make(chan ports.ClientEvent, 4)
+	output := make(chan ports.OutputEvent, 4)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes, Clock: clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	// A wlr-screencopy frame: no session.
+	client <- ports.CaptureFrameTaken{Output: "OUT-1", Region: ports.Rect{X: 10, Y: 10, W: 20, H: 20}}
+	if s := scene(t, scenes); len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0].Rect != (ports.Rect{X: 10, Y: 10, W: 20, H: 20}) || s.CaptureIndicators[0].Pill {
+		t.Fatalf("indicators %+v", s.CaptureIndicators)
+	}
+	now.Store(1)
+	fire <- time.Time{}
+	if s := scene(t, scenes); s.CaptureIndicators != nil {
+		t.Fatalf("indicators %+v after the flash", s.CaptureIndicators)
+	}
+}
+
+// popupIDs lists the popups of a scene.
+func popupIDs(s ports.Scene) []ports.WindowID {
+	var ids []ports.WindowID
+	for _, w := range s.Windows {
+		if w.Popup {
+			ids = append(ids, w.ID)
+		}
+	}
+	return ids
+}
+
+// A popup of a HUD layer is excluded for as long as it is in the scene, from
+// the session's end to the layer's: when the session closes, or the layer is
+// destroyed, the popup is never left in the scene while no longer excluded.
+func TestCaptureExclusionPopupOfHUDLayerNeverLeaksWhenTheExclusionEnds(t *testing.T) {
+	setup := func(t *testing.T) *captureRig {
+		r := captureCore(t)
+		r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 0)}}
+		r.client <- ports.CaptureSessionOpen{ID: 1, Output: "OUT-1"}
+		r.client <- ports.CaptureExclusionBegin{Session: 1}
+		r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
+		r.client <- ports.PopupRequest{ID: 20, Parent: 10, Positioner: ports.Positioner{Width: 5, Height: 5, AnchorRect: ports.Rect{W: 1, H: 1}}}
+		r.client <- ports.PopupMapped{ID: 20}
+		for {
+			s := r.excludedScene(t, 2)
+			if ids := popupIDs(s); len(ids) == 1 && ids[0] == 20 {
+				break
+			}
+		}
+		return r
+	}
+	// leaks: a scene that draws the popup without excluding it, while a
+	// session that could still capture it with the exclusion is alive.
+	t.Run("exclusion object destroyed, session lives, layer goes away", func(t *testing.T) {
+		r := setup(t)
+		r.client <- ports.CaptureExclusionEnd{Session: 1}
+		// The layer is still listed: it and its popup stay excluded.
+		s := r.excludedScene(t, 2)
+		if ids := popupIDs(s); len(ids) != 1 || !slices.Contains(s.Capture.Excluded, 20) {
+			t.Fatalf("popup %v of a retained HUD layer not excluded: %+v", ids, s.Capture)
+		}
+		r.client <- ports.LayerChanged{} // the layer is destroyed
+		for {
+			s := scene(t, r.scenes)
+			if len(s.Layers) != 0 {
+				continue
+			}
+			for _, w := range s.Windows {
+				if w.ID == 20 && (s.Capture == nil || !slices.Contains(s.Capture.Excluded, 20)) {
+					t.Fatalf("popup of a destroyed layer stays in the scene, unexcluded: %+v", s.Capture)
+				}
+			}
+			break
+		}
+	})
+	t.Run("session closed", func(t *testing.T) {
+		r := setup(t)
+		r.client <- ports.CaptureSessionClose{ID: 1}
+		s := r.sceneWith(t, false)
+		if ids := popupIDs(s); len(ids) != 0 && len(s.Layers) == 0 {
+			t.Fatalf("popup %v outlived its HUD layer's exclusion while the layer is hidden", ids)
+		}
+	})
 }

@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"testing"
+	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -123,6 +124,42 @@ func TestSubmitHiddenRegionOutsideFrameFailsOthersServed(t *testing.T) {
 	require.ErrorIs(t, byID[1], ErrOffscreenGeometry)
 	require.NoError(t, byID[2])
 	p.Close(nil)
+}
+
+// A hidden-workspace capture submitted while the indicator gate is open is held
+// by the child pipeline: no reply until the owner's verdict, then it is
+// released (nil) or failed (error) like a displayed capture.
+func TestSubmitHiddenHeldByGateUntilVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		verdict error
+	}{
+		{"released", nil},
+		{"failed", GateVerdict(errors.New("frame dropped"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := make(chan ports.CaptureDone, 4)
+			p := NewPipeline(context.Background(), replies)
+			child, _ := childMock(t, 200, 100)
+			child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+			p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+			p.BeginGate()
+			p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+			select {
+			case d := <-replies:
+				t.Fatalf("answered before the gate verdict: %v", d.Err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			p.EndGate(tc.verdict)
+			got := awaitCapture(t, replies)
+			if tc.verdict == nil {
+				require.NoError(t, got.Err)
+			} else {
+				require.ErrorIs(t, got.Err, ErrIndicatorMissing)
+			}
+			p.Close(nil)
+		})
+	}
 }
 
 func TestSubmitHiddenChildClosesWhenSessionEnds(t *testing.T) {

@@ -126,7 +126,7 @@ func (f *screencopyFrame) copy(b *wayland.Buffer, damage bool) {
 		}
 		hi, lo, ns := captureTime(done.Time)
 		f.res.SendReady(hi, lo, ns)
-	}, f.res.Resource, captureTag{})
+	}, f.res.Resource, captureTag{taken: ports.CaptureFrameTaken{Output: f.o.name(), Region: logicalRegion(f.o, f.region)}})
 	f.replyID = id
 	if !ok {
 		f.res.SendFailed()
@@ -142,14 +142,33 @@ func (s *Server) validCaptureBuffer(b *wayland.Buffer, rect image.Rectangle, for
 	return ok && (format == uint32(wayland.ShmFormatArgb8888) || format == uint32(wayland.ShmFormatXrgb8888)) && buf.width == rect.Dx() && buf.height == rect.Dy() && buf.stride >= rect.Dx()*4 && buf.format == format && fileHolds(buf.pool.file, int64(buf.offset)+int64(buf.height-1)*int64(buf.stride)+int64(buf.width)*4)
 }
 
+// logicalRegion is a physical region of an output as the logical rectangle
+// core marks: zero for the whole output, else the region's bounds rounded
+// outwards to logical pixels.
+func logicalRegion(o *output, phys image.Rectangle) ports.Rect {
+	scale := o.place.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	if phys == image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height) {
+		return ports.Rect{}
+	}
+	x0, y0 := int(math.Floor(float64(phys.Min.X)/scale)), int(math.Floor(float64(phys.Min.Y)/scale))
+	x1, y1 := int(math.Ceil(float64(phys.Max.X)/scale)), int(math.Ceil(float64(phys.Max.Y)/scale))
+	return ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+}
+
 // captureTag says what a capture is for the renderer: the registered session
-// (0 for wlr-screencopy), the exclusion fence and the workspace.
+// (0 for wlr-screencopy), the exclusion fence and the workspace. taken is
+// what core is told of the frame (ports.CaptureFrameTaken): the compositor
+// shows an indicator for every capture, whatever the client or protocol.
 type captureTag struct {
 	session   uint64
 	exclude   bool
 	revision  uint64
 	workspace uint64
 	offscreen bool
+	taken     ports.CaptureFrameTaken
 }
 
 // requestCapture duplicates the pool descriptor, so destroying the wl_buffer
@@ -180,7 +199,14 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 	id := s.nextCapture
 	s.captureInflight[id] = struct{}{}
 	start := time.Now()
+	taken := tag.taken
+	taken.Session = tag.session
 	s.captureReplies[id] = func(done ports.CaptureDone) {
+		if done.Err == nil {
+			// Whatever became of the client's frame object, its buffer holds
+			// an image now: the indicator lasts CaptureFlash from here.
+			s.emit(taken)
+		}
 		ev := s.log.Debug()
 		if done.Err != nil {
 			ev = s.log.Info().Err(done.Err)
@@ -190,10 +216,12 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			reply(done)
 		}
 	}
-	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, OffScreen: tag.offscreen}
+	req := ports.CaptureRequest{ID: id, Output: o.name(), Region: rect, Cursor: cursor, Dst: ports.SHMBuffer{File: os.NewFile(uintptr(fd), "capture"), Offset: buf.offset}, Width: buf.width, Height: buf.height, Stride: buf.stride, Format: buf.format, Session: tag.session, Exclude: tag.exclude, CaptureRevision: tag.revision, Workspace: tag.workspace, OffScreen: tag.offscreen, Indicate: true}
 	select {
 	case s.channels.Captures <- req:
 		s.log.Debug().Uint64("id", id).Str("output", o.name()).Stringer("region", rect).Uint32("format", format).Bool("cursor", cursor).Msg("capture requested")
+		// The indicator is on screen while the frame is rendered.
+		s.emit(taken)
 		return id, true
 	default:
 		delete(s.captureReplies, id)

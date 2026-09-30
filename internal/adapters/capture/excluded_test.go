@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func cleanTestScene() ports.Scene {
+func excludedTestScene() ports.Scene {
 	return ports.Scene{
 		Seq: 5,
 		Windows: []ports.SceneWindow{
@@ -26,11 +26,11 @@ func ids(q []ports.CaptureRequest) (out []uint64) {
 	return out
 }
 
-func TestCleanSceneDropsOnlyExcluded(t *testing.T) {
+func TestExcludedSceneDropsOnlyExcluded(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	s := cleanTestScene()
-	c := p.CleanScene(s)
+	s := excludedTestScene()
+	c := p.ExcludedScene(s)
 	require.Nil(t, c.Capture)
 	require.Zero(t, c.Seq)
 	require.Equal(t, []ports.SceneWindow{{ID: 1}, {ID: 21, Popup: true, OverLayers: true}, {ID: 3}}, c.Windows)
@@ -45,13 +45,13 @@ func TestCleanSceneDropsOnlyExcluded(t *testing.T) {
 func TestSplitNoAlloc(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	for name, s := range map[string]ports.Scene{"no capture": {Windows: cleanTestScene().Windows}, "exclusion": cleanTestScene()} {
+	for name, s := range map[string]ports.Scene{"no capture": {Windows: excludedTestScene().Windows}, "exclusion": excludedTestScene()} {
 		reqs := make([]ports.CaptureRequest, 3)
 		for i := range reqs {
 			reqs[i].ID = uint64(i + 1)
 		}
 		if allocs := testing.AllocsPerRun(100, func() {
-			_ = p.CleanScene(s)
+			_ = p.ExcludedScene(s)
 			p.Split(s, reqs)
 		}); allocs != 0 {
 			t.Fatalf("%s: %.1f allocs, want 0", name, allocs)
@@ -63,7 +63,7 @@ func TestSplitOrdersAndFailsClosed(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 8)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	s := cleanTestScene()
+	s := excludedTestScene()
 	s.Capture.Revision = 1
 	reqs := []ports.CaptureRequest{
 		{ID: 1, Exclude: true, Session: 7, CaptureRevision: 1},
@@ -72,17 +72,17 @@ func TestSplitOrdersAndFailsClosed(t *testing.T) {
 		{ID: 4, Exclude: true, Session: 7, CaptureRevision: 1},
 		{ID: 5},
 	}
-	normal, clean, hidden := p.Split(s, reqs)
+	normal, excluded, hidden := p.Split(s, reqs)
 	require.ElementsMatch(t, []uint64{2, 5}, ids(normal))
-	require.ElementsMatch(t, []uint64{1, 4}, ids(clean))
+	require.ElementsMatch(t, []uint64{1, 4}, ids(excluded))
 	require.Empty(t, hidden)
-	for _, q := range clean {
+	for _, q := range excluded {
 		require.True(t, q.Exclude)
 	}
 	got := awaitCapture(t, replies)
 	require.Equal(t, uint64(3), got.ID)
 	require.ErrorIs(t, got.Err, ErrSessionInactive)
-	for _, q := range reqs[len(normal)+len(clean):] {
+	for _, q := range reqs[len(normal)+len(excluded):] {
 		require.True(t, Handed(q), "tail must be zeroed")
 	}
 }
@@ -91,11 +91,11 @@ func TestSplitExcludeWithoutSceneExclusionFails(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	s := cleanTestScene()
+	s := excludedTestScene()
 	s.Capture = nil
-	normal, clean, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
+	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
 	require.Equal(t, []uint64{2}, ids(normal))
-	require.Empty(t, clean)
+	require.Empty(t, excluded)
 	got := awaitCapture(t, replies)
 	require.Equal(t, uint64(1), got.ID)
 	require.ErrorIs(t, got.Err, ErrSessionInactive)
@@ -106,20 +106,20 @@ func TestSplitExcludeWithoutSceneExclusionFails(t *testing.T) {
 func TestSplitNoSecondCompositionWhenNothingExcludedIsShown(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	s := cleanTestScene()
+	s := excludedTestScene()
 	s.Capture.Excluded = []ports.WindowID{99}
-	normal, clean, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
+	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}, {ID: 2}})
 	require.Len(t, normal, 2)
-	require.Empty(t, clean)
+	require.Empty(t, excluded)
 }
 
 // Every other capture keeps the HUD, even while an exclusion is live.
 func TestSplitStandardCapturesKeepExclusionScene(t *testing.T) {
 	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
 	defer p.Close(nil)
-	normal, clean, _ := p.Split(cleanTestScene(), []ports.CaptureRequest{{ID: 1}, {ID: 2}})
+	normal, excluded, _ := p.Split(excludedTestScene(), []ports.CaptureRequest{{ID: 1}, {ID: 2}})
 	require.Len(t, normal, 2)
-	require.Empty(t, clean)
+	require.Empty(t, excluded)
 }
 
 // A request stamped with a revision the scene has not reached is refused:
@@ -128,15 +128,15 @@ func TestSplitStaleRevisionFailsClosed(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	defer p.Close(nil)
-	s := cleanTestScene()
+	s := excludedTestScene()
 	s.Capture.Revision = 3
-	normal, clean, _ := p.Split(s, []ports.CaptureRequest{
+	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{
 		{ID: 1, Exclude: true, Session: 7, CaptureRevision: 4},
 		{ID: 2, Exclude: true, Session: 7, CaptureRevision: 3},
 		{ID: 3, Exclude: true, Session: 7, CaptureRevision: 2},
 	})
 	require.Empty(t, normal)
-	require.Len(t, clean, 2)
+	require.Len(t, excluded, 2)
 	got := awaitCapture(t, replies)
 	require.Equal(t, uint64(1), got.ID)
 	require.ErrorIs(t, got.Err, ErrSessionStale)
@@ -157,9 +157,9 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 		{ID: 5, Workspace: 9, OffScreen: true}, // not rendered at all
 		{ID: 6},
 	}
-	normal, clean, hidden := p.Split(s, reqs)
+	normal, excluded, hidden := p.Split(s, reqs)
 	require.ElementsMatch(t, []uint64{1, 6}, ids(normal))
-	require.Empty(t, clean)
+	require.Empty(t, excluded)
 	require.Equal(t, []uint64{2}, ids(hidden))
 	failed := map[uint64]bool{}
 	for range 3 {

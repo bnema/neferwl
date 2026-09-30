@@ -21,6 +21,10 @@ type screen struct {
 	// capture holds the attached layers of the capture exclusion: shown over
 	// a fullscreen window (capture.go).
 	capture map[WindowID]bool
+	// capScene and capMarks are what the last scene carried (Capture and
+	// CaptureIndicators): immutable, shared by the next one while unchanged.
+	capScene *ports.SceneCapture
+	capMarks []ports.CaptureIndicator
 }
 
 func (s *screen) name() string { return s.info.Name }

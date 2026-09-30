@@ -2,13 +2,17 @@ package capture
 
 import (
 	"errors"
+	"os"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A request with Exclude leaves out the exclusion's HUD layers and popups;
-// every other capture shows them.
+// every other capture shows them. No capture shows the capture indicator
+// (Scene.CaptureIndicators): a scene that carries it is never the source of a
+// capture image. Requests of the displayed frame are then served from the
+// frame rendered without it first (SubmitPlain, ExcludedScene).
 
 // ErrSessionInactive fails an Exclude request whose session is not the one
 // the scene carries. Serving it as a normal capture would leak its HUD.
@@ -24,10 +28,10 @@ var ErrSessionStale = errors.New("capture exclusion scene is older than the requ
 // or the scene predates the session.
 var ErrWorkspaceMoved = errors.New("captured workspace is not where the request expected")
 
-// cleaner derives the scene of Exclude captures: the frame without the
+// excluder derives the scene of Exclude captures: the frame without the
 // excluded layers and popups. Its scratch slices are reused,
 // so a warmed output allocates nothing.
-type cleaner struct {
+type excluder struct {
 	windows []ports.SceneWindow
 	layers  []ports.SceneLayer
 }
@@ -59,16 +63,42 @@ func excludedShown(s ports.Scene) bool {
 	return false
 }
 
-// plain returns s without its capture state, Seq 0 so the renderer redraws
-// the whole target instead of reusing a displayed frame.
+// plain returns s without its capture state and indicators, Seq 0 so the
+// renderer redraws the whole target instead of reusing a displayed frame.
 func plain(s ports.Scene) ports.Scene {
-	s.Capture, s.Seq = nil, 0
+	s.Capture, s.CaptureIndicators, s.Seq = nil, nil, 0
 	return s
+}
+
+// SubmitPlain serves the displayed-frame requests of a scene that carries the
+// capture indicator: the frame is rendered without it, first (same renderer,
+// queue order, like ExcludedScene), and copied before the displayed one is
+// drawn. It reports whether it took the requests (and zeroed them); false
+// when the scene has no indicator or there is nothing to serve, the caller
+// submits them after the displayed frame as usual. On a render error the
+// caller still owns the requests.
+//
+// Admission is the session gate's: the requests are handed over with
+// SubmitScoped under the scene's epoch, so a locked or changed epoch fails
+// them before BeginCapture. The render fence is returned, never closed here:
+// the plain render reads client buffers even when the requests are rejected,
+// so the caller owns it (hold or wait it) whatever happened, error included.
+func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
+	if len(normal) == 0 || len(s.CaptureIndicators) == 0 {
+		return false, nil, nil
+	}
+	done, err = r.Render(plain(s), surfaces)
+	if err != nil {
+		return false, done, err
+	}
+	p.SubmitScoped(s.Security, r, normal)
+	clear(normal)
+	return true, done, nil
 }
 
 // scene returns s without the excluded windows
 // (popups included) and layers. The result is valid until the next call.
-func (c *cleaner) scene(s ports.Scene) ports.Scene {
+func (c *excluder) scene(s ports.Scene) ports.Scene {
 	var ex []ports.WindowID
 	if s.Capture != nil {
 		ex = s.Capture.Excluded
@@ -93,8 +123,8 @@ func (c *cleaner) scene(s ports.Scene) ports.Scene {
 	return s
 }
 
-// CleanScene is the scene of Exclude captures: no excluded surface; see Split. Valid until the next call.
-func (p *Pipeline) CleanScene(s ports.Scene) ports.Scene { return p.clean.scene(s) }
+// ExcludedScene is the scene of Exclude captures: no excluded surface; see Split. Valid until the next call.
+func (p *Pipeline) ExcludedScene(s ports.Scene) ports.Scene { return p.excl.scene(s) }
 
 // Split answers or orders the requests of one output frame, in place. No
 // allocation. Requests that cannot be served are failed and removed:
@@ -103,14 +133,14 @@ func (p *Pipeline) CleanScene(s ports.Scene) ports.Scene { return p.clean.scene(
 // (ErrSessionStale); workspace requests whose workspace is not where they
 // expected (ErrWorkspaceMoved). The rest is reordered:
 //   - normal is the prefix, drawn from the displayed frame;
-//   - clean follows: Exclude requests, drawn from CleanScene rendered first,
+//   - excluded follows: Exclude requests, drawn from ExcludedScene rendered first,
 //     or from the displayed frame (they stay in normal) when it shows no
-//     excluded surface;
+//     excluded surface and no capture indicator;
 //   - hidden: the requests of the workspace rendered off screen
 //     (OffScreen), served from CaptureScene (see SubmitHidden); they come last.
 //
 // The entries past the groups are zeroed.
-func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, clean, hidden []ports.CaptureRequest) {
+func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, excluded, hidden []ports.CaptureRequest) {
 	n := 0
 	for _, q := range reqs {
 		var err error
@@ -131,7 +161,7 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, cl
 	}
 	clear(reqs[n:])
 	reqs = reqs[:n]
-	excl := excludedShown(s)
+	excl := excludedShown(s) || len(s.CaptureIndicators) > 0
 	group := func(q ports.CaptureRequest) int {
 		switch {
 		case q.OffScreen:

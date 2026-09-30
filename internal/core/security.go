@@ -73,7 +73,7 @@ func blockedProtectedEvent(ev ports.ClientEvent) bool {
 	switch ev.(type) {
 	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained,
 		ports.PopupRequest, ports.ShortcutsInhibit, ports.WindowFullscreenRequest,
-		ports.CaptureSessionOpen, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer:
+		ports.CaptureSessionOpen, ports.CaptureFrameTaken, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer:
 		return true
 	}
 	return false

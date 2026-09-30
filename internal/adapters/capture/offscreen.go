@@ -426,7 +426,8 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 		fail(fmt.Errorf("render workspace: %w", err), reqs)
 		return
 	}
-	// Immutable parent scene epoch, not the cleaner's rewritten child scene.
+	o.p.gating = p.gating
+	// Immutable parent scene epoch, not the excluder's rewritten child scene.
 	// SubmitScoped rechecks immediately before native BeginCapture.
 	o.p.SubmitScoped(s.Security, o.r, reqs)
 }

@@ -37,6 +37,16 @@ type CaptureRequest struct {
 	// another crop.
 	Workspace uint64
 	OffScreen bool
+	// Indicate is set by wayland on every capture it requests: core shows the
+	// capture indicator for it (CaptureFrameTaken), and the output owner
+	// serves the request only from a scene that shows the mark it needs (a
+	// pill for OffScreen, else a border covering Region), so the indicator is
+	// on screen in the same frame as the capture or an earlier one. It holds
+	// the request for a bounded time, then fails it.
+	Indicate bool
+	// Since is when the output owner took the request (monotonic), to bound
+	// that wait. Only the output owner sets it.
+	Since time.Time
 }
 
 // CaptureDone is attempted once after the output closes the destination.
@@ -840,6 +850,10 @@ type Scene struct {
 	// drawn for capture only: a workspace that is not on screen. Only the
 	// root scene carries it; CaptureScene.Capture and .CaptureScene are nil.
 	CaptureScene *Scene
+	// CaptureIndicators are the marks of live captures of this output,
+	// drawn over everything; nil when none. Captures never hold them: the
+	// capture pipeline serves requests from a scene without them.
+	CaptureIndicators []CaptureIndicator
 }
 
 // Shows reports whether the scene draws the surface of id: only its

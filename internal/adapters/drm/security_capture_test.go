@@ -34,10 +34,10 @@ func TestSecurityEngageDuringExcludeRenderRejectsCaptureTransfer(t *testing.T) {
 		t.Fatalf("capture admission result: %v", err)
 	}
 	if len(o.readFences) != 1 || o.readDone() {
-		t.Fatal("rejected clean render dropped GPU reads")
+		t.Fatal("rejected excluded render dropped GPU reads")
 	}
 	if _, err := f.Stat(); !errors.Is(err, os.ErrClosed) {
-		t.Fatal("returned clean fence not closed")
+		t.Fatal("returned excluded fence not closed")
 	}
 	// Match Run's remaining-credit rejection: nothing was transferred to the
 	// worker, each request is failed once, and every owned FD is closed.

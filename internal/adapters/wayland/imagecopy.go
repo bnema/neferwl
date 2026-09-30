@@ -396,6 +396,15 @@ func (c *captureSession) tag(hidden bool) (t captureTag, ok bool) {
 	if c.src.kind == srcWorkspace {
 		t.workspace, t.offscreen = c.src.workspace, hidden
 	}
+	switch c.src.kind {
+	case srcOutput:
+		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name()}
+	case srcRegion:
+		r := c.src.region
+		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name(), Region: ports.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()}}
+	case srcWorkspace:
+		t.taken = ports.CaptureFrameTaken{Workspace: c.src.workspace}
+	}
 	if c.excl != nil && !c.exclSeen {
 		return t, false
 	}

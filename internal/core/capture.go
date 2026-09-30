@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"reflect"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -15,10 +14,12 @@ import (
 //     (target, hidden workspace, end);
 //   - the one exclusion, whose HUD layers stay visible over a fullscreen
 //     window and are left out of its session's frames;
-//   - the workspace rendered off screen for a session (Scene.CaptureScene).
+//   - the workspace rendered off screen for a session (Scene.CaptureScene);
+//   - the capture indicator (capindicator below): what shows on screen that
+//     something is captured, whoever captures.
 //
-// With no session and no exclusion none of this allocates: the scenes carry
-// no Capture.
+// With no session, no exclusion and no flash none of this allocates: the
+// scenes carry no Capture and no CaptureIndicators.
 
 // capTarget is what a capture covers, as asked.
 type capTarget struct {
@@ -31,6 +32,9 @@ type capSession struct {
 	open    ports.CaptureSessionOpen
 	last    ports.CaptureSessionState
 	hasLast bool
+	// recording: the session produced a frame. Its target shows the
+	// indicator for as long as the session lives.
+	recording bool
 }
 
 func (s *capSession) target() capTarget {
@@ -56,6 +60,8 @@ type capExclusion struct {
 	rev    uint64 // revision fence, bumped when what a frame must leave out changes
 	key    capExclusionKey
 	hasKey bool
+	// scratch is the list captureExcluded builds.
+	scratch []WindowID
 }
 
 // capExclusionKey is what the revision fence follows.
@@ -197,6 +203,10 @@ func (c *Core) captureExclusionEnd(session uint64) {
 // protected, no capture is served, and wayland has stopped them all.
 func (c *Core) dropCaptureSessions() {
 	c.capSessions = nil
+	// No capture indicator outlives the lock: nothing is drawn for a capture
+	// that can no longer happen, and none is left to show after the unlock.
+	c.capFlashes = nil
+	c.stopCaptureTimer()
 	c.dropExclusion()
 }
 
@@ -270,14 +280,16 @@ func (c *Core) clampCaptureKeyboard() {
 // excluded lists the attached layers and every popup hanging from one of
 // them, sorted. Layers not mapped yet are listed too: they are excluded from
 // their first frame.
+// The result is scratch of the exclusion, valid until the next call.
 func (c *Core) captureExcluded(e *capExclusion) []WindowID {
-	out := append(slices.Clone(e.layers), e.retained...)
+	out := append(append(e.scratch[:0], e.layers...), e.retained...)
 	for id := range c.popups {
 		if root := c.popupRoot(id); slices.Contains(e.layers, root) || slices.Contains(e.retained, root) {
 			out = append(out, id)
 		}
 	}
 	slices.Sort(out)
+	e.scratch = out
 	return out
 }
 
@@ -290,11 +302,14 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		return nil, nil
 	}
 	c.pruneRetained()
-	v := &capView{}
-	// Decide each session.
-	states := make([]ports.CaptureSessionState, 0, len(c.capSessions))
-	alive := c.capSessions[:0:0]
-	for _, s := range c.capSessions {
+	// The scratch is the view and the states of this evaluation; nothing the
+	// scenes or the commands keep points into it.
+	v := &c.capScratch
+	*v = capView{}
+	// Decide each session. The live ones are kept in place.
+	states := c.capStates[:0]
+	alive := c.capSessions[:0]
+	for i, s := range c.capSessions {
 		st := ports.CaptureSessionState{ID: s.open.ID}
 		r, reason := c.capResolve(s.target())
 		if reason == ports.CaptureReasonNone {
@@ -309,6 +324,7 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		states = append(states, st)
 		if reason != ports.CaptureReasonNone {
 			if err := c.command(ctx, st); err != nil {
+				c.capSessions = append(alive, c.capSessions[i:]...)
 				return nil, err
 			}
 			if c.capExcl != nil && c.capExcl.session == s.open.ID {
@@ -318,7 +334,9 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 		}
 		alive = append(alive, s)
 	}
+	clear(c.capSessions[len(alive):])
 	c.capSessions = alive
+	c.capStates = states
 	// Exclusion.
 	if e := c.capExcl; e != nil {
 		ex := c.captureExcluded(e)
@@ -342,11 +360,13 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 					st = x
 				}
 			}
-			key := capExclusionKey{excluded: ex, layers: slices.Clone(e.layers), target: st}
-			if !e.hasKey || !reflect.DeepEqual(e.key, key) {
+			if !e.hasKey || !slices.Equal(e.key.excluded, ex) || !slices.Equal(e.key.layers, e.layers) || !sameCaptureState(e.key.target, st) {
 				e.rev++
+				e.key = capExclusionKey{excluded: slices.Clone(ex), layers: slices.Clone(e.layers), target: st}
+				e.hasKey = true
 			}
-			e.key, e.hasKey = key, true
+			// What the scenes carry is the key's list, shared while it holds.
+			v.excluded = e.key.excluded
 		}
 	}
 	// Tell wayland what changed.
@@ -358,9 +378,16 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 			}
 		}
 		if e := c.capExcl; e != nil && e.session == s.open.ID {
-			st.Exclusion, st.Revision, st.Layers = true, e.rev, slices.Clone(e.layers)
+			st.Exclusion, st.Revision = true, e.rev
+			// The list is sent, read by another goroutine: shared, never
+			// rebuilt, while the attached set is the same.
+			if s.hasLast && slices.Equal(s.last.Layers, e.layers) {
+				st.Layers = s.last.Layers
+			} else {
+				st.Layers = slices.Clone(e.layers)
+			}
 		}
-		if !s.hasLast || !reflect.DeepEqual(s.last, st) {
+		if !s.hasLast || !sameCaptureState(s.last, st) {
 			s.last, s.hasLast = st, true
 			if err := c.command(ctx, st); err != nil {
 				return nil, err
@@ -370,23 +397,38 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 	return v, nil
 }
 
+// sameCaptureState reports whether two session states say the same.
+func sameCaptureState(a, b ports.CaptureSessionState) bool {
+	return a.ID == b.ID && a.Output == b.Output && a.Rect == b.Rect && a.Workspace == b.Workspace &&
+		a.Hidden == b.Hidden && a.Active == b.Active && a.Reason == b.Reason &&
+		a.Exclusion == b.Exclusion && a.Revision == b.Revision && slices.Equal(a.Layers, b.Layers)
+}
+
 // captureSceneFor is the capture state of one screen's scene; nil when
 // there is no session. Shown is the workspace drawn as itself on screen.
 func (c *Core) captureSceneFor(sc *screen, v *capView) *ports.SceneCapture {
 	if v == nil || len(c.capSessions) == 0 && v.exclusion == nil {
 		return nil
 	}
-	sceneCap := &ports.SceneCapture{}
+	want := ports.SceneCapture{}
 	if !sc.mon.ov.open {
-		sceneCap.Shown = sc.mon.Current().ID
+		want.Shown = sc.mon.Current().ID
 	}
 	if e := v.exclusion; e != nil {
-		sceneCap.Session, sceneCap.Revision, sceneCap.Excluded = e.session, e.rev, v.excluded
+		want.Session, want.Revision, want.Excluded = e.session, e.rev, v.excluded
 	}
 	if v.hiddenScr == sc {
-		sceneCap.Workspace = v.hiddenID
+		want.Workspace = v.hiddenID
 	}
-	return sceneCap
+	// The scene is read by the output owner and never changed: the last one
+	// is shared while it says the same.
+	if p := sc.capScene; p != nil && p.Shown == want.Shown && p.Session == want.Session && p.Revision == want.Revision &&
+		p.Workspace == want.Workspace && slices.Equal(p.Excluded, want.Excluded) {
+		return p
+	}
+	shared := want
+	sc.capScene = &shared
+	return sc.capScene
 }
 
 // workspaceByID finds a workspace, numbered or hidden, on any screen.
