@@ -119,9 +119,8 @@ func (c *Core) releaseSlots() {
 		if st.window == 0 {
 			continue
 		}
-		sc, w := c.byName(key.workspace)
-		// A slot window away in its own fullscreen workspace keeps its slot.
-		if w == nil || !w.inSlot(st.window, key.index) && !sc.mon.awayInSlot(w, st.window, key.index) {
+		_, w := c.byName(key.workspace)
+		if w == nil || !w.inSlot(st.window, key.index) {
 			st.window = 0
 		}
 	}

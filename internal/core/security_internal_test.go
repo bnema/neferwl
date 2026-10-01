@@ -97,3 +97,20 @@ func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 		t.Fatal("stale input admitted")
 	}
 }
+
+// A fullscreen request dropped while locked is still answered with a
+// configure once unlocked (xdg-shell).
+func TestProtectedFullscreenRequestAnswered(t *testing.T) {
+	c, _, _ := hiddenCaptureCommands(t)
+	p := Placement{ID: 1, Rect: Rect{W: 10, H: 10}}
+	v, _ := c.configures.next(p, configureTarget{})
+	c.configures.mark(v)
+	c.security = ports.SecurityState{Generation: 1, Protected: true}
+	if !c.blockProtected(ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}) {
+		t.Fatal("fullscreen request allowed while locked")
+	}
+	c.security = ports.SecurityState{Generation: 2}
+	if _, send := c.configures.next(p, configureTarget{}); !send {
+		t.Fatal("locked request not answered")
+	}
+}

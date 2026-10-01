@@ -323,7 +323,7 @@ func (c *Core) animate(now time.Time) {
 				m.stopSwitch()
 			}
 		}
-		for _, w := range m.all() {
+		for w := range m.all() {
 			if w.motion != nil {
 				v, done := w.motion.at(now)
 				w.shift = v
@@ -355,7 +355,7 @@ func (m *Monitor) springing() bool {
 	if m.switchMotion != nil {
 		return true
 	}
-	for _, w := range m.all() {
+	for w := range m.all() {
 		if w.motion != nil {
 			return true
 		}

@@ -807,23 +807,23 @@ func TestExpelCrossesToFullNeighbor(t *testing.T) {
 	}
 }
 
-func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
+func TestExpelOntoFixedFullscreenLeavesIt(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
 	// DP-1: [1] [2 3], focus on 3.
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	r.mapWindow(t, 3)
 	r.key(t, "bracketleft", ports.ModAlt)
-	// DP-2: [4] [5]; 5 goes fullscreen on its own workspace.
+	// DP-2: [4] [5]; 5 goes fullscreen.
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
 	r.mapWindow(t, 4)
 	r.mapWindow(t, 5)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
-	// 3 floats above the fullscreen window, visible and focused.
+	// 3 joins as a tile: fullscreen ends so it is seen, focused.
 	set := r.key(t, "bracketright", ports.ModAlt)
 	got, focused := windowsOf(set, "DP-2")
-	if !slices.Contains(got, 3) || focused != 3 {
+	if !slices.Contains(got, 3) || !slices.Contains(got, 4) || focused != 3 {
 		t.Fatal(got, focused)
 	}
 }
@@ -1144,5 +1144,34 @@ func TestNamedOnScreenAtHomeStaysOnBindFromElsewhere(t *testing.T) {
 	}
 	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-1"]) != 0 {
 		t.Fatal(got)
+	}
+}
+
+// From a fullscreen window, focus-column-left/right leaves fullscreen for
+// the column on that side; at the workspace edge it goes to the neighbor
+// monitor and the window stays fullscreen.
+func TestFocusColumnLeavesFullscreenBeforeMonitor(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	// Right edge: DP-2 has no neighbor there, the game stays fullscreen.
+	if got, focused := windowsOf(r.key(t, "Right", ports.ModAlt), "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("edge:", got, focused)
+	}
+	// Left: window 1 is there, fullscreen ends.
+	if got, focused := windowsOf(r.key(t, "Left", ports.ModAlt), "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 1 {
+		t.Fatal("left:", got, focused)
+	}
+	// Fullscreen on window 1, the left edge: DP-1 gets the focus and
+	// window 1 stays fullscreen on DP-2.
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	set := r.key(t, "Left", ports.ModAlt)
+	if got, _ := windowsOf(set, "DP-2"); !reflect.DeepEqual(got, []ports.WindowID{1}) {
+		t.Fatal("monitor edge:", got)
+	}
+	if got, _ := windowsOf(r.mapWindow(t, 3), "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{3}) {
+		t.Fatal("focus not on DP-1:", got)
 	}
 }

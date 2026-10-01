@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // stashIDs lists the stash of w, left to right.
@@ -73,33 +75,26 @@ func TestStashFollowsWorkspace(t *testing.T) {
 	}
 }
 
-// Fixed overflow gives a fullscreen window its own workspace: a stashed
-// one returns to its place in the stash, selected when the user was on it.
+// A stashed window goes fullscreen in place and stays in its stash slot,
+// selected when the user was on it; a client exit while the user is on
+// another workspace leaves the view there.
 func TestStashFullscreenRoundTrip(t *testing.T) {
 	m := stashMonitor(OverflowFixed)
 	w := m.Current()
 	w.FocusID(2)
 	m.ToggleFullscreen()
-	if m.Current() == w || !slices.Equal(stashIDs(w), []WindowID{3}) {
-		t.Fatalf("fullscreen stayed: %v", stashIDs(w))
+	if m.Current() != w || w.cover() != 2 || !slices.Equal(stashIDs(w), []WindowID{2, 3}) {
+		t.Fatalf("fullscreen: cover %d stash %v", w.cover(), stashIDs(w))
 	}
 	m.ToggleFullscreen()
-	if m.Current() != w || !slices.Equal(stashIDs(w), []WindowID{2, 3}) {
-		t.Fatalf("back %v", stashIDs(w))
-	}
-	if id, _ := w.Focused(); id != 2 || w.stashAt != 0 {
+	if id, _ := w.Focused(); id != 2 || w.stashAt != 0 || w.fullscreen != 0 {
 		t.Fatalf("focused %d at %d", id, w.stashAt)
 	}
-	// Left by a client request while the user is elsewhere: the selection
-	// stays on the same window.
-	w.FocusID(2)
 	m.ToggleFullscreen()
-	fs := m.Current()
-	m.Focus(indexOf(m.Workspaces, w))
-	w.FocusID(3)
+	m.Focus(1)
 	m.SetFullscreen(2, false)
-	if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.Stash[w.stashAt].ID != 3 || m.has(fs) {
-		t.Fatalf("request: %v at %d", stashIDs(w), w.stashAt)
+	if !slices.Equal(stashIDs(w), []WindowID{2, 3}) || w.fullscreen != 0 || m.Active != 1 {
+		t.Fatalf("request: %v on %d", stashIDs(w), m.Active)
 	}
 }
 
@@ -114,9 +109,8 @@ func TestStashAloneHasFocus(t *testing.T) {
 	if id, _ := w.Focused(); id != 3 {
 		t.Fatalf("focused %d, want the selected stashed window", id)
 	}
-	// Fixed overflow: the stashed window goes fullscreen on its own
-	// workspace, its only tile closes, then the client leaves fullscreen
-	// while the user is elsewhere.
+	// Fixed overflow: the stashed window goes fullscreen, its only tile
+	// closes, then the client leaves fullscreen.
 	m = newMonitor("", "")
 	m.SetOutput(100, 80)
 	m.SetOverflow(OverflowFixed)
@@ -125,15 +119,13 @@ func TestStashAloneHasFocus(t *testing.T) {
 	w = m.Current()
 	w.ToggleWindowStash()
 	m.ToggleFullscreen()
-	fs := m.Current()
-	if fs == w || fs.origin != w {
-		t.Fatal("no fullscreen workspace")
+	if w.cover() != 2 {
+		t.Fatal("not fullscreen")
 	}
 	m.RemoveWindow(1)
-	m.Focus(indexOf(m.Workspaces, fs) + 1)
 	m.SetFullscreen(2, false)
-	if len(w.Columns) != 0 || !slices.Equal(stashIDs(w), []WindowID{2}) || m.has(fs) {
-		t.Fatalf("origin %+v", w)
+	if len(w.Columns) != 0 || !slices.Equal(stashIDs(w), []WindowID{2}) {
+		t.Fatalf("workspace %+v", w)
 	}
 	if id, ok := w.Focused(); !ok || id != 2 {
 		t.Fatalf("focused %d %v", id, ok)
@@ -239,5 +231,65 @@ func TestStashWidth(t *testing.T) {
 	m.SetStash(100, 3)
 	if p := placement(w, 3); p.Rect.W != 90 {
 		t.Fatalf("clamped high %d", p.Rect.W)
+	}
+}
+
+// focus-column from a fullscreen stashed window at the end of the stash
+// goes to the neighbor monitor and keeps fullscreen; inside the stash it
+// leaves fullscreen for the next stashed window.
+func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	cfg.Layout.Overflow = string(OverflowFixed)
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 100, Height: 80})
+	m := c.screens[0].mon
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	w := m.Current()
+	w.FocusID(2)
+	w.ToggleWindowStash()
+	w.FocusID(3)
+	w.ToggleWindowStash() // stash [2 3], 3 selected
+	m.ToggleFullscreen()
+	if w.cover() != 3 {
+		t.Fatal("setup", w.cover())
+	}
+	c.applyAction(ActionFocusColumnRight)
+	if c.focusScreen != 1 || w.cover() != 3 {
+		t.Fatalf("edge: screen %d cover %d", c.focusScreen, w.cover())
+	}
+	c.focusScreen = 0
+	c.applyAction(ActionFocusColumnLeft)
+	if id, _ := w.Focused(); id != 2 || w.fullscreen != 0 || c.focusScreen != 0 {
+		t.Fatalf("inside: focused %d fullscreen %d", id, w.fullscreen)
+	}
+}
+
+// Activating a hidden stashed window over a scroll fullscreen tile ends
+// the fullscreen like any exit: the view leaves the fullscreen alignment.
+func TestActivateHiddenStashEndsScrollFullscreen(t *testing.T) {
+	w := workspace()
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.AddWindow(3)
+	w.ToggleWindowStash() // 3 stashed
+	w.ToggleStashVisible()
+	w.FocusID(2)
+	w.SetFullscreen(2, true)
+	w.Activate(3)
+	if id, _ := w.Focused(); id != 3 || w.fullscreen != 0 {
+		t.Fatalf("focused %d fullscreen %d", id, w.fullscreen)
+	}
+	view := w.ViewX
+	w.scroll()
+	if w.ViewX != view {
+		t.Fatalf("view %d, settled %d", view, w.ViewX)
 	}
 }
