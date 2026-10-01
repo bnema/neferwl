@@ -44,6 +44,14 @@ func ParseWidth(s string) (Width, error) {
 	return Width{}, fmt.Errorf("invalid width %q", s)
 }
 
+// same reports whether v and o are the same width: 1/2 and 50/100 are.
+func (v Width) same(o Width) bool {
+	if v.Pixels > 0 || o.Pixels > 0 || v.Den == 0 || o.Den == 0 {
+		return v == o
+	}
+	return v.Num*o.Den == o.Num*v.Den
+}
+
 // Resolve returns column pixels: round(frac * (usableW - gaps)) - gaps.
 // Widths are clamped to the available area (zero if no space remains).
 func (v Width) Resolve(usableW, gaps int) int {
@@ -665,6 +673,44 @@ func (w *Workspace) MoveColumn(dir int) {
 	}
 }
 
+// MoveWindow moves the focused tile up or down (dir -1/1) inside its
+// column; focus follows it. A slot window leaving row 0 releases the slot.
+func (w *Workspace) MoveWindow(dir int) {
+	if w.onFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.fullscreenHides() {
+		return
+	}
+	c := &w.Columns[w.Focus]
+	to := c.Focus + dir
+	if to < 0 || to >= len(c.Windows) {
+		return
+	}
+	if c.Focus == 0 || to == 0 {
+		w.dropSlotOf(c.Windows[0])
+	}
+	c.Windows[c.Focus], c.Windows[to] = c.Windows[to], c.Windows[c.Focus]
+	c.Focus = to
+	w.scroll()
+}
+
+// ResizeColumn changes the focused column's width by pct percent of the
+// usable width, clamped to 10-100%. An auto column becomes explicit. Fixed
+// overflow shares the width equally: nothing changes there.
+func (w *Workspace) ResizeColumn(pct int) {
+	if w.onFloat() || len(w.Columns) == 0 || w.Overflow == OverflowFixed || w.fullscreenHides() {
+		return
+	}
+	w.unmaximize()
+	g := w.gap()
+	avail := w.Usable.W - g
+	if avail <= 0 {
+		return
+	}
+	// Inverse of Width.Resolve: width = round(p/100 * avail) - g.
+	cur := (200*(w.columnWidth(w.Focus)+g) + avail) / (2 * avail)
+	w.Columns[w.Focus].Width = Width{Num: min(max(cur+pct, 10), 100), Den: 100}
+	w.scroll()
+}
+
 // takeColumn removes the focused column and returns it, as a normal column.
 func (w *Workspace) takeColumn() (Column, bool) {
 	if len(w.Columns) == 0 || w.onFloat() {
@@ -706,14 +752,15 @@ func (w *Workspace) CycleWidth() {
 	if len(w.Columns) == 0 || len(w.presets) == 0 || w.onFloat() {
 		return
 	}
-	// auto → presets in order → auto.
+	// auto → presets in order → auto; a width set by set-column-width
+	// restarts at the first preset.
 	c := &w.Columns[w.Focus]
 	next := Width{}
-	if c.Width == next {
+	if c.Width == next || !slices.ContainsFunc(w.presets, c.Width.same) {
 		next = w.presets[0]
 	}
 	for i, v := range w.presets {
-		if v == c.Width && i+1 < len(w.presets) {
+		if v.same(c.Width) && i+1 < len(w.presets) {
 			next = w.presets[i+1]
 			break
 		}
@@ -1002,6 +1049,13 @@ func (w *Workspace) cover() WindowID {
 		}
 	}
 	return 0
+}
+
+// fullscreenHides reports whether a fullscreen window hides the focused
+// column's layout: the others (fixed) or its own column (scroll). Column
+// edits would change what the user cannot see.
+func (w *Workspace) fullscreenHides() bool {
+	return w.fullscreen != 0 && (w.Overflow == OverflowFixed || w.fullscreenColumn(w.Focus))
 }
 
 func (w *Workspace) fullscreenColumn(i int) bool {

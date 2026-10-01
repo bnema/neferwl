@@ -51,10 +51,23 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+right", "focus-monitor-right"},
 	{"cmd+ctrl+shift+left", "move-workspace-to-monitor-left"},
 	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
+	{"cmd+shift+up", "move-window-up"},
+	{"cmd+shift+down", "move-window-down"},
+	{"cmd+alt+left", "set-column-width -10%"},
+	{"cmd+alt+right", "set-column-width +10%"},
+	{"cmd+alt+up", "set-window-height -10%"},
+	{"cmd+alt+down", "set-window-height +10%"},
+	{"cmd+ctrl+shift+up", "move-workspace-up"},
+	{"cmd+ctrl+shift+down", "move-workspace-down"},
+	{"cmd+shift+space", "toggle-floating"},
 }
-var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "consume-or-expel-window-left": true, "consume-or-expel-window-right": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "maximize-column": true, "toggle-fullscreen": true, "toggle-window-stash": true, "toggle-stash-visible": true, "toggle-overview": true, "close-window": true, "quit": true}
+var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "consume-or-expel-window-left": true, "consume-or-expel-window-right": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "maximize-column": true, "toggle-fullscreen": true, "toggle-window-stash": true, "toggle-stash-visible": true, "toggle-overview": true, "close-window": true, "quit": true, "move-window-up": true, "move-window-down": true, "move-workspace-up": true, "move-workspace-down": true, "toggle-floating": true}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// resizeStep is the +N% or -N% step of set-column-width and
+// set-window-height, N from 1 to 100.
+var resizeStep = regexp.MustCompile(`^[+-]([1-9][0-9]?|100)%$`)
 
 // namedKeys maps lowercase names to xkb keysym names so binds are case-insensitive.
 var namedKeys = map[string]string{
@@ -808,6 +821,14 @@ func checkAction(v string) error {
 		if rest, ok := strings.CutPrefix(v, prefix); ok {
 			if n, err := strconv.Atoi(strings.TrimSpace(rest)); err != nil || n < 1 || n > 99 {
 				return fmt.Errorf("%snumber must be between 1 and 99", prefix)
+			}
+			return nil
+		}
+	}
+	for _, prefix := range []string{"set-column-width ", "set-window-height "} {
+		if rest, ok := strings.CutPrefix(v, prefix); ok {
+			if !resizeStep.MatchString(strings.TrimSpace(rest)) {
+				return fmt.Errorf("%sneeds +N%% or -N%% (1-100)", prefix)
 			}
 			return nil
 		}

@@ -181,11 +181,16 @@ func (m *Monitor) overviewTarget() WindowID {
 // selection is provisional. Workspace and monitor navigation and moves to
 // another workspace remain active.
 func overviewBlocks(a Action) bool {
+	if _, _, ok := ResizeArg(a); ok {
+		return true
+	}
 	switch a {
 	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
 		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
 		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
-		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
+		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspaceUp,
+		ActionMoveWorkspaceDown, ActionToggleFloating:
 		return true
 	}
 	return false

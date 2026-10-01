@@ -47,8 +47,7 @@ func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
 }
 
 func TestOwner(t *testing.T) {
-	cfg := config.Defaults()
-	cfg.Keyboard.CmdKey = "alt"
+	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 8
 	client := make(chan ports.ClientEvent, 128)

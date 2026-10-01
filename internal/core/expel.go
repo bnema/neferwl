@@ -25,7 +25,7 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 	}
 	// A fullscreen window hides the others (fixed) or its column (scroll):
 	// moving would break its way back.
-	if w.fullscreen != 0 && (w.Overflow == OverflowFixed || w.fullscreenColumn(w.Focus)) {
+	if w.fullscreenHides() {
 		return true
 	}
 	src := w.Focus

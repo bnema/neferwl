@@ -43,7 +43,58 @@ const (
 	// Consume or expel the focused window (ADR 016).
 	ActionConsumeOrExpelLeft  Action = "consume-or-expel-window-left"
 	ActionConsumeOrExpelRight Action = "consume-or-expel-window-right"
+	// Move the focused window up or down inside its column.
+	ActionMoveWindowUp   Action = "move-window-up"
+	ActionMoveWindowDown Action = "move-window-down"
+	// Swap the active numbered workspace with its neighbor.
+	ActionMoveWorkspaceUp   Action = "move-workspace-up"
+	ActionMoveWorkspaceDown Action = "move-workspace-down"
+	// Turn the focused tile into a free floating window, or back.
+	ActionToggleFloating Action = "toggle-floating"
 )
+
+// Resize axes of ResizeArg.
+const (
+	ResizeWidth  = 0
+	ResizeHeight = 1
+)
+
+var resizePrefixes = [...]string{
+	ResizeWidth:  "set-column-width ",
+	ResizeHeight: "set-window-height ",
+}
+
+// ResizeArg parses "set-column-width +N%" (axis ResizeWidth) and
+// "set-window-height -N%" (axis ResizeHeight); N is 1 to 100 and the sign
+// is required.
+func ResizeArg(a Action) (axis, pct int, ok bool) {
+	for i, prefix := range resizePrefixes {
+		rest, found := strings.CutPrefix(string(a), prefix)
+		if !found {
+			continue
+		}
+		if p, ok := parseResizeStep(strings.TrimSpace(rest)); ok {
+			return i, p, true
+		}
+		return 0, 0, false
+	}
+	return 0, 0, false
+}
+
+// parseResizeStep parses "+N%" or "-N%" with N from 1 to 100.
+func parseResizeStep(s string) (int, bool) {
+	if len(s) < 3 || (s[0] != '+' && s[0] != '-') || s[len(s)-1] != '%' {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s[1 : len(s)-1])
+	if err != nil || n < 1 || n > 100 || s[1] == '+' || s[1] == '-' {
+		return 0, false
+	}
+	if s[0] == '-' {
+		n = -n
+	}
+	return n, true
+}
 
 // WorkspaceOp is what a numbered workspace action does.
 type WorkspaceOp int
@@ -283,6 +334,12 @@ func (m *Monitor) Apply(a Action) Effect {
 			m.Focus(m.Active + 1)
 		}
 		return Effect{}
+	case ActionMoveWorkspaceUp:
+		m.MoveWorkspace(-1)
+		return Effect{}
+	case ActionMoveWorkspaceDown:
+		m.MoveWorkspace(1)
+		return Effect{}
 	}
 	return m.Current().Apply(a)
 }
@@ -324,6 +381,12 @@ func (w *Workspace) Apply(a Action) Effect {
 	if argv, ok := SpawnArgv(a); ok {
 		return Effect{Spawn: true, Argv: argv}
 	}
+	if axis, pct, ok := ResizeArg(a); ok {
+		if axis == ResizeWidth {
+			w.ResizeColumn(pct)
+		}
+		return Effect{}
+	}
 	switch a {
 	case ActionSpawnTerminal:
 		return Effect{Spawn: true}
@@ -339,6 +402,10 @@ func (w *Workspace) Apply(a Action) Effect {
 		w.MoveColumn(-1)
 	case ActionMoveColumnRight:
 		w.MoveColumn(1)
+	case ActionMoveWindowUp:
+		w.MoveWindow(-1)
+	case ActionMoveWindowDown:
+		w.MoveWindow(1)
 	case ActionCycleColumnWidth:
 		w.CycleWidth()
 	case ActionMaximizeColumn:

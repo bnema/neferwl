@@ -199,6 +199,20 @@ func (m *Monitor) Focus(i int) {
 	m.normalize()
 }
 
+// MoveWorkspace swaps the active numbered workspace with its neighbor up
+// (dir -1) or down (dir 1); the view follows it. It never passes the
+// trailing empty workspace.
+func (m *Monitor) MoveWorkspace(dir int) {
+	to := m.Active + dir
+	if m.shown != nil || (dir != -1 && dir != 1) || to < 0 || to >= len(m.Workspaces)-1 || m.Active >= len(m.Workspaces)-1 {
+		return
+	}
+	m.Workspaces[m.Active], m.Workspaces[to] = m.Workspaces[to], m.Workspaces[m.Active]
+	m.stopSwitch()
+	m.Active = to
+	m.normalize()
+}
+
 // FocusNumber switches to workspace n (1-based); past the end means the last.
 func (m *Monitor) FocusNumber(n int) { m.Focus(n - 1) }
 
