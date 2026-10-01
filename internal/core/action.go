@@ -120,6 +120,9 @@ func (c *Core) applyAction(a Action) Effect {
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
 	c.cur().mon.Current().focusCover()
+	if name, ok := NamedArg(a); ok && c.bringNamed(name) {
+		return Effect{}
+	}
 	dir := 0
 	switch a {
 	case ActionFocusMonitorLeft, ActionMoveWorkspaceLeft:
