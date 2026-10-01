@@ -58,9 +58,9 @@ type swipeGesture struct {
 	// ws is the workspace whose columns scroll, or the active one when a
 	// workspace slide began.
 	ws *Workspace
-	// usable is ws's usable area when a column swipe began: its snap
-	// points hold for it only, so the swipe ends if it changes.
-	usable Rect
+	// points are ws's column snap points when a column swipe began: the
+	// swipe ends if the layout no longer has them.
+	points []float64
 	// list is the numbered workspaces when a workspace slide began: the
 	// slide indexes it, so it ends if the list changes.
 	list []*Workspace
@@ -77,10 +77,11 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 }
 
 // columnsChanged reports whether a column swipe lost its workspace: it is
-// no longer shown or slidable, its usable area changed (an output resize
-// or a panel), or the overview opened over it.
+// no longer shown or slidable, its snap points moved (an output resize, a
+// panel, a window mapped or resized, other gaps), or the overview opened
+// over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
-	return m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.ws.Usable != g.usable
+	return m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || !slices.Equal(g.ws.snapPoints(), g.points)
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -169,9 +170,9 @@ func (c *Core) decide(g *swipeGesture) {
 		// The overview does not slide: the swipe moves its selection.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
-		g.mode, g.ws, g.usable = swipeColumns, w, w.Usable
+		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
 		w.motion = nil
-		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), w.snapPoints(), workspaceBand.scaled(float64(w.Usable.W)))
+		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.Usable.W)))
 	case !g.horizontal && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {

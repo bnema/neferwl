@@ -346,17 +346,20 @@ func TestStepSwipe(t *testing.T) {
 	}
 }
 
-// With no column fully shown (a fullscreen column wider than the usable
-// area), the focus goes to the column at the left edge.
+// With no column fully shown (a column wider than the space between the
+// gaps), the focus goes to the column at the left edge.
 func TestSnapFocusWideColumn(t *testing.T) {
-	w := &Workspace{Output: Rect{W: 800, H: 600}, Usable: Rect{X: 50, W: 700, H: 600}}
+	w := &Workspace{Output: Rect{W: 800, H: 600}, Usable: Rect{W: 800, H: 600}, Gaps: 10}
 	for i := range 3 {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 	}
-	w.fullscreen = 2
-	// Column 1 (index 1) is 800 wide from x 350+50: view 350 puts its
-	// left edge on the usable area's.
-	view := w.columnX(1) - w.Usable.X
+	// Full width with gaps: 780 wide, between 10 and 790. The view
+	// columnX(1)+1 shifts it 1 px left, so it is not fully shown.
+	w.Columns[1].FullWidth = true
+	if !w.slidable() {
+		t.Fatal("the workspace does not scroll")
+	}
+	view := w.columnX(1) - w.Usable.X - w.gap() + 1
 	for _, forward := range []bool{true, false} {
 		if focus := w.snapFocus(view, forward); focus != 1 {
 			t.Fatalf("forward=%t: focus %d, want the wide column 1", forward, focus)

@@ -780,11 +780,43 @@ func TestSwipeOutputResizedMidSwipe(t *testing.T) {
 	r.output <- ports.OutputAdded{Info: smaller}
 	scene(t, r.scenes)
 	// The first update after the resize lets go: the slide stops.
-	r.move(t, -40, 0)
+	s := r.move(t, -40, 0)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v after the next update, want %+v", id, got, w)
+		}
+	}
 	for range 2 {
 		r.at += 8 * time.Millisecond
 		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 	}
+	s = r.end(t, false)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
+		}
+	}
+}
+
+// A window maps mid-swipe: the column snap points moved, so the swipe lets
+// go and the view shows what the map alone shows.
+func TestSwipeWindowMappedMidSwipe(t *testing.T) {
+	plain := startSwipe(t, nil)
+	threeColumns(t, plain)
+	want := plain.mapWindow(t, 4)[0]
+
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	r.begin()
+	for range 3 {
+		r.move(t, -40, 0)
+	}
+	r.mapWindow(t, 4)
+	r.move(t, -40, 0)
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 	s := r.end(t, false)
 	for _, id := range []ports.WindowID{1, 2, 3, 4} {
 		w, _ := rectOf(want, id)
