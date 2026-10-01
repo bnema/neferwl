@@ -24,6 +24,9 @@ type overviewState struct {
 	selected         WindowID
 	selectedAt       int
 	scrollX, scrollY float64
+	// scrolled is set once a finger scroll stepped: it waits for the
+	// fingers to lift before the next step.
+	scrolled bool
 }
 
 // rowSnapshot is a row as the overview first showed it: browsing moves its
@@ -71,7 +74,7 @@ func (m *Monitor) ToggleOverview() {
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
-	m.ov.scrollX, m.ov.scrollY = 0, 0
+	m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, false
 	m.overviewOpens++
 	m.selectRow()
 }
@@ -897,14 +900,19 @@ func (m *Monitor) overviewFocus(a Action) bool {
 const overviewScrollStep = 60
 
 // overviewScroll moves the overview selection with a scroll frame: two
-// fingers step once per overviewScrollStep on the axis they move most
-// along, a wheel once per notch (high-resolution wheels add up their
-// fractions of a notch). Vertical steps select cards first, then rows;
+// fingers step once per gesture, after overviewScrollStep on the axis they
+// move most along, so a quick scroll never skips a column; a wheel steps
+// once per notch (high-resolution wheels add up their fractions of a
+// notch). Vertical steps select cards first, then rows;
 // touchpad.natural-scroll flips both axes as libinput reports.
 func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
 		// Fingers lifted: the next scroll starts from zero.
-		m.ov.scrollX, m.ov.scrollY = 0, 0
+		m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, false
+		return false
+	}
+	finger := a.Source != ports.AxisWheel
+	if finger && m.ov.scrolled {
 		return false
 	}
 	add := func(acc *float64, ax ports.ScrollAxis) {
@@ -932,6 +940,10 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			return changed
 		}
 		changed = true
+		if finger {
+			m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
+			return true
+		}
 	}
 }
 

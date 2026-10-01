@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"testing"
 	"time"
 )
@@ -122,21 +123,144 @@ func TestSnap(t *testing.T) {
 	for i := range 4 {
 		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
 	}
+	if got := w.snapPoints(); !slices.Equal(got, []float64{0, 400, 800}) {
+		t.Fatalf("snap points %v", got)
+	}
 	for _, tc := range []struct {
-		target  float64
-		forward bool
 		view    int
+		forward bool
 		focus   int
 	}{
-		{target: 130, forward: true, view: 0, focus: 0},
-		{target: 330, forward: true, view: 400, focus: 2},
-		{target: 330, forward: false, view: 400, focus: 1},
-		{target: 5000, forward: true, view: 800, focus: 3},
-		{target: -900, forward: false, view: 0, focus: 0},
+		{view: 0, forward: true, focus: 0},
+		{view: 400, forward: true, focus: 2},
+		{view: 400, forward: false, focus: 1},
+		{view: 800, forward: true, focus: 3},
 	} {
-		view, focus := w.snap(tc.target, tc.forward)
-		if view != tc.view || focus != tc.focus {
-			t.Errorf("snap(%v, %t) = %d, %d; want %d, %d", tc.target, tc.forward, view, focus, tc.view, tc.focus)
+		if focus := w.snapFocus(tc.view, tc.forward); focus != tc.focus {
+			t.Errorf("snapFocus(%d, %t) = %d; want %d", tc.view, tc.forward, focus, tc.focus)
 		}
+	}
+}
+
+// Column edges closer than snapSpacing merge: a step always shows.
+func TestSnapPointsMergeClose(t *testing.T) {
+	w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}}
+	// Views aligning a column: 0, 600, 640 (merged into 600) and 1000.
+	for _, px := range []int{600, 400, 640, 360} {
+		w.Columns = append(w.Columns, Column{Width: Width{Pixels: px}, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
+	}
+	if got := w.snapPoints(); !slices.Equal(got, []float64{0, 600, 1000}) {
+		t.Fatalf("snap points %v", got)
+	}
+}
+
+// swipe pushes n updates of delta, 8 ms apart, from time 0.
+func swipe(s *snapSwipe, n int, delta float64) time.Duration {
+	at := time.Duration(0)
+	for range n {
+		at += 8 * time.Millisecond
+		s.push(delta, at)
+	}
+	return at
+}
+
+func workspaceSnap(start float64) snapSwipe {
+	return newSnapSwipe(start, math.Round(start), 1/workspaceSwipeMovement, []float64{0, 1, 2, 3, 4}, workspaceBand)
+}
+
+// One swipe reaches the next workspace at most, however fast or far.
+func TestSnapSwipeOneStep(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		n     int
+		delta float64
+		want  float64
+	}{
+		{"quick flick down", 6, 30, 3},
+		{"quick flick up", 6, -30, 1},
+		{"hard long flick", 30, 60, 3},
+		{"short quick flick", 3, 20, 3},
+	} {
+		s := workspaceSnap(2)
+		at := swipe(&s, tc.n, tc.delta)
+		if got, _ := s.end(false, at); got != tc.want {
+			t.Errorf("%s: landed on %v, want %v", tc.name, got, tc.want)
+		}
+		if p := s.pos(); p < 1-workspaceBand.limit || p > 3+workspaceBand.limit {
+			t.Errorf("%s: view %v went past the neighbors", tc.name, p)
+		}
+	}
+}
+
+// A slow swipe settles on the closest point: back unless past halfway.
+func TestSnapSwipeSlowSettlesClosest(t *testing.T) {
+	for _, tc := range []struct {
+		dist, want float64
+	}{{100, 2}, {200, 3}, {-200, 1}} {
+		s := workspaceSnap(2)
+		at := time.Duration(0)
+		for range 40 {
+			at += 50 * time.Millisecond
+			s.push(tc.dist/40, at)
+		}
+		if got, _ := s.end(false, at+200*time.Millisecond); got != tc.want {
+			t.Errorf("slow %v: landed on %v, want %v", tc.dist, got, tc.want)
+		}
+	}
+}
+
+func TestSnapSwipeCancelReturns(t *testing.T) {
+	s := workspaceSnap(2)
+	at := swipe(&s, 10, 30)
+	if got, _ := s.end(true, at); got != 2 {
+		t.Fatalf("cancelled swipe landed on %v", got)
+	}
+}
+
+// A swipe caught during a landing steps from the landing: one more.
+func TestSnapSwipeFromBetweenPoints(t *testing.T) {
+	s := newSnapSwipe(2.6, 3, 1/workspaceSwipeMovement, []float64{0, 1, 2, 3, 4}, workspaceBand)
+	if s.lo != 2 || s.hi != 4 {
+		t.Fatalf("bounds %v %v", s.lo, s.hi)
+	}
+	at := swipe(&s, 6, 30)
+	if got, _ := s.end(false, at); got != 4 {
+		t.Fatalf("landed on %v, want 4", got)
+	}
+}
+
+// Detents: the view sticks near points and catches up between them,
+// moving with the fingers in the same direction, ending where they do.
+func TestSnapSwipeDetents(t *testing.T) {
+	s := workspaceSnap(2)
+	prev := s.pos()
+	for i := range 300 {
+		s.push(1, time.Duration(i)*time.Millisecond)
+		p := s.pos()
+		if p < prev {
+			t.Fatalf("view went back at %d: %v then %v", i, prev, p)
+		}
+		prev = p
+	}
+	if math.Abs(prev-3) > 1e-9 {
+		t.Fatalf("a full step shows %v", prev)
+	}
+	s = workspaceSnap(2)
+	s.push(30, 0)
+	if p := s.pos(); p >= 2.1 || p <= 2 {
+		t.Fatalf("near a point the view moved to %v for 0.1", p)
+	}
+}
+
+func TestStepSwipe(t *testing.T) {
+	s := newStepSwipe()
+	at := swipe(&s, 3, -40)
+	if got := s.step(false, at); got != -1 {
+		t.Fatalf("quick swipe step %d", got)
+	}
+	s = newStepSwipe()
+	s.push(-20, time.Second)
+	if got := s.step(false, 2*time.Second); got != 0 {
+		t.Fatalf("slow short swipe step %d", got)
 	}
 }

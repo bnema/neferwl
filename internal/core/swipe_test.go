@@ -166,13 +166,17 @@ func TestSwipeFollowsFingers(t *testing.T) {
 	r.input <- ports.SwipeUpdate{DX: -10, Time: r.at}
 	s := r.move(t, -10, 0)
 	after, _ := rectOf(s, 2)
-	// 10 units of 1200 per 800 px view: 7 px, not snapped to a column.
-	if d := after.X - before.X; d != 7 {
+	// 10 units of 1200 per 800 px view are 7 px; near the resting view
+	// the detent holds the view back a little.
+	if d := after.X - before.X; d <= 0 || d >= 7 {
 		t.Fatalf("column moved %d px with the fingers", d)
 	}
-	s = r.move(t, -30, 0)
-	if got, _ := rectOf(s, 2); got.X-before.X != 27 {
-		t.Fatalf("column moved %d px after 40 units", got.X-before.X)
+	// Halfway to the next column edge (400 px: 600 units) the view
+	// catches up with the fingers.
+	r.move(t, -290, 0)
+	s = r.move(t, -300, 0)
+	if got, _ := rectOf(s, 2); got.X-before.X != 400 {
+		t.Fatalf("column moved %d px after a full step", got.X-before.X)
 	}
 }
 
@@ -478,13 +482,13 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 	}
 	// The swipe on DP-1 still follows the fingers.
 	var got ports.Rect
-	for _, sc := range receiveMove(t, r, -30) {
+	for _, sc := range receiveMove(t, r, -570) {
 		if sc.Output == wide.Name {
 			got, _ = rectOf(sc, 2)
 		}
 	}
-	// 60 units at 2/3 px each: 40 px.
-	if got.X-before.X != 40 {
+	// 600 units at 2/3 px each: a full step of 400 px.
+	if got.X-before.X != 400 {
 		t.Fatalf("column 2 moved %d px", got.X-before.X)
 	}
 }
@@ -682,5 +686,37 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 				t.Fatalf("closeFirst=%v: window %d moved: %+v then %+v", closeFirst, id, before, after)
 			}
 		}
+	}
+}
+
+// A hard flick down from the first of four workspaces lands on the second:
+// one swipe never skips a workspace.
+func TestSwipeHardFlickMovesOneWorkspace(t *testing.T) {
+	r := startSwipe(t, nil)
+	for id := ports.WindowID(1); id <= 4; id++ {
+		r.mapWindow(t, id)
+		r.key(t, "Next", ports.ModAlt)
+	}
+	for range 4 {
+		r.key(t, "Prior", ports.ModAlt)
+	}
+	r.flick(t, 20, 0, 60)
+	s := r.settle(t)
+	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
+		t.Fatalf("hard flick did not land on workspace 2: %v %t", got, ok)
+	}
+}
+
+// A hard flick across many columns moves the view one column edge.
+func TestSwipeHardFlickMovesOneColumn(t *testing.T) {
+	r := startSwipe(t, nil)
+	for id := ports.WindowID(1); id <= 5; id++ {
+		r.mapWindow(t, id)
+	}
+	// The view shows 4 and 5; a hard flick left shows 3 and 4, not 1.
+	r.flick(t, 20, -60, 0)
+	s := r.settle(t)
+	if got, ok := rectOf(s, 3); !ok || got.X != 0 {
+		t.Fatalf("column 3 at %v %t, want the left edge", got, ok)
 	}
 }

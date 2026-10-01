@@ -226,18 +226,22 @@ func TestOverviewTwoFingerScroll(t *testing.T) {
 	finger := func(dx, dy float64) ports.PointerAxis {
 		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}, Vertical: ports.ScrollAxis{Set: true, Value: dy}}
 	}
-	// 50 left, lifted, then 50 and 50 left: one step (to 2). Without the
-	// reset it would be two (to 1), and the l below would land on 2.
+	// 50 left, lifted, then 50, 50 and 200 left: one step (to 2). Without
+	// the reset it would be two (to 1); without the one step per scroll,
+	// more. The l below would not land on 3.
 	input <- finger(-50, 5)
 	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
 	input <- finger(-50, 5)
 	input <- finger(-50, 0)
+	input <- finger(-200, 0)
 	sceneMatch(t, scenes, focused(2))
+	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
 	input <- ports.KeyEvent{Keysym: "l", Pressed: true}
 	sceneMatch(t, scenes, focused(3))
 	input <- ports.KeyEvent{Keysym: "l"}
 	input <- finger(-60, 0)
 	sceneMatch(t, scenes, focused(2))
+	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
 	// A wheel notch down has nowhere to go (no workspace below with
 	// windows); a finger scroll left moves on.
 	input <- ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}

@@ -9,10 +9,12 @@ import (
 )
 
 // A three-finger swipe follows the fingers: sideways it scrolls the columns,
-// up or down it slides between workspaces. When the fingers lift, the view
-// lands where the swipe's speed would carry it and a spring takes it there
-// (motion.go). Where the view cannot slide (fixed overflow, the stash, a
-// float, a fullscreen window), the swipe runs one focus action instead.
+// up or down it slides between workspaces. Each swipe moves one step at
+// most (snapswipe.go): the next column edge or the next workspace. When
+// the fingers lift, a quick swipe goes on to that step, a slow one settles
+// on the closest, and a spring takes the view there (motion.go). Where the
+// view cannot slide (fixed overflow, the stash, a float, a fullscreen
+// window, the overview), the swipe runs one focus action instead.
 
 const (
 	// swipeDecide is the touchpad distance before the swipe picks its axis
@@ -24,10 +26,6 @@ const (
 	// workspaceSwipeMovement is the touchpad distance that slides one
 	// workspace.
 	workspaceSwipeMovement = 300.0
-	// discreteSwipeMin is the projected distance a swipe needs to run a
-	// focus action where the view cannot slide, or a four-finger swipe to
-	// open or close the overview (half of niri's 300).
-	discreteSwipeMin = 150.0
 )
 
 type swipeMode uint8
@@ -51,18 +49,17 @@ type swipeGesture struct {
 	mode       swipeMode
 	horizontal bool
 	cx, cy     float64
-	// tracker adds up the movement along the chosen axis, natural scroll
-	// applied: positive scrolls right or down.
-	tracker swipeTracker
+	// snap follows the movement along the chosen axis, natural scroll
+	// applied: positive scrolls right or down. Its view is absolute: the
+	// columns' x in pixels or the monitor's fractional workspace index,
+	// so a focus change during the swipe does not move the fingers' view.
+	// A discrete or overview swipe counts steps of -1, 0 or 1.
+	snap snapSwipe
 	// ws is the workspace whose columns scroll, or the active one when a
-	// workspace slide began; start is where the view was when the swipe
-	// took over: its x in pixels (columns) or the monitor's fractional
-	// workspace index (workspaces). Both are absolute, so a focus change
-	// during the swipe does not move the fingers' view.
-	ws    *Workspace
-	start float64
-	// list is the numbered workspaces when a workspace slide began: start
-	// indexes it, so the slide ends if the list changes.
+	// workspace slide began.
+	ws *Workspace
+	// list is the numbered workspaces when a workspace slide began: the
+	// slide indexes it, so it ends if the list changes.
 	list []*Workspace
 	// opens is the monitor's overviewOpens when the swipe picked its
 	// mode: a slide the overview opened over is dropped, even once the
@@ -119,10 +116,10 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	if g.mode == swipeOverview {
 		// Like niri, the overview gesture ignores natural scroll: the
 		// fingers going up open it.
-		g.tracker.push(d, u.Time)
+		g.snap.push(d, u.Time)
 		return false
 	}
-	g.tracker.push(d*c.swipeSign(), u.Time)
+	g.snap.push(d*c.swipeSign(), u.Time)
 	m := g.screen.mon
 	switch g.mode {
 	case swipeColumns:
@@ -131,7 +128,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 			g.mode = swipeDropped
 			return true
 		}
-		g.ws.shift = g.start + g.tracker.pos*g.ws.swipeScale() - float64(g.ws.ViewX)
+		g.ws.shift = g.snap.pos() - float64(g.ws.ViewX)
 		return true
 	case swipeWorkspaces:
 		if g.listChanged(m) {
@@ -139,8 +136,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 			g.mode = swipeDropped
 			return true
 		}
-		f := workspaceBand.clamp(0, float64(len(m.Workspaces)-1), g.start+g.tracker.pos/workspaceSwipeMovement)
-		m.switchOff = f - float64(m.Active)
+		m.switchOff = g.snap.pos() - float64(m.Active)
 		return true
 	}
 	return false
@@ -153,6 +149,7 @@ func (c *Core) decide(g *swipeGesture) {
 	m := g.screen.mon
 	g.opens = m.overviewOpens
 	w := m.Current()
+	g.snap = newStepSwipe()
 	switch {
 	case g.fingers == 4 && !g.horizontal:
 		g.mode = swipeOverview
@@ -165,7 +162,8 @@ func (c *Core) decide(g *swipeGesture) {
 	case g.horizontal && w.slidable():
 		g.mode, g.ws = swipeColumns, w
 		w.motion = nil
-		g.start = float64(w.ViewX) + w.shift
+		band := rubberBand{stiffness: workspaceBand.stiffness, limit: workspaceBand.limit * float64(w.Usable.W)}
+		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), w.snapPoints(), band)
 	case !g.horizontal && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
@@ -174,7 +172,11 @@ func (c *Core) decide(g *swipeGesture) {
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
 		g.list = slices.Clone(m.Workspaces)
 		m.switchMotion, m.switchList = nil, nil
-		g.start = float64(m.Active) + m.switchOff
+		points := make([]float64, len(m.Workspaces))
+		for i := range points {
+			points[i] = float64(i)
+		}
+		g.snap = newSnapSwipe(float64(m.Active)+m.switchOff, float64(m.Active), 1/workspaceSwipeMovement, points, workspaceBand)
 	default:
 		g.mode = swipeDiscrete
 	}
@@ -188,8 +190,6 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	if g == nil || !c.hasScreen(g.screen) {
 		return false
 	}
-	// Idle time before the lift slows the swipe down.
-	g.tracker.push(0, e.Time)
 	now := c.now()
 	m := g.screen.mon
 	switch g.mode {
@@ -199,29 +199,29 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			w.stopSlide()
 			return false
 		}
-		scale := w.swipeScale()
 		shown := float64(w.ViewX) + w.shift
+		target, velocity := g.snap.end(e.Cancelled, e.Time)
 		if !e.Cancelled {
-			target := g.start + g.tracker.projectedEnd()*scale
-			w.ViewX, w.Focus = w.snap(target, target >= shown)
+			view := int(math.Round(target))
+			w.Focus = w.snapFocus(view, target >= shown)
+			w.ViewX = view
 			// A column wider than the view aligns as focus moves align it.
 			w.scroll()
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.keyboard.takeBack()
 		}
 		w.shift = shown - float64(w.ViewX)
-		w.motion = newMotion(viewSpring(w.shift, g.tracker.velocity()*scale), now)
+		w.motion = newMotion(viewSpring(w.shift, velocity), now)
 	case swipeWorkspaces:
 		if g.listChanged(m) {
 			m.stopSwitch()
 			return false
 		}
-		last := float64(len(m.Workspaces) - 1)
 		cur := float64(m.Active) + m.switchOff
-		velocity := g.tracker.velocity() / workspaceSwipeMovement * workspaceBand.clampDerivative(0, last, g.start+g.tracker.pos/workspaceSwipeMovement)
+		target, velocity := g.snap.end(e.Cancelled, e.Time)
 		idx := m.Active
 		if !e.Cancelled {
-			idx = int(math.Round(min(max(g.start+g.tracker.projectedEnd()/workspaceSwipeMovement, 0), last)))
+			idx = int(math.Round(target))
 		}
 		// Focus may drop the empty workspace left behind and renumber the
 		// list: the slide keeps measuring in the list it began on.
@@ -237,8 +237,8 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		m.switchOff, m.switchList = off, g.list
 		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
 	case swipeOverview:
-		p := g.tracker.projectedEnd()
-		if e.Cancelled || math.Abs(p) < discreteSwipeMin || (p < 0) == m.ov.open {
+		step := g.snap.step(e.Cancelled, e.Time)
+		if step == 0 || (step < 0) == m.ov.open {
 			return false
 		}
 		before := m.Current()
@@ -247,17 +247,17 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		c.keyboard.takeBack()
 		return m.Current() != before
 	case swipeDiscrete:
-		p := g.tracker.projectedEnd()
-		if e.Cancelled || math.Abs(p) < discreteSwipeMin {
+		step := g.snap.step(e.Cancelled, e.Time)
+		if step == 0 {
 			return false
 		}
 		a := ActionFocusWorkspaceDown
 		switch {
-		case g.horizontal && p < 0:
+		case g.horizontal && step < 0:
 			a = ActionFocusColumnLeft
 		case g.horizontal:
 			a = ActionFocusColumnRight
-		case p < 0:
+		case step < 0:
 			a = ActionFocusWorkspaceUp
 		}
 		// Focus actions act on the focused screen: the swipe's, unless the

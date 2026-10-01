@@ -2,6 +2,7 @@ package core
 
 import (
 	"math"
+	"slices"
 	"time"
 )
 
@@ -37,33 +38,54 @@ func (w *Workspace) swipeScale() float64 {
 	return float64(w.Usable.W) / viewSwipeMovement
 }
 
-// snap returns the view closest to target that aligns a column edge with
-// the usable area, never past the first or last column, and the column to
-// focus there: the current one while it stays fully shown, else the
-// furthest fully shown column toward the swipe (forward is rightward).
-func (w *Workspace) snap(target float64, forward bool) (view, focus int) {
+// snapPoints are the sorted views that align a column edge with the usable
+// area, never past the first or last column. Points closer than a
+// snapSpacing of the usable width merge into the first: a swipe step
+// always moves the view visibly.
+func (w *Workspace) snapPoints() []float64 {
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	last := len(w.Columns) - 1
 	lo := w.columnX(0) - minX
 	hi := max(w.columnX(last)+w.columnWidth(last)-maxX, lo)
-	view, best := lo, math.Inf(1)
-	try := func(v int) {
-		v = min(max(v, lo), hi)
-		if d := math.Abs(float64(v) - target); d < best {
-			view, best = v, d
+	var views []int
+	for i := range w.Columns {
+		views = append(views, min(max(w.columnX(i)-minX, lo), hi), min(max(w.columnX(i)+w.columnWidth(i)-maxX, lo), hi))
+	}
+	slices.Sort(views)
+	minStep := float64(w.Usable.W) * snapSpacing
+	points := []float64{float64(lo)}
+	for _, v := range views {
+		if float64(v)-points[len(points)-1] >= minStep {
+			points = append(points, float64(v))
 		}
 	}
-	for i := range w.Columns {
-		try(w.columnX(i) - minX)
-		try(w.columnX(i) + w.columnWidth(i) - maxX)
+	// The last column's end stays a point; a point close before it goes.
+	if n := len(points); float64(hi) != points[n-1] {
+		if n > 1 && float64(hi)-points[n-1] < minStep {
+			points = points[:n-1]
+		}
+		points = append(points, float64(hi))
 	}
+	return points
+}
+
+// snapSpacing is the smallest distance between column snap points, in
+// usable widths.
+const snapSpacing = 0.1
+
+// snapFocus is the column to focus at view: the current one while it stays
+// fully shown at the current view, else the furthest fully shown column
+// toward the swipe (forward is rightward).
+func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
+	g := w.gap()
+	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	full := func(i int) bool {
 		x := w.columnX(i) - view
 		return x >= minX && x+w.columnWidth(i) <= maxX
 	}
 	if full(w.Focus) && view == w.ViewX {
-		return view, w.Focus
+		return w.Focus
 	}
 	focus = -1
 	for i := range w.Columns {
@@ -80,7 +102,7 @@ func (w *Workspace) snap(target float64, forward bool) (view, focus int) {
 			}
 		}
 	}
-	return view, focus
+	return focus
 }
 
 func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, nil, nil }
