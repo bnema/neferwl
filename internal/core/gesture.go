@@ -268,7 +268,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		before := c.cur().mon.Current()
 		c.keyboard.takeBack()
 		if mon := c.cur().mon; mon.ov.open {
-			mon.overviewSwipe(a)
+			mon.overviewFocus(a)
 		} else {
 			c.applyAction(a)
 		}

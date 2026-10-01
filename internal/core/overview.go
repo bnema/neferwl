@@ -835,9 +835,17 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	return true, c.publish(ctx)
 }
 
-// overviewSwipe moves the selection like the keys, through stacks and rows.
-func (m *Monitor) overviewSwipe(a Action) {
-	m.overviewFocus(a)
+// overviewAction runs a bind while the overview is open: focus binds move
+// the selection, close-window targets the selected preview, mutations are
+// dropped. handled is false for binds that run as usual.
+func (m *Monitor) overviewAction(a Action) (e Effect, handled bool) {
+	if !m.ov.open {
+		return Effect{}, false
+	}
+	if a == ActionCloseWindow {
+		return Effect{Close: m.overviewTarget()}, true
+	}
+	return Effect{}, m.overviewFocus(a) || overviewBlocks(a)
 }
 
 // overviewFocus runs a focus bind as an overview move, so the focus binds

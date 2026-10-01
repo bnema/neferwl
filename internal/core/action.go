@@ -109,13 +109,8 @@ type Effect struct {
 // screen; column focus past the edge column moves to the neighbor screen;
 // everything else applies to the focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
-	if m := c.cur().mon; m.ov.open {
-		if m.overviewFocus(a) || overviewBlocks(a) {
-			return Effect{}
-		}
-		if a == ActionCloseWindow {
-			return m.Apply(a)
-		}
+	if e, ok := c.cur().mon.overviewAction(a); ok {
+		return e
 	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
@@ -222,13 +217,8 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
-	if m.ov.open {
-		if a == ActionCloseWindow {
-			return Effect{Close: m.overviewTarget()}
-		}
-		if m.overviewFocus(a) || overviewBlocks(a) {
-			return Effect{}
-		}
+	if e, ok := m.overviewAction(a); ok {
+		return e
 	}
 	if n, op, ok := WorkspaceArg(a); ok {
 		if op == FocusWorkspace {

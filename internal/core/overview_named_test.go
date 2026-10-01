@@ -410,7 +410,7 @@ func TestOverviewNamedDividerPublished(t *testing.T) {
 func TestOverviewNamedScrollAndSwipe(t *testing.T) {
 	m := namedOverviewMonitor()
 	m.ToggleOverview()
-	m.overviewSwipe(ActionFocusWorkspaceDown)
+	m.overviewFocus(ActionFocusWorkspaceDown)
 	if m.Current().Name != "dev" {
 		t.Fatal("swipe did not cross groups")
 	}
