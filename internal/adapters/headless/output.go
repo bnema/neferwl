@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/sys/unix"
 	"image"
 	"image/png"
-	"maps"
 	"os"
 	"path/filepath"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/presented"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -120,9 +121,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
 	seen := map[ports.WindowID]uint64{}
-	var holds holdSnapshots
-	// pending is a report the channel could not take, retried soon.
-	var pending *ports.OutputPresented
+	// reports holds what the channel could not take yet, retried soon.
+	var reports presented.Queue
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason string) {
@@ -151,7 +151,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			// confirmed software inactivity, independent of its old epoch.
 			inactive := haveScene && scene.Off
 			security, securityKnown = next, true
-			pending = nil
+			reports.Reset()
 			haveScene, dirty = false, false
 			if !security.Protected {
 				continue
@@ -230,7 +230,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return err
 		}
 		var retry <-chan time.Time
-		if pending != nil {
+		if reports.Len() > 0 {
 			retry = time.After(time.Millisecond)
 		}
 		// Requests wait for a scene that shows their indicator, at most
@@ -317,9 +317,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 				return err
 			}
-			if pending != nil {
-				pending = opts.send(pending)
-			}
+			opts.flush(&reports)
 			continue
 		case <-trim.C():
 			if err := checkSecurity(); err != nil {
@@ -424,7 +422,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
-			pending = opts.report(pending, seen)
+			opts.report(&reports, nil, seen)
 			continue
 		}
 		dirty = false
@@ -473,10 +471,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					r := holds.report(opts.Name, seen, reads)
-					select {
-					case opts.Presented <- r:
-					case <-ctx.Done():
+					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
+					if reports.Drain(ctx, opts.Presented) != nil {
 						return nil
 					}
 				}
@@ -574,7 +570,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests = capture.Waiting(requests, scene)
 		frame++
-		pending = opts.flipped(pending, seen, scene, surfaces)
+		opts.report(&reports, flipInfo(scene, surfaces), seen)
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
@@ -599,24 +595,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		}
 		opts.Log.Debug().Str("component", "render").Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
 	}
-}
-
-// holdSnapshots caches the immutable maps of the child-hold reports. The
-// receiver may still read an earlier report on another goroutine, so a cached
-// map is never mutated: it is replaced by a clone when the content changes,
-// and an unchanged publication allocates nothing.
-type holdSnapshots struct {
-	seen, reads map[ports.WindowID]uint64
-}
-
-func (h *holdSnapshots) report(output string, seen, reads map[ports.WindowID]uint64) ports.OutputPresented {
-	if !maps.Equal(h.seen, seen) {
-		h.seen = maps.Clone(seen)
-	}
-	if !maps.Equal(h.reads, reads) {
-		h.reads = maps.Clone(reads)
-	}
-	return ports.OutputPresented{Output: output, Seen: h.seen, ChildReads: h.reads}
 }
 
 func (opts Options) protected() bool {
@@ -645,31 +623,29 @@ func writePNGSecure(path string, img *image.RGBA, security ports.SessionSecurity
 	return os.Rename(f.Name(), path)
 }
 
-// report sends what the output read, or returns it to retry when the
-// channel is full. Frames that were not drawn carry no flip.
-func (opts Options) report(_ *ports.OutputPresented, seen map[ports.WindowID]uint64) *ports.OutputPresented {
+// report queues what the output read, with flip for a drawn frame, and
+// sends what the channel takes now; the rest is retried soon.
+func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	if opts.Presented == nil {
-		return nil
+		return
 	}
-	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen)})
+	if q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}) {
+		opts.Log.Warn().Str("component", "render").Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
+	}
+	q.Flush(opts.Presented)
 }
 
-// flipped reports a drawn frame as a flip at the current CLOCK_MONOTONIC
+// flush retries reports the channel could not take.
+func (opts Options) flush(q *presented.Queue) {
+	if opts.Presented != nil {
+		q.Flush(opts.Presented)
+	}
+}
+
+// flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
-// frame callbacks follow headless frames. A report still waiting is
-// sent first.
-func (opts Options) flipped(pending *ports.OutputPresented, seen map[ports.WindowID]uint64, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) *ports.OutputPresented {
-	if opts.Presented == nil {
-		return nil
-	}
-	var merged int
-	if pending != nil && opts.send(pending) != nil {
-		// The reader is behind: this frame's report replaces the waiting
-		// one, and its flip counts as merged (its feedback is discarded).
-		if pending.Flip != nil {
-			merged = 1 + pending.Flip.Merged
-		}
-	}
+// frame callbacks follow headless frames.
+func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	shows := map[ports.WindowID]uint64{}
@@ -678,14 +654,5 @@ func (opts Options) flipped(pending *ports.OutputPresented, seen map[ports.Windo
 			shows[id] = c.Seq
 		}
 	}
-	return opts.send(&ports.OutputPresented{Output: opts.Name, Seen: maps.Clone(seen), Flip: &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows, Merged: merged}})
-}
-
-func (opts Options) send(r *ports.OutputPresented) *ports.OutputPresented {
-	select {
-	case opts.Presented <- *r:
-		return nil
-	default:
-		return r
-	}
+	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows}
 }

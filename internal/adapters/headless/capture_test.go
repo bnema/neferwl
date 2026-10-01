@@ -5,7 +5,6 @@ import (
 	"errors"
 	"image"
 	"os"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -257,33 +256,6 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 		ids = append(ids, (<-replies).ID)
 	}
 	require.Equal(t, []uint64{1}, ids, "request 1 answered once by its worker, no pseudo request 0")
-}
-
-// An unchanged child-hold publication reuses its immutable snapshots;
-// a change clones, and earlier reports keep their maps.
-func TestHoldSnapshotsCloneOnlyOnChange(t *testing.T) {
-	var h holdSnapshots
-	seen := map[ports.WindowID]uint64{1: 4, 5: 7}
-	reads := map[ports.WindowID]uint64{5: 2}
-	first := h.report("HEADLESS-1", seen, reads)
-	require.Equal(t, seen, first.Seen)
-	require.Equal(t, reads, first.ChildReads)
-	seen[1] = 99 // the caller's scratch changes: the report does not
-	require.Equal(t, uint64(4), first.Seen[1])
-
-	seen[1] = 4
-	again := h.report("HEADLESS-1", seen, reads)
-	require.Equal(t, reflect.ValueOf(first.Seen).Pointer(), reflect.ValueOf(again.Seen).Pointer(), "unchanged seen is shared")
-	require.Equal(t, reflect.ValueOf(first.ChildReads).Pointer(), reflect.ValueOf(again.ChildReads).Pointer(), "unchanged reads are shared")
-	allocs := testing.AllocsPerRun(100, func() { _ = h.report("HEADLESS-1", seen, reads) })
-	require.Zero(t, allocs, "unchanged publication allocates nothing")
-	t.Logf("unchanged hidden-capture publication: %.0f allocs", allocs)
-
-	reads[5] = 3
-	changed := h.report("HEADLESS-1", seen, reads)
-	require.Equal(t, map[ports.WindowID]uint64{5: 3}, changed.ChildReads)
-	require.Equal(t, map[ports.WindowID]uint64{5: 2}, first.ChildReads, "sent snapshot stays immutable")
-	require.Equal(t, reflect.ValueOf(first.Seen).Pointer(), reflect.ValueOf(changed.Seen).Pointer(), "seen still unchanged")
 }
 
 // A scene that shows the capture indicator is never the source of a capture:

@@ -12,6 +12,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/presented"
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
@@ -98,11 +99,9 @@ type Output struct {
 	shown, queued uint64
 	planeRect     planeRect
 	reason        string // why the last frame was composed ("" = scanout)
-	unsent        []ports.OutputPresented
-	// Last immutable snapshot sent in a report. Never mutate it: wayland may
-	// still be reading a prior report on another goroutine.
-	seenSnapshot        map[ports.WindowID]uint64
-	childReadsSnapshot  map[ports.WindowID]uint64
+	reports       presented.Queue
+	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
+	// may still be reading a prior report on another goroutine.
 	showsSnapshot       map[ports.WindowID]uint64
 	directShowsSnapshot map[ports.WindowID]uint64
 	showsScratch        map[ports.WindowID]uint64
@@ -1234,15 +1233,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				// A display frame or fence that has not finished must not
 				// keep a finished child read held: child holds do not expire.
 				// Report them alone, at the last Seen that was safe.
-				o.report(nil, o.seenSnapshot)
+				o.report(nil, o.reports.Seen())
 				readWait = readWait || o.capped
 			}
 		}
-		o.flushReport(presented)
+		o.reports.Flush(presented)
 		// An unsent report is retried soon, not only on the next event;
 		// so is one that waits for an uncommitted frame's fence.
 		var retry <-chan time.Time
-		if len(o.unsent) > 0 || readWait {
+		if o.reports.Len() > 0 || readWait {
 			retryTimer.Reset(time.Millisecond)
 			retry = retryTimer.C
 		} else {
@@ -1667,68 +1666,16 @@ func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorCh
 	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }
 
-// maxUnsent bounds reports waiting for wayland; past it the oldest flip is
-// folded into the next one.
-const maxUnsent = 16
-
 // report queues what the output shows and has read, so replaced client
-// buffers can be released. A flip-less report merges into the newest
-// queued one; flips are never merged unless maxUnsent is reached.
+// buffers can be released (see presented.Queue for merging).
 func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	o.capped = false
 	var reads map[ports.WindowID]uint64
 	if o.capHidden != nil {
 		seen, reads, o.capped = o.capHidden(seen)
 	}
-	if !maps.Equal(o.seenSnapshot, seen) {
-		o.seenSnapshot = maps.Clone(seen)
-	}
-	if !maps.Equal(o.childReadsSnapshot, reads) {
-		o.childReadsSnapshot = maps.Clone(reads)
-	}
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot, ChildReads: o.childReadsSnapshot}
-	if n := len(o.unsent); n > 0 && (flip == nil || o.unsent[n-1].Flip == nil) {
-		if flip == nil {
-			r.Flip = o.unsent[n-1].Flip
-		}
-		o.unsent[n-1] = r
-		return
-	}
-	o.unsent = append(o.unsent, r)
-	if len(o.unsent) > maxUnsent {
-		old, next := o.unsent[0].Flip, o.unsent[1].Flip
-		if next != nil && old != nil {
-			next.Merged += 1 + old.Merged
-			// A snapshot can be shared with previously sent flips. Clone only
-			// when a merge actually needs to add an absent window.
-			cloned := false
-			for id, seq := range old.Shows {
-				if _, ok := next.Shows[id]; !ok {
-					if !cloned {
-						next.Shows = maps.Clone(next.Shows)
-						cloned = true
-					}
-					if next.Shows == nil {
-						next.Shows = make(map[ports.WindowID]uint64)
-					}
-					next.Shows[id] = seq
-				}
-			}
-		}
-		o.unsent = slices.Delete(o.unsent, 0, 1)
+	if o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads}) {
 		o.log.Warn().Str("connector", o.conn.name).Msg("wayland is not reading output reports; flips merged")
-	}
-}
-
-// flushReport sends queued reports without blocking.
-func (o *Output) flushReport(presented chan<- ports.OutputPresented) {
-	for len(o.unsent) > 0 {
-		select {
-		case presented <- o.unsent[0]:
-			o.unsent = slices.Delete(o.unsent, 0, 1)
-		default:
-			return
-		}
 	}
 }
 

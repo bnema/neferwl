@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/presented"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -196,8 +197,8 @@ func TestCursorCommitWaitsForEvent(t *testing.T) {
 	// Its event is not a frame: nothing is reported.
 	seen := map[ports.WindowID]uint64{}
 	o.completed(eventOf(c), seen)
-	if o.frame.pendingCommit() || len(o.unsent) != 0 || o.flips != 0 {
-		t.Fatalf("pending=%v unsent=%d flips=%d", o.frame.pendingCommit(), len(o.unsent), o.flips)
+	if o.frame.pendingCommit() || o.reports.Len() != 0 || o.flips != 0 {
+		t.Fatalf("pending=%v unsent=%d flips=%d", o.frame.pendingCommit(), o.reports.Len(), o.flips)
 	}
 	// Nothing changed: no commit.
 	if err := o.commitState(false); err != nil || len(*commits) != 1 {
@@ -289,10 +290,10 @@ func TestFlipReportsTimestampAndShownFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	o.completed(flipEvent{user: (*commits)[0].user, when: 5 * time.Second, seq: 11}, map[ports.WindowID]uint64{1: 4})
-	if len(o.unsent) != 1 {
-		t.Fatalf("reports %d", len(o.unsent))
+	if o.reports.Len() != 1 {
+		t.Fatalf("reports %d", o.reports.Len())
 	}
-	f := o.unsent[0].Flip
+	f := o.reports.Unsent()[0].Flip
 	if f == nil || f.When != 5*time.Second || f.Seq != 11 || f.Refresh != time.Second/60 || f.Shows[1] != 4 || !f.HardwareClock {
 		t.Fatalf("flip %+v", f)
 	}
@@ -310,11 +311,11 @@ func TestReportSeenAllocations(t *testing.T) {
 	} else {
 		t.Logf("unchanged report: %.1f allocs", allocs)
 	}
-	previous := o.unsent[0].Seen
+	previous := o.reports.Unsent()[0].Seen
 	seen[1] = 3
 	o.report(nil, seen)
-	if previous[1] != 1 || o.unsent[0].Seen[1] != 3 {
-		t.Fatalf("snapshot mutated: old %v new %v", previous, o.unsent[0].Seen)
+	if previous[1] != 1 || o.reports.Unsent()[0].Seen[1] != 3 {
+		t.Fatalf("snapshot mutated: old %v new %v", previous, o.reports.Unsent()[0].Seen)
 	}
 }
 
@@ -348,14 +349,14 @@ func TestReportsKeepEveryFlip(t *testing.T) {
 	o.report(nil, seen)
 	o.report(&ports.FlipInfo{Seq: 2}, seen)
 	o.report(nil, map[ports.WindowID]uint64{1: 3})
-	if len(o.unsent) != 2 || o.unsent[0].Flip.Seq != 1 || o.unsent[1].Flip.Seq != 2 || o.unsent[1].Seen[1] != 3 {
-		t.Fatalf("unsent %+v", o.unsent)
+	if o.reports.Len() != 2 || o.reports.Unsent()[0].Flip.Seq != 1 || o.reports.Unsent()[1].Flip.Seq != 2 || o.reports.Unsent()[1].Seen[1] != 3 {
+		t.Fatalf("unsent %+v", o.reports.Unsent())
 	}
-	for i := range maxUnsent + 3 {
+	for i := range presented.MaxUnsent + 3 {
 		o.report(&ports.FlipInfo{Seq: uint64(10 + i), Shows: map[ports.WindowID]uint64{}}, seen)
 	}
-	if len(o.unsent) != maxUnsent || o.unsent[0].Flip.Merged == 0 {
-		t.Fatalf("cap: %d reports, first merged %d", len(o.unsent), o.unsent[0].Flip.Merged)
+	if o.reports.Len() != presented.MaxUnsent || o.reports.Unsent()[0].Flip.Merged == 0 {
+		t.Fatalf("cap: %d reports, first merged %d", o.reports.Len(), o.reports.Unsent()[0].Flip.Merged)
 	}
 }
 
