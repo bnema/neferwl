@@ -91,7 +91,7 @@ func TestCaptureIndicatorFlashLastsOneSecond(t *testing.T) {
 	if s := indicatorScene(t, c); s.CaptureIndicators != nil {
 		t.Fatalf("indicators %+v after the flash", s.CaptureIndicators)
 	}
-	if c.capStop != nil || len(c.capFlashes) != 0 {
+	if c.capt.timerStop != nil || len(c.capt.flashes) != 0 {
 		t.Fatal("timer or flash left")
 	}
 }
@@ -108,15 +108,15 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 	if !c.captureFrame(ports.CaptureFrameTaken{Output: "A"}) {
 		t.Fatal("first frame shows nothing new")
 	}
-	if len(c.capFlashes) != 1 || c.capStop == nil {
-		t.Fatalf("flash %d, timer armed %v", len(c.capFlashes), c.capStop != nil)
+	if len(c.capt.flashes) != 1 || c.capt.timerStop == nil {
+		t.Fatalf("flash %d, timer armed %v", len(c.capt.flashes), c.capt.timerStop != nil)
 	}
 	state = ports.SecurityState{Generation: 2, Protected: true}
 	if !c.syncSecurity() {
 		t.Fatal("protection not engaged")
 	}
-	if len(c.capFlashes) != 0 || c.capStop != nil || c.capC != nil {
-		t.Fatalf("flash %d, timer %v left under protection", len(c.capFlashes), c.capStop != nil)
+	if len(c.capt.flashes) != 0 || c.capt.timerStop != nil || c.capt.timerC != nil {
+		t.Fatalf("flash %d, timer %v left under protection", len(c.capt.flashes), c.capt.timerStop != nil)
 	}
 	if s := indicatorScene(t, c); s.CaptureIndicators != nil {
 		t.Fatalf("indicators %+v while protected", s.CaptureIndicators)
@@ -137,7 +137,7 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 	if s := indicatorScene(t, c); len(s.CaptureIndicators) != 1 {
 		t.Fatalf("indicators %+v after the unlock", s.CaptureIndicators)
 	}
-	if len(ic.timers) != timers+1 || c.capStop == nil {
+	if len(ic.timers) != timers+1 || c.capt.timerStop == nil {
 		t.Fatalf("timer not re-armed after the unlock: %v", ic.timers)
 	}
 	ic.now = ic.now.Add(ports.CaptureFlash)
@@ -158,8 +158,8 @@ func TestCaptureIndicatorRegionAndUnion(t *testing.T) {
 	// A target with nothing on screen marks nothing and stores nothing.
 	c.captureFrame(ports.CaptureFrameTaken{Output: "gone"})
 	c.captureFrame(ports.CaptureFrameTaken{Output: "A", Region: Rect{X: 900, Y: 900, W: 5, H: 5}})
-	if len(c.capFlashes) != 2 {
-		t.Fatalf("flashes %+v", c.capFlashes)
+	if len(c.capt.flashes) != 2 {
+		t.Fatalf("flashes %+v", c.capt.flashes)
 	}
 }
 
@@ -270,7 +270,7 @@ func TestCaptureIndicatorInflatesThinTargets(t *testing.T) {
 		{Rect{X: 100, Y: 50, W: 4, H: 4}, Rect{X: 100, Y: 50, W: 5, H: 5}},
 		{Rect{X: 100, Y: 50, W: 5, H: 5}, Rect{X: 100, Y: 50, W: 5, H: 5}},
 	} {
-		c.capFlashes = nil
+		c.capt.flashes = nil
 		c.captureFrame(ports.CaptureFrameTaken{Output: "A", Region: tc.region})
 		s := indicatorScene(t, c)
 		if len(s.CaptureIndicators) != 1 || s.CaptureIndicators[0].Rect != tc.want {

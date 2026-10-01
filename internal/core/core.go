@@ -121,18 +121,8 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
-	// capSessions and capExcl are the capture state (capture.go).
-	capSessions []*capSession
-	capExcl     *capExclusion
-	// capScratch, capStates and capMarks are scratch of one publish, reused.
-	capScratch capView
-	capStates  []ports.CaptureSessionState
-	capMarks   []ports.CaptureIndicator
-	// capFlashes are the targets of captured frames still flashing; capC
-	// fires at the earliest of them (capindicator.go).
-	capFlashes []capFlash
-	capC       <-chan time.Time
-	capStop    func() bool
+	// capt is the capture state (capture.go, capindicator.go).
+	capt captureState
 }
 
 func keyName(s string) string {
@@ -1075,8 +1065,8 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			continue
-		case <-c.capC:
-			c.capC, c.capStop = nil, nil
+		case <-c.capt.timerC:
+			c.capt.timerC, c.capt.timerStop = nil, nil
 			if c.captureFlashTick() && c.publish(ctx) != nil {
 				return nil
 			}

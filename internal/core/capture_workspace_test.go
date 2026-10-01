@@ -190,7 +190,7 @@ func TestCaptureWorkspaceReusesStorage(t *testing.T) {
 func TestCapturedWorkspaceStaysCapturedWhileSliding(t *testing.T) {
 	c, ws, _ := hiddenCaptureCommands(t)
 	c.configures.cw.reset()
-	c.capSessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID}}}
+	c.capt.sessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID}}}
 	c.popups[10] = &popupState{id: 10, parent: 1, rect: Rect{X: 3, Y: 4, W: 10, H: 8}, mapped: true}
 	c.popupOrder = append(c.popupOrder, 10)
 	ws.motion = newMotion(viewSpring(10, 0), time.Time{})
@@ -198,7 +198,7 @@ func TestCapturedWorkspaceStaysCapturedWhileSliding(t *testing.T) {
 	if err := c.publish(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if v := c.capSessions[0].last; !v.Hidden || !v.Active || v.Reason.Terminal() {
+	if v := c.capt.sessions[0].last; !v.Hidden || !v.Active || v.Reason.Terminal() {
 		t.Fatalf("session state %+v", v)
 	}
 	if !c.configures.cw.active() || c.popups[10] == nil {
@@ -212,7 +212,7 @@ func TestCapturedWorkspaceStaysCapturedWhileSliding(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !c.configures.cw.active() {
-		t.Fatalf("captured workspace lost after the slide: %+v", c.capSessions[0].last)
+		t.Fatalf("captured workspace lost after the slide: %+v", c.capt.sessions[0].last)
 	}
 	// The session ends: the captured workspace is forgotten and its popup goes.
 	c.captureClose(1)
@@ -250,7 +250,7 @@ func TestCapturedWorkspaceInOverviewKeepsRealSize(t *testing.T) {
 		before[p.ID] = v
 	}
 	m.ToggleOverview()
-	c.capSessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID}}}
+	c.capt.sessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID}}}
 	if err := c.publish(ctx); err != nil {
 		t.Fatal(err)
 	}

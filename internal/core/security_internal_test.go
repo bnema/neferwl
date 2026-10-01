@@ -17,7 +17,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	c.ch.Security = gate
 	c.captureOpen(ports.CaptureSessionOpen{ID: 7, Workspace: ws.ID})
 	c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 7})
-	c.capFlashes = []capFlash{{target: capTarget{output: "A"}, until: c.now().Add(time.Hour)}}
+	c.capt.flashes = []capFlash{{target: capTarget{output: "A"}, until: c.now().Add(time.Hour)}}
 	c.screens[0].layers = []ports.LayerSurface{{ID: 50, Layer: ports.LayerOverlay, Keyboard: 1}}
 	c.pressed["password"] = true
 	c.buttons[0x110] = true
@@ -33,7 +33,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	if s.Security != state || s.Capture != nil || s.CaptureScene != nil || len(s.CaptureIndicators) != 0 || len(s.Windows) != 0 || len(s.Layers) != 0 || len(s.Separators) != 0 || s.Background != "#000000" {
 		t.Fatalf("unsafe protected scene %+v", s)
 	}
-	if len(c.capSessions) != 0 || c.capExcl != nil || len(c.capFlashes) != 0 || c.configures.cw.active() || len(c.pressed) != 0 || len(c.buttons) != 0 || c.pointer != 0 || c.grab != 0 || c.keyboard.layer != 0 || c.constrained.ID != 0 || c.swipe != nil {
+	if len(c.capt.sessions) != 0 || c.capt.excl != nil || len(c.capt.flashes) != 0 || c.configures.cw.active() || len(c.pressed) != 0 || len(c.buttons) != 0 || c.pointer != 0 || c.grab != 0 || c.keyboard.layer != 0 || c.constrained.ID != 0 || c.swipe != nil {
 		t.Fatal("transition kept desktop input/capture state")
 	}
 	// Logical dimensions must match exactly, including after output changes.
