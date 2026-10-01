@@ -143,10 +143,7 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 	var cfg ports.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSizedCore(t, cfg)
 	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
 	s := c.screens[0]
 	s.x = 1000
@@ -163,4 +160,67 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 	if r, ok := c.shownClientRect(1); ok {
 		t.Fatalf("scrolled off window has bounds %+v", r)
 	}
+}
+
+// A named workspace following the focus to another screen takes its
+// fullscreen siblings along, still linked and sized by the declaration.
+func TestBringNamedMovesFullscreenSiblings(t *testing.T) {
+	var cfg ports.Config
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	cfg.Layout.Overflow = string(OverflowFixed)
+	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s", Size: [2]int{100, 100}}}
+	c := newSizedCore(t, cfg)
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
+	a, b := c.screens[0], c.screens[1]
+	a.mon.ToggleNamed("s")
+	named := a.mon.Current()
+	a.mon.AddWindow(1)
+	a.mon.AddWindow(2)
+	a.mon.ToggleFullscreen()
+	fs := a.mon.Current()
+	if fs.origin != named {
+		t.Fatal("test did not create fullscreen sibling")
+	}
+	c.focusScreen = 1
+	c.bringNamed("s")
+	if a.mon.has(named) || a.mon.has(fs) || !b.mon.has(named) || !b.mon.has(fs) {
+		t.Fatal("named workspace or sibling left behind")
+	}
+	if fs.origin != named || fs.size != [2]int{100, 100} || named.Output.W != 100 {
+		t.Fatalf("sibling %+v size %v, named %+v", fs.origin, fs.size, named.Output)
+	}
+	// Siblings drop the home of the screen they left, like the workspace.
+	named.home, fs.home = "A", "A"
+	c.focusScreen = 0
+	c.bringNamed("s")
+	if named.home != "" || fs.home != "" || !a.mon.has(fs) || fs.origin != named {
+		t.Fatalf("home %q sibling home %q", named.home, fs.home)
+	}
+}
+
+// Toggling a named workspace that is already on the focused screen, or on
+// its connected home, allocates nothing to find it.
+func TestBringNamedLookupAllocations(t *testing.T) {
+	var cfg ports.Config
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s"}, {Name: "h", Monitor: "A"}}
+	c := newSizedCore(t, cfg)
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
+	if n := testing.AllocsPerRun(100, func() { c.focusScreen = 0; c.bringNamed("s"); c.bringNamed("h") }); n != 0 {
+		t.Fatalf("%v allocs", n)
+	}
+}
+
+// newSizedCore returns a core with buffered output channels and no outputs.
+func newSizedCore(t *testing.T, cfg ports.Config) *Core {
+	t.Helper()
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

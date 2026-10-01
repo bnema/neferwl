@@ -39,7 +39,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; use the overview to show an occupied one, or a `workspace <name>` bind to show it and toggle back |
-| `workspace.<name>.monitor` | first output | Home monitor: connector (`DP-2`) or monitor key; guests on another output while home is absent and returns when it reconnects |
+| `workspace.<name>.monitor` | focused output | Home monitor: connector (`DP-2`) or monitor key. A `workspace <name>` bind focuses it there. Unset, or while home is absent, the workspace comes to the focused output; it returns home when it reconnects |
 | `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |

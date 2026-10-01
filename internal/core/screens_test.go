@@ -28,6 +28,7 @@ type multiRig struct {
 var (
 	left  = ports.OutputInfo{Name: "DP-1", Make: "Acme", Model: "A", Serial: "1", Width: 200, Height: 100}
 	right = ports.OutputInfo{Name: "DP-2", Make: "Acme", Model: "B", Serial: "2", Width: 400, Height: 200}
+	third = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
 )
 
 // startMulti runs core with Alt as Cmd, no border and no gaps, and plugs
@@ -1054,5 +1055,94 @@ func TestStashThinPeekClick(t *testing.T) {
 			}
 			break
 		}
+	}
+}
+
+func TestNamedWorkspaceWithoutHomeFollowsFocus(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	// Called from DP-2, web comes to DP-2.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "w", ports.ModAlt)
+	if got := shown(r.mapWindow(t, 1)); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-2"]) != 0 {
+		t.Fatal(got)
+	}
+	// Called from DP-1, it moves there with its window.
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestNamedWorkspaceWithHomeFocusesIt(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "w", ports.ModAlt)
+	// The focus went to DP-1: the window opens there.
+	if got := shown(r.mapWindow(t, 1)); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestNamedGuestFollowsFocusAndReturnsHome(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	// DP-3 is not plugged: web follows the focus to DP-2.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "w", ports.ModAlt)
+	if got := shown(r.mapWindow(t, 1)); len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	r.key(t, "w", ports.ModAlt)
+	// DP-3 arrives: web, not on screen, goes home with no bind.
+	r.plug(t, third)
+	st := receive(t, r.state)
+	for len(st.Outputs) < 3 {
+		st = receive(t, r.state)
+	}
+	if len(st.Windows) != 1 || st.Windows[0].Output != "DP-3" {
+		t.Fatalf("%+v", st.Windows)
+	}
+}
+
+func TestNamedGuestOnScreenGoesHomeOnBind(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "w", ports.ModAlt)
+	r.mapWindow(t, 1)
+	// DP-3 arrives while web is on screen on DP-2: the bind takes it home.
+	r.plug(t, third)
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-3"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func TestNamedOnScreenAtHomeStaysOnBindFromElsewhere(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-1"}}
+		c.Binds["Alt+w"] = "workspace web"
+	}, left, right)
+	r.key(t, "w", ports.ModAlt)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	// Reaching web from DP-2 focuses it; it does not hide it.
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-1"]) != 1 {
+		t.Fatal(got)
+	}
+	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-1"]) != 0 {
+		t.Fatal(got)
 	}
 }

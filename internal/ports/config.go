@@ -152,7 +152,7 @@ const (
 type WorkspaceConfig struct {
 	Name string
 	// Monitor is the home monitor: a connector name (DP-2) or a monitor key
-	// ("make model serial"); empty means the first output.
+	// ("make model serial"); empty follows the focused output when shown.
 	Monitor string
 	// Size overrides the workspace's logical width and height. Zero inherits
 	// the monitor; its scale is always inherited.

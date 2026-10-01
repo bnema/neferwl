@@ -45,7 +45,7 @@ type Monitor struct {
 // Overflow follow the monitor defaults.
 type NamedWorkspace struct {
 	Name string
-	// Monitor is the home monitor (connector or key); "" for the first one.
+	// Monitor is the home monitor (connector or key); "" follows the focus.
 	Monitor    string
 	MaxColumns int
 	Overflow   Overflow
@@ -229,9 +229,11 @@ func (m *Monitor) ToggleNamed(name string) {
 
 // byName returns the configured workspace with that name, or nil.
 func (m *Monitor) byName(name string) *Workspace {
-	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {
-		if w.Name == name {
-			return w
+	for _, list := range [2][]*Workspace{m.Workspaces, m.hidden} {
+		for _, w := range list {
+			if w.Name == name {
+				return w
+			}
 		}
 	}
 	return nil
