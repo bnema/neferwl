@@ -654,33 +654,57 @@ func TestOverviewScrollSteps(t *testing.T) {
 	}
 }
 
-// A two-finger scroll steps once until the fingers lift; reopening the
+// A two-finger scroll sideways steps to the next column after
+// overviewScrollStep, then once per overviewScrollRepeat, and stays on
+// columns; up or down it steps once until the fingers lift. Reopening the
 // overview, a wheel notch and continuous scrolling are not held by it.
-func TestOverviewFingerScrollOneStep(t *testing.T) {
-	m := overviewMonitor()
-	finger := func(dx float64) ports.PointerAxis {
-		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+func TestOverviewFingerScroll(t *testing.T) {
+	finger := func(dx, dy float64) ports.PointerAxis {
+		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}, Vertical: ports.ScrollAxis{Set: true, Value: dy}}
 	}
+	m := overviewMonitor()
 	focused := func() WindowID { f, _ := m.Focused(); return f }
 	m.Current().FocusID(3)
 	m.ToggleOverview()
-	if !m.overviewScroll(finger(-70)) || focused() != 2 {
+	// 70: one column; 100 more is under the longer repeat step.
+	if !m.overviewScroll(finger(-70, 0)) || focused() != 2 {
 		t.Fatalf("first step on %d", focused())
 	}
-	if m.overviewScroll(finger(-200)) {
-		t.Fatal("the same scroll stepped twice")
+	if m.overviewScroll(finger(-100, 0)) {
+		t.Fatal("stepped again before overviewScrollRepeat")
 	}
-	if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Horizontal: ports.ScrollAxis{Set: true, V120: -120}}) || focused() != 1 {
-		t.Fatalf("wheel held by the finger scroll: on %d", focused())
+	// The fingers drift down: still on columns, no row step.
+	if m.overviewScroll(finger(0, 200)) {
+		t.Fatal("a sideways scroll stepped down")
 	}
-	m.CancelOverview()
-	m.Current().FocusID(3)
-	m.ToggleOverview()
-	if !m.overviewScroll(finger(-70)) {
+	if !m.overviewScroll(finger(-50, 0)) || focused() != 1 {
+		t.Fatalf("long scroll on %d, want 1", focused())
+	}
+
+	// Vertical: one step per scroll, through the stack's cards.
+	sm := stackMonitor()
+	sm.ToggleOverview()
+	before, _ := sm.Focused()
+	if !sm.overviewScroll(finger(0, 70)) {
+		t.Fatal("first vertical step")
+	}
+	after, _ := sm.Focused()
+	if after == before {
+		t.Fatal("vertical step selected nothing new")
+	}
+	if sm.overviewScroll(finger(0, 400)) {
+		t.Fatal("the same vertical scroll stepped twice")
+	}
+	if !sm.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) {
+		t.Fatal("wheel held by the finger scroll")
+	}
+	sm.CancelOverview()
+	sm.ToggleOverview()
+	if !sm.overviewScroll(finger(0, 70)) {
 		t.Fatal("reopened overview still held the old scroll")
 	}
-	cont := ports.PointerAxis{Source: ports.AxisContinuous, Horizontal: ports.ScrollAxis{Set: true, Value: -70}}
-	if !m.overviewScroll(cont) {
+	cont := ports.PointerAxis{Source: ports.AxisContinuous, Vertical: ports.ScrollAxis{Set: true, Value: -70}}
+	if !sm.overviewScroll(cont) {
 		t.Fatal("continuous scroll held by the finger scroll")
 	}
 }
