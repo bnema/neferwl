@@ -28,6 +28,7 @@ type multiRig struct {
 var (
 	left  = ports.OutputInfo{Name: "DP-1", Make: "Acme", Model: "A", Serial: "1", Width: 200, Height: 100}
 	right = ports.OutputInfo{Name: "DP-2", Make: "Acme", Model: "B", Serial: "2", Width: 400, Height: 200}
+	third = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
 )
 
 // startMulti runs core with Alt as Cmd, no border and no gaps, and plugs
@@ -1091,8 +1092,7 @@ func TestNamedWorkspaceWithHomeFocusesIt(t *testing.T) {
 	}
 }
 
-func TestNamedGuestFollowsFocusAndKeepsHome(t *testing.T) {
-	third := ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
+func TestNamedGuestFollowsFocusAndReturnsHome(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
 		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
 		c.Binds["Alt+w"] = "workspace web"
@@ -1104,15 +1104,18 @@ func TestNamedGuestFollowsFocusAndKeepsHome(t *testing.T) {
 		t.Fatal(got)
 	}
 	r.key(t, "w", ports.ModAlt)
-	// DP-3 arrives: web still goes home.
+	// DP-3 arrives: web, not on screen, goes home with no bind.
 	r.plug(t, third)
-	if got := shown(r.key(t, "w", ports.ModAlt)); len(got["DP-3"]) != 1 || got["DP-3"][0] != 1 {
-		t.Fatal(got)
+	st := receive(t, r.state)
+	for len(st.Outputs) < 3 {
+		st = receive(t, r.state)
+	}
+	if len(st.Windows) != 1 || st.Windows[0].Output != "DP-3" {
+		t.Fatalf("%+v", st.Windows)
 	}
 }
 
 func TestNamedGuestOnScreenGoesHomeOnBind(t *testing.T) {
-	third := ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "C", Serial: "3", Width: 300, Height: 100}
 	r := startMulti(t, func(c *ports.Config) {
 		c.Workspaces = []ports.WorkspaceConfig{{Name: "web", Monitor: "DP-3"}}
 		c.Binds["Alt+w"] = "workspace web"

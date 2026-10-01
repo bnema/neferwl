@@ -143,10 +143,7 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 	var cfg ports.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSizedCore(t, cfg)
 	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
 	s := c.screens[0]
 	s.x = 1000
@@ -173,10 +170,7 @@ func TestBringNamedMovesFullscreenSiblings(t *testing.T) {
 	cfg.Layout.MaxColumns = 2
 	cfg.Layout.Overflow = string(OverflowFixed)
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s", Size: [2]int{100, 100}}}
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSizedCore(t, cfg)
 	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
 	c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
 	a, b := c.screens[0], c.screens[1]
@@ -213,13 +207,20 @@ func TestBringNamedLookupAllocations(t *testing.T) {
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s"}, {Name: "h", Monitor: "A"}}
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSizedCore(t, cfg)
 	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
 	c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
 	if n := testing.AllocsPerRun(100, func() { c.focusScreen = 0; c.bringNamed("s"); c.bringNamed("h") }); n != 0 {
 		t.Fatalf("%v allocs", n)
 	}
+}
+
+// newSizedCore returns a core with buffered output channels and no outputs.
+func newSizedCore(t *testing.T, cfg ports.Config) *Core {
+	t.Helper()
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

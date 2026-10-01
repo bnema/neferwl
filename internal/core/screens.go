@@ -354,9 +354,8 @@ func (c *Core) bringNamed(name string) bool {
 	if w == nil || i < 0 {
 		return false
 	}
-	spec := c.specs[i]
-	to, home := c.focusScreen, spec.Monitor
-	if h := slices.IndexFunc(c.screens, func(s *screen) bool { return home != "" && s.mon.matches(home) }); h >= 0 {
+	to, home := c.focusScreen, c.specs[i].Monitor
+	if h := slices.IndexFunc(c.screens, func(s *screen) bool { return s.mon.matches(home) }); h >= 0 {
 		to, home = h, ""
 	}
 	dst := c.screens[to]
@@ -367,23 +366,22 @@ func (c *Core) bringNamed(name string) bool {
 		}
 	}
 	if src != dst {
-		c.moveNamed(src, dst, w, home)
+		moveNamed(src, dst, w, home)
 	}
 	return false
 }
 
 // moveNamed moves the named workspace w and its fullscreen siblings from src
 // to dst, without changing what dst shows. home is their new w.home.
-func (c *Core) moveNamed(src, dst *screen, w *Workspace, home string) {
-	// Fullscreen siblings leave first: without their origin on the source,
-	// normalize would unlink them. take edits the lists, so collect first.
+func moveNamed(src, dst *screen, w *Workspace, home string) {
+	// Fullscreen siblings (always numbered) leave first: without their
+	// origin on the source, normalize would unlink them. take edits the
+	// list, so collect first.
 	var buf [4]*Workspace
 	siblings := buf[:0]
-	for _, list := range [2][]*Workspace{src.mon.Workspaces, src.mon.hidden} {
-		for _, fs := range list {
-			if fs.origin == w {
-				siblings = append(siblings, fs)
-			}
+	for _, fs := range src.mon.Workspaces {
+		if fs.origin == w {
+			siblings = append(siblings, fs)
 		}
 	}
 	for _, fs := range siblings {
@@ -392,7 +390,7 @@ func (c *Core) moveNamed(src, dst *screen, w *Workspace, home string) {
 	hidden := src.mon.isHidden(w)
 	src.mon.take(w)
 	// A guest keeps waiting for its home; any other forgets the output it
-	// was unplugged from. Siblings share it so they return together.
+	// was unplugged from. Siblings take the same home.
 	w.home = home
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	for _, fs := range siblings {
