@@ -355,7 +355,7 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		switch {
 		case at+dx >= 0 && at+dx < len(w.Stash):
 			m.selectCard(w, at+dx)
-		case dx > 0 && len(w.Columns) > 0:
+		case dx > 0 && len(w.stack()) > 0:
 			m.ov.card, m.ov.cardOf = 0, nil
 			item := m.stackFront(w)
 			if item.kind == stackColumns {

@@ -277,3 +277,24 @@ func TestOverviewStackNoFloatVeil(t *testing.T) {
 		t.Fatalf("veil %v in the overview", d)
 	}
 }
+
+// l past the last stash card returns to the front card, even with no columns.
+func TestOverviewPileRightToFloatCard(t *testing.T) {
+	m := monitor()
+	m.SetOutput(300, 200)
+	m.SetBorder(2)
+	w := m.Current()
+	m.AddWindow(1)
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
+	w.AddFloating(9, 300, 200)
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	if m.card() != 1 {
+		t.Fatalf("h did not enter the pile: card %d", m.card())
+	}
+	m.OverviewMove(1, 0)
+	if m.card() != 0 || m.overviewTarget() != 9 {
+		t.Fatalf("l stayed in the pile: card %d target %d", m.card(), m.overviewTarget())
+	}
+}
