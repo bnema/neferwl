@@ -40,6 +40,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	}
 	w.windows()
 	w.popups(false)
+	w.dropHints()
 	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
@@ -79,6 +80,20 @@ func (w *sceneWalk) captureIndicators() {
 		w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
 		w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
 		w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
+	}
+}
+
+// dropHints fills where a dragged tile would land (ports.Scene.DropHints),
+// in the active border color, over the workspace's windows.
+func (w *sceneWalk) dropHints() {
+	if len(w.s.DropHints) == 0 {
+		return
+	}
+	col := parseColor(w.s.Border.Active)
+	for _, r := range w.s.DropHints {
+		if r.W > 0 && r.H > 0 {
+			w.fill(w.physRect(r.X, r.Y, r.W, r.H), col)
+		}
 	}
 }
 

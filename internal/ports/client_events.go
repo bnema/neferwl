@@ -67,6 +67,28 @@ type OutputPower struct {
 
 func (OutputPower) clientEvent() {}
 
+// ResizeEdges are the window edges a pointer resize moves, as bit flags
+// (the xdg_toplevel resize_edge values).
+type ResizeEdges uint32
+
+const (
+	ResizeTop    ResizeEdges = 1
+	ResizeBottom ResizeEdges = 2
+	ResizeLeft   ResizeEdges = 4
+	ResizeRight  ResizeEdges = 8
+)
+
+// WindowMoveRequest carries wayland → core xdg_toplevel move and resize
+// requests answering the client's current press: core starts a pointer
+// drag of the window with the held button.
+type WindowMoveRequest struct {
+	ID     WindowID
+	Resize bool
+	Edges  ResizeEdges
+}
+
+func (WindowMoveRequest) clientEvent() {}
+
 // WindowFullscreenRequest carries wayland → core fullscreen requests.
 // External is set when another client (a taskbar, through foreign
 // toplevel) asks for it, not the window itself.

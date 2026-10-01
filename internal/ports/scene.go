@@ -33,6 +33,10 @@ type Scene struct {
 	// the Border colors: tile lines over the tiles, under the floats; a
 	// float's border right after the float.
 	Separators []Separator
+	// DropHints show where a dragged tile lands, filled with Border.Active
+	// over the windows of the workspace, under the top layers. Only the
+	// output under the pointer has them, during a drag.
+	DropHints []Rect
 	// Layers are the shown layer surfaces, drawn in slice order: background
 	// and bottom before windows, top and overlay after. Core leaves out
 	// those a fullscreen window hides (all but the background and a surface

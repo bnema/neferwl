@@ -155,6 +155,18 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 On a free floating window, `move-column-left/right` and `move-window-up/down` move it by 50 logical pixels, and `set-column-width`/`set-window-height` resize it by a share of the usable width or height. `toggle-window-stash` stashes it and brings it back floating at the same place. `toggle-floating` returns it to its column.
 
+### Moving windows with the pointer
+
+Hold `cmd` and drag with the left button to move the window under the pointer; drag with the right button to resize a floating window from its bottom-right corner. Apps that drag their own title bar or edges (`xdg_toplevel.move`/`resize`) do the same without `cmd`. The window gets no pointer events while you drag, and `Escape` cancels the drag.
+
+A floating window follows the pointer and becomes a [free floating window](#free-floating-windows). A tile stays in place until you release the button. Until then, a bar or frame in `border.active` color shows where it will land:
+
+- top or bottom quarter of a window: stack it above or below that window;
+- middle of a window: swap the two columns (a window from a stacked column becomes a new column there);
+- in scroll overflow, the gap between two columns: a new column there. Moving the pointer against the left or right edge scrolls the workspace one column at a time.
+
+The drop can be on another monitor; focus follows the window. There, the middle of a window puts it in a new column at that place: only columns of the same workspace swap. A full `fixed` workspace has no room for a new column, so the window stacks in the outlined one.
+
 ### Overview
 
 `toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Each monitor has one vertical overview. A named workspace appears directly below the numbered workspace from which its `workspace <name>` bind was invoked. Invoking it from another numbered workspace updates this placement; browsing the overview does not. Several named workspaces attached to the same numbered workspace follow configuration order, with horizontal rules separating their group from numbered rows. Named-to-named binds reuse the source's numbered attachment. Unattached named workspaces follow the last occupied numbered row, or the first row if all numbered workspaces are empty. The selected workspace stays centred and its immediate neighbors appear above and below; rows and stash previews keep their full width. Empty workspaces are skipped unless currently selected or serving as the invocation anchor of a visible named row. Named workspaces remain outside the numbered list and normal workspace up/down navigation. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's only preview; `scroll` overflow keeps its columns selectable in one card.
