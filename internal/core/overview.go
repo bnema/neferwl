@@ -907,10 +907,12 @@ const (
 	overviewScrollRepeat = 150
 )
 
-// overviewScroll moves the overview selection with a scroll frame, on the
-// axis the scroll moves most along. Two fingers step to the next column
-// after overviewScrollStep, then once per overviewScrollRepeat; up or down
-// they step once per scroll, so a card in a stack is easy to pick.
+// overviewScroll moves the overview selection with a scroll frame: a row
+// step when the vertical scroll reaches overviewScrollStep and leads, else
+// a column step. Two fingers step to the next column after
+// overviewScrollStep, then once per overviewScrollRepeat, and stay on
+// columns until they lift; up or down they step once per scroll, so a card
+// in a stack is easy to pick.
 // Continuous scrolling steps once per overviewScrollStep and a wheel once
 // per notch (high-resolution wheels add up their fractions of a notch).
 // Vertical steps select cards first, then rows; touchpad.natural-scroll
@@ -924,8 +926,14 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if finger && m.ov.scrolled {
 		return false
 	}
+	// A sideways finger scroll stays on columns; other sources do not, and
+	// start from zero rather than from its leftover.
+	sideways := finger && m.ov.sideways
+	if !finger && m.ov.sideways {
+		m.ov.scrollX, m.ov.scrollY = 0, 0
+	}
 	stepX := float64(overviewScrollStep)
-	if m.ov.sideways {
+	if sideways {
 		stepX = overviewScrollRepeat
 	}
 	add := func(acc *float64, ax ports.ScrollAxis) {
@@ -937,7 +945,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			*acc += ax.Value
 		}
 	}
-	if !m.ov.sideways {
+	if !sideways {
 		add(&m.ov.scrollY, a.Vertical)
 	}
 	add(&m.ov.scrollX, a.Horizontal)

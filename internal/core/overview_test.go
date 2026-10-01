@@ -680,6 +680,24 @@ func TestOverviewFingerScroll(t *testing.T) {
 	if !m.overviewScroll(finger(-50, 0)) || focused() != 1 {
 		t.Fatalf("long scroll on %d, want 1", focused())
 	}
+	// The fingers still rest: a wheel notch steps one column as always.
+	if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Horizontal: ports.ScrollAxis{Set: true, V120: 120}}) || focused() != 2 {
+		t.Fatalf("wheel after a sideways scroll on %d, want 2", focused())
+	}
+	// Once lifted, the next scroll starts with the short step again, and
+	// one large frame takes the short step then a repeat.
+	c := &Core{screens: []*screen{{mon: m}}}
+	c.scrollStop(ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}})
+	if !m.overviewScroll(finger(220, 0)) || focused() != 3 {
+		t.Fatalf("large frame on %d, want 3", focused())
+	}
+	// Reopening forgets a sideways scroll left without its stop.
+	m.CancelOverview()
+	m.Current().FocusID(3)
+	m.ToggleOverview()
+	if !m.overviewScroll(finger(-70, 0)) || focused() != 2 {
+		t.Fatalf("reopened sideways scroll on %d, want 2", focused())
+	}
 
 	// Vertical: one step per scroll, through the stack's cards.
 	sm := stackMonitor()
@@ -697,6 +715,13 @@ func TestOverviewFingerScroll(t *testing.T) {
 	}
 	if !sm.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: -120}}) {
 		t.Fatal("wheel held by the finger scroll")
+	}
+	// A sideways finger scroll does not hold a vertical wheel notch.
+	sm.CancelOverview()
+	sm.ToggleOverview()
+	sm.overviewScroll(finger(70, 0))
+	if !sm.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: 120}}) {
+		t.Fatal("vertical wheel held by a sideways finger scroll")
 	}
 	sm.CancelOverview()
 	sm.ToggleOverview()
