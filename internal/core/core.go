@@ -1001,13 +1001,15 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 			case ports.WindowFullscreenRequest:
+				c.configures.answer[v.ID] = true
 				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
-					continue
+					break
 				}
 				if s, w := c.screenOf(v.ID); s != nil {
-					// A taskbar request is a user action on that window.
+					// A taskbar request is a user action on that window: it
+					// takes the focus, leaving another window's fullscreen.
 					if v.External && v.Fullscreen {
-						w.FocusID(v.ID)
+						w.Activate(v.ID)
 					}
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}

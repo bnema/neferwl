@@ -918,6 +918,34 @@ func TestExternalFullscreenFocusesFixed(t *testing.T) {
 	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
 		t.Fatal("taskbar fullscreen:", got, focused)
 	}
+	// Over another covering window too: it leaves fullscreen.
+	r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true, External: true}
+	set = receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("taskbar fullscreen over another:", got, focused)
+	}
+}
+
+// A refused fullscreen request still gets a configure, unchanged: clients
+// wait for it (xdg-shell).
+func TestRefusedFullscreenConfigured(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	receive(t, r.scenes)
+	for len(r.commands) > 0 {
+		if v, ok := (<-r.commands).(ports.ConfigureWindow); ok && v.ID == 1 {
+			if v.Fullscreen {
+				t.Fatalf("refused request applied: %+v", v)
+			}
+			return
+		}
+	}
+	t.Fatal("no configure answered the request")
 }
 
 // An activated window on another workspace comes on screen with focus.

@@ -23,12 +23,15 @@ type configureTarget struct {
 type configures struct {
 	sent map[WindowID]ports.ConfigureWindow
 	seen map[WindowID]bool
+	// answer holds windows whose state request awaits a configure, sent
+	// even unchanged: xdg-shell answers every request, a refused one too.
+	answer map[WindowID]bool
 	// cw is the workspace a capture session renders off screen, if any.
 	cw captureWorkspace
 }
 
 func newConfigures() configures {
-	return configures{sent: map[WindowID]ports.ConfigureWindow{}, seen: map[WindowID]bool{}}
+	return configures{sent: map[WindowID]ports.ConfigureWindow{}, seen: map[WindowID]bool{}, answer: map[WindowID]bool{}}
 }
 
 // next returns the configure for p at t and whether it must be sent. The
@@ -37,7 +40,7 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 	s.seen[p.ID] = true
 	old, ok := s.sent[p.ID]
 	v := build(p, t, old, ok)
-	return v, !ok || v != old
+	return v, !ok || v != old || s.answer[p.ID]
 }
 
 // nextWithCapture is next for a window of a workspace a capture session
@@ -66,7 +69,7 @@ func (s *configures) nextWithCapture(p Placement, t configureTarget, cp *Placeme
 		v = build(p, t, old, ok)
 	}
 	v.Captured = !v.Visible && !cp.Hidden && cp.Rect.Overlaps(t.captureArea)
-	return v, !ok || v != old
+	return v, !ok || v != old || s.answer[p.ID]
 }
 
 // build is the configure for p at t given the last one sent, if any. It
@@ -113,7 +116,10 @@ func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) p
 }
 
 // mark records v as sent.
-func (s *configures) mark(v ports.ConfigureWindow) { s.sent[v.ID] = v }
+func (s *configures) mark(v ports.ConfigureWindow) {
+	s.sent[v.ID] = v
+	delete(s.answer, v.ID)
+}
 
 // prune forgets the windows no next call saw since the last prune: they
 // left the layout.
@@ -121,6 +127,11 @@ func (s *configures) prune() {
 	for id := range s.sent {
 		if !s.seen[id] {
 			delete(s.sent, id)
+		}
+	}
+	for id := range s.answer {
+		if !s.seen[id] {
+			delete(s.answer, id)
 		}
 	}
 	clear(s.seen)
