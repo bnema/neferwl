@@ -229,6 +229,7 @@ func (m *Monitor) Apply(a Action) Effect {
 			}
 		} else {
 			m.MoveToWorkspace(n-1, op == MoveColumnToWorkspace)
+			m.overviewMoved()
 		}
 		return Effect{}
 	}
@@ -284,11 +285,13 @@ func (m *Monitor) Apply(a Action) Effect {
 	case ActionMoveColumnToWorkspaceUp, ActionMoveWindowToWorkspaceUp:
 		if m.shown == nil && m.Active > 0 {
 			m.MoveToWorkspace(m.Active-1, a == ActionMoveColumnToWorkspaceUp)
+			m.overviewMoved()
 		}
 		return Effect{}
 	case ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceDown:
 		if m.shown == nil {
 			m.MoveToWorkspace(m.Active+1, a == ActionMoveColumnToWorkspaceDown)
+			m.overviewMoved()
 		}
 		return Effect{}
 	}

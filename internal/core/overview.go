@@ -179,18 +179,35 @@ func (m *Monitor) overviewTarget() WindowID {
 }
 
 // overviewBlocks makes window mutations explicit: they are disabled while
-// selection is provisional. Workspace and monitor navigation remain active.
+// selection is provisional. Workspace and monitor navigation and moves to
+// another workspace remain active.
 func overviewBlocks(a Action) bool {
+	switch a {
+	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
+		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
+		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
+		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+		return true
+	}
+	return false
+}
+
+// overviewMoved resets the selection after a move to another workspace,
+// on the row now current.
+func (m *Monitor) overviewMoved() {
+	if m.ov.open {
+		m.selectRow()
+	}
+}
+
+// overviewMoves reports a bind that moves a window to another workspace.
+func overviewMoves(a Action) bool {
 	if _, op, ok := WorkspaceArg(a); ok {
 		return op != FocusWorkspace
 	}
 	switch a {
-	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
-		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
-		ActionToggleStashVisible, ActionMoveColumnToWorkspaceUp,
-		ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp,
-		ActionMoveWindowToWorkspaceDown, ActionConsumeOrExpelLeft,
-		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
+	case ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown,
+		ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown:
 		return true
 	}
 	return false
@@ -844,6 +861,17 @@ func (m *Monitor) overviewAction(a Action) (e Effect, handled bool) {
 	}
 	if a == ActionCloseWindow {
 		return Effect{Close: m.overviewTarget()}, true
+	}
+	if overviewMoves(a) {
+		// Moves are committed at once, like close-window: the selected
+		// preview moves, the overview stays open. A stash card stays.
+		if m.card() != 0 {
+			return Effect{}, true
+		}
+		if id := m.overviewTarget(); id != 0 {
+			m.Current().FocusID(id)
+		}
+		return Effect{}, false
 	}
 	return Effect{}, m.overviewFocus(a) || overviewBlocks(a)
 }

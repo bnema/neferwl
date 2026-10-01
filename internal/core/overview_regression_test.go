@@ -125,11 +125,8 @@ func TestOverviewWindowMutationsDisabled(t *testing.T) {
 	actions := []Action{
 		ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
 		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
-		ActionToggleStashVisible, ActionMoveColumnToWorkspaceUp,
-		ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp,
-		ActionMoveWindowToWorkspaceDown, ActionConsumeOrExpelLeft,
+		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
-		"move-column-to-workspace 2", "move-window-to-workspace 2",
 	}
 	for _, a := range actions {
 		t.Run(string(a), func(t *testing.T) {
