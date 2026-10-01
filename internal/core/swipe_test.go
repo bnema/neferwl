@@ -755,3 +755,41 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 	r.input <- finger(-70)
 	sceneMatch(t, r.scenes, on(1))
 }
+
+// The output shrinks mid-swipe: the snap points no longer hold, so the
+// swipe lets go. The view shows what the resize alone shows, and the rest
+// of the swipe moves nothing.
+func TestSwipeOutputResizedMidSwipe(t *testing.T) {
+	smaller := ports.OutputInfo{Name: wide.Name, Width: 600, Height: 600, RefreshMilli: 60000}
+	four := func(r *swipeRig) {
+		for id := ports.WindowID(1); id <= 4; id++ {
+			r.mapWindow(t, id)
+		}
+	}
+	plain := startSwipe(t, nil)
+	four(plain)
+	plain.output <- ports.OutputAdded{Info: smaller}
+	want := scene(t, plain.scenes)
+
+	r := startSwipe(t, nil)
+	four(r)
+	r.begin()
+	for range 3 {
+		r.move(t, -40, 0)
+	}
+	r.output <- ports.OutputAdded{Info: smaller}
+	scene(t, r.scenes)
+	// The first update after the resize lets go: the slide stops.
+	r.move(t, -40, 0)
+	for range 2 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	}
+	s := r.end(t, false)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
+		}
+	}
+}

@@ -142,15 +142,27 @@ func TestSnap(t *testing.T) {
 	}
 }
 
-// Column edges closer than snapSpacing merge: a step always shows.
+// Column edges closer than snapSpacing merge: a step always shows. The
+// last column's end stays, dropping a point close before it.
 func TestSnapPointsMergeClose(t *testing.T) {
-	w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}}
-	// Views aligning a column: 0, 600, 640 (merged into 600) and 1000.
-	for _, px := range []int{600, 400, 640, 360} {
-		w.Columns = append(w.Columns, Column{Width: Width{Pixels: px}, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
-	}
-	if got := w.snapPoints(); !slices.Equal(got, []float64{0, 600, 1000}) {
-		t.Fatalf("snap points %v", got)
+	for _, tc := range []struct {
+		widths []int
+		want   []float64
+	}{
+		// Views aligning a column: 0, 600, 640 (merged into 600), 1000.
+		{[]int{600, 400, 640, 360}, []float64{0, 600, 1000}},
+		// 0, 360, 600, 960 and the end 1000: 960 goes, 1000 stays.
+		{[]int{600, 360, 400, 640}, []float64{0, 360, 600, 1000}},
+		// Columns narrower than the view: one point.
+		{[]int{300, 300}, []float64{0}},
+	} {
+		w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}}
+		for _, px := range tc.widths {
+			w.Columns = append(w.Columns, Column{Width: Width{Pixels: px}, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
+		}
+		if got := w.snapPoints(); !slices.Equal(got, tc.want) {
+			t.Errorf("widths %v: snap points %v, want %v", tc.widths, got, tc.want)
+		}
 	}
 }
 
@@ -307,6 +319,24 @@ func TestStepSwipe(t *testing.T) {
 		}
 		if _, v := s.end(tc.cancelled, at); math.IsNaN(v) {
 			t.Errorf("%s: velocity NaN", tc.name)
+		}
+	}
+}
+
+// With no column fully shown (a fullscreen column wider than the usable
+// area), the focus goes to the column at the left edge.
+func TestSnapFocusWideColumn(t *testing.T) {
+	w := &Workspace{Output: Rect{W: 800, H: 600}, Usable: Rect{X: 50, W: 700, H: 600}}
+	for i := range 3 {
+		w.Columns = append(w.Columns, Column{Windows: []WindowID{WindowID(i + 1)}})
+	}
+	w.fullscreen = 2
+	// Column 1 (index 1) is 800 wide from x 350+50: view 350 puts its
+	// left edge on the usable area's.
+	view := w.columnX(1) - w.Usable.X
+	for _, forward := range []bool{true, false} {
+		if focus := w.snapFocus(view, forward); focus != 1 {
+			t.Fatalf("forward=%t: focus %d, want the wide column 1", forward, focus)
 		}
 	}
 }

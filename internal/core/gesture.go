@@ -58,6 +58,9 @@ type swipeGesture struct {
 	// ws is the workspace whose columns scroll, or the active one when a
 	// workspace slide began.
 	ws *Workspace
+	// usable is ws's usable area when a column swipe began: its snap
+	// points hold for it only, so the swipe ends if it changes.
+	usable Rect
 	// list is the numbered workspaces when a workspace slide began: the
 	// slide indexes it, so it ends if the list changes.
 	list []*Workspace
@@ -71,6 +74,13 @@ type swipeGesture struct {
 // changed since a workspace slide began, or the overview opened over it.
 func (g *swipeGesture) listChanged(m *Monitor) bool {
 	return m.overviewOpens != g.opens || m.shown != nil || m.Workspaces[m.Active] != g.ws || !slices.Equal(m.Workspaces, g.list)
+}
+
+// columnsChanged reports whether a column swipe lost its workspace: it is
+// no longer shown or slidable, its usable area changed (an output resize
+// or a panel), or the overview opened over it.
+func (g *swipeGesture) columnsChanged(m *Monitor) bool {
+	return m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || g.ws.Usable != g.usable
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -123,7 +133,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	m := g.screen.mon
 	switch g.mode {
 	case swipeColumns:
-		if m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() {
+		if g.columnsChanged(m) {
 			g.ws.stopSlide()
 			g.mode = swipeDropped
 			return true
@@ -159,7 +169,7 @@ func (c *Core) decide(g *swipeGesture) {
 		// The overview does not slide: the swipe moves its selection.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
-		g.mode, g.ws = swipeColumns, w
+		g.mode, g.ws, g.usable = swipeColumns, w, w.Usable
 		w.motion = nil
 		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), w.snapPoints(), workspaceBand.scaled(float64(w.Usable.W)))
 	case !g.horizontal && m.shown == nil:
@@ -189,7 +199,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	switch g.mode {
 	case swipeColumns:
 		w := g.ws
-		if m.overviewOpens != g.opens || m.Current() != w || !w.slidable() {
+		if g.columnsChanged(m) {
 			w.stopSlide()
 			return false
 		}
