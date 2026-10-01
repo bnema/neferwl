@@ -1,10 +1,10 @@
 package wayland
 
 import (
-	"github.com/bnema/purego-libwayland/protocol/kdedecoration"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/xdgdecoration"
-	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+	"github.com/bnema/go-wayland-bindings/server/serverdecoration"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/xdgdecoration"
+	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -21,33 +21,33 @@ func registerDecoration(d *server.Display, s *Server) error {
 	}
 	// GTK only speaks KDE's older protocol: without it GTK4 draws its own
 	// title bar.
-	return kdedecoration.NewOrgKdeKwinServerDecorationManagerGlobal(d, 1, func(c server.Client, v, id uint32) {
-		m, err := kdedecoration.NewOrgKdeKwinServerDecorationManager(c, int32(v), id, kdeManager{})
+	return serverdecoration.NewOrgKdeKwinServerDecorationManagerGlobal(d, 1, func(c server.Client, v, id uint32) {
+		m, err := serverdecoration.NewOrgKdeKwinServerDecorationManager(c, int32(v), id, kdeManager{})
 		if err == nil {
-			m.SendDefaultMode(uint32(kdedecoration.OrgKdeKwinServerDecorationManagerModeServer))
+			m.SendDefaultMode(uint32(serverdecoration.OrgKdeKwinServerDecorationManagerModeServer))
 		}
 	})
 }
 
 type kdeManager struct{}
 
-func (kdeManager) Create(r *kdedecoration.OrgKdeKwinServerDecorationManager, id uint32, _ *wayland.Surface) {
-	if d, err := kdedecoration.NewOrgKdeKwinServerDecoration(r.Client(), r.Version(), id, kdeDecoration{}); err == nil {
-		d.SendMode(uint32(kdedecoration.OrgKdeKwinServerDecorationModeServer))
+func (kdeManager) Create(r *serverdecoration.OrgKdeKwinServerDecorationManager, id uint32, _ *wayland.Surface) {
+	if d, err := serverdecoration.NewOrgKdeKwinServerDecoration(r.Client(), r.Version(), id, kdeDecoration{}); err == nil {
+		d.SendMode(uint32(serverdecoration.OrgKdeKwinServerDecorationModeServer))
 	}
 }
 
 type kdeDecoration struct{}
 
-func (kdeDecoration) Release(*kdedecoration.OrgKdeKwinServerDecoration) {}
+func (kdeDecoration) Release(*serverdecoration.OrgKdeKwinServerDecoration) {}
 
 // A requested mode is acknowledged as is: the protocol has no way to
 // refuse, and answering server to a client that insists on client-side
 // (Firefox) makes it ask again forever. The server default already makes
 // GTK drop its title bar.
 // Unknown modes are ignored: replacing them would restart the loop.
-func (kdeDecoration) RequestMode(r *kdedecoration.OrgKdeKwinServerDecoration, mode uint32) {
-	if mode > uint32(kdedecoration.OrgKdeKwinServerDecorationModeServer) {
+func (kdeDecoration) RequestMode(r *serverdecoration.OrgKdeKwinServerDecoration, mode uint32) {
+	if mode > uint32(serverdecoration.OrgKdeKwinServerDecorationModeServer) {
 		return
 	}
 	r.SendMode(mode)

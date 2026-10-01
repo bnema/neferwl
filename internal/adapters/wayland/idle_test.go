@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
+	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
+	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	"github.com/bnema/neferwl/internal/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/extidlenotify"
-	"github.com/bnema/purego-libwayland/protocol/idleinhibit"
-	"github.com/bnema/purego-libwayland/protocol/wlroutputpower"
 	"github.com/bnema/wlturbo"
 	"github.com/stretchr/testify/mock"
 )
@@ -131,14 +131,14 @@ func TestOutputPower(t *testing.T) {
 	mgr := bindProtocol(t, c, "zwlr_output_power_manager_v1")
 	registerProtocol(t, c, mgr)
 	id, p := newEventProxy(c)
-	requestProtocol(t, c, mgr, wlroutputpower.ZwlrOutputPowerManagerV1RequestGetOutputPower, id, output)
-	modeEv, failed := uint32(wlroutputpower.ZwlrOutputPowerV1EventMode), uint32(wlroutputpower.ZwlrOutputPowerV1EventFailed)
-	on, off := uint32(wlroutputpower.ZwlrOutputPowerV1ModeOn), uint32(wlroutputpower.ZwlrOutputPowerV1ModeOff)
+	requestProtocol(t, c, mgr, wlroutputpowermanagement.ZwlrOutputPowerManagerV1RequestGetOutputPower, id, output)
+	modeEv, failed := uint32(wlroutputpowermanagement.ZwlrOutputPowerV1EventMode), uint32(wlroutputpowermanagement.ZwlrOutputPowerV1EventFailed)
+	on, off := uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOn), uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOff)
 	if e := p.next(t, c, 2*time.Second); e != [2]uint32{modeEv, on} {
 		t.Fatalf("initial %v", e)
 	}
 	name := testOutputs[0].Info.Name
-	requestProtocol(t, c, id, wlroutputpower.ZwlrOutputPowerV1RequestSetMode, off)
+	requestProtocol(t, c, id, wlroutputpowermanagement.ZwlrOutputPowerV1RequestSetMode, off)
 	if v := clientEvent[ports.OutputPower](t, events); v != (ports.OutputPower{Output: name, On: false}) {
 		t.Fatal(v)
 	}
@@ -160,7 +160,7 @@ func TestOutputPower(t *testing.T) {
 	}
 	// Back with the same name: the failed object controls nothing.
 	commands <- ports.SetOutputs{Outputs: testOutputs}
-	requestProtocol(t, c, id, wlroutputpower.ZwlrOutputPowerV1RequestSetMode, off)
+	requestProtocol(t, c, id, wlroutputpowermanagement.ZwlrOutputPowerV1RequestSetMode, off)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestOutputPowerInvalidMode(t *testing.T) {
 	mgr := bindProtocol(t, c, "zwlr_output_power_manager_v1")
 	id := c.AllocateID()
 	registerProtocol(t, c, id)
-	requestProtocol(t, c, mgr, wlroutputpower.ZwlrOutputPowerManagerV1RequestGetOutputPower, id, output)
-	requestProtocol(t, c, id, wlroutputpower.ZwlrOutputPowerV1RequestSetMode, uint32(7))
-	expectProtocolError(t, c, id, uint32(wlroutputpower.ZwlrOutputPowerV1ErrorInvalidMode))
+	requestProtocol(t, c, mgr, wlroutputpowermanagement.ZwlrOutputPowerManagerV1RequestGetOutputPower, id, output)
+	requestProtocol(t, c, id, wlroutputpowermanagement.ZwlrOutputPowerV1RequestSetMode, uint32(7))
+	expectProtocolError(t, c, id, uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ErrorInvalidMode))
 }

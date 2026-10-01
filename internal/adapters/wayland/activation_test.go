@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/xdgactivation"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/xdgactivation"
 	"github.com/bnema/wlturbo"
 )
 

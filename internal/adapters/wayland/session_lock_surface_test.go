@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/purego-libwayland/protocol/extsessionlock"
-	"github.com/bnema/purego-libwayland/protocol/linuxdrmsyncobj"
-	"github.com/bnema/purego-libwayland/protocol/viewporter"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
-	"github.com/bnema/purego-libwayland/protocol/xdgshell"
+	"github.com/bnema/go-wayland-bindings/server/extsessionlock"
+	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
+	"github.com/bnema/go-wayland-bindings/server/viewporter"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
+	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

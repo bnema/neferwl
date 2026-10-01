@@ -3,8 +3,8 @@ package wayland
 import (
 	"slices"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
 // intersectRect returns the overlap of two half-open rectangles.

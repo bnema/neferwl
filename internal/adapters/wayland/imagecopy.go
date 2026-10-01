@@ -4,12 +4,12 @@ import (
 	"image"
 	"math"
 
+	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+	extworkspace "github.com/bnema/go-wayland-bindings/server/extworkspace"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
-	source "github.com/bnema/purego-libwayland/protocol/extimagecapturesource"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
-	extworkspace "github.com/bnema/purego-libwayland/protocol/extworkspace"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/virtualkeyboard"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/virtualkeyboard"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

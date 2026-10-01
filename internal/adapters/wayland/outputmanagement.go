@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"strings"
 
+	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	wlr "github.com/bnema/purego-libwayland/protocol/wlroutputmanagement"
 	"github.com/bnema/purego-libwayland/server"
 )
 

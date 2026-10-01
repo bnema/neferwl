@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/alphamodifier"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/alphamodifier"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
 // contentMatching waits for a content of the window that matches want.

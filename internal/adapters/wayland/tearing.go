@@ -1,8 +1,8 @@
 package wayland
 
 import (
-	"github.com/bnema/purego-libwayland/protocol/tearingcontrol"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/go-wayland-bindings/server/tearingcontrol"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

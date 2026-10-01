@@ -3,8 +3,8 @@ package wayland
 import (
 	"math"
 
-	cm "github.com/bnema/purego-libwayland/protocol/colormanagement"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

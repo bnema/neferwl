@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/xdgshell"
 )
 
 func TestToplevelStates(t *testing.T) {

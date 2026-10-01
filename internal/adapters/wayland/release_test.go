@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/fifo"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/fifo"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )

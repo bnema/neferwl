@@ -3,8 +3,8 @@ package wayland
 import (
 	"testing"
 
-	cr "github.com/bnema/purego-libwayland/protocol/colorrepresentation"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	cr "github.com/bnema/go-wayland-bindings/server/colorrepresentation"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 )
 
 func TestColorRepresentationProtocol(t *testing.T) {

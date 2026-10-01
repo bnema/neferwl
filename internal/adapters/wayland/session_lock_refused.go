@@ -1,6 +1,6 @@
 package wayland
 
-import "github.com/bnema/purego-libwayland/protocol/extsessionlock"
+import "github.com/bnema/go-wayland-bindings/server/extsessionlock"
 
 // A constructor pipelined before finished must still create its new object,
 // but a refused lock never assigns a wl_surface role or changes active focus.

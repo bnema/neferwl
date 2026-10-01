@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	source "github.com/bnema/purego-libwayland/protocol/extimagecapturesource"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
+	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
+	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	wlr "github.com/bnema/purego-libwayland/protocol/wlrscreencopy"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

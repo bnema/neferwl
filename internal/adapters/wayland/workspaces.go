@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/binary"
 
+	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
-	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

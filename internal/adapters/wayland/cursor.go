@@ -3,10 +3,10 @@ package wayland
 import (
 	"context"
 
+	"github.com/bnema/go-wayland-bindings/server/cursorshape"
+	"github.com/bnema/go-wayland-bindings/server/tablet"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/cursorshape"
-	"github.com/bnema/purego-libwayland/protocol/tabletv2"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -43,7 +43,7 @@ func (m cursorShapeManager) GetPointer(r *cursorshape.WpCursorShapeManagerV1, id
 }
 
 // GetTabletToolV2 is unreachable: neferwl has no tablet global.
-func (cursorShapeManager) GetTabletToolV2(*cursorshape.WpCursorShapeManagerV1, uint32, *tabletv2.ZwpTabletToolV2) {
+func (cursorShapeManager) GetTabletToolV2(*cursorshape.WpCursorShapeManagerV1, uint32, *tablet.ZwpTabletToolV2) {
 }
 
 type cursorShapeDevice struct{ server *Server }

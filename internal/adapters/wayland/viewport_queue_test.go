@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/purego-libwayland/protocol/viewporter"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/go-wayland-bindings/server/viewporter"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 )
 
 // A queued attachment that was destroyed cannot apply either its new crop or

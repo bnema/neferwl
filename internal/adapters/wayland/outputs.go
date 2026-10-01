@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/xdgoutput"
 	"github.com/bnema/purego-libwayland/server"
 )
 

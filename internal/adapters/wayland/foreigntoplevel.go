@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"slices"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlrforeigntoplevelmanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	wlr "github.com/bnema/purego-libwayland/protocol/wlrforeigntoplevel"
 	"github.com/bnema/purego-libwayland/server"
 )
 

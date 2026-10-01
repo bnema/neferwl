@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/fifo"
+	"github.com/bnema/go-wayland-bindings/server/viewporter"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/logging"
-	"github.com/bnema/purego-libwayland/protocol/fifo"
-	"github.com/bnema/purego-libwayland/protocol/viewporter"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )
