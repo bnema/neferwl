@@ -154,6 +154,10 @@ func (c *Core) captureExpire() {
 // that ended and re-arms for the next. It reports whether one ended.
 func (c *Core) captureFlashTick() bool {
 	n := len(c.capt.flashes)
+	if n == 0 {
+		c.capt.stopTimer()
+		return false
+	}
 	now := c.now()
 	c.capt.expire(now)
 	c.capt.armTimer(now, c.ch.Clock)
