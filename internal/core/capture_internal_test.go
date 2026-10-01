@@ -19,7 +19,7 @@ func TestExclusionKeepIsSharedAndBuiltOncePerChange(t *testing.T) {
 	c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 1})
 	c.captureExclusionLayer(ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true})
 	c.captureExclusionLayer(ports.CaptureExclusionLayer{Session: 1, Layer: 11, Attached: true})
-	e := c.capExcl
+	e := c.capt.excl
 	keep := c.exclusionKeep(e)
 	if len(keep) != 2 || !keep[10] || !keep[11] {
 		t.Fatalf("keep %v", keep)
@@ -43,17 +43,17 @@ func TestExclusionKeepIsSharedAndBuiltOncePerChange(t *testing.T) {
 	// An ended exclusion keeps nothing over a fullscreen window.
 	c.screens[0].layers = []ports.LayerSurface{{ID: 10}}
 	c.captureExclusionEnd(1)
-	if c.capExcl == nil || !c.capExcl.ended || !slices.Equal(c.capExcl.retained, []WindowID{10}) {
-		t.Fatalf("ended exclusion %+v", c.capExcl)
+	if c.capt.excl == nil || !c.capt.excl.ended || !slices.Equal(c.capt.excl.retained, []WindowID{10}) {
+		t.Fatalf("ended exclusion %+v", c.capt.excl)
 	}
-	if k := c.exclusionKeep(c.capExcl); k != nil {
+	if k := c.exclusionKeep(c.capt.excl); k != nil {
 		t.Fatalf("keep of an ended exclusion %v", k)
 	}
 	// With no layer listed any more it is gone.
 	c.screens[0].layers = nil
 	c.pruneRetained()
-	if c.capExcl != nil {
-		t.Fatalf("exclusion survived its last listed layer: %+v", c.capExcl)
+	if c.capt.excl != nil {
+		t.Fatalf("exclusion survived its last listed layer: %+v", c.capt.excl)
 	}
 }
 

@@ -35,15 +35,17 @@ type Keymap struct {
 	keymapString      func(uintptr, uint32) unsafe.Pointer
 	free              func(uintptr)
 	getSym            func(uintptr, uint32) uint32
-	symName           func(uint32, uintptr, uintptr) int32
-	updateKey         func(uintptr, uint32, uint32) uint32
-	serializeMods     func(uintptr, uint32) uint32
-	serializeLayout   func(uintptr, uint32) uint32
-	modActive         func(uintptr, uintptr, uint32) int32
-	minCode           func(uintptr) uint32
-	maxCode           func(uintptr) uint32
-	symsLevel         func(uintptr, uint32, uint32, uint32, *unsafe.Pointer) int32
-	fromName          func(uintptr, uint32) uint32
+	// Buffers go to C as typed pointers: they escape to the heap, where a
+	// stack growth during the call cannot move them under C.
+	symName         func(uint32, *byte, uintptr) int32
+	updateKey       func(uintptr, uint32, uint32) uint32
+	serializeMods   func(uintptr, uint32) uint32
+	serializeLayout func(uintptr, uint32) uint32
+	modActive       func(uintptr, *byte, uint32) int32
+	minCode         func(uintptr) uint32
+	maxCode         func(uintptr) uint32
+	symsLevel       func(uintptr, uint32, uint32, uint32, *unsafe.Pointer) int32
+	fromName        func(*byte, uint32) uint32
 }
 
 type ruleNames struct{ rules, model, layout, variant, options uintptr }
@@ -132,7 +134,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 	code := evdevCode + 8
 	sym := k.getSym(k.state, code)
 	var buf [64]byte
-	n := k.symName(sym, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	n := k.symName(sym, &buf[0], uintptr(len(buf)))
 	name := ""
 	if n > 0 && n < int32(len(buf)) {
 		name = string(buf[:n])
@@ -156,7 +158,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 		flag ports.Mods
 	}{{"Shift", ports.ModShift}, {"Control", ports.ModCtrl}, {"Mod1", ports.ModAlt}, {"Mod4", ports.ModSuper}} {
 		b := append([]byte(mod.name), 0)
-		if k.modActive(k.state, uintptr(unsafe.Pointer(&b[0])), modsEffective) > 0 {
+		if k.modActive(k.state, &b[0], modsEffective) > 0 {
 			event.Mods |= mod.flag
 		}
 		runtime.KeepAlive(b)
@@ -228,7 +230,7 @@ func (k *Keymap) levelName(code, layout, level uint32) string {
 		return ""
 	}
 	var buf [64]byte
-	n := k.symName(*(*uint32)(ptr), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	n := k.symName(*(*uint32)(ptr), &buf[0], uintptr(len(buf)))
 	if n <= 0 || n >= int32(len(buf)) {
 		return ""
 	}
@@ -237,7 +239,7 @@ func (k *Keymap) levelName(code, layout, level uint32) string {
 
 func (k *Keymap) KeycodeFor(keysymName string) (evdev uint32, shift bool, ok bool) {
 	b := append([]byte(keysymName), 0)
-	sym := k.fromName(uintptr(unsafe.Pointer(&b[0])), 0)
+	sym := k.fromName(&b[0], 0)
 	runtime.KeepAlive(b)
 	if sym == 0 {
 		return 0, false, false

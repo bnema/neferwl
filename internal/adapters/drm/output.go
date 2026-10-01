@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
 	"time"
@@ -12,8 +11,8 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/presented"
 
-	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -37,22 +36,15 @@ type Output struct {
 	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
 	runContext       context.Context // bounds compositor clear waits during Run startup
 
-	k           kms
-	flipped     <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
-	crtc        uint32
-	conn        connector
-	mode        modeInfo
-	saved       modeCrtc
-	monitor     Monitor
-	hdr         hdrCapability
-	hdrProps    connectorHDRProps
-	hdrSettings HDRSettings
-	// hdrFailed disables retries until this Output is replaced; hdrOn is
-	// the currently selected signal encoding, including on VT resume.
-	hdrOn, hdrFailed bool
-	hdrBlob          uint32
-	hdrBlobData      hdrOutputMetadata
-	log              zerowrap.Logger
+	k       kms
+	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
+	crtc    uint32
+	conn    connector
+	mode    modeInfo
+	saved   modeCrtc
+	monitor Monitor
+	hdr     hdrState
+	log     zerowrap.Logger
 	// clock paces the periodic stats and renderer trim (nil: system).
 	clock ports.Clock
 	// Properties: CRTC and connector property IDs by name.
@@ -98,11 +90,9 @@ type Output struct {
 	shown, queued uint64
 	planeRect     planeRect
 	reason        string // why the last frame was composed ("" = scanout)
-	unsent        []ports.OutputPresented
-	// Last immutable snapshot sent in a report. Never mutate it: wayland may
-	// still be reading a prior report on another goroutine.
-	seenSnapshot        map[ports.WindowID]uint64
-	childReadsSnapshot  map[ports.WindowID]uint64
+	reports       presented.Queue
+	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
+	// may still be reading a prior report on another goroutine.
 	showsSnapshot       map[ports.WindowID]uint64
 	directShowsSnapshot map[ports.WindowID]uint64
 	showsScratch        map[ports.WindowID]uint64
@@ -163,91 +153,6 @@ type Output struct {
 // Ready reports the result of the first modeset exactly once.
 func (o *Output) Ready() <-chan error { return o.ready }
 
-// dupFences duplicates the non-nil fences.
-func dupFences(fs ...*os.File) []*os.File {
-	var out []*os.File
-	for _, f := range fs {
-		if d := dupFence(f); d != nil {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// signalled reports whether every fence signalled (readable); an fd that
-// cannot be polled counts as signalled.
-func signalled(fs []*os.File) bool {
-	if len(fs) == 0 {
-		return true
-	}
-	pfds := make([]unix.PollFd, len(fs))
-	for i, f := range fs {
-		pfds[i] = unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN}
-	}
-	if _, err := unix.Poll(pfds, 0); err != nil {
-		return true
-	}
-	for _, p := range pfds {
-		if p.Revents == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// holdRead keeps the fences of a frame that was not committed.
-func (o *Output) holdRead(fs ...*os.File) {
-	o.readFences = append(o.readFences, dupFences(fs...)...)
-}
-
-// readDone reports whether no uncommitted frame may still read client
-// buffers, closing the fences that signalled.
-func (o *Output) readDone() bool {
-	kept := o.readFences[:0]
-	for _, f := range o.readFences {
-		if signalled([]*os.File{f}) {
-			f.Close()
-			continue
-		}
-		kept = append(kept, f)
-	}
-	clear(o.readFences[len(kept):])
-	o.readFences = kept
-	return len(kept) == 0
-}
-
-// dropRead closes the fences of uncommitted frames.
-func (o *Output) dropRead() {
-	for _, f := range o.readFences {
-		f.Close()
-	}
-	o.readFences = nil
-}
-
-// expire applies a lifecycle deadline and reports whether KMS needs a modeset.
-// Fence polling and logging stay at the output boundary, not in the value
-// transition; the lifecycle owns the decision and closes pending fences.
-func (o *Output) expire() bool {
-	now := time.Now()
-	serial, frame, age, busy, fences := o.frame.deadlineInfo(now)
-	ready := serial == 0 || !o.frame.deadlineReached(now) || signalled(fences)
-	switch o.frame.timeout(now, ready) {
-	case timeoutFence:
-		o.log.Warn().Str("connector", o.conn.name).Uint64("serial", serial).Dur("age", age).Msg("frame waits for GPU fence")
-	case timeoutBusy:
-		o.log.Warn().Str("connector", o.conn.name).Str("kind", "busy").Dur("age", busy).Msg("commits refused as busy; modeset")
-		return true
-	case timeoutMissing:
-		kind := "state"
-		if frame {
-			kind = "frame"
-		}
-		o.log.Warn().Str("connector", o.conn.name).Uint64("serial", serial).Str("kind", kind).Dur("age", age).Msg("commit event missing; modeset")
-		return true
-	}
-	return false
-}
-
 // CursorLoader returns the image of a cursor at an output scale, at most
 // limit pixels on a side; an empty image hides the cursor.
 type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
@@ -264,11 +169,11 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if err := o.readProps(card.fd, pipe, card.taken, cursorSize(card.fd)); err != nil {
 		return nil, err
 	}
-	o.hdrSettings = normalizedHDRSettings(card.want.HDR[c.name])
-	o.hdr = detectHDR(o.monitor, o.hdrProps)
-	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
-	if o.hdrSettings.Enabled && !o.hdr.Capable {
-		log.Warn().Str("connector", c.name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
+	o.hdr.settings = normalizedHDRSettings(card.want.HDR[c.name])
+	o.hdr.cap = detectHDR(o.monitor, o.hdr.props)
+	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.cap.Capable).Str("reason", o.hdr.cap.Reason).Float64("max_luminance", o.hdr.cap.MaxLuminance).Float64("max_frame_average", o.hdr.cap.MaxFrameAverage).Float64("min_luminance", o.hdr.cap.MinLuminance).Msg("HDR capability")
+	if o.hdr.settings.Enabled && !o.hdr.cap.Capable {
+		log.Warn().Str("connector", c.name).Str("reason", o.hdr.cap.Reason).Msg("HDR requested but unavailable")
 	}
 	o.tearing = card.async && !card.want.NoTearing
 	if !card.want.NoVRR {
@@ -295,7 +200,7 @@ func (o *Output) readProps(fd, pipe int, taken map[uint32]bool, cursorSide int) 
 	}
 	o.connCrtc = uint32(np["CRTC_ID"][0])
 	// The connector's property metadata is needed for enum/range capability.
-	o.hdrProps = readConnectorHDRProps(fd, np)
+	o.hdr.props = readConnectorHDRProps(fd, np)
 	o.contentProp, o.contentValues = readContentTypeProp(fd, np)
 	o.contentValue = np["content type"][1]
 	o.contentWanted = o.contentValue
@@ -524,12 +429,12 @@ func (o *Output) sendFormats() {
 		return
 	}
 	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
-	if o.hdrOn && !o.off {
-		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.MaxLuminance, MaxFrameAverage: o.hdr.MaxFrameAverage, MinLuminance: o.hdr.MinLuminance}
+	if o.hdr.on && !o.off {
+		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.cap.MaxLuminance, MaxFrameAverage: o.hdr.cap.MaxFrameAverage, MinLuminance: o.hdr.cap.MinLuminance}
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
-			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdrOn {
+			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdr.on {
 				f.Formats = append(f.Formats, format)
 			}
 		}
@@ -592,7 +497,7 @@ func (o *Output) modesetBaseReq(blob uint32, active bool) *atomicReq {
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
-	o.hdrConnectorProps(req, o.hdrOn)
+	o.hdrConnectorProps(req, o.hdr.on)
 	return req
 }
 
@@ -615,86 +520,6 @@ func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 		req.set(p.id, p.prop("CRTC_ID"), 0)
 	}
 	return req
-}
-
-// probeAsync checks once whether async commits may carry IN_FENCE_FD.
-func (o *Output) probeAsync(r ports.Renderer) {
-	if o.asyncProbed || !o.tearing {
-		return
-	}
-	o.asyncProbed = true
-	r.UseTarget(o.back)
-	done, err := r.Render(ports.Scene{Background: "#000000"}, nil)
-	if err != nil {
-		return
-	}
-	req := &atomicReq{}
-	req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(o.fbs[o.back]))
-	if done != nil {
-		defer done.Close()
-		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(done.Fd()))
-	}
-	err = o.k.commit(req, atomicTestOnly|flipAsyncFlag, 0)
-	o.asyncFence = err == nil && done != nil
-	o.log.Info().Err(err).Str("connector", o.conn.name).Bool("async_fence", o.asyncFence).Msg("tearing probe")
-}
-
-// wantVRR is the VRR state the next frame commit sets: on while game (a
-// buffer is scanned out or a fullscreen window covers the output), off
-// after vrrHold without it (each toggle may flicker, so short breaks keep
-// it).
-func (o *Output) wantVRR(game bool) bool {
-	if o.vrrProp == 0 {
-		return false
-	}
-	o.vrrGame = game
-	if game {
-		o.composedSince = time.Time{}
-		return true
-	}
-	if o.composedSince.IsZero() {
-		o.composedSince = time.Now()
-	}
-	return o.vrrOn && time.Since(o.composedSince) <= vrrHold
-}
-
-// stateVRR is the VRR state of a commit without a new frame (cursor,
-// vrrOff timer): the last frame's. A shown buffer is not enough: it may
-// be a tiled window on the overlay plane.
-func (o *Output) stateVRR() bool { return o.wantVRR(o.vrrGame) }
-
-// contentProps changes the connector hint only when it differs from the applied value.
-func (o *Output) contentProps(req *atomicReq) {
-	if o.contentProp != 0 && o.contentWanted != o.contentValue {
-		req.set(o.conn.id, o.contentProp, o.contentWanted)
-	}
-}
-
-// wantContent chooses a content hint for the only visible fullscreen window.
-func (o *Output) wantContent(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) {
-	o.contentWanted = o.contentValues[0]
-	var full *ports.SceneWindow
-	for i := range s.Windows {
-		w := &s.Windows[i]
-		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
-			continue
-		}
-		if !w.Fullscreen || !covers(&s, w) || full != nil {
-			return
-		}
-		full = w
-	}
-	if full == nil {
-		return
-	}
-	switch surfaces[full.ID].ContentType {
-	case ports.ContentPhoto:
-		o.contentWanted = o.contentValues[2]
-	case ports.ContentVideo:
-		o.contentWanted = o.contentValues[3]
-	case ports.ContentGame:
-		o.contentWanted = o.contentValues[4]
-	}
 }
 
 // commitFrame flips fb in one commit with the cursor and VRR. An async
@@ -951,17 +776,6 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 	return true, err
 }
 
-// vrrHold is how long composition runs before VRR turns off.
-const vrrHold = 500 * time.Millisecond
-
-// setAsync logs when the output starts or stops tearing.
-func (o *Output) setAsync(on bool) {
-	if on != o.async {
-		o.async = on
-		o.log.Info().Bool("tearing", on).Str("connector", o.conn.name).Msg("tearing")
-	}
-}
-
 // Close frees buffers and disables scanout. Without a security gate it
 // retains legacy restoration of the CRTC state found at startup; a wired
 // gate never admits saved desktop pixels, even if its snapshot is unlocked.
@@ -1016,10 +830,8 @@ func (o *Output) Close() {
 			detached = o.primary != nil && o.crtc != 0 && o.crtcProps["ACTIVE"] != 0
 		}
 	}
-	// A live metadata blob means an HDR modeset may still be on screen, even
-	// after a failed SDR fallback (hdrOn is then false): it is freed only once
-	// an SDR modeset succeeds.
-	hdrShown := o.hdrOn || o.hdrBlob != 0
+	// A live metadata blob is freed only once an SDR modeset succeeds.
+	hdrShown := o.hdr.shown()
 	// Best effort: at exit the card may already belong to another session.
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		ev := o.log.Debug()
@@ -1042,10 +854,7 @@ func (o *Output) Close() {
 		_ = o.k.destroyBlob(o.modeBlob)
 		o.modeBlob = 0
 	}
-	if o.hdrBlob != 0 {
-		_ = o.k.destroyBlob(o.hdrBlob)
-		o.hdrBlob = 0
-	}
+	o.hdr.releaseBlob(o.k)
 	if o.cursor != nil {
 		o.cursor.free(o.k)
 	}
@@ -1063,8 +872,8 @@ func (o *Output) Close() {
 func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
-// enable/disable. What the output shows and read is reported on presented.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, presented chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+// enable/disable. What the output shows and read is reported on reportsCh.
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, reportsCh chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1234,15 +1043,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				// A display frame or fence that has not finished must not
 				// keep a finished child read held: child holds do not expire.
 				// Report them alone, at the last Seen that was safe.
-				o.report(nil, o.seenSnapshot)
+				o.report(nil, o.reports.Seen())
 				readWait = readWait || o.capped
 			}
 		}
-		o.flushReport(presented)
+		o.reports.Flush(reportsCh)
 		// An unsent report is retried soon, not only on the next event;
 		// so is one that waits for an uncommitted frame's fence.
 		var retry <-chan time.Time
-		if len(o.unsent) > 0 || readWait {
+		if o.reports.Len() > 0 || readWait {
 			retryTimer.Reset(time.Millisecond)
 			retry = retryTimer.C
 		} else {
@@ -1667,187 +1476,6 @@ func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorCh
 	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }
 
-// maxUnsent bounds reports waiting for wayland; past it the oldest flip is
-// folded into the next one.
-const maxUnsent = 16
-
-// report queues what the output shows and has read, so replaced client
-// buffers can be released. A flip-less report merges into the newest
-// queued one; flips are never merged unless maxUnsent is reached.
-func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
-	o.capped = false
-	var reads map[ports.WindowID]uint64
-	if o.capHidden != nil {
-		seen, reads, o.capped = o.capHidden(seen)
-	}
-	if !maps.Equal(o.seenSnapshot, seen) {
-		o.seenSnapshot = maps.Clone(seen)
-	}
-	if !maps.Equal(o.childReadsSnapshot, reads) {
-		o.childReadsSnapshot = maps.Clone(reads)
-	}
-	r := ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: o.seenSnapshot, ChildReads: o.childReadsSnapshot}
-	if n := len(o.unsent); n > 0 && (flip == nil || o.unsent[n-1].Flip == nil) {
-		if flip == nil {
-			r.Flip = o.unsent[n-1].Flip
-		}
-		o.unsent[n-1] = r
-		return
-	}
-	o.unsent = append(o.unsent, r)
-	if len(o.unsent) > maxUnsent {
-		old, next := o.unsent[0].Flip, o.unsent[1].Flip
-		if next != nil && old != nil {
-			next.Merged += 1 + old.Merged
-			// A snapshot can be shared with previously sent flips. Clone only
-			// when a merge actually needs to add an absent window.
-			cloned := false
-			for id, seq := range old.Shows {
-				if _, ok := next.Shows[id]; !ok {
-					if !cloned {
-						next.Shows = maps.Clone(next.Shows)
-						cloned = true
-					}
-					if next.Shows == nil {
-						next.Shows = make(map[ports.WindowID]uint64)
-					}
-					next.Shows[id] = seq
-				}
-			}
-		}
-		o.unsent = slices.Delete(o.unsent, 0, 1)
-		o.log.Warn().Str("connector", o.conn.name).Msg("wayland is not reading output reports; flips merged")
-	}
-}
-
-// flushReport sends queued reports without blocking.
-func (o *Output) flushReport(presented chan<- ports.OutputPresented) {
-	for len(o.unsent) > 0 {
-		select {
-		case presented <- o.unsent[0]:
-			o.unsent = slices.Delete(o.unsent, 0, 1)
-		default:
-			return
-		}
-	}
-}
-
-// imageKind is how output images are made, best first.
-type imageKind int
-
-const (
-	imagesDriver imageKind = iota // exported, modifier chosen by the driver
-	imagesLinear                  // exported, linear
-)
-
-// showImages sets up images from kind on and modesets them. KMS may refuse
-// an image only in a modeset: a TEST_ONLY modeset checks it first, and the
-// next kind is tried on refusal. cause is why the
-// previous kind failed, for the log.
-func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error {
-	if o.hdrSettings.Enabled && o.hdr.Capable && !o.hdrFailed {
-		o.hdrOn = true
-		meta := hdrMetadata(o.monitor)
-		// Reuse the live blob across VT resume. A changed EDID creates a
-		// replacement, but the old one remains alive until KMS accepts it.
-		oldBlob := o.hdrBlob
-		created := false
-		var err error
-		if oldBlob == 0 || meta != o.hdrBlobData {
-			var newBlob uint32
-			newBlob, err = o.k.createBlob(meta.bytes())
-			if err == nil {
-				o.hdrBlob = newBlob
-				created = true
-			}
-		}
-		if err == nil {
-			r.SetHDR(float64(o.hdrSettings.SDRBrightness))
-			err = o.showImageKind(r, imagesDriver, nil)
-		}
-		var pe protectedCommitError
-		if errors.As(err, &pe) {
-			// A protected KMS failure is not an HDR failure: images exist and
-			// the owner retries the protected modeset. Never fall back to SDR
-			// or latch hdrFailed for it.
-			if created {
-				if oldBlob != 0 {
-					_ = o.k.destroyBlob(o.hdrBlob)
-					o.hdrBlob = oldBlob
-				} else {
-					o.hdrBlobData = meta
-				}
-			}
-			return err
-		}
-		if err == nil {
-			if created {
-				o.hdrBlobData = meta
-				if oldBlob != 0 {
-					_ = o.k.destroyBlob(oldBlob)
-				}
-			}
-			o.log.Info().Str("connector", o.conn.name).Int("sdr_brightness", o.hdrSettings.SDRBrightness).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Msg("HDR10 on")
-			return nil
-		}
-		if created && oldBlob != 0 {
-			// Failed replacement: the existing modeset may still use it.
-			_ = o.k.destroyBlob(o.hdrBlob)
-			o.hdrBlob = oldBlob
-		}
-		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
-		o.hdrFailed = true
-		o.hdrOn = false
-		o.freeImages()
-		r.SetHDR(0)
-		_, _ = r.ExportTargets(0, nil)
-		// A failed test commit can leave the old HDR mode on screen;
-		// retain its blob until the SDR modeset succeeds or Close restores it.
-	} else {
-		r.SetHDR(0)
-	}
-	err := o.showImageKind(r, kind, cause)
-	if err == nil && o.hdrFailed && o.hdrBlob != 0 {
-		// The SDR commit has completed; the old HDR metadata is no longer in use.
-		_ = o.k.destroyBlob(o.hdrBlob)
-		o.hdrBlob = 0
-		o.hdrBlobData = hdrOutputMetadata{}
-	}
-	return err
-}
-
-func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) error {
-	for {
-		got, err := o.setupImages(r, kind, cause)
-		if err != nil {
-			return err
-		}
-		o.kind = got
-		if err = o.testModeset(); err == nil {
-			err = o.modeset()
-			if err != nil && o.protected && !errors.Is(err, errSecurityScene) && !errors.Is(err, errProtectionPending) && !errors.As(err, new(protectedCommitError)) {
-				err = protectedCommitError{err}
-			}
-			// A protected failure is not an image refusal: never fall back to
-			// another image kind or SDR for it. The caller hands it to the
-			// bounded retry (commitFailed).
-			return err
-		}
-		if o.protected && !refused(err) {
-			// EBUSY, lost master or a blob failure of the test: the images
-			// are fine; retry the protected modeset later.
-			return protectedCommitError{err}
-		}
-		if !refused(err) || got == imagesLinear {
-			o.freeImages()
-			return err
-		}
-		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
-		o.freeImages()
-		kind, cause = got+1, err
-	}
-}
-
 // refused reports a modeset error meaning KMS rejects the images.
 func refused(err error) bool {
 	return errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)
@@ -1856,119 +1484,4 @@ func refused(err error) bool {
 // lostMaster reports a commit error meaning the seat is switched away.
 func lostMaster(err error) bool {
 	return errors.Is(err, unix.EACCES) || errors.Is(err, unix.EPERM)
-}
-
-// setupImages gives the output the two renderer images it flips between,
-// exported as dmabufs. There is no CPU fallback (ADR 014): a GPU that
-// cannot export a scanout-capable image cannot drive the output.
-func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (imageKind, error) {
-	err := cause
-	for ; kind <= imagesLinear; kind++ {
-		if o.runContext != nil && o.runContext.Err() != nil {
-			return kind, o.runContext.Err()
-		}
-		mods := []uint64(nil)
-		if o.hdrOn {
-			for _, f := range o.primary.formats {
-				if f.Format == fourccXR30 {
-					mods = append(mods, f.Modifier)
-				}
-			}
-			if len(mods) == 0 {
-				return kind, fmt.Errorf("primary plane has no XRGB2101010 modifiers")
-			}
-			if kind == imagesLinear {
-				if !slices.Contains(mods, uint64(0)) {
-					continue
-				}
-				mods = []uint64{0}
-			}
-		} else if kind == imagesLinear {
-			mods = []uint64{0}
-		}
-		if err = o.exportImages(r, mods); err == nil {
-			return kind, nil
-		}
-		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
-	}
-	return imagesLinear, fmt.Errorf("%s: GPU cannot export scanout images (ADR 014): %w", o.conn.name, err)
-}
-
-// exportImages makes the renderer's exported targets the output images.
-func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
-	bufs, err := r.ExportTargets(len(o.fbs), mods)
-	if err != nil {
-		return err
-	}
-	for i := range bufs {
-		if err == nil {
-			format := uint32(fourccXRGB)
-			if o.hdrOn {
-				format = fourccXR30
-			}
-			o.fbs[i], err = o.k.addFB(&bufs[i], format)
-		}
-		bufs[i].Planes[0].File.Close()
-	}
-	// GPU memory starts undefined (old VRAM contents): clear both images
-	// before the modeset shows one.
-	for i := range o.fbs {
-		if err != nil {
-			break
-		}
-		r.UseTarget(i)
-		var done *os.File
-		if done, err = r.Render(ports.Scene{Background: "#000000"}, nil); done != nil {
-			// The modeset is a blocking commit: wait for the clear.
-			waitCtx := o.runContext
-			if waitCtx == nil {
-				waitCtx = context.Background()
-			}
-			err = errors.Join(err, syncfile.Wait(waitCtx, done))
-			done.Close()
-		}
-	}
-	if err != nil {
-		o.freeImages()
-		_, _ = r.ExportTargets(0, nil)
-		return err
-	}
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")
-	return nil
-}
-
-// freeImages removes the output images' framebuffers.
-func (o *Output) freeImages() {
-	for i, fb := range o.fbs {
-		if fb != 0 {
-			_ = o.k.rmFB(fb)
-		}
-		o.fbs[i] = 0
-	}
-}
-
-// shownBy returns an immutable snapshot of the content Seq of drawn windows.
-// The scratch map is private to the output; a snapshot may still be read by
-// wayland after a subsequent flip, so never refill a previously sent map.
-func (o *Output) shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[ports.WindowID]uint64 {
-	if o.showsScratch == nil {
-		o.showsScratch = make(map[ports.WindowID]uint64)
-	}
-	clear(o.showsScratch)
-	for id, seq := range seen {
-		if s.Shows(id) {
-			o.showsScratch[id] = seq
-		}
-	}
-	if !maps.Equal(o.showsSnapshot, o.showsScratch) {
-		o.showsSnapshot = maps.Clone(o.showsScratch)
-	}
-	return o.showsSnapshot
-}
-
-func (o *Output) directShownBy(id ports.WindowID, seq uint64) map[ports.WindowID]uint64 {
-	if len(o.directShowsSnapshot) != 1 || o.directShowsSnapshot[id] != seq {
-		o.directShowsSnapshot = map[ports.WindowID]uint64{id: seq}
-	}
-	return o.directShowsSnapshot
 }

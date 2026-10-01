@@ -33,15 +33,15 @@ func TestHDRMetadataLayoutAndContent(t *testing.T) {
 
 func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 	o, _, _ := testOutput(t)
-	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, DefaultValue: 0, HasDefault: true, MaxBPCValue: 8}
-	o.hdrBlob, o.hdrOn = 321, true
+	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, DefaultValue: 0, HasDefault: true, MaxBPCValue: 8}
+	o.hdr.blob, o.hdr.on = 321, true
 	for _, tc := range []struct {
 		on                        bool
 		bpc, colorspace, metadata uint64
 	}{
 		{true, 10, 7, 321}, {false, 8, 0, 0},
 	} {
-		o.hdrOn = tc.on
+		o.hdr.on = tc.on
 		req := o.modesetReq(11, true)
 		for _, prop := range []struct {
 			id   uint32
@@ -52,7 +52,7 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 			}
 		}
 	}
-	o.hdrOn = true
+	o.hdr.on = true
 	if fb, _ := o.scanoutFrame(ports.Scene{}, nil); fb != 0 || o.reason != "no_fullscreen" {
 		t.Fatalf("scanout: fb %d reason %q", fb, o.reason)
 	}
@@ -60,14 +60,14 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 		t.Fatalf("overlay: fb %d reason %q", ov.fb, o.overlayReason)
 	}
 	// Colorspace property without a Default enum must not receive invented 0.
-	o.hdrOn = false
-	o.hdrProps.HasDefault = false
-	if _, ok := o.modesetReq(11, true).value(o.conn.id, o.hdrProps.Colorspace); ok {
+	o.hdr.on = false
+	o.hdr.props.HasDefault = false
+	if _, ok := o.modesetReq(11, true).value(o.conn.id, o.hdr.props.Colorspace); ok {
 		t.Fatal("SDR set Colorspace with no Default enum")
 	}
 	restore := &atomicReq{}
 	o.hdrConnectorProps(restore, false)
-	if _, ok := restore.value(o.conn.id, o.hdrProps.Colorspace); ok {
+	if _, ok := restore.value(o.conn.id, o.hdr.props.Colorspace); ok {
 		t.Fatal("restore set Colorspace with no Default enum")
 	}
 }
@@ -75,9 +75,9 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL, unix.EINVAL)
 	o.cursor = nil
-	o.hdr = hdrCapability{Capable: true}
-	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: 203}
-	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.hdr.cap = hdrCapability{Capable: true}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -105,8 +105,8 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	if !slices.Equal(calls, []string{"hdr", "sdr", "drop"}) {
 		t.Fatalf("fallback order: %v", calls)
 	}
-	if o.hdrOn || !o.hdrFailed {
-		t.Fatalf("HDR on %t failed %t", o.hdrOn, o.hdrFailed)
+	if o.hdr.on || !o.hdr.failed {
+		t.Fatalf("HDR on %t failed %t", o.hdr.on, o.hdr.failed)
 	}
 	if len(*commits) != 4 {
 		t.Fatalf("commits: %d", len(*commits))
@@ -137,11 +137,11 @@ func TestHDRSettingsRestartComparison(t *testing.T) {
 		{HDRSettings{Enabled: true, SDRBrightness: 350}, true},
 		{HDRSettings{SDRBrightness: ports.DefaultSDRBrightness}, true},
 	} {
-		if restart := outputNeedsRestart(&Output{hdrSettings: current}, modeInfo{}, tc.settings); restart != tc.restart {
+		if restart := outputNeedsRestart(&Output{hdr: hdrState{settings: current}}, modeInfo{}, tc.settings); restart != tc.restart {
 			t.Fatalf("settings %+v: restart %t, want %t", tc.settings, restart, tc.restart)
 		}
 	}
-	if !outputNeedsRestart(&Output{hdrSettings: current}, modeInfo{VRefresh: 60}, current) {
+	if !outputNeedsRestart(&Output{hdr: hdrState{settings: current}}, modeInfo{VRefresh: 60}, current) {
 		t.Fatal("mode change did not restart")
 	}
 }
@@ -149,9 +149,9 @@ func TestHDRSettingsRestartComparison(t *testing.T) {
 func TestHDRSuccessfulModeset(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.cursor = nil
-	o.hdr = hdrCapability{Capable: true}
-	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
-	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.hdr.cap = hdrCapability{Capable: true}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -170,8 +170,8 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !o.hdrOn || o.hdrFailed || len(*commits) != 2 {
-		t.Fatalf("on=%t failed=%t commits=%d", o.hdrOn, o.hdrFailed, len(*commits))
+	if !o.hdr.on || o.hdr.failed || len(*commits) != 2 {
+		t.Fatalf("on=%t failed=%t commits=%d", o.hdr.on, o.hdr.failed, len(*commits))
 	}
 	for _, c := range *commits {
 		for _, tc := range []struct {
@@ -190,9 +190,9 @@ func TestHDRSuccessfulModeset(t *testing.T) {
 func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 	o, k, commits := testOutput(t)
 	o.cursor = nil
-	o.hdr = hdrCapability{Capable: true}
-	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
-	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.hdr.cap = hdrCapability{Capable: true}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -224,8 +224,8 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 		if err := o.showImages(r, imagesDriver, nil); err != nil {
 			t.Fatal(err)
 		}
-		if o.hdrBlob != 321 || created != 1 || destroyed != 0 {
-			t.Fatalf("pass %d blob %d created %d destroyed %d", i, o.hdrBlob, created, destroyed)
+		if o.hdr.blob != 321 || created != 1 || destroyed != 0 {
+			t.Fatalf("pass %d blob %d created %d destroyed %d", i, o.hdr.blob, created, destroyed)
 		}
 	}
 	if len(*commits) != 4 {
@@ -240,9 +240,9 @@ func TestHDRBlobReusedAcrossImageSetup(t *testing.T) {
 func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
-	o.hdr = hdrCapability{Capable: true}
-	o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
-	o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+	o.hdr.cap = hdrCapability{Capable: true}
+	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: ports.DefaultSDRBrightness}
+	o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 19}}
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -278,11 +278,55 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.hdrBlob != 322 || !slices.Equal(destroyed, []uint32{321}) {
-		t.Fatalf("blob %d destroyed %v", o.hdrBlob, destroyed)
+	if o.hdr.blob != 322 || !slices.Equal(destroyed, []uint32{321}) {
+		t.Fatalf("blob %d destroyed %v", o.hdr.blob, destroyed)
 	}
 	o.Close()
 	if !slices.Equal(destroyed, []uint32{321, 322}) {
 		t.Fatalf("destroyed %v", destroyed)
+	}
+}
+
+// The metadata blob is reused when unchanged, and a replacement keeps the
+// old blob alive until its modeset is committed or rolled back.
+func TestHDRBlobSwap(t *testing.T) {
+	k := newMockkms(t)
+	meta := hdrMetadata(Monitor{HDR: HDRMetadata{MaxLuminance: 1000}})
+	other := hdrMetadata(Monitor{HDR: HDRMetadata{MaxLuminance: 600}})
+	k.EXPECT().createBlob(mock.Anything).Return(7, nil).Once()
+	var h hdrState
+	sw, err := h.prepareBlob(k, meta)
+	if err != nil || !sw.created || h.blob != 7 {
+		t.Fatalf("first blob: %v %+v %d", err, sw, h.blob)
+	}
+	h.commitBlob(k, sw)
+
+	// Unchanged metadata (VT resume): no new blob.
+	if sw, err = h.prepareBlob(k, meta); err != nil || sw.created || h.blob != 7 {
+		t.Fatalf("reuse: %v %+v %d", err, sw, h.blob)
+	}
+
+	// A refused replacement restores the old blob and frees the new one.
+	k.EXPECT().createBlob(mock.Anything).Return(8, nil).Once()
+	k.EXPECT().destroyBlob(uint32(8)).Return(nil).Once()
+	sw, _ = h.prepareBlob(k, other)
+	h.rollbackBlob(k, sw)
+	if h.blob != 7 || h.blobData != meta {
+		t.Fatalf("rollback: blob %d", h.blob)
+	}
+
+	// An accepted replacement frees the old blob.
+	k.EXPECT().createBlob(mock.Anything).Return(9, nil).Once()
+	k.EXPECT().destroyBlob(uint32(7)).Return(nil).Once()
+	sw, _ = h.prepareBlob(k, other)
+	h.commitBlob(k, sw)
+	if h.blob != 9 || h.blobData != other {
+		t.Fatalf("commit: blob %d", h.blob)
+	}
+
+	k.EXPECT().destroyBlob(uint32(9)).Return(nil).Once()
+	h.releaseBlob(k)
+	if h.blob != 0 || h.shown() {
+		t.Fatalf("release: blob %d", h.blob)
 	}
 }

@@ -67,7 +67,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		// past the stale-report timeout. Do not advance the display's Seen
 		// until its own GPU work finishes.
 		if o.capHidden != nil {
-			o.report(nil, o.seenSnapshot)
+			o.report(nil, o.reports.Seen())
 		}
 		clear(hidden)
 	}

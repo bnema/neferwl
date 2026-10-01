@@ -196,14 +196,14 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 		if reason == "" && isYUVFormat(c.DMABuf.Format) {
 			reason = "yuv"
 		}
-		if o.hdrOn && reason == "" {
+		if o.hdr.on && reason == "" {
 			switch {
 			case !c.Color.IsPQ2020():
 				reason = "hdr_sdr_content"
 			case !isTenBit(c.DMABuf.Format):
 				reason = "hdr_format"
 			}
-		} else if !o.hdrOn && reason == "" && c.Color.IsPQ2020() {
+		} else if !o.hdr.on && reason == "" && c.Color.IsPQ2020() {
 			// An SDR connector must never show raw PQ values.
 			reason = "sdr_pq_content"
 		}
@@ -243,7 +243,7 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
-	if o.hdrOn {
+	if o.hdr.on {
 		reason = "hdr"
 	} else if o.overlay != nil && o.scanout {
 		var w ports.SceneWindow

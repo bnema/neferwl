@@ -121,18 +121,8 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
-	// capSessions and capExcl are the capture state (capture.go).
-	capSessions []*capSession
-	capExcl     *capExclusion
-	// capScratch, capStates and capMarks are scratch of one publish, reused.
-	capScratch capView
-	capStates  []ports.CaptureSessionState
-	capMarks   []ports.CaptureIndicator
-	// capFlashes are the targets of captured frames still flashing; capC
-	// fires at the earliest of them (capindicator.go).
-	capFlashes []capFlash
-	capC       <-chan time.Time
-	capStop    func() bool
+	// capt is the capture state (capture.go, capindicator.go).
+	capt captureState
 }
 
 func keyName(s string) string {
@@ -489,14 +479,8 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	// Clients learn outputs and scales before the configures sized for them.
-	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}); !sameOutputs(v, c.sentOutputs) {
-		if err := c.command(ctx, v); err != nil {
-			return err
-		}
-		if !slices.Equal(v.Outputs, c.sentOutputs.Outputs) && c.ch.Layouts != nil {
-			latest(c.ch.Layouts, v.Outputs)
-		}
-		c.sentOutputs = v
+	if err := c.syncOutputs(ctx); err != nil {
+		return err
 	}
 	// Output layout must be known before an automatic terminal can map.
 	if err := c.spawnEmpty(ctx); err != nil {
@@ -582,11 +566,8 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 	}
-	if focus != c.keyboard.sent {
-		if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
-			return err
-		}
-		c.keyboard.sent = focus
+	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
 	}
 	if err := c.updateInhibit(ctx); err != nil {
 		return err
@@ -783,6 +764,35 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 		return nil
 	}
 	return c.rehit(ctx)
+}
+
+// syncOutputs sends the output layout when it changed; input learns the
+// geometry only when the outputs themselves moved.
+func (c *Core) syncOutputs(ctx context.Context) error {
+	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
+	if sameOutputs(v, c.sentOutputs) {
+		return nil
+	}
+	if err := c.command(ctx, v); err != nil {
+		return err
+	}
+	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sentOutputs.Outputs) {
+		latest(c.ch.Layouts, v.Outputs)
+	}
+	c.sentOutputs = v
+	return nil
+}
+
+// syncFocus tells wayland the keyboard focus when it changed.
+func (c *Core) syncFocus(ctx context.Context, focus WindowID) error {
+	if focus == c.keyboard.sent {
+		return nil
+	}
+	if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
+		return err
+	}
+	c.keyboard.sent = focus
+	return nil
 }
 
 // latest replaces any unread value: only the owner sends and drains;
@@ -1062,8 +1072,8 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			continue
-		case <-c.capC:
-			c.capC, c.capStop = nil, nil
+		case <-c.capt.timerC:
+			c.capt.timerC, c.capt.timerStop = nil, nil
 			if c.captureFlashTick() && c.publish(ctx) != nil {
 				return nil
 			}

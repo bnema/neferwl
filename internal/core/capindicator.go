@@ -43,7 +43,7 @@ type capFlash struct {
 // already does not.
 func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 	changed := false
-	if s := c.capSession(v.Session); v.Session != 0 && s != nil && !s.recording {
+	if s := c.capt.session(v.Session); v.Session != 0 && s != nil && !s.recording {
 		s.recording, changed = true, true
 	}
 	t := capTarget{output: v.Output, workspace: v.Workspace, rect: v.Region}
@@ -51,30 +51,35 @@ func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 		// Nothing of the target is left on screen to mark.
 		return changed
 	}
-	until := c.now().Add(ports.CaptureFlash)
-	for i := range c.capFlashes {
-		if c.capFlashes[i].target == t {
-			c.capFlashes[i].until = until
-			c.armCaptureTimer()
-			return changed
+	return c.capt.flash(t, c.now(), c.ch.Clock) || changed
+}
+
+// flash marks t until ports.CaptureFlash after now and arms the timer. It
+// reports whether a new mark shows; extending one does not.
+func (s *captureState) flash(t capTarget, now time.Time, clock ports.Clock) bool {
+	until := now.Add(ports.CaptureFlash)
+	defer s.armTimer(now, clock)
+	for i := range s.flashes {
+		if s.flashes[i].target == t {
+			s.flashes[i].until = until
+			return false
 		}
 	}
-	if len(c.capFlashes) >= maxCaptureFlashes {
-		c.collapseFlashes(t)
+	if len(s.flashes) >= maxCaptureFlashes {
+		s.collapseFlashes(t)
 	}
-	c.capFlashes = append(c.capFlashes, capFlash{target: t, until: until})
-	c.armCaptureTimer()
+	s.flashes = append(s.flashes, capFlash{target: t, until: until})
 	return true
 }
 
 // collapseFlashes makes room: the flashes of regions of t's output become one
 // whole-output flash lasting as long as the longest of them; when that is
 // not enough the oldest flash goes.
-func (c *Core) collapseFlashes(t capTarget) {
+func (s *captureState) collapseFlashes(t capTarget) {
 	if t.workspace == 0 && t.output != "" {
 		var until time.Time
 		n := 0
-		c.capFlashes = slices.DeleteFunc(c.capFlashes, func(f capFlash) bool {
+		s.flashes = slices.DeleteFunc(s.flashes, func(f capFlash) bool {
 			if f.target.workspace != 0 || f.target.output != t.output || f.target.rect == (Rect{}) {
 				return false
 			}
@@ -85,82 +90,102 @@ func (c *Core) collapseFlashes(t capTarget) {
 			return true
 		})
 		if n > 0 {
-			c.capFlashes = append(c.capFlashes, capFlash{target: capTarget{output: t.output}, until: until})
+			s.flashes = append(s.flashes, capFlash{target: capTarget{output: t.output}, until: until})
 		}
 	}
-	if len(c.capFlashes) >= maxCaptureFlashes {
+	if len(s.flashes) >= maxCaptureFlashes {
 		old := 0
-		for i, f := range c.capFlashes {
-			if f.until.Before(c.capFlashes[old].until) {
+		for i, f := range s.flashes {
+			if f.until.Before(s.flashes[old].until) {
 				old = i
 			}
 		}
-		c.capFlashes = slices.Delete(c.capFlashes, old, old+1)
+		s.flashes = slices.Delete(s.flashes, old, old+1)
 	}
 }
 
-// captureExpire forgets the flashes that ended.
-func (c *Core) captureExpire() {
-	if len(c.capFlashes) == 0 {
+// expire forgets the flashes that ended by now.
+func (s *captureState) expire(now time.Time) {
+	s.flashes = slices.DeleteFunc(s.flashes, func(f capFlash) bool { return !f.until.After(now) })
+}
+
+// armTimer arms the timer at the earliest flash when none runs. A flash that
+// was extended leaves it: the timer fires early, finds nothing to forget and
+// arms again. No flash stops it. A nil clock uses the system timer.
+func (s *captureState) armTimer(now time.Time, clock ports.Clock) {
+	if len(s.flashes) == 0 {
+		s.stopTimer()
 		return
 	}
-	now := c.now()
-	c.capFlashes = slices.DeleteFunc(c.capFlashes, func(f capFlash) bool { return !f.until.After(now) })
+	if s.timerStop != nil {
+		return
+	}
+	first := s.flashes[0].until
+	for _, f := range s.flashes[1:] {
+		if f.until.Before(first) {
+			first = f.until
+		}
+	}
+	d := max(first.Sub(now), time.Millisecond)
+	if clock != nil {
+		t := clock.NewTimer(d)
+		s.timerC, s.timerStop = t.C(), t.Stop
+		return
+	}
+	t := time.NewTimer(d)
+	s.timerC, s.timerStop = t.C, t.Stop
+}
+
+func (s *captureState) stopTimer() {
+	if s.timerStop != nil {
+		s.timerStop()
+	}
+	s.timerC, s.timerStop = nil, nil
+}
+
+// captureExpire forgets the flashes that ended. With none it reads no clock.
+func (c *Core) captureExpire() {
+	if len(c.capt.flashes) > 0 {
+		c.capt.expire(c.now())
+	}
 }
 
 // captureFlashTick runs when the flash timer fired: it forgets the flashes
 // that ended and re-arms for the next. It reports whether one ended.
 func (c *Core) captureFlashTick() bool {
-	n := len(c.capFlashes)
-	c.captureExpire()
-	c.armCaptureTimer()
-	return len(c.capFlashes) != n
+	n := len(c.capt.flashes)
+	if n == 0 {
+		c.capt.stopTimer()
+		return false
+	}
+	now := c.now()
+	c.capt.expire(now)
+	c.capt.armTimer(now, c.ch.Clock)
+	return len(c.capt.flashes) != n
 }
 
-// armCaptureTimer arms the timer at the earliest flash when none runs. A
-// flash that was extended leaves it: the timer fires early, finds nothing to
-// forget and arms again. No flash stops it.
 func (c *Core) armCaptureTimer() {
-	if len(c.capFlashes) == 0 {
-		c.stopCaptureTimer()
+	if len(c.capt.flashes) == 0 {
+		c.capt.stopTimer()
 		return
 	}
-	if c.capStop != nil {
-		return
+	if c.capt.timerStop == nil {
+		c.capt.armTimer(c.now(), c.ch.Clock)
 	}
-	first := c.capFlashes[0].until
-	for _, f := range c.capFlashes[1:] {
-		if f.until.Before(first) {
-			first = f.until
-		}
-	}
-	d := max(first.Sub(c.now()), time.Millisecond)
-	if c.ch.Clock != nil {
-		t := c.ch.Clock.NewTimer(d)
-		c.capC, c.capStop = t.C(), t.Stop
-		return
-	}
-	t := time.NewTimer(d)
-	c.capC, c.capStop = t.C, t.Stop
 }
 
-func (c *Core) stopCaptureTimer() {
-	if c.capStop != nil {
-		c.capStop()
-	}
-	c.capC, c.capStop = nil, nil
-}
+func (c *Core) stopCaptureTimer() { c.capt.stopTimer() }
 
 // captureIndicators is the marks of one output's scene; nil when there are
 // none. The slice is immutable once published and shared with the next scene
 // of the screen while the marks are the same; it is cloned only when they
 // change, so a steady recording allocates nothing.
 func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
-	if len(c.capSessions) == 0 && len(c.capFlashes) == 0 {
+	if c.capt.idle() {
 		sc.capMarks = nil
 		return nil
 	}
-	out := c.capMarks[:0]
+	out := c.capt.marks[:0]
 	add := func(t capTarget) {
 		r, reason := c.capResolve(t)
 		if reason != ports.CaptureReasonNone || r.sc != sc {
@@ -177,15 +202,15 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 			out = append(out, m)
 		}
 	}
-	for _, s := range c.capSessions {
+	for _, s := range c.capt.sessions {
 		if s.recording {
 			add(s.target())
 		}
 	}
-	for _, f := range c.capFlashes {
+	for _, f := range c.capt.flashes {
 		add(f.target)
 	}
-	c.capMarks = out
+	c.capt.marks = out
 	switch {
 	case len(out) == 0:
 		sc.capMarks = nil
