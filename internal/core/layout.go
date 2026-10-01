@@ -552,13 +552,7 @@ func (w *Workspace) focusColumn(dir int) {
 // overflow stacks columns (spiral, expanded strips), so it follows the
 // screen: the column on that side.
 func (w *Workspace) columnToward(dir int) int {
-	if w.pinned() {
-		// Probed as if not fullscreen: focus moves leave it (leaveCover).
-		full := w.fullscreen
-		w.fullscreen = 0
-		defer func() { w.fullscreen = full }()
-	}
-	if len(w.Columns) == 0 || (dir != -1 && dir != 1) {
+	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
 		return -1
 	}
 	if w.onScreenFocus() {

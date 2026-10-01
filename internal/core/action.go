@@ -146,11 +146,20 @@ func (c *Core) applyAction(a Action) Effect {
 		} else {
 			dir = 1
 		}
+		// A covering fullscreen window is left for the window on that side;
+		// with none (the workspace or stash edge), the move goes to the
+		// neighbor monitor and fullscreen stays.
+		if w.pinned() {
+			if !w.leaveCover(func() { w.focusColumn(dir) }) {
+				if i := c.neighbor(dir); i >= 0 {
+					c.focusScreen = i
+				}
+			}
+			return Effect{}
+		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends. A covering fullscreen window is
-		// left for the column on that side; at the edge the move goes to
-		// the neighbor monitor and fullscreen stays.
+		// keeps the focus at its ends.
 		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i

@@ -228,8 +228,7 @@ func TestFullscreenFloatNewWindowNoColumns(t *testing.T) {
 }
 
 // Under a covering fullscreen float, or any fixed-overflow fullscreen,
-// focus moves inside the workspace are off and binds act on the window on
-// screen, never on a column it hides.
+// binds act on the window on screen, never on a column it hides.
 func TestFullscreenPinsFocus(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)

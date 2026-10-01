@@ -79,14 +79,14 @@ func (w *Workspace) unstash(i int) {
 	w.restore(f.ID, f.back)
 }
 
-// restore tiles id back where back says: its row in the column that still
-// holds its former neighbors, else a column of its own at its former
-// index. It takes the focus.
 // holdsStack reports whether c holds a window of the stack left behind.
 func (p origPlace) holdsStack(c Column) bool {
 	return slices.ContainsFunc(c.Windows, func(v WindowID) bool { return slices.Contains(p.stacked, v) })
 }
 
+// restore tiles id back where back says: its row in the column that still
+// holds its former neighbors, else a column of its own at its former
+// index. It takes the focus.
 func (w *Workspace) restore(id WindowID, back *origPlace) {
 	w.floatFocus, w.stashFocus = false, false
 	w.raiseColumns()

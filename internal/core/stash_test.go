@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // stashIDs lists the stash of w, left to right.
@@ -229,5 +231,43 @@ func TestStashWidth(t *testing.T) {
 	m.SetStash(100, 3)
 	if p := placement(w, 3); p.Rect.W != 90 {
 		t.Fatalf("clamped high %d", p.Rect.W)
+	}
+}
+
+// focus-column from a fullscreen stashed window at the end of the stash
+// goes to the neighbor monitor and keeps fullscreen; inside the stash it
+// leaves fullscreen for the next stashed window.
+func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	cfg.Layout.Overflow = string(OverflowFixed)
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 100, Height: 80})
+	m := c.screens[0].mon
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	w := m.Current()
+	w.FocusID(2)
+	w.ToggleWindowStash()
+	w.FocusID(3)
+	w.ToggleWindowStash() // stash [2 3], 3 selected
+	m.ToggleFullscreen()
+	if w.cover() != 3 {
+		t.Fatal("setup", w.cover())
+	}
+	c.applyAction(ActionFocusColumnRight)
+	if c.focusScreen != 1 || w.cover() != 3 {
+		t.Fatalf("edge: screen %d cover %d", c.focusScreen, w.cover())
+	}
+	c.focusScreen = 0
+	c.applyAction(ActionFocusColumnLeft)
+	if id, _ := w.Focused(); id != 2 || w.fullscreen != 0 || c.focusScreen != 0 {
+		t.Fatalf("inside: focused %d fullscreen %d", id, w.fullscreen)
 	}
 }

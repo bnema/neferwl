@@ -807,7 +807,7 @@ func TestExpelCrossesToFullNeighbor(t *testing.T) {
 	}
 }
 
-func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
+func TestExpelOntoFixedFullscreenLeavesIt(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
 	// DP-1: [1] [2 3], focus on 3.
 	r.mapWindow(t, 1)
@@ -820,10 +820,10 @@ func TestExpelOntoFixedFullscreenFloats(t *testing.T) {
 	r.mapWindow(t, 5)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
-	// 3 floats above the fullscreen window, visible and focused.
+	// 3 joins as a tile: fullscreen ends so it is seen, focused.
 	set := r.key(t, "bracketright", ports.ModAlt)
 	got, focused := windowsOf(set, "DP-2")
-	if !slices.Contains(got, 3) || focused != 3 {
+	if !slices.Contains(got, 3) || !slices.Contains(got, 4) || focused != 3 {
 		t.Fatal(got, focused)
 	}
 }
