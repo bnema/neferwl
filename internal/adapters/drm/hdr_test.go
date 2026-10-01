@@ -286,3 +286,47 @@ func TestHDRBlobReplacementWaitsForCommit(t *testing.T) {
 		t.Fatalf("destroyed %v", destroyed)
 	}
 }
+
+// The metadata blob is reused when unchanged, and a replacement keeps the
+// old blob alive until its modeset is committed or rolled back.
+func TestHDRBlobSwap(t *testing.T) {
+	k := newMockkms(t)
+	meta := hdrMetadata(Monitor{HDR: HDRMetadata{MaxLuminance: 1000}})
+	other := hdrMetadata(Monitor{HDR: HDRMetadata{MaxLuminance: 600}})
+	k.EXPECT().createBlob(mock.Anything).Return(7, nil).Once()
+	var h hdrState
+	sw, err := h.prepareBlob(k, meta)
+	if err != nil || !sw.created || h.blob != 7 {
+		t.Fatalf("first blob: %v %+v %d", err, sw, h.blob)
+	}
+	h.commitBlob(k, sw)
+
+	// Unchanged metadata (VT resume): no new blob.
+	if sw, err = h.prepareBlob(k, meta); err != nil || sw.created || h.blob != 7 {
+		t.Fatalf("reuse: %v %+v %d", err, sw, h.blob)
+	}
+
+	// A refused replacement restores the old blob and frees the new one.
+	k.EXPECT().createBlob(mock.Anything).Return(8, nil).Once()
+	k.EXPECT().destroyBlob(uint32(8)).Return(nil).Once()
+	sw, _ = h.prepareBlob(k, other)
+	h.rollbackBlob(k, sw)
+	if h.blob != 7 || h.blobData != meta {
+		t.Fatalf("rollback: blob %d", h.blob)
+	}
+
+	// An accepted replacement frees the old blob.
+	k.EXPECT().createBlob(mock.Anything).Return(9, nil).Once()
+	k.EXPECT().destroyBlob(uint32(7)).Return(nil).Once()
+	sw, _ = h.prepareBlob(k, other)
+	h.commitBlob(k, sw)
+	if h.blob != 9 || h.blobData != other {
+		t.Fatalf("commit: blob %d", h.blob)
+	}
+
+	k.EXPECT().destroyBlob(uint32(9)).Return(nil).Once()
+	h.releaseBlob(k)
+	if h.blob != 0 || h.shown() {
+		t.Fatalf("release: blob %d", h.blob)
+	}
+}
