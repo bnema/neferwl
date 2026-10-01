@@ -42,6 +42,13 @@ func (w *Workspace) onFloat() bool { return w.floatFocus || w.stashFocused() }
 // stashWindow moves the focused tile id to the end of the stash,
 // remembering its place in its column to return there.
 func (w *Workspace) stashWindow(id WindowID) {
+	back := w.tilePlace(id)
+	w.RemoveWindow(id)
+	w.addStash(Float{ID: id, back: back})
+}
+
+// tilePlace is where the focused tile id is in its column, for restore.
+func (w *Workspace) tilePlace(id WindowID) *origPlace {
 	c := w.Columns[w.Focus]
 	lone := len(c.Windows) == 1
 	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && lone, expanded: c.Expanded && lone}
@@ -50,8 +57,7 @@ func (w *Workspace) stashWindow(id WindowID) {
 			back.stacked = append(back.stacked, v)
 		}
 	}
-	w.RemoveWindow(id)
-	w.addStash(Float{ID: id, back: back})
+	return back
 }
 
 // addStash appends a window to the stash, shows the stash and selects it.
@@ -72,10 +78,16 @@ func (w *Workspace) showStash() {
 	w.hiddenFullscreen = 0
 }
 
-// unstash returns stash entry i to its former column, focused.
+// unstash returns stash entry i to its former column, focused; a free
+// float floats again where it was.
 func (w *Workspace) unstash(i int) {
 	f := w.Stash[i]
 	w.RemoveWindow(f.ID)
+	if f.free {
+		w.Floats = append(w.Floats, f)
+		w.floatFocus, w.stashFocus = true, false
+		return
+	}
 	w.restore(f.ID, f.back)
 }
 

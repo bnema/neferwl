@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"math/bits"
 	"slices"
 	"strconv"
@@ -216,8 +217,14 @@ type Float struct {
 	W, H int
 	// below places a covering native float behind columns and stash.
 	below bool
-	// back records the former column of a stashed window; nil for native floats.
+	// back records the former column of a stashed window or a free float;
+	// nil for native floats.
 	back *origPlace
+	// free marks a window the user floated (toggle-floating) or dragged:
+	// core owns its size and its centre is at cx, cy, fractions of the
+	// usable area, so it keeps its place on any output.
+	free   bool
+	cx, cy float64
 }
 
 func (w *Workspace) empty() bool {
@@ -304,9 +311,10 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 	w.floatFocus = true
 }
 
-// ResizeFloating records the size a floating window draws.
+// ResizeFloating records the size a floating window draws. Core sizes a
+// free float: its reports only fill a missing size.
 func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
-	if i := w.floatIndex(id); i >= 0 {
+	if i := w.floatIndex(id); i >= 0 && (!w.Floats[i].free || w.Floats[i].W <= 0) {
 		w.Floats[i].W, w.Floats[i].H = width, height
 		w.reconcileFloats()
 	}
@@ -1466,8 +1474,9 @@ func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
 	}
 }
 
-// floatRect centres a native floating window in the usable area, its
-// border around its client size, clamped to the area.
+// floatRect places a floating window, its border around its client size,
+// clamped to the usable area: a native one centred, a free one at its
+// centre, kept inside the area.
 func (w *Workspace) floatRect(f Float) Rect {
 	u := w.Usable
 	fw, fh := f.W, f.H
@@ -1475,12 +1484,24 @@ func (w *Workspace) floatRect(f Float) Rect {
 		fw, fh = u.W/2, u.H/2
 	}
 	fw, fh = min(fw+2*w.border, u.W), min(fh+2*w.border, u.H)
-	return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
+	if !f.free {
+		return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
+	}
+	x := u.X + int(math.Round(f.cx*float64(u.W))) - fw/2
+	y := u.Y + int(math.Round(f.cy*float64(u.H))) - fh/2
+	x = min(max(x, u.X), u.X+u.W-fw)
+	y = min(max(y, u.Y), u.Y+u.H-fh)
+	return Rect{X: x, Y: y, W: fw, H: fh}
 }
 
 // imposedFloat reports whether core, rather than the client, owns the
-// size of a floating window: a stashed one.
-func (w *Workspace) imposedFloat(id WindowID) bool { return w.stashIndex(id) >= 0 }
+// size of a floating window: a stashed one or a free float.
+func (w *Workspace) imposedFloat(id WindowID) bool {
+	if i := w.floatIndex(id); i >= 0 {
+		return w.Floats[i].free
+	}
+	return w.stashIndex(id) >= 0
+}
 
 // ToggleWindowStash stashes the focused tile, or returns the focused
 // stashed window to its column. A native float becomes a new column.
@@ -1492,6 +1513,11 @@ func (w *Workspace) ToggleWindowStash() {
 		return
 	}
 	switch {
+	case w.floatIndex(id) >= 0 && w.Floats[w.floatIndex(id)].free:
+		// A free float keeps its place and size in the stash.
+		f := w.Floats[w.floatIndex(id)]
+		w.RemoveWindow(id)
+		w.addStash(f)
 	case w.floatIndex(id) >= 0:
 		w.RemoveWindow(id)
 		w.restore(id, nil)
