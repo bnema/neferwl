@@ -524,7 +524,7 @@ func (c *Core) publish(ctx context.Context) error {
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
 			real = make(map[WindowID]Placement)
-			for _, w := range sc.mon.all() {
+			for w := range sc.mon.all() {
 				for _, p := range w.Layout() {
 					real[p.ID] = p
 				}
@@ -1014,7 +1014,7 @@ func (c *Core) Run(ctx context.Context) error {
 						if sc.name() == "" {
 							continue
 						}
-						for _, w := range sc.mon.all() {
+						for w := range sc.mon.all() {
 							if w.ID == id {
 								c.focusScreen = i
 								sc.mon.show(w)
@@ -1182,11 +1182,6 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 		return nil
 	}
 	before := c.cur().mon.Current()
-	if full := w.cover(); full != 0 && full != id && w.origin != nil {
-		// The window hides under a fullscreen workspace: it goes home first.
-		s.mon.leaveFullscreen(w, false)
-		_, w = c.screenOf(id)
-	}
 	if w != s.mon.Current() {
 		s.mon.show(w)
 	}

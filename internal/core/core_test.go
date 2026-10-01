@@ -839,17 +839,17 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 	now.Add(1)
 	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
 	s = scene(t, scenes)
-	// Honoured: under fixed overflow it gets its own workspace, and the view
-	// stays here since it has no focus (ADR 011).
-	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Hidden }) {
+	// Honoured, in place.
+	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Fullscreen && !w.Hidden }) {
 		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
 	}
 }
 
-// Under fixed overflow, a window opening over a fullscreen game tiles on
-// its home workspace: the game keeps the screen and the keyboard, and an
-// activation (a user action in the new client) shows the window there.
-func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
+// Under fixed overflow, a window opening over a fullscreen game waits
+// hidden: the game keeps the screen and the keyboard. An activation (a
+// user action in the new client) leaves fullscreen and shows both tiles;
+// a focus move back to the game and the bind make it fullscreen again.
+func TestFixedFullscreenArrivalWaits(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
 	r.mapWindow(t, 1)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)
@@ -862,7 +862,7 @@ func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
 	}
 	r.client <- ports.WindowActivate{ID: 2}
 	set = receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
 		t.Fatal("after activate:", got, focused)
 	}
 	for {
@@ -870,10 +870,10 @@ func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
 			break
 		}
 	}
-	// The game still waits fullscreen one workspace down.
-	set = r.key(t, "Next", ports.ModAlt)
+	r.key(t, "Left", ports.ModAlt)
+	set = r.key(t, "f", ports.ModAlt|ports.ModShift)
 	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("game workspace:", got, focused)
+		t.Fatal("game again:", got, focused)
 	}
 }
 

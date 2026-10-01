@@ -391,9 +391,9 @@ func TestStartupCommands(t *testing.T) {
 	}
 }
 
-// A slot window in its own fullscreen workspace (fixed overflow) keeps its
-// slot: coming back to dev spawns no duplicate.
-func TestSlotKeptWhileFullscreenAway(t *testing.T) {
+// A fullscreen slot window (fixed overflow) keeps its slot: coming back to
+// dev spawns no duplicate.
+func TestSlotKeptWhileFullscreen(t *testing.T) {
 	r := startSlots(t, true, true)
 	r.fill(t)
 	r.press(t, "d") // on dev, focus on code (slot 1)

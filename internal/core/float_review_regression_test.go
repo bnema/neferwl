@@ -34,8 +34,7 @@ func TestDemotedFloatFullscreenUserReturn(t *testing.T) {
 	w := m.Current()
 	w.FocusID(1)
 	m.SetFullscreen(2, true)
-	m.Focus(1)
-	m.Current().FocusID(2)
+	w.focusCover()
 	m.SetFullscreen(2, false)
 	if id, _ := w.Focused(); id != 2 || !w.floatFocus || w.Floats[0].below {
 		t.Fatalf("returned focus %d floats %+v", id, w.Floats)

@@ -140,7 +140,7 @@ func (c *Core) isPrimary(name string) bool {
 // anyWindow reports whether any workspace holds a window.
 func (c *Core) anyWindow() bool {
 	for _, s := range c.screens {
-		for _, w := range s.mon.all() {
+		for w := range s.mon.all() {
 			if !w.empty() {
 				return true
 			}
@@ -276,7 +276,7 @@ func (c *Core) settleGuests() {
 			if host == home {
 				continue
 			}
-			for _, w := range host.mon.all() {
+			for w := range host.mon.all() {
 				if home.mon.matches(w.home) && host.mon.Current() != w {
 					list = append(list, guest{w: w, anchor: w.overviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
 				}
@@ -371,32 +371,14 @@ func (c *Core) bringNamed(name string) bool {
 	return false
 }
 
-// moveNamed moves the named workspace w and its fullscreen siblings from src
-// to dst, without changing what dst shows. home is their new w.home.
+// moveNamed moves the named workspace w from src to dst, without changing
+// what dst shows. home is its new w.home: a guest keeps waiting for its
+// home; any other forgets the output it was unplugged from.
 func moveNamed(src, dst *screen, w *Workspace, home string) {
-	// Fullscreen siblings (always numbered) leave first: without their
-	// origin on the source, normalize would unlink them. take edits the
-	// list, so collect first.
-	var buf [4]*Workspace
-	siblings := buf[:0]
-	for _, fs := range src.mon.Workspaces {
-		if fs.origin == w {
-			siblings = append(siblings, fs)
-		}
-	}
-	for _, fs := range siblings {
-		src.mon.take(fs)
-	}
 	hidden := src.mon.isHidden(w)
 	src.mon.take(w)
-	// A guest keeps waiting for its home; any other forgets the output it
-	// was unplugged from. Siblings take the same home.
 	w.home = home
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
-	for _, fs := range siblings {
-		fs.home = home
-		dst.mon.adopt(fs, false, len(dst.mon.Workspaces))
-	}
 }
 
 // settings applies output-wide config to a monitor.

@@ -148,9 +148,10 @@ func (c *Core) applyAction(a Action) Effect {
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends. A covering fullscreen window pins
-		// the focus: the move goes to the neighbor monitor.
-		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.pinned() || w.floatFocus && !w.canLeaveFloat())
+		// keeps the focus at its ends. A covering fullscreen window is
+		// left for the column on that side; at the edge the move goes to
+		// the neighbor monitor and fullscreen stays.
+		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
 		if i := c.neighbor(dir); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}
@@ -176,7 +177,7 @@ func (c *Core) applyAction(a Action) Effect {
 			return Effect{}
 		}
 		c.focusScreen = i
-		c.cur().mon.landing().expelTo(id, dir)
+		c.cur().mon.Current().expelTo(id, dir)
 		from.mon.normalize()
 		c.cur().mon.normalize()
 		return Effect{}
@@ -196,7 +197,7 @@ func (c *Core) applyAction(a Action) Effect {
 			}
 			from := c.cur()
 			c.focusScreen = i
-			to := c.cur().mon.landing()
+			to := c.cur().mon.Current()
 			at := 0
 			if dir < 0 {
 				at = len(to.Columns)
@@ -320,8 +321,6 @@ func (w *Workspace) Apply(a Action) Effect {
 	case ActionMaximizeColumn:
 		w.ToggleFullWidth()
 	case ActionToggleFullscreen:
-		// In place only: binds go through Monitor.Apply, which gives a
-		// fixed-overflow fullscreen its own workspace.
 		w.ToggleFullscreen()
 	case ActionToggleWindowStash:
 		w.ToggleWindowStash()

@@ -127,36 +127,26 @@ func TestOverviewPick(t *testing.T) {
 }
 
 // gameMonitor has workspace 1 with column 1 on a 300x200 output and a
-// floating game 2 (fixed size) fullscreen on its own workspace below, or
-// alone in place on workspace 2 when inPlace is set.
-func gameMonitor(o Overflow, inPlace bool) *Monitor {
+// gameMonitor has window 1 on workspace 1 and, on workspace 2, a floating
+// game 2 (fixed size) fullscreen; workspace 1 is on screen.
+func gameMonitor(o Overflow) *Monitor {
 	m := newMonitor("", "")
 	m.SetOutput(300, 200)
 	m.SetOverflow(o)
 	m.AddWindow(1)
-	if inPlace {
-		m.Focus(1)
-	}
+	m.Focus(1)
 	m.AddFloating(2, 300, 200)
 	m.SetFullscreen(2, true)
 	m.Focus(0)
 	return m
 }
 
-// A floating game covering its workspace shows as that row's preview,
-// dedicated or in place: the row is not empty.
+// A floating game covering its workspace shows as that row's preview: the
+// row is not empty.
 func TestOverviewFullscreenFloat(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		o       Overflow
-		inPlace bool
-	}{
-		{"own workspace", OverflowFixed, false},
-		{"in place fixed", OverflowFixed, true},
-		{"in place scroll", OverflowScroll, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			m := gameMonitor(tt.o, tt.inPlace)
+	for _, o := range []Overflow{OverflowFixed, OverflowScroll} {
+		t.Run(string(o), func(t *testing.T) {
+			m := gameMonitor(o)
 			m.ToggleOverview()
 			ps := m.Layout()
 			cur, game := previewOf(t, ps, 1), previewOf(t, ps, 2)
@@ -180,7 +170,7 @@ func TestOverviewFullscreenFloat(t *testing.T) {
 // A click picks the game; Escape from its row returns where the overview
 // opened.
 func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
-	m := gameMonitor(OverflowFixed, false)
+	m := gameMonitor(OverflowFixed)
 	m.ToggleOverview()
 	r := previewOf(t, m.Layout(), 2).Rect
 	if id := m.overviewAt(float64(r.X+1), float64(r.Y+1)); id != 2 {
@@ -201,7 +191,7 @@ func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
 // The overview opens over the game too: the game is the selected row,
 // the workspace above shows dimmed, and Escape returns to the game.
 func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
-	m := gameMonitor(OverflowFixed, false)
+	m := gameMonitor(OverflowFixed)
 	m.Focus(1)
 	m.ToggleOverview()
 	if !m.ov.open {
@@ -218,16 +208,16 @@ func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
 	}
 }
 
-// A tiled fullscreen window on its own workspace (fixed overflow) is its
-// row's only preview too: the selection cannot leave it for a hidden
-// column, and Return keeps it fullscreen.
+// A tiled fullscreen window (fixed overflow) is its row's only preview
+// too: the selection cannot leave it for a hidden column, and Return keeps
+// it fullscreen.
 func TestOverviewOpensOverFullscreenTile(t *testing.T) {
 	m := newMonitor("", "")
 	m.SetOutput(300, 200)
 	m.SetOverflow(OverflowFixed)
 	m.AddWindow(1)
 	m.AddWindow(2)
-	m.ToggleFullscreen() // 2 to its own workspace
+	m.ToggleFullscreen()
 	m.ToggleOverview()
 	game := previewOf(t, m.Layout(), 2)
 	if !m.ov.open || !game.Focused || game.Peek || !game.Fullscreen {
@@ -235,7 +225,7 @@ func TestOverviewOpensOverFullscreenTile(t *testing.T) {
 	}
 	m.OverviewMove(-1, 0)
 	m.ToggleOverview()
-	if f, _ := m.Focused(); f != 2 || m.Active != 1 || !previewOf(t, m.Layout(), 2).Fullscreen {
+	if f, _ := m.Focused(); f != 2 || m.Active != 0 || !previewOf(t, m.Layout(), 2).Fullscreen {
 		t.Fatalf("confirm: %d on %d", f, m.Active)
 	}
 }
@@ -261,10 +251,9 @@ func TestOverviewOverScrollFullscreenPicksColumn(t *testing.T) {
 }
 
 // Only the game shows on its row: its dialogs and the columns under it
-// stay hidden, as on screen. (Under fixed overflow a new column sends
-// the game to its own workspace instead.)
+// stay hidden, as on screen.
 func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
-	m := gameMonitor(OverflowScroll, true)
+	m := gameMonitor(OverflowScroll)
 	m.Focus(1)
 	m.AddWindow(5)
 	m.Current().FocusID(2) // back on the game, over column 5

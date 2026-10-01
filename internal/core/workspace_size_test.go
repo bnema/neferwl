@@ -91,20 +91,20 @@ func TestWorkspaceSizeFullscreenFillsFrame(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSizeFixedFullscreenSiblingKeepsFrame(t *testing.T) {
+func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
 	r, _ := sizedRig(t, "fixed", nil)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]
 	if s.WorkspaceClip != frame {
-		t.Fatalf("sibling clip %+v", s.WorkspaceClip)
+		t.Fatalf("fullscreen clip %+v", s.WorkspaceClip)
 	}
 	for _, w := range s.Windows {
 		if w.Fullscreen && w.Rect != frame {
 			t.Fatalf("%+v", w)
 		}
 	}
-	// Reload keeps the origin's size on the sibling; removing it frees both.
+	// Reload keeps the size; removing it frees the workspace.
 	cfg := r.cfg
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if s := receive(t, r.scenes)[0]; s.WorkspaceClip != frame {

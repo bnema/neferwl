@@ -65,48 +65,6 @@ func TestSizedNeighborDisablesSlideButInheritedNeighborDoesNot(t *testing.T) {
 	}
 }
 
-// A fullscreen sibling detached from its origin keeps its size on reload;
-// one still tied to a named origin follows the config.
-func TestDetachedFullscreenSiblingKeepsSizeOnReload(t *testing.T) {
-	m := sizedMonitor(OverflowFixed)
-	m.AddWindow(1)
-	m.AddWindow(2)
-	m.ToggleFullscreen()
-	fs := m.Current()
-	if fs.origin == nil || fs.size != [2]int{100, 100} {
-		t.Fatalf("sibling %+v size %v", fs.origin, fs.size)
-	}
-	m.SetNamed([]NamedWorkspace{{Name: "s", Size: [2]int{120, 80}}})
-	if fs.size != [2]int{120, 80} {
-		t.Fatalf("attached sibling did not follow config: %v", fs.size)
-	}
-	fs.origin, fs.back = nil, origPlace{} // moved away or home gone
-	m.SetNamed([]NamedWorkspace{{Name: "s", Size: [2]int{50, 50}}})
-	if fs.size != [2]int{120, 80} {
-		t.Fatalf("detached sibling resized: %v", fs.size)
-	}
-	// A plain unnamed workspace is never resized by config.
-	if u := m.Workspaces[0]; u.size != ([2]int{}) {
-		t.Fatalf("unnamed size %v", u.size)
-	}
-}
-
-// Removing a named origin restores inherited geometry on its sibling.
-func TestFullscreenSiblingDropsRemovedNamedSize(t *testing.T) {
-	m := sizedMonitor(OverflowFixed)
-	m.AddWindow(1)
-	m.AddWindow(2)
-	m.ToggleFullscreen()
-	fs := m.Current()
-	if fs.Output == m.Output() || fs.origin == nil {
-		t.Fatal("test did not create sized fullscreen sibling")
-	}
-	m.SetNamed(nil)
-	if fs.Output != m.Output() || fs.size != [2]int{} {
-		t.Fatalf("removed declaration retained size: %+v", fs.Output)
-	}
-}
-
 // The overview keeps monitor-wide placement and real client aspect ratios.
 func TestOverviewIgnoresWorkspaceSize(t *testing.T) {
 	m := sizedMonitor(OverflowScroll)
@@ -159,44 +117,6 @@ func TestShownClientRectIsClippedToFrame(t *testing.T) {
 	}
 	if r, ok := c.shownClientRect(1); ok {
 		t.Fatalf("scrolled off window has bounds %+v", r)
-	}
-}
-
-// A named workspace following the focus to another screen takes its
-// fullscreen siblings along, still linked and sized by the declaration.
-func TestBringNamedMovesFullscreenSiblings(t *testing.T) {
-	var cfg ports.Config
-	cfg.Keyboard.CmdKey = "super"
-	cfg.Layout.MaxColumns = 2
-	cfg.Layout.Overflow = string(OverflowFixed)
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "s", Size: [2]int{100, 100}}}
-	c := newSizedCore(t, cfg)
-	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
-	c.addScreen(ports.OutputInfo{Name: "B", Width: 600, Height: 400})
-	a, b := c.screens[0], c.screens[1]
-	a.mon.ToggleNamed("s")
-	named := a.mon.Current()
-	a.mon.AddWindow(1)
-	a.mon.AddWindow(2)
-	a.mon.ToggleFullscreen()
-	fs := a.mon.Current()
-	if fs.origin != named {
-		t.Fatal("test did not create fullscreen sibling")
-	}
-	c.focusScreen = 1
-	c.bringNamed("s")
-	if a.mon.has(named) || a.mon.has(fs) || !b.mon.has(named) || !b.mon.has(fs) {
-		t.Fatal("named workspace or sibling left behind")
-	}
-	if fs.origin != named || fs.size != [2]int{100, 100} || named.Output.W != 100 {
-		t.Fatalf("sibling %+v size %v, named %+v", fs.origin, fs.size, named.Output)
-	}
-	// Siblings drop the home of the screen they left, like the workspace.
-	named.home, fs.home = "A", "A"
-	c.focusScreen = 0
-	c.bringNamed("s")
-	if named.home != "" || fs.home != "" || !a.mon.has(fs) || fs.origin != named {
-		t.Fatalf("home %q sibling home %q", named.home, fs.home)
 	}
 }
 
