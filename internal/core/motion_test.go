@@ -241,13 +241,35 @@ func TestSnapSwipeDuringLanding(t *testing.T) {
 	}
 }
 
-// A slow swipe from a view between points (a merged column edge) never
-// settles behind where it started.
+// From a view between points (a merged column edge) a slow swipe never
+// settles behind where it started; a quick one reaches the points around.
 func TestSnapSwipeRestBetweenPoints(t *testing.T) {
-	s := newSnapSwipe(640, 640, 1, []float64{0, 600, 1000}, workspaceBand.scaled(1000))
-	at := slowSwipe(&s, 5)
-	if got, _ := s.end(false, at); got != 640 {
-		t.Fatalf("slow swipe from 640 landed on %v", got)
+	for _, tc := range []struct {
+		name string
+		push func(*snapSwipe) time.Duration
+		want float64
+	}{
+		{"slow", func(s *snapSwipe) time.Duration { return slowSwipe(s, 5) }, 640},
+		{"quick back", func(s *snapSwipe) time.Duration { return swipe(s, 4, -40) }, 600},
+		{"quick on", func(s *snapSwipe) time.Duration { return swipe(s, 4, 40) }, 1000},
+	} {
+		s := newSnapSwipe(640, 640, 1, []float64{0, 600, 1000}, workspaceBand.scaled(1000))
+		at := tc.push(&s)
+		if got, _ := s.end(false, at); got != tc.want {
+			t.Errorf("%s: landed on %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A swipe caught while sliding to a far workspace lands on that one or
+// its neighbors, never back where the slide shows.
+func TestSnapSwipeCaughtFarFromRest(t *testing.T) {
+	for _, delta := range []float64{-60, 60} {
+		s := newSnapSwipe(0.5, 4, 1/workspaceSwipeMovement, indexPoints(6), workspaceBand)
+		at := swipe(&s, 20, delta)
+		if got, _ := s.end(false, at); got < 3 || got > 5 {
+			t.Errorf("delta %v: landed on %v, want 3 to 5", delta, got)
+		}
 	}
 }
 
@@ -314,10 +336,11 @@ func TestStepSwipe(t *testing.T) {
 	} {
 		s := newStepSwipe()
 		at := tc.push(&s)
-		if got := s.step(tc.cancelled, at); got != tc.want {
+		target, v := s.end(tc.cancelled, at)
+		if got := int(math.Round(target)); got != tc.want {
 			t.Errorf("%s: step %d, want %d", tc.name, got, tc.want)
 		}
-		if _, v := s.end(tc.cancelled, at); math.IsNaN(v) {
+		if math.IsNaN(v) {
 			t.Errorf("%s: velocity NaN", tc.name)
 		}
 	}

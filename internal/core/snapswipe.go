@@ -162,24 +162,22 @@ func (s *snapSwipe) end(cancelled bool, at time.Duration) (target, velocity floa
 			}
 		}
 	}
+	// proj lies within [landLo, landHi]: one of them always matches.
 	for _, p := range slices.Backward(land[:]) {
 		if p <= proj+snapEpsilon {
 			return p, velocity
 		}
 	}
-	return s.points[s.home], velocity
+	return s.landLo, velocity
 }
 
 // discreteSwipeMovement is the touchpad distance of one step of a swipe
 // that runs an action instead of sliding the view.
 const discreteSwipeMovement = 300.0
 
-// stepPoints are the steps a step swipe settles on.
-var stepPoints = []float64{-1, 0, 1}
-
 // newStepSwipe is a swipe that settles on a step of -1, 0 or 1.
 func newStepSwipe() snapSwipe {
-	return newSnapSwipe(0, 0, 1/discreteSwipeMovement, stepPoints, workspaceBand)
+	return newSnapSwipe(0, 0, 1/discreteSwipeMovement, []float64{-1, 0, 1}, workspaceBand)
 }
 
 // step is where a step swipe settles when the fingers lift.
