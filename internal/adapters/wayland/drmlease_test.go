@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	dl "github.com/bnema/go-wayland-bindings/server/drmlease"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	dl "github.com/bnema/purego-libwayland/protocol/drmlease"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"

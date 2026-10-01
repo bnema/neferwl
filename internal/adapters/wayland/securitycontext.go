@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bnema/purego-libwayland/protocol/securitycontext"
+	"github.com/bnema/go-wayland-bindings/server/securitycontext"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )

@@ -3,10 +3,10 @@ package wayland
 import (
 	"testing"
 
+	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/wlrlayershell"
 	"github.com/bnema/wlturbo"
 )
 

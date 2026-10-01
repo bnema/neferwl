@@ -8,15 +8,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bnema/purego-libwayland/protocol/relativepointer"
+	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 
+	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/neferwl/internal/sessionlock"
-	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"

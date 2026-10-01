@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
 	"github.com/bnema/wlturbo"
 )
 

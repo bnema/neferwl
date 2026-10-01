@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/securitycontext"
 	"github.com/bnema/neferwl/internal/logging"
-	"github.com/bnema/purego-libwayland/protocol/securitycontext"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

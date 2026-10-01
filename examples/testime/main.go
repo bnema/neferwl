@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/bnema/purego-libwayland/protocol/inputmethod"
+	"github.com/bnema/go-wayland-bindings/server/inputmethod"
 	"github.com/bnema/wlturbo"
 	clientcore "github.com/bnema/wlturbo/protocol/core"
 	clientime "github.com/bnema/wlturbo/protocol/inputmethod"

@@ -3,10 +3,10 @@ package wayland
 import (
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/extidlenotify"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
-	"github.com/bnema/purego-libwayland/protocol/wlroutputpower"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -28,7 +28,7 @@ type idleNotification struct {
 
 // outputPower is one zwlr_output_power_v1.
 type outputPower struct {
-	res    *wlroutputpower.ZwlrOutputPowerV1
+	res    *wlroutputpowermanagement.ZwlrOutputPowerV1
 	output string
 }
 
@@ -38,8 +38,8 @@ func registerIdle(d *server.Display, s *Server) error {
 	}); err != nil {
 		return err
 	}
-	return wlroutputpower.NewZwlrOutputPowerManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
-		_, _ = wlroutputpower.NewZwlrOutputPowerManagerV1(c, int32(v), id, powerManager{s})
+	return wlroutputpowermanagement.NewZwlrOutputPowerManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
+		_, _ = wlroutputpowermanagement.NewZwlrOutputPowerManagerV1(c, int32(v), id, powerManager{s})
 	})
 }
 
@@ -138,13 +138,13 @@ func (s *Server) syncIdle(wasHeld bool) {
 
 type powerManager struct{ server *Server }
 
-func (powerManager) Destroy(*wlroutputpower.ZwlrOutputPowerManagerV1) {}
+func (powerManager) Destroy(*wlroutputpowermanagement.ZwlrOutputPowerManagerV1) {}
 
-func (m powerManager) GetOutputPower(r *wlroutputpower.ZwlrOutputPowerManagerV1, id uint32, wl *wayland.Output) {
+func (m powerManager) GetOutputPower(r *wlroutputpowermanagement.ZwlrOutputPowerManagerV1, id uint32, wl *wayland.Output) {
 	s := m.server
 	o := s.outputOf(wl)
 	p := &outputPower{}
-	res, err := wlroutputpower.NewZwlrOutputPowerV1(r.Client(), r.Version(), id, powerHandler{s, p})
+	res, err := wlroutputpowermanagement.NewZwlrOutputPowerV1(r.Client(), r.Version(), id, powerHandler{s, p})
 	if err != nil {
 		return
 	}
@@ -172,24 +172,24 @@ type powerHandler struct {
 	p      *outputPower
 }
 
-func (powerHandler) Destroy(*wlroutputpower.ZwlrOutputPowerV1) {}
+func (powerHandler) Destroy(*wlroutputpowermanagement.ZwlrOutputPowerV1) {}
 
-func (h powerHandler) SetMode(r *wlroutputpower.ZwlrOutputPowerV1, mode uint32) {
-	if mode != uint32(wlroutputpower.ZwlrOutputPowerV1ModeOff) && mode != uint32(wlroutputpower.ZwlrOutputPowerV1ModeOn) {
-		r.PostError(uint32(wlroutputpower.ZwlrOutputPowerV1ErrorInvalidMode), "invalid mode")
+func (h powerHandler) SetMode(r *wlroutputpowermanagement.ZwlrOutputPowerV1, mode uint32) {
+	if mode != uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOff) && mode != uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOn) {
+		r.PostError(uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ErrorInvalidMode), "invalid mode")
 		return
 	}
 	if h.p.output == "" {
 		return
 	}
-	h.server.emit(ports.OutputPower{Output: h.p.output, On: mode == uint32(wlroutputpower.ZwlrOutputPowerV1ModeOn)})
+	h.server.emit(ports.OutputPower{Output: h.p.output, On: mode == uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOn)})
 }
 
 func powerMode(on bool) uint32 {
 	if on {
-		return uint32(wlroutputpower.ZwlrOutputPowerV1ModeOn)
+		return uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOn)
 	}
-	return uint32(wlroutputpower.ZwlrOutputPowerV1ModeOff)
+	return uint32(wlroutputpowermanagement.ZwlrOutputPowerV1ModeOff)
 }
 
 // setOutputsOff applies core's power state: each object of an output

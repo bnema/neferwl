@@ -1,11 +1,11 @@
 package wayland
 
 import (
+	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
+	"github.com/bnema/go-wayland-bindings/server/pointerwarp"
+	"github.com/bnema/go-wayland-bindings/server/relativepointer"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/pointerconstraints"
-	"github.com/bnema/purego-libwayland/protocol/pointerwarp"
-	"github.com/bnema/purego-libwayland/protocol/relativepointer"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

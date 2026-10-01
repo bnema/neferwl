@@ -3,8 +3,8 @@ package wayland
 import (
 	"testing"
 
+	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/linuxdmabuf"
 	"golang.org/x/sys/unix"
 )
 

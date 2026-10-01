@@ -3,9 +3,9 @@ package wayland
 import (
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/presentationtime"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/presentationtime"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )

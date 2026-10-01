@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/linuxdmabuf"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

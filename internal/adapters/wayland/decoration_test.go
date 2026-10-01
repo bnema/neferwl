@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/serverdecoration"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/purego-libwayland/protocol/kdedecoration"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/wlturbo"
 )
 
@@ -32,14 +32,14 @@ func TestKDEDecorationAcknowledgesMode(t *testing.T) {
 	proxy := &kdeModeProxy{modes: make(chan uint32, 8)}
 	proxy.SetID(deco)
 	registerWireProxy(c, proxy)
-	requestProtocol(t, c, mgr, kdedecoration.OrgKdeKwinServerDecorationManagerRequestCreate, deco, surf)
-	requestProtocol(t, c, deco, kdedecoration.OrgKdeKwinServerDecorationRequestRequestMode, uint32(kdedecoration.OrgKdeKwinServerDecorationModeClient))
+	requestProtocol(t, c, mgr, serverdecoration.OrgKdeKwinServerDecorationManagerRequestCreate, deco, surf)
+	requestProtocol(t, c, deco, serverdecoration.OrgKdeKwinServerDecorationRequestRequestMode, uint32(serverdecoration.OrgKdeKwinServerDecorationModeClient))
 	// An undefined mode gets no answer.
-	requestProtocol(t, c, deco, kdedecoration.OrgKdeKwinServerDecorationRequestRequestMode, uint32(3))
+	requestProtocol(t, c, deco, serverdecoration.OrgKdeKwinServerDecorationRequestRequestMode, uint32(3))
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []kdedecoration.OrgKdeKwinServerDecorationMode{kdedecoration.OrgKdeKwinServerDecorationModeServer, kdedecoration.OrgKdeKwinServerDecorationModeClient} {
+	for _, want := range []serverdecoration.OrgKdeKwinServerDecorationMode{serverdecoration.OrgKdeKwinServerDecorationModeServer, serverdecoration.OrgKdeKwinServerDecorationModeClient} {
 		select {
 		case got := <-proxy.modes:
 			if got != uint32(want) {

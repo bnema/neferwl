@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/ports"
-	wlr "github.com/bnema/purego-libwayland/protocol/wlroutputmanagement"
 	"github.com/bnema/wlturbo"
 	client "github.com/bnema/wlturbo/protocol/outputmanagement"
 )

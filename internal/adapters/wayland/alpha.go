@@ -3,8 +3,8 @@ package wayland
 import (
 	"math"
 
-	"github.com/bnema/purego-libwayland/protocol/alphamodifier"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/go-wayland-bindings/server/alphamodifier"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

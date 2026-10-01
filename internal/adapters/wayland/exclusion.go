@@ -7,10 +7,10 @@ import (
 	"os"
 	"slices"
 
+	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 

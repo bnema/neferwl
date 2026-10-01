@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
+	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
-	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
-	wlr "github.com/bnema/purego-libwayland/protocol/wlrscreencopy"
 	"github.com/bnema/wlturbo"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"

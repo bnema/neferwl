@@ -3,9 +3,9 @@ package wayland
 import (
 	"testing"
 
+	cm "github.com/bnema/go-wayland-bindings/server/colormanagement"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
-	cm "github.com/bnema/purego-libwayland/protocol/colormanagement"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
 )
 
 func TestColorManagerErrors(t *testing.T) {

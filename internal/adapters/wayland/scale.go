@@ -3,9 +3,9 @@ package wayland
 import (
 	"math"
 
-	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
-	"github.com/bnema/purego-libwayland/protocol/viewporter"
-	"github.com/bnema/purego-libwayland/protocol/wayland"
+	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
+	"github.com/bnema/go-wayland-bindings/server/viewporter"
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/purego-libwayland/server"
 )
 
