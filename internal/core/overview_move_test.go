@@ -189,10 +189,10 @@ func TestOverviewMoveDropsMaximizeHistory(t *testing.T) {
 	}
 }
 
-// Moving next to a fullscreen sibling workspace keeps the origin row's
-// snapshot: Escape restores its opening focus, whether the window moves
-// (a float on the sibling) or follow-move sends the fullscreen one home.
-func TestOverviewMoveToFullscreenSibling(t *testing.T) {
+// A fixed fullscreen row moves its window like the bind outside the
+// overview: fullscreen ends, and Escape leaves the row on a window still
+// there.
+func TestOverviewMoveFromFullscreenRow(t *testing.T) {
 	for _, follow := range []bool{false, true} {
 		m := newMonitor("", "")
 		m.SetOutput(300, 200)
@@ -202,23 +202,23 @@ func TestOverviewMoveToFullscreenSibling(t *testing.T) {
 		}
 		w := m.Current()
 		w.Overflow = OverflowFixed
-		w.FocusID(1)
-		m.ToggleFullscreen()
-		if m.Workspaces[1].origin != w {
-			t.Fatalf("no fullscreen sibling: %v", windows(m))
-		}
-		m.Focus(0)
 		w.FocusID(2)
+		m.ToggleFullscreen()
 		m.SetFollowMove(follow)
 		m.ToggleOverview()
-		m.OverviewMove(1, 0)
-		if m.overviewTarget() != 3 {
+		if m.overviewTarget() != 2 {
 			t.Fatalf("follow %v: selection %d", follow, m.overviewTarget())
 		}
 		m.Apply(ActionMoveColumnToWorkspaceDown)
+		if !slices.Equal(w.windows(), []WindowID{1, 3, 4}) || !slices.Equal(m.Workspaces[1].windows(), []WindowID{2}) {
+			t.Fatalf("follow %v: windows %v", follow, windows(m))
+		}
+		if w.fullscreen != 0 || m.Workspaces[1].fullscreen != 0 {
+			t.Fatalf("follow %v: fullscreen kept", follow)
+		}
 		m.CancelOverview()
-		if id, _ := w.Focused(); id != 2 {
-			t.Fatalf("follow %v: origin focus %d, want 2 (%v)", follow, id, windows(m))
+		if id, ok := w.Focused(); !ok || !w.has(id) || m.Current() != w {
+			t.Fatalf("follow %v: focus %d on workspace %d", follow, id, m.Active)
 		}
 	}
 }
