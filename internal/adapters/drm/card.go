@@ -281,5 +281,5 @@ func normalizedHDRSettings(settings HDRSettings) HDRSettings {
 // outputNeedsRestart applies the same replacement path to mode and HDR
 // configuration changes; Release drops the old output before reopening it.
 func outputNeedsRestart(o *Output, mode modeInfo, settings HDRSettings) bool {
-	return o.mode != mode || o.hdrSettings != normalizedHDRSettings(settings)
+	return o.mode != mode || o.hdr.settings != normalizedHDRSettings(settings)
 }

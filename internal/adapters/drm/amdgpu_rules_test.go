@@ -165,8 +165,8 @@ func amdgpuRuleWith(t *testing.T, live func(uint32) bool) func(*atomicReq, uint3
 }
 
 func enableTestHDR(o *Output) {
-	o.hdrOn, o.hdrBlob = true, 55
-	o.hdrProps = connectorHDRProps{Metadata: pHDRMeta, Colorspace: pColorspace, MaxBPC: pMaxBPC, BT2020Value: colorspaceBT2020, MaxBPCValue: 8, HasDefault: true}
+	o.hdr.on, o.hdr.blob = true, 55
+	o.hdr.props = connectorHDRProps{Metadata: pHDRMeta, Colorspace: pColorspace, MaxBPC: pMaxBPC, BT2020Value: colorspaceBT2020, MaxBPCValue: 8, HasDefault: true}
 }
 
 func TestAmdgpuRuleRejectsWhatHardwareRejected(t *testing.T) {

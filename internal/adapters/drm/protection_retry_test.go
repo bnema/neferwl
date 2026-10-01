@@ -250,9 +250,9 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			o, k, _ := testOutput(t, errs...)
 			o.cursor = nil
 			o.protected = true
-			o.hdr = hdrCapability{Capable: true}
-			o.hdrSettings = HDRSettings{Enabled: true, SDRBrightness: 203}
-			o.hdrProps = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
+			o.hdr.cap = hdrCapability{Capable: true}
+			o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
+			o.hdr.props = connectorHDRProps{Metadata: 100, Colorspace: 101, MaxBPC: 102, BT2020Value: 7, HasDefault: true, MaxBPCValue: 8}
 			o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30, Modifier: 0}}
 			if errno == nil {
 				o.primary.props = map[string]uint32{"CRTC_ID": pCrtcID} // incomplete: detach fails
@@ -279,8 +279,8 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			if !o.commitFailed(err, &enabled) {
 				t.Fatalf("protected failure not handled: %v", err)
 			}
-			if o.hdrFailed || !o.hdrOn {
-				t.Fatalf("HDR fell back: failed=%v on=%v", o.hdrFailed, o.hdrOn)
+			if o.hdr.failed || !o.hdr.on {
+				t.Fatalf("HDR fell back: failed=%v on=%v", o.hdr.failed, o.hdr.on)
 			}
 			if lost == enabled {
 				t.Fatalf("lost master=%v enabled=%v", lost, enabled)

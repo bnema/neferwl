@@ -227,7 +227,7 @@ func TestModesetSendsScanoutFormats(t *testing.T) {
 
 func TestHDRScanoutDecision(t *testing.T) {
 	o, k, _ := testOutput(t)
-	o.hdrOn = true
+	o.hdr.on = true
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
 	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Fullscreen: true, Rect: ports.Rect{W: 200, H: 100}}}}
 	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
@@ -247,15 +247,15 @@ func TestHDRScanoutDecision(t *testing.T) {
 	c.DMABuf.Format = fourccXR30
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(uint32(77), nil).Once()
 	check("")
-	o.hdrOn = false
+	o.hdr.on = false
 	check("sdr_pq_content")
 }
 
 func TestModesetReportsConfirmedHDR(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
-	o.hdrOn = true
-	o.hdr = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
+	o.hdr.on = true
+	o.hdr.cap = hdrCapability{MaxLuminance: 1000, MaxFrameAverage: 400, MinLuminance: 0.005}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
 	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}, {Format: fourccXRGB}}
 	ch := make(chan ports.OutputFormats, 2)
@@ -268,7 +268,7 @@ func TestModesetReportsConfirmedHDR(t *testing.T) {
 	if f := <-ch; f.HDR == nil || f.HDR.MaxLuminance != 1000 || f.HDR.MaxFrameAverage != 400 || f.HDR.MinLuminance != 0.005 || len(f.Formats) != 1 || f.Formats[0].Format != fourccXR30 {
 		t.Fatalf("HDR report: %+v", f)
 	}
-	o.hdrOn = false // fallback to SDR
+	o.hdr.on = false // fallback to SDR
 	if err := o.modeset(); err != nil {
 		t.Fatal(err)
 	}
@@ -282,8 +282,8 @@ func TestModesetReportsConfirmedHDR(t *testing.T) {
 func TestPowerOffWithdrawsHDRAndFormats(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor = nil
-	o.hdrOn, o.scanout = true, true
-	o.hdr = hdrCapability{MaxLuminance: 1000}
+	o.hdr.on, o.scanout = true, true
+	o.hdr.cap = hdrCapability{MaxLuminance: 1000}
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXR30}}
 	o.sampled = []ports.DMABufFormat{{Format: fourccXR30}}
 	ch := make(chan ports.OutputFormats, 1)

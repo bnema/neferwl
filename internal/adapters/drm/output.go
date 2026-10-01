@@ -38,22 +38,15 @@ type Output struct {
 	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
 	runContext       context.Context // bounds compositor clear waits during Run startup
 
-	k           kms
-	flipped     <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
-	crtc        uint32
-	conn        connector
-	mode        modeInfo
-	saved       modeCrtc
-	monitor     Monitor
-	hdr         hdrCapability
-	hdrProps    connectorHDRProps
-	hdrSettings HDRSettings
-	// hdrFailed disables retries until this Output is replaced; hdrOn is
-	// the currently selected signal encoding, including on VT resume.
-	hdrOn, hdrFailed bool
-	hdrBlob          uint32
-	hdrBlobData      hdrOutputMetadata
-	log              zerowrap.Logger
+	k       kms
+	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
+	crtc    uint32
+	conn    connector
+	mode    modeInfo
+	saved   modeCrtc
+	monitor Monitor
+	hdr     hdrState
+	log     zerowrap.Logger
 	// clock paces the periodic stats and renderer trim (nil: system).
 	clock ports.Clock
 	// Properties: CRTC and connector property IDs by name.
@@ -263,11 +256,11 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	if err := o.readProps(card.fd, pipe, card.taken, cursorSize(card.fd)); err != nil {
 		return nil, err
 	}
-	o.hdrSettings = normalizedHDRSettings(card.want.HDR[c.name])
-	o.hdr = detectHDR(o.monitor, o.hdrProps)
-	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.Capable).Str("reason", o.hdr.Reason).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Float64("min_luminance", o.hdr.MinLuminance).Msg("HDR capability")
-	if o.hdrSettings.Enabled && !o.hdr.Capable {
-		log.Warn().Str("connector", c.name).Str("reason", o.hdr.Reason).Msg("HDR requested but unavailable")
+	o.hdr.settings = normalizedHDRSettings(card.want.HDR[c.name])
+	o.hdr.cap = detectHDR(o.monitor, o.hdr.props)
+	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.cap.Capable).Str("reason", o.hdr.cap.Reason).Float64("max_luminance", o.hdr.cap.MaxLuminance).Float64("max_frame_average", o.hdr.cap.MaxFrameAverage).Float64("min_luminance", o.hdr.cap.MinLuminance).Msg("HDR capability")
+	if o.hdr.settings.Enabled && !o.hdr.cap.Capable {
+		log.Warn().Str("connector", c.name).Str("reason", o.hdr.cap.Reason).Msg("HDR requested but unavailable")
 	}
 	o.tearing = card.async && !card.want.NoTearing
 	if !card.want.NoVRR {
@@ -294,7 +287,7 @@ func (o *Output) readProps(fd, pipe int, taken map[uint32]bool, cursorSide int) 
 	}
 	o.connCrtc = uint32(np["CRTC_ID"][0])
 	// The connector's property metadata is needed for enum/range capability.
-	o.hdrProps = readConnectorHDRProps(fd, np)
+	o.hdr.props = readConnectorHDRProps(fd, np)
 	o.contentProp, o.contentValues = readContentTypeProp(fd, np)
 	o.contentValue = np["content type"][1]
 	o.contentWanted = o.contentValue
@@ -523,12 +516,12 @@ func (o *Output) sendFormats() {
 		return
 	}
 	f := ports.OutputFormats{Output: o.conn.name, Device: o.device}
-	if o.hdrOn && !o.off {
-		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.MaxLuminance, MaxFrameAverage: o.hdr.MaxFrameAverage, MinLuminance: o.hdr.MinLuminance}
+	if o.hdr.on && !o.off {
+		f.HDR = &ports.OutputHDR{MaxLuminance: o.hdr.cap.MaxLuminance, MaxFrameAverage: o.hdr.cap.MaxFrameAverage, MinLuminance: o.hdr.cap.MinLuminance}
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
-			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdrOn {
+			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdr.on {
 				f.Formats = append(f.Formats, format)
 			}
 		}
@@ -591,7 +584,7 @@ func (o *Output) modesetBaseReq(blob uint32, active bool) *atomicReq {
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
-	o.hdrConnectorProps(req, o.hdrOn)
+	o.hdrConnectorProps(req, o.hdr.on)
 	return req
 }
 
@@ -1015,10 +1008,8 @@ func (o *Output) Close() {
 			detached = o.primary != nil && o.crtc != 0 && o.crtcProps["ACTIVE"] != 0
 		}
 	}
-	// A live metadata blob means an HDR modeset may still be on screen, even
-	// after a failed SDR fallback (hdrOn is then false): it is freed only once
-	// an SDR modeset succeeds.
-	hdrShown := o.hdrOn || o.hdrBlob != 0
+	// A live metadata blob is freed only once an SDR modeset succeeds.
+	hdrShown := o.hdr.shown()
 	// Best effort: at exit the card may already belong to another session.
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		ev := o.log.Debug()
@@ -1041,10 +1032,7 @@ func (o *Output) Close() {
 		_ = o.k.destroyBlob(o.modeBlob)
 		o.modeBlob = 0
 	}
-	if o.hdrBlob != 0 {
-		_ = o.k.destroyBlob(o.hdrBlob)
-		o.hdrBlob = 0
-	}
+	o.hdr.releaseBlob(o.k)
 	if o.cursor != nil {
 		o.cursor.free(o.k)
 	}
@@ -1692,59 +1680,35 @@ const (
 // next kind is tried on refusal. cause is why the
 // previous kind failed, for the log.
 func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error {
-	if o.hdrSettings.Enabled && o.hdr.Capable && !o.hdrFailed {
-		o.hdrOn = true
-		meta := hdrMetadata(o.monitor)
+	if o.hdr.wanted() {
+		o.hdr.on = true
 		// Reuse the live blob across VT resume. A changed EDID creates a
 		// replacement, but the old one remains alive until KMS accepts it.
-		oldBlob := o.hdrBlob
-		created := false
-		var err error
-		if oldBlob == 0 || meta != o.hdrBlobData {
-			var newBlob uint32
-			newBlob, err = o.k.createBlob(meta.bytes())
-			if err == nil {
-				o.hdrBlob = newBlob
-				created = true
-			}
-		}
+		sw, err := o.hdr.prepareBlob(o.k, hdrMetadata(o.monitor))
 		if err == nil {
-			r.SetHDR(float64(o.hdrSettings.SDRBrightness))
+			r.SetHDR(float64(o.hdr.settings.SDRBrightness))
 			err = o.showImageKind(r, imagesDriver, nil)
 		}
 		var pe protectedCommitError
 		if errors.As(err, &pe) {
 			// A protected KMS failure is not an HDR failure: images exist and
 			// the owner retries the protected modeset. Never fall back to SDR
-			// or latch hdrFailed for it.
-			if created {
-				if oldBlob != 0 {
-					_ = o.k.destroyBlob(o.hdrBlob)
-					o.hdrBlob = oldBlob
-				} else {
-					o.hdrBlobData = meta
-				}
-			}
+			// or latch hdr.failed for it.
+			o.hdr.rollbackBlob(o.k, sw)
 			return err
 		}
 		if err == nil {
-			if created {
-				o.hdrBlobData = meta
-				if oldBlob != 0 {
-					_ = o.k.destroyBlob(oldBlob)
-				}
-			}
-			o.log.Info().Str("connector", o.conn.name).Int("sdr_brightness", o.hdrSettings.SDRBrightness).Float64("max_luminance", o.hdr.MaxLuminance).Float64("max_frame_average", o.hdr.MaxFrameAverage).Msg("HDR10 on")
+			o.hdr.commitBlob(o.k, sw)
+			o.log.Info().Str("connector", o.conn.name).Int("sdr_brightness", o.hdr.settings.SDRBrightness).Float64("max_luminance", o.hdr.cap.MaxLuminance).Float64("max_frame_average", o.hdr.cap.MaxFrameAverage).Msg("HDR10 on")
 			return nil
 		}
-		if created && oldBlob != 0 {
+		if sw.old != 0 {
 			// Failed replacement: the existing modeset may still use it.
-			_ = o.k.destroyBlob(o.hdrBlob)
-			o.hdrBlob = oldBlob
+			o.hdr.rollbackBlob(o.k, sw)
 		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
-		o.hdrFailed = true
-		o.hdrOn = false
+		o.hdr.failed = true
+		o.hdr.on = false
 		o.freeImages()
 		r.SetHDR(0)
 		_, _ = r.ExportTargets(0, nil)
@@ -1754,11 +1718,9 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 		r.SetHDR(0)
 	}
 	err := o.showImageKind(r, kind, cause)
-	if err == nil && o.hdrFailed && o.hdrBlob != 0 {
+	if err == nil && o.hdr.failed && o.hdr.blob != 0 {
 		// The SDR commit has completed; the old HDR metadata is no longer in use.
-		_ = o.k.destroyBlob(o.hdrBlob)
-		o.hdrBlob = 0
-		o.hdrBlobData = hdrOutputMetadata{}
+		o.hdr.releaseBlob(o.k)
 	}
 	return err
 }
@@ -1815,7 +1777,7 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 			return kind, o.runContext.Err()
 		}
 		mods := []uint64(nil)
-		if o.hdrOn {
+		if o.hdr.on {
 			for _, f := range o.primary.formats {
 				if f.Format == fourccXR30 {
 					mods = append(mods, f.Modifier)
@@ -1850,7 +1812,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 	for i := range bufs {
 		if err == nil {
 			format := uint32(fourccXRGB)
-			if o.hdrOn {
+			if o.hdr.on {
 				format = fourccXR30
 			}
 			o.fbs[i], err = o.k.addFB(&bufs[i], format)

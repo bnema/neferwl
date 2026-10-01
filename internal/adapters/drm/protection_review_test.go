@@ -74,7 +74,7 @@ func TestProtectedModesetDisableSendsInactiveFormats(t *testing.T) {
 				failures = []error{unix.EACCES}
 			}
 			o, k, _ := testOutput(t, failures...)
-			o.device, o.hdrOn = 42, true
+			o.device, o.hdr.on = 42, true
 			feedback := make(chan ports.OutputFormats, 2)
 			o.formats = feedback
 			r := portsmocks.NewMockRenderer(t)
