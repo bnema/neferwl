@@ -837,6 +837,9 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 		}
 	}
 	now.Add(1)
+	// Only the focused window may cover the screen (ADR 011).
+	client <- ports.WindowUnmapped{ID: 3}
+	scene(t, scenes)
 	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
 	s = scene(t, scenes)
 	// Honoured, in place.
@@ -901,6 +904,19 @@ func TestExternalFullscreenAtMapApplies(t *testing.T) {
 	s := scene(t, scenes)
 	if len(s.Windows) != 1 || !s.Windows[0].Fullscreen {
 		t.Fatalf("taskbar fullscreen ignored: %+v", s.Windows)
+	}
+}
+
+// Under fixed overflow, a taskbar's fullscreen on an unfocused window is
+// the user's choice: the window takes the focus and covers the screen.
+func TestExternalFullscreenFocusesFixed(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	set := receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("taskbar fullscreen:", got, focused)
 	}
 }
 

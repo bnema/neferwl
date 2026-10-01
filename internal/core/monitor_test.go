@@ -525,10 +525,20 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 	if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 {
 		t.Fatal("after bind", id)
 	}
+	// A client request for an unfocused window would take the screen and
+	// the keyboard from the user (ADR 011): it is refused.
 	w.FocusID(1)
 	m.SetFullscreen(3, true)
-	m.SetFullscreen(3, false)
-	if id, _ := m.Focused(); id != 1 || len(m.Workspaces) != 2 {
+	if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || w.cover() != 0 {
+		t.Fatal("unfocused request", id, w.fullscreen)
+	}
+	// The focused window's own request is honoured, in place.
+	m.SetFullscreen(1, true)
+	if id, _ := m.Focused(); id != 1 || w.cover() != 1 {
+		t.Fatal("focused request", id, w.cover())
+	}
+	m.SetFullscreen(1, false)
+	if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || len(m.Workspaces) != 2 {
 		t.Fatal("client round trip", id, windows(m))
 	}
 }

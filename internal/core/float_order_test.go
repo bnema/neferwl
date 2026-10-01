@@ -91,8 +91,9 @@ func TestDemotedFloatFullscreenRoundTrip(t *testing.T) {
 		w.FocusID(1)
 		wantOrder(t, w, 2, 1)
 		m.SetFullscreen(2, true)
-		if p := placement(w, 2); !p.Fullscreen {
-			t.Fatalf("fullscreen %+v", p)
+		// Fixed overflow refuses an unfocused window's fullscreen (ADR 011).
+		if p := placement(w, 2); p.Fullscreen != (overflow == OverflowScroll) {
+			t.Fatalf("%v: fullscreen %+v", overflow, p)
 		}
 		m.SetFullscreen(2, false)
 		wantOrder(t, w, 2, 1)

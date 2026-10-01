@@ -32,7 +32,7 @@ func TestDemotedFloatFullscreenUserReturn(t *testing.T) {
 	m.AddWindow(1)
 	m.AddFloating(2, 100, 80)
 	w := m.Current()
-	w.FocusID(1)
+	w.FocusID(2)
 	m.SetFullscreen(2, true)
 	w.focusCover()
 	m.SetFullscreen(2, false)

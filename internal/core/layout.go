@@ -817,6 +817,9 @@ func (w *Workspace) Activate(id WindowID) {
 // SetFullscreen applies a client request. It never moves focus: client
 // requests are automatic events (ADR 011 golden rule).
 func (w *Workspace) SetFullscreen(id WindowID, on bool) {
+	if on && !w.mayCover(id) {
+		return
+	}
 	if w.isFloat(id) {
 		if w.stashHidden && w.stashIndex(id) >= 0 {
 			// Applied when the stash is shown again.
@@ -919,6 +922,19 @@ func (w *Workspace) SetMaxColumns(n int) {
 func (w *Workspace) overviewArea() Rect { return w.reserved }
 
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+
+// mayCover reports whether a client may make id fullscreen. In fixed
+// overflow it would cover the output at once and take the keyboard from
+// the focused window, so only the focused window may; the request of
+// another is refused and the user can still toggle-fullscreen it. A
+// hidden stash's request waits for the show (showStash).
+func (w *Workspace) mayCover(id WindowID) bool {
+	if w.Overflow != OverflowFixed || w.stashHidden && w.stashIndex(id) >= 0 {
+		return true
+	}
+	focused, ok := w.Focused()
+	return ok && focused == id
+}
 
 // pinned reports whether the covering fullscreen window hides every other
 // window: focus moves leave it (leaveCover). Only in scroll overflow does

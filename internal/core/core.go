@@ -1004,7 +1004,11 @@ func (c *Core) Run(ctx context.Context) error {
 				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
 					continue
 				}
-				if s, _ := c.screenOf(v.ID); s != nil {
+				if s, w := c.screenOf(v.ID); s != nil {
+					// A taskbar request is a user action on that window.
+					if v.External && v.Fullscreen {
+						w.FocusID(v.ID)
+					}
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
 			case ports.WorkspaceActivate:
