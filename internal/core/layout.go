@@ -99,6 +99,10 @@ type Column struct {
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
+	// Shares are the row heights set by set-window-height, in percent, in
+	// Windows order. They apply only while there is one per window and
+	// they sum to 100; otherwise the rows share the height equally.
+	Shares []int
 }
 type Placement struct {
 	ID                          WindowID
@@ -463,6 +467,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			}
 			c := &w.Columns[i]
 			c.Windows = append(c.Windows[:j], c.Windows[j+1:]...)
+			c.Shares = nil
 			if len(c.Windows) == 0 {
 				w.Columns = append(w.Columns[:i], w.Columns[i+1:]...)
 				if len(w.Columns) == 0 {
@@ -688,6 +693,9 @@ func (w *Workspace) MoveWindow(dir int) {
 		w.dropSlotOf(c.Windows[0])
 	}
 	c.Windows[c.Focus], c.Windows[to] = c.Windows[to], c.Windows[c.Focus]
+	if validShares(*c) {
+		c.Shares[c.Focus], c.Shares[to] = c.Shares[to], c.Shares[c.Focus]
+	}
 	c.Focus = to
 	w.scroll()
 }
@@ -709,6 +717,80 @@ func (w *Workspace) ResizeColumn(pct int) {
 	cur := (200*(w.columnWidth(w.Focus)+g) + avail) / (2 * avail)
 	w.Columns[w.Focus].Width = Width{Num: min(max(cur+pct, 10), 100), Den: 100}
 	w.scroll()
+}
+
+// minShare is the smallest row height set-window-height leaves, percent.
+const minShare = 10
+
+// ResizeRow changes the focused window's height share by pct percent; the
+// other rows of its column give or take it in proportion to their shares.
+// Every row keeps at least minShare percent.
+func (w *Workspace) ResizeRow(pct int) {
+	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
+		return
+	}
+	c := &w.Columns[w.Focus]
+	n := len(c.Windows)
+	if n < 2 || n*minShare > 100 {
+		return
+	}
+	shares := c.Shares
+	if !validShares(*c) {
+		shares = make([]int, n)
+		for i := range shares {
+			shares[i] = 100 / n
+		}
+		shares[n-1] += 100 % n
+	} else {
+		shares = slices.Clone(shares)
+	}
+	f := c.Focus
+	target := min(max(shares[f]+pct, minShare), 100-minShare*(n-1))
+	delta := target - shares[f]
+	if delta == 0 {
+		return
+	}
+	// The others share -delta in proportion to their room: what they have
+	// above minShare when shrinking, their share when growing.
+	weight := func(v int) int {
+		if delta > 0 {
+			return v - minShare
+		}
+		return v
+	}
+	total := 0
+	for i, v := range shares {
+		if i != f {
+			total += weight(v)
+		}
+	}
+	left := delta
+	for i, v := range shares {
+		if i == f {
+			continue
+		}
+		part := 0
+		if total > 0 {
+			part = delta * weight(v) / total
+		}
+		shares[i] = v - part
+		left -= part
+	}
+	shares[f] = target
+	// Rounding: the remainder goes to the rows that still have room, last
+	// first.
+	for i := n - 1; left != 0 && i >= 0; i-- {
+		if i == f {
+			continue
+		}
+		step := left
+		if left > 0 {
+			step = min(left, shares[i]-minShare)
+		}
+		shares[i] -= step
+		left -= step
+	}
+	c.Shares = shares
 }
 
 // takeColumn removes the focused column and returns it, as a normal column.
@@ -1213,6 +1295,46 @@ func stackRects(r Rect, n, gap int) []Rect {
 	return rows
 }
 
+// rowRects splits column rect r into the rows of c: by c.Shares when they
+// are valid, else equally (stackRects).
+func rowRects(r Rect, c Column, gap int) []Rect {
+	n := len(c.Windows)
+	if !validShares(c) {
+		return stackRects(r, n, gap)
+	}
+	rows := make([]Rect, n)
+	avail := max(r.H-(n-1)*gap, 0)
+	yy, bottom, used := r.Y, r.Y+r.H, 0
+	for i, share := range c.Shares {
+		hh := avail * share / 100
+		if i == n-1 {
+			hh = avail - used
+		}
+		used += hh
+		yy = min(yy, bottom)
+		hh = min(hh, bottom-yy)
+		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
+		yy += hh + gap
+	}
+	return rows
+}
+
+// validShares reports whether c.Shares has one share per window, each at
+// least 1, summing to 100.
+func validShares(c Column) bool {
+	if len(c.Shares) != len(c.Windows) || len(c.Shares) < 2 {
+		return false
+	}
+	sum := 0
+	for _, v := range c.Shares {
+		if v < 1 {
+			return false
+		}
+		sum += v
+	}
+	return sum == 100
+}
+
 // split cuts r in two halves with a gap: top/bottom when vertical, else left/right.
 func split(r Rect, gap int, vertical bool) (Rect, Rect) {
 	if vertical {
@@ -1239,18 +1361,9 @@ func (w *Workspace) Layout() []Placement {
 		if fullColumn {
 			col.W = w.Output.W
 		}
-		available := max(col.H-(n-1)*gap, 0)
-		height := available / n
-		y := col.Y
-		bottom := col.Y + col.H
+		rows := rowRects(col, c, gap)
 		for j, id := range c.Windows {
-			h := height
-			if j == n-1 {
-				h = available - height*(n-1)
-			}
-			y = min(y, bottom)
-			h = min(h, bottom-y)
-			r := Rect{X: col.X, Y: y, W: col.W, H: h}
+			r := rows[j]
 			full := w.fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
@@ -1267,7 +1380,6 @@ func (w *Workspace) Layout() []Placement {
 				r = Rect{}
 			}
 			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
-			y += h + gap
 		}
 	}
 	setVisibleNeighbors(result, gap, w.Output)

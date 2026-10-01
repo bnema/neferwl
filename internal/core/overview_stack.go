@@ -233,7 +233,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 			r := rects[i]
 			r.X -= w.Usable.X
 			r.Y -= w.Usable.Y
-			for j, t := range stackRects(r, len(c.Windows), g) {
+			for j, t := range rowRects(r, c, g) {
 				tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == selected && j == c.Focus})
 			}
 		}
@@ -258,7 +258,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 	r.X = (w.Usable.W - r.W) / 2
 	r.Y = (w.Usable.H - r.H) / 2
 	tiles := make([]Placement, 0, len(c.Windows))
-	for j, t := range stackRects(r, len(c.Windows), g) {
+	for j, t := range rowRects(r, c, g) {
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus})
 	}
 	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, r)

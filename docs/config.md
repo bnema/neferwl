@@ -128,6 +128,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `move-column-left/right` | Move the focused column |
 | `move-window-up/down` | Move the focused window up or down in its column; focus follows it |
 | `set-column-width <+N%\|-N%>` | Widen or narrow the focused column by N% of the usable width (1-100), between 10% and 100%. The new width stays until changed; `cycle-column-width` then restarts at the first preset. Does nothing in fixed overflow |
+| `set-window-height <+N%\|-N%>` | Give the focused window N% more or less of its column's height; the other rows give or take it in proportion. Each row keeps at least 10%. A window joining or leaving the column resets equal rows. Does nothing past 9 rows |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
 | `workspace <name>` | Toggle a named workspace |
@@ -191,6 +192,8 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+shift+down` / `cmd+shift+j` | `move-window-down` |
 | `cmd+alt+left` / `cmd+alt+h` | `set-column-width -10%` |
 | `cmd+alt+right` / `cmd+alt+l` | `set-column-width +10%` |
+| `cmd+alt+up` / `cmd+alt+k` | `set-window-height -10%` |
+| `cmd+alt+down` / `cmd+alt+j` | `set-window-height +10%` |
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
