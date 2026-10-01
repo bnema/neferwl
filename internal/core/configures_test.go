@@ -83,4 +83,10 @@ func TestConfiguresPruneForgetsUnseen(t *testing.T) {
 	if _, send := s.next(Placement{ID: 2}, configureTarget{}); !send {
 		t.Fatal("returning window not configured")
 	}
+	// A request from a window out of the layout is forgotten too.
+	s.answer[9] = true
+	s.prune()
+	if s.answer[9] {
+		t.Fatal("answer for a window out of the layout kept")
+	}
 }

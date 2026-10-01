@@ -916,6 +916,10 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			if c.security.Protected && blockedProtectedEvent(ev) {
+				// Answered at the first publish after unlock.
+				if v, ok := ev.(ports.WindowFullscreenRequest); ok {
+					c.configures.answer[v.ID] = true
+				}
 				continue
 			}
 			switch v := ev.(type) {
@@ -1005,12 +1009,13 @@ func (c *Core) Run(ctx context.Context) error {
 				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
 					break
 				}
-				if s, w := c.screenOf(v.ID); s != nil {
-					// A taskbar request is a user action on that window: it
-					// takes the focus, leaving another window's fullscreen.
-					if v.External && v.Fullscreen {
-						w.Activate(v.ID)
-					}
+				// A taskbar request is a user action on that window, as an
+				// activation: it comes on screen with the focus, leaving
+				// another window's fullscreen.
+				if v.External && v.Fullscreen && c.activate(ctx, v.ID) != nil {
+					return nil
+				}
+				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
 				}
 			case ports.WorkspaceActivate:

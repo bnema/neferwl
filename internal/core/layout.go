@@ -514,13 +514,14 @@ func (w *Workspace) FocusID(id WindowID) bool {
 }
 
 // FocusColumn moves focus to the column on that side. From a covering
-// fullscreen window it leaves fullscreen for the window there (leaveCover).
-func (w *Workspace) FocusColumn(dir int) {
+// fullscreen window it leaves fullscreen for the window there (leaveCover);
+// false means it stays, with no window on that side.
+func (w *Workspace) FocusColumn(dir int) bool {
 	if w.pinned() {
-		w.leaveCover(func() { w.focusColumn(dir) })
-		return
+		return w.leaveCover(func() { w.focusColumn(dir) })
 	}
 	w.focusColumn(dir)
+	return true
 }
 
 func (w *Workspace) focusColumn(dir int) {
@@ -788,13 +789,22 @@ func (w *Workspace) ToggleFullscreen() {
 	}
 	if w.fullscreen == id {
 		// The user was on it: it keeps the focus, in front of floats that
-		// mapped meanwhile.
+		// mapped meanwhile. Cleared first, so that floats it covers drop
+		// below the columns.
 		w.fullscreen = 0
 		w.FocusID(id)
-		w.reconcileFloats()
-	} else {
-		w.fullscreen = id
+		w.endFullscreen()
+		return
 	}
+	w.fullscreen = id
+	w.scroll()
+}
+
+// endFullscreen ends the fullscreen: floats it kept demoted are promoted
+// again and the view follows the focus.
+func (w *Workspace) endFullscreen() {
+	w.fullscreen = 0
+	w.reconcileFloats()
 	w.scroll()
 }
 
@@ -809,7 +819,7 @@ func (w *Workspace) Activate(id WindowID) {
 		w.showStash()
 	}
 	if w.fullscreen != 0 && w.fullscreen != id {
-		w.fullscreen = 0
+		w.endFullscreen()
 	}
 	w.FocusID(id)
 }
@@ -830,26 +840,19 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 			}
 			return
 		}
-		if on {
-			w.fullscreen = id
-		} else if w.fullscreen == id {
-			w.fullscreen = 0
-			w.reconcileFloats()
+	}
+	if !w.has(id) {
+		return
+	}
+	if !on {
+		if w.fullscreen == id {
+			w.endFullscreen()
 		}
 		return
 	}
-	for i := range w.Columns {
-		for _, v := range w.Columns[i].Windows {
-			if v == id {
-				if on {
-					w.fullscreen = id
-				} else if w.fullscreen == id {
-					w.fullscreen = 0
-				}
-				w.scroll()
-				return
-			}
-		}
+	w.fullscreen = id
+	if !w.isFloat(id) {
+		w.scroll()
 	}
 }
 
@@ -954,8 +957,7 @@ func (w *Workspace) leaveCover(move func()) bool {
 	w.fullscreen = 0
 	move()
 	if id, ok := w.Focused(); ok && id != full {
-		w.reconcileFloats()
-		w.scroll()
+		w.endFullscreen()
 		return true
 	}
 	w.fullscreen = full

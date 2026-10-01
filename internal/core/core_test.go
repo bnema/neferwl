@@ -924,6 +924,48 @@ func TestExternalFullscreenFocusesFixed(t *testing.T) {
 	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
 		t.Fatal("taskbar fullscreen over another:", got, focused)
 	}
+	// Leaving from the taskbar keeps the focus.
+	r.client <- ports.WindowFullscreenRequest{ID: 2, External: true}
+	set = receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+		t.Fatal("taskbar leave:", got, focused)
+	}
+}
+
+// A taskbar fullscreen on a window of a workspace off screen, on another
+// output, brings it on screen with the focus, as an activation.
+func TestExternalFullscreenOffScreen(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2, not followed
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl) // focus DP-2
+	r.mapWindow(t, 2)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	set := receive(t, r.scenes)
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if w.ID == 1 && (s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused) {
+				t.Fatalf("window 1 on %s: %+v", s.Output, w)
+			}
+		}
+	}
+}
+
+// focus-window-down from a fullscreen tile at the bottom of its column
+// goes to the next workspace and fullscreen stays.
+func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	set := r.key(t, "Down", ports.ModAlt)
+	if got, _ := windowsOf(set, "DP-1"); len(got) != 0 {
+		t.Fatal("still on the first workspace:", got)
+	}
+	set = r.key(t, "Up", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("fullscreen lost:", got, focused)
+	}
 }
 
 // A refused fullscreen request still gets a configure, unchanged: clients

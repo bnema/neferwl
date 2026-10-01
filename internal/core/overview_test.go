@@ -126,9 +126,9 @@ func TestOverviewPick(t *testing.T) {
 	}
 }
 
-// gameMonitor has workspace 1 with column 1 on a 300x200 output and a
-// gameMonitor has window 1 on workspace 1 and, on workspace 2, a floating
-// game 2 (fixed size) fullscreen; workspace 1 is on screen.
+// gameMonitor has, on a 300x200 output, window 1 on workspace 1 and, on
+// workspace 2, a floating game 2 (fixed size) fullscreen; workspace 1 is
+// on screen.
 func gameMonitor(o Overflow) *Monitor {
 	m := newMonitor("", "")
 	m.SetOutput(300, 200)

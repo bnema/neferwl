@@ -122,20 +122,6 @@ func TestMonitorLayoutHidesOtherWorkspaces(t *testing.T) {
 	}
 }
 
-func TestMonitorFullscreenRequestStaysPut(t *testing.T) {
-	m := monitor()
-	m.AddWindow(1)
-	m.FocusNumber(2)
-	m.AddWindow(2)
-	m.SetFullscreen(1, true)
-	if m.Active != 1 {
-		t.Fatal("client request switched workspace")
-	}
-	if m.Workspaces[0].fullscreen != 1 {
-		t.Fatal("fullscreen not applied")
-	}
-}
-
 func TestMonitorActions(t *testing.T) {
 	m := monitor()
 	m.AddWindow(1)
@@ -290,19 +276,6 @@ func TestWorkspaceArg(t *testing.T) {
 	}
 }
 
-func TestFullscreenRequestKeepsFocus(t *testing.T) {
-	m := monitor()
-	m.AddWindow(1)
-	m.AddWindow(2)
-	m.SetFullscreen(1, true)
-	if id, _ := m.Focused(); id != 2 {
-		t.Fatal(id)
-	}
-	if m.Current().fullscreen != 1 {
-		t.Fatal("not fullscreen")
-	}
-}
-
 func TestLonePresetColumnKeepsWidth(t *testing.T) {
 	m := monitor()
 	m.SetPresets([]Width{{Num: 1, Den: 2}})
@@ -410,52 +383,6 @@ func TestNamedWorkspaceSettings(t *testing.T) {
 	}
 }
 
-// The expanded column comes back expanded from its fullscreen workspace.
-func TestMonitorFixedFullscreenKeepsExpanded(t *testing.T) {
-	m := monitor()
-	m.SetOverflow(OverflowFixed)
-	m.SetMaxColumns(3)
-	for id := WindowID(1); id <= 3; id++ {
-		m.AddWindow(id)
-	}
-	m.Current().FocusID(2)
-	m.Apply(ActionCycleColumnWidth)
-	m.ToggleFullscreen()
-	m.ToggleFullscreen()
-	if c := m.Current().Columns; len(c) != 3 || !c[1].Expanded || c[0].Expanded || c[2].Expanded {
-		t.Fatalf("%+v", c)
-	}
-}
-
-// A window of an expanded stacked column comes back expanded when the rest
-// of its column closed meanwhile, unless another column took the expansion.
-func TestMonitorFixedFullscreenStackedExpanded(t *testing.T) {
-	for _, other := range []bool{false, true} {
-		m := monitor()
-		m.SetOverflow(OverflowFixed)
-		m.SetMaxColumns(3)
-		for id := WindowID(1); id <= 4; id++ {
-			m.AddWindow(id)
-		}
-		w := m.Current()
-		w.FocusID(2)
-		w.stackWindow(2, 1) // column {1, 2}, then {3}, {4}
-		w.FocusID(2)
-		m.Apply(ActionCycleColumnWidth)
-		m.ToggleFullscreen()
-		w.RemoveWindow(1)
-		if other {
-			w.FocusID(3)
-			w.CycleWidth()
-		}
-		m.ToggleFullscreen()
-		c := m.Current().Columns
-		if len(c) != 3 || c[0].Windows[0] != 2 || c[0].Expanded == other || c[1].Expanded != other || c[2].Expanded {
-			t.Fatalf("other=%v %+v", other, c)
-		}
-	}
-}
-
 // Cmd+F on a window that made itself fullscreen returns it to its column
 // (Wine opens monitor-sized apps fullscreen); the next press maximizes.
 func TestMaximizeLeavesClientFullscreen(t *testing.T) {
@@ -513,6 +440,7 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 	}
 	w := m.Current()
 	w.FocusID(2)
+	m.Apply(ActionCycleColumnWidth) // expanded: kept through fullscreen
 	m.ToggleFullscreen()
 	m.AddWindow(4)
 	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Current() != w || w.cover() != 2 {
@@ -522,23 +450,44 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 		t.Fatal("focus", id)
 	}
 	m.ToggleFullscreen()
-	if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 {
-		t.Fatal("after bind", id)
+	if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 || !w.Columns[1].Expanded {
+		t.Fatal("after bind", id, w.Columns)
 	}
-	// A client request for an unfocused window would take the screen and
-	// the keyboard from the user (ADR 011): it is refused.
-	w.FocusID(1)
-	m.SetFullscreen(3, true)
-	if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || w.cover() != 0 {
-		t.Fatal("unfocused request", id, w.fullscreen)
-	}
-	// The focused window's own request is honoured, in place.
-	m.SetFullscreen(1, true)
-	if id, _ := m.Focused(); id != 1 || w.cover() != 1 {
-		t.Fatal("focused request", id, w.cover())
-	}
-	m.SetFullscreen(1, false)
-	if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || len(m.Workspaces) != 2 {
-		t.Fatal("client round trip", id, windows(m))
+}
+
+// A client fullscreen request never moves the view or the focus (ADR
+// 011). In fixed overflow, where it would cover the screen and take the
+// keyboard, only the focused window's request applies.
+func TestFullscreenRequestStaysPut(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		overflow Overflow
+		id       WindowID // requests fullscreen; 1 is focused
+		applied  bool
+	}{
+		{"scroll focused", OverflowScroll, 1, true},
+		{"scroll unfocused", OverflowScroll, 2, true},
+		{"scroll other workspace", OverflowScroll, 3, true},
+		{"fixed focused", OverflowFixed, 1, true},
+		{"fixed unfocused", OverflowFixed, 2, false},
+		{"fixed other workspace", OverflowFixed, 3, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := monitor()
+			m.SetOverflow(tc.overflow)
+			m.AddWindow(3) // alone, so focused on workspace 1
+			m.FocusNumber(2)
+			m.AddWindow(2)
+			m.AddWindow(1)
+			w, _ := m.find(tc.id)
+			m.SetFullscreen(tc.id, true)
+			if id, _ := m.Focused(); m.Active != 1 || id != 1 || (w.fullscreen == tc.id) != tc.applied {
+				t.Fatal("active", m.Active, "focused", id, "fullscreen", w.fullscreen)
+			}
+			m.SetFullscreen(tc.id, false)
+			if id, _ := m.Focused(); id != 1 || w.fullscreen != 0 || len(m.Workspaces) != 3 {
+				t.Fatal("round trip", id, windows(m))
+			}
+		})
 	}
 }

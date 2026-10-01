@@ -285,13 +285,7 @@ func (m *Monitor) AddWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
-	m.arrive(m.Current(), func(w *Workspace) { w.AddWindow(id) })
-}
-
-// arrive adds a new tiled window to w with add. Under a covering fullscreen
-// window it waits hidden and the view stays (ADR 011, Workspace.AddWindow).
-func (m *Monitor) arrive(w *Workspace, add func(*Workspace)) {
-	add(w)
+	m.Current().AddWindow(id)
 	m.normalize()
 }
 
@@ -318,16 +312,12 @@ func (m *Monitor) RemoveWindow(id WindowID) {
 func (m *Monitor) SetFullscreen(id WindowID, on bool) {
 	if w, _ := m.find(id); w != nil {
 		w.SetFullscreen(id, on)
-		m.normalize()
 	}
 }
 
 // ToggleFullscreen is the bind: the focused window goes fullscreen in place,
 // or leaves it. Focus moves leave it too (Workspace.leaveCover).
-func (m *Monitor) ToggleFullscreen() {
-	m.Current().ToggleFullscreen()
-	m.normalize()
-}
+func (m *Monitor) ToggleFullscreen() { m.Current().ToggleFullscreen() }
 
 // MoveToWorkspace moves the focused column (or only the focused window) to
 // numbered workspace index i. A floating window always moves alone. Focus
@@ -402,7 +392,7 @@ func (m *Monitor) Layout() []Placement {
 	}
 	var result []Placement
 	cur := m.Current()
-	for _, w := range append(append([]*Workspace(nil), m.Workspaces...), m.hidden...) {
+	for w := range m.all() {
 		if w == cur {
 			result = append(result, w.Layout()...)
 			continue

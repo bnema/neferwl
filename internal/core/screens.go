@@ -345,9 +345,9 @@ func (c *Core) named() {
 
 // bringNamed prepares a "workspace <name>" toggle from the focused screen.
 // The workspace goes to its home monitor when connected, else to the focused
-// screen, with the fullscreen workspaces that came out of it; that screen
-// takes the focus. It reports true when the workspace is already on screen
-// there after a focus change: reaching it must not toggle it away.
+// screen; that screen takes the focus. It reports true when the workspace
+// is already on screen there after a focus change: reaching it must not
+// toggle it away.
 func (c *Core) bringNamed(name string) bool {
 	src, w := c.byName(name)
 	i := slices.IndexFunc(c.specs, func(s NamedWorkspace) bool { return s.Name == name })
