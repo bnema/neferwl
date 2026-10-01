@@ -140,7 +140,7 @@ func (c *Core) isPrimary(name string) bool {
 // anyWindow reports whether any workspace holds a window.
 func (c *Core) anyWindow() bool {
 	for _, s := range c.screens {
-		for _, w := range s.mon.all() {
+		for w := range s.mon.all() {
 			if !w.empty() {
 				return true
 			}
@@ -233,21 +233,39 @@ func (c *Core) removeScreen(name string) {
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
 	c.focusScreen = max(slices.Index(c.screens, focused), 0)
-	host := c.cur()
-	for pos, w := range gone.mon.Workspaces {
-		if w.empty() && w.Name == "" {
-			continue
-		}
+	hostWorkspaces(c.cur(), gone)
+	c.order()
+}
+
+// hostWorkspaces moves every workspace of the unplugged screen gone to
+// host: numbered ones below its numbered workspaces, hidden ones hidden.
+// Guests from host go home; the others remember gone as their home.
+func hostWorkspaces(host, gone *screen) {
+	numbered := func(pos int, w *Workspace) {
 		switch {
+		case w.origin != nil && host.mon.has(w.origin):
+			// A fullscreen sibling shares its origin's home and stays
+			// next to it.
+			w.home, w.homePos = w.origin.home, pos
+			host.mon.adopt(w, false, siblingPos(host.mon, w.origin))
+			return
 		case host.mon.matches(w.home):
 			// A guest from the host goes home.
 			w.home = ""
 			host.mon.adopt(w, false, w.homePos)
-			continue
+			return
 		case w.home == "":
 			w.home, w.homePos = gone.info.Key(), pos
 		}
 		host.mon.adopt(w, false, len(host.mon.Workspaces))
+	}
+	// A fullscreen sibling of a hidden workspace waits for it: adopted
+	// first, normalize would unlink it from its absent origin.
+	for pos, w := range gone.mon.Workspaces {
+		if (w.empty() && w.Name == "") || (w.origin != nil && gone.mon.isHidden(w.origin)) {
+			continue
+		}
+		numbered(pos, w)
 	}
 	for _, w := range gone.mon.hidden {
 		switch {
@@ -258,53 +276,115 @@ func (c *Core) removeScreen(name string) {
 		}
 		host.mon.adopt(w, true, 0)
 	}
-	c.order()
+	for pos, w := range gone.mon.Workspaces {
+		if w.origin != nil && gone.mon.isHidden(w.origin) {
+			numbered(pos, w)
+		}
+	}
 }
 
 // settleGuests returns guests to their connected home monitor, at their
 // original positions. A guest on screen stays until the user leaves it
-// (golden rule: automatic events never move the user).
+// (golden rule: automatic events never move the user). A fullscreen
+// workspace and its origin form a group that follows its origin's home and
+// moves whole: it stays while any of them is on screen.
 func (c *Core) settleGuests() {
 	for _, home := range c.screens {
-		type guest struct {
-			w, anchor *Workspace
-			host      *Monitor
-			hidden    bool
+		returnGuests(home, c.guestsOf(home))
+	}
+}
+
+// guest is a workspace returning home, with its overview anchor snapshot.
+type guest struct {
+	w, anchor *Workspace
+	host      *Monitor
+	hidden    bool
+}
+
+// guestsOf lists the workspaces that may return to home now.
+func (c *Core) guestsOf(home *screen) []guest {
+	var list []guest
+	for _, host := range c.screens {
+		if host == home {
+			continue
 		}
-		var list []guest
-		for _, host := range c.screens {
-			if host == home {
-				continue
-			}
-			for _, w := range host.mon.all() {
-				if home.mon.matches(w.home) && host.mon.Current() != w {
-					list = append(list, guest{w: w, anchor: w.overviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
-				}
-			}
-		}
-		// Snapshot every anchor before take normalizes a host and clears
-		// references to numbered workspaces returning alongside named rows.
-		for _, g := range list {
-			g.host.take(g.w)
-		}
-		slices.SortStableFunc(list, func(a, b guest) int { return a.w.homePos - b.w.homePos })
-		// A monitor showing an empty workspace (just plugged in) shows
-		// its first returning workspace instead.
-		idle := home.mon.Current().empty() && home.mon.Current().Name == ""
-		for _, g := range list {
-			g.w.home = ""
-			home.mon.adopt(g.w, g.hidden, g.w.homePos)
-			if idle && !g.hidden {
-				home.mon.show(g.w)
-				idle = false
-			}
-		}
-		for _, g := range list {
-			if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
-				g.w.overviewAfter = g.anchor
+		shown := groupRoot(host.mon.Current())
+		for w := range host.mon.all() {
+			if root := groupRoot(w); home.mon.matches(root.home) && root != shown {
+				list = append(list, guest{w: w, anchor: w.overviewAfter, host: host.mon, hidden: host.mon.isHidden(w)})
 			}
 		}
 	}
+	return list
+}
+
+// returnGuests moves the listed guests to home, at their positions.
+func returnGuests(home *screen, list []guest) {
+	// Snapshot every anchor before take normalizes a host and clears
+	// references to numbered workspaces returning alongside named rows.
+	// Siblings leave before their origin and arrive after it (and after
+	// its anchor), so that normalize never sees them without it.
+	for _, siblings := range [2]bool{true, false} {
+		for _, g := range list {
+			if (g.w.origin != nil) == siblings {
+				g.host.take(g.w)
+			}
+		}
+	}
+	slices.SortStableFunc(list, func(a, b guest) int { return a.w.homePos - b.w.homePos })
+	// A monitor showing an empty workspace (just plugged in) shows
+	// its first returning workspace instead.
+	idle := home.mon.Current().empty() && home.mon.Current().Name == ""
+	for _, g := range list {
+		if g.w.origin != nil {
+			continue
+		}
+		g.w.home = ""
+		home.mon.adopt(g.w, g.hidden, g.w.homePos)
+		if idle && !g.hidden {
+			home.mon.show(g.w)
+			idle = false
+		}
+	}
+	for _, g := range list {
+		if g.hidden && indexOf(home.mon.Workspaces, g.anchor) >= 0 {
+			g.w.overviewAfter = g.anchor
+		}
+	}
+	// Siblings go next to their origin, once its anchor is back.
+	for _, g := range list {
+		if g.w.origin != nil {
+			g.w.home = ""
+			home.mon.adopt(g.w, false, siblingPos(home.mon, g.w.origin))
+		}
+	}
+}
+
+// siblingPos is where a fullscreen sibling of origin goes in m, as
+// enterFullscreen places it: after its numbered origin, else after the
+// numbered workspace a hidden origin is attached to, past siblings already
+// there; at the end otherwise.
+func siblingPos(m *Monitor, origin *Workspace) int {
+	i := indexOf(m.Workspaces, origin)
+	if i < 0 {
+		i = indexOf(m.Workspaces, origin.overviewAfter)
+	}
+	if i < 0 {
+		return len(m.Workspaces)
+	}
+	i++
+	for i < len(m.Workspaces) && m.Workspaces[i].origin == origin {
+		i++
+	}
+	return i
+}
+
+// groupRoot returns the origin of a fullscreen workspace, else w itself.
+func groupRoot(w *Workspace) *Workspace {
+	if w.origin != nil {
+		return w.origin
+	}
+	return w
 }
 
 // named applies the named workspaces from config. One that exists stays on
@@ -366,14 +446,14 @@ func (c *Core) bringNamed(name string) bool {
 		}
 	}
 	if src != dst {
-		moveNamed(src, dst, w, home)
+		moveGroup(src, dst, w, home)
 	}
 	return false
 }
 
-// moveNamed moves the named workspace w and its fullscreen siblings from src
-// to dst, without changing what dst shows. home is their new w.home.
-func moveNamed(src, dst *screen, w *Workspace, home string) {
+// moveGroup moves workspace w and its fullscreen siblings from src to dst,
+// without changing what dst shows. home is their new w.home.
+func moveGroup(src, dst *screen, w *Workspace, home string) {
 	// Fullscreen siblings (always numbered) leave first: without their
 	// origin on the source, normalize would unlink them. take edits the
 	// list, so collect first.
@@ -395,7 +475,7 @@ func moveNamed(src, dst *screen, w *Workspace, home string) {
 	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
 	for _, fs := range siblings {
 		fs.home = home
-		dst.mon.adopt(fs, false, len(dst.mon.Workspaces))
+		dst.mon.adopt(fs, false, siblingPos(dst.mon, w))
 	}
 }
 
@@ -427,7 +507,8 @@ func (c *Core) neighbor(dir int) int {
 }
 
 // moveWorkspace moves the workspace on screen to the neighbor screen, where
-// it is appended and shown; it becomes its new home (ADR 011).
+// it is appended and shown; it becomes its new home (ADR 011). A fullscreen
+// workspace and its origin move together.
 func (c *Core) moveWorkspace(dir int) {
 	to := c.neighbor(dir)
 	if to < 0 {
@@ -438,11 +519,8 @@ func (c *Core) moveWorkspace(dir int) {
 	if w.empty() && w.Name == "" {
 		return
 	}
-	hidden := from.mon.isHidden(w)
-	from.mon.take(w)
-	w.home = ""
 	dst := c.screens[to]
-	dst.mon.adopt(w, hidden, len(dst.mon.Workspaces))
+	moveGroup(from, dst, groupRoot(w), "")
 	dst.mon.show(w)
 	c.focusScreen = to
 }

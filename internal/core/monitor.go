@@ -1,6 +1,9 @@
 package core
 
-import "slices"
+import (
+	"iter"
+	"slices"
+)
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
 // are positions: Cmd+N targets Workspaces[N-1]. An empty workspace always sits
@@ -71,9 +74,21 @@ func (m *Monitor) matches(home string) bool {
 	return home != "" && (home == m.Key || home == m.Name)
 }
 
-// all lists every workspace, numbered then hidden.
-func (m *Monitor) all() []*Workspace {
-	return append(append([]*Workspace(nil), m.Workspaces...), m.hidden...)
+// all yields every workspace, numbered then hidden, without copying.
+// Callers must not add or remove workspaces while ranging.
+func (m *Monitor) all() iter.Seq[*Workspace] {
+	return func(yield func(*Workspace) bool) {
+		for _, w := range m.Workspaces {
+			if !yield(w) {
+				return
+			}
+		}
+		for _, w := range m.hidden {
+			if !yield(w) {
+				return
+			}
+		}
+	}
 }
 
 // isHidden reports whether w is in the hidden list.
@@ -229,11 +244,9 @@ func (m *Monitor) ToggleNamed(name string) {
 
 // byName returns the configured workspace with that name, or nil.
 func (m *Monitor) byName(name string) *Workspace {
-	for _, list := range [2][]*Workspace{m.Workspaces, m.hidden} {
-		for _, w := range list {
-			if w.Name == name {
-				return w
-			}
+	for w := range m.all() {
+		if w.Name == name {
+			return w
 		}
 	}
 	return nil
@@ -542,7 +555,7 @@ func (m *Monitor) foldInto(fs, origin *Workspace, at int, focus bool, tiled []Wi
 // awayInSlot reports whether id is away from slot n of w, fullscreen in a
 // workspace that returns it there.
 func (m *Monitor) awayInSlot(w *Workspace, id WindowID, n int) bool {
-	for _, fs := range m.all() {
+	for fs := range m.all() {
 		if fs.origin == w && fs.back.id == id && fs.back.slot == n {
 			return true
 		}
@@ -561,7 +574,7 @@ func (p origPlace) holdsStack(c Column) bool {
 // fullscreen, the origin gone to another monitor) it is a normal workspace.
 // Other windows opened there (a dialog) stay when the window returns.
 func (m *Monitor) fullscreenHome() {
-	for _, w := range m.all() {
+	for w := range m.all() {
 		if w.origin == nil {
 			continue
 		}

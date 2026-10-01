@@ -41,7 +41,7 @@ func (c *Core) state() ports.State {
 		for _, p := range m.Layout() {
 			shown[p.ID] = onScreen(p, m.Frame())
 		}
-		for _, w := range m.all() {
+		for w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1
 			for _, id := range w.windows() {
 				rec := c.windows.lookup(id)

@@ -524,7 +524,7 @@ func (c *Core) publish(ctx context.Context) error {
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
 			real = make(map[WindowID]Placement)
-			for _, w := range sc.mon.all() {
+			for w := range sc.mon.all() {
 				for _, p := range w.Layout() {
 					real[p.ID] = p
 				}
@@ -1014,7 +1014,7 @@ func (c *Core) Run(ctx context.Context) error {
 						if sc.name() == "" {
 							continue
 						}
-						for _, w := range sc.mon.all() {
+						for w := range sc.mon.all() {
 							if w.ID == id {
 								c.focusScreen = i
 								sc.mon.show(w)

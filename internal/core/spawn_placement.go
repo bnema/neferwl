@@ -83,7 +83,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 			if target.terminal != nil {
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
-					if slices.Contains(s.mon.all(), target.terminal) {
+					if s.mon.has(target.terminal) {
 						s.mon.arrive(target.terminal, func(w *Workspace) { w.AddWindow(v.ID) })
 						return
 					}

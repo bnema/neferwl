@@ -34,7 +34,7 @@ func (c *Core) syncSecurity() bool {
 	c.swipe = nil
 	for _, sc := range c.screens {
 		sc.mon.stopSwitch()
-		for _, w := range sc.mon.all() {
+		for w := range sc.mon.all() {
 			w.stopSlide()
 		}
 	}
