@@ -489,14 +489,8 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	// Clients learn outputs and scales before the configures sized for them.
-	if v := (ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}); !sameOutputs(v, c.sentOutputs) {
-		if err := c.command(ctx, v); err != nil {
-			return err
-		}
-		if !slices.Equal(v.Outputs, c.sentOutputs.Outputs) && c.ch.Layouts != nil {
-			latest(c.ch.Layouts, v.Outputs)
-		}
-		c.sentOutputs = v
+	if err := c.syncOutputs(ctx); err != nil {
+		return err
 	}
 	// Output layout must be known before an automatic terminal can map.
 	if err := c.spawnEmpty(ctx); err != nil {
@@ -582,11 +576,8 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 	}
-	if focus != c.keyboard.sent {
-		if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
-			return err
-		}
-		c.keyboard.sent = focus
+	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
 	}
 	if err := c.updateInhibit(ctx); err != nil {
 		return err
@@ -783,6 +774,35 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 		return nil
 	}
 	return c.rehit(ctx)
+}
+
+// syncOutputs sends the output layout when it changed; input learns the
+// geometry only when the outputs themselves moved.
+func (c *Core) syncOutputs(ctx context.Context) error {
+	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
+	if sameOutputs(v, c.sentOutputs) {
+		return nil
+	}
+	if err := c.command(ctx, v); err != nil {
+		return err
+	}
+	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sentOutputs.Outputs) {
+		latest(c.ch.Layouts, v.Outputs)
+	}
+	c.sentOutputs = v
+	return nil
+}
+
+// syncFocus tells wayland the keyboard focus when it changed.
+func (c *Core) syncFocus(ctx context.Context, focus WindowID) error {
+	if focus == c.keyboard.sent {
+		return nil
+	}
+	if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
+		return err
+	}
+	c.keyboard.sent = focus
+	return nil
 }
 
 // latest replaces any unread value: only the owner sends and drains;

@@ -158,15 +158,8 @@ func (c *Core) lockHit(x, y float64) (WindowID, float64, float64) {
 }
 
 func (c *Core) publishProtected(ctx context.Context) error {
-	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
-	if !sameOutputs(v, c.sentOutputs) {
-		if err := c.command(ctx, v); err != nil {
-			return err
-		}
-		if c.ch.Layouts != nil {
-			latest(c.ch.Layouts, v.Outputs)
-		}
-		c.sentOutputs = v
+	if err := c.syncOutputs(ctx); err != nil {
+		return err
 	}
 	focus := c.lockKeyboardFocus()
 	scenes := make([]ports.Scene, 0, len(c.screens))
@@ -179,11 +172,8 @@ func (c *Core) publishProtected(ctx context.Context) error {
 		}
 		scenes = append(scenes, scene)
 	}
-	if c.keyboard.sent != focus {
-		if err := c.command(ctx, ports.FocusWindow{ID: focus}); err != nil {
-			return err
-		}
-		c.keyboard.sent = focus
+	if err := c.syncFocus(ctx, focus); err != nil {
+		return err
 	}
 	// Surface updates may invalidate the role under a stationary pointer.
 	if !c.validLockID(c.pointer) {
