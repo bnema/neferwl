@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -28,8 +27,7 @@ var wide = ports.OutputInfo{Name: "DP-1", Width: 800, Height: 600, RefreshMilli:
 
 func startSwipe(t *testing.T, edit func(*ports.Config)) *swipeRig {
 	t.Helper()
-	cfg := config.Defaults()
-	cfg.Keyboard.CmdKey = "alt"
+	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 0
 	cfg.Terminal.AutoOpen = "never"

@@ -28,8 +28,7 @@ type slotRig struct {
 // fixed overflow.
 func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	t.Helper()
-	cfg := config.Defaults()
-	cfg.Keyboard.CmdKey = "alt"
+	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{
 		{Index: 1, Width: "70%", Argv: []string{"code"}},

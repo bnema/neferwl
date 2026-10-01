@@ -104,3 +104,61 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 		t.Fatal(moved)
 	}
 }
+
+func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
+	cfg := config.Defaults()
+	client := make(chan ports.ClientEvent, 16)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	snapshots := make(chan ports.Workspaces, 1)
+	scenes := make(chan []ports.Scene, 1)
+	spawn := make(chan ports.SpawnRequest, 8)
+	commands := make(chan ports.ClientCommand, 32)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Workspaces: snapshots, Scenes: scenes, Spawn: spawn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+	go func() {
+		for {
+			select {
+			case <-scenes:
+			case <-commands:
+			case <-spawn:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "A", Width: 100, Height: 80}}
+	until := func(ok func(ws []ports.WorkspaceInfo) bool) []ports.WorkspaceInfo {
+		t.Helper()
+		for {
+			v := receive(t, snapshots)
+			if len(v.Outputs) > 0 && ok(v.Outputs[0].Workspaces) {
+				return v.Outputs[0].Workspaces
+			}
+		}
+	}
+	client <- ports.WindowMapped{ID: 1}
+	until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 2 })
+	input <- ports.KeyEvent{Keysym: "Next", Mods: ports.ModSuper, Pressed: true}
+	until(func(ws []ports.WorkspaceInfo) bool { return ws[1].Active })
+	client <- ports.WindowMapped{ID: 2}
+	ws := until(func(ws []ports.WorkspaceInfo) bool { return len(ws) >= 3 && ws[1].Active })
+	before := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Workspaces: ws}}}
+	first, second := before.Outputs[0].Workspaces[0].ID, before.Outputs[0].Workspaces[1].ID
+	input <- ports.KeyEvent{Keysym: "Up", Mods: ports.ModSuper | ports.ModCtrl | ports.ModShift, Pressed: true}
+	ws = until(func(ws []ports.WorkspaceInfo) bool { return ws[0].Active })
+	if ws[0].ID != second || ws[1].ID != first || !ws[0].Active || ws[0].Index != 0 || ws[1].Index != 1 {
+		t.Fatalf("%+v", ws)
+	}
+}

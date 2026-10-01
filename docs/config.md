@@ -126,6 +126,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen. From a fullscreen window, the neighbor column comes first and fullscreen ends; at the edge it stays |
 | `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first. Up at the top brings back a covering float put behind the columns. From a fullscreen window, a window above or below comes first and fullscreen ends |
 | `move-column-left/right` | Move the focused column |
+| `move-window-up/down` | Move the focused window up or down in its column; focus follows it |
+| `set-column-width <+N%\|-N%>` | Widen or narrow the focused column by N% of the usable width (1-100), between 10% and 100%. The new width stays until changed; `cycle-column-width` then restarts at the first preset. Does nothing in fixed overflow |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
 | `workspace <name>` | Toggle a named workspace |
@@ -133,6 +135,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `move-window-to-workspace <N>` / `-up/-down` | Move only the focused window |
 | `focus-monitor-left/right` | Focus the neighbor monitor |
 | `move-workspace-to-monitor-left/right` | Move the workspace; it gets a new home |
+| `move-workspace-up/down` | Swap the current numbered workspace with its neighbor; the view follows it. It never passes the empty workspace at the end |
 | `scale-up` / `scale-down` | Zoom the whole display; one second after the last press, the scale is saved to `output.<name>.scale` and a notification confirms it (`notify-send`) |
 | `quit` | Exit NeferWL |
 
@@ -165,6 +168,8 @@ Return or a click on a front tile or peeking card commits it; card changes remai
 
 ### Default binds
 
+With `keyboard.cmd = alt`, the `cmd+alt+…` binds have the same keys as `cmd+…` and are dropped with a warning; with `keyboard.cmd = ctrl`, so are the `cmd+ctrl+…` ones. Bind those actions to other keys.
+
 | Keys | Action |
 |---|---|
 | `cmd+return` | `spawn-terminal` |
@@ -182,6 +187,10 @@ Return or a click on a front tile or peeking card commits it; card changes remai
 | `cmd+shift+l` | `move-column-right` |
 | `cmd+bracketleft` | `consume-or-expel-window-left` |
 | `cmd+bracketright` | `consume-or-expel-window-right` |
+| `cmd+shift+up` / `cmd+shift+k` | `move-window-up` |
+| `cmd+shift+down` / `cmd+shift+j` | `move-window-down` |
+| `cmd+alt+left` / `cmd+alt+h` | `set-column-width -10%` |
+| `cmd+alt+right` / `cmd+alt+l` | `set-column-width +10%` |
 | `cmd+r` | `cycle-column-width` |
 | `cmd+f` | `maximize-column` |
 | `cmd+shift+f` | `toggle-fullscreen` |
@@ -221,5 +230,7 @@ Return or a click on a front tile or peeking card commits it; card changes remai
 | `cmd+ctrl+shift+right` | `move-workspace-to-monitor-right` |
 | `cmd+ctrl+shift+h` | `move-workspace-to-monitor-left` |
 | `cmd+ctrl+shift+l` | `move-workspace-to-monitor-right` |
+| `cmd+ctrl+shift+up` / `cmd+ctrl+shift+k` | `move-workspace-up` |
+| `cmd+ctrl+shift+down` / `cmd+ctrl+shift+j` | `move-workspace-down` |
 | `cmd+code:13` | `scale-up` |
 | `cmd+code:12` | `scale-down` |

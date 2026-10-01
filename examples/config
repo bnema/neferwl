@@ -125,6 +125,22 @@ bind.cmd+shift+l = move-column-right
 # neighbor column instead, past the edge on the neighbor monitor.
 bind.cmd+bracketleft = consume-or-expel-window-left
 bind.cmd+bracketright = consume-or-expel-window-right
+# Reorder the focused window inside its column.
+bind.cmd+shift+up = move-window-up
+bind.cmd+shift+down = move-window-down
+bind.cmd+shift+k = move-window-up
+bind.cmd+shift+j = move-window-down
+# Resize by a step of the usable width or height: +N% or -N% (1-100).
+bind.cmd+alt+left = set-column-width -10%
+bind.cmd+alt+right = set-column-width +10%
+bind.cmd+alt+up = set-window-height -10%
+bind.cmd+alt+down = set-window-height +10%
+bind.cmd+alt+h = set-column-width -10%
+bind.cmd+alt+l = set-column-width +10%
+bind.cmd+alt+k = set-window-height -10%
+bind.cmd+alt+j = set-window-height +10%
+# A tile becomes a free floating window, or returns to its column.
+bind.cmd+shift+space = toggle-floating
 bind.cmd+r = cycle-column-width
 bind.cmd+f = maximize-column
 bind.cmd+shift+f = toggle-fullscreen
@@ -143,6 +159,11 @@ bind.cmd+pagedown = focus-workspace-down
 # (N, -up, -down) moves only the focused window and has no default bind.
 bind.cmd+shift+pageup = move-column-to-workspace-up
 bind.cmd+shift+pagedown = move-column-to-workspace-down
+# Reorder workspaces: swap the current one with its neighbor.
+bind.cmd+ctrl+shift+up = move-workspace-up
+bind.cmd+ctrl+shift+down = move-workspace-down
+bind.cmd+ctrl+shift+k = move-workspace-up
+bind.cmd+ctrl+shift+j = move-workspace-down
 bind.cmd+code:2 = focus-workspace 1
 bind.cmd+code:3 = focus-workspace 2
 bind.cmd+code:4 = focus-workspace 3

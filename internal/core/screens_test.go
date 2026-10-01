@@ -41,8 +41,7 @@ func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo
 // startRig is startMulti; terminal enables the configured automatic-open policy.
 func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
-	cfg := config.Defaults()
-	cfg.Keyboard.CmdKey = "alt"
+	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	if edit != nil {
 		edit(&cfg)
