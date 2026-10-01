@@ -188,3 +188,50 @@ func TestOverviewMoveDropsMaximizeHistory(t *testing.T) {
 		t.Fatalf("maximized %v keeps a moved window", w.maximized)
 	}
 }
+
+// Moving next to a fullscreen sibling workspace keeps the origin row's
+// snapshot: Escape restores its opening focus, whether the window moves
+// (a float on the sibling) or follow-move sends the fullscreen one home.
+func TestOverviewMoveToFullscreenSibling(t *testing.T) {
+	for _, follow := range []bool{false, true} {
+		m := newMonitor("", "")
+		m.SetOutput(300, 200)
+		m.SetMaxColumns(4)
+		for id := WindowID(1); id <= 4; id++ {
+			m.AddWindow(id)
+		}
+		w := m.Current()
+		w.Overflow = OverflowFixed
+		w.FocusID(1)
+		m.ToggleFullscreen()
+		if m.Workspaces[1].origin != w {
+			t.Fatalf("no fullscreen sibling: %v", windows(m))
+		}
+		m.Focus(0)
+		w.FocusID(2)
+		m.SetFollowMove(follow)
+		m.ToggleOverview()
+		m.OverviewMove(1, 0)
+		if m.overviewTarget() != 3 {
+			t.Fatalf("follow %v: selection %d", follow, m.overviewTarget())
+		}
+		m.Apply(ActionMoveColumnToWorkspaceDown)
+		m.CancelOverview()
+		if id, _ := w.Focused(); id != 2 {
+			t.Fatalf("follow %v: origin focus %d, want 2 (%v)", follow, id, windows(m))
+		}
+	}
+}
+
+// A move from a browsed row back to the opening row keeps the moved window
+// focused there on Escape, like any destination.
+func TestOverviewMoveBackToOpeningRow(t *testing.T) {
+	m := overviewMonitor()
+	m.ToggleOverview()
+	m.OverviewMove(0, 1)
+	m.Apply("move-column-to-workspace 1")
+	m.CancelOverview()
+	if id, _ := m.Current().Focused(); m.Current() != m.Workspaces[0] || id != 4 {
+		t.Fatalf("workspace %d focus %d, want 4 on 1 (%v)", m.Active, id, windows(m))
+	}
+}

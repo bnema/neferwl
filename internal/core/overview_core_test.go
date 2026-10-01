@@ -146,12 +146,16 @@ func TestOverviewCoreMoveBind(t *testing.T) {
 		t.Fatal("overview closed")
 	}
 	r.key(t, "Escape", 0)
-	// The state channel keeps the latest snapshot: wait for window 2 to
-	// settle on workspace 2.
+	// The state channel keeps the latest snapshot: wait for the one after
+	// Escape, back on window 3 of workspace 1. The overview showed window
+	// 2 in the row below; closed, it is off screen on workspace 2.
 	deadline := time.After(time.Second)
 	for {
 		select {
 		case st := <-r.state:
+			if st.Window == nil || st.Window.ID != 3 || st.Outputs[0].Active != 1 {
+				continue
+			}
 			for _, w := range st.Windows {
 				if w.ID == 2 && w.Workspace == 2 && !w.Visible {
 					return

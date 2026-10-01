@@ -201,14 +201,11 @@ func (m *Monitor) overviewMoveTo(a Action) {
 	if m.card() != 0 || id == 0 || !ok || m.Workspaces[i] == cur {
 		return
 	}
-	to := m.Workspaces[i]
-	origin := to.origin
 	cur.FocusID(id)
 	m.MoveToWorkspace(i, column)
-	// The destination keeps the moved window focused on close.
-	delete(m.ov.rows, to)
-	if origin != nil {
-		delete(m.ov.rows, origin)
+	// The row that received the window keeps it focused on close.
+	if to, _ := m.find(id); to != nil && to != cur {
+		delete(m.ov.rows, to)
 	}
 	m.selectRow()
 }
