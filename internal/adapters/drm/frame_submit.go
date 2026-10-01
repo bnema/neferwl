@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/ports"
@@ -23,6 +24,7 @@ func (e renderError) Unwrap() error { return e.err }
 // without the overlay; a renderError stops the output; other errors are
 // commit errors for commitFailed.
 func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, seen map[ports.WindowID]uint64, requests []ports.CaptureRequest, pipeline *capture.Pipeline) (direct bool, err error) {
+	presented := false // the frame was committed: what it gated is released
 	if !o.sceneCurrent(scene) {
 		return false, errSecurityScene
 	}
@@ -33,32 +35,46 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	// windows it does not draw is discarded, not presented.
 	f := pendingFrame{security: scene.Security, shows: o.shownBy(scene, seen)}
 	o.wantContent(scene, surfaces)
-	// Clean requests that cannot be served (their session is not the
-	// scene's) are failed here, never answered from the displayed frame.
-	normal, clean := pipeline.Split(scene, requests)
+	// Requests that cannot be served (exclusion of another session, a
+	// workspace that moved) are failed here, never answered from the
+	// displayed frame.
+	// A request whose capture indicator the scene does not show yet is held
+	// (the caller keeps it, see capture.Waiting).
+	ready, _ := pipeline.Hold(scene, requests, time.Now())
+	if len(scene.CaptureIndicators) > 0 {
+		// The captures of this frame are delivered only once the frame that
+		// carries their indicator is committed, whatever the path out (see
+		// capture.Pipeline.EndGate): no failed or dropped frame serves one.
+		pipeline.BeginGate()
+		defer func() {
+			if err == nil && !presented {
+				err = capture.ErrFrameNotPresented // a panic on the way out
+			}
+			pipeline.EndGate(capture.GateVerdict(err))
+		}()
+	}
+	normal, excluded, hidden := pipeline.Split(scene, ready)
 	pipeline.Retire(scene)
-	hiddenClean := len(clean) > 0 && scene.CaptureScene != nil
-	if hiddenClean {
+	if len(hidden) > 0 {
 		if !o.sceneCurrent(scene) || o.protected {
 			return false, errSecurityScene
 		}
 		// A hidden workspace: the child renderer draws it, whatever the display
 		// does (scanout included). Failures answer the requests and never stop
 		// the output.
-		pipeline.SubmitHidden(scene, surfaces, clean)
+		pipeline.SubmitHidden(scene, surfaces, hidden)
 		// Publish child holds before queuing a display flip, which may stall
 		// past the stale-report timeout. Do not advance the display's Seen
 		// until its own GPU work finishes.
 		if o.capHidden != nil {
 			o.report(nil, o.seenSnapshot)
 		}
-		clear(clean)
-		clean = nil
+		clear(hidden)
 	}
-	// Captures of the displayed frame, and a visible native session border,
-	// force composition: scanout and the overlay plane would skip them. The
-	// hidden-workspace child needs none, so it keeps direct scanout.
-	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(clean) > 0 || capture.BorderVisible(scene))
+	// Displayed-frame captures, Exclude requests and the capture indicator
+	// force composition (scanout and the overlay plane would skip them); the
+	// hidden-workspace child does not.
+	decision := o.decideFrame(scene, surfaces, len(normal) > 0 || len(excluded) > 0 || len(scene.CaptureIndicators) > 0)
 	if !o.sceneCurrent(scene) || o.protected {
 		decision.overlay.close()
 		return false, errSecurityScene
@@ -66,42 +82,69 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	if decision.fb != 0 {
 		c := decision.content
 		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect); direct {
+			presented = err == nil
 			return true, err
 		}
 		decision = o.composeFrame(scene, surfaces)
 	}
 	ov, composed := decision.overlay, decision.composed
 	r.UseTarget(o.back)
-	if len(clean) > 0 {
-		// The clean frame goes first to the same target and is copied by
+	// Captures never show the capture indicator: their frame goes first.
+	took, pdone, perr := pipeline.SubmitPlain(r, composed, surfaces, normal)
+	if perr != nil {
+		o.holdRead(pdone)
+		if pdone != nil {
+			pdone.Close()
+		}
+		ov.close()
+		return false, renderError{perr}
+	}
+	// Not capture admission: an engage during the render retains its client
+	// reads; SubmitScoped already failed the requests of a stale epoch.
+	if !o.sceneCurrent(scene) || o.protected {
+		o.holdRead(pdone)
+		if pdone != nil {
+			pdone.Close()
+		}
+		ov.close()
+		return false, errSecurityScene
+	}
+	if pdone != nil {
+		pdone.Close()
+	}
+	if took {
+		normal = nil // answered from the frame without the indicator
+	}
+	if len(excluded) > 0 {
+		// The excluded frame goes first to the same target and is copied by
 		// the capture; the displayed frame is drawn over it in queue order.
-		// Cost: a second composition on frames with a clean request.
-		cdone, cerr := r.Render(pipeline.CleanScene(composed), surfaces)
-		if cerr != nil {
-			o.holdRead(cdone)
-			if cdone != nil {
-				cdone.Close()
+		// Cost: a second composition on frames with an excluded request.
+		xdone, xerr := r.Render(pipeline.ExcludedScene(composed), surfaces)
+		if xerr != nil {
+			o.holdRead(xdone)
+			if xdone != nil {
+				xdone.Close()
 			}
 			ov.close()
-			return false, renderError{cerr}
+			return false, renderError{xerr}
 		}
-		// A clean composition is not capture admission. Engage may have
+		// An excluded composition is not capture admission. Engage may have
 		// happened while Render submitted GPU work; retain its client reads
 		// and leave the request credit with the caller on rejection.
 		if !o.sceneCurrent(scene) || o.protected {
-			o.holdRead(cdone)
-			if cdone != nil {
-				cdone.Close()
+			o.holdRead(xdone)
+			if xdone != nil {
+				xdone.Close()
 			}
 			ov.close()
 			return false, errSecurityScene
 		}
-		if cdone != nil {
-			cdone.Close()
+		if xdone != nil {
+			xdone.Close()
 		}
-		pipeline.SubmitScoped(scene.Security, r, clean)
+		pipeline.SubmitScoped(scene.Security, r, excluded)
 		// Ownership moved to the worker (or an immediate failure reply).
-		clear(clean)
+		clear(excluded)
 	}
 	done, rerr := r.Render(composed, surfaces)
 	if rerr != nil {
@@ -150,6 +193,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	// layer, subsurfaces, size mismatch).
 	game := o.vrrProp != 0 && fullscreenShown(&scene)
 	err = o.commitWith(o.fbs[o.back], done, false, o.wantVRR(game), f, ov)
+	presented = err == nil
 	if err != nil {
 		// The GPU may still read client buffers for this frame.
 		o.holdRead(done)

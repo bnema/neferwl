@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/wayland/capturesession"
+	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/purego-libwayland/protocol/cursorshape"
 	wlr "github.com/bnema/purego-libwayland/protocol/wlrforeigntoplevel"
 	screencopy "github.com/bnema/purego-libwayland/protocol/wlrscreencopy"
@@ -227,54 +228,94 @@ func TestProtectedInputMethod(t *testing.T) {
 	}
 }
 
-func TestProtectedPrivateCapture(t *testing.T) {
-	h := newPrivateHarness(t)
+// While the session is protected nothing of it is captured: ext sessions stop
+// or fail their frames, wlr-screencopy fails, a new session is stopped, an
+// exclusion attach is refused, and none of it reaches core or the renderer.
+func TestProtectedCapture(t *testing.T) {
+	h := newCaptureHarness(t)
 	state := installSecurity(t, h.s)
-	owner := h.client(t)
-	_, msgs := owner.begin(t, 0, 0, 0, 0, 0, 0)
-	begin := nextEvent[ports.CaptureSessionBegin](t, h.events)
-	h.send(ports.CaptureSessionState{ID: begin.ID, Output: "HEADLESS-1", Active: true, Revision: 1})
-	token := waitMsg(t, owner.c, msgs).token
-	// Establish that this active owner's capture is admitted and clean before
-	// protection, then refuse the same connection without ending its session.
-	captureOnce(t, h, owner)
-	accepted := receive1(t, h.captures)
-	if !accepted.Clean || accepted.Session != begin.ID {
-		t.Fatalf("owner capture not clean: %+v", accepted)
+	owner, session, open, _, token := h.exclusionOwner(t)
+	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 1})
+	h.settle(t, owner)
+	// Unprotected, the same frame is admitted (positive control).
+	owner.extFrame(t, session, 4, 4)
+	accepted := receiveCapture(t, h.captures)
+	if !accepted.Exclude || accepted.Session != open.ID {
+		t.Fatalf("owner capture not excluded: %+v", accepted)
 	}
-	accepted.Dst.File.Close()
 	h.captured <- ports.CaptureDone{ID: accepted.ID, Output: accepted.Output, Time: time.Now()}
 	hd := h.hud(t, ports.LayerTop, 0)
 	protect(t, h.s, state, 1, true)
-	failed, _ := captureOnce(t, h, owner)
-	if !eventsInclude(failed, uint16(screencopy.ZwlrScreencopyFrameV1EventFailed)) {
-		t.Fatal("protected active owner's clean capture not failed")
+	if !eventsInclude(owner.extFrame(t, session, 4, 4), frameFailed) {
+		t.Fatal("protected ext frame not failed")
 	}
-	select {
-	case req := <-h.captures:
-		req.Dst.File.Close()
-		t.Fatal("protected active owner's capture admitted")
-	default:
+	if !eventsInclude(owner.wlrFrame(t), uint16(screencopy.ZwlrScreencopyFrameV1EventFailed)) {
+		t.Fatal("protected wlr frame not failed")
 	}
+	noCapture(t, h.captures)
 	att := hd.attach(t, token)
-	expectAttachment(t, hd.c, att, capturesession.NeferwlCaptureLayerV1EventFailed, int64(capturesession.NeferwlCaptureLayerV1FailureUnauthorized))
+	expectAttachment(t, hd.c, att, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureUnauthorized))
+	// A session made while protected is stopped, for every kind of source.
 	other := h.client(t)
-	_, refused := other.begin(t, 0, 0, 0, 0, 0, 0)
-	expectAttachment(t, other.c, refused, capturesession.NeferwlCaptureSessionV1EventStopped, int64(capturesession.NeferwlCaptureSessionV1StopReasonUnauthorized))
-	snapshot := ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 1, Name: "sensitive"}}}}}
-	if !h.s.display.Do(func() { h.s.workspaceSnapshot = snapshot; h.s.updateCaptureWorkspaces(snapshot) }) {
-		t.Fatal("display stopped")
-	}
-	noMessage(t, owner.c, owner.mgr.msgs)
-	noMessage(t, other.c, other.mgr.msgs)
-	late := h.client(t)
-	noMessage(t, late.c, late.mgr.msgs)
-	for len(h.events) > 0 {
-		switch ev := (<-h.events).(type) {
-		case ports.CaptureSessionBegin, ports.CaptureSessionLayer:
-			t.Fatalf("protected private request reached core: %+v", ev)
+	for name, src := range map[string]uint32{"output": other.outputSource(t), "region": other.regionSource(t, 0, 0, 2, 2)} {
+		_, ev := other.session(t, src)
+		if got := nextSession(t, other, ev); got[0] != evStopped {
+			t.Fatalf("%s session while protected: %v", name, got)
 		}
 	}
+	for len(h.events) > 0 {
+		switch ev := (<-h.events).(type) {
+		case ports.CaptureSessionOpen, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer:
+			t.Fatalf("protected capture request reached core: %+v", ev)
+		}
+	}
+	// Unlocked again, capture works for a new session.
+	protect(t, h.s, state, 2, false)
+	cc := h.client(t)
+	again, ev := cc.session(t, cc.outputSource(t))
+	constraints(t, cc, ev)
+	h.open(t)
+	cc.extFrame(t, again, 4, 4)
+	receiveCapture(t, h.captures)
+}
+
+// Engaging the lock ends every capture session and its exclusion and tells
+// core, so a session never outlives the lock and no hidden-workspace or
+// region session keeps rendering.
+func TestSessionLockEndsCaptureSessions(t *testing.T) {
+	gate := &sessionsecurity.Gate{}
+	h := newCaptureHarnessWith(t, func(o *Options, c *Channels) {
+		o.Security = gate
+		c.SecurityChanges = make(chan ports.SecurityState, 1)
+		c.SecurityEvents = make(chan ports.SecurityBackendEvent, 16)
+	})
+	owner, session, open, msgs, _ := h.exclusionOwner(t)
+	region, rev := owner.session(t, owner.regionSource(t, 0, 0, 2, 2))
+	constraints(t, owner, rev)
+	regionOpen := h.open(t)
+	manager := bindLockManager(t, owner.c)
+	if _, err := manager.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if !gate.Snapshot().Protected {
+		t.Fatal("lock did not engage")
+	}
+	closed := map[uint64]bool{}
+	for len(closed) < 2 {
+		closed[nextEvent[ports.CaptureSessionClose](t, h.events).ID] = true
+	}
+	if !closed[open.ID] || !closed[regionOpen.ID] {
+		t.Fatalf("core not told: %v", closed)
+	}
+	// Both sessions are stopped and the exclusion failed with its session.
+	if !eventsInclude(owner.extFrame(t, session, 4, 4), frameFailed) || !eventsInclude(owner.extFrame(t, region, 2, 2), frameFailed) {
+		t.Fatal("frame of a locked session not failed")
+	}
+	noCapture(t, h.captures)
+	_ = msgs
 }
 
 func TestProtectedActivationAndForeignInventory(t *testing.T) {

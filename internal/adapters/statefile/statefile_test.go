@@ -11,14 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
 
 var sample = State{
 	Output:  "DP-2",
-	Outputs: []Output{{Name: "HDMI-A-1", Active: 1, Count: 1}, {Name: "DP-2", Active: 2, Count: 3, Workspace: "web"}},
-	Windows: []Window{{ID: 1, AppID: "foot", PID: 100, Output: "HDMI-A-1", Workspace: 1, Visible: true}, {ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 2, Visible: true}},
+	Outputs: []Output{{Name: "HDMI-A-1", Active: 1, Count: 1, WorkspaceID: "p-1"}, {Name: "DP-2", Active: 2, Count: 3, Workspace: "web", WorkspaceID: "name:web"}},
+	Windows: []Window{{ID: 1, AppID: "foot", PID: 100, Output: "HDMI-A-1", Workspace: 1, WorkspaceID: "p-1", Visible: true}, {ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 2, WorkspaceID: "name:web", Visible: true}},
 }
 
 // The file holds the latest state while the session runs; a stale file from
@@ -37,10 +38,10 @@ func TestRunWritesAndRemoves(t *testing.T) {
 	states := make(chan ports.State, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Run(ctx, path, states, zerowrap.Default()) }()
-	focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}
-	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1}}, Window: &focused, Windows: []ports.WindowState{focused}}
-	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, Visible: true}}}
+	go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
+	focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
+	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []ports.WindowState{focused}}
+	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if got, err := Read(path); err == nil && got.Output != "stale" {
@@ -65,7 +66,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 
 // Stash fields reach the file with their script-facing names.
 func TestWindowStashFields(t *testing.T) {
-	got := window(ports.WindowState{ID: 3, Floating: true, StashIndex: 2, StashCount: 4, Hidden: true})
+	got := window(ports.WindowState{ID: 3, Floating: true, StashIndex: 2, StashCount: 4, Hidden: true}, workspaceid.WithPrefix("0a1b2c3d"))
 	if !got.Floating || got.StashIndex != 2 || got.StashCount != 4 || !got.Hidden {
 		t.Fatalf("%+v", got)
 	}
@@ -135,5 +136,25 @@ func TestOutputOfPrefersFocusedWindow(t *testing.T) {
 func TestLinuxProcTreeParent(t *testing.T) {
 	if ppid, ok := (linuxProcTree{}).Parent(os.Getpid()); !ok || ppid != os.Getppid() {
 		t.Fatal(ppid, ok)
+	}
+}
+
+// A configured workspace is named after its configured name, any other one
+// after the launch prefix and its core ID: the string of ext_workspace_handle_v1.
+func TestWorkspaceIDStrings(t *testing.T) {
+	ids := workspaceid.WithPrefix("0a1b2c3d")
+	st := fromPorts(ports.State{
+		Outputs: []ports.OutputState{{Name: "DP-2", Workspace: "web", WorkspaceID: 7}, {Name: "DP-3", WorkspaceID: 8}},
+		Windows: []ports.WindowState{{ID: 1, WorkspaceID: 7, WorkspaceName: "web"}, {ID: 2, WorkspaceID: 8}},
+	}, ids)
+	if st.Outputs[0].WorkspaceID != "name:web" || st.Outputs[1].WorkspaceID != "0a1b2c3d-8" {
+		t.Fatalf("outputs %+v", st.Outputs)
+	}
+	if st.Windows[0].WorkspaceID != "name:web" || st.Windows[1].WorkspaceID != "0a1b2c3d-8" {
+		t.Fatalf("windows %+v", st.Windows)
+	}
+	data, err := json.Marshal(st.Windows[1])
+	if err != nil || !strings.Contains(string(data), `"workspace_id":"0a1b2c3d-8"`) {
+		t.Fatalf("%s %v", data, err)
 	}
 }

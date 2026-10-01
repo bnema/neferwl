@@ -1,0 +1,31 @@
+# NeferWL screen-capture allowlist example.
+#
+# Without /etc/neferwl/capture-allow, NeferWL allows these executables to
+# capture the screen (the built-in list):
+#
+#   /usr/bin/grim
+#   /usr/bin/nefercap
+#   /usr/lib/xdg-desktop-portal-wlr
+#   /usr/libexec/xdg-desktop-portal-wlr
+#
+# To allow a tool installed elsewhere, copy this file to
+# /etc/neferwl/capture-allow as root and add its path. The file REPLACES the
+# built-in list entirely, so keep the entries you still need.
+#
+# Format: one absolute executable path per line, the resolved path that
+# /proc/<pid>/exe shows (a symlink is never followed). Blank lines and lines
+# starting with '#' are ignored. A line with only '*' disables the check:
+# every client may capture. An invalid file (a relative path, anything that is
+# not a path) lets no client capture, and the log names the line.
+# NeferWL reads the file at startup and again whenever it changes.
+#
+# The file and every directory down from / must be root-owned, not group- or
+# other-writable, and not symlinks; otherwise no client may capture.
+# See docs/capture.md.
+#
+# Never list an interpreter (python, bash, node...): every script it runs
+# would then be allowed to capture.
+/usr/bin/grim
+/usr/bin/nefercap
+/usr/lib/xdg-desktop-portal-wlr
+/usr/libexec/xdg-desktop-portal-wlr

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
+func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 	for _, finish := range []string{"signal", "cancel", "render-error"} {
 		t.Run(finish, func(t *testing.T) {
 			admitted := ports.SecurityState{Generation: 2}
@@ -32,7 +32,7 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			r.EXPECT().Close().Return().Once()
 			rendered := make(chan struct{}, 1)
 			releaseRender := make(chan struct{})
-			failure := errors.New("clean render failed after submission")
+			failure := errors.New("excluded render failed after submission")
 			r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Security == admitted && s.Seq == 0 }), mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 				rendered <- struct{}{}
 				<-releaseRender
@@ -59,7 +59,7 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 				done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: presented, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
-			incoming <- ports.CaptureRequest{ID: 99, Clean: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
+			incoming <- ports.CaptureRequest{ID: 99, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
 			contents <- ports.SurfaceContent{ID: 1, Seq: 8, SHM: &ports.SHMBuffer{Pool: 1}}
 			scene := sessionScene()
 			scene.Security = admitted
@@ -69,7 +69,7 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			scenes <- scene
 			securityReceive(t, rendered)
 			// Prior non-render reports are outside this read lifetime; establish the
-			// cut at clean GPU submission before exercising transition/off handling.
+			// cut at excluded GPU submission before exercising transition/off handling.
 			for len(presented) > 0 {
 				<-presented
 			}
@@ -81,15 +81,15 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			// close/report path without assuming a polling schedule.
 			select {
 			case report := <-presented:
-				t.Fatalf("GPU reads reported before clean fence: %+v", report)
+				t.Fatalf("GPU reads reported before excluded fence: %+v", report)
 			case <-time.After(150 * time.Millisecond):
 			}
 			if _, err := fence.Stat(); err != nil {
-				t.Fatalf("unsignalled clean read fence closed: %v", err)
+				t.Fatalf("unsignalled excluded read fence closed: %v", err)
 			}
 			select {
 			case proof := <-proofs:
-				t.Fatalf("protection path bypassed pending clean reads: %+v", proof)
+				t.Fatalf("protection path bypassed pending excluded reads: %+v", proof)
 			default:
 			}
 			if finish == "cancel" {
@@ -112,7 +112,7 @@ func TestCleanFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 				t.Fatal(runErr)
 			}
 			if _, err := fence.Stat(); !errors.Is(err, os.ErrClosed) {
-				t.Fatalf("clean fence leaked: %v", err)
+				t.Fatalf("excluded fence leaked: %v", err)
 			}
 			reply := securityReceive(t, replies)
 			if reply.ID != 99 || reply.Err == nil {

@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"testing"
+	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -16,7 +17,7 @@ import (
 func hiddenScene() ports.Scene {
 	return ports.Scene{
 		Scale: 2, OutputWidth: 100, OutputHeight: 50, Windows: []ports.SceneWindow{{ID: 1}},
-		Capture: &ports.SceneCapture{Session: 7, TargetRect: ports.Rect{W: 100, H: 50}, Revision: 1, Excluded: []ports.WindowID{10}, BorderWidth: 2, BorderColor: ports.CaptureBorderColor},
+		Capture: &ports.SceneCapture{Workspace: 9},
 		CaptureScene: &ports.Scene{
 			OutputWidth: 100, OutputHeight: 50, Scale: 2, Seq: 9,
 			Windows: []ports.SceneWindow{{ID: 5}, {ID: 10, Popup: true}},
@@ -27,7 +28,7 @@ func hiddenScene() ports.Scene {
 
 func hiddenRequest(t *testing.T, id uint64, region image.Rectangle) ports.CaptureRequest {
 	q := pipelineRequest(t, id)
-	q.Clean, q.Session, q.CaptureRevision = true, 7, 1
+	q.Workspace, q.OffScreen = 9, true
 	q.Region, q.Width, q.Height, q.Stride = region, region.Dx(), region.Dy(), region.Dx()*4
 	require.NoError(t, q.Dst.File.Truncate(int64(q.Stride*q.Height)))
 	return q
@@ -44,7 +45,7 @@ func childMock(t *testing.T, w, h int) (*portsmocks.MockRenderer, *portsmocks.Mo
 	return r, frame
 }
 
-func TestSubmitHiddenDrawsChildWithoutExcludedAndRebasesRegion(t *testing.T) {
+func TestSubmitHiddenDrawsChildAndRebasesRegion(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	p := NewPipeline(context.Background(), replies)
 	child, _ := childMock(t, 200, 100)
@@ -56,13 +57,12 @@ func TestSubmitHiddenDrawsChildWithoutExcludedAndRebasesRegion(t *testing.T) {
 	var made [2]int
 	p.EnableOffscreen(func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil })
 	s := hiddenScene()
-	s.Capture.TargetRect = ports.Rect{W: 100, H: 50}
 	p.SubmitHidden(s, nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(480, 360, 680, 460))})
 	require.Equal(t, [2]int{200, 100}, made, "child image is the frame in physical pixels")
 	require.Nil(t, scene.Capture)
 	require.Zero(t, scene.Seq)
-	require.Equal(t, []ports.SceneWindow{{ID: 5}}, scene.Windows, "excluded popup left out")
-	require.Equal(t, []ports.SceneLayer{{ID: 11}}, scene.Layers, "excluded HUD layer left out")
+	require.Equal(t, []ports.SceneWindow{{ID: 5}, {ID: 10, Popup: true}}, scene.Windows)
+	require.Equal(t, []ports.SceneLayer{{ID: 10}, {ID: 11}}, scene.Layers)
 	require.NoError(t, awaitCapture(t, replies).Err)
 	p.Close(nil)
 }
@@ -74,9 +74,9 @@ func TestSubmitHiddenFailsClosed(t *testing.T) {
 		want error
 	}{
 		{"output off", func(s *ports.Scene) { s.Off = true }, nil},
-		{"target is not the frame", func(s *ports.Scene) { s.Capture.TargetRect.W = 50 }, ErrOffscreenGeometry},
-		{"frame too large", func(s *ports.Scene) { s.CaptureScene.OutputWidth, s.Capture.TargetRect.W = 20000, 20000 }, ErrOffscreenGeometry},
-		{"frame empty", func(s *ports.Scene) { s.CaptureScene.OutputWidth, s.Capture.TargetRect.W = 0, 0 }, ErrOffscreenGeometry},
+		{"no hidden workspace in the scene", func(s *ports.Scene) { s.Capture.Workspace = 0 }, ErrOffscreenUnavailable},
+		{"frame too large", func(s *ports.Scene) { s.CaptureScene.OutputWidth = 20000 }, ErrOffscreenGeometry},
+		{"frame empty", func(s *ports.Scene) { s.CaptureScene.OutputWidth = 0 }, ErrOffscreenGeometry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			replies := make(chan ports.CaptureDone, 2)
@@ -124,6 +124,42 @@ func TestSubmitHiddenRegionOutsideFrameFailsOthersServed(t *testing.T) {
 	require.ErrorIs(t, byID[1], ErrOffscreenGeometry)
 	require.NoError(t, byID[2])
 	p.Close(nil)
+}
+
+// A hidden-workspace capture submitted while the indicator gate is open is held
+// by the child pipeline: no reply until the owner's verdict, then it is
+// released (nil) or failed (error) like a displayed capture.
+func TestSubmitHiddenHeldByGateUntilVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		verdict error
+	}{
+		{"released", nil},
+		{"failed", GateVerdict(errors.New("frame dropped"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := make(chan ports.CaptureDone, 4)
+			p := NewPipeline(context.Background(), replies)
+			child, _ := childMock(t, 200, 100)
+			child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+			p.EnableOffscreen(func(int, int) (ports.Renderer, error) { return child, nil })
+			p.BeginGate()
+			p.SubmitHidden(hiddenScene(), nil, []ports.CaptureRequest{hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))})
+			select {
+			case d := <-replies:
+				t.Fatalf("answered before the gate verdict: %v", d.Err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			p.EndGate(tc.verdict)
+			got := awaitCapture(t, replies)
+			if tc.verdict == nil {
+				require.NoError(t, got.Err)
+			} else {
+				require.ErrorIs(t, got.Err, ErrIndicatorMissing)
+			}
+			p.Close(nil)
+		})
+	}
 }
 
 func TestSubmitHiddenChildClosesWhenSessionEnds(t *testing.T) {

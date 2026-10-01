@@ -121,11 +121,18 @@ type Core struct {
 	// last position sent in the pointer's window.
 	motionMsec uint32
 	pointerAt  [2]float64
-	// capture is the live private capture session (capture_session.go);
-	// captureC fires when its owner stopped pinging.
-	capture     *captureSession
-	captureC    <-chan time.Time
-	captureStop func() bool
+	// capSessions and capExcl are the capture state (capture.go).
+	capSessions []*capSession
+	capExcl     *capExclusion
+	// capScratch, capStates and capMarks are scratch of one publish, reused.
+	capScratch capView
+	capStates  []ports.CaptureSessionState
+	capMarks   []ports.CaptureIndicator
+	// capFlashes are the targets of captured frames still flashing; capC
+	// fires at the earliest of them (capindicator.go).
+	capFlashes []capFlash
+	capC       <-chan time.Time
+	capStop    func() bool
 }
 
 func keyName(s string) string {
@@ -470,6 +477,7 @@ func (c *Core) publish(ctx context.Context) error {
 	if c.security.Protected {
 		return c.publishProtected(ctx)
 	}
+	c.captureExpire()
 	capture, err := c.captureEvaluate(ctx)
 	if err != nil {
 		return err
@@ -557,8 +565,8 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
-		if capture != nil && capture.scene != nil && sc.name() == capture.output {
-			scene.Capture = capture.scene
+		scene.CaptureIndicators = c.captureIndicators(sc)
+		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil && capture.hiddenScr == sc {
 			scene.CaptureScene = c.captureScene(scene.Seq)
 		}
 		scenes = append(scenes, scene)
@@ -593,6 +601,7 @@ func (c *Core) publish(ctx context.Context) error {
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
 	c.publishWorkspaces()
+	c.armCaptureTimer()
 	// A running slide moves on the next flip, or on the fallback timer.
 	if c.animating() {
 		if c.frameC == nil {
@@ -872,7 +881,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
-	defer c.stopCapture()
+	defer c.stopCaptureTimer()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -914,17 +923,21 @@ func (c *Core) Run(ctx context.Context) error {
 				if !c.applyLockChanged(v) {
 					continue
 				}
-			case ports.CaptureSessionBegin:
-				if c.captureBegin(ctx, v) != nil {
-					return nil
+			case ports.CaptureSessionOpen:
+				c.captureOpen(v)
+			case ports.CaptureSessionClose:
+				c.captureClose(v.ID)
+			case ports.CaptureFrameTaken:
+				// Nothing new to show (the target flashes already): no scene.
+				if !c.captureFrame(v) {
+					continue
 				}
-			case ports.CaptureSessionLayer:
-				c.captureLayer(v)
-			case ports.CaptureSessionPing:
-				c.capturePing(v.ID)
-				continue
-			case ports.CaptureSessionEnd:
-				c.captureEnd(v.ID)
+			case ports.CaptureExclusionBegin:
+				c.captureExclusionBegin(v)
+			case ports.CaptureExclusionLayer:
+				c.captureExclusionLayer(v)
+			case ports.CaptureExclusionEnd:
+				c.captureExclusionEnd(v.Session)
 			case ports.LayerChanged:
 				c.layerChanged = true
 				c.setLayers(v.Layers)
@@ -1042,12 +1055,9 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			continue
-		case <-c.captureC:
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			c.captureExpired()
-			if c.publish(ctx) != nil {
+		case <-c.capC:
+			c.capC, c.capStop = nil, nil
+			if c.captureFlashTick() && c.publish(ctx) != nil {
 				return nil
 			}
 			continue

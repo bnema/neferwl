@@ -15,16 +15,38 @@ type CaptureRequest struct {
 	Dst                   SHMBuffer
 	Width, Height, Stride int
 	Format                uint32
-	// Clean asks for a capture without the private session's HUD layers
-	// and native border (SceneCapture). Wayland sets it, with Session, only
-	// on requests of the connection that owns the active session; every
-	// other capture is false/0 and sees the scene as shown.
-	Clean   bool
+	// Session is the registered capture session (CaptureSessionOpen) the
+	// request belongs to, 0 for wlr-screencopy. It is informational, except
+	// with Exclude.
 	Session uint64
-	// CaptureRevision is the session Revision last confirmed by core
-	// (CaptureSessionState); a renderer fails a Clean request whose scene
-	// has Capture nil or Capture.Revision below it. 0 when not Clean.
+	// Exclude asks for a capture without the exclusion's HUD layers and
+	// popups (SceneCapture.Excluded). Wayland sets it, with Session and
+	// CaptureRevision, only on requests of the session that owns the
+	// exclusion. A renderer fails such a request unless its scene's
+	// Capture.Session is Session and Capture.Revision at least
+	// CaptureRevision (CaptureSessionState).
+	Exclude         bool
 	CaptureRevision uint64
+	// Workspace is not 0 for the capture of a workspace's frame. On screen
+	// (OffScreen false) it is an ordinary region of the displayed frame, and
+	// fails unless the scene's Capture.Shown is Workspace. OffScreen is set
+	// when the workspace was not on screen when the request was made: it is
+	// served from Scene.CaptureScene, whole (Region is the whole child
+	// image), and fails unless the scene's Capture.Workspace is Workspace.
+	// Either way a workspace that moved since fails instead of returning
+	// another crop.
+	Workspace uint64
+	OffScreen bool
+	// Indicate is set by wayland on every capture it requests: core shows the
+	// capture indicator for it (CaptureFrameTaken), and the output owner
+	// serves the request only from a scene that shows the mark it needs (a
+	// pill for OffScreen, else a border covering Region), so the indicator is
+	// on screen in the same frame as the capture or an earlier one. It holds
+	// the request for a bounded time, then fails it.
+	Indicate bool
+	// Since is when the output owner took the request (monotonic), to bound
+	// that wait. Only the output owner sets it.
+	Since time.Time
 }
 
 // CaptureDone is attempted once after the output closes the destination.
@@ -134,7 +156,7 @@ type WorkspaceOutput struct {
 }
 type WorkspaceInfo struct {
 	ID             uint64
-	Configured     string // stable configured name; empty for dynamic workspaces
+	Configured     string // configured name; empty for dynamic workspaces. ID, not this, identifies the workspace
 	Name           string
 	Index          int // zero-based vertical coordinate
 	Active, Hidden bool
@@ -821,13 +843,17 @@ type Scene struct {
 	// Window popups are drawn after the windows, layer popups
 	// (SceneWindow.OverLayers) last, over every layer.
 	Layers []SceneLayer
-	// Capture is the active private capture session on this output, nil
-	// when none (capture_session.go).
+	// Capture is the capture state of this output: exclusion and hidden
+	// workspace; nil while nothing is captured (capture.go).
 	Capture *SceneCapture
-	// CaptureScene is the workspace of the active session drawn for
-	// capture only (a workspace that is not on screen). Only the root scene
-	// carries it; CaptureScene.Capture and .CaptureScene are nil.
+	// CaptureScene is the workspace captured off screen (Capture.Workspace)
+	// drawn for capture only: a workspace that is not on screen. Only the
+	// root scene carries it; CaptureScene.Capture and .CaptureScene are nil.
 	CaptureScene *Scene
+	// CaptureIndicators are the marks of live captures of this output,
+	// drawn over everything; nil when none. Captures never hold them: the
+	// capture pipeline serves requests from a scene without them.
+	CaptureIndicators []CaptureIndicator
 }
 
 // Shows reports whether the scene draws the surface of id: only its
@@ -1120,7 +1146,9 @@ type OutputState struct {
 	Name      string
 	Active    int
 	Count     int
-	Workspace string // name of the workspace on screen, "" if unnamed
+	Workspace string // configured name of the workspace on screen, "" if unnamed
+	// WorkspaceID is the core ID of the workspace on screen (WorkspaceInfo.ID).
+	WorkspaceID uint64
 }
 
 // WindowState is one mapped window and where it is.
@@ -1131,6 +1159,11 @@ type WindowState struct {
 	Output string
 	// Workspace is the window's numbered workspace, 0 for a hidden one.
 	Workspace int
+	// WorkspaceID is the core ID of the window's workspace, numbered or not
+	// (WorkspaceInfo.ID); WorkspaceName is its configured name, "" for a
+	// dynamic one (WorkspaceInfo.Configured).
+	WorkspaceID   uint64
+	WorkspaceName string
 	// Visible means on the workspace on screen (it may be behind a
 	// fullscreen window).
 	Visible bool

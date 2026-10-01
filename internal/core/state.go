@@ -31,7 +31,7 @@ func (c *Core) state() ports.State {
 		}
 		m := s.mon
 		cur := m.Current()
-		o := ports.OutputState{Name: s.name(), Count: numbered(m), Workspace: cur.Name}
+		o := ports.OutputState{Name: s.name(), Count: numbered(m), Workspace: cur.Name, WorkspaceID: cur.ID}
 		if i := indexOf(m.Workspaces, cur); i >= 0 {
 			o.Active = i + 1
 		}
@@ -45,7 +45,7 @@ func (c *Core) state() ports.State {
 			n := indexOf(m.Workspaces, w) + 1
 			for _, id := range w.windows() {
 				rec := c.windows.lookup(id)
-				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id)}
+				v := ports.WindowState{ID: id, AppID: rec.client.AppID, PID: rec.client.PID, Output: s.name(), Workspace: n, WorkspaceID: w.ID, WorkspaceName: w.Name, Visible: shown[id], IdleInhibit: rec.idleInhibit, Floating: w.isFloat(id)}
 				if i := w.stashIndex(id); i >= 0 {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}

@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bnema/purego-libwayland/protocol/relativepointer"
 
+	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/neferwl/internal/sessionlock"
 	"github.com/bnema/purego-libwayland/protocol/fractionalscale"
@@ -37,8 +40,17 @@ type Options struct {
 	// Security is display-owned protection control. Nil leaves session-lock
 	// unadvertised; independent protocol tests remain unlocked.
 	Security ports.SessionSecurityController
+	// WorkspaceIDs names workspaces (ext-workspace id); nil draws a fresh
+	// launch prefix. The state file must share the one of the session.
+	WorkspaceIDs *workspaceid.IDs
+	// CaptureAllow is the executable allowlist for screen capture (captureauth.go);
+	// nil lets every client capture, unless the session is protected. The
+	// caller keeps it current (captureallow.Store.Run).
+	CaptureAllow *captureallow.Store
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
+	// peer replaces the peer executable lookup (tests).
+	peer peerExe
 }
 
 // Channels carries client notifications and commands. Events may be unbuffered.
@@ -95,10 +107,29 @@ type Server struct {
 	// captureInflight counts accepted captures until the backend completes
 	// them, independent of client resources; only the display loop touches it.
 	captureInflight map[uint64]struct{}
-	captureSources  map[*server.Resource]*output
+	captureSources  map[*server.Resource]*captureSource
 	captureSessions map[*captureSession]struct{}
-	// private is the private capture session state (capture_session.go).
-	private      privateCapture
+	// sessionsByID are the sessions registered with core (imagecopy.go);
+	// excl is the one live exclusion (exclusion.go); ownUID the compositor's.
+	sessionsByID map[uint64]*captureSession
+	nextSession  uint64
+	excl         *exclusion
+	ownUID       uint32
+	// captureAllow, peer and peers decide mayCapture (captureauth.go):
+	// peers keeps each client's pidfd until it is destroyed.
+	captureAllow *captureallow.Store
+	peer         peerExe
+	peers        map[server.Client]*peerID
+	// noPidfdWarned: the missing SO_PEERPIDFD is logged once.
+	noPidfdWarned bool
+	// sandboxed are the clients that connected through a security context
+	// (securitycontext.go); display goroutine only. securityStop is
+	// written once at shutdown to end the listeners, securityWG waits for
+	// them, securityLive counts them.
+	sandboxed    map[server.Client]*sandbox
+	securityStop int
+	securityWG   sync.WaitGroup
+	securityLive atomic.Int32
 	display      *server.Display
 	env          procEnv
 	slotsPending bool // core waits for a slot window
@@ -191,6 +222,8 @@ type Server struct {
 	workspaceManagers []*workspaceManager
 	toplevelManagers  []*toplevelManager
 	workspaceSnapshot ports.Workspaces
+	workspaceFrames   []*workspaceFrame
+	workspaceIDs      *workspaceid.IDs
 	outputHeads       ports.OutputHeads
 	outputPlaces      ports.Layout
 	managementSerial  uint32
@@ -259,15 +292,25 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.pendingLeaseCards = map[uint64]string{}
 	s.activeLeases = map[leaseKey]*leaseObject{}
 	s.leaseReady = make(chan struct{}, 1)
+	s.workspaceIDs = opts.WorkspaceIDs
+	if s.workspaceIDs == nil {
+		s.workspaceIDs = workspaceid.New()
+	}
 	s.clock = opts.Clock
 	if s.clock == nil {
 		s.clock = clock.System{}
 	}
+	s.captureAllow, s.peer, s.peers = opts.CaptureAllow, opts.peer, map[server.Client]*peerID{}
+	if s.peer == nil {
+		s.peer = linuxPeerExe{}
+	}
+	s.sandboxed, s.securityStop = map[server.Client]*sandbox{}, -1
 	s.captureReplies = map[uint64]func(ports.CaptureDone){}
 	s.captureInflight = map[uint64]struct{}{}
 	s.outputReplies = map[uint64]*outputConfiguration{}
 	s.managementSerial = 1
-	s.captureSources = map[*server.Resource]*output{}
+	s.captureSources = map[*server.Resource]*captureSource{}
+	s.sessionsByID = map[uint64]*captureSession{}
 	s.captureSessions = map[*captureSession]struct{}{}
 	s.fractions = map[*surface]*fractionalscale.WpFractionalScaleV1{}
 	s.fifoSurfaces, s.lastFlip = map[*surface]struct{}{}, map[string]time.Time{}
@@ -316,6 +359,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s.syncWait.log = log
 	s.cleanup = func() {
+		if s.securityStop >= 0 {
+			unix.Close(s.securityStop)
+		}
 		if s.seat.keymapFD >= 0 {
 			unix.Close(s.seat.keymapFD)
 		}
@@ -327,6 +373,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 			node.close()
 		}
 		cleanup()
+	}
+	if s.securityStop, err = unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK); err != nil {
+		s.cleanup()
+		d.Close()
+		return nil, err
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
 		s.cleanup()
@@ -403,6 +454,7 @@ func (s *Server) Run(ctx context.Context) error {
 		go func() { defer wg.Done(); s.syncWait.run(ctx) }()
 	}
 	err := s.display.Run(ctx)
+	s.stopSecurityContexts()
 	wg.Wait()
 	return err
 }

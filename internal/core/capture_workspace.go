@@ -62,21 +62,15 @@ func (cw *captureWorkspace) placement(id WindowID) *Placement {
 // on screen, or the overview shows it as a preview) and forgets it
 // otherwise. It runs
 // right after captureEvaluate, before the popups and configures that use it.
-func (c *Core) captureTrack(view *captureView) {
-	// Tracking follows the non-terminal view, not its Active flag: while the
-	// captured workspace slides in its own viewport its windows stay captured
-	// (not suspended) and its popups stay. A terminal or absent session has no
-	// view.
-	if view == nil || !view.hidden || view.state.Workspace == 0 {
+func (c *Core) captureTrack(view *capView) {
+	// Tracking follows the decided view, not whether frames were taken: while
+	// the captured workspace slides in its own viewport its windows stay
+	// captured (not suspended) and its popups stay.
+	if view == nil || view.hidden == nil {
 		c.configures.cw.reset()
 		return
 	}
-	sc, ws := c.workspaceByID(view.state.Workspace)
-	if ws == nil || sc == nil || sc.name() != view.output || (sc.mon.Current() == ws && !sc.mon.ov.open) {
-		c.configures.cw.reset()
-		return
-	}
-	c.configures.cw.load(sc, ws)
+	c.configures.cw.load(view.hiddenScr, view.hidden)
 }
 
 // captureConfigure picks how a physical placement p on sc is configured:

@@ -54,9 +54,7 @@ func (m sessionLockManager) Lock(r *extsessionlock.ExtSessionLockManagerV1, id u
 	s.lockReadiness.Begin(state.Generation)
 	res.OnDestroy = l.orphan
 	s.resetProtectionInput()
-	if ps := s.private.session; ps != nil {
-		ps.end(true)
-	}
+	s.endCaptureSessions()
 	for _, lease := range s.activeLeases {
 		lease.destroy()
 	}
@@ -94,7 +92,6 @@ func (l *sessionLock) UnlockAndDestroy(r *extsessionlock.ExtSessionLockV1) {
 	s.sessionLock = nil
 	s.refreshToplevels()
 	s.updateWorkspaceManagers(s.workspaceSnapshot)
-	s.updateCaptureWorkspaces(s.workspaceSnapshot)
 	for _, surface := range l.surfaces {
 		surface.unmap()
 	}

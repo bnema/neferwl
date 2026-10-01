@@ -16,13 +16,12 @@ Pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no spe
 
 ```sh
 #!/bin/sh
-# ~/.local/bin/screenshot-area: select an area, save it and copy it.
-file="$HOME/Pictures/$(date +%F-%T).png"
-grim -g "$(slurp)" "$file" && wl-copy < "$file"
+# ~/.local/bin/screenshot-main: save the main monitor with a dated name.
+nefercap screenshot -output DP-1 -file "$HOME/Pictures/$(date +%F-%T).png"
 ```
 
 ```text
-bind.cmd+shift+p = spawn screenshot-area
+bind.cmd+shift+p = spawn screenshot-main
 ```
 
 Make the script executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. It can use any shell, including fish (`#!/usr/bin/env fish`).
@@ -72,6 +71,10 @@ Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` tak
 
 External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and captures, covers every output, and stays protected if the locker dies. Authentication belongs to the locker; screen-off and a visual cover do not replace locking. See [Session locking](session-lock.md) for confirmation, recovery and security limits.
 
+## Screen capture
+
+nefercap, `grim`, recorders and screen sharing use `zwlr_screencopy_v1` and `ext_image_copy_capture_v1`. Every capture shows a red border, only the executables on the built-in list (`grim`, `nefercap`, `xdg-desktop-portal-wlr`) or in `/etc/neferwl/capture-allow`, which replaces it, may capture, and sandboxed clients use the portal. See [Screen capture](capture.md).
+
 ## Idle and screen off
 
 NeferWL supports `ext_idle_notifier_v1` and `zwlr_output_power_management_v1`, so [swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay. A window that inhibits idle, such as a video player or a game, keeps them on.
@@ -90,7 +93,7 @@ exec wlopm --off '*'
 
 ## Bars
 
-NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling.
+NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling. Every workspace sends an `id`, the same string as its `workspace_id` in the state file. A configured (named) workspace has `name:<configured name>`, stable across launches; renaming it in the config removes its handle and sends a new one. A numbered or dynamic workspace has `<prefix>-<n>`: the prefix is 8 lowercase hex characters drawn once per compositor launch, so the `id` is unique per launch, stable while the workspace exists (across reordering and moves between outputs), and never repeats in the next launch. Numbered workspaces carry an `id` too, so a bar or script can target them during the session, but it is unique for the current launch only: do not store preferences keyed on it across launches. Only named workspaces have an `id` that is stable across launches.
 
 NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. While unlocked, clients can see window titles and app IDs. Workspace and window inventory updates are withheld during session protection.
 
@@ -98,9 +101,9 @@ NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, foc
 
 While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:
 
-- every output, with its active numbered workspace, workspace count and the name of the workspace on screen;
+- every output, with its active numbered workspace, workspace count, and the name (`workspace`) and ID string (`workspace_id`) of the workspace on screen;
 - the focused output and window;
-- every window, with its app ID, PID, output, workspace and whether it is on screen (`visible`);
+- every window, with its app ID, PID, output, workspace, `workspace_id` (the ID string of its workspace, numbered or hidden) and whether it is on screen (`visible`);
 - `floating: true` for floating windows. Stashed windows also have their 1-based place in their workspace's stash (`stash_index` of `stash_count`, both `0` outside it) and `hidden: true` while the stash is hidden.
 
 ```sh

@@ -28,13 +28,18 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	shots := t.TempDir()
+	// The test's own capture client is not on the built-in list: disable the check.
+	allowPath := filepath.Join(t.TempDir(), "capture-allow")
+	if err := os.WriteFile(allowPath, []byte("*\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	scenes := make(chan []ports.Scene, 128)
 	script, writer := io.Pipe()
 	defer writer.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, ScreenshotDir: shots, Script: script, testScenes: scenes})
+		done <- Run(ctx, Options{Backend: "headless", NoXwayland: true, NoTerminal: true, Config: config.Defaults(), Sizes: [][2]int{{160, 120}, {128, 96}}, ScreenshotDir: shots, Script: script, testScenes: scenes, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
 	}()
 	// Cancellation closes clients' sockets too, bounding blocked Roundtrip.
 	watchdog := time.AfterFunc(20*time.Second, cancel)

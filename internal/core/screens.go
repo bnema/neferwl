@@ -18,9 +18,13 @@ type screen struct {
 	off             bool // turned off by a client (output power management)
 	layers          []ports.LayerSurface
 	placed          []ports.SceneLayer
-	// capture holds the layer surfaces of the active capture session on
-	// this output: shown over a fullscreen window (capture_session.go).
+	// capture holds the attached layers of the capture exclusion: shown over
+	// a fullscreen window (capture.go).
 	capture map[WindowID]bool
+	// capScene and capMarks are what the last scene carried (Capture and
+	// CaptureIndicators): immutable, shared by the next one while unchanged.
+	capScene *ports.SceneCapture
+	capMarks []ports.CaptureIndicator
 }
 
 func (s *screen) name() string { return s.info.Name }

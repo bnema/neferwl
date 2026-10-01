@@ -1160,6 +1160,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	gapTimer := time.NewTimer(time.Hour)
 	gapTimer.Stop()
 	defer gapTimer.Stop()
+	// A request waits for a scene that shows its capture indicator, at most
+	// capture.HoldFor (see capture.Hold).
+	holdTimer := time.NewTimer(time.Hour)
+	holdTimer.Stop()
+	defer holdTimer.Stop()
 	retryTimer.Stop()
 	vrrTimer.Stop()
 	cursorTimer.Stop()
@@ -1267,6 +1272,18 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			gapTimer.Stop()
 		}
+		var holdDue <-chan time.Time
+		if len(requests) > 0 {
+			var wait time.Duration
+			requests, wait = pipeline.Expire(scene, requests, time.Now())
+			if wait > 0 {
+				holdTimer.Reset(wait)
+				holdDue = holdTimer.C
+			}
+		}
+		if holdDue == nil {
+			holdTimer.Stop()
+		}
 		// A refused protected commit is retried after a bounded backoff.
 		var protectDue <-chan time.Time
 		if o.protected && enabled && !o.securityPrepared && o.protectBackoffActive() {
@@ -1314,6 +1331,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case <-cursorWake:
 			stateDirty = true
 		case <-gapDue:
+		case <-holdDue:
+			continue
 		case <-ctx.Done():
 			return nil
 		case b := <-pipeline.Completed():
@@ -1330,8 +1349,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			} else if len(requests) == cap(requests) {
 				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), captured)
 			} else {
+				q.Since = time.Now()
 				requests = append(requests, q)
-				dirty = haveScene
+				// Its indicator may already be on screen; else it waits for the
+				// scene that shows it.
+				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
 			}
 		case on := <-active:
 			o.observeSecurity()
@@ -1513,9 +1535,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				}
 				capture.Fail(ctx, q, err, captured)
 			}
+			clear(requests) // held ones included: their frame is gone
 		}
-		clear(requests)
-		requests = requestStorage[:0]
+		// Requests still waiting for their indicator stay; the rest is gone.
+		requests = capture.Waiting(requests, scene)
 		if errors.As(err, &fatal) {
 			return err
 		}

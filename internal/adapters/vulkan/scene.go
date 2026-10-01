@@ -43,31 +43,57 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
-	w.captureBorder()
+	w.captureIndicators()
 	r.scratchDraws = w.draws
 	return w.draws
 }
 
-// captureBorder draws the native border of a recording session over
-// everything: four fills on the inside edge of Capture.TargetRect, so it stays
-// visible on a monitor edge. Sizes are logical like the rest of the scene and
-// scale with it; the width is at most half the smaller side. A scene without
-// Capture, or without border, draws nothing (clean captures never carry it).
-func (w *sceneWalk) captureBorder() {
-	c := w.s.Capture
-	if c == nil || c.BorderColor == "" {
+// captureIndicators draws the compositor's capture indicator over everything
+// (ports.CaptureIndicator). The border is four fills on the inside edge of the
+// target, so it stays visible on a monitor edge; the pill is a small rounded
+// square. Sizes are logical like the rest of the scene and scale with it. A
+// scene without indicators draws nothing: captures are rendered from scenes
+// that never carry them.
+func (w *sceneWalk) captureIndicators() {
+	if len(w.s.CaptureIndicators) == 0 {
 		return
 	}
-	t := c.TargetRect
-	b := min(c.BorderWidth, t.W/2, t.H/2)
-	if b <= 0 {
+	col := parseColor(ports.CaptureBorderColor)
+	for _, m := range w.s.CaptureIndicators {
+		t := m.Rect
+		if t.W <= 0 || t.H <= 0 {
+			continue
+		}
+		if m.Pill {
+			w.pill(w.physRect(t.X, t.Y, t.W, t.H), col)
+			continue
+		}
+		b := ports.CaptureBorderOf(t.W, t.H)
+		if b <= 0 {
+			// Too thin for a border (core inflates such marks, so this is a
+			// 1-pixel output): a listed mark always draws something.
+			w.fill(w.physRect(t.X, t.Y, t.W, t.H), col)
+			continue
+		}
+		w.fill(w.physRect(t.X, t.Y, t.W, b), col)
+		w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
+		w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
+		w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
+	}
+}
+
+// pill fills a rounded square (physical pixels) with three rects: a full
+// middle and two bands narrowed by the corner radius.
+func (w *sceneWalk) pill(r image.Rectangle, c [3]uint8) {
+	rad := min(w.phys(ports.CapturePillRadius), r.Dx()/2, r.Dy()/2)
+	if rad <= 0 {
+		w.fill(r, c)
 		return
 	}
-	col := parseColor(c.BorderColor)
-	w.fill(w.physRect(t.X, t.Y, t.W, b), col)
-	w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
-	w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
-	w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
+	cut := (rad + 1) / 2
+	w.fill(image.Rect(r.Min.X+cut, r.Min.Y, r.Max.X-cut, r.Min.Y+rad), c)
+	w.fill(image.Rect(r.Min.X, r.Min.Y+rad, r.Max.X, r.Max.Y-rad), c)
+	w.fill(image.Rect(r.Min.X+cut, r.Max.Y-rad, r.Max.X-cut, r.Max.Y), c)
 }
 
 func (w *sceneWalk) phys(v int) int { return int(math.Round(float64(v) * w.scale)) }

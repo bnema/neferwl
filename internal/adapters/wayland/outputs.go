@@ -180,13 +180,7 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		o.global.Remove()
 		delete(s.hdrOutputs, o.name())
 		delete(s.colorIdentity, o.name())
-		for session := range s.captureSessions {
-			if session.o == o && !session.stopped {
-				session.stopped = true
-				session.res.SendStopped()
-			}
-		}
-		s.stopCaptureOnOutput(o.name())
+		s.outputGone(o)
 		s.log.Info().Str("output", o.name()).Msg("output removed")
 		for _, l := range s.layers {
 			if l.output == o {
@@ -215,7 +209,6 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		scaleChanged := o.place.Scale != p.Scale
-		sizeChanged := o.place.Info.Width != p.Info.Width || o.place.Info.Height != p.Info.Height
 		logicalChanged := o.place.Width != p.Width || o.place.Height != p.Height
 		o.place = p
 		if logicalChanged {
@@ -226,13 +219,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			}
 			s.lockSurfaceChanged()
 		}
-		if sizeChanged {
-			for session := range s.captureSessions {
-				if session.o == o && !session.stopped {
-					session.sendConstraints(p.Info.Width, p.Info.Height)
-				}
-			}
-		}
+		// Buffer sizes follow the mode and the scale (region and workspace
+		// sources too): sessions send new constraints when theirs changed.
+		s.refreshSessions()
 		for _, r := range o.resources {
 			o.sendAll(r)
 		}

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	wire_capturesession "github.com/bnema/neferwl/internal/adapters/wayland/capturesession"
+	wire_imagecapture "github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	wire_alphamodifier "github.com/bnema/purego-libwayland/protocol/alphamodifier"
 	wire_colormanagement "github.com/bnema/purego-libwayland/protocol/colormanagement"
 	wire_colorrepresentation "github.com/bnema/purego-libwayland/protocol/colorrepresentation"
@@ -36,6 +36,7 @@ import (
 	wire_presentationtime "github.com/bnema/purego-libwayland/protocol/presentationtime"
 	wire_primaryselection "github.com/bnema/purego-libwayland/protocol/primaryselection"
 	wire_relativepointer "github.com/bnema/purego-libwayland/protocol/relativepointer"
+	wire_securitycontext "github.com/bnema/purego-libwayland/protocol/securitycontext"
 	wire_tearingcontrol "github.com/bnema/purego-libwayland/protocol/tearingcontrol"
 	wire_textinput "github.com/bnema/purego-libwayland/protocol/textinput"
 	wire_viewporter "github.com/bnema/purego-libwayland/protocol/viewporter"
@@ -119,9 +120,11 @@ var wireSchemas = map[string]wireSchema{
 	"ext_workspace_group_handle_v1":                        {wire_extworkspace.ExtWorkspaceGroupHandleV1Interface, &client_workspace.ExtWorkspaceGroupHandle{}, map[uint16]bool{1: true}, nil},
 	"ext_workspace_handle_v1":                              {wire_extworkspace.ExtWorkspaceHandleV1Interface, &client_workspace.ExtWorkspaceHandle{}, map[uint16]bool{0: true}, nil},
 	"ext_workspace_manager_v1":                             {wire_extworkspace.ExtWorkspaceManagerV1Interface, &client_workspace.ExtWorkspaceManager{}, nil, map[uint16]bool{3: true}},
-	"neferwl_capture_layer_v1":                             {wire_capturesession.NeferwlCaptureLayerV1Interface, nil, map[uint16]bool{0: true}, nil},
-	"neferwl_capture_manager_v1":                           {wire_capturesession.NeferwlCaptureManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
-	"neferwl_capture_session_v1":                           {wire_capturesession.NeferwlCaptureSessionV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"neferwl_capture_exclusion_manager_v1":                 {wire_imagecapture.NeferwlCaptureExclusionManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"neferwl_capture_exclusion_v1":                         {wire_imagecapture.NeferwlCaptureExclusionV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"neferwl_capture_layer_v1":                             {wire_imagecapture.NeferwlCaptureLayerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"neferwl_image_capture_source_manager_v1":              {wire_imagecapture.NeferwlImageCaptureSourceManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"neferwl_workspace_frame_v1":                           {wire_imagecapture.NeferwlWorkspaceFrameV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"org_kde_kwin_server_decoration":                       {wire_kdedecoration.OrgKdeKwinServerDecorationInterface, &client_kdeserverdecoration.OrgKdeKwinServerDecoration{}, map[uint16]bool{0: true}, nil},
 	"org_kde_kwin_server_decoration_manager":               {wire_kdedecoration.OrgKdeKwinServerDecorationManagerInterface, &client_kdeserverdecoration.OrgKdeKwinServerDecorationManager{}, nil, nil},
 	"wl_buffer":                                            {wire_wayland.BufferInterface, &client_core.Buffer{}, map[uint16]bool{0: true}, nil},
@@ -178,6 +181,8 @@ var wireSchemas = map[string]wireSchema{
 	"wp_pointer_warp_v1":                                   {wire_pointerwarp.WpPointerWarpV1Interface, &client_pointerwarp.WpPointerWarp{}, map[uint16]bool{0: true}, nil},
 	"wp_presentation":                                      {wire_presentationtime.WpPresentationInterface, &client_presentation.WpPresentation{}, map[uint16]bool{0: true}, nil},
 	"wp_presentation_feedback":                             {wire_presentationtime.WpPresentationFeedbackInterface, &client_presentation.WpPresentationFeedback{}, nil, map[uint16]bool{1: true, 2: true}},
+	"wp_security_context_manager_v1":                       {wire_securitycontext.WpSecurityContextManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"wp_security_context_v1":                               {wire_securitycontext.WpSecurityContextV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"wp_tearing_control_manager_v1":                        {wire_tearingcontrol.WpTearingControlManagerV1Interface, &client_tearingcontrol.WpTearingControlManager{}, map[uint16]bool{0: true}, nil},
 	"wp_tearing_control_v1":                                {wire_tearingcontrol.WpTearingControlV1Interface, &client_tearingcontrol.WpTearingControl{}, map[uint16]bool{1: true}, nil},
 	"wp_viewport":                                          {wire_viewporter.WpViewportInterface, &client_viewporter.WpViewport{}, map[uint16]bool{0: true}, nil},

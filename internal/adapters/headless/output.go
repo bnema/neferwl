@@ -2,6 +2,7 @@ package headless
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"golang.org/x/sys/unix"
 	"image"
@@ -94,6 +95,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EnableOffscreen(opts.NewCaptureRenderer)
 	}
 	defer func() {
+		// An error path out of a gated frame: what it held is failed.
+		pipeline.EndGate(capture.ErrFrameNotPresented)
 		cancelCaptures()
 		pipeline.Close(r)
 		for _, q := range requests {
@@ -123,6 +126,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason string) {
+		// Whatever this frame had handed to a worker is failed with it.
+		pipeline.EndGate(capture.GateVerdict(errors.New(reason)))
 		for _, q := range requests {
 			if !capture.Handed(q) {
 				capture.Fail(ctx, q, fmt.Errorf("%s", reason), opts.Captured)
@@ -206,7 +211,15 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	}
 	trim := clk.NewTicker(trimEvery)
 	defer trim.Stop()
+	// One timer for the wait of held requests, reset per pass (a time.After
+	// per loop pass would leave a timer behind each).
+	holdTimer := time.NewTimer(time.Hour)
+	holdTimer.Stop()
+	defer holdTimer.Stop()
 	for {
+		// A frame that left its gate open (any path out but its present) fails
+		// what it held: nothing is delivered for a frame that did not present.
+		pipeline.EndGate(capture.ErrFrameNotPresented)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -220,7 +233,23 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if pending != nil {
 			retry = time.After(time.Millisecond)
 		}
+		// Requests wait for a scene that shows their indicator, at most
+		// capture.HoldFor (see capture.Hold).
+		var holdDue <-chan time.Time
+		if len(requests) > 0 {
+			var wait time.Duration
+			requests, wait = pipeline.Expire(scene, requests, time.Now())
+			if wait > 0 {
+				holdTimer.Reset(wait)
+				holdDue = holdTimer.C
+			}
+		}
+		if holdDue == nil {
+			holdTimer.Stop()
+		}
 		select {
+		case <-holdDue:
+			continue
 		case <-ctx.Done():
 			return nil
 		case _, ok := <-opts.SecurityChanges:
@@ -275,8 +304,11 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			} else if len(requests) == cap(requests) {
 				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), opts.Captured)
 			} else {
+				q.Since = time.Now()
 				requests = append(requests, q)
-				dirty = haveScene
+				// Its indicator may already be on screen; else it waits for the
+				// scene that shows it.
+				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
 			}
 		case <-retry:
 			if err := checkSecurity(); err != nil {
@@ -416,20 +448,26 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		}
 		start := time.Now()
-		// Clean requests of a session the scene does not carry are failed
-		// here. The others draw the clean frame first (same renderer, queue
-		// order), then the displayed one; see capture.Pipeline.Split.
-		normal, clean := pipeline.Split(scene, requests)
+		// Requests the scene cannot serve (exclusion of another session, a
+		// workspace that moved) are failed here; see capture.Pipeline.Split.
+		// A request whose indicator the scene does not show yet stays held.
+		ready, _ := pipeline.Hold(scene, requests, time.Now())
+		if len(scene.CaptureIndicators) > 0 {
+			// The captures of this frame are delivered only once its frame,
+			// with the indicator, is presented (capture.Pipeline.EndGate).
+			pipeline.BeginGate()
+		}
+		normal, excluded, hidden := pipeline.Split(scene, ready)
 		pipeline.Retire(scene)
-		if len(clean) > 0 && scene.CaptureScene != nil {
+		if len(hidden) > 0 {
 			// A hidden workspace: a child renderer draws it. The display's
 			// fences do not cover the child, so wait for it before reporting.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests("security epoch changed")
 				continue
 			}
-			pipeline.SubmitHidden(scene, surfaces, clean)
-			clear(clean)
+			pipeline.SubmitHidden(scene, surfaces, hidden)
+			clear(hidden)
 			// A slow child may outlive Wayland's stale-report timeout even
 			// though this owner waits. Publish its non-expiring holds first.
 			if opts.Presented != nil {
@@ -449,34 +487,58 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 				return fmt.Errorf("workspace frame fence: %w", err)
 			}
-		} else if len(clean) > 0 {
+		}
+		// Captures never show the capture indicator: their frame goes first.
+		took, pdone, perr := pipeline.SubmitPlain(r, scene, surfaces, normal)
+		if pdone != nil {
+			// The plain render reads client buffers even when its requests
+			// are rejected by a gate transition: own and wait its fence
+			// before any Seen report or protection check can proceed.
+			waitErr := syncfile.Wait(ctx, pdone)
+			_ = pdone.Close()
+			if waitErr != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("plain frame fence: %w", waitErr)
+			}
+		}
+		if perr != nil {
+			return fmt.Errorf("render plain frame: %w", perr)
+		}
+		if took {
+			normal = nil // answered from the frame without the indicator
+		}
+		if len(excluded) > 0 {
+			// Exclude requests: the frame without the excluded surfaces is
+			// drawn first (same renderer, queue order), then the displayed one.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests("security epoch changed")
 				continue
 			}
-			cdone, renderErr := r.Render(pipeline.CleanScene(scene), surfaces)
-			if cdone != nil {
-				// Clean composition reads client buffers even when the displayed
+			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), surfaces)
+			if xdone != nil {
+				// The excluded-frame composition reads client buffers even when the displayed
 				// frame is skipped by a gate/off transition. Own and wait its
 				// fence before any Seen report or protection check can proceed.
-				waitErr := syncfile.Wait(ctx, cdone)
-				_ = cdone.Close()
+				waitErr := syncfile.Wait(ctx, xdone)
+				_ = xdone.Close()
 				if waitErr != nil {
 					if ctx.Err() != nil {
 						return nil
 					}
-					return fmt.Errorf("clean frame fence: %w", waitErr)
+					return fmt.Errorf("excluded frame fence: %w", waitErr)
 				}
 			}
 			if renderErr != nil {
-				return fmt.Errorf("render clean frame: %w", renderErr)
+				return fmt.Errorf("render excluded frame: %w", renderErr)
 			}
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests("security epoch changed")
 				continue
 			}
-			pipeline.SubmitScoped(scene.Security, r, clean)
-			clear(clean)
+			pipeline.SubmitScoped(scene.Security, r, excluded)
+			clear(excluded)
 		}
 		if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 			failRequests("security epoch changed")
@@ -508,8 +570,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		}
 		pipeline.SubmitScoped(scene.Security, r, normal)
-		clear(requests)
-		requests = requestStorage[:0]
+		// The indicated frame is presented: release what it gated.
+		pipeline.EndGate(nil)
+		requests = capture.Waiting(requests, scene)
 		frame++
 		pending = opts.flipped(pending, seen, scene, surfaces)
 		if opts.ScreenshotDir != "" && !opts.protected() {

@@ -35,6 +35,7 @@ archives:
       - LICENSE
       - README.md
       - examples/config
+      - examples/capture-allow
       - packaging/neferwl-session
       - packaging/neferwl.service
       - packaging/neferwl-shutdown.target
@@ -144,6 +145,8 @@ aurs:
       - "foot: default terminal"
       - "fuzzel: launcher"
       - "xdg-desktop-portal-gtk: file pickers and settings for apps"
+      - "xdg-desktop-portal-wlr: screen sharing and screenshots through the portal"
+      - "nefercap: screenshots and screen recording"
     package: |-
       install -Dm755 ./neferwl "${pkgdir}/usr/bin/neferwl"
       install -Dm755 ./packaging/neferwl-session "${pkgdir}/usr/bin/neferwl-session"
@@ -152,5 +155,6 @@ aurs:
       install -Dm644 ./packaging/neferwl.desktop "${pkgdir}/usr/share/wayland-sessions/neferwl.desktop"
       install -Dm644 ./packaging/neferwl-portals.conf "${pkgdir}/usr/share/xdg-desktop-portal/neferwl-portals.conf"
       install -Dm644 ./examples/config "${pkgdir}/usr/share/doc/neferwl/config.example"
+      install -Dm644 ./examples/capture-allow "${pkgdir}/usr/share/doc/neferwl/capture-allow.example"
       install -Dm644 ./README.md "${pkgdir}/usr/share/doc/neferwl/README.md"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"

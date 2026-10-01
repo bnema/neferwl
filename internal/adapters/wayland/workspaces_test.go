@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	ext "github.com/bnema/purego-libwayland/protocol/extworkspace"
@@ -86,7 +87,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	snapshots := make(chan ports.Workspaces, 1)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, WorkspaceIDs: workspaceid.WithPrefix("0a1b2c3d")}, Channels{Events: events, Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,10 +128,14 @@ func TestWorkspaceProtocol(t *testing.T) {
 	if handle == 0 {
 		t.Fatal("workspace not announced")
 	}
+	// A dynamic workspace sends "<launch prefix>-<core ID>".
 	select {
 	case id := <-p.idEvents:
-		t.Fatalf("dynamic workspace sent stable id %q", id)
+		if id != "0a1b2c3d-42" {
+			t.Fatalf("workspace id %q, want 0a1b2c3d-42", id)
+		}
 	default:
+		t.Fatal("workspace sent no id")
 	}
 	out := bindProtocol(t, c, "wl_output")
 	registerProtocol(t, c, out)
@@ -161,8 +166,8 @@ func TestWorkspaceProtocol(t *testing.T) {
 	if !entered || doneCount != 1 {
 		t.Fatalf("late output enter=%v, done=%d", entered, doneCount)
 	}
-	if len(p.idEvents) != 0 {
-		t.Fatal("dynamic workspace sent id")
+	if len(p.idEvents) != 1 { // the second workspace's; the first was read above
+		t.Fatalf("id events left = %d, want 1", len(p.idEvents))
 	}
 	requestProtocol(t, c, handle, ext.ExtWorkspaceHandleV1RequestActivate)
 	requestProtocol(t, c, secondHandle, ext.ExtWorkspaceHandleV1RequestActivate)
@@ -228,7 +233,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	dir := t.TempDir()
 	snapshots := make(chan ports.Workspaces, 1)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, WorkspaceIDs: workspaceid.WithPrefix("0a1b2c3d")}, Channels{Workspaces: snapshots}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,25 +289,29 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	// initialized; workspace_enter follows all initial workspace details.
 	wantOrder := []uint32{
 		ext.ExtWorkspaceManagerV1EventWorkspaceGroup, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventCapabilities,
-		ext.ExtWorkspaceManagerV1EventWorkspace, 2<<8 | ext.ExtWorkspaceHandleV1EventName, 2<<8 | ext.ExtWorkspaceHandleV1EventCoordinates, 2<<8 | ext.ExtWorkspaceHandleV1EventState, 2<<8 | ext.ExtWorkspaceHandleV1EventCapabilities, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventWorkspaceEnter,
+		ext.ExtWorkspaceManagerV1EventWorkspace, 2<<8 | ext.ExtWorkspaceHandleV1EventId, 2<<8 | ext.ExtWorkspaceHandleV1EventName, 2<<8 | ext.ExtWorkspaceHandleV1EventCoordinates, 2<<8 | ext.ExtWorkspaceHandleV1EventState, 2<<8 | ext.ExtWorkspaceHandleV1EventCapabilities, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventWorkspaceEnter,
 		ext.ExtWorkspaceManagerV1EventWorkspace, 2<<8 | ext.ExtWorkspaceHandleV1EventId, 2<<8 | ext.ExtWorkspaceHandleV1EventName, 2<<8 | ext.ExtWorkspaceHandleV1EventCoordinates, 2<<8 | ext.ExtWorkspaceHandleV1EventState, 2<<8 | ext.ExtWorkspaceHandleV1EventCapabilities, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventWorkspaceEnter,
 		ext.ExtWorkspaceManagerV1EventWorkspaceGroup, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventCapabilities,
-		ext.ExtWorkspaceManagerV1EventWorkspace, 2<<8 | ext.ExtWorkspaceHandleV1EventName, 2<<8 | ext.ExtWorkspaceHandleV1EventCoordinates, 2<<8 | ext.ExtWorkspaceHandleV1EventState, 2<<8 | ext.ExtWorkspaceHandleV1EventCapabilities, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventWorkspaceEnter,
+		ext.ExtWorkspaceManagerV1EventWorkspace, 2<<8 | ext.ExtWorkspaceHandleV1EventId, 2<<8 | ext.ExtWorkspaceHandleV1EventName, 2<<8 | ext.ExtWorkspaceHandleV1EventCoordinates, 2<<8 | ext.ExtWorkspaceHandleV1EventState, 2<<8 | ext.ExtWorkspaceHandleV1EventCapabilities, 1<<8 | ext.ExtWorkspaceGroupHandleV1EventWorkspaceEnter,
 		ext.ExtWorkspaceManagerV1EventDone,
 	}
 	if !slices.Equal(order, wantOrder) {
 		t.Fatalf("creation order = %v, want %v", order, wantOrder)
 	}
-	select {
-	case id := <-p.idEvents:
-		if id != "dev" {
-			t.Fatalf("id=%q", id)
+	// A configured workspace sends "name:<name>", the others the launch
+	// prefix and their core ID, in creation order.
+	for _, want := range []string{"0a1b2c3d-42", "name:dev", "0a1b2c3d-44"} {
+		select {
+		case id := <-p.idEvents:
+			if id != want {
+				t.Fatalf("id=%q, want %q", id, want)
+			}
+		default:
+			t.Fatalf("workspace %s has no id", want)
 		}
-	default:
-		t.Fatal("configured workspace has no id")
 	}
 	if len(p.idEvents) != 0 {
-		t.Fatal("dynamic workspace received id")
+		t.Fatal("extra id")
 	}
 	out := bindProtocol(t, c, "wl_output")
 	registerProtocol(t, c, out)
@@ -375,8 +384,9 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 			t.Fatalf("recreated client-destroyed handle: %v", v)
 		}
 	}
-	// A configured rename replaces the handle on the still-live second group.
-	// The destroyed first group remains a tombstone until it disappears.
+	// A configured rename is a removed handle and a new one (the id is the
+	// configured name), on the still-live second group. The destroyed first
+	// group remains a tombstone until it disappears.
 	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "one", Active: true}, {ID: 43, Name: "dev", Configured: "dev", Index: 1, Hidden: true}}}, {Name: "HEADLESS-2", Workspaces: []ports.WorkspaceInfo{{ID: 44, Name: "code", Configured: "code", Active: true}}}}}
 	replaced, removed := 0, 0
 	for i := 0; i < 8 && replaced == 0; i++ {
@@ -401,7 +411,7 @@ func TestWorkspaceConfiguredIDAndBatchDone(t *testing.T) {
 	}
 	select {
 	case id := <-p.idEvents:
-		if id != "code" {
+		if id != "name:code" {
 			t.Fatalf("renamed id=%q", id)
 		}
 	default:

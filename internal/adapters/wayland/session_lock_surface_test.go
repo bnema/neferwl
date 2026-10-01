@@ -102,9 +102,16 @@ func TestLockSurfaceInitialConfigureAndCommitErrors(t *testing.T) {
 				if scenario == "queued before ack" {
 					s.display.Do(func() { surf.barrier = true; surf.next.wait = true })
 				}
+				// Hold the display goroutine while both requests are written: the
+				// server reads neither before the release, so the fatal commit
+				// cannot close the connection under the ACK write.
+				entered, release := make(chan struct{}), make(chan struct{})
+				go s.display.Do(func() { close(entered); <-release })
+				<-entered
 				requestProtocol(t, c, surfID, wayland.SurfaceRequestCommit)
 				// This later ACK must not legalize an earlier FIFO commit.
 				requestProtocol(t, c, lockID, extsessionlock.ExtSessionLockSurfaceV1RequestAckConfigure, cfg.serial)
+				close(release)
 				code = extsessionlock.ExtSessionLockSurfaceV1ErrorCommitBeforeFirstAck
 			case "null":
 				requestProtocol(t, c, lockID, extsessionlock.ExtSessionLockSurfaceV1RequestAckConfigure, cfg.serial)

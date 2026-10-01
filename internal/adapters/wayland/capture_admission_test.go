@@ -10,6 +10,7 @@ import (
 	ext "github.com/bnema/purego-libwayland/protocol/extimagecopycapture"
 	wlr "github.com/bnema/purego-libwayland/protocol/wlrscreencopy"
 	"github.com/bnema/wlturbo"
+	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
 
@@ -42,6 +43,13 @@ type pendingCapture struct {
 
 func newAdmissionHarness(t *testing.T, queue int) *admissionHarness {
 	t.Helper()
+	return newAdmissionHarnessWith(t, queue, Options{CaptureAllow: allowStore(t, "*\n")}, logging.For(context.Background(), "wayland"))
+}
+
+// newAdmissionHarnessWith runs the server with extra options (RuntimeDir and
+// Outputs are the harness's) and a logger.
+func newAdmissionHarnessWith(t *testing.T, queue int, opts Options, log zerowrap.Logger) *admissionHarness {
+	t.Helper()
 	h := &admissionHarness{dir: t.TempDir(), requests: make(chan ports.CaptureRequest, queue), replies: make(chan ports.CaptureDone, maxCaptureInflight+2)}
 	// Registered first so it runs after Run stopped and the clients closed:
 	// close every dup'd descriptor, including the ones a failed test left in
@@ -55,7 +63,8 @@ func newAdmissionHarness(t *testing.T, queue int) *admissionHarness {
 		}
 	})
 	out := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 2, Height: 2}, Width: 2, Height: 2, Scale: 1}}
-	s, err := New(Options{RuntimeDir: h.dir, Outputs: out}, Channels{Captures: h.requests, Captured: h.replies}, logging.For(context.Background(), "wayland"))
+	opts.RuntimeDir, opts.Outputs = h.dir, out
+	s, err := New(opts, Channels{Captures: h.requests, Captured: h.replies}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +83,12 @@ func newAdmissionHarness(t *testing.T, queue int) *admissionHarness {
 
 func (h *admissionHarness) client(t *testing.T) *admissionClient {
 	t.Helper()
-	c := protocolClient(t, h.s, h.dir)
+	return h.clientOn(t, protocolClient(t, h.s, h.dir))
+}
+
+// clientOn binds the capture globals on an already connected client.
+func (h *admissionHarness) clientOn(t *testing.T, c *wlturbo.Display) *admissionClient {
+	t.Helper()
 	g, ok := c.Registry().FindGlobal("wl_output")
 	if !ok {
 		t.Fatal("output missing")

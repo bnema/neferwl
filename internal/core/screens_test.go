@@ -675,10 +675,10 @@ func TestStateSnapshot(t *testing.T) {
 	}
 	want := ports.State{
 		Output:  "DP-2",
-		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1}, {Name: "DP-2", Active: 1, Count: 1}},
+		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
 		Windows: []ports.WindowState{
-			{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, Visible: true},
-			{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, Visible: true},
+			{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
+			{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
 		},
 	}
 	want.Window = &want.Windows[1]
@@ -689,7 +689,8 @@ func TestStateSnapshot(t *testing.T) {
 	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
 	receive(t, r.scenes)
 	st = receive(t, r.state)
-	if st.Outputs[1] != (ports.OutputState{Name: "DP-2", Active: 2, Count: 2}) || st.Windows[1].Visible || st.Window != nil {
+	// The window keeps its workspace ID; the output now shows the new one.
+	if o := st.Outputs[1]; o.Name != "DP-2" || o.Active != 2 || o.Count != 2 || o.WorkspaceID == 0 || o.WorkspaceID == 2 || st.Windows[1].WorkspaceID != 2 || st.Windows[1].Visible || st.Window != nil {
 		t.Fatalf("%+v", st)
 	}
 }
@@ -713,6 +714,20 @@ func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
 	st := receive(t, r.state)
 	if st.Outputs[0].Active != 0 || st.Outputs[0].Workspace != "notes" || st.Windows[0].Visible {
 		t.Fatalf("%+v", st)
+	}
+	// The hidden workspace has its own ID, and the window keeps the one of
+	// the workspace it is on.
+	if st.Outputs[0].WorkspaceID == 0 || st.Windows[0].WorkspaceID == 0 || st.Outputs[0].WorkspaceID == st.Windows[0].WorkspaceID {
+		t.Fatalf("workspace IDs: %+v", st)
+	}
+	// A window on the configured workspace carries its name; the ID string
+	// of ext-workspace and the state file is built from it.
+	r.client <- ports.WindowMapped{ID: 2, PID: 200}
+	receive(t, r.scenes)
+	for st = receive(t, r.state); len(st.Windows) < 2; st = receive(t, r.state) {
+	}
+	if st.Windows[0].WorkspaceName != "" || st.Windows[1].WorkspaceName != "notes" || st.Windows[1].WorkspaceID != st.Outputs[0].WorkspaceID {
+		t.Fatalf("workspace names: %+v", st.Windows)
 	}
 }
 
