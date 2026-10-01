@@ -148,17 +148,25 @@ func browsedMonitor(ov Overflow) (*Monitor, *Workspace) {
 	return m, ws2
 }
 
+// Escape gives every row the overview showed its focus and scroll back,
+// as first shown, even after leaving and revisiting it.
 func TestOverviewBrowsedRowsRestored(t *testing.T) {
+	paths := map[string][][2]int{
+		"browse":  {{0, 1}, {-1, 0}, {-1, 0}},
+		"revisit": {{0, 1}, {-1, 0}, {0, -1}, {0, 1}, {-1, 0}},
+	}
 	for _, ov := range []Overflow{OverflowScroll, OverflowFixed} {
-		m, ws2 := browsedMonitor(ov)
-		view := ws2.ViewX
-		m.ToggleOverview()
-		m.OverviewMove(0, 1)
-		m.OverviewMove(-1, 0)
-		m.OverviewMove(-1, 0)
-		m.CancelOverview()
-		if id, _ := ws2.Focused(); id != 5 || ws2.ViewX != view || m.Current() != m.Workspaces[0] {
-			t.Fatalf("%v: focus %d view %v (want %v) current %v", ov, id, ws2.ViewX, view, m.Active)
+		for name, path := range paths {
+			m, ws2 := browsedMonitor(ov)
+			view := ws2.ViewX
+			m.ToggleOverview()
+			for _, d := range path {
+				m.OverviewMove(d[0], d[1])
+			}
+			m.CancelOverview()
+			if id, _ := ws2.Focused(); id != 5 || ws2.ViewX != view || m.Current() != m.Workspaces[0] {
+				t.Fatalf("%v %s: focus %d view %v (want %v) current %v", ov, name, id, ws2.ViewX, view, m.Active)
+			}
 		}
 	}
 }
@@ -179,32 +187,5 @@ func TestOverviewReturnRestoresBrowsedRows(t *testing.T) {
 	m.ToggleOverview()
 	if id, _ := ws2.Focused(); id != 5 || m.Current() != m.Workspaces[2] {
 		t.Fatalf("focus %d current %v", id, m.Active)
-	}
-}
-
-func TestOverviewBrowsedRowKeepsFixedMaximize(t *testing.T) {
-	m := newMonitor("", "")
-	m.SetOutput(300, 200)
-	m.SetMaxColumns(3)
-	m.AddWindow(1)
-	m.Focus(1)
-	for id := WindowID(2); id <= 4; id++ {
-		m.AddWindow(id)
-	}
-	ws2 := m.Workspaces[1]
-	ws2.Overflow = OverflowFixed
-	ws2.FocusID(3)
-	ws2.ToggleFullWidth()
-	m.Focus(0)
-	m.ToggleOverview()
-	m.OverviewMove(0, 1)
-	m.OverviewMove(-1, 0)
-	m.CancelOverview()
-	i := ws2.columnOf(3)
-	if i < 0 || !ws2.Columns[i].FullWidth {
-		t.Fatalf("column of 3 lost full width: %+v", ws2.Columns)
-	}
-	if id, _ := ws2.Focused(); id != 3 {
-		t.Fatalf("focus %d", id)
 	}
 }

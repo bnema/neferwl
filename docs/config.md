@@ -152,8 +152,8 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 | --- | --- |
 | `h` / `l`, `left` / `right` | Move within a front column-group card; left of its first tile enters the stash. Left on a single-window card sends it behind, or enters the stash when none is behind; right does nothing on a single card. |
 | `k` / `j`, `up` / `down` | Bring the next card above / previous card below to the front, then change workspace at the stack boundary |
-| `return` | Show the selected front card; picking a hidden column moves the maximization to it |
-| `escape` | Restore the original focus, maximization and float order |
+| `return` | Show the selected front card; picking a hidden column moves the maximization to it. Other rows shown keep their focus, maximization and float order |
+| `escape` | Return to the original workspace; every row shown keeps its focus, maximization and float order |
 
 The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys. In the overview, `focus-workspace-up/down` also traverse cards before crossing workspace rows, including named ones.
 
@@ -161,7 +161,7 @@ Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the
 
 A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
 
-Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Move-to-workspace binds (`move-column-to-workspace*`, `move-window-to-workspace*`) move the selected preview at once and keep the overview open; with `focus.follow-move`, the selection follows it. Escape does not undo a move, and a selected stash card does not move. Other window mutation binds (moving within the row, resizing, maximizing, fullscreen and stash toggles) and moving a workspace to another monitor are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
+Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Move-to-workspace binds (`move-column-to-workspace*`, `move-window-to-workspace*`) move the selected preview at once and keep the overview open; with `focus.follow-move`, the selection follows it. Escape does not undo a move. A selected stash card, or a row with no preview, does not move. Other window mutation binds (moving within the row, resizing, maximizing, fullscreen and stash toggles) and moving a workspace to another monitor are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
 
 ### Default binds
 

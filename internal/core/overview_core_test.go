@@ -19,8 +19,8 @@ func outputScene(t *testing.T, set []ports.Scene, name string) ports.Scene {
 	return ports.Scene{}
 }
 
-// previewOf returns window id's overview preview in s.
-func previewOf(s ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
+// scenePreview returns window id's overview preview in s.
+func scenePreview(s ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
 	for _, w := range s.Windows {
 		if w.ID == id && w.Preview > 0 {
 			return w, true
@@ -55,14 +55,14 @@ func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
 	r.mapWindow(t, 2)
 	r.mapWindow(t, 3)
 	set := r.key(t, "o", ports.ModAlt)
-	p, ok := previewOf(outputScene(t, set, "DP-2"), 2)
+	p, ok := scenePreview(outputScene(t, set, "DP-2"), 2)
 	if !ok {
 		t.Fatal("no preview of window 2 on DP-2")
 	}
 	for len(r.commands) > 0 {
 		<-r.commands
 	}
-	r.input <- ports.PointerMotion{X: 200 + float64(p.Rect.X+p.Rect.W/2), Y: float64(p.Rect.Y + p.Rect.H/2)}
+	r.input <- ports.PointerMotion{X: float64(left.Width + p.Rect.X + p.Rect.W/2), Y: float64(p.Rect.Y + p.Rect.H/2)}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	deadline := time.After(time.Second)
 	for picked := false; !picked; {
@@ -97,8 +97,16 @@ func TestOverviewCoreClickOutsidePreviewKeepsOverview(t *testing.T) {
 	r.input <- ports.PointerMotion{X: 1, Y: 1}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	r.input <- ports.PointerButton{Button: 0x110}
-	if s := r.key(t, "h", 0); !hasPreview(s[0]) {
-		t.Fatal("overview closed by a click outside the previews")
+	// h moves the selection in the overview; it would be a plain key
+	// otherwise, with no scene.
+	r.input <- ports.KeyEvent{Keysym: "h", Pressed: true}
+	select {
+	case s := <-r.scenes:
+		if !hasPreview(s[0]) {
+			t.Fatal("overview closed by a click outside the previews")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("overview closed by a click outside the previews: h published nothing")
 	}
 	noButtonSent(t, r.commands)
 }
@@ -111,7 +119,7 @@ func TestOverviewCoreEscapeRestoresFocus(t *testing.T) {
 	r.key(t, "o", ports.ModAlt)
 	r.key(t, "h", 0)
 	set := r.key(t, "h", 0)
-	if p, ok := previewOf(set[0], 1); !ok || !p.Focused {
+	if p, ok := scenePreview(set[0], 1); !ok || !p.Focused {
 		t.Fatalf("preview 1 not selected: %+v", set[0].Windows)
 	}
 	set = r.key(t, "Escape", 0)
@@ -121,6 +129,36 @@ func TestOverviewCoreEscapeRestoresFocus(t *testing.T) {
 	for _, w := range set[0].Windows {
 		if w.Focused != (w.ID == 3) {
 			t.Fatalf("focus: %+v", w)
+		}
+	}
+}
+
+// The default move bind moves the selected preview and keeps the overview
+// open, through the same path as any key.
+func TestOverviewCoreMoveBind(t *testing.T) {
+	r := startMulti(t, nil, right)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.mapWindow(t, 3)
+	r.key(t, "o", ports.ModAlt)
+	r.key(t, "h", 0)
+	if set := r.key(t, "Next", ports.ModAlt|ports.ModShift); !hasPreview(set[0]) {
+		t.Fatal("overview closed")
+	}
+	r.key(t, "Escape", 0)
+	// The state channel keeps the latest snapshot: wait for window 2 to
+	// settle on workspace 2.
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case st := <-r.state:
+			for _, w := range st.Windows {
+				if w.ID == 2 && w.Workspace == 2 && !w.Visible {
+					return
+				}
+			}
+		case <-deadline:
+			t.Fatal("window 2 not on workspace 2 after escape")
 		}
 	}
 }

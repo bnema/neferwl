@@ -12,17 +12,17 @@ import (
 // it showed. row is the workspace whose stack has a provisional front; nil
 // uses its real front.
 type overviewState struct {
-	open       bool
-	from       *Workspace
-	back       *Workspace
-	rows       map[*Workspace]rowSnapshot
-	row        *Workspace
-	front      stackItem
-	frontAt    int
-	cardOf     *Workspace
-	card       WindowID
-	selected   WindowID
-	selectedAt int
+	open             bool
+	from             *Workspace
+	back             *Workspace
+	rows             map[*Workspace]rowSnapshot
+	row              *Workspace
+	front            stackItem
+	frontAt          int
+	cardOf           *Workspace
+	card             WindowID
+	selected         WindowID
+	selectedAt       int
 	scrollX, scrollY float64
 }
 
@@ -71,7 +71,6 @@ func (m *Monitor) ToggleOverview() {
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
-	m.ov.rows = nil
 	m.ov.scrollX, m.ov.scrollY = 0, 0
 	m.overviewOpens++
 	m.selectRow()
@@ -192,25 +191,26 @@ func overviewBlocks(a Action) bool {
 	return false
 }
 
-// overviewMoved resets the selection after a move to another workspace,
-// on the row now current.
-func (m *Monitor) overviewMoved() {
-	if m.ov.open {
-		m.selectRow()
+// overviewMoveTo moves the selected preview at once, like close-window: the
+// overview stays open and closing it does not undo the move. Nothing moves
+// without a selected preview, from a stash card, or when the bind has
+// nowhere to go.
+func (m *Monitor) overviewMoveTo(a Action) {
+	cur, id := m.Current(), m.overviewTarget()
+	i, column, ok := m.moveDest(a)
+	if m.card() != 0 || id == 0 || !ok || m.Workspaces[i] == cur {
+		return
 	}
-}
-
-// overviewMoves reports a bind that moves a window to another workspace.
-func overviewMoves(a Action) bool {
-	if _, op, ok := WorkspaceArg(a); ok {
-		return op != FocusWorkspace
+	to := m.Workspaces[i]
+	origin := to.origin
+	cur.FocusID(id)
+	m.MoveToWorkspace(i, column)
+	// The destination keeps the moved window focused on close.
+	delete(m.ov.rows, to)
+	if origin != nil {
+		delete(m.ov.rows, origin)
 	}
-	switch a {
-	case ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown,
-		ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown:
-		return true
-	}
-	return false
+	m.selectRow()
 }
 
 // closeOverview closes the overview on the selection: a card shows the
@@ -288,7 +288,8 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 			}
 		}
 	}
-	w.maximized = slices.Clone(s.maximized)
+	// Windows that left the row since leave its maximize history too.
+	w.maximized = slices.DeleteFunc(slices.Clone(s.maximized), func(id WindowID) bool { return !w.has(id) })
 	w.scroll()
 }
 
@@ -853,8 +854,9 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 }
 
 // overviewAction runs a bind while the overview is open: focus binds move
-// the selection, close-window targets the selected preview, mutations are
-// dropped. handled is false for binds that run as usual.
+// the selection, close-window and move-to-workspace binds act on the
+// selected preview, other mutations are dropped. handled is false for binds
+// that run as usual.
 func (m *Monitor) overviewAction(a Action) (e Effect, handled bool) {
 	if !m.ov.open {
 		return Effect{}, false
@@ -862,16 +864,9 @@ func (m *Monitor) overviewAction(a Action) (e Effect, handled bool) {
 	if a == ActionCloseWindow {
 		return Effect{Close: m.overviewTarget()}, true
 	}
-	if overviewMoves(a) {
-		// Moves are committed at once, like close-window: the selected
-		// preview moves, the overview stays open. A stash card stays.
-		if m.card() != 0 {
-			return Effect{}, true
-		}
-		if id := m.overviewTarget(); id != 0 {
-			m.Current().FocusID(id)
-		}
-		return Effect{}, false
+	if movesToWorkspace(a) {
+		m.overviewMoveTo(a)
+		return Effect{}, true
 	}
 	return Effect{}, m.overviewFocus(a) || overviewBlocks(a)
 }
