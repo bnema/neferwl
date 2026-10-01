@@ -197,8 +197,10 @@ func TestWorkspaceProtocol(t *testing.T) {
 	default:
 	}
 	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{{Name: "HEADLESS-1", Workspaces: []ports.WorkspaceInfo{{ID: 42, Name: "1", Hidden: true}, {ID: 43, Name: "2", Index: 1}}}}}
+	// The snapshot reaches the display through a forwarding goroutine:
+	// poll by round trips until a deadline, not a fixed count.
 	found := false
-	for i := 0; i < 8 && !found; i++ {
+	for deadline := time.Now().Add(2 * time.Second); !found && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}
@@ -214,7 +216,7 @@ func TestWorkspaceProtocol(t *testing.T) {
 	}
 	snapshots <- ports.Workspaces{Outputs: []ports.WorkspaceOutput{}}
 	found = false
-	for i := 0; i < 8 && !found; i++ {
+	for deadline := time.Now().Add(2 * time.Second); !found && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 		if err := c.Roundtrip(); err != nil {
 			t.Fatal(err)
 		}

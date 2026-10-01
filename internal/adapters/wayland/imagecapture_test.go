@@ -238,14 +238,37 @@ func noSession(t *testing.T, cc *cclient, ev chan []uint32) {
 // client received what followed.
 func (h *captureHarness) settle(t *testing.T, cc *cclient) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(h.commands) > 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if !h.s.display.Do(func() {}) {
+	// The command loop takes commands off the channel before it applies
+	// them on the display: an empty channel does not mean applied. Commands
+	// apply in order, so a marker (SlotsPending, a plain flag) seen on the
+	// display means every command sent before it was applied.
+	var was bool
+	if !h.s.display.Do(func() { was = h.s.slotsPending }) {
 		t.Fatal("display stopped")
 	}
+	h.applied(t, !was)
+	h.applied(t, was)
 	cc.roundtrip(t)
+}
+
+// applied sends SlotsPending{pending} and waits until the display applied it.
+func (h *captureHarness) applied(t *testing.T, pending bool) {
+	t.Helper()
+	h.commands <- ports.SlotsPending{Pending: pending}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var now bool
+		if !h.s.display.Do(func() { now = h.s.slotsPending }) {
+			t.Fatal("display stopped")
+		}
+		if now == pending {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("commands not applied")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func (h *captureHarness) send(cmd ports.ClientCommand) { h.commands <- cmd }
@@ -1264,14 +1287,24 @@ func TestExclusionAttachLimit(t *testing.T) {
 	}
 	over := hd.attachSurfaceNew(t, token)
 	expectAttachment(t, hd.c, over, imagecapture.NeferwlCaptureLayerV1EventFailed, int64(imagecapture.NeferwlCaptureLayerV1FailureTooManyLayers))
-	n := 0
-	for len(h.events) > 0 {
-		if l, ok := (<-h.events).(ports.CaptureExclusionLayer); ok && l.Attached {
-			n++
+	// Events reach core through a forwarding goroutine: wait for each.
+	for range ports.MaxExclusionLayers {
+		if l := nextEvent[ports.CaptureExclusionLayer](t, h.events); !l.Attached {
+			t.Fatalf("detach %+v", l)
 		}
 	}
-	if n != ports.MaxExclusionLayers {
-		t.Fatalf("%d layers reached core, want %d", n, ports.MaxExclusionLayers)
+	// The refused one never follows: it was refused before the failed event
+	// the client already read, so a short wait covers the forwarder.
+	deadline := time.After(50 * time.Millisecond)
+	for {
+		select {
+		case ev := <-h.events:
+			if l, ok := ev.(ports.CaptureExclusionLayer); ok && l.Attached {
+				t.Fatalf("layer over the limit reached core: %+v", l)
+			}
+		case <-deadline:
+			return
+		}
 	}
 }
 
