@@ -146,7 +146,7 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 			return i
 		}
 	}
-	if i := w.columnOf(m.ov.fromID); w == m.ov.from && i >= 0 && i != w.Focus {
+	if i := w.columnOf(m.ov.rows[m.ov.from].focus); w == m.ov.from && i >= 0 && i != w.Focus {
 		return i
 	}
 	for i := range w.Columns {

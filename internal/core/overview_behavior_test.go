@@ -15,15 +15,15 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 	if m.stackFront(w) != (stackItem{stackFloat, 9}) {
 		t.Fatal("screen front")
 	}
-	m.overviewSwipe(ActionFocusWorkspaceUp)
+	m.overviewFocus(ActionFocusWorkspaceUp)
 	if m.stackFront(w).kind != stackColumns || m.Active != 0 {
 		t.Fatal("swipe did not visit card")
 	}
-	m.overviewSwipe(ActionFocusWorkspaceUp)
+	m.overviewFocus(ActionFocusWorkspaceUp)
 	if m.Active != 0 {
 		t.Fatal("up at top crossed workspace boundary")
 	}
-	m.overviewSwipe(ActionFocusWorkspaceDown)
+	m.overviewFocus(ActionFocusWorkspaceDown)
 	if m.stackFront(w).kind != stackFloat || m.Active != 0 {
 		t.Fatal("down did not return to front")
 	}
@@ -127,4 +127,65 @@ func TestOverviewStackMRUAndSize(t *testing.T) {
 		t.Fatalf("prior maximized buffer not fitted to cell: %+v", p)
 	}
 	m.CancelOverview()
+}
+
+// browsedMonitor has window 1 on workspace 1 and columns 2..5 on workspace
+// 2, focused on 5 with one column per screen, and shows workspace 1.
+func browsedMonitor(ov Overflow) (*Monitor, *Workspace) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetMaxColumns(1)
+	m.AddWindow(1)
+	m.Focus(1)
+	for id := WindowID(2); id <= 5; id++ {
+		m.AddWindow(id)
+	}
+	ws2 := m.Workspaces[1]
+	ws2.Overflow = ov
+	ws2.FocusID(5)
+	ws2.scroll()
+	m.Focus(0)
+	return m, ws2
+}
+
+// Escape gives every row the overview showed its focus and scroll back,
+// as first shown, even after leaving and revisiting it.
+func TestOverviewBrowsedRowsRestored(t *testing.T) {
+	paths := map[string][][2]int{
+		"browse":  {{0, 1}, {-1, 0}, {-1, 0}},
+		"revisit": {{0, 1}, {-1, 0}, {0, -1}, {0, 1}, {-1, 0}},
+	}
+	for _, ov := range []Overflow{OverflowScroll, OverflowFixed} {
+		for name, path := range paths {
+			m, ws2 := browsedMonitor(ov)
+			view := ws2.ViewX
+			m.ToggleOverview()
+			for _, d := range path {
+				m.OverviewMove(d[0], d[1])
+			}
+			m.CancelOverview()
+			if id, _ := ws2.Focused(); id != 5 || ws2.ViewX != view || m.Current() != m.Workspaces[0] {
+				t.Fatalf("%v %s: focus %d view %v (want %v) current %v", ov, name, id, ws2.ViewX, view, m.Active)
+			}
+		}
+	}
+}
+
+func TestOverviewReturnRestoresBrowsedRows(t *testing.T) {
+	m, ws2 := browsedMonitor(OverflowScroll)
+	m.Focus(2)
+	m.AddWindow(6)
+	m.Focus(0)
+	m.ToggleOverview()
+	m.OverviewMove(0, 1)
+	m.OverviewMove(-1, 0)
+	m.OverviewMove(-1, 0)
+	m.OverviewMove(0, 1)
+	if m.Current() != m.Workspaces[2] {
+		t.Fatal("not on workspace 3")
+	}
+	m.ToggleOverview()
+	if id, _ := ws2.Focused(); id != 5 || m.Current() != m.Workspaces[2] {
+		t.Fatalf("focus %d current %v", id, m.Active)
+	}
 }

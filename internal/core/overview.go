@@ -8,25 +8,32 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// overviewState owns the provisional selection and opening snapshot. row is
-// the workspace whose stack has a provisional front; nil uses its real front.
+// overviewState owns the provisional selection and the snapshot of each row
+// it showed. row is the workspace whose stack has a provisional front; nil
+// uses its real front.
 type overviewState struct {
-	open       bool
-	from       *Workspace
-	back       *Workspace
-	fromID     WindowID
-	floats     []Float
-	fullWidth  WindowID
-	row        *Workspace
-	front      stackItem
-	frontAt    int
-	cardOf     *Workspace
-	card       WindowID
-	selected   WindowID
-	selectedAt int
-	// FullWidth history is restored on Escape when active binds changed it.
-	maximized        []WindowID
+	open             bool
+	from             *Workspace
+	back             *Workspace
+	rows             map[*Workspace]rowSnapshot
+	row              *Workspace
+	front            stackItem
+	frontAt          int
+	cardOf           *Workspace
+	card             WindowID
+	selected         WindowID
+	selectedAt       int
 	scrollX, scrollY float64
+}
+
+// rowSnapshot is a row as the overview first showed it: browsing moves its
+// focus and scroll, closing puts them back.
+type rowSnapshot struct {
+	focus     WindowID
+	floats    []Float
+	fullWidth WindowID
+	// FullWidth history is restored when active binds changed it.
+	maximized []WindowID
 }
 
 // The overview scales workspace rows without resizing clients. Covering
@@ -64,21 +71,34 @@ func (m *Monitor) ToggleOverview() {
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
-	m.ov.fromID, _ = w.Focused()
-	m.ov.floats = append([]Float(nil), w.Floats...)
-	m.ov.maximized = slices.Clone(w.maximized)
-	m.ov.fullWidth = 0
-	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
-		c := w.Columns[w.Focus]
-		m.ov.fullWidth = c.Windows[c.Focus]
-	}
 	m.ov.scrollX, m.ov.scrollY = 0, 0
 	m.overviewOpens++
 	m.selectRow()
 }
 
+// remember snapshots w the first time the overview shows it.
+func (m *Monitor) remember(w *Workspace) {
+	if _, ok := m.ov.rows[w]; ok {
+		return
+	}
+	if m.ov.rows == nil {
+		m.ov.rows = make(map[*Workspace]rowSnapshot)
+	}
+	s := rowSnapshot{
+		floats:    append([]Float(nil), w.Floats...),
+		maximized: slices.Clone(w.maximized),
+	}
+	s.focus, _ = w.Focused()
+	if len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
+		c := w.Columns[w.Focus]
+		s.fullWidth = c.Windows[c.Focus]
+	}
+	m.ov.rows[w] = s
+}
+
 // selectRow resets provisional stack and stash selection for a new row.
 func (m *Monitor) selectRow() {
+	m.remember(m.Current())
 	m.ov.card, m.ov.cardOf = 0, nil
 	m.ov.front, m.ov.row, m.ov.frontAt = stackItem{}, nil, 0
 	m.ov.selected, m.ov.selectedAt = 0, -1
@@ -158,21 +178,36 @@ func (m *Monitor) overviewTarget() WindowID {
 }
 
 // overviewBlocks makes window mutations explicit: they are disabled while
-// selection is provisional. Workspace and monitor navigation remain active.
+// selection is provisional. Workspace and monitor navigation and moves to
+// another workspace remain active.
 func overviewBlocks(a Action) bool {
-	if _, op, ok := WorkspaceArg(a); ok {
-		return op != FocusWorkspace
-	}
 	switch a {
 	case ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth,
 		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
-		ActionToggleStashVisible, ActionMoveColumnToWorkspaceUp,
-		ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceUp,
-		ActionMoveWindowToWorkspaceDown, ActionConsumeOrExpelLeft,
+		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
 		return true
 	}
 	return false
+}
+
+// overviewMoveTo moves the selected preview at once, like close-window: the
+// overview stays open and closing it does not undo the move. Nothing moves
+// without a selected preview, from a stash card, or when the bind has
+// nowhere to go.
+func (m *Monitor) overviewMoveTo(a Action) {
+	cur, id := m.Current(), m.overviewTarget()
+	i, column, ok := m.moveDest(a)
+	if m.card() != 0 || id == 0 || !ok || m.Workspaces[i] == cur {
+		return
+	}
+	cur.FocusID(id)
+	m.MoveToWorkspace(i, column)
+	// The row that received the window keeps it focused on close.
+	if to, _ := m.find(id); to != nil && to != cur {
+		delete(m.ov.rows, to)
+	}
+	m.selectRow()
 }
 
 // closeOverview closes the overview on the selection: a card shows the
@@ -189,56 +224,70 @@ func (m *Monitor) closeOverview() {
 	} else if !w.pinned() && len(w.stack()) > 0 {
 		w.apply(m.stackFront(w), m.overviewTarget())
 	}
+	for r, s := range m.ov.rows {
+		if r != w && m.has(r) {
+			restoreRow(r, s)
+		}
+	}
 	m.ov = overviewState{}
 }
 
 // CancelOverview closes the overview and returns to the workspace and
-// window it opened on, if they are still there.
+// window it opened on, if they are still there. Every row it showed gets
+// its focus back.
 func (m *Monitor) CancelOverview() {
-	from, id := m.ov.from, m.ov.fromID
-	if from != nil && m.has(from) {
+	if from := m.ov.from; from != nil && m.has(from) {
 		m.show(from)
-		if id != 0 {
-			from.FocusID(id)
-		} else {
-			from.floatFocus, from.stashFocus = false, false
+	}
+	for r, s := range m.ov.rows {
+		if m.has(r) {
+			restoreRow(r, s)
 		}
-		// FocusID on a float raises it; restore the initial order and below
-		// flags for floats still present, leaving new floats in their order.
-		initial := m.ov.floats
-		current := from.Floats
-		from.Floats = nil
-		for _, f := range initial {
-			for i, now := range current {
-				if now.ID == f.ID {
-					now.below = f.below
-					from.Floats = append(from.Floats, now)
-					current = append(current[:i], current[i+1:]...)
-					break
-				}
-			}
-		}
-		from.Floats = append(from.Floats, current...)
-		// Fixed overflow maximizes at most one column: only the one holding
-		// the anchor window, wherever active binds moved it. Scroll overflow
-		// keeps each column's own width.
-		if from.Overflow == OverflowFixed {
-			from.unmaximize()
-			for i := range from.Columns {
-				if m.ov.fullWidth != 0 && slices.Contains(from.Columns[i].Windows, m.ov.fullWidth) {
-					from.maximize(i)
-					break
-				}
-			}
-		}
-		from.maximized = slices.Clone(m.ov.maximized)
-		from.scroll()
 	}
 	m.back = m.ov.back
 	if m.back != nil && !m.has(m.back) {
 		m.back = nil
 	}
 	m.ov = overviewState{}
+}
+
+// restoreRow puts w back as snapshot s found it.
+func restoreRow(w *Workspace, s rowSnapshot) {
+	if s.focus != 0 {
+		w.FocusID(s.focus)
+	} else {
+		w.floatFocus, w.stashFocus = false, false
+	}
+	// FocusID on a float raises it; restore the initial order and below
+	// flags for floats still present, leaving new floats in their order.
+	current := w.Floats
+	w.Floats = nil
+	for _, f := range s.floats {
+		for i, now := range current {
+			if now.ID == f.ID {
+				now.below = f.below
+				w.Floats = append(w.Floats, now)
+				current = append(current[:i], current[i+1:]...)
+				break
+			}
+		}
+	}
+	w.Floats = append(w.Floats, current...)
+	// Fixed overflow maximizes at most one column: only the one holding
+	// the anchor window, wherever active binds moved it. Scroll overflow
+	// keeps each column's own width.
+	if w.Overflow == OverflowFixed {
+		w.unmaximize()
+		for i := range w.Columns {
+			if s.fullWidth != 0 && slices.Contains(w.Columns[i].Windows, s.fullWidth) {
+				w.maximize(i)
+				break
+			}
+		}
+	}
+	// Windows that left the row since leave its maximize history too.
+	w.maximized = slices.DeleteFunc(slices.Clone(s.maximized), func(id WindowID) bool { return !w.has(id) })
+	w.scroll()
 }
 
 // overviewWorkspaces inserts named rows below their invocation workspace,
@@ -321,7 +370,7 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		switch {
 		case at+dx >= 0 && at+dx < len(w.Stash):
 			m.selectCard(w, at+dx)
-		case dx > 0 && len(w.Columns) > 0:
+		case dx > 0 && len(w.stack()) > 0:
 			m.ov.card, m.ov.cardOf = 0, nil
 			item := m.stackFront(w)
 			if item.kind == stackColumns {
@@ -801,9 +850,22 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	return true, c.publish(ctx)
 }
 
-// overviewSwipe moves the selection like the keys, through stacks and rows.
-func (m *Monitor) overviewSwipe(a Action) {
-	m.overviewFocus(a)
+// overviewAction runs a bind while the overview is open: focus binds move
+// the selection, close-window and move-to-workspace binds act on the
+// selected preview, other mutations are dropped. handled is false for binds
+// that run as usual.
+func (m *Monitor) overviewAction(a Action) (e Effect, handled bool) {
+	if !m.ov.open {
+		return Effect{}, false
+	}
+	if a == ActionCloseWindow {
+		return Effect{Close: m.overviewTarget()}, true
+	}
+	if movesToWorkspace(a) {
+		m.overviewMoveTo(a)
+		return Effect{}, true
+	}
+	return Effect{}, m.overviewFocus(a) || overviewBlocks(a)
 }
 
 // overviewFocus runs a focus bind as an overview move, so the focus binds

@@ -109,13 +109,8 @@ type Effect struct {
 // screen; column focus past the edge column moves to the neighbor screen;
 // everything else applies to the focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
-	if m := c.cur().mon; m.ov.open {
-		if m.overviewFocus(a) || overviewBlocks(a) {
-			return Effect{}
-		}
-		if a == ActionCloseWindow {
-			return m.Apply(a)
-		}
+	if e, ok := c.cur().mon.overviewAction(a); ok {
+		return e
 	}
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
@@ -222,23 +217,20 @@ func (c *Core) applyAction(a Action) Effect {
 
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
-	if m.ov.open {
-		if a == ActionCloseWindow {
-			return Effect{Close: m.overviewTarget()}
-		}
-		if m.overviewFocus(a) || overviewBlocks(a) {
-			return Effect{}
-		}
+	if e, ok := m.overviewAction(a); ok {
+		return e
 	}
-	if n, op, ok := WorkspaceArg(a); ok {
-		if op == FocusWorkspace {
-			before := m.Current()
-			m.FocusNumber(n)
-			if m.ov.open && m.Current() != before {
-				m.selectRow()
-			}
-		} else {
-			m.MoveToWorkspace(n-1, op == MoveColumnToWorkspace)
+	if movesToWorkspace(a) {
+		if i, column, ok := m.moveDest(a); ok {
+			m.MoveToWorkspace(i, column)
+		}
+		return Effect{}
+	}
+	if n, _, ok := WorkspaceArg(a); ok {
+		before := m.Current()
+		m.FocusNumber(n)
+		if m.ov.open && m.Current() != before {
+			m.selectRow()
 		}
 		return Effect{}
 	}
@@ -291,18 +283,40 @@ func (m *Monitor) Apply(a Action) Effect {
 			m.Focus(m.Active + 1)
 		}
 		return Effect{}
-	case ActionMoveColumnToWorkspaceUp, ActionMoveWindowToWorkspaceUp:
-		if m.shown == nil && m.Active > 0 {
-			m.MoveToWorkspace(m.Active-1, a == ActionMoveColumnToWorkspaceUp)
-		}
-		return Effect{}
-	case ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceDown:
-		if m.shown == nil {
-			m.MoveToWorkspace(m.Active+1, a == ActionMoveColumnToWorkspaceDown)
-		}
-		return Effect{}
 	}
 	return m.Current().Apply(a)
+}
+
+// movesToWorkspace reports a bind that moves a window to another workspace.
+func movesToWorkspace(a Action) bool {
+	if _, op, ok := WorkspaceArg(a); ok {
+		return op != FocusWorkspace
+	}
+	switch a {
+	case ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown,
+		ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown:
+		return true
+	}
+	return false
+}
+
+// moveDest resolves a move-to-workspace bind to the workspace index it
+// moves to and whether the whole column goes; ok is false when it has
+// nowhere to go. Up and down do nothing on a named workspace.
+func (m *Monitor) moveDest(a Action) (i int, column, ok bool) {
+	if n, op, isArg := WorkspaceArg(a); isArg {
+		return min(max(n-1, 0), len(m.Workspaces)-1), op == MoveColumnToWorkspace, true
+	}
+	if m.shown != nil {
+		return 0, false, false
+	}
+	switch a {
+	case ActionMoveColumnToWorkspaceUp, ActionMoveWindowToWorkspaceUp:
+		return m.Active - 1, a == ActionMoveColumnToWorkspaceUp, m.Active > 0
+	case ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceDown:
+		return min(m.Active+1, len(m.Workspaces)-1), a == ActionMoveColumnToWorkspaceDown, true
+	}
+	return 0, false, false
 }
 
 // Apply runs a bind action that only touches this workspace.
