@@ -103,6 +103,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full == nil {
 		return ports.SurfaceContent{}, "no_fullscreen"
 	}
+	if len(s.DropHints) > 0 {
+		// Drag hints are drawn over the window.
+		return ports.SurfaceContent{}, "drop_hint"
+	}
 	if full.Dim > 0 {
 		// Its veil is composed over it: the plane would show it bright.
 		return ports.SurfaceContent{}, "dim"

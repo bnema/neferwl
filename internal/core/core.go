@@ -67,23 +67,32 @@ type binding struct {
 	key  string
 }
 type Core struct {
-	security         ports.SecurityState
-	lockSurfaces     []ports.LockSurfacePlacement
-	lockFocus        WindowID
-	inputKeys        map[string]bool
-	inputActive      bool
-	startup          [][]string
-	nextWorkspaceID  uint64
-	ch               Channels
-	cfg              ports.Config
-	screens          []*screen
-	focusScreen      int
-	binds            map[binding]Action
-	pressed          map[string]bool
-	configures       configures
-	pointer          WindowID
-	grab             WindowID
-	buttons          map[uint32]bool
+	security        ports.SecurityState
+	lockSurfaces    []ports.LockSurfacePlacement
+	lockFocus       WindowID
+	inputKeys       map[string]bool
+	inputActive     bool
+	startup         [][]string
+	nextWorkspaceID uint64
+	ch              Channels
+	cfg             ports.Config
+	screens         []*screen
+	focusScreen     int
+	binds           map[binding]Action
+	pressed         map[string]bool
+	configures      configures
+	pointer         WindowID
+	grab            WindowID
+	buttons         map[uint32]bool
+	// drag is the pointer drag in progress (drag.go); swallow holds the
+	// buttons whose release no client must see. mods are the modifiers
+	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
+	// press a client saw, the one xdg_toplevel.move's serial names.
+	drag             *dragState
+	swallow          map[uint32]bool
+	lastButton       uint32
+	mods             ports.Mods
+	cmdMod           ports.Mods
 	cursorX, cursorY float64 // global, logical
 	pointerOutput    string  // output under the pointer at the last motion
 	// constrained is the constraint wayland activated; constraint is it
@@ -260,6 +269,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	c.cfg = cfg
 	c.binds = binds
+	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]
 	c.specs, c.presets = named, presets
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
@@ -329,7 +339,7 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, configures: newConfigures()}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -520,6 +530,9 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 		scene.Dim = floatDim(layout, frame, c.cfg.Floating.Dim)
+		if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
+			scene.DropHints = slices.Clone(d.target.hints)
+		}
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		if sc.mon.ov.open {
@@ -621,7 +634,7 @@ func (c *Core) slid(ctx context.Context, shown bool) error {
 // rehit points the pointer at what now lies under a still cursor, as
 // windows slide under it. A held button keeps its grab.
 func (c *Core) rehit(ctx context.Context) error {
-	if c.grab != 0 {
+	if c.grab != 0 || c.drag != nil {
 		return nil
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
@@ -999,6 +1012,9 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 				c.windows.drop(v.ID)
+				if c.drag != nil && c.drag.id == v.ID {
+					c.abortDrag()
+				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
 				}
@@ -1013,6 +1029,10 @@ func (c *Core) Run(ctx context.Context) error {
 				c.constrained = v
 			case ports.PointerWarp:
 				if c.warpPointer(ctx, v) != nil {
+					return nil
+				}
+			case ports.WindowMoveRequest:
+				if c.clientDrag(ctx, v) != nil {
 					return nil
 				}
 			case ports.WindowFullscreenRequest:
@@ -1098,6 +1118,8 @@ func (c *Core) Run(ctx context.Context) error {
 					c.setLayers(c.allLayers())
 				}
 			case ports.OutputRemoved:
+				// A drop target may be on the output going away.
+				c.abortDrag()
 				c.removeScreen(v.Name)
 				if c.layerChanged {
 					c.setLayers(c.allLayers())

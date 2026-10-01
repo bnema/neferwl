@@ -24,6 +24,7 @@ func (c *Core) syncSecurity() bool {
 	c.lockSurfaces, c.lockFocus = nil, 0
 	c.pressed, c.buttons, c.inputKeys = map[string]bool{}, map[uint32]bool{}, map[string]bool{}
 	c.pointer, c.grab, c.pointerOutput = 0, 0, ""
+	c.drag, c.swallow, c.mods, c.lastButton = nil, map[uint32]bool{}, 0, 0
 	c.pointerAt, c.motionMsec = [2]float64{}, 0
 	c.keyboard = keyboard{}
 	c.constrained, c.constraint = ports.PointerConstrained{}, ports.PointerConstraint{}
@@ -85,7 +86,8 @@ func blockedProtectedEvent(ev ports.ClientEvent) bool {
 	switch ev.(type) {
 	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained,
 		ports.PopupRequest, ports.ShortcutsInhibit, ports.WindowFullscreenRequest,
-		ports.CaptureSessionOpen, ports.CaptureFrameTaken, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer:
+		ports.CaptureSessionOpen, ports.CaptureFrameTaken, ports.CaptureExclusionBegin, ports.CaptureExclusionLayer,
+		ports.WindowMoveRequest:
 		return true
 	}
 	return false

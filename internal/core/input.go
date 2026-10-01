@@ -26,7 +26,8 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		// The focused screen follows the pointer, so new windows
 		// and launchers open where the user is.
 		// Only a pointer entering another output switches: keyboard
-		// moves to another screen stick until then. Not mid-drag.
+		// moves to another screen stick until then. Not mid-drag of a
+		// client; a window drag (drag.go) follows the pointer.
 		if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.pointerOutput && c.grab == 0 {
 			c.pointerOutput = o.Info.Name
 			if o.Info.Name != c.cur().name() {
@@ -35,6 +36,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 					return err
 				}
 			}
+		}
+		if c.drag != nil {
+			// The dragged window and the others get no pointer events.
+			return c.dragMotion(ctx, v.TimeMsec)
 		}
 		id, x, y := c.hit(c.cursorX, c.cursorY)
 		// Layout changes are intentionally re-hit-tested only on motion.
@@ -52,7 +57,29 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return nil
 	case ports.PointerButton:
-		if v.Pressed && c.pointer == 0 && c.grab == 0 && len(c.buttons) == 0 {
+		// Buttons a drag took stay in c.buttons until released, so the
+		// security gate admits their release; no client sees it.
+		if !v.Pressed && c.swallow[v.Button] {
+			delete(c.swallow, v.Button)
+			delete(c.buttons, v.Button)
+			return nil
+		}
+		if d := c.drag; d != nil {
+			if !v.Pressed && v.Button == d.button {
+				delete(c.buttons, v.Button)
+				return c.endDrag(ctx)
+			}
+			// Other buttons do nothing mid-drag; their releases neither.
+			if v.Pressed {
+				c.buttons[v.Button] = true
+				c.swallow[v.Button] = true
+			}
+			return nil
+		}
+		if started, err := c.startDrag(ctx, v); err != nil || started {
+			return err
+		}
+		if v.Pressed && c.pointer == 0 && c.grab == 0 && c.held() == 0 {
 			if picked, err := c.overviewClick(ctx); err != nil {
 				return err
 			} else if picked {
@@ -63,17 +90,18 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		if c.grab != 0 {
 			id = c.grab
 		}
-		if v.Pressed && len(c.buttons) == 0 {
+		if v.Pressed && c.held() == 0 {
 			// A click outside an open menu closes it.
 			if err := c.dismissGrabs(ctx, id); err != nil {
 				return err
 			}
 		}
 		if v.Pressed {
-			if len(c.buttons) == 0 {
+			if c.held() == 0 {
 				c.grab = id
 			}
 			c.buttons[v.Button] = true
+			c.lastButton = v.Button
 		} else {
 			delete(c.buttons, v.Button)
 		}
@@ -103,7 +131,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 				}
 			}
 		}
-		if len(c.buttons) == 0 {
+		if c.held() == 0 {
 			c.grab = 0
 		}
 		return nil
@@ -121,8 +149,8 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			return nil
 		}
 		// Scroll goes to the window under the pointer, which has the
-		// pointer focus even mid-drag.
-		if c.pointer != 0 {
+		// pointer focus even mid-drag. None during a window drag.
+		if c.pointer != 0 && c.drag == nil {
 			if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 				return err
 			}
@@ -144,6 +172,16 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	key, ok := ev.(ports.KeyEvent)
 	if !ok {
 		return nil
+	}
+	c.mods = key.Mods
+	if c.drag != nil && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the drag; its release goes nowhere either.
+		c.cancelDrag()
+		c.pressed[heldKey(key)] = true
+		if err := c.publish(ctx); err != nil {
+			return err
+		}
+		return c.rehit(ctx)
 	}
 	// The overview takes its keys before any window; others still
 	// run binds, and are not forwarded.

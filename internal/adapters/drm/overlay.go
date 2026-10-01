@@ -94,6 +94,10 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// float on the plane would take the veil with it.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
 	}
+	if len(s.DropHints) > 0 {
+		// Drag hints are drawn over the windows.
+		return ports.SceneWindow{}, ports.SurfaceContent{}, "drop_hint"
+	}
 	for _, l := range s.Layers {
 		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"

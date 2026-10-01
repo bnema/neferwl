@@ -322,8 +322,26 @@ func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	}
 }
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}
-func (top) Move(*xdgshell.Toplevel, *wayland.Seat, uint32)                         {}
-func (top) Resize(*xdgshell.Toplevel, *wayland.Seat, uint32, uint32)               {}
+
+// Move and Resize start a pointer drag in core when they answer the
+// client's current press; stale serials are ignored.
+func (t top) Move(r *xdgshell.Toplevel, _ *wayland.Seat, serial uint32) {
+	t.moveRequest(r, serial, false, 0)
+}
+func (t top) Resize(r *xdgshell.Toplevel, _ *wayland.Seat, serial, edges uint32) {
+	if edges > uint32(xdgshell.ToplevelResizeEdgeBottomRight) || edges&3 == 3 || edges&12 == 12 {
+		r.PostError(uint32(xdgshell.ToplevelErrorInvalidResizeEdge), "invalid resize edge")
+		return
+	}
+	t.moveRequest(r, serial, true, ports.ResizeEdges(edges))
+}
+func (t top) moveRequest(r *xdgshell.Toplevel, serial uint32, resize bool, edges ports.ResizeEdges) {
+	s := t.w.xdg.server
+	if !t.w.mapped || serial != s.seat.press || s.seat.pressClient != r.Client() {
+		return
+	}
+	s.emit(ports.WindowMoveRequest{ID: t.w.id, Resize: resize, Edges: edges})
+}
 func (t top) SetMaxSize(r *xdgshell.Toplevel, w, h int32) {
 	if w < 0 || h < 0 {
 		r.PostError(uint32(xdgshell.ToplevelErrorInvalidSize), "negative max size")
