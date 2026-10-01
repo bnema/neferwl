@@ -178,8 +178,14 @@ func (m *motion) at(now time.Time) (float64, bool) {
 // it moves, never more than limit.
 type rubberBand struct{ stiffness, limit float64 }
 
-// workspaceBand holds a workspace swipe past the first or last workspace.
+// workspaceBand holds a swipe past the steps it may reach, in steps: a
+// twentieth of a workspace at most. Column swipes scale it to pixels.
 var workspaceBand = rubberBand{stiffness: 0.5, limit: 0.05}
+
+// scaled is the band measured in units k times smaller.
+func (r rubberBand) scaled(k float64) rubberBand {
+	return rubberBand{stiffness: r.stiffness, limit: r.limit * k}
+}
 
 func (r rubberBand) band(x float64) float64 {
 	return (1 - 1/(x*r.stiffness/r.limit+1)) * r.limit

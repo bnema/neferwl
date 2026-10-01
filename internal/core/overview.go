@@ -24,7 +24,7 @@ type overviewState struct {
 	selected         WindowID
 	selectedAt       int
 	scrollX, scrollY float64
-	// scrolled is set once a finger scroll stepped: it waits for the
+	// scrolled is set once a two-finger scroll stepped: it waits for the
 	// fingers to lift before the next step.
 	scrolled bool
 }
@@ -900,18 +900,17 @@ func (m *Monitor) overviewFocus(a Action) bool {
 const overviewScrollStep = 60
 
 // overviewScroll moves the overview selection with a scroll frame: two
-// fingers step once per gesture, after overviewScrollStep on the axis they
-// move most along, so a quick scroll never skips a column; a wheel steps
-// once per notch (high-resolution wheels add up their fractions of a
-// notch). Vertical steps select cards first, then rows;
-// touchpad.natural-scroll flips both axes as libinput reports.
+// fingers step once per scroll, after overviewScrollStep on the axis they
+// move most along, so a quick scroll never skips a column; continuous
+// scrolling steps once per overviewScrollStep and a wheel once per notch
+// (high-resolution wheels add up their fractions of a notch). Vertical
+// steps select cards first, then rows; touchpad.natural-scroll flips both
+// axes as libinput reports. The end of a scroll resets it (scrollStop).
 func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
-		// Fingers lifted: the next scroll starts from zero.
-		m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, false
 		return false
 	}
-	finger := a.Source != ports.AxisWheel
+	finger := a.Source == ports.AxisFinger
 	if finger && m.ov.scrolled {
 		return false
 	}
@@ -944,6 +943,18 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 			return true
 		}
+	}
+}
+
+// scrollStop ends a scroll on every monitor: the fingers lifted, maybe
+// after the pointer took the focus to another output, so the next scroll
+// starts from zero wherever it goes.
+func (c *Core) scrollStop(a ports.PointerAxis) {
+	if !a.Vertical.Stop && !a.Horizontal.Stop {
+		return
+	}
+	for _, sc := range c.screens {
+		sc.mon.ov.scrollX, sc.mon.ov.scrollY, sc.mon.ov.scrolled = 0, 0, false
 	}
 }
 

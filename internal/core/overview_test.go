@@ -653,3 +653,34 @@ func TestOverviewScrollSteps(t *testing.T) {
 		t.Fatalf("two notches from 3 landed on %d, want 1 (started on %d)", f, start)
 	}
 }
+
+// A two-finger scroll steps once until the fingers lift; reopening the
+// overview, a wheel notch and continuous scrolling are not held by it.
+func TestOverviewFingerScrollOneStep(t *testing.T) {
+	m := overviewMonitor()
+	finger := func(dx float64) ports.PointerAxis {
+		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+	}
+	focused := func() WindowID { f, _ := m.Focused(); return f }
+	m.Current().FocusID(3)
+	m.ToggleOverview()
+	if !m.overviewScroll(finger(-70)) || focused() != 2 {
+		t.Fatalf("first step on %d", focused())
+	}
+	if m.overviewScroll(finger(-200)) {
+		t.Fatal("the same scroll stepped twice")
+	}
+	if !m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Horizontal: ports.ScrollAxis{Set: true, V120: -120}}) || focused() != 1 {
+		t.Fatalf("wheel held by the finger scroll: on %d", focused())
+	}
+	m.CancelOverview()
+	m.Current().FocusID(3)
+	m.ToggleOverview()
+	if !m.overviewScroll(finger(-70)) {
+		t.Fatal("reopened overview still held the old scroll")
+	}
+	cont := ports.PointerAxis{Source: ports.AxisContinuous, Horizontal: ports.ScrollAxis{Set: true, Value: -70}}
+	if !m.overviewScroll(cont) {
+		t.Fatal("continuous scroll held by the finger scroll")
+	}
+}

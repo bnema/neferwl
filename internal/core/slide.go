@@ -48,7 +48,7 @@ func (w *Workspace) snapPoints() []float64 {
 	last := len(w.Columns) - 1
 	lo := w.columnX(0) - minX
 	hi := max(w.columnX(last)+w.columnWidth(last)-maxX, lo)
-	var views []int
+	views := make([]int, 0, 2*len(w.Columns))
 	for i := range w.Columns {
 		views = append(views, min(max(w.columnX(i)-minX, lo), hi), min(max(w.columnX(i)+w.columnWidth(i)-maxX, lo), hi))
 	}

@@ -171,9 +171,12 @@ func TestSwipeFollowsFingers(t *testing.T) {
 	if d := after.X - before.X; d <= 0 || d >= 7 {
 		t.Fatalf("column moved %d px with the fingers", d)
 	}
-	// Halfway to the next column edge (400 px: 600 units) the view
-	// catches up with the fingers.
-	r.move(t, -290, 0)
+	// Halfway to the next column edge (400 px: 600 units) the view has
+	// caught up with the fingers; a full step shows whole.
+	s = r.move(t, -290, 0)
+	if got, _ := rectOf(s, 2); got.X-before.X != 200 {
+		t.Fatalf("column moved %d px halfway", got.X-before.X)
+	}
 	s = r.move(t, -300, 0)
 	if got, _ := rectOf(s, 2); got.X-before.X != 400 {
 		t.Fatalf("column moved %d px after a full step", got.X-before.X)
@@ -719,4 +722,36 @@ func TestSwipeHardFlickMovesOneColumn(t *testing.T) {
 	if got, ok := rectOf(s, 3); !ok || got.X != 0 {
 		t.Fatalf("column 3 at %v %t, want the left edge", got, ok)
 	}
+}
+
+// A two-finger scroll that steps in the overview and ends with the pointer
+// on another output does not hold the next scroll back.
+func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+	r.key(t, "o", ports.ModAlt)
+	selected := func(s ports.Scene) ports.WindowID {
+		for _, w := range s.Windows {
+			if w.Focused && w.Preview > 0 {
+				return w.ID
+			}
+		}
+		return 0
+	}
+	on := func(id ports.WindowID) func(ports.Scene) bool {
+		return func(s ports.Scene) bool { return s.Output == wide.Name && selected(s) == id }
+	}
+	finger := func(dx float64) ports.PointerAxis {
+		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+	}
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- finger(-70)
+	sceneMatch(t, r.scenes, on(2))
+	// The pointer crosses to DP-2 and the fingers lift there.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	r.input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- finger(-70)
+	sceneMatch(t, r.scenes, on(1))
 }

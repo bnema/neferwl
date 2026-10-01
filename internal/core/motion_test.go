@@ -164,86 +164,107 @@ func swipe(s *snapSwipe, n int, delta float64) time.Duration {
 	return at
 }
 
-func workspaceSnap(start float64) snapSwipe {
-	return newSnapSwipe(start, math.Round(start), 1/workspaceSwipeMovement, []float64{0, 1, 2, 3, 4}, workspaceBand)
+// slowSwipe pushes dist over two seconds and rests before the lift.
+func slowSwipe(s *snapSwipe, dist float64) time.Duration {
+	at := time.Duration(0)
+	for range 40 {
+		at += 50 * time.Millisecond
+		s.push(dist/40, at)
+	}
+	return at + 200*time.Millisecond
 }
 
-// One swipe reaches the next workspace at most, however fast or far.
+func workspaceSnap(start float64) snapSwipe {
+	return newSnapSwipe(start, math.Round(start), 1/workspaceSwipeMovement, indexPoints(5), workspaceBand)
+}
+
+// One swipe reaches the next workspace at most, however fast or far: a
+// slow one settles on the closest, back unless past halfway; a cancelled
+// one returns.
 func TestSnapSwipeOneStep(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		n     int
-		delta float64
-		want  float64
+		name      string
+		push      func(*snapSwipe) time.Duration
+		cancelled bool
+		want      float64
 	}{
-		{"quick flick down", 6, 30, 3},
-		{"quick flick up", 6, -30, 1},
-		{"hard long flick", 30, 60, 3},
-		{"short quick flick", 3, 20, 3},
+		{"quick flick down", func(s *snapSwipe) time.Duration { return swipe(s, 6, 30) }, false, 3},
+		{"quick flick up", func(s *snapSwipe) time.Duration { return swipe(s, 6, -30) }, false, 1},
+		{"hard long flick", func(s *snapSwipe) time.Duration { return swipe(s, 30, 60) }, false, 3},
+		{"short quick flick", func(s *snapSwipe) time.Duration { return swipe(s, 3, 20) }, false, 3},
+		{"slow short", func(s *snapSwipe) time.Duration { return slowSwipe(s, 100) }, false, 2},
+		{"slow past half", func(s *snapSwipe) time.Duration { return slowSwipe(s, 200) }, false, 3},
+		{"slow far up", func(s *snapSwipe) time.Duration { return slowSwipe(s, -900) }, false, 1},
+		{"cancelled", func(s *snapSwipe) time.Duration { return swipe(s, 10, 30) }, true, 2},
+		// Most of the way down, then a hard flick back: one step up.
+		{"forward then hard back", func(s *snapSwipe) time.Duration {
+			at := slowSwipe(s, 250)
+			for range 4 {
+				at += 8 * time.Millisecond
+				s.push(-30, at)
+			}
+			return at
+		}, false, 1},
 	} {
 		s := workspaceSnap(2)
-		at := swipe(&s, tc.n, tc.delta)
-		if got, _ := s.end(false, at); got != tc.want {
-			t.Errorf("%s: landed on %v, want %v", tc.name, got, tc.want)
-		}
+		at := tc.push(&s)
 		if p := s.pos(); p < 1-workspaceBand.limit || p > 3+workspaceBand.limit {
 			t.Errorf("%s: view %v went past the neighbors", tc.name, p)
 		}
-	}
-}
-
-// A slow swipe settles on the closest point: back unless past halfway.
-func TestSnapSwipeSlowSettlesClosest(t *testing.T) {
-	for _, tc := range []struct {
-		dist, want float64
-	}{{100, 2}, {200, 3}, {-200, 1}} {
-		s := workspaceSnap(2)
-		at := time.Duration(0)
-		for range 40 {
-			at += 50 * time.Millisecond
-			s.push(tc.dist/40, at)
+		if got, _ := s.end(tc.cancelled, at); got != tc.want {
+			t.Errorf("%s: landed on %v, want %v", tc.name, got, tc.want)
 		}
-		if got, _ := s.end(false, at+200*time.Millisecond); got != tc.want {
-			t.Errorf("slow %v: landed on %v, want %v", tc.dist, got, tc.want)
-		}
-	}
-}
-
-func TestSnapSwipeCancelReturns(t *testing.T) {
-	s := workspaceSnap(2)
-	at := swipe(&s, 10, 30)
-	if got, _ := s.end(true, at); got != 2 {
-		t.Fatalf("cancelled swipe landed on %v", got)
 	}
 }
 
 // A swipe caught during a landing steps from the landing: one more.
-func TestSnapSwipeFromBetweenPoints(t *testing.T) {
-	s := newSnapSwipe(2.6, 3, 1/workspaceSwipeMovement, []float64{0, 1, 2, 3, 4}, workspaceBand)
-	if s.lo != 2 || s.hi != 4 {
-		t.Fatalf("bounds %v %v", s.lo, s.hi)
-	}
+func TestSnapSwipeDuringLanding(t *testing.T) {
+	s := newSnapSwipe(2.6, 3, 1/workspaceSwipeMovement, indexPoints(5), workspaceBand)
 	at := swipe(&s, 6, 30)
+	if p := s.pos(); p > 4+workspaceBand.limit {
+		t.Fatalf("view %v went past 4", p)
+	}
 	if got, _ := s.end(false, at); got != 4 {
 		t.Fatalf("landed on %v, want 4", got)
 	}
 }
 
-// Detents: the view sticks near points and catches up between them,
-// moving with the fingers in the same direction, ending where they do.
-func TestSnapSwipeDetents(t *testing.T) {
-	s := workspaceSnap(2)
-	prev := s.pos()
-	for i := range 300 {
-		s.push(1, time.Duration(i)*time.Millisecond)
-		p := s.pos()
-		if p < prev {
-			t.Fatalf("view went back at %d: %v then %v", i, prev, p)
-		}
-		prev = p
+// A slow swipe from a view between points (a merged column edge) never
+// settles behind where it started.
+func TestSnapSwipeRestBetweenPoints(t *testing.T) {
+	s := newSnapSwipe(640, 640, 1, []float64{0, 600, 1000}, workspaceBand.scaled(1000))
+	at := slowSwipe(&s, 5)
+	if got, _ := s.end(false, at); got != 640 {
+		t.Fatalf("slow swipe from 640 landed on %v", got)
 	}
-	if math.Abs(prev-3) > 1e-9 {
-		t.Fatalf("a full step shows %v", prev)
+}
+
+// The view follows the fingers in their direction, without jumps, from a
+// start on a point, between points, or caught past the edge (a spring back
+// from the rubber band); near a point it sticks, a full step shows whole.
+func TestSnapSwipeDetents(t *testing.T) {
+	for _, start := range []float64{2, 2.4, -0.03, 4.03} {
+		s := workspaceSnap(start)
+		if p := s.pos(); math.Abs(p-start) > 1e-9 {
+			t.Fatalf("start %v shows %v", start, p)
+		}
+		for _, dir := range []float64{1, -1} {
+			s := workspaceSnap(start)
+			prev := s.pos()
+			for i := range 400 {
+				s.push(dir, time.Duration(i)*time.Millisecond)
+				p := s.pos()
+				if (p-prev)*dir < 0 || math.Abs(p-prev) > 0.01 {
+					t.Fatalf("start %v dir %v: view %v then %v at %d", start, dir, prev, p, i)
+				}
+				prev = p
+			}
+		}
+	}
+	s := workspaceSnap(2)
+	s.push(300, 0)
+	if p := s.pos(); math.Abs(p-3) > 1e-9 {
+		t.Fatalf("a full step shows %v", p)
 	}
 	s = workspaceSnap(2)
 	s.push(30, 0)
@@ -252,15 +273,40 @@ func TestSnapSwipeDetents(t *testing.T) {
 	}
 }
 
-func TestStepSwipe(t *testing.T) {
-	s := newStepSwipe()
-	at := swipe(&s, 3, -40)
-	if got := s.step(false, at); got != -1 {
-		t.Fatalf("quick swipe step %d", got)
+// One workspace: nowhere to go, the view resists and stays.
+func TestSnapSwipeSinglePoint(t *testing.T) {
+	s := newSnapSwipe(0, 0, 1/workspaceSwipeMovement, indexPoints(1), workspaceBand)
+	at := swipe(&s, 10, 40)
+	if p := s.pos(); p <= 0 || p > workspaceBand.limit {
+		t.Fatalf("view %v", p)
 	}
-	s = newStepSwipe()
-	s.push(-20, time.Second)
-	if got := s.step(false, 2*time.Second); got != 0 {
-		t.Fatalf("slow short swipe step %d", got)
+	target, velocity := s.end(false, at)
+	if target != 0 || math.IsNaN(velocity) {
+		t.Fatalf("landed on %v at %v", target, velocity)
+	}
+}
+
+func TestStepSwipe(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		push      func(*snapSwipe) time.Duration
+		cancelled bool
+		want      int
+	}{
+		{"quick back", func(s *snapSwipe) time.Duration { return swipe(s, 3, -40) }, false, -1},
+		{"quick on", func(s *snapSwipe) time.Duration { return swipe(s, 3, 40) }, false, 1},
+		{"hard", func(s *snapSwipe) time.Duration { return swipe(s, 30, 80) }, false, 1},
+		{"slow short", func(s *snapSwipe) time.Duration { return slowSwipe(s, -100) }, false, 0},
+		{"slow past half", func(s *snapSwipe) time.Duration { return slowSwipe(s, -200) }, false, -1},
+		{"cancelled", func(s *snapSwipe) time.Duration { return swipe(s, 3, 40) }, true, 0},
+	} {
+		s := newStepSwipe()
+		at := tc.push(&s)
+		if got := s.step(tc.cancelled, at); got != tc.want {
+			t.Errorf("%s: step %d, want %d", tc.name, got, tc.want)
+		}
+		if _, v := s.end(tc.cancelled, at); math.IsNaN(v) {
+			t.Errorf("%s: velocity NaN", tc.name)
+		}
 	}
 }

@@ -149,21 +149,19 @@ func (c *Core) decide(g *swipeGesture) {
 	m := g.screen.mon
 	g.opens = m.overviewOpens
 	w := m.Current()
-	g.snap = newStepSwipe()
 	switch {
 	case g.fingers == 4 && !g.horizontal:
-		g.mode = swipeOverview
+		g.mode, g.snap = swipeOverview, newStepSwipe()
 	case g.fingers == 4:
 		// Four fingers sideways do nothing.
 		g.mode = swipeDropped
 	case m.ov.open:
 		// The overview does not slide: the swipe moves its selection.
-		g.mode = swipeDiscrete
+		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
 		g.mode, g.ws = swipeColumns, w
 		w.motion = nil
-		band := rubberBand{stiffness: workspaceBand.stiffness, limit: workspaceBand.limit * float64(w.Usable.W)}
-		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), w.snapPoints(), band)
+		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), w.snapPoints(), workspaceBand.scaled(float64(w.Usable.W)))
 	case !g.horizontal && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
@@ -172,13 +170,9 @@ func (c *Core) decide(g *swipeGesture) {
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
 		g.list = slices.Clone(m.Workspaces)
 		m.switchMotion, m.switchList = nil, nil
-		points := make([]float64, len(m.Workspaces))
-		for i := range points {
-			points[i] = float64(i)
-		}
-		g.snap = newSnapSwipe(float64(m.Active)+m.switchOff, float64(m.Active), 1/workspaceSwipeMovement, points, workspaceBand)
+		g.snap = newSnapSwipe(float64(m.Active)+m.switchOff, float64(m.Active), 1/workspaceSwipeMovement, indexPoints(len(m.Workspaces)), workspaceBand)
 	default:
-		g.mode = swipeDiscrete
+		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	}
 }
 
