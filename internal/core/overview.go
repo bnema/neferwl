@@ -741,7 +741,7 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 			}
 			continue
 		}
-		for j, t := range stackRects(r, len(c.Windows), g) {
+		for j, t := range rowRects(r, c, g) {
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
 		}
 		if w.Overflow != OverflowFixed {

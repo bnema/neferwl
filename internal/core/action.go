@@ -384,6 +384,8 @@ func (w *Workspace) Apply(a Action) Effect {
 	if axis, pct, ok := ResizeArg(a); ok {
 		if axis == ResizeWidth {
 			w.ResizeColumn(pct)
+		} else {
+			w.ResizeRow(pct)
 		}
 		return Effect{}
 	}
