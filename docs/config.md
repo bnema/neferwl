@@ -119,6 +119,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. An app that asks for fullscreen in its first second (e.g. a Wine launcher that remembered a monitor-sized window) opens in a column instead; later requests are honoured. Fullscreen is exclusive, whether from this bind or the app: nothing is drawn above it but a surface taking the keyboard (a locker). Bars, notifications and other windows, dialogs included, wait hidden until it leaves; a window opening meanwhile waits hidden too. Fullscreen stays in place: the window keeps its column. Focusing another window of the workspace (`focus-column-left/right`, `focus-window-up/down` or an activation) leaves fullscreen. In fixed overflow, an app's own request applies only while it has the focus. A taskbar request brings the window on screen with the focus first |
 | `toggle-window-stash` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
+| `toggle-floating` | Make the focused tile a [free floating window](#free-floating-windows) at its current size, centred; on a floating window, send it back to its former place in the columns (a native dialog becomes a new column). Does nothing on a stashed or fullscreen window |
 | `toggle-stash-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Does nothing under a fullscreen window |
 | `toggle-overview` | Open the [overview](#overview), or close it on the selected window |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
@@ -147,6 +148,12 @@ Each workspace has a stash: a horizontal strip of windows set aside with `toggle
 While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
 Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile; `focus-window-up` at the top of a column raises it again. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive.
+
+### Free floating windows
+
+`toggle-floating` lifts the focused tile out of its column into a free floating window. NeferWL sets its size, and it stays where you put it, kept inside the usable area. Its place is relative to the screen, so it keeps it on another workspace or monitor of any size.
+
+On a free floating window, `move-column-left/right` and `move-window-up/down` move it by 50 logical pixels, and `set-column-width`/`set-window-height` resize it by a share of the usable width or height. `toggle-window-stash` stashes it and brings it back floating at the same place. `toggle-floating` returns it to its column.
 
 ### Overview
 
@@ -199,6 +206,7 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+shift+f` | `toggle-fullscreen` |
 | `cmd+s` | `toggle-stash-visible` |
 | `cmd+shift+s` | `toggle-window-stash` |
+| `cmd+shift+space` | `toggle-floating` |
 | `cmd+o` | `toggle-overview` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |

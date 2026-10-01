@@ -166,6 +166,10 @@ func (c *Core) applyAction(a Action) Effect {
 	// A bind acts on the window on screen: under a covering fullscreen
 	// window, that is the one Focused reports.
 	c.cur().mon.Current().focusCover()
+	// Before the edge moves below: a free float moves on its screen.
+	if c.cur().mon.Current().freeAction(a) {
+		return Effect{}
+	}
 	if name, ok := NamedArg(a); ok && c.bringNamed(name) {
 		return Effect{}
 	}
@@ -381,6 +385,9 @@ func (w *Workspace) Apply(a Action) Effect {
 	if argv, ok := SpawnArgv(a); ok {
 		return Effect{Spawn: true, Argv: argv}
 	}
+	if w.freeAction(a) {
+		return Effect{}
+	}
 	if axis, pct, ok := ResizeArg(a); ok {
 		if axis == ResizeWidth {
 			w.ResizeColumn(pct)
@@ -418,6 +425,8 @@ func (w *Workspace) Apply(a Action) Effect {
 		w.ToggleWindowStash()
 	case ActionToggleStashVisible:
 		w.ToggleStashVisible()
+	case ActionToggleFloating:
+		w.ToggleFloating()
 	case ActionCloseWindow:
 		id, _ := w.Focused()
 		return Effect{Close: id}

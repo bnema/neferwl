@@ -345,6 +345,10 @@ func (m *Monitor) MoveToWorkspace(i int, column bool) {
 	}
 	if f := cur.floatIndex(id); f >= 0 {
 		fl := cur.Floats[f]
+		if fl.free && fl.back != nil {
+			// Its column place is on this workspace.
+			fl = fl.rehome()
+		}
 		cur.RemoveWindow(id)
 		to.AddFloating(id, fl.W, fl.H)
 		to.Floats[len(to.Floats)-1] = fl
@@ -538,6 +542,9 @@ func (m *Monitor) SetNamed(specs []NamedWorkspace) {
 			}
 		}
 		for _, f := range w.Floats {
+			if f.free && f.back != nil {
+				f = f.rehome()
+			}
 			m.Workspaces[m.Active].AddFloating(f.ID, f.W, f.H)
 			m.Workspaces[m.Active].Floats[len(m.Workspaces[m.Active].Floats)-1] = f
 		}
