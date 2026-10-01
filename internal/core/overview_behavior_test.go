@@ -128,3 +128,83 @@ func TestOverviewStackMRUAndSize(t *testing.T) {
 	}
 	m.CancelOverview()
 }
+
+// browsedMonitor has window 1 on workspace 1 and columns 2..5 on workspace
+// 2, focused on 5 with one column per screen, and shows workspace 1.
+func browsedMonitor(ov Overflow) (*Monitor, *Workspace) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetMaxColumns(1)
+	m.AddWindow(1)
+	m.Focus(1)
+	for id := WindowID(2); id <= 5; id++ {
+		m.AddWindow(id)
+	}
+	ws2 := m.Workspaces[1]
+	ws2.Overflow = ov
+	ws2.FocusID(5)
+	ws2.scroll()
+	m.Focus(0)
+	return m, ws2
+}
+
+func TestOverviewBrowsedRowsRestored(t *testing.T) {
+	for _, ov := range []Overflow{OverflowScroll, OverflowFixed} {
+		m, ws2 := browsedMonitor(ov)
+		view := ws2.ViewX
+		m.ToggleOverview()
+		m.OverviewMove(0, 1)
+		m.OverviewMove(-1, 0)
+		m.OverviewMove(-1, 0)
+		m.CancelOverview()
+		if id, _ := ws2.Focused(); id != 5 || ws2.ViewX != view || m.Current() != m.Workspaces[0] {
+			t.Fatalf("%v: focus %d view %v (want %v) current %v", ov, id, ws2.ViewX, view, m.Active)
+		}
+	}
+}
+
+func TestOverviewReturnRestoresBrowsedRows(t *testing.T) {
+	m, ws2 := browsedMonitor(OverflowScroll)
+	m.Focus(2)
+	m.AddWindow(6)
+	m.Focus(0)
+	m.ToggleOverview()
+	m.OverviewMove(0, 1)
+	m.OverviewMove(-1, 0)
+	m.OverviewMove(-1, 0)
+	m.OverviewMove(0, 1)
+	if m.Current() != m.Workspaces[2] {
+		t.Fatal("not on workspace 3")
+	}
+	m.ToggleOverview()
+	if id, _ := ws2.Focused(); id != 5 || m.Current() != m.Workspaces[2] {
+		t.Fatalf("focus %d current %v", id, m.Active)
+	}
+}
+
+func TestOverviewBrowsedRowKeepsFixedMaximize(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetMaxColumns(3)
+	m.AddWindow(1)
+	m.Focus(1)
+	for id := WindowID(2); id <= 4; id++ {
+		m.AddWindow(id)
+	}
+	ws2 := m.Workspaces[1]
+	ws2.Overflow = OverflowFixed
+	ws2.FocusID(3)
+	ws2.ToggleFullWidth()
+	m.Focus(0)
+	m.ToggleOverview()
+	m.OverviewMove(0, 1)
+	m.OverviewMove(-1, 0)
+	m.CancelOverview()
+	i := ws2.columnOf(3)
+	if i < 0 || !ws2.Columns[i].FullWidth {
+		t.Fatalf("column of 3 lost full width: %+v", ws2.Columns)
+	}
+	if id, _ := ws2.Focused(); id != 3 {
+		t.Fatalf("focus %d", id)
+	}
+}
