@@ -228,16 +228,13 @@ func TestFullscreenFloatNewWindowNoColumns(t *testing.T) {
 }
 
 // Under a covering fullscreen float, or any fixed-overflow fullscreen,
-// focus moves inside the workspace are off and binds act on the window on
-// screen, never on a column it hides.
+// binds act on the window on screen, never on a column it hides.
 func TestFullscreenPinsFocus(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.AddFloating(3, 20, 10)
 	w.SetFullscreen(3, true)
-	w.FocusColumn(-1)
-	w.FocusWindow(1)
 	w.focusCover()
 	w.Apply(ActionMoveColumnLeft)
 	w.Apply(ActionCycleColumnWidth)
@@ -247,14 +244,48 @@ func TestFullscreenPinsFocus(t *testing.T) {
 	if e := w.Apply(ActionCloseWindow); e.Close != 3 {
 		t.Fatalf("close %d, want the fullscreen window", e.Close)
 	}
-	// A fixed-overflow fullscreen tile pins the focus too.
+}
+
+// A focus move from a covering fullscreen window leaves fullscreen for the
+// window on that side; with none there, fullscreen stays.
+func TestFocusMoveLeavesFullscreen(t *testing.T) {
+	w := workspace()
+	w.AddWindow(1)
+	w.AddWindow(2)
+	w.AddFloating(3, 20, 10)
+	w.SetFullscreen(3, true)
+	w.FocusColumn(-1)
+	if id, _ := w.Focused(); id == 3 || w.fullscreen != 0 {
+		t.Fatalf("float: focused %d fullscreen %d", id, w.fullscreen)
+	}
 	f := workspace()
 	f.Overflow = OverflowFixed
 	f.AddWindow(1)
 	f.AddWindow(2)
 	f.SetFullscreen(2, true)
-	if f.FocusColumn(-1); f.Focus != 1 {
-		t.Fatalf("fixed: focus moved to column %d", f.Focus)
+	if f.FocusColumn(1); f.fullscreen != 2 || f.Focus != 1 {
+		t.Fatalf("fixed edge: focus %d fullscreen %d", f.Focus, f.fullscreen)
+	}
+	if f.FocusColumn(-1); f.fullscreen != 0 || f.Focus != 0 {
+		t.Fatalf("fixed: focus %d fullscreen %d", f.Focus, f.fullscreen)
+	}
+	// Side by side: nothing above, so up keeps fullscreen and reports
+	// the edge (the monitor goes to the workspace above).
+	f.Focus = 1
+	f.SetFullscreen(2, true)
+	if f.FocusWindow(-1) || f.fullscreen != 2 || f.Focus != 1 {
+		t.Fatalf("fixed up: focus %d fullscreen %d", f.Focus, f.fullscreen)
+	}
+	// Stacked: up reaches the window above in the column.
+	f.SetFullscreen(2, false)
+	f.stackWindow(2, 1)
+	f.FocusID(2)
+	f.SetFullscreen(2, true)
+	if !f.FocusWindow(-1) || f.fullscreen != 0 {
+		t.Fatalf("stacked up: fullscreen %d", f.fullscreen)
+	}
+	if id, _ := f.Focused(); id != 1 {
+		t.Fatalf("stacked up: focused %d", id)
 	}
 	// Scroll overflow: moving off a fullscreen column still works; it no
 	// longer covers.

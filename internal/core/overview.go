@@ -461,7 +461,7 @@ func (m *Monitor) overviewLayout() []Placement {
 	cur := m.Current()
 	rows, _ := m.overviewRows()
 	var result []Placement
-	for _, w := range m.all() {
+	for w := range m.all() {
 		ry, shown := rows[w]
 		if shown && w.pinned() {
 			// Only the covering window shows, as on screen.

@@ -91,18 +91,11 @@ func TestDemotedFloatFullscreenRoundTrip(t *testing.T) {
 		w.FocusID(1)
 		wantOrder(t, w, 2, 1)
 		m.SetFullscreen(2, true)
-		if overflow == OverflowFixed {
-			fs := m.Workspaces[1]
-			if fs.origin != w || fs.back.float == nil || !fs.back.float.below {
-				t.Fatalf("fullscreen origin %+v", fs.back)
-			}
-			m.SetFullscreen(2, false)
-		} else {
-			if p := placement(w, 2); !p.Fullscreen {
-				t.Fatalf("fullscreen %+v", p)
-			}
-			m.SetFullscreen(2, false)
+		// Fixed overflow refuses an unfocused window's fullscreen (ADR 011).
+		if p := placement(w, 2); p.Fullscreen != (overflow == OverflowScroll) {
+			t.Fatalf("%v: fullscreen %+v", overflow, p)
 		}
+		m.SetFullscreen(2, false)
 		wantOrder(t, w, 2, 1)
 		if id, _ := w.Focused(); id != 1 {
 			t.Fatalf("focus %d", id)
@@ -216,8 +209,7 @@ func TestFocusWindowWithoutDemotedFloatChangesWorkspace(t *testing.T) {
 }
 
 // Up from a shown stash stays in the stash, even with a demoted covering
-// float; from a pinned fullscreen window it goes to the workspace above,
-// as without covering floats.
+// float; from a fullscreen float it leaves fullscreen for the tile below.
 func TestFocusWindowUpStashAndPinned(t *testing.T) {
 	m := monitor()
 	m.SetBorder(2)
@@ -239,12 +231,12 @@ func TestFocusWindowUpStashAndPinned(t *testing.T) {
 	m.SetOverflow(OverflowFixed)
 	m.AddWindow(1)
 	m.AddFloating(2, 50, 40)
-	m.SetFullscreen(2, true) // own workspace below
-	if m.Active != 1 || !m.Current().pinned() {
+	m.SetFullscreen(2, true)
+	if m.Active != 0 || !m.Current().pinned() {
 		t.Fatalf("setup: active %d", m.Active)
 	}
 	m.Apply(ActionFocusWindowUp)
-	if id, _ := m.Current().Focused(); id != 1 || m.Active != 0 {
+	if id, _ := m.Current().Focused(); id != 1 || m.Active != 0 || m.Current().fullscreen != 0 {
 		t.Fatalf("pinned up focused %d on %d", id, m.Active)
 	}
 }
@@ -263,8 +255,8 @@ func TestCoveringFloatAloneKeepsFocus(t *testing.T) {
 	wantOrder(t, w, 3)
 }
 
-// A tile returning from its own fullscreen workspace with the focus comes
-// back in front of a covering float mapped in its origin meanwhile.
+// A tile leaving fullscreen with the focus comes back in front of a
+// covering float mapped meanwhile.
 func TestFullscreenReturnRaisesColumns(t *testing.T) {
 	for _, stacked := range []bool{false, true} {
 		m := monitor()
@@ -277,7 +269,7 @@ func TestFullscreenReturnRaisesColumns(t *testing.T) {
 		}
 		w := m.Current()
 		w.FocusID(2)
-		m.ToggleFullscreen() // 2 to its own workspace
+		m.ToggleFullscreen()
 		w.AddFloating(3, 100, 80)
 		m.ToggleFullscreen() // back, focused
 		if id, _ := w.Focused(); id != 2 {

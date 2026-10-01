@@ -524,7 +524,7 @@ func (c *Core) publish(ctx context.Context) error {
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
 			real = make(map[WindowID]Placement)
-			for _, w := range sc.mon.all() {
+			for w := range sc.mon.all() {
 				for _, p := range w.Layout() {
 					real[p.ID] = p
 				}
@@ -915,7 +915,7 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
-			if c.security.Protected && blockedProtectedEvent(ev) {
+			if c.blockProtected(ev) {
 				continue
 			}
 			switch v := ev.(type) {
@@ -1001,8 +1001,15 @@ func (c *Core) Run(ctx context.Context) error {
 					return nil
 				}
 			case ports.WindowFullscreenRequest:
+				c.configures.answer[v.ID] = true
 				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
-					continue
+					break
+				}
+				// A taskbar request is a user action on that window, as an
+				// activation: it comes on screen with the focus, leaving
+				// another window's fullscreen.
+				if v.External && v.Fullscreen && c.activate(ctx, v.ID) != nil {
+					return nil
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
@@ -1014,7 +1021,7 @@ func (c *Core) Run(ctx context.Context) error {
 						if sc.name() == "" {
 							continue
 						}
-						for _, w := range sc.mon.all() {
+						for w := range sc.mon.all() {
 							if w.ID == id {
 								c.focusScreen = i
 								sc.mon.show(w)
@@ -1182,11 +1189,6 @@ func (c *Core) activate(ctx context.Context, id WindowID) error {
 		return nil
 	}
 	before := c.cur().mon.Current()
-	if full := w.cover(); full != 0 && full != id && w.origin != nil {
-		// The window hides under a fullscreen workspace: it goes home first.
-		s.mon.leaveFullscreen(w, false)
-		_, w = c.screenOf(id)
-	}
 	if w != s.mon.Current() {
 		s.mon.show(w)
 	}

@@ -21,7 +21,9 @@ func (c *Core) publishWorkspaces() {
 		}
 		m := sc.mon
 		out := ports.WorkspaceOutput{Name: sc.name(), Workspaces: []ports.WorkspaceInfo{}}
-		for i, w := range m.all() {
+		i := -1
+		for w := range m.all() {
+			i++
 			name := w.Name
 			if name == "" {
 				name = strconv.Itoa(i + 1)

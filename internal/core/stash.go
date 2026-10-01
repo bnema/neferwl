@@ -79,6 +79,11 @@ func (w *Workspace) unstash(i int) {
 	w.restore(f.ID, f.back)
 }
 
+// holdsStack reports whether c holds a window of the stack left behind.
+func (p origPlace) holdsStack(c Column) bool {
+	return slices.ContainsFunc(c.Windows, func(v WindowID) bool { return slices.Contains(p.stacked, v) })
+}
+
 // restore tiles id back where back says: its row in the column that still
 // holds its former neighbors, else a column of its own at its former
 // index. It takes the focus.
@@ -105,7 +110,7 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 		return
 	}
 	// Its column is gone: it comes back expanded, unless another column
-	// was expanded meanwhile (as leaveFullscreen).
+	// was expanded meanwhile.
 	expanded := back.expanded && !slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Expanded })
 	w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: expanded})
 	if back.fullWidth {

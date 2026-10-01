@@ -434,7 +434,7 @@ func (c *Core) captureSceneFor(sc *screen, v *capView) *ports.SceneCapture {
 // workspaceByID finds a workspace, numbered or hidden, on any screen.
 func (c *Core) workspaceByID(id uint64) (*screen, *Workspace) {
 	for _, sc := range c.screens {
-		for _, w := range sc.mon.all() {
+		for w := range sc.mon.all() {
 			if w.ID == id {
 				return sc, w
 			}

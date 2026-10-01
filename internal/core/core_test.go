@@ -837,19 +837,22 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 		}
 	}
 	now.Add(1)
+	// Only the focused window may cover the screen (ADR 011).
+	client <- ports.WindowUnmapped{ID: 3}
+	scene(t, scenes)
 	client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true}
 	s = scene(t, scenes)
-	// Honoured: under fixed overflow it gets its own workspace, and the view
-	// stays here since it has no focus (ADR 011).
-	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Hidden }) {
+	// Honoured, in place.
+	if !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 && w.Fullscreen && !w.Hidden }) {
 		t.Fatalf("later fullscreen ignored: %+v", s.Windows)
 	}
 }
 
-// Under fixed overflow, a window opening over a fullscreen game tiles on
-// its home workspace: the game keeps the screen and the keyboard, and an
-// activation (a user action in the new client) shows the window there.
-func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
+// Under fixed overflow, a window opening over a fullscreen game waits
+// hidden: the game keeps the screen and the keyboard. An activation (a
+// user action in the new client) leaves fullscreen and shows both tiles;
+// a focus move back to the game and the bind make it fullscreen again.
+func TestFixedFullscreenArrivalWaits(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
 	r.mapWindow(t, 1)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)
@@ -862,7 +865,7 @@ func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
 	}
 	r.client <- ports.WindowActivate{ID: 2}
 	set = receive(t, r.scenes)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
 		t.Fatal("after activate:", got, focused)
 	}
 	for {
@@ -870,10 +873,10 @@ func TestFixedFullscreenArrivalTilesAtHome(t *testing.T) {
 			break
 		}
 	}
-	// The game still waits fullscreen one workspace down.
-	set = r.key(t, "Next", ports.ModAlt)
+	r.key(t, "Left", ports.ModAlt)
+	set = r.key(t, "f", ports.ModAlt|ports.ModShift)
 	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
-		t.Fatal("game workspace:", got, focused)
+		t.Fatal("game again:", got, focused)
 	}
 }
 
@@ -902,6 +905,113 @@ func TestExternalFullscreenAtMapApplies(t *testing.T) {
 	if len(s.Windows) != 1 || !s.Windows[0].Fullscreen {
 		t.Fatalf("taskbar fullscreen ignored: %+v", s.Windows)
 	}
+}
+
+// Under fixed overflow, a taskbar's fullscreen on an unfocused window is
+// the user's choice: the window takes the focus and covers the screen.
+func TestExternalFullscreenFocusesFixed(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	set := receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("taskbar fullscreen:", got, focused)
+	}
+	// Over another covering window too: it leaves fullscreen.
+	r.client <- ports.WindowFullscreenRequest{ID: 2, Fullscreen: true, External: true}
+	set = receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("taskbar fullscreen over another:", got, focused)
+	}
+	// Leaving from the taskbar keeps the focus.
+	r.client <- ports.WindowFullscreenRequest{ID: 2, External: true}
+	set = receive(t, r.scenes)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1, 2}) || focused != 2 {
+		t.Fatal("taskbar leave:", got, focused)
+	}
+}
+
+// A taskbar fullscreen on a window of a workspace off screen, on another
+// output, brings it on screen with the focus, as an activation.
+func TestExternalFullscreenOffScreen(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2, not followed
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl) // focus DP-2
+	r.mapWindow(t, 2)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	set := receive(t, r.scenes)
+	found := false
+	for _, s := range set {
+		for _, w := range s.Windows {
+			if w.ID != 1 {
+				continue
+			}
+			found = true
+			if s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused {
+				t.Fatalf("window 1 on %s: %+v", s.Output, w)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("window 1 in no scene")
+	}
+}
+
+// In the overview, a taskbar fullscreen on a window of another workspace
+// selects its row: closing the overview lands on it, fullscreen.
+func TestExternalFullscreenInOverview(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2
+	r.mapWindow(t, 2)
+	r.key(t, "o", ports.ModAlt)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	receive(t, r.scenes)
+	set := r.key(t, "o", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("after the overview:", got, focused)
+	}
+}
+
+// focus-window-down from a fullscreen tile at the bottom of its column
+// goes to the next workspace and fullscreen stays.
+func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	set := r.key(t, "Down", ports.ModAlt)
+	if got, _ := windowsOf(set, "DP-1"); len(got) != 0 {
+		t.Fatal("still on the first workspace:", got)
+	}
+	set = r.key(t, "Up", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+		t.Fatal("fullscreen lost:", got, focused)
+	}
+}
+
+// A refused fullscreen request still gets a configure, unchanged: clients
+// wait for it (xdg-shell).
+func TestRefusedFullscreenConfigured(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	receive(t, r.scenes)
+	for len(r.commands) > 0 {
+		if v, ok := (<-r.commands).(ports.ConfigureWindow); ok && v.ID == 1 {
+			if v.Fullscreen {
+				t.Fatalf("refused request applied: %+v", v)
+			}
+			return
+		}
+	}
+	t.Fatal("no configure answered the request")
 }
 
 // An activated window on another workspace comes on screen with focus.

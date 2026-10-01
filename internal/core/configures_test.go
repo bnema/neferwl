@@ -49,6 +49,22 @@ func TestConfiguresNext(t *testing.T) {
 	}
 }
 
+// A window awaiting an answer gets its configure once, even unchanged.
+func TestConfiguresAnswer(t *testing.T) {
+	s := newConfigures()
+	p, target := Placement{ID: 1, Rect: Rect{W: 10, H: 10}}, configureTarget{output: "A"}
+	v, _ := s.next(p, target)
+	s.mark(v)
+	s.answer[1] = true
+	if _, send := s.next(p, target); !send {
+		t.Fatal("answer not sent")
+	}
+	s.mark(v)
+	if _, send := s.next(p, target); send {
+		t.Fatal("answered twice")
+	}
+}
+
 func TestConfiguresPruneForgetsUnseen(t *testing.T) {
 	s := newConfigures()
 	for _, id := range []WindowID{1, 2} {
@@ -66,5 +82,11 @@ func TestConfiguresPruneForgetsUnseen(t *testing.T) {
 	}
 	if _, send := s.next(Placement{ID: 2}, configureTarget{}); !send {
 		t.Fatal("returning window not configured")
+	}
+	// A request from a window out of the layout is forgotten too.
+	s.answer[9] = true
+	s.prune()
+	if s.answer[9] {
+		t.Fatal("answer for a window out of the layout kept")
 	}
 }

@@ -98,7 +98,7 @@ func (w *Workspace) expelTo(id WindowID, dir int) {
 	if dir < 0 {
 		at = len(w.Columns)
 	}
-	if !w.full() || w.origin != nil {
+	if !w.full() {
 		w.receive(Column{Windows: []WindowID{id}}, at)
 		return
 	}
