@@ -69,6 +69,18 @@ func (c *Core) securityCheckpoint(ctx context.Context) error {
 	return c.publish(ctx)
 }
 
+// blockProtected reports whether a protected session drops ev. A dropped
+// fullscreen request is still answered, at the first publish after unlock.
+func (c *Core) blockProtected(ev ports.ClientEvent) bool {
+	if !c.security.Protected || !blockedProtectedEvent(ev) {
+		return false
+	}
+	if v, ok := ev.(ports.WindowFullscreenRequest); ok {
+		c.configures.answer[v.ID] = true
+	}
+	return true
+}
+
 func blockedProtectedEvent(ev ports.ClientEvent) bool {
 	switch ev.(type) {
 	case ports.WindowActivate, ports.WorkspaceActivate, ports.PointerWarp, ports.PointerConstrained,

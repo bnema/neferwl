@@ -942,12 +942,36 @@ func TestExternalFullscreenOffScreen(t *testing.T) {
 	r.mapWindow(t, 2)
 	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 	set := receive(t, r.scenes)
+	found := false
 	for _, s := range set {
 		for _, w := range s.Windows {
-			if w.ID == 1 && (s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused) {
+			if w.ID != 1 {
+				continue
+			}
+			found = true
+			if s.Output != "DP-1" || w.Hidden || !w.Fullscreen || !w.Focused {
 				t.Fatalf("window 1 on %s: %+v", s.Output, w)
 			}
 		}
+	}
+	if !found {
+		t.Fatal("window 1 in no scene")
+	}
+}
+
+// In the overview, a taskbar fullscreen on a window of another workspace
+// selects its row: closing the overview lands on it, fullscreen.
+func TestExternalFullscreenInOverview(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r.mapWindow(t, 1)
+	r.key(t, "Next", ports.ModAlt|ports.ModShift) // 1 to workspace 2
+	r.mapWindow(t, 2)
+	r.key(t, "o", ports.ModAlt)
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
+	receive(t, r.scenes)
+	set := r.key(t, "o", ports.ModAlt)
+	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{1}) || focused != 1 {
+		t.Fatal("after the overview:", got, focused)
 	}
 }
 

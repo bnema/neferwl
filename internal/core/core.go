@@ -915,11 +915,7 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
-			if c.security.Protected && blockedProtectedEvent(ev) {
-				// Answered at the first publish after unlock.
-				if v, ok := ev.(ports.WindowFullscreenRequest); ok {
-					c.configures.answer[v.ID] = true
-				}
+			if c.blockProtected(ev) {
 				continue
 			}
 			switch v := ev.(type) {

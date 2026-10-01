@@ -815,7 +815,8 @@ func (w *Workspace) Activate(id WindowID) {
 		// A hidden stashed window must be seen: show the stash with it,
 		// selected. Another window's fullscreen leaves first, so its own
 		// pending fullscreen comes back.
-		w.fullscreen, w.stashAt = 0, i
+		w.endFullscreen()
+		w.stashAt = i
 		w.showStash()
 	}
 	if w.fullscreen != 0 && w.fullscreen != id {
