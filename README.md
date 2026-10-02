@@ -18,7 +18,7 @@
 
 I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no built-in bar or wallpaper. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no bar, no wallpaper. If you want them, bring your own: any layer-shell client works. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
 ## Features
 
