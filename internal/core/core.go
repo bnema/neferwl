@@ -70,6 +70,7 @@ type Core struct {
 	security        ports.SecurityState
 	lockSurfaces    []ports.LockSurfacePlacement
 	lockFocus       WindowID
+	lockClicked     bool // lockFocus was chosen by a click: it keeps focus
 	inputKeys       map[string]bool
 	inputActive     bool
 	startup         [][]string

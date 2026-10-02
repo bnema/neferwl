@@ -72,6 +72,38 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	}
 }
 
+// Lock clients map their surfaces one by one: the focused output's surface
+// takes keyboard focus when it maps after another one, unless the user
+// clicked a surface.
+func TestLockFocusMovesToFocusedOutputSurfaceUntilClicked(t *testing.T) {
+	c, _, _ := hiddenCaptureCommands(t)
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+	c.focusScreen = c.screenIndex("B")
+	state := ports.SecurityState{Generation: 1, Protected: true}
+	gate := portsmocks.NewMockSessionSecurity(t)
+	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+	c.ch.Security = gate
+	c.syncSecurity()
+	focusB := c.focusScreen
+
+	a := ports.LockSurfacePlacement{ID: 10, Output: "A", Width: 300, Height: 200}
+	b := ports.LockSurfacePlacement{ID: 11, Output: "B", Width: 400, Height: 300}
+	c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []ports.LockSurfacePlacement{a}})
+	if got := c.lockKeyboardFocus(); got != 10 {
+		t.Fatalf("only mapped surface not focused: %d", got)
+	}
+	c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []ports.LockSurfacePlacement{a, b}})
+	if got := c.lockKeyboardFocus(); got != 11 {
+		t.Fatalf("focused output surface not focused: %d", got)
+	}
+
+	c.lockFocus, c.lockClicked = 10, true // as a click on A does
+	c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: []ports.LockSurfacePlacement{a, b}})
+	if got := c.lockKeyboardFocus(); got != 10 || c.focusScreen != focusB {
+		t.Fatalf("clicked surface lost focus: %d", got)
+	}
+}
+
 func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 	c, _, commands := hiddenCaptureCommands(t)
 	gate := portsmocks.NewMockSessionSecurity(t)
