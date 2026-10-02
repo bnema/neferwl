@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"context"
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
@@ -12,7 +13,8 @@ import (
 
 // Idle and output power. ext_idle_notifier_v1: each notification has its
 // own timeout, restarted by user activity (ports.UserActivity from core);
-// idle inhibitors hold every notification but input-idle ones.
+// idle inhibitors, surfaces or D-Bus clients (Channels.IdleInhibited),
+// hold every notification but input-idle ones.
 // zwlr_output_power_v1: a client such as wlopm turns a display off or on;
 // core decides and the scene carries it.
 
@@ -80,7 +82,35 @@ func (s *Server) addIdle(r *extidlenotify.ExtIdleNotifierV1, id, timeout uint32,
 
 // idleHeld reports whether an idle inhibitor keeps n from firing.
 func (s *Server) idleHeld(n *idleNotification) bool {
-	return !n.input && len(s.idleWindows) > 0
+	return !n.input && s.inhibited()
+}
+
+// inhibited reports whether any idle inhibitor is in effect.
+func (s *Server) inhibited() bool {
+	return len(s.idleWindows) > 0 || s.busInhibited
+}
+
+// forwardIdleInhibited applies D-Bus idle inhibition on the display goroutine.
+func (s *Server) forwardIdleInhibited(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case on, ok := <-s.channels.IdleInhibited:
+			if !ok {
+				return
+			}
+			if !s.display.Do(func() {
+				wasHeld := s.inhibited()
+				s.busInhibited = on
+				s.syncIdle(wasHeld)
+			}) {
+				return
+			}
+		}
+	}
 }
 
 // armIdle restarts n's timer, unless an inhibitor holds it. The timer
@@ -127,7 +157,7 @@ func (s *Server) userActivity() {
 // syncIdle follows idle inhibitors: while one exists, inhibitable timers
 // stop; once the last one goes, they start again from zero.
 func (s *Server) syncIdle(wasHeld bool) {
-	if held := len(s.idleWindows) > 0; held != wasHeld {
+	if held := s.inhibited(); held != wasHeld {
 		for _, n := range s.idleNotes {
 			if !n.input {
 				s.armIdle(n)

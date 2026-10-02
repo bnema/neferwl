@@ -9,6 +9,7 @@ require (
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.5.0
 	github.com/bnema/zerowrap v1.4.1
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/rs/zerolog v1.35.1
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sys v0.48.0

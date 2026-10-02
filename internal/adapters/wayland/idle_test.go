@@ -121,6 +121,44 @@ func TestIdleNotification(t *testing.T) {
 	}
 }
 
+// A D-Bus idle inhibition (IdleInhibited) holds notifications like an
+// inhibitor surface: input-idle ones still fire, and held ones count from
+// zero once it ends.
+func TestBusIdleInhibition(t *testing.T) {
+	dir := t.TempDir()
+	events := make(chan ports.ClientEvent, 16)
+	inhibited := make(chan bool)
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, IdleInhibited: inhibited}, logging.For(context.Background(), "wayland"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-done })
+	c := protocolClient(t, s, dir)
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	notifier := bindVersion(t, c, "ext_idle_notifier_v1", 2)
+	registerProtocol(t, c, notifier)
+	// The forwarder takes the second send only once the first is applied.
+	inhibited <- true
+	inhibited <- true
+	id, n := newEventProxy(c)
+	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetIdleNotification, id, uint32(50), seat)
+	inputID, input := newEventProxy(c)
+	requestProtocol(t, c, notifier, extidlenotify.ExtIdleNotifierV1RequestGetInputIdleNotification, inputID, uint32(50), seat)
+	idled := uint32(extidlenotify.ExtIdleNotificationV1EventIdled)
+	if e := input.next(t, c, 2*time.Second); e[0] != idled {
+		t.Fatalf("input-idle event %v, want idled", e)
+	}
+	n.none(t, c, 200*time.Millisecond)
+	inhibited <- false
+	if e := n.next(t, c, 2*time.Second); e[0] != idled {
+		t.Fatalf("event %v, want idled after the inhibition", e)
+	}
+}
+
 // An output power object reports the mode, turns set_mode into a core
 // event, hears core's decision, and fails when its output goes.
 func TestOutputPower(t *testing.T) {
