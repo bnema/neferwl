@@ -189,10 +189,7 @@ func (w *sceneWalk) windows() {
 			if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
-			// The contrast pulse is an SDR effect: HDR composes in linear light.
-			if win.Pulse > 0 && w.r.hdrNits <= 0 {
-				w.pulse = float32(min(win.Pulse, 1))
-			}
+			w.pulse = float32(max(0, min(win.Pulse, 1)))
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
 			w.zoom, w.pulse = 1, 0
 		}
