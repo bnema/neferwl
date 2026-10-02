@@ -55,17 +55,14 @@ The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `term
 
 ## The performance path
 
-These protocols and kernel features cut copies, waits and latency between the app and the screen:
-
-- **Zero copy.** GPU clients (`zwp_linux_dmabuf_v1` v4) are sampled in place. Vulkan composes straight into exported scanout images, and the frame fence goes to KMS as `IN_FENCE_FD`: no CPU copy, no CPU wait before a flip.
-- **Direct scanout.** A fullscreen window's buffer goes straight to the display plane; dmabuf feedback sends the game a scanout-ready format first. A lone opaque window can use an overlay plane.
-- **Tearing and VRR.** `wp_tearing_control_v1` flips without waiting for vblank when the game requests it; variable refresh runs while a fullscreen window covers the output, scanned out or composed.
-- **Explicit sync.** `wp_linux_drm_syncobj_v1` passes GPU fences from the app to KMS. NVIDIA drivers need it.
-- **Frame pacing.** Apps get real flip times through `wp_presentation`, and can queue frames with `wp_fifo_v1` and `wp_commit_timing_v1`.
-- **Only what changed.** NeferWL redraws only damaged regions, skips surfaces hidden behind opaque ones, and leaves idle outputs alone. Frame, cursor, overlay and VRR go to the kernel in one atomic commit.
-- **Input.** Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. Input at 1 kHz and more never waits on rendering, and the cursor has its own hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling.
-- **X11 games.** Steam and X11-only games run through xwayland-satellite, started on the first X11 connection. Wine with its Wayland driver does not need it.
-- **VR.** Non-desktop headset connectors are leased to SteamVR and Monado via `wp_drm_lease_v1`.
+- `zwp_linux_dmabuf_v1` v4: client buffers are sampled in place. Vulkan composes into exported scanout images and the frame fence goes to KMS as `IN_FENCE_FD`. No CPU copy, no CPU wait.
+- Direct scanout of a fullscreen window's buffer; dmabuf feedback gives it a scanout-ready format first. A lone opaque window can use an overlay plane.
+- `wp_tearing_control_v1` and VRR while a fullscreen window covers the output.
+- `wp_linux_drm_syncobj_v1`: client fences go to KMS. NVIDIA drivers need it.
+- `wp_presentation`, `wp_fifo_v1`, `wp_commit_timing_v1` for frame pacing.
+- Damage tracking, occlusion of surfaces behind opaque ones, no work on idle outputs. Frame, cursor, overlay and VRR in one atomic commit.
+- Input is read on its own thread and never waits on rendering; the cursor has a hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling. Relative pointer, pointer constraints and keyboard shortcuts inhibit for games.
+- `wp_drm_lease_v1` leases headset connectors to SteamVR and Monado.
 
 ## Hardware support
 
