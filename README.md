@@ -7,7 +7,7 @@
   <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://badgen.net/github/stars/bnema/neferwl?icon=github" alt="GitHub stars"></a>
 </p>
 
-<p align="center">A Wayland compositor for people who live in a terminal and die in games.</p>
+<p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
 > [!WARNING]
 > **Early alpha.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
@@ -16,9 +16,11 @@
 
 ## Why NeferWL
 
-NeferWL exists because I wanted a compositor that puts performance first and picks up new Wayland protocols and kernel features as soon as they land. Games get the whole GPU, and the compositor stays out of the way.
+I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-The design is deliberately small, and it will stay small: no animations, no themes, no built-in bar or wallpaper. Anything that adds latency or work per frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no built-in bar or wallpaper. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+
+The config fits in your head: one `key = value` per line, every key has a default, and an empty file is a valid config. See [Configuration](#configuration).
 
 ## Features
 
@@ -28,7 +30,7 @@ The design is deliberately small, and it will stay small: no animations, no them
 - **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
 - **Multi-monitor.** Each output has its own workspaces. When an output is unplugged its workspaces move to another one, and return when it is plugged back. Fractional scale per output.
 - **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, nefercap, cliphist, swayidle, wlr-randr and input methods such as fcitx5 work through their standard protocols. See [Desktop integration](docs/desktop.md).
-- **Config.** One `key = value` file, reloaded on save without closing windows. A JSON state file describes outputs, workspaces and windows for scripts.
+- **Simple config.** One flat `key = value` file, reloaded on save without closing windows. A bad line only warns and keeps its default, and `neferwl validate-config` checks a file before you use it. A JSON state file describes outputs, workspaces and windows for scripts.
 
 Config example:
 
@@ -115,16 +117,23 @@ The file has one `key = value` per line, and `#` starts a comment. A missing fil
 - [Headless mode](docs/headless.md): run without a screen, take screenshots, play input scripts and test input methods.
 - [Performance](docs/performance.md): how to profile, the allocation guards, and reference numbers.
 
-## Why not Rust?
+## But why Go?
 
-Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). NeferWL uses Go on purpose:
+Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). The usual objection to Go is the garbage collector. It is a fair one, so here is how NeferWL deals with it.
 
-- **Readable.** Go is small and explicit. Goroutines and channels fit a compositor where input, each output and the clients own their own state.
-- **Tooling.** A full build takes seconds, and tests, the race detector, profiling and formatting come with the language.
-- **No cgo.** NeferWL builds with `CGO_ENABLED=0`: libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego).
-- **Speed.** With care for allocations and the garbage collector, input, rendering and buffer handling run close to native code.
+- **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
+- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](docs/performance.md).
+- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
+- **The concurrency model fits.** Input, each output and each client own their own state in their own goroutine, and talk over channels. There is no mutex on window state, and the race detector checks every test.
+- **It is a pleasure to work on.** A full build takes seconds, and tests, race detection, profiling and formatting come with the language.
 
-I like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, [purego-libwayland](https://github.com/bnema/purego-libwayland), [purego-vulkan](https://github.com/bnema/purego-vulkan) and [wlturbo](https://github.com/bnema/wlturbo), and other Go projects can use them.
+I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
+
+- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
+- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan without cgo, generated from `vk.xml`.
+- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): Wayland protocol bindings, generated from the upstream XML.
+- [wlturbo](https://github.com/bnema/wlturbo): a fast Wayland client.
+- [neferclient](https://github.com/bnema/neferclient): a client toolkit on top of them: connection, outputs, surface roles, seat and dmabuf presentation.
 
 ## Developing the bindings
 
