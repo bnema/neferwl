@@ -473,6 +473,10 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 				rects := make([]string, 0, len(s.Windows))
 				for _, w := range s.Windows {
 					rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+					if w.Pulse > 0 {
+						// The focus pulse frame by frame: window and contrast gain.
+						ev = ev.Uint64("pulse_window", uint64(w.ID)).Float64("pulse", w.Pulse)
+					}
 				}
 				ev.Strs("windows", rects).Msg("scene")
 			}
