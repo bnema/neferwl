@@ -136,6 +136,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return nil
 	case ports.PointerAxis:
+		c.scrollStop(v)
 		// In the overview, scrolling moves the selection.
 		if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
 			if c.cur().mon.overviewScroll(v) {

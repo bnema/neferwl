@@ -24,6 +24,11 @@ type overviewState struct {
 	selected         WindowID
 	selectedAt       int
 	scrollX, scrollY float64
+	// scrolled is set once a two-finger scroll stepped up or down: it
+	// waits for the fingers to lift before the next step. sideways is set
+	// once it stepped to a column: it stays on columns and steps once per
+	// overviewScrollRepeat.
+	scrolled, sideways bool
 }
 
 // rowSnapshot is a row as the overview first showed it: browsing moves its
@@ -71,7 +76,7 @@ func (m *Monitor) ToggleOverview() {
 	m.stopSwitch()
 	m.each(func(w *Workspace) { w.stopSlide() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
-	m.ov.scrollX, m.ov.scrollY = 0, 0
+	m.ov.scrollX, m.ov.scrollY, m.ov.scrolled, m.ov.sideways = 0, 0, false, false
 	m.overviewOpens++
 	m.selectRow()
 }
@@ -892,20 +897,44 @@ func (m *Monitor) overviewFocus(a Action) bool {
 	return true
 }
 
-// overviewScrollStep is the two-finger scroll distance, in libinput's
-// pointer units, that moves the selection one column or workspace.
-const overviewScrollStep = 60
+const (
+	// overviewScrollStep is the scroll distance, in libinput's pointer
+	// units, that moves the selection one column or workspace.
+	overviewScrollStep = 60
+	// overviewScrollRepeat is the two-finger distance of each further
+	// column step in one scroll: longer than the first, so a short scroll
+	// reaches the next column exactly and a long one goes on.
+	overviewScrollRepeat = 150
+)
 
-// overviewScroll moves the overview selection with a scroll frame: two
-// fingers step once per overviewScrollStep on the axis they move most
-// along, a wheel once per notch (high-resolution wheels add up their
-// fractions of a notch). Vertical steps select cards first, then rows;
-// touchpad.natural-scroll flips both axes as libinput reports.
+// overviewScroll moves the overview selection with a scroll frame: a row
+// step when the vertical scroll reaches overviewScrollStep and leads, else
+// a column step. Two fingers step to the next column after
+// overviewScrollStep, then once per overviewScrollRepeat, and stay on
+// columns until they lift; up or down they step once per scroll, so a card
+// in a stack is easy to pick.
+// Continuous scrolling steps once per overviewScrollStep and a wheel once
+// per notch (high-resolution wheels add up their fractions of a notch).
+// Vertical steps select cards first, then rows; touchpad.natural-scroll
+// flips both axes as libinput reports. The end of a scroll resets it
+// (scrollStop).
 func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
-		// Fingers lifted: the next scroll starts from zero.
-		m.ov.scrollX, m.ov.scrollY = 0, 0
 		return false
+	}
+	finger := a.Source == ports.AxisFinger
+	if finger && m.ov.scrolled {
+		return false
+	}
+	// A sideways finger scroll stays on columns; other sources do not, and
+	// start from zero rather than from its leftover.
+	sideways := finger && m.ov.sideways
+	if !finger && m.ov.sideways {
+		m.ov.scrollX, m.ov.scrollY = 0, 0
+	}
+	stepX := float64(overviewScrollStep)
+	if sideways {
+		stepX = overviewScrollRepeat
 	}
 	add := func(acc *float64, ax ports.ScrollAxis) {
 		switch {
@@ -916,7 +945,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			*acc += ax.Value
 		}
 	}
-	add(&m.ov.scrollY, a.Vertical)
+	if !sideways {
+		add(&m.ov.scrollY, a.Vertical)
+	}
 	add(&m.ov.scrollX, a.Horizontal)
 	for {
 		switch {
@@ -924,14 +955,33 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			m.OverviewMove(0, sign(m.ov.scrollY))
 			m.ov.scrollY -= float64(sign(m.ov.scrollY)) * overviewScrollStep
 			m.ov.scrollX = 0
-		case math.Abs(m.ov.scrollX) >= overviewScrollStep:
+			if finger {
+				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
+				return true
+			}
+		case math.Abs(m.ov.scrollX) >= stepX:
 			m.OverviewMove(sign(m.ov.scrollX), 0)
-			m.ov.scrollX -= float64(sign(m.ov.scrollX)) * overviewScrollStep
+			m.ov.scrollX -= float64(sign(m.ov.scrollX)) * stepX
 			m.ov.scrollY = 0
+			if finger {
+				m.ov.sideways, stepX = true, overviewScrollRepeat
+			}
 		default:
 			return changed
 		}
 		changed = true
+	}
+}
+
+// scrollStop ends a scroll on every monitor: the fingers lifted, maybe
+// after the pointer took the focus to another output, so the next scroll
+// starts from zero wherever it goes.
+func (c *Core) scrollStop(a ports.PointerAxis) {
+	if !a.Vertical.Stop && !a.Horizontal.Stop {
+		return
+	}
+	for _, sc := range c.screens {
+		sc.mon.ov.scrollX, sc.mon.ov.scrollY, sc.mon.ov.scrolled, sc.mon.ov.sideways = 0, 0, false, false
 	}
 }
 

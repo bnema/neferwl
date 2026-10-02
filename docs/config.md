@@ -66,10 +66,12 @@ bind.Cmd+p = workspace presentation
 
 ## Touchpad
 
-A three-finger swipe follows the fingers:
+A three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
 
-- Left or right scrolls the columns (`scroll` overflow). When the fingers lift, the view keeps the swipe's speed, slows down and settles on a column edge; the focus moves to a column fully on screen.
-- Up or down slides between numbered workspaces and settles on the nearest one the swipe's speed reaches. It stops with some resistance at the first and last workspace.
+- Left or right scrolls the columns (`scroll` overflow) to the next column edge; the focus moves to a column fully on screen.
+- Up or down slides to the next numbered workspace.
+
+The view sticks a little near each step and catches up between them. Past the next step it resists; lift and swipe again to go further. When the fingers lift, a quick swipe goes on to the next step and a slow one settles on the closest.
 
 With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
 
@@ -182,7 +184,7 @@ The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows`
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. A successful up/down move through the stack leaves the stash and selects the new front card. `return` or a click on a card closes the overview with the stash shown on that window.
 
-A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll`. A three-finger swipe moves it one step when the fingers lift.
+A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll`. A two-finger scroll sideways moves it to the next column after a short distance, then one column per longer distance, and stays on the columns until the fingers lift; up or down it moves one step per scroll, so a card in a stack is easy to pick. The wheel moves one step per notch. A three-finger swipe moves it one step when the fingers lift.
 
 Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Move-to-workspace binds (`move-column-to-workspace*`, `move-window-to-workspace*`) move the selected preview at once and keep the overview open; with `focus.follow-move`, the selection follows it. Escape does not undo a move, and the row that received the window keeps it focused. A selected stash card, or a row with no preview, does not move. Other window mutation binds (moving within the row, resizing, maximizing, fullscreen and stash toggles) and moving a workspace to another monitor are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
 

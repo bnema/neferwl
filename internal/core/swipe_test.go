@@ -166,13 +166,20 @@ func TestSwipeFollowsFingers(t *testing.T) {
 	r.input <- ports.SwipeUpdate{DX: -10, Time: r.at}
 	s := r.move(t, -10, 0)
 	after, _ := rectOf(s, 2)
-	// 10 units of 1200 per 800 px view: 7 px, not snapped to a column.
-	if d := after.X - before.X; d != 7 {
+	// 10 units of 1200 per 800 px view are 7 px; near the resting view
+	// the detent holds the view back a little.
+	if d := after.X - before.X; d <= 0 || d >= 7 {
 		t.Fatalf("column moved %d px with the fingers", d)
 	}
-	s = r.move(t, -30, 0)
-	if got, _ := rectOf(s, 2); got.X-before.X != 27 {
-		t.Fatalf("column moved %d px after 40 units", got.X-before.X)
+	// Halfway to the next column edge (400 px: 600 units) the view has
+	// caught up with the fingers; a full step shows whole.
+	s = r.move(t, -290, 0)
+	if got, _ := rectOf(s, 2); got.X-before.X != 200 {
+		t.Fatalf("column moved %d px halfway", got.X-before.X)
+	}
+	s = r.move(t, -300, 0)
+	if got, _ := rectOf(s, 2); got.X-before.X != 400 {
+		t.Fatalf("column moved %d px after a full step", got.X-before.X)
 	}
 }
 
@@ -478,13 +485,13 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 	}
 	// The swipe on DP-1 still follows the fingers.
 	var got ports.Rect
-	for _, sc := range receiveMove(t, r, -30) {
+	for _, sc := range receiveMove(t, r, -570) {
 		if sc.Output == wide.Name {
 			got, _ = rectOf(sc, 2)
 		}
 	}
-	// 60 units at 2/3 px each: 40 px.
-	if got.X-before.X != 40 {
+	// 600 units at 2/3 px each: a full step of 400 px.
+	if got.X-before.X != 400 {
 		t.Fatalf("column 2 moved %d px", got.X-before.X)
 	}
 }
@@ -681,6 +688,140 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 			if after, _ := rectOf(s, id); before != after {
 				t.Fatalf("closeFirst=%v: window %d moved: %+v then %+v", closeFirst, id, before, after)
 			}
+		}
+	}
+}
+
+// A hard flick down from the first of four workspaces lands on the second:
+// one swipe never skips a workspace.
+func TestSwipeHardFlickMovesOneWorkspace(t *testing.T) {
+	r := startSwipe(t, nil)
+	for id := ports.WindowID(1); id <= 4; id++ {
+		r.mapWindow(t, id)
+		r.key(t, "Next", ports.ModAlt)
+	}
+	for range 4 {
+		r.key(t, "Prior", ports.ModAlt)
+	}
+	r.flick(t, 20, 0, 60)
+	s := r.settle(t)
+	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
+		t.Fatalf("hard flick did not land on workspace 2: %v %t", got, ok)
+	}
+}
+
+// A hard flick across many columns moves the view one column edge.
+func TestSwipeHardFlickMovesOneColumn(t *testing.T) {
+	r := startSwipe(t, nil)
+	for id := ports.WindowID(1); id <= 5; id++ {
+		r.mapWindow(t, id)
+	}
+	// The view shows 4 and 5; a hard flick left shows 3 and 4, not 1.
+	r.flick(t, 20, -60, 0)
+	s := r.settle(t)
+	if got, ok := rectOf(s, 3); !ok || got.X != 0 {
+		t.Fatalf("column 3 at %v %t, want the left edge", got, ok)
+	}
+}
+
+// A two-finger scroll that steps in the overview and ends with the pointer
+// on another output does not hold the next scroll back.
+func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+	r.key(t, "o", ports.ModAlt)
+	selected := func(s ports.Scene) ports.WindowID {
+		for _, w := range s.Windows {
+			if w.Focused && w.Preview > 0 {
+				return w.ID
+			}
+		}
+		return 0
+	}
+	on := func(id ports.WindowID) func(ports.Scene) bool {
+		return func(s ports.Scene) bool { return s.Output == wide.Name && selected(s) == id }
+	}
+	finger := func(dx float64) ports.PointerAxis {
+		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+	}
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- finger(-70)
+	sceneMatch(t, r.scenes, on(2))
+	// The pointer crosses to DP-2 and the fingers lift there.
+	r.input <- ports.PointerMotion{X: 1000, Y: 300}
+	r.input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- finger(-70)
+	sceneMatch(t, r.scenes, on(1))
+}
+
+// The output shrinks mid-swipe: the snap points no longer hold, so the
+// swipe lets go. The view shows what the resize alone shows, and the rest
+// of the swipe moves nothing.
+func TestSwipeOutputResizedMidSwipe(t *testing.T) {
+	smaller := ports.OutputInfo{Name: wide.Name, Width: 600, Height: 600, RefreshMilli: 60000}
+	four := func(r *swipeRig) {
+		for id := ports.WindowID(1); id <= 4; id++ {
+			r.mapWindow(t, id)
+		}
+	}
+	plain := startSwipe(t, nil)
+	four(plain)
+	plain.output <- ports.OutputAdded{Info: smaller}
+	want := scene(t, plain.scenes)
+
+	r := startSwipe(t, nil)
+	four(r)
+	r.begin()
+	for range 3 {
+		r.move(t, -40, 0)
+	}
+	r.output <- ports.OutputAdded{Info: smaller}
+	scene(t, r.scenes)
+	// The first update after the resize lets go: the slide stops.
+	s := r.move(t, -40, 0)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v after the next update, want %+v", id, got, w)
+		}
+	}
+	for range 2 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	}
+	s = r.end(t, false)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
+		}
+	}
+}
+
+// A window maps mid-swipe: the column snap points moved, so the swipe lets
+// go and the view shows what the map alone shows.
+func TestSwipeWindowMappedMidSwipe(t *testing.T) {
+	plain := startSwipe(t, nil)
+	threeColumns(t, plain)
+	want := plain.mapWindow(t, 4)[0]
+
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	r.begin()
+	for range 3 {
+		r.move(t, -40, 0)
+	}
+	r.mapWindow(t, 4)
+	r.move(t, -40, 0)
+	r.at += 8 * time.Millisecond
+	r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	s := r.end(t, false)
+	for _, id := range []ports.WindowID{1, 2, 3, 4} {
+		w, _ := rectOf(want, id)
+		if got, _ := rectOf(s, id); got != w {
+			t.Fatalf("window %d at %+v, want %+v as without the swipe", id, got, w)
 		}
 	}
 }
