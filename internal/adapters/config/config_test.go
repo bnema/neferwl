@@ -89,6 +89,19 @@ func TestFocusPulse(t *testing.T) {
 	if c.Focus.Pulse != ports.FocusPulseContrast || len(w) != 1 {
 		t.Fatal(c.Focus, w)
 	}
+	if Defaults().Focus.PulseStrength != 0.04 {
+		t.Fatal("focus.pulse-strength default", Defaults().Focus.PulseStrength)
+	}
+	c, w = parseString(t, "focus.pulse-strength = 0.08\n")
+	if c.Focus.PulseStrength != 0.08 || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	for _, v := range []string{"0", "0.5", "x"} {
+		c, w = parseString(t, "focus.pulse-strength = "+v+"\n")
+		if c.Focus.PulseStrength != 0.04 || len(w) != 1 {
+			t.Fatal(v, c.Focus, w)
+		}
+	}
 }
 
 func TestTouchpadNaturalScroll(t *testing.T) {

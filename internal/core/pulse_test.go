@@ -12,6 +12,7 @@ func pulseCore(t *testing.T) (*Core, *indicatorClock) {
 	t.Helper()
 	c, ic := indicatorCore(t)
 	c.cfg.Focus.Pulse = ports.FocusPulseContrast
+	c.cfg.Focus.PulseStrength = 0.05
 	c.cur().mon.AddWindow(1)
 	c.cur().mon.AddWindow(2)
 	indicatorScene(t, c)
@@ -46,8 +47,8 @@ func TestFocusPulseAfterSettle(t *testing.T) {
 	}
 	ic.now = ic.now.Add(pulseRise)
 	s := indicatorScene(t, c)
-	if p := pulseOf(s, 1); p < pulseStrength*0.99 || p > pulseStrength {
-		t.Fatalf("peak %v, want %v", p, pulseStrength)
+	if p := pulseOf(s, 1); p < 0.05*0.99 || p > 0.05 {
+		t.Fatalf("peak %v, want the configured 0.05", p)
 	}
 	if pulseOf(s, 2) != 0 {
 		t.Fatal("unfocused window pulses")

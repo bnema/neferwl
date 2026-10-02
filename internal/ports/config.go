@@ -114,8 +114,10 @@ type Config struct {
 		// moves to it.
 		FollowMove bool
 		// Pulse is the effect that marks a window that just got the focus:
-		// FocusPulseContrast or FocusPulseOff.
-		Pulse string
+		// FocusPulseContrast or FocusPulseOff. PulseStrength is its peak
+		// lift toward white, 0.01 to 0.2.
+		Pulse         string
+		PulseStrength float64
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

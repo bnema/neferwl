@@ -20,9 +20,6 @@ const (
 	pulseRise     = 90 * time.Millisecond
 	pulseFall     = 230 * time.Millisecond
 	pulseCooldown = time.Second
-	// pulseStrength is the lift toward white at the top of the pulse: black
-	// shows about 10/255.
-	pulseStrength = 0.04
 )
 
 // focusPulse is the pulse state. target is the window focus last seen and
@@ -90,22 +87,23 @@ func (c *Core) pulseTick() bool {
 	return true
 }
 
-// advancePulse is the lift of the running pulse at now: a quick
-// sine rise, then a smooth fall. It ends the pulse once over.
+// advancePulse is the lift of the running pulse at now: a quick sine rise
+// to focus.pulse-strength, then a smooth fall. It ends the pulse once over.
 func (c *Core) advancePulse(now time.Time) float64 {
 	p := &c.pulse
 	if p.id == 0 {
 		return 0
 	}
+	peak := c.cfg.Focus.PulseStrength
 	t := now.Sub(p.start)
 	switch {
 	case t < 0:
 		return 0
 	case t < pulseRise:
-		return pulseStrength * math.Sin(float64(t)/float64(pulseRise)*math.Pi/2)
+		return peak * math.Sin(float64(t)/float64(pulseRise)*math.Pi/2)
 	case t < pulseRise+pulseFall:
 		x := 1 - float64(t-pulseRise)/float64(pulseFall)
-		return pulseStrength * x * x * (3 - 2*x)
+		return peak * x * x * (3 - 2*x)
 	}
 	p.id = 0
 	return 0
