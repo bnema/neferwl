@@ -72,6 +72,56 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	}
 }
 
+// Lock clients map their surfaces one by one: the focused output's surface
+// takes keyboard focus when it maps after another one, unless the user
+// already clicked or typed into a surface.
+func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input []ports.InputEvent // on A, before B maps
+		want  WindowID
+	}{
+		{"no input", nil, 11},
+		{"click on focused A", []ports.InputEvent{ports.PointerMotion{X: 10, Y: 10}, ports.PointerButton{Button: 0x110, Pressed: true}}, 10},
+		{"typing", []ports.InputEvent{ports.KeyEvent{Keysym: "a", Keycode: 30, Pressed: true}}, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, _ := hiddenCaptureCommands(t)
+			c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+			c.focusScreen = c.screenIndex("B")
+			state := ports.SecurityState{Generation: 1, Protected: true}
+			gate := portsmocks.NewMockSessionSecurity(t)
+			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+			c.ch.Security = gate
+			c.syncSecurity()
+			ctx := context.Background()
+			mapped := func(s ...ports.LockSurfacePlacement) {
+				t.Helper()
+				c.applyLockChanged(ports.SessionLockChanged{State: state, Surfaces: s})
+				if err := c.publishProtected(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			a := ports.LockSurfacePlacement{ID: 10, Output: "A", Width: 300, Height: 200}
+			b := ports.LockSurfacePlacement{ID: 11, Output: "B", Width: 400, Height: 300}
+			mapped(a)
+			if c.keyboard.sent != 10 {
+				t.Fatalf("only mapped surface not focused: %d", c.keyboard.sent)
+			}
+			for _, ev := range tc.input {
+				if err := c.protectedInput(ctx, ev); err != nil {
+					t.Fatal(err)
+				}
+			}
+			mapped(a, b)
+			if c.keyboard.sent != tc.want {
+				t.Fatalf("keyboard focus %d, want %d", c.keyboard.sent, tc.want)
+			}
+		})
+	}
+}
+
 func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 	c, _, commands := hiddenCaptureCommands(t)
 	gate := portsmocks.NewMockSessionSecurity(t)

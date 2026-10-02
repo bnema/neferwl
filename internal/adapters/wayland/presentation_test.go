@@ -166,8 +166,20 @@ func TestPresentationFeedback(t *testing.T) {
 		t.Fatalf("hidden feedback: %+v", ev)
 	}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 100, Height: 100, Output: "HEADLESS-1", Visible: true}
-	// Synchronize the resume before committing the next feedback.
-	s.display.Do(func() {})
+	// Wait for the resume before committing the next feedback: the command
+	// goroutine applies it in its own display round trip, which an empty Do
+	// here may overtake.
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		var visible bool
+		s.display.Do(func() { visible = s.windows[w.ID].last.Visible })
+		if visible {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("resume not applied")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 	// Presented with the flip's time, counter and flags.
 	a := feedback()
 	commit()

@@ -21,7 +21,7 @@ func (c *Core) syncSecurity() bool {
 		return false
 	}
 	c.security = state
-	c.lockSurfaces, c.lockFocus = nil, 0
+	c.lockSurfaces, c.lockFocus, c.lockPinned = nil, 0, false
 	c.pressed, c.buttons, c.inputKeys = map[string]bool{}, map[uint32]bool{}, map[string]bool{}
 	c.pointer, c.grab, c.pointerOutput = 0, 0, ""
 	c.drag, c.swallow, c.mods, c.lastButton = nil, map[uint32]bool{}, 0, 0
@@ -135,18 +135,26 @@ func (c *Core) validLockID(id WindowID) bool {
 	return false
 }
 
+// lockKeyboardFocus prefers the lock surface of the focused output, where the
+// user is looking, then any other. A surface the user clicked or typed into is
+// pinned and keeps focus. Until then, focus moves to the focused output's
+// surface once it maps: lock clients map their surfaces one by one, in any
+// order.
 func (c *Core) lockKeyboardFocus() WindowID {
-	if c.validLockID(c.lockFocus) {
+	valid := c.validLockID(c.lockFocus)
+	if valid && c.lockPinned {
 		return c.lockFocus
 	}
-	c.lockFocus = 0
-	// Prefer the focused output, where the user is looking, then any other.
 	if c.focusScreen >= 0 && c.focusScreen < len(c.screens) {
 		if s, ok := c.lockSurface(c.screens[c.focusScreen]); ok {
-			c.lockFocus = s.ID
+			c.lockFocus, c.lockPinned = s.ID, false
 			return c.lockFocus
 		}
 	}
+	if valid {
+		return c.lockFocus
+	}
+	c.lockFocus, c.lockPinned = 0, false
 	for _, sc := range c.screens {
 		if s, ok := c.lockSurface(sc); ok {
 			c.lockFocus = s.ID
@@ -239,6 +247,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 	switch v := ev.(type) {
 	case ports.KeyEvent:
 		if id := c.lockKeyboardFocus(); id != 0 {
+			c.lockPinned = true // typing must not move focus mid-secret
 			return c.command(ctx, ports.ForwardKey{ID: id, Key: v})
 		}
 	case ports.PointerMotion:
@@ -272,10 +281,13 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 			delete(c.buttons, v.Button)
 		}
 		if c.validLockID(id) {
-			if v.Pressed && c.lockFocus != id {
-				c.lockFocus = id
-				if err := c.publishProtected(ctx); err != nil {
-					return err
+			if v.Pressed {
+				changed := c.lockFocus != id
+				c.lockFocus, c.lockPinned = id, true
+				if changed {
+					if err := c.publishProtected(ctx); err != nil {
+						return err
+					}
 				}
 			}
 			if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
