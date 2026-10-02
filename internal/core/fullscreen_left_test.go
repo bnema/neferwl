@@ -86,18 +86,17 @@ func TestLeftFullscreenTaskbar(t *testing.T) {
 	}
 }
 
-// A latched window moved away with its column drops the latch.
+// A latched window moved away with its column, which another window of
+// it has the focus of, drops the latch.
 func TestLeftFullscreenColumnMoved(t *testing.T) {
-	m := monitor()
-	m.AddWindow(1)
-	m.AddWindow(2)
-	w := m.Current()
-	m.ToggleFullscreen()
-	w.Activate(1)
+	w := cols(OverflowScroll, 2, 0, []WindowID{2, 3}, []WindowID{1})
 	w.FocusID(2)
-	w.left = 2 // as if moved before the latch settled
-	m.MoveToWorkspace(1, true)
-	if w.left != 0 {
+	w.fullscreen = 2
+	w.Activate(3)
+	if w.left != 2 {
+		t.Fatalf("latch %d", w.left)
+	}
+	if _, ok := w.takeColumn(); !ok || w.left != 0 {
 		t.Fatalf("left %d", w.left)
 	}
 }
