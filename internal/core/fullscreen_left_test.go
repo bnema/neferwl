@@ -15,6 +15,8 @@ func TestLeftFullscreenRefusesRequest(t *testing.T) {
 			m.OverviewPick(1)
 		},
 	}
+	// Fixed overflow refuses an unfocused window's request anyway; scroll
+	// with a float is where the latch alone refuses it.
 	for _, tc := range pinnedCases {
 		for name, leave := range leaves {
 			t.Run(tc.name+"/"+name, func(t *testing.T) {
@@ -50,6 +52,53 @@ func TestToggleFullscreenOffNoLatch(t *testing.T) {
 	m.SetFullscreen(2, true)
 	if w.fullscreen != 2 {
 		t.Fatalf("request refused: %d", w.fullscreen)
+	}
+}
+
+// Focusing the window again drops the latch even without a request, so a
+// later request while unfocused follows the usual rules again.
+func TestLeftFullscreenSettlesOnFocus(t *testing.T) {
+	m := coverMonitor(OverflowScroll, true)
+	w := m.Current()
+	w.Activate(1)
+	w.FocusID(2)
+	w.settleLeft()
+	if w.left != 0 {
+		t.Fatalf("left %d", w.left)
+	}
+	w.FocusID(1)
+	m.SetFullscreen(2, true)
+	if w.fullscreen != 2 {
+		t.Fatalf("request refused: %d", w.fullscreen)
+	}
+}
+
+// A taskbar fullscreen request activates the window first (core), so it
+// passes the latch.
+func TestLeftFullscreenTaskbar(t *testing.T) {
+	m := coverMonitor(OverflowScroll, true)
+	w := m.Current()
+	w.Activate(1)
+	w.Activate(2)
+	m.SetFullscreen(2, true)
+	if w.fullscreen != 2 || w.left != 0 {
+		t.Fatalf("fullscreen %d, left %d", w.fullscreen, w.left)
+	}
+}
+
+// A latched window moved away with its column drops the latch.
+func TestLeftFullscreenColumnMoved(t *testing.T) {
+	m := monitor()
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w := m.Current()
+	m.ToggleFullscreen()
+	w.Activate(1)
+	w.FocusID(2)
+	w.left = 2 // as if moved before the latch settled
+	m.MoveToWorkspace(1, true)
+	if w.left != 0 {
+		t.Fatalf("left %d", w.left)
 	}
 }
 

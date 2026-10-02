@@ -704,7 +704,8 @@ func (w *Workspace) rowHeight() int {
 // corner. Fixed overflow uses its on-screen geometry; scroll overflow uses
 // an unscrolled row. span is the row's width; sel is the focused column.
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
-	if c := w.cover(); c != 0 && w.pinned() {
+	if w.pinned() {
+		c := w.cover()
 		// The row shows the columns a pinned fullscreen window hides,
 		// laid out as without it; its own tile stays marked fullscreen.
 		v := *w

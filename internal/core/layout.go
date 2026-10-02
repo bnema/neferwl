@@ -818,6 +818,9 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
+	if slices.Contains(col.Windows, w.left) {
+		w.left = 0
+	}
 	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
 	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
 	if len(w.Columns) == 0 {
@@ -953,7 +956,8 @@ func (w *Workspace) endFullscreen() {
 }
 
 // leaveFullscreen ends the fullscreen for another window the user chose,
-// and refuses its client's requests until it is focused again (mayCover).
+// and refuses its client's requests until it is focused again (mayCover,
+// settleLeft).
 func (w *Workspace) leaveFullscreen() {
 	if w.fullscreen != 0 {
 		w.left = w.fullscreen
@@ -1079,6 +1083,14 @@ func (w *Workspace) SetMaxColumns(n int) {
 func (w *Workspace) overviewArea() Rect { return w.reserved }
 
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
+
+// settleLeft drops the latch once its window has the focus again, however
+// it got it; core calls it after each event.
+func (w *Workspace) settleLeft() {
+	if id, ok := w.Focused(); ok && id == w.left {
+		w.left = 0
+	}
+}
 
 // mayCover reports whether a client may make id fullscreen. In fixed
 // overflow it would cover the output at once and take the keyboard from

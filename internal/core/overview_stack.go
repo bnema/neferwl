@@ -57,7 +57,7 @@ func (w *Workspace) stack() []stackItem {
 	case w.overviewMaximized():
 		items = append(items, stackItem{stackColumn, c})
 	default:
-		// Its column is the only one.
+		// One card of all columns, its own marked fullscreen.
 		items = append(items, stackItem{kind: stackColumns})
 		columns = false
 	}
