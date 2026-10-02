@@ -12,9 +12,10 @@ import (
 // light screen blend visible on black backgrounds too) on a window that just
 // got the keyboard focus. Only the last focus counts: it must hold for
 // pulseSettle before the pulse starts, a focus change stops a running one, and
-// the same window does not pulse again within pulseCooldown. Fast switching
-// therefore shows nothing. Fullscreen windows, overview previews and a
-// protected session never pulse.
+// the window that pulsed last does not pulse again within pulseCooldown
+// (switching back after another window held the focus is a new change).
+// Fast switching therefore shows nothing. Fullscreen windows, overview
+// previews, a window focused as it maps and a protected session never pulse.
 
 const (
 	pulseSettle   = 150 * time.Millisecond
@@ -138,15 +139,5 @@ func (c *Core) stopPulseTimer() {
 // focus is kept: the window focused again after an unlock does not pulse.
 func (c *Core) stopPulse() {
 	c.stopPulseTimer()
-	c.pulse.id = 0
-}
-
-// newTimer makes a timer on clock, or the system timer when clock is nil.
-func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
-	if clock != nil {
-		t := clock.NewTimer(d)
-		return t.C(), t.Stop
-	}
-	t := time.NewTimer(d)
-	return t.C, t.Stop
+	c.pulse.id, c.pulse.drawable = 0, false
 }

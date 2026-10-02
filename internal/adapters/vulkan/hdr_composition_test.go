@@ -173,16 +173,17 @@ func TestHDRLinearBlend(t *testing.T) {
 }
 
 // The focus pulse on an HDR output applies the SDR lift to sRGB content
-// before decoding: sRGB 200 at 0.1 shows as sRGB 205.5 would.
+// before decoding: sRGB 64 at 0.1 shows as sRGB 83.1 would. A dark input
+// separates this from a lift in linear light or none at all.
 func TestHDRPulse(t *testing.T) {
 	r := hdrTestRenderer(t)
-	c := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{200, 200, 200, 255}))
+	c := shmContent(t, 64, 16, 64*4, fill(64, 16, [4]byte{64, 64, 64, 255}))
 	scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}, FocusEffect: 0.1}}}
 	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
 		t.Fatal(err)
 	}
 	got := hdrTargetAt(t, r, 5, 5)
-	want := pqEncode(srgbToLinear((200+0.1*(255-200))/255) * 203)
+	want := pqEncode(srgbToLinear((64+0.1*(255-64))/255) * 203)
 	for i, v := range got {
 		if math.Abs(v-want) > .006 {
 			t.Errorf("channel %d: got %.4f want %.4f", i, v, want)

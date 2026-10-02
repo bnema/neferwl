@@ -75,9 +75,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		c := surfaces[w.ID]
 		// A viewport crop or PQ content is composed: the plane would show
 		// the whole buffer, and raw PQ values on this SDR output. A dimmed
-		// window (a peeking stashed one) needs the veil drawn over it, a
-		// one with the focus effect its blend; an overview preview is drawn smaller
-		// than its buffer.
+		// window (a peeking stashed one) needs the veil drawn over it, and
+		// one with the focus effect needs its lift; an overview preview is
+		// drawn smaller than its buffer.
 		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && !c.Color.IsPQ2020() {
 			pick = w
 			continue

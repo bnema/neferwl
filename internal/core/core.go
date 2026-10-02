@@ -349,6 +349,17 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	}
 	return c, nil
 }
+
+// newTimer makes a timer on clock, or the system timer when clock is nil.
+func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
+	if clock != nil {
+		t := clock.NewTimer(d)
+		return t.C(), t.Stop
+	}
+	t := time.NewTimer(d)
+	return t.C, t.Stop
+}
+
 func (c *Core) now() time.Time {
 	if c.ch.Clock != nil {
 		return c.ch.Clock.Now()

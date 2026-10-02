@@ -2,6 +2,7 @@ package core
 
 import (
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -125,6 +126,18 @@ func TestFocusPulseSkipsNewWindow(t *testing.T) {
 	ic.now = ic.now.Add(pulseSettle)
 	if !c.pulseTick() || c.pulse.id != 3 {
 		t.Fatal("an existing window did not pulse")
+	}
+}
+
+// A window that mapped earlier without the focus pulses when focused.
+func TestFocusPulseWindowMappedEarlier(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.windows.mapped(ports.WindowMapped{ID: 1}, ic.now.Add(-time.Minute))
+	c.cur().mon.Current().FocusID(1)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if !c.pulseTick() || c.pulse.id != 1 {
+		t.Fatal("a window mapped earlier did not pulse")
 	}
 }
 
