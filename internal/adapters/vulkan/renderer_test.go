@@ -111,6 +111,31 @@ func TestRendererFade(t *testing.T) {
 	}
 }
 
+// A pulsing window's contrast rises around mid grey: dark goes darker,
+// light lighter, mid grey stays, and nothing leaves 0..255.
+func TestRendererPulse(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	for i, tc := range []struct {
+		in, want uint8
+	}{{200, 207}, {64, 57}, {128, 128}, {255, 255}, {0, 0}} {
+		// One window per case: the shm copy is cached per window.
+		id := ports.WindowID(i + 1)
+		c := solidContent(t, 64, 48, color.RGBA{tc.in, tc.in, tc.in, 255})
+		s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: id, Rect: ports.Rect{W: 64, H: 48}, Pulse: 0.1}}}
+		if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{id: c}); err != nil {
+			t.Fatal(err)
+		}
+		got := readPixels(t, r).At(10, 10).(color.RGBA)
+		if d := int(got.R) - int(tc.want); d < -1 || d > 1 || got.R != got.G || got.G != got.B {
+			t.Errorf("pulse of %d = %v, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestRendererContents(t *testing.T) {
 	r, err := New(64, 48)
 	if err != nil {

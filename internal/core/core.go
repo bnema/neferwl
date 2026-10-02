@@ -133,6 +133,8 @@ type Core struct {
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
 	capt captureState
+	// pulse marks a window that just got the focus (pulse.go).
+	pulse focusPulse
 }
 
 func keyName(s string) string {
@@ -512,6 +514,11 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	c.pulseFocus(focus)
+	var pulse float64
+	if c.pulse.id != 0 {
+		pulse = c.pulseAt(c.now())
+	}
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -553,6 +560,9 @@ func (c *Core) publish(ctx context.Context) error {
 			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
+			}
+			if pulse > 0 && focused && p.ID == c.pulse.id && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
+				sw.Pulse = pulse
 			}
 			scene.Windows = append(scene.Windows, sw)
 			t := configureTarget{output: sc.name(), area: frame, focused: focused}
@@ -917,6 +927,7 @@ func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
+	defer c.stopPulseTimer()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -1101,6 +1112,14 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC, c.frameStop = nil, nil
 			if c.step(ctx) != nil {
+				return nil
+			}
+			continue
+		case <-c.pulse.timerC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.pulseTick() && c.publish(ctx) != nil {
 				return nil
 			}
 			continue

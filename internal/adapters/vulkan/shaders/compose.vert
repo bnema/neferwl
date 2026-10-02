@@ -4,7 +4,7 @@
 layout(push_constant) uniform Draw {
     ivec4 rect;  // visible x0, y0, x1, y1 in target pixels
     vec4 map;    // source texel = map.xy + fragment centre.x * map.zw
-    vec4 mapy;   //   + fragment centre.y * mapy.xy (zw unused): any buffer transform
+    vec4 mapy;   //   + fragment centre.y * mapy.xy: any buffer transform; mapy.z focus pulse
     vec4 color;  // solid fills: premultiplied RGBA
     vec4 crop;   // source crop bounds in buffer pixels
     uvec4 buf;   // buffer draws: first word, row width, height, unused

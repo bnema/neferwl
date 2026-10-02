@@ -320,6 +320,10 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// Pulse, above 0, raises the contrast of the window's surfaces by
+	// that fraction: the short focus pulse (focus.pulse). Renderers
+	// without the effect ignore it.
+	Pulse float64
 	// Preview, above 0, draws the window's surfaces that much smaller in
 	// Rect (an overview thumbnail): the client keeps its size.
 	Preview float64

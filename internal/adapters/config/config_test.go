@@ -77,6 +77,20 @@ func TestFollowMove(t *testing.T) {
 	}
 }
 
+func TestFocusPulse(t *testing.T) {
+	if Defaults().Focus.Pulse != ports.FocusPulseContrast {
+		t.Fatal("focus.pulse default", Defaults().Focus.Pulse)
+	}
+	c, w := parseString(t, "focus.pulse = off\n")
+	if c.Focus.Pulse != ports.FocusPulseOff || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	c, w = parseString(t, "focus.pulse = flash\n")
+	if c.Focus.Pulse != ports.FocusPulseContrast || len(w) != 1 {
+		t.Fatal(c.Focus, w)
+	}
+}
+
 func TestTouchpadNaturalScroll(t *testing.T) {
 	if Defaults().Touchpad.NaturalScroll {
 		t.Fatal("natural scroll on by default")

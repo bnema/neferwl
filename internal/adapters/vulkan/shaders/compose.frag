@@ -132,6 +132,11 @@ void main() {
             c.rgb = mix(v * 12.92, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, greaterThan(v, vec3(0.0031308))) * c.a;
         }
     }
+    if (d.mapy.z > 0.0) {
+        // Focus pulse: contrast around mid grey, on premultiplied values
+        // ((rgb/a - 0.5) * gain + 0.5) * a, kept within 0..a.
+        c.rgb = clamp((c.rgb - 0.5 * c.a) * (1.0 + d.mapy.z) + 0.5 * c.a, 0.0, c.a);
+    }
     if (d.misc.x != modeSolid) {
         // The surface's alpha modifier; premultiplied, it scales all four.
         c *= d.color.a;

@@ -59,6 +59,8 @@ touchpad.scroll-factor = 1
 
 # on: moving a column or window to another workspace shows that workspace.
 focus.follow-move = off
+# Subtle contrast pulse on the newly focused window: contrast or off.
+focus.pulse = contrast
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.

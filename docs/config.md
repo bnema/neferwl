@@ -39,6 +39,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
 | `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
+| `focus.pulse` | `contrast` | Brief, subtle contrast pulse on a window that keeps the focus for 150 ms; `off` disables it. Skipped for fullscreen windows, the overview and HDR outputs |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; use the overview to show an occupied one, or a `workspace <name>` bind to show it and toggle back |
 | `workspace.<name>.monitor` | focused output | Home monitor: connector (`DP-2`) or monitor key. A `workspace <name>` bind focuses it there. Unset, or while home is absent, the workspace comes to the focused output; it returns home when it reconnects |
 | `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |

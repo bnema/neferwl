@@ -19,7 +19,10 @@ type sceneWalk struct {
 	scale float64
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (ports.SceneWindow.Preview); 1 otherwise.
-	zoom   float64
+	zoom float64
+	// pulse is the contrast gain of the window being placed
+	// (ports.SceneWindow.Pulse); 0 otherwise.
+	pulse  float32
 	bounds image.Rectangle
 	draws  []draw
 }
@@ -186,8 +189,12 @@ func (w *sceneWalk) windows() {
 			if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
+			// The contrast pulse is an SDR effect: HDR composes in linear light.
+			if win.Pulse > 0 && w.r.hdrNits <= 0 {
+				w.pulse = float32(min(win.Pulse, 1))
+			}
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
-			w.zoom = 1
+			w.zoom, w.pulse = 1, 0
 		}
 		if win.Floating {
 			w.separators(win.ID)
@@ -360,6 +367,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
 		r.setContentColor(&dr, content)
+		dr.pc.mapy[2] = w.pulse
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
 			if content.DMABuf.Format == fourcc('P', '0', '1', '0') {
@@ -396,6 +404,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content)
+	dr.pc.mapy[2] = w.pulse
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)

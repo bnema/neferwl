@@ -59,6 +59,12 @@ type OutputLayout struct {
 	LayoutRules
 }
 
+// Focus pulse effects (Config.Focus.Pulse).
+const (
+	FocusPulseOff      = "off"
+	FocusPulseContrast = "contrast"
+)
+
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
@@ -107,6 +113,9 @@ type Config struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
+		// Pulse is the effect that marks a window that just got the focus:
+		// FocusPulseContrast or FocusPulseOff.
+		Pulse string
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

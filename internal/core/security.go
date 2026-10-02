@@ -40,6 +40,7 @@ func (c *Core) syncSecurity() bool {
 		}
 	}
 	c.stopFrame()
+	c.stopPulse()
 	if state.Protected {
 		c.dropCaptureSessions()
 	}
