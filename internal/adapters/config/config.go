@@ -112,6 +112,7 @@ func Defaults() ports.Config {
 	c.Stash.Width = 80
 	c.Stash.Gap = 2
 	c.Stash.Dim = 0.5
+	c.Stash.Capture = true
 	c.Border.Width = 2
 	c.Border.Active = "#808080"
 	c.Border.Inactive = "#111111"
@@ -504,6 +505,12 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be between 0 and 1")
 		}
 		c.Stash.Dim = dim
+	case "stash.capture":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Stash.Capture = b
 	case "border.width":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 32 {

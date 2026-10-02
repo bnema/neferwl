@@ -28,6 +28,8 @@ type Monitor struct {
 	named      []NamedWorkspace
 	// followMove shows the target workspace after a move to it.
 	followMove bool
+	// stashCapture puts new windows in the shown stash (stash.capture).
+	stashCapture bool
 	// switchOff slides the view between numbered workspaces: the view is
 	// at Active+switchOff while a swipe follows the fingers or its spring
 	// (switchMotion) lands.
@@ -294,12 +296,15 @@ func (m *Monitor) find(id WindowID) (*Workspace, int) {
 	return nil, -1
 }
 
-// AddWindow places a new window on the workspace on screen (see arrive).
+// AddWindow places a new window on the workspace on screen; with
+// stash.capture, in its stash when shown.
 func (m *Monitor) AddWindow(id WindowID) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
-	m.Current().AddWindow(id)
+	if w := m.Current(); !m.stashCapture || !w.captureStash(id) {
+		w.AddWindow(id)
+	}
 	m.normalize()
 }
 
@@ -468,6 +473,10 @@ func (m *Monitor) SetStash(width, gap int) {
 	}
 	m.each(func(w *Workspace) { w.stashWidth, w.stashGap = width, min(max(gap, 0), 10) })
 }
+
+// SetStashCapture makes new windows join the shown stash (stash.capture).
+func (m *Monitor) SetStashCapture(on bool) { m.stashCapture = on }
+
 func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
 
 // SetFollowMove makes moves to another workspace show it (focus.follow-move).

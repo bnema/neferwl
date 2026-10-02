@@ -26,6 +26,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `stash.width` | `80` | Width of the selected stashed window, over the tiles, in percent of the usable width; 10 to 90 (`80%` works too). The rest is split between both sides, where the neighbors show. Its height is 80% of the usable height |
 | `stash.gap` | `2` | Space between the selected stashed window and its neighbors, in percent of the usable width; 0 to 10. The neighbors show from there to the screen edge: with the defaults, 8% of each. A gap as wide as the side margin hides them |
 | `stash.dim` | `0.5` | Black veil over the stash neighbors, borders included; opacity 0 to 1 |
+| `stash.capture` | `on` | `on`: a window opened while the stash is shown joins its end, selected; `toggle-window-stash` tiles it as a new column. `off`: new windows always tile |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Colors for focused / other window lines; only the focused output lights up |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |

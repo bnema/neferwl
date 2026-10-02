@@ -487,6 +487,18 @@ func TestStash(t *testing.T) {
 	}
 }
 
+func TestStashCapture(t *testing.T) {
+	if c, _ := parseString(t, ""); !c.Stash.Capture {
+		t.Fatal("stash.capture is on by default")
+	}
+	if c, w := parseString(t, "stash.capture = off"); c.Stash.Capture || len(w) != 0 {
+		t.Fatalf("off: %v %v", c.Stash.Capture, w)
+	}
+	if c, w := parseString(t, "stash.capture = yes"); !c.Stash.Capture || len(w) == 0 {
+		t.Fatalf("invalid: %v %v", c.Stash.Capture, w)
+	}
+}
+
 func TestVRRFlipGap(t *testing.T) {
 	for _, tc := range []struct {
 		value   string
