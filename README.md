@@ -3,8 +3,8 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License: GPLv3"></a>
   <a href="https://github.com/bnema/neferwl"><img src="https://img.shields.io/badge/platform-Linux-blue?style=flat-square" alt="Platform: Linux"></a>
-  <a href="https://github.com/bnema/neferwl/commits/main"><img src="https://badgen.net/github/last-commit/bnema/neferwl/main?icon=github" alt="Last commit"></a>
-  <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://badgen.net/github/stars/bnema/neferwl?icon=github" alt="GitHub stars"></a>
+  <a href="https://github.com/bnema/neferwl/commits/main"><img src="https://img.shields.io/github/last-commit/bnema/neferwl/main?style=flat-square&logo=github" alt="Last commit"></a>
+  <a href="https://github.com/bnema/neferwl/stargazers"><img src="https://img.shields.io/github/stars/bnema/neferwl?style=flat-square&logo=github" alt="GitHub stars"></a>
 </p>
 
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
