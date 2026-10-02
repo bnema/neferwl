@@ -122,8 +122,8 @@ func Defaults() ports.Config {
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1
-	c.Focus.Pulse = ports.FocusPulseContrast
-	c.Focus.PulseStrength = 0.04
+	c.Focus.Pulse = ports.FocusPulseScreen
+	c.Focus.PulseStrength = 0.03
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}
@@ -588,8 +588,8 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Focus.FollowMove = b
 	case "focus.pulse":
-		if v != ports.FocusPulseContrast && v != ports.FocusPulseOff {
-			return fmt.Errorf("must be contrast or off")
+		if v != ports.FocusPulseScreen && v != ports.FocusPulseOff {
+			return fmt.Errorf("must be screen or off")
 		}
 		c.Focus.Pulse = v
 	case "focus.pulse-strength":

@@ -61,8 +61,8 @@ type OutputLayout struct {
 
 // Focus pulse effects (Config.Focus.Pulse).
 const (
-	FocusPulseOff      = "off"
-	FocusPulseContrast = "contrast"
+	FocusPulseOff    = "off"
+	FocusPulseScreen = "screen"
 )
 
 // Config is the parsed compositor configuration (see the config adapter for keys).
@@ -114,7 +114,7 @@ type Config struct {
 		// moves to it.
 		FollowMove bool
 		// Pulse is the effect that marks a window that just got the focus:
-		// FocusPulseContrast or FocusPulseOff. PulseStrength is its peak
+		// FocusPulseScreen or FocusPulseOff. PulseStrength is its peak
 		// lift toward white, 0.01 to 0.2.
 		Pulse         string
 		PulseStrength float64

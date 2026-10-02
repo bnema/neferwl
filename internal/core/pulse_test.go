@@ -11,7 +11,7 @@ import (
 func pulseCore(t *testing.T) (*Core, *indicatorClock) {
 	t.Helper()
 	c, ic := indicatorCore(t)
-	c.cfg.Focus.Pulse = ports.FocusPulseContrast
+	c.cfg.Focus.Pulse = ports.FocusPulseScreen
 	c.cfg.Focus.PulseStrength = 0.05
 	c.cur().mon.AddWindow(1)
 	c.cur().mon.AddWindow(2)
@@ -161,7 +161,7 @@ func TestFocusPulseOff(t *testing.T) {
 		t.Fatal("pulse with focus.pulse off")
 	}
 	// Turning it back on does not pulse the window already focused.
-	c.cfg.Focus.Pulse = ports.FocusPulseContrast
+	c.cfg.Focus.Pulse = ports.FocusPulseScreen
 	indicatorScene(t, c)
 	if c.pulse.timerC != nil {
 		t.Fatal("enabling the pulse pulses the focused window")

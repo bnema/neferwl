@@ -78,7 +78,7 @@ func TestFollowMove(t *testing.T) {
 }
 
 func TestFocusPulse(t *testing.T) {
-	if Defaults().Focus.Pulse != ports.FocusPulseContrast {
+	if Defaults().Focus.Pulse != ports.FocusPulseScreen {
 		t.Fatal("focus.pulse default", Defaults().Focus.Pulse)
 	}
 	c, w := parseString(t, "focus.pulse = off\n")
@@ -86,10 +86,10 @@ func TestFocusPulse(t *testing.T) {
 		t.Fatal(c.Focus, w)
 	}
 	c, w = parseString(t, "focus.pulse = flash\n")
-	if c.Focus.Pulse != ports.FocusPulseContrast || len(w) != 1 {
+	if c.Focus.Pulse != ports.FocusPulseScreen || len(w) != 1 {
 		t.Fatal(c.Focus, w)
 	}
-	if Defaults().Focus.PulseStrength != 0.04 {
+	if Defaults().Focus.PulseStrength != 0.03 {
 		t.Fatal("focus.pulse-strength default", Defaults().Focus.PulseStrength)
 	}
 	c, w = parseString(t, "focus.pulse-strength = 0.08\n")
@@ -98,7 +98,7 @@ func TestFocusPulse(t *testing.T) {
 	}
 	for _, v := range []string{"0", "0.5", "x"} {
 		c, w = parseString(t, "focus.pulse-strength = "+v+"\n")
-		if c.Focus.PulseStrength != 0.04 || len(w) != 1 {
+		if c.Focus.PulseStrength != 0.03 || len(w) != 1 {
 			t.Fatal(v, c.Focus, w)
 		}
 	}

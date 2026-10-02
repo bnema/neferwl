@@ -38,7 +38,7 @@ type focusPulse struct {
 	timerStop func() bool
 }
 
-func (c *Core) pulseOn() bool { return c.cfg.Focus.Pulse == ports.FocusPulseContrast }
+func (c *Core) pulseOn() bool { return c.cfg.Focus.Pulse == ports.FocusPulseScreen }
 
 // pulseFocus follows the window focus. held is false while something else
 // (a popup grab, a layer, a lock surface) has the keyboard: the running pulse
