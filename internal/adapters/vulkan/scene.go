@@ -20,8 +20,8 @@ type sceneWalk struct {
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (ports.SceneWindow.Preview); 1 otherwise.
 	zoom float64
-	// pulse is the focus pulse lift of the window being placed
-	// (ports.SceneWindow.Pulse); 0 otherwise.
+	// pulse is the focus effect of the window being placed
+	// (ports.SceneWindow.FocusEffect); 0 otherwise.
 	pulse  float32
 	bounds image.Rectangle
 	draws  []draw
@@ -189,7 +189,7 @@ func (w *sceneWalk) windows() {
 			if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
-			w.pulse = float32(max(0, min(win.Pulse, 1)))
+			w.pulse = float32(max(0, min(win.FocusEffect, 1)))
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
 			w.zoom, w.pulse = 1, 0
 		}

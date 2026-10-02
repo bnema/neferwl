@@ -223,7 +223,7 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	// Pulse frames would fill the scene tap before the click.
-	cfg.Focus.Pulse = ports.FocusPulseOff
+	cfg.Focus.Animation = ports.FocusAnimationOff
 	scenes := make(chan []ports.Scene, 128)
 	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {

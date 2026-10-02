@@ -124,7 +124,7 @@ func TestRendererPulse(t *testing.T) {
 		// One window per case: the shm copy is cached per window.
 		id := ports.WindowID(i + 1)
 		c := solidContent(t, 64, 48, color.RGBA{tc.in, tc.in, tc.in, 255})
-		s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: id, Rect: ports.Rect{W: 64, H: 48}, Pulse: 0.1}}}
+		s := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: id, Rect: ports.Rect{W: 64, H: 48}, FocusEffect: 0.1}}}
 		if err := render(r, s, map[ports.WindowID]ports.SurfaceContent{id: c}); err != nil {
 			t.Fatal(err)
 		}

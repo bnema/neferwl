@@ -567,7 +567,7 @@ func (c *Core) publish(ctx context.Context) error {
 			if focused && p.ID == c.pulse.target && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
 				drawable = true
 				if p.ID == c.pulse.id {
-					sw.Pulse = pulse
+					sw.FocusEffect = pulse
 				}
 			}
 			scene.Windows = append(scene.Windows, sw)

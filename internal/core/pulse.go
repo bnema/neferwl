@@ -7,9 +7,10 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// The focus pulse briefly lifts the colors of a window toward white (a light
-// screen blend, visible on black backgrounds too): a window that just got the
-// keyboard focus (focus.pulse). Only the last focus counts: it must hold for
+// The focus pulse is the pulse animation of the focus indicator
+// (focus.animation): it briefly shows the indicator's effect (focus.effect, a
+// light screen blend visible on black backgrounds too) on a window that just
+// got the keyboard focus. Only the last focus counts: it must hold for
 // pulseSettle before the pulse starts, a focus change stops a running one, and
 // the same window does not pulse again within pulseCooldown. Fast switching
 // therefore shows nothing. Fullscreen windows, overview previews and a
@@ -38,7 +39,7 @@ type focusPulse struct {
 	timerStop func() bool
 }
 
-func (c *Core) pulseOn() bool { return c.cfg.Focus.Pulse == ports.FocusPulseScreen }
+func (c *Core) pulseOn() bool { return c.cfg.Focus.Animation == ports.FocusAnimationPulse }
 
 // pulseFocus follows the window focus. held is false while something else
 // (a popup grab, a layer, a lock surface) has the keyboard: the running pulse
@@ -87,14 +88,14 @@ func (c *Core) pulseTick() bool {
 	return true
 }
 
-// advancePulse is the lift of the running pulse at now: a quick sine rise
-// to focus.pulse-strength, then a smooth fall. It ends the pulse once over.
+// advancePulse is the effect of the running pulse at now: a quick sine rise
+// to focus.strength, then a smooth fall. It ends the pulse once over.
 func (c *Core) advancePulse(now time.Time) float64 {
 	p := &c.pulse
 	if p.id == 0 {
 		return 0
 	}
-	peak := c.cfg.Focus.PulseStrength
+	peak := c.cfg.Focus.Strength
 	t := now.Sub(p.start)
 	switch {
 	case t < 0:

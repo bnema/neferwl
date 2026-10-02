@@ -59,10 +59,12 @@ type OutputLayout struct {
 	LayoutRules
 }
 
-// Focus pulse effects (Config.Focus.Pulse).
+// Focus indicator: the animation (Config.Focus.Animation) shapes in time
+// the visual effect (Config.Focus.Effect) drawn on a newly focused window.
 const (
-	FocusPulseOff    = "off"
-	FocusPulseScreen = "screen"
+	FocusAnimationOff   = "off"
+	FocusAnimationPulse = "pulse"
+	FocusEffectScreen   = "screen"
 )
 
 // Config is the parsed compositor configuration (see the config adapter for keys).
@@ -113,11 +115,11 @@ type Config struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
-		// Pulse is the effect that marks a window that just got the focus:
-		// FocusPulseScreen or FocusPulseOff. PulseStrength is its peak
-		// lift toward white, 0.01 to 0.2.
-		Pulse         string
-		PulseStrength float64
+		// Animation and Effect mark a window that just got the focus:
+		// FocusAnimation* (off disables it) and FocusEffect*. Strength is
+		// the effect's peak, 0.01 to 0.2.
+		Animation, Effect string
+		Strength          float64
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

@@ -122,8 +122,9 @@ func Defaults() ports.Config {
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1
-	c.Focus.Pulse = ports.FocusPulseScreen
-	c.Focus.PulseStrength = 0.03
+	c.Focus.Animation = ports.FocusAnimationPulse
+	c.Focus.Effect = ports.FocusEffectScreen
+	c.Focus.Strength = 0.03
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}
@@ -587,18 +588,23 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Focus.FollowMove = b
-	case "focus.pulse":
-		if v != ports.FocusPulseScreen && v != ports.FocusPulseOff {
-			return fmt.Errorf("must be screen or off")
+	case "focus.animation":
+		if v != ports.FocusAnimationPulse && v != ports.FocusAnimationOff {
+			return fmt.Errorf("must be pulse or off")
 		}
-		c.Focus.Pulse = v
-	case "focus.pulse-strength":
-		// Capped low: the pulse must never flash.
+		c.Focus.Animation = v
+	case "focus.effect":
+		if v != ports.FocusEffectScreen {
+			return fmt.Errorf("must be screen")
+		}
+		c.Focus.Effect = v
+	case "focus.strength":
+		// Capped low: the focus indicator must never flash.
 		f, err := strconv.ParseFloat(v, 64)
 		if err != nil || !(f >= 0.01 && f <= 0.2) {
 			return fmt.Errorf("must be between 0.01 and 0.2")
 		}
-		c.Focus.PulseStrength = f
+		c.Focus.Strength = f
 	case "render.direct-scanout":
 		b, err := onOff(v)
 		if err != nil {

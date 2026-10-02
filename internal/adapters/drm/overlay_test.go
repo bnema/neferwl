@@ -109,7 +109,7 @@ func TestOverlayCandidate(t *testing.T) {
 	}
 	// A pulsing window needs its contrast composed.
 	s, _ = overlayScene()
-	s.Windows[len(s.Windows)-1].Pulse = 0.05
+	s.Windows[len(s.Windows)-1].FocusEffect = 0.05
 	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
 		t.Fatalf("pulsing window reason %q", reason)
 	}

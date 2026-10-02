@@ -59,10 +59,12 @@ touchpad.scroll-factor = 1
 
 # on: moving a column or window to another workspace shows that workspace.
 focus.follow-move = off
-# Subtle brightening pulse on the newly focused window: screen or off.
-focus.pulse = screen
-# Peak brightening, 0.01 to 0.2 (0.03: black reaches about 8/255).
-focus.pulse-strength = 0.03
+# Focus indicator on the newly focused window: an animation (pulse or off)
+# of an effect (screen: a slight brightening), peaking at strength
+# (0.01 to 0.2; 0.03: black reaches about 8/255).
+focus.animation = pulse
+focus.effect = screen
+focus.strength = 0.03
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.

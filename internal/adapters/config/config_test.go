@@ -77,29 +77,20 @@ func TestFollowMove(t *testing.T) {
 	}
 }
 
-func TestFocusPulse(t *testing.T) {
-	if Defaults().Focus.Pulse != ports.FocusPulseScreen {
-		t.Fatal("focus.pulse default", Defaults().Focus.Pulse)
+func TestFocusIndicator(t *testing.T) {
+	d := Defaults().Focus
+	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.03 {
+		t.Fatal("focus indicator defaults", d)
 	}
-	c, w := parseString(t, "focus.pulse = off\n")
-	if c.Focus.Pulse != ports.FocusPulseOff || len(w) != 0 {
+	c, w := parseString(t, "focus.animation = off\nfocus.effect = screen\nfocus.strength = 0.08\n")
+	if c.Focus.Animation != ports.FocusAnimationOff || c.Focus.Effect != ports.FocusEffectScreen || c.Focus.Strength != 0.08 || len(w) != 0 {
 		t.Fatal(c.Focus, w)
 	}
-	c, w = parseString(t, "focus.pulse = flash\n")
-	if c.Focus.Pulse != ports.FocusPulseScreen || len(w) != 1 {
-		t.Fatal(c.Focus, w)
-	}
-	if Defaults().Focus.PulseStrength != 0.03 {
-		t.Fatal("focus.pulse-strength default", Defaults().Focus.PulseStrength)
-	}
-	c, w = parseString(t, "focus.pulse-strength = 0.08\n")
-	if c.Focus.PulseStrength != 0.08 || len(w) != 0 {
-		t.Fatal(c.Focus, w)
-	}
-	for _, v := range []string{"0", "0.5", "x"} {
-		c, w = parseString(t, "focus.pulse-strength = "+v+"\n")
-		if c.Focus.PulseStrength != 0.03 || len(w) != 1 {
-			t.Fatal(v, c.Focus, w)
+	// Each rejected value warns and keeps its default.
+	for _, line := range []string{"focus.animation = blink", "focus.effect = glow", "focus.strength = 0", "focus.strength = 0.5", "focus.strength = x"} {
+		c, w = parseString(t, line+"\n")
+		if c.Focus != d || len(w) != 1 {
+			t.Fatal(line, c.Focus, w)
 		}
 	}
 }

@@ -11,8 +11,8 @@ import (
 func pulseCore(t *testing.T) (*Core, *indicatorClock) {
 	t.Helper()
 	c, ic := indicatorCore(t)
-	c.cfg.Focus.Pulse = ports.FocusPulseScreen
-	c.cfg.Focus.PulseStrength = 0.05
+	c.cfg.Focus.Animation = ports.FocusAnimationPulse
+	c.cfg.Focus.Strength = 0.05
 	c.cur().mon.AddWindow(1)
 	c.cur().mon.AddWindow(2)
 	indicatorScene(t, c)
@@ -26,7 +26,7 @@ func pulseCore(t *testing.T) (*Core, *indicatorClock) {
 func pulseOf(s ports.Scene, id WindowID) float64 {
 	for _, w := range s.Windows {
 		if w.ID == id {
-			return w.Pulse
+			return w.FocusEffect
 		}
 	}
 	return -1
@@ -150,7 +150,7 @@ func TestFocusPulseIgnoresKeyboardDetours(t *testing.T) {
 
 func TestFocusPulseOff(t *testing.T) {
 	c, ic := pulseCore(t)
-	c.cfg.Focus.Pulse = ports.FocusPulseOff
+	c.cfg.Focus.Animation = ports.FocusAnimationOff
 	c.cur().mon.Current().FocusID(1)
 	indicatorScene(t, c)
 	if c.pulse.timerC != nil {
@@ -158,10 +158,10 @@ func TestFocusPulseOff(t *testing.T) {
 	}
 	ic.now = ic.now.Add(pulseSettle)
 	if c.pulseTick() || c.animating() {
-		t.Fatal("pulse with focus.pulse off")
+		t.Fatal("pulse with focus.animation off")
 	}
 	// Turning it back on does not pulse the window already focused.
-	c.cfg.Focus.Pulse = ports.FocusPulseScreen
+	c.cfg.Focus.Animation = ports.FocusAnimationPulse
 	indicatorScene(t, c)
 	if c.pulse.timerC != nil {
 		t.Fatal("enabling the pulse pulses the focused window")
