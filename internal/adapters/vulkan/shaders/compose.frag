@@ -132,6 +132,12 @@ void main() {
             c.rgb = mix(v * 12.92, 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055, greaterThan(v, vec3(0.0031308))) * c.a;
         }
     }
+    if (d.mapy.z > 0.0) {
+        // Focus pulse: a screen-like lift toward white, on premultiplied
+        // values (rgb/a + k * (1 - rgb/a)) * a. Black shows it most; white
+        // never saturates.
+        c.rgb += d.mapy.z * (c.a - c.rgb);
+    }
     if (d.misc.x != modeSolid) {
         // The surface's alpha modifier; premultiplied, it scales all four.
         c *= d.color.a;

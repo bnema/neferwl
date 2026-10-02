@@ -126,14 +126,7 @@ func (s *captureState) armTimer(now time.Time, clock ports.Clock) {
 			first = f.until
 		}
 	}
-	d := max(first.Sub(now), time.Millisecond)
-	if clock != nil {
-		t := clock.NewTimer(d)
-		s.timerC, s.timerStop = t.C(), t.Stop
-		return
-	}
-	t := time.NewTimer(d)
-	s.timerC, s.timerStop = t.C, t.Stop
+	s.timerC, s.timerStop = newTimer(clock, max(first.Sub(now), time.Millisecond))
 }
 
 func (s *captureState) stopTimer() {

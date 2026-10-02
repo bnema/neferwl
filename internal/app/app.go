@@ -473,6 +473,10 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 				rects := make([]string, 0, len(s.Windows))
 				for _, w := range s.Windows {
 					rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+					if w.FocusEffect > 0 {
+						// The focus indicator frame by frame: window and effect.
+						ev = ev.Uint64("focus_effect_window", uint64(w.ID)).Float64("focus_effect", w.FocusEffect)
+					}
 				}
 				ev.Strs("windows", rects).Msg("scene")
 			}

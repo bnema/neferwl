@@ -10,6 +10,7 @@ import (
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 )
 
 // steppingClock returns a clock that moves a second forward on each Now:
@@ -21,6 +22,13 @@ func steppingClock(t *testing.T) *portsmocks.MockClock {
 	clock.EXPECT().Now().RunAndReturn(func() time.Time {
 		now = now.Add(time.Second)
 		return now
+	}).Maybe()
+	// Timers (the focus pulse) never fire: tests drive events only.
+	clock.EXPECT().NewTimer(mock.Anything).RunAndReturn(func(time.Duration) ports.Timer {
+		timer := portsmocks.NewMockTimer(t)
+		timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
+		timer.EXPECT().Stop().Return(true).Maybe()
+		return timer
 	}).Maybe()
 	return clock
 }

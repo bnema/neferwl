@@ -320,6 +320,16 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// FocusEffect, above 0, is the focus indicator's effect at this frame
+	// (focus.animation, focus.effect): the window's surfaces are lifted
+	// toward white by that fraction (screen blend). Renderers without the
+	// effect ignore it.
+	//
+	// Only focus.effect = screen exists, so the effect kind is not carried:
+	// core ignores Config.Focus.Effect and the shaders always apply screen
+	// (compose.frag, compose_hdr.frag, push constant mapy.z). A second effect
+	// needs its kind here and in the push constants (a misc flag).
+	FocusEffect float64
 	// Preview, above 0, draws the window's surfaces that much smaller in
 	// Rect (an overview thumbnail): the client keeps its size.
 	Preview float64

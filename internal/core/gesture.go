@@ -343,11 +343,14 @@ func (c *Core) animate(now time.Time) {
 // sliding reports whether a spring runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && c.screens[i].mon.springing()
+	return i >= 0 && (c.screens[i].mon.springing() || c.pulsing(c.screens[i]))
 }
 
-// animating reports whether a spring runs on any output.
+// animating reports whether a spring or the focus pulse runs on any output.
 func (c *Core) animating() bool {
+	if c.pulse.id != 0 {
+		return true
+	}
 	for _, sc := range c.screens {
 		if sc.mon.springing() {
 			return true
@@ -373,7 +376,7 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && sc.mon.springing() {
+		if r := sc.info.RefreshMilli; r > 0 && (sc.mon.springing() || c.pulsing(sc)) {
 			refresh = min(refresh, r)
 		}
 	}
@@ -383,14 +386,7 @@ func (c *Core) frameFallback() time.Duration {
 // armFrame starts the fallback timer of a running slide.
 func (c *Core) armFrame() {
 	c.stopFrame()
-	d := c.frameFallback()
-	if c.ch.Clock != nil {
-		t := c.ch.Clock.NewTimer(d)
-		c.frameC, c.frameStop = t.C(), t.Stop
-		return
-	}
-	t := time.NewTimer(d)
-	c.frameC, c.frameStop = t.C, t.Stop
+	c.frameC, c.frameStop = newTimer(c.ch.Clock, c.frameFallback())
 }
 
 func (c *Core) stopFrame() {

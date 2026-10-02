@@ -803,6 +803,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 func TestFullscreenAtMapIgnored(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Layout.Overflow = "fixed"
+	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
@@ -882,6 +883,7 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 // A taskbar's fullscreen request is the user's: it applies at once.
 func TestExternalFullscreenAtMapApplies(t *testing.T) {
 	cfg := config.Defaults()
+	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)

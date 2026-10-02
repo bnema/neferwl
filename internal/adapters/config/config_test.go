@@ -77,6 +77,24 @@ func TestFollowMove(t *testing.T) {
 	}
 }
 
+func TestFocusIndicator(t *testing.T) {
+	d := Defaults().Focus
+	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.04 {
+		t.Fatal("focus indicator defaults", d)
+	}
+	c, w := parseString(t, "focus.animation = off\nfocus.effect = screen\nfocus.strength = 0.08\n")
+	if c.Focus.Animation != ports.FocusAnimationOff || c.Focus.Effect != ports.FocusEffectScreen || c.Focus.Strength != 0.08 || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	// Each rejected value warns and keeps its default.
+	for _, line := range []string{"focus.animation = blink", "focus.effect = glow", "focus.strength = 0", "focus.strength = 0.5", "focus.strength = x"} {
+		c, w = parseString(t, line+"\n")
+		if c.Focus != d || len(w) != 1 {
+			t.Fatal(line, c.Focus, w)
+		}
+	}
+}
+
 func TestTouchpadNaturalScroll(t *testing.T) {
 	if Defaults().Touchpad.NaturalScroll {
 		t.Fatal("natural scroll on by default")

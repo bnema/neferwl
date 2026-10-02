@@ -59,6 +59,14 @@ type OutputLayout struct {
 	LayoutRules
 }
 
+// Focus indicator: the animation (Config.Focus.Animation) shapes in time
+// the visual effect (Config.Focus.Effect) drawn on a newly focused window.
+const (
+	FocusAnimationOff   = "off"
+	FocusAnimationPulse = "pulse"
+	FocusEffectScreen   = "screen"
+)
+
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
@@ -107,6 +115,11 @@ type Config struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
+		// Animation and Effect mark a window that just got the focus:
+		// FocusAnimation* (off disables it) and FocusEffect*. Strength is
+		// the effect's peak, 0.01 to 0.2.
+		Animation, Effect string
+		Strength          float64
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

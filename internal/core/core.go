@@ -133,6 +133,8 @@ type Core struct {
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
 	capt captureState
+	// pulse marks a window that just got the focus (pulse.go).
+	pulse focusPulse
 }
 
 func keyName(s string) string {
@@ -347,6 +349,17 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 	}
 	return c, nil
 }
+
+// newTimer makes a timer on clock, or the system timer when clock is nil.
+func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
+	if clock != nil {
+		t := clock.NewTimer(d)
+		return t.C(), t.Stop
+	}
+	t := time.NewTimer(d)
+	return t.C, t.Stop
+}
+
 func (c *Core) now() time.Time {
 	if c.ch.Clock != nil {
 		return c.ch.Clock.Now()
@@ -512,6 +525,14 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	window, _ := c.cur().mon.Focused()
+	c.pulseFocus(window, focus == window)
+	var pulse float64
+	if c.pulse.id != 0 {
+		pulse = c.advancePulse(c.now())
+	}
+	// drawable: the scene can show a pulse on the focused window.
+	drawable := false
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -554,6 +575,12 @@ func (c *Core) publish(ctx context.Context) error {
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
 			}
+			if focused && p.ID == c.pulse.target && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
+				drawable = true
+				if p.ID == c.pulse.id {
+					sw.FocusEffect = pulse
+				}
+			}
 			scene.Windows = append(scene.Windows, sw)
 			t := configureTarget{output: sc.name(), area: frame, focused: focused}
 			if !p.Hidden && p.Preview == 0 {
@@ -581,6 +608,10 @@ func (c *Core) publish(ctx context.Context) error {
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
+	// A pulse nothing shows (fullscreen, overview) asks for no frames.
+	if c.pulse.drawable = drawable; !drawable {
+		c.pulse.id = 0
+	}
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
 	if c.pointer != 0 && !c.visible(c.pointer) {
@@ -917,6 +948,7 @@ func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
+	defer c.stopPulseTimer()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -1101,6 +1133,14 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC, c.frameStop = nil, nil
 			if c.step(ctx) != nil {
+				return nil
+			}
+			continue
+		case <-c.pulse.timerC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.pulseTick() && c.publish(ctx) != nil {
 				return nil
 			}
 			continue

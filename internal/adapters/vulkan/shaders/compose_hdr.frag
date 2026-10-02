@@ -126,8 +126,15 @@ void main() {
     if (c.a > 0.0 && d.misc.x != modeSolid) {
         // ext_linear has the protocol's default 80 cd/m² reference white.
         // Keep negative and above-white values in fp16 until the HDR pass.
-        vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(c.rgb / c.a, d.color.x) :
-            (d.misc.y & flagExtendedLinear) != 0u ? c.rgb / c.a * (80.0 / d.color.x) : decodeSRGB(c.rgb / c.a);
+        vec3 v = c.rgb / c.a;
+        bool srgb = (d.misc.y & (flagPQ | flagExtendedLinear)) == 0u;
+        if (srgb && d.mapy.z > 0.0) {
+            // Focus pulse: the SDR lift, on sRGB-encoded values before
+            // decoding, so it looks the same as on an SDR output.
+            v += d.mapy.z * (1.0 - v);
+        }
+        vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(v, d.color.x) :
+            (d.misc.y & flagExtendedLinear) != 0u ? v * (80.0 / d.color.x) : decodeSRGB(v);
         c.rgb = linearRGB * c.a;
     }
     if (d.misc.x != modeSolid) {
