@@ -386,14 +386,7 @@ func (c *Core) frameFallback() time.Duration {
 // armFrame starts the fallback timer of a running slide.
 func (c *Core) armFrame() {
 	c.stopFrame()
-	d := c.frameFallback()
-	if c.ch.Clock != nil {
-		t := c.ch.Clock.NewTimer(d)
-		c.frameC, c.frameStop = t.C(), t.Stop
-		return
-	}
-	t := time.NewTimer(d)
-	c.frameC, c.frameStop = t.C, t.Stop
+	c.frameC, c.frameStop = newTimer(c.ch.Clock, c.frameFallback())
 }
 
 func (c *Core) stopFrame() {

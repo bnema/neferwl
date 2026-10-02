@@ -514,11 +514,14 @@ func (c *Core) publish(ctx context.Context) error {
 		return err
 	}
 	focus := c.keyboardFocus()
-	c.pulseFocus(focus)
+	window, _ := c.cur().mon.Focused()
+	c.pulseFocus(window, focus == window)
 	var pulse float64
 	if c.pulse.id != 0 {
-		pulse = c.pulseAt(c.now())
+		pulse = c.advancePulse(c.now())
 	}
+	// drawable: the scene can show a pulse on the focused window.
+	drawable := false
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -561,8 +564,11 @@ func (c *Core) publish(ctx context.Context) error {
 			if p.Peek {
 				sw.Dim = c.cfg.Stash.Dim
 			}
-			if pulse > 0 && focused && p.ID == c.pulse.id && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
-				sw.Pulse = pulse
+			if focused && p.ID == c.pulse.target && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
+				drawable = true
+				if p.ID == c.pulse.id {
+					sw.Pulse = pulse
+				}
 			}
 			scene.Windows = append(scene.Windows, sw)
 			t := configureTarget{output: sc.name(), area: frame, focused: focused}
@@ -591,6 +597,10 @@ func (c *Core) publish(ctx context.Context) error {
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
+	// A pulse nothing shows (fullscreen, overview) asks for no frames.
+	if c.pulse.drawable = drawable; !drawable {
+		c.pulse.id = 0
+	}
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
 	if c.pointer != 0 && !c.visible(c.pointer) {

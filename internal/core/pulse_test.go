@@ -110,10 +110,40 @@ func TestFocusPulseSkipsFullscreen(t *testing.T) {
 	c.cur().mon.ToggleFullscreen()
 	indicatorScene(t, c)
 	ic.now = ic.now.Add(pulseSettle)
+	if c.pulseTick() || c.animating() {
+		t.Fatal("fullscreen window asks for pulse frames")
+	}
+	// Fullscreen entered mid-pulse ends it.
+	c.cur().mon.ToggleFullscreen()
+	c.cur().mon.Current().FocusID(2)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if !c.pulseTick() {
+		t.Fatal("no pulse on the tiled window")
+	}
+	c.cur().mon.ToggleFullscreen()
+	if s := indicatorScene(t, c); pulseOf(s, 2) != 0 || c.animating() {
+		t.Fatal("pulse survived fullscreen")
+	}
+}
+
+// A popup grab or layer taking the keyboard stops the pulse; the window
+// getting it back is not a new focus and does not pulse again.
+func TestFocusPulseIgnoresKeyboardDetours(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.cur().mon.Current().FocusID(1)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
 	c.pulseTick()
-	ic.now = ic.now.Add(pulseRise)
-	if s := indicatorScene(t, c); pulseOf(s, 1) != 0 {
-		t.Fatalf("fullscreen window pulses: %v", pulseOf(s, 1))
+	// The keyboard goes elsewhere (held false), then comes back.
+	c.pulseFocus(1, false)
+	if c.animating() {
+		t.Fatal("pulse kept while the keyboard is elsewhere")
+	}
+	ic.now = ic.now.Add(2 * pulseCooldown)
+	c.pulseFocus(1, true)
+	if c.pulse.timerC != nil {
+		t.Fatal("returning keyboard counts as a new focus")
 	}
 }
 
@@ -128,5 +158,11 @@ func TestFocusPulseOff(t *testing.T) {
 	ic.now = ic.now.Add(pulseSettle)
 	if c.pulseTick() || c.animating() {
 		t.Fatal("pulse with focus.pulse off")
+	}
+	// Turning it back on does not pulse the window already focused.
+	c.cfg.Focus.Pulse = ports.FocusPulseContrast
+	indicatorScene(t, c)
+	if c.pulse.timerC != nil {
+		t.Fatal("enabling the pulse pulses the focused window")
 	}
 }
