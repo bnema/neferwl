@@ -81,10 +81,12 @@ type Config struct {
 	// Stash is the strip of windows set aside by toggle-window-stash:
 	// Width is the width of its selected window (10 to 90) and Gap the
 	// space between it and its neighbors (0 to 10), in percent of the
-	// usable width; Dim darkens the neighbors, 0 to 1.
+	// usable width; Dim darkens the neighbors, 0 to 1. Capture puts new
+	// windows in the stash while it is shown.
 	Stash struct {
 		Width, Gap int
 		Dim        float64
+		Capture    bool
 	}
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {

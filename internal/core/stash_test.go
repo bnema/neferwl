@@ -196,6 +196,53 @@ func TestStashFromRemovedNamedWorkspace(t *testing.T) {
 	}
 }
 
+// With stash.capture, a window opened while the stash is shown joins its
+// end, selected, and takes the focus unless a native dialog has it. A
+// hidden stash, a covering fullscreen window or capture off let it tile.
+func TestStashCapture(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		overflow Overflow
+		setup    func(*Monitor)
+		captured bool
+		focused  WindowID
+	}{
+		{"shown", OverflowScroll, func(*Monitor) {}, true, 4},
+		{"shown fixed", OverflowFixed, func(*Monitor) {}, true, 4},
+		{"dialog keeps focus", OverflowScroll, func(m *Monitor) { m.AddFloating(9, 10, 10) }, true, 9},
+		{"hidden", OverflowScroll, func(m *Monitor) { m.Current().ToggleStashVisible() }, false, 4},
+		{"under fullscreen", OverflowScroll, func(m *Monitor) { m.Current().SetFullscreen(3, true) }, false, 3},
+		{"off", OverflowScroll, func(m *Monitor) { m.SetStashCapture(false) }, false, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := stashMonitor(tc.overflow)
+			m.SetStashCapture(true)
+			tc.setup(m)
+			w := m.Current()
+			m.AddWindow(4)
+			if captured := w.stashIndex(4) == 2 && w.stashAt == 2; captured != tc.captured {
+				t.Fatalf("captured %v, stash %+v", captured, w.Stash)
+			}
+			if id, _ := w.Focused(); id != tc.focused {
+				t.Fatalf("focused %d", id)
+			}
+		})
+	}
+}
+
+// A captured window has no former column: toggle-window-stash tiles it as
+// a new column after the focused one.
+func TestStashCaptureUnstash(t *testing.T) {
+	m := stashMonitor(OverflowScroll)
+	m.SetStashCapture(true)
+	w := m.Current()
+	m.AddWindow(4)
+	w.ToggleWindowStash()
+	if len(w.Columns) != 2 || w.Columns[1].Windows[0] != 4 || w.Focus != 1 || w.stashIndex(4) >= 0 {
+		t.Fatalf("columns %+v focus %d stash %+v", w.Columns, w.Focus, w.Stash)
+	}
+}
+
 // stash.width sets the selected window's width; the neighbors sit
 // stash.gap beside it, in what the margins show.
 func TestStashWidth(t *testing.T) {

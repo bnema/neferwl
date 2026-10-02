@@ -67,6 +67,20 @@ func (w *Workspace) addStash(f Float) {
 	w.showStash()
 }
 
+// captureStash puts a new window id in the shown stash, selected, and
+// reports whether it did. Like a new tile, it leaves a focused native
+// float focused. Under a covering fullscreen window the stash is not on
+// screen: the window tiles as usual.
+func (w *Workspace) captureStash(id WindowID) bool {
+	if id == 0 || w.stashHidden || len(w.Stash) == 0 || w.cover() != 0 {
+		return false
+	}
+	// No former column: toggle-window-stash tiles it as a new column.
+	w.Stash = append(w.Stash, Float{ID: id})
+	w.stashAt, w.stashFocus = len(w.Stash)-1, true
+	return true
+}
+
 // showStash shows the stash and gives it the focus; a member whose
 // fullscreen waited while hidden is fullscreen again, selected, as if it
 // asked now.
