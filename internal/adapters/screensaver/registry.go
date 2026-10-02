@@ -1,8 +1,9 @@
 package screensaver
 
 // maxPerSender bounds the cookies one D-Bus connection may hold, so a
-// looping client cannot grow the registry without limit.
-const maxPerSender = 64
+// looping client cannot grow the registry without limit. It is generous:
+// the GTK portal holds the cookies of every app that inhibits through it.
+const maxPerSender = 1024
 
 // registry is the inhibitions in effect: cookie → owning connection. The
 // session stays awake while it is not empty. It is owned by Run's goroutine.

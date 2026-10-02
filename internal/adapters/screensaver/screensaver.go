@@ -81,24 +81,18 @@ func New(ctx context.Context, address string, log zerowrap.Logger) (*Service, er
 
 // Run serves the name until ctx ends or the bus goes, and sends on held each
 // change of whether any inhibition is in effect. If the bus goes while an
-// inhibition is held, it sends false before it returns. Another owner of the name is not an error:
-// Run then serves nothing and waits for ctx.
+// inhibition is held, it sends false before it returns. Another owner of
+// the name is not an error: Run then closes the connection and returns nil.
 func (s *Service) Run(ctx context.Context, held chan<- bool) error {
 	defer close(s.done)
 	defer func() { _ = s.conn.Close() }()
-	signals := make(chan *dbus.Signal, 16)
-	s.conn.Signal(signals)
-	// Leaving connections are how inhibitions of crashed clients end.
-	if err := s.conn.AddMatchSignalContext(ctx, dbus.WithMatchSender("org.freedesktop.DBus"), dbus.WithMatchInterface("org.freedesktop.DBus"), dbus.WithMatchMember("NameOwnerChanged")); err != nil {
-		return fmt.Errorf("watch bus names: %w", err)
-	}
 	for _, p := range paths {
 		if err := s.conn.Export(handler{s}, p, iface); err != nil {
-			return err
+			return fmt.Errorf("export %s: %w", p, err)
 		}
 		node := &introspect.Node{Name: string(p), Interfaces: []introspect.Interface{{Name: iface, Methods: methods}}}
 		if err := s.conn.Export(introspect.NewIntrospectable(node), p, "org.freedesktop.DBus.Introspectable"); err != nil {
-			return err
+			return fmt.Errorf("export %s introspection: %w", p, err)
 		}
 	}
 	r, err := s.conn.RequestName(busName, dbus.NameFlagDoNotQueue)
@@ -107,8 +101,15 @@ func (s *Service) Run(ctx context.Context, held chan<- bool) error {
 	}
 	if r != dbus.RequestNameReplyPrimaryOwner {
 		s.log.Warn().Msg(busName + " is owned by another program; D-Bus idle inhibitors are left to it")
-		<-ctx.Done()
 		return nil
+	}
+	// Departures end the inhibitions of crashed clients. Only lost owners
+	// (new owner "") are sent. A client that leaves before this match exists
+	// is caught by the onBus check on its first cookie.
+	signals := make(chan *dbus.Signal, 16)
+	s.conn.Signal(signals)
+	if err := s.conn.AddMatchSignalContext(ctx, dbus.WithMatchSender("org.freedesktop.DBus"), dbus.WithMatchInterface("org.freedesktop.DBus"), dbus.WithMatchMember("NameOwnerChanged"), dbus.WithMatchArg(2, "")); err != nil {
+		return fmt.Errorf("watch bus names: %w", err)
 	}
 	s.log.Info().Msg("serving " + busName)
 	reg := newRegistry()

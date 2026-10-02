@@ -204,7 +204,8 @@ func TestBusLossReleases(t *testing.T) {
 	}
 }
 
-// Another owner keeps the name: the service stands aside without error.
+// Another owner keeps the name: the service stands aside without error,
+// and returns at once so it holds no bus connection.
 func TestNameTaken(t *testing.T) {
 	address := privateBus(t)
 	other := connect(t, address)
@@ -217,11 +218,19 @@ func TestNameTaken(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
+	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx, make(chan bool)) }()
-	time.Sleep(100 * time.Millisecond)
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run waits instead of standing aside")
+	}
+	var owner string
+	if err := other.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, busName).Store(&owner); err != nil || owner != other.Names()[0] {
+		t.Fatalf("owner %q, want %q: %v", owner, other.Names()[0], err)
 	}
 }
