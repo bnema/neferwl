@@ -208,25 +208,34 @@ func TestOverviewOpensOverFullscreenFloat(t *testing.T) {
 	}
 }
 
-// A tiled fullscreen window (fixed overflow) is its row's only preview
-// too: the selection cannot leave it for a hidden column, and Return keeps
-// it fullscreen.
+// A tiled fullscreen window (fixed overflow) is its row's front card:
+// Return keeps it fullscreen; the column it hides is behind, and picking
+// it leaves fullscreen.
 func TestOverviewOpensOverFullscreenTile(t *testing.T) {
-	m := newMonitor("", "")
-	m.SetOutput(300, 200)
-	m.SetOverflow(OverflowFixed)
-	m.AddWindow(1)
-	m.AddWindow(2)
-	m.ToggleFullscreen()
-	m.ToggleOverview()
+	open := func() *Monitor {
+		m := newMonitor("", "")
+		m.SetOutput(300, 200)
+		m.SetOverflow(OverflowFixed)
+		m.AddWindow(1)
+		m.AddWindow(2)
+		m.ToggleFullscreen()
+		m.ToggleOverview()
+		return m
+	}
+	m := open()
 	game := previewOf(t, m.Layout(), 2)
 	if !m.ov.open || !game.Focused || game.Peek || !game.Fullscreen {
 		t.Fatalf("game %+v", game)
 	}
-	m.OverviewMove(-1, 0)
 	m.ToggleOverview()
 	if f, _ := m.Focused(); f != 2 || m.Active != 0 || !previewOf(t, m.Layout(), 2).Fullscreen {
 		t.Fatalf("confirm: %d on %d", f, m.Active)
+	}
+	m = open()
+	m.OverviewMove(-1, 0)
+	m.ToggleOverview()
+	if f, _ := m.Focused(); f != 1 || m.Current().fullscreen != 0 {
+		t.Fatalf("behind: focused %d, fullscreen %d", f, m.Current().fullscreen)
 	}
 }
 
@@ -250,9 +259,9 @@ func TestOverviewOverScrollFullscreenPicksColumn(t *testing.T) {
 	}
 }
 
-// Only the game shows on its row: its dialogs and the columns under it
-// stay hidden, as on screen.
-func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
+// A neighbor row with a fullscreen game shows it in front, the columns it
+// hides behind; a dialog under it stays hidden, as for any small float.
+func TestOverviewFullscreenFloatRow(t *testing.T) {
 	m := gameMonitor(OverflowScroll)
 	m.Focus(1)
 	m.AddWindow(5)
@@ -262,13 +271,16 @@ func TestOverviewFullscreenFloatHidesOthers(t *testing.T) {
 	m.Focus(0)
 	m.ToggleOverview()
 	ps := m.Layout()
-	if previewOf(t, ps, 2).Hidden {
-		t.Fatal("game hidden")
-	}
-	for _, id := range []WindowID{3, 4, 5} {
-		if p := previewOf(t, ps, id); !p.Hidden {
-			t.Fatalf("%d shown: %+v", id, p)
+	for _, id := range []WindowID{2, 3, 5} {
+		if p := previewOf(t, ps, id); p.Hidden || !p.Peek {
+			t.Fatalf("%d: %+v", id, p)
 		}
+	}
+	if p := previewOf(t, ps, 4); !p.Hidden {
+		t.Fatalf("dialog shown: %+v", p)
+	}
+	if g := previewOf(t, ps, 2); !g.Fullscreen {
+		t.Fatalf("game %+v", g)
 	}
 }
 

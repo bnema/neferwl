@@ -171,6 +171,10 @@ type Workspace struct {
 	border     int
 	presets    []Width
 	fullscreen WindowID
+	// left is the window whose fullscreen the user left for another
+	// window: its client requests are refused until it is focused again,
+	// so an app that re-asks at once (Wine) does not cover that window.
+	left WindowID
 	// Floats are native floating windows in user selection order;
 	// below/above and dialog groups determine their layout order.
 	Floats     []Float
@@ -449,6 +453,9 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	}
 	if w.hiddenFullscreen == id {
 		w.hiddenFullscreen = 0
+	}
+	if w.left == id {
+		w.left = 0
 	}
 	if i := w.floatIndex(id); i >= 0 {
 		w.Floats = slices.Delete(w.Floats, i, i+1)
@@ -811,6 +818,9 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
+	if slices.Contains(col.Windows, w.left) {
+		w.left = 0
+	}
 	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
 	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
 	if len(w.Columns) == 0 {
@@ -945,6 +955,16 @@ func (w *Workspace) endFullscreen() {
 	w.scroll()
 }
 
+// leaveFullscreen ends the fullscreen for another window the user chose,
+// and refuses its client's requests until it is focused again (mayCover,
+// settleLeft).
+func (w *Workspace) leaveFullscreen() {
+	if w.fullscreen != 0 {
+		w.left = w.fullscreen
+	}
+	w.endFullscreen()
+}
+
 // Activate focuses a window and makes it visible: it leaves another
 // window's fullscreen, which hides everything else.
 func (w *Workspace) Activate(id WindowID) {
@@ -952,12 +972,12 @@ func (w *Workspace) Activate(id WindowID) {
 		// A hidden stashed window must be seen: show the stash with it,
 		// selected. Another window's fullscreen leaves first, so its own
 		// pending fullscreen comes back.
-		w.endFullscreen()
+		w.leaveFullscreen()
 		w.stashAt = i
 		w.showStash()
 	}
 	if w.fullscreen != 0 && w.fullscreen != id {
-		w.endFullscreen()
+		w.leaveFullscreen()
 	}
 	w.FocusID(id)
 }
@@ -1064,12 +1084,27 @@ func (w *Workspace) overviewArea() Rect { return w.reserved }
 
 func (w *Workspace) gap() int { return min(w.Gaps, w.Usable.W/2, w.Usable.H/2) }
 
+// settleLeft drops the latch once its window has the focus again, however
+// it got it; core calls it after each event.
+func (w *Workspace) settleLeft() {
+	if id, ok := w.Focused(); ok && id == w.left {
+		w.left = 0
+	}
+}
+
 // mayCover reports whether a client may make id fullscreen. In fixed
 // overflow it would cover the output at once and take the keyboard from
 // the focused window, so only the focused window may; the request of
 // another is refused and the user can still toggle-fullscreen it. A
-// hidden stash's request waits for the show (showStash).
+// hidden stash's request waits for the show (showStash). A window whose
+// fullscreen the user left may only once focused again, in any overflow.
 func (w *Workspace) mayCover(id WindowID) bool {
+	if id == w.left {
+		if focused, ok := w.Focused(); !ok || focused != id {
+			return false
+		}
+		w.left = 0
+	}
 	if w.Overflow != OverflowFixed || w.stashHidden && w.stashIndex(id) >= 0 {
 		return true
 	}
@@ -1078,8 +1113,9 @@ func (w *Workspace) mayCover(id WindowID) bool {
 }
 
 // pinned reports whether the covering fullscreen window hides every other
-// window: focus moves leave it (leaveCover). Only in scroll overflow does
-// moving to a tiled neighbor scroll it off and show the target instead.
+// window: focus moves leave it (leaveCover), and the overview shows it as
+// the front card of its row. Only in scroll overflow does moving to a
+// tiled neighbor scroll it off and show the target instead.
 func (w *Workspace) pinned() bool {
 	c := w.cover()
 	return c != 0 && (w.Overflow == OverflowFixed || w.isFloat(c))
@@ -1095,7 +1131,8 @@ func (w *Workspace) leaveCover(move func()) bool {
 	w.fullscreen = 0
 	move()
 	if id, ok := w.Focused(); ok && id != full {
-		w.endFullscreen()
+		w.fullscreen = full
+		w.leaveFullscreen()
 		return true
 	}
 	w.fullscreen = full

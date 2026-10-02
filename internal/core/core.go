@@ -483,6 +483,12 @@ func (c *Core) publish(ctx context.Context) error {
 	if c.security.Protected {
 		return c.publishProtected(ctx)
 	}
+	for _, sc := range c.screens {
+		// The overview's selection is provisional: it focuses nothing yet.
+		if !sc.mon.ov.open {
+			sc.mon.Current().settleLeft()
+		}
+	}
 	c.captureExpire()
 	capture, err := c.captureEvaluate(ctx)
 	if err != nil {

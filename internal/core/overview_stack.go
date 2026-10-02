@@ -18,8 +18,17 @@ type stackItem struct {
 	id   WindowID
 }
 
+// overviewMaximized reports a fixed row whose focused column hides the
+// others: maximized, or holding the covering fullscreen tile. Its card
+// shows in front of the hidden columns' card.
 func (w *Workspace) overviewMaximized() bool {
-	return w.Overflow == OverflowFixed && len(w.Columns) > 1 && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && !w.pinned()
+	if w.Overflow != OverflowFixed || len(w.Columns) < 2 || w.Focus < 0 || w.Focus >= len(w.Columns) {
+		return false
+	}
+	if c := w.cover(); c != 0 && !w.isFloat(c) {
+		return w.columnOf(c) == w.Focus
+	}
+	return w.Columns[w.Focus].FullWidth
 }
 
 func (w *Workspace) columnOf(id WindowID) int {
@@ -32,21 +41,36 @@ func (w *Workspace) columnOf(id WindowID) int {
 }
 
 // stack lists what is on screen followed by what it hides, top to bottom.
+// A pinned fullscreen window is the front card, a float on its own, a
+// fixed tile with its column, so every window it hides stays reachable; a
+// stashed one is its card in the pile.
 func (w *Workspace) stack() []stackItem {
-	if w.pinned() {
-		return nil
-	}
 	var items []stackItem
+	c, columns := WindowID(0), len(w.Columns) > 0
+	if w.pinned() {
+		c = w.cover()
+	}
+	switch {
+	case c == 0, w.stashIndex(c) >= 0:
+	case w.floatIndex(c) >= 0:
+		items = append(items, stackItem{stackFloat, c})
+	case w.overviewMaximized():
+		items = append(items, stackItem{stackColumn, c})
+	default:
+		// One card of all columns, its own marked fullscreen.
+		items = append(items, stackItem{kind: stackColumns})
+		columns = false
+	}
 	for i := len(w.Floats) - 1; i >= 0; i-- {
 		f := w.Floats[i]
 		if !f.below && w.coversFloat(f) {
 			items = append(items, stackItem{stackFloat, f.ID})
 		}
 	}
-	if w.overviewMaximized() {
+	if (c == 0 || w.isFloat(c)) && w.overviewMaximized() {
 		items = append(items, stackItem{stackColumn, w.Columns[w.Focus].Windows[0]})
 	}
-	if len(w.Columns) > 0 {
+	if columns {
 		items = append(items, stackItem{kind: stackColumns})
 	}
 	for i := len(w.Floats) - 1; i >= 0; i-- {
@@ -242,6 +266,11 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 		return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, sel)
 	}
 	g := w.gap()
+	if item.kind == stackFloat && item.id == w.cover() {
+		// A fullscreen float shows at the size of a fullscreen column.
+		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
+		return w.previewRowTiles(y, dim, lit, []Placement{{ID: item.id, Rect: r, Focused: true, Fullscreen: true}}, w.Usable.W, r)
+	}
 	if item.kind == stackFloat {
 		f := w.Floats[w.floatIndex(item.id)]
 		r := w.floatRect(f)
@@ -259,7 +288,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 	r.Y = (w.Usable.H - r.H) / 2
 	tiles := make([]Placement, 0, len(c.Windows))
 	for j, t := range rowRects(r, c, g) {
-		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus})
+		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus, Fullscreen: c.Windows[j] == w.cover()})
 	}
 	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, r)
 }
