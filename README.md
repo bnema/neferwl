@@ -20,8 +20,6 @@ I wanted a compositor I would never have to think about. It takes the newest Way
 
 It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no built-in bar or wallpaper. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
-The config fits in your head: one `key = value` per line, every key has a default, and an empty file is a valid config. See [Configuration](#configuration).
-
 ## Features
 
 - **Games.** Fullscreen is exclusive: nothing is drawn above a fullscreen window but a locker, so it is scanned out directly, with tearing, VRR and explicit sync when the client asks for them. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
