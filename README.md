@@ -60,6 +60,7 @@ The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `term
 - `wp_tearing_control_v1` and VRR while a fullscreen window covers the output.
 - `wp_linux_drm_syncobj_v1`: client fences go to KMS. NVIDIA drivers need it.
 - `wp_presentation`, `wp_fifo_v1`, `wp_commit_timing_v1` for frame pacing.
+- `wp_fractional_scale_v1` and `wp_viewporter`: clients render at the output scale, nothing is rescaled.
 - Damage tracking, occlusion of surfaces behind opaque ones, no work on idle outputs. Frame, cursor, overlay and VRR in one atomic commit.
 - Input is read on its own thread and never waits on rendering; the cursor has a hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling. Relative pointer, pointer constraints and keyboard shortcuts inhibit for games.
 - `wp_drm_lease_v1` leases headset connectors to SteamVR and Monado.
