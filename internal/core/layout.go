@@ -1078,8 +1078,9 @@ func (w *Workspace) mayCover(id WindowID) bool {
 }
 
 // pinned reports whether the covering fullscreen window hides every other
-// window: focus moves leave it (leaveCover). Only in scroll overflow does
-// moving to a tiled neighbor scroll it off and show the target instead.
+// window: focus moves leave it (leaveCover), and the overview shows it as
+// the front card of its row. Only in scroll overflow does moving to a
+// tiled neighbor scroll it off and show the target instead.
 func (w *Workspace) pinned() bool {
 	c := w.cover()
 	return c != 0 && (w.Overflow == OverflowFixed || w.isFloat(c))

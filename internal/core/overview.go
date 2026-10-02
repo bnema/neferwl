@@ -44,7 +44,8 @@ type rowSnapshot struct {
 // The overview scales workspace rows without resizing clients. Covering
 // floats and the columns form a linear stack of cards; small floats stay
 // hidden. Up/down traverse the stack before changing workspace. A pinned
-// fullscreen window remains the only preview on its row.
+// fullscreen window is the front card of its row, the windows it hides
+// behind it; choosing one of them leaves fullscreen.
 
 // A workspace's stash shows as a pile of cards pinned to the left edge of
 // its row: the selected stashed window in front at overviewCardZoom, up to
@@ -108,9 +109,8 @@ func (m *Monitor) selectRow() {
 	m.ov.front, m.ov.row, m.ov.frontAt = stackItem{}, nil, 0
 	m.ov.selected, m.ov.selectedAt = 0, -1
 	w := m.Current()
-	if w.pinned() {
-		return
-	}
+	// A fullscreen window has the focus: its card is in front.
+	w.focusCover()
 	if w.floatFocus && len(w.Columns) > 0 && (len(w.stack()) < 2 || m.stackFront(w).kind == stackColumns) {
 		w.floatFocus = false
 	}
@@ -150,9 +150,6 @@ func (m *Monitor) overviewTarget() WindowID {
 		return id
 	}
 	w := m.Current()
-	if w.pinned() {
-		return w.cover()
-	}
 	item := m.stackFront(w)
 	switch item.kind {
 	case stackFloat:
@@ -222,17 +219,22 @@ func (m *Monitor) overviewMoveTo(a Action) {
 
 // closeOverview closes the overview on the selection: a card shows the
 // stash on it. A fullscreen request another stashed window made while
-// the stash was hidden is dropped: the picked card stays in front.
+// the stash was hidden is dropped: the picked card stays in front. A
+// window a pinned fullscreen window hides leaves that fullscreen.
 func (m *Monitor) closeOverview() {
 	w := m.Current()
+	front, target := m.stackFront(w), m.overviewTarget()
+	if w.pinned() && target != w.cover() {
+		w.endFullscreen()
+	}
 	if i := m.cardAt(w); i >= 0 {
 		if w.hiddenFullscreen != w.Stash[i].ID {
 			w.hiddenFullscreen = 0
 		}
 		w.stashAt = i
 		w.showStash()
-	} else if !w.pinned() && len(w.stack()) > 0 {
-		w.apply(m.stackFront(w), m.overviewTarget())
+	} else if front != (stackItem{}) {
+		w.apply(front, target)
 	}
 	for r, s := range m.ov.rows {
 		if r != w && m.has(r) {
@@ -373,9 +375,6 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		m.showOverview(rows[i])
 		return
 	}
-	if w.pinned() {
-		return
-	}
 	if at := m.cardAt(w); at >= 0 {
 		switch {
 		case at+dx >= 0 && at+dx < len(w.Stash):
@@ -447,7 +446,7 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	}
 	if w.floatIndex(id) >= 0 && w.stashIndex(id) < 0 {
 		i := w.floatIndex(id)
-		if !w.coversFloat(w.Floats[i]) && !w.pinned() {
+		if !w.coversFloat(w.Floats[i]) && !(id == w.cover() && w.pinned()) {
 			return
 		}
 	}
@@ -455,8 +454,6 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	m.ov.card, m.ov.cardOf = 0, nil
 	if i := w.stashIndex(id); i >= 0 {
 		m.selectCard(w, i)
-	} else if w.pinned() {
-		w.FocusID(id)
 	} else if item, ok := w.itemOf(id); ok {
 		m.setFront(w, item)
 		if i := w.columnOf(id); i >= 0 {
@@ -522,16 +519,6 @@ func (m *Monitor) overviewLayout() []Placement {
 	var result []Placement
 	for w := range m.all() {
 		ry, shown := rows[w]
-		if shown && w.pinned() {
-			// Only the covering window shows, as on screen.
-			result = append(result, w.previewRow(ry, w != cur, true)...)
-			for _, id := range w.windows() {
-				if id != w.fullscreen {
-					result = append(result, Placement{ID: id, Hidden: true})
-				}
-			}
-			continue
-		}
 		if shown {
 			at := m.cardAt(w)
 			result = append(result, m.stackRow(w, ry, w != cur, at < 0)...)
@@ -622,7 +609,7 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
 // pileWidth is the room the stash pile of w takes on the left of its row,
 // its margin included; 0 without a stash.
 func (w *Workspace) pileWidth() int {
-	if len(w.Stash) == 0 || w.pinned() {
+	if len(w.Stash) == 0 {
 		return 0
 	}
 	card := int(math.Round(float64(w.stashRect().W) * overviewCardZoom))
@@ -713,15 +700,19 @@ func (w *Workspace) rowHeight() int {
 // corner. Fixed overflow uses its on-screen geometry; scroll overflow uses
 // an unscrolled row. span is the row's width; sel is the focused column.
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
+	if c := w.cover(); c != 0 && w.pinned() {
+		// The row shows the columns a pinned fullscreen window hides,
+		// laid out as without it; its own tile stays marked fullscreen.
+		v := *w
+		v.fullscreen = 0
+		tiles, span, sel = v.previewTiles()
+		for i := range tiles {
+			tiles[i].Fullscreen = tiles[i].ID == c
+		}
+		return tiles, span, sel
+	}
 	g := w.gap()
 	h := max(w.Usable.H-2*g, 0)
-	if w.pinned() {
-		// A covering window nothing else is reachable under (a game) is
-		// the row's only tile, at the size of a fullscreen column. It
-		// stays fullscreen.
-		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: h}
-		return []Placement{{ID: w.cover(), Rect: r, Focused: true, Fullscreen: true}}, r.X + r.W + g, r
-	}
 	var rects []Rect
 	if w.Overflow == OverflowFixed {
 		rects = w.columnRects()
