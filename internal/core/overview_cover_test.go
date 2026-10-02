@@ -8,6 +8,7 @@ func coverMonitor(o Overflow, float bool) *Monitor {
 	m := newMonitor("", "")
 	m.SetOutput(300, 200)
 	m.SetOverflow(o)
+	m.SetMaxColumns(2)
 	m.AddWindow(1)
 	if float {
 		m.AddFloating(2, 300, 200)

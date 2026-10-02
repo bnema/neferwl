@@ -225,7 +225,7 @@ func (m *Monitor) closeOverview() {
 	w := m.Current()
 	front, target := m.stackFront(w), m.overviewTarget()
 	if w.pinned() && target != w.cover() {
-		w.endFullscreen()
+		w.leaveFullscreen()
 	}
 	if i := m.cardAt(w); i >= 0 {
 		if w.hiddenFullscreen != w.Stash[i].ID {
