@@ -105,6 +105,29 @@ func TestFocusPulseStopsAndCoolsDown(t *testing.T) {
 	}
 }
 
+// A window focused as it maps does not pulse; focusing it again later does.
+func TestFocusPulseSkipsNewWindow(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.windows.mapped(ports.WindowMapped{ID: 3}, ic.now)
+	c.cur().mon.AddWindow(3)
+	indicatorScene(t, c)
+	if c.pulse.timerC != nil {
+		t.Fatal("opening a window arms the pulse")
+	}
+	ic.now = ic.now.Add(pulseSettle)
+	if c.pulseTick() || c.animating() {
+		t.Fatal("a new window pulses")
+	}
+	c.cur().mon.Current().FocusID(1)
+	indicatorScene(t, c)
+	c.cur().mon.Current().FocusID(3)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if !c.pulseTick() || c.pulse.id != 3 {
+		t.Fatal("an existing window did not pulse")
+	}
+}
+
 func TestFocusPulseSkipsFullscreen(t *testing.T) {
 	c, ic := pulseCore(t)
 	c.cur().mon.Current().FocusID(1)

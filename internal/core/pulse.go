@@ -65,7 +65,18 @@ func (c *Core) pulseFocus(window WindowID, held bool) {
 		return
 	}
 	p.since = c.now()
+	if c.justMapped(window) {
+		return
+	}
 	p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseSettle)
+}
+
+// justMapped reports whether the window got the focus as it mapped: opening
+// an app is not a focus change, and its first frames may still be on their
+// way. Its focus counts from the next change.
+func (c *Core) justMapped(id WindowID) bool {
+	p := &c.pulse
+	return p.target == id && p.since.Sub(c.windows.lookup(id).mappedAt) < pulseSettle
 }
 
 // pulseTick runs when the settle timer fired. It reports whether a pulse
@@ -73,7 +84,7 @@ func (c *Core) pulseFocus(window WindowID, held bool) {
 func (c *Core) pulseTick() bool {
 	p := &c.pulse
 	p.timerC, p.timerStop = nil, nil
-	if p.target == 0 || !c.pulseOn() || !p.drawable {
+	if p.target == 0 || !c.pulseOn() || !p.drawable || c.justMapped(p.target) {
 		return false
 	}
 	now := c.now()
