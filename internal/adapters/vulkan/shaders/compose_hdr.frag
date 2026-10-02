@@ -129,9 +129,9 @@ void main() {
         vec3 v = c.rgb / c.a;
         bool srgb = (d.misc.y & (flagPQ | flagExtendedLinear)) == 0u;
         if (srgb && d.mapy.z > 0.0) {
-            // Focus pulse: the SDR contrast, on sRGB-encoded values before
+            // Focus pulse: the SDR lift, on sRGB-encoded values before
             // decoding, so it looks the same as on an SDR output.
-            v = clamp((v - 0.5) * (1.0 + d.mapy.z) + 0.5, 0.0, 1.0);
+            v += d.mapy.z * (1.0 - v);
         }
         vec3 linearRGB = (d.misc.y & flagPQ) != 0u ? pqToLinear709(v, d.color.x) :
             (d.misc.y & flagExtendedLinear) != 0u ? v * (80.0 / d.color.x) : decodeSRGB(v);

@@ -20,7 +20,7 @@ type sceneWalk struct {
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (ports.SceneWindow.Preview); 1 otherwise.
 	zoom float64
-	// pulse is the contrast gain of the window being placed
+	// pulse is the focus pulse lift of the window being placed
 	// (ports.SceneWindow.Pulse); 0 otherwise.
 	pulse  float32
 	bounds image.Rectangle

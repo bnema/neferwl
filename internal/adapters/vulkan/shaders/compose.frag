@@ -133,9 +133,10 @@ void main() {
         }
     }
     if (d.mapy.z > 0.0) {
-        // Focus pulse: contrast around mid grey, on premultiplied values
-        // ((rgb/a - 0.5) * gain + 0.5) * a, kept within 0..a.
-        c.rgb = clamp((c.rgb - 0.5 * c.a) * (1.0 + d.mapy.z) + 0.5 * c.a, 0.0, c.a);
+        // Focus pulse: a screen-like lift toward white, on premultiplied
+        // values (rgb/a + k * (1 - rgb/a)) * a. Black shows it most; white
+        // never saturates.
+        c.rgb += d.mapy.z * (c.a - c.rgb);
     }
     if (d.misc.x != modeSolid) {
         // The surface's alpha modifier; premultiplied, it scales all four.

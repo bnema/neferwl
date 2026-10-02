@@ -7,7 +7,8 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// The focus pulse briefly raises the contrast of a window that just got the
+// The focus pulse briefly lifts the colors of a window toward white (a light
+// screen blend, visible on black backgrounds too): a window that just got the
 // keyboard focus (focus.pulse). Only the last focus counts: it must hold for
 // pulseSettle before the pulse starts, a focus change stops a running one, and
 // the same window does not pulse again within pulseCooldown. Fast switching
@@ -19,8 +20,9 @@ const (
 	pulseRise     = 90 * time.Millisecond
 	pulseFall     = 230 * time.Millisecond
 	pulseCooldown = time.Second
-	// pulseStrength is the contrast gain at the top of the pulse.
-	pulseStrength = 0.08
+	// pulseStrength is the lift toward white at the top of the pulse: black
+	// shows about 10/255.
+	pulseStrength = 0.04
 )
 
 // focusPulse is the pulse state. target is the window focus last seen and
@@ -88,7 +90,7 @@ func (c *Core) pulseTick() bool {
 	return true
 }
 
-// advancePulse is the contrast gain of the running pulse at now: a quick
+// advancePulse is the lift of the running pulse at now: a quick
 // sine rise, then a smooth fall. It ends the pulse once over.
 func (c *Core) advancePulse(now time.Time) float64 {
 	p := &c.pulse

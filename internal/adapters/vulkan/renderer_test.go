@@ -111,8 +111,7 @@ func TestRendererFade(t *testing.T) {
 	}
 }
 
-// A pulsing window's contrast rises around mid grey: dark goes darker,
-// light lighter, mid grey stays, and nothing leaves 0..255.
+// A pulsing window lifts toward white: black the most, white not at all.
 func TestRendererPulse(t *testing.T) {
 	r, err := New(64, 48)
 	if err != nil {
@@ -121,7 +120,7 @@ func TestRendererPulse(t *testing.T) {
 	defer r.Close()
 	for i, tc := range []struct {
 		in, want uint8
-	}{{200, 207}, {64, 57}, {128, 128}, {255, 255}, {0, 0}} {
+	}{{0, 26}, {64, 83}, {200, 206}, {255, 255}} {
 		// One window per case: the shm copy is cached per window.
 		id := ports.WindowID(i + 1)
 		c := solidContent(t, 64, 48, color.RGBA{tc.in, tc.in, tc.in, 255})
