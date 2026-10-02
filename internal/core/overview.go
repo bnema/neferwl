@@ -208,6 +208,10 @@ func (m *Monitor) overviewMoveTo(a Action) {
 	if m.card() != 0 || id == 0 || !ok || m.Workspaces[i] == cur {
 		return
 	}
+	if cur.pinned() && id != cur.cover() {
+		// Focused reports the covering window while it covers.
+		cur.leaveFullscreen()
+	}
 	cur.FocusID(id)
 	m.MoveToWorkspace(i, column)
 	// The row that received the window keeps it focused on close.

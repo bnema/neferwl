@@ -158,6 +158,47 @@ func TestOverviewCoverPickStashCard(t *testing.T) {
 	}
 }
 
+// Window binds act on the selected card: a window behind the fullscreen
+// one moves or closes, not the fullscreen window.
+func TestOverviewCoverActsOnSelection(t *testing.T) {
+	for _, tc := range pinnedCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := coverMonitor(tc.overflow, tc.float)
+			m.ToggleOverview()
+			if e := m.Apply(ActionCloseWindow); e.Close != 2 {
+				t.Fatalf("front close %d", e.Close)
+			}
+			m.OverviewMove(-1, 0)
+			if e := m.Apply(ActionCloseWindow); e.Close != 1 {
+				t.Fatalf("behind close %d", e.Close)
+			}
+			w := m.Current()
+			m.Apply(ActionMoveWindowToWorkspaceDown)
+			if got, _ := m.find(1); got == w || !w.has(2) {
+				t.Fatalf("moved the wrong window: %v", windows(m))
+			}
+		})
+	}
+}
+
+// A fullscreen tile whose column is also maximized hands the maximized
+// state to the column picked behind it, as a maximized row does.
+func TestOverviewCoverMaximizedPick(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(300, 200)
+	m.SetOverflow(OverflowFixed)
+	m.AddWindow(1)
+	m.AddWindow(2)
+	w := m.Current()
+	w.ToggleFullWidth()
+	m.ToggleFullscreen()
+	m.ToggleOverview()
+	m.OverviewPick(1)
+	if f, _ := m.Focused(); f != 1 || w.fullscreen != 0 || !w.Columns[0].FullWidth || w.Columns[1].FullWidth {
+		t.Fatalf("focused %d, fullscreen %d, columns %+v", f, w.fullscreen, w.Columns)
+	}
+}
+
 // A fixed fullscreen tile among several columns is the front card, the
 // other columns behind it, as for a maximized column.
 func TestOverviewCoverTileAmongColumns(t *testing.T) {
