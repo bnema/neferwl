@@ -124,7 +124,7 @@ func Defaults() ports.Config {
 	c.Touchpad.ScrollFactor = 1
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen
-	c.Focus.Strength = 0.03
+	c.Focus.Strength = 0.04
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}

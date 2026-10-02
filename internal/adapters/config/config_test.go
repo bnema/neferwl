@@ -79,7 +79,7 @@ func TestFollowMove(t *testing.T) {
 
 func TestFocusIndicator(t *testing.T) {
 	d := Defaults().Focus
-	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.03 {
+	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.04 {
 		t.Fatal("focus indicator defaults", d)
 	}
 	c, w := parseString(t, "focus.animation = off\nfocus.effect = screen\nfocus.strength = 0.08\n")

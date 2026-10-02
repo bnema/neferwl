@@ -61,10 +61,10 @@ touchpad.scroll-factor = 1
 focus.follow-move = off
 # Focus indicator on the newly focused window: an animation (pulse or off)
 # of an effect (screen: a slight brightening), peaking at strength
-# (0.01 to 0.2; 0.03: black reaches about 8/255).
+# (0.01 to 0.2; 0.04: black reaches about 10/255).
 focus.animation = pulse
 focus.effect = screen
-focus.strength = 0.03
+focus.strength = 0.04
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.
