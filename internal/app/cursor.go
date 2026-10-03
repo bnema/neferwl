@@ -67,8 +67,40 @@ type themeKey struct {
 // loadCursor returns the cursor a client asked for at an output scale, at
 // most limit physical pixels on a side: a XCURSOR_THEME shape at
 // XCURSOR_SIZE × scale, the client image resized to the output scale, or
-// an empty image when hidden. Unknown shapes fall back to the arrow.
-func loadCursor(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error) {
+// an empty image when hidden, then rotated by the output transform t (the
+// cursor plane and the headless cursor are drawn in target space). Unknown
+// shapes fall back to the arrow.
+func loadCursor(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error) {
+	img, err := loadCursorUpright(c, scale, limit)
+	if err != nil {
+		return img, err
+	}
+	return rotateCursor(img, t), nil
+}
+
+// rotateCursor returns img as an output with transform t holds it, hotspot
+// included. It never modifies img (theme images are cached).
+func rotateCursor(img ports.CursorImage, t ports.BufferTransform) ports.CursorImage {
+	if t == 0 || img.W <= 0 || img.H <= 0 {
+		return img
+	}
+	dw, dh := img.W, img.H
+	if t.Rotated() {
+		dw, dh = dh, dw
+	}
+	out := make([]byte, dw*dh*4)
+	for y := range img.H {
+		for x := range img.W {
+			bx, by := t.ToBuffer(float64(x)+.5, float64(y)+.5, float64(img.W), float64(img.H))
+			src := (y*img.W + x) * 4
+			copy(out[(int(by)*dw+int(bx))*4:], img.Pixels[src:src+4])
+		}
+	}
+	hx, hy := t.ToBuffer(float64(img.HotX)+.5, float64(img.HotY)+.5, float64(img.W), float64(img.H))
+	return ports.CursorImage{W: dw, H: dh, HotX: int(hx), HotY: int(hy), Pixels: out}
+}
+
+func loadCursorUpright(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error) {
 	scale = max(scale, 1)
 	if c.Hidden {
 		return ports.CursorImage{}, nil
