@@ -176,7 +176,12 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if hdr {
 		tg = &r.hdrOwn
 	}
-	dmg := r.frameDamage(tg, s, image.Rect(0, 0, r.width, r.height))
+	// Bounds, damage and redrawn pixels are in scene space: the target's
+	// size, swapped for a rotated output. orient maps the draws to the target
+	// below. A transform change always comes with a new scene Seq, so a held
+	// target is never reused across transforms.
+	sw, sh := r.sceneSize(s.Transform)
+	dmg := r.frameDamage(tg, s, image.Rect(0, 0, sw, sh))
 	ds := r.draws(s, contents, dmg)
 	dmg.finish()
 	r.dropPools()
@@ -192,8 +197,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		r.scratchDraws = ds
 		r.redrawn += dmg.area.Dx() * dmg.area.Dy()
 	} else {
-		r.redrawn += r.width * r.height
+		r.redrawn += sw * sh
 	}
+	r.orient(ds, s.Transform)
 	d := r.dd
 	cmd := slot.cmd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(cmd, 0)); err != nil {

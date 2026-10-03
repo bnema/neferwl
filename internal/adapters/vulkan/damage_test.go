@@ -27,16 +27,25 @@ func damagedContent(t *testing.T, f *os.File, base ports.SurfaceContent, seq uin
 // (render, skip, render).
 func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 	for _, tr := range []ports.BufferTransform{0, 1, 6} {
-		t.Run(fmt.Sprintf("transform %d", tr), func(t *testing.T) { damageMatchesFullRedraw(t, tr) })
+		t.Run(fmt.Sprintf("transform %d", tr), func(t *testing.T) { damageMatchesFullRedraw(t, tr, 0) })
+	}
+	// A rotated or flipped output composes the scene into its target.
+	for _, out := range []ports.BufferTransform{1, 6} {
+		t.Run(fmt.Sprintf("output transform %d", out), func(t *testing.T) { damageMatchesFullRedraw(t, 0, out) })
 	}
 }
 
 // damageMatchesFullRedraw checks partial frames of a window whose buffer
-// carries transform tr against full redraws.
-func damageMatchesFullRedraw(t *testing.T, tr ports.BufferTransform) {
+// carries transform tr against full redraws, on an output with transform
+// out (its scene is 64×48; a rotated output's target is 48×64).
+func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	const w, h = 32, 32
+	tw, th := 64, 48
+	if out.Rotated() {
+		tw, th = th, tw
+	}
 	newR := func() *Renderer {
-		r, err := New(64, 48)
+		r, err := New(tw, th)
 		if err != nil {
 			t.Skipf("Vulkan unavailable: %v", err)
 		}
@@ -63,7 +72,7 @@ func damageMatchesFullRedraw(t *testing.T, tr ports.BufferTransform) {
 	base := shmContent(t, w, h, w*4, pixels)
 	base.ID, base.Transform = 1, tr
 	f := base.SHM.File
-	scene := ports.Scene{Seq: 5, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}}}}
+	scene := ports.Scene{Seq: 5, Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: w, H: h}}}}
 	hist := []ports.SeqDamage{{Seq: 1, Full: true}}
 	c := damagedContent(t, f, *base, 1, pixels, hist)
 	step := func(i int, c ports.SurfaceContent) {
@@ -73,7 +82,7 @@ func damageMatchesFullRedraw(t *testing.T, tr ports.BufferTransform) {
 		if err := render(damaged, scene, contents); err != nil {
 			t.Fatal(err)
 		}
-		if err := render(full, ports.Scene{Background: scene.Background, Windows: scene.Windows}, contents); err != nil {
+		if err := render(full, ports.Scene{Transform: out, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: scene.Background, Windows: scene.Windows}, contents); err != nil {
 			t.Fatal(err)
 		}
 		if a, b := readPixels(t, damaged), readPixels(t, full); !bytes.Equal(a.Pix, b.Pix) {
