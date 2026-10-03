@@ -17,6 +17,15 @@ func srgbToLinear(v float64) float64 {
 	return math.Pow((v+0.055)/1.055, 2.4)
 }
 
+// linearToSRGB encodes a unit-range linear component; the inverse of
+// srgbToLinear.
+func linearToSRGB(v float64) float64 {
+	if v <= 0.04045/12.92 {
+		return v * 12.92
+	}
+	return 1.055*math.Pow(v, 1/2.4) - 0.055
+}
+
 // pqEncode encodes absolute luminance in nits using SMPTE ST 2084.
 func pqEncode(nits float64) float64 {
 	if nits <= 0 {

@@ -292,6 +292,9 @@ func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64
 // drawable reports whether the child's buffer will draw. GPU buffer
 // imports are cached, so pre-importing here costs nothing.
 func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
+	if c.Solid != nil {
+		return true
+	}
 	if c.DMABuf != nil {
 		_, err := w.r.importDMABuf(c.DMABuf)
 		return err == nil
@@ -312,10 +315,10 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 	if lw <= 0 || lh <= 0 {
 		lw, lh = content.Width, content.Height
 	}
-	if content.SHM == nil && content.DMABuf == nil || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
+	if !content.HasBuffer() || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
 		return full, dst, false
 	}
-	if content.DMABuf == nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
+	if content.SHM != nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
 		return full, dst, false
 	}
 	full = w.physRectF(x, y, float64(lw)*w.zoom, float64(lh)*w.zoom)
@@ -359,6 +362,12 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	r := w.r
 	rect := dst
 	if rect.Empty() {
+		return
+	}
+	if content.Solid != nil {
+		if dr := r.solidDraw(rect, content); dr.pc.color[3] > 0 {
+			w.draws = append(w.draws, dr)
+		}
 		return
 	}
 	if content.DMABuf != nil {
