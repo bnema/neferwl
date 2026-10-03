@@ -166,16 +166,13 @@ func (c *Core) lockKeyboardFocus() WindowID {
 }
 
 func (c *Core) lockHit(x, y float64) (WindowID, float64, float64) {
-	o, ok := c.layout().At(x, y)
-	if !ok {
-		return 0, 0, 0
-	}
-	i := c.screenIndex(o.Info.Name)
+	i := c.screenAt(x, y)
 	if i < 0 {
 		return 0, 0, 0
 	}
-	if s, ok := c.lockSurface(c.screens[i]); ok {
-		return s.ID, x - float64(o.X), y - float64(o.Y)
+	sc := c.screens[i]
+	if s, ok := c.lockSurface(sc); ok {
+		return s.ID, x - float64(sc.x), y - float64(sc.y)
 	}
 	return 0, 0, 0
 }
@@ -189,7 +186,7 @@ func (c *Core) publishProtected(ctx context.Context) error {
 	for _, sc := range c.screens {
 		c.seq++
 		o := sc.mon.Output()
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: "#000000"}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: "#000000"}
 		if s, ok := c.lockSurface(sc); ok {
 			scene.Windows = []ports.SceneWindow{{ID: s.ID, Rect: Rect{W: o.W, H: o.H}, Fullscreen: true, Focused: s.ID == focus}}
 		}
@@ -253,7 +250,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 	case ports.PointerMotion:
 		c.motionMsec = v.TimeMsec
-		c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y)
+		c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y)
 		id, x, y := c.lockHit(c.cursorX, c.cursorY)
 		if id != c.pointer {
 			c.pointer = id

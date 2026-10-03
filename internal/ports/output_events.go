@@ -53,6 +53,8 @@ type HeadChange struct {
 	Mode    *OutputMode
 	Pos     *image.Point
 	Scale   float64
+	// Transform is nil to leave the transform unchanged.
+	Transform *BufferTransform
 }
 
 // OutputApply asks the app owner to validate or apply a runtime configuration.

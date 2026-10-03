@@ -237,10 +237,10 @@ func TestCursorOffSkipsLoads(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor.off = true
 	loaded := false
-	o.setCursor(nil, func(ports.CursorChange, float64, int) (ports.CursorImage, error) {
+	o.setCursor(nil, func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
 		loaded = true
 		return ports.CursorImage{}, nil
-	}, ports.CursorChange{}, 1)
+	}, ports.CursorChange{}, 1, 0)
 	if loaded || o.cursor.desired().on {
 		t.Fatal("cursor used while off")
 	}
@@ -272,7 +272,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	load := func(ports.CursorChange, float64, int) (ports.CursorImage, error) {
+	load := func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
 		return ports.CursorImage{Pixels: []byte{1, 2, 3, 4}, W: 1, H: 1}, nil
 	}
 	last := func(kind uint64) (commitRec, bool) {

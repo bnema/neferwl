@@ -601,6 +601,12 @@ func (f *captureExtFrame) attempt() {
 		return
 	}
 	tag, ok := c.tag(hidden)
+	// On-screen frames are target pixels, which the output holds under its
+	// transform; off-screen child images are unrotated.
+	transform := uint32(0)
+	if !hidden {
+		transform = uint32(o.place.Transform)
+	}
 	buf, isBuf := c.s.buffers[f.buf.GetResource()].(*buffer)
 	switch {
 	case !isBuf:
@@ -621,7 +627,7 @@ func (f *captureExtFrame) attempt() {
 			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 			return
 		}
-		f.res.SendTransform(0)
+		f.res.SendTransform(transform)
 		f.res.SendDamage(0, 0, int32(region.Dx()), int32(region.Dy()))
 		hi, lo, ns := captureTime(done.Time)
 		f.res.SendPresentationTime(hi, lo, ns)

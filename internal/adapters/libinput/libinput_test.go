@@ -337,3 +337,15 @@ func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
 		t.Fatalf("quarantined release logged: %s", &buf)
 	}
 }
+
+// The cursor is placed in target pixels: after the output transform.
+func TestPointerMovedTransform(t *testing.T) {
+	p := newPointer(ports.Layout{{Info: ports.OutputInfo{Name: "A", Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}})
+	p.set(10, 20)
+	var out string
+	var px, py float64
+	p.moved(func(o string, x, y float64, _ bool) { out, px, py = o, x, y }, true)
+	if out != "A" || px != 20 || py != 90 {
+		t.Fatal(out, px, py)
+	}
+}

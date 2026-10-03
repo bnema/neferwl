@@ -115,6 +115,9 @@ func (o *outputOverrides) validate(req ports.OutputApply) error {
 		if change.Scale < 0 || change.Scale > 4 || (change.Scale > 0 && change.Scale < 1) || math.IsNaN(change.Scale) || math.IsInf(change.Scale, 0) {
 			return fmt.Errorf("invalid scale on %s", change.Name)
 		}
+		if change.Transform != nil && *change.Transform > 7 {
+			return fmt.Errorf("invalid transform on %s", change.Name)
+		}
 		if o.headless && (change.Enabled != current.Enabled || change.Mode != nil && (current.Current == nil || change.Mode.Width != current.Current.Width || change.Mode.Height != current.Current.Height || change.Mode.RefreshMilli != current.Current.RefreshMilli)) {
 			return fmt.Errorf("headless mode and enabled state are fixed")
 		}
@@ -146,6 +149,9 @@ func (o *outputOverrides) apply(req ports.OutputApply) (ports.Config, error) {
 		entry.Off = !h.Enabled
 		if h.Scale > 0 {
 			entry.Scale = h.Scale
+		}
+		if h.Transform != nil {
+			entry.Transform = *h.Transform
 		}
 		if h.Pos != nil {
 			entry.Pos = &image.Point{X: h.Pos.X, Y: h.Pos.Y}
@@ -280,7 +286,11 @@ func (a *outputApply) finished(err error) {
 	}
 	a.req = nil
 	for _, h := range req.Heads {
-		a.log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale).Msg("output configuration applied")
+		e := a.log.Info().Str("output", h.Name).Bool("enabled", h.Enabled).Float64("scale", h.Scale)
+		if h.Transform != nil {
+			e = e.Uint8("transform", uint8(*h.Transform))
+		}
+		e.Msg("output configuration applied")
 	}
 	a.reply(req.ID, nil)
 }

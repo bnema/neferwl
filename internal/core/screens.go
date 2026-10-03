@@ -13,11 +13,14 @@ type screen struct {
 	info            ports.OutputInfo
 	mon             *Monitor
 	scale, cfgScale float64
-	primary         bool
-	x, y            int  // logical origin in the global layout
-	off             bool // turned off by a client (output power management)
-	layers          []ports.LayerSurface
-	placed          []ports.SceneLayer
+	// transform is how the physical target holds the screen's logical
+	// output (output.<name>.transform); 90/270 swap width and height.
+	transform ports.BufferTransform
+	primary   bool
+	x, y      int  // logical origin in the global layout
+	off       bool // turned off by a client (output power management)
+	layers    []ports.LayerSurface
+	placed    []ports.SceneLayer
 	// capture holds the attached layers of the capture exclusion: shown over
 	// a fullscreen window (capture.go).
 	capture map[WindowID]bool
@@ -29,15 +32,28 @@ type screen struct {
 
 func (s *screen) name() string { return s.info.Name }
 
-func (s *screen) placement() ports.OutputPlacement {
+// modeSize is the physical mode size in the screen's logical orientation:
+// width and height swap for a 90/270 transform.
+func (s *screen) modeSize() (w, h int) {
+	return s.transform.Size(s.info.Width, s.info.Height)
+}
+
+// rect is the screen's place in the global logical layout.
+func (s *screen) rect() Rect {
 	o := s.mon.Output()
-	return ports.OutputPlacement{Info: s.info, X: s.x, Y: s.y, Width: o.W, Height: o.H, Scale: s.scale, Primary: s.primary}
+	return Rect{X: s.x, Y: s.y, W: o.W, H: o.H}
+}
+
+func (s *screen) placement() ports.OutputPlacement {
+	r := s.rect()
+	return ports.OutputPlacement{Info: s.info, X: r.X, Y: r.Y, Width: r.W, Height: r.H, Scale: s.scale, Transform: s.transform, Primary: s.primary}
 }
 
 // setScale resizes the logical output; layer placement follows.
 func (s *screen) setScale(v float64) {
 	s.scale = SnapScale(v)
-	s.mon.SetOutput(logical(s.info.Width, s.scale), logical(s.info.Height, s.scale))
+	w, h := s.modeSize()
+	s.mon.SetOutput(logical(w, s.scale), logical(h, s.scale))
 	s.arrange()
 }
 
@@ -63,8 +79,8 @@ func (c *Core) order() {
 	c.focusScreen = slices.Index(c.screens, focused)
 	items := make([]placeItem, len(c.screens))
 	for i, s := range c.screens {
-		o := s.mon.Output()
-		items[i].name, items[i].w, items[i].h = s.name(), o.W, o.H
+		r := s.rect()
+		items[i].name, items[i].w, items[i].h = s.name(), r.W, r.H
 		if cfg, ok := c.outputConfig(s.name()); ok {
 			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
@@ -105,6 +121,39 @@ func (c *Core) cur() *screen { return c.screens[c.focusScreen] }
 
 func (c *Core) screenIndex(name string) int {
 	return slices.IndexFunc(c.screens, func(s *screen) bool { return s.name() == name })
+}
+
+// screenAt is the index of the first connected screen containing the global
+// point, or -1. It does not allocate.
+func (c *Core) screenAt(x, y float64) int {
+	for i, s := range c.screens {
+		if s.name() == "" {
+			continue
+		}
+		r := s.rect()
+		if x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
+			return i
+		}
+	}
+	return -1
+}
+
+// clampPointer keeps the pointer on a screen: a point outside every screen
+// stays on the screen under (fromX, fromY), or the first one, clamped to its
+// edges.
+func (c *Core) clampPointer(fromX, fromY, x, y float64) (float64, float64) {
+	i := c.screenAt(x, y)
+	if i >= 0 {
+		return x, y
+	}
+	if i = c.screenAt(fromX, fromY); i < 0 {
+		i = slices.IndexFunc(c.screens, func(s *screen) bool { return s.name() != "" })
+		if i < 0 {
+			return x, y
+		}
+	}
+	r := c.screens[i].rect()
+	return min(max(x, float64(r.X)), float64(r.X+r.W)-1), min(max(y, float64(r.Y)), float64(r.Y+r.H)-1)
 }
 
 // screenOf returns the screen and workspace holding the window.
@@ -154,14 +203,27 @@ func (c *Core) configScale(name string) float64 {
 	return SnapScale(v)
 }
 
-// applyConfigScales picks up output.<name>.scale when it changed in the
-// config, replacing any live scale-up/scale-down adjustment.
-func (c *Core) applyConfigScales() {
+// configTransform is output.<name>.transform, else 0.
+func (c *Core) configTransform(name string) ports.BufferTransform {
+	o, _ := c.outputConfig(name)
+	return o.Transform
+}
+
+// applyOutputConfig picks up output.<name>.scale and .transform when they
+// changed in the config. A new scale replaces any live scale-up/scale-down
+// adjustment; a transform alone keeps it.
+func (c *Core) applyOutputConfig() {
 	for _, s := range c.screens {
-		if v := c.configScale(s.name()); v != s.cfgScale {
-			s.cfgScale = v
-			s.setScale(v)
+		v, t := c.configScale(s.name()), c.configTransform(s.name())
+		if v == s.cfgScale && t == s.transform {
+			continue
 		}
+		scale := s.scale
+		if v != s.cfgScale {
+			scale = v
+		}
+		s.cfgScale, s.transform = v, t
+		s.setScale(scale)
 	}
 	c.order()
 }
@@ -178,6 +240,7 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 			s.mon.Key = info.Key()
 			c.settings(s.mon)
 		}
+		s.transform = c.configTransform(info.Name)
 		s.setScale(s.scale)
 		c.order()
 		return
@@ -195,6 +258,7 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
 	c.settings(s.mon)
 	s.cfgScale = c.configScale(info.Name)
+	s.transform = c.configTransform(info.Name)
 	s.setScale(s.cfgScale)
 	s.primary = c.isPrimary(info.Name)
 	c.order()
@@ -429,11 +493,11 @@ func (c *Core) neighbor(d direction) int {
 	}
 	// span is the extent of s along the move (lo, hi) and across it.
 	span := func(s *screen) (lo, hi, clo, chi int) {
-		o := s.mon.Output()
+		r := s.rect()
 		if d == dirUp || d == dirDown {
-			return s.y, s.y + o.H, s.x, s.x + o.W
+			return r.Y, r.Y + r.H, r.X, r.X + r.W
 		}
-		return s.x, s.x + o.W, s.y, s.y + o.H
+		return r.X, r.X + r.W, r.Y, r.Y + r.H
 	}
 	lo, hi, clo, chi := span(c.cur())
 	pick := func(fallback bool) int {

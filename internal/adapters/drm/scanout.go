@@ -86,6 +86,10 @@ func fullscreenShown(s *ports.Scene) bool {
 // directly, or a reason why it cannot. w, h are the output's physical size.
 // The plane's formats are checked by scanoutFB.
 func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int) (ports.SurfaceContent, string) {
+	if s.Transform != 0 {
+		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
+		return ports.SurfaceContent{}, "output_transform"
+	}
 	if s.WorkspaceClip != (ports.Rect{}) && s.WorkspaceClip != (ports.Rect{W: s.OutputWidth, H: s.OutputHeight}) {
 		return ports.SurfaceContent{}, "workspace_clip"
 	}

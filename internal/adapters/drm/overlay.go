@@ -58,6 +58,9 @@ type overlayWin struct {
 // dmabuf at integer physical coordinates, drawn 1:1, with no other window
 // or layer above it. reason is why none.
 func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (ports.SceneWindow, ports.SurfaceContent, string) {
+	if s.Transform != 0 {
+		return ports.SceneWindow{}, ports.SurfaceContent{}, "output_transform"
+	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1

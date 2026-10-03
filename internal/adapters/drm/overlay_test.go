@@ -68,6 +68,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if w, _, reason := overlayCandidate(s, c); reason != "" || w.ID != 2 {
 		t.Fatalf("candidate %v %q", w.ID, reason)
 	}
+	// A rotated output composes: planes are not rotated.
+	rs, rc := overlayScene()
+	rs.Transform = 1
+	if _, _, reason := overlayCandidate(rs, rc); reason != "output_transform" {
+		t.Fatalf("rotated output reason %q", reason)
+	}
 	c[2] = ports.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{Format: fourccNV12}}
 	if _, _, reason := overlayCandidate(s, c); reason != "no_candidate" {
 		t.Fatalf("YUV overlay reason %q", reason)

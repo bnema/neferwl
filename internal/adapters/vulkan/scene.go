@@ -15,7 +15,7 @@ type sceneWalk struct {
 	s        ports.Scene
 	contents map[ports.WindowID]ports.SurfaceContent
 	dmg      *damageRegion
-	// scale maps the scene's logical pixels to the target's physical ones.
+	// scale maps the scene's logical pixels to scene-physical ones.
 	scale float64
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (ports.SceneWindow.Preview); 1 otherwise.
@@ -30,7 +30,10 @@ type sceneWalk struct {
 // draws walks the scene into quads in paint order.
 func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, dmg *damageRegion) []draw {
 	clear(r.scratchDraws) // release references from longer earlier scenes
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, bounds: image.Rect(0, 0, r.width, r.height), draws: r.scratchDraws[:0]}
+	// The walk stays in scene-physical space (the target's size, swapped for
+	// a rotated output); orient maps the draws to the target afterwards.
+	sw, sh := r.sceneSize(s.Transform)
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
@@ -323,9 +326,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 	if content.Source[2] > 0 {
 		sourceW, sourceH = int(content.Source[2]), int(content.Source[3])
 	}
-	if content.Transform.Rotated() {
-		sourceW, sourceH = sourceH, sourceW
-	}
+	sourceW, sourceH = content.Transform.Size(sourceW, sourceH)
 	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
 		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}

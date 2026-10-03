@@ -169,8 +169,10 @@ func (m *outputManager) sendState(h *managementHead, info ports.OutputHead) {
 		if place.Info.Name != "" {
 			h.res.SendPosition(int32(place.X), int32(place.Y))
 			h.res.SendScale(server.FixedFromFloat(place.Scale))
+			h.res.SendTransform(int32(place.Transform))
+		} else {
+			h.res.SendTransform(0)
 		}
-		h.res.SendTransform(0)
 	}
 	m.places[info.Info.Name] = m.s.placementFor(info.Info.Name)
 }

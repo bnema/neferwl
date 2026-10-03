@@ -21,17 +21,18 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		c.motionMsec = v.TimeMsec
 		// A locked pointer stays still; relative motion still flows.
 		if c.constraint.Mode != ports.ConstraintLock {
-			c.cursorX, c.cursorY = c.constraint.Clamp(c.layout().Clamp(c.cursorX, c.cursorY, v.X, v.Y))
+			c.cursorX, c.cursorY = c.constraint.Clamp(c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y))
 		}
 		// The focused screen follows the pointer, so new windows
 		// and launchers open where the user is.
 		// Only a pointer entering another output switches: keyboard
 		// moves to another screen stick until then. Not mid-drag of a
 		// client; a window drag (drag.go) follows the pointer.
-		if o, ok := c.layout().At(c.cursorX, c.cursorY); ok && o.Info.Name != c.pointerOutput && c.grab == 0 {
-			c.pointerOutput = o.Info.Name
-			if o.Info.Name != c.cur().name() {
-				c.focusScreen = c.screenIndex(o.Info.Name)
+		if i := c.screenAt(c.cursorX, c.cursorY); i >= 0 && c.screens[i].name() != c.pointerOutput && c.grab == 0 {
+			name := c.screens[i].name()
+			c.pointerOutput = name
+			if name != c.cur().name() {
+				c.focusScreen = i
 				if err := c.publish(ctx); err != nil {
 					return err
 				}

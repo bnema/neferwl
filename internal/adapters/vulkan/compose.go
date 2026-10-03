@@ -332,10 +332,8 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 		source = [4]float32{0, 0, float32(w), float32(h)}
 	}
 	// The crop in the surface's axes: its sides swap for a rotation.
-	cw, ch := float64(source[2]), float64(source[3])
-	if t.Rotated() {
-		cw, ch = ch, cw
-	}
+	iw, ih := t.Size(int(source[2]), int(source[3]))
+	cw, ch := float64(iw), float64(ih)
 	// src maps a target point to buffer pixels: affine, so its value at
 	// the target origin and its steps along x and y define it.
 	src := func(x, y float64) (float64, float64) {

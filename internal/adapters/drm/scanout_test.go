@@ -25,6 +25,7 @@ func TestScanoutCandidate(t *testing.T) {
 			s.Windows = append(s.Windows, ports.SceneWindow{ID: 2, Hidden: true})
 		}, nil, ""},
 		{"no window", func(s *ports.Scene) { s.Windows = nil }, nil, "no_fullscreen"},
+		{"rotated output", func(s *ports.Scene) { s.Transform = 1 }, nil, "output_transform"},
 		{"dimmed", func(s *ports.Scene) { s.Windows[0].Dim = 0.5 }, nil, "dim"},
 		{"faded", nil, func(c *ports.SurfaceContent) { c.Fade = 0.5 }, "fade"},
 		{"tiled", func(s *ports.Scene) { s.Windows[0].Fullscreen = false }, nil, "other_windows"},

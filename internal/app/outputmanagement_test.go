@@ -307,6 +307,51 @@ func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	}
 }
 
+// A transform change takes the full reload path; a scale change alone does not.
+func TestScaleChangesTransform(t *testing.T) {
+	old := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+	cur := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
+	if _, only := scaleChanges(old, cur); only {
+		t.Fatal("a transform change must take the full reload path")
+	}
+	cur.Outputs[0].Transform = 0
+	cur.Outputs[0].Scale = 1.5
+	if _, only := scaleChanges(old, cur); !only {
+		t.Fatal("a scale-only change stays a scale change")
+	}
+}
+
+// A runtime transform lands in the effective configuration and survives a
+// reload that only changes file scales.
+func TestOutputApplyTransform(t *testing.T) {
+	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
+	file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+	state := newOutputOverrides(file, false)
+	state.heads = ports.OutputHeads{Heads: []ports.OutputHead{{Info: ports.OutputInfo{Name: "DP-1"}, Enabled: true, Current: &mode, Modes: []ports.OutputMode{mode}}}}
+	tr := ports.BufferTransform(3)
+	cfg, err := state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &tr}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Outputs) != 1 || cfg.Outputs[0].Transform != 3 {
+		t.Fatalf("applied transform: %+v", cfg.Outputs)
+	}
+	scaled := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 1.5}}}
+	cfg = state.reload(scaled)
+	if cfg.Outputs[0].Transform != 3 || cfg.Outputs[0].Scale != 1.5 {
+		t.Fatalf("scale reload lost the runtime transform: %+v", cfg.Outputs)
+	}
+	// Without a transform in the change, the current one stays.
+	cfg, err = state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true}}})
+	if err != nil || cfg.Outputs[0].Transform != 3 {
+		t.Fatalf("unset transform changed: %+v, %v", cfg.Outputs, err)
+	}
+	bad := ports.BufferTransform(8)
+	if _, err := state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &bad}}}); err == nil {
+		t.Fatal("transform 8 accepted")
+	}
+}
+
 // A runtime position never replaces a file relation: it only takes
 // precedence over it in core, and the relation is followed again once the
 // override is dropped.

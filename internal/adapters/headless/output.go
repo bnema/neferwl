@@ -28,9 +28,10 @@ type Options struct {
 	Instance        ports.OutputInstance
 	SecurityEvents  chan<- ports.SecurityBackendEvent
 	// Cursor, when set, is drawn into screenshots with the image from
-	// LoadCursor at the scene scale.
+	// LoadCursor at the scene scale and transform. The cursor is drawn in
+	// target space: the image comes rotated and Move takes target pixels.
 	Cursor        *Cursor
-	LoadCursor    func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
+	LoadCursor    func(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
 	HDR           bool                       // virtual HDR output for protocol testing only
@@ -120,6 +121,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	}()
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
+	var cursorTransform ports.BufferTransform
 	seen := map[ports.WindowID]uint64{}
 	// reports holds what the channel could not take yet, retried soon.
 	var reports presented.Queue
@@ -369,7 +371,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return err
 			}
 			// The cursor is only drawn into screenshots: no new frame.
-			want, cursorScale = c, -1
+			want, cursorScale, cursorTransform = c, -1, 0
 		}
 		// Drain all queued updates before presenting one frame.
 	drain:
@@ -426,9 +428,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			continue
 		}
 		dirty = false
-		if !opts.protected() && opts.Cursor != nil && opts.LoadCursor != nil && scene.Scale != cursorScale {
-			cursorScale = scene.Scale
-			if img, err := opts.LoadCursor(want, scene.Scale, 256); err == nil {
+		if !opts.protected() && opts.Cursor != nil && opts.LoadCursor != nil && (scene.Scale != cursorScale || scene.Transform != cursorTransform) {
+			cursorScale, cursorTransform = scene.Scale, scene.Transform
+			if img, err := opts.LoadCursor(want, scene.Scale, scene.Transform, 256); err == nil {
 				if !opts.protected() {
 					opts.Cursor.set(img)
 				}

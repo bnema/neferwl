@@ -39,6 +39,22 @@ func TestCaptureRegion(t *testing.T) {
 		}
 	}
 }
+
+// Regions are logical; a rotated output holds them in its target under the
+// transform, and logicalRegion maps them back.
+func TestCaptureRegionTransform(t *testing.T) {
+	o := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Width: 200, Height: 100}, Scale: 1, Transform: 1, Width: 100, Height: 200}}
+	got := captureRegion(o, image.Rect(0, 0, 10, 20))
+	if want := image.Rect(0, 90, 20, 100); got != want {
+		t.Fatalf("captureRegion %v, want %v", got, want)
+	}
+	if back := logicalRegion(o, got); back != (ports.Rect{X: 0, Y: 0, W: 10, H: 20}) {
+		t.Fatalf("logicalRegion %+v", back)
+	}
+	if full := logicalRegion(o, image.Rect(0, 0, 200, 100)); full != (ports.Rect{}) {
+		t.Fatalf("full target %+v", full)
+	}
+}
 func TestScreencopyProtocol(t *testing.T) {
 	dir := t.TempDir()
 	requests := make(chan ports.CaptureRequest, 1)

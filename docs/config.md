@@ -55,6 +55,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
+| `output.<name>.transform` | `normal` | `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180`, `flipped-270`; 90/270 swap the output's width and height |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup |
 | `output.<name>.right-of` / `.left-of` / `.above` / `.below` | automatic | Connector to place the output against, e.g. `DP-1` |
 | `output.<name>.offset` | `0` | Logical px along the shared edge, −65536 to 65536; see [Output placement](#output-placement) |
@@ -85,13 +86,15 @@ output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
 └────────────┘
 ```
 
+Placement, offsets and monitor navigation use the rotated size: a 2560x1440 output with `transform = 90` is 1440 wide and 2560 tall at scale 1. Rotated outputs always compose, with no direct scanout or overlay planes.
+
 Rules:
 
 - `offset` moves down for `right-of`/`left-of` and right for `above`/`below`; negative moves the other way.
 - Sizes are logical: the layout follows scale changes on its own.
 - An output whose reference is not connected is placed automatically until the reference returns.
 - Cycles and invalid values are ignored with a warning in the log.
-- Positions set by kanshi, wdisplays or wlr-randr win until the next config reload.
+- Positions and transforms set by kanshi, wdisplays or wlr-randr win until the next config reload.
 - `focus-monitor-*`, `move-workspace-to-monitor-*` and column moves past the edge go to the output on that side.
 
 Two rows of three, with DP-1 as the base:

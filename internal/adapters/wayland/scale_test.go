@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,6 +39,18 @@ func (p *surfaceScaleProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+// surfaceTransformProxy records wl_surface.preferred_buffer_transform (opcode 3).
+type surfaceTransformProxy struct {
+	wlturbo.BaseProxy
+	transforms chan uint32
+}
+
+func (p *surfaceTransformProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == 3 {
+		p.transforms <- e.Uint32()
+	}
+}
+
 func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -53,6 +66,82 @@ func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cl
 	go func() { done <- s.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 	return s, events, commands, contents, dir
+}
+
+// A v6 surface learns the transform of its output when it differs from
+// normal (the protocol default), and again only when it changes. A cursor
+// surface never does: cursor buffers must stay untransformed.
+func TestPreferredBufferTransform(t *testing.T) {
+	s, _, _, _, dir := contentServer(t)
+	info := testOutputs[0].Info
+	setOutputs := func(tr ports.BufferTransform, scale float64) {
+		if !s.display.Do(func() {
+			s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: info, Width: info.Height, Height: info.Width, Scale: scale, Transform: tr}}})
+		}) {
+			t.Fatal("display stopped")
+		}
+	}
+	newSurface := func(c *wlturbo.Display, comp uint32) (uint32, func() []uint32) {
+		surf := c.AllocateID()
+		p := &surfaceTransformProxy{transforms: make(chan uint32, 8)}
+		p.SetID(surf)
+		registerWireProxy(c, p)
+		requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+		return surf, func() []uint32 {
+			if err := c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			var got []uint32
+			for len(p.transforms) > 0 {
+				got = append(got, <-p.transforms)
+			}
+			return got
+		}
+	}
+	setOutputs(0, 1)
+	c := protocolClient(t, s, dir)
+	g, _ := c.Registry().FindGlobal("wl_compositor")
+	comp, err := bindWireID(c, g.Name, g.Interface, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seat := bindProtocol(t, c, "wl_seat")
+	registerProtocol(t, c, seat)
+	pointer := c.AllocateID()
+	registerProtocol(t, c, pointer)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetPointer, pointer)
+
+	_, normal := newSurface(c, comp)
+	cursor, cursorSeen := newSurface(c, comp)
+	if got := normal(); len(got) != 0 {
+		t.Fatalf("normal output sent transforms %v", got)
+	}
+	cursorSeen()
+	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(1), cursor, int32(0), int32(0))
+
+	setOutputs(1, 1)
+	if got := normal(); !slices.Equal(got, []uint32{1}) {
+		t.Fatalf("rotated transforms %v, want [1]", got)
+	}
+	if got := cursorSeen(); len(got) != 0 {
+		t.Fatalf("cursor surface got transforms %v", got)
+	}
+	// A scale change alone does not repeat the transform.
+	setOutputs(1, 2)
+	if got := normal(); len(got) != 0 {
+		t.Fatalf("unchanged transform resent: %v", got)
+	}
+	setOutputs(3, 2)
+	if got := normal(); !slices.Equal(got, []uint32{3}) {
+		t.Fatalf("changed transforms %v, want [3]", got)
+	}
+	setOutputs(0, 2)
+	if got := normal(); !slices.Equal(got, []uint32{0}) {
+		t.Fatalf("back to normal: %v, want [0]", got)
+	}
+	if got := cursorSeen(); len(got) != 0 {
+		t.Fatalf("cursor surface got transforms %v", got)
+	}
 }
 
 func TestFractionalScaleAndViewport(t *testing.T) {

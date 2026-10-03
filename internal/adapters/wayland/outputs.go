@@ -65,7 +65,7 @@ func (o *output) sendAll(r *wayland.Output) {
 	if refresh == 0 {
 		refresh = 60000
 	}
-	r.SendGeometry(int32(o.place.X), int32(o.place.Y), int32(i.PhysicalW), int32(i.PhysicalH), 0, make, model, 0)
+	r.SendGeometry(int32(o.place.X), int32(o.place.Y), int32(i.PhysicalW), int32(i.PhysicalH), 0, make, model, int32(o.place.Transform))
 	// The mode stays physical; the scale tells clients how to divide it.
 	r.SendMode(3, int32(i.Width), int32(i.Height), int32(refresh))
 	if r.Version() >= 2 {
@@ -209,6 +209,8 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			continue
 		}
 		scaleChanged := o.place.Scale != p.Scale
+		// A 90° to 270° change keeps the logical size: lock surfaces are
+		// logical-sized and need no reconfigure then.
 		logicalChanged := o.place.Width != p.Width || o.place.Height != p.Height
 		o.place = p
 		if logicalChanged {

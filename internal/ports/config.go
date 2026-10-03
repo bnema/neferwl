@@ -17,7 +17,8 @@ const DefaultSDRBrightness = 203
 // everything placed so far (never left of 0), at y=0, in config order, then in
 // connection order.
 // Scale is the output scale (0 means 1); layout works in logical pixels,
-// physical = logical × Scale.
+// physical = logical × Scale. Placement and offsets use the transformed
+// logical size.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
 // ScaleOnly marks an entry set only by output.<name> subkeys: it
 // does not select the connector.
@@ -26,6 +27,8 @@ type OutputConfig struct {
 	Mode  string
 	Off   bool
 	Scale float64
+	// Transform is output.<name>.transform; logical size swaps for 90/270.
+	Transform BufferTransform
 	// Pos is an explicit logical placement set at runtime; nil uses Anchor, else automatic layout.
 	Pos *image.Point
 	// Anchor places the output against another connected one.

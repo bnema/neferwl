@@ -282,7 +282,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	for _, s := range c.screens {
 		c.settings(s.mon)
 	}
-	c.applyConfigScales()
+	c.applyOutputConfig()
 	return nil
 }
 
@@ -549,7 +549,7 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
@@ -909,12 +909,12 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if c.security.Protected {
 		return c.lockHit(x, y)
 	}
-	o, ok := c.layout().At(x, y)
-	if !ok {
+	i := c.screenAt(x, y)
+	if i < 0 {
 		return 0, 0, 0
 	}
-	lx, ly := x-float64(o.X), y-float64(o.Y)
-	sc := c.screens[c.screenIndex(o.Info.Name)]
+	sc := c.screens[i]
+	lx, ly := x-float64(sc.x), y-float64(sc.y)
 	// Layer popups are over everything; window popups are over the windows
 	// only, under the top and overlay layers (as drawn).
 	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {
@@ -1184,6 +1184,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
+				c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			case ports.OutputRemoved:
 				// A drop target may be on the output going away.
 				c.abortDrag()
@@ -1191,7 +1192,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
-				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
+				c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			}
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil
@@ -1214,6 +1215,8 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
+			// A rotation can shrink the layout under a still pointer.
+			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil
 			}

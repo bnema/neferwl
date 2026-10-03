@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -637,6 +638,37 @@ output.DP-5.offset = 7
 		if o.Anchor != want[o.Name] || !o.ScaleOnly {
 			t.Fatalf("%s: %+v", o.Name, o)
 		}
+	}
+}
+
+func TestOutputTransform(t *testing.T) {
+	names := []string{"normal", "90", "180", "270", "flipped", "flipped-90", "flipped-180", "flipped-270"}
+	var text strings.Builder
+	for i, n := range names {
+		fmt.Fprintf(&text, "output.O%d.transform = %s\n", i, n)
+	}
+	c, w := parseString(t, text.String())
+	if len(w) != 0 || len(c.Outputs) != len(names) {
+		t.Fatalf("%v %+v", w, c.Outputs)
+	}
+	for i, o := range c.Outputs {
+		if o.Transform != ports.BufferTransform(i) || !o.ScaleOnly {
+			t.Fatalf("%s: %+v", names[i], o)
+		}
+	}
+
+	c, w = parseString(t, "output.DP-1.transform = 45\n")
+	if len(w) != 1 || !strings.Contains(w[0].Msg, "invalid transform") {
+		t.Fatalf("warnings %v", w)
+	}
+	if len(c.Outputs) != 0 {
+		t.Fatalf("%+v", c.Outputs)
+	}
+
+	// A later mode line keeps the transform.
+	c, w = parseString(t, "output.DP-1.transform = 90\noutput.DP-1 = 1920x1080\n")
+	if len(w) != 0 || len(c.Outputs) != 1 || c.Outputs[0].Transform != 1 || c.Outputs[0].ScaleOnly {
+		t.Fatalf("%v %+v", w, c.Outputs)
 	}
 }
 

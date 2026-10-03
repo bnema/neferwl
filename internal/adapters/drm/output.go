@@ -156,9 +156,10 @@ type Output struct {
 // Ready reports the result of the first modeset exactly once.
 func (o *Output) Ready() <-chan error { return o.ready }
 
-// CursorLoader returns the image of a cursor at an output scale, at most
-// limit pixels on a side; an empty image hides the cursor.
-type CursorLoader func(c ports.CursorChange, scale float64, limit int) (ports.CursorImage, error)
+// CursorLoader returns the image of a cursor at an output scale, already
+// rotated by the output transform t (the cursor plane is not rotated by the
+// hardware), at most limit pixels on a side; an empty image hides the cursor.
+type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error)
 
 // newOutput reads the CRTC's planes and properties for a connector on crtc.
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
@@ -930,6 +931,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	haveScene, dirty := false, false
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
+	var cursorTransform ports.BufferTransform
 	frame := 0
 	var requestStorage [capture.MaxRequests]ports.CaptureRequest
 	requests := requestStorage[:0]
@@ -1000,7 +1002,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	for {
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
 			scene, haveScene, dirty = ports.Scene{}, false, false
-			want, cursorScale = ports.CursorChange{}, -1
+			want, cursorScale, cursorTransform = ports.CursorChange{}, -1, 0
 			if o.cursor != nil {
 				o.cursor.image, o.cursor.later = false, nil
 			}
@@ -1230,9 +1232,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					o.invalidateSecurity()
 				}
 			}
-			if !o.protected && o.cursor != nil && loadCursor != nil && s.Scale != cursorScale {
-				cursorScale = s.Scale
-				o.setCursor(r, loadCursor, want, s.Scale)
+			if !o.protected && o.cursor != nil && loadCursor != nil && (s.Scale != cursorScale || s.Transform != cursorTransform) {
+				cursorScale, cursorTransform = s.Scale, s.Transform
+				o.setCursor(r, loadCursor, want, s.Scale, s.Transform)
 				stateDirty = true
 			}
 			scene, haveScene, dirty = s, true, true
@@ -1245,7 +1247,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			want = c
 			// Before the first scene the scale is unknown: loaded then.
 			if o.cursor != nil && loadCursor != nil && cursorScale > 0 {
-				o.setCursor(r, loadCursor, want, cursorScale)
+				o.setCursor(r, loadCursor, want, cursorScale, cursorTransform)
 				stateDirty = true
 			}
 		case c := <-contents:
@@ -1462,25 +1464,26 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	return true
 }
 
-// setCursor loads a cursor for scale into the cursor images.
-func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorChange, scale float64) {
+// setCursor loads a cursor for scale and output transform t into the cursor
+// images.
+func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorChange, scale float64, t ports.BufferTransform) {
 	o.observeSecurity()
 	if o.protected || o.cursor.off {
 		return
 	}
-	img, err := load(c, scale, o.cursor.Limit())
+	img, err := load(c, scale, t, o.cursor.Limit())
 	if err == nil {
 		err = o.cursor.setImage(r, img.Pixels, img.W, img.H, img.HotX, img.HotY)
 	}
 	if err != nil {
-		o.log.Warn().Err(err).Msg("cursor")
+		o.log.Warn().Err(err).Float64("scale", scale).Int("transform", int(t)).Msg("cursor")
 		return
 	}
 	if c.Image != nil {
 		// Client cursors (games) reload on every change: too many to log.
 		return
 	}
-	o.log.Debug().Float64("scale", scale).Str("shape", c.Shape).Int("w", img.W).Int("h", img.H).Msg("cursor image")
+	o.log.Debug().Float64("scale", scale).Int("transform", int(t)).Str("shape", c.Shape).Int("w", img.W).Int("h", img.H).Msg("cursor image")
 }
 
 // refused reports a modeset error meaning KMS rejects the images.

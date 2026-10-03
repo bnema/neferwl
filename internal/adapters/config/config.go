@@ -457,6 +457,17 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				entry().Scale = s
 				continue
 			}
+			if base, ok := strings.CutSuffix(name, ".transform"); ok {
+				name = base
+				t, err := parseTransform(value)
+				if err != nil {
+					warn("%s: %v", key, err)
+					continue
+				}
+				override()
+				entry().Transform = t
+				continue
+			}
 			o := ports.OutputConfig{Name: name}
 			if value == "off" {
 				o.Off = true
@@ -468,7 +479,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
+			o.Scale, o.Transform, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Transform, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
 			*e = o
 			continue
 		}
@@ -1140,6 +1151,29 @@ func keysym(k string) (string, error) {
 		}
 	}
 	return k, nil
+}
+
+// parseTransform accepts the wl_output.transform names.
+func parseTransform(v string) (ports.BufferTransform, error) {
+	switch v {
+	case "normal":
+		return 0, nil
+	case "90":
+		return 1, nil
+	case "180":
+		return 2, nil
+	case "270":
+		return 3, nil
+	case "flipped":
+		return 4, nil
+	case "flipped-90":
+		return 5, nil
+	case "flipped-180":
+		return 6, nil
+	case "flipped-270":
+		return 7, nil
+	}
+	return 0, fmt.Errorf("invalid transform %q (normal, 90, 180, 270, flipped, flipped-90, flipped-180, flipped-270)", v)
 }
 
 // parseScale accepts a decimal (1.5) or a fraction (4/3) between 1 and 4.

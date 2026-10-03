@@ -37,10 +37,7 @@ func TestRendererBufferTransform(t *testing.T) {
 				c.Source = [4]float32{1, 0, 2, 2}
 				bx0, bw = 1, 2
 			}
-			sw, sh := bw, bh
-			if tr.Rotated() {
-				sw, sh = bh, bw
-			}
+			sw, sh := tr.Size(bw, bh)
 			c.Transform, c.LogicalW, c.LogicalH = tr, sw, sh
 			scene := ports.Scene{Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: sw, H: sh}}}}
 			if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: *c}); err != nil {
