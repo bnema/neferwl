@@ -1043,7 +1043,8 @@ func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 	scene.Seq = 2
 	sr.scenes <- scene
 	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}} // stamped by now
-	sr.state.Store(2) // a new security generation, not protected
+	// A new security generation, not protected.
+	sr.state.Store(2)
 	sr.wake <- ports.SecurityState{}
 	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}} // Run went round and reset
 	sr.stop()

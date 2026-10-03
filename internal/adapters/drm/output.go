@@ -130,7 +130,8 @@ type Output struct {
 	// by recursing: a retry resets it, so a caller never reads it after a
 	// recursive call. stateReq builds commitState. Paths that hold a second
 	// request while one is alive use their own: withoutReq (commitState's
-	// retry test) and probeReq (contentRefused, the scale TEST_ONLY probe).
+	// retry test) and probeReq (every TEST_ONLY probe: frameTest, the scale,
+	// overlay and colour probes).
 	frameReq, stateReq, withoutReq, probeReq atomicReq
 	// restWindows is overlayFrame's scene windows, valid until its next call.
 	restWindows []ports.SceneWindow
@@ -645,7 +646,9 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
-		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.contentRefused(fb, fence, vrr, cur, ov, rect, pc) {
+		// The same frame without the connector hint tells whether the hint
+		// is the cause.
+		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false) {
 			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
@@ -689,11 +692,6 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.setAsync(async)
 	o.frame.begin(f, time.Now())
 	return nil
-}
-
-// contentRefused tests the same frame without the connector hint before disabling it.
-func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse) bool {
-	return o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false)
 }
 
 // frameTest is a TEST_ONLY of the frame commit as commitWithRect builds it,

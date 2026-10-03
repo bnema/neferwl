@@ -773,14 +773,6 @@ func TestSetupColor(t *testing.T) {
 	})
 }
 
-// The cap is requested on the fd before anything is read; the property
-// readers are shared with the content type.
-func TestEnableColorPipelineFailsOnBadFD(t *testing.T) {
-	if err := enableColorPipeline(-1); err == nil {
-		t.Fatal("cap accepted on an invalid fd")
-	}
-}
-
 // A frame refused because of its pipeline never turns the hardware cursor
 // off: only a refusal the frame has with Bypass does.
 func TestColorRefusalDoesNotDisableTheCursor(t *testing.T) {

@@ -58,16 +58,17 @@ type overlayWin struct {
 
 // overlayCandidate finds the one window the overlay can show: an opaque
 // dmabuf at integer physical coordinates, drawn 1:1, with no other window
-// or layer above it. reason is why none.
-func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) (ports.SceneWindow, ports.SurfaceContent, string) {
+// or layer above it, and the plane colour mode it needs. reason is why none.
+func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
 	if s.Transform != 0 {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "output_transform"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
 	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1
 	}
 	var pick *ports.SceneWindow
+	var mode colorMode
 	for i := range s.Windows {
 		w := &s.Windows[i]
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
@@ -75,7 +76,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		}
 		if w.Popup {
 			// Popups draw after every window, wherever they are listed.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 		}
 		c := surfaces[w.ID]
 		// A viewport crop is composed: the plane would show the whole
@@ -84,57 +85,53 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// window (a peeking stashed one) needs the veil drawn over it, and
 		// one with the focus effect needs its lift; an overview preview is
 		// drawn smaller than its buffer.
-		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && colorFits(c, hdrOn, pipeline) {
-			pick = w
-			continue
+		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) {
+			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
+				pick, mode = w, m
+				continue
+			}
 		}
 		if pick != nil {
 			// Something is drawn above the candidate.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 		}
 	}
 	if pick == nil {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "no_candidate"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "no_candidate"
 	}
 	if s.Dim > 0 {
 		// The renderer composes the veil (under the first float, or under
 		// every window with DimBehind): a window on the plane would skip it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "dim"
 	}
 	if len(s.DropHints) > 0 {
 		// Drag hints are drawn over the windows.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "drop_hint"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
 		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "layer_above"
 		}
 	}
 	if !pick.Fullscreen && len(s.Separators) > 0 {
 		// The overlay shows the buffer alone; the lines would go with it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
 	}
 	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
 		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
 		// The plane cannot apply the workspace's logical viewport crop.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "workspace_clip"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
 	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "scaled"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "scaled"
 	}
 	x, y := float64(pick.Rect.X)*scale, float64(pick.Rect.Y)*scale
 	if x != float64(int(x)) || y != float64(int(y)) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "fractional_position"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "fractional_position"
 	}
-	return *pick, c, ""
-}
-
-// colorFits reports whether the plane can show c's colour (see planeColor).
-func colorFits(c ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) bool {
-	_, reason := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline)
-	return reason == ""
+	return *pick, c, mode, ""
 }
 
 // overlayProps puts ov on the overlay plane, or turns it off.

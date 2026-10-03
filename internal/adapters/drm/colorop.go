@@ -236,34 +236,30 @@ func (o *Output) colorAllowed(p *plane, format uint32, test func(req *atomicReq)
 func (o *Output) setupColor() {
 	if !o.hdr.wanted() {
 		// The pipelines serve HDR outputs only: SDR stays on Bypass.
-		o.primary.pipeline = nil
-		if o.overlay != nil {
-			o.overlay.pipeline = nil
-		}
+		o.dropPipelines()
 		return
 	}
-	if o.primary.pipelineOf() == nil && o.overlay.pipelineOf() == nil {
+	if o.primary.pipeline == nil && (o.overlay == nil || o.overlay.pipeline == nil) {
 		return
 	}
 	blob, err := o.k.createBlob(ctmBytes(bt709ToBT2020))
 	if err != nil {
 		o.log.Warn().Str("component", "drm").Err(err).Str("connector", o.conn.name).Msg("colour matrix blob; plane colour pipelines off")
-		o.primary.pipeline = nil
-		if o.overlay != nil {
-			o.overlay.pipeline = nil
-		}
+		o.dropPipelines()
 		return
 	}
 	o.ctmBlob = blob
 	o.colorMult = s3132(float64(o.hdr.settings.SDRBrightness) / 80)
 }
 
-// pipelineOf is a nil-safe read of p.pipeline.
-func (p *plane) pipelineOf() *colorPipeline {
-	if p == nil {
-		return nil
+// dropPipelines leaves the output's planes without a pipeline: SDR content
+// is composed.
+func (o *Output) dropPipelines() {
+	for _, p := range [...]*plane{o.primary, o.overlay} {
+		if p != nil {
+			p.pipeline = nil
+		}
 	}
-	return p.pipeline
 }
 
 // readColor finds the planes' SDR to PQ pipelines, once at output creation.
