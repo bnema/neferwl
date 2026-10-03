@@ -77,14 +77,15 @@ func (surf *surface) sendScale() {
 	if o != nil {
 		scale = o.place.Scale
 	}
-	// The output holds the scene under its transform, so a client that
-	// renders with the same buffer transform avoids a compositing pass.
+	// The hint lets the client render in the output's orientation (rotated
+	// outputs are always composed). Normal is the protocol default, so it is
+	// sent only on change; cursor buffers must stay untransformed.
 	var t ports.BufferTransform
 	if o != nil {
 		t = o.place.Transform
 	}
-	if surf.wl.Version() >= 6 && (!surf.prefTransformSent || t != surf.prefTransform) {
-		surf.prefTransform, surf.prefTransformSent = t, true
+	if surf.wl.Version() >= 6 && surf.kind != roleCursor && t != surf.prefTransform {
+		surf.prefTransform = t
 		surf.wl.SendPreferredBufferTransform(uint32(t))
 	}
 	if scale == surf.scale {
@@ -236,10 +237,8 @@ func (s *surface) source(bw, bh int) ([4]float32, bool) {
 	v := s.committedViewport.src
 	scale := float64(max(s.bufferScale, 1))
 	// Transformed buffer size, in the surface's axes.
-	tw, th := float64(bw), float64(bh)
-	if s.transform.Rotated() {
-		tw, th = th, tw
-	}
+	iw, ih := s.transformedSize(bw, bh)
+	tw, th := float64(iw), float64(ih)
 	x0, y0 := float64(v[0])*scale/256, float64(v[1])*scale/256
 	x1, y1 := x0+float64(v[2])*scale/256, y0+float64(v[3])*scale/256
 	// validateViewport tolerates a rounding overshoot: sample inside the buffer.
@@ -252,10 +251,7 @@ func (s *surface) source(bw, bh int) ([4]float32, bool) {
 // transformedSize is the buffer size in the surface's axes: width and height
 // swap for a 90° or 270° buffer transform.
 func (s *surface) transformedSize(bw, bh int) (int, int) {
-	if s.transform.Rotated() {
-		return bh, bw
-	}
-	return bw, bh
+	return s.transform.Size(bw, bh)
 }
 
 func (s *surface) validateViewport(bw, bh int) bool {

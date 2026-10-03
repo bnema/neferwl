@@ -285,7 +285,6 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 	}
 }
 
-// Each case uses a new connection because wl_display.error terminates that client.
 // set_transform reaches the backend, and heads report the placement's
 // transform, at bind time and when it changes.
 func TestOutputManagementTransform(t *testing.T) {
@@ -365,6 +364,7 @@ func TestOutputManagementTransform(t *testing.T) {
 	}
 }
 
+// Each case uses a new connection because wl_display.error terminates that client.
 func TestOutputManagementProtocolErrors(t *testing.T) {
 	const (
 		enable  = wlr.ZwlrOutputConfigurationV1RequestEnableHead

@@ -56,9 +56,8 @@ type surface struct {
 	on    *output
 	scale float64
 	// prefTransform is the last preferred buffer transform sent (wl_surface
-	// v6+); prefTransformSent is false until the first one.
-	prefTransform     ports.BufferTransform
-	prefTransformSent bool
+	// v6+); zero (normal) is the protocol default.
+	prefTransform ports.BufferTransform
 	// content is the last content built from this surface's own buffer;
 	// has is false while no buffer is attached.
 	inputAll                bool
