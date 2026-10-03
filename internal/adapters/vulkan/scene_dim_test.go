@@ -64,6 +64,26 @@ func TestSceneDimOrder(t *testing.T) {
 	}
 }
 
+// DimBehind puts the veil first, under every window, floats included, and
+// only once.
+func TestSceneDimBehind(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	s := ports.Scene{Dim: 0.3, DimBehind: true, Windows: []ports.SceneWindow{
+		{ID: 1, Preview: 0.5, Rect: ports.Rect{X: 10, W: 20, H: 20}},
+		{ID: 2, Floating: true, Rect: ports.Rect{X: 40, W: 20, H: 20}},
+	}}
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
+	if len(ds) != 3 { // veil, two windows
+		t.Fatalf("draws = %d, want 3", len(ds))
+	}
+	if v := ds[0].pc; v.rect != [4]int32{0, 0, 80, 60} || v.color != [4]float32{0, 0, 0, 0.3} {
+		t.Fatalf("veil = %+v", v)
+	}
+	if ds[1].pc.rect[0] != 10 || ds[2].pc.rect[0] != 40 {
+		t.Fatalf("windows not over the veil: %+v", ds)
+	}
+}
+
 // A dimmed window gets a veil over its own rect, border included, right
 // after it: windows drawn later stay bright.
 func TestSceneWindowDim(t *testing.T) {

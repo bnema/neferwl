@@ -160,8 +160,12 @@ func (w *sceneWalk) layers(afterWindows bool) {
 
 // windows draws ordered placements with borders. Tile lines go after
 // the column group, before the first float above it; an overview preview
-// of a float is not one.
+// of a float is not one. The veil goes under that float, or under every
+// window with DimBehind.
 func (w *sceneWalk) windows() {
+	if w.s.DimBehind && w.s.Dim > 0 {
+		w.dim(w.bounds, w.s.Dim)
+	}
 	tileLines := false
 	for _, win := range w.s.Windows {
 		if win.Hidden || win.Popup || win.Rect.W <= 0 || win.Rect.H <= 0 {
@@ -170,7 +174,7 @@ func (w *sceneWalk) windows() {
 		if !win.Below && win.Floating && win.Preview == 0 && !tileLines {
 			w.separators(0)
 			tileLines = true
-			if w.s.Dim > 0 {
+			if w.s.Dim > 0 && !w.s.DimBehind {
 				w.dim(w.bounds, w.s.Dim)
 			}
 		}
