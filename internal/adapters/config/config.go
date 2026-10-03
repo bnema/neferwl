@@ -23,6 +23,9 @@ import (
 // VRR panel (48 Hz: 20.8 ms).
 const maxVRRFlipGap = 10 * time.Millisecond
 
+// maxCursorHideAfter bounds cursor.hide-after.
+const maxCursorHideAfter = time.Hour
+
 // defaultBinds use the config syntax and go through the same parser as user binds.
 var defaultBinds = []struct{ combo, action string }{
 	{"cmd+return", "spawn-terminal"},
@@ -122,6 +125,7 @@ func Defaults() ports.Config {
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1
+	c.Cursor.HideAfter = 5 * time.Second
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen
 	c.Focus.Strength = 0.04
@@ -582,6 +586,16 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be above 0 and at most 10")
 		}
 		c.Touchpad.ScrollFactor = f
+	case "cursor.hide-after":
+		if v == "off" {
+			c.Cursor.HideAfter = 0
+			return nil
+		}
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 100*time.Millisecond || d > maxCursorHideAfter {
+			return fmt.Errorf("must be off or a duration between 100ms and %s, e.g. 5s", maxCursorHideAfter)
+		}
+		c.Cursor.HideAfter = d
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {

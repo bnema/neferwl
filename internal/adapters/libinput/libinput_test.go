@@ -132,7 +132,7 @@ func TestPointerAcrossOutputs(t *testing.T) {
 	}
 	var out string
 	var px, py float64
-	p.moved(func(o string, x, y float64) { out, px, py = o, x, y })
+	p.moved(func(o string, x, y float64, _ bool) { out, px, py = o, x, y }, true)
 	if out != "B" || px != 120 || py != 50 {
 		t.Fatal(out, px, py)
 	}
