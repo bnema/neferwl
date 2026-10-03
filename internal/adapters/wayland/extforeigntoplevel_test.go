@@ -78,16 +78,22 @@ func TestExtForeignToplevelList(t *testing.T) {
 	if got, want := takeEvents(t, c, p.events), []string{"title editor - file", "done"}; !slices.Equal(got, want) {
 		t.Fatalf("title = %q, want %q", got, want)
 	}
-	requestProtocol(t, c, top, xdgshell.ToplevelRequestDestroy)
-	if got := takeEvents(t, c, p.events); !slices.Equal(got, []string{"closed"}) {
-		t.Fatalf("close = %q", got)
-	}
+
+	// After stop, a handle already sent still follows its window.
 	requestProtocol(t, c, list, ext.ExtForeignToplevelListV1RequestStop)
 	if err := c.Roundtrip(); err != nil {
 		t.Fatal(err)
 	}
 	if ev := <-p.events; ev != "finished" {
 		t.Fatalf("stop = %q", ev)
+	}
+	requestProtocol(t, c, top, xdgshell.ToplevelRequestSetTitle, "editor - other")
+	if got, want := takeEvents(t, c, p.events), []string{"title editor - other", "done"}; !slices.Equal(got, want) {
+		t.Fatalf("title after stop = %q, want %q", got, want)
+	}
+	requestProtocol(t, c, top, xdgshell.ToplevelRequestDestroy)
+	if got := takeEvents(t, c, p.events); !slices.Equal(got, []string{"closed"}) {
+		t.Fatalf("close = %q", got)
 	}
 }
 
@@ -150,10 +156,10 @@ func TestWindowCaptureSource(t *testing.T) {
 	requestProtocol(t, cc.c, surf, wayland.SurfaceRequestCommit)
 	ackAndAttach(t, cc.c, surf, xdg, shmBuffer(t, cc.c), serials)
 	clientEvent[ports.WindowMapped](t, h.events)
-	got := takeEvents(t, cc.c, p.events)
-	if slices.Equal(got, []string{"closed"}) {
-		got = takeEvents(t, cc.c, p.events)
+	if got := takeEvents(t, cc.c, p.events); !slices.Equal(got, []string{"closed"}) {
+		t.Fatalf("unmap = %q, want closed", got)
 	}
+	got := takeEvents(t, cc.c, p.events)
 	if !slices.Contains(got, "identifier "+toplevelIdentifier(win.ID, 2)) {
 		t.Fatalf("remap = %q", got)
 	}

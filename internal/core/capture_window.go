@@ -11,8 +11,9 @@ import "github.com/bnema/neferwl/internal/ports"
 // target, a workspace or a window, is rendered off screen at a time.
 
 // windowSize is a window's client size, at the origin: its placement on its
-// own workspace or, when that hides it (a stashed or covered float), the
-// float's own size, else the size it was last configured to.
+// own workspace or, when that hides it (a covered float), the float's own
+// size, else the size it was last configured to (a stashed window keeps its
+// imposed stash size).
 func (c *Core) windowSize(w *Workspace, id WindowID) Rect {
 	for _, p := range w.Layout() {
 		if p.ID == id && !p.Hidden && p.Rect.W > 0 && p.Rect.H > 0 {
@@ -20,12 +21,8 @@ func (c *Core) windowSize(w *Workspace, id WindowID) Rect {
 			return Rect{W: r.W, H: r.H}
 		}
 	}
-	for _, fs := range [][]Float{w.Floats, w.Stash} {
-		for _, f := range fs {
-			if f.ID == id && f.W > 0 && f.H > 0 {
-				return Rect{W: f.W, H: f.H}
-			}
-		}
+	if i := w.floatIndex(id); i >= 0 && w.Floats[i].W > 0 && w.Floats[i].H > 0 {
+		return Rect{W: w.Floats[i].W, H: w.Floats[i].H}
 	}
 	if v, ok := c.configures.sent[id]; ok && v.Width > 0 && v.Height > 0 {
 		return Rect{W: v.Width, H: v.Height}
