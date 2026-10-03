@@ -775,10 +775,12 @@ func (p *pointer) bounds() ports.Rect {
 	return r
 }
 
-// moved reports the physical position on the output under the pointer;
+// moved reports the target position (physical pixels after the output
+// transform) on the output under the pointer;
 // motion tells the device moved it.
 func (p *pointer) moved(move func(output string, x, y float64, motion bool), motion bool) {
 	if o, ok := p.layout.At(p.x, p.y); ok && move != nil {
-		move(o.Info.Name, (p.x-float64(o.X))*o.Scale, (p.y-float64(o.Y))*o.Scale, motion)
+		tx, ty := o.ToTarget(p.x, p.y)
+		move(o.Info.Name, tx, ty, motion)
 	}
 }

@@ -414,7 +414,8 @@ func (c *cursors) set(output string, cur cursor) {
 	}
 }
 
-// move places the cursor on output at physical (x, y). motion is false
+// move places the cursor on output at target pixels (x, y): physical, after
+// the output transform. motion is false
 // when the pointer is only placed again (layout or constraint change): it
 // neither shows an idle-hidden cursor nor delays the hide.
 func (c *cursors) move(output string, x, y float64, motion bool) {
