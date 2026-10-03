@@ -70,6 +70,20 @@ func TestOutputRouting(t *testing.T) {
 	}
 }
 
+// The set remembers which outputs scenes turned off, also once they are
+// gone: drm starts an output that reconnects off (Output.StartOff).
+func TestOutputSetRemembersOff(t *testing.T) {
+	set := newOutputSet(context.Background(), nil)
+	set.scenes([]ports.Scene{{Output: "A", Off: true}, {Output: "B"}})
+	if !set.off["A"] || set.off["B"] {
+		t.Fatal(set.off)
+	}
+	set.scenes([]ports.Scene{{Output: "A"}})
+	if len(set.off) != 0 {
+		t.Fatal(set.off)
+	}
+}
+
 func TestOutputRoutingAllocations(t *testing.T) {
 	set := newOutputSet(context.Background(), nil)
 	// Populate the existing content slot before measuring, so the guard
