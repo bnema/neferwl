@@ -32,7 +32,7 @@ func TestStartFlipGap(t *testing.T) {
 			pending = time.Now().Add(time.Hour)
 		}
 		o := &Output{vrrFlipGap: tc.gap, vrrOn: tc.vrr, vrrGame: tc.game, flipGapUntil: pending}
-		o.startFlipGap(pendingFrame{frame: tc.frame})
+		o.startFlipGap(pendingFrame{frame: tc.frame}, monotonic(), time.Now())
 		if got := !o.flipGapUntil.IsZero(); got != tc.want {
 			t.Errorf("%s: gap started %v, want %v", tc.name, got, tc.want)
 		}

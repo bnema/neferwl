@@ -97,7 +97,8 @@ func (o *Output) disableProtected() error {
 		_ = o.k.destroyBlob(o.modeBlob) // MODE_ID is 0 now: nothing references it
 		o.modeBlob = 0
 	}
-	o.off, o.vrrOn, o.vrrGame, o.overlayOn = true, false, false, 0
+	o.off, o.vrrGame, o.overlayOn = true, false, 0
+	o.setVRR(false)
 	o.sendFormats()
 	o.shown, o.queued = 0, 0
 	if o.cursor != nil {

@@ -72,7 +72,7 @@ type Renderer struct {
 	copied int
 	// marks date the frames for Trim's wall-clock eviction (trim.go).
 	marks []trimMark
-	// redrawn counts the target pixels drawn, for tests.
+	// redrawn counts the target pixels drawn (TakeRedrawn).
 	redrawn int
 	// cursors are the exported cursor images (CursorBuffers).
 	cursors [2]*cursorImage
@@ -324,6 +324,14 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 // CopiedBytes reports cumulative wl_shm bytes copied into GPU storage.
 // It is diagnostic only and must be read by the renderer's owner goroutine.
 func (r *Renderer) CopiedBytes() int { return r.copied }
+
+// TakeRedrawn returns the target pixels drawn since the last call and
+// resets the count.
+func (r *Renderer) TakeRedrawn() int {
+	n := r.redrawn
+	r.redrawn = 0
+	return n
+}
 
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.

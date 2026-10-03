@@ -40,13 +40,17 @@ import "time"
 // startFlipGap is called on each completed commit f: after a game frame's
 // flip under VRR, the next frame waits vrrFlipGap before it commits. A
 // state commit (cursor, VRR toggle) completing inside the gap keeps it:
-// the next frame still follows the last frame flip.
-func (o *Output) startFlipGap(f pendingFrame) {
+// the next frame still follows the last frame flip. The commit gate runs
+// from readAt, when the event was read (what the workaround was measured
+// with); the flip stats' gap end runs from when, the flip's kernel
+// timestamp, so a late read of the event still shows as a commit delay.
+func (o *Output) startFlipGap(f pendingFrame, when time.Duration, readAt time.Time) {
 	if !f.frame {
 		return
 	}
-	o.flipGapUntil = time.Time{}
+	o.flipGapUntil, o.flipGapAt = time.Time{}, 0
 	if o.vrrFlipGap > 0 && o.vrrOn && o.vrrGame {
-		o.flipGapUntil = time.Now().Add(o.vrrFlipGap)
+		o.flipGapUntil = readAt.Add(o.vrrFlipGap)
+		o.flipGapAt = when + o.vrrFlipGap
 	}
 }
