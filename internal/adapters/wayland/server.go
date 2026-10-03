@@ -170,12 +170,12 @@ type Server struct {
 	readinessGeneration uint64
 	lastFlip            map[string]time.Time
 	// tokens are the issued xdg-activation tokens (activation.go).
-	tokens   map[string]activationToken
+	tokens map[string]activationToken
 	// foreignExports are the live xdg-foreign handles (foreign.go).
 	foreignExports map[string]*foreignExport
 	surfaces       map[*server.Resource]*surface
-	buffers  map[*server.Resource]clientBuffer
-	dmabuf   *dmabufGlobal
+	buffers        map[*server.Resource]clientBuffer
+	dmabuf         *dmabufGlobal
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
 	hdrOutputs        map[string]ports.OutputHDR
 	colorID           uint64

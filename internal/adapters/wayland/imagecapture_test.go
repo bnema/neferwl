@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"errors"
 	"image"
 	"strings"
 	"sync/atomic"
@@ -312,6 +313,22 @@ func (cc *cclient) extFrame(t *testing.T, session uint32, w, h int32) *captureEv
 	requestProtocol(t, cc.c, frame, ext.ExtImageCopyCaptureFrameV1RequestCapture)
 	cc.roundtrip(t)
 	requestProtocol(t, cc.c, frame, ext.ExtImageCopyCaptureFrameV1RequestDestroy)
+	cc.roundtrip(t)
+	return ev
+}
+
+// liveExtFrame is extFrame whose frame object stays alive, so a held frame
+// can still be served.
+func (cc *cclient) liveExtFrame(t *testing.T, session uint32, w, h int32) *captureEvents {
+	t.Helper()
+	buf, _ := captureShm(t, cc.c, w, h)
+	frame := cc.c.AllocateID()
+	ev := &captureEvents{events: make(chan uint16, 16)}
+	ev.SetID(frame)
+	registerWireProxy(cc.c, ev)
+	requestProtocol(t, cc.c, session, ext.ExtImageCopyCaptureSessionV1RequestCreateFrame, frame)
+	requestProtocol(t, cc.c, frame, ext.ExtImageCopyCaptureFrameV1RequestAttachBuffer, buf)
+	requestProtocol(t, cc.c, frame, ext.ExtImageCopyCaptureFrameV1RequestCapture)
 	cc.roundtrip(t)
 	return ev
 }
@@ -947,21 +964,21 @@ func TestExclusionDestroyFreesTheSlot(t *testing.T) {
 	}
 }
 
-// Frames of the session that owns the exclusion are fenced: refused until
-// core knows the exclusion, then tagged with its revision. Every other
-// capture, wlr-screencopy included, carries no tag.
+// Frames of the session that owns the exclusion are fenced: held until core
+// knows the exclusion, then tagged with its revision. Every other capture,
+// wlr-screencopy included, carries no tag.
 func TestExclusionFrameTagging(t *testing.T) {
 	h := newCaptureHarness(t)
 	owner, session, open, _, _ := h.exclusionOwner(t)
-	// Core has not confirmed the exclusion: the frame fails.
-	ev := owner.extFrame(t, session, 4, 4)
-	if !eventsInclude(ev, frameFailed) {
-		t.Fatal("a frame before core confirmed the exclusion was served")
+	// Core has not confirmed the exclusion: the frame waits, unserved.
+	ev := owner.liveExtFrame(t, session, 4, 4)
+	if eventsInclude(ev, frameFailed) || eventsInclude(ev, frameReady) {
+		t.Fatal("a frame before core confirmed the exclusion was answered")
 	}
 	noCapture(t, h.captures)
+	// Once core confirms it, the held frame is served, tagged.
 	h.send(ports.CaptureSessionState{ID: open.ID, Output: "HEADLESS-1", Rect: ports.Rect{W: 4, H: 4}, Active: true, Exclusion: true, Revision: 9})
 	h.settle(t, owner)
-	owner.extFrame(t, session, 4, 4)
 	r := receiveCapture(t, h.captures)
 	if !r.Exclude || r.Session != open.ID || r.CaptureRevision != 9 {
 		t.Fatalf("owner frame %+v", r)
@@ -983,6 +1000,36 @@ func TestExclusionFrameTagging(t *testing.T) {
 	r = receiveCapture(t, h.captures)
 	if r.Exclude || r.CaptureRevision != 0 {
 		t.Fatalf("another session's frame tagged: %+v", r)
+	}
+}
+
+// A renderer failure is transient for the client: the frame is asked again
+// and served, it does not fail (which ends a portal screencast).
+func TestExtFrameRetriesTransientFailure(t *testing.T) {
+	h := newCaptureHarness(t)
+	cc := h.client(t)
+	session, ev := cc.session(t, cc.outputSource(t))
+	constraints(t, cc, ev)
+	open := h.open(t)
+	h.send(active(open.ID))
+	h.settle(t, cc)
+	frame := cc.liveExtFrame(t, session, 4, 4)
+	r := receiveCapture(t, h.captures)
+	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: errors.New("capture indicator is not on screen")}
+	r = receiveCapture(t, h.captures)
+	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		cc.roundtrip(t)
+		if len(frame.events) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("retried frame not answered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if eventsInclude(frame, frameFailed) {
+		t.Fatal("transient failure ended the frame")
 	}
 }
 
