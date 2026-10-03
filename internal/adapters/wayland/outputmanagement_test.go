@@ -243,9 +243,6 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 		{"custom mode", func(t *testing.T, c *wlturbo.Display, ch uint32) {
 			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetCustomMode, int32(800), int32(600), int32(60000))
 		}},
-		{"transform", func(t *testing.T, c *wlturbo.Display, ch uint32) {
-			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetTransform, int32(1))
-		}},
 		{"adaptive sync off", func(t *testing.T, c *wlturbo.Display, ch uint32) {
 			requestProtocol(t, c, ch, wlr.ZwlrOutputConfigurationHeadV1RequestSetAdaptiveSync, uint32(0))
 		}},
@@ -289,6 +286,85 @@ func TestOutputManagementUnsupportedSettings(t *testing.T) {
 }
 
 // Each case uses a new connection because wl_display.error terminates that client.
+// set_transform reaches the backend, and heads report the placement's
+// transform, at bind time and when it changes.
+func TestOutputManagementTransform(t *testing.T) {
+	s, _, apply, replies, dir := outputTestServer(t)
+	heads := testHead()
+	if !s.display.Do(func() {
+		s.setOutputHeads(heads)
+		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 1}}})
+	}) {
+		t.Fatal("display stopped")
+	}
+	c := protocolClient(t, s, dir)
+	id := bindVersion(t, c, "zwlr_output_manager_v1", 4)
+	p := &managementEvents{events: make(chan [2]uint32, 32), headEvents: make(chan [2]uint32, 32), modes: make(chan uint32, 4), client: c}
+	p.SetID(id)
+	registerWireProxy(c, p)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var head, serial [2]uint32
+	for ev := recvManagement(t, p.events); ; ev = recvManagement(t, p.events) {
+		if ev[0] == wlr.ZwlrOutputManagerV1EventHead {
+			head = ev
+		}
+		if ev[0] == wlr.ZwlrOutputManagerV1EventDone {
+			serial = ev
+			break
+		}
+	}
+	transform := func() (uint32, bool) {
+		v, ok := uint32(0), false
+		for len(p.headEvents) > 0 {
+			if ev := <-p.headEvents; ev[0] == wlr.ZwlrOutputHeadV1EventTransform {
+				v, ok = ev[1], true
+			}
+		}
+		return v, ok
+	}
+	if v, ok := transform(); !ok || v != 1 {
+		t.Fatalf("initial transform: %d, %v", v, ok)
+	}
+	configID := c.AllocateID()
+	configProxy := &managementEvents{events: make(chan [2]uint32, 8), client: c}
+	configProxy.SetID(configID)
+	registerWireProxy(c, configProxy)
+	requestProtocol(t, c, id, wlr.ZwlrOutputManagerV1RequestCreateConfiguration, configID, serial[1])
+	chID := c.AllocateID()
+	registerProtocol(t, c, chID)
+	requestProtocol(t, c, configID, wlr.ZwlrOutputConfigurationV1RequestEnableHead, chID, head[1])
+	requestProtocol(t, c, chID, wlr.ZwlrOutputConfigurationHeadV1RequestSetTransform, int32(3))
+	requestProtocol(t, c, configID, wlr.ZwlrOutputConfigurationV1RequestApply)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	var req ports.OutputApply
+	select {
+	case req = <-apply:
+	case <-time.After(time.Second):
+		t.Fatal("no apply request")
+	}
+	if len(req.Heads) != 1 || req.Heads[0].Transform == nil || *req.Heads[0].Transform != 3 {
+		t.Fatalf("apply: %+v", req)
+	}
+	replies <- ports.OutputApplied{ID: req.ID}
+	waitManagementEvent(t, c, configProxy.events, uint32(wlr.ZwlrOutputConfigurationV1EventSucceeded))
+	if !s.display.Do(func() {
+		s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: heads.Heads[0].Info, Scale: 1, Transform: 3}}})
+		s.setOutputHeads(heads)
+	}) {
+		t.Fatal("display stopped")
+	}
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := transform(); !ok || v != 3 {
+		t.Fatalf("updated transform: %d, %v", v, ok)
+	}
+}
+
 func TestOutputManagementProtocolErrors(t *testing.T) {
 	const (
 		enable  = wlr.ZwlrOutputConfigurationV1RequestEnableHead

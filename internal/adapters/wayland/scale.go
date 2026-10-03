@@ -6,6 +6,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	"github.com/bnema/go-wayland-bindings/server/viewporter"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -75,6 +76,16 @@ func (surf *surface) sendScale() {
 	scale := 1.0
 	if o != nil {
 		scale = o.place.Scale
+	}
+	// The output holds the scene under its transform, so a client that
+	// renders with the same buffer transform avoids a compositing pass.
+	var t ports.BufferTransform
+	if o != nil {
+		t = o.place.Transform
+	}
+	if surf.wl.Version() >= 6 && (!surf.prefTransformSent || t != surf.prefTransform) {
+		surf.prefTransform, surf.prefTransformSent = t, true
+		surf.wl.SendPreferredBufferTransform(uint32(t))
 	}
 	if scale == surf.scale {
 		return

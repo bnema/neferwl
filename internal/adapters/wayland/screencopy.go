@@ -19,8 +19,9 @@ import (
 // release its slot: only the backend completion does.
 const maxCaptureInflight = ports.MaxCaptureInflight
 
-// The renderer's scene and wl_output modes are already in physical orientation;
-// this compositor does not advertise rotated wl_output transforms.
+// captureRegion maps a logical rectangle to target pixels: scaled to the
+// scene-physical space, then through the output transform into the target
+// (the framebuffer, mode size) that captures read.
 func captureRegion(o *output, logical image.Rectangle) image.Rectangle {
 	if o == nil {
 		return image.Rectangle{}
@@ -29,8 +30,19 @@ func captureRegion(o *output, logical image.Rectangle) image.Rectangle {
 	if scale <= 0 {
 		scale = 1
 	}
+	sw, sh := sceneSize(o)
 	p := image.Rect(int(math.Floor(float64(logical.Min.X)*scale)), int(math.Floor(float64(logical.Min.Y)*scale)), int(math.Ceil(float64(logical.Max.X)*scale)), int(math.Ceil(float64(logical.Max.Y)*scale)))
-	return p.Intersect(image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height))
+	return o.place.Transform.RectToBuffer(p, sw, sh).Intersect(image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height))
+}
+
+// sceneSize is the scene-physical size of the output: the mode size, swapped
+// for a 90° or 270° transform.
+func sceneSize(o *output) (int, int) {
+	w, h := o.place.Info.Width, o.place.Info.Height
+	if o.place.Transform.Rotated() {
+		return h, w
+	}
+	return w, h
 }
 func captureTime(t time.Time) (uint32, uint32, uint32) {
 	sec := uint64(t.Unix())
@@ -154,6 +166,7 @@ func logicalRegion(o *output, phys image.Rectangle) ports.Rect {
 	if phys == image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height) {
 		return ports.Rect{}
 	}
+	phys = o.place.Transform.Invert().RectToBuffer(phys, o.place.Info.Width, o.place.Info.Height)
 	x0, y0 := int(math.Floor(float64(phys.Min.X)/scale)), int(math.Floor(float64(phys.Min.Y)/scale))
 	x1, y1 := int(math.Ceil(float64(phys.Max.X)/scale)), int(math.Ceil(float64(phys.Max.Y)/scale))
 	return ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}

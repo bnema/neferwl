@@ -147,6 +147,9 @@ func (o *outputOverrides) apply(req ports.OutputApply) (ports.Config, error) {
 		if h.Scale > 0 {
 			entry.Scale = h.Scale
 		}
+		if h.Transform != nil {
+			entry.Transform = *h.Transform
+		}
 		if h.Pos != nil {
 			entry.Pos = &image.Point{X: h.Pos.X, Y: h.Pos.Y}
 		}

@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,6 +39,18 @@ func (p *surfaceScaleProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
+// surfaceTransformProxy records wl_surface.preferred_buffer_transform (opcode 3).
+type surfaceTransformProxy struct {
+	wlturbo.BaseProxy
+	transforms chan uint32
+}
+
+func (p *surfaceTransformProxy) Dispatch(e *wlturbo.Event) {
+	if e.Opcode == 3 {
+		p.transforms <- e.Uint32()
+	}
+}
+
 func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -53,6 +66,54 @@ func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cl
 	go func() { done <- s.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
 	return s, events, commands, contents, dir
+}
+
+// A v6 surface learns the transform of its output once, and again only when
+// the transform changes.
+func TestPreferredBufferTransform(t *testing.T) {
+	s, _, _, _, dir := contentServer(t)
+	info := testOutputs[0].Info
+	setOutputs := func(tr ports.BufferTransform, scale float64) {
+		if !s.display.Do(func() {
+			s.setOutputs(ports.SetOutputs{Outputs: ports.Layout{{Info: info, Width: info.Height, Height: info.Width, Scale: scale, Transform: tr}}})
+		}) {
+			t.Fatal("display stopped")
+		}
+	}
+	setOutputs(1, 1)
+	c := protocolClient(t, s, dir)
+	g, _ := c.Registry().FindGlobal("wl_compositor")
+	comp, err := bindWireID(c, g.Name, g.Interface, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	surf := c.AllocateID()
+	p := &surfaceTransformProxy{transforms: make(chan uint32, 8)}
+	p.SetID(surf)
+	registerWireProxy(c, p)
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, surf)
+	drain := func() []uint32 {
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		var got []uint32
+		for len(p.transforms) > 0 {
+			got = append(got, <-p.transforms)
+		}
+		return got
+	}
+	if got := drain(); !slices.Equal(got, []uint32{1}) {
+		t.Fatalf("initial transforms %v, want [1]", got)
+	}
+	// A scale change alone does not repeat the transform.
+	setOutputs(1, 2)
+	if got := drain(); len(got) != 0 {
+		t.Fatalf("unchanged transform resent: %v", got)
+	}
+	setOutputs(3, 2)
+	if got := drain(); !slices.Equal(got, []uint32{3}) {
+		t.Fatalf("changed transforms %v, want [3]", got)
+	}
 }
 
 func TestFractionalScaleAndViewport(t *testing.T) {
