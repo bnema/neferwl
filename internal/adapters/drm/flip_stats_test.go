@@ -14,9 +14,15 @@ const period60 = 16_666_666 * time.Nanosecond // modeInfo{VRefresh: 60}
 
 func flipAt(when time.Duration) flipEvent { return flipEvent{when: when} }
 
-// flip is a frame flip at when whose commit was made at commit.
+// flip is a frame flip at when whose commit was made at commit, for a
+// frame wanted at the same time.
 func flip(o *Output, when, commit, fenceAt time.Duration) {
-	o.accountFlip(flipAt(when), true, commit, fenceAt)
+	o.accountFlip(flipAt(when), true, commit, commit, fenceAt)
+}
+
+// flipWanted is flip for a frame wanted at wanted.
+func flipWanted(o *Output, when, wanted, commit, fenceAt time.Duration) {
+	o.accountFlip(flipAt(when), true, wanted, commit, fenceAt)
 }
 
 func TestAccountFlipMissedVblanks(t *testing.T) {
@@ -74,6 +80,47 @@ func TestAccountFlipIdleGapNotCounted(t *testing.T) {
 	}
 }
 
+// A frame wanted while the previous flip was still in flight is due at
+// that flip. If the event is read late and the commit comes after the
+// next vblank, the frame is still counted, with its commit delay.
+func TestAccountFlipDelayedCommitCounted(t *testing.T) {
+	o, _, _ := testOutput(t)
+	p := o.refreshPeriod()
+	at := time.Second
+	flip(o, at, at-p, 0)
+	// Wanted before the previous flip landed, committed 1.2 periods
+	// after it (late read), flipped two vblanks after it.
+	flipWanted(o, at+2*p, at-p/2, at+p+p/5, at+p/2)
+	s := o.flipStats
+	if s.missedVblanks != 1 || s.maxInterval != 2*p || s.maxCommitDelay != p+p/5 {
+		t.Fatalf("delayed commit: %+v", s)
+	}
+	// The fence was ready before the targeted vblank (at+p): no late fence.
+	if s.lateFences != 0 {
+		t.Fatalf("late fence counted: %+v", s)
+	}
+	// Wanted a little after the flip, committed late: counted likewise,
+	// the delay running from when it was wanted.
+	at += 2 * p
+	flipWanted(o, at+3*p, at+p/4, at+p, at+p+1)
+	s = o.flipStats
+	if s.missedVblanks != 2 || s.maxInterval != 3*p || s.maxCommitDelay != p+p/5 || s.lateFences != 1 {
+		t.Fatalf("wanted after the flip: %+v", s)
+	}
+}
+
+// A frame wanted long after the previous flip is not due for the next
+// vblank, however fast it is committed: not an interval, no delay.
+func TestAccountFlipWantedAfterIdleNotCounted(t *testing.T) {
+	o, _, _ := testOutput(t)
+	p := o.refreshPeriod()
+	flip(o, time.Second, time.Second-p, 0)
+	flipWanted(o, 2*time.Second+3*p, 2*time.Second, 2*time.Second+2*p, 0)
+	if s := o.flipStats; s != (flipStats{}) || o.lastFlipAt != 2*time.Second+3*p {
+		t.Fatalf("idle gap counted: %+v last %s", s, o.lastFlipAt)
+	}
+}
+
 func TestAccountFlipVRR(t *testing.T) {
 	o, _, _ := testOutput(t)
 	p := o.nominalPeriod()
@@ -117,7 +164,7 @@ func TestAccountFlipStateCommit(t *testing.T) {
 	o, _, _ := testOutput(t)
 	p := o.refreshPeriod()
 	flip(o, time.Second, time.Second-p, 0)
-	o.accountFlip(flipAt(time.Second+3*p), false, time.Second+p/2, time.Second+3*p)
+	o.accountFlip(flipAt(time.Second+3*p), false, time.Second+p/2, time.Second+p/2, time.Second+3*p)
 	if s := o.flipStats; s != (flipStats{}) || o.lastFlipAt != time.Second {
 		t.Fatalf("stats %+v last %s", s, o.lastFlipAt)
 	}
@@ -170,15 +217,16 @@ func TestTakeFlipStatsResets(t *testing.T) {
 	flip(o, time.Second, time.Second-p, 0)
 	flip(o, time.Second+3*p, time.Second+p/2, time.Second+2*p)
 	o.accountRead(flipAt(time.Second), time.Second+time.Millisecond)
+	flipWanted(o, time.Second+4*p, time.Second+3*p, time.Second+3*p+p/2, 0)
 	s := o.takeFlipStats()
-	if s.missedVblanks != 1 || s.lateFences != 1 || s.maxInterval != 3*p || s.maxFlipToRead != time.Millisecond {
+	if s.missedVblanks != 1 || s.lateFences != 1 || s.maxInterval != 3*p || s.maxCommitDelay != p/2 || s.maxFlipToRead != time.Millisecond {
 		t.Fatalf("taken %+v", s)
 	}
 	if o.flipStats != (flipStats{}) {
 		t.Fatalf("not reset: %+v", o.flipStats)
 	}
 	// The interval chain survives the report.
-	if o.lastFlipAt != time.Second+3*p {
+	if o.lastFlipAt != time.Second+4*p {
 		t.Fatalf("last flip %s", o.lastFlipAt)
 	}
 }
@@ -250,8 +298,8 @@ func TestAccountFlipAllocations(t *testing.T) {
 	at := time.Second
 	if n := testing.AllocsPerRun(100, func() {
 		at += 40 * time.Millisecond
-		o.accountFlip(flipAt(at), true, at-30*time.Millisecond, at-20*time.Millisecond)
-		o.accountFlip(flipAt(at), false, at, 0)
+		o.accountFlip(flipAt(at), true, at-35*time.Millisecond, at-30*time.Millisecond, at-20*time.Millisecond)
+		o.accountFlip(flipAt(at), false, at, at, 0)
 		o.accountRead(flipAt(at), at+time.Millisecond)
 		_ = o.takeFlipStats()
 	}); n != 0 {

@@ -38,6 +38,9 @@ type pendingFrame struct {
 	composed bool
 	// fenceReady: every fence had signalled at commit (flip tracing only).
 	fenceReady bool
+	// wantedAt is when the frame was first wanted (CLOCK_MONOTONIC, 0:
+	// unknown), for the flip stats.
+	wantedAt time.Duration
 }
 
 func (f *pendingFrame) closeFences() {

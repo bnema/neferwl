@@ -123,10 +123,13 @@ type Output struct {
 	cursorHeld bool
 	// traceFlips logs every completion with its timing; lastFlipAt is
 	// the previous frame flip's kernel timestamp (always kept).
-	// flipStats are reported and reset with the periodic stats.
+	// flipStats are reported and reset with the periodic stats. wantedAt
+	// is when the output first needed a frame since the last frame commit
+	// (0: none), taken by the commit into pendingFrame.
 	traceFlips bool
 	lastFlipAt time.Duration
 	flipStats  flipStats
+	wantedAt   time.Duration
 	// vrrFlipGap is the minimum time between a game frame's flip event
 	// and the next frame commit under VRR (render.vrr-flip-gap, 0: off);
 	// flipGapUntil is when the next frame may commit. See vrr_flip_gap.go.
@@ -621,6 +624,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.planeRect = rect
 	o.lastFrame, o.cursorHeld = time.Now(), false
 	f.frame, f.async = true, async
+	f.wantedAt, o.wantedAt = o.wantedAt, 0
 	f.fences = dupFences(fence, ov.acquire)
 	if o.traceFlips {
 		f.fenceReady = signalled(f.fences)
@@ -1005,6 +1009,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	for {
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
 			scene, haveScene, dirty = ports.Scene{}, false, false
+			o.wantedAt = 0
 			want, cursorScale, cursorTransform = ports.CursorChange{}, -1, 0
 			if o.cursor != nil {
 				o.cursor.image, o.cursor.later = false, nil
@@ -1281,11 +1286,17 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			fs := o.takeFlipStats()
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
-			ev = ev.Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead)).Int("redrawn_pixels", r.TakeRedrawn())
+			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
+			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)
 			}
 			ev.Msg("stats")
+		}
+		// A frame wanted while the previous one is in flight is due at
+		// that flip: accountFlip never counts it before.
+		if dirty && haveScene && o.wantedAt == 0 {
+			o.wantedAt = monotonic()
 		}
 		o.observeSecurity()
 		if haveScene && !o.sceneCurrent(scene) {
@@ -1451,7 +1462,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if trace {
 		o.traceFlip(ev, f, commitAt, now, o.lastFlipAt, fenceAt)
 	}
-	o.accountFlip(ev, f.frame, commitAt, fenceAt)
+	o.accountFlip(ev, f.frame, f.wantedAt, commitAt, fenceAt)
 	o.startFlipGap(f)
 	if o.cursor != nil {
 		o.cursor.landed()

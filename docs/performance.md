@@ -40,10 +40,13 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 Each output's `stats` entry (every 10 s) counts what happened since the previous one, from the kernel's flip timestamps, and starts over:
 
-- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. An output commits only on change, so an interval counts only if its commit was made less than one period after the previous flip (it could have made the next vblank); a gap after an idle period is ignored. Not counted under VRR, where the period is not fixed.
-- `max_flip_interval_ms`: the longest such interval between two frame flips (also under VRR, with the same rule against the mode's nominal period). The chain restarts after a modeset or a VRR change.
-- `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event, for the output's own commits. A large value with few `missed_vblanks` means the flips were on time and the event was read late.
-- `late_fences` (only with `--debug=drm-flip`, which reads the fence times): missed vblanks, as defined above, whose composition fence signalled after the vblank the commit targeted (the previous flip plus one period), so the frame was not ready for it. A missed vblank with an earlier fence was delayed elsewhere (commit placement, flip delivery). Not counted under VRR.
+- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. An output renders only on change, so only a frame that was due counts: one wanted (a scene, content or capture change made it dirty) less than one period after the previous flip, so it was meant for the next vblank even if it was committed late. A frame wanted after an idle period is ignored. Not counted under VRR, where the period is not fixed.
+- `max_flip_interval_ms`: the longest interval between two flips of due frames (also under VRR, where the gate uses the mode's refresh period, the shortest one). The chain restarts after a modeset or a VRR change.
+- `max_commit_delay_ms`: for due frames, the longest time from when the frame was due (wanted, and not before the previous flip) to its commit. It is large when the commit came late: the previous flip's event was read late, or the CPU side of the composition was slow.
+- `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event, for the output's own commits.
+- `late_fences` (only with `--debug=drm-flip`, which reads the fence times): missed vblanks whose composition fence signalled after the vblank the frame targeted (the previous flip plus one period), so the GPU was not done in time. Not counted under VRR.
+
+Reading them together: missed vblanks with `late_fences` are a late GPU composition. Missed vblanks without late fences and with a large `max_commit_delay_ms` (usually next to a large `max_flip_to_read_ms`) are a late commit: the event reader or the CPU. Few `missed_vblanks` mean flips were on time only if `max_commit_delay_ms` is also small: a delayed commit can still make its vblank, and `max_flip_to_read_ms` alone says the event arrived late, not that the flip did.
 - `redrawn_pixels`: target pixels the renderer drew; a damage-limited frame counts its damage, not the whole target.
 
 `input stats` shows coalesced pointer motion and the longest wait for core.

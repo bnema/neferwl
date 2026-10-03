@@ -8,23 +8,29 @@ import "time"
 // flip timestamps, so they tell a late composition from a late read of
 // the event (see accountFlip).
 type flipStats struct {
-	// missedVblanks counts frame flips whose kernel timestamp is over 1.5
-	// refresh periods after the previous frame flip (never under VRR,
+	// missedVblanks counts due frame flips whose kernel timestamp is over
+	// 1.5 refresh periods after the previous frame flip (never under VRR,
 	// where the period is not fixed).
 	missedVblanks int
-	// maxInterval is the longest time between two frame flips.
+	// maxInterval is the longest time between two frame flips, of the
+	// frames that were due.
 	maxInterval time.Duration
+	// maxCommitDelay is the longest time a due frame waited between the
+	// moment it was due (wanted, and the previous flip landed) and its
+	// commit: late event read, slow composition.
+	maxCommitDelay time.Duration
 	// maxFlipToRead is the longest time between a flip's kernel timestamp
 	// and the output reading its event: the event delivery latency.
 	maxFlipToRead time.Duration
-	// lateFences counts frame flips whose fences signalled after the
-	// vblank before the flip (never under VRR). Fence times are only read
-	// while flip tracing is on.
+	// lateFences counts missed vblanks whose fences signalled after the
+	// vblank the frame targeted (never under VRR). Fence times are only
+	// read while flip tracing is on.
 	lateFences int
 }
 
 // nominalPeriod is the time between two vblanks at the mode's refresh
-// rate, which is also the longest a VRR output is held to.
+// rate. Under VRR it is the shortest period: the fastest the output
+// flips.
 func (o *Output) nominalPeriod() time.Duration {
 	return time.Duration(int64(time.Second) * 1000 / int64(max(1, o.mode.refreshMilli())))
 }
@@ -47,33 +53,40 @@ func (o *Output) setVRR(on bool) {
 	o.vrrOn = on
 }
 
-// accountFlip counts the completion ev of the commit made at commitAt
-// (all times CLOCK_MONOTONIC). fenceAt is when the commit's
-// fences signalled (0: none or unknown). It updates lastFlipAt for frame
-// flips and never allocates.
+// accountFlip counts the completion ev of a frame commit made at
+// commitAt for a frame wanted at wantedAt (0: unknown, the commit time)
+// (all times CLOCK_MONOTONIC). fenceAt is when the commit's fences
+// signalled (0: none or unknown). It updates lastFlipAt for frame flips
+// and never allocates.
 //
-// An output only commits on change, so a gap after an idle period says
+// An output renders only on change, so a gap after an idle period says
 // nothing about missed vblanks. The interval to the previous flip counts
-// only if the commit came less than one period after it, that is if the
-// commit could have made the very next vblank. Then:
+// only for a frame that was due: wanted less than one period after the
+// previous flip, so it was meant for the very next vblank, whenever it was
+// committed. A frame that waited for the previous flip's event or for its
+// composition is due as soon as it is wanted. Then:
 //
 //   - a flip over 1.5 periods after the previous one missed a vblank
 //     (never counted under VRR, where the period is not fixed);
-//   - if it missed one and its fences signalled after the vblank the
-//     commit targeted (the previous flip plus one period), the frame was
-//     late: a late fence. A flip on time or a fence before the targeted
-//     vblank is not;
-//   - a flip on time whose event is read late is a delay of the event
-//     reader, not of the composition: see maxFlipToRead.
-func (o *Output) accountFlip(ev flipEvent, frame bool, commitAt, fenceAt time.Duration) {
+//   - if it missed one and its fences signalled after the vblank it
+//     targeted (the previous flip plus one period), the frame was late: a
+//     late fence. A fence before that vblank is not;
+//   - the commit delay is the time from when the frame was due (wanted,
+//     and not before the previous flip) to its commit. A missed vblank
+//     with a long commit delay and no late fence points at the commit
+//     path: late event read, slow composition on the CPU.
+func (o *Output) accountFlip(ev flipEvent, frame bool, wantedAt, commitAt, fenceAt time.Duration) {
 	if !frame {
 		return
 	}
-	nominal := o.nominalPeriod()
-	if prev := o.lastFlipAt; prev != 0 && commitAt-prev < nominal {
+	if wantedAt == 0 {
+		wantedAt = commitAt
+	}
+	if prev := o.lastFlipAt; prev != 0 && wantedAt-prev < o.nominalPeriod() {
 		s := &o.flipStats
 		interval := ev.when - prev
 		s.maxInterval = max(s.maxInterval, interval)
+		s.maxCommitDelay = max(s.maxCommitDelay, commitAt-max(wantedAt, prev))
 		if period := o.refreshPeriod(); period != 0 && 2*interval > 3*period {
 			s.missedVblanks++
 			if fenceAt != 0 && fenceAt > prev+period {
