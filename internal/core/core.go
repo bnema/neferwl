@@ -561,6 +561,10 @@ func (c *Core) publish(ctx context.Context) error {
 			}
 		}
 		scene.Dim = floatDim(layout, frame, c.cfg.Floating.Dim)
+		if sc.mon.ov.open {
+			// Darken the wallpaper around the previews.
+			scene.Dim, scene.DimBehind = c.cfg.Floating.Dim, true
+		}
 		if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
 			scene.DropHints = slices.Clone(d.target.hints)
 		}

@@ -60,4 +60,41 @@ func TestCoreCoveringFloatSceneAndHit(t *testing.T) {
 	}
 	w.FocusID(2)
 	check(0.3, 1, 2, 3)
+	m.ToggleOverview()
+	if err := c.publish(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s := (<-scenes)[0]; s.Dim != 0.3 || !s.DimBehind {
+		t.Fatalf("overview dim %v behind %v", s.Dim, s.DimBehind)
+	}
+}
+
+// The overview darkens the wallpaper behind its previews, tiles only too.
+func TestCoreOverviewDimsBehind(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	cfg.Floating.Dim = 0.3
+	scenes := make(chan []ports.Scene, 1)
+	c, err := New(cfg, Channels{Scenes: scenes, Commands: make(chan ports.ClientCommand, 128)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cur().info = ports.OutputInfo{Name: "OUT", Width: 100, Height: 80}
+	m := c.cur().mon
+	m.SetOutput(100, 80)
+	m.Current().AddWindow(1)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		dim    float64
+		behind bool
+	}{{0, false}, {0.3, true}, {0, false}} {
+		if err := c.publish(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if s := (<-scenes)[0]; s.Dim != tc.dim || s.DimBehind != tc.behind {
+			t.Fatalf("dim %v behind %v, want %v %v", s.Dim, s.DimBehind, tc.dim, tc.behind)
+		}
+		m.ToggleOverview()
+	}
 }
