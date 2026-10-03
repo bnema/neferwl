@@ -116,3 +116,86 @@ func TestRunOutputPower(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An output started off (it reconnected while turned off) never activates
+// its CRTC before a scene turns it on; its tearing probe, refused by an
+// inactive CRTC, waits until then.
+func TestRunOutputStartOff(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.tearing, o.cursor = true, nil
+	o.StartOff = true
+	ready := make(chan error, 1)
+	o.ready = ready
+	r := portsmocks.NewMockRenderer(t)
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
+	renders := make(chan struct{}, 8)
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		renders <- struct{}{}
+		return nil, nil
+	}).Maybe()
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	snapshot := func() []commitRec {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return append([]commitRec(nil), *commits...)
+	}
+	lit := func(cs []commitRec) bool {
+		for _, c := range cs {
+			if v, ok := c.req.value(tCrtc, pActive); ok && v != 0 && c.flags&atomicTestOnly == 0 {
+				return true
+			}
+		}
+		return false
+	}
+	probed := func(cs []commitRec) bool {
+		for _, c := range cs {
+			if c.flags == atomicTestOnly|flipAsyncFlag {
+				return true
+			}
+		}
+		return false
+	}
+	scenes := make(chan ports.Scene, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8), nil, nil)
+	}()
+	if err := <-ready; err != nil {
+		t.Fatal(err)
+	}
+	for len(renders) > 0 { // the images are cleared at setup
+		<-renders
+	}
+	off := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1, Off: true}
+	scenes <- off
+	time.Sleep(20 * time.Millisecond)
+	if lit(snapshot()) {
+		t.Fatal("a display started off lit up")
+	}
+	if probed(snapshot()) {
+		t.Fatal("tearing probed while off")
+	}
+	if len(renders) > 0 {
+		t.Fatal("rendered while off")
+	}
+	on := off
+	on.Off = false
+	scenes <- on
+	waitFor(t, func() bool { return lit(snapshot()) && probed(snapshot()) })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

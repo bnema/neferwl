@@ -196,6 +196,8 @@ func (c *Core) addScreen(info ports.OutputInfo) {
 		s = &screen{info: info, mon: newMonitorWithIDs(info.Name, info.Key(), &c.nextWorkspaceID)}
 		c.screens = append(c.screens, s)
 	}
+	s.off = c.offGone[info.Name]
+	delete(c.offGone, info.Name)
 	s.mon.Name, s.mon.Key = info.Name, info.Key()
 	c.settings(s.mon)
 	s.cfgScale = c.configScale(info.Name)
@@ -223,6 +225,12 @@ func (c *Core) removeScreen(name string) {
 	// A capture session's off-screen workspace of this output goes with it.
 	if c.configures.cw.sc == c.screens[i] {
 		c.configures.cw.reset()
+	}
+	if c.screens[i].off {
+		if c.offGone == nil {
+			c.offGone = map[string]bool{}
+		}
+		c.offGone[name] = true
 	}
 	if len(c.screens) == 1 {
 		c.screens[0].info = ports.OutputInfo{}

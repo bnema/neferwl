@@ -8,9 +8,10 @@ import (
 
 // Tearing, variable refresh and content type of frame commits.
 
-// probeAsync checks once whether async commits may carry IN_FENCE_FD.
+// probeAsync checks once whether async commits may carry IN_FENCE_FD. An
+// inactive CRTC refuses async flips: the probe waits until it is on.
 func (o *Output) probeAsync(r ports.Renderer) {
-	if o.asyncProbed || !o.tearing {
+	if o.asyncProbed || !o.tearing || o.off {
 		return
 	}
 	o.asyncProbed = true

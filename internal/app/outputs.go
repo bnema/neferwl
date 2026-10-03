@@ -21,8 +21,11 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // each window is kept so a new output starts with every window drawn.
 // Only the goroutine running loop touches the set.
 type outputSet struct {
-	outs           map[string]*runningOutput
-	latest         map[ports.WindowID]ports.SurfaceContent
+	outs   map[string]*runningOutput
+	latest map[ports.WindowID]ports.SurfaceContent
+	// off is the latest Scene.Off per output name, kept after the output
+	// goes: it reconnects off until core's first scene (Output.StartOff).
+	off            map[string]bool
 	cursor         ports.CursorChange
 	stopped        chan outputStopped
 	captured       chan<- ports.CaptureDone
@@ -59,7 +62,7 @@ type runningOutput struct {
 }
 
 func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
-	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, stopped: make(chan outputStopped), quit: make(chan struct{})}
+	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, off: map[string]bool{}, stopped: make(chan outputStopped), quit: make(chan struct{})}
 }
 
 // start runs an output in its own goroutine and replays the window contents.
@@ -211,6 +214,11 @@ func (s *outputSet) setCursor(c ports.CursorChange) {
 // scenes routes each scene to its output, replacing an unread one.
 func (s *outputSet) scenes(set []ports.Scene) {
 	for _, sc := range set {
+		if sc.Off {
+			s.off[sc.Output] = true
+		} else {
+			delete(s.off, sc.Output)
+		}
 		if r := s.outs[sc.Output]; r != nil {
 			select {
 			case <-r.scenes:
