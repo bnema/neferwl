@@ -125,6 +125,7 @@ func Defaults() ports.Config {
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1
+	c.Mouse.AccelProfile = ports.AccelAdaptive
 	c.Cursor.HideAfter = 5 * time.Second
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen
@@ -557,29 +558,12 @@ func set(c *ports.Config, key, v string) error {
 			}
 		}
 		c.Layout.Presets = list
-	case "touchpad.natural-scroll":
-		b, err := onOff(v)
-		if err != nil {
-			return err
-		}
-		c.Touchpad.NaturalScroll = b
 	case "touchpad.tap":
 		b, err := onOff(v)
 		if err != nil {
 			return err
 		}
 		c.Touchpad.Tap = b
-	case "touchpad.accel-speed":
-		s, err := strconv.ParseFloat(v, 64)
-		if err != nil || !(s >= -1 && s <= 1) {
-			return fmt.Errorf("must be between -1 and 1")
-		}
-		c.Touchpad.AccelSpeed = s
-	case "touchpad.accel-profile":
-		if v != ports.AccelAdaptive && v != ports.AccelFlat {
-			return fmt.Errorf("must be adaptive or flat")
-		}
-		c.Touchpad.AccelProfile = v
 	case "touchpad.scroll-factor":
 		f, err := strconv.ParseFloat(v, 64)
 		if err != nil || !(f > 0 && f <= 10) {
@@ -666,6 +650,16 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Log.Debug = list
 	default:
+		if rest, ok := strings.CutPrefix(key, "touchpad."); ok {
+			if handled, err := parsePointerKey(rest, v, &c.Touchpad.PointerConfig); handled {
+				return err
+			}
+		}
+		if rest, ok := strings.CutPrefix(key, "mouse."); ok {
+			if handled, err := parsePointerKey(rest, v, &c.Mouse); handled {
+				return err
+			}
+		}
 		if rest, ok := strings.CutPrefix(key, "layout."); ok {
 			if i := strings.LastIndex(rest, "."); i > 0 {
 				return setOutputLayout(c, rest[:i], rest[i+1:], v)
@@ -674,6 +668,40 @@ func set(c *ports.Config, key, v string) error {
 		return fmt.Errorf("unknown key")
 	}
 	return nil
+}
+
+// parsePointerKey applies one pointer key shared by touchpads and mice, with
+// the touchpad. or mouse. prefix already removed. handled is false for a key it
+// does not know, so the caller can report it; on an error p is left unchanged.
+func parsePointerKey(key, v string, p *ports.PointerConfig) (handled bool, err error) {
+	switch key {
+	case "natural-scroll":
+		b, err := onOff(v)
+		if err != nil {
+			return true, err
+		}
+		p.NaturalScroll = b
+	case "left-handed":
+		b, err := onOff(v)
+		if err != nil {
+			return true, err
+		}
+		p.LeftHanded = b
+	case "accel-speed":
+		s, err := strconv.ParseFloat(v, 64)
+		if err != nil || !(s >= -1 && s <= 1) {
+			return true, fmt.Errorf("must be between -1 and 1")
+		}
+		p.AccelSpeed = s
+	case "accel-profile":
+		if v != ports.AccelAdaptive && v != ports.AccelFlat {
+			return true, fmt.Errorf("must be adaptive or flat")
+		}
+		p.AccelProfile = v
+	default:
+		return false, nil
+	}
+	return true, nil
 }
 
 // setOutputLayout applies one layout.<output>.<field> key.

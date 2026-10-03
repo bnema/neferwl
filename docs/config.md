@@ -37,7 +37,12 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `touchpad.tap` | `on` | Tap to click: one finger left, two right, three middle |
 | `touchpad.accel-speed` | `0` | Touchpad pointer speed, from `-1` (slowest) to `1` (fastest) |
 | `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
+| `touchpad.left-handed` | `off` | Swaps the left and right touchpad buttons |
 | `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
+| `mouse.natural-scroll` | `off` | Wheel scrolling moves the content with the wheel instead of against it |
+| `mouse.accel-speed` | `0` | Mouse pointer speed, from `-1` (slowest) to `1` (fastest) |
+| `mouse.accel-profile` | `adaptive` | `adaptive`: faster moves go further; `flat`: constant speed |
+| `mouse.left-handed` | `off` | Swaps the left and right mouse buttons |
 | `cursor.hide-after` | `5s` | Hides the pointer cursor after this long without motion; the next motion shows it. 100ms to 1h, or `off` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, the overview and a window focused as it opens |
