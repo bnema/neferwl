@@ -1426,6 +1426,9 @@ func TestRotatedOutputLayout(t *testing.T) {
 	}
 	r.mapWindow(t, 1)
 	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	if len(set) != 2 || set[0].Output != "DP-1" || set[1].Output != "DP-2" {
+		t.Fatalf("scenes: %+v", set)
+	}
 	for _, s := range set {
 		switch s.Output {
 		case "DP-1":
@@ -1501,5 +1504,42 @@ func TestTransformReload(t *testing.T) {
 	_ = receive(t, r.scenes)
 	if o := lastOutputs(t, r.commands).Outputs[0]; o.Width != 200 || o.Transform != 0 {
 		t.Fatalf("DP-1: %+v", o)
+	}
+}
+
+// A reload that shrinks the layout under a still pointer brings it back onto
+// an output.
+func TestTransformReloadClampsPointer(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+	}, left, right)
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapWindow(t, 2)
+	// DP-2 spans x 200..600: (550, 50) is (350, 50) on window 2.
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+	r.input <- ports.PointerMotion{X: 550, Y: 50}
+	if v := command(t, r.commands); v != (ports.PointerFocus{ID: 2, X: 350, Y: 50}) {
+		t.Fatal(v)
+	}
+	// Rotating DP-1 moves DP-2 to x 100..500: 550 is off every output.
+	r.cfg.Outputs[0].Transform = 1
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	receive(t, r.scenes)
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+	// A rehit (here from a swipe end) points at what lies under the pointer:
+	// clamped onto DP-1's right edge, window 1, not nothing.
+	r.input <- ports.SwipeEnd{}
+	for {
+		if v, ok := command(t, r.commands).(ports.PointerFocus); ok {
+			if v.ID != 1 {
+				t.Fatalf("pointer after reload: %+v", v)
+			}
+			break
+		}
 	}
 }

@@ -1184,6 +1184,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
+				c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			case ports.OutputRemoved:
 				// A drop target may be on the output going away.
 				c.abortDrag()
@@ -1214,6 +1215,8 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
+			// A rotation can shrink the layout under a still pointer.
+			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil
 			}
