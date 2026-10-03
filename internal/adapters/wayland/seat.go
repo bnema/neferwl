@@ -188,14 +188,15 @@ func (s *Server) windowKeyboards(w *window) []*wayland.Keyboard {
 	return s.clientKeyboards(w.xdg.resource.Client())
 }
 
+// clientKeyboards returns c's wl_keyboards without allocating. The list holds
+// only live resources (OnDestroy removes a keyboard when it dies) and is
+// replaced, never mutated, so callers may iterate it while sending.
+//
+// This relies on purego-libwayland: destroyed() sets gone and runs OnDestroy
+// synchronously on the display goroutine, and PostEvent never re-enters Go, so
+// a list ranged over while sending is never changed under the caller.
 func (s *Server) clientKeyboards(c server.Client) []*wayland.Keyboard {
-	var alive []*wayland.Keyboard
-	for _, k := range s.seat.keyboards[c] {
-		if k.Resource.Alive() {
-			alive = append(alive, k)
-		}
-	}
-	return alive
+	return s.seat.keyboards[c]
 }
 
 // focusTarget resolves a window or layer ID to its wl_surface and keyboards.
@@ -459,14 +460,12 @@ func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {
 	return s.clientPointers(l.resource.Client())
 }
 
+// clientPointers returns c's wl_pointers without allocating. The list holds
+// only live resources (OnDestroy removes a pointer when it dies) and is
+// replaced, never mutated, so callers may iterate it while sending. See
+// clientKeyboards for the libwayland invariant this relies on.
 func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
-	var result []*wayland.Pointer
-	for _, p := range s.seat.pointers[c] {
-		if p.Resource.Alive() {
-			result = append(result, p)
-		}
-	}
-	return result
+	return s.seat.pointers[c]
 }
 func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {
