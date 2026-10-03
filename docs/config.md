@@ -55,6 +55,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
+| `output.<name>.transform` | `normal` | `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180`, `flipped-270`; 90/270 swap the output's width and height |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup |
 | `output.<name>.right-of` / `.left-of` / `.above` / `.below` | automatic | Connector to place the output against, e.g. `DP-1` |
 | `output.<name>.offset` | `0` | Logical px along the shared edge, −65536 to 65536; see [Output placement](#output-placement) |
@@ -74,6 +75,7 @@ Without relations, outputs sit left to right in config order, top-aligned. A rel
 ```ini
 output.DP-2.right-of = DP-1
 output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
+# output.DP-2.transform = 90  # DP-2 is rotated: 1080 wide, 1920 tall
 ```
 
 ```
@@ -84,6 +86,8 @@ output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
 │            │└─────────┘
 └────────────┘
 ```
+
+Placement, offsets and monitor navigation use the rotated size: a 2560x1440 output with `transform = 90` is 1440 wide and 2560 tall at scale 1. Rotated outputs always compose, with no direct scanout or overlay planes.
 
 Rules:
 
