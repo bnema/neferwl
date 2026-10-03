@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -43,6 +44,9 @@ type seatState struct {
 	// pressAt and focusAt date the last press and keyboard focus change,
 	// for xdg-activation tokens.
 	pressAt, focusAt time.Time
+	// keyStamps and pointerStamps hold the zwp_input_timestamps_v1 objects
+	// subscribed to each device; the lists are replaced, never mutated.
+	keyStamps, pointerStamps map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1
 }
 
 // applyInput delivers a core input command to the focused client.
@@ -76,7 +80,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.lockSurfaces[c.ID]; l != nil && s.lockInputTarget(c.ID) && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.clientPointers(l.resource.Client()) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				s.stampPointer(p, c.Time)
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
 			return
@@ -84,7 +89,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.layers[c.ID]; l != nil && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.layerPointers(l) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				s.stampPointer(p, c.Time)
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
 			return
@@ -106,7 +112,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.updateConstraint()
 			}
 			for _, p := range s.windowPointers(w) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(x), server.FixedFromFloat(y))
+				s.stampPointer(p, c.Time)
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(x), server.FixedFromFloat(y))
 				pointerFrame(p)
 			}
 		}
@@ -120,7 +127,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
 			}
 			for _, p := range pointers {
-				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
+				s.stampPointer(p, c.Time)
+				p.SendButton(s.serial, wireMsec(c.Time), c.Button, state)
 				pointerFrame(p)
 			}
 		}
@@ -132,7 +140,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		steps, values := s.seat.wheelSteps(c.Axis)
 		_, pointers, _ := s.pointerTarget(c.ID)
 		for _, p := range pointers {
-			sendAxis(p, c.Axis, steps, values)
+			s.sendAxis(p, c.Axis, steps, values)
 		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
@@ -169,7 +177,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			}
 		}
 		for _, k := range keyboards {
-			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
+			s.stampKeyboard(k, c.Key.Time)
+			k.SendKey(s.serial, wireMsec(c.Key.Time), c.Key.Keycode, state)
 		}
 		if c.Key.State != s.seat.modState {
 			s.seat.modState = c.Key.State
@@ -188,14 +197,15 @@ func (s *Server) windowKeyboards(w *window) []*wayland.Keyboard {
 	return s.clientKeyboards(w.xdg.resource.Client())
 }
 
+// clientKeyboards returns c's wl_keyboards without allocating. The list holds
+// only live resources (OnDestroy removes a keyboard when it dies) and is
+// replaced, never mutated, so callers may iterate it while sending.
+//
+// This relies on purego-libwayland: destroyed() sets gone and runs OnDestroy
+// synchronously on the display goroutine, and PostEvent never re-enters Go, so
+// a list ranged over while sending is never changed under the caller.
 func (s *Server) clientKeyboards(c server.Client) []*wayland.Keyboard {
-	var alive []*wayland.Keyboard
-	for _, k := range s.seat.keyboards[c] {
-		if k.Resource.Alive() {
-			alive = append(alive, k)
-		}
-	}
-	return alive
+	return s.seat.keyboards[c]
 }
 
 // focusTarget resolves a window or layer ID to its wl_surface and keyboards.
@@ -395,7 +405,7 @@ func (st *seatState) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]
 // steps are whole wheel detents for axis_discrete. A pre-v8 client gets a
 // wheel axis only with a step, carrying values (all the value since the
 // last step), so it never counts smooth and discrete scroll.
-func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
+func (s *Server) sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
 	v := p.Version()
 	axes := [2]ports.ScrollAxis{a.Vertical, a.Horizontal}
 	for i := range axes {
@@ -409,21 +419,22 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 	if v >= 5 {
 		p.SendAxisSource(uint32(a.Source))
 	}
-	for axis, s := range axes {
-		if !s.Set {
+	for axis, ax := range axes {
+		if !ax.Set {
 			continue
 		}
-		if s.Stop {
+		if ax.Stop {
 			if v >= 5 {
-				p.SendAxisStop(a.TimeMsec, uint32(axis))
+				s.stampPointer(p, a.Time)
+				p.SendAxisStop(wireMsec(a.Time), uint32(axis))
 			}
 			continue
 		}
-		value := s.Value
-		if a.Source == ports.AxisWheel && s.V120 != 0 {
+		value := ax.Value
+		if a.Source == ports.AxisWheel && ax.V120 != 0 {
 			switch {
 			case v >= 8:
-				p.SendAxisValue120(uint32(axis), s.V120)
+				p.SendAxisValue120(uint32(axis), ax.V120)
 			default:
 				value = values[axis]
 				if v >= 5 {
@@ -431,10 +442,15 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 				}
 			}
 		}
-		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(value))
+		s.stampPointer(p, a.Time)
+		p.SendAxis(wireMsec(a.Time), uint32(axis), server.FixedFromFloat(value))
 	}
 	pointerFrame(p)
 }
+
+// wireMsec is a device timestamp as the 32-bit millisecond time of wl_pointer
+// and wl_keyboard events (wrapping, like the protocol).
+func wireMsec(t time.Duration) uint32 { return uint32(t / time.Millisecond) }
 
 func pointerFrame(p *wayland.Pointer) {
 	if p.Version() >= 5 {
@@ -455,14 +471,12 @@ func (s *Server) layerPointers(l *layerSurface) []*wayland.Pointer {
 	return s.clientPointers(l.resource.Client())
 }
 
+// clientPointers returns c's wl_pointers without allocating. The list holds
+// only live resources (OnDestroy removes a pointer when it dies) and is
+// replaced, never mutated, so callers may iterate it while sending. See
+// clientKeyboards for the libwayland invariant this relies on.
 func (s *Server) clientPointers(c server.Client) []*wayland.Pointer {
-	var result []*wayland.Pointer
-	for _, p := range s.seat.pointers[c] {
-		if p.Resource.Alive() {
-			result = append(result, p)
-		}
-	}
-	return result
+	return s.seat.pointers[c]
 }
 func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 	if s.security != nil && s.security.Snapshot().Protected && id != 0 && !s.lockInputTarget(id) {

@@ -158,7 +158,7 @@ func TestSessionLockInputEpochHeldPasswordClearedBeforeDesktopEnter(t *testing.T
 	if *locked != 1 {
 		t.Fatal("lock not confirmed")
 	}
-	password := ports.KeyEvent{Keycode: 30, Pressed: true, TimeMsec: 1, State: ports.ModState{Depressed: 65, Latched: 2, Locked: 16, Group: 1}}
+	password := ports.KeyEvent{Keycode: 30, Pressed: true, Time: 1 * time.Millisecond, State: ports.ModState{Depressed: 65, Latched: 2, Locked: 16, Group: 1}}
 	s.display.Do(func() {
 		s.apply(ports.SecurityCommand{State: state, Command: ports.FocusWindow{ID: id}})
 		s.apply(ports.SecurityCommand{State: state, Command: ports.ForwardKey{ID: id, Key: password}})

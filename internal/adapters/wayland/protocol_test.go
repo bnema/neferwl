@@ -510,13 +510,13 @@ func TestPointerProtocol(t *testing.T) {
 	}
 	w := mapped(t, events, 2*time.Second)
 	commands <- ports.PointerFocus{ID: w.ID, X: 10, Y: 20}
-	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, TimeMsec: 1}
+	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, Time: 1 * time.Millisecond}
 	// Middle, side and extra buttons pass through as evdev codes.
 	for _, b := range []uint32{0x112, 0x113, 0x114} {
-		commands <- ports.PointerButtonTo{ID: w.ID, Button: b, Pressed: true, TimeMsec: 1}
+		commands <- ports.PointerButtonTo{ID: w.ID, Button: b, Pressed: true, Time: 1 * time.Millisecond}
 	}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}, TimeMsec: 2}}
-	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, TimeMsec: 3}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}, Time: 2 * time.Millisecond}}
+	commands <- ports.PointerAxisTo{ID: w.ID, Axis: ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}, Time: 3 * time.Millisecond}}
 	deadline := time.After(2 * time.Second)
 	dispatched := make(chan error, 1)
 	go func() {
@@ -607,10 +607,10 @@ func TestHeldKeyOnKeyboardFocusTransfer(t *testing.T) {
 	}
 	commands <- ports.FocusWindow{ID: a}
 	enter(nil)
-	commands <- ports.ForwardKey{ID: a, Key: ports.KeyEvent{Keycode: 30, Pressed: true, TimeMsec: 1}}
+	commands <- ports.ForwardKey{ID: a, Key: ports.KeyEvent{Keycode: 30, Pressed: true, Time: 1 * time.Millisecond}}
 	commands <- ports.FocusWindow{ID: b}
 	enter([]byte{30, 0, 0, 0})
-	commands <- ports.ForwardKey{ID: b, Key: ports.KeyEvent{Keycode: 30, TimeMsec: 2}}
+	commands <- ports.ForwardKey{ID: b, Key: ports.KeyEvent{Keycode: 30, Time: 2 * time.Millisecond}}
 	commands <- ports.FocusWindow{ID: a}
 	enter(nil)
 }

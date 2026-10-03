@@ -335,7 +335,7 @@ func TestSessionLockLifecycleIMEGrabCannotReceiveLockerKey(t *testing.T) {
 	s.display.Do(func() {
 		l := s.surfaceOf(findTestSurface(s, surf.ID())).lock
 		s.apply(ports.SecurityCommand{State: state, Command: ports.FocusWindow{ID: l.id}})
-		s.apply(ports.SecurityCommand{State: state, Command: ports.ForwardKey{ID: l.id, Key: ports.KeyEvent{Keycode: 30, Pressed: true, TimeMsec: 1}}})
+		s.apply(ports.SecurityCommand{State: state, Command: ports.ForwardKey{ID: l.id, Key: ports.KeyEvent{Keycode: 30, Pressed: true, Time: 1 * time.Millisecond}}})
 	})
 	settle(t, locker, ime.c)
 	for _, event := range grab.take() {

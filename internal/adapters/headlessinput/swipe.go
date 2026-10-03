@@ -33,5 +33,3 @@ func monotonic() time.Duration {
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	return time.Duration(ts.Nano())
 }
-
-func msec(d time.Duration) uint32 { return uint32(d / time.Millisecond) }

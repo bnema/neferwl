@@ -1,6 +1,8 @@
 package wayland
 
 import (
+	"time"
+
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
 	"github.com/bnema/go-wayland-bindings/server/pointerwarp"
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
@@ -82,9 +84,10 @@ func (s *Server) relativeMotion(w *window, c ports.PointerMotionTo) bool {
 		return false
 	}
 	sent := false
+	usec := uint64(c.Time / time.Microsecond)
 	for _, rel := range s.relatives[w.xdg.resource.Client()] {
 		if rel.Resource.Alive() {
-			rel.SendRelativeMotion(uint32(c.TimeUsec>>32), uint32(c.TimeUsec), server.FixedFromFloat(c.DX), server.FixedFromFloat(c.DY), server.FixedFromFloat(c.UnaccelDX), server.FixedFromFloat(c.UnaccelDY))
+			rel.SendRelativeMotion(uint32(usec>>32), uint32(usec), server.FixedFromFloat(c.DX), server.FixedFromFloat(c.DY), server.FixedFromFloat(c.UnaccelDX), server.FixedFromFloat(c.UnaccelDY))
 			sent = true
 		}
 	}

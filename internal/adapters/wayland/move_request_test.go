@@ -78,7 +78,7 @@ func TestToplevelMoveRequest(t *testing.T) {
 	}
 	w := mapped(t, events, 2*time.Second)
 	commands <- ports.PointerFocus{ID: w.ID, X: 1, Y: 1}
-	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, TimeMsec: 1}
+	commands <- ports.PointerButtonTo{ID: w.ID, Button: 0x110, Pressed: true, Time: 1 * time.Millisecond}
 	var serial uint32
 	deadline := time.After(2 * time.Second)
 	for serial == 0 {

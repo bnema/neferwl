@@ -4,6 +4,7 @@ package xkb
 import (
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -130,7 +131,7 @@ func (k *Keymap) String() string {
 	return string(unsafe.Slice((*byte)(ptr), n))
 }
 
-func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyEvent {
+func (k *Keymap) Key(evdevCode uint32, pressed bool, t time.Duration) ports.KeyEvent {
 	code := evdevCode + 8
 	sym := k.getSym(k.state, code)
 	var buf [64]byte
@@ -144,7 +145,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 		direction = 1
 	}
 	k.updateKey(k.state, code, direction)
-	event := ports.KeyEvent{Keysym: name, Pressed: pressed, TimeMsec: timeMsec, Keycode: evdevCode}
+	event := ports.KeyEvent{Keysym: name, Pressed: pressed, Time: t, Keycode: evdevCode}
 	if pressed {
 		layout := k.serializeLayout(k.state, layoutEffective)
 		event.Base = k.levelName(code, layout, 0)
@@ -170,7 +171,7 @@ func (k *Keymap) Key(evdevCode uint32, pressed bool, timeMsec uint32) ports.KeyE
 // new security epoch. Keys physically held across a transition are suppressed
 // (including repeats and their eventual release), never replayed into XKB.
 // On reset failure no event is translated against the old native state.
-func (k *Keymap) KeySecure(code uint32, pressed bool, timeMsec uint32, epoch ports.SecurityState) (ports.KeyEvent, bool, error) {
+func (k *Keymap) KeySecure(code uint32, pressed bool, t time.Duration, epoch ports.SecurityState) (ports.KeyEvent, bool, error) {
 	if !k.epochSet || k.epoch != epoch {
 		next := k.stateNew(k.mapPtr)
 		if next == 0 {
@@ -208,7 +209,7 @@ func (k *Keymap) KeySecure(code uint32, pressed bool, timeMsec uint32, epoch por
 	if blocked {
 		return ports.KeyEvent{}, false, nil
 	}
-	return k.Key(code, pressed, timeMsec), true, nil
+	return k.Key(code, pressed, t), true, nil
 }
 
 // QuarantineFrom transfers physical held-key tracking when a producer replaces

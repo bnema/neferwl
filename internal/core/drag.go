@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"slices"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -30,9 +31,9 @@ const (
 	gapPad = 12
 	// edgeScroll is the distance from the usable edge, logical px, that
 	// scrolls a scroll-overflow workspace during a tile drag, at most
-	// once per edgeScrollMsec.
-	edgeScroll     = 32
-	edgeScrollMsec = 250
+	// once per edgeScrollInterval.
+	edgeScroll         = 32
+	edgeScrollInterval = 250 * time.Millisecond
 )
 
 type dropKind int
@@ -69,7 +70,7 @@ type dragState struct {
 	float  bool
 	target dropTarget
 	// scrolled is the time of the last edge scroll.
-	scrolled uint32
+	scrolled time.Duration
 }
 
 // draggable returns the screen and workspace of a window a drag may
@@ -173,7 +174,7 @@ func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize
 
 // dragMotion follows the cursor: a float moves or resizes, a tile shows
 // where it would land.
-func (c *Core) dragMotion(ctx context.Context, timeMsec uint32) error {
+func (c *Core) dragMotion(ctx context.Context, at time.Duration) error {
 	d := c.drag
 	_, w, ok := c.draggable(d.id)
 	if !ok {
@@ -198,7 +199,7 @@ func (c *Core) dragMotion(ctx context.Context, timeMsec uint32) error {
 		}
 		return c.publish(ctx)
 	}
-	scrolled := c.edgeScroll(timeMsec)
+	scrolled := c.edgeScroll(at)
 	t := c.dropAt(d.id, c.cursorX, c.cursorY)
 	if !scrolled && t.kind == d.target.kind && t.anchor == d.target.anchor && t.ws == d.target.ws && slices.Equal(t.hints, d.target.hints) {
 		return nil
@@ -513,9 +514,9 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 // edgeScroll scrolls a scroll-overflow workspace by one column when a
 // tile drag moves the pointer against its usable edge. It reports whether
 // the view moved.
-func (c *Core) edgeScroll(timeMsec uint32) bool {
+func (c *Core) edgeScroll(t time.Duration) bool {
 	i := c.screenAt(c.cursorX, c.cursorY)
-	if i < 0 || timeMsec-c.drag.scrolled < edgeScrollMsec && c.drag.scrolled != 0 {
+	if i < 0 || t-c.drag.scrolled < edgeScrollInterval && c.drag.scrolled != 0 {
 		return false
 	}
 	sc := c.screens[i]
@@ -536,7 +537,7 @@ func (c *Core) edgeScroll(timeMsec uint32) bool {
 	if !w.scrollBy(dir) {
 		return false
 	}
-	c.drag.scrolled = max(timeMsec, 1)
+	c.drag.scrolled = max(t, 1)
 	return true
 }
 

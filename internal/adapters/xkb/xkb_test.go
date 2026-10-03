@@ -3,6 +3,7 @@ package xkb
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -25,7 +26,7 @@ func TestKeymap(t *testing.T) {
 	if !strings.Contains(k.String(), "xkb_keymap") {
 		t.Fatal("missing keymap text")
 	}
-	if ev := k.Key(30, true, 123); ev.Keysym != "a" || ev.Keycode != 30 || !ev.Pressed || ev.TimeMsec != 123 {
+	if ev := k.Key(30, true, 123*time.Millisecond); ev.Keysym != "a" || ev.Keycode != 30 || !ev.Pressed || ev.Time != 123*time.Millisecond {
 		t.Fatalf("A: %+v", ev)
 	}
 	k.Key(30, false, 0)

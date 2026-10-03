@@ -25,7 +25,7 @@ func (c *Core) syncSecurity() bool {
 	c.pressed, c.buttons, c.inputKeys = map[string]bool{}, map[uint32]bool{}, map[string]bool{}
 	c.pointer, c.grab, c.pointerOutput = 0, 0, ""
 	c.drag, c.swallow, c.mods, c.lastButton = nil, map[uint32]bool{}, 0, 0
-	c.pointerAt, c.motionMsec = [2]float64{}, 0
+	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
 	c.constrained, c.constraint = ports.PointerConstrained{}, ports.PointerConstraint{}
 	if c.ch.Constraints != nil {
@@ -249,7 +249,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 			return c.command(ctx, ports.ForwardKey{ID: id, Key: v})
 		}
 	case ports.PointerMotion:
-		c.motionMsec = v.TimeMsec
+		c.motionTime = v.Time
 		c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y)
 		id, x, y := c.lockHit(c.cursorX, c.cursorY)
 		if id != c.pointer {
@@ -260,7 +260,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		c.pointerAt = [2]float64{x, y}
 		if id != 0 {
-			return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec})
+			return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, Time: v.Time})
 		}
 	case ports.PointerButton:
 		id := c.pointer
@@ -288,7 +288,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 					}
 				}
 			}
-			if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
+			if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Time: v.Time}); err != nil {
 				return err
 			}
 		}

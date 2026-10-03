@@ -130,9 +130,9 @@ type Core struct {
 	swipe     *swipeGesture
 	frameC    <-chan time.Time
 	frameStop func() bool
-	// motionMsec is the time of the last pointer motion; pointerAt is the
+	// motionTime is the time of the last pointer motion; pointerAt is the
 	// last position sent in the pointer's window.
-	motionMsec uint32
+	motionTime time.Duration
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
 	capt captureState
@@ -703,7 +703,7 @@ func (c *Core) rehit(ctx context.Context) error {
 	// The same window moved under the cursor: it moves in the window. No
 	// relative motion: the device did not move. The input clock is the
 	// device's; the last motion's time is the closest core knows.
-	return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, TimeMsec: c.motionMsec})
+	return c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, Time: c.motionTime})
 }
 
 // updateInhibit makes the shortcuts inhibitor of the keyboard focus the

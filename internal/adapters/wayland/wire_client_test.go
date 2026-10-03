@@ -27,6 +27,7 @@ import (
 	wire_fractionalscale "github.com/bnema/go-wayland-bindings/server/fractionalscale"
 	wire_idleinhibit "github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	wire_inputmethod "github.com/bnema/go-wayland-bindings/server/inputmethod"
+	wire_inputtimestamps "github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	wire_keyboardshortcutsinhibit "github.com/bnema/go-wayland-bindings/server/keyboardshortcutsinhibit"
 	wire_linuxdmabuf "github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	wire_linuxdrmsyncobj "github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
@@ -225,6 +226,8 @@ var wireSchemas = map[string]wireSchema{
 	"zwp_input_method_manager_v2":                          {wire_inputmethod.ZwpInputMethodManagerV2Interface, &client_inputmethod.InputMethodManager{}, map[uint16]bool{1: true}, nil},
 	"zwp_input_method_v2":                                  {wire_inputmethod.ZwpInputMethodV2Interface, &client_inputmethod.InputMethod{}, map[uint16]bool{6: true}, nil},
 	"zwp_input_popup_surface_v2":                           {wire_inputmethod.ZwpInputPopupSurfaceV2Interface, &client_inputmethod.InputPopupSurface{}, map[uint16]bool{0: true}, nil},
+	"zwp_input_timestamps_manager_v1":                      {wire_inputtimestamps.ZwpInputTimestampsManagerV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"zwp_input_timestamps_v1":                              {wire_inputtimestamps.ZwpInputTimestampsV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"zwp_keyboard_shortcuts_inhibit_manager_v1":            {wire_keyboardshortcutsinhibit.ZwpKeyboardShortcutsInhibitManagerV1Interface, &client_shortcutsinhibit.KeyboardShortcutsInhibitManager{}, map[uint16]bool{0: true}, nil},
 	"zwp_keyboard_shortcuts_inhibitor_v1":                  {wire_keyboardshortcutsinhibit.ZwpKeyboardShortcutsInhibitorV1Interface, &client_shortcutsinhibit.KeyboardShortcutsInhibitor{}, map[uint16]bool{0: true}, nil},
 	"zwp_linux_buffer_params_v1":                           {wire_linuxdmabuf.ZwpLinuxBufferParamsV1Interface, &client_linuxdmabuf.LinuxBufferParams{}, map[uint16]bool{0: true}, nil},

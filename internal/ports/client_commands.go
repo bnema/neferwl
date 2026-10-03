@@ -161,24 +161,25 @@ type PointerFocus struct {
 func (PointerFocus) clientCommand() {}
 
 // PointerMotionTo carries core → wayland motion for the pointer focus, in
-// window coordinates. The deltas and TimeUsec feed zwp_relative_pointer_v1;
+// window coordinates. The deltas and Time feed zwp_relative_pointer_v1;
 // While the window locks the pointer, wayland sends only relative motion.
 type PointerMotionTo struct {
 	ID                   WindowID
 	X, Y                 float64
 	DX, DY               float64
 	UnaccelDX, UnaccelDY float64
-	TimeMsec             uint32
-	TimeUsec             uint64
+	// Time is the device timestamp (CLOCK_MONOTONIC).
+	Time time.Duration
 }
 
 func (PointerMotionTo) clientCommand() {}
 
 type PointerButtonTo struct {
-	ID       WindowID
-	Button   uint32
-	Pressed  bool
-	TimeMsec uint32
+	ID      WindowID
+	Button  uint32
+	Pressed bool
+	// Time is the device timestamp (CLOCK_MONOTONIC).
+	Time time.Duration
 }
 
 func (PointerButtonTo) clientCommand() {}

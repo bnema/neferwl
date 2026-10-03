@@ -232,8 +232,8 @@ func TestFootKeyboard(t *testing.T) {
 	w := mapped(t, events, 10*time.Second)
 	commands <- ports.FocusWindow{ID: w.ID}
 	for _, code := range []uint32{18, 46, 35, 24, 57, 35, 23, 28} {
-		commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: code, Pressed: true, TimeMsec: 1}}
-		commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: code, TimeMsec: 2}}
+		commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: code, Pressed: true, Time: 1 * time.Millisecond}}
+		commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: code, Time: 2 * time.Millisecond}}
 	}
 	enter := regexp.MustCompile(`wl_keyboard#[0-9]+\.enter\(`)
 	key := regexp.MustCompile(`wl_keyboard#[0-9]+\.key\(`)
