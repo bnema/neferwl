@@ -191,7 +191,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	watched := make(chan ports.ConfigChanged, 8)
 	keymaps := make(chan *xkb.Keymap, 1)
-	devices := make(chan ports.InputDevicesConfig, 1)
+	deviceConfigs := make(chan ports.InputDevicesConfig, 1)
 	go func() {
 		defer workers.Done()
 		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
@@ -209,7 +209,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, watched, filtered, keymaps, devices, curs, commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, watched, filtered, keymaps, deviceConfigs, curs, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
 	go func() {
@@ -231,7 +231,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
 					}
 				}
-				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Devices: ports.InputDevicesConfig{Touchpad: opts.Config.Touchpad, Mouse: opts.Config.Mouse}, DeviceConfigs: devices, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
+				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, DeviceConfig: opts.Config.InputDevicesConfig, DeviceConfigs: deviceConfigs, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
 			})
 			return
 		}
@@ -372,9 +372,9 @@ const screensaverRetry = 2 * time.Second
 // or mouse change goes to the input goroutine as one InputDevicesConfig; only
 // the newest one waits there. The cursor idle delay goes straight to the
 // cursor router.
-func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, devices chan ports.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan ports.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
-	dev := ports.InputDevicesConfig{Touchpad: cur.Touchpad, Mouse: cur.Mouse}
+	devCfg := cur.InputDevicesConfig
 	for {
 		var ev ports.ConfigChanged
 		select {
@@ -409,9 +409,9 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 			}
 		}
 		curs.setHideAfter(ev.Config.Cursor.HideAfter)
-		if cfg := (ports.InputDevicesConfig{Touchpad: ev.Config.Touchpad, Mouse: ev.Config.Mouse}); cfg != dev {
-			dev = cfg
-			latest(devices, dev) // this goroutine is the only sender
+		if ev.Config.InputDevicesConfig != devCfg {
+			devCfg = ev.Config.InputDevicesConfig
+			latest(deviceConfigs, devCfg) // this goroutine is the only sender
 		}
 		if layoutChanged || repeatChanged {
 			select {

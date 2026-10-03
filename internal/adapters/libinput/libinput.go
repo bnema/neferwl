@@ -203,10 +203,10 @@ type Options struct {
 	// Constraints holds the pointer lock or confinement of the focused
 	// window, in global logical coordinates.
 	Constraints <-chan ports.PointerConstraint
-	// Devices is the initial config: Touchpad for touchpads, Mouse for the
-	// other pointers (mice, trackballs, trackpoints); other devices are left
-	// alone. DeviceConfigs replaces it live, on the devices already added.
-	Devices       ports.InputDevicesConfig
+	// DeviceConfig is the initial config: Touchpad for touchpads, Mouse for
+	// the other pointers (mice, trackballs, trackpoints); other devices are
+	// left alone. DeviceConfigs replaces it live, on the devices already added.
+	DeviceConfig  ports.InputDevicesConfig
 	DeviceConfigs <-chan ports.InputDevicesConfig
 	Active        <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
@@ -252,7 +252,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor, false)
-	in := &inputState{cfg: opts.Devices, dev: libinputDevices{}, devices: map[uintptr]bool{}}
+	in := &inputState{cfg: opts.DeviceConfig, dev: libinputDevices{}, devices: map[uintptr]bool{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)

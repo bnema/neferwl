@@ -110,8 +110,8 @@ type Config struct {
 		LayoutRules
 		Outputs []OutputLayout
 	}
-	Touchpad TouchpadConfig
-	Mouse    PointerConfig
+	// InputDevicesConfig holds Touchpad and Mouse, promoted.
+	InputDevicesConfig
 	// Cursor.HideAfter hides the pointer cursor after this long without
 	// motion; the next motion shows it. 0 never hides it.
 	Cursor struct{ HideAfter time.Duration }
@@ -158,10 +158,10 @@ type PointerConfig struct {
 	LeftHanded    bool
 }
 
-// TouchpadConfig configures touchpads: the shared pointer settings, applied to
-// two-finger scroll and three-finger swipes, plus Tap, which clicks on a tap
-// (one finger left, two right, three middle), and ScrollFactor, which
-// multiplies two-finger scroll.
+// TouchpadConfig configures touchpads: the shared pointer settings
+// (NaturalScroll also applies to two-finger scroll and swipes), plus Tap,
+// which clicks on a tap (one finger left, two right, three middle), and
+// ScrollFactor, which multiplies two-finger scroll.
 type TouchpadConfig struct {
 	PointerConfig
 	Tap          bool

@@ -294,7 +294,7 @@ func TestRelayConfigKeyboard(t *testing.T) {
 		t.Fatalf("touchpad: %+v", d)
 	}
 
-	// A mouse-only change is relayed too, with the touchpad config beside it.
+	// Touchpad and mouse changes travel together.
 	next.Touchpad.Tap = false
 	next.Mouse.LeftHanded = true
 	next.Mouse.AccelSpeed = 0.25
@@ -304,11 +304,18 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	if d := <-devices; d != want || len(devices) != 0 {
 		t.Fatalf("devices: %+v, want %+v", d, want)
 	}
+	// A mouse-only change is relayed too, with the touchpad config beside it.
+	// relayConfig sends to devices before out, so it is ready after <-out.
 	next.Mouse.NaturalScroll = true
 	in <- ports.ConfigChanged{Config: next}
 	<-out
-	if d := <-devices; !d.Mouse.NaturalScroll || !d.Mouse.LeftHanded || d.Touchpad != want.Touchpad {
-		t.Fatalf("mouse-only change: %+v", d)
+	select {
+	case d := <-devices:
+		if !d.Mouse.NaturalScroll || !d.Mouse.LeftHanded || d.Touchpad != want.Touchpad || len(devices) != 0 {
+			t.Fatalf("mouse-only change: %+v", d)
+		}
+	default:
+		t.Fatal("mouse-only change not relayed")
 	}
 
 	next.Keyboard.Layout, next.Keyboard.RepeatRate = "fr", 40

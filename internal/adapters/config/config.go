@@ -651,14 +651,10 @@ func set(c *ports.Config, key, v string) error {
 		c.Log.Debug = list
 	default:
 		if rest, ok := strings.CutPrefix(key, "touchpad."); ok {
-			if handled, err := parsePointerKey(rest, v, &c.Touchpad.PointerConfig); handled {
-				return err
-			}
+			return parsePointerKey(rest, v, &c.Touchpad.PointerConfig)
 		}
 		if rest, ok := strings.CutPrefix(key, "mouse."); ok {
-			if handled, err := parsePointerKey(rest, v, &c.Mouse); handled {
-				return err
-			}
+			return parsePointerKey(rest, v, &c.Mouse)
 		}
 		if rest, ok := strings.CutPrefix(key, "layout."); ok {
 			if i := strings.LastIndex(rest, "."); i > 0 {
@@ -671,37 +667,37 @@ func set(c *ports.Config, key, v string) error {
 }
 
 // parsePointerKey applies one pointer key shared by touchpads and mice, with
-// the touchpad. or mouse. prefix already removed. handled is false for a key it
-// does not know, so the caller can report it; on an error p is left unchanged.
-func parsePointerKey(key, v string, p *ports.PointerConfig) (handled bool, err error) {
+// the touchpad. or mouse. prefix already removed. Touchpad-only keys are
+// handled before; anything else is unknown. On an error p is left unchanged.
+func parsePointerKey(key, v string, p *ports.PointerConfig) error {
 	switch key {
 	case "natural-scroll":
 		b, err := onOff(v)
 		if err != nil {
-			return true, err
+			return err
 		}
 		p.NaturalScroll = b
 	case "left-handed":
 		b, err := onOff(v)
 		if err != nil {
-			return true, err
+			return err
 		}
 		p.LeftHanded = b
 	case "accel-speed":
 		s, err := strconv.ParseFloat(v, 64)
 		if err != nil || !(s >= -1 && s <= 1) {
-			return true, fmt.Errorf("must be between -1 and 1")
+			return fmt.Errorf("must be between -1 and 1")
 		}
 		p.AccelSpeed = s
 	case "accel-profile":
 		if v != ports.AccelAdaptive && v != ports.AccelFlat {
-			return true, fmt.Errorf("must be adaptive or flat")
+			return fmt.Errorf("must be adaptive or flat")
 		}
 		p.AccelProfile = v
 	default:
-		return false, nil
+		return fmt.Errorf("unknown key")
 	}
-	return true, nil
+	return nil
 }
 
 // setOutputLayout applies one layout.<output>.<field> key.
