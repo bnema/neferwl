@@ -74,45 +74,55 @@ func TestOutputPower(t *testing.T) {
 }
 
 // An output unplugged while off (a display in deep sleep) reconnects off;
-// after input it reconnects on.
-func TestOutputReconnectedWhileOffStaysOff(t *testing.T) {
-	input, client, output, commands, scenes := powerCore(t)
-	stop := make(chan struct{})
-	defer close(stop)
-	active := make(chan struct{}, 1)
-	go func() { // core blocks on a full command channel
-		for {
-			select {
-			case c := <-commands:
-				if _, ok := c.(ports.UserActivity); ok {
-					active <- struct{}{}
+// after input it reconnects on. Alone, it is the last output: core keeps a
+// placeholder screen meanwhile.
+func TestOutputReconnectedWhileOff(t *testing.T) {
+	for _, alone := range []bool{false, true} {
+		t.Run(map[bool]string{false: "beside another", true: "alone"}[alone], func(t *testing.T) {
+			input, client, output, commands, scenes := powerCore(t)
+			stop := make(chan struct{})
+			defer close(stop)
+			active := make(chan struct{}, 1)
+			go func() { // core blocks on a full command channel
+				for {
+					select {
+					case c := <-commands:
+						if _, ok := c.(ports.UserActivity); ok {
+							active <- struct{}{}
+						}
+					case <-stop:
+						return
+					}
 				}
-			case <-stop:
-				return
+			}()
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+			if alone {
+				output <- ports.OutputRemoved{Name: "OUT-1"}
+				gone(t, scenes, "OUT-1")
 			}
-		}
-	}()
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-	client <- ports.OutputPower{Output: "OUT-2", On: false}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
-	output <- ports.OutputRemoved{Name: "OUT-2"}
-	gone(t, scenes, "OUT-2") // no older scene can answer below
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+			client <- ports.OutputPower{Output: "OUT-2", On: false}
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+			output <- ports.OutputRemoved{Name: "OUT-2"}
+			gone(t, scenes, "OUT-2") // no older scene can answer below
+			output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
 
-	client <- ports.OutputPower{Output: "OUT-2", On: true}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
-	client <- ports.OutputPower{Output: "OUT-2", On: false}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
-	output <- ports.OutputRemoved{Name: "OUT-2"}
-	input <- ports.PointerMotion{X: 1, Y: 1}
-	select { // input and outputs are separate channels: order them
-	case <-active:
-	case <-time.After(2 * time.Second):
-		t.Fatal("input not handled")
+			client <- ports.OutputPower{Output: "OUT-2", On: true}
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+			client <- ports.OutputPower{Output: "OUT-2", On: false}
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+			output <- ports.OutputRemoved{Name: "OUT-2"}
+			gone(t, scenes, "OUT-2")
+			input <- ports.PointerMotion{X: 1, Y: 1}
+			select { // input and outputs are separate channels: order them
+			case <-active:
+			case <-time.After(2 * time.Second):
+				t.Fatal("input not handled")
+			}
+			output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+			sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+		})
 	}
-	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
-	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
 }
 
 // gone waits for a scene set without the named output.

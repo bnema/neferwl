@@ -235,7 +235,6 @@ func (c *Core) removeScreen(name string) {
 	if len(c.screens) == 1 {
 		c.screens[0].info = ports.OutputInfo{}
 		c.screens[0].layers = nil
-		c.screens[0].off = false // the placeholder is no output
 		return
 	}
 	gone := c.screens[i]

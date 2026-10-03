@@ -73,6 +73,9 @@ type Output struct {
 	// capture session (Scene.CaptureScene). Nil: such captures fail closed.
 	// Set before Run.
 	NewCaptureRenderer func(w, h int) (ports.Renderer, error)
+	// StartOff, set before Run, keeps the display off until a scene turns
+	// it on: a display that reconnects while turned off never lights up.
+	StartOff bool
 	// capHidden limits a report to what the child renderer of a hidden
 	// workspace was given, window by window, while it may still read (its
 	// device is not ordered with the display's fences). capped is set when
@@ -888,6 +891,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 	}()
 	o.runContext = ctx
+	o.wantOff = o.StartOff
 	o.observeSecurity()
 	r, err := newRenderer(o.Width(), o.Height())
 	if err != nil {
