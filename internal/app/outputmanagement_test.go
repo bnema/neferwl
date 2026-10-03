@@ -286,6 +286,19 @@ func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 
 // A reload that only changes output scales (a saved scale bind) keeps the
 // runtime overrides; any other change drops them.
+func TestScaleChangesTransform(t *testing.T) {
+	old := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+	cur := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
+	if _, only := scaleChanges(old, cur); only {
+		t.Fatal("a transform change must take the full reload path")
+	}
+	cur.Outputs[0].Transform = 0
+	cur.Outputs[0].Scale = 1.5
+	if _, only := scaleChanges(old, cur); !only {
+		t.Fatal("a scale-only change stays a scale change")
+	}
+}
+
 func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 	file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}

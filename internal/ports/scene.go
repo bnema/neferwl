@@ -1,6 +1,10 @@
 package ports
 
-import "os"
+import (
+	"image"
+	"math"
+	"os"
+)
 
 // Scene carries core → renderer immutable snapshots with fresh Windows slices,
 // one per output. Rects and the output size are logical and local to the
@@ -14,6 +18,10 @@ type Scene struct {
 	Seq                       uint64
 	OutputWidth, OutputHeight int
 	Scale                     float64
+	// Transform is how the output target holds this scene
+	// (wl_output.transform); 0 for capture child scenes. OutputWidth and
+	// OutputHeight are already in the transformed (logical) orientation.
+	Transform BufferTransform
 	// Off turns the display off (output power management): nothing is
 	// drawn until a scene without it.
 	Off        bool
@@ -218,6 +226,23 @@ func (t BufferTransform) ToBuffer(x, y, w, h float64) (float64, float64) {
 		return h - y, x
 	}
 	return x, y
+}
+
+// Invert is the transform that maps target points back: for a w×h scene and
+// its w'×h' target, t.Invert().ToBuffer(t.ToBuffer(p, w, h), w', h') == p.
+func (t BufferTransform) Invert() BufferTransform {
+	if t&1 != 0 && t&4 == 0 {
+		return t ^ 2
+	}
+	return t
+}
+
+// RectToBuffer maps a rectangle of a w×h surface to the buffer. Integer
+// rectangles stay integer under these transforms; rounding absorbs float noise.
+func (t BufferTransform) RectToBuffer(r image.Rectangle, w, h int) image.Rectangle {
+	ax, ay := t.ToBuffer(float64(r.Min.X), float64(r.Min.Y), float64(w), float64(h))
+	bx, by := t.ToBuffer(float64(r.Max.X), float64(r.Max.Y), float64(w), float64(h))
+	return image.Rect(int(math.Round(ax)), int(math.Round(ay)), int(math.Round(bx)), int(math.Round(by)))
 }
 
 // SeqDamage is what content Seq changed from the one before: Rects in

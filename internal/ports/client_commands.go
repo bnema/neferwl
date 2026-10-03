@@ -48,11 +48,15 @@ type ConfigureWindow struct {
 func (ConfigureWindow) clientCommand() {}
 
 // OutputPlacement is one output in the global layout. X, Y, Width and
-// Height are logical; physical = logical × Scale.
+// Height are logical (after Transform: they swap for 90/270);
+// physical = logical × Scale. Info.Width and Info.Height are the physical
+// mode, the untransformed target.
 type OutputPlacement struct {
 	Info                OutputInfo
 	X, Y, Width, Height int
 	Scale               float64
+	// Transform is how the target holds the scene (wl_output.transform).
+	Transform BufferTransform
 	// Primary is output.<name>.primary: the pointer starts on it.
 	Primary bool
 }
@@ -60,6 +64,20 @@ type OutputPlacement struct {
 // Contains reports whether the logical point is on the output.
 func (o OutputPlacement) Contains(x, y float64) bool {
 	return x >= float64(o.X) && x < float64(o.X+o.Width) && y >= float64(o.Y) && y < float64(o.Y+o.Height)
+}
+
+// ToTarget maps a global logical point on the output to target pixels.
+func (o OutputPlacement) ToTarget(x, y float64) (float64, float64) {
+	s := o.Scale
+	if s <= 0 {
+		s = 1
+	}
+	px, py := (x-float64(o.X))*s, (y-float64(o.Y))*s
+	sw, sh := float64(o.Info.Width), float64(o.Info.Height)
+	if o.Transform.Rotated() {
+		sw, sh = sh, sw
+	}
+	return o.Transform.ToBuffer(px, py, sw, sh)
 }
 
 // Layout is the global arrangement of outputs in logical pixels.

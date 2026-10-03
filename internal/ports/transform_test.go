@@ -1,6 +1,11 @@
 package ports
 
-import "testing"
+import (
+	"image"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 // ToBuffer matches wl_output.transform: the buffer holds the surface rotated
 // counter-clockwise by the transform (after a flip around the vertical axis
@@ -33,4 +38,39 @@ func TestBufferTransformToBuffer(t *testing.T) {
 			t.Errorf("%d: (%v,%v) outside the %dx%d buffer", tc.t, x, y, tc.bufW, tc.bufH)
 		}
 	}
+}
+
+func TestBufferTransformInvert(t *testing.T) {
+	const w, h = 7.0, 3.0
+	for tr := BufferTransform(0); tr < 8; tr++ {
+		assert.Equal(t, tr, tr.Invert().Invert(), "transform %d", tr)
+		bw, bh := w, h
+		if tr.Rotated() {
+			bw, bh = h, w
+		}
+		for _, p := range [][2]float64{{0, 0}, {1.5, 1}, {6.25, 2.5}} {
+			bx, by := tr.ToBuffer(p[0], p[1], w, h)
+			x, y := tr.Invert().ToBuffer(bx, by, bw, bh)
+			assert.InDelta(t, p[0], x, 1e-9, "transform %d point %v", tr, p)
+			assert.InDelta(t, p[1], y, 1e-9, "transform %d point %v", tr, p)
+		}
+	}
+}
+
+func TestRectToBuffer(t *testing.T) {
+	r := image.Rect(0, 0, 2, 1)
+	assert.Equal(t, image.Rect(0, 5, 1, 7), BufferTransform(1).RectToBuffer(r, 7, 3))
+	assert.Equal(t, r, BufferTransform(0).RectToBuffer(r, 7, 3))
+}
+
+func TestOutputPlacementToTarget(t *testing.T) {
+	o := OutputPlacement{Info: OutputInfo{Width: 2560, Height: 1440}, Scale: 1, X: 100, Transform: 1}
+	x, y := o.ToTarget(100, 0)
+	wx, wy := BufferTransform(1).ToBuffer(0, 0, 1440, 2560)
+	assert.Equal(t, [2]float64{wx, wy}, [2]float64{x, y})
+	assert.Equal(t, [2]float64{0, 1440}, [2]float64{x, y})
+
+	o.Transform = 0
+	x, y = o.ToTarget(150, 20)
+	assert.Equal(t, [2]float64{50, 20}, [2]float64{x, y})
 }
