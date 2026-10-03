@@ -938,13 +938,29 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 	o.Run(context.Background(), func(int, int) (ports.Renderer, error) { panic("renderer panic") }, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
-// Run: a frame wanted while the previous one is in flight is stamped when
-// it becomes dirty, and the commit that follows takes the stamp.
-func TestRunStampsWhenFrameWasWanted(t *testing.T) {
+// stampRun starts Run on an output with unbuffered scene and content
+// channels: a send completes once Run took the message, and the next send
+// once it went round its loop again, which is the sync point for what the
+// loop did with the first.
+type stampRun struct {
+	o           *Output
+	scenes      chan ports.Scene
+	contents    chan ports.SurfaceContent
+	flips       chan flipEvent
+	wake        chan ports.SecurityState
+	state       *atomic.Uint64
+	frameCommit func() int
+	lastCommit  func() commitRec
+	stop        func()
+}
+
+func startStampRun(t *testing.T) *stampRun {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
-	flips := make(chan flipEvent, 1)
-	o.flipped = flips
+	sr := &stampRun{o: o, scenes: make(chan ports.Scene), contents: make(chan ports.SurfaceContent), flips: make(chan flipEvent, 1), wake: make(chan ports.SecurityState, 1), state: &atomic.Uint64{}}
+	o.flipped = sr.flips
+	securityGate(t, o, sr.state)
+	o.SecurityChanges = sr.wake
 	r := portsmocks.NewMockRenderer(t)
 	pipeBuf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
@@ -954,15 +970,13 @@ func TestRunStampsWhenFrameWasWanted(t *testing.T) {
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
-	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
-		return nil, nil
-	})
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	frameCommits := func() int {
+	sr.frameCommit = func() int {
 		commitMu.Lock()
 		defer commitMu.Unlock()
 		n := 0
@@ -973,35 +987,67 @@ func TestRunStampsWhenFrameWasWanted(t *testing.T) {
 		}
 		return n
 	}
-	scenes := make(chan ports.Scene, 1)
+	sr.lastCommit = func() commitRec {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		return (*commits)[len(*commits)-1]
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), sr.scenes, sr.contents, nil, make(chan ports.OutputPresented, 8), nil, nil)
 	}()
+	// stop ends Run: its state is ours to read afterwards.
+	sr.stop = func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	return sr
+}
+
+// Run: a frame wanted while the previous one is in flight is stamped when
+// it becomes dirty, and the commit that follows takes the stamp.
+func TestRunStampsWhenFrameWasWanted(t *testing.T) {
+	sr := startStampRun(t)
 	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
-	scenes <- scene
-	waitFor(t, func() bool { return frameCommits() == 1 })
+	sr.scenes <- scene
+	waitFor(t, func() bool { return sr.frameCommit() == 1 })
 	// Frame 1 is in flight: a new scene arrives and waits.
-	commitMu.Lock()
-	last := (*commits)[len(*commits)-1]
-	commitMu.Unlock()
+	last := sr.lastCommit()
 	scene.Seq = 2
 	before := monotonic()
-	scenes <- scene
-	time.Sleep(20 * time.Millisecond) // the scene is read and stamped
-	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
-	waitFor(t, func() bool { return frameCommits() == 2 })
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
+	sr.scenes <- scene
+	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}} // Run went round its loop
+	flipSent := monotonic()
+	sr.flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+	waitFor(t, func() bool { return sr.frameCommit() == 2 })
+	sr.stop()
+	if sr.o.wantedAt != 0 {
+		t.Fatalf("stamp left after the commit: %s", sr.o.wantedAt)
 	}
-	// Run has returned: its state is ours to read.
-	if o.wantedAt != 0 {
-		t.Fatalf("stamp left after the commit: %s", o.wantedAt)
+	f := sr.o.frame.pendingFrame
+	if !f.frame || f.wantedAt < before || f.wantedAt >= flipSent {
+		t.Fatalf("second frame (%v) wanted at %s, scene sent at %s, flip sent at %s", f.frame, f.wantedAt, before, flipSent)
 	}
-	f := o.frame.pendingFrame
-	if !f.frame || f.wantedAt < before || f.wantedAt > monotonic() {
-		t.Fatalf("second frame (%v) wanted at %s, scene sent at %s", f.frame, f.wantedAt, before)
+}
+
+// A change of security state drops the scene, and with it the stamp of
+// the frame it wanted.
+func TestRunSecurityResetClearsWantedAt(t *testing.T) {
+	sr := startStampRun(t)
+	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+	sr.scenes <- scene
+	waitFor(t, func() bool { return sr.frameCommit() == 1 })
+	scene.Seq = 2
+	sr.scenes <- scene
+	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}} // stamped by now
+	sr.state.Store(2) // a new security generation, not protected
+	sr.wake <- ports.SecurityState{}
+	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}} // Run went round and reset
+	sr.stop()
+	if sr.o.wantedAt != 0 {
+		t.Fatalf("stamp kept across the security reset: %s", sr.o.wantedAt)
 	}
 }

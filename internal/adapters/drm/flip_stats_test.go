@@ -14,132 +14,87 @@ const period60 = 16_666_666 * time.Nanosecond // modeInfo{VRefresh: 60}
 
 func flipAt(when time.Duration) flipEvent { return flipEvent{when: when} }
 
-// flip is a frame flip at when whose commit was made at commit, for a
-// frame wanted at the same time.
-func flip(o *Output, when, commit, fenceAt time.Duration) {
-	o.accountFlip(flipAt(when), true, commit, commit, fenceAt)
+// p is the refresh period of the test output's 60 Hz mode.
+const p = period60
+
+// The gate and the counters of accountFlip, one flip after a frame flip at
+// prev (1 s). due is the frame's due time: the later of wanted and gapEnd
+// (see pendingFrame.dueAt; both 0: the commit time).
+func TestAccountFlip(t *testing.T) {
+	const prev = time.Second
+	for _, tc := range []struct {
+		name                string
+		vrr                 bool
+		prev                time.Duration // 0: no previous flip
+		wanted, gapEnd      time.Duration
+		commit, when, fence time.Duration
+		want                flipStats
+		wantLast            time.Duration
+	}{
+		{name: "first flip has no interval", prev: 0, wanted: prev, commit: prev, when: prev + p, want: flipStats{}, wantLast: prev + p},
+		{name: "on time", prev: prev, wanted: prev + p/4, commit: prev + p/2, when: prev + p, want: flipStats{maxInterval: p, maxCommitDelay: p/2 - p/4}},
+		{name: "unknown wanted time", prev: prev, commit: prev + p/2, when: prev + p, want: flipStats{maxInterval: p}},
+		{name: "just under 1.5 periods", prev: prev, wanted: prev, commit: prev + p/2, when: prev + p*3/2 - 1, want: flipStats{maxInterval: p*3/2 - 1, maxCommitDelay: p / 2}},
+		{name: "two periods is a missed vblank", prev: prev, wanted: prev, commit: prev + p/2, when: prev + 2*p, want: flipStats{missedVblanks: 1, maxInterval: 2 * p, maxCommitDelay: p / 2}},
+		{name: "idle gap is not counted", prev: prev, wanted: prev + time.Second, commit: prev + time.Second + p/2, when: prev + time.Second + p, want: flipStats{}},
+		{name: "wanted one period after: not due", prev: prev, wanted: prev + p, commit: prev + p + p/2, when: prev + 5*p, want: flipStats{}},
+		{name: "wanted just before one period: due", prev: prev, wanted: prev + p - 1, commit: prev + p + p/2, when: prev + 4*p, want: flipStats{missedVblanks: 1, maxInterval: 4 * p, maxCommitDelay: p/2 + 1}},
+		{name: "delayed commit, wanted before the previous flip", prev: prev, wanted: prev - p/2, commit: prev + p + p/5, when: prev + 2*p, fence: prev + p/2,
+			want: flipStats{missedVblanks: 1, maxInterval: 2 * p, maxCommitDelay: p + p/5}},
+		{name: "normal frame: fence before its flip", prev: prev, wanted: prev + p/4, commit: prev + p/2, when: prev + p, fence: prev + p - 1,
+			want: flipStats{maxInterval: p, maxCommitDelay: p/2 - p/4}},
+		{name: "missed, fence unknown", prev: prev, wanted: prev, commit: prev + p/2, when: prev + 2*p, want: flipStats{missedVblanks: 1, maxInterval: 2 * p, maxCommitDelay: p / 2}},
+		{name: "missed, fence at the targeted vblank", prev: prev, wanted: prev, commit: prev + p/2, when: prev + 2*p, fence: prev + p,
+			want: flipStats{missedVblanks: 1, maxInterval: 2 * p, maxCommitDelay: p / 2}},
+		{name: "missed, fence after the targeted vblank", prev: prev, wanted: prev, commit: prev + p/2, when: prev + 2*p, fence: prev + p + 1,
+			want: flipStats{missedVblanks: 1, lateFences: 1, maxInterval: 2 * p, maxCommitDelay: p / 2}},
+		{name: "VRR idle gap", vrr: true, prev: prev, wanted: prev + time.Second, commit: prev + time.Second + time.Millisecond, when: prev + time.Second + 2*time.Millisecond, want: flipStats{}},
+		{name: "VRR back to back: no missed vblank, no late fence", vrr: true, prev: prev, wanted: prev, commit: prev + p/2, when: prev + 3*p, fence: prev + 3*p - 1,
+			want: flipStats{maxInterval: 3 * p, maxCommitDelay: p / 2}},
+		{name: "VRR flip gap is not a commit delay", vrr: true, prev: prev, wanted: prev, gapEnd: prev + 2*time.Millisecond, commit: prev + 2*time.Millisecond + 100*time.Microsecond, when: prev + 3*time.Millisecond,
+			want: flipStats{maxInterval: 3 * time.Millisecond, maxCommitDelay: 100 * time.Microsecond}},
+		{name: "wanted after the gap ended", vrr: true, prev: prev, wanted: prev + 5*time.Millisecond, gapEnd: prev + 2*time.Millisecond, commit: prev + 6*time.Millisecond, when: prev + 7*time.Millisecond,
+			want: flipStats{maxInterval: 7 * time.Millisecond, maxCommitDelay: time.Millisecond}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _, _ := testOutput(t)
+			o.vrrOn, o.lastFlipAt = tc.vrr, tc.prev
+			f := pendingFrame{wantedAt: tc.wanted, gapEnd: tc.gapEnd}
+			o.accountFlip(flipAt(tc.when), true, f.dueAt(), tc.commit, tc.fence)
+			if o.flipStats != tc.want {
+				t.Fatalf("stats %+v, want %+v", o.flipStats, tc.want)
+			}
+			wantLast := tc.wantLast
+			if wantLast == 0 {
+				wantLast = tc.when
+			}
+			if o.lastFlipAt != wantLast {
+				t.Fatalf("last flip %s, want %s", o.lastFlipAt, wantLast)
+			}
+		})
+	}
 }
 
-// flipWanted is flip for a frame wanted at wanted.
-func flipWanted(o *Output, when, wanted, commit, fenceAt time.Duration) {
-	o.accountFlip(flipAt(when), true, wanted, commit, fenceAt)
-}
-
-func TestAccountFlipMissedVblanks(t *testing.T) {
+// The gap end of the flip stats runs from the flip's kernel timestamp, the
+// commit gate from the time the event was read: an event read long after
+// the flip still shows as a commit delay.
+func TestStartFlipGapFromFlipTimestamp(t *testing.T) {
 	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	if p < period60-time.Microsecond || p > period60+time.Microsecond {
-		t.Fatalf("period %s", p)
+	gap := 2 * time.Millisecond
+	o.vrrFlipGap, o.vrrOn, o.vrrGame = gap, true, true
+	flipped := time.Hour // CLOCK_MONOTONIC of the flip
+	readAt := time.Unix(1000, 0)
+	o.startFlipGap(pendingFrame{frame: true}, flipped, readAt)
+	if o.flipGapAt != flipped+gap || !o.flipGapUntil.Equal(readAt.Add(gap)) {
+		t.Fatalf("gap at %s until %s", o.flipGapAt, o.flipGapUntil)
 	}
-	at := time.Second
-	// The first flip has no interval.
-	flip(o, at, at-p, 0)
-	if s := o.flipStats; s.missedVblanks != 0 || s.maxInterval != 0 || o.lastFlipAt != at {
-		t.Fatalf("first flip: %+v last %s", s, o.lastFlipAt)
-	}
-	// On time, and just under 1.5 periods: not missed.
-	flip(o, at+p, at+p/2, 0)
-	at += p
-	flip(o, at+p*3/2-1, at+p/2, 0)
-	at += p * 3 / 2
-	if o.flipStats.missedVblanks != 0 {
-		t.Fatalf("on time counted: %+v", o.flipStats)
-	}
-	// Committed back to back, flipped 2 then 3 periods later: missed.
-	flip(o, at+2*p, at+p/2, 0)
-	at += 2 * p
-	flip(o, at+3*p, at+p/2, 0)
-	at += 3 * p
-	flip(o, at+p, at+p/2, 0)
-	if s := o.flipStats; s.missedVblanks != 2 || s.maxInterval != 3*p {
-		t.Fatalf("stats %+v", s)
-	}
-}
-
-// An output commits on change only: the gap after an idle period is not
-// a missed vblank, whatever the flip interval.
-func TestAccountFlipIdleGapNotCounted(t *testing.T) {
-	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	flip(o, time.Second, time.Second-p, 0)
-	// Committed a second after the previous flip: nothing was waiting.
-	flip(o, 2*time.Second, 2*time.Second-p/2, 2*time.Second-p)
-	s := o.flipStats
-	if s.missedVblanks != 0 || s.maxInterval != 0 || s.lateFences != 0 || o.lastFlipAt != 2*time.Second {
-		t.Fatalf("idle gap counted: %+v", s)
-	}
-	// Committed exactly one period after: it could not make the vblank.
-	flip(o, 2*time.Second+5*p, 2*time.Second+p, 0)
-	if s := o.flipStats; s.missedVblanks != 0 || s.maxInterval != 0 {
-		t.Fatalf("commit after the next vblank counted: %+v", s)
-	}
-	// Committed just before it, flipped 4 periods later: counted.
-	flip(o, 2*time.Second+9*p, 2*time.Second+5*p+p-1, 0)
-	if s := o.flipStats; s.missedVblanks != 1 || s.maxInterval != 4*p {
-		t.Fatalf("back-to-back late flip: %+v", s)
-	}
-}
-
-// A frame wanted while the previous flip was still in flight is due at
-// that flip. If the event is read late and the commit comes after the
-// next vblank, the frame is still counted, with its commit delay.
-func TestAccountFlipDelayedCommitCounted(t *testing.T) {
-	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	at := time.Second
-	flip(o, at, at-p, 0)
-	// Wanted before the previous flip landed, committed 1.2 periods
-	// after it (late read), flipped two vblanks after it.
-	flipWanted(o, at+2*p, at-p/2, at+p+p/5, at+p/2)
-	s := o.flipStats
-	if s.missedVblanks != 1 || s.maxInterval != 2*p || s.maxCommitDelay != p+p/5 {
-		t.Fatalf("delayed commit: %+v", s)
-	}
-	// The fence was ready before the targeted vblank (at+p): no late fence.
-	if s.lateFences != 0 {
-		t.Fatalf("late fence counted: %+v", s)
-	}
-	// Wanted a little after the flip, committed late: counted likewise,
-	// the delay running from when it was wanted.
-	at += 2 * p
-	flipWanted(o, at+3*p, at+p/4, at+p, at+p+1)
-	s = o.flipStats
-	if s.missedVblanks != 2 || s.maxInterval != 3*p || s.maxCommitDelay != p+p/5 || s.lateFences != 1 {
-		t.Fatalf("wanted after the flip: %+v", s)
-	}
-}
-
-// A frame wanted long after the previous flip is not due for the next
-// vblank, however fast it is committed: not an interval, no delay.
-func TestAccountFlipWantedAfterIdleNotCounted(t *testing.T) {
-	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	flip(o, time.Second, time.Second-p, 0)
-	flipWanted(o, 2*time.Second+3*p, 2*time.Second, 2*time.Second+2*p, 0)
-	if s := o.flipStats; s != (flipStats{}) || o.lastFlipAt != 2*time.Second+3*p {
-		t.Fatalf("idle gap counted: %+v last %s", s, o.lastFlipAt)
-	}
-}
-
-// The deliberate VRR flip gap holds a due frame: its time is not a commit
-// delay, nor does it make the frame late for the interval gate.
-func TestDueAtLeavesFlipGapOut(t *testing.T) {
-	if got := (&pendingFrame{wantedAt: 5, gapEnd: 9}).dueAt(); got != 9 {
-		t.Fatalf("due %d", got)
-	}
-	if got := (&pendingFrame{wantedAt: 12, gapEnd: 9}).dueAt(); got != 12 {
-		t.Fatalf("due %d", got)
-	}
-	o, _, _ := testOutput(t)
-	o.vrrOn = true
-	p := o.nominalPeriod()
-	at := time.Second
-	flip(o, at, at-p, 0)
-	// Wanted at the flip, held 2 ms by the gap, committed right after it.
-	f := pendingFrame{wantedAt: at, gapEnd: at + 2*time.Millisecond}
-	o.accountFlip(flipAt(at+3*time.Millisecond), true, f.dueAt(), at+2*time.Millisecond+100*time.Microsecond, 0)
-	if s := o.flipStats; s.maxCommitDelay != 100*time.Microsecond || s.maxInterval != 3*time.Millisecond {
-		t.Fatalf("gap counted as delay: %+v", s)
+	// The event was read 30 ms after the flip (> one period), the next
+	// frame committed right after: the delay is not hidden in the gap.
+	o.lastFlipAt = flipped
+	f := pendingFrame{wantedAt: flipped + time.Millisecond, gapEnd: o.flipGapAt}
+	o.accountFlip(flipAt(flipped+2*p), true, f.dueAt(), flipped+30*time.Millisecond, 0)
+	if want := 30*time.Millisecond - gap; o.flipStats.maxCommitDelay != want {
+		t.Fatalf("commit delay %s, want %s", o.flipStats.maxCommitDelay, want)
 	}
 }
 
@@ -153,10 +108,11 @@ func TestFlipGapEndReachesNextFrame(t *testing.T) {
 	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
-	before := monotonic()
-	o.completed(eventOf((*commits)[0]), seen)
-	if o.flipGapAt < before+2*time.Millisecond {
-		t.Fatalf("gap end %s before %s", o.flipGapAt, before)
+	ev := eventOf((*commits)[0])
+	ev.when = monotonic()
+	o.completed(ev, seen)
+	if o.flipGapAt != ev.when+2*time.Millisecond {
+		t.Fatalf("gap end %s, flip at %s", o.flipGapAt, ev.when)
 	}
 	gap := o.flipGapAt
 	if err := o.commitFrame(71, nil, false, true, pendingFrame{}); err != nil {
@@ -164,25 +120,6 @@ func TestFlipGapEndReachesNextFrame(t *testing.T) {
 	}
 	if o.frame.pendingFrame.gapEnd != gap || o.flipGapAt != 0 {
 		t.Fatalf("gap end %s, left %s, want %s", o.frame.pendingFrame.gapEnd, o.flipGapAt, gap)
-	}
-}
-
-func TestAccountFlipVRR(t *testing.T) {
-	o, _, _ := testOutput(t)
-	p := o.nominalPeriod()
-	o.vrrOn = true
-	flip(o, time.Second, time.Second-p, 0)
-	// Idle gap under VRR: not an interval.
-	flip(o, 2*time.Second, 2*time.Second-time.Millisecond, 2*time.Second-time.Millisecond)
-	if s := o.flipStats; s != (flipStats{}) {
-		t.Fatalf("idle gap: %+v", s)
-	}
-	// Back to back: the interval is tracked, but no vblank is missed and
-	// no fence is late.
-	flip(o, 2*time.Second+3*p, 2*time.Second+p/2, 2*time.Second+3*p-1)
-	s := o.flipStats
-	if s.missedVblanks != 0 || s.lateFences != 0 || s.maxInterval != 3*p || o.lastFlipAt != 2*time.Second+3*p {
-		t.Fatalf("stats %+v", s)
 	}
 }
 
@@ -208,8 +145,7 @@ func TestSetVRRRestartsFlipInterval(t *testing.T) {
 // A state commit (cursor, VRR) is neither a frame interval nor a frame.
 func TestAccountFlipStateCommit(t *testing.T) {
 	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	flip(o, time.Second, time.Second-p, 0)
+	o.lastFlipAt = time.Second
 	o.accountFlip(flipAt(time.Second+3*p), false, time.Second+p/2, time.Second+p/2, time.Second+3*p)
 	if s := o.flipStats; s != (flipStats{}) || o.lastFlipAt != time.Second {
 		t.Fatalf("stats %+v last %s", s, o.lastFlipAt)
@@ -226,44 +162,13 @@ func TestAccountReadMax(t *testing.T) {
 	}
 }
 
-func TestAccountFlipLateFences(t *testing.T) {
-	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	at := time.Second
-	flip(o, at, at-p, 0)
-	// A normal frame: fence signalled during the frame before, flip on
-	// the next vblank.
-	flip(o, at+p, at+p/2, at+p/4)
-	at += p
-	flip(o, at+p, at+p/2, at+p-1)
-	at += p
-	if s := o.flipStats; s.lateFences != 0 || s.missedVblanks != 0 {
-		t.Fatalf("normal frame counted: %+v", s)
-	}
-	// Missed vblank, unknown fence time: not a late fence.
-	flip(o, at+2*p, at+p/2, 0)
-	at += 2 * p
-	// Missed vblank, fence signalled before the targeted vblank (at+p):
-	// the frame was ready, something else delayed the flip.
-	flip(o, at+2*p, at+p/2, at+p)
-	at += 2 * p
-	if s := o.flipStats; s.lateFences != 0 || s.missedVblanks != 2 {
-		t.Fatalf("early fence counted: %+v", s)
-	}
-	// Missed vblank, fence after the targeted vblank: late.
-	flip(o, at+2*p, at+p/2, at+p+1)
-	if s := o.flipStats; s.lateFences != 1 || s.missedVblanks != 3 {
-		t.Fatalf("stats %+v", s)
-	}
-}
-
 func TestTakeFlipStatsResets(t *testing.T) {
 	o, _, _ := testOutput(t)
-	p := o.refreshPeriod()
-	flip(o, time.Second, time.Second-p, 0)
-	flip(o, time.Second+3*p, time.Second+p/2, time.Second+2*p)
+	o.lastFlipAt = time.Second
+	// Missed, with a fence after the targeted vblank.
+	o.accountFlip(flipAt(time.Second+3*p), true, time.Second, time.Second+p/2, time.Second+2*p)
 	o.accountRead(flipAt(time.Second), time.Second+time.Millisecond)
-	flipWanted(o, time.Second+4*p, time.Second+3*p, time.Second+3*p+p/2, 0)
+	o.accountFlip(flipAt(time.Second+4*p), true, time.Second+3*p, time.Second+3*p+p/2, 0)
 	s := o.takeFlipStats()
 	if s.missedVblanks != 1 || s.lateFences != 1 || s.maxInterval != 3*p || s.maxCommitDelay != p/2 || s.maxFlipToRead != time.Millisecond {
 		t.Fatalf("taken %+v", s)
@@ -282,16 +187,14 @@ func TestTakeFlipStatsResets(t *testing.T) {
 func TestCompletedKeepsLastFlipWithoutTrace(t *testing.T) {
 	o, _, commits := testOutput(t)
 	o.cursor = nil
-	var log bytes.Buffer
-	o.log = zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: &log})
 	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
 		t.Fatal(err)
 	}
 	if !o.completed(flipEvent{crtc: tCrtc, user: (*commits)[0].user, when: 5 * time.Second}, map[ports.WindowID]uint64{}) {
 		t.Fatal("not completed")
 	}
-	if o.lastFlipAt != 5*time.Second || strings.Contains(log.String(), "slow flip") {
-		t.Fatalf("last flip %s: %s", o.lastFlipAt, log.String())
+	if o.lastFlipAt != 5*time.Second {
+		t.Fatalf("last flip %s", o.lastFlipAt)
 	}
 	if o.flipStats.maxFlipToRead <= 0 {
 		t.Fatalf("flip to read not measured: %+v", o.flipStats)
@@ -350,5 +253,20 @@ func TestAccountFlipAllocations(t *testing.T) {
 		_ = o.takeFlipStats()
 	}); n != 0 {
 		t.Fatalf("%v allocations", n)
+	}
+}
+
+// The completion accounting of a frame flip, tracing off, in steady state.
+// (completed itself reports the flip to wayland, which allocates.)
+func TestFlipDoneAllocations(t *testing.T) {
+	o, _, _ := testOutput(t)
+	o.vrrFlipGap, o.vrrOn, o.vrrGame = time.Millisecond, true, true
+	start := time.Now()
+	at := time.Second
+	if n := testing.AllocsPerRun(100, func() {
+		at += 10 * time.Millisecond
+		o.flipDone(flipAt(at), pendingFrame{frame: true, wantedAt: at - time.Millisecond}, start, true, false, 0)
+	}); n != 0 {
+		t.Fatalf("flipDone: %v allocations", n)
 	}
 }

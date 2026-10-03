@@ -45,9 +45,9 @@ Each output's `stats` entry (every 10 s) counts what happened since the previous
 - `max_commit_delay_ms`: for due frames, the longest time from when the frame was due (wanted, and not before the previous flip or the end of the deliberate `render.vrr-flip-gap`) to its commit. It is large when the commit came late: the previous flip's event was read late, or the CPU side of the composition was slow.
 - `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event, for the output's own commits.
 - `late_fences` (only with `--debug=drm-flip`, which reads the fence times): missed vblanks whose composition fence signalled after the vblank the frame targeted (the previous flip plus one period), so the GPU was not done in time. Not counted under VRR.
+- `redrawn_pixels`: target pixels the renderer drew; a damage-limited frame counts its damage, not the whole target.
 
 Reading them together: missed vblanks with `late_fences` are a late GPU composition. Missed vblanks without late fences and with a large `max_commit_delay_ms` (usually next to a large `max_flip_to_read_ms`) are a late commit: the event reader or the CPU. Few `missed_vblanks` mean flips were on time only if `max_commit_delay_ms` is also small: a delayed commit can still make its vblank, and `max_flip_to_read_ms` alone says the event arrived late, not that the flip did.
-- `redrawn_pixels`: target pixels the renderer drew; a damage-limited frame counts its damage, not the whole target.
 
 `input stats` shows coalesced pointer motion and the longest wait for core.
 

@@ -132,11 +132,15 @@ type Output struct {
 	wantedAt   time.Duration
 	// vrrFlipGap is the minimum time between a game frame's flip event
 	// and the next frame commit under VRR (render.vrr-flip-gap, 0: off);
-	// flipGapUntil is when the next frame may commit. See vrr_flip_gap.go.
+	// flipGapUntil is when the next frame may commit: the gap from the
+	// time the flip event was read, as the workaround was measured. See
+	// vrr_flip_gap.go.
 	vrrFlipGap   time.Duration
 	flipGapUntil time.Time
-	// flipGapAt is the end of the gap in CLOCK_MONOTONIC, kept until the
-	// frame it held commits (the flip stats leave the gap out).
+	// flipGapAt is the end of the gap from the flip's kernel timestamp
+	// (CLOCK_MONOTONIC), kept until the frame it held commits. It differs
+	// from flipGapUntil on purpose: the flip stats must not hide a late
+	// read of the event inside the gap.
 	flipGapAt time.Duration
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
@@ -1442,6 +1446,23 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 	return false
 }
 
+// flipDone times the completion ev of the commit f made at start: the
+// flip stats, the flip trace and the VRR flip gap. It never allocates
+// with tracing off.
+func (o *Output) flipDone(ev flipEvent, f pendingFrame, start time.Time, ours, trace bool, fenceAt time.Duration) {
+	readAt := time.Now()
+	now := monotonic()
+	commitAt := now - readAt.Sub(start)
+	if ours {
+		o.accountRead(ev, now)
+	}
+	if trace {
+		o.traceFlip(ev, f, commitAt, now, o.lastFlipAt, fenceAt)
+	}
+	o.accountFlip(ev, f.frame, f.dueAt(), commitAt, fenceAt)
+	o.startFlipGap(f, ev.when, readAt)
+}
+
 // completed handles the event of the pending commit: a flipped frame is
 // reported with its kernel timestamp. It reports false for an event of
 // another commit, which is dropped.
@@ -1458,16 +1479,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if !ok {
 		return false
 	}
-	now := monotonic()
-	commitAt := now - time.Since(start)
-	if ours {
-		o.accountRead(ev, now)
-	}
-	if trace {
-		o.traceFlip(ev, f, commitAt, now, o.lastFlipAt, fenceAt)
-	}
-	o.accountFlip(ev, f.frame, f.dueAt(), commitAt, fenceAt)
-	o.startFlipGap(f)
+	o.flipDone(ev, f, start, ours, trace, fenceAt)
 	if o.cursor != nil {
 		o.cursor.landed()
 	}

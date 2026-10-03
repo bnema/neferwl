@@ -4,9 +4,9 @@ import "time"
 
 // flipStats are the flip timing counters of one output, reported and
 // reset by the periodic stats entry. They are plain fields owned by the
-// output goroutine. All times come from the kernel's CLOCK_MONOTONIC
-// flip timestamps, so they tell a late composition from a late read of
-// the event (see accountFlip).
+// output goroutine. All times are CLOCK_MONOTONIC (kernel flip
+// timestamps and userspace reads), so they tell a late composition from a
+// late read of the event (see accountFlip).
 type flipStats struct {
 	// missedVblanks counts due frame flips whose kernel timestamp is over
 	// 1.5 refresh periods after the previous frame flip (never under VRR,
@@ -16,8 +16,8 @@ type flipStats struct {
 	// frames that were due.
 	maxInterval time.Duration
 	// maxCommitDelay is the longest time a due frame waited between the
-	// moment it was due (wanted, and the previous flip landed) and its
-	// commit: late event read, slow composition.
+	// moment it was due (wanted, the previous flip landed, or the VRR
+	// flip gap ended) and its commit: late event read, slow composition.
 	maxCommitDelay time.Duration
 	// maxFlipToRead is the longest time between a flip's kernel timestamp
 	// and the output reading its event: the event delivery latency.
