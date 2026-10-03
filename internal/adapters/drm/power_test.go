@@ -118,10 +118,11 @@ func TestRunOutputPower(t *testing.T) {
 }
 
 // An output started off (it reconnected while turned off) never activates
-// its CRTC before a scene turns it on.
+// its CRTC before a scene turns it on; its tearing probe, refused by an
+// inactive CRTC, waits until then.
 func TestRunOutputStartOff(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
-	o.tearing, o.cursor = false, nil
+	o.tearing, o.cursor = true, nil
 	o.StartOff = true
 	ready := make(chan error, 1)
 	o.ready = ready
@@ -157,6 +158,14 @@ func TestRunOutputStartOff(t *testing.T) {
 		}
 		return false
 	}
+	probed := func(cs []commitRec) bool {
+		for _, c := range cs {
+			if c.flags == atomicTestOnly|flipAsyncFlag {
+				return true
+			}
+		}
+		return false
+	}
 	scenes := make(chan ports.Scene, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -175,13 +184,16 @@ func TestRunOutputStartOff(t *testing.T) {
 	if lit(snapshot()) {
 		t.Fatal("a display started off lit up")
 	}
+	if probed(snapshot()) {
+		t.Fatal("tearing probed while off")
+	}
 	if len(renders) > 0 {
 		t.Fatal("rendered while off")
 	}
 	on := off
 	on.Off = false
 	scenes <- on
-	waitFor(t, func() bool { return lit(snapshot()) })
+	waitFor(t, func() bool { return lit(snapshot()) && probed(snapshot()) })
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

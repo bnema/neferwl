@@ -1304,6 +1304,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				err = o.powerOff()
 			} else if err = o.modeset(); err == nil {
 				dirty = true
+				if !o.protected {
+					o.probeAsync(r) // skipped while it started off
+				}
 			}
 			if err != nil && !o.commitFailed(err, &enabled) {
 				return err
