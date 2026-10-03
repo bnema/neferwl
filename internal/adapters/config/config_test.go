@@ -95,20 +95,6 @@ func TestFocusIndicator(t *testing.T) {
 	}
 }
 
-func TestTouchpadNaturalScroll(t *testing.T) {
-	if Defaults().Touchpad.NaturalScroll {
-		t.Fatal("natural scroll on by default")
-	}
-	c, w := parseString(t, "touchpad.natural-scroll = on\n")
-	if !c.Touchpad.NaturalScroll || len(w) != 0 {
-		t.Fatal(c.Touchpad, w)
-	}
-	c, w = parseString(t, "touchpad.natural-scroll = maybe\n")
-	if c.Touchpad.NaturalScroll || len(w) != 1 {
-		t.Fatal(c.Touchpad, w)
-	}
-}
-
 func TestTouchpadTap(t *testing.T) {
 	if !Defaults().Touchpad.Tap {
 		t.Fatal("tap to click off by default")
@@ -128,20 +114,71 @@ func TestTouchpadSpeed(t *testing.T) {
 	if d.AccelSpeed != 0 || d.AccelProfile != ports.AccelAdaptive || d.ScrollFactor != 1 {
 		t.Fatal(d)
 	}
-	c, w := parseString(t, "touchpad.accel-speed = -0.5\ntouchpad.accel-profile = flat\ntouchpad.scroll-factor = 0.5\n")
-	if c.Touchpad.AccelSpeed != -0.5 || c.Touchpad.AccelProfile != ports.AccelFlat || c.Touchpad.ScrollFactor != 0.5 || len(w) != 0 {
+	c, w := parseString(t, "touchpad.scroll-factor = 0.5\n")
+	if c.Touchpad.ScrollFactor != 0.5 || len(w) != 0 {
 		t.Fatal(c.Touchpad, w)
 	}
 	for _, bad := range []string{
-		"touchpad.accel-speed = 2",
-		"touchpad.accel-speed = NaN",
-		"touchpad.accel-profile = fast",
 		"touchpad.scroll-factor = 0",
 		"touchpad.scroll-factor = 11",
 	} {
 		c, w := parseString(t, bad+"\n")
 		if c.Touchpad != d || len(w) != 1 {
 			t.Errorf("%s: %+v %v", bad, c.Touchpad, w)
+		}
+	}
+}
+
+func TestPointerKeys(t *testing.T) {
+	d := Defaults()
+	if d.Mouse != (ports.PointerConfig{AccelProfile: ports.AccelAdaptive}) {
+		t.Fatal(d.Mouse)
+	}
+	if d.Touchpad.LeftHanded || d.Touchpad.NaturalScroll {
+		t.Fatal(d.Touchpad)
+	}
+	touchpad := func(c ports.Config) ports.PointerConfig { return c.Touchpad.PointerConfig }
+	mouse := func(c ports.Config) ports.PointerConfig { return c.Mouse }
+	for _, tc := range []struct {
+		prefix         string
+		pointer, other func(ports.Config) ports.PointerConfig
+	}{
+		{"touchpad", touchpad, mouse},
+		{"mouse", mouse, touchpad},
+	} {
+		t.Run(tc.prefix, func(t *testing.T) {
+			prefix := tc.prefix
+			c, w := parseString(t, prefix+".natural-scroll = on\n"+prefix+".left-handed = on\n"+prefix+".accel-speed = -0.5\n"+prefix+".accel-profile = flat\n")
+			want := ports.PointerConfig{NaturalScroll: true, LeftHanded: true, AccelSpeed: -0.5, AccelProfile: ports.AccelFlat}
+			if tc.pointer(c) != want || len(w) != 0 {
+				t.Errorf("%+v %v", tc.pointer(c), w)
+			}
+			// The other device keeps its defaults.
+			if other := tc.other(c); other != (ports.PointerConfig{AccelProfile: ports.AccelAdaptive}) {
+				t.Errorf("leaked into the other device: %+v", other)
+			}
+			for _, bad := range []string{
+				".natural-scroll = maybe",
+				".left-handed = 1",
+				".accel-speed = 2",
+				".accel-speed = -1.5",
+				".accel-speed = NaN",
+				".accel-speed = fast",
+				".accel-profile = fast",
+				".accel-profile = ",
+				".unknown = on",
+			} {
+				c, w := parseString(t, prefix+bad+"\n")
+				if c.Mouse != d.Mouse || c.Touchpad != d.Touchpad || len(w) != 1 {
+					t.Errorf("%s%s: %+v %v", prefix, bad, tc.pointer(c), w)
+				}
+			}
+		})
+	}
+	// Touchpad-only keys do not exist for mice.
+	for _, bad := range []string{"mouse.tap = on", "mouse.scroll-factor = 2"} {
+		if c, w := parseString(t, bad+"\n"); c.Mouse != d.Mouse || c.Touchpad != d.Touchpad || len(w) != 1 {
+			t.Errorf("%s: %+v %v", bad, c.Mouse, w)
 		}
 	}
 }

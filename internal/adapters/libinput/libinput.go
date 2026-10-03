@@ -39,57 +39,59 @@ var (
 	loadOnce sync.Once
 	loadErr  error
 
-	udevNew         func() uintptr
-	udevUnref       func(uintptr) uintptr
-	createContext   func(iface unsafe.Pointer, data uintptr, udev uintptr) uintptr
-	assignSeat      func(li uintptr, seat string) int32
-	unref           func(li uintptr) uintptr
-	getFD           func(li uintptr) int32
-	dispatch        func(li uintptr) int32
-	getEvent        func(li uintptr) uintptr
-	eventType       func(ev uintptr) int32
-	eventDestroy    func(ev uintptr)
-	eventDevice     func(ev uintptr) uintptr
-	deviceName      func(dev uintptr) string
-	suspend         func(li uintptr)
-	resume          func(li uintptr) int32
-	keyboardEvent   func(ev uintptr) uintptr
-	keyboardKey     func(kev uintptr) uint32
-	keyboardState   func(kev uintptr) int32
-	keyboardUsec    func(kev uintptr) uint64
-	pointerEvent    func(ev uintptr) uintptr
-	pointerDX       func(pev uintptr) float64
-	pointerDY       func(pev uintptr) float64
-	pointerRawDX    func(pev uintptr) float64
-	pointerRawDY    func(pev uintptr) float64
-	pointerUsec     func(pev uintptr) uint64
-	pointerAbsX     func(pev uintptr, width uint32) float64
-	pointerAbsY     func(pev uintptr, height uint32) float64
-	pointerButton   func(pev uintptr) uint32
-	pointerBtnState func(pev uintptr) int32
-	pointerHasAxis  func(pev uintptr, axis uint32) int32
-	scrollValue     func(pev uintptr, axis uint32) float64
-	scrollV120      func(pev uintptr, axis uint32) float64
-	gestureEvent    func(ev uintptr) uintptr
-	gestureFingers  func(gev uintptr) int32
-	gestureCanceled func(gev uintptr) int32
-	gestureDX       func(gev uintptr) float64
-	gestureDY       func(gev uintptr) float64
-	gestureUsec     func(gev uintptr) uint64
-	deviceRef       func(dev uintptr) uintptr
-	deviceUnref     func(dev uintptr) uintptr
-	hasNatural      func(dev uintptr) int32
-	setNatural      func(dev uintptr, on int32) int32
-	tapFingers      func(dev uintptr) int32
-	setTap          func(dev uintptr, on int32) int32
-	setTapMap       func(dev uintptr, m int32) int32
-	hasCapability   func(dev uintptr, capability int32) int32
-	accelAvailable  func(dev uintptr) int32
-	setAccelSpeed   func(dev uintptr, speed float64) int32
-	accelProfiles   func(dev uintptr) uint32
-	setAccelProfile func(dev uintptr, profile uint32) int32
-	iface           [2]uintptr
-	active          ports.Seat
+	udevNew             func() uintptr
+	udevUnref           func(uintptr) uintptr
+	createContext       func(iface unsafe.Pointer, data uintptr, udev uintptr) uintptr
+	assignSeat          func(li uintptr, seat string) int32
+	unref               func(li uintptr) uintptr
+	getFD               func(li uintptr) int32
+	dispatch            func(li uintptr) int32
+	getEvent            func(li uintptr) uintptr
+	eventType           func(ev uintptr) int32
+	eventDestroy        func(ev uintptr)
+	eventDevice         func(ev uintptr) uintptr
+	deviceName          func(dev uintptr) string
+	suspend             func(li uintptr)
+	resume              func(li uintptr) int32
+	keyboardEvent       func(ev uintptr) uintptr
+	keyboardKey         func(kev uintptr) uint32
+	keyboardState       func(kev uintptr) int32
+	keyboardUsec        func(kev uintptr) uint64
+	pointerEvent        func(ev uintptr) uintptr
+	pointerDX           func(pev uintptr) float64
+	pointerDY           func(pev uintptr) float64
+	pointerRawDX        func(pev uintptr) float64
+	pointerRawDY        func(pev uintptr) float64
+	pointerUsec         func(pev uintptr) uint64
+	pointerAbsX         func(pev uintptr, width uint32) float64
+	pointerAbsY         func(pev uintptr, height uint32) float64
+	pointerButton       func(pev uintptr) uint32
+	pointerBtnState     func(pev uintptr) int32
+	pointerHasAxis      func(pev uintptr, axis uint32) int32
+	scrollValue         func(pev uintptr, axis uint32) float64
+	scrollV120          func(pev uintptr, axis uint32) float64
+	gestureEvent        func(ev uintptr) uintptr
+	gestureFingers      func(gev uintptr) int32
+	gestureCanceled     func(gev uintptr) int32
+	gestureDX           func(gev uintptr) float64
+	gestureDY           func(gev uintptr) float64
+	gestureUsec         func(gev uintptr) uint64
+	deviceRef           func(dev uintptr) uintptr
+	deviceUnref         func(dev uintptr) uintptr
+	hasNatural          func(dev uintptr) int32
+	setNatural          func(dev uintptr, on int32) int32
+	tapFingers          func(dev uintptr) int32
+	setTap              func(dev uintptr, on int32) int32
+	setTapMap           func(dev uintptr, m int32) int32
+	hasCapability       func(dev uintptr, capability int32) int32
+	accelAvailable      func(dev uintptr) int32
+	setAccelSpeed       func(dev uintptr, speed float64) int32
+	accelProfiles       func(dev uintptr) uint32
+	leftHandedAvailable func(dev uintptr) int32
+	setLeftHanded       func(dev uintptr, on int32) int32
+	setAccelProfile     func(dev uintptr, profile uint32) int32
+	iface               [2]uintptr
+	active              ports.Seat
 )
 
 func load() error {
@@ -159,6 +161,8 @@ func load() error {
 		reg(&setAccelSpeed, "device_config_accel_set_speed")
 		reg(&accelProfiles, "device_config_accel_get_profiles")
 		reg(&setAccelProfile, "device_config_accel_set_profile")
+		reg(&leftHandedAvailable, "device_config_left_handed_is_available")
+		reg(&setLeftHanded, "device_config_left_handed_set")
 		iface[0] = purego.NewCallback(func(path *byte, _, _ uintptr) uintptr {
 			fd, err := active.OpenDevice(goString(path))
 			if err != nil {
@@ -199,10 +203,12 @@ type Options struct {
 	// Constraints holds the pointer lock or confinement of the focused
 	// window, in global logical coordinates.
 	Constraints <-chan ports.PointerConstraint
-	// Touchpad is the initial touchpad config; Touchpads replaces it live.
-	Touchpad  ports.TouchpadConfig
-	Touchpads <-chan ports.TouchpadConfig
-	Active    <-chan bool
+	// DeviceConfig is the initial config: Touchpad for touchpads, Mouse for
+	// the other pointers (mice, trackballs, trackpoints); other devices are
+	// left alone. DeviceConfigs replaces it live, on the devices already added.
+	DeviceConfig  ports.InputDevicesConfig
+	DeviceConfigs <-chan ports.InputDevicesConfig
+	Active        <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
 	// read, before core sees the event: the output under the pointer and
 	// the physical position on it. motion is false when the pointer is only
@@ -246,7 +252,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor, false)
-	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}}
+	in := &inputState{cfg: opts.DeviceConfig, dev: libinputDevices{}, devices: map[uintptr]bool{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
@@ -283,12 +289,14 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		case c := <-opts.Constraints:
 			p.constrain(c)
 			p.moved(opts.MoveCursor, false)
-		case t := <-opts.Touchpads:
-			in.touchpad = t
+		case c := <-opts.DeviceConfigs:
+			in.cfg = c
 			for dev := range in.devices {
 				in.configure(dev, opts.Log)
 			}
-			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Float64("scroll_factor", t.ScrollFactor).Msg("touchpad reloaded")
+			t, m := c.Touchpad, c.Mouse
+			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Bool("left_handed", t.LeftHanded).Float64("scroll_factor", t.ScrollFactor).
+				Bool("mouse_natural_scroll", m.NaturalScroll).Float64("mouse_accel_speed", m.AccelSpeed).Str("mouse_accel_profile", m.AccelProfile).Bool("mouse_left_handed", m.LeftHanded).Msg("input devices reloaded")
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -316,51 +324,134 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	return nil
 }
 
-// inputState is the device state Run owns: touchpad config, the devices
+// inputState is the device state Run owns: the device config, the devices
 // it configures (referenced until removed) and the swipe in progress on
-// each touchpad.
+// each touchpad. dev applies the config to libinput; it is a zero-size
+// type, so storing it in the interface allocates nothing.
 type inputState struct {
-	touchpad ports.TouchpadConfig
-	devices  map[uintptr]bool
-	swipes   swipes
+	cfg     ports.InputDevicesConfig
+	dev     deviceConfig
+	devices map[uintptr]bool
+	swipes  swipes
 }
 
-// configurable reports whether the touchpad config applies to dev: it has
-// natural scroll or tapping, or is a touchpad.
-func configurable(dev uintptr) bool {
-	return hasNatural(dev) != 0 || tapFingers(dev) > 0 || touchpad(dev)
+// deviceConfig is libinput's device configuration side: what a device is
+// and the settings it takes. libinputDevices is the real one; tests use its
+// Mockery mock. It serves device-added and config reload only, never the
+// event path. A setting the device lacks is skipped without error; one it
+// refuses returns a sentinel error.
+type deviceConfig interface {
+	// IsTouchpad reports the gesture capability libinput gives touchpads.
+	IsTouchpad(dev uintptr) bool
+	// IsPointer reports the pointer capability: mice, trackballs,
+	// trackpoints and touchpads.
+	IsPointer(dev uintptr) bool
+	// Name is the device name, for logs.
+	Name(dev uintptr) string
+	SetNaturalScroll(dev uintptr, on bool) error
+	// SetAccel sets the pointer speed and, when the device offers it, the
+	// profile (ports.AccelFlat or ports.AccelAdaptive).
+	SetAccel(dev uintptr, speed float64, profile string) error
+	SetLeftHanded(dev uintptr, on bool) error
+	// SetTap enables tap to click, with one finger left, two right, three
+	// middle. Devices that cannot tap skip it.
+	SetTap(dev uintptr, on bool) error
 }
 
-// capGesture is LIBINPUT_DEVICE_CAP_GESTURE: libinput gives it to
-// touchpads, with or without tapping.
-const capGesture = 5
+// errRejected is a setting the device refuses (libinput status not success).
+var errRejected = errors.New("rejected by libinput")
 
-func touchpad(dev uintptr) bool { return hasCapability(dev, capGesture) != 0 }
+// libinputDevices implements deviceConfig over the libinput functions.
+type libinputDevices struct{}
 
-// tapButtonMap is LIBINPUT_CONFIG_TAP_MAP_LRM: one finger taps left, two
-// right, three middle.
-const tapButtonMap = 0
+const (
+	// capPointer is LIBINPUT_DEVICE_CAP_POINTER.
+	capPointer = 1
+	// capGesture is LIBINPUT_DEVICE_CAP_GESTURE: libinput gives it to
+	// touchpads, with or without tapping.
+	capGesture = 5
+	// tapButtonMap is LIBINPUT_CONFIG_TAP_MAP_LRM.
+	tapButtonMap = 0
+)
 
+func (libinputDevices) IsTouchpad(dev uintptr) bool { return hasCapability(dev, capGesture) != 0 }
+func (libinputDevices) IsPointer(dev uintptr) bool  { return hasCapability(dev, capPointer) != 0 }
+func (libinputDevices) Name(dev uintptr) string     { return deviceName(dev) }
+
+func (libinputDevices) SetNaturalScroll(dev uintptr, on bool) error {
+	if hasNatural(dev) != 0 && setNatural(dev, flag(on)) != 0 {
+		return errRejected
+	}
+	return nil
+}
+
+func (libinputDevices) SetAccel(dev uintptr, speed float64, profile string) error {
+	if accelAvailable(dev) == 0 {
+		return nil
+	}
+	var err error
+	if setAccelSpeed(dev, speed) != 0 {
+		err = errRejected
+	}
+	if p := accelProfile(profile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
+		err = errRejected
+	}
+	return err
+}
+
+func (libinputDevices) SetLeftHanded(dev uintptr, on bool) error {
+	if leftHandedAvailable(dev) != 0 && setLeftHanded(dev, flag(on)) != 0 {
+		return errRejected
+	}
+	return nil
+}
+
+func (libinputDevices) SetTap(dev uintptr, on bool) error {
+	if tapFingers(dev) <= 0 {
+		return nil
+	}
+	var err error
+	if setTap(dev, flag(on)) != 0 {
+		err = errRejected
+	}
+	if setTapMap(dev, tapButtonMap) != 0 {
+		err = errRejected
+	}
+	return err
+}
+
+// configurable reports whether the device config applies to dev: a
+// touchpad or another pointer. Keyboards, switches and the like are left
+// alone and not referenced.
+func (s *inputState) configurable(dev uintptr) bool {
+	return s.dev.IsTouchpad(dev) || s.dev.IsPointer(dev)
+}
+
+// configure applies the config to dev by type: touchpads take the touchpad
+// settings and tapping, other pointers (mice, trackballs, trackpoints) the
+// mouse settings, other devices nothing. A refused setting is logged and
+// the rest still apply. The success path logs and allocates nothing.
 func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
-	if hasNatural(dev) != 0 && setNatural(dev, flag(s.touchpad.NaturalScroll)) != 0 {
-		log.Warn().Str("device", deviceName(dev)).Msg("natural scroll rejected")
+	switch {
+	case s.dev.IsTouchpad(dev):
+		s.applyPointer(dev, s.cfg.Touchpad.PointerConfig, log)
+		s.check(dev, "tap to click", s.dev.SetTap(dev, s.cfg.Touchpad.Tap), log)
+	case s.dev.IsPointer(dev):
+		s.applyPointer(dev, s.cfg.Mouse, log)
 	}
-	if tapFingers(dev) > 0 {
-		if setTap(dev, flag(s.touchpad.Tap)) != 0 {
-			log.Warn().Str("device", deviceName(dev)).Msg("tap to click rejected")
-		}
-		if setTapMap(dev, tapButtonMap) != 0 {
-			log.Warn().Str("device", deviceName(dev)).Msg("tap button map rejected")
-		}
-	}
-	// Pointer speed is a touchpad setting: mice keep libinput's own.
-	if touchpad(dev) && accelAvailable(dev) != 0 {
-		if setAccelSpeed(dev, s.touchpad.AccelSpeed) != 0 {
-			log.Warn().Str("device", deviceName(dev)).Msg("accel speed rejected")
-		}
-		if p := accelProfile(s.touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
-			log.Warn().Str("device", deviceName(dev)).Msg("accel profile rejected")
-		}
+}
+
+// applyPointer applies the settings touchpads and mice share.
+func (s *inputState) applyPointer(dev uintptr, c ports.PointerConfig, log zerowrap.Logger) {
+	s.check(dev, "natural scroll", s.dev.SetNaturalScroll(dev, c.NaturalScroll), log)
+	s.check(dev, "accel", s.dev.SetAccel(dev, c.AccelSpeed, c.AccelProfile), log)
+	s.check(dev, "left handed", s.dev.SetLeftHanded(dev, c.LeftHanded), log)
+}
+
+// check logs a refused setting; the device name is only read then.
+func (s *inputState) check(dev uintptr, setting string, err error, log zerowrap.Logger) {
+	if err != nil {
+		log.Warn().Err(err).Str("device", s.dev.Name(dev)).Str("setting", setting).Msg("input device setting rejected")
 	}
 }
 
@@ -453,7 +544,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 	case evDeviceAdded:
 		dev := eventDevice(ev)
 		log.Info().Str("device", deviceName(dev)).Msg("input device added")
-		if configurable(dev) && !in.devices[dev] {
+		if in.configurable(dev) && !in.devices[dev] {
 			in.devices[deviceRef(dev)] = true
 			in.configure(dev, log)
 		}
@@ -519,7 +610,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 			s.Set, s.Value = true, scrollValue(pe, uint32(i))
 			if source == ports.AxisFinger {
 				// Two-finger scroll is the touchpad's only scroll source.
-				s.Value *= in.touchpad.ScrollFactor
+				s.Value *= in.cfg.Touchpad.ScrollFactor
 			}
 			if source == ports.AxisWheel {
 				s.V120 = int32(scrollV120(pe, uint32(i)))

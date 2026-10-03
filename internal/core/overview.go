@@ -911,9 +911,9 @@ const (
 // in a stack is easy to pick.
 // Continuous scrolling steps once per overviewScrollStep and a wheel once
 // per notch (high-resolution wheels add up their fractions of a notch).
-// Vertical steps select cards first, then rows; touchpad.natural-scroll
-// flips both axes as libinput reports. The end of a scroll resets it
-// (scrollStop).
+// Vertical steps select cards first, then rows; natural scroll
+// (touchpad.* or mouse.*) flips both axes as libinput reports. The end of
+// a scroll resets it (scrollStop).
 func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	if a.Vertical.Stop || a.Horizontal.Stop {
 		return false

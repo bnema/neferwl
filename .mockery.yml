@@ -31,6 +31,13 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/libinput:
+    interfaces:
+      deviceConfig:
+        config:
+          dir: internal/adapters/libinput
+          pkgname: libinput
+          filename: device_config_mock_test.go
   github.com/bnema/neferwl/internal/adapters/vulkan:
     interfaces:
       captureSync:

@@ -54,8 +54,17 @@ touchpad.tap = on
 # Pointer speed from -1 to 1; adaptive speeds up quick moves, flat does not.
 touchpad.accel-speed = 0
 touchpad.accel-profile = adaptive
+# left-handed = on swaps the left and right buttons.
+touchpad.left-handed = off
 # Two-finger scroll distance multiplier.
 touchpad.scroll-factor = 1
+
+# Mouse. natural-scroll = on moves the content with the wheel; speed and
+# profile work as for the touchpad.
+mouse.natural-scroll = off
+mouse.accel-speed = 0
+mouse.accel-profile = adaptive
+mouse.left-handed = off
 
 # Hide the pointer cursor after this long without motion (100ms to 1h, or
 # off); the next motion shows it.

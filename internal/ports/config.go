@@ -110,7 +110,8 @@ type Config struct {
 		LayoutRules
 		Outputs []OutputLayout
 	}
-	Touchpad TouchpadConfig
+	// InputDevicesConfig holds Touchpad and Mouse, promoted.
+	InputDevicesConfig
 	// Cursor.HideAfter hides the pointer cursor after this long without
 	// motion; the next motion shows it. 0 never hides it.
 	Cursor struct{ HideAfter time.Duration }
@@ -146,20 +147,35 @@ type Config struct {
 	}
 }
 
-// TouchpadConfig configures touchpads. NaturalScroll moves the content with
-// the fingers, for two-finger scroll and three-finger swipes. Tap clicks on
-// a tap: one finger left, two right, three middle. AccelSpeed (-1 to 1) and
-// AccelProfile (AccelAdaptive or AccelFlat) set the pointer speed;
-// ScrollFactor multiplies two-finger scroll.
-type TouchpadConfig struct {
+// PointerConfig holds the settings mice and touchpads share. NaturalScroll
+// moves the content with the fingers or the wheel instead of against them.
+// AccelSpeed (-1 to 1) and AccelProfile (AccelAdaptive or AccelFlat) set the
+// pointer speed. LeftHanded swaps the left and right buttons.
+type PointerConfig struct {
 	NaturalScroll bool
-	Tap           bool
 	AccelSpeed    float64
 	AccelProfile  string
-	ScrollFactor  float64
+	LeftHanded    bool
 }
 
-// Touchpad pointer acceleration profiles.
+// TouchpadConfig configures touchpads: the shared pointer settings
+// (NaturalScroll also applies to two-finger scroll and swipes), plus Tap,
+// which clicks on a tap (one finger left, two right, three middle), and
+// ScrollFactor, which multiplies two-finger scroll.
+type TouchpadConfig struct {
+	PointerConfig
+	Tap          bool
+	ScrollFactor float64
+}
+
+// InputDevicesConfig is the live configuration of the input devices, sent to
+// the input adapter as one value. It is comparable.
+type InputDevicesConfig struct {
+	Touchpad TouchpadConfig
+	Mouse    PointerConfig
+}
+
+// Pointer acceleration profiles, for mice and touchpads.
 const (
 	AccelAdaptive = "adaptive"
 	AccelFlat     = "flat"
