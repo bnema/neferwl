@@ -18,6 +18,14 @@ type trimMark struct {
 	at    time.Time
 }
 
+// TakeRedrawn returns the target pixels drawn since the last call and
+// resets the count.
+func (r *Renderer) TakeRedrawn() int {
+	n := r.redrawn
+	r.redrawn = 0
+	return n
+}
+
 // Trim frees the pool mappings, GPU copies and dmabuf imports not drawn
 // for idleTTL, and the objects of frames the GPU finished, without a new
 // frame. What the last frame drew stays: it is on screen and a redraw

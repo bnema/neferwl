@@ -74,6 +74,9 @@ type Renderer interface {
 	// finished frames held, without rendering. Outputs call it
 	// periodically: an idle output renders no frame to free them.
 	Trim(now time.Time) error
+	// TakeRedrawn returns the target pixels drawn since the last call
+	// (damage-limited frames count their damage only) and starts over.
+	TakeRedrawn() int
 	Close()
 }
 

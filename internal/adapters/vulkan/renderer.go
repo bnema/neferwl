@@ -72,7 +72,7 @@ type Renderer struct {
 	copied int
 	// marks date the frames for Trim's wall-clock eviction (trim.go).
 	marks []trimMark
-	// redrawn counts the target pixels drawn, for tests.
+	// redrawn counts the target pixels drawn (TakeRedrawn).
 	redrawn int
 	// cursors are the exported cursor images (CursorBuffers).
 	cursors [2]*cursorImage
