@@ -114,6 +114,7 @@ func (p origPlace) holdsStack(c Column) bool {
 // holds its former neighbors, else a column of its own at its former
 // index. It takes the focus.
 func (w *Workspace) restore(id WindowID, back *origPlace) {
+	w.dropStashOver()
 	w.floatFocus, w.stashFocus = false, false
 	w.raiseColumns()
 	if back == nil {
@@ -156,11 +157,25 @@ func (f Float) rehome() Float {
 }
 
 // ToggleStashVisible hides the stash, or shows it and gives it the
-// focus. Native floats stay as they are. It does nothing under a covering
-// fullscreen window (a game in scanout): hiding it would drop scanout and
-// VRR.
+// focus. Native floats stay as they are. Over a covering fullscreen
+// window it is a user override: the stash shows over it, which stays
+// fullscreen behind (composed, no scanout) and returns when the stash
+// hides. A stashed fullscreen window is the stash on screen: no-op.
 func (w *Workspace) ToggleStashVisible() {
-	if len(w.Stash) == 0 || w.cover() != 0 {
+	if len(w.Stash) == 0 {
+		return
+	}
+	if c := w.cover(); c != 0 {
+		if w.stashIndex(c) >= 0 {
+			return
+		}
+		if w.stashOverCover() {
+			w.dropStashOver()
+			return
+		}
+		// Not showStash: a pending stashed fullscreen must not replace
+		// the covering window.
+		w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = c, false, true, false
 		return
 	}
 	if w.stashHidden {
@@ -168,6 +183,21 @@ func (w *Workspace) ToggleStashVisible() {
 		return
 	}
 	w.stashHidden, w.stashFocus = true, false
+}
+
+// stashOverCover reports whether the stash shows over the covering
+// fullscreen window (ToggleStashVisible).
+func (w *Workspace) stashOverCover() bool {
+	return w.stashOver != 0 && w.stashOver == w.cover() && !w.stashHidden && len(w.Stash) > 0
+}
+
+// dropStashOver ends the stash override when the focus leaves it: the
+// stash hides again under the covering window, as it was.
+func (w *Workspace) dropStashOver() {
+	if w.stashOverCover() {
+		w.stashHidden, w.stashFocus = true, false
+	}
+	w.stashOver = 0
 }
 
 // Click focuses the clicked window. A click on a tile behind the shown
@@ -204,7 +234,7 @@ func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
 		switch {
 		case f.ID == cover:
 			p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
-		case w.stashHidden || cover != 0:
+		case w.stashHidden || cover != 0 && !w.stashOverCover():
 			p.Hidden = true
 		case i == w.stashAt:
 			p.Rect = center
