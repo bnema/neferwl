@@ -189,7 +189,9 @@ func (h *admissionHarness) accepted(t *testing.T, p pendingCapture) (ports.Captu
 		h.held = append(h.held, req)
 		return req, true
 	default:
-		if last != p.failed {
+		// A refused wlr frame fails at once; an ext frame waits for a
+		// retry (captureRetryFor) rather than ending the client's stream.
+		if last != p.failed && (!p.ext || last != 0) {
 			t.Fatalf("refused capture not failed: last event %d", last)
 		}
 		return ports.CaptureRequest{}, false
@@ -287,9 +289,12 @@ func TestExtCaptureAdmissionSaturation(t *testing.T) {
 	}
 	a.destroy(t, p)
 	h.waitInflight(t, maxCaptureInflight)
-	if _, ok := h.accepted(t, a.captureExt(t)); ok {
+	p = a.captureExt(t)
+	if _, ok := h.accepted(t, p); ok {
 		t.Fatal("cap exceeded after ext refill")
 	}
+	// A live refused frame would retry into the freed credit: drop it.
+	a.destroy(t, p)
 	h.complete(t, req, maxCaptureInflight-1)
 	for i, r := range reqs[1:] {
 		h.complete(t, r, maxCaptureInflight-2-i)

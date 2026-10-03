@@ -142,7 +142,7 @@ func (p *Pipeline) SubmitScoped(state ports.SecurityState, r ports.Renderer, req
 	}
 	var err error
 	if b == nil {
-		err = fmt.Errorf("capture pipeline full or stopped")
+		err = fmt.Errorf("%w: capture pipeline full or stopped", ports.ErrCaptureTransient)
 	} else if !p.captureAllowed(state) {
 		err = ErrSecurityState
 	} else {

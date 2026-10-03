@@ -17,3 +17,5 @@ fi
 systemctl --user --wait start neferwl.service
 systemctl --user start --job-mode=replace-irreversibly neferwl-shutdown.target
 systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NEFERWL_STATE
+# Portals keep the session variables they started with: stop them, even after a crash.
+systemctl --user --no-block stop 'xdg-desktop-portal*.service'

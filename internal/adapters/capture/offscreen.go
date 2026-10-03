@@ -41,7 +41,7 @@ var (
 	ErrOffscreenGeometry = errors.New("workspace capture geometry is unsupported")
 	// ErrOffscreenBusy fails a request while the child is still busy with
 	// another session or size, or has too many renders in flight.
-	ErrOffscreenBusy = errors.New("workspace capture is busy")
+	ErrOffscreenBusy = fmt.Errorf("%w: workspace capture is busy", ports.ErrCaptureTransient)
 )
 
 // fenceSlot is one child render whose GPU reads may not be finished: its sync
@@ -397,7 +397,9 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	k := 0
 	for _, q := range reqs {
 		if q.Region.Dx() != w || q.Region.Dy() != h {
-			Fail(p.ctx, q, fmt.Errorf("%w: region %v is not the whole %dx%d workspace frame", ErrOffscreenGeometry, q.Region, w, h), p.replies)
+			// A resize the request has not caught up with: transient, the
+			// next try uses the new size or new buffer constraints.
+			Fail(p.ctx, q, fmt.Errorf("%w: %w: region %v is not the whole %dx%d workspace frame", ports.ErrCaptureTransient, ErrOffscreenGeometry, q.Region, w, h), p.replies)
 			continue
 		}
 		q.Region = image.Rect(0, 0, w, h)

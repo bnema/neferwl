@@ -235,7 +235,11 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			slot := x.server.slotToken(r.Client())
 			// Its size comes with the commit, in WindowResized (afterCommit).
 			w.floating = w.floats()
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH})
+			var parent ports.WindowID
+			if w.parent != nil && w.parent.mapped {
+				parent = w.parent.id
+			}
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
@@ -245,6 +249,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 	}
 	t.OnDestroy = func() {
 		w.unmap()
+		x.server.foreignToplevelGone(w)
 		x.surface.dropQueue()
 		x.surface.current, x.surface.next.buffer = nil, nil
 		x.surface.next.attached = false
@@ -294,15 +299,32 @@ type top struct{ w *window }
 
 func (top) Destroy(*xdgshell.Toplevel) {}
 func (t top) SetParent(_ *xdgshell.Toplevel, parent *xdgshell.Toplevel) {
-	t.w.parent = nil
-	if parent == nil {
-		return
-	}
-	for _, w := range t.w.xdg.server.windows {
-		if w.toplevel != nil && w.toplevel.Resource == parent.Resource && w != t.w {
-			t.w.parent = w
+	var p *window
+	if parent != nil {
+		for _, w := range t.w.xdg.server.windows {
+			if w.toplevel != nil && w.toplevel.Resource == parent.Resource && w != t.w {
+				p = w
+			}
 		}
 	}
+	t.w.setParent(p)
+}
+
+// setParent changes the dialog parent; core follows it once mapped (the
+// map carries the parent of the first frame).
+func (w *window) setParent(p *window) {
+	if w.parent == p {
+		return
+	}
+	w.parent = p
+	if !w.mapped {
+		return
+	}
+	var id ports.WindowID
+	if p != nil && p.mapped {
+		id = p.id
+	}
+	w.xdg.server.emit(ports.WindowParent{ID: w.id, Parent: id})
 }
 func (t top) SetTitle(_ *xdgshell.Toplevel, title string) {
 	if title == t.w.title {

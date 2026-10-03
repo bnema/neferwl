@@ -1,8 +1,10 @@
 package wayland
 
 import (
+	"errors"
 	"image"
 	"math"
+	"time"
 
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
@@ -441,7 +443,19 @@ type captureExtFrame struct {
 	buf     *wayland.Buffer
 	used    bool
 	replyID uint64
+	// deadline ends the retries of a frame whose target is not ready yet.
+	deadline time.Time
 }
+
+// A frame whose target is briefly unavailable (not active yet, rendered off
+// screen by another session, its indicator or exclusion not on screen yet,
+// a renderer slot busy) is tried again rather than failed: failed(unknown)
+// ends the whole screencast in clients such as xdg-desktop-portal-wlr. Only
+// a stopped session, a refused client or a wrong buffer fail at once.
+const (
+	captureRetryEvery = 16 * time.Millisecond
+	captureRetryFor   = time.Second
+)
 
 func (*captureExtFrame) Destroy(*ext.ExtImageCopyCaptureFrameV1) {}
 func (f *captureExtFrame) AttachBuffer(_ *ext.ExtImageCopyCaptureFrameV1, b *wayland.Buffer) {
@@ -488,9 +502,34 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 		f.res.PostError(uint32(ext.ExtImageCopyCaptureFrameV1ErrorNoBuffer), "no buffer attached")
 		return
 	}
+	f.deadline = c.s.clock.Now().Add(captureRetryFor)
+	f.attempt()
+}
+
+// retry tries the frame again shortly, or fails it past its deadline.
+func (f *captureExtFrame) retry(why string) {
+	s := f.session.s
+	if !s.clock.Now().Before(f.deadline) {
+		s.log.Info().Uint64("session", f.session.id).Str("reason", why).Msg("capture frame failed after retries")
+		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
+		return
+	}
+	s.clock.AfterFunc(captureRetryEvery, func() { s.display.Do(f.attempt) })
+}
+
+// attempt serves the frame from the current target. Display goroutine only.
+func (f *captureExtFrame) attempt() {
+	if !f.res.Alive() {
+		return
+	}
+	c := f.session
+	if c.stopped || !c.s.mayCaptureFrame(f.res.Client()) {
+		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonStopped))
+		return
+	}
 	o, region, hidden, ok := c.geometry()
 	if !ok || c.haveState && !c.st.Active {
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
+		f.retry("target not ready")
 		return
 	}
 	tag, ok := c.tag(hidden)
@@ -501,11 +540,16 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 		return
 	case !ok:
 		// The exclusion is not confirmed by core yet: nothing is served.
-		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
+		f.retry("exclusion not confirmed")
 		return
 	}
 	f.replyID, ok = c.s.requestCapture(o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
-		if done.Err != nil {
+		switch {
+		case errors.Is(done.Err, ports.ErrCaptureTransient):
+			f.retry(done.Err.Error())
+			return
+		case done.Err != nil:
+			// Retrying cannot clear it (a bad buffer, an unsupported size).
 			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 			return
 		}
@@ -516,10 +560,14 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 		f.res.SendReady()
 	}, f.res.Resource, tag)
 	if !ok {
-		if !c.s.validCaptureBuffer(f.buf, region, buf.format) {
+		switch {
+		case !c.s.validCaptureBuffer(f.buf, region, buf.format):
 			f.constraintsFailed(region)
-		} else {
-			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
+		case !c.s.mayCaptureFrame(f.res.Client()):
+			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonStopped))
+		default:
+			// The renderer queue or the in-flight bound is full.
+			f.retry("capture queue full")
 		}
 	}
 }

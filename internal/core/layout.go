@@ -229,6 +229,9 @@ type Float struct {
 	// usable area, so it keeps its place on any output.
 	free   bool
 	cx, cy float64
+	// over is the parent of a dialog: while the parent covers the output
+	// fullscreen, the dialog shows over it and may take the focus.
+	over WindowID
 }
 
 func (w *Workspace) empty() bool {
@@ -315,6 +318,52 @@ func (w *Workspace) AddFloating(id WindowID, width, height int) {
 	w.floatFocus = true
 }
 
+// AddDialog is AddFloating for a dialog of parent: it shows, focused, over
+// its parent's fullscreen. A dialog follows a user action in its parent
+// (a portal request, a file chooser), so the user expects to see it.
+func (w *Workspace) AddDialog(id, parent WindowID, width, height int) {
+	if id == 0 || w.has(id) {
+		return
+	}
+	w.Floats = append(w.Floats, Float{ID: id, W: width, H: height, over: parent})
+	w.floatFocus = true
+}
+
+// SetDialogParent follows a dialog's parent after it mapped: a cleared or
+// changed parent ends its place over the old one's fullscreen.
+func (w *Workspace) SetDialogParent(id, parent WindowID) {
+	if i := w.floatIndex(id); i >= 0 {
+		w.Floats[i].over = parent
+		w.reconcileFloats()
+	}
+}
+
+// coverDialog reports whether f is a dialog of the covering fullscreen
+// window cover: the one float drawn over it.
+func (f Float) coverDialog(cover WindowID) bool {
+	return cover != 0 && f.over == cover && f.ID != cover
+}
+
+// coverDialog is the topmost dialog shown over the covering fullscreen
+// window when the floats have the focus, else 0. The floats it hides cannot
+// take the focus.
+func (w *Workspace) coverDialog() WindowID {
+	if !w.floatFocus {
+		return 0
+	}
+	cover := w.cover()
+	for i := len(w.Floats) - 1; i >= 0; i-- {
+		if f := w.Floats[i]; !f.below && f.coverDialog(cover) {
+			return f.ID
+		}
+	}
+	return 0
+}
+
+// coverDialogFocused reports whether a dialog over the covering fullscreen
+// window has the focus.
+func (w *Workspace) coverDialogFocused() bool { return w.coverDialog() != 0 }
+
 // ResizeFloating records the size a floating window draws. Core sizes a
 // free float: its reports only fill a missing size.
 func (w *Workspace) ResizeFloating(id WindowID, width, height int) {
@@ -340,8 +389,12 @@ func (w *Workspace) has(id WindowID) bool {
 }
 
 func (w *Workspace) Focused() (WindowID, bool) {
-	// Nothing else is drawn: the covering fullscreen window has the focus.
+	// Nothing else is drawn but its dialogs: the covering fullscreen window
+	// has the focus unless one of them took it.
 	if full := w.cover(); full != 0 {
+		if d := w.coverDialog(); d != 0 {
+			return d, true
+		}
 		return full, true
 	}
 	if w.floatFocus && len(w.Floats) > 0 && !w.Floats[len(w.Floats)-1].below {
@@ -545,6 +598,11 @@ func (w *Workspace) FocusID(id WindowID) bool {
 // fullscreen window it leaves fullscreen for the window there (leaveCover);
 // false means it stays, with no window on that side.
 func (w *Workspace) FocusColumn(dir int) bool {
+	if w.coverDialogFocused() {
+		// The first move goes back to the fullscreen window under it.
+		w.floatFocus = false
+		return true
+	}
 	if w.pinned() {
 		return w.leaveCover(func() { w.focusColumn(dir) })
 	}
@@ -604,6 +662,10 @@ func (w *Workspace) onScreenFocus() bool {
 // float; false means no window is available in that direction. From a
 // covering fullscreen window it leaves fullscreen for that window.
 func (w *Workspace) FocusWindow(dir int) bool {
+	if w.coverDialogFocused() {
+		w.floatFocus = false
+		return true
+	}
 	if w.pinned() {
 		return w.leaveCover(func() { w.focusWindow(dir) })
 	}
@@ -1147,6 +1209,11 @@ func (w *Workspace) focusCover() {
 	if c == 0 {
 		return
 	}
+	if d := w.coverDialog(); d != 0 {
+		// Its dialog is on screen with the focus: the action is on it.
+		w.FocusID(d)
+		return
+	}
 	if w.isFloat(c) {
 		w.FocusID(c)
 		return
@@ -1451,9 +1518,9 @@ func (w *Workspace) Layout() []Placement {
 			if order != group {
 				continue
 			}
-			// A covering fullscreen window hides every float, its own dialogs
-			// too: they show again when it leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover}
+			// A covering fullscreen window hides every float but its own
+			// dialogs: the others show again when it leaves fullscreen.
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !f.coverDialog(cover)}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)

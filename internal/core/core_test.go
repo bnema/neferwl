@@ -797,6 +797,49 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 	}
 }
 
+// A dialog of the fullscreen window (a portal dialog parented through
+// xdg-foreign) shows over it and takes the pointer at once.
+func TestDialogOverFullscreenHit(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Border.Width = 0
+	client := make(chan ports.ClientEvent, 8)
+	input := make(chan ports.InputEvent, 8)
+	output := make(chan ports.OutputEvent, 8)
+	commands := make(chan ports.ClientCommand, 64)
+	scenes := make(chan []ports.Scene, 1)
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Clock: steppingClock(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 1}
+	scene(t, scenes)
+	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	scene(t, scenes)
+	client <- ports.WindowMapped{ID: 2, Floating: true, Width: 20, Height: 10, Parent: 1}
+	s := scene(t, scenes)
+	shown := false
+	for _, w := range s.Windows {
+		if w.ID == 2 {
+			shown = !w.Hidden && w.Rect.W > 0
+		}
+	}
+	if !shown {
+		t.Fatalf("dialog not shown: %+v", s.Windows)
+	}
+	for len(commands) > 0 {
+		<-commands
+	}
+	input <- ports.PointerMotion{X: 50, Y: 40}
+	if v, ok := command(t, commands).(ports.PointerFocus); !ok || v.ID != 2 {
+		t.Fatalf("pointer went to %v, want the dialog", v)
+	}
+}
+
 // A window that asks for fullscreen as it maps (Wine at a remembered
 // monitor size) stays in its column: the windows it opens next are seen.
 // A later request is honoured.

@@ -1003,6 +1003,65 @@ func TestStashKeepsFocusAtEdges(t *testing.T) {
 	}
 }
 
+// Binds act on the dialog shown over a fullscreen window, not on the window:
+// close closes the dialog, a focus move goes back to the window and keeps it
+// fullscreen. A dialog of a window on another output opens there.
+func TestBindsOnDialogOverFullscreen(t *testing.T) {
+	for _, overflow := range []string{"scroll", "fixed"} {
+		t.Run(overflow, func(t *testing.T) {
+			r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = overflow }, left, right)
+			r.key(t, "Left", ports.ModAlt|ports.ModCtrl) // DP-1
+			r.mapWindow(t, 1)
+			r.mapWindow(t, 2)
+			r.key(t, "Left", ports.ModAlt)
+			r.key(t, "f", ports.ModAlt|ports.ModShift) // 1 fullscreen
+			r.client <- ports.WindowMapped{ID: 9, Floating: true, Width: 10, Height: 10, Parent: 1}
+			receive(t, r.scenes)
+			st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID == 9 })
+			if st.Window.ID != 9 {
+				t.Fatalf("focus %+v, want the dialog", st.Window)
+			}
+			for len(r.commands) > 0 {
+				<-r.commands
+			}
+			r.input <- ports.KeyEvent{Keysym: "q", Mods: ports.ModAlt, Pressed: true}
+			r.input <- ports.KeyEvent{Keysym: "q", Mods: ports.ModAlt}
+			for {
+				if v, ok := receive(t, r.commands).(ports.CloseWindow); ok {
+					if v.ID != 9 {
+						t.Fatalf("closed %d, want the dialog", v.ID)
+					}
+					break
+				}
+			}
+			scenes := r.key(t, "Right", ports.ModAlt)
+			st = stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID != 9 })
+			if st.Window.ID != 1 {
+				t.Fatalf("focus %+v, want the fullscreen window", st.Window)
+			}
+			for _, s := range scenes {
+				for _, w := range s.Windows {
+					if s.Output == "DP-1" && w.ID == 1 && !w.Fullscreen {
+						t.Fatalf("window 1 left fullscreen: %+v", w)
+					}
+				}
+			}
+			// A dialog of the window on DP-1 opens on DP-1 while DP-2 has the focus.
+			r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+			r.client <- ports.WindowMapped{ID: 10, Floating: true, Width: 10, Height: 10, Parent: 1}
+			for {
+				seen := shown(receive(t, r.scenes))
+				if slices.Contains(seen["DP-2"], 10) {
+					t.Fatalf("dialog on the focused output: %v", seen)
+				}
+				if slices.Contains(seen["DP-1"], 10) {
+					break
+				}
+			}
+		})
+	}
+}
+
 // A focused native dialog: focus-column first leaves the dialog for the
 // tiles below, it does not hop to the neighbor monitor.
 func TestDialogFocusStaysOnMonitor(t *testing.T) {

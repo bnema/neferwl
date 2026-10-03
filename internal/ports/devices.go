@@ -2,6 +2,7 @@ package ports
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"os"
 	"time"
@@ -12,8 +13,13 @@ import (
 // at least this capacity, so an output never blocks on a reply.
 const MaxCaptureInflight = 32
 
+// ErrCaptureTransient marks a capture failure that may clear on its own (the
+// renderer busy, the indicator or an exclusion not shown yet): a protocol
+// frame tries again shortly instead of failing. Test with errors.Is.
+var ErrCaptureTransient = errors.New("capture: transient")
+
 // ErrCaptureBusy: every capture slot of the renderer is leased.
-var ErrCaptureBusy = errors.New("capture: no free slot")
+var ErrCaptureBusy = fmt.Errorf("%w: no free slot", ErrCaptureTransient)
 
 // CaptureFrame is a lease on one renderer readback slot holding a GPU
 // copy of a rendered frame. Done and Read make no Vulkan call: a worker

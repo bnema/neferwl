@@ -170,10 +170,12 @@ type Server struct {
 	readinessGeneration uint64
 	lastFlip            map[string]time.Time
 	// tokens are the issued xdg-activation tokens (activation.go).
-	tokens   map[string]activationToken
-	surfaces map[*server.Resource]*surface
-	buffers  map[*server.Resource]clientBuffer
-	dmabuf   *dmabufGlobal
+	tokens map[string]activationToken
+	// foreignExports are the live xdg-foreign handles (foreign.go).
+	foreignExports map[string]*foreignExport
+	surfaces       map[*server.Resource]*surface
+	buffers        map[*server.Resource]clientBuffer
+	dmabuf         *dmabufGlobal
 	// hdrOutputs records confirmed DRM modesets; absent outputs are SDR.
 	hdrOutputs        map[string]ports.OutputHDR
 	colorID           uint64
@@ -391,6 +393,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.colorOutputs = map[*colorOutput]struct{}{}
 	s.colorFeedbacks = map[*colorFeedback]struct{}{}
 	s.tokens = map[string]activationToken{}
+	s.foreignExports = map[string]*foreignExport{}
 	if opts.Keymap != "" {
 		fd, size, e := keymapFile(opts.Keymap)
 		if e != nil {
