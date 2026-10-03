@@ -16,6 +16,10 @@ type WindowMapped struct {
 	// size, Width×Height logical (0 when unknown).
 	Floating      bool
 	Width, Height int
+	// Parent is the window a dialog belongs to (xdg_toplevel.set_parent or
+	// xdg-foreign), 0 when none. A dialog of a fullscreen window shows over
+	// it.
+	Parent WindowID
 }
 
 // SlotEnv is the environment variable neferwl sets on processes it spawns
@@ -137,6 +141,14 @@ type WindowAppID struct {
 }
 
 func (WindowAppID) clientEvent() {}
+
+// WindowParent carries the new parent of a mapped dialog (0: none), after
+// set_parent or an xdg-foreign import changed or ended the relationship.
+type WindowParent struct {
+	ID, Parent WindowID
+}
+
+func (WindowParent) clientEvent() {}
 
 // WindowResized carries wayland → core the new size of a floating window.
 type WindowResized struct {

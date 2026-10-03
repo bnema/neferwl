@@ -1041,6 +1041,10 @@ func (c *Core) Run(ctx context.Context) error {
 				continue
 			case ports.WindowAppID:
 				c.windows.setAppID(v.ID, v.AppID)
+			case ports.WindowParent:
+				if _, w := c.screenOf(v.ID); w != nil {
+					w.SetDialogParent(v.ID, v.Parent)
+				}
 			case ports.WindowUnmapped:
 				if c.popups[v.ID] != nil {
 					if err := c.dropPopup(ctx, v.ID); err != nil {

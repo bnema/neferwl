@@ -47,6 +47,7 @@ import (
 	wire_wlroutputpower "github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	wire_wlrscreencopy "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	wire_xdgactivation "github.com/bnema/go-wayland-bindings/server/xdgactivation"
+	wire_xdgforeign "github.com/bnema/go-wayland-bindings/server/xdgforeign"
 	wire_xdgoutput "github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	wire_xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
 	wire_imagecapture "github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
@@ -189,6 +190,10 @@ var wireSchemas = map[string]wireSchema{
 	"wp_viewporter":                                        {wire_viewporter.WpViewporterInterface, &client_viewporter.WpViewporter{}, map[uint16]bool{0: true}, nil},
 	"xdg_activation_token_v1":                              {wire_xdgactivation.ActivationTokenV1Interface, &client_xdgactivation.XdgActivationToken{}, map[uint16]bool{4: true}, nil},
 	"xdg_activation_v1":                                    {wire_xdgactivation.ActivationV1Interface, &client_xdgactivation.XdgActivation{}, map[uint16]bool{0: true}, nil},
+	"zxdg_exporter_v2":                                     {wire_xdgforeign.ZxdgExporterV2Interface, nil, map[uint16]bool{0: true}, nil},
+	"zxdg_importer_v2":                                     {wire_xdgforeign.ZxdgImporterV2Interface, nil, map[uint16]bool{0: true}, nil},
+	"zxdg_exported_v2":                                     {wire_xdgforeign.ZxdgExportedV2Interface, nil, map[uint16]bool{0: true}, nil},
+	"zxdg_imported_v2":                                     {wire_xdgforeign.ZxdgImportedV2Interface, nil, map[uint16]bool{0: true}, nil},
 	"xdg_popup":                                            {wire_xdgshell.PopupInterface, &client_xdgshell.XdgPopup{}, map[uint16]bool{0: true}, nil},
 	"xdg_positioner":                                       {wire_xdgshell.PositionerInterface, &client_xdgshell.XdgPositioner{}, map[uint16]bool{0: true}, nil},
 	"xdg_surface":                                          {wire_xdgshell.SurfaceInterface, &client_xdgshell.XdgSurface{}, map[uint16]bool{0: true}, nil},

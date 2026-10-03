@@ -73,9 +73,16 @@ func (p *spawnPlacement) expireTerminals(now time.Time) {
 // Untagged windows return before any map lookup or allocation.
 func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 	if v.Floating {
-		if s, _ := c.screenOf(v.ID); s == nil {
-			c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
+		if s, _ := c.screenOf(v.ID); s != nil {
+			return
 		}
+		// A dialog opens on its parent's workspace, over it, fullscreen too.
+		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
+			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
+			ps.mon.normalize()
+			return
+		}
+		c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
 		return
 	}
 	if v.Slot != "" {
