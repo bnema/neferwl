@@ -205,8 +205,9 @@ type Options struct {
 	Active    <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
 	// read, before core sees the event: the output under the pointer and
-	// the physical position on it.
-	MoveCursor func(output string, x, y float64)
+	// the physical position on it. motion is false when the pointer is only
+	// placed again after a layout or constraint change.
+	MoveCursor func(output string, x, y float64, motion bool)
 	Log        zerowrap.Logger
 	// LogMotion logs every pointer motion (--debug=input-motion); motions
 	// are otherwise only counted in the input stats.
@@ -244,7 +245,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		return fmt.Errorf("libinput_udev_assign_seat %s failed", name)
 	}
 	p := newPointer(opts.Layout)
-	p.moved(opts.MoveCursor)
+	p.moved(opts.MoveCursor, false)
 	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}}
 	defer in.release()
 	fd := getFD(li)
@@ -278,10 +279,10 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 			opts.Log.Info().Msg("keymap replaced")
 		case l := <-opts.Layouts:
 			p.setLayout(l)
-			p.moved(opts.MoveCursor)
+			p.moved(opts.MoveCursor, false)
 		case c := <-opts.Constraints:
 			p.constrain(c)
-			p.moved(opts.MoveCursor)
+			p.moved(opts.MoveCursor, false)
 		case t := <-opts.Touchpads:
 			in.touchpad = t
 			for dev := range in.devices {
@@ -484,7 +485,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
 		m.TimeUsec = pointerUsec(pe)
 		m.TimeMsec = msec(m.TimeUsec)
-		p.moved(opts.MoveCursor)
+		p.moved(opts.MoveCursor, true)
 		if opts.LogMotion {
 			log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
 		}
@@ -498,7 +499,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 			return ports.PointerMotion{X: p.x, Y: p.y, TimeMsec: now}, nil
 		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
-		p.moved(opts.MoveCursor)
+		p.moved(opts.MoveCursor, true)
 		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
 	case evPointerButton:
 		pe := pointerEvent(ev)
@@ -683,9 +684,10 @@ func (p *pointer) bounds() ports.Rect {
 	return r
 }
 
-// moved reports the physical position on the output under the pointer.
-func (p *pointer) moved(move func(output string, x, y float64)) {
+// moved reports the physical position on the output under the pointer;
+// motion tells the device moved it.
+func (p *pointer) moved(move func(output string, x, y float64, motion bool), motion bool) {
 	if o, ok := p.layout.At(p.x, p.y); ok && move != nil {
-		move(o.Info.Name, (p.x-float64(o.X))*o.Scale, (p.y-float64(o.Y))*o.Scale)
+		move(o.Info.Name, (p.x-float64(o.X))*o.Scale, (p.y-float64(o.Y))*o.Scale, motion)
 	}
 }

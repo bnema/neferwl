@@ -111,7 +111,10 @@ type Config struct {
 		Outputs []OutputLayout
 	}
 	Touchpad TouchpadConfig
-	Focus    struct {
+	// Cursor.HideAfter hides the pointer cursor after this long without
+	// motion; the next motion shows it. 0 never hides it.
+	Cursor struct{ HideAfter time.Duration }
+	Focus  struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool

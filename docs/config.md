@@ -38,6 +38,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `touchpad.accel-speed` | `0` | Touchpad pointer speed, from `-1` (slowest) to `1` (fastest) |
 | `touchpad.accel-profile` | `adaptive` | `adaptive`: faster finger moves go further; `flat`: constant speed |
 | `touchpad.scroll-factor` | `1` | Multiplies two-finger scroll distance, above `0` up to `10` |
+| `cursor.hide-after` | `5s` | Hides the pointer cursor after this long without motion; the next motion shows it. 100ms to 1h, or `off` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, the overview and a window focused as it opens |
 | `focus.effect` | `screen` | What the focus indicator draws: `screen` brightens the window slightly, visible on black too. HDR (PQ) client content is not brightened on HDR outputs |
