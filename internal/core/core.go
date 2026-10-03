@@ -582,10 +582,13 @@ func (c *Core) publish(ctx context.Context) error {
 				}
 			}
 			scene.Windows = append(scene.Windows, sw)
-			t := configureTarget{output: sc.name(), area: frame, focused: focused}
+			t := configureTarget{output: sc.name(), area: frame, focused: focused, captured: capture != nil && capture.window == p.ID}
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
 				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+			} else if t.captured && p.Hidden {
+				// A captured hidden window is sized like its capture.
+				t.client = capture.windowSz
 			} else if p.Preview > 0 && !p.Hidden {
 				if rp, ok := real[p.ID]; ok && !rp.Hidden {
 					t.realTiled = !rp.Floating
@@ -602,8 +605,13 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scene.CaptureIndicators = c.captureIndicators(sc)
-		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil && capture.hiddenScr == sc {
-			scene.CaptureScene = c.captureScene(scene.Seq)
+		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil {
+			switch sc {
+			case capture.hiddenScr:
+				scene.CaptureScene = c.captureScene(scene.Seq)
+			case capture.windowScr:
+				scene.CaptureScene = c.captureWindowScene(capture, scene.Seq)
+			}
 		}
 		scenes = append(scenes, scene)
 	}

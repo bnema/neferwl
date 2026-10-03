@@ -57,6 +57,7 @@ func (s *captureState) idle() bool {
 type capTarget struct {
 	output    string
 	workspace uint64
+	window    WindowID
 	rect      Rect // output-local logical; zero is the whole output or frame
 }
 
@@ -70,7 +71,7 @@ type capSession struct {
 }
 
 func (s *capSession) target() capTarget {
-	return capTarget{output: s.open.Output, workspace: s.open.Workspace, rect: s.open.Region}
+	return capTarget{output: s.open.Output, workspace: s.open.Workspace, window: s.open.Window, rect: s.open.Region}
 }
 
 // capExclusion is the one live exclusion.
@@ -108,9 +109,17 @@ type capView struct {
 	hidden    *Workspace // captured off screen, nil when none
 	hiddenScr *screen
 	hiddenID  uint64
+	// window is the window rendered off screen for a session, 0 when none.
+	// One target at most, a workspace or a window, is rendered off screen.
+	window    WindowID
+	windowScr *screen
+	windowSz  Rect // its client size, logical, at the origin
 	excluded  []WindowID
 	exclusion *capExclusion
 }
+
+// offscreen reports whether the view renders a target off screen.
+func (v *capView) offscreen() bool { return v.hiddenID != 0 || v.window != 0 }
 
 // capResolved is a target located on the current screens.
 type capResolved struct {
@@ -118,11 +127,26 @@ type capResolved struct {
 	ws     *Workspace
 	rect   Rect // clipped, output-local logical
 	hidden bool
+	// size is a window's client size at the origin; visible tells whether
+	// the window is on screen, at rect.
+	size    Rect
+	visible bool
 }
 
 // capResolve locates a target. A zero reason is success.
 func (c *Core) capResolve(t capTarget) (capResolved, ports.CaptureReason) {
 	var r capResolved
+	if t.window != 0 {
+		sc, w := c.screenOf(t.window)
+		if w == nil || sc.name() == "" {
+			return r, ports.CaptureReasonWindowGone
+		}
+		r.sc, r.ws, r.hidden, r.size = sc, w, true, c.windowSize(w, t.window)
+		if vs, vr, ok := c.windowRect(t.window); ok && vs == sc {
+			r.rect, r.visible = vr, true
+		}
+		return r, ports.CaptureReasonNone
+	}
 	if t.workspace != 0 {
 		sc, w := c.workspaceByID(t.workspace)
 		if w == nil || sc.name() == "" {
@@ -335,12 +359,21 @@ func (c *Core) captureEvaluate(ctx context.Context) (*capView, error) {
 	for i, s := range c.capt.sessions {
 		st := ports.CaptureSessionState{ID: s.open.ID}
 		r, reason := c.capResolve(s.target())
-		if reason == ports.CaptureReasonNone {
+		switch {
+		case reason != ports.CaptureReasonNone:
+		case s.open.Window != 0:
+			// A window is always rendered off screen, alone at its size.
+			st.Output, st.Rect, st.Hidden = r.sc.name(), r.size, true
+			if !v.offscreen() && r.size.W > 0 && r.size.H > 0 {
+				v.window, v.windowScr, v.windowSz = s.open.Window, r.sc, r.size
+			}
+			st.Active = v.window == s.open.Window
+		default:
 			st.Output, st.Rect, st.Workspace, st.Hidden = r.sc.name(), r.rect, s.open.Workspace, r.hidden
-			if r.hidden && v.hiddenID == 0 {
+			if r.hidden && !v.offscreen() {
 				v.hidden, v.hiddenScr, v.hiddenID = r.ws, r.sc, s.open.Workspace
 			}
-			// One hidden workspace is rendered at a time.
+			// One target is rendered off screen at a time.
 			st.Active = !r.hidden || v.hiddenID == s.open.Workspace
 		}
 		st.Reason = reason
@@ -443,10 +476,13 @@ func (c *Core) captureSceneFor(sc *screen, v *capView) *ports.SceneCapture {
 	if v.hiddenScr == sc {
 		want.Workspace = v.hiddenID
 	}
+	if v.windowScr == sc {
+		want.Window = v.window
+	}
 	// The scene is read by the output owner and never changed: the last one
 	// is shared while it says the same.
 	if p := sc.capScene; p != nil && p.Shown == want.Shown && p.Session == want.Session && p.Revision == want.Revision &&
-		p.Workspace == want.Workspace && slices.Equal(p.Excluded, want.Excluded) {
+		p.Workspace == want.Workspace && p.Window == want.Window && slices.Equal(p.Excluded, want.Excluded) {
 		return p
 	}
 	shared := want

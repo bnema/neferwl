@@ -17,6 +17,7 @@ import (
 	wire_cursorshape "github.com/bnema/go-wayland-bindings/server/cursorshape"
 	wire_drmlease "github.com/bnema/go-wayland-bindings/server/drmlease"
 	wire_extdatacontrol "github.com/bnema/go-wayland-bindings/server/extdatacontrol"
+	wire_extforeigntoplevellist "github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
 	wire_extidlenotify "github.com/bnema/go-wayland-bindings/server/extidlenotify"
 	wire_extimagecapturesource "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 	wire_extimagecopycapture "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
@@ -62,6 +63,7 @@ import (
 	client_datacontrol "github.com/bnema/wlturbo/protocol/datacontrol"
 	client_drmlease "github.com/bnema/wlturbo/protocol/drmlease"
 	client_drmsyncobj "github.com/bnema/wlturbo/protocol/drmsyncobj"
+	client_extforeigntoplevel "github.com/bnema/wlturbo/protocol/extforeigntoplevel"
 	client_extsessionlock "github.com/bnema/wlturbo/protocol/extsessionlock"
 	client_fifo "github.com/bnema/wlturbo/protocol/fifo"
 	client_foreigntoplevel "github.com/bnema/wlturbo/protocol/foreigntoplevel"
@@ -106,6 +108,8 @@ var wireSchemas = map[string]wireSchema{
 	"ext_data_control_manager_v1":                          {wire_extdatacontrol.ExtDataControlManagerV1Interface, &client_datacontrol.ExtDataControlManager{}, map[uint16]bool{2: true}, nil},
 	"ext_data_control_offer_v1":                            {wire_extdatacontrol.ExtDataControlOfferV1Interface, &client_datacontrol.ExtDataControlOffer{}, map[uint16]bool{1: true}, nil},
 	"ext_data_control_source_v1":                           {wire_extdatacontrol.ExtDataControlSourceV1Interface, &client_datacontrol.ExtDataControlSource{}, map[uint16]bool{1: true}, nil},
+	"ext_foreign_toplevel_list_v1":                         {wire_extforeigntoplevellist.ExtForeignToplevelListV1Interface, &client_extforeigntoplevel.ExtForeignToplevelList{}, map[uint16]bool{1: true}, map[uint16]bool{1: true}},
+	"ext_foreign_toplevel_handle_v1":                       {wire_extforeigntoplevellist.ExtForeignToplevelHandleV1Interface, &client_extforeigntoplevel.ExtForeignToplevelHandle{}, map[uint16]bool{0: true}, nil},
 	"ext_foreign_toplevel_image_capture_source_manager_v1": {wire_extimagecapturesource.ExtForeignToplevelImageCaptureSourceManagerV1Interface, &client_imagecapturesource.ExtForeignToplevelImageCaptureSourceManager{}, map[uint16]bool{1: true}, nil},
 	"ext_idle_notification_v1":                             {wire_extidlenotify.ExtIdleNotificationV1Interface, &client_idlenotify.ExtIdleNotification{}, map[uint16]bool{0: true}, nil},
 	"ext_idle_notifier_v1":                                 {wire_extidlenotify.ExtIdleNotifierV1Interface, &client_idlenotify.ExtIdleNotifier{}, map[uint16]bool{0: true}, nil},

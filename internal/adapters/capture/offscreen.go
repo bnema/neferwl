@@ -14,9 +14,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Offscreen capture: a session of a workspace that is not on screen is drawn
-// by a dedicated child renderer from Scene.CaptureScene, only for requests
-// of that workspace and never shown. The child is a separate renderer instance: it has
+// Offscreen capture: a session of a workspace that is not on screen, or of a
+// window (always), is drawn by a dedicated child renderer from
+// Scene.CaptureScene, only for requests of that target and never shown. The child is a separate renderer instance: it has
 // its own Vulkan device, so its fences are not ordered against the display's.
 // It is created on the first request of the workspace and closed when the
 // scene stops carrying CaptureScene (once idle), when the workspace or the frame
@@ -63,13 +63,19 @@ func (s *fenceSlot) release() {
 	clear(s.ceil)
 }
 
+// offTarget is what the child draws: a hidden workspace or a window.
+type offTarget struct {
+	workspace uint64
+	window    ports.WindowID
+}
+
 // offscreen is owned by the goroutine of its Pipeline.
 type offscreen struct {
-	factory   func(w, h int) (ports.Renderer, error)
-	r         ports.Renderer
-	p         *Pipeline // leases of r
-	w, h      int
-	workspace uint64
+	factory func(w, h int) (ports.Renderer, error)
+	r       ports.Renderer
+	p       *Pipeline // leases of r
+	w, h    int
+	target  offTarget
 	// slots[:nf] are the unfinished child renders, oldest first.
 	slots [maxChildFences]fenceSlot
 	nf    int
@@ -292,7 +298,7 @@ func (o *offscreen) close() {
 	for i := range o.slots {
 		o.slots[i].release()
 	}
-	o.nf, o.w, o.h, o.workspace = 0, 0, 0, 0
+	o.nf, o.w, o.h, o.target = 0, 0, 0, offTarget{}
 }
 
 // childSize is the physical child image: the workspace frame at the scene
@@ -350,7 +356,7 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 	case s.Off:
 		fail(errors.New("output off"), reqs)
 		return
-	case s.CaptureScene == nil || s.Capture == nil || s.Capture.Workspace == 0:
+	case s.CaptureScene == nil || s.Capture == nil || s.Capture.Workspace == 0 && s.Capture.Window == 0:
 		fail(ErrOffscreenUnavailable, reqs)
 		return
 	case o == nil || o.factory == nil:
@@ -366,7 +372,8 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 		fail(err, reqs)
 		return
 	}
-	if o.r != nil && (o.workspace != s.Capture.Workspace || o.w != w || o.h != h) {
+	target := offTarget{workspace: s.Capture.Workspace, window: s.Capture.Window}
+	if o.r != nil && (o.target != target || o.w != w || o.h != h) {
 		if o.busy() {
 			fail(ErrOffscreenBusy, reqs)
 			return
@@ -385,7 +392,7 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 			fail(fmt.Errorf("%w: %v", ErrOffscreenUnavailable, err), reqs)
 			return
 		}
-		o.r, o.p, o.w, o.h, o.workspace = r, NewPipeline(p.ctx, p.replies), w, h, s.Capture.Workspace
+		o.r, o.p, o.w, o.h, o.target = r, NewPipeline(p.ctx, p.replies), w, h, target
 		o.p.Security = p.Security
 	}
 	// Request regions are physical pixels of the output, and the scene does

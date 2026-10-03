@@ -24,8 +24,9 @@ var ErrSessionInactive = fmt.Errorf("%w: capture exclusion is not active", ports
 var ErrSessionStale = fmt.Errorf("%w: capture exclusion scene is older than the request", ports.ErrCaptureTransient)
 
 // ErrWorkspaceMoved fails a workspace request whose workspace is neither on
-// screen nor the one rendered off screen in the scene: it moved, went away,
-// or the scene predates the session.
+// screen nor the one rendered off screen in the scene, or a window request
+// whose window is not the one rendered off screen: it moved, went away, or
+// the scene predates the session.
 var ErrWorkspaceMoved = fmt.Errorf("%w: captured workspace is not where the request expected", ports.ErrCaptureTransient)
 
 // excluder derives the scene of Exclude captures: the frame without the
@@ -150,6 +151,8 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 		case q.Exclude && s.Capture.Revision < q.CaptureRevision:
 			err = ErrSessionStale
 		case q.Workspace != 0 && (s.Capture == nil || q.OffScreen && q.Workspace != s.Capture.Workspace || !q.OffScreen && q.Workspace != s.Capture.Shown):
+			err = ErrWorkspaceMoved
+		case q.Window != 0 && (s.Capture == nil || !q.OffScreen || q.Window != s.Capture.Window):
 			err = ErrWorkspaceMoved
 		}
 		if err != nil {

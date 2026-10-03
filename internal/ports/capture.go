@@ -45,6 +45,7 @@ const (
 	CaptureReasonOutputGone    CaptureReason = "output-gone"
 	CaptureReasonWorkspaceGone CaptureReason = "workspace-gone"
 	CaptureReasonInvalidRegion CaptureReason = "invalid-region" // nothing of the region is left on the output
+	CaptureReasonWindowGone    CaptureReason = "window-gone"
 	// TooManyExcluded: the attached layers and their popups exceed
 	// MaxCaptureExcluded; a capture could not leave them all out (fail closed).
 	CaptureReasonTooManyExcluded CaptureReason = "too-many-excluded"
@@ -57,11 +58,14 @@ func (r CaptureReason) Terminal() bool { return r != CaptureReasonNone }
 // session. Its target is an output (Workspace 0), whole when Region is zero,
 // else the part of it in Region (output-local logical pixels, clipped), or a
 // workspace (ID of WorkspaceInfo.ID): its frame, on whichever output owns it
-// now. ID is chosen by wayland and unique for the process lifetime.
+// now, or a window (Window not 0): its client area at its own size, wherever
+// it is and whether or not it is on screen, always rendered off screen. ID is
+// chosen by wayland and unique for the process lifetime.
 type CaptureSessionOpen struct {
 	ID        uint64
 	Output    string
 	Workspace uint64
+	Window    WindowID
 	Region    Rect
 }
 
@@ -85,6 +89,7 @@ type CaptureFrameTaken struct {
 	Session   uint64
 	Output    string
 	Workspace uint64
+	Window    WindowID
 	Region    Rect
 }
 
@@ -167,13 +172,16 @@ func (CaptureSessionState) clientCommand() {}
 // workspace CaptureScene draws, 0 when there is none on this output. Shown is
 // the ID of the workspace this scene draws as itself (0 in the overview): a
 // request for a workspace is served only when it is Shown here, or is the
-// hidden Workspace; else it fails, whatever wayland last believed.
+// hidden Workspace; else it fails, whatever wayland last believed. Window is
+// the window CaptureScene draws instead, alone at its client size, 0 when
+// none: one of Workspace and Window at most is set.
 type SceneCapture struct {
 	Shown     uint64
 	Session   uint64
 	Excluded  []WindowID
 	Revision  uint64
 	Workspace uint64
+	Window    WindowID
 }
 
 // CaptureIndicator carries core → renderer one mark of a capture on an

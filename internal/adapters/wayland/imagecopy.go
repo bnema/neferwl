@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/extforeigntoplevellist"
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	extworkspace "github.com/bnema/go-wayland-bindings/server/extworkspace"
@@ -28,6 +29,7 @@ const (
 	srcOutput                      // a whole output
 	srcRegion                      // a logical rectangle of an output
 	srcWorkspace                   // a workspace frame
+	srcWindow                      // a toplevel, at its own size
 )
 
 // captureSource is the state behind one ext_image_capture_source_v1.
@@ -36,6 +38,8 @@ type captureSource struct {
 	output    *output
 	region    image.Rectangle // output-local logical, srcRegion
 	workspace uint64
+	window    ports.WindowID // srcWindow
+	gen       uint32         // srcWindow: its mapping; a remap kills the source
 }
 
 func registerImageCopy(d *server.Display, s *Server) error {
@@ -46,6 +50,11 @@ func registerImageCopy(d *server.Display, s *Server) error {
 	}
 	if err := imagecapture.NewNeferwlImageCaptureSourceManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
 		_, _ = imagecapture.NewNeferwlImageCaptureSourceManagerV1(c, int32(v), id, extraSources{s})
+	}); err != nil {
+		return err
+	}
+	if err := source.NewExtForeignToplevelImageCaptureSourceManagerV1Global(d, 1, func(c server.Client, v, id uint32) {
+		_, _ = source.NewExtForeignToplevelImageCaptureSourceManagerV1(c, int32(v), id, toplevelCaptureSource{s})
 	}); err != nil {
 		return err
 	}
@@ -77,6 +86,33 @@ func (m outputCaptureSource) CreateSource(r *source.ExtOutputImageCaptureSourceM
 		src = &captureSource{kind: srcOutput, output: o}
 	}
 	m.s.newSource(r.Client(), id, src)
+}
+
+// toplevelCaptureSource makes the source of an ext-foreign-toplevel-list
+// handle: that window. A closed or unknown handle gives a dead source.
+type toplevelCaptureSource struct{ s *Server }
+
+func (toplevelCaptureSource) Destroy(*source.ExtForeignToplevelImageCaptureSourceManagerV1) {}
+func (m toplevelCaptureSource) CreateSource(r *source.ExtForeignToplevelImageCaptureSourceManagerV1, id uint32, h *extforeigntoplevellist.ExtForeignToplevelHandleV1) {
+	src := &captureSource{kind: srcDead}
+	if h != nil {
+		if wid, gen, ok := m.s.extHandleWindow(h.Resource); ok {
+			src = &captureSource{kind: srcWindow, window: wid, gen: gen}
+		}
+	}
+	m.s.newSource(r.Client(), id, src)
+}
+
+// windowCaptureGone stops the sessions of a window that unmapped or closed.
+func (s *Server) windowCaptureGone(id ports.WindowID) {
+	for c := range s.captureSessions {
+		if c.src != nil && c.src.kind == srcWindow && c.src.window == id {
+			if c.id != 0 {
+				s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonWindowGone)).Msg("capture session end")
+			}
+			c.end(true, true)
+		}
+	}
 }
 
 type extraSources struct{ s *Server }
@@ -172,6 +208,8 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 		open.Output, open.Region = cs.output.name(), ports.Rect{X: cs.region.Min.X, Y: cs.region.Min.Y, W: cs.region.Dx(), H: cs.region.Dy()}
 	case srcWorkspace:
 		open.Workspace = cs.workspace
+	case srcWindow:
+		open.Window = cs.window
 	}
 	s.emit(open)
 	state.sendConstraints()
@@ -297,6 +335,31 @@ func (c *captureSession) geometry() (o *output, rect image.Rectangle, hidden, ok
 		}
 		rect = captureRegion(o, image.Rect(frame.X, frame.Y, frame.X+frame.W, frame.Y+frame.H))
 		return o, rect, false, !rect.Empty()
+	case srcWindow:
+		// Core's state gives the size; before it, the last configure.
+		w := c.s.windows[src.window]
+		if w == nil || !w.mapped || w.toplevel == nil || w.gen != src.gen {
+			return nil, image.Rectangle{}, false, false
+		}
+		name, size := w.last.Output, ports.Rect{W: w.last.Width, H: w.last.Height}
+		if c.haveState && c.st.Reason == ports.CaptureReasonNone {
+			name, size = c.st.Output, c.st.Rect
+		}
+		if size.W <= 0 || size.H <= 0 {
+			if gw, gh := w.size(); gw > 0 && gh > 0 {
+				size = ports.Rect{W: gw, H: gh}
+			}
+		}
+		o = c.s.outputByNameExact(name)
+		if o == nil || size.W <= 0 || size.H <= 0 {
+			return nil, image.Rectangle{}, false, false
+		}
+		scale := o.place.Scale
+		if scale <= 0 {
+			scale = 1
+		}
+		// The size of the off-screen child image (capture.childSize).
+		return o, image.Rect(0, 0, int(math.Ceil(float64(size.W)*scale)), int(math.Ceil(float64(size.H)*scale))), true, true
 	}
 	return nil, image.Rectangle{}, false, false
 }
@@ -331,7 +394,7 @@ func (c *captureSession) refresh() {
 	}
 	_, rect, _, ok := c.geometry()
 	switch {
-	case !ok && c.src.kind != srcWorkspace:
+	case !ok && c.src.kind != srcWorkspace && c.src.kind != srcWindow:
 		c.s.log.Info().Uint64("session", c.id).Msg("capture session end: target empty")
 		c.end(true, true)
 	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.sent:
@@ -395,8 +458,11 @@ func (s *Server) captureState(st ports.CaptureSessionState) {
 // HUD in it (ok false).
 func (c *captureSession) tag(hidden bool) (t captureTag, ok bool) {
 	t = captureTag{session: c.id}
-	if c.src.kind == srcWorkspace {
+	switch c.src.kind {
+	case srcWorkspace:
 		t.workspace, t.offscreen = c.src.workspace, hidden
+	case srcWindow:
+		t.window, t.offscreen = c.src.window, true
 	}
 	switch c.src.kind {
 	case srcOutput:
@@ -406,6 +472,8 @@ func (c *captureSession) tag(hidden bool) (t captureTag, ok bool) {
 		t.taken = ports.CaptureFrameTaken{Output: c.src.output.name(), Region: ports.Rect{X: r.Min.X, Y: r.Min.Y, W: r.Dx(), H: r.Dy()}}
 	case srcWorkspace:
 		t.taken = ports.CaptureFrameTaken{Workspace: c.src.workspace}
+	case srcWindow:
+		t.taken = ports.CaptureFrameTaken{Window: c.src.window}
 	}
 	if c.excl != nil && !c.exclSeen {
 		return t, false

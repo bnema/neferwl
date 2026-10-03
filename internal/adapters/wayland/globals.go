@@ -25,6 +25,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerOutputManagement(d, s) },
 		func() error { return registerWorkspaces(d, s) },
 		func() error { return registerForeignToplevel(d, s) },
+		func() error { return registerExtForeignToplevel(d, s) },
 		func() error { return registerDecoration(d, s) },
 		func() error { return registerScale(d, s) },
 		func() error { return registerCursorShape(d, s) },

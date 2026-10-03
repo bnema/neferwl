@@ -232,6 +232,7 @@ type Server struct {
 	outputManagers    []*outputManager
 	workspaceManagers []*workspaceManager
 	toplevelManagers  []*toplevelManager
+	extToplevelLists  []*extToplevelList
 	workspaceSnapshot ports.Workspaces
 	workspaceFrames   []*workspaceFrame
 	workspaceIDs      *workspaceid.IDs
