@@ -88,46 +88,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		defer hw.close()
 	}
 	security := &sessionsecurity.Gate{}
-	securityChanges := make(chan ports.SecurityState, 8)
-	securityEvents := make(chan ports.SecurityBackendEvent, 64)
-	client := make(chan ports.ClientEvent, 32)
-	input := make(chan ports.InputEvent, 32)
-	output := make(chan ports.OutputEvent, 32)
-	configChanges := make(chan ports.ConfigChanged, 8)
-	commands := make(chan ports.ClientCommand, 32)
-	spawn := make(chan ports.SpawnRequest, 32)
-	scenes := make(chan []ports.Scene, 1)
-	layouts := make(chan ports.Layout, 1)
-	constraints := make(chan ports.PointerConstraint, 1)
-	states := make(chan ports.State, 1)
-	workspaces := make(chan ports.Workspaces, 1)
-	configErrors := make(chan error, 8)
-	renderScenes := make(chan []ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 64)
-	cursorChanges := make(chan ports.CursorChange, 1)
-	presented := make(chan ports.OutputPresented, 64)
-	// Outputs report on flips; relayPresented passes them to wayland and
-	// tells core about each flip (frames) to move running slides.
-	flips := make(chan ports.OutputPresented, 64)
-	frames := make(chan ports.OutputFrame, 8)
-	captures := make(chan ports.CaptureRequest, ports.MaxCaptureInflight)
-	// Every admitted capture owns one reply slot until Wayland consumes it.
-	// Keep this capacity tied to admission so output routing never waits.
-	captured := make(chan ports.CaptureDone, ports.MaxCaptureInflight)
-	outputFormats := make(chan ports.OutputFormats, 8)
-	outputHeads := make(chan ports.OutputHeads, 8)
-	leaseRequests := make(chan ports.LeaseMessage, 32)
-	leaseEvents := make(chan ports.LeaseMessage, 32)
-	applyOutput := make(chan ports.OutputApply, 8)
-	appliedOutput := make(chan ports.OutputApplied, 8)
-	idleInhibited := make(chan bool, 1)
-	idleActivity := make(chan struct{}, 1)
-	var scales chan ports.ScaleChanged
-	if hw != nil {
-		// Only real sessions save scales: headless runs never touch the config file.
-		scales = make(chan ports.ScaleChanged, 8)
-	}
-	ch := core.Channels{Security: security, Scales: scales, Client: client, Input: input, Output: output, Config: configChanges, Commands: commands, Spawn: spawn, Scenes: scenes, Layouts: layouts, Constraints: constraints, State: states, Workspaces: workspaces, ConfigErrors: configErrors, Terminal: !opts.NoTerminal, Clock: clock.System{}, Frames: frames}
+	p := newPipes(hw != nil)
+	ch := p.core()
+	ch.Security = security
+	ch.Terminal = !opts.NoTerminal
+	ch.Clock = clock.System{}
 	c, err := core.New(opts.Config, ch)
 	if err != nil {
 		return err
@@ -154,7 +119,17 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	} else {
 		captureAllow = captureallow.NewStore(captureallow.DefaultPath, captureAllowLog)
 	}
-	server, err := wayland.New(wayland.Options{CaptureAllow: captureAllow, WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput, IdleInhibited: idleInhibited, IdleActivity: idleActivity}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{
+		CaptureAllow: captureAllow,
+		WorkspaceIDs: wsIDs,
+		Security:     security,
+		RuntimeDir:   runtimeDir,
+		DMABuf:       dmabuf,
+		SyncobjNode:  renderNode(dmabuf.Device),
+		Keymap:       keymap,
+		RepeatRate:   opts.Config.Keyboard.RepeatRate,
+		RepeatDelay:  opts.Config.Keyboard.RepeatDelay,
+	}, p.wayland(), logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -180,7 +155,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	child := launcher.New(childEnv, logging.For(ctx, "launcher"))
 	child.Security = security
 	if inject != nil {
-		inject(input)
+		inject(p.input)
 	}
 	var workers sync.WaitGroup
 	workers.Add(8)
@@ -189,27 +164,23 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if path == "" {
 		path = config.DefaultPath()
 	}
-	watched := make(chan ports.ConfigChanged, 8)
-	keymaps := make(chan *xkb.Keymap, 1)
-	deviceConfigs := make(chan ports.InputDevicesConfig, 1)
 	go func() {
 		defer workers.Done()
-		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
+		done <- config.Watch(ctx, path, p.watched, logging.For(ctx, "config"))
 	}()
-	if scales != nil {
+	if p.scales != nil {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			core.PersistScales(ctx, scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), clock.System{}, time.Second)
+			core.PersistScales(ctx, p.scales, config.ScaleStore{Path: path}, launcher.NewNotifier(ctx, childEnv, logging.For(ctx, "launcher")), clock.System{}, time.Second)
 		}()
 	}
-	filtered := make(chan ports.ConfigChanged, 8)
 	curs := newCursors(clock.System{}, opts.Config.Cursor.HideAfter)
 	defer curs.stop()
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, watched, filtered, keymaps, deviceConfigs, curs, commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, p.watched, p.filtered, p.keymaps, p.deviceConfigs, curs, p.commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
 	go func() {
@@ -218,7 +189,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			// Core sends the first layout once DRM reports the outputs.
 			var layout ports.Layout
 			select {
-			case layout = <-layouts:
+			case layout = <-p.layouts:
 			case <-ctx.Done():
 				km.Close()
 				return
@@ -231,11 +202,27 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
 					}
 				}
-				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, DeviceConfig: opts.Config.InputDevicesConfig, DeviceConfigs: deviceConfigs, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
+				return libinput.Run(ctx, libinput.Options{
+					Security:      security,
+					Seat:          hw.seat,
+					SeatName:      hw.seat.Name(),
+					Keymap:        km,
+					Keymaps:       p.keymaps,
+					Layout:        layout,
+					Layouts:       p.layouts,
+					Constraints:   p.constraints,
+					DeviceConfig:  opts.Config.InputDevicesConfig,
+					DeviceConfigs: p.deviceConfigs,
+					Active:        hw.seat.Subscribe(),
+					MoveCursor:    curs.move,
+					Log:           logging.For(ctx, "input"),
+					LogMotion:     logging.Enabled(ctx, "input-motion"),
+					LogKeys:       logging.Enabled(ctx, "input-keys"),
+				}, p.input)
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, keymaps, script, input, layouts, func(o string, x, y float64) { curs.move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		if err := headlessinput.RunSecure(ctx, km, p.keymaps, script, p.input, p.layouts, func(o string, x, y float64) { curs.move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case done <- err:
 			case <-ctx.Done():
@@ -269,7 +256,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
 		}
 	}()
-	go func() { defer workers.Done(); done <- child.Run(ctx, spawn) }()
+	go func() { defer workers.Done(); done <- child.Run(ctx, p.spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
 	if xdisplay != nil {
 		workers.Add(1)
@@ -280,19 +267,22 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			if err := statefile.Run(ctx, statePath, states, wsIDs, logging.For(ctx, "statefile")); err != nil {
+			if err := statefile.Run(ctx, statePath, p.states, wsIDs, logging.For(ctx, "statefile")); err != nil {
 				// Scripts lose their state; the session goes on.
 				log.Warn().Err(err).Msg("state file disabled")
 			}
 		}()
 	}
-	go func() { defer workers.Done(); consumeScenes(ctx, scenes, configErrors, opts.testScenes, renderScenes) }()
+	go func() {
+		defer workers.Done()
+		consumeScenes(ctx, p.scenes, p.configErrors, opts.testScenes, p.renderScenes)
+	}()
 	workers.Add(1)
-	go func() { defer workers.Done(); relayPresented(ctx, flips, presented, frames) }()
+	go func() { defer workers.Done(); relayPresented(ctx, p.flips, p.presented, p.frames) }()
 
 	go func() {
 		defer workers.Done()
-		outputIO := outputChannels{security: security, securityChanges: securityChanges, securityEvents: securityEvents, events: output, scenes: renderScenes, contents: contents, cursorChanges: cursorChanges, presented: flips, captures: captures, captured: captured, formats: outputFormats, heads: outputHeads, leaseRequests: leaseRequests, leaseEvents: leaseEvents, reloads: filtered, configured: configChanges, requests: applyOutput, replies: appliedOutput}
+		outputIO := p.outputs(security)
 		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		renderLog := logging.For(ctx, "render")
 		newRenderer := func(w, h int) (ports.Renderer, error) {
@@ -326,7 +316,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			reports := screensaver.Reports{Held: idleInhibited, Activity: idleActivity}
+			reports := screensaver.Reports{Held: p.idleInhibited, Activity: p.idleActivity}
 			screensaver.Serve(ctx, "", reports, screensaverRetry, logging.For(ctx, "screensaver"))
 		}()
 	}
@@ -342,10 +332,10 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	cancel()
 	workers.Wait()
 	// The wayland server has stopped: no request can be queued any more.
-	drainCaptures(ctx, captures, nil)
+	drainCaptures(ctx, p.captures, nil)
 	// A keymap the input goroutine never took is still ours to free.
 	select {
-	case km := <-keymaps:
+	case km := <-p.keymaps:
 		km.Close()
 	default:
 	}
