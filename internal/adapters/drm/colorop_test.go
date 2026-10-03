@@ -824,3 +824,59 @@ func TestColorRefusalDoesNotDisableTheCursor(t *testing.T) {
 		t.Fatal("a cursor refusal did not turn the cursor off")
 	}
 }
+
+// The colour test differs from the failed commit in colour alone. A frame
+// refused for its content hint is not blamed on the pipeline; the hint is
+// disabled as before. A frame refused for its pipeline, with the hint wanted,
+// is blamed on the pipeline and the hint stays.
+func TestColorRefusalBlamesOnlyColour(t *testing.T) {
+	const pContent = 70
+	setup := func(t *testing.T, rule func(*atomicReq, uint32) error) (*Output, ports.SurfaceContent) {
+		o, k, _ := colorOutput(t, false, rule)
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(uint32(80), nil).Maybe()
+		o.contentProp, o.contentValues = pContent, [5]uint64{0, 1, 2, 3, 4}
+		o.contentWanted = 4 // wanted Game, the applied value is still the first
+		return o, sdrContent(o)
+	}
+	hasHint := func(r *atomicReq) bool { v, ok := r.value(tConn, pContent); return ok && v == 4 }
+	usesPipeline := func(r *atomicReq) bool { v, ok := r.value(tPrimary, pColorPipe); return ok && v != 0 }
+	t.Run("the hint is refused, the pipeline is accepted", func(t *testing.T) {
+		o, c := setup(t, func(r *atomicReq, flags uint32) error {
+			if hasHint(r) {
+				return unix.EINVAL
+			}
+			return nil
+		})
+		ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ)
+		if !ok || err != nil {
+			t.Fatalf("ok=%v err=%v reason %q", ok, err, o.reason)
+		}
+		if o.contentProp != 0 {
+			t.Fatal("the content hint was not disabled")
+		}
+		if _, known := o.primary.verdict(fourccXRGB, false); known || o.reason == "color_refused" {
+			t.Fatal("the pipeline was blamed for the hint")
+		}
+		if !o.primary.colorKnown || o.primary.colorApplied != colorSDRToPQ {
+			t.Fatal("the retried frame did not apply the pipeline")
+		}
+	})
+	t.Run("the pipeline is refused, the hint is accepted", func(t *testing.T) {
+		o, c := setup(t, func(r *atomicReq, flags uint32) error {
+			if usesPipeline(r) && flags&atomicTestOnly == 0 {
+				return unix.EINVAL
+			}
+			return nil
+		})
+		ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ)
+		if ok || err != nil || o.reason != "color_refused" {
+			t.Fatalf("ok=%v err=%v reason %q", ok, err, o.reason)
+		}
+		if v, known := o.primary.verdict(fourccXRGB, false); !known || v {
+			t.Fatal("the pipeline refusal was not cached")
+		}
+		if o.contentProp != pContent {
+			t.Fatal("the content hint was disabled for the pipeline's refusal")
+		}
+	})
+}

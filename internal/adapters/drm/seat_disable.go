@@ -39,6 +39,10 @@ func (o *Output) pipelineApplied() bool {
 	return false
 }
 
+// The commit blocks, and the kernel may make it wait for a flip in flight: a
+// Bypass that finishes after PrepareSeatDisable's bound is lost, since the
+// seat is disabled meanwhile. The caller logs the timeout.
+
 // bypassForSeatDisable commits Bypass on the planes when one applies the
 // pipeline, synchronously. It is a no-op (no commit) otherwise. A failure is
 // only logged: the seat is disabled anyway.

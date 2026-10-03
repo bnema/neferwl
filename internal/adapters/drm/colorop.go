@@ -155,8 +155,8 @@ func (o *Output) colorCommitted(pc colorUse, ov overlayWin) {
 var errColorRefused = errors.New("plane colour pipeline refused")
 
 // colorRefused handles a frame commit that failed with EINVAL while a plane
-// showed the pipeline: when the same frame passes TEST_ONLY with Bypass, the
-// pipeline is the cause. The refusal is cached for each plane that showed it,
+// showed the pipeline: when the same frame passes TEST_ONLY with Bypass, and
+// differs from the commit in colour alone, the pipeline is the cause. The refusal is cached for each plane that showed it,
 // its buffer format and the cursor state, and the frame is not retried.
 func (o *Output) colorRefused(err error, fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse) bool {
 	if !o.colorUsed(pc, ov) {
@@ -164,7 +164,10 @@ func (o *Output) colorRefused(err error, fb uint32, fence *os.File, vrr bool, cu
 	}
 	bypassed := ov
 	bypassed.color = colorUse{}
-	if !o.contentRefused(fb, fence, vrr, cur, bypassed, rect, colorUse{}) {
+	// The same frame as the failed commit, content hint included, with
+	// Bypass as the only difference: if the hint was the cause, this fails
+	// too and the pipeline is not blamed.
+	if !o.frameTest(fb, fence, vrr, cur, bypassed, rect, colorUse{}, true) {
 		return false
 	}
 	if pc.mode != colorBypass {

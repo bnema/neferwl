@@ -693,7 +693,15 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 
 // contentRefused tests the same frame without the connector hint before disabling it.
 func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse) bool {
-	req := &o.probeReq // frameReq is still the caller's
+	return o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false)
+}
+
+// frameTest is a TEST_ONLY of the frame commit as commitWithRect builds it,
+// with the colour state pc and ov.color, and the connector content hint only
+// when withContent. It reports whether KMS takes it. frameReq is still the
+// caller's: it uses probeReq.
+func (o *Output) frameTest(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse, withContent bool) bool {
+	req := &o.probeReq
 	req.reset()
 	o.primaryRectProps(req, fb, rect)
 	o.primaryColorProps(req, pc.mode)
@@ -705,6 +713,9 @@ func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorS
 		o.overlayProps(req, ov)
 	} else {
 		o.overlayColorProps(req, ov.color.mode)
+	}
+	if withContent {
+		o.contentProps(req)
 	}
 	if fence != nil {
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
