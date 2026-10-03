@@ -173,35 +173,35 @@ func (c *Core) applyAction(a Action) Effect {
 	if name, ok := NamedArg(a); ok && c.bringNamed(name) {
 		return Effect{}
 	}
-	dir := 0
-	switch a {
-	case ActionFocusMonitorLeft, ActionMoveWorkspaceLeft:
-		dir = -1
-	case ActionFocusMonitorRight, ActionMoveWorkspaceRight:
-		dir = 1
-	}
 	switch a {
 	case ActionFocusMonitorLeft, ActionFocusMonitorRight:
-		if i := c.neighbor(dir); i >= 0 {
+		d := dirLeft
+		if a == ActionFocusMonitorRight {
+			d = dirRight
+		}
+		if i := c.neighbor(d); i >= 0 {
 			c.focusScreen = i
 		}
 		return Effect{}
 	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
-		c.moveWorkspace(dir)
+		d := dirLeft
+		if a == ActionMoveWorkspaceRight {
+			d = dirRight
+		}
+		c.moveWorkspace(d)
 		return Effect{}
 	case ActionFocusColumnLeft, ActionFocusColumnRight:
 		w := c.cur().mon.Current()
+		dir, d := 1, dirRight
 		if a == ActionFocusColumnLeft {
-			dir = -1
-		} else {
-			dir = 1
+			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
 		// with none (the workspace or stash edge), the move goes to the
 		// neighbor monitor and fullscreen stays.
 		if w.pinned() {
 			if !w.FocusColumn(dir) {
-				if i := c.neighbor(dir); i >= 0 {
+				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i
 				}
 			}
@@ -211,14 +211,14 @@ func (c *Core) applyAction(a Action) Effect {
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
 		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if i := c.neighbor(dir); edge && i >= 0 {
+		if i := c.neighbor(d); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
-		dir = 1
+		dir, d := 1, dirRight
 		if a == ActionConsumeOrExpelLeft {
-			dir = -1
+			dir, d = -1, dirLeft
 		}
 		from := c.cur()
 		if from.mon.Current().ConsumeOrExpel(dir) {
@@ -227,7 +227,7 @@ func (c *Core) applyAction(a Action) Effect {
 		}
 		// Full fixed workspace, stacked edge column: one hop to the
 		// neighbor monitor, if any; focus follows the window.
-		i := c.neighbor(dir)
+		i := c.neighbor(d)
 		if i < 0 {
 			return Effect{}
 		}
@@ -244,12 +244,12 @@ func (c *Core) applyAction(a Action) Effect {
 		// Past the edge the column moves to the neighbor screen, on the
 		// side facing this one, and focus follows it.
 		w := c.cur().mon.Current()
-		dir = 1
+		d := dirRight
 		if a == ActionMoveColumnLeft {
-			dir = -1
+			d = dirLeft
 		}
-		edge := (dir < 0 && w.Focus == 0) || (dir > 0 && w.Focus == len(w.Columns)-1)
-		if i := c.neighbor(dir); edge && i >= 0 {
+		edge := (d == dirLeft && w.Focus == 0) || (d == dirRight && w.Focus == len(w.Columns)-1)
+		if i := c.neighbor(d); edge && i >= 0 {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}
@@ -258,7 +258,7 @@ func (c *Core) applyAction(a Action) Effect {
 			c.focusScreen = i
 			to := c.cur().mon.Current()
 			at := 0
-			if dir < 0 {
+			if d == dirLeft {
 				at = len(to.Columns)
 			}
 			to.receive(col, at)

@@ -7,8 +7,8 @@ import (
 )
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and
-// place in the global layout (ADR 011). Outputs are placed left to right, in
-// config order (output.<name>.*), then in connection order.
+// place in the global layout (ADR 011). Outputs are ordered by config
+// (output.<name>.*), then by connection; order places them.
 type screen struct {
 	info            ports.OutputInfo
 	mon             *Monitor
@@ -49,44 +49,39 @@ func (s *screen) arrange() {
 	s.mon.SetUsable(usable)
 }
 
-// order sorts screens by config order, then connection order, and assigns x.
+// order sorts screens by config order, then connection order, and places them
+// in the global layout (placeOutputs).
 func (c *Core) order() {
 	rank := func(s *screen) int {
-		for i, o := range c.cfg.Outputs {
-			if o.Name == s.name() {
-				return i
-			}
+		if i := slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == s.name() }); i >= 0 {
+			return i
 		}
 		return len(c.cfg.Outputs)
 	}
 	focused := c.cur()
 	slices.SortStableFunc(c.screens, func(a, b *screen) int { return rank(a) - rank(b) })
 	c.focusScreen = slices.Index(c.screens, focused)
-	// Explicitly placed outputs reserve their position first; auto-placed
-	// outputs follow the rightmost explicit edge in configuration order.
-	x := 0
-	for _, s := range c.screens {
-		for _, o := range c.cfg.Outputs {
-			if o.Name == s.name() && o.Pos != nil {
-				s.x, s.y = o.Pos.X, o.Pos.Y
-				x = max(x, s.x+s.mon.Output().W)
-				break
-			}
+	items := make([]placeItem, len(c.screens))
+	for i, s := range c.screens {
+		o := s.mon.Output()
+		items[i].name, items[i].w, items[i].h = s.name(), o.W, o.H
+		if cfg, ok := c.outputConfig(s.name()); ok {
+			items[i].pos = cfg.Pos
 		}
 	}
-	for _, s := range c.screens {
-		explicit := false
-		for _, o := range c.cfg.Outputs {
-			if o.Name == s.name() && o.Pos != nil {
-				explicit = true
-				break
-			}
-		}
-		if !explicit {
-			s.x, s.y = x, 0
-			x += s.mon.Output().W
-		}
+	for i, p := range placeOutputs(items) {
+		c.screens[i].x, c.screens[i].y = p.X, p.Y
 	}
+}
+
+// outputConfig returns the output.<name> entry; names are unique in the
+// config.
+func (c *Core) outputConfig(name string) (ports.OutputConfig, bool) {
+	i := slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == name })
+	if i < 0 {
+		return ports.OutputConfig{}, false
+	}
+	return c.cfg.Outputs[i], true
 }
 
 // layout lists the connected outputs; the placeholder is not one.
@@ -129,12 +124,8 @@ func (c *Core) byName(name string) (*screen, *Workspace) {
 
 // isPrimary reports output.<name>.primary.
 func (c *Core) isPrimary(name string) bool {
-	for _, o := range c.cfg.Outputs {
-		if o.Name == name && o.Primary {
-			return true
-		}
-	}
-	return false
+	o, _ := c.outputConfig(name)
+	return o.Primary
 }
 
 // anyWindow reports whether any workspace holds a window.
@@ -152,10 +143,8 @@ func (c *Core) anyWindow() bool {
 // configScale is output.<name>.scale, else 1.
 func (c *Core) configScale(name string) float64 {
 	v := 1.0
-	for _, o := range c.cfg.Outputs {
-		if o.Name == name && o.Scale != 0 {
-			v = o.Scale
-		}
+	if o, ok := c.outputConfig(name); ok && o.Scale != 0 {
+		v = o.Scale
 	}
 	return SnapScale(v)
 }
@@ -407,10 +396,28 @@ func (c *Core) settings(m *Monitor) {
 	m.SetFollowMove(c.cfg.Focus.FollowMove)
 }
 
-// neighbor returns the screen index left (-1) or right (+1) of the focused
-// one, or -1 at the edge.
-func (c *Core) neighbor(dir int) int {
-	i := c.focusScreen + dir
+// direction is where a monitor action looks for a neighbor screen.
+type direction uint8
+
+const (
+	dirLeft direction = iota
+	dirRight
+	dirUp
+	dirDown
+)
+
+// neighbor returns the index of the screen next to the focused one in
+// direction d, or -1 at the edge.
+func (c *Core) neighbor(d direction) int {
+	var i int
+	switch d {
+	case dirLeft:
+		i = c.focusScreen - 1
+	case dirRight:
+		i = c.focusScreen + 1
+	default:
+		return -1
+	}
 	if i < 0 || i >= len(c.screens) {
 		return -1
 	}
@@ -419,8 +426,8 @@ func (c *Core) neighbor(dir int) int {
 
 // moveWorkspace moves the workspace on screen to the neighbor screen, where
 // it is appended and shown; it becomes its new home (ADR 011).
-func (c *Core) moveWorkspace(dir int) {
-	to := c.neighbor(dir)
+func (c *Core) moveWorkspace(d direction) {
+	to := c.neighbor(d)
 	if to < 0 {
 		return
 	}
