@@ -7,8 +7,8 @@ import (
 )
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and
-// place in the global layout (ADR 011). Outputs are placed left to right, in
-// config order (output.<name>.*), then in connection order.
+// place in the global layout (ADR 011). Outputs are ordered by config
+// (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
 	info            ports.OutputInfo
 	mon             *Monitor
@@ -49,44 +49,44 @@ func (s *screen) arrange() {
 	s.mon.SetUsable(usable)
 }
 
-// order sorts screens by config order, then connection order, and assigns x.
+// order sorts screens by config order, then connection order, and places them
+// in the global layout (placeOutputs).
 func (c *Core) order() {
 	rank := func(s *screen) int {
-		for i, o := range c.cfg.Outputs {
-			if o.Name == s.name() {
-				return i
-			}
+		if i := c.outputIndex(s.name()); i >= 0 {
+			return i
 		}
 		return len(c.cfg.Outputs)
 	}
 	focused := c.cur()
 	slices.SortStableFunc(c.screens, func(a, b *screen) int { return rank(a) - rank(b) })
 	c.focusScreen = slices.Index(c.screens, focused)
-	// Explicitly placed outputs reserve their position first; auto-placed
-	// outputs follow the rightmost explicit edge in configuration order.
-	x := 0
-	for _, s := range c.screens {
-		for _, o := range c.cfg.Outputs {
-			if o.Name == s.name() && o.Pos != nil {
-				s.x, s.y = o.Pos.X, o.Pos.Y
-				x = max(x, s.x+s.mon.Output().W)
-				break
-			}
+	items := make([]placeItem, len(c.screens))
+	for i, s := range c.screens {
+		o := s.mon.Output()
+		items[i].name, items[i].w, items[i].h = s.name(), o.W, o.H
+		if cfg, ok := c.outputConfig(s.name()); ok {
+			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
 	}
-	for _, s := range c.screens {
-		explicit := false
-		for _, o := range c.cfg.Outputs {
-			if o.Name == s.name() && o.Pos != nil {
-				explicit = true
-				break
-			}
-		}
-		if !explicit {
-			s.x, s.y = x, 0
-			x += s.mon.Output().W
-		}
+	for i, p := range placeOutputs(items) {
+		c.screens[i].x, c.screens[i].y = p.X, p.Y
 	}
+}
+
+// outputIndex is the position of the output.<name> entry in the config, or
+// -1; names are unique in the config.
+func (c *Core) outputIndex(name string) int {
+	return slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == name })
+}
+
+// outputConfig returns the output.<name> entry.
+func (c *Core) outputConfig(name string) (ports.OutputConfig, bool) {
+	i := c.outputIndex(name)
+	if i < 0 {
+		return ports.OutputConfig{}, false
+	}
+	return c.cfg.Outputs[i], true
 }
 
 // layout lists the connected outputs; the placeholder is not one.
@@ -129,12 +129,8 @@ func (c *Core) byName(name string) (*screen, *Workspace) {
 
 // isPrimary reports output.<name>.primary.
 func (c *Core) isPrimary(name string) bool {
-	for _, o := range c.cfg.Outputs {
-		if o.Name == name && o.Primary {
-			return true
-		}
-	}
-	return false
+	o, _ := c.outputConfig(name)
+	return o.Primary
 }
 
 // anyWindow reports whether any workspace holds a window.
@@ -152,10 +148,8 @@ func (c *Core) anyWindow() bool {
 // configScale is output.<name>.scale, else 1.
 func (c *Core) configScale(name string) float64 {
 	v := 1.0
-	for _, o := range c.cfg.Outputs {
-		if o.Name == name && o.Scale != 0 {
-			v = o.Scale
-		}
+	if o, ok := c.outputConfig(name); ok && o.Scale != 0 {
+		v = o.Scale
 	}
 	return SnapScale(v)
 }
@@ -407,20 +401,84 @@ func (c *Core) settings(m *Monitor) {
 	m.SetFollowMove(c.cfg.Focus.FollowMove)
 }
 
-// neighbor returns the screen index left (-1) or right (+1) of the focused
-// one, or -1 at the edge.
-func (c *Core) neighbor(dir int) int {
-	i := c.focusScreen + dir
-	if i < 0 || i >= len(c.screens) {
+// direction is where a monitor action looks for a neighbor screen.
+type direction uint8
+
+const (
+	dirLeft direction = iota + 1
+	dirRight
+	dirUp
+	dirDown
+)
+
+// neighbor returns the index of the screen next to the focused one in
+// direction d, or -1 at the edge. Candidates lie fully beyond the focused
+// screen's edge; one sharing part of that edge wins over a diagonal one, then
+// the smallest gap, the largest shared edge, the closest centers and the
+// lowest index decide. Overlapping outputs (for instance two anchored to the
+// same reference) are reached only when no screen lies fully beyond the edge
+// in that direction: a second pass then takes the screens whose rectangle
+// intersects the focused one and whose center is strictly beyond the focused
+// center, ranked the same way with a gap of 0. A screen that does have a
+// strict candidate never falls back, so an overlapping one can stay out of
+// reach. Screens with the same center on the axis are unreachable by direction
+// (the pointer still reaches them). There is no wrap.
+func (c *Core) neighbor(d direction) int {
+	if d < dirLeft || d > dirDown {
 		return -1
 	}
-	return i
+	// span is the extent of s along the move (lo, hi) and across it.
+	span := func(s *screen) (lo, hi, clo, chi int) {
+		o := s.mon.Output()
+		if d == dirUp || d == dirDown {
+			return s.y, s.y + o.H, s.x, s.x + o.W
+		}
+		return s.x, s.x + o.W, s.y, s.y + o.H
+	}
+	lo, hi, clo, chi := span(c.cur())
+	pick := func(fallback bool) int {
+		best, bestKey := -1, [4]int{}
+		for i, s := range c.screens {
+			if i == c.focusScreen || s.name() == "" {
+				continue
+			}
+			l, h, cl, ch := span(s)
+			gap := l - hi
+			beyond := l+h > lo+hi // centers, doubled
+			if d == dirLeft || d == dirUp {
+				gap = lo - h
+				beyond = l+h < lo+hi
+			}
+			if fallback {
+				if !beyond || min(hi, h)-max(lo, l) <= 0 || min(chi, ch)-max(clo, cl) <= 0 {
+					continue
+				}
+				gap = 0
+			} else if gap < 0 {
+				continue
+			}
+			overlap := min(chi, ch) - max(clo, cl)
+			diagonal := 0
+			if overlap <= 0 {
+				diagonal = 1
+			}
+			key := [4]int{diagonal, gap, -max(overlap, 0), abs(cl + ch - clo - chi)}
+			if best < 0 || slices.Compare(key[:], bestKey[:]) < 0 {
+				best, bestKey = i, key
+			}
+		}
+		return best
+	}
+	if i := pick(false); i >= 0 {
+		return i
+	}
+	return pick(true)
 }
 
 // moveWorkspace moves the workspace on screen to the neighbor screen, where
 // it is appended and shown; it becomes its new home (ADR 011).
-func (c *Core) moveWorkspace(dir int) {
-	to := c.neighbor(dir)
+func (c *Core) moveWorkspace(d direction) {
+	to := c.neighbor(d)
 	if to < 0 {
 		return
 	}

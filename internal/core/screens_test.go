@@ -207,6 +207,60 @@ func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
 	}
 }
 
+func TestRelativeOutputPlacement(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1", Offset: 30}},
+			{Name: "DP-3", Anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-2", Offset: -10}},
+		}
+	}, left, right, third)
+	positions := func() [][2]int {
+		t.Helper()
+		var got [][2]int
+		for _, o := range lastOutputs(t, r.commands).Outputs {
+			got = append(got, [2]int{o.X, o.Y})
+		}
+		return got
+	}
+	// DP-1 is 200x100, DP-2 400x200 logical.
+	if got, want := positions(), [][2]int{{0, 0}, {30, 100}, {430, 90}}; !slices.Equal(got, want) {
+		t.Fatalf("positions %v, want %v", got, want)
+	}
+	// A reload with another offset moves the output.
+	r.cfg.Outputs[1].Anchor.Offset = -50
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	if got, want := positions(), [][2]int{{0, 0}, {-50, 100}, {350, 90}}; !slices.Equal(got, want) {
+		t.Fatalf("positions after offset reload %v, want %v", got, want)
+	}
+	// Scaling the reference down moves the output below it.
+	r.cfg.Outputs[0].Scale = 2
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	if got, want := positions(), [][2]int{{0, 0}, {-50, 50}, {350, 40}}; !slices.Equal(got, want) {
+		t.Fatalf("positions after scale reload %v, want %v", got, want)
+	}
+}
+
+func TestRelativeOutputWithoutReferenceIsAutomatic(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 25}}}
+	}, right)
+	if out := lastOutputs(t, r.commands).Outputs; len(out) != 1 || out[0].X != 0 || out[0].Y != 0 {
+		t.Fatalf("without reference: %+v", out)
+	}
+	// Plugging the reference restores the relation (DP-1 is 200 wide).
+	r.plug(t, left)
+	out := lastOutputs(t, r.commands).Outputs
+	if len(out) != 2 || out[0].Info.Name != "DP-2" || out[1].Info.Name != "DP-1" {
+		t.Fatalf("outputs %+v", out)
+	}
+	if out[0].X != 200 || out[0].Y != 25 || out[1].X != 0 || out[1].Y != 0 {
+		t.Fatalf("placement %+v", out)
+	}
+}
+
 func TestWindowsOpenOnFocusedOutput(t *testing.T) {
 	r := startMulti(t, nil, left, right)
 	r.mapWindow(t, 1)
@@ -294,6 +348,54 @@ func TestMoveWorkspaceToMonitor(t *testing.T) {
 	set = receive(t, r.scenes)
 	if len(set) != 1 || set[0].Output != "DP-2" || len(shown(set)["DP-2"]) != 1 {
 		t.Fatal(shown(set))
+	}
+}
+
+func TestMonitorActionsFollowGeometry(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
+		}
+		// Without a default bind; these replace move-workspace-up/down.
+		c.Binds["Cmd+Ctrl+Shift+Up"] = string(core.ActionMoveWorkspaceToMonitorUp)
+		c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
+	}, left, right)
+	// SetOutputs is sent only when the focus or layout changed.
+	current := lastOutputs(t, r.commands).Focused
+	focused := func() string {
+		for len(r.commands) > 0 {
+			if v, ok := (<-r.commands).(ports.SetOutputs); ok {
+				current = v.Focused
+			}
+		}
+		return current
+	}
+	cmdCtrl := ports.ModAlt | ports.ModCtrl
+	// DP-1 is focused and has no neighbor left, right or up.
+	r.mapWindow(t, 1)
+	for _, k := range []string{"Left", "Right", "Up"} {
+		r.key(t, k, cmdCtrl)
+		if got := focused(); got != "DP-1" {
+			t.Fatalf("%s moved focus to %s", k, got)
+		}
+	}
+	r.key(t, "Down", cmdCtrl)
+	if got := focused(); got != "DP-2" {
+		t.Fatalf("focus-monitor-down: %s", got)
+	}
+	r.key(t, "k", cmdCtrl)
+	if got := focused(); got != "DP-1" {
+		t.Fatalf("focus-monitor-up (vim twin): %s", got)
+	}
+	// The workspace goes to the monitor below and focus follows it.
+	set := r.key(t, "Down", cmdCtrl|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	set = r.key(t, "Up", cmdCtrl|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatalf("move-workspace-to-monitor-up: %v", got)
 	}
 }
 
@@ -1231,5 +1333,79 @@ func TestFocusColumnLeavesFullscreenBeforeMonitor(t *testing.T) {
 	}
 	if got, _ := windowsOf(r.mapWindow(t, 3), "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{3}) {
 		t.Fatal("focus not on DP-1:", got)
+	}
+}
+
+// focusedOutput drains the commands and returns the focused connector,
+// current when no SetOutputs was sent (it is sent only on a change).
+func focusedOutput(r *multiRig, current string) string {
+	for len(r.commands) > 0 {
+		if v, ok := (<-r.commands).(ports.SetOutputs); ok {
+			current = v.Focused
+		}
+	}
+	return current
+}
+
+// The column edge crosses to the screen on that side of the geometry, not to
+// the next one in configuration order.
+func TestFocusColumnEdgeFollowsGeometryNotConfigOrder(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1", Pos: &image.Point{X: 500, Y: 0}},
+			{Name: "DP-2", Pos: &image.Point{X: 0, Y: 0}},
+		}
+	}, left, right)
+	// DP-1 (x 500..700) is focused first; DP-2 (x 0..400) lies to its left.
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	if current = focusedOutput(r, current); current != "DP-2" {
+		t.Fatalf("focus-monitor-left: %s, want DP-2", current)
+	}
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt)
+	if got := focusedOutput(r, current); got != "DP-1" {
+		t.Fatalf("focus-column-right at the right edge: %s, want DP-1", got)
+	}
+	r.key(t, "Left", ports.ModAlt)
+	if got := focusedOutput(r, "DP-1"); got != "DP-2" {
+		t.Fatalf("focus-column-left at the left edge: %s, want DP-2", got)
+	}
+}
+
+// With the outputs stacked, a column edge has no neighbor on its side.
+func TestFocusColumnEdgeStaysOnStackedOutputs(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
+		}
+	}, left, right)
+	r.mapWindow(t, 1)
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	for _, k := range []string{"Left", "Right", "Left"} {
+		r.key(t, k, ports.ModAlt)
+		if got := focusedOutput(r, current); got != current {
+			t.Fatalf("focus-column %s moved focus from %s to %s", k, current, got)
+		}
+	}
+}
+
+// A screen turned off by power management is still a neighbor.
+func TestPoweredOffScreenStaysNeighbor(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	// DP-1 is focused, DP-2 follows it on the right.
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	r.client <- ports.OutputPower{Output: "DP-2", On: false}
+	_ = receive(t, r.scenes)
+	if current != "DP-1" {
+		t.Fatalf("focused %s, want DP-1", current)
+	}
+	if out := lastOutputs(t, r.commands); !slices.Equal(out.Off, []string{"DP-2"}) {
+		t.Fatalf("off %v, want [DP-2]", out.Off)
+	}
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	if got := focusedOutput(r, current); got != "DP-2" {
+		t.Fatalf("focus-monitor-right: %s, want the powered-off DP-2", got)
 	}
 }

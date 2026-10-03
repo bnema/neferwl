@@ -23,7 +23,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 73 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 77 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
@@ -608,5 +608,136 @@ func TestFloatingDim(t *testing.T) {
 				t.Fatalf("dim %v, warnings %v", c.Floating.Dim, warnings)
 			}
 		})
+	}
+}
+
+func TestOutputRelations(t *testing.T) {
+	c, w := parseString(t, `
+output.DP-2.right-of = DP-1
+output.DP-2.offset = 180
+output.DP-3.left-of = DP-1
+output.DP-3.offset = -40
+output.DP-4.above = DP-1
+output.DP-5.below = DP-1
+output.DP-5.offset = 7
+`)
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	want := map[string]ports.OutputAnchor{
+		"DP-2": {Relation: ports.RelationRightOf, To: "DP-1", Offset: 180},
+		"DP-3": {Relation: ports.RelationLeftOf, To: "DP-1", Offset: -40},
+		"DP-4": {Relation: ports.RelationAbove, To: "DP-1"},
+		"DP-5": {Relation: ports.RelationBelow, To: "DP-1", Offset: 7},
+	}
+	if len(c.Outputs) != len(want) {
+		t.Fatalf("%+v", c.Outputs)
+	}
+	for _, o := range c.Outputs {
+		if o.Anchor != want[o.Name] || !o.ScaleOnly {
+			t.Fatalf("%s: %+v", o.Name, o)
+		}
+	}
+}
+
+func TestOutputRelationOverride(t *testing.T) {
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.below = DP-3\n")
+	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "overrides line 1") {
+		t.Fatalf("warnings %v", w)
+	}
+	if got := c.Outputs[0].Anchor; got != (ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-3"}) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestOutputRelationWarnings(t *testing.T) {
+	const rangeMsg = "must be an integer between -65536 and 65536"
+	rel := "output.DP-2.right-of = DP-1\n"
+	cases := []struct {
+		name, text string
+		want       []string // expected warning messages (substring), in order
+		lines      []int    // expected warning lines, in order
+		anchored   []string // outputs that keep a relation
+	}{
+		{"self", "output.DP-2.right-of = DP-2", []string{"relative to itself"}, []int{1}, nil},
+		{"empty", "output.DP-2.above =", []string{"expected an output name"}, []int{1}, nil},
+		{"bad offset", rel + "output.DP-2.offset = abc", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset too large", rel + "output.DP-2.offset = 65537", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset too small", rel + "output.DP-2.offset = -65537", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset overflow", rel + "output.DP-2.offset = 99999999999999999999", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset alone", "output.DP-2.offset = 10", []string{"without a relation"}, []int{1}, nil},
+		{"two cycle", "output.A.right-of = B\noutput.B.below = A", []string{"relation cycle", "relation cycle"}, []int{1, 2}, nil},
+		{"three cycle", "output.A.right-of = B\noutput.B.right-of = C\noutput.C.above = A", []string{"relation cycle", "relation cycle", "relation cycle"}, []int{1, 2, 3}, nil},
+		{"tail into cycle", "output.A.right-of = B\noutput.B.right-of = A\noutput.C.left-of = A", []string{"relation cycle", "relation cycle"}, []int{1, 2}, []string{"C"}},
+		{"relation overridden twice", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C", []string{"overrides line 1", "overrides line 2"}, []int{2, 3}, []string{"DP-2"}},
+		{"relation overridden three times", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C\noutput.DP-2.below = D", []string{"overrides line 1", "overrides line 2", "overrides line 3"}, []int{2, 3, 4}, []string{"DP-2"}},
+		{"same relation on two outputs", "output.DP-2.right-of = DP-1\noutput.DP-3.right-of = DP-1", []string{"output.DP-3: same relation as output.DP-2; both get the same position"}, []int{2}, []string{"DP-2", "DP-3"}},
+		{"same relation and offset on three outputs", "output.A.below = R\noutput.A.offset = 5\noutput.B.below = R\noutput.B.offset = 5\noutput.C.below = R\noutput.C.offset = 5", []string{"output.B: same relation as output.A", "output.C: same relation as output.A"}, []int{3, 5}, []string{"A", "B", "C"}},
+		{"same reference, other offset", "output.DP-2.right-of = DP-1\noutput.DP-3.right-of = DP-1\noutput.DP-3.offset = 10", nil, nil, []string{"DP-2", "DP-3"}},
+		{"same reference, other relation", "output.DP-2.right-of = DP-1\noutput.DP-3.left-of = DP-1", nil, nil, []string{"DP-2", "DP-3"}},
+		{"same relation twice", "output.DP-2.below = A\noutput.DP-2.below = B", []string{"overrides line 1"}, []int{2}, []string{"DP-2"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, w := parseString(t, tc.text)
+			if len(w) != len(tc.want) {
+				t.Fatalf("warnings %v, want %q", w, tc.want)
+			}
+			for i, x := range w {
+				if !strings.Contains(x.Msg, tc.want[i]) || x.Line != tc.lines[i] {
+					t.Fatalf("warning %d = %+v, want %q at line %d (all: %v)", i, x, tc.want[i], tc.lines[i], w)
+				}
+			}
+			var got []string
+			for _, o := range c.Outputs {
+				if o.Anchor.Relation != ports.RelationNone {
+					got = append(got, o.Name)
+				}
+			}
+			if !reflect.DeepEqual(got, tc.anchored) {
+				t.Fatalf("anchored %v, want %v: %+v", got, tc.anchored, c.Outputs)
+			}
+		})
+	}
+}
+
+func TestDefaultMonitorBinds(t *testing.T) {
+	d := Defaults()
+	for combo, action := range map[string]string{
+		"Cmd+Ctrl+Up": "focus-monitor-up", "Cmd+Ctrl+k": "focus-monitor-up",
+		"Cmd+Ctrl+Down": "focus-monitor-down", "Cmd+Ctrl+j": "focus-monitor-down",
+		"Cmd+Ctrl+Left": "focus-monitor-left", "Cmd+Ctrl+l": "focus-monitor-right",
+	} {
+		if d.Binds[combo] != action {
+			t.Errorf("%s = %q, want %q", combo, d.Binds[combo], action)
+		}
+	}
+	// The up/down move-workspace-to-monitor actions have no default bind but
+	// load from a config file.
+	c, w := parseString(t, "bind.cmd+ctrl+alt+up = move-workspace-to-monitor-up\nbind.cmd+ctrl+alt+down = move-workspace-to-monitor-down\nbind.cmd+alt+u = focus-monitor-up\n")
+	if len(w) != 0 || c.Binds["Alt+Cmd+Ctrl+Up"] != "move-workspace-to-monitor-up" || c.Binds["Alt+Cmd+Ctrl+Down"] != "move-workspace-to-monitor-down" {
+		t.Fatalf("%v %v", w, c.Binds)
+	}
+}
+
+func TestOutputOffsetKeepsEarlierValueWhenInvalid(t *testing.T) {
+	c, _ := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 40\noutput.DP-2.offset = 65537\n")
+	if got := c.Outputs[0].Anchor.Offset; got != 40 {
+		t.Fatalf("offset %d, want 40", got)
+	}
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 65536\noutput.DP-2.offset = -65536\n")
+	if len(w) != 1 || c.Outputs[0].Anchor.Offset != -65536 {
+		t.Fatalf("%v %+v", w, c.Outputs)
+	}
+}
+
+func TestOutputModeLineKeepsAnchor(t *testing.T) {
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 50\noutput.DP-2 = 1920x1080\n")
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	o := c.Outputs[0]
+	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 50}) {
+		t.Fatalf("%+v", o)
 	}
 }

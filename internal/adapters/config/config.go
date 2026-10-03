@@ -52,6 +52,8 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+shift+pagedown", "move-column-to-workspace-down"},
 	{"cmd+ctrl+left", "focus-monitor-left"},
 	{"cmd+ctrl+right", "focus-monitor-right"},
+	{"cmd+ctrl+up", "focus-monitor-up"},
+	{"cmd+ctrl+down", "focus-monitor-down"},
 	{"cmd+ctrl+shift+left", "move-workspace-to-monitor-left"},
 	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
 	{"cmd+shift+up", "move-window-up"},
@@ -64,7 +66,47 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+down", "move-workspace-down"},
 	{"cmd+shift+space", "toggle-floating"},
 }
-var actions = map[string]bool{"focus-monitor-left": true, "focus-monitor-right": true, "move-workspace-to-monitor-left": true, "move-workspace-to-monitor-right": true, "scale-up": true, "scale-down": true, "focus-workspace-up": true, "focus-workspace-down": true, "move-column-to-workspace-up": true, "move-column-to-workspace-down": true, "move-window-to-workspace-up": true, "move-window-to-workspace-down": true, "none": true, "consume-or-expel-window-left": true, "consume-or-expel-window-right": true, "spawn-terminal": true, "focus-column-left": true, "focus-column-right": true, "focus-window-up": true, "focus-window-down": true, "move-column-left": true, "move-column-right": true, "cycle-column-width": true, "maximize-column": true, "toggle-fullscreen": true, "toggle-window-stash": true, "toggle-stash-visible": true, "toggle-overview": true, "close-window": true, "quit": true, "move-window-up": true, "move-window-down": true, "move-workspace-up": true, "move-workspace-down": true, "toggle-floating": true}
+var actions = map[string]bool{
+	"focus-monitor-left":              true,
+	"focus-monitor-right":             true,
+	"move-workspace-to-monitor-left":  true,
+	"move-workspace-to-monitor-right": true,
+	"focus-monitor-up":                true,
+	"focus-monitor-down":              true,
+	"move-workspace-to-monitor-up":    true,
+	"move-workspace-to-monitor-down":  true,
+	"scale-up":                        true,
+	"scale-down":                      true,
+	"focus-workspace-up":              true,
+	"focus-workspace-down":            true,
+	"move-column-to-workspace-up":     true,
+	"move-column-to-workspace-down":   true,
+	"move-window-to-workspace-up":     true,
+	"move-window-to-workspace-down":   true,
+	"none":                            true,
+	"consume-or-expel-window-left":    true,
+	"consume-or-expel-window-right":   true,
+	"spawn-terminal":                  true,
+	"focus-column-left":               true,
+	"focus-column-right":              true,
+	"focus-window-up":                 true,
+	"focus-window-down":               true,
+	"move-column-left":                true,
+	"move-column-right":               true,
+	"cycle-column-width":              true,
+	"maximize-column":                 true,
+	"toggle-fullscreen":               true,
+	"toggle-window-stash":             true,
+	"toggle-stash-visible":            true,
+	"toggle-overview":                 true,
+	"close-window":                    true,
+	"quit":                            true,
+	"move-window-up":                  true,
+	"move-window-down":                true,
+	"move-workspace-up":               true,
+	"move-workspace-down":             true,
+	"toggle-floating":                 true,
+}
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -188,6 +230,83 @@ func Load(path string) (ports.Config, []Warning, error) {
 	return Parse(f)
 }
 
+// maxOutputOffset bounds output.<name>.offset (logical px), far beyond any
+// real layout but small enough that placement arithmetic cannot overflow.
+const maxOutputOffset = 65536
+
+// outputRelations lists the relation suffixes, tried in order.
+var outputRelations = [...]struct {
+	suffix string
+	rel    ports.OutputRelation
+}{
+	{".right-of", ports.RelationRightOf},
+	{".left-of", ports.RelationLeftOf},
+	{".above", ports.RelationAbove},
+	{".below", ports.RelationBelow},
+}
+
+// outputRelation splits "<output>.right-of" (left-of, above, below) into the
+// relation and the output name.
+func outputRelation(name string) (ports.OutputRelation, string, bool) {
+	for _, r := range outputRelations {
+		if base, ok := strings.CutSuffix(name, r.suffix); ok {
+			return r.rel, base, true
+		}
+	}
+	return ports.RelationNone, "", false
+}
+
+// checkOutputAnchors warns about an offset without a relation, then drops the
+// relations that form a cycle (every output of the cycle, one warning each),
+// and warns about outputs sharing the same relation, reference and offset.
+// Core places a cycle automatically anyway; runtime overrides never create
+// relations, so this is the only place to detect them.
+func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string, offsetLines, seen map[string]int) []Warning {
+	var warnings []Warning
+	for _, o := range outputs {
+		if line, ok := offsetLines[o.Name]; ok && o.Anchor.Relation == ports.RelationNone {
+			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("output.%s.offset: ignored without a relation (right-of, left-of, above, below)", o.Name)})
+		}
+	}
+	byName := make(map[string]*ports.OutputConfig, len(outputs))
+	for i := range outputs {
+		byName[outputs[i].Name] = &outputs[i]
+	}
+	var cycle []*ports.OutputConfig
+	for i := range outputs {
+		for cur, steps := &outputs[i], 0; steps <= len(outputs); steps++ {
+			if cur.Anchor.Relation == ports.RelationNone {
+				break
+			}
+			if cur = byName[cur.Anchor.To]; cur == nil {
+				break
+			}
+			if cur == &outputs[i] {
+				cycle = append(cycle, cur)
+				break
+			}
+		}
+	}
+	for _, o := range cycle {
+		key := relKeys[o.Name]
+		warnings = append(warnings, Warning{Line: seen[key], Msg: fmt.Sprintf("%s: relation cycle, ignored", key)})
+		o.Anchor.Relation, o.Anchor.To = ports.RelationNone, ""
+	}
+	// Two outputs with the same relation, reference and offset overlap.
+	for i, o := range outputs {
+		if o.Anchor.Relation == ports.RelationNone {
+			continue
+		}
+		for _, prev := range outputs[:i] {
+			if prev.Anchor == o.Anchor {
+				warnings = append(warnings, Warning{Line: seen[relKeys[o.Name]], Msg: fmt.Sprintf("output.%s: same relation as output.%s; both get the same position", o.Name, prev.Name)})
+				break
+			}
+		}
+	}
+	return warnings
+}
+
 // Parse reads `key = value` lines on top of the defaults.
 func Parse(r io.Reader) (ports.Config, []Warning, error) {
 	c, _, w, err := parse(r)
@@ -201,6 +320,8 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	raw := map[string]string{}
 	seen := map[string]int{}
 	outputs := map[string]int{}
+	relKeys := map[string]string{}  // output -> key of its relation
+	offsetLines := map[string]int{} // output -> line of its offset
 	workspaces := map[string]int{}
 	scanner := bufio.NewScanner(r)
 	for n := 1; scanner.Scan(); n++ {
@@ -289,6 +410,42 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				entry().SDRBrightness = nits
 				continue
 			}
+			if base, ok := strings.CutSuffix(name, ".offset"); ok {
+				name = base
+				off, err := strconv.Atoi(value)
+				if err != nil || off < -maxOutputOffset || off > maxOutputOffset {
+					warn("%s: must be an integer between -%d and %d", key, maxOutputOffset, maxOutputOffset)
+					continue
+				}
+				override()
+				entry().Anchor.Offset = off
+				offsetLines[name] = n
+				continue
+			}
+			if rel, base, ok := outputRelation(name); ok {
+				name = base
+				if value == "" {
+					warn("%s: expected an output name", key)
+					continue
+				}
+				if value == name {
+					warn("%s: an output cannot be placed relative to itself", key)
+					continue
+				}
+				if prev, ok := relKeys[name]; ok && prev != key {
+					warn("%s: overrides line %d (%s)", key, seen[prev], prev)
+					delete(raw, prev)
+					// Stale lines of the other relation keys must not trigger a
+					// second override warning from override() or a later switch.
+					delete(seen, prev)
+					delete(seen, key)
+				}
+				override()
+				relKeys[name] = key
+				a := &entry().Anchor
+				a.Relation, a.To = rel, value
+				continue
+			}
 			if base, ok := strings.CutSuffix(name, ".scale"); ok {
 				name = base
 				s, err := parseScale(value)
@@ -311,7 +468,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			override()
 			e := entry()
-			o.Scale, o.Primary, o.HDR, o.SDRBrightness = e.Scale, e.Primary, e.HDR, e.SDRBrightness
+			o.Scale, o.Primary, o.HDR, o.SDRBrightness, o.Anchor = e.Scale, e.Primary, e.HDR, e.SDRBrightness, e.Anchor
 			*e = o
 			continue
 		}
@@ -353,6 +510,7 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	if err := scanner.Err(); err != nil {
 		return c, raw, warnings, err
 	}
+	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
 	sort.SliceStable(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound

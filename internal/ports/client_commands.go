@@ -62,7 +62,7 @@ func (o OutputPlacement) Contains(x, y float64) bool {
 	return x >= float64(o.X) && x < float64(o.X+o.Width) && y >= float64(o.Y) && y < float64(o.Y+o.Height)
 }
 
-// Layout is the global arrangement of outputs, left to right.
+// Layout is the global arrangement of outputs in logical pixels.
 type Layout []OutputPlacement
 
 // At returns the output under the logical point.

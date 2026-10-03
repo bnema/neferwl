@@ -127,6 +127,7 @@ func TestOverviewWindowMutationsDisabled(t *testing.T) {
 		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
 		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
+		ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown,
 	}
 	for _, a := range actions {
 		t.Run(string(a), func(t *testing.T) {

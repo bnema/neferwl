@@ -56,6 +56,8 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup |
+| `output.<name>.right-of` / `.left-of` / `.above` / `.below` | automatic | Connector to place the output against, e.g. `DP-1` |
+| `output.<name>.offset` | `0` | Logical px along the shared edge, −65536 to 65536; see [Output placement](#output-placement) |
 | `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
 | `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
@@ -64,6 +66,59 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `performance.realtime` | `on` | Request real-time scheduling for output and input threads |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
+
+## Output placement
+
+Without relations, outputs sit left to right in config order, top-aligned. A relation places an output against another one; `offset` slides it along the shared edge so the pointer crosses where the screens really meet.
+
+```ini
+output.DP-2.right-of = DP-1
+output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
+```
+
+```
+┌────────────┐
+│            │┌─────────┐
+│    DP-1    ││  DP-2   │
+│ 2560x1440  ││1920x1080│
+│            │└─────────┘
+└────────────┘
+```
+
+Rules:
+
+- `offset` moves down for `right-of`/`left-of` and right for `above`/`below`; negative moves the other way.
+- Sizes are logical: the layout follows scale changes on its own.
+- An output whose reference is not connected is placed automatically until the reference returns.
+- Cycles and invalid values are ignored with a warning in the log.
+- Positions set by kanshi, wdisplays or wlr-randr win until the next config reload.
+- `focus-monitor-*`, `move-workspace-to-monitor-*` and column moves past the edge go to the output on that side.
+
+Two rows of three, with DP-1 as the base:
+
+```
+┌────────┐┌────────────┐┌────────┐
+│  DP-4  ││   HDMI-1   ││  DP-5  │
+└────────┘└────────────┘└────────┘
+┌────────┐┌────────────┐┌────────┐
+│  DP-2  ││    DP-1    ││  DP-3  │
+└────────┘└────────────┘└────────┘
+```
+
+```ini
+# Bottom row: 1080p sides, bottoms aligned with DP-1 (1440 - 1080 = 360)
+output.DP-2.left-of = DP-1
+output.DP-2.offset = 360
+output.DP-3.right-of = DP-1
+output.DP-3.offset = 360
+
+# Top row: 1200p sides, bottoms aligned with HDMI-1 (1440 - 1200 = 240)
+output.HDMI-1.above = DP-1
+output.DP-4.left-of = HDMI-1
+output.DP-4.offset = 240
+output.DP-5.right-of = HDMI-1
+output.DP-5.offset = 240
+```
 
 ## Workspace size
 
@@ -147,8 +202,8 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 | `workspace <name>` | Toggle a named workspace |
 | `move-column-to-workspace <N>` / `-up/-down` | Move the focused column |
 | `move-window-to-workspace <N>` / `-up/-down` | Move only the focused window |
-| `focus-monitor-left/right` | Focus the neighbor monitor |
-| `move-workspace-to-monitor-left/right` | Move the workspace; it gets a new home |
+| `focus-monitor-left/right` / `focus-monitor-up/down` | Focus the neighbor monitor in that direction |
+| `move-workspace-to-monitor-left/right` / `move-workspace-to-monitor-up/down` | Move the workspace to the neighbor monitor in that direction; it gets a new home |
 | `move-workspace-up/down` | Swap the current numbered workspace with its neighbor; the view follows it. It never passes the empty workspace at the end |
 | `scale-up` / `scale-down` | Zoom the whole display; one second after the last press, the scale is saved to `output.<name>.scale` and a notification confirms it (`notify-send`) |
 | `quit` | Exit NeferWL |
@@ -259,6 +314,8 @@ With `keyboard.cmd = alt`, the `cmd+alt+…` binds have the same keys as `cmd+�
 | `cmd+shift+code:10` | `move-column-to-workspace 9` |
 | `cmd+ctrl+left` | `focus-monitor-left` |
 | `cmd+ctrl+right` | `focus-monitor-right` |
+| `cmd+ctrl+up` / `cmd+ctrl+k` | `focus-monitor-up` |
+| `cmd+ctrl+down` / `cmd+ctrl+j` | `focus-monitor-down` |
 | `cmd+ctrl+h` | `focus-monitor-left` |
 | `cmd+ctrl+l` | `focus-monitor-right` |
 | `cmd+ctrl+shift+left` | `move-workspace-to-monitor-left` |

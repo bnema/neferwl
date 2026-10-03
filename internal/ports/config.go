@@ -11,8 +11,11 @@ const DefaultSDRBrightness = 203
 // OutputConfig configures one connector. Name is the connector (e.g. "DP-2").
 // Mode is "WxH" (highest refresh) or "WxH@Hz" (closest refresh); empty picks the
 // monitor's preferred mode. Off disables the connector.
-// Every connected output that is not off is used. Outputs are placed left to
-// right in config order, then in connection order.
+// Every connected output that is not off is used.
+// Placement, by precedence: Pos (set at runtime by wlr-output-management),
+// then Anchor against another connected output, then automatic: right of
+// everything placed so far (never left of 0), at y=0, in config order, then in
+// connection order.
 // Scale is the output scale (0 means 1); layout works in logical pixels,
 // physical = logical × Scale.
 // Primary gets the focus and the pointer at startup, wherever it is placed.
@@ -23,12 +26,34 @@ type OutputConfig struct {
 	Mode  string
 	Off   bool
 	Scale float64
-	// Pos is an explicit logical placement set at runtime; nil uses automatic layout.
-	Pos           *image.Point
+	// Pos is an explicit logical placement set at runtime; nil uses Anchor, else automatic layout.
+	Pos *image.Point
+	// Anchor places the output against another connected one.
+	Anchor        OutputAnchor // RelationNone: automatic
 	Primary       bool
 	HDR           bool // opt-in to HDR10 on capable outputs
 	SDRBrightness int  // nits; default DefaultSDRBrightness
 	ScaleOnly     bool
+}
+
+// OutputRelation is the side of another output where an output is placed.
+type OutputRelation uint8
+
+const (
+	RelationNone OutputRelation = iota
+	RelationRightOf
+	RelationLeftOf
+	RelationAbove
+	RelationBelow
+)
+
+// OutputAnchor places an output against another connected one, named by To.
+// Offset is in logical pixels, along the shared edge: y for right-of and
+// left-of (positive is down), x for above and below (positive is right).
+type OutputAnchor struct {
+	Relation OutputRelation
+	To       string
+	Offset   int
 }
 
 // LayoutRules are the layout settings shared by the defaults, screens and
