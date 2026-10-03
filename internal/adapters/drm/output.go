@@ -418,7 +418,8 @@ func (o *Output) powerOff() error {
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("power off: %w", err)
 	}
-	o.off, o.vrrOn, o.vrrGame = true, false, false
+	o.off, o.vrrGame = true, false
+	o.setVRR(false)
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
 	// An inactive output offers neither HDR nor direct scanout.
@@ -607,7 +608,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 		if o.vrrOn != vrr {
 			o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
 		}
-		o.vrrOn = vrr
+		o.setVRR(vrr)
 	}
 	if o.cursor != nil {
 		// An async commit leaves the cursor plane as applied.
@@ -716,7 +717,7 @@ func (o *Output) commitState(vrr bool) error {
 	if vrr != o.vrrOn {
 		o.log.Info().Bool("vrr", vrr).Str("connector", o.conn.name).Msg("vrr")
 	}
-	o.vrrOn = vrr
+	o.setVRR(vrr)
 	o.contentValue = o.contentWanted
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
@@ -1279,7 +1280,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_commits", cs.Commits)
 			}
 			fs := o.takeFlipStats()
-			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead)).Int("redrawn_pixels", r.TakeRedrawn())
+			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
+			ev = ev.Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead)).Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)
 			}
@@ -1431,7 +1433,8 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	// Only a commit of ours is traced: not a stale event, nor the end of
 	// an EBUSY wait. Its fences are read before flip closes them.
-	trace := o.traceFlips && o.frame.ours(ev.user)
+	ours := o.frame.ours(ev.user)
+	trace := o.traceFlips && ours
 	var fenceAt time.Duration
 	if trace {
 		fenceAt = fencesSignalledAt(o.frame.pendingFrame.fences)
@@ -1441,10 +1444,14 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		return false
 	}
 	now := monotonic()
-	if trace {
-		o.traceFlip(ev, f, start, now, fenceAt)
+	commitAt := now - time.Since(start)
+	if ours {
+		o.accountRead(ev, now)
 	}
-	o.accountFlip(ev, f.frame, now, fenceAt)
+	if trace {
+		o.traceFlip(ev, f, commitAt, now, o.lastFlipAt, fenceAt)
+	}
+	o.accountFlip(ev, f.frame, commitAt, fenceAt)
 	o.startFlipGap(f)
 	if o.cursor != nil {
 		o.cursor.landed()

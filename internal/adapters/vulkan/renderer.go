@@ -325,6 +325,14 @@ func (r *Renderer) findMemoryType(bits uint32, props vk.MemoryPropertyFlags) (ui
 // It is diagnostic only and must be read by the renderer's owner goroutine.
 func (r *Renderer) CopiedBytes() int { return r.copied }
 
+// TakeRedrawn returns the target pixels drawn since the last call and
+// resets the count.
+func (r *Renderer) TakeRedrawn() int {
+	n := r.redrawn
+	r.redrawn = 0
+	return n
+}
+
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.
 func (r *Renderer) QueuePriority() string { return r.queuePriority }

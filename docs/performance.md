@@ -40,10 +40,10 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 Each output's `stats` entry (every 10 s) counts what happened since the previous one, from the kernel's flip timestamps, and starts over:
 
-- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. Not counted under VRR, where the period is not fixed.
-- `max_flip_interval_ms`: the longest time between two frame flips (also under VRR).
-- `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event. A large value with few `missed_vblanks` means the flips were on time and the event was read late.
-- `late_fences` (only with `--debug=drm-flip`, which reads the fence times): frame flips whose composition fence signalled after the vblank before the flip, so the frame could not have flipped earlier. Not counted under VRR. Many `missed_vblanks` with many `late_fences` is a late composition.
+- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. An output commits only on change, so an interval counts only if its commit was made less than one period after the previous flip (it could have made the next vblank); a gap after an idle period is ignored. Not counted under VRR, where the period is not fixed.
+- `max_flip_interval_ms`: the longest such interval between two frame flips (also under VRR, with the same rule against the mode's nominal period). The chain restarts after a modeset or a VRR change.
+- `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event, for the output's own commits. A large value with few `missed_vblanks` means the flips were on time and the event was read late.
+- `late_fences` (only with `--debug=drm-flip`, which reads the fence times): missed vblanks, as defined above, whose composition fence signalled after the vblank the commit targeted (the previous flip plus one period), so the frame was not ready for it. A missed vblank with an earlier fence was delayed elsewhere (commit placement, flip delivery). Not counted under VRR.
 - `redrawn_pixels`: target pixels the renderer drew; a damage-limited frame counts its damage, not the whole target.
 
 `input stats` shows coalesced pointer motion and the longest wait for core.
