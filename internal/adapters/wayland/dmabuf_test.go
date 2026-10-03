@@ -57,8 +57,8 @@ type paramsProxy struct {
 
 func (p *paramsProxy) Dispatch(e *wlturbo.Event) { p.result <- e.Opcode }
 
-// A format the renderer did not list fails; a plane past the end of its
-// file is a protocol error.
+// An unadvertised format is a protocol error from v4 and `failed` before; a
+// plane past the end of its file is a protocol error.
 func TestDMABufParams(t *testing.T) {
 	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
 	c := protocolClient(t, s, dir)
@@ -93,13 +93,8 @@ func TestDMABufParams(t *testing.T) {
 		}
 		return p, proxy.result
 	}
-	// NV12 is not in the list: failed, not a protocol error.
-	_, result := create('N'|'V'<<8|'1'<<16|'2'<<24, 16)
-	if op := <-result; op != uint16(linuxdmabuf.ZwpLinuxBufferParamsV1EventFailed) {
-		t.Fatalf("event %d", op)
-	}
 	// Supported: created (import errors surface in the renderer).
-	_, result = create(linearARGB.Format, 16)
+	_, result := create(linearARGB.Format, 16)
 	if op := <-result; op != uint16(linuxdmabuf.ZwpLinuxBufferParamsV1EventCreated) {
 		t.Fatalf("event %d", op)
 	}
@@ -111,6 +106,132 @@ func TestDMABufParams(t *testing.T) {
 	}
 	requestProtocol(t, c, big, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(17), linearARGB.Format, uint32(0))
 	expectProtocolError(t, c, big, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorOutOfBounds))
+	// Each case below needs its own connection: a protocol error kills it.
+	t.Run("unadvertised format v6", func(t *testing.T) {
+		c, p, _ := createNV12(t, dmabufVersion, false, 0)
+		expectProtocolError(t, c, p, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidFormat))
+	})
+	t.Run("unadvertised format v6 immed", func(t *testing.T) {
+		c, p, _ := createNV12(t, dmabufVersion, true, 0)
+		expectProtocolError(t, c, p, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidFormat))
+	})
+	// Flags are checked first: a y-inverted buffer fails, whatever its format.
+	t.Run("flags before format v6", func(t *testing.T) {
+		c, _, proxy := createNV12(t, dmabufVersion, false, 1)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		if op := <-proxy.result; op != uint16(linuxdmabuf.ZwpLinuxBufferParamsV1EventFailed) {
+			t.Fatalf("event %d", op)
+		}
+	})
+	// Before v4 there is no feedback to follow: the client gets `failed`,
+	// or invalid_wl_buffer for an immediate create.
+	t.Run("unadvertised format v3 immed", func(t *testing.T) {
+		c, p, _ := createNV12(t, 3, true, 0)
+		expectProtocolError(t, c, p, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidWlBuffer))
+	})
+	t.Run("unadvertised format v3", func(t *testing.T) {
+		c, _, proxy := createNV12(t, 3, false, 0)
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		if op := <-proxy.result; op != uint16(linuxdmabuf.ZwpLinuxBufferParamsV1EventFailed) {
+			t.Fatalf("event %d", op)
+		}
+	})
+}
+
+// createNV12 sends a one-plane create (or create_immed) of NV12, which the
+// server does not list, on a fresh connection bound at the given version.
+func createNV12(t *testing.T, version uint32, immed bool, flags uint32) (*wlturbo.Display, uint32, *paramsProxy) {
+	t.Helper()
+	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	c := protocolClient(t, s, dir)
+	dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", version)
+	fd, err := unix.MemfdCreate("fake-dmabuf", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { unix.Close(fd) })
+	if err := unix.Ftruncate(fd, 256*16); err != nil {
+		t.Fatal(err)
+	}
+	p := c.AllocateID()
+	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
+	proxy := &paramsProxy{result: make(chan uint16, 2)}
+	proxy.SetID(p)
+	registerWireProxy(c, proxy)
+	if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+		t.Fatal(err)
+	}
+	if immed {
+		requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreateImmed, c.AllocateID(), int32(64), int32(16), uint32(fourccNV12), flags)
+	} else {
+		requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(16), uint32(fourccNV12), flags)
+	}
+	return c, p, proxy
+}
+
+// set_sampling_device takes an 8-byte dev_t, before the params are used.
+func TestDMABufSamplingDevice(t *testing.T) {
+	s, _, _, dir := dmabufServer(t, ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}})
+	fd, err := unix.MemfdCreate("fake-dmabuf", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Ftruncate(fd, 256*16); err != nil {
+		t.Fatal(err)
+	}
+	newParams := func(c *wlturbo.Display, dm uint32) (uint32, *paramsProxy) {
+		p := c.AllocateID()
+		requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestCreateParams, p)
+		proxy := &paramsProxy{result: make(chan uint16, 2)}
+		proxy.SetID(p)
+		registerWireProxy(c, proxy)
+		return p, proxy
+	}
+	setDevice := func(c *wlturbo.Display, p uint32, dev []byte) {
+		t.Helper()
+		if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestSetSamplingDevice), nil, dev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("accepted", func(t *testing.T) {
+		c := protocolClient(t, s, dir)
+		dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", dmabufVersion)
+		p, proxy := newParams(c, dm)
+		setDevice(c, p, devBytes(42))
+		if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+			t.Fatal(err)
+		}
+		requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(16), linearARGB.Format, uint32(0))
+		if err := c.Roundtrip(); err != nil {
+			t.Fatal(err)
+		}
+		if op := <-proxy.result; op != uint16(linuxdmabuf.ZwpLinuxBufferParamsV1EventCreated) {
+			t.Fatalf("event %d", op)
+		}
+	})
+	t.Run("bad size", func(t *testing.T) {
+		c := protocolClient(t, s, dir)
+		dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", dmabufVersion)
+		p, _ := newParams(c, dm)
+		setDevice(c, p, make([]byte, 4))
+		expectProtocolError(t, c, p, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidDevTSize))
+	})
+	t.Run("after create", func(t *testing.T) {
+		c := protocolClient(t, s, dir)
+		dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", dmabufVersion)
+		p, _ := newParams(c, dm)
+		if err := wireRequest(c, p, uint16(linuxdmabuf.ZwpLinuxBufferParamsV1RequestAdd), []int{fd}, uint32(0), uint32(0), uint32(256), uint32(0), uint32(0)); err != nil {
+			t.Fatal(err)
+		}
+		requestProtocol(t, c, p, linuxdmabuf.ZwpLinuxBufferParamsV1RequestCreate, int32(64), int32(16), linearARGB.Format, uint32(0))
+		setDevice(c, p, devBytes(42))
+		expectProtocolError(t, c, p, uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorAlreadyUsed))
+	})
 }
 
 // A reused params object is a protocol error.
@@ -173,12 +294,19 @@ func TestWestonDMABuf(t *testing.T) {
 	}
 }
 
-// feedbackProxy records the tranches of each feedback round (done).
+// feedbackProxy records each feedback round (up to done).
 type feedbackProxy struct {
 	wlturbo.BaseProxy
-	rounds chan []tranche
-	cur    []tranche
+	rounds chan round
+	cur    round
 	open   tranche
+}
+
+// round is what one feedback round carried.
+type round struct {
+	tranches    []tranche
+	tables      int
+	mainDevices int
 }
 
 type tranche struct {
@@ -189,9 +317,12 @@ type tranche struct {
 func (p *feedbackProxy) Dispatch(e *wlturbo.Event) {
 	switch uint32(e.Opcode) {
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventFormatTable:
+		p.cur.tables++
 		if fd := e.Fd(); fd != 0 {
 			unix.Close(int(fd))
 		}
+	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventMainDevice:
+		p.cur.mainDevices++
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheFlags:
 		p.open.flags = e.Uint32()
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheFormats:
@@ -200,86 +331,115 @@ func (p *feedbackProxy) Dispatch(e *wlturbo.Event) {
 			p.open.indices = append(p.open.indices, uint16(a[i])|uint16(a[i+1])<<8)
 		}
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventTrancheDone:
-		p.cur, p.open = append(p.cur, p.open), tranche{}
+		p.cur.tranches, p.open = append(p.cur.tranches, p.open), tranche{}
 	case linuxdmabuf.ZwpLinuxDmabufFeedbackV1EventDone:
 		p.rounds <- p.cur
-		p.cur = nil
+		p.cur = round{}
 	}
 }
 
-// A fullscreen surface on an output with scanout formats gets a scanout
-// tranche first; leaving fullscreen sends the renderer tranche alone.
-func TestDMABufScanoutTranche(t *testing.T) {
-	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
-	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+// scanoutHarness is a server with commands and output formats channels, a
+// mapped window, and a surface feedback bound at the given version.
+type scanoutHarness struct {
+	t        *testing.T
+	c        *wlturbo.Display
+	s        *Server
+	w        ports.WindowMapped
+	fb       uint32
+	proxy    *feedbackProxy
+	commands chan ports.ClientCommand
+	formats  chan ports.OutputFormats
+}
+
+func newScanoutHarness(t *testing.T, sup ports.DMABufSupport, version uint32) *scanoutHarness {
+	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	commands := make(chan ports.ClientCommand, 16)
-	formats := make(chan ports.OutputFormats, 1)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events, Commands: commands, OutputFormats: formats}, logging.For(context.Background(), "wayland"))
+	h := &scanoutHarness{t: t, commands: make(chan ports.ClientCommand, 16), formats: make(chan ports.OutputFormats, 1)}
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events, Commands: h.commands, OutputFormats: h.formats}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.s = s
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
-	c := protocolClient(t, s, dir)
-	w, surf, xdg := surfaceMapper(t, c, events)()
+	h.c = protocolClient(t, s, dir)
+	w, surf, xdg := surfaceMapper(t, h.c, events)()
+	h.w = w
 	// Our configures must not block the mapper's one-slot proxy.
-	registerProtocol(t, c, xdg)
-	dm := bindVersion(t, c, "zwp_linux_dmabuf_v1", dmabufVersion)
-	fb := c.AllocateID()
-	proxy := &feedbackProxy{rounds: make(chan []tranche, 8)}
-	proxy.SetID(fb)
-	registerWireProxy(c, proxy)
-	requestProtocol(t, c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestGetSurfaceFeedback, fb, surf)
-	round := func(what string) []tranche {
-		t.Helper()
-		deadline := time.After(2 * time.Second)
-		for {
-			if err := c.Roundtrip(); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case r := <-proxy.rounds:
-				return r
-			case <-deadline:
-				t.Fatalf("no feedback: %s", what)
-			default:
-				time.Sleep(5 * time.Millisecond)
-			}
+	registerProtocol(t, h.c, xdg)
+	dm := bindVersion(t, h.c, "zwp_linux_dmabuf_v1", version)
+	h.fb = h.c.AllocateID()
+	h.proxy = &feedbackProxy{rounds: make(chan round, 8)}
+	h.proxy.SetID(h.fb)
+	registerWireProxy(h.c, h.proxy)
+	requestProtocol(t, h.c, dm, linuxdmabuf.ZwpLinuxDmabufV1RequestGetSurfaceFeedback, h.fb, surf)
+	return h
+}
+
+// next waits for the next feedback round.
+func (h *scanoutHarness) next(what string) round {
+	h.t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		if err := h.c.Roundtrip(); err != nil {
+			h.t.Fatal(err)
+		}
+		select {
+		case r := <-h.proxy.rounds:
+			return r
+		case <-deadline:
+			h.t.Fatalf("no feedback: %s", what)
+		default:
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
+}
+
+// A fullscreen surface on an output with scanout formats gets a scanout
+// tranche first; leaving fullscreen sends the renderer tranche alone. From
+// v6 the table comes once, main_device never, and the renderer tranche is
+// flagged for sampling.
+func TestDMABufScanoutTranche(t *testing.T) {
+	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
+	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+	h := newScanoutHarness(t, sup, dmabufVersion)
+	c, s, w, fb, commands, formats := h.c, h.s, h.w, h.fb, h.commands, h.formats
 	scanout := uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout)
-	if r := round("initial"); len(r) != 1 || r[0].flags != 0 || len(r[0].indices) != 2 {
+	sampling := uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsSampling)
+	if r := h.next("initial"); len(r.tranches) != 1 || r.tranches[0].flags != sampling || len(r.tranches[0].indices) != 2 || r.tables != 1 || r.mainDevices != 0 {
 		t.Fatalf("tiled window: %+v", r)
 	}
 	formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
-	r := round("fullscreen")
-	for len(r) == 1 { // the formats may land after the configure
-		r = round("fullscreen with formats")
+	r := h.next("fullscreen")
+	for len(r.tranches) == 1 { // the formats may land after the configure
+		if r.tables != 0 || r.mainDevices != 0 {
+			t.Fatalf("resent table or main device: %+v", r)
+		}
+		r = h.next("fullscreen with formats")
 	}
-	if len(r) != 2 || r[0].flags != scanout || len(r[0].indices) != 1 || r[0].indices[0] != 1 || r[1].flags != 0 {
+	if len(r.tranches) != 2 || r.tranches[0].flags != scanout || len(r.tranches[0].indices) != 1 || r.tranches[0].indices[0] != 1 || r.tranches[1].flags != sampling || r.tables != 0 || r.mainDevices != 0 {
 		t.Fatalf("fullscreen: %+v", r)
 	}
 	// Hidden, the window loses its scanout tranche; shown, it gets it back.
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1"}
-	if r := round("hidden"); len(r) != 1 {
+	if r := h.next("hidden"); len(r.tranches) != 1 || r.tables != 0 {
 		t.Fatalf("hidden fullscreen: %+v", r)
 	}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
-	if r := round("shown again"); len(r) != 2 || r[0].flags != scanout {
+	if r := h.next("shown again"); len(r.tranches) != 2 || r.tranches[0].flags != scanout || r.tables != 0 {
 		t.Fatalf("shown fullscreen: %+v", r)
 	}
 	// Fullscreen on another output: its formats (none) apply at once.
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "OTHER-1", Visible: true}
-	if r := round("other output"); len(r) != 1 {
+	if r := h.next("other output"); len(r.tranches) != 1 || r.tables != 0 {
 		t.Fatalf("moved output: %+v", r)
 	}
 	commands <- ports.ConfigureWindow{ID: w.ID, Width: 800, Height: 600, Output: "HEADLESS-1", Visible: true}
-	if r := round("tiled again"); len(r) != 1 || r[0].flags != 0 {
+	if r := h.next("tiled again"); len(r.tranches) != 1 || r.tranches[0].flags != sampling || r.tables != 0 {
 		t.Fatalf("left fullscreen: %+v", r)
 	}
 	// A destroyed feedback gets nothing more (a protocol error would
@@ -294,6 +454,32 @@ func TestDMABufScanoutTranche(t *testing.T) {
 	s.display.Do(func() { n = len(s.dmabuf.feedbacks) })
 	if n != 0 {
 		t.Fatalf("%d feedbacks kept", n)
+	}
+}
+
+// A v4 client keeps the whole feedback on every round: table, main device,
+// and an unflagged renderer tranche.
+func TestDMABufFeedbackV4(t *testing.T) {
+	tiled := ports.DMABufFormat{Format: linearARGB.Format, Modifier: 0x0200000000000001}
+	sup := ports.DMABufSupport{Device: 1, Formats: []ports.DMABufFormat{linearARGB, tiled}}
+	h := newScanoutHarness(t, sup, 4)
+	check := func(what string, r round, tranches int) {
+		t.Helper()
+		if r.tables != 1 || r.mainDevices != 1 || len(r.tranches) != tranches || r.tranches[len(r.tranches)-1].flags != 0 {
+			t.Fatalf("%s: %+v", what, r)
+		}
+	}
+	check("initial", h.next("initial"), 1)
+	h.formats <- ports.OutputFormats{Output: "HEADLESS-1", Device: 7, Formats: []ports.DMABufFormat{tiled}}
+	h.commands <- ports.ConfigureWindow{ID: h.w.ID, Width: 1920, Height: 1080, Fullscreen: true, Output: "HEADLESS-1", Visible: true}
+	r := h.next("fullscreen")
+	for len(r.tranches) == 1 { // the formats may land after the configure
+		check("fullscreen before formats", r, 1)
+		r = h.next("fullscreen with formats")
+	}
+	check("fullscreen", r, 2)
+	if r.tranches[0].flags != uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout) {
+		t.Fatalf("scanout tranche: %+v", r)
 	}
 }
 

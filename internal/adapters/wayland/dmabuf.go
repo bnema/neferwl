@@ -13,15 +13,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// linux-dmabuf v4: clients hand GPU buffers to the renderer without copies.
+// linux-dmabuf v6: clients hand GPU buffers to the renderer without copies.
 // The formats are those the renderer imports (ports.DMABufSupport); without
 // any, the global is not advertised and clients use wl_shm. Surface
 // feedback also offers, first, a scanout tranche while the surface's
 // window is fullscreen on an output that reported scanout formats
 // (ports.OutputFormats): a buffer allocated from it can be flipped to the
-// display with no composition.
+// display with no composition. From v6 the renderer tranche carries the
+// sampling flag, the format table is sent once per feedback object (it never
+// changes; wayland-protocols main lets compositors skip an unchanged
+// format_table, and clients index the last received one), main_device is not sent (the tranche target devices say it) and
+// params accept set_sampling_device. Older clients keep getting the whole
+// feedback on every round.
 
-const dmabufVersion = 4
+const dmabufVersion = 6
 
 // maxPlanes is the protocol limit (DRM planes).
 const maxPlanes = 4
@@ -182,12 +187,18 @@ func devBytes(dev uint64) []byte {
 	return b
 }
 
-// send sends the whole feedback: table, main device, the scanout tranche
-// when the surface has one, then the renderer tranche.
+// send sends a feedback round: the table (once from v6), the main device
+// (before v6), the scanout tranche when the surface has one, then the
+// renderer tranche.
 func (g *dmabufGlobal) send(fb *linuxdmabuf.ZwpLinuxDmabufFeedbackV1, st *feedbackState) {
-	fb.SendFormatTable(int(g.table.Fd()), uint32(16*len(g.support.Formats)))
-	st.tableSent = true
-	fb.SendMainDevice(g.mainDev)
+	v6 := fb.Version() >= 6
+	if !st.tableSent || !v6 {
+		fb.SendFormatTable(int(g.table.Fd()), uint32(16*len(g.support.Formats)))
+		st.tableSent = true
+	}
+	if !v6 {
+		fb.SendMainDevice(g.mainDev)
+	}
 	if offer, ok := g.scanoutFor(st.surf); ok && len(offer.indices) > 0 {
 		fb.SendTrancheTargetDevice(offer.device)
 		fb.SendTrancheFlags(uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout))
@@ -195,7 +206,11 @@ func (g *dmabufGlobal) send(fb *linuxdmabuf.ZwpLinuxDmabufFeedbackV1, st *feedba
 		fb.SendTrancheDone()
 	}
 	fb.SendTrancheTargetDevice(g.mainDev)
-	fb.SendTrancheFlags(0)
+	rendererFlags := uint32(0)
+	if v6 {
+		rendererFlags = uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsSampling)
+	}
+	fb.SendTrancheFlags(rendererFlags)
 	fb.SendTrancheFormats(g.rendererIndices)
 	fb.SendTrancheDone()
 	fb.SendDone()
@@ -346,10 +361,17 @@ func (p *params) build(width, height int32, format, flags uint32) (buf *dmabufBu
 		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidDimensions), "invalid dimensions")
 		return nil, false, false
 	}
-	// Unsupported formats, y-inverted or interlaced buffers: the client
-	// falls back to another format or to wl_shm.
-	want := ports.DMABufFormat{Format: format, Modifier: p.modifier}
-	if flags != 0 || !slices.Contains(p.global.support.Formats, want) {
+	// Y-inverted or interlaced buffers fail: the client falls back to
+	// another format or to wl_shm. An unadvertised format+modifier is
+	// invalid_format from v4, a failure before.
+	if flags != 0 {
+		return nil, true, true
+	}
+	if want := (ports.DMABufFormat{Format: format, Modifier: p.modifier}); !slices.Contains(p.global.support.Formats, want) {
+		if r.Version() >= 4 {
+			r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidFormat), "format and modifier not advertised")
+			return nil, false, false
+		}
 		return nil, true, true
 	}
 	// NV12/P010 are 4:2:0 two-plane images. The same modifier must
@@ -437,7 +459,16 @@ func (p *params) CreateImmed(r *linuxdmabuf.ZwpLinuxBufferParamsV1, id uint32, w
 	p.global.server.addBuffer(res, b)
 }
 
-func (*params) SetSamplingDevice(*linuxdmabuf.ZwpLinuxBufferParamsV1, []byte) {}
+// SetSamplingDevice accepts any dev_t: the renderer samples on a single
+// device, and a hint for another one is not an error.
+func (p *params) SetSamplingDevice(r *linuxdmabuf.ZwpLinuxBufferParamsV1, device []byte) {
+	switch {
+	case p.used:
+		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorAlreadyUsed), "params already used")
+	case len(device) != 8:
+		r.PostError(uint32(linuxdmabuf.ZwpLinuxBufferParamsV1ErrorInvalidDevTSize), "dev_t must be 8 bytes")
+	}
+}
 
 // dmabufBuffer is a wl_buffer backed by client GPU memory.
 type dmabufBuffer struct{ buf *ports.DMABuf }
