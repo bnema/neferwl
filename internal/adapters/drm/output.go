@@ -631,15 +631,19 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	}
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.frame.userData(userFrame)); err != nil {
-		// With a colour pipeline in the frame the cursor test cannot tell
-		// the cursor from the pipeline: the caller composes instead.
-		if !async && cur.on && errors.Is(err, unix.EINVAL) && !o.colorUsed(pc, ov) && o.cursorRefused() {
+		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
 		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.contentRefused(fb, fence, vrr, cur, ov, rect, pc) {
 			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
+		}
+		// After the cursor and the content hint, which the colour test
+		// does not tell apart from the pipeline. An async refusal is not
+		// one: the caller retries it synchronously.
+		if !async && errors.Is(err, unix.EINVAL) && o.colorRefused(err, fb, fence, vrr, cur, ov, rect, pc) {
+			return errColorRefused
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
@@ -835,11 +839,9 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 		cfb.noAsync = true
 		err = o.commitWithRect(fb, fence, false, vrr, f, overlayWin{}, rect, pc)
 	}
-	if err != nil && mode != colorBypass && errors.Is(err, unix.EINVAL) && o.colorRefusedFrame(fb, rect) {
-		// The buffer passes without the pipeline: the pipeline is what KMS
-		// refuses (cached per plane, format and cursor state).
-		o.primary.setVerdict(c.DMABuf.Format, o.cursorShown(), false)
-		o.log.Info().Str("component", "render").Err(err).Uint32("format", c.DMABuf.Format).Str("connector", o.conn.name).Msg("scanout colour pipeline refused")
+	if errors.Is(err, errColorRefused) {
+		// KMS takes the buffer without the pipeline: compose it; the
+		// refusal is cached, the buffer is not marked failed.
 		o.setScanoutReason("color_refused")
 		return false, nil
 	}

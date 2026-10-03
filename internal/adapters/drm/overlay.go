@@ -59,7 +59,7 @@ type overlayWin struct {
 // overlayCandidate finds the one window the overlay can show: an opaque
 // dmabuf at integer physical coordinates, drawn 1:1, with no other window
 // or layer above it. reason is why none.
-func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (ports.SceneWindow, ports.SurfaceContent, string) {
+func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) (ports.SceneWindow, ports.SurfaceContent, string) {
 	if s.Transform != 0 {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "output_transform"
 	}
@@ -79,11 +79,12 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		}
 		c := surfaces[w.ID]
 		// A viewport crop is composed: the plane would show the whole
-		// buffer. (Its colour encoding is checked by planeColor.) A dimmed
+		// buffer, and so is a colour the plane cannot show (raw PQ values
+		// on an SDR output, SDR on HDR without a pipeline). A dimmed
 		// window (a peeking stashed one) needs the veil drawn over it, and
 		// one with the focus effect needs its lift; an overview preview is
 		// drawn smaller than its buffer.
-		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) {
+		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && colorFits(c, hdrOn, pipeline) {
 			pick = w
 			continue
 		}
@@ -128,6 +129,12 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "fractional_position"
 	}
 	return *pick, c, ""
+}
+
+// colorFits reports whether the plane can show c's colour (see planeColor).
+func colorFits(c ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) bool {
+	_, reason := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline)
+	return reason == ""
 }
 
 // overlayProps puts ov on the overlay plane, or turns it off.

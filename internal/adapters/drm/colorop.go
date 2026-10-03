@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"slices"
 	"strings"
 
@@ -421,24 +422,31 @@ func (o *Output) colorCommitted(pc colorUse, ov overlayWin) {
 	}
 }
 
-// colorRefusedFrame reports whether KMS takes the scanout of fb at rect with
-// the primary plane on Bypass (and the cursor as it is): after a refused
-// commit with the pipeline, the pipeline is then the cause.
-func (o *Output) colorRefusedFrame(fb uint32, rect planeRect) bool {
-	req := &o.probeReq // frameReq is still the caller's
-	req.reset()
-	o.primaryRectProps(req, fb, rect)
-	o.primary.colorProps(req, colorBypass, 0, 0)
-	if o.cursor != nil {
-		o.cursor.props(req, o.crtc, o.cursor.desired())
-	}
-	return o.k.commit(req, atomicTestOnly, 0) == nil
-}
+// errColorRefused: KMS refused a frame with a plane colour pipeline that it
+// takes with Bypass. The caller composes the frame.
+var errColorRefused = errors.New("plane colour pipeline refused")
 
-// colorUsed reports whether a frame with primary colour pc and overlay ov
-// has a plane show the pipeline.
-func (o *Output) colorUsed(pc colorUse, ov overlayWin) bool {
-	return pc.mode != colorBypass || ov.buf != 0 && ov.color.mode != colorBypass
+// colorRefused handles a frame commit that failed with EINVAL while a plane
+// showed the pipeline: when the same frame passes TEST_ONLY with Bypass, the
+// pipeline is the cause. The refusal is cached for each plane that showed it,
+// its buffer format and the cursor state, and the frame is not retried.
+func (o *Output) colorRefused(err error, fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse) bool {
+	if !o.colorUsed(pc, ov) {
+		return false
+	}
+	bypassed := ov
+	bypassed.color = colorUse{}
+	if !o.contentRefused(fb, fence, vrr, cur, bypassed, rect, colorUse{}) {
+		return false
+	}
+	if pc.mode != colorBypass {
+		o.primary.setVerdict(pc.format, cur.on, false)
+	}
+	if ov.buf != 0 && ov.color.mode != colorBypass {
+		o.overlay.setVerdict(ov.color.format, cur.on, false)
+	}
+	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Bool("cursor", cur.on).Msg("plane colour pipeline refused")
+	return true
 }
 
 // colorConflict handles a commit without a frame, which turned the cursor
@@ -537,4 +545,10 @@ func (o *Output) readColor() {
 		p.pipeline = cp
 		o.log.Info().Str("component", "drm").Str("connector", o.conn.name).Uint32("plane", p.id).Bool("matched", cp != nil).Str("reason", why).Msg("plane colour pipeline")
 	}
+}
+
+// colorUsed reports whether a frame with primary colour pc and overlay ov
+// has a plane show the pipeline.
+func (o *Output) colorUsed(pc colorUse, ov overlayWin) bool {
+	return pc.mode != colorBypass || ov.buf != 0 && ov.color.mode != colorBypass
 }

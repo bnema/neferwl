@@ -254,7 +254,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 	if o.overlay != nil && o.scanout {
 		var w ports.SceneWindow
 		var c ports.SurfaceContent
-		w, c, reason = overlayCandidate(s, surfaces)
+		w, c, reason = overlayCandidate(s, surfaces, o.hdr.on, o.overlay.pipeline)
 		var mode colorMode
 		if reason == "" {
 			mode, reason = planeColor(c.Color, c.DMABuf.Format, c.Opaque, o.hdr.on, o.overlay.pipeline)

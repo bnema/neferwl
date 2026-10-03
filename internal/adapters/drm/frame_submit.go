@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
@@ -202,6 +203,11 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		done.Close()
 	}
 	ov.close()
+	if errors.Is(err, errColorRefused) {
+		// Cached for the overlay's buffer format: the next frame composes it.
+		o.setOverlayReason("color_refused")
+		return false, errOverlayDropped
+	}
 	if err != nil && o.overlayConflict(err, ov.buf) {
 		return false, errOverlayDropped
 	}
