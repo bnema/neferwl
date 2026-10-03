@@ -75,7 +75,6 @@ Without relations, outputs sit left to right in config order, top-aligned. A rel
 ```ini
 output.DP-2.right-of = DP-1
 output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
-# output.DP-2.transform = 90  # DP-2 is rotated: 1080 wide, 1920 tall
 ```
 
 ```
@@ -95,7 +94,7 @@ Rules:
 - Sizes are logical: the layout follows scale changes on its own.
 - An output whose reference is not connected is placed automatically until the reference returns.
 - Cycles and invalid values are ignored with a warning in the log.
-- Positions set by kanshi, wdisplays or wlr-randr win until the next config reload.
+- Positions and transforms set by kanshi, wdisplays or wlr-randr win until the next config reload.
 - `focus-monitor-*`, `move-workspace-to-monitor-*` and column moves past the edge go to the output on that side.
 
 Two rows of three, with DP-1 as the base:
