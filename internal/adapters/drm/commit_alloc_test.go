@@ -222,3 +222,61 @@ func TestAtomicReqResetKeepsCapacityAndDropsContent(t *testing.T) {
 		t.Fatal("stale object")
 	}
 }
+
+// With a plane colour pipeline active, the steady-state frame decision and
+// commit allocate nothing: the colour state is compared, not rebuilt, and a
+// cached verdict spares the TEST_ONLY.
+func TestColorPipelineAllocations(t *testing.T) {
+	t.Run("scanout decision", func(t *testing.T) {
+		o, _, _ := colorOutput(t, false, nil)
+		o.cursor.image = true
+		o.cursor.Move(12, 34)
+		o.clientFBs[9] = &clientFB{fbID: 80}
+		s, surfaces := hdrScanoutScene()
+		d := o.decideFrame(s, surfaces, false) // first use: TEST_ONLY, then cached
+		if d.fb != 80 || d.color != colorSDRToPQ {
+			t.Fatalf("decision %+v reason %q", d, o.reason)
+		}
+		if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) }); n != 0 {
+			t.Fatalf("decision with the pipeline: %.1f allocs, want 0", n)
+		}
+	})
+	t.Run("overlay decision", func(t *testing.T) {
+		o, k, _ := colorOutput(t, true, nil)
+		o.primary.pipeline = nil
+		k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(uint32(88), nil).Maybe()
+		s, surfaces := overlayScene()
+		if d := o.decideFrame(s, surfaces, false); d.overlay.fb != 88 || d.overlay.color.mode != colorSDRToPQ {
+			t.Fatalf("decision %+v reason %q", d, o.overlayReason)
+		}
+		if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) }); n != 0 {
+			t.Fatalf("overlay decision with the pipeline: %.1f allocs, want 0", n)
+		}
+	})
+	// The real kmsDevice on an invalid fd runs the request path up to the
+	// failing ioctl (see TestCommitFrameAllocations).
+	for _, tc := range []struct {
+		name  string
+		known bool // the plane applies the pipeline already
+	}{{"commit writing the pipeline", false}, {"steady-state commit", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _, _ := colorOutput(t, false, nil)
+			c := sdrContent(o)
+			o.cursor.image = true
+			o.cursor.Move(12, 34)
+			o.k = kmsDevice{fd: -1}
+			rect := fullPlaneRect(200, 100)
+			commit := func() {
+				o.primary.colorKnown, o.primary.colorApplied = tc.known, colorSDRToPQ
+				_, _ = o.commitScanoutRect(80, c, pendingFrame{}, rect, colorSDRToPQ)
+			}
+			commit() // grow the buffers
+			if _, ok := o.frameReq.value(tPrimary, pColorPipe); ok == tc.known {
+				t.Fatalf("COLOR_PIPELINE in the request: %v, known %v", ok, tc.known)
+			}
+			if n := testing.AllocsPerRun(100, commit); n != 0 {
+				t.Fatalf("%s: %.1f allocs, want 0", tc.name, n)
+			}
+		})
+	}
+}

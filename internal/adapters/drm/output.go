@@ -473,10 +473,11 @@ func (o *Output) sendFormats() {
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
-			// On HDR the 10-bit buffers go as they are; 8-bit ones are
-			// offered too when the primary plane converts them (SDR
-			// clients; HDR clients pick 10-bit formats for PQ).
-			if !isYUVFormat(format.Format) && (isTenBit(format.Format) == o.hdr.on || o.hdr.on && o.primary.pipeline != nil) {
+			// The feedback is not widened for SDR buffers on HDR: HDR
+			// clients pick from it and need 10-bit formats. An SDR
+			// buffer is still scanned out through the pipeline when the
+			// plane lists its format.
+			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdr.on {
 				f.Formats = append(f.Formats, format)
 			}
 		}

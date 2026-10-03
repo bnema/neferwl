@@ -17,7 +17,7 @@ With the capability, the dynamic loader ignores `LD_PRELOAD` and `LD_LIBRARY_PAT
 
 ## Guards
 
-`make perf-check` runs `testing.AllocsPerRun` guards that fail when a hot path starts allocating: tiled SHM scene walk, tiled commit publication, headless tiled playback, steady-state `Render`, DRM report and flip snapshots, frame lifecycle transitions, scanout/overlay frame decision, pacer bookkeeping, output message routing, surface update recycling and input-region traversal. Run it with `make check`.
+`make perf-check` runs `testing.AllocsPerRun` guards that fail when a hot path starts allocating: tiled SHM scene walk, tiled commit publication, headless tiled playback, steady-state `Render`, DRM report and flip snapshots, frame lifecycle transitions, scanout/overlay frame decision, DRM frame commit and plane colour pipeline decision, pacer bookkeeping, output message routing, surface update recycling and input-region traversal. Run it with `make check`.
 
 ## Measuring
 

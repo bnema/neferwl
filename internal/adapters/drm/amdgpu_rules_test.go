@@ -89,7 +89,12 @@ func (m *amdgpuModel) attach(k *mockkms, strict ...uint32) {
 //   - the active primary plane covers the whole mode (no partial src/dst);
 //   - HDR_OUTPUT_METADATA needs the BT.2020 Colorspace;
 //   - MODE_ID must name a live blob, and a change of MODE_ID, ACTIVE or the
-//     connector CRTC_ID is a modeset that needs the ALLOW_MODESET flag.
+//     connector CRTC_ID is a modeset that needs the ALLOW_MODESET flag;
+//   - a plane COLOR_PIPELINE cannot be selected together with the CRTC
+//     DEGAMMA_LUT (amdgpu_dm_plane.c);
+//   - an async commit changes nothing but a plane's FB_ID and IN_FENCE_FD
+//     (drm_atomic_set_property: a changed CRTC, connector, colorop or other
+//     plane property is EINVAL; writing the current value is allowed).
 //
 // amdgpuRule has no blob model: any MODE_ID is live.
 func amdgpuRule(t *testing.T) func(*atomicReq, uint32) error {
@@ -105,6 +110,14 @@ func amdgpuRuleWith(t *testing.T, live func(uint32) bool) func(*atomicReq, uint3
 	for _, p := range []uint32{tPrimary, tCursor, tOverlay, 53} {
 		state[[2]uint32{p, pFB}], state[[2]uint32{p, pCrtcID}] = 70, tCrtc
 	}
+	// The lit desktop's primary plane covers the whole mode: a commit that
+	// leaves its geometry alone (an async flip) keeps it.
+	for _, c := range [...]struct {
+		prop uint32
+		val  uint64
+	}{{12, 200 << 16}, {13, 100 << 16}, {16, 200}, {17, 100}} {
+		state[[2]uint32{tPrimary, c.prop}] = c.val
+	}
 	return func(req *atomicReq, flags uint32) error {
 		next := make(map[[2]uint32]uint64, len(state))
 		for k, v := range state {
@@ -116,6 +129,23 @@ func amdgpuRuleWith(t *testing.T, live func(uint32) bool) func(*atomicReq, uint3
 			}
 		}
 		get := func(obj, prop uint32) uint64 { return next[[2]uint32{obj, prop}] }
+		if flags&flipAsyncFlag != 0 {
+			for i, obj := range req.objs {
+				for _, p := range req.props[i] {
+					isPlane := obj == tPrimary || obj == tCursor || obj == tOverlay || obj == 53
+					if p.val != state[[2]uint32{obj, p.prop}] && !(isPlane && (p.prop == pFB || p.prop == pFence)) {
+						t.Logf("amdgpu: async commit changes object %d property %d", obj, p.prop)
+						return unix.EINVAL
+					}
+				}
+			}
+		}
+		for _, p := range []uint32{tPrimary, tOverlay} {
+			if get(tCrtc, pDegamma) != 0 && (get(p, pColorPipe) != 0 || get(p, pColorPipeOverlay) != 0) {
+				t.Logf("amdgpu: COLOR_PIPELINE on plane %d with a CRTC DEGAMMA_LUT", p)
+				return unix.EINVAL
+			}
+		}
 		if mode := get(tCrtc, pMode); mode != 0 && !live(uint32(mode)) {
 			t.Logf("amdgpu: MODE_ID %d names an unknown or destroyed blob", mode)
 			return unix.EINVAL
@@ -194,9 +224,12 @@ func TestAmdgpuRuleRejectsWhatHardwareRejected(t *testing.T) {
 		},
 		"cursor with CRTC but no FB": func(r *atomicReq) { r.set(tCursor, pFB, 0) },
 		"partial primary":            func(r *atomicReq) { r.set(tPrimary, 16, 100) },
-		"unknown MODE_ID":            func(r *atomicReq) { r.set(tCrtc, pMode, 123) },
 		"HDR metadata without colorspace": func(r *atomicReq) {
 			r.set(tConn, pHDRMeta, 55)
+		},
+		"COLOR_PIPELINE with DEGAMMA_LUT": func(r *atomicReq) {
+			r.set(tCrtc, pDegamma, 77)
+			r.set(tPrimary, pColorPipe, opBase)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -274,6 +307,16 @@ func TestAmdgpuRuleRejectsModesetWithoutAllowModes(t *testing.T) {
 				t.Fatal("rule accepted a modeset change without ALLOW_MODESET")
 			}
 		})
+	}
+}
+
+// The state a lit desktop starts from is valid: the rule only refuses an
+// unknown MODE_ID once it models blobs.
+func TestAmdgpuRuleRejectsUnknownModeBlob(t *testing.T) {
+	req := &atomicReq{}
+	req.set(tCrtc, pMode, 123)
+	if err := newAmdgpuModel(t).rule(req, atomicAllowModes); err == nil {
+		t.Fatal("rule accepted an unknown MODE_ID")
 	}
 }
 
@@ -408,6 +451,92 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 			t.Fatalf("output stopped on refused protected commit: %v", err)
 		case <-ctx.Done():
 			t.Fatal("no proof after retries")
+		}
+	}
+}
+
+// Async commits may change FB_ID and IN_FENCE_FD only; writing a value a
+// property already has is allowed.
+func TestAmdgpuRuleAsyncChangesOnlyFB(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		build func(*atomicReq)
+		ok    bool
+	}{
+		{"FB_ID and fence", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(tPrimary, pFence, 5) }, true},
+		{"the current value of another property", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(tPrimary, pCrtcID, tCrtc) }, true},
+		{"COLOR_PIPELINE changes", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(tPrimary, pColorPipe, opBase) }, false},
+		{"colorop BYPASS changes", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(opBase, bypassProp(opBase), 1) }, false},
+		{"VRR changes", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(tCrtc, pVRR, 1) }, false},
+		{"cursor moves", func(r *atomicReq) { r.set(tPrimary, pFB, 71); r.set(tCursor, 14, 9) }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &atomicReq{}
+			tc.build(req)
+			err := amdgpuRule(t)(req, flipAsyncFlag)
+			if (err == nil) != tc.ok {
+				t.Fatalf("async rule error %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}
+
+// The colour pipeline sequence the output drives on an HDR output meets the
+// amdgpu rules: modeset on Bypass, SDR scanout selecting the pipeline in a
+// synchronous commit, async flips of it carrying FB_ID alone, a composed
+// frame back on Bypass, and Close.
+func TestColorPipelineSequenceAcceptedByAmdgpuRules(t *testing.T) {
+	m := newAmdgpuModel(t)
+	o, k, commits := colorOutput(t, true, m.rule)
+	m.attach(k)
+	k.EXPECT().objProps(uint32(tOverlay), uint32(objPlane)).Return(map[string][2]uint64{"CRTC_ID": {pCrtcID, tCrtc}}, nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	enableTestHDR(o)
+	o.hdr.blob = 55
+	m.live[55], m.live[61] = true, true
+	o.modeBlob = 99
+	if err := o.modeset(); err != nil {
+		t.Fatalf("modeset: %v", err)
+	}
+	c := sdrContent(o)
+	c.Async = true
+	o.shown = 9
+	flip := func(mode colorMode) {
+		t.Helper()
+		o.frame.endPending()
+		o.vrrOn = true // keep VRR out of the way: it is its own commit field
+		if ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), mode); !ok || err != nil {
+			t.Fatalf("scanout %d: ok=%v err=%v", mode, ok, err)
+		}
+	}
+	flip(colorSDRToPQ)
+	flip(colorSDRToPQ)
+	flip(colorSDRToPQ)
+	if n := len(*commits); (*commits)[n-1].flags&flipAsyncFlag == 0 {
+		t.Fatal("steady-state flip with the pipeline was not async")
+	}
+	flip(colorBypass)
+	o.frame.endPending()
+	if err := o.commitFrame(70, nil, false, false, pendingFrame{}); err != nil {
+		t.Fatalf("composed: %v", err)
+	}
+	o.Close()
+}
+
+// The pipeline is never selected next to a CRTC DEGAMMA_LUT: the modeset
+// state this compositor commits has none.
+func TestColorPipelineNeverSetsDegamma(t *testing.T) {
+	m := newAmdgpuModel(t)
+	o, k, commits := colorOutput(t, false, m.rule)
+	m.attach(k)
+	k.EXPECT().objProps(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	c := sdrContent(o)
+	if ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ); !ok || err != nil {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	for _, rec := range *commits {
+		if _, ok := rec.req.value(tCrtc, pDegamma); ok {
+			t.Fatal("commit touches DEGAMMA_LUT")
 		}
 	}
 }
