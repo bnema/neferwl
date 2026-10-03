@@ -212,7 +212,7 @@ func (c *Core) applyAction(a Action) Effect {
 		// A covering fullscreen window is left for the window on that side;
 		// with none (the workspace or stash edge), the move goes to the
 		// neighbor monitor and fullscreen stays.
-		if w.pinned() {
+		if w.pinned() && !w.stashOverCover() {
 			if !w.FocusColumn(dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i

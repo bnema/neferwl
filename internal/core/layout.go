@@ -193,6 +193,10 @@ type Workspace struct {
 	// hiddenFullscreen holds a stashed window's fullscreen while the stash
 	// is hidden, restored when shown.
 	hiddenFullscreen WindowID
+	// stashOver shows the stash over the covering fullscreen window, a
+	// user override (ToggleStashVisible). Focusing another window or a
+	// fullscreen change ends it.
+	stashOver bool
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
 	// its position there, where it returns.
@@ -395,6 +399,9 @@ func (w *Workspace) Focused() (WindowID, bool) {
 		if d := w.coverDialog(); d != 0 {
 			return d, true
 		}
+		if w.stashOverCover() {
+			return w.Stash[w.stashAt].ID, true
+		}
 		return full, true
 	}
 	if w.floatFocus && len(w.Floats) > 0 && !w.Floats[len(w.Floats)-1].below {
@@ -566,6 +573,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 		f := w.Floats[i]
 		f.below = false
 		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
+		w.dropStashOver()
 		w.floatFocus = true
 		return true
 	}
@@ -579,6 +587,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 	for i := range w.Columns {
 		for j, v := range w.Columns[i].Windows {
 			if v == id {
+				w.dropStashOver()
 				w.floatFocus, w.stashFocus = false, false
 				w.raiseColumns()
 				if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
@@ -603,7 +612,7 @@ func (w *Workspace) FocusColumn(dir int) bool {
 		w.floatFocus = false
 		return true
 	}
-	if w.pinned() {
+	if w.pinned() && !w.stashOverCover() {
 		return w.leaveCover(func() { w.focusColumn(dir) })
 	}
 	w.focusColumn(dir)
@@ -666,7 +675,7 @@ func (w *Workspace) FocusWindow(dir int) bool {
 		w.floatFocus = false
 		return true
 	}
-	if w.pinned() {
+	if w.pinned() && !w.stashOverCover() {
 		return w.leaveCover(func() { w.focusWindow(dir) })
 	}
 	return w.focusWindow(dir)
@@ -1005,14 +1014,14 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
-	w.fullscreen = id
+	w.fullscreen, w.stashOver = id, false
 	w.scroll()
 }
 
 // endFullscreen ends the fullscreen: floats it kept demoted are promoted
 // again and the view follows the focus.
 func (w *Workspace) endFullscreen() {
-	w.fullscreen = 0
+	w.fullscreen, w.stashOver = 0, false
 	w.reconcileFloats()
 	w.scroll()
 }
@@ -1069,6 +1078,11 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 			w.endFullscreen()
 		}
 		return
+	}
+	// A repeated request of the covering window (Wine) keeps the stash the
+	// user showed over it.
+	if w.fullscreen != id {
+		w.stashOver = false
 	}
 	w.fullscreen = id
 	if !w.isFloat(id) {
@@ -1534,6 +1548,12 @@ func (w *Workspace) Layout() []Placement {
 	}
 	appendFloats(belowTiles)
 	result = append(result, tiles...)
+	if w.stashOverCover() {
+		// The stash the user showed over a covering window tops it all.
+		appendFloats(coveringFloats)
+		appendFloats(dialogs)
+		return append(result, w.stashLayout(focusedID, cover)...)
+	}
 	result = append(result, w.stashLayout(focusedID, cover)...)
 	appendFloats(coveringFloats)
 	appendFloats(dialogs)
