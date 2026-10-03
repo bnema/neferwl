@@ -53,7 +53,7 @@ func (s *screen) arrange() {
 // in the global layout (placeOutputs).
 func (c *Core) order() {
 	rank := func(s *screen) int {
-		if i := slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == s.name() }); i >= 0 {
+		if i := c.outputIndex(s.name()); i >= 0 {
 			return i
 		}
 		return len(c.cfg.Outputs)
@@ -66,7 +66,7 @@ func (c *Core) order() {
 		o := s.mon.Output()
 		items[i].name, items[i].w, items[i].h = s.name(), o.W, o.H
 		if cfg, ok := c.outputConfig(s.name()); ok {
-			items[i].pos = cfg.Pos
+			items[i].pos, items[i].anchor = cfg.Pos, cfg.Anchor
 		}
 	}
 	for i, p := range placeOutputs(items) {
@@ -74,10 +74,15 @@ func (c *Core) order() {
 	}
 }
 
-// outputConfig returns the output.<name> entry; names are unique in the
-// config.
+// outputIndex is the position of the output.<name> entry in the config, or
+// -1; names are unique in the config.
+func (c *Core) outputIndex(name string) int {
+	return slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == name })
+}
+
+// outputConfig returns the output.<name> entry.
 func (c *Core) outputConfig(name string) (ports.OutputConfig, bool) {
-	i := slices.IndexFunc(c.cfg.Outputs, func(o ports.OutputConfig) bool { return o.Name == name })
+	i := c.outputIndex(name)
 	if i < 0 {
 		return ports.OutputConfig{}, false
 	}
@@ -400,7 +405,7 @@ func (c *Core) settings(m *Monitor) {
 type direction uint8
 
 const (
-	dirLeft direction = iota
+	dirLeft direction = iota + 1
 	dirRight
 	dirUp
 	dirDown

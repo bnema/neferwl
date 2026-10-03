@@ -207,6 +207,60 @@ func TestExplicitOutputPositionAndAutomaticFallback(t *testing.T) {
 	}
 }
 
+func TestRelativeOutputPlacement(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1", Offset: 30}},
+			{Name: "DP-3", Anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-2", Offset: -10}},
+		}
+	}, left, right, third)
+	positions := func() [][2]int {
+		t.Helper()
+		var got [][2]int
+		for _, o := range lastOutputs(t, r.commands).Outputs {
+			got = append(got, [2]int{o.X, o.Y})
+		}
+		return got
+	}
+	// DP-1 is 200x100, DP-2 400x200 logical.
+	if got, want := positions(), [][2]int{{0, 0}, {30, 100}, {430, 90}}; !slices.Equal(got, want) {
+		t.Fatalf("positions %v, want %v", got, want)
+	}
+	// A reload with another offset moves the output.
+	r.cfg.Outputs[1].Anchor.Offset = -50
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	if got, want := positions(), [][2]int{{0, 0}, {-50, 100}, {350, 90}}; !slices.Equal(got, want) {
+		t.Fatalf("positions after offset reload %v, want %v", got, want)
+	}
+	// Scaling the reference down moves the output below it.
+	r.cfg.Outputs[0].Scale = 2
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	if got, want := positions(), [][2]int{{0, 0}, {-50, 50}, {350, 40}}; !slices.Equal(got, want) {
+		t.Fatalf("positions after scale reload %v, want %v", got, want)
+	}
+}
+
+func TestRelativeOutputWithoutReferenceIsAutomatic(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 25}}}
+	}, right)
+	if out := lastOutputs(t, r.commands).Outputs; len(out) != 1 || out[0].X != 0 || out[0].Y != 0 {
+		t.Fatalf("without reference: %+v", out)
+	}
+	// Plugging the reference restores the relation (DP-1 is 200 wide).
+	r.plug(t, left)
+	out := lastOutputs(t, r.commands).Outputs
+	if len(out) != 2 || out[0].Info.Name != "DP-2" || out[1].Info.Name != "DP-1" {
+		t.Fatalf("outputs %+v", out)
+	}
+	if out[0].X != 200 || out[0].Y != 25 || out[1].X != 0 || out[1].Y != 0 {
+		t.Fatalf("placement %+v", out)
+	}
+}
+
 func TestWindowsOpenOnFocusedOutput(t *testing.T) {
 	r := startMulti(t, nil, left, right)
 	r.mapWindow(t, 1)

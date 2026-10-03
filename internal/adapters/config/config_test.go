@@ -610,3 +610,105 @@ func TestFloatingDim(t *testing.T) {
 		})
 	}
 }
+
+func TestOutputRelations(t *testing.T) {
+	c, w := parseString(t, `
+output.DP-2.right-of = DP-1
+output.DP-2.offset = 180
+output.DP-3.left-of = DP-1
+output.DP-3.offset = -40
+output.DP-4.above = DP-1
+output.DP-5.below = DP-1
+output.DP-5.offset = 7
+`)
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	want := map[string]ports.OutputAnchor{
+		"DP-2": {Relation: ports.RelationRightOf, To: "DP-1", Offset: 180},
+		"DP-3": {Relation: ports.RelationLeftOf, To: "DP-1", Offset: -40},
+		"DP-4": {Relation: ports.RelationAbove, To: "DP-1"},
+		"DP-5": {Relation: ports.RelationBelow, To: "DP-1", Offset: 7},
+	}
+	if len(c.Outputs) != len(want) {
+		t.Fatalf("%+v", c.Outputs)
+	}
+	for _, o := range c.Outputs {
+		if o.Anchor != want[o.Name] || !o.ScaleOnly {
+			t.Fatalf("%s: %+v", o.Name, o)
+		}
+	}
+}
+
+func TestOutputRelationOverride(t *testing.T) {
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.below = DP-3\n")
+	if len(w) != 1 || w[0].Line != 2 || !strings.Contains(w[0].Msg, "overrides line 1") {
+		t.Fatalf("warnings %v", w)
+	}
+	if got := c.Outputs[0].Anchor; got != (ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-3"}) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestOutputRelationWarnings(t *testing.T) {
+	cases := []struct {
+		name, text, want string
+		line             int
+		anchored         []string // outputs that keep a relation
+	}{
+		{"self", "output.DP-2.right-of = DP-2", "relative to itself", 1, nil},
+		{"empty", "output.DP-2.above =", "expected an output name", 1, nil},
+		{"bad offset", "output.DP-2.right-of = DP-1\noutput.DP-2.offset = abc", "must be an integer", 2, []string{"DP-2"}},
+		{"offset alone", "output.DP-2.offset = 10", "without a relation", 1, nil},
+		{"two cycle", "output.A.right-of = B\noutput.B.below = A", "relation cycle", 1, nil},
+		{"three cycle", "output.A.right-of = B\noutput.B.right-of = C\noutput.C.above = A", "relation cycle", 1, nil},
+		{"tail into cycle", "output.A.right-of = B\noutput.B.right-of = A\noutput.C.left-of = A", "relation cycle", 1, []string{"C"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, w := parseString(t, tc.text)
+			if len(w) == 0 || w[len(w)-1].Line == 0 {
+				t.Fatalf("warnings %v", w)
+			}
+			n := 0
+			for _, x := range w {
+				if strings.Contains(x.Msg, tc.want) {
+					n++
+				}
+			}
+			cycle := strings.Contains(tc.want, "cycle")
+			if n == 0 || (!cycle && len(w) != 1) || w[0].Line != tc.line {
+				t.Fatalf("warnings %v, want %q at line %d", w, tc.want, tc.line)
+			}
+			if cycle {
+				members := strings.Count(tc.text, "\n") + 1
+				if tc.name == "tail into cycle" {
+					members = 2
+				}
+				if n != members {
+					t.Fatalf("%d cycle warnings, want %d: %v", n, members, w)
+				}
+			}
+			var got []string
+			for _, o := range c.Outputs {
+				if o.Anchor.Relation != ports.RelationNone {
+					got = append(got, o.Name)
+				}
+			}
+			if !reflect.DeepEqual(got, tc.anchored) {
+				t.Fatalf("anchored %v, want %v: %+v", got, tc.anchored, c.Outputs)
+			}
+		})
+	}
+}
+
+func TestOutputModeLineKeepsAnchor(t *testing.T) {
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 50\noutput.DP-2 = 1920x1080\n")
+	if len(w) != 0 {
+		t.Fatal(w)
+	}
+	o := c.Outputs[0]
+	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 50}) {
+		t.Fatalf("%+v", o)
+	}
+}
