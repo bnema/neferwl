@@ -1,7 +1,7 @@
 package capture
 
 import (
-	"errors"
+	"fmt"
 	"os"
 	"slices"
 
@@ -16,17 +16,17 @@ import (
 
 // ErrSessionInactive fails an Exclude request whose session is not the one
 // the scene carries. Serving it as a normal capture would leak its HUD.
-var ErrSessionInactive = errors.New("capture exclusion is not active")
+var ErrSessionInactive = fmt.Errorf("%w: capture exclusion is not active", ports.ErrCaptureTransient)
 
 // ErrSessionStale fails an Exclude request stamped with a revision newer than
 // the scene's: the scene predates a change of what an excluded frame must
 // hide (a new HUD layer, popup, target), so its exclusion list could leak.
-var ErrSessionStale = errors.New("capture exclusion scene is older than the request")
+var ErrSessionStale = fmt.Errorf("%w: capture exclusion scene is older than the request", ports.ErrCaptureTransient)
 
 // ErrWorkspaceMoved fails a workspace request whose workspace is neither on
 // screen nor the one rendered off screen in the scene: it moved, went away,
 // or the scene predates the session.
-var ErrWorkspaceMoved = errors.New("captured workspace is not where the request expected")
+var ErrWorkspaceMoved = fmt.Errorf("%w: captured workspace is not where the request expected", ports.ErrCaptureTransient)
 
 // excluder derives the scene of Exclude captures: the frame without the
 // excluded layers and popups. Its scratch slices are reused,

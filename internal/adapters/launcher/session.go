@@ -16,6 +16,8 @@ var sessionVars = []string{"WAYLAND_DISPLAY", "DISPLAY", "XDG_CURRENT_DESKTOP", 
 // portalUnits are the desktop portal and its backends. They read the
 // session variables once, at start: a portal started without them (before
 // the export, or after the last session ended) never serves this session.
+// Portals are per user, like the exported variables: another graphical
+// session of the same user running at once is not supported.
 const portalUnits = "xdg-desktop-portal*.service"
 
 // ExportSession shares the session's displays with D-Bus and systemd user

@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"errors"
 	"image"
 	"math"
 	"os"
@@ -209,9 +210,10 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 			s.emit(taken)
 		}
 		ev := s.log.Debug()
-		if done.Err != nil {
-			ev = s.log.Info().Err(done.Err)
+		if done.Err != nil && !errors.Is(done.Err, ports.ErrCaptureTransient) {
+			ev = s.log.Info()
 		}
+		ev = ev.Err(done.Err)
 		ev.Uint64("id", id).Str("output", done.Output).Dur("took", time.Since(start)).Bool("delivered", life.Alive()).Msg("capture done")
 		if life.Alive() {
 			reply(done)

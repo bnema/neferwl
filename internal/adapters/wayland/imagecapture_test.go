@@ -3,6 +3,7 @@ package wayland
 import (
 	"context"
 	"errors"
+	"fmt"
 	"image"
 	"strings"
 	"sync/atomic"
@@ -17,9 +18,11 @@ import (
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/logging"
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/wlturbo"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/sys/unix"
 )
 
@@ -1003,10 +1006,60 @@ func TestExclusionFrameTagging(t *testing.T) {
 	}
 }
 
-// A renderer failure is transient for the client: the frame is asked again
-// and served, it does not fail (which ends a portal screencast).
-func TestExtFrameRetriesTransientFailure(t *testing.T) {
-	h := newCaptureHarness(t)
+// A transient renderer failure is asked again and served: failing the frame
+// would end a portal screencast. A permanent one fails at once, unretried.
+func TestExtFrameRendererFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		retry bool
+	}{
+		{"transient", fmt.Errorf("%w: indicator", ports.ErrCaptureTransient), true},
+		{"permanent", errors.New("capture buffer truncated"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newCaptureHarness(t)
+			cc := h.client(t)
+			session, ev := cc.session(t, cc.outputSource(t))
+			constraints(t, cc, ev)
+			open := h.open(t)
+			h.send(active(open.ID))
+			h.settle(t, cc)
+			frame := cc.liveExtFrame(t, session, 4, 4)
+			r := receiveCapture(t, h.captures)
+			h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: tc.err}
+			if tc.retry {
+				r = receiveCapture(t, h.captures)
+				h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
+			}
+			for deadline := time.Now().Add(2 * time.Second); len(frame.events) == 0; time.Sleep(time.Millisecond) {
+				cc.roundtrip(t)
+				if time.Now().After(deadline) {
+					t.Fatal("frame not answered")
+				}
+			}
+			if failed := eventsInclude(frame, frameFailed); failed == tc.retry {
+				t.Fatalf("failed = %v", failed)
+			}
+			if !tc.retry {
+				noCapture(t, h.captures)
+			}
+		})
+	}
+}
+
+// A frame whose target stays unavailable fails once its retry deadline has
+// passed, so a client is never left waiting.
+func TestExtFrameRetryDeadline(t *testing.T) {
+	var now atomic.Int64
+	timers := make(chan func(), 4)
+	clock := portsmocks.NewMockClock(t)
+	clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Unix(0, now.Load()) }).Maybe()
+	clock.EXPECT().AfterFunc(mock.Anything, mock.Anything).RunAndReturn(func(_ time.Duration, f func()) ports.Timer {
+		timers <- f
+		return portsmocks.NewMockTimer(t)
+	}).Maybe()
+	h := newCaptureHarnessWith(t, func(o *Options, _ *Channels) { o.Clock = clock })
 	cc := h.client(t)
 	session, ev := cc.session(t, cc.outputSource(t))
 	constraints(t, cc, ev)
@@ -1014,22 +1067,30 @@ func TestExtFrameRetriesTransientFailure(t *testing.T) {
 	h.send(active(open.ID))
 	h.settle(t, cc)
 	frame := cc.liveExtFrame(t, session, 4, 4)
+	busy := fmt.Errorf("%w: busy", ports.ErrCaptureTransient)
 	r := receiveCapture(t, h.captures)
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: errors.New("capture indicator is not on screen")}
-	r = receiveCapture(t, h.captures)
-	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Time: time.Now()}
-	for deadline := time.Now().Add(2 * time.Second); ; {
-		cc.roundtrip(t)
-		if len(frame.events) > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("retried frame not answered")
-		}
-		time.Sleep(time.Millisecond)
+	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
+	var fire func()
+	select {
+	case fire = <-timers:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no retry armed")
 	}
-	if eventsInclude(frame, frameFailed) {
-		t.Fatal("transient failure ended the frame")
+	now.Store(int64(captureRetryFor))
+	fire()
+	r = receiveCapture(t, h.captures)
+	h.captured <- ports.CaptureDone{ID: r.ID, Output: r.Output, Err: busy}
+	for deadline := time.Now().Add(2 * time.Second); len(frame.events) == 0; time.Sleep(time.Millisecond) {
+		cc.roundtrip(t)
+		if time.Now().After(deadline) {
+			t.Fatal("frame not failed past its deadline")
+		}
+	}
+	if !eventsInclude(frame, frameFailed) {
+		t.Fatal("frame not failed past its deadline")
+	}
+	if len(timers) > 0 {
+		t.Fatal("retried past its deadline")
 	}
 }
 

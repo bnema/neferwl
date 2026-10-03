@@ -1,7 +1,7 @@
 package capture
 
 import (
-	"errors"
+	"fmt"
 	"image"
 	"math"
 	"time"
@@ -46,7 +46,7 @@ const HoldFor = 250 * time.Millisecond
 
 // ErrIndicatorMissing fails a request whose indicator was not on screen in
 // time.
-var ErrIndicatorMissing = errors.New("capture indicator is not on screen")
+var ErrIndicatorMissing = fmt.Errorf("%w: capture indicator is not on screen", ports.ErrCaptureTransient)
 
 // IndicatorShown reports whether scene s shows the indicator request q needs.
 // A request that does not ask for one (Indicate false) needs none.

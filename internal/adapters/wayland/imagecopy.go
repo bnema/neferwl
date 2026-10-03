@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"errors"
 	"image"
 	"math"
 	"time"
@@ -509,7 +510,7 @@ func (f *captureExtFrame) Capture(*ext.ExtImageCopyCaptureFrameV1) {
 func (f *captureExtFrame) retry(why string) {
 	s := f.session.s
 	if !s.clock.Now().Before(f.deadline) {
-		s.log.Debug().Uint64("session", f.session.id).Str("reason", why).Msg("capture frame failed after retries")
+		s.log.Info().Uint64("session", f.session.id).Str("reason", why).Msg("capture frame failed after retries")
 		f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 		return
 	}
@@ -543,8 +544,13 @@ func (f *captureExtFrame) attempt() {
 		return
 	}
 	f.replyID, ok = c.s.requestCapture(o, region, c.cursor, f.buf, buf.format, func(done ports.CaptureDone) {
-		if done.Err != nil {
+		switch {
+		case errors.Is(done.Err, ports.ErrCaptureTransient):
 			f.retry(done.Err.Error())
+			return
+		case done.Err != nil:
+			// Retrying cannot clear it (a bad buffer, an unsupported size).
+			f.res.SendFailed(uint32(ext.ExtImageCopyCaptureFrameV1FailureReasonUnknown))
 			return
 		}
 		f.res.SendTransform(0)
