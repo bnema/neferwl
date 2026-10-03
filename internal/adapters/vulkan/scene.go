@@ -312,10 +312,10 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 	if lw <= 0 || lh <= 0 {
 		lw, lh = content.Width, content.Height
 	}
-	if content.SHM == nil && content.DMABuf == nil || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
+	if !content.HasBuffer() || lw <= 0 || lh <= 0 || content.Width <= 0 || content.Height <= 0 {
 		return full, dst, false
 	}
-	if content.DMABuf == nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
+	if content.SHM != nil && (content.SHM.Stride < content.Width*4 || content.SHM.Offset < 0) {
 		return full, dst, false
 	}
 	full = w.physRectF(x, y, float64(lw)*w.zoom, float64(lh)*w.zoom)

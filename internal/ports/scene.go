@@ -293,9 +293,14 @@ type Subsurface struct {
 	SurfaceContent
 }
 
+// HasBuffer reports whether the surface itself carries a client buffer.
+func (c SurfaceContent) HasBuffer() bool {
+	return c.SHM != nil || c.DMABuf != nil
+}
+
 // Empty reports whether the content has nothing to draw.
 func (c SurfaceContent) Empty() bool {
-	return c.SHM == nil && c.DMABuf == nil && len(c.Children) == 0
+	return !c.HasBuffer() && len(c.Children) == 0
 }
 
 // SHMBuffer is a client wl_shm buffer: B8G8R8A8 pixels (argb8888/xrgb8888

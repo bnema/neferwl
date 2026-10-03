@@ -390,7 +390,8 @@ func (*buffer) Destroy(*wayland.Buffer) {}
 
 func (b *buffer) size() (int, int) { return b.width, b.height }
 
-// clientBuffer is a wl_buffer's content source: wl_shm or linux-dmabuf.
+// clientBuffer is a wl_buffer's content source: wl_shm, linux-dmabuf or
+// single-pixel buffers.
 type clientBuffer interface {
 	// content returns what the renderer draws; false means the client
 	// broke its buffer (a truncated shm file).
@@ -399,11 +400,14 @@ type clientBuffer interface {
 }
 
 // addBuffer tracks a buffer until the client destroys it.
-func (s *Server) addBuffer(r *wayland.Buffer, b *dmabufBuffer) {
+// A buffer that owns resources implements close() to release them.
+func (s *Server) addBuffer(r *wayland.Buffer, b clientBuffer) {
 	s.buffers[r.Resource] = b
 	r.OnDestroy = func() {
 		delete(s.buffers, r.Resource)
-		b.close()
+		if c, ok := b.(interface{ close() }); ok {
+			c.close()
+		}
 	}
 }
 
