@@ -68,6 +68,9 @@ type Output struct {
 	// colorMult is the S31.32 multiplier, SDR white over 80 nits.
 	ctmBlob   uint32
 	colorMult uint64
+	// seatDisable carries a request to leave the planes on Bypass before
+	// the seat is disabled (PrepareSeatDisable); Run answers it.
+	seatDisable chan chan struct{}
 	// fbs are the two renderer images frames alternate between, back the
 	// one the next frame draws into (ADR 014: zero copy).
 	fbs   [2]uint32
@@ -191,7 +194,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -632,6 +635,13 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	}
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.frame.userData(userFrame)); err != nil {
+		// The pipeline first: with it in the frame, its refusal must not
+		// be taken for the cursor's, which would turn the hardware cursor
+		// off for good. colorRefused tests the frame with Bypass and the
+		// cursor as it is, so a real cursor refusal still reaches below.
+		if !async && errors.Is(err, unix.EINVAL) && o.colorRefused(err, fb, fence, vrr, cur, ov, rect, pc) {
+			return errColorRefused
+		}
 		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
@@ -639,12 +649,6 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
-		}
-		// After the cursor and the content hint, which the colour test
-		// does not tell apart from the pipeline. An async refusal is not
-		// one: the caller retries it synchronously.
-		if !async && errors.Is(err, unix.EINVAL) && o.colorRefused(err, fb, fence, vrr, cur, ov, rect, pc) {
-			return errColorRefused
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
@@ -1256,6 +1260,13 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				// scene that shows it.
 				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
 			}
+		case ack := <-o.seatDisable:
+			o.bypassForSeatDisable()
+			// The seat is about to be disabled: no frame may select the
+			// pipeline again before the next enable (a modeset).
+			enabled = false
+			ack <- struct{}{}
+			continue
 		case on := <-active:
 			o.observeSecurity()
 			if o.protected {

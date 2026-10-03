@@ -278,7 +278,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 		}
 	}
 	o.setOverlayReason(reason)
-	if ov.fb == 0 {
+	if ov.id == 0 {
 		return overlayWin{}, s
 	}
 	// The composed frame leaves the window out: the overlay shows it.

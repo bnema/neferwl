@@ -141,8 +141,7 @@ func TestCommitFrameRetryRebuildsRequest(t *testing.T) {
 // the TEST_ONLY probe uses its own request.
 func TestCommitFrameCursorRetryKeepsProbeApart(t *testing.T) {
 	var frameSeen []*atomicReq
-	o, k, commits := testOutput(t)
-	_ = k
+	o, _, _ := testOutput(t)
 	o.cursor.image = true
 	o.cursor.Move(1, 2)
 	// First real commit refused with EINVAL, the cursor probe refused too,
@@ -173,7 +172,6 @@ func TestCommitFrameCursorRetryKeepsProbeApart(t *testing.T) {
 	if v, _ := o.frameReq.value(tCursor, pFB); v != 0 {
 		t.Fatalf("retry still shows the cursor: fb %d", v)
 	}
-	_ = commits
 }
 
 // kmsDevice.commit fills the request's own scratch: once grown it allocates

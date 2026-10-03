@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
@@ -115,6 +116,62 @@ type drmBackend struct {
 	seat  *seat.Seat
 	cards []*drmCard
 	clock ports.Clock
+	log   zerowrap.Logger
+	// preparers are the running outputs, guarded by mu: the seat's goroutine
+	// reads them while the output loop adds and removes them.
+	mu        sync.Mutex
+	preparers map[seatDisablePreparer]struct{}
+}
+
+// seatDisablePreparer is an output that can reset its planes before the
+// seat is disabled (drm.Output).
+type seatDisablePreparer interface {
+	PrepareSeatDisable(timeout time.Duration) bool
+}
+
+// seatDisableTimeout bounds how long a seat disable waits for the outputs:
+// the VT switch must not hang on a stuck one.
+const seatDisableTimeout = 100 * time.Millisecond
+
+func (b *drmBackend) addPreparer(p seatDisablePreparer) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.preparers == nil {
+		b.preparers = map[seatDisablePreparer]struct{}{}
+	}
+	b.preparers[p] = struct{}{}
+}
+
+func (b *drmBackend) removePreparer(p seatDisablePreparer) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.preparers, p)
+}
+
+// prepareSeatDisable runs on the seat's goroutine before the seat is
+// disabled and its devices revoked: every running output commits what it
+// must leave behind (planes on Bypass), all in parallel under one bound. A
+// timeout is logged and the disable goes on.
+func (b *drmBackend) prepareSeatDisable() {
+	b.mu.Lock()
+	outs := make([]seatDisablePreparer, 0, len(b.preparers))
+	for p := range b.preparers {
+		outs = append(outs, p)
+	}
+	b.mu.Unlock()
+	var wg sync.WaitGroup
+	var late atomic.Int32
+	for _, p := range outs {
+		wg.Go(func() {
+			if !p.PrepareSeatDisable(seatDisableTimeout) {
+				late.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if n := late.Load(); n > 0 {
+		b.log.Warn().Str("component", "drm").Int("outputs", int(n)).Dur("timeout", seatDisableTimeout).Msg("outputs did not prepare for the seat disable in time; disabling anyway")
+	}
 }
 
 type drmCard struct {
@@ -165,7 +222,8 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 	want.TraceFlips = logging.Enabled(ctx, "drm-flip")
 	paths, _ := filepath.Glob("/dev/dri/card[0-9]*")
 	sort.Strings(paths)
-	b := &drmBackend{seat: s, clock: clock.System{}}
+	b := &drmBackend{seat: s, clock: clock.System{}, log: log}
+	s.SetBeforeDisable(b.prepareSeatDisable)
 	var errs []error
 	for _, path := range paths {
 		fd, err := s.OpenDevice(path)
@@ -483,6 +541,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					o.Security, o.SecurityChanges, o.Instance = ch.security, secure, instance
 					return safe("output "+name, func() error {
 						defer o.Close()
+						b.addPreparer(o)
+						defer b.removePreparer(o) // before Close: it handles no request any more
 						if realtime {
 							runtime.LockOSThread()
 							// Keep the thread locked until this goroutine exits: an RT

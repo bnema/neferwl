@@ -294,7 +294,10 @@ func enableAtomic(fd int) error {
 // enableColorPipeline asks for the plane COLOR_PIPELINE property and the
 // colorop objects. It must run after enableAtomic and before any plane or
 // property read: the property set differs per fd. Failure leaves the
-// feature off.
+// feature off. With the cap on, the kernel rejects COLOR_ENCODING and
+// COLOR_RANGE on planes (they are replaced by the pipeline), so a YUV buffer
+// can never be put on a plane: planeColor refuses YUV, and every YUV format
+// is composed.
 func enableColorPipeline(fd int) error {
 	v := setClientCap{capability: clientCapColorPipeline, value: 1}
 	return ioctl(fd, ioctlSetClientCap, unsafe.Pointer(&v))

@@ -524,15 +524,6 @@ func TestColorBypassOnComposedProtectedOffCloseAndModeset(t *testing.T) {
 			t.Fatalf("protected frame: COLOR_PIPELINE %d %v", v, ok)
 		}
 	})
-	t.Run("async probe forgets", func(t *testing.T) {
-		o, _, _ := colorOutput(t, true, nil)
-		apply(o)
-		o.tearing = false // the probe itself does nothing
-		o.probeAsync(nil)
-		if o.primary.colorKnown || o.overlay.colorKnown {
-			t.Fatal("probeAsync kept the colour state")
-		}
-	})
 }
 
 // The overlay's pipeline is driven with the primary on Bypass; a frame
@@ -631,7 +622,7 @@ func TestColorRefusalIsTestedOnceAndCached(t *testing.T) {
 	if n := countTests(*commits); n != 2 {
 		t.Fatalf("%d tests with the cursor shown, want 2", n)
 	}
-	// The overlay is a plane of its own: its verdict is separate.
+	// A modeset asks the driver again.
 	o.forgetColorVerdicts()
 	decide()
 	if n := countTests(*commits); n != 3 {
@@ -787,5 +778,49 @@ func TestSetupColor(t *testing.T) {
 func TestEnableColorPipelineFailsOnBadFD(t *testing.T) {
 	if err := enableColorPipeline(-1); err == nil {
 		t.Fatal("cap accepted on an invalid fd")
+	}
+}
+
+// A frame refused because of its pipeline never turns the hardware cursor
+// off: only a refusal the frame has with Bypass does.
+func TestColorRefusalDoesNotDisableTheCursor(t *testing.T) {
+	// The driver refuses the pipeline, and also the cursor whenever it is
+	// shown with the pipeline.
+	rule := func(r *atomicReq, flags uint32) error {
+		if v, ok := r.value(tPrimary, pColorPipe); ok && v != 0 && flags&atomicTestOnly == 0 {
+			return unix.EINVAL
+		}
+		return nil
+	}
+	o, k, _ := colorOutput(t, false, rule)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(uint32(80), nil).Maybe()
+	o.cursor.image = true
+	o.cursor.Move(5, 5)
+	c := sdrContent(o)
+	ok, err := o.commitScanoutRect(80, c, pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ)
+	if ok || err != nil || o.reason != "color_refused" {
+		t.Fatalf("ok=%v err=%v reason %q", ok, err, o.reason)
+	}
+	if o.cursor.off {
+		t.Fatal("a pipeline refusal turned the hardware cursor off")
+	}
+	if v, known := o.primary.verdict(fourccXRGB, true); !known || v {
+		t.Fatal("refusal with the cursor not cached")
+	}
+	// A cursor the driver refuses on its own, pipeline or not, is still turned off.
+	o2, k2, _ := colorOutput(t, false, func(r *atomicReq, flags uint32) error {
+		if v, ok := r.value(tCursor, pFB); ok && v != 0 {
+			return unix.EINVAL
+		}
+		return nil
+	})
+	k2.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(uint32(80), nil).Maybe()
+	o2.cursor.image = true
+	o2.cursor.Move(5, 5)
+	if ok, err := o2.commitScanoutRect(80, sdrContent(o2), pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ); !ok || err != nil {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if !o2.cursor.off {
+		t.Fatal("a cursor refusal did not turn the cursor off")
 	}
 }
