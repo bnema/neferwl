@@ -117,6 +117,15 @@ type Output struct {
 	contentValue  uint64
 	contentWanted uint64
 	composedSince time.Time
+	// Reusable atomic requests, owned by the output goroutine (zero value
+	// ready). frameReq builds frame commits (commitWithRect), which retry
+	// by recursing: a retry resets it, so a caller never reads it after a
+	// recursive call. stateReq builds commitState. Paths that hold a second
+	// request while one is alive use their own: withoutReq (commitState's
+	// retry test) and probeReq (contentRefused, the scale TEST_ONLY probe).
+	frameReq, stateReq, withoutReq, probeReq atomicReq
+	// restWindows is overlayFrame's scene windows, valid until its next call.
+	restWindows []ports.SceneWindow
 	// lastFrame is when the last frame was committed. cursorHeld: a cursor
 	// move waits for the next frame (see cursorWaits).
 	lastFrame  time.Time
@@ -567,7 +576,8 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn || rect != o.planeRect || o.contentWanted != o.contentValue) {
 		async = false
 	}
-	req := &atomicReq{}
+	req := &o.frameReq
+	req.reset()
 	flags := uint32(atomicNonblock | flipEventFlag)
 	if async {
 		flags |= flipAsyncFlag
@@ -644,7 +654,8 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 
 // contentRefused tests the same frame without the connector hint before disabling it.
 func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect) bool {
-	req := &atomicReq{}
+	req := &o.probeReq // frameReq is still the caller's
+	req.reset()
 	o.primaryRectProps(req, fb, rect)
 	req.set(o.crtc, o.vrrProp, boolValue(vrr))
 	if o.cursor != nil {
@@ -673,7 +684,8 @@ func (o *Output) commitState(vrr bool) error {
 	if o.protected {
 		return errSecurityScene
 	}
-	req := &atomicReq{}
+	req := &o.stateReq
+	req.reset()
 	cur := cursorState{}
 	// A move back to the applied state holds nothing.
 	o.cursorHeld = false
@@ -708,7 +720,8 @@ func (o *Output) commitState(vrr bool) error {
 			return o.commitState(vrr)
 		}
 		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) {
-			without := &atomicReq{}
+			without := &o.withoutReq
+			without.reset()
 			if o.cursor != nil && cur != o.cursor.applied {
 				o.cursor.props(without, o.crtc, cur)
 			}

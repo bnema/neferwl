@@ -224,7 +224,8 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 			if cfb.scaleRefused && cfb.scaleFailed == rect {
 				reason = "scale_refused"
 			} else if rect != fullPlaneRect(o.Width(), o.Height()) && (!cfb.scaleTestedOK || cfb.scaleTested != rect) {
-				req := &atomicReq{}
+				req := &o.probeReq
+				req.reset()
 				o.primaryRectProps(req, fb, rect)
 				if err := o.k.commit(req, atomicTestOnly, 0); err != nil {
 					cfb.scaleFailed = rect
@@ -247,7 +248,9 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 
 // overlayFrame decides the overlay of a frame: the window, and the scene
 // the renderer composes (the window left out). A zero overlayWin means
-// none; the reason is logged on change.
+// none; the reason is logged on change. The returned scene's Windows is
+// valid until the next call: it reuses o.restWindows (its consumers, Render,
+// ExcludedScene and the capture tracking, run synchronously before then).
 func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
@@ -276,12 +279,13 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 	}
 	// The composed frame leaves the window out: the overlay shows it.
 	rest := s
-	rest.Windows = make([]ports.SceneWindow, 0, len(s.Windows))
+	o.restWindows = o.restWindows[:0]
 	for _, w := range s.Windows {
 		if w.ID != ov.id {
-			rest.Windows = append(rest.Windows, w)
+			o.restWindows = append(o.restWindows, w)
 		}
 	}
+	rest.Windows = o.restWindows
 	return ov, rest
 }
 

@@ -102,9 +102,23 @@ type planeRes struct {
 }
 
 // atomicReq collects (object, property, value) triples in insertion order.
+// A request is owned by one goroutine and reused through reset: its slices,
+// and the flat scratch kmsDevice.commit fills for the ioctl, keep their
+// capacity, so steady-state commits allocate nothing. The scratch lives on
+// the request, never on the shared kms device.
 type atomicReq struct {
 	objs  []uint32
 	props [][]propValue
+	// counts, flatProps and flatVals are the ioctl arrays commit builds.
+	counts    []uint32
+	flatProps []uint32
+	flatVals  []uint64
+}
+
+// reset empties the request, keeping every buffer's capacity.
+func (r *atomicReq) reset() {
+	r.objs = r.objs[:0]
+	r.props = r.props[:0]
 }
 
 type propValue struct {
@@ -120,7 +134,13 @@ func (r *atomicReq) set(obj, prop uint32, v uint64) {
 	i := slices.Index(r.objs, obj)
 	if i < 0 {
 		r.objs = append(r.objs, obj)
-		r.props = append(r.props, nil)
+		if n := len(r.props); n < cap(r.props) {
+			// Reuse the property list kept by reset.
+			r.props = r.props[:n+1]
+			r.props[n] = r.props[n][:0]
+		} else {
+			r.props = append(r.props, nil)
+		}
 		i = len(r.objs) - 1
 	}
 	for j, p := range r.props[i] {
@@ -160,16 +180,15 @@ func (k kmsDevice) commit(req *atomicReq, flags uint32, userData uint64) error {
 	if len(req.objs) == 0 {
 		return errors.New("empty atomic commit")
 	}
-	counts := make([]uint32, len(req.objs))
-	var props []uint32
-	var vals []uint64
-	for i, ps := range req.props {
-		counts[i] = uint32(len(ps))
+	req.counts, req.flatProps, req.flatVals = req.counts[:0], req.flatProps[:0], req.flatVals[:0]
+	for _, ps := range req.props {
+		req.counts = append(req.counts, uint32(len(ps)))
 		for _, p := range ps {
-			props = append(props, p.prop)
-			vals = append(vals, p.val)
+			req.flatProps = append(req.flatProps, p.prop)
+			req.flatVals = append(req.flatVals, p.val)
 		}
 	}
+	counts, props, vals := req.counts, req.flatProps, req.flatVals
 	a := modeAtomic{flags: flags, countObjs: uint32(len(req.objs)), userData: userData,
 		objs: uint64(uintptr(unsafe.Pointer(&req.objs[0]))), countProps: uint64(uintptr(unsafe.Pointer(&counts[0]))),
 		props: uint64(uintptr(unsafe.Pointer(&props[0]))), values: uint64(uintptr(unsafe.Pointer(&vals[0])))}
@@ -357,9 +376,9 @@ type flipEvent struct {
 	seq  uint32
 }
 
-// parseFlips parses DRM events read from the card fd.
-func parseFlips(buf []byte) []flipEvent {
-	var out []flipEvent
+// parseFlips appends the flip events of buf, DRM events read from the card
+// fd, to out (pass out[:0] to reuse its storage) and returns it.
+func parseFlips(out []flipEvent, buf []byte) []flipEvent {
 	le := binary.LittleEndian
 	for len(buf) >= 8 {
 		typ := le.Uint32(buf)

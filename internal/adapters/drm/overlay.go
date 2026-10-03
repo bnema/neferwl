@@ -166,7 +166,8 @@ func (ov overlayWin) close() {
 // the cursor at its current place included. A refusal is cached on the
 // buffer.
 func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
-	req := &atomicReq{}
+	req := &o.probeReq // no frame request is alive: the frame commit follows
+	req.reset()
 	o.primaryProps(req, fb)
 	o.overlayProps(req, ov)
 	if o.cursor != nil {

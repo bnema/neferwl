@@ -240,6 +240,7 @@ func (c *Card) open(conn connector, mode modeInfo) (*Output, error) {
 // the output owes it a pending commit.
 func (c *Card) ReadEvents(ctx context.Context) error {
 	buf := make([]byte, 1024)
+	var events []flipEvent // reused by every read
 	for ctx.Err() == nil {
 		fds := []unix.PollFd{{Fd: int32(c.fd), Events: unix.POLLIN}}
 		n, err := unix.Poll(fds, 100)
@@ -256,7 +257,8 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 			}
 			return fmt.Errorf("drm read: %w", err)
 		}
-		for _, ev := range parseFlips(buf[:m]) {
+		events = parseFlips(events[:0], buf[:m])
+		for _, ev := range events {
 			ch := c.flips[ev.crtc]
 			if ch == nil {
 				continue

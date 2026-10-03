@@ -111,13 +111,18 @@ func TestParseFlips(t *testing.T) {
 		return b
 	}
 	buf := append(append(ev(eventFlipDone, 41, userFrame, 3, 250, 7), ev(1, 7, 0, 0, 0, 0)...), ev(eventFlipDone, 42, userState, 0, 1, 8)...)
-	got := parseFlips(buf)
+	got := parseFlips(nil, buf)
 	want := []flipEvent{{crtc: 41, user: userFrame, when: 3*time.Second + 250*time.Microsecond, seq: 7}, {crtc: 42, user: userState, when: time.Microsecond, seq: 8}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
-	if got := parseFlips(buf[:20]); len(got) != 0 {
+	if got := parseFlips(nil, buf[:20]); len(got) != 0 {
 		t.Fatalf("truncated: got %v", got)
+	}
+	// ReadEvents reuses one slice across reads.
+	reused := parseFlips(nil, buf)
+	if n := testing.AllocsPerRun(100, func() { reused = parseFlips(reused[:0], buf) }); n != 0 || !slices.Equal(reused, want) {
+		t.Fatalf("reused parse: %.1f allocs, got %+v", n, reused)
 	}
 }
 
