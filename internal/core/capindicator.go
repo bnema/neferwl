@@ -46,7 +46,7 @@ func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 	if s := c.capt.session(v.Session); v.Session != 0 && s != nil && !s.recording {
 		s.recording, changed = true, true
 	}
-	t := capTarget{output: v.Output, workspace: v.Workspace, rect: v.Region}
+	t := capTarget{output: v.Output, workspace: v.Workspace, window: v.Window, rect: v.Region}
 	if _, reason := c.capResolve(t); reason != ports.CaptureReasonNone {
 		// Nothing of the target is left on screen to mark.
 		return changed
@@ -185,14 +185,23 @@ func (c *Core) captureIndicators(sc *screen) []ports.CaptureIndicator {
 			return
 		}
 		o := sc.mon.Output()
-		var m ports.CaptureIndicator
-		if r.hidden {
-			m = ports.CaptureIndicator{Pill: true, Rect: pillRect(o)}
-		} else {
-			m = ports.CaptureIndicator{Rect: thickenMark(r.rect, o)}
+		mark := func(m ports.CaptureIndicator) {
+			if !slices.Contains(out, m) {
+				out = append(out, m)
+			}
 		}
-		if !slices.Contains(out, m) {
-			out = append(out, m)
+		switch {
+		case t.window != 0:
+			// A window is rendered off screen, so its frames need the pill;
+			// while it is on screen it is outlined too.
+			mark(ports.CaptureIndicator{Pill: true, Rect: pillRect(o)})
+			if r.visible {
+				mark(ports.CaptureIndicator{Rect: thickenMark(r.rect, o)})
+			}
+		case r.hidden:
+			mark(ports.CaptureIndicator{Pill: true, Rect: pillRect(o)})
+		default:
+			mark(ports.CaptureIndicator{Rect: thickenMark(r.rect, o)})
 		}
 	}
 	for _, s := range c.capt.sessions {

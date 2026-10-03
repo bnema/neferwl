@@ -16,6 +16,9 @@ type configureTarget struct {
 	captureArea Rect
 	// realTiled sizes a visible tiled preview from its real client rect.
 	realTiled bool
+	// captured: a capture session renders this window off screen (window
+	// capture), so off screen it is Captured, not suspended.
+	captured bool
 }
 
 // configures owns the last configure sent to each window and decides the
@@ -40,6 +43,12 @@ func (s *configures) next(p Placement, t configureTarget) (ports.ConfigureWindow
 	s.seen[p.ID] = true
 	old, ok := s.sent[p.ID]
 	v := build(p, t, old, ok)
+	v.Captured = t.captured && !v.Visible
+	if t.captured && p.Hidden && t.client.W > 0 && t.client.H > 0 {
+		// Hidden but captured: sized for the capture, which follows its real
+		// layout.
+		v.Width, v.Height = t.client.W, t.client.H
+	}
 	return v, !ok || v != old || s.answer[p.ID]
 }
 
@@ -68,7 +77,7 @@ func (s *configures) nextWithCapture(p Placement, t configureTarget, cp *Placeme
 	} else {
 		v = build(p, t, old, ok)
 	}
-	v.Captured = !v.Visible && !cp.Hidden && cp.Rect.Overlaps(t.captureArea)
+	v.Captured = !v.Visible && (t.captured || !cp.Hidden && cp.Rect.Overlaps(t.captureArea))
 	return v, !ok || v != old || s.answer[p.ID]
 }
 

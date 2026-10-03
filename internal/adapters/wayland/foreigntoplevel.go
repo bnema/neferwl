@@ -192,6 +192,9 @@ func (s *Server) toplevelChanged(w *window) {
 	for _, m := range s.toplevelManagers {
 		m.refresh(w)
 	}
+	for _, l := range s.extToplevelLists {
+		l.refresh(w)
+	}
 }
 
 // toplevelClosed tells every manager that w unmapped.
@@ -199,6 +202,10 @@ func (s *Server) toplevelClosed(id ports.WindowID) {
 	for _, m := range s.toplevelManagers {
 		m.closed(id)
 	}
+	for _, l := range s.extToplevelLists {
+		l.closed(id)
+	}
+	s.windowCaptureGone(id)
 }
 
 // refreshToplevels reconciles inventory after output changes or unlock:
@@ -208,13 +215,18 @@ func (s *Server) refreshToplevels() {
 	if s.protected() {
 		return
 	}
-	ids := make([]ports.WindowID, 0, len(s.windows))
-	for id, w := range s.windows {
-		if w.toplevel != nil && w.mapped {
-			ids = append(ids, id)
+	ids := s.mappedToplevels()
+	for _, l := range s.extToplevelLists {
+		for id, h := range l.handles {
+			w := s.windows[id]
+			if h.closed || w == nil || w.toplevel == nil || !w.mapped {
+				l.closed(id)
+			}
+		}
+		for _, id := range ids {
+			l.refresh(s.windows[id])
 		}
 	}
-	slices.Sort(ids)
 	for _, m := range s.toplevelManagers {
 		for id, h := range m.handles {
 			w := s.windows[id]

@@ -134,6 +134,9 @@ type window struct {
 	xdg          *xdgSurface
 	appID, title string
 	mapped       bool
+	// gen counts the mappings: an unmap and a remap is a new toplevel to
+	// ext-foreign-toplevel-list (identifier) and to its capture sources.
+	gen uint32
 	// parent is set_parent (dialogs); min and max are the size hints.
 	parent         *window
 	minW, minH     int32
@@ -232,6 +235,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.serials = append(x.serials, x.server.serial)
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
+			w.gen++
 			slot := x.server.slotToken(r.Client())
 			// Its size comes with the commit, in WindowResized (afterCommit).
 			w.floating = w.floats()

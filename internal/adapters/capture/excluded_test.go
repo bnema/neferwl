@@ -174,3 +174,24 @@ func TestSplitWorkspaceMovedFailsClosed(t *testing.T) {
 	require.Empty(t, hidden)
 	require.ErrorIs(t, awaitCapture(t, replies).Err, ErrWorkspaceMoved)
 }
+
+// A window request is served off screen only while the scene renders that
+// window; any other is failed, never served from the displayed frame.
+func TestSplitWindowFailsClosed(t *testing.T) {
+	replies := make(chan ports.CaptureDone, 8)
+	p := NewPipeline(context.Background(), replies)
+	defer p.Close(nil)
+	s := ports.Scene{Capture: &ports.SceneCapture{Window: 7}}
+	reqs := []ports.CaptureRequest{
+		{ID: 1, Window: 7, OffScreen: true}, // rendered
+		{ID: 2, Window: 8, OffScreen: true}, // another window
+		{ID: 3, Window: 7},                  // never on screen
+	}
+	normal, excluded, hidden := p.Split(s, reqs)
+	require.Empty(t, normal)
+	require.Empty(t, excluded)
+	require.Equal(t, []uint64{1}, ids(hidden))
+	for range 2 {
+		require.ErrorIs(t, awaitCapture(t, replies).Err, ErrWorkspaceMoved)
+	}
+}

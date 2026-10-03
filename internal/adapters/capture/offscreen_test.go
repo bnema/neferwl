@@ -183,3 +183,23 @@ func TestHiddenNilPipelineSafe(t *testing.T) {
 	require.False(t, p.HiddenReading())
 	p.Retire(ports.Scene{})
 }
+
+// A window is drawn by the child like a hidden workspace; another window or
+// a workspace needs a new child.
+func TestSubmitHiddenWindow(t *testing.T) {
+	replies := make(chan ports.CaptureDone, 4)
+	p := NewPipeline(context.Background(), replies)
+	child, _ := childMock(t, 200, 100)
+	child.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Once()
+	made := 0
+	p.EnableOffscreen(func(w, h int) (ports.Renderer, error) { made++; return child, nil })
+	s := hiddenScene()
+	s.Capture = &ports.SceneCapture{Window: 5}
+	q := hiddenRequest(t, 1, image.Rect(0, 0, 200, 100))
+	q.Workspace, q.Window = 0, 5
+	p.SubmitHidden(s, nil, []ports.CaptureRequest{q})
+	require.NoError(t, awaitCapture(t, replies).Err)
+	require.Equal(t, 1, made)
+	require.Equal(t, offTarget{window: 5}, p.off.target)
+	p.Close(nil)
+}

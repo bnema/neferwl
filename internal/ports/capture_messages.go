@@ -36,6 +36,10 @@ type CaptureRequest struct {
 	// another crop.
 	Workspace uint64
 	OffScreen bool
+	// Window is not 0 for the capture of a window: always OffScreen, served
+	// whole from Scene.CaptureScene, and failed unless the scene's
+	// Capture.Window is Window.
+	Window WindowID
 	// Indicate is set by wayland on every capture it requests: core shows the
 	// capture indicator for it (CaptureFrameTaken), and the output owner
 	// serves the request only from a scene that shows the mark it needs (a
