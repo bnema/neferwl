@@ -12,9 +12,10 @@ import (
 )
 
 // Idle and output power. ext_idle_notifier_v1: each notification has its
-// own timeout, restarted by user activity (ports.UserActivity from core);
-// idle inhibitors, surfaces or D-Bus clients (Channels.IdleInhibited),
-// hold every notification but input-idle ones.
+// own timeout, restarted by user activity (ports.UserActivity from core,
+// or Channels.IdleActivity from D-Bus clients); idle inhibitors, surfaces
+// or D-Bus clients (Channels.IdleInhibited), hold every notification but
+// input-idle ones.
 // zwlr_output_power_v1: a client such as wlopm turns a display off or on;
 // core decides and the scene carries it.
 
@@ -90,25 +91,36 @@ func (s *Server) inhibited() bool {
 	return len(s.idleWindows) > 0 || s.busInhibited
 }
 
-// forwardIdleInhibited applies D-Bus idle inhibition on the display goroutine.
-func (s *Server) forwardIdleInhibited(ctx context.Context) {
-	for {
+// forwardBusIdle applies D-Bus idle inhibition and simulated activity on
+// the display goroutine. A closed channel stops only its own forwarding.
+func (s *Server) forwardBusIdle(ctx context.Context) {
+	inhibited, activity := s.channels.IdleInhibited, s.channels.IdleActivity
+	for inhibited != nil || activity != nil {
+		var apply func()
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.display.Stopped():
 			return
-		case on, ok := <-s.channels.IdleInhibited:
+		case on, ok := <-inhibited:
 			if !ok {
-				return
+				inhibited = nil
+				continue
 			}
-			if !s.display.Do(func() {
+			apply = func() {
 				wasHeld := s.inhibited()
 				s.busInhibited = on
 				s.syncIdle(wasHeld)
-			}) {
-				return
 			}
+		case _, ok := <-activity:
+			if !ok {
+				activity = nil
+				continue
+			}
+			apply = s.userActivity
+		}
+		if !s.display.Do(apply) {
+			return
 		}
 	}
 }

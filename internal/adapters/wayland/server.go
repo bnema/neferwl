@@ -88,6 +88,9 @@ type Channels struct {
 	// inhibit idle; while true, it holds idle notifications like an inhibitor
 	// surface does.
 	IdleInhibited <-chan bool
+	// IdleActivity carries D-Bus SimulateUserActivity calls: idle
+	// notifications resume and restart as on input.
+	IdleActivity <-chan struct{}
 }
 
 type Server struct {
@@ -488,7 +491,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()
-	go func() { defer wg.Done(); s.forwardIdleInhibited(ctx) }()
+	go func() { defer wg.Done(); s.forwardBusIdle(ctx) }()
 	go func() { defer wg.Done(); s.forwardCaptured(ctx.Done()) }()
 	if s.syncWait != nil {
 		wg.Add(1)
