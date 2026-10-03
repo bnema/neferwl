@@ -8,7 +8,7 @@ import (
 
 // screen is one connected output: its monitor tree, scale, layer surfaces and
 // place in the global layout (ADR 011). Outputs are ordered by config
-// (output.<name>.*), then by connection; order places them.
+// (output.<name>.*), then by connection; order places them (placeOutputs).
 type screen struct {
 	info            ports.OutputInfo
 	mon             *Monitor
