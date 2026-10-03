@@ -57,6 +57,10 @@ touchpad.accel-profile = adaptive
 # Two-finger scroll distance multiplier.
 touchpad.scroll-factor = 1
 
+# Hide the pointer cursor after this long without motion (100ms to 1h, or
+# off); the next motion shows it.
+cursor.hide-after = 5s
+
 # on: moving a column or window to another workspace shows that workspace.
 focus.follow-move = off
 # Focus indicator on the newly focused window: an animation (pulse or off)

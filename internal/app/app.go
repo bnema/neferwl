@@ -202,6 +202,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	filtered := make(chan ports.ConfigChanged, 8)
 	curs := newCursors(clock.System{}, opts.Config.Cursor.HideAfter)
+	defer curs.stop()
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
@@ -231,7 +232,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		if err := headlessinput.RunSecure(ctx, km, keymaps, script, input, layouts, curs.move, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
+		if err := headlessinput.RunSecure(ctx, km, keymaps, script, input, layouts, func(o string, x, y float64) { curs.move(o, x, y, true) }, logging.For(ctx, "input"), security); err != nil && !errors.Is(err, context.Canceled) {
 			select {
 			case done <- err:
 			case <-ctx.Done():
