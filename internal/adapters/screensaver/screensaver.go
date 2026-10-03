@@ -86,12 +86,19 @@ func New(ctx context.Context, address string, log zerowrap.Logger) (*Service, er
 func (s *Service) Run(ctx context.Context, held chan<- bool) error {
 	defer close(s.done)
 	defer func() { _ = s.conn.Close() }()
+	// Method tables, not Export(v): godbus finds Export's methods by
+	// reflection, which stops the linker from pruning unused methods and
+	// grows the binary by ~4 MB.
+	h := handler{s}
+	table := map[string]any{"Inhibit": h.Inhibit, "UnInhibit": h.UnInhibit, "GetActive": h.GetActive}
 	for _, p := range paths {
-		if err := s.conn.Export(handler{s}, p, iface); err != nil {
+		if err := s.conn.ExportMethodTable(table, p, iface); err != nil {
 			return fmt.Errorf("export %s: %w", p, err)
 		}
 		node := &introspect.Node{Name: string(p), Interfaces: []introspect.Interface{{Name: iface, Methods: methods}}}
-		if err := s.conn.Export(introspect.NewIntrospectable(node), p, "org.freedesktop.DBus.Introspectable"); err != nil {
+		xml := string(introspect.NewIntrospectable(node))
+		intro := map[string]any{"Introspect": func() (string, *dbus.Error) { return xml, nil }}
+		if err := s.conn.ExportMethodTable(intro, p, "org.freedesktop.DBus.Introspectable"); err != nil {
 			return fmt.Errorf("export %s introspection: %w", p, err)
 		}
 	}
