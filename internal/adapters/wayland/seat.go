@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
@@ -43,6 +44,9 @@ type seatState struct {
 	// pressAt and focusAt date the last press and keyboard focus change,
 	// for xdg-activation tokens.
 	pressAt, focusAt time.Time
+	// keyStamps and pointerStamps hold the zwp_input_timestamps_v1 objects
+	// subscribed to each device; the lists are replaced, never mutated.
+	keyStamps, pointerStamps map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1
 }
 
 // applyInput delivers a core input command to the focused client.
@@ -76,6 +80,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.lockSurfaces[c.ID]; l != nil && s.lockInputTarget(c.ID) && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.clientPointers(l.resource.Client()) {
+				s.stampPointer(p, c.Time)
 				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
@@ -84,6 +89,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.layers[c.ID]; l != nil && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.layerPointers(l) {
+				s.stampPointer(p, c.Time)
 				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
@@ -106,6 +112,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.updateConstraint()
 			}
 			for _, p := range s.windowPointers(w) {
+				s.stampPointer(p, c.Time)
 				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(x), server.FixedFromFloat(y))
 				pointerFrame(p)
 			}
@@ -120,6 +127,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
 			}
 			for _, p := range pointers {
+				s.stampPointer(p, c.Time)
 				p.SendButton(s.serial, wireMsec(c.Time), c.Button, state)
 				pointerFrame(p)
 			}
@@ -132,7 +140,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		steps, values := s.seat.wheelSteps(c.Axis)
 		_, pointers, _ := s.pointerTarget(c.ID)
 		for _, p := range pointers {
-			sendAxis(p, c.Axis, steps, values)
+			s.sendAxis(p, c.Axis, steps, values)
 		}
 	case ports.SetKeymap:
 		s.setKeymap(c)
@@ -169,6 +177,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			}
 		}
 		for _, k := range keyboards {
+			s.stampKeyboard(k, c.Key.Time)
 			k.SendKey(s.serial, wireMsec(c.Key.Time), c.Key.Keycode, state)
 		}
 		if c.Key.State != s.seat.modState {
@@ -396,7 +405,7 @@ func (st *seatState) wheelSteps(a ports.PointerAxis) (steps [2]int32, values [2]
 // steps are whole wheel detents for axis_discrete. A pre-v8 client gets a
 // wheel axis only with a step, carrying values (all the value since the
 // last step), so it never counts smooth and discrete scroll.
-func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
+func (s *Server) sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2]float64) {
 	v := p.Version()
 	axes := [2]ports.ScrollAxis{a.Vertical, a.Horizontal}
 	for i := range axes {
@@ -410,21 +419,22 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 	if v >= 5 {
 		p.SendAxisSource(uint32(a.Source))
 	}
-	for axis, s := range axes {
-		if !s.Set {
+	for axis, ax := range axes {
+		if !ax.Set {
 			continue
 		}
-		if s.Stop {
+		if ax.Stop {
 			if v >= 5 {
+				s.stampPointer(p, a.Time)
 				p.SendAxisStop(wireMsec(a.Time), uint32(axis))
 			}
 			continue
 		}
-		value := s.Value
-		if a.Source == ports.AxisWheel && s.V120 != 0 {
+		value := ax.Value
+		if a.Source == ports.AxisWheel && ax.V120 != 0 {
 			switch {
 			case v >= 8:
-				p.SendAxisValue120(uint32(axis), s.V120)
+				p.SendAxisValue120(uint32(axis), ax.V120)
 			default:
 				value = values[axis]
 				if v >= 5 {
@@ -432,6 +442,7 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 				}
 			}
 		}
+		s.stampPointer(p, a.Time)
 		p.SendAxis(wireMsec(a.Time), uint32(axis), server.FixedFromFloat(value))
 	}
 	pointerFrame(p)

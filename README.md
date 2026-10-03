@@ -61,7 +61,7 @@ The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `term
 - `wp_presentation`, `wp_fifo_v1`, `wp_commit_timing_v1` for frame pacing.
 - `wp_fractional_scale_v1` and `wp_viewporter`: clients render at the output scale, nothing is rescaled.
 - Damage tracking, occlusion of surfaces behind opaque ones, no work on idle outputs. Frame, cursor, overlay and VRR in one atomic commit.
-- Input is read on its own thread and never waits on rendering; the cursor has a hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling. Relative pointer, pointer constraints and keyboard shortcuts inhibit for games.
+- Input is read on its own thread and never waits on rendering; the cursor has a hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling. Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. `zwp_input_timestamps_v1` gives clients microsecond input timestamps from libinput.
 - `wp_drm_lease_v1` leases headset connectors to SteamVR and Monado.
 
 ## Hardware support

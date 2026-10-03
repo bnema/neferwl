@@ -81,6 +81,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 				}
 			})
 		},
+		func() error { return registerInputTimestamps(d, s) },
 		func() error { return registerClipboard(d, s) },
 		func() error { return registerFixes(d) },
 		func() error { return registerAlphaModifier(d, s) },
@@ -434,6 +435,8 @@ func (h seat) GetPointer(r *wayland.Seat, id uint32) {
 	s.seat.pointers[r.Client()] = append(s.seat.pointers[r.Client()], p)
 	p.OnDestroy = func() {
 		delete(s.seat.enters, p.Resource)
+		// Subscribed timestamps objects become inert with the device.
+		delete(s.seat.pointerStamps, p.Resource)
 		// Copy on write: callers may be ranging over the old list (see
 		// clientPointers).
 		list := slices.DeleteFunc(slices.Clone(s.seat.pointers[r.Client()]), func(x *wayland.Pointer) bool { return x == p })
@@ -459,6 +462,7 @@ func (h seat) GetKeyboard(r *wayland.Seat, id uint32) {
 	}
 	s := h.server
 	k.OnDestroy = func() {
+		delete(s.seat.keyStamps, k.Resource)
 		// Copy on write: callers may be ranging over the old list (see
 		// clientKeyboards).
 		list := slices.DeleteFunc(slices.Clone(s.seat.keyboards[r.Client()]), func(x *wayland.Keyboard) bool { return x == k })

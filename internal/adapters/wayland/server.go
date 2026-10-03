@@ -11,6 +11,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 
 	"github.com/bnema/go-wayland-bindings/server/fractionalscale"
+	"github.com/bnema/go-wayland-bindings/server/inputtimestamps"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
 	"github.com/bnema/neferwl/internal/adapters/clock"
@@ -331,7 +332,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		relatives:          map[server.Client][]*relativepointer.ZwpRelativePointerV1{},
 		constraints:        map[*surface]*constraint{},
 		positioners:        map[*server.Resource]*positioner{},
-		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
+		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), keyStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), pointerStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
 	}
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}

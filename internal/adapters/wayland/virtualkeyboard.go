@@ -136,7 +136,7 @@ func (k *virtualKeyboard) keyboards(r *virtualkeyboard.ZwpVirtualKeyboardV1) []*
 	return keyboards
 }
 
-func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key, state uint32) {
+func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, msec, key, state uint32) {
 	if !k.admitted() || state != 1 && k.dropReleases && !k.pressed[key] {
 		return
 	}
@@ -149,8 +149,11 @@ func (k *virtualKeyboard) Key(r *virtualkeyboard.ZwpVirtualKeyboardV1, time, key
 	} else {
 		delete(k.pressed, key)
 	}
+	// The client's millisecond time is all the timestamp there is.
+	stamp := time.Duration(msec) * time.Millisecond
 	for _, kb := range keyboards {
-		kb.SendKey(k.server.serial, time, key, state)
+		k.server.stampKeyboard(kb, stamp)
+		kb.SendKey(k.server.serial, msec, key, state)
 	}
 }
 
@@ -198,12 +201,13 @@ func (k *virtualKeyboard) release() {
 		_, keyboards := s.focusTarget(s.seat.focused)
 		var ts unix.Timespec
 		_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
-		// Input events carry CLOCK_MONOTONIC milliseconds (libinput's clock).
-		now := uint32(ts.Nano() / int64(time.Millisecond))
+		// Input events carry CLOCK_MONOTONIC (libinput's clock).
+		now := time.Duration(ts.Nano())
 		for key := range k.pressed {
 			s.serial++
 			for _, kb := range keyboards {
-				kb.SendKey(s.serial, now, key, 0)
+				s.stampKeyboard(kb, now)
+				kb.SendKey(s.serial, wireMsec(now), key, 0)
 			}
 		}
 	}
