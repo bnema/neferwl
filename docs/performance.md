@@ -38,7 +38,15 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 `make tty` enables it on `localhost:6060` (`make tty PPROF=` disables it). `--pprof` also serves `/debug/pprof/profile` (CPU) and `/debug/pprof/trace` (scheduler and GC timeline for `go tool trace`). Escape analysis (`go build -gcflags=-m ./internal/adapters/vulkan`) shows why a value reaches the heap.
 
-`slow flip` log entries (flip over 20 ms) carry `frame` (false: cursor or VRR state commit) and `vrr`; `input stats` shows coalesced pointer motion and the longest wait for core.
+Each output's `stats` entry (every 10 s) counts what happened since the previous one, from the kernel's flip timestamps, and starts over:
+
+- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. Not counted under VRR, where the period is not fixed.
+- `max_flip_interval_ms`: the longest time between two frame flips (also under VRR).
+- `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event. A large value with few `missed_vblanks` means the flips were on time and the event was read late.
+- `late_fences` (only with `--debug=drm-flip`, which reads the fence times): frame flips whose composition fence signalled after the vblank before the flip, so the frame could not have flipped earlier. Not counted under VRR. Many `missed_vblanks` with many `late_fences` is a late composition.
+- `redrawn_pixels`: target pixels the renderer drew; a damage-limited frame counts its damage, not the whole target.
+
+`input stats` shows coalesced pointer motion and the longest wait for core.
 
 `--debug=drm-flip` (or `make tty TTY_DEBUG=drm-flip`) logs every commit completion as a `flip` entry: `commit_to_flip_ms`, `flip_interval_ms` (between frame flips), `fence_ready_at_commit`, and, when the client fence reports its signal time, `commit_to_fence_ms` and `fence_to_flip_ms`. A negative `commit_to_fence_ms` means the client finished before the commit.
 

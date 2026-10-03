@@ -78,10 +78,10 @@ func monotonic() time.Duration {
 	return time.Duration(ts.Nano())
 }
 
-// traceFlip logs the completion ev of the commit f started at start.
+// traceFlip logs the completion ev of the commit f started at start,
+// handled at now. It runs before accountFlip moves lastFlipAt.
 // fenceAt is when its fences signalled (0: none or unknown).
-func (o *Output) traceFlip(ev flipEvent, f pendingFrame, start time.Time, fenceAt time.Duration) {
-	now := monotonic()
+func (o *Output) traceFlip(ev flipEvent, f pendingFrame, start time.Time, now, fenceAt time.Duration) {
 	commitAt := now - time.Since(start)
 	e := o.log.Debug().Str("connector", o.conn.name).Bool("frame", f.frame).Bool("async", f.async).Bool("vrr", o.vrrOn).
 		Bool("direct", f.zeroCopy != 0).Uint32("seq", ev.seq).
@@ -90,11 +90,8 @@ func (o *Output) traceFlip(ev flipEvent, f pendingFrame, start time.Time, fenceA
 	if fenceAt != 0 {
 		e = e.Float64("commit_to_fence_ms", ms(fenceAt-commitAt)).Float64("fence_to_flip_ms", ms(ev.when-fenceAt))
 	}
-	if f.frame {
-		if o.lastFlipAt != 0 {
-			e = e.Float64("flip_interval_ms", ms(ev.when-o.lastFlipAt))
-		}
-		o.lastFlipAt = ev.when
+	if f.frame && o.lastFlipAt != 0 {
+		e = e.Float64("flip_interval_ms", ms(ev.when-o.lastFlipAt))
 	}
 	e.Msg("flip")
 }

@@ -122,9 +122,11 @@ type Output struct {
 	lastFrame  time.Time
 	cursorHeld bool
 	// traceFlips logs every completion with its timing; lastFlipAt is
-	// the previous frame flip's kernel timestamp.
+	// the previous frame flip's kernel timestamp (always kept).
+	// flipStats are reported and reset with the periodic stats.
 	traceFlips bool
 	lastFlipAt time.Duration
+	flipStats  flipStats
 	// vrrFlipGap is the minimum time between a game frame's flip event
 	// and the next frame commit under VRR (render.vrr-flip-gap, 0: off);
 	// flipGapUntil is when the next frame may commit. See vrr_flip_gap.go.
@@ -378,7 +380,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	}
 	o.modeBlob = blob
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, !active
-	// The gap and the traced flip interval belonged to the old state.
+	// The gap and the flip interval belonged to the old state.
 	o.flipGapUntil, o.lastFlipAt = time.Time{}, 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.planeRect = fullPlaneRect(o.Width(), o.Height())
@@ -1276,6 +1278,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				cs := o.cursor.TakeStats()
 				ev = ev.Int("cursor_moves", cs.Moves).Int("cursor_commits", cs.Commits)
 			}
+			fs := o.takeFlipStats()
+			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead)).Int("redrawn_pixels", r.TakeRedrawn())
+			if o.traceFlips {
+				ev = ev.Int("late_fences", fs.lateFences)
+			}
 			ev.Msg("stats")
 		}
 		o.observeSecurity()
@@ -1433,13 +1440,12 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if !ok {
 		return false
 	}
+	now := monotonic()
 	if trace {
-		o.traceFlip(ev, f, start, fenceAt)
+		o.traceFlip(ev, f, start, now, fenceAt)
 	}
+	o.accountFlip(ev, f.frame, now, fenceAt)
 	o.startFlipGap(f)
-	if age := time.Since(start); age > 20*time.Millisecond {
-		o.log.Info().Dur("flip_ms", age).Bool("frame", f.frame).Bool("vrr", o.vrrOn).Str("connector", o.conn.name).Msg("slow flip")
-	}
 	if o.cursor != nil {
 		o.cursor.landed()
 	}
@@ -1456,11 +1462,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if o.queued == f.queued {
 		o.queued = 0
 	}
-	refresh := time.Duration(0)
-	if !o.vrrOn {
-		refresh = time.Duration(int64(time.Second) * 1000 / int64(max(1, o.mode.refreshMilli())))
-	}
-	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: refresh, ZeroCopy: f.zeroCopy, Async: f.async, HardwareClock: true, Shows: f.shows}, seen)
+	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, HardwareClock: true, Shows: f.shows}, seen)
 	return true
 }
 
