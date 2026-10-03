@@ -672,6 +672,68 @@ func (_c *mockkms_planes_Call) RunAndReturn(run func() ([]planeRes, error)) *moc
 	return _c
 }
 
+// propEnums provides a mock function for the type mockkms
+func (_mock *mockkms) propEnums(prop uint32) (map[string]uint64, error) {
+	ret := _mock.Called(prop)
+
+	if len(ret) == 0 {
+		panic("no return value specified for propEnums")
+	}
+
+	var r0 map[string]uint64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(uint32) (map[string]uint64, error)); ok {
+		return returnFunc(prop)
+	}
+	if returnFunc, ok := ret.Get(0).(func(uint32) map[string]uint64); ok {
+		r0 = returnFunc(prop)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]uint64)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(uint32) error); ok {
+		r1 = returnFunc(prop)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_propEnums_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'propEnums'
+type mockkms_propEnums_Call struct {
+	*mock.Call
+}
+
+// propEnums is a helper method to define mock.On call
+//   - prop uint32
+func (_e *mockkms_Expecter) propEnums(prop any) *mockkms_propEnums_Call {
+	return &mockkms_propEnums_Call{Call: _e.mock.On("propEnums", prop)}
+}
+
+func (_c *mockkms_propEnums_Call) Run(run func(prop uint32)) *mockkms_propEnums_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_propEnums_Call) Return(stringToUint64 map[string]uint64, err error) *mockkms_propEnums_Call {
+	_c.Call.Return(stringToUint64, err)
+	return _c
+}
+
+func (_c *mockkms_propEnums_Call) RunAndReturn(run func(prop uint32) (map[string]uint64, error)) *mockkms_propEnums_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // resources provides a mock function for the type mockkms
 func (_mock *mockkms) resources() ([]uint32, []uint32, error) {
 	ret := _mock.Called()

@@ -31,6 +31,13 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: kms_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/seat:
+    interfaces:
+      disabler:
+        config:
+          dir: internal/adapters/seat
+          pkgname: seat
+          filename: disabler_mock_test.go
   github.com/bnema/neferwl/internal/adapters/libinput:
     interfaces:
       deviceConfig:
@@ -79,6 +86,11 @@ packages:
           dir: internal/app
           pkgname: app
           filename: cursor_mock_test.go
+      seatDisablePreparer:
+        config:
+          dir: internal/app
+          pkgname: app
+          filename: seatdisable_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:

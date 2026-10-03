@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
@@ -81,7 +82,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	if decision.fb != 0 {
 		c := decision.content
-		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect); direct {
+		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect, decision.color); direct {
 			presented = err == nil
 			return true, err
 		}
@@ -202,6 +203,11 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		done.Close()
 	}
 	ov.close()
+	if errors.Is(err, errColorRefused) {
+		// Cached for the overlay's buffer format: the next frame composes it.
+		o.setOverlayReason("color_refused")
+		return false, errOverlayDropped
+	}
 	if err != nil && o.overlayConflict(err, ov.buf) {
 		return false, errOverlayDropped
 	}

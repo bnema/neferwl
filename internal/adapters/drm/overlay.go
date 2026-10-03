@@ -49,6 +49,8 @@ type overlayWin struct {
 	buf  uint64
 	rect ports.Rect // CRTC rect
 	w, h int        // buffer size
+	// color is how the plane's colour pipeline shows the buffer.
+	color colorUse
 	// acquire is the client's explicit-sync fence, a duplicate owned by
 	// the frame loop (closed after the commit); nil without one.
 	acquire *os.File
@@ -56,16 +58,17 @@ type overlayWin struct {
 
 // overlayCandidate finds the one window the overlay can show: an opaque
 // dmabuf at integer physical coordinates, drawn 1:1, with no other window
-// or layer above it. reason is why none.
-func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (ports.SceneWindow, ports.SurfaceContent, string) {
+// or layer above it, and the plane colour mode it needs. reason is why none.
+func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
 	if s.Transform != 0 {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "output_transform"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
 	}
 	scale := s.Scale
 	if scale <= 0 {
 		scale = 1
 	}
 	var pick *ports.SceneWindow
+	var mode colorMode
 	for i := range s.Windows {
 		w := &s.Windows[i]
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
@@ -73,59 +76,62 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		}
 		if w.Popup {
 			// Popups draw after every window, wherever they are listed.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 		}
 		c := surfaces[w.ID]
-		// A viewport crop or PQ content is composed: the plane would show
-		// the whole buffer, and raw PQ values on this SDR output. A dimmed
+		// A viewport crop is composed: the plane would show the whole
+		// buffer, and so is a colour the plane cannot show (raw PQ values
+		// on an SDR output, SDR on HDR without a pipeline). A dimmed
 		// window (a peeking stashed one) needs the veil drawn over it, and
 		// one with the focus effect needs its lift; an overview preview is
 		// drawn smaller than its buffer.
-		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && !c.Color.IsPQ2020() {
-			pick = w
-			continue
+		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) {
+			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
+				pick, mode = w, m
+				continue
+			}
 		}
 		if pick != nil {
 			// Something is drawn above the candidate.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 		}
 	}
 	if pick == nil {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "no_candidate"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "no_candidate"
 	}
 	if s.Dim > 0 {
 		// The renderer composes the veil (under the first float, or under
 		// every window with DimBehind): a window on the plane would skip it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "dim"
 	}
 	if len(s.DropHints) > 0 {
 		// Drag hints are drawn over the windows.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "drop_hint"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
 		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
-			return ports.SceneWindow{}, ports.SurfaceContent{}, "layer_above"
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "layer_above"
 		}
 	}
 	if !pick.Fullscreen && len(s.Separators) > 0 {
 		// The overlay shows the buffer alone; the lines would go with it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "border"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
 	}
 	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
 		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
 		// The plane cannot apply the workspace's logical viewport crop.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "workspace_clip"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale
 	if float64(c.Width) != pw || float64(c.Height) != ph || c.Geometry != (ports.Rect{}) && (c.Geometry.X != 0 || c.Geometry.Y != 0) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "scaled"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "scaled"
 	}
 	x, y := float64(pick.Rect.X)*scale, float64(pick.Rect.Y)*scale
 	if x != float64(int(x)) || y != float64(int(y)) {
-		return ports.SceneWindow{}, ports.SurfaceContent{}, "fractional_position"
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "fractional_position"
 	}
-	return *pick, c, ""
+	return *pick, c, mode, ""
 }
 
 // overlayProps puts ov on the overlay plane, or turns it off.
@@ -137,8 +143,10 @@ func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 	if ov.fb == 0 {
 		req.set(p.id, p.prop("FB_ID"), 0)
 		req.set(p.id, p.prop("CRTC_ID"), 0)
+		o.overlayColorProps(req, colorBypass)
 		return
 	}
+	o.overlayColorProps(req, ov.color.mode)
 	req.set(p.id, p.prop("FB_ID"), uint64(ov.fb))
 	req.set(p.id, p.prop("CRTC_ID"), uint64(o.crtc))
 	req.set(p.id, p.prop("SRC_X"), 0)
@@ -164,17 +172,19 @@ func (ov overlayWin) close() {
 
 // testOverlay asks KMS whether it takes the frame with ov on the overlay,
 // the cursor at its current place included. A refusal is cached on the
-// buffer.
+// buffer; one that the plane's colour pipeline causes (the same frame passes
+// with Bypass) is cached on the plane for the buffer format and the cursor
+// state instead.
 func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
-	req := &atomicReq{}
-	o.primaryProps(req, fb)
-	o.overlayProps(req, ov)
-	if o.cursor != nil {
-		o.cursor.props(req, o.crtc, o.cursor.desired())
-	}
-	err := o.k.commit(req, atomicTestOnly, 0)
+	err := o.probeOverlay(fb, ov, ov.color.mode)
 	if err == nil {
 		return true
+	}
+	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
+		o.overlay.setVerdict(ov.color.format, o.cursorShown(), false)
+		o.setOverlayReason("color_refused")
+		o.log.Info().Str("component", "render").Err(err).Uint32("format", ov.color.format).Str("connector", o.conn.name).Msg("overlay colour pipeline refused")
+		return false
 	}
 	if cfb := o.clientFBs[ov.buf]; cfb != nil && refused(err) {
 		cfb.overlayFailed = "overlay_refused"
@@ -182,6 +192,23 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	o.setOverlayReason("overlay_refused")
 	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
+}
+
+// probeOverlay is a TEST_ONLY of the frame: the composed image on the
+// primary plane (Bypass), ov on the overlay with colour mode, the cursor.
+// Both planes' colour state is written whatever they applied: the test must
+// not rely on the state of the last commit.
+func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode) error {
+	req := &o.probeReq // no frame request is alive: the frame commit follows
+	req.reset()
+	o.primaryProps(req, fb)
+	o.primary.colorProps(req, colorBypass, 0, 0)
+	o.overlayProps(req, ov)
+	o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob)
+	if o.cursor != nil {
+		o.cursor.props(req, o.crtc, o.cursor.desired())
+	}
+	return o.k.commit(req, atomicTestOnly, 0)
 }
 
 // errOverlayDropped: a commit was refused with the overlay on; the frame is

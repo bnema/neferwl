@@ -71,6 +71,27 @@ type Seat struct {
 	devices map[int32]int32 // fd → libseat device id
 	subs    []chan bool
 	log     zerowrap.Logger
+	// beforeDisable runs on a seat disable, before it is acked to the seat
+	// manager: the last moment this process is still DRM master.
+	beforeDisable func()
+	disabler      disabler
+}
+
+// disabler acks a seat disable to the seat manager (libseat_disable_seat),
+// which revokes the devices.
+type disabler interface{ disable() }
+
+type libseatDisabler struct{ s *Seat }
+
+func (d libseatDisabler) disable() { disableSeat(d.s.handle) }
+
+// SetBeforeDisable registers f, run on every seat disable before it is
+// acked. f runs inside libseat's dispatch, with the seat locked: it must be
+// short and must not call the Seat. Call it before Run.
+func (s *Seat) SetBeforeDisable(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.beforeDisable = f
 }
 
 // Open connects to logind or seatd and waits for the first enable.
@@ -82,6 +103,7 @@ func Open(ctx context.Context, log zerowrap.Logger) (*Seat, error) {
 		return nil, errors.New("seat already open")
 	}
 	s := &Seat{devices: make(map[int32]int32), log: log}
+	s.disabler = libseatDisabler{s}
 	current = s
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -105,8 +127,13 @@ func (s *Seat) changed(active bool) {
 	s.active = active
 	s.log.Info().Bool("active", active).Msg("seat")
 	if !active {
+		// Once acked the devices are revoked and the next master inherits
+		// the planes as they are: let the owner of the outputs reset them.
+		if s.beforeDisable != nil {
+			s.beforeDisable()
+		}
 		// Devices are revoked by the seat manager; ack so the VT can switch.
-		disableSeat(s.handle)
+		s.disabler.disable()
 	}
 	for _, c := range s.subs {
 		select {

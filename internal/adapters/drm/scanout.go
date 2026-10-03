@@ -197,23 +197,12 @@ func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
 // scanoutFrame picks a fullscreen client buffer to flip directly. It
 // returns fb 0, with the reason logged on change, when the frame must be
 // composed.
-func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent) {
+func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent, mode colorMode) {
 	reason := "disabled"
 	if o.scanout {
 		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
-		if reason == "" && isYUVFormat(c.DMABuf.Format) {
-			reason = "yuv"
-		}
-		if o.hdr.on && reason == "" {
-			switch {
-			case !c.Color.IsPQ2020():
-				reason = "hdr_sdr_content"
-			case !isTenBit(c.DMABuf.Format):
-				reason = "hdr_format"
-			}
-		} else if !o.hdr.on && reason == "" && c.Color.IsPQ2020() {
-			// An SDR connector must never show raw PQ values.
-			reason = "sdr_pq_content"
+		if reason == "" {
+			mode, reason = planeColor(c.Color, c.DMABuf.Format, c.Opaque, o.hdr.on, o.primary.pipeline)
 		}
 	}
 	if reason == "" {
@@ -224,7 +213,8 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 			if cfb.scaleRefused && cfb.scaleFailed == rect {
 				reason = "scale_refused"
 			} else if rect != fullPlaneRect(o.Width(), o.Height()) && (!cfb.scaleTestedOK || cfb.scaleTested != rect) {
-				req := &atomicReq{}
+				req := &o.probeReq
+				req.reset()
 				o.primaryRectProps(req, fb, rect)
 				if err := o.k.commit(req, atomicTestOnly, 0); err != nil {
 					cfb.scaleFailed = rect
@@ -236,27 +226,41 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 					cfb.scaleTestedOK = true
 				}
 			}
+			if reason == "" && mode != colorBypass && !o.colorAllowed(o.primary, c.DMABuf.Format, func(req *atomicReq) {
+				o.primaryRectProps(req, fb, rect)
+				if o.overlayOn != 0 {
+					o.overlayProps(req, overlayWin{})
+				}
+			}) {
+				reason = "color_refused"
+			}
 		}
 	}
 	o.setScanoutReason(reason)
 	if reason != "" {
-		return 0, c
+		return 0, c, colorBypass
 	}
-	return fb, c
+	return fb, c, mode
 }
 
 // overlayFrame decides the overlay of a frame: the window, and the scene
 // the renderer composes (the window left out). A zero overlayWin means
-// none; the reason is logged on change.
+// none; the reason is logged on change. The returned scene's Windows is
+// valid until the next call: it reuses o.restWindows (its consumers, Render,
+// ExcludedScene and the capture tracking, run synchronously before then).
 func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (overlayWin, ports.Scene) {
 	reason := "no_plane"
 	var ov overlayWin
-	if o.hdr.on {
-		reason = "hdr"
-	} else if o.overlay != nil && o.scanout {
+	if o.overlay != nil && o.scanout {
 		var w ports.SceneWindow
 		var c ports.SurfaceContent
-		w, c, reason = overlayCandidate(s, surfaces)
+		var mode colorMode
+		w, c, mode, reason = overlayCandidate(s, surfaces, o.hdr.on, o.overlay.pipeline)
+		if reason == "" && mode != colorBypass {
+			if ok, known := o.overlay.verdict(c.DMABuf.Format, o.cursorShown()); known && !ok {
+				reason = "color_refused"
+			}
+		}
 		if reason == "" {
 			var fb uint32
 			if fb, reason = o.overlayFB(c.DMABuf, time.Now()); reason == "" {
@@ -266,22 +270,23 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 				}
 				ov = overlayWin{id: w.ID, fb: fb, buf: c.DMABuf.ID, w: c.Width, h: c.Height,
 					rect:    ports.Rect{X: int(float64(w.Rect.X) * scale), Y: int(float64(w.Rect.Y) * scale), W: c.Width, H: c.Height},
-					acquire: dupFence(c.Acquire)}
+					acquire: dupFence(c.Acquire), color: colorUse{mode: mode, format: c.DMABuf.Format}}
 			}
 		}
 	}
 	o.setOverlayReason(reason)
-	if ov.fb == 0 {
+	if ov.id == 0 {
 		return overlayWin{}, s
 	}
 	// The composed frame leaves the window out: the overlay shows it.
 	rest := s
-	rest.Windows = make([]ports.SceneWindow, 0, len(s.Windows))
+	o.restWindows = o.restWindows[:0]
 	for _, w := range s.Windows {
 		if w.ID != ov.id {
-			rest.Windows = append(rest.Windows, w)
+			o.restWindows = append(o.restWindows, w)
 		}
 	}
+	rest.Windows = o.restWindows
 	return ov, rest
 }
 
@@ -290,6 +295,7 @@ type frameDecision struct {
 	fb       uint32
 	content  ports.SurfaceContent
 	rect     planeRect
+	color    colorMode // how the primary plane shows fb
 	overlay  overlayWin
 	composed ports.Scene
 }
@@ -312,9 +318,9 @@ func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 		o.setOverlayReason("capture")
 		return frameDecision{composed: s}
 	}
-	fb, c := o.scanoutFrame(s, surfaces)
+	fb, c, mode := o.scanoutFrame(s, surfaces)
 	if fb != 0 {
-		return frameDecision{fb: fb, content: c, rect: scanoutRect(c, o.Width(), o.Height())}
+		return frameDecision{fb: fb, content: c, rect: scanoutRect(c, o.Width(), o.Height()), color: mode}
 	}
 	return o.composeFrame(s, surfaces)
 }

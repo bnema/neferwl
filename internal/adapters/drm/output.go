@@ -63,6 +63,14 @@ type Output struct {
 	overlay       *plane
 	overlayOn     uint64
 	overlayReason string
+	// ctmBlob is the 3x4 matrix blob of the planes' colour pipelines
+	// (BT.709 to BT.2020), made at setup and destroyed by Close (0: none);
+	// colorMult is the S31.32 multiplier, SDR white over 80 nits.
+	ctmBlob   uint32
+	colorMult uint64
+	// seatDisable carries a request to leave the planes on Bypass before
+	// the seat is disabled (PrepareSeatDisable); Run answers it.
+	seatDisable chan chan struct{}
 	// fbs are the two renderer images frames alternate between, back the
 	// one the next frame draws into (ADR 014: zero copy).
 	fbs   [2]uint32
@@ -117,6 +125,16 @@ type Output struct {
 	contentValue  uint64
 	contentWanted uint64
 	composedSince time.Time
+	// Reusable atomic requests, owned by the output goroutine (zero value
+	// ready). frameReq builds frame commits (commitWithRect), which retry
+	// by recursing: a retry resets it, so a caller never reads it after a
+	// recursive call. stateReq builds commitState. Paths that hold a second
+	// request while one is alive use their own: withoutReq (commitState's
+	// retry test) and probeReq (every TEST_ONLY probe: frameTest, the scale,
+	// overlay and colour probes).
+	frameReq, stateReq, withoutReq, probeReq atomicReq
+	// restWindows is overlayFrame's scene windows, valid until its next call.
+	restWindows []ports.SceneWindow
 	// lastFrame is when the last frame was committed. cursorHeld: a cursor
 	// move waits for the next frame (see cursorWaits).
 	lastFrame  time.Time
@@ -177,7 +195,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -187,6 +205,8 @@ func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, er
 	}
 	o.hdr.settings = normalizedHDRSettings(card.want.HDR[c.name])
 	o.hdr.cap = detectHDR(o.monitor, o.hdr.props)
+	o.readColor()
+	o.setupColor()
 	log.Info().Str("connector", c.name).Bool("hdr_capable", o.hdr.cap.Capable).Str("reason", o.hdr.cap.Reason).Float64("max_luminance", o.hdr.cap.MaxLuminance).Float64("max_frame_average", o.hdr.cap.MaxFrameAverage).Float64("min_luminance", o.hdr.cap.MinLuminance).Msg("HDR capability")
 	if o.hdr.settings.Enabled && !o.hdr.cap.Capable {
 		log.Warn().Str("connector", c.name).Str("reason", o.hdr.cap.Reason).Msg("HDR requested but unavailable")
@@ -338,6 +358,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 			return err
 		}
 		o.frame.resetAfterModeset()
+		o.forgetColor()
 		o.planeRect = fullPlaneRect(o.Width(), o.Height())
 		o.signalReady()
 		return nil
@@ -380,10 +401,13 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	// Only now is nothing of ours pending or on screen: on failure the
 	// previous buffers may still show.
 	o.frame.resetAfterModeset()
-	// Plane scaling capabilities may change after a modeset or VT resume.
+	// Plane scaling and colour pipeline capabilities may change after a
+	// modeset or VT resume; the planes' colour state is not assumed.
 	for _, fb := range o.clientFBs {
 		fb.scaleTestedOK, fb.scaleRefused = false, false
 	}
+	o.forgetColor()
+	o.forgetColorVerdicts()
 	o.shown, o.queued = 0, 0
 	if o.modeBlob != 0 {
 		_ = o.k.destroyBlob(o.modeBlob)
@@ -425,9 +449,11 @@ func (o *Output) powerOff() error {
 	req.set(o.crtc, o.crtcProps["ACTIVE"], 0)
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.contentProp, o.contentValues[0])
+	o.forceBypass(req)
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("power off: %w", err)
 	}
+	o.colorBypassed()
 	o.off, o.vrrGame = true, false
 	o.setVRR(false)
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
@@ -451,6 +477,10 @@ func (o *Output) sendFormats() {
 	}
 	if o.scanout && !o.off {
 		for _, format := range o.scanoutFormats(o.sampled) {
+			// The feedback is not widened for SDR buffers on HDR: HDR
+			// clients pick from it and need 10-bit formats. An SDR
+			// buffer is still scanned out through the pipeline when the
+			// plane lists its format.
 			if !isYUVFormat(format.Format) && isTenBit(format.Format) == o.hdr.on {
 				f.Formats = append(f.Formats, format)
 			}
@@ -515,6 +545,9 @@ func (o *Output) modesetBaseReq(blob uint32, active bool) *atomicReq {
 	req.set(o.conn.id, o.contentProp, o.contentValues[0])
 	req.set(o.conn.id, o.connCrtc, uint64(o.crtc))
 	o.hdrConnectorProps(req, o.hdr.on)
+	// A modeset starts from the planes' Bypass pipeline: whatever the
+	// previous master left is not ours.
+	o.forceBypass(req)
 	return req
 }
 
@@ -544,15 +577,20 @@ func (o *Output) modesetReq(blob uint32, active bool) *atomicReq {
 // also move the cursor or change VRR flips at vblank. fence is the
 // frame's GPU fence (nil: none); the caller keeps and closes it.
 func (o *Output) commitFrame(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame) error {
-	return o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, fullPlaneRect(o.Width(), o.Height()))
+	return o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, fullPlaneRect(o.Width(), o.Height()), colorUse{})
 }
 
-// commitWith is commitFrame with ov on the overlay plane (zero: off).
+// commitWith is commitFrame with ov on the overlay plane (zero: off). The
+// primary plane shows a composed image: Bypass.
 func (o *Output) commitWith(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin) error {
-	return o.commitWithRect(fb, fence, async, vrr, f, ov, fullPlaneRect(o.Width(), o.Height()))
+	return o.commitWithRect(fb, fence, async, vrr, f, ov, fullPlaneRect(o.Width(), o.Height()), colorUse{})
 }
 
-func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect) error {
+// commitWithRect commits fb on the primary plane at rect, with ov on the
+// overlay, and the planes' colour pipelines as pc (primary) and ov.color
+// (overlay) say. A frame that changes a plane's colour state is never async:
+// only FB_ID may change in an async commit.
+func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool, f pendingFrame, ov overlayWin, rect planeRect, pc colorUse) error {
 	o.observeSecurity()
 	if o.Security != nil && (f.security != o.securityState || o.protected && !o.securityPrepared) {
 		return errSecurityScene
@@ -562,24 +600,28 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 		cur = o.cursor.desired()
 	}
 	if o.protected {
-		async, vrr, ov = false, false, overlayWin{}
+		async, vrr, ov, pc = false, false, overlayWin{}, colorUse{}
 	}
-	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn || rect != o.planeRect || o.contentWanted != o.contentValue) {
+	if async && (vrr != o.vrrOn || o.cursor != nil && cur != o.cursor.applied || fence != nil && !o.asyncFence || ov.buf != o.overlayOn || rect != o.planeRect || o.contentWanted != o.contentValue || o.colorStaleFor(pc, ov)) {
 		async = false
 	}
-	req := &atomicReq{}
+	req := &o.frameReq
+	req.reset()
 	flags := uint32(atomicNonblock | flipEventFlag)
 	if async {
 		flags |= flipAsyncFlag
 		req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(fb))
 	} else {
 		o.primaryRectProps(req, fb, rect)
+		o.primaryColorProps(req, pc.mode)
 		req.set(o.crtc, o.vrrProp, boolValue(vrr))
 		if o.cursor != nil {
 			o.cursor.props(req, o.crtc, cur)
 		}
 		if ov.buf != 0 || o.overlayOn != 0 {
 			o.overlayProps(req, ov)
+		} else {
+			o.overlayColorProps(req, ov.color.mode)
 		}
 	}
 	o.contentProps(req)
@@ -594,19 +636,28 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	}
 	// The kernel takes its own reference on the fence.
 	if err := o.k.commit(req, flags, o.frame.userData(userFrame)); err != nil {
-		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
-			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect)
+		// The pipeline first: with it in the frame, its refusal must not
+		// be taken for the cursor's, which would turn the hardware cursor
+		// off for good. colorRefused tests the frame with Bypass and the
+		// cursor as it is, so a real cursor refusal still reaches below.
+		if !async && errors.Is(err, unix.EINVAL) && o.colorRefused(err, fb, fence, vrr, cur, ov, rect, pc) {
+			return errColorRefused
 		}
-		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.contentRefused(fb, fence, vrr, cur, ov, rect) {
+		if !async && cur.on && errors.Is(err, unix.EINVAL) && o.cursorRefused() {
+			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
+		}
+		// The same frame without the connector hint tells whether the hint
+		// is the cause.
+		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false) {
 			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
-			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect)
+			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
 		if !async && vrr && !o.vrrOn && errors.Is(err, unix.EINVAL) {
 			// Retry without turning VRR on: if that passes, the driver
 			// refuses VRR on this output. The overlay stays: the composed
 			// image left its window out.
-			if o.commitWithRect(fb, fence, false, false, f, ov, rect) == nil {
+			if o.commitWithRect(fb, fence, false, false, f, ov, rect, pc) == nil {
 				o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("vrr refused; disabled")
 				o.vrrProp = 0
 				return nil
@@ -626,6 +677,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	}
 	if !async {
 		o.overlayOn = ov.buf
+		o.colorCommitted(pc, ov)
 	}
 	o.contentValue = o.contentWanted
 	o.planeRect = rect
@@ -642,16 +694,26 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	return nil
 }
 
-// contentRefused tests the same frame without the connector hint before disabling it.
-func (o *Output) contentRefused(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect) bool {
-	req := &atomicReq{}
+// frameTest is a TEST_ONLY of the frame commit as commitWithRect builds it,
+// with the colour state pc and ov.color, and the connector content hint only
+// when withContent. It reports whether KMS takes it. frameReq is still the
+// caller's: it uses probeReq.
+func (o *Output) frameTest(fb uint32, fence *os.File, vrr bool, cur cursorState, ov overlayWin, rect planeRect, pc colorUse, withContent bool) bool {
+	req := &o.probeReq
+	req.reset()
 	o.primaryRectProps(req, fb, rect)
+	o.primaryColorProps(req, pc.mode)
 	req.set(o.crtc, o.vrrProp, boolValue(vrr))
 	if o.cursor != nil {
 		o.cursor.props(req, o.crtc, cur)
 	}
 	if ov.buf != 0 || o.overlayOn != 0 {
 		o.overlayProps(req, ov)
+	} else {
+		o.overlayColorProps(req, ov.color.mode)
+	}
+	if withContent {
+		o.contentProps(req)
 	}
 	if fence != nil {
 		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(fence.Fd()))
@@ -673,7 +735,8 @@ func (o *Output) commitState(vrr bool) error {
 	if o.protected {
 		return errSecurityScene
 	}
-	req := &atomicReq{}
+	req := &o.stateReq
+	req.reset()
 	cur := cursorState{}
 	// A move back to the applied state holds nothing.
 	o.cursorHeld = false
@@ -700,6 +763,11 @@ func (o *Output) commitState(vrr bool) error {
 		return errSecurityScene
 	}
 	if err := o.k.commit(req, atomicNonblock|flipEventFlag, o.frame.userData(userState)); err != nil {
+		if o.colorConflict(err, o.cursor != nil && cur.on && cur != o.cursor.applied) {
+			// A plane shows the pipeline and KMS refuses the cursor with
+			// it: the next frame is composed.
+			return errOverlayDropped
+		}
 		if o.overlayConflict(err, o.overlayOn) {
 			// The next frame is composed without the overlay.
 			return errOverlayDropped
@@ -708,7 +776,8 @@ func (o *Output) commitState(vrr bool) error {
 			return o.commitState(vrr)
 		}
 		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) {
-			without := &atomicReq{}
+			without := &o.withoutReq
+			without.reset()
 			if o.cursor != nil && cur != o.cursor.applied {
 				o.cursor.props(without, o.crtc, cur)
 			}
@@ -757,10 +826,11 @@ func boolValue(b bool) uint64 {
 // commitScanout flips a client buffer. It reports false when KMS refused
 // the buffer: the frame must be composed.
 func (o *Output) commitScanout(fb uint32, c ports.SurfaceContent, f pendingFrame) (bool, error) {
-	return o.commitScanoutRect(fb, c, f, fullPlaneRect(o.Width(), o.Height()))
+	return o.commitScanoutRect(fb, c, f, fullPlaneRect(o.Width(), o.Height()), colorBypass)
 }
 
-func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingFrame, rect planeRect) (bool, error) {
+// commitScanoutRect flips a client buffer at rect, shown with colour mode.
+func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingFrame, rect planeRect, mode colorMode) (bool, error) {
 	cfb := o.clientFBs[c.DMABuf.ID]
 	// Drivers refuse async flips that change the format or modifier: the
 	// flip from the composed image into scanout waits for vblank.
@@ -774,13 +844,20 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 	if fence != nil {
 		defer fence.Close()
 	}
-	err := o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, rect)
+	pc := colorUse{mode: mode, format: c.DMABuf.Format}
+	err := o.commitWithRect(fb, fence, async, vrr, f, overlayWin{}, rect, pc)
 	if err != nil && async && errors.Is(err, unix.EINVAL) {
 		// Refused (e.g. not a fast update): this buffer flips at vblank
 		// from now on.
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
 		cfb.noAsync = true
-		err = o.commitWithRect(fb, fence, false, vrr, f, overlayWin{}, rect)
+		err = o.commitWithRect(fb, fence, false, vrr, f, overlayWin{}, rect, pc)
+	}
+	if errors.Is(err, errColorRefused) {
+		// KMS takes the buffer without the pipeline: compose it; the
+		// refusal is cached, the buffer is not marked failed.
+		o.setScanoutReason("color_refused")
+		return false, nil
 	}
 	if err != nil && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)) {
 		// KMS refuses this buffer on the plane: compose it instead.
@@ -807,6 +884,8 @@ func (o *Output) Close() {
 		o.cursor.props(req, o.crtc, cursorState{})
 	}
 	o.overlayProps(req, overlayWin{})
+	// Whoever drives the planes next starts from Bypass.
+	o.forceBypass(req)
 	o.hdrConnectorProps(req, false)
 	req.set(o.crtc, o.vrrProp, 0)
 	s := o.saved
@@ -874,6 +953,10 @@ func (o *Output) Close() {
 		o.modeBlob = 0
 	}
 	o.hdr.releaseBlob(o.k)
+	if o.ctmBlob != 0 {
+		_ = o.k.destroyBlob(o.ctmBlob)
+		o.ctmBlob = 0
+	}
 	if o.cursor != nil {
 		o.cursor.free(o.k)
 	}
@@ -1186,6 +1269,13 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				// scene that shows it.
 				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
 			}
+		case ack := <-o.seatDisable:
+			o.bypassForSeatDisable()
+			// The seat is about to be disabled: no frame may select the
+			// pipeline again before the next enable (a modeset).
+			enabled = false
+			ack <- struct{}{}
+			continue
 		case on := <-active:
 			o.observeSecurity()
 			if o.protected {

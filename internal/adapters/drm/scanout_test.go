@@ -247,7 +247,7 @@ func TestHDRScanoutDecision(t *testing.T) {
 	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
 	check := func(want string) {
 		t.Helper()
-		fb, _ := o.scanoutFrame(scene, map[ports.WindowID]ports.SurfaceContent{1: c})
+		fb, _, _ := o.scanoutFrame(scene, map[ports.WindowID]ports.SurfaceContent{1: c})
 		if o.reason != want || (fb != 0) != (want == "") {
 			t.Fatalf("fb %d reason %q, want %q", fb, o.reason, want)
 		}
@@ -384,6 +384,29 @@ func TestFrameDecisionAllocations(t *testing.T) {
 	if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) }); n != 0 {
 		t.Fatalf("composition decision: %.1f allocs", n)
 	}
+
+	// Overlay active: the scene composed without the overlaid window reuses
+	// the output's window slice.
+	t.Run("overlay", func(t *testing.T) {
+		o, _, _ := overlayOutput(t)
+		o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
+		s, surfaces := overlayScene()
+		o.clientFBs[9] = &clientFB{fbID: 88}
+		d := o.decideFrame(s, surfaces, false)
+		if d.fb != 0 || d.overlay.fb != 88 || o.overlayReason != "" || len(d.composed.Windows) != 1 || d.composed.Windows[0].ID != 1 {
+			t.Fatalf("overlay decision: %+v reason %q", d, o.overlayReason)
+		}
+		if n := testing.AllocsPerRun(100, func() { o.decideFrame(s, surfaces, false) }); n != 0 {
+			t.Fatalf("overlay decision: %.1f allocs", n)
+		}
+		// The slice is reused: the previous scene's Windows is overwritten
+		// by the next call, and the input scene is never modified.
+		first := d.composed.Windows
+		d2 := o.decideFrame(s, surfaces, false)
+		if &first[0] != &d2.composed.Windows[0] || len(s.Windows) != 2 || s.Windows[0].ID != 1 || s.Windows[1].ID != 2 {
+			t.Fatal("rest windows not reused or the input scene changed")
+		}
+	})
 }
 
 func TestFrameDecisionOverlayFallback(t *testing.T) {
