@@ -57,7 +57,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.primary` | `off` | Gets focus and pointer at startup |
 | `output.<name>.right-of` / `.left-of` / `.above` / `.below` | automatic | Connector to place the output against, e.g. `DP-1` |
-| `output.<name>.offset` | `0` | Logical px along the shared edge: down for `right-of`/`left-of`, right for `above`/`below`. Negative allowed, −65536 to 65536. Ignored without a relation, with a warning |
+| `output.<name>.offset` | `0` | Logical px along the shared edge, −65536 to 65536; see [Output placement](#output-placement) |
 | `output.<name>.hdr` | `off` | Turns on HDR10 on capable outputs; otherwise falls back to SDR (reason in the log) |
 | `output.<name>.sdr-brightness` | `203` | How bright SDR desktop content appears in HDR, in nits (80–1000) |
 | `render.direct-scanout` | `on` | Fullscreen buffers straight to the display |
@@ -69,29 +69,56 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 ## Output placement
 
-An output with no relation is placed automatically, left to right after the others, at y=0. An output whose reference is not connected is placed automatically too, and returns to its relation when the reference connects. Relation cycles are ignored with a warning. Positions set by an output-management client (kanshi, wdisplays, wlr-randr) take precedence over relations until the next config reload. The pointer crosses any touching edge. Monitor navigation and column edge crossings follow output geometry; stacked outputs are reached with focus-monitor-up/down.
+Without relations, outputs sit left to right in config order, top-aligned. A relation places an output against another one; `offset` slides it along the shared edge so the pointer crosses where the screens really meet.
+
+```ini
+output.DP-2.right-of = DP-1
+output.DP-2.offset = 360    # DP-2 starts 360 px lower than DP-1's top
+```
+
+```
+┌────────────┐
+│            │┌─────────┐
+│    DP-1    ││  DP-2   │
+│ 2560x1440  ││1920x1080│
+│            │└─────────┘
+└────────────┘
+```
+
+Rules:
+
+- `offset` moves down for `right-of`/`left-of` and right for `above`/`below`; negative moves the other way.
+- Sizes are logical: the layout follows scale changes on its own.
+- An output whose reference is not connected is placed automatically until the reference returns.
+- Cycles and invalid values are ignored with a warning in the log.
+- Positions set by kanshi, wdisplays or wlr-randr win until the next config reload.
+- `focus-monitor-*`, `move-workspace-to-monitor-*` and column moves past the edge go to the output on that side.
 
 Two rows of three, with DP-1 as the base:
 
 ```
-output.DP-1 = 2560x1440
-output.DP-2 = 1920x1080
+┌────────┐┌────────────┐┌────────┐
+│  DP-4  ││   HDMI-1   ││  DP-5  │
+└────────┘└────────────┘└────────┘
+┌────────┐┌────────────┐┌────────┐
+│  DP-2  ││    DP-1    ││  DP-3  │
+└────────┘└────────────┘└────────┘
+```
+
+```ini
+# Bottom row: 1080p sides, bottoms aligned with DP-1 (1440 - 1080 = 360)
 output.DP-2.left-of = DP-1
 output.DP-2.offset = 360
-output.DP-3 = 1920x1080
 output.DP-3.right-of = DP-1
 output.DP-3.offset = 360
-output.HDMI-1 = 2560x1440
+
+# Top row: 1200p sides, bottoms aligned with HDMI-1 (1440 - 1200 = 240)
 output.HDMI-1.above = DP-1
-output.DP-4 = 1920x1200
 output.DP-4.left-of = HDMI-1
 output.DP-4.offset = 240
-output.DP-5 = 1920x1200
 output.DP-5.right-of = HDMI-1
 output.DP-5.offset = 240
 ```
-
-The bottom row is DP-2 | DP-1 | DP-3 and the top row DP-4 | HDMI-1 | DP-5.
 
 ## Workspace size
 
