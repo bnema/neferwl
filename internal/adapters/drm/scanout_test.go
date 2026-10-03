@@ -106,6 +106,19 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	if reason != "" || c.DMABuf != game || c.ID != 1 || c.Seq != 7 || !c.Async || c.Acquire != acquire || c.Geometry != (ports.Rect{}) {
 		t.Fatalf("candidate %+v, reason %q", c, reason)
 	}
+
+	// A single-pixel root is hidden by the opaque dmabuf over it, like an shm
+	// one; alone it is not a dmabuf.
+	solidRoot := root
+	solidRoot.SHM, solidRoot.Solid = nil, &ports.SolidColor{A: 1}
+	c, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100)
+	if reason != "" || c.DMABuf != game || c.Solid != nil || c.ID != 1 || c.Seq != 7 {
+		t.Fatalf("solid root with dmabuf child: candidate %+v, reason %q", c, reason)
+	}
+	solidRoot.Children = nil
+	if _, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100); reason != "not_dmabuf" {
+		t.Fatalf("solid root alone: reason %q, want not_dmabuf", reason)
+	}
 }
 
 // VRR follows a visible fullscreen window covering the output, even

@@ -292,6 +292,9 @@ func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64
 // drawable reports whether the child's buffer will draw. GPU buffer
 // imports are cached, so pre-importing here costs nothing.
 func (w *sceneWalk) drawable(c *ports.SurfaceContent) bool {
+	if c.Solid != nil {
+		return true
+	}
 	if c.DMABuf != nil {
 		_, err := w.r.importDMABuf(c.DMABuf)
 		return err == nil
@@ -359,6 +362,12 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	r := w.r
 	rect := dst
 	if rect.Empty() {
+		return
+	}
+	if content.Solid != nil {
+		if dr := r.solidDraw(rect, content); dr.pc.color[3] > 0 {
+			w.draws = append(w.draws, dr)
+		}
 		return
 	}
 	if content.DMABuf != nil {

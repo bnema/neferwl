@@ -168,16 +168,17 @@ func (s *surface) checkSyncCommit() bool {
 		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoReleasePoint), "no release point")
 	case a.tl == r.tl && a.point >= r.point:
 		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorConflictingPoints), "release point not after acquire point")
-	case s.pendingIsSHM():
-		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorUnsupportedBuffer), "explicit sync on a wl_shm buffer")
+	case s.pendingNotDMABuf():
+		res.PostError(uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorUnsupportedBuffer), "explicit sync on a non-dmabuf buffer")
 	default:
 		return true
 	}
 	return false
 }
 
-// pendingIsSHM reports whether the buffer of the next commit is wl_shm.
-func (s *surface) pendingIsSHM() bool {
+// pendingNotDMABuf reports whether the buffer of the next commit is not a
+// dmabuf: wl_shm and single-pixel buffers have no syncobj support.
+func (s *surface) pendingNotDMABuf() bool {
 	b := s.next.buffer
 	if !s.next.attached {
 		b = s.current

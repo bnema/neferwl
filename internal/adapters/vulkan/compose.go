@@ -302,6 +302,30 @@ func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
 	return dr
 }
 
+// solidDraw is the quad of a single-pixel buffer. Opaque forces alpha to 1
+// keeping rgb, like the shader's flagOpaque does for client pixels; Fade
+// scales the four premultiplied channels. The shader decodes the rgb of a
+// solid on HDR outputs, so there it is pre-encoded such that the decode
+// yields the linear premultiplied color.
+func (r *Renderer) solidDraw(rect image.Rectangle, content *ports.SurfaceContent) draw {
+	c := *content.Solid
+	if content.Opaque {
+		c.A = 1
+	}
+	k := 1 - max(0, min(1, content.Fade))
+	c.R, c.G, c.B, c.A = c.R*k, c.G*k, c.B*k, c.A*k
+	if a := float64(c.A); r.hdrNits > 0 && a > 0 {
+		enc := func(ch float32) float32 {
+			v := max(0, min(1, float64(ch)/a))
+			return float32(linearToSRGB(srgbToLinear(v) * a))
+		}
+		c.R, c.G, c.B = enc(c.R), enc(c.G), enc(c.B)
+	}
+	dr := r.fillDraw(rect, [3]uint8{})
+	dr.pc.color = [4]float32{c.R, c.G, c.B, c.A}
+	return dr
+}
+
 // dimDraw is premultiplied black: blending ONE, ONE_MINUS_SRC_ALPHA
 // leaves the destination at (1-alpha) of its previous value.
 func (r *Renderer) dimDraw(rect image.Rectangle, alpha float64) draw {
