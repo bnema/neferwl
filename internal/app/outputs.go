@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
 
@@ -301,11 +302,20 @@ func (s *outputSet) wait() error {
 }
 
 // cursors routes pointer moves from the input goroutine to the cursor of
-// the output under the pointer and hides the others.
+// the output under the pointer and hides the others. After hideAfter
+// without a move it hides that cursor too; the next move shows it.
 type cursors struct {
-	mu   sync.Mutex
-	all  map[string]cursor
-	last string
+	mu    sync.Mutex
+	all   map[string]cursor
+	last  string
+	clock ports.Clock
+	// hideAfter is 0 when the cursor never hides. lastMove is when the
+	// latest move came; armed tells the timer runs. The timer is not reset
+	// on every move: when it fires early it re-arms for the time left.
+	hideAfter time.Duration
+	lastMove  time.Time
+	timer     ports.Timer
+	armed     bool
 }
 
 // cursor is a hardware or software cursor of one output.
@@ -314,7 +324,56 @@ type cursor interface {
 	Hide()
 }
 
-func newCursors() *cursors { return &cursors{all: map[string]cursor{}} }
+func newCursors(clock ports.Clock, hideAfter time.Duration) *cursors {
+	return &cursors{all: map[string]cursor{}, clock: clock, hideAfter: hideAfter}
+}
+
+// setHideAfter changes the idle delay; 0 never hides the cursor. A cursor
+// already hidden shows again on the next move.
+func (c *cursors) setHideAfter(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if d == c.hideAfter {
+		return
+	}
+	c.hideAfter = d
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.armed = false
+	if d > 0 && c.last != "" {
+		c.lastMove = c.clock.Now()
+		c.arm(d)
+	}
+}
+
+// arm starts the idle timer for d. Callers hold mu.
+func (c *cursors) arm(d time.Duration) {
+	c.armed = true
+	if c.timer == nil {
+		c.timer = c.clock.AfterFunc(d, c.idle)
+		return
+	}
+	c.timer.Reset(d)
+}
+
+// idle hides the cursor once hideAfter passed since the last move, or
+// re-arms the timer for the time left.
+func (c *cursors) idle() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.armed || c.hideAfter <= 0 {
+		return
+	}
+	if left := c.hideAfter - c.clock.Now().Sub(c.lastMove); left > 0 {
+		c.timer.Reset(left)
+		return
+	}
+	c.armed = false
+	if cur := c.all[c.last]; cur != nil {
+		cur.Hide()
+	}
+}
 
 // set registers the cursor of an output; nil removes it.
 func (c *cursors) set(output string, cur cursor) {
@@ -326,8 +385,9 @@ func (c *cursors) set(output string, cur cursor) {
 	}
 	c.all[output] = cur
 	// Only the output under the pointer shows it; before the first move,
-	// none does (a new cursor would show at its top-left corner).
-	if output != c.last {
+	// none does (a new cursor would show at its top-left corner). An idle
+	// hidden cursor stays hidden.
+	if output != c.last || c.hideAfter > 0 && !c.armed {
 		cur.Hide()
 	}
 }
@@ -346,6 +406,12 @@ func (c *cursors) move(output string, x, y float64) {
 	}
 	if cur := c.all[output]; cur != nil {
 		cur.Move(x, y)
+	}
+	if c.hideAfter > 0 {
+		c.lastMove = c.clock.Now()
+		if !c.armed {
+			c.arm(c.hideAfter)
+		}
 	}
 }
 

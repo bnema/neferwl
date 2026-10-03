@@ -201,13 +201,13 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 		}()
 	}
 	filtered := make(chan ports.ConfigChanged, 8)
+	curs := newCursors(clock.System{}, opts.Config.Cursor.HideAfter)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, watched, filtered, keymaps, touchpads, commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, watched, filtered, keymaps, touchpads, curs, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
-	curs := newCursors()
 	go func() {
 		defer workers.Done()
 		if hw != nil {
@@ -352,8 +352,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 // relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates
 // clients. A keymap that fails to build keeps the previous layout. A touchpad
-// change goes to the input goroutine; only the newest one waits there.
-func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, touchpads chan ports.TouchpadConfig, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+// change goes to the input goroutine; only the newest one waits there. The
+// cursor idle delay goes straight to the cursor router.
+func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, touchpads chan ports.TouchpadConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	tp := cur.Touchpad
 	for {
@@ -389,6 +390,7 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 				}
 			}
 		}
+		curs.setHideAfter(ev.Config.Cursor.HideAfter)
 		if ev.Config.Touchpad != tp {
 			tp = ev.Config.Touchpad
 			select {

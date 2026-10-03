@@ -535,6 +535,27 @@ func TestVRRFlipGap(t *testing.T) {
 	}
 }
 
+func TestCursorHideAfter(t *testing.T) {
+	if d := Defaults().Cursor.HideAfter; d != 5*time.Second {
+		t.Fatalf("default %v", d)
+	}
+	for _, tc := range []struct {
+		value   string
+		want    time.Duration
+		warning bool
+	}{
+		{"off", 0, false}, {"100ms", 100 * time.Millisecond, false}, {"2s", 2 * time.Second, false}, {"1h", time.Hour, false},
+		{"0", 5 * time.Second, true}, {"50ms", 5 * time.Second, true}, {"2h", 5 * time.Second, true}, {"on", 5 * time.Second, true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			c, warnings := parseString(t, "cursor.hide-after = "+tc.value)
+			if c.Cursor.HideAfter != tc.want || (len(warnings) != 0) != tc.warning {
+				t.Fatalf("hide-after %v, warnings %v", c.Cursor.HideAfter, warnings)
+			}
+		})
+	}
+}
+
 func TestFloatingDim(t *testing.T) {
 	for _, tc := range []struct {
 		value   string

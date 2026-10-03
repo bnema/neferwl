@@ -67,6 +67,11 @@ packages:
           dir: internal/app
           pkgname: app
           filename: securitylease_mock_test.go
+      cursor:
+        config:
+          dir: internal/app
+          pkgname: app
+          filename: cursor_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:
