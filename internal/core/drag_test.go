@@ -168,7 +168,7 @@ func columnsOf(set []ports.Scene, output string) [][]ports.WindowID {
 var dragOut = ports.OutputInfo{Name: "A", Width: 1000, Height: 600}
 
 func (r *dragRig) moveTo(x, y float64, msec uint32) {
-	r.in(ports.PointerMotion{X: x, Y: y, TimeMsec: msec})
+	r.in(ports.PointerMotion{X: x, Y: y, Time: time.Duration(msec) * time.Millisecond})
 }
 
 func (r *dragRig) press(t *testing.T, button uint32, mods ports.Mods) {

@@ -107,8 +107,8 @@ func TestAccelProfile(t *testing.T) {
 }
 
 func TestTimestamps(t *testing.T) {
-	if usec(1500) != 1500*time.Microsecond || msec(1_234_567) != 1234 {
-		t.Fatal(usec(1500), msec(1_234_567))
+	if usec(1500) != 1500*time.Microsecond {
+		t.Fatal(usec(1500))
 	}
 }
 
@@ -301,7 +301,7 @@ func TestKeyboardProducerQuarantinesBeforeHotkeysAndLogging(t *testing.T) {
 	produce := func(code uint32, down bool) ports.InputEvent {
 		t.Helper()
 		state := securitySnapshot(opts.Security)
-		ev, err := translateKeyboard(code, down, 123, opts, state)
+		ev, err := translateKeyboard(code, down, 123*time.Millisecond, opts, state)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -245,11 +245,11 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	for len(commands) > 0 {
 		<-commands
 	}
-	input <- ports.PointerMotion{X: float64(first.X + 2), Y: float64(first.Y + 3), TimeMsec: 1}
+	input <- ports.PointerMotion{X: float64(first.X + 2), Y: float64(first.Y + 3), Time: 1 * time.Millisecond}
 	if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 2, Y: 3}) {
 		t.Fatal(v)
 	}
-	if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, TimeMsec: 1}) {
+	if v := command(t, commands); v != (ports.PointerMotionTo{ID: 1, X: 2, Y: 3, Time: 1 * time.Millisecond}) {
 		t.Fatal(v)
 	}
 	input <- ports.PointerAxis{Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}
@@ -324,7 +324,7 @@ func TestBorderInset(t *testing.T) {
 	if !found {
 		t.Fatalf("no %v for outer %v", want, r)
 	}
-	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), TimeMsec: 1}
+	input <- ports.PointerMotion{X: float64(r.X + 2), Y: float64(r.Y + 5), Time: 1 * time.Millisecond}
 	if v := command(t, commands); v != (ports.PointerFocus{ID: 2, X: 2, Y: 5}) {
 		t.Fatal(v)
 	}

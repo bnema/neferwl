@@ -516,7 +516,7 @@ func (s *Server) grabKey(c ports.ForwardKey) bool {
 		s.seat.grabKeys[code] = true
 	}
 	s.serial++
-	g.res.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
+	g.res.SendKey(s.serial, wireMsec(c.Key.Time), c.Key.Keycode, state)
 	if c.Key.State != s.seat.modState {
 		s.seat.modState = c.Key.State
 		m := s.seat.modState

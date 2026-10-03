@@ -76,7 +76,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.lockSurfaces[c.ID]; l != nil && s.lockInputTarget(c.ID) && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.clientPointers(l.resource.Client()) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
 			return
@@ -84,7 +84,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if l := s.layers[c.ID]; l != nil && c.ID == s.seat.pointerFocus {
 			s.seat.pointerX, s.seat.pointerY = c.X, c.Y
 			for _, p := range s.layerPointers(l) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(c.X), server.FixedFromFloat(c.Y))
 				pointerFrame(p)
 			}
 			return
@@ -106,7 +106,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.updateConstraint()
 			}
 			for _, p := range s.windowPointers(w) {
-				p.SendMotion(c.TimeMsec, server.FixedFromFloat(x), server.FixedFromFloat(y))
+				p.SendMotion(wireMsec(c.Time), server.FixedFromFloat(x), server.FixedFromFloat(y))
 				pointerFrame(p)
 			}
 		}
@@ -120,7 +120,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
 			}
 			for _, p := range pointers {
-				p.SendButton(s.serial, c.TimeMsec, c.Button, state)
+				p.SendButton(s.serial, wireMsec(c.Time), c.Button, state)
 				pointerFrame(p)
 			}
 		}
@@ -169,7 +169,7 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			}
 		}
 		for _, k := range keyboards {
-			k.SendKey(s.serial, c.Key.TimeMsec, c.Key.Keycode, state)
+			k.SendKey(s.serial, wireMsec(c.Key.Time), c.Key.Keycode, state)
 		}
 		if c.Key.State != s.seat.modState {
 			s.seat.modState = c.Key.State
@@ -415,7 +415,7 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 		}
 		if s.Stop {
 			if v >= 5 {
-				p.SendAxisStop(a.TimeMsec, uint32(axis))
+				p.SendAxisStop(wireMsec(a.Time), uint32(axis))
 			}
 			continue
 		}
@@ -431,10 +431,14 @@ func sendAxis(p *wayland.Pointer, a ports.PointerAxis, steps [2]int32, values [2
 				}
 			}
 		}
-		p.SendAxis(a.TimeMsec, uint32(axis), server.FixedFromFloat(value))
+		p.SendAxis(wireMsec(a.Time), uint32(axis), server.FixedFromFloat(value))
 	}
 	pointerFrame(p)
 }
+
+// wireMsec is a device timestamp as the 32-bit millisecond time of wl_pointer
+// and wl_keyboard events (wrapping, like the protocol).
+func wireMsec(t time.Duration) uint32 { return uint32(t / time.Millisecond) }
 
 func pointerFrame(p *wayland.Pointer) {
 	if p.Version() >= 5 {

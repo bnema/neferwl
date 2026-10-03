@@ -78,7 +78,7 @@ func TestVirtualKeyboardTypesIntoFocus(t *testing.T) {
 	}
 
 	proxy.opcodes, proxy.keymaps = nil, nil
-	commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: 30, Pressed: true, TimeMsec: 3}}
+	commands <- ports.ForwardKey{ID: w.ID, Key: ports.KeyEvent{Keycode: 30, Pressed: true, Time: 3 * time.Millisecond}}
 	deadline := time.Now().Add(2 * time.Second)
 	for !slices.Contains(proxy.opcodes, uint16(wayland.KeyboardEventKey)) && time.Now().Before(deadline) {
 		if err := target.Roundtrip(); err != nil {

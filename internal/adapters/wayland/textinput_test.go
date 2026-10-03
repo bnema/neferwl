@@ -309,7 +309,7 @@ func TestInputMethodKeyboardGrab(t *testing.T) {
 	ime := newIMEApp(t, s, dir)
 	app.keys.opcodes = nil
 	key := func(code uint32, pressed bool) {
-		commands <- ports.ForwardKey{ID: app.window, Key: ports.KeyEvent{Keycode: code, Pressed: pressed, TimeMsec: 7}}
+		commands <- ports.ForwardKey{ID: app.window, Key: ports.KeyEvent{Keycode: code, Pressed: pressed, Time: 7 * time.Millisecond}}
 	}
 	k := uint16(wayland.KeyboardEventKey)
 	key(31, true) // held by the client before the grab

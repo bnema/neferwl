@@ -17,17 +17,18 @@ type InputEvent interface{ inputEvent() }
 
 // KeyEvent carries input → core key transitions; Keysym is an xkb keysym name.
 // Keycode is the evdev code (xkb keycode - 8) and State the xkb modifier state
-// after this transition; wayland forwards both to clients unchanged.
+// after this transition; wayland forwards both to clients unchanged. Time is
+// the device timestamp (CLOCK_MONOTONIC), like SwipeBegin.Time.
 type KeyEvent struct {
 	Keysym string
 	// Base is the key's unshifted keysym in the active layout, so Cmd+Shift+1
 	// still matches a cmd+shift+1 bind although it prints exclam.
-	Base     string
-	Mods     Mods
-	Pressed  bool
-	TimeMsec uint32
-	Keycode  uint32
-	State    ModState
+	Base    string
+	Mods    Mods
+	Pressed bool
+	Time    time.Duration
+	Keycode uint32
+	State   ModState
 }
 
 // ModState is the serialized xkb modifier state sent in wl_keyboard.modifiers.
@@ -37,23 +38,23 @@ func (KeyEvent) inputEvent() {}
 
 // PointerMotion uses global layout coordinates in logical pixels (see OutputPlacement).
 // DX and DY are the accelerated logical deltas and UnaccelDX, UnaccelDY the
-// raw device deltas; all four are 0 for absolute devices. TimeUsec is the
-// device timestamp in microseconds.
+// raw device deltas; all four are 0 for absolute devices. Time is the device
+// timestamp (CLOCK_MONOTONIC).
 type PointerMotion struct {
 	X, Y                 float64
 	DX, DY               float64
 	UnaccelDX, UnaccelDY float64
-	TimeMsec             uint32
-	TimeUsec             uint64
+	Time                 time.Duration
 }
 
 func (PointerMotion) inputEvent() {}
 
-// PointerButton uses evdev button codes (BTN_LEFT is 0x110).
+// PointerButton uses evdev button codes (BTN_LEFT is 0x110). Time is the
+// device timestamp (CLOCK_MONOTONIC).
 type PointerButton struct {
-	Button   uint32
-	Pressed  bool
-	TimeMsec uint32
+	Button  uint32
+	Pressed bool
+	Time    time.Duration
 }
 
 func (PointerButton) inputEvent() {}
@@ -77,11 +78,12 @@ type ScrollAxis struct {
 	Stop  bool
 }
 
-// PointerAxis is one scroll frame: Vertical, then Horizontal.
+// PointerAxis is one scroll frame: Vertical, then Horizontal. Time is the
+// device timestamp (CLOCK_MONOTONIC).
 type PointerAxis struct {
 	Source               AxisSource
 	Vertical, Horizontal ScrollAxis
-	TimeMsec             uint32
+	Time                 time.Duration
 }
 
 func (PointerAxis) inputEvent() {}

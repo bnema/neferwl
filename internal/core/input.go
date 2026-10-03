@@ -18,7 +18,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	}
 	switch v := ev.(type) {
 	case ports.PointerMotion:
-		c.motionMsec = v.TimeMsec
+		c.motionTime = v.Time
 		// A locked pointer stays still; relative motion still flows.
 		if c.constraint.Mode != ports.ConstraintLock {
 			c.cursorX, c.cursorY = c.constraint.Clamp(c.clampPointer(c.cursorX, c.cursorY, v.X, v.Y))
@@ -40,7 +40,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		if c.drag != nil {
 			// The dragged window and the others get no pointer events.
-			return c.dragMotion(ctx, v.TimeMsec)
+			return c.dragMotion(ctx, v.Time)
 		}
 		id, x, y := c.hit(c.cursorX, c.cursorY)
 		// Layout changes are intentionally re-hit-tested only on motion.
@@ -52,7 +52,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		c.pointerAt = [2]float64{x, y}
 		if id != 0 {
-			if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, TimeMsec: v.TimeMsec, TimeUsec: v.TimeUsec}); err != nil {
+			if err := c.command(ctx, ports.PointerMotionTo{ID: id, X: x, Y: y, DX: v.DX, DY: v.DY, UnaccelDX: v.UnaccelDX, UnaccelDY: v.UnaccelDY, Time: v.Time}); err != nil {
 				return err
 			}
 		}
@@ -107,7 +107,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			delete(c.buttons, v.Button)
 		}
 		if id != 0 {
-			if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, TimeMsec: v.TimeMsec}); err != nil {
+			if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Time: v.Time}); err != nil {
 				return err
 			}
 			// A click on an on-demand layer gives it the keyboard.

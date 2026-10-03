@@ -56,7 +56,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		if security != nil {
 			var deliver bool
 			var err error
-			key, deliver, err = km.KeySecure(code, down, msec(monotonic()), state)
+			key, deliver, err = km.KeySecure(code, down, monotonic(), state)
 			if err != nil {
 				return err
 			}
@@ -64,7 +64,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 				return nil
 			}
 		} else {
-			key = km.Key(code, down, msec(monotonic()))
+			key = km.Key(code, down, monotonic())
 		}
 		ev := stamp(key, state)
 		select {
@@ -154,7 +154,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 				}
 				return 0
 			}
-			now := msec(monotonic())
+			now := monotonic()
 			if len(fields) > 0 && fields[0] == "move" {
 				if len(fields) == 3 {
 					x, ex := strconv.ParseFloat(fields[1], 64)
@@ -164,7 +164,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 							tx, ty := o.ToTarget(x, y)
 							moveCursor(o.Info.Name, tx, ty)
 						}
-						if err := sendPointer(ports.PointerMotion{X: x, Y: y, TimeMsec: now}); err != nil {
+						if err := sendPointer(ports.PointerMotion{X: x, Y: y, Time: now}); err != nil {
 							return err
 						}
 						continue
@@ -205,12 +205,12 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 					continue
 				}
 				if fields[0] != "up" {
-					if err := sendPointer(ports.PointerButton{Button: code, Pressed: true, TimeMsec: now}); err != nil {
+					if err := sendPointer(ports.PointerButton{Button: code, Pressed: true, Time: now}); err != nil {
 						return err
 					}
 				}
 				if fields[0] != "down" {
-					if err := sendPointer(ports.PointerButton{Button: code, TimeMsec: now}); err != nil {
+					if err := sendPointer(ports.PointerButton{Button: code, Time: now}); err != nil {
 						return err
 					}
 				}

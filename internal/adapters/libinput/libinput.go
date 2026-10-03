@@ -511,9 +511,6 @@ func (s *swipes) end(dev uintptr, cancelled bool, at time.Duration) ports.InputE
 // usec is a libinput timestamp as a duration.
 func usec(v uint64) time.Duration { return time.Duration(v) * time.Microsecond }
 
-// msec is a libinput timestamp in wayland's millisecond clock.
-func msec(v uint64) uint32 { return uint32(v / 1000) }
-
 // translate converts one libinput event. Timestamps are the device's
 // (CLOCK_MONOTONIC), so clients measure speeds (kinetic scrolling) on
 // when events happened, not when they were read.
@@ -569,13 +566,12 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
-		return translateKeyboard(code, pressed, msec(keyboardUsec(k)), opts, state)
+		return translateKeyboard(code, pressed, usec(keyboardUsec(k)), opts, state)
 	case evPointerMotion:
 		pe := pointerEvent(ev)
 		m := p.move(pointerDX(pe), pointerDY(pe))
 		m.UnaccelDX, m.UnaccelDY = pointerRawDX(pe), pointerRawDY(pe)
-		m.TimeUsec = pointerUsec(pe)
-		m.TimeMsec = msec(m.TimeUsec)
+		m.Time = usec(pointerUsec(pe))
 		p.moved(opts.MoveCursor, true)
 		if opts.LogMotion {
 			log.Debug().Float64("x", m.X).Float64("y", m.Y).Msg("pointer")
@@ -584,24 +580,24 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 	case evPointerAbs:
 		// Absolute devices (tablets, VMs) map to the whole layout.
 		pe := pointerEvent(ev)
-		now := msec(pointerUsec(pe))
+		now := usec(pointerUsec(pe))
 		b := p.bounds()
 		if p.constraint.Mode == ports.ConstraintLock {
-			return ports.PointerMotion{X: p.x, Y: p.y, TimeMsec: now}, nil
+			return ports.PointerMotion{X: p.x, Y: p.y, Time: now}, nil
 		}
 		x, y := p.set(float64(b.X)+pointerAbsX(pe, uint32(b.W)), float64(b.Y)+pointerAbsY(pe, uint32(b.H)))
 		p.moved(opts.MoveCursor, true)
-		return ports.PointerMotion{X: x, Y: y, TimeMsec: now}, nil
+		return ports.PointerMotion{X: x, Y: y, Time: now}, nil
 	case evPointerButton:
 		pe := pointerEvent(ev)
 		b, pressed := pointerButton(pe), pointerBtnState(pe) == 1
 		log.Debug().Uint32("button", b).Bool("pressed", pressed).Msg("button")
-		return ports.PointerButton{Button: b, Pressed: pressed, TimeMsec: msec(pointerUsec(pe))}, nil
+		return ports.PointerButton{Button: b, Pressed: pressed, Time: usec(pointerUsec(pe))}, nil
 	case evScrollWheel, evScrollFinger, evScrollCont:
 		pe := pointerEvent(ev)
 		// The three scroll events follow each other as the sources do.
 		source := ports.AxisSource(eventType(ev) - evScrollWheel)
-		a := ports.PointerAxis{Source: source, TimeMsec: msec(pointerUsec(pe))}
+		a := ports.PointerAxis{Source: source, Time: usec(pointerUsec(pe))}
 		// libinput axis 0 is vertical, 1 horizontal, as in wl_pointer.
 		for i, s := range []*ports.ScrollAxis{&a.Vertical, &a.Horizontal} {
 			if pointerHasAxis(pe, uint32(i)) == 0 {
@@ -626,17 +622,17 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 
 // translateKeyboard applies the production epoch before native translation.
 // Quarantined events never reach logging, reserved hotkeys or core.
-func translateKeyboard(code uint32, pressed bool, timeMsec uint32, opts Options, state ports.SecurityState) (ports.InputEvent, error) {
+func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options, state ports.SecurityState) (ports.InputEvent, error) {
 	var ke ports.KeyEvent
 	if opts.Security != nil {
 		var deliver bool
 		var err error
-		ke, deliver, err = opts.Keymap.KeySecure(code, pressed, timeMsec, state)
+		ke, deliver, err = opts.Keymap.KeySecure(code, pressed, t, state)
 		if err != nil || !deliver {
 			return nil, err
 		}
 	} else {
-		ke = opts.Keymap.Key(code, pressed, timeMsec)
+		ke = opts.Keymap.Key(code, pressed, t)
 	}
 	return translateKey(ke, opts, state)
 }
