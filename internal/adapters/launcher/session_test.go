@@ -32,14 +32,36 @@ func TestExportSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE wayland-9\n" +
-		"systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE wayland-9\n"
+		"systemctl --user --no-block try-restart xdg-desktop-portal*.service wayland-9\n" +
+		"systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE wayland-9\n" +
+		"systemctl --user --no-block stop xdg-desktop-portal*.service wayland-9\n"
 	if string(data) != want {
 		t.Fatalf("calls:\n%s", data)
 	}
 	// Missing tools are skipped, not fatal.
 	ExportSession(ctx, []string{"PATH=" + t.TempDir()}, logging.For(ctx, "launcher"))
-	if strings.Count(string(data), "\n") != 2 {
+	if strings.Count(string(data), "\n") != 4 {
 		t.Fatal(string(data))
+	}
+}
+
+// A failed export restarts no portal: it would read the old variables again.
+func TestExportSessionFailedSkipsPortals(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "calls")
+	scripts := map[string]string{
+		"dbus-update-activation-environment": "#!/bin/sh\nexit 1\n",
+		"systemctl":                          "#!/bin/sh\necho \"$*\" >> " + out + "\n",
+	}
+	for name, script := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	ExportSession(ctx, []string{"PATH=" + dir}, logging.For(ctx, "launcher"))
+	if data, err := os.ReadFile(out); err == nil {
+		t.Fatalf("systemctl called: %s", data)
 	}
 }
 
