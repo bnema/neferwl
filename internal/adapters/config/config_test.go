@@ -23,7 +23,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 73 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 77 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
@@ -694,6 +694,25 @@ func TestOutputRelationWarnings(t *testing.T) {
 				t.Fatalf("anchored %v, want %v: %+v", got, tc.anchored, c.Outputs)
 			}
 		})
+	}
+}
+
+func TestDefaultMonitorBinds(t *testing.T) {
+	d := Defaults()
+	for combo, action := range map[string]string{
+		"Cmd+Ctrl+Up": "focus-monitor-up", "Cmd+Ctrl+k": "focus-monitor-up",
+		"Cmd+Ctrl+Down": "focus-monitor-down", "Cmd+Ctrl+j": "focus-monitor-down",
+		"Cmd+Ctrl+Left": "focus-monitor-left", "Cmd+Ctrl+l": "focus-monitor-right",
+	} {
+		if d.Binds[combo] != action {
+			t.Errorf("%s = %q, want %q", combo, d.Binds[combo], action)
+		}
+	}
+	// The up/down move-workspace-to-monitor actions have no default bind but
+	// load from a config file.
+	c, w := parseString(t, "bind.cmd+ctrl+alt+up = move-workspace-to-monitor-up\nbind.cmd+ctrl+alt+down = move-workspace-to-monitor-down\nbind.cmd+alt+u = focus-monitor-up\n")
+	if len(w) != 0 || c.Binds["Alt+Cmd+Ctrl+Up"] != "move-workspace-to-monitor-up" || c.Binds["Alt+Cmd+Ctrl+Down"] != "move-workspace-to-monitor-down" {
+		t.Fatalf("%v %v", w, c.Binds)
 	}
 }
 

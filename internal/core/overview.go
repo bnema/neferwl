@@ -191,6 +191,7 @@ func overviewBlocks(a Action) bool {
 		ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash,
 		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
+		ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown,
 		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspaceUp,
 		ActionMoveWorkspaceDown, ActionToggleFloating:
 		return true

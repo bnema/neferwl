@@ -412,21 +412,47 @@ const (
 )
 
 // neighbor returns the index of the screen next to the focused one in
-// direction d, or -1 at the edge.
+// direction d, or -1 at the edge. Candidates lie fully beyond the focused
+// screen's edge; one sharing part of that edge wins over a diagonal one, then
+// the smallest gap, the largest shared edge, the closest centers and the
+// lowest index decide. There is no wrap.
 func (c *Core) neighbor(d direction) int {
-	var i int
-	switch d {
-	case dirLeft:
-		i = c.focusScreen - 1
-	case dirRight:
-		i = c.focusScreen + 1
-	default:
+	if d < dirLeft || d > dirDown {
 		return -1
 	}
-	if i < 0 || i >= len(c.screens) {
-		return -1
+	// span is the extent of s along the move (lo, hi) and across it.
+	span := func(s *screen) (lo, hi, clo, chi int) {
+		o := s.mon.Output()
+		if d == dirUp || d == dirDown {
+			return s.y, s.y + o.H, s.x, s.x + o.W
+		}
+		return s.x, s.x + o.W, s.y, s.y + o.H
 	}
-	return i
+	lo, hi, clo, chi := span(c.cur())
+	best, bestKey := -1, [4]int{}
+	for i, s := range c.screens {
+		if i == c.focusScreen || s.name() == "" {
+			continue
+		}
+		l, h, cl, ch := span(s)
+		gap := l - hi
+		if d == dirLeft || d == dirUp {
+			gap = lo - h
+		}
+		if gap < 0 {
+			continue
+		}
+		overlap := min(chi, ch) - max(clo, cl)
+		diagonal := 0
+		if overlap <= 0 {
+			diagonal = 1
+		}
+		key := [4]int{diagonal, gap, -max(overlap, 0), abs(cl + ch - clo - chi)}
+		if best < 0 || slices.Compare(key[:], bestKey[:]) < 0 {
+			best, bestKey = i, key
+		}
+	}
+	return best
 }
 
 // moveWorkspace moves the workspace on screen to the neighbor screen, where

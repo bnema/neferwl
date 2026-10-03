@@ -32,11 +32,16 @@ const (
 	ActionMoveColumnToWorkspaceDown Action = "move-column-to-workspace-down"
 	ActionMoveWindowToWorkspaceUp   Action = "move-window-to-workspace-up"
 	ActionMoveWindowToWorkspaceDown Action = "move-window-to-workspace-down"
-	// Monitors are ordered left to right (ADR 011).
-	ActionFocusMonitorLeft   Action = "focus-monitor-left"
-	ActionFocusMonitorRight  Action = "focus-monitor-right"
-	ActionMoveWorkspaceLeft  Action = "move-workspace-to-monitor-left"
-	ActionMoveWorkspaceRight Action = "move-workspace-to-monitor-right"
+	// Monitors act on the neighbor in that direction of the global layout
+	// (ADR 011).
+	ActionFocusMonitorLeft           Action = "focus-monitor-left"
+	ActionFocusMonitorRight          Action = "focus-monitor-right"
+	ActionFocusMonitorUp             Action = "focus-monitor-up"
+	ActionFocusMonitorDown           Action = "focus-monitor-down"
+	ActionMoveWorkspaceLeft          Action = "move-workspace-to-monitor-left"
+	ActionMoveWorkspaceRight         Action = "move-workspace-to-monitor-right"
+	ActionMoveWorkspaceToMonitorUp   Action = "move-workspace-to-monitor-up"
+	ActionMoveWorkspaceToMonitorDown Action = "move-workspace-to-monitor-down"
 	// Scale steps through the clean scales of the output (see CleanScales).
 	ActionScaleUp   Action = "scale-up"
 	ActionScaleDown Action = "scale-down"
@@ -52,6 +57,15 @@ const (
 	// Turn the focused tile into a free floating window, or back.
 	ActionToggleFloating Action = "toggle-floating"
 )
+
+// monitorDirections maps the focus-monitor and move-workspace-to-monitor
+// actions to the direction of the neighbor screen they target.
+var monitorDirections = map[Action]direction{
+	ActionFocusMonitorLeft: dirLeft, ActionFocusMonitorRight: dirRight,
+	ActionFocusMonitorUp: dirUp, ActionFocusMonitorDown: dirDown,
+	ActionMoveWorkspaceLeft: dirLeft, ActionMoveWorkspaceRight: dirRight,
+	ActionMoveWorkspaceToMonitorUp: dirUp, ActionMoveWorkspaceToMonitorDown: dirDown,
+}
 
 // Resize axes of ResizeArg.
 const (
@@ -174,21 +188,13 @@ func (c *Core) applyAction(a Action) Effect {
 		return Effect{}
 	}
 	switch a {
-	case ActionFocusMonitorLeft, ActionFocusMonitorRight:
-		d := dirLeft
-		if a == ActionFocusMonitorRight {
-			d = dirRight
-		}
-		if i := c.neighbor(d); i >= 0 {
+	case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown:
+		if i := c.neighbor(monitorDirections[a]); i >= 0 {
 			c.focusScreen = i
 		}
 		return Effect{}
-	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight:
-		d := dirLeft
-		if a == ActionMoveWorkspaceRight {
-			d = dirRight
-		}
-		c.moveWorkspace(d)
+	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
+		c.moveWorkspace(monitorDirections[a])
 		return Effect{}
 	case ActionFocusColumnLeft, ActionFocusColumnRight:
 		w := c.cur().mon.Current()

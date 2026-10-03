@@ -351,6 +351,54 @@ func TestMoveWorkspaceToMonitor(t *testing.T) {
 	}
 }
 
+func TestMonitorActionsFollowGeometry(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
+		}
+		// Without a default bind; these replace move-workspace-up/down.
+		c.Binds["Cmd+Ctrl+Shift+Up"] = string(core.ActionMoveWorkspaceToMonitorUp)
+		c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
+	}, left, right)
+	// SetOutputs is sent only when the focus or layout changed.
+	current := lastOutputs(t, r.commands).Focused
+	focused := func() string {
+		for len(r.commands) > 0 {
+			if v, ok := (<-r.commands).(ports.SetOutputs); ok {
+				current = v.Focused
+			}
+		}
+		return current
+	}
+	cmdCtrl := ports.ModAlt | ports.ModCtrl
+	// DP-1 is focused and has no neighbor left, right or up.
+	r.mapWindow(t, 1)
+	for _, k := range []string{"Left", "Right", "Up"} {
+		r.key(t, k, cmdCtrl)
+		if got := focused(); got != "DP-1" {
+			t.Fatalf("%s moved focus to %s", k, got)
+		}
+	}
+	r.key(t, "Down", cmdCtrl)
+	if got := focused(); got != "DP-2" {
+		t.Fatalf("focus-monitor-down: %s", got)
+	}
+	r.key(t, "k", cmdCtrl)
+	if got := focused(); got != "DP-1" {
+		t.Fatalf("focus-monitor-up (vim twin): %s", got)
+	}
+	// The workspace goes to the monitor below and focus follows it.
+	set := r.key(t, "Down", cmdCtrl|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 0 || len(got["DP-2"]) != 1 {
+		t.Fatal(got)
+	}
+	set = r.key(t, "Up", cmdCtrl|ports.ModShift)
+	if got := shown(set); len(got["DP-1"]) != 1 || len(got["DP-2"]) != 0 {
+		t.Fatalf("move-workspace-to-monitor-up: %v", got)
+	}
+}
+
 func TestUnplugMovesWorkspacesAndReplugReturnsThem(t *testing.T) {
 	r := startMulti(t, nil, left, right)
 	r.mapWindow(t, 1)
