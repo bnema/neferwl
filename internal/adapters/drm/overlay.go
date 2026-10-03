@@ -91,8 +91,8 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "no_candidate"
 	}
 	if s.Dim > 0 {
-		// The renderer draws the veil under the first float it composes: a
-		// float on the plane would take the veil with it.
+		// The renderer composes the veil (under the first float, or under
+		// every window with DimBehind): a window on the plane would skip it.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, "dim"
 	}
 	if len(s.DropHints) > 0 {
