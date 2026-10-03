@@ -40,9 +40,9 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 Each output's `stats` entry (every 10 s) counts what happened since the previous one, from the kernel's flip timestamps, and starts over:
 
-- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. An output renders only on change, so only a frame that was due counts: one wanted (a scene, content or capture change made it dirty) less than one period after the previous flip, so it was meant for the next vblank even if it was committed late. A frame wanted after an idle period is ignored. Not counted under VRR, where the period is not fixed.
+- `missed_vblanks`: frame flips that came over 1.5 refresh periods after the previous frame flip. An output renders only on change, so only a frame that was due counts: one wanted (a scene, content or capture change made it dirty) before, or less than one period after, the previous flip, so it was meant for the next vblank even if it was committed late. A frame wanted after an idle period is ignored. Not counted under VRR, where the period is not fixed.
 - `max_flip_interval_ms`: the longest interval between two flips of due frames (also under VRR, where the gate uses the mode's refresh period, the shortest one). The chain restarts after a modeset or a VRR change.
-- `max_commit_delay_ms`: for due frames, the longest time from when the frame was due (wanted, and not before the previous flip) to its commit. It is large when the commit came late: the previous flip's event was read late, or the CPU side of the composition was slow.
+- `max_commit_delay_ms`: for due frames, the longest time from when the frame was due (wanted, and not before the previous flip or the end of the deliberate `render.vrr-flip-gap`) to its commit. It is large when the commit came late: the previous flip's event was read late, or the CPU side of the composition was slow.
 - `max_flip_to_read_ms`: the longest time between a flip's kernel timestamp and the output goroutine handling its event, for the output's own commits.
 - `late_fences` (only with `--debug=drm-flip`, which reads the fence times): missed vblanks whose composition fence signalled after the vblank the frame targeted (the previous flip plus one period), so the GPU was not done in time. Not counted under VRR.
 

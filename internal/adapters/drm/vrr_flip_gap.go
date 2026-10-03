@@ -45,8 +45,9 @@ func (o *Output) startFlipGap(f pendingFrame) {
 	if !f.frame {
 		return
 	}
-	o.flipGapUntil = time.Time{}
+	o.flipGapUntil, o.flipGapAt = time.Time{}, 0
 	if o.vrrFlipGap > 0 && o.vrrOn && o.vrrGame {
 		o.flipGapUntil = time.Now().Add(o.vrrFlipGap)
+		o.flipGapAt = monotonic() + o.vrrFlipGap
 	}
 }

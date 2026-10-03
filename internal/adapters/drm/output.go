@@ -135,6 +135,9 @@ type Output struct {
 	// flipGapUntil is when the next frame may commit. See vrr_flip_gap.go.
 	vrrFlipGap   time.Duration
 	flipGapUntil time.Time
+	// flipGapAt is the end of the gap in CLOCK_MONOTONIC, kept until the
+	// frame it held commits (the flip stats leave the gap out).
+	flipGapAt time.Duration
 	// wantOff is the latest Scene.Off: a client turned the display off.
 	// off: the CRTC is inactive for it. Every modeset (resume, recovery)
 	// follows wantOff, so a display turned off never lights up.
@@ -384,7 +387,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	o.modeBlob = blob
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, !active
 	// The gap and the flip interval belonged to the old state.
-	o.flipGapUntil, o.lastFlipAt = time.Time{}, 0
+	o.flipGapUntil, o.flipGapAt, o.lastFlipAt = time.Time{}, 0, 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.planeRect = fullPlaneRect(o.Width(), o.Height())
 	if o.cursor != nil {
@@ -625,6 +628,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.lastFrame, o.cursorHeld = time.Now(), false
 	f.frame, f.async = true, async
 	f.wantedAt, o.wantedAt = o.wantedAt, 0
+	f.gapEnd, o.flipGapAt = o.flipGapAt, 0
 	f.fences = dupFences(fence, ov.acquire)
 	if o.traceFlips {
 		f.fenceReady = signalled(f.fences)
@@ -1462,7 +1466,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 	if trace {
 		o.traceFlip(ev, f, commitAt, now, o.lastFlipAt, fenceAt)
 	}
-	o.accountFlip(ev, f.frame, f.wantedAt, commitAt, fenceAt)
+	o.accountFlip(ev, f.frame, f.dueAt(), commitAt, fenceAt)
 	o.startFlipGap(f)
 	if o.cursor != nil {
 		o.cursor.landed()

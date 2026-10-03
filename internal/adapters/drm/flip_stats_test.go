@@ -121,6 +121,52 @@ func TestAccountFlipWantedAfterIdleNotCounted(t *testing.T) {
 	}
 }
 
+// The deliberate VRR flip gap holds a due frame: its time is not a commit
+// delay, nor does it make the frame late for the interval gate.
+func TestDueAtLeavesFlipGapOut(t *testing.T) {
+	if got := (&pendingFrame{wantedAt: 5, gapEnd: 9}).dueAt(); got != 9 {
+		t.Fatalf("due %d", got)
+	}
+	if got := (&pendingFrame{wantedAt: 12, gapEnd: 9}).dueAt(); got != 12 {
+		t.Fatalf("due %d", got)
+	}
+	o, _, _ := testOutput(t)
+	o.vrrOn = true
+	p := o.nominalPeriod()
+	at := time.Second
+	flip(o, at, at-p, 0)
+	// Wanted at the flip, held 2 ms by the gap, committed right after it.
+	f := pendingFrame{wantedAt: at, gapEnd: at + 2*time.Millisecond}
+	o.accountFlip(flipAt(at+3*time.Millisecond), true, f.dueAt(), at+2*time.Millisecond+100*time.Microsecond, 0)
+	if s := o.flipStats; s.maxCommitDelay != 100*time.Microsecond || s.maxInterval != 3*time.Millisecond {
+		t.Fatalf("gap counted as delay: %+v", s)
+	}
+}
+
+// The gap end set at a game frame's flip travels with the next frame
+// commit, which consumes it.
+func TestFlipGapEndReachesNextFrame(t *testing.T) {
+	o, _, commits := testOutput(t)
+	o.cursor = nil
+	o.vrrFlipGap, o.vrrOn, o.vrrGame = 2*time.Millisecond, true, true
+	seen := map[ports.WindowID]uint64{}
+	if err := o.commitFrame(70, nil, false, true, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	before := monotonic()
+	o.completed(eventOf((*commits)[0]), seen)
+	if o.flipGapAt < before+2*time.Millisecond {
+		t.Fatalf("gap end %s before %s", o.flipGapAt, before)
+	}
+	gap := o.flipGapAt
+	if err := o.commitFrame(71, nil, false, true, pendingFrame{}); err != nil {
+		t.Fatal(err)
+	}
+	if o.frame.pendingFrame.gapEnd != gap || o.flipGapAt != 0 {
+		t.Fatalf("gap end %s, left %s, want %s", o.frame.pendingFrame.gapEnd, o.flipGapAt, gap)
+	}
+}
+
 func TestAccountFlipVRR(t *testing.T) {
 	o, _, _ := testOutput(t)
 	p := o.nominalPeriod()

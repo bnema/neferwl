@@ -41,7 +41,13 @@ type pendingFrame struct {
 	// wantedAt is when the frame was first wanted (CLOCK_MONOTONIC, 0:
 	// unknown), for the flip stats.
 	wantedAt time.Duration
+	// gapEnd is when the VRR flip gap that held the frame ended (0: none).
+	gapEnd time.Duration
 }
+
+// dueAt is when the frame could first commit: wanted, and after the
+// deliberate VRR flip gap (0: unknown).
+func (f *pendingFrame) dueAt() time.Duration { return max(f.wantedAt, f.gapEnd) }
 
 func (f *pendingFrame) closeFences() {
 	for _, fd := range f.fences {

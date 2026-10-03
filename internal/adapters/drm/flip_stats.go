@@ -54,10 +54,10 @@ func (o *Output) setVRR(on bool) {
 }
 
 // accountFlip counts the completion ev of a frame commit made at
-// commitAt for a frame wanted at wantedAt (0: unknown, the commit time)
-// (all times CLOCK_MONOTONIC). fenceAt is when the commit's fences
-// signalled (0: none or unknown). It updates lastFlipAt for frame flips
-// and never allocates.
+// commitAt for a frame due at wantedAt (0: unknown, the commit time; see
+// pendingFrame.dueAt). All times are CLOCK_MONOTONIC. fenceAt is when the
+// commit's fences signalled (0: none or unknown). It updates lastFlipAt
+// for frame flips and never allocates.
 //
 // An output renders only on change, so a gap after an idle period says
 // nothing about missed vblanks. The interval to the previous flip counts

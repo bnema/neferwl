@@ -937,3 +937,71 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 	}()
 	o.Run(context.Background(), func(int, int) (ports.Renderer, error) { panic("renderer panic") }, nil, nil, nil, nil, nil, nil, nil, nil)
 }
+
+// Run: a frame wanted while the previous one is in flight is stamped when
+// it becomes dirty, and the commit that follows takes the stamp.
+func TestRunStampsWhenFrameWasWanted(t *testing.T) {
+	o, k, commits, commitMu := testOutputMu(t)
+	o.cursor, o.tearing = nil, false
+	flips := make(chan flipEvent, 1)
+	o.flipped = flips
+	r := portsmocks.NewMockRenderer(t)
+	pipeBuf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		return nil, nil
+	})
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	frameCommits := func() int {
+		commitMu.Lock()
+		defer commitMu.Unlock()
+		n := 0
+		for _, c := range *commits {
+			if c.user&3 == userFrame {
+				n++
+			}
+		}
+		return n
+	}
+	scenes := make(chan ports.Scene, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+	}()
+	scene := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+	scenes <- scene
+	waitFor(t, func() bool { return frameCommits() == 1 })
+	// Frame 1 is in flight: a new scene arrives and waits.
+	commitMu.Lock()
+	last := (*commits)[len(*commits)-1]
+	commitMu.Unlock()
+	scene.Seq = 2
+	before := monotonic()
+	scenes <- scene
+	time.Sleep(20 * time.Millisecond) // the scene is read and stamped
+	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
+	waitFor(t, func() bool { return frameCommits() == 2 })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// Run has returned: its state is ours to read.
+	if o.wantedAt != 0 {
+		t.Fatalf("stamp left after the commit: %s", o.wantedAt)
+	}
+	f := o.frame.pendingFrame
+	if !f.frame || f.wantedAt < before || f.wantedAt > monotonic() {
+		t.Fatalf("second frame (%v) wanted at %s, scene sent at %s", f.frame, f.wantedAt, before)
+	}
+}
