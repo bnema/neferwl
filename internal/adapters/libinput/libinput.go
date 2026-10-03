@@ -199,10 +199,11 @@ type Options struct {
 	// Constraints holds the pointer lock or confinement of the focused
 	// window, in global logical coordinates.
 	Constraints <-chan ports.PointerConstraint
-	// Touchpad is the initial touchpad config; Touchpads replaces it live.
-	Touchpad  ports.TouchpadConfig
-	Touchpads <-chan ports.TouchpadConfig
-	Active    <-chan bool
+	// Devices is the initial touchpad and mouse config; DeviceConfigs
+	// replaces it live.
+	Devices       ports.InputDevicesConfig
+	DeviceConfigs <-chan ports.InputDevicesConfig
+	Active        <-chan bool
 	// MoveCursor, when set, places the hardware cursor as soon as motion is
 	// read, before core sees the event: the output under the pointer and
 	// the physical position on it. motion is false when the pointer is only
@@ -246,7 +247,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	}
 	p := newPointer(opts.Layout)
 	p.moved(opts.MoveCursor, false)
-	in := &inputState{touchpad: opts.Touchpad, devices: map[uintptr]bool{}}
+	in := &inputState{cfg: opts.Devices, devices: map[uintptr]bool{}}
 	defer in.release()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
@@ -283,12 +284,14 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		case c := <-opts.Constraints:
 			p.constrain(c)
 			p.moved(opts.MoveCursor, false)
-		case t := <-opts.Touchpads:
-			in.touchpad = t
+		case c := <-opts.DeviceConfigs:
+			in.cfg = c
 			for dev := range in.devices {
 				in.configure(dev, opts.Log)
 			}
-			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Float64("scroll_factor", t.ScrollFactor).Msg("touchpad reloaded")
+			t, m := c.Touchpad, c.Mouse
+			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Bool("left_handed", t.LeftHanded).Float64("scroll_factor", t.ScrollFactor).
+				Bool("mouse_natural_scroll", m.NaturalScroll).Float64("mouse_accel_speed", m.AccelSpeed).Str("mouse_accel_profile", m.AccelProfile).Bool("mouse_left_handed", m.LeftHanded).Msg("input devices reloaded")
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
@@ -320,9 +323,9 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 // it configures (referenced until removed) and the swipe in progress on
 // each touchpad.
 type inputState struct {
-	touchpad ports.TouchpadConfig
-	devices  map[uintptr]bool
-	swipes   swipes
+	cfg     ports.InputDevicesConfig
+	devices map[uintptr]bool
+	swipes  swipes
 }
 
 // configurable reports whether the touchpad config applies to dev: it has
@@ -342,11 +345,11 @@ func touchpad(dev uintptr) bool { return hasCapability(dev, capGesture) != 0 }
 const tapButtonMap = 0
 
 func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
-	if hasNatural(dev) != 0 && setNatural(dev, flag(s.touchpad.NaturalScroll)) != 0 {
+	if hasNatural(dev) != 0 && setNatural(dev, flag(s.cfg.Touchpad.NaturalScroll)) != 0 {
 		log.Warn().Str("device", deviceName(dev)).Msg("natural scroll rejected")
 	}
 	if tapFingers(dev) > 0 {
-		if setTap(dev, flag(s.touchpad.Tap)) != 0 {
+		if setTap(dev, flag(s.cfg.Touchpad.Tap)) != 0 {
 			log.Warn().Str("device", deviceName(dev)).Msg("tap to click rejected")
 		}
 		if setTapMap(dev, tapButtonMap) != 0 {
@@ -355,10 +358,10 @@ func (s *inputState) configure(dev uintptr, log zerowrap.Logger) {
 	}
 	// Pointer speed is a touchpad setting: mice keep libinput's own.
 	if touchpad(dev) && accelAvailable(dev) != 0 {
-		if setAccelSpeed(dev, s.touchpad.AccelSpeed) != 0 {
+		if setAccelSpeed(dev, s.cfg.Touchpad.AccelSpeed) != 0 {
 			log.Warn().Str("device", deviceName(dev)).Msg("accel speed rejected")
 		}
-		if p := accelProfile(s.touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
+		if p := accelProfile(s.cfg.Touchpad.AccelProfile); accelProfiles(dev)&p != 0 && setAccelProfile(dev, p) != 0 {
 			log.Warn().Str("device", deviceName(dev)).Msg("accel profile rejected")
 		}
 	}
@@ -519,7 +522,7 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 			s.Set, s.Value = true, scrollValue(pe, uint32(i))
 			if source == ports.AxisFinger {
 				// Two-finger scroll is the touchpad's only scroll source.
-				s.Value *= in.touchpad.ScrollFactor
+				s.Value *= in.cfg.Touchpad.ScrollFactor
 			}
 			if source == ports.AxisWheel {
 				s.V120 = int32(scrollV120(pe, uint32(i)))

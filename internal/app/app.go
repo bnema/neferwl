@@ -191,7 +191,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	watched := make(chan ports.ConfigChanged, 8)
 	keymaps := make(chan *xkb.Keymap, 1)
-	touchpads := make(chan ports.TouchpadConfig, 1)
+	devices := make(chan ports.InputDevicesConfig, 1)
 	go func() {
 		defer workers.Done()
 		done <- config.Watch(ctx, path, watched, logging.For(ctx, "config"))
@@ -209,7 +209,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		relayConfig(ctx, opts.Config, watched, filtered, keymaps, touchpads, curs, commands, logging.For(ctx, "config"))
+		relayConfig(ctx, opts.Config, watched, filtered, keymaps, devices, curs, commands, logging.For(ctx, "config"))
 	}()
 	script := make(chan string)
 	go func() {
@@ -231,7 +231,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
 					}
 				}
-				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Touchpad: opts.Config.Touchpad, Touchpads: touchpads, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
+				return libinput.Run(ctx, libinput.Options{Security: security, Seat: hw.seat, SeatName: hw.seat.Name(), Keymap: km, Keymaps: keymaps, Layout: layout, Layouts: layouts, Constraints: constraints, Devices: ports.InputDevicesConfig{Touchpad: opts.Config.Touchpad, Mouse: opts.Config.Mouse}, DeviceConfigs: devices, Active: hw.seat.Subscribe(), MoveCursor: curs.move, Log: logging.For(ctx, "input"), LogMotion: logging.Enabled(ctx, "input-motion"), LogKeys: logging.Enabled(ctx, "input-keys")}, input)
 			})
 			return
 		}
@@ -369,11 +369,12 @@ const screensaverRetry = 2 * time.Second
 // relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates
 // clients. A keymap that fails to build keeps the previous layout. A touchpad
-// change goes to the input goroutine; only the newest one waits there. The
-// cursor idle delay goes straight to the cursor router.
-func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, touchpads chan ports.TouchpadConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
+// or mouse change goes to the input goroutine as one InputDevicesConfig; only
+// the newest one waits there. The cursor idle delay goes straight to the
+// cursor router.
+func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, devices chan ports.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
-	tp := cur.Touchpad
+	dev := ports.InputDevicesConfig{Touchpad: cur.Touchpad, Mouse: cur.Mouse}
 	for {
 		var ev ports.ConfigChanged
 		select {
@@ -408,13 +409,9 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 			}
 		}
 		curs.setHideAfter(ev.Config.Cursor.HideAfter)
-		if ev.Config.Touchpad != tp {
-			tp = ev.Config.Touchpad
-			select {
-			case <-touchpads:
-			default:
-			}
-			touchpads <- tp // buffered and just drained: this goroutine is the only sender
+		if cfg := (ports.InputDevicesConfig{Touchpad: ev.Config.Touchpad, Mouse: ev.Config.Mouse}); cfg != dev {
+			dev = cfg
+			latest(devices, dev) // this goroutine is the only sender
 		}
 		if layoutChanged || repeatChanged {
 			select {
@@ -475,18 +472,7 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 				default:
 				}
 			}
-			select {
-			case renderScenes <- set:
-			default:
-				select {
-				case <-renderScenes:
-				default:
-				}
-				select {
-				case renderScenes <- set:
-				default:
-				}
-			}
+			latest(renderScenes, set) // this goroutine is the only sender
 			for _, s := range set {
 				ev := log.Debug().Str("output", s.Output).Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
 				rects := make([]string, 0, len(s.Windows))
@@ -531,4 +517,22 @@ func renderNode(dev uint64) string {
 		return ""
 	}
 	return fmt.Sprintf("/dev/dri/renderD%d", unix.Minor(dev))
+}
+
+// latest sends v without blocking and replaces a value the consumer has not
+// read yet: the newest wins. Only one goroutine may send on ch; consumers only
+// receive, so the retry after draining cannot find the buffer full again.
+func latest[T any](ch chan T, v T) {
+	select {
+	case ch <- v:
+	default:
+		select {
+		case <-ch:
+		default:
+		}
+		select {
+		case ch <- v:
+		default:
+		}
+	}
 }

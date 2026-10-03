@@ -273,13 +273,13 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	out := make(chan ports.ConfigChanged, 1)
 	keymaps := make(chan *xkb.Keymap, 1)
 	commands := make(chan ports.ClientCommand, 1)
-	touchpads := make(chan ports.TouchpadConfig, 1)
-	go relayConfig(ctx, cur, in, out, keymaps, touchpads, newCursors(clock.System{}, 0), commands, logging.For(ctx, "config"))
+	devices := make(chan ports.InputDevicesConfig, 1)
+	go relayConfig(ctx, cur, in, out, keymaps, devices, newCursors(clock.System{}, 0), commands, logging.For(ctx, "config"))
 
 	next := config.Defaults()
 	next.Background.Color = "#000000"
 	in <- ports.ConfigChanged{Config: next}
-	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 || len(touchpads) != 0 {
+	if got := <-out; got.Config.Background.Color != "#000000" || len(keymaps) != 0 || len(commands) != 0 || len(devices) != 0 {
 		t.Fatalf("non-keyboard change rebuilt keymap: %+v", got)
 	}
 
@@ -290,8 +290,25 @@ func TestRelayConfigKeyboard(t *testing.T) {
 	next.Touchpad.NaturalScroll = false
 	in <- ports.ConfigChanged{Config: next}
 	<-out
-	if tp := <-touchpads; tp.NaturalScroll || len(touchpads) != 0 {
-		t.Fatalf("touchpad: %+v", tp)
+	if d := <-devices; d.Touchpad.NaturalScroll || len(devices) != 0 {
+		t.Fatalf("touchpad: %+v", d)
+	}
+
+	// A mouse-only change is relayed too, with the touchpad config beside it.
+	next.Touchpad.Tap = false
+	next.Mouse.LeftHanded = true
+	next.Mouse.AccelSpeed = 0.25
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	want := ports.InputDevicesConfig{Touchpad: next.Touchpad, Mouse: next.Mouse}
+	if d := <-devices; d != want || len(devices) != 0 {
+		t.Fatalf("devices: %+v, want %+v", d, want)
+	}
+	next.Mouse.NaturalScroll = true
+	in <- ports.ConfigChanged{Config: next}
+	<-out
+	if d := <-devices; !d.Mouse.NaturalScroll || !d.Mouse.LeftHanded || d.Touchpad != want.Touchpad {
+		t.Fatalf("mouse-only change: %+v", d)
 	}
 
 	next.Keyboard.Layout, next.Keyboard.RepeatRate = "fr", 40
