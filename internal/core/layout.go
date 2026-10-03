@@ -576,7 +576,11 @@ func (w *Workspace) FocusID(id WindowID) bool {
 		f := w.Floats[i]
 		f.below = false
 		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
-		w.dropStashOver()
+		if !f.coverDialog(w.cover()) {
+			// A dialog of the cover shows over the stash; leaving it
+			// returns there.
+			w.dropStashOver()
+		}
 		w.floatFocus = true
 		return true
 	}
@@ -1088,6 +1092,10 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 			w.endFullscreen()
 		}
 		return
+	}
+	if id != w.stashOver {
+		// Another window covers: the override was for the old cover.
+		w.dropStashOver()
 	}
 	w.fullscreen = id
 	if !w.isFloat(id) {

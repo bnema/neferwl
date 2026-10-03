@@ -109,6 +109,10 @@ func TestStashOverCoverEdges(t *testing.T) {
 	if id, _ := w.Focused(); id != 6 {
 		t.Fatalf("dialog focus %d", id)
 	}
+	c.applyAction(ActionFocusColumnLeft) // back to the stash
+	if id, _ := w.Focused(); id != 3 || !w.stashOverCover() {
+		t.Fatalf("from dialog: focused %d", id)
+	}
 	w.RemoveWindow(6)
 	// The cover closes: the stash it showed over is a plain shown stash;
 	// a later fullscreen window is never covered by it.
@@ -120,6 +124,20 @@ func TestStashOverCoverEdges(t *testing.T) {
 	w.ToggleFullscreen()
 	if p := previewOf(t, w.Layout(), 3); !p.Hidden {
 		t.Fatalf("stash over a new cover: %+v", p)
+	}
+}
+
+// Another window's fullscreen request ends the override: the old cover
+// asking again never brings the stash back over it.
+func TestStashOverCoverOtherRequest(t *testing.T) {
+	c, w, cover := stashCoverCore(t, OverflowScroll, false)
+	m := c.screens[0].mon
+	m.AddWindow(5)
+	c.applyAction(ActionToggleStashVisible)
+	m.SetFullscreen(5, true)
+	m.SetFullscreen(cover, true)
+	if w.cover() != cover || w.stashOverCover() {
+		t.Fatalf("cover %d, override revived", w.cover())
 	}
 }
 
