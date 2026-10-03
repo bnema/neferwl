@@ -326,9 +326,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 	if content.Source[2] > 0 {
 		sourceW, sourceH = int(content.Source[2]), int(content.Source[3])
 	}
-	if content.Transform.Rotated() {
-		sourceW, sourceH = sourceH, sourceW
-	}
+	sourceW, sourceH = content.Transform.Size(sourceW, sourceH)
 	if near(full.Dx(), sourceW) && near(full.Dy(), sourceH) {
 		full.Max = full.Min.Add(image.Pt(sourceW, sourceH))
 	}

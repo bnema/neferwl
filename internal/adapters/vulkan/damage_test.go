@@ -40,10 +40,7 @@ func TestRendererDamageMatchesFullRedraw(t *testing.T) {
 // out (its scene is 64×48; a rotated output's target is 48×64).
 func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 	const w, h = 32, 32
-	tw, th := 64, 48
-	if out.Rotated() {
-		tw, th = th, tw
-	}
+	tw, th := out.Size(64, 48)
 	newR := func() *Renderer {
 		r, err := New(tw, th)
 		if err != nil {

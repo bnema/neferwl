@@ -30,20 +30,11 @@ func captureRegion(o *output, logical image.Rectangle) image.Rectangle {
 	if scale <= 0 {
 		scale = 1
 	}
-	sw, sh := sceneSize(o)
+	sw, sh := o.place.Transform.Size(o.place.Info.Width, o.place.Info.Height)
 	p := image.Rect(int(math.Floor(float64(logical.Min.X)*scale)), int(math.Floor(float64(logical.Min.Y)*scale)), int(math.Ceil(float64(logical.Max.X)*scale)), int(math.Ceil(float64(logical.Max.Y)*scale)))
 	return o.place.Transform.RectToBuffer(p, sw, sh).Intersect(image.Rect(0, 0, o.place.Info.Width, o.place.Info.Height))
 }
 
-// sceneSize is the scene-physical size of the output: the mode size, swapped
-// for a 90° or 270° transform.
-func sceneSize(o *output) (int, int) {
-	w, h := o.place.Info.Width, o.place.Info.Height
-	if o.place.Transform.Rotated() {
-		return h, w
-	}
-	return w, h
-}
 func captureTime(t time.Time) (uint32, uint32, uint32) {
 	sec := uint64(t.Unix())
 	return uint32(sec >> 32), uint32(sec), uint32(t.Nanosecond())

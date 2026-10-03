@@ -73,11 +73,8 @@ func (o OutputPlacement) ToTarget(x, y float64) (float64, float64) {
 		s = 1
 	}
 	px, py := (x-float64(o.X))*s, (y-float64(o.Y))*s
-	sw, sh := float64(o.Info.Width), float64(o.Info.Height)
-	if o.Transform.Rotated() {
-		sw, sh = sh, sw
-	}
-	return o.Transform.ToBuffer(px, py, sw, sh)
+	sw, sh := o.Transform.Size(o.Info.Width, o.Info.Height)
+	return o.Transform.ToBuffer(px, py, float64(sw), float64(sh))
 }
 
 // Layout is the global arrangement of outputs in logical pixels.

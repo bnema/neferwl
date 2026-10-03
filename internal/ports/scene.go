@@ -210,6 +210,15 @@ type BufferTransform uint8
 // Rotated reports whether width and height swap between buffer and surface.
 func (t BufferTransform) Rotated() bool { return t&1 != 0 }
 
+// Size returns the size of a w×h space seen through t: width and height swap
+// when t is Rotated.
+func (t BufferTransform) Size(w, h int) (int, int) {
+	if t.Rotated() {
+		return h, w
+	}
+	return w, h
+}
+
 // ToBuffer maps a point of a w×h surface (logical, before scale) to the
 // same point of its buffer, in the buffer's untransformed w'×h' axes, where
 // w' and h' swap when the transform is Rotated.

@@ -35,10 +35,7 @@ func (s *screen) name() string { return s.info.Name }
 // modeSize is the physical mode size in the screen's logical orientation:
 // width and height swap for a 90/270 transform.
 func (s *screen) modeSize() (w, h int) {
-	if s.transform.Rotated() {
-		return s.info.Height, s.info.Width
-	}
-	return s.info.Width, s.info.Height
+	return s.transform.Size(s.info.Width, s.info.Height)
 }
 
 // rect is the screen's place in the global logical layout.

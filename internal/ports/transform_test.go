@@ -57,10 +57,32 @@ func TestBufferTransformInvert(t *testing.T) {
 	}
 }
 
+// RectToBuffer is the bounding box of the rect's corners under ToBuffer.
 func TestRectToBuffer(t *testing.T) {
-	r := image.Rect(0, 0, 2, 1)
-	assert.Equal(t, image.Rect(0, 5, 1, 7), BufferTransform(1).RectToBuffer(r, 7, 3))
-	assert.Equal(t, r, BufferTransform(0).RectToBuffer(r, 7, 3))
+	const w, h = 7, 3
+	r := image.Rect(1, 0, 3, 2)
+	assert.Equal(t, image.Rect(0, 5, 1, 7), BufferTransform(1).RectToBuffer(image.Rect(0, 0, 2, 1), w, h))
+	for tr := BufferTransform(0); tr < 8; tr++ {
+		got := tr.RectToBuffer(r, w, h)
+		x0, y0 := tr.ToBuffer(float64(r.Min.X), float64(r.Min.Y), w, h)
+		x1, y1 := tr.ToBuffer(float64(r.Max.X), float64(r.Max.Y), w, h)
+		x2, y2 := tr.ToBuffer(float64(r.Min.X), float64(r.Max.Y), w, h)
+		x3, y3 := tr.ToBuffer(float64(r.Max.X), float64(r.Min.Y), w, h)
+		want := image.Rect(int(min(x0, x1, x2, x3)), int(min(y0, y1, y2, y3)), int(max(x0, x1, x2, x3)), int(max(y0, y1, y2, y3)))
+		assert.Equal(t, want, got, "transform %d", tr)
+		assert.Equal(t, r.Dx()*r.Dy(), got.Dx()*got.Dy(), "transform %d area", tr)
+	}
+}
+
+func TestBufferTransformSize(t *testing.T) {
+	for tr := BufferTransform(0); tr < 8; tr++ {
+		w, h := tr.Size(7, 3)
+		if tr.Rotated() {
+			assert.Equal(t, [2]int{3, 7}, [2]int{w, h}, "transform %d", tr)
+		} else {
+			assert.Equal(t, [2]int{7, 3}, [2]int{w, h}, "transform %d", tr)
+		}
+	}
 }
 
 func TestOutputPlacementToTarget(t *testing.T) {

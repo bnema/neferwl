@@ -9,10 +9,7 @@ import (
 // sceneSize is the size of a scene in scene-physical pixels: the target's,
 // swapped when the output transform t rotates by 90 or 270 degrees.
 func (r *Renderer) sceneSize(t ports.BufferTransform) (int, int) {
-	if t.Rotated() {
-		return r.height, r.width
-	}
-	return r.width, r.height
+	return t.Size(r.width, r.height)
 }
 
 // orient maps draws built in scene space to the target, in place and without
