@@ -8,27 +8,40 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// TestRenderSteadyStateAllocations measures the cost of a small stable scene.
+// TestRenderSteadyStateAllocations measures the cost of a small stable scene,
+// on a normal and on a rotated output (orient works in place).
 func TestRenderSteadyStateAllocations(t *testing.T) {
-	r, err := New(32, 32)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
-	defer r.Close()
-	scene := ports.Scene{Seq: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 32, H: 32}}}}
-	content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
-	content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: content}
-	frame := func() {
-		if err := render(r, scene, contents); err != nil {
-			t.Fatal(err)
-		}
-	}
-	frame()
-	if allocs := testing.AllocsPerRun(20, frame); allocs > 13 {
-		t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
-	} else {
-		t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
+	for _, tc := range []struct {
+		name           string
+		transform      ports.BufferTransform
+		tw, th         int
+		sceneW, sceneH int
+	}{
+		{"transform 0", 0, 32, 32, 32, 32},
+		{"transform 1", 1, 32, 24, 24, 32},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := New(tc.tw, tc.th)
+			if err != nil {
+				t.Skipf("Vulkan unavailable: %v", err)
+			}
+			defer r.Close()
+			scene := ports.Scene{Seq: 1, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: tc.sceneW, H: tc.sceneH}}}}
+			content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
+			content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
+			contents := map[ports.WindowID]ports.SurfaceContent{1: content}
+			frame := func() {
+				if err := render(r, scene, contents); err != nil {
+					t.Fatal(err)
+				}
+			}
+			frame()
+			if allocs := testing.AllocsPerRun(20, frame); allocs > 13 {
+				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
+			} else {
+				t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
+			}
+		})
 	}
 }
 

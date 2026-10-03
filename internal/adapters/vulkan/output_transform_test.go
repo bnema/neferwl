@@ -47,28 +47,3 @@ func TestRendererOutputTransform(t *testing.T) {
 		}
 	}
 }
-
-// A rotated output keeps the steady-state frame free of extra allocations:
-// orient works in place.
-func TestRenderSteadyStateAllocationsRotated(t *testing.T) {
-	r, err := New(32, 24)
-	if err != nil {
-		t.Skipf("Vulkan unavailable: %v", err)
-	}
-	defer r.Close()
-	scene := ports.Scene{Seq: 1, Transform: 1, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 24, H: 32}}}}
-	content := solidContent(t, 8, 8, color.RGBA{R: 255, A: 255})
-	content.ID, content.Surface, content.Seq, content.Version = 1, 1, 1, 1
-	contents := map[ports.WindowID]ports.SurfaceContent{1: content}
-	frame := func() {
-		if err := render(r, scene, contents); err != nil {
-			t.Fatal(err)
-		}
-	}
-	frame()
-	if allocs := testing.AllocsPerRun(20, frame); allocs > 13 {
-		t.Errorf("rotated steady-state Render: %.1f allocs/frame, want <=13", allocs)
-	} else {
-		t.Logf("rotated steady-state Render: %.1f allocs/frame", allocs)
-	}
-}
