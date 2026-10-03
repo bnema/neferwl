@@ -247,7 +247,7 @@ func TestHDRScanoutDecision(t *testing.T) {
 	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 11, Format: fourccXR30}}
 	check := func(want string) {
 		t.Helper()
-		fb, _ := o.scanoutFrame(scene, map[ports.WindowID]ports.SurfaceContent{1: c})
+		fb, _, _ := o.scanoutFrame(scene, map[ports.WindowID]ports.SurfaceContent{1: c})
 		if o.reason != want || (fb != 0) != (want == "") {
 			t.Fatalf("fb %d reason %q, want %q", fb, o.reason, want)
 		}

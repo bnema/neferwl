@@ -47,6 +47,10 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 	if err := enableAtomic(fd); err != nil {
 		return nil, fmt.Errorf("drm: atomic modesetting unsupported by %s: %w", path, err)
 	}
+	// Before any plane or property read: the property set depends on it.
+	if err := enableColorPipeline(fd); err != nil {
+		log.Info().Str("component", "drm").Err(err).Str("card", path).Msg("plane colour pipelines unavailable")
+	}
 	crtcs, _, err := resources(fd)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

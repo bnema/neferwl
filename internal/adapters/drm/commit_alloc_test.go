@@ -43,7 +43,7 @@ func TestCommitFrameAllocations(t *testing.T) {
 		o, c := scanoutAllocsOutput(t)
 		o.k = kmsDevice{fd: -1}
 		rect := fullPlaneRect(200, 100)
-		commit := func() { _, _ = o.commitScanoutRect(80, c, pendingFrame{}, rect) }
+		commit := func() { _, _ = o.commitScanoutRect(80, c, pendingFrame{}, rect, colorBypass) }
 		commit() // grow the buffers
 		if len(o.frameReq.objs) != 3 || len(o.frameReq.counts) != 3 || len(o.frameReq.flatProps) == 0 {
 			t.Fatalf("frame request %+v", o.frameReq)
@@ -59,7 +59,7 @@ func TestCommitFrameAllocations(t *testing.T) {
 		o.k = k // no recorder: it copies every request
 		rect := fullPlaneRect(200, 100)
 		commit := func() {
-			if _, err := o.commitScanoutRect(80, c, pendingFrame{}, rect); err != nil {
+			if _, err := o.commitScanoutRect(80, c, pendingFrame{}, rect, colorBypass); err != nil {
 				t.Fatal(err)
 			}
 		}

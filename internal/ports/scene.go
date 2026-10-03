@@ -127,6 +127,7 @@ const (
 	ColorTFExtendedLinear uint8 = 5  // wp_color_manager_v1 ext_linear
 	ColorPrimariesBT2020  uint8 = 6  // wp_color_manager_v1 BT.2020
 	ColorPrimariesSRGB    uint8 = 1
+	ColorTFSRGB           uint8 = 9 // wp_color_manager_v1 sRGB
 )
 
 func (c SurfaceColor) IsPQ2020() bool {

@@ -29,6 +29,7 @@ const (
 
 	clientCapUniversalPlanes = 2
 	clientCapAtomic          = 3
+	clientCapColorPipeline   = 7 // DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE
 	capTimestampMonotonic    = 0x6
 	capAtomicAsync           = 0x15
 
@@ -83,6 +84,8 @@ type kms interface {
 	// planes lists every plane with the CRTCs it can show on.
 	planes() ([]planeRes, error)
 	objProps(obj, typ uint32) (map[string][2]uint64, error)
+	// propEnums returns the enum names of a property with their values.
+	propEnums(prop uint32) (map[string]uint64, error)
 	// addFB imports a single-plane dmabuf as a framebuffer of format.
 	addFB(b *ports.DMABuf, format uint32) (uint32, error)
 	rmFB(id uint32) error
@@ -265,6 +268,10 @@ func (k kmsDevice) objProps(obj, typ uint32) (map[string][2]uint64, error) {
 	return objProps(k.fd, obj, typ)
 }
 
+func (k kmsDevice) propEnums(prop uint32) (map[string]uint64, error) {
+	return propEnums(k.fd, prop)
+}
+
 func (k kmsDevice) rmFB(id uint32) error {
 	v := id
 	return ioctl(k.fd, ioctlRmFB, unsafe.Pointer(&v))
@@ -284,6 +291,15 @@ func enableAtomic(fd int) error {
 	return nil
 }
 
+// enableColorPipeline asks for the plane COLOR_PIPELINE property and the
+// colorop objects. It must run after enableAtomic and before any plane or
+// property read: the property set differs per fd. Failure leaves the
+// feature off.
+func enableColorPipeline(fd int) error {
+	v := setClientCap{capability: clientCapColorPipeline, value: 1}
+	return ioctl(fd, ioctlSetClientCap, unsafe.Pointer(&v))
+}
+
 func hasCap(fd int, c uint64) bool {
 	v := getCap{capability: c}
 	return ioctl(fd, ioctlGetCap, unsafe.Pointer(&v)) == nil && v.value == 1
@@ -295,6 +311,15 @@ type plane struct {
 	props   map[string]uint32
 	crtc    uint32 // CRTC_ID when read
 	formats []ports.DMABufFormat
+	// pipeline is the colour pipeline the plane offers for SDR content on
+	// an HDR output (colorop.go); nil: none. colorApplied is the mode the
+	// plane was last committed with, valid while colorKnown.
+	pipeline     *colorPipeline
+	colorApplied colorMode
+	colorKnown   bool
+	colorFormat  uint32 // format of the buffer shown with colorApplied
+	// verdicts are KMS's cached TEST_ONLY answers for the pipeline.
+	verdicts []colorVerdict
 	// zposValue is the plane's zpos when read (its "zpos" property).
 	zposValue uint64
 }

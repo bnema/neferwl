@@ -87,12 +87,14 @@ func (o *Output) disableProtected() error {
 	req.set(o.crtc, o.vrrProp, 0)
 	req.set(o.conn.id, o.connCrtc, 0)
 	o.hdrConnectorProps(req, false)
+	o.forceBypass(req)
 	if err := o.detachProtectedPlanes(req); err != nil {
 		return protectedCommitError{err}
 	}
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return protectedCommitError{fmt.Errorf("disable protected output: %w", err)}
 	}
+	o.colorBypassed()
 	if o.modeBlob != 0 {
 		_ = o.k.destroyBlob(o.modeBlob) // MODE_ID is 0 now: nothing references it
 		o.modeBlob = 0

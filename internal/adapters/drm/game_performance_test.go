@@ -20,7 +20,7 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	var log bytes.Buffer
 	o.log = zerowrap.New(zerowrap.Config{Output: &log})
 	surfaces := map[ports.WindowID]ports.SurfaceContent{1: c}
-	if fb, _ := o.scanoutFrame(s, surfaces); fb != 0 || o.reason != "scale_refused" {
+	if fb, _, _ := o.scanoutFrame(s, surfaces); fb != 0 || o.reason != "scale_refused" {
 		t.Fatalf("fb %d reason %s", fb, o.reason)
 	}
 	if len(*commits) != 1 || (*commits)[0].flags != atomicTestOnly {
@@ -35,7 +35,7 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	if v, _ := (*commits)[0].req.value(tPrimary, planeProps["CRTC_W"]); v != 200 {
 		t.Fatalf("destination width: %d", v)
 	}
-	if fb, _ := o.scanoutFrame(s, surfaces); fb != 0 || len(*commits) != 1 {
+	if fb, _, _ := o.scanoutFrame(s, surfaces); fb != 0 || len(*commits) != 1 {
 		t.Fatal("refused geometry retried")
 	}
 	if !bytes.Contains(log.Bytes(), []byte("scale_refused")) {
@@ -52,7 +52,7 @@ func TestModesetInvalidatesScaleDecision(t *testing.T) {
 	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
 	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
-	if got, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 1 || !fb.scaleTestedOK {
+	if got, _, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 1 || !fb.scaleTestedOK {
 		t.Fatalf("initial scale: %d, commits: %d", got, len(*commits))
 	}
 	k.EXPECT().createBlob(mock.Anything).Return(uint32(77), nil).Once()
@@ -62,7 +62,7 @@ func TestModesetInvalidatesScaleDecision(t *testing.T) {
 	if fb.scaleTestedOK || fb.scaleRefused {
 		t.Fatal("cached scale survived modeset")
 	}
-	if got, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 3 || (*commits)[2].flags != atomicTestOnly {
+	if got, _, _ := o.scanoutFrame(s, contents); got != 87 || len(*commits) != 3 || (*commits)[2].flags != atomicTestOnly {
 		t.Fatalf("scale not retested: fb %d commits %+v", got, *commits)
 	}
 }

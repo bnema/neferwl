@@ -11,6 +11,7 @@ import (
 // probeAsync checks once whether async commits may carry IN_FENCE_FD. An
 // inactive CRTC refuses async flips: the probe waits until it is on.
 func (o *Output) probeAsync(r ports.Renderer) {
+	o.forgetColor() // the planes' state is not assumed after a modeset
 	if o.asyncProbed || !o.tearing || o.off {
 		return
 	}

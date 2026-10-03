@@ -49,6 +49,8 @@ type overlayWin struct {
 	buf  uint64
 	rect ports.Rect // CRTC rect
 	w, h int        // buffer size
+	// color is how the plane's colour pipeline shows the buffer.
+	color colorUse
 	// acquire is the client's explicit-sync fence, a duplicate owned by
 	// the frame loop (closed after the commit); nil without one.
 	acquire *os.File
@@ -76,12 +78,12 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, "window_above"
 		}
 		c := surfaces[w.ID]
-		// A viewport crop or PQ content is composed: the plane would show
-		// the whole buffer, and raw PQ values on this SDR output. A dimmed
+		// A viewport crop is composed: the plane would show the whole
+		// buffer. (Its colour encoding is checked by planeColor.) A dimmed
 		// window (a peeking stashed one) needs the veil drawn over it, and
 		// one with the focus effect needs its lift; an overview preview is
 		// drawn smaller than its buffer.
-		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && !c.Color.IsPQ2020() {
+		if w.Dim <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) {
 			pick = w
 			continue
 		}
@@ -137,8 +139,10 @@ func (o *Output) overlayProps(req *atomicReq, ov overlayWin) {
 	if ov.fb == 0 {
 		req.set(p.id, p.prop("FB_ID"), 0)
 		req.set(p.id, p.prop("CRTC_ID"), 0)
+		o.overlayColorProps(req, colorBypass)
 		return
 	}
+	o.overlayColorProps(req, ov.color.mode)
 	req.set(p.id, p.prop("FB_ID"), uint64(ov.fb))
 	req.set(p.id, p.prop("CRTC_ID"), uint64(o.crtc))
 	req.set(p.id, p.prop("SRC_X"), 0)
@@ -164,18 +168,19 @@ func (ov overlayWin) close() {
 
 // testOverlay asks KMS whether it takes the frame with ov on the overlay,
 // the cursor at its current place included. A refusal is cached on the
-// buffer.
+// buffer; one that the plane's colour pipeline causes (the same frame passes
+// with Bypass) is cached on the plane for the buffer format and the cursor
+// state instead.
 func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
-	req := &o.probeReq // no frame request is alive: the frame commit follows
-	req.reset()
-	o.primaryProps(req, fb)
-	o.overlayProps(req, ov)
-	if o.cursor != nil {
-		o.cursor.props(req, o.crtc, o.cursor.desired())
-	}
-	err := o.k.commit(req, atomicTestOnly, 0)
+	err := o.probeOverlay(fb, ov, ov.color.mode)
 	if err == nil {
 		return true
+	}
+	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
+		o.overlay.setVerdict(ov.color.format, o.cursorShown(), false)
+		o.setOverlayReason("color_refused")
+		o.log.Info().Str("component", "render").Err(err).Uint32("format", ov.color.format).Str("connector", o.conn.name).Msg("overlay colour pipeline refused")
+		return false
 	}
 	if cfb := o.clientFBs[ov.buf]; cfb != nil && refused(err) {
 		cfb.overlayFailed = "overlay_refused"
@@ -183,6 +188,23 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	o.setOverlayReason("overlay_refused")
 	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
+}
+
+// probeOverlay is a TEST_ONLY of the frame: the composed image on the
+// primary plane (Bypass), ov on the overlay with colour mode, the cursor.
+// Both planes' colour state is written whatever they applied: the test must
+// not rely on the state of the last commit.
+func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode) error {
+	req := &o.probeReq // no frame request is alive: the frame commit follows
+	req.reset()
+	o.primaryProps(req, fb)
+	o.primary.colorProps(req, colorBypass, 0, 0)
+	o.overlayProps(req, ov)
+	o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob)
+	if o.cursor != nil {
+		o.cursor.props(req, o.crtc, o.cursor.desired())
+	}
+	return o.k.commit(req, atomicTestOnly, 0)
 }
 
 // errOverlayDropped: a commit was refused with the overlay on; the frame is

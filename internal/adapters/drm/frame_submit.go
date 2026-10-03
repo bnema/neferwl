@@ -81,7 +81,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	if decision.fb != 0 {
 		c := decision.content
-		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect); direct {
+		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect, decision.color); direct {
 			presented = err == nil
 			return true, err
 		}

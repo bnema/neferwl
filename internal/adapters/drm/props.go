@@ -15,6 +15,7 @@ const (
 
 	objCrtc      = 0xcccccccc
 	objConnector = 0xc0c0c0c0
+	objColorop   = 0xfafafafa // DRM_MODE_OBJECT_COLOROP
 )
 
 type objGetProps struct {
@@ -61,6 +62,33 @@ func objProps(fd int, obj, typ uint32) (map[string][2]uint64, error) {
 	return out, nil
 }
 
+// propEnums returns the enum names of property id with their values.
+func propEnums(fd int, id uint32) (map[string]uint64, error) {
+	p := getProp{propID: id}
+	if err := ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)); err != nil {
+		return nil, err
+	}
+	if p.countEn == 0 {
+		return nil, nil
+	}
+	enums := make([]propEnum, p.countEn)
+	// The kernel also copies an enum's values when countValues is set: a
+	// nil values pointer makes the whole call fail (EFAULT).
+	v := make([]uint64, max(p.countValues, 1))
+	p.enumBlobs = uint64(uintptr(unsafe.Pointer(&enums[0])))
+	p.values = uint64(uintptr(unsafe.Pointer(&v[0])))
+	if err := ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)); err != nil {
+		return nil, err
+	}
+	out := make(map[string]uint64, p.countEn)
+	for _, e := range enums[:min(int(p.countEn), len(enums))] {
+		out[unix.ByteSliceToString(e.name[:])] = e.value
+	}
+	runtime.KeepAlive(enums)
+	runtime.KeepAlive(v)
+	return out, nil
+}
+
 // readContentTypeProp records the connector's content type enum values.
 func readContentTypeProp(fd int, props map[string][2]uint64) (uint32, [5]uint64) {
 	id := uint32(props["content type"][0])
@@ -68,33 +96,13 @@ func readContentTypeProp(fd int, props map[string][2]uint64) (uint32, [5]uint64)
 	if id == 0 {
 		return 0, values
 	}
-	p := getProp{propID: id}
-	if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) != nil || p.countEn == 0 {
+	enums, err := propEnums(fd, id)
+	if err != nil || len(enums) == 0 {
 		return 0, values
 	}
-	enums := make([]propEnum, p.countEn)
-	v := make([]uint64, max(p.countValues, 1))
-	p.enumBlobs = uint64(uintptr(unsafe.Pointer(&enums[0])))
-	p.values = uint64(uintptr(unsafe.Pointer(&v[0])))
-	if ioctl(fd, ioctlGetProp, unsafe.Pointer(&p)) != nil {
-		return 0, values
+	for i, name := range [...]string{"No Data", "Graphics", "Photo", "Cinema", "Game"} {
+		values[i] = enums[name]
 	}
-	for _, e := range enums[:min(int(p.countEn), len(enums))] {
-		switch unix.ByteSliceToString(e.name[:]) {
-		case "No Data":
-			values[0] = e.value
-		case "Graphics":
-			values[1] = e.value
-		case "Photo":
-			values[2] = e.value
-		case "Cinema":
-			values[3] = e.value
-		case "Game":
-			values[4] = e.value
-		}
-	}
-	runtime.KeepAlive(enums)
-	runtime.KeepAlive(v)
 	return id, values
 }
 
