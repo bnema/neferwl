@@ -251,7 +251,8 @@ func outputRelation(name string) (ports.OutputRelation, string, bool) {
 }
 
 // checkOutputAnchors warns about an offset without a relation, then drops the
-// relations that form a cycle (every output of the cycle, one warning each).
+// relations that form a cycle (every output of the cycle, one warning each),
+// and warns about outputs sharing the same relation, reference and offset.
 // Core places a cycle automatically anyway; runtime overrides never create
 // relations, so this is the only place to detect them.
 func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string, offsetLines, seen map[string]int) []Warning {
@@ -284,6 +285,18 @@ func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string,
 		key := relKeys[o.Name]
 		warnings = append(warnings, Warning{Line: seen[key], Msg: fmt.Sprintf("%s: relation cycle, ignored", key)})
 		o.Anchor.Relation, o.Anchor.To = ports.RelationNone, ""
+	}
+	// Two outputs with the same relation, reference and offset overlap.
+	for i, o := range outputs {
+		if o.Anchor.Relation == ports.RelationNone {
+			continue
+		}
+		for _, prev := range outputs[:i] {
+			if prev.Anchor == o.Anchor {
+				warnings = append(warnings, Warning{Line: seen[relKeys[o.Name]], Msg: fmt.Sprintf("output.%s: same relation as output.%s; both get the same position", o.Name, prev.Name)})
+				break
+			}
+		}
 	}
 	return warnings
 }

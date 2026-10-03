@@ -25,6 +25,7 @@ func layoutCore(focus int, tiles ...tile) *Core {
 
 func TestNeighbor(t *testing.T) {
 	dirs := []direction{dirLeft, dirRight, dirUp, dirDown}
+	dirNames := [...]string{"left", "right", "up", "down"}
 	// want holds the expected neighbor name for left, right, up, down; "" is
 	// the edge.
 	type step struct {
@@ -71,7 +72,22 @@ func TestNeighbor(t *testing.T) {
 		{"lowest index at a full tie", []tile{{"A", 0, 0, 100, 100}, {"first", 100, 0, 100, 100}, {"second", 100, 0, 100, 100}}, []step{
 			{"A", [4]string{"", "first", "", ""}},
 		}},
-		{"overlapping screens are not neighbors", []tile{{"A", 0, 0, 200, 100}, {"B", 100, 0, 200, 100}}, []step{
+		{"overlapping screens fall back to centers", []tile{{"A", 0, 0, 200, 100}, {"B", 100, 0, 200, 100}}, []step{
+			// Centers are 100 and 200 apart on x only.
+			{"A", [4]string{"", "B", "", ""}},
+			{"B", [4]string{"A", "", "", ""}},
+		}},
+		{"outputs anchored to the same reference", []tile{{"R", 0, 0, 100, 100}, {"X", 100, 0, 100, 100}, {"Y", 100, 0, 300, 50}}, []step{
+			// X and Y overlap; the strict pass finds nothing between them.
+			{"X", [4]string{"R", "Y", "Y", ""}},
+			// R is fully left of Y and wins over the closer, overlapping X.
+			{"Y", [4]string{"R", "", "", "X"}},
+		}},
+		{"strict candidate beats a closer overlapping one", []tile{{"A", 0, 0, 100, 100}, {"near", 50, 0, 100, 100}, {"far", 300, 0, 100, 100}}, []step{
+			{"A", [4]string{"", "far", "", ""}},
+			{"near", [4]string{"A", "far", "", ""}},
+		}},
+		{"identical centers are unreachable", []tile{{"A", 0, 0, 100, 100}, {"B", 0, 0, 100, 100}}, []step{
 			{"A", [4]string{"", "", "", ""}},
 			{"B", [4]string{"", "", "", ""}},
 		}},
@@ -92,23 +108,25 @@ func TestNeighbor(t *testing.T) {
 		}},
 	}
 	for _, tc := range cases {
-		for _, st := range tc.steps {
-			c := layoutCore(0, tc.tiles...)
-			for i, s := range c.screens {
-				if s.name() == st.from {
-					c.focusScreen = i
+		t.Run(tc.name, func(t *testing.T) {
+			for _, st := range tc.steps {
+				c := layoutCore(0, tc.tiles...)
+				for i, s := range c.screens {
+					if s.name() == st.from {
+						c.focusScreen = i
+					}
+				}
+				for i, d := range dirs {
+					got := ""
+					if n := c.neighbor(d); n >= 0 {
+						got = c.screens[n].name()
+					}
+					if got != st.want[i] {
+						t.Errorf("from %s %s: got %q, want %q", st.from, dirNames[i], got, st.want[i])
+					}
 				}
 			}
-			for i, d := range dirs {
-				got := ""
-				if n := c.neighbor(d); n >= 0 {
-					got = c.screens[n].name()
-				}
-				if got != st.want[i] {
-					t.Errorf("%s: from %s direction %d: got %q, want %q", tc.name, st.from, d, got, st.want[i])
-				}
-			}
-		}
+		})
 	}
 	if n := layoutCore(0, tile{"A", 0, 0, 10, 10}).neighbor(direction(0)); n != -1 {
 		t.Fatalf("invalid direction: %d", n)

@@ -671,6 +671,10 @@ func TestOutputRelationWarnings(t *testing.T) {
 		{"tail into cycle", "output.A.right-of = B\noutput.B.right-of = A\noutput.C.left-of = A", []string{"relation cycle", "relation cycle"}, []int{1, 2}, []string{"C"}},
 		{"relation overridden twice", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C", []string{"overrides line 1", "overrides line 2"}, []int{2, 3}, []string{"DP-2"}},
 		{"relation overridden three times", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C\noutput.DP-2.below = D", []string{"overrides line 1", "overrides line 2", "overrides line 3"}, []int{2, 3, 4}, []string{"DP-2"}},
+		{"same relation on two outputs", "output.DP-2.right-of = DP-1\noutput.DP-3.right-of = DP-1", []string{"output.DP-3: same relation as output.DP-2; both get the same position"}, []int{2}, []string{"DP-2", "DP-3"}},
+		{"same relation and offset on three outputs", "output.A.below = R\noutput.A.offset = 5\noutput.B.below = R\noutput.B.offset = 5\noutput.C.below = R\noutput.C.offset = 5", []string{"output.B: same relation as output.A", "output.C: same relation as output.A"}, []int{3, 5}, []string{"A", "B", "C"}},
+		{"same reference, other offset", "output.DP-2.right-of = DP-1\noutput.DP-3.right-of = DP-1\noutput.DP-3.offset = 10", nil, nil, []string{"DP-2", "DP-3"}},
+		{"same reference, other relation", "output.DP-2.right-of = DP-1\noutput.DP-3.left-of = DP-1", nil, nil, []string{"DP-2", "DP-3"}},
 		{"same relation twice", "output.DP-2.below = A\noutput.DP-2.below = B", []string{"overrides line 1"}, []int{2}, []string{"DP-2"}},
 	}
 	for _, tc := range cases {

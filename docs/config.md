@@ -69,7 +69,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 ## Output placement
 
-An output with no relation is placed automatically, left to right after the others, at y=0. An output whose reference is not connected is placed automatically too, and returns to its relation when the reference connects. Relation cycles are ignored with a warning. Positions set by an output-management client (kanshi, wdisplays, wlr-randr) take precedence over relations until the next config reload. The pointer crosses any touching edge.
+An output with no relation is placed automatically, left to right after the others, at y=0. An output whose reference is not connected is placed automatically too, and returns to its relation when the reference connects. Relation cycles are ignored with a warning. Positions set by an output-management client (kanshi, wdisplays, wlr-randr) take precedence over relations until the next config reload. The pointer crosses any touching edge. Monitor navigation and column edge crossings follow output geometry; stacked outputs are reached with focus-monitor-up/down.
 
 Two rows of three, with DP-1 as the base:
 

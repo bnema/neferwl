@@ -1335,3 +1335,74 @@ func TestFocusColumnLeavesFullscreenBeforeMonitor(t *testing.T) {
 		t.Fatal("focus not on DP-1:", got)
 	}
 }
+
+// focusedOutput drains the commands and returns the focused connector,
+// current when no SetOutputs was sent (it is sent only on a change).
+func focusedOutput(r *multiRig, current string) string {
+	for len(r.commands) > 0 {
+		if v, ok := (<-r.commands).(ports.SetOutputs); ok {
+			current = v.Focused
+		}
+	}
+	return current
+}
+
+// The column edge crosses to the screen on that side of the geometry, not to
+// the next one in configuration order.
+func TestFocusColumnEdgeFollowsGeometryNotConfigOrder(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1", Pos: &image.Point{X: 500, Y: 0}},
+			{Name: "DP-2", Pos: &image.Point{X: 0, Y: 0}},
+		}
+	}, left, right)
+	// DP-1 (x 500..700) is focused first; DP-2 (x 0..400) lies to its left.
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	if current = focusedOutput(r, current); current != "DP-2" {
+		t.Fatalf("focus-monitor-left: %s, want DP-2", current)
+	}
+	r.mapWindow(t, 1)
+	r.key(t, "Right", ports.ModAlt)
+	if got := focusedOutput(r, current); got != "DP-1" {
+		t.Fatalf("focus-column-right at the right edge: %s, want DP-1", got)
+	}
+	r.key(t, "Left", ports.ModAlt)
+	if got := focusedOutput(r, "DP-1"); got != "DP-2" {
+		t.Fatalf("focus-column-left at the left edge: %s, want DP-2", got)
+	}
+}
+
+// With the outputs stacked, a column edge has no neighbor on its side.
+func TestFocusColumnEdgeStaysOnStackedOutputs(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1"},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
+		}
+	}, left, right)
+	r.mapWindow(t, 1)
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	for _, k := range []string{"Left", "Right", "Left"} {
+		r.key(t, k, ports.ModAlt)
+		if got := focusedOutput(r, current); got != current {
+			t.Fatalf("focus-column %s moved focus from %s to %s", k, current, got)
+		}
+	}
+}
+
+// A screen turned off by power management is still a neighbor.
+func TestPoweredOffScreenStaysNeighbor(t *testing.T) {
+	r := startMulti(t, nil, left, right)
+	// DP-1 is focused, DP-2 follows it on the right.
+	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
+	r.client <- ports.OutputPower{Output: "DP-2", On: false}
+	_ = receive(t, r.scenes)
+	if out := lastOutputs(t, r.commands); current != "DP-1" || !slices.Equal(out.Off, []string{"DP-2"}) {
+		t.Fatalf("focused %s, off %v", current, out.Off)
+	}
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	if got := focusedOutput(r, current); got != "DP-2" {
+		t.Fatalf("focus-monitor-right: %s, want the powered-off DP-2", got)
+	}
+}

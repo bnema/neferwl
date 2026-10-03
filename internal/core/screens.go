@@ -415,7 +415,12 @@ const (
 // direction d, or -1 at the edge. Candidates lie fully beyond the focused
 // screen's edge; one sharing part of that edge wins over a diagonal one, then
 // the smallest gap, the largest shared edge, the closest centers and the
-// lowest index decide. There is no wrap.
+// lowest index decide. When none lies fully beyond, a second pass handles
+// overlapping outputs (for instance two anchored to the same reference): it
+// takes the screens whose rectangle intersects the focused one and whose
+// center is strictly beyond the focused center, ranked the same way with a
+// gap of 0, so they stay reachable. Screens with identical centers are not
+// reachable by direction. There is no wrap.
 func (c *Core) neighbor(d direction) int {
 	if d < dirLeft || d > dirDown {
 		return -1
@@ -429,30 +434,43 @@ func (c *Core) neighbor(d direction) int {
 		return s.x, s.x + o.W, s.y, s.y + o.H
 	}
 	lo, hi, clo, chi := span(c.cur())
-	best, bestKey := -1, [4]int{}
-	for i, s := range c.screens {
-		if i == c.focusScreen || s.name() == "" {
-			continue
+	pick := func(fallback bool) int {
+		best, bestKey := -1, [4]int{}
+		for i, s := range c.screens {
+			if i == c.focusScreen || s.name() == "" {
+				continue
+			}
+			l, h, cl, ch := span(s)
+			gap := l - hi
+			beyond := l+h > lo+hi // centers, doubled
+			if d == dirLeft || d == dirUp {
+				gap = lo - h
+				beyond = l+h < lo+hi
+			}
+			if fallback {
+				if !beyond || min(hi, h)-max(lo, l) <= 0 || min(chi, ch)-max(clo, cl) <= 0 {
+					continue
+				}
+				gap = 0
+			} else if gap < 0 {
+				continue
+			}
+			overlap := min(chi, ch) - max(clo, cl)
+			diagonal := 0
+			if overlap <= 0 {
+				diagonal = 1
+			}
+			key := [4]int{diagonal, gap, -max(overlap, 0), abs(cl + ch - clo - chi)}
+			if best < 0 || slices.Compare(key[:], bestKey[:]) < 0 {
+				best, bestKey = i, key
+			}
 		}
-		l, h, cl, ch := span(s)
-		gap := l - hi
-		if d == dirLeft || d == dirUp {
-			gap = lo - h
-		}
-		if gap < 0 {
-			continue
-		}
-		overlap := min(chi, ch) - max(clo, cl)
-		diagonal := 0
-		if overlap <= 0 {
-			diagonal = 1
-		}
-		key := [4]int{diagonal, gap, -max(overlap, 0), abs(cl + ch - clo - chi)}
-		if best < 0 || slices.Compare(key[:], bestKey[:]) < 0 {
-			best, bestKey = i, key
-		}
+		return best
 	}
-	return best
+	if i := pick(false); i >= 0 {
+		return i
+	}
+	return pick(true)
 }
 
 // moveWorkspace moves the workspace on screen to the neighbor screen, where

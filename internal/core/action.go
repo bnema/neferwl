@@ -58,13 +58,20 @@ const (
 	ActionToggleFloating Action = "toggle-floating"
 )
 
-// monitorDirections maps the focus-monitor and move-workspace-to-monitor
-// actions to the direction of the neighbor screen they target.
-var monitorDirections = map[Action]direction{
-	ActionFocusMonitorLeft: dirLeft, ActionFocusMonitorRight: dirRight,
-	ActionFocusMonitorUp: dirUp, ActionFocusMonitorDown: dirDown,
-	ActionMoveWorkspaceLeft: dirLeft, ActionMoveWorkspaceRight: dirRight,
-	ActionMoveWorkspaceToMonitorUp: dirUp, ActionMoveWorkspaceToMonitorDown: dirDown,
+// monitorDirection returns the direction of the neighbor screen targeted by
+// a focus-monitor or move-workspace-to-monitor action, 0 for other actions.
+func monitorDirection(a Action) direction {
+	switch a {
+	case ActionFocusMonitorLeft, ActionMoveWorkspaceLeft:
+		return dirLeft
+	case ActionFocusMonitorRight, ActionMoveWorkspaceRight:
+		return dirRight
+	case ActionFocusMonitorUp, ActionMoveWorkspaceToMonitorUp:
+		return dirUp
+	case ActionFocusMonitorDown, ActionMoveWorkspaceToMonitorDown:
+		return dirDown
+	}
+	return 0
 }
 
 // Resize axes of ResizeArg.
@@ -189,12 +196,12 @@ func (c *Core) applyAction(a Action) Effect {
 	}
 	switch a {
 	case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown:
-		if i := c.neighbor(monitorDirections[a]); i >= 0 {
+		if i := c.neighbor(monitorDirection(a)); i >= 0 {
 			c.focusScreen = i
 		}
 		return Effect{}
 	case ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
-		c.moveWorkspace(monitorDirections[a])
+		c.moveWorkspace(monitorDirection(a))
 		return Effect{}
 	case ActionFocusColumnLeft, ActionFocusColumnRight:
 		w := c.cur().mon.Current()
