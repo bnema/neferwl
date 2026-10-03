@@ -415,12 +415,14 @@ const (
 // direction d, or -1 at the edge. Candidates lie fully beyond the focused
 // screen's edge; one sharing part of that edge wins over a diagonal one, then
 // the smallest gap, the largest shared edge, the closest centers and the
-// lowest index decide. When none lies fully beyond, a second pass handles
-// overlapping outputs (for instance two anchored to the same reference): it
-// takes the screens whose rectangle intersects the focused one and whose
-// center is strictly beyond the focused center, ranked the same way with a
-// gap of 0, so they stay reachable. Screens with identical centers are not
-// reachable by direction. There is no wrap.
+// lowest index decide. Overlapping outputs (for instance two anchored to the
+// same reference) are reached only when no screen lies fully beyond the edge
+// in that direction: a second pass then takes the screens whose rectangle
+// intersects the focused one and whose center is strictly beyond the focused
+// center, ranked the same way with a gap of 0. A screen that does have a
+// strict candidate never falls back, so an overlapping one can stay out of
+// reach. Screens with the same center on the axis are unreachable by direction
+// (the pointer still reaches them). There is no wrap.
 func (c *Core) neighbor(d direction) int {
 	if d < dirLeft || d > dirDown {
 		return -1

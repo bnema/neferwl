@@ -83,6 +83,11 @@ func TestNeighbor(t *testing.T) {
 			// R is fully left of Y and wins over the closer, overlapping X.
 			{"Y", [4]string{"R", "", "", "X"}},
 		}},
+		{"same-height outputs anchored to the same reference: one is unreachable by direction", []tile{{"R", 0, 0, 100, 100}, {"Y", 100, 0, 300, 100}, {"X", 100, 0, 100, 100}}, []step{
+			{"R", [4]string{"", "Y", "", ""}},
+			{"Y", [4]string{"R", "", "", ""}},
+			{"X", [4]string{"R", "Y", "", ""}},
+		}},
 		{"strict candidate beats a closer overlapping one", []tile{{"A", 0, 0, 100, 100}, {"near", 50, 0, 100, 100}, {"far", 300, 0, 100, 100}}, []step{
 			{"A", [4]string{"", "far", "", ""}},
 			{"near", [4]string{"A", "far", "", ""}},

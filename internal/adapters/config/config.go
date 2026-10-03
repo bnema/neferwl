@@ -234,17 +234,23 @@ func Load(path string) (ports.Config, []Warning, error) {
 // real layout but small enough that placement arithmetic cannot overflow.
 const maxOutputOffset = 65536
 
+// outputRelations lists the relation suffixes, tried in order.
+var outputRelations = [...]struct {
+	suffix string
+	rel    ports.OutputRelation
+}{
+	{".right-of", ports.RelationRightOf},
+	{".left-of", ports.RelationLeftOf},
+	{".above", ports.RelationAbove},
+	{".below", ports.RelationBelow},
+}
+
 // outputRelation splits "<output>.right-of" (left-of, above, below) into the
 // relation and the output name.
 func outputRelation(name string) (ports.OutputRelation, string, bool) {
-	for suffix, rel := range map[string]ports.OutputRelation{
-		".right-of": ports.RelationRightOf,
-		".left-of":  ports.RelationLeftOf,
-		".above":    ports.RelationAbove,
-		".below":    ports.RelationBelow,
-	} {
-		if base, ok := strings.CutSuffix(name, suffix); ok {
-			return rel, base, true
+	for _, r := range outputRelations {
+		if base, ok := strings.CutSuffix(name, r.suffix); ok {
+			return r.rel, base, true
 		}
 	}
 	return ports.RelationNone, "", false

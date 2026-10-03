@@ -1398,8 +1398,11 @@ func TestPoweredOffScreenStaysNeighbor(t *testing.T) {
 	current := focusedOutput(r, lastOutputs(t, r.commands).Focused)
 	r.client <- ports.OutputPower{Output: "DP-2", On: false}
 	_ = receive(t, r.scenes)
-	if out := lastOutputs(t, r.commands); current != "DP-1" || !slices.Equal(out.Off, []string{"DP-2"}) {
-		t.Fatalf("focused %s, off %v", current, out.Off)
+	if current != "DP-1" {
+		t.Fatalf("focused %s, want DP-1", current)
+	}
+	if out := lastOutputs(t, r.commands); !slices.Equal(out.Off, []string{"DP-2"}) {
+		t.Fatalf("off %v, want [DP-2]", out.Off)
 	}
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
 	if got := focusedOutput(r, current); got != "DP-2" {
