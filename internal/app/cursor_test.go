@@ -159,6 +159,11 @@ func TestRotateCursor(t *testing.T) {
 			t.Fatalf("transform %d: hotspot (%d,%d) on pixel %d, want 5", tr, got.HotX, got.HotY, v)
 		}
 	}
+	// Pixels shorter than W*H*4 are returned as they are.
+	short := ports.CursorImage{W: 3, H: 2, Pixels: px[:8]}
+	if got := rotateCursor(short, 1); got.W != 3 || got.H != 2 || len(got.Pixels) != 8 {
+		t.Fatalf("short pixels: %+v", got)
+	}
 	// 90 degrees: the top left pixel goes to the bottom left.
 	if got := rotateCursor(ports.CursorImage{W: 3, H: 2, Pixels: px}, 1); got.Pixels[(2*2+0)*4] != 0 {
 		t.Fatalf("90: top-left pixel at %v", got.Pixels)

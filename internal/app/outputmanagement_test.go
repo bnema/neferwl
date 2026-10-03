@@ -286,19 +286,6 @@ func TestOutputApplyAnsweredAtOnce(t *testing.T) {
 
 // A reload that only changes output scales (a saved scale bind) keeps the
 // runtime overrides; any other change drops them.
-func TestScaleChangesTransform(t *testing.T) {
-	old := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
-	cur := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
-	if _, only := scaleChanges(old, cur); only {
-		t.Fatal("a transform change must take the full reload path")
-	}
-	cur.Outputs[0].Transform = 0
-	cur.Outputs[0].Scale = 1.5
-	if _, only := scaleChanges(old, cur); !only {
-		t.Fatal("a scale-only change stays a scale change")
-	}
-}
-
 func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	mode := ports.OutputMode{Width: 1920, Height: 1080, RefreshMilli: 60000}
 	file := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
@@ -317,6 +304,20 @@ func TestReloadScaleOnlyKeepsOverrides(t *testing.T) {
 	other.Layout.Gaps = 4
 	if cfg := state.reload(other); cfg.Outputs[0].Pos != nil {
 		t.Fatalf("other reload kept overrides: %+v", cfg.Outputs)
+	}
+}
+
+// A transform change takes the full reload path; a scale change alone does not.
+func TestScaleChangesTransform(t *testing.T) {
+	old := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2}}}
+	cur := ports.Config{Outputs: []ports.OutputConfig{{Name: "DP-1", Scale: 2, Transform: 1}}}
+	if _, only := scaleChanges(old, cur); only {
+		t.Fatal("a transform change must take the full reload path")
+	}
+	cur.Outputs[0].Transform = 0
+	cur.Outputs[0].Scale = 1.5
+	if _, only := scaleChanges(old, cur); !only {
+		t.Fatal("a scale-only change stays a scale change")
 	}
 }
 
@@ -344,6 +345,10 @@ func TestOutputApplyTransform(t *testing.T) {
 	cfg, err = state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true}}})
 	if err != nil || cfg.Outputs[0].Transform != 3 {
 		t.Fatalf("unset transform changed: %+v, %v", cfg.Outputs, err)
+	}
+	bad := ports.BufferTransform(8)
+	if _, err := state.apply(ports.OutputApply{Heads: []ports.HeadChange{{Name: "DP-1", Enabled: true, Transform: &bad}}}); err == nil {
+		t.Fatal("transform 8 accepted")
 	}
 }
 

@@ -81,13 +81,10 @@ func loadCursor(c ports.CursorChange, scale float64, t ports.BufferTransform, li
 // rotateCursor returns img as an output with transform t holds it, hotspot
 // included. It never modifies img (theme images are cached).
 func rotateCursor(img ports.CursorImage, t ports.BufferTransform) ports.CursorImage {
-	if t == 0 || img.W <= 0 || img.H <= 0 {
+	if t == 0 || img.W <= 0 || img.H <= 0 || len(img.Pixels) < img.W*img.H*4 {
 		return img
 	}
-	dw, dh := img.W, img.H
-	if t.Rotated() {
-		dw, dh = dh, dw
-	}
+	dw, dh := t.Size(img.W, img.H)
 	out := make([]byte, dw*dh*4)
 	for y := range img.H {
 		for x := range img.W {
