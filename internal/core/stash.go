@@ -170,12 +170,12 @@ func (w *Workspace) ToggleStashVisible() {
 			return
 		}
 		if w.stashOverCover() {
-			w.stashOver, w.stashHidden, w.stashFocus = false, true, false
+			w.dropStashOver()
 			return
 		}
 		// Not showStash: a pending stashed fullscreen must not replace
 		// the covering window.
-		w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = true, false, true, false
+		w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = c, false, true, false
 		return
 	}
 	if w.stashHidden {
@@ -188,7 +188,7 @@ func (w *Workspace) ToggleStashVisible() {
 // stashOverCover reports whether the stash shows over the covering
 // fullscreen window (ToggleStashVisible).
 func (w *Workspace) stashOverCover() bool {
-	return w.stashOver && !w.stashHidden && len(w.Stash) > 0 && w.cover() != 0
+	return w.stashOver != 0 && w.stashOver == w.cover() && !w.stashHidden && len(w.Stash) > 0
 }
 
 // dropStashOver ends the stash override when the focus leaves it: the
@@ -197,7 +197,7 @@ func (w *Workspace) dropStashOver() {
 	if w.stashOverCover() {
 		w.stashHidden, w.stashFocus = true, false
 	}
-	w.stashOver = false
+	w.stashOver = 0
 }
 
 // Click focuses the clicked window. A click on a tile behind the shown

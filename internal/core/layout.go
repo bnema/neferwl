@@ -193,10 +193,10 @@ type Workspace struct {
 	// hiddenFullscreen holds a stashed window's fullscreen while the stash
 	// is hidden, restored when shown.
 	hiddenFullscreen WindowID
-	// stashOver shows the stash over the covering fullscreen window, a
-	// user override (ToggleStashVisible). Focusing another window or a
-	// fullscreen change ends it.
-	stashOver bool
+	// stashOver is the covering fullscreen window the stash shows over, a
+	// user override (ToggleStashVisible); 0 without. Bound to that window,
+	// it ends with its cover. Focusing another window ends it too.
+	stashOver WindowID
 	// home is the monitor (key or connector) the workspace belongs to; ""
 	// means the one it is on. On another monitor it is a guest; homePos is
 	// its position there, where it returns.
@@ -511,6 +511,9 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 	if w.fullscreen == id {
 		w.fullscreen = 0
 	}
+	if w.stashOver == id {
+		w.stashOver = 0
+	}
 	if w.hiddenFullscreen == id {
 		w.hiddenFullscreen = 0
 	}
@@ -531,7 +534,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			w.stashAt = max(w.stashAt-1, 0)
 		}
 		if len(w.Stash) == 0 {
-			w.stashFocus, w.stashHidden = false, false
+			w.stashFocus, w.stashHidden, w.stashOver = false, false, 0
 		}
 		return
 	}
@@ -889,6 +892,9 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
+	if slices.Contains(col.Windows, w.stashOver) {
+		w.stashOver = 0
+	}
 	if slices.Contains(col.Windows, w.left) {
 		w.left = 0
 	}
@@ -1005,6 +1011,10 @@ func (w *Workspace) ToggleFullscreen() {
 	if !ok {
 		return
 	}
+	if w.stashOverCover() {
+		// A stashed window the user picked over the cover replaces it.
+		w.leaveFullscreen()
+	}
 	if w.fullscreen == id {
 		// The user was on it: it keeps the focus, in front of floats that
 		// mapped meanwhile. Cleared first, so that floats it covers drop
@@ -1014,14 +1024,14 @@ func (w *Workspace) ToggleFullscreen() {
 		w.endFullscreen()
 		return
 	}
-	w.fullscreen, w.stashOver = id, false
+	w.fullscreen = id
 	w.scroll()
 }
 
 // endFullscreen ends the fullscreen: floats it kept demoted are promoted
 // again and the view follows the focus.
 func (w *Workspace) endFullscreen() {
-	w.fullscreen, w.stashOver = 0, false
+	w.fullscreen, w.stashOver = 0, 0
 	w.reconcileFloats()
 	w.scroll()
 }
@@ -1078,11 +1088,6 @@ func (w *Workspace) SetFullscreen(id WindowID, on bool) {
 			w.endFullscreen()
 		}
 		return
-	}
-	// A repeated request of the covering window (Wine) keeps the stash the
-	// user showed over it.
-	if w.fullscreen != id {
-		w.stashOver = false
 	}
 	w.fullscreen = id
 	if !w.isFloat(id) {
@@ -1226,6 +1231,11 @@ func (w *Workspace) focusCover() {
 	if d := w.coverDialog(); d != 0 {
 		// Its dialog is on screen with the focus: the action is on it.
 		w.FocusID(d)
+		return
+	}
+	if w.stashOverCover() {
+		// The stash shown over it has the focus.
+		w.stashFocus, w.floatFocus = true, false
 		return
 	}
 	if w.isFloat(c) {
@@ -1549,13 +1559,14 @@ func (w *Workspace) Layout() []Placement {
 	appendFloats(belowTiles)
 	result = append(result, tiles...)
 	if w.stashOverCover() {
-		// The stash the user showed over a covering window tops it all.
+		// The stash the user showed over a covering window tops it, under
+		// the dialogs it may open meanwhile.
 		appendFloats(coveringFloats)
-		appendFloats(dialogs)
-		return append(result, w.stashLayout(focusedID, cover)...)
+		result = append(result, w.stashLayout(focusedID, cover)...)
+	} else {
+		result = append(result, w.stashLayout(focusedID, cover)...)
+		appendFloats(coveringFloats)
 	}
-	result = append(result, w.stashLayout(focusedID, cover)...)
-	appendFloats(coveringFloats)
 	appendFloats(dialogs)
 	return result
 }
@@ -1646,6 +1657,10 @@ func (w *Workspace) ToggleWindowStash() {
 		w.RemoveWindow(id)
 		w.restore(id, nil)
 	case w.stashIndex(id) >= 0:
+		if w.stashOverCover() {
+			// Its column would be hidden under the cover: leave it.
+			w.leaveFullscreen()
+		}
 		w.unstash(w.stashIndex(id))
 	default:
 		w.stashWindow(id)
