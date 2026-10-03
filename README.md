@@ -53,7 +53,7 @@ The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `term
 
 ## The performance path
 
-- `zwp_linux_dmabuf_v1` v4: client buffers are sampled in place. Vulkan composes into exported scanout images and the frame fence goes to KMS as `IN_FENCE_FD`. No CPU copy, no CPU wait.
+- `zwp_linux_dmabuf_v1` v6: client buffers are sampled in place. Vulkan composes into exported scanout images and the frame fence goes to KMS as `IN_FENCE_FD`. No CPU copy, no CPU wait.
 - Direct scanout of a fullscreen window's buffer; dmabuf feedback gives it a scanout-ready format first. A lone opaque window can use an overlay plane.
 - `wp_tearing_control_v1` and VRR while a fullscreen window covers the output.
 - `wp_linux_drm_syncobj_v1`: client fences go to KMS. NVIDIA drivers need it.
