@@ -9,7 +9,10 @@ import (
 
 // userActivity tells wayland the user touched an input device, at most
 // once per ports.ActivityInterval: idle notification timers restart.
+// Input also forgets the outputs unplugged while off: the user is back, so
+// they reconnect on.
 func (c *Core) userActivity(ctx context.Context) error {
+	clear(c.offGone)
 	now := time.Now()
 	if now.Sub(c.activity) < ports.ActivityInterval {
 		return nil

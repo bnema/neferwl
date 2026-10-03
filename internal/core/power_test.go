@@ -73,6 +73,64 @@ func TestOutputPower(t *testing.T) {
 	sceneOf(t, scenes, "OUT-1", func(s ports.Scene) bool { return !s.Off })
 }
 
+// An output unplugged while off (a display in deep sleep) reconnects off;
+// after input it reconnects on.
+func TestOutputReconnectedWhileOffStaysOff(t *testing.T) {
+	input, client, output, commands, scenes := powerCore(t)
+	stop := make(chan struct{})
+	defer close(stop)
+	active := make(chan struct{}, 1)
+	go func() { // core blocks on a full command channel
+		for {
+			select {
+			case c := <-commands:
+				if _, ok := c.(ports.UserActivity); ok {
+					active <- struct{}{}
+				}
+			case <-stop:
+				return
+			}
+		}
+	}()
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+	client <- ports.OutputPower{Output: "OUT-2", On: false}
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+	output <- ports.OutputRemoved{Name: "OUT-2"}
+	gone(t, scenes, "OUT-2") // no older scene can answer below
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+
+	client <- ports.OutputPower{Output: "OUT-2", On: true}
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+	client <- ports.OutputPower{Output: "OUT-2", On: false}
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return s.Off })
+	output <- ports.OutputRemoved{Name: "OUT-2"}
+	input <- ports.PointerMotion{X: 1, Y: 1}
+	select { // input and outputs are separate channels: order them
+	case <-active:
+	case <-time.After(2 * time.Second):
+		t.Fatal("input not handled")
+	}
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-2", Width: 100, Height: 80}}
+	sceneOf(t, scenes, "OUT-2", func(s ports.Scene) bool { return !s.Off })
+}
+
+// gone waits for a scene set without the named output.
+func gone(t *testing.T, scenes <-chan []ports.Scene, name string) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case set := <-scenes:
+			if !slices.ContainsFunc(set, func(s ports.Scene) bool { return s.Output == name }) {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("%s still in the scenes", name)
+		}
+	}
+}
+
 // Input reports user activity to wayland, at most once per interval.
 func TestUserActivity(t *testing.T) {
 	input, _, _, commands, _ := powerCore(t)

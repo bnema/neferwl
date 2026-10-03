@@ -79,12 +79,15 @@ type Core struct {
 	cfg             ports.Config
 	screens         []*screen
 	focusScreen     int
-	binds           map[binding]Action
-	pressed         map[string]bool
-	configures      configures
-	pointer         WindowID
-	grab            WindowID
-	buttons         map[uint32]bool
+	// offGone names outputs unplugged while turned off: a display that
+	// reconnects from deep sleep comes back off, until the next input.
+	offGone    map[string]bool
+	binds      map[binding]Action
+	pressed    map[string]bool
+	configures configures
+	pointer    WindowID
+	grab       WindowID
+	buttons    map[uint32]bool
 	// drag is the pointer drag in progress (drag.go); swallow holds the
 	// buttons whose release no client must see. mods are the modifiers
 	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
