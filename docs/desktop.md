@@ -79,6 +79,8 @@ nefercap, `grim`, recorders and screen sharing use `zwlr_screencopy_v1` and `ext
 
 NeferWL supports `ext_idle_notifier_v1` and `zwlr_output_power_management_v1`, so [swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay. A window that inhibits idle, such as a video player or a game, keeps them on.
 
+Programs that inhibit idle over D-Bus instead (browsers, Electron apps, VLC) are covered too: NeferWL serves `org.freedesktop.ScreenSaver` on the session bus. The desktop portal's `Inhibit` reaches it only through a portal backend that forwards to that name, such as `xdg-desktop-portal-gtk`; `xdg-desktop-portal-wlr` does not implement `Inhibit`. An inhibition ends when the program releases it or leaves the bus, and `SimulateUserActivity` counts as input. If another program owns the name, or the session bus is missing, NeferWL logs a warning and tries again later, so it takes over once the name is free or the bus is back.
+
 ```text
 startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 ```

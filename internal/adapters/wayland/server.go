@@ -84,6 +84,13 @@ type Channels struct {
 	OutputHeads   <-chan ports.OutputHeads
 	OutputApply   chan<- ports.OutputApply
 	OutputApplied <-chan ports.OutputApplied
+	// IdleInhibited reports whether D-Bus clients (org.freedesktop.ScreenSaver)
+	// inhibit idle; while true, it holds idle notifications like an inhibitor
+	// surface does.
+	IdleInhibited <-chan bool
+	// IdleActivity carries D-Bus SimulateUserActivity calls: idle
+	// notifications resume and restart as on input.
+	IdleActivity <-chan struct{}
 }
 
 type Server struct {
@@ -209,6 +216,8 @@ type Server struct {
 	// shortcutWindows and idleWindows what core was told.
 	inhibitors                   []*inhibitor
 	shortcutWindows, idleWindows map[ports.WindowID]bool
+	// busInhibited is the last IdleInhibited value (idle.go).
+	busInhibited bool
 	// idleNotes and powers are the idle notifications and output power
 	// objects (idle.go); outputsOff the outputs core turned off.
 	idleNotes         []*idleNotification
@@ -437,7 +446,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(14)
+	wg.Add(15)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -482,6 +491,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()
+	go func() { defer wg.Done(); s.forwardBusIdle(ctx) }()
 	go func() { defer wg.Done(); s.forwardCaptured(ctx.Done()) }()
 	if s.syncWait != nil {
 		wg.Add(1)

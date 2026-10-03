@@ -21,11 +21,12 @@ jobs:
       XDG_RUNTIME_DIR: /tmp/xdg-runtime
     steps:
       # Libraries loaded at runtime through purego; vulkan-swrast (lavapipe)
-      # gives tests a Vulkan device; gcc is for the race detector.
+      # gives tests a Vulkan device; gcc is for the race detector; dbus
+      # gives the screensaver tests a private bus.
       - run: >-
           pacman -Syu --noconfirm --needed
           git go make gcc shaderc wayland libxkbcommon libinput seatd
-          vulkan-icd-loader vulkan-swrast
+          vulkan-icd-loader vulkan-swrast dbus
       - uses: actions/checkout@v4
       - run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"

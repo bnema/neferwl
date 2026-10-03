@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"context"
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
@@ -11,8 +12,10 @@ import (
 )
 
 // Idle and output power. ext_idle_notifier_v1: each notification has its
-// own timeout, restarted by user activity (ports.UserActivity from core);
-// idle inhibitors hold every notification but input-idle ones.
+// own timeout, restarted by user activity (ports.UserActivity from core,
+// or Channels.IdleActivity from D-Bus clients); idle inhibitors, surfaces
+// or D-Bus clients (Channels.IdleInhibited), hold every notification but
+// input-idle ones.
 // zwlr_output_power_v1: a client such as wlopm turns a display off or on;
 // core decides and the scene carries it.
 
@@ -80,7 +83,46 @@ func (s *Server) addIdle(r *extidlenotify.ExtIdleNotifierV1, id, timeout uint32,
 
 // idleHeld reports whether an idle inhibitor keeps n from firing.
 func (s *Server) idleHeld(n *idleNotification) bool {
-	return !n.input && len(s.idleWindows) > 0
+	return !n.input && s.inhibited()
+}
+
+// inhibited reports whether any idle inhibitor is in effect.
+func (s *Server) inhibited() bool {
+	return len(s.idleWindows) > 0 || s.busInhibited
+}
+
+// forwardBusIdle applies D-Bus idle inhibition and simulated activity on
+// the display goroutine. A closed channel stops only its own forwarding.
+func (s *Server) forwardBusIdle(ctx context.Context) {
+	inhibited, activity := s.channels.IdleInhibited, s.channels.IdleActivity
+	for inhibited != nil || activity != nil {
+		var apply func()
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.display.Stopped():
+			return
+		case on, ok := <-inhibited:
+			if !ok {
+				inhibited = nil
+				continue
+			}
+			apply = func() {
+				wasHeld := s.inhibited()
+				s.busInhibited = on
+				s.syncIdle(wasHeld)
+			}
+		case _, ok := <-activity:
+			if !ok {
+				activity = nil
+				continue
+			}
+			apply = s.userActivity
+		}
+		if !s.display.Do(apply) {
+			return
+		}
+	}
 }
 
 // armIdle restarts n's timer, unless an inhibitor holds it. The timer
@@ -127,7 +169,7 @@ func (s *Server) userActivity() {
 // syncIdle follows idle inhibitors: while one exists, inhibitable timers
 // stop; once the last one goes, they start again from zero.
 func (s *Server) syncIdle(wasHeld bool) {
-	if held := len(s.idleWindows) > 0; held != wasHeld {
+	if held := s.inhibited(); held != wasHeld {
 		for _, n := range s.idleNotes {
 			if !n.input {
 				s.armIdle(n)

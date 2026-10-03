@@ -127,7 +127,7 @@ func (s *Server) syncInhibitors() {
 	for id, on := range diffSets(s.idleWindows, idle) {
 		s.emit(ports.IdleInhibit{Window: id, Active: on})
 	}
-	wasHeld := len(s.idleWindows) > 0
+	wasHeld := s.inhibited()
 	s.shortcutWindows, s.idleWindows = shortcuts, idle
 	s.syncIdle(wasHeld)
 }

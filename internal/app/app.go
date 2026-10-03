@@ -20,6 +20,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/sched"
+	"github.com/bnema/neferwl/internal/adapters/screensaver"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
@@ -119,6 +120,8 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	leaseEvents := make(chan ports.LeaseMessage, 32)
 	applyOutput := make(chan ports.OutputApply, 8)
 	appliedOutput := make(chan ports.OutputApplied, 8)
+	idleInhibited := make(chan bool, 1)
+	idleActivity := make(chan struct{}, 1)
 	var scales chan ports.ScaleChanged
 	if hw != nil {
 		// Only real sessions save scales: headless runs never touch the config file.
@@ -151,7 +154,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	} else {
 		captureAllow = captureallow.NewStore(captureallow.DefaultPath, captureAllowLog)
 	}
-	server, err := wayland.New(wayland.Options{CaptureAllow: captureAllow, WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput}, logging.For(ctx, "wayland"))
+	server, err := wayland.New(wayland.Options{CaptureAllow: captureAllow, WorkspaceIDs: wsIDs, Security: security, RuntimeDir: runtimeDir, DMABuf: dmabuf, SyncobjNode: renderNode(dmabuf.Device), Keymap: keymap, RepeatRate: opts.Config.Keyboard.RepeatRate, RepeatDelay: opts.Config.Keyboard.RepeatDelay}, wayland.Channels{SecurityChanges: securityChanges, SecurityEvents: securityEvents, Events: client, Commands: commands, Workspaces: workspaces, Contents: contents, Cursors: cursorChanges, Presented: presented, Captures: captures, Captured: captured, OutputFormats: outputFormats, OutputHeads: outputHeads, LeaseRequests: leaseRequests, LeaseEvents: leaseEvents, OutputApply: applyOutput, OutputApplied: appliedOutput, IdleInhibited: idleInhibited, IdleActivity: idleActivity}, logging.For(ctx, "wayland"))
 	if err != nil {
 		km.Close()
 		return err
@@ -318,6 +321,14 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	if hw != nil {
 		workers.Add(1)
 		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.seat.Run(ctx) }) }()
+		// Only a real session serves the session bus: headless runs would take
+		// the name from the desktop they run in.
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			reports := screensaver.Reports{Held: idleInhibited, Activity: idleActivity}
+			screensaver.Serve(ctx, "", reports, screensaverRetry, logging.For(ctx, "screensaver"))
+		}()
 	}
 	var result error
 	select {
@@ -349,6 +360,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	}
 	return result
 }
+
+// screensaverRetry is the first delay before the screensaver service tries
+// the session bus again: without one, only surface inhibitors count, and
+// the session goes on either way.
+const screensaverRetry = 2 * time.Second
 
 // relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates
