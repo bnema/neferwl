@@ -34,7 +34,24 @@ func registerDMABuf(d *server.Display, s *Server, sup ports.DMABufSupport) error
 	if err != nil {
 		return err
 	}
-	s.dmabuf = &dmabufGlobal{server: s, support: sup, table: table, scanout: map[string]ports.OutputFormats{}, feedbacks: map[*linuxdmabuf.ZwpLinuxDmabufFeedbackV1]*surface{}}
+	index := make(map[ports.DMABufFormat]uint16, len(sup.Formats))
+	rendererIndices := make([]byte, 2*len(sup.Formats))
+	for i, f := range sup.Formats {
+		if _, dup := index[f]; !dup {
+			index[f] = uint16(i)
+		}
+		binary.NativeEndian.PutUint16(rendererIndices[i*2:], uint16(i))
+	}
+	s.dmabuf = &dmabufGlobal{
+		server:          s,
+		support:         sup,
+		table:           table,
+		mainDev:         devBytes(sup.Device),
+		rendererIndices: rendererIndices,
+		index:           index,
+		scanout:         map[string]scanoutOffer{},
+		feedbacks:       map[*linuxdmabuf.ZwpLinuxDmabufFeedbackV1]*feedbackState{},
+	}
 	return linuxdmabuf.NewZwpLinuxDmabufV1Global(d, dmabufVersion, func(c server.Client, v, id uint32) {
 		r, err := linuxdmabuf.NewZwpLinuxDmabufV1(c, int32(v), id, s.dmabuf)
 		if err != nil || v >= 4 {
@@ -81,11 +98,42 @@ type dmabufGlobal struct {
 	support ports.DMABufSupport
 	table   *os.File
 	nextID  uint64
-	// scanout are the outputs' direct scanout formats by output name.
-	scanout map[string]ports.OutputFormats
-	// feedbacks are the live feedback objects and their surface (nil:
-	// default feedback).
-	feedbacks map[*linuxdmabuf.ZwpLinuxDmabufFeedbackV1]*surface
+	// mainDev is the renderer device, and rendererIndices the u16 table
+	// indices of every supported format: both are fixed for the server's
+	// lifetime.
+	mainDev         []byte
+	rendererIndices []byte
+	// index maps a supported format to its position in the table.
+	index map[ports.DMABufFormat]uint16
+	// scanout are the outputs' direct scanout offers by output name.
+	scanout map[string]scanoutOffer
+	// feedbacks are the live feedback objects and their state.
+	feedbacks map[*linuxdmabuf.ZwpLinuxDmabufFeedbackV1]*feedbackState
+}
+
+// scanoutOffer is an output's scanout tranche, ready to send.
+type scanoutOffer struct {
+	formats ports.OutputFormats // as reported, for change detection
+	device  []byte              // devBytes(formats.Device)
+	indices []byte              // u16 table indices of formats present in the table
+}
+
+// feedbackState is a live feedback object: its surface (nil: default
+// feedback) and whether the format table was sent to it.
+type feedbackState struct {
+	surf      *surface
+	tableSent bool
+}
+
+// offer builds the scanout tranche of an output's formats.
+func (g *dmabufGlobal) offer(f ports.OutputFormats) scanoutOffer {
+	o := scanoutOffer{formats: f, device: devBytes(f.Device)}
+	for _, format := range f.Formats {
+		if i, ok := g.index[format]; ok {
+			o.indices = binary.NativeEndian.AppendUint16(o.indices, i)
+		}
+	}
+	return o
 }
 
 func (g *dmabufGlobal) close() {
@@ -121,9 +169,10 @@ func (g *dmabufGlobal) feedback(r *linuxdmabuf.ZwpLinuxDmabufV1, id uint32, surf
 	if err != nil {
 		return
 	}
-	g.feedbacks[fb] = surf
+	st := &feedbackState{surf: surf}
+	g.feedbacks[fb] = st
 	fb.OnDestroy = func() { delete(g.feedbacks, fb) }
-	g.send(fb, surf)
+	g.send(fb, st)
 }
 
 // devBytes is a dev_t as the protocol's array.
@@ -135,47 +184,45 @@ func devBytes(dev uint64) []byte {
 
 // send sends the whole feedback: table, main device, the scanout tranche
 // when the surface has one, then the renderer tranche.
-func (g *dmabufGlobal) send(fb *linuxdmabuf.ZwpLinuxDmabufFeedbackV1, surf *surface) {
+func (g *dmabufGlobal) send(fb *linuxdmabuf.ZwpLinuxDmabufFeedbackV1, st *feedbackState) {
 	fb.SendFormatTable(int(g.table.Fd()), uint32(16*len(g.support.Formats)))
-	main := devBytes(g.support.Device)
-	fb.SendMainDevice(main)
-	if out, ok := g.scanoutFor(surf); ok {
-		var indices []byte
-		for _, f := range out.Formats {
-			if i := slices.Index(g.support.Formats, f); i >= 0 {
-				indices = binary.NativeEndian.AppendUint16(indices, uint16(i))
-			}
-		}
-		if len(indices) > 0 {
-			fb.SendTrancheTargetDevice(devBytes(out.Device))
-			fb.SendTrancheFlags(uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout))
-			fb.SendTrancheFormats(indices)
-			fb.SendTrancheDone()
-		}
+	st.tableSent = true
+	fb.SendMainDevice(g.mainDev)
+	if offer, ok := g.scanoutFor(st.surf); ok && len(offer.indices) > 0 {
+		fb.SendTrancheTargetDevice(offer.device)
+		fb.SendTrancheFlags(uint32(linuxdmabuf.ZwpLinuxDmabufFeedbackV1TrancheFlagsScanout))
+		fb.SendTrancheFormats(offer.indices)
+		fb.SendTrancheDone()
 	}
-	indices := make([]byte, 2*len(g.support.Formats))
-	for i := range g.support.Formats {
-		binary.NativeEndian.PutUint16(indices[i*2:], uint16(i))
-	}
-	fb.SendTrancheTargetDevice(main)
+	fb.SendTrancheTargetDevice(g.mainDev)
 	fb.SendTrancheFlags(0)
-	fb.SendTrancheFormats(indices)
+	fb.SendTrancheFormats(g.rendererIndices)
 	fb.SendTrancheDone()
 	fb.SendDone()
 }
 
-// scanoutFor is the scanout offer for a surface: its window is fullscreen
-// on an output that reported scanout formats.
-func (g *dmabufGlobal) scanoutFor(surf *surface) (ports.OutputFormats, bool) {
+// fullscreenOutput is the output a surface's window is visibly fullscreen
+// on, once configured.
+func (g *dmabufGlobal) fullscreenOutput(surf *surface) (string, bool) {
 	if surf == nil || surf.destroyed {
-		return ports.OutputFormats{}, false
+		return "", false
 	}
 	root := toplevelRoot(surf)
-	if g.server.invisible(surf) || root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast || !root.xdg.window.last.Fullscreen {
-		return ports.OutputFormats{}, false
+	if root.xdg == nil || root.xdg.window == nil || !root.xdg.window.hasLast || !root.xdg.window.last.Fullscreen || g.server.invisible(surf) {
+		return "", false
 	}
-	out, ok := g.scanout[root.xdg.window.last.Output]
-	return out, ok && len(out.Formats) > 0
+	return root.xdg.window.last.Output, true
+}
+
+// scanoutFor is the scanout offer for a surface: its window is fullscreen
+// on an output that reported scanout formats.
+func (g *dmabufGlobal) scanoutFor(surf *surface) (scanoutOffer, bool) {
+	out, ok := g.fullscreenOutput(surf)
+	if !ok {
+		return scanoutOffer{}, false
+	}
+	offer, ok := g.scanout[out]
+	return offer, ok
 }
 
 // setOutputFormats records an output's scanout formats and sends the
@@ -183,19 +230,19 @@ func (g *dmabufGlobal) scanoutFor(surf *surface) (ports.OutputFormats, bool) {
 // formats the renderer samples (a refused buffer is composed), so they
 // are all in the table.
 func (g *dmabufGlobal) setOutputFormats(f ports.OutputFormats) {
-	if old, ok := g.scanout[f.Output]; ok && old.Device == f.Device && slices.Equal(old.Formats, f.Formats) {
+	if old, ok := g.scanout[f.Output]; ok && old.formats.Device == f.Device && slices.Equal(old.formats.Formats, f.Formats) {
 		return
 	}
 	if len(f.Formats) == 0 {
 		delete(g.scanout, f.Output)
 	} else {
-		g.scanout[f.Output] = f
+		// Offers without table indices are kept, so repeated reports
+		// stay deduplicated.
+		g.scanout[f.Output] = g.offer(f)
 	}
-	for fb, surf := range g.feedbacks {
-		if surf != nil && !surf.destroyed {
-			if root := toplevelRoot(surf); root.xdg != nil && root.xdg.window != nil && root.xdg.window.last.Fullscreen && root.xdg.window.last.Output == f.Output {
-				g.send(fb, surf)
-			}
+	for fb, st := range g.feedbacks {
+		if out, ok := g.fullscreenOutput(st.surf); ok && out == f.Output {
+			g.send(fb, st)
 		}
 	}
 }
@@ -206,10 +253,10 @@ func (g *dmabufGlobal) resendSurface(root *surface) {
 	if g == nil {
 		return
 	}
-	for fb, surf := range g.feedbacks {
+	for fb, st := range g.feedbacks {
 		// Popups follow their toplevel's offer (scanoutFor).
-		if surf != nil && toplevelRoot(surf) == root {
-			g.send(fb, surf)
+		if st.surf != nil && toplevelRoot(st.surf) == root {
+			g.send(fb, st)
 		}
 	}
 }
