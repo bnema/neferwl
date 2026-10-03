@@ -835,16 +835,15 @@ func (m *Monitor) overviewAt(x, y float64) WindowID {
 // overviewClick closes the overview on the preview under the pointer, on
 // the output it shows on. picked is false when no preview is there.
 func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
-	o, ok := c.layout().At(c.cursorX, c.cursorY)
-	if !ok {
+	i := c.screenAt(c.cursorX, c.cursorY)
+	if i < 0 {
 		return false, nil
 	}
-	i := c.screenIndex(o.Info.Name)
 	sc := c.screens[i]
 	if !sc.mon.ov.open {
 		return false, nil
 	}
-	id := sc.mon.overviewAt(c.cursorX-float64(o.X), c.cursorY-float64(o.Y))
+	id := sc.mon.overviewAt(c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
 	if id == 0 {
 		return false, nil
 	}

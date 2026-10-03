@@ -909,12 +909,12 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if c.security.Protected {
 		return c.lockHit(x, y)
 	}
-	o, ok := c.layout().At(x, y)
-	if !ok {
+	i := c.screenAt(x, y)
+	if i < 0 {
 		return 0, 0, 0
 	}
-	lx, ly := x-float64(o.X), y-float64(o.Y)
-	sc := c.screens[c.screenIndex(o.Info.Name)]
+	sc := c.screens[i]
+	lx, ly := x-float64(sc.x), y-float64(sc.y)
 	// Layer popups are over everything; window popups are over the windows
 	// only, under the top and overlay layers (as drawn).
 	if id, px, py := c.popupAt(sc, lx, ly, true); id != 0 {
@@ -1191,7 +1191,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.layerChanged {
 					c.setLayers(c.allLayers())
 				}
-				c.cursorX, c.cursorY = c.layout().Clamp(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
+				c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			}
 			if c.workspaceVisible(ctx, false) != nil {
 				return nil

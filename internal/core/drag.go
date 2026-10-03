@@ -269,13 +269,13 @@ func (c *Core) abortDrag() {
 
 // dropAt is the drop target under the global point x, y.
 func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
-	o, ok := c.layout().At(x, y)
-	if !ok {
+	i := c.screenAt(x, y)
+	if i < 0 {
 		return dropTarget{}
 	}
-	sc := c.screens[c.screenIndex(o.Info.Name)]
+	sc := c.screens[i]
 	m := sc.mon
-	lx, ly := int(x)-o.X, int(y)-o.Y
+	lx, ly := int(x)-sc.x, int(y)-sc.y
 	w := m.Current()
 	if m.ov.open || w.pinned() || !m.frameHas(float64(lx), float64(ly)) {
 		return dropTarget{}
@@ -514,15 +514,16 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 // tile drag moves the pointer against its usable edge. It reports whether
 // the view moved.
 func (c *Core) edgeScroll(timeMsec uint32) bool {
-	o, ok := c.layout().At(c.cursorX, c.cursorY)
-	if !ok || timeMsec-c.drag.scrolled < edgeScrollMsec && c.drag.scrolled != 0 {
+	i := c.screenAt(c.cursorX, c.cursorY)
+	if i < 0 || timeMsec-c.drag.scrolled < edgeScrollMsec && c.drag.scrolled != 0 {
 		return false
 	}
-	w := c.screens[c.screenIndex(o.Info.Name)].mon.Current()
+	sc := c.screens[i]
+	w := sc.mon.Current()
 	if w.Overflow == OverflowFixed || len(w.Columns) == 0 || w.pinned() {
 		return false
 	}
-	lx := int(c.cursorX) - o.X
+	lx := int(c.cursorX) - sc.x
 	dir := 0
 	switch {
 	case lx < w.Usable.X+edgeScroll:
