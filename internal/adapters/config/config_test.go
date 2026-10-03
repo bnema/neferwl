@@ -651,42 +651,37 @@ func TestOutputRelationOverride(t *testing.T) {
 }
 
 func TestOutputRelationWarnings(t *testing.T) {
+	const rangeMsg = "must be an integer between -65536 and 65536"
+	rel := "output.DP-2.right-of = DP-1\n"
 	cases := []struct {
-		name, text, want string
-		line             int
-		anchored         []string // outputs that keep a relation
+		name, text string
+		want       []string // expected warning messages (substring), in order
+		lines      []int    // expected warning lines, in order
+		anchored   []string // outputs that keep a relation
 	}{
-		{"self", "output.DP-2.right-of = DP-2", "relative to itself", 1, nil},
-		{"empty", "output.DP-2.above =", "expected an output name", 1, nil},
-		{"bad offset", "output.DP-2.right-of = DP-1\noutput.DP-2.offset = abc", "must be an integer", 2, []string{"DP-2"}},
-		{"offset alone", "output.DP-2.offset = 10", "without a relation", 1, nil},
-		{"two cycle", "output.A.right-of = B\noutput.B.below = A", "relation cycle", 1, nil},
-		{"three cycle", "output.A.right-of = B\noutput.B.right-of = C\noutput.C.above = A", "relation cycle", 1, nil},
-		{"tail into cycle", "output.A.right-of = B\noutput.B.right-of = A\noutput.C.left-of = A", "relation cycle", 1, []string{"C"}},
+		{"self", "output.DP-2.right-of = DP-2", []string{"relative to itself"}, []int{1}, nil},
+		{"empty", "output.DP-2.above =", []string{"expected an output name"}, []int{1}, nil},
+		{"bad offset", rel + "output.DP-2.offset = abc", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset too large", rel + "output.DP-2.offset = 65537", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset too small", rel + "output.DP-2.offset = -65537", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset overflow", rel + "output.DP-2.offset = 99999999999999999999", []string{rangeMsg}, []int{2}, []string{"DP-2"}},
+		{"offset alone", "output.DP-2.offset = 10", []string{"without a relation"}, []int{1}, nil},
+		{"two cycle", "output.A.right-of = B\noutput.B.below = A", []string{"relation cycle", "relation cycle"}, []int{1, 2}, nil},
+		{"three cycle", "output.A.right-of = B\noutput.B.right-of = C\noutput.C.above = A", []string{"relation cycle", "relation cycle", "relation cycle"}, []int{1, 2, 3}, nil},
+		{"tail into cycle", "output.A.right-of = B\noutput.B.right-of = A\noutput.C.left-of = A", []string{"relation cycle", "relation cycle"}, []int{1, 2}, []string{"C"}},
+		{"relation overridden twice", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C", []string{"overrides line 1", "overrides line 2"}, []int{2, 3}, []string{"DP-2"}},
+		{"relation overridden three times", "output.DP-2.right-of = A\noutput.DP-2.below = B\noutput.DP-2.right-of = C\noutput.DP-2.below = D", []string{"overrides line 1", "overrides line 2", "overrides line 3"}, []int{2, 3, 4}, []string{"DP-2"}},
+		{"same relation twice", "output.DP-2.below = A\noutput.DP-2.below = B", []string{"overrides line 1"}, []int{2}, []string{"DP-2"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			c, w := parseString(t, tc.text)
-			if len(w) == 0 || w[len(w)-1].Line == 0 {
-				t.Fatalf("warnings %v", w)
+			if len(w) != len(tc.want) {
+				t.Fatalf("warnings %v, want %q", w, tc.want)
 			}
-			n := 0
-			for _, x := range w {
-				if strings.Contains(x.Msg, tc.want) {
-					n++
-				}
-			}
-			cycle := strings.Contains(tc.want, "cycle")
-			if n == 0 || (!cycle && len(w) != 1) || w[0].Line != tc.line {
-				t.Fatalf("warnings %v, want %q at line %d", w, tc.want, tc.line)
-			}
-			if cycle {
-				members := strings.Count(tc.text, "\n") + 1
-				if tc.name == "tail into cycle" {
-					members = 2
-				}
-				if n != members {
-					t.Fatalf("%d cycle warnings, want %d: %v", n, members, w)
+			for i, x := range w {
+				if !strings.Contains(x.Msg, tc.want[i]) || x.Line != tc.lines[i] {
+					t.Fatalf("warning %d = %+v, want %q at line %d (all: %v)", i, x, tc.want[i], tc.lines[i], w)
 				}
 			}
 			var got []string
@@ -699,6 +694,17 @@ func TestOutputRelationWarnings(t *testing.T) {
 				t.Fatalf("anchored %v, want %v: %+v", got, tc.anchored, c.Outputs)
 			}
 		})
+	}
+}
+
+func TestOutputOffsetKeepsEarlierValueWhenInvalid(t *testing.T) {
+	c, _ := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 40\noutput.DP-2.offset = 65537\n")
+	if got := c.Outputs[0].Anchor.Offset; got != 40 {
+		t.Fatalf("offset %d, want 40", got)
+	}
+	c, w := parseString(t, "output.DP-2.right-of = DP-1\noutput.DP-2.offset = 65536\noutput.DP-2.offset = -65536\n")
+	if len(w) != 1 || c.Outputs[0].Anchor.Offset != -65536 {
+		t.Fatalf("%v %+v", w, c.Outputs)
 	}
 }
 

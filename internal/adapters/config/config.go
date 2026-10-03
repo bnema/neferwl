@@ -224,6 +224,10 @@ func Load(path string) (ports.Config, []Warning, error) {
 	return Parse(f)
 }
 
+// maxOutputOffset bounds output.<name>.offset (logical px), far beyond any
+// real layout but small enough that placement arithmetic cannot overflow.
+const maxOutputOffset = 65536
+
 // outputRelation splits "<output>.right-of" (left-of, above, below) into the
 // relation and the output name.
 func outputRelation(name string) (ports.OutputRelation, string, bool) {
@@ -384,8 +388,8 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			if base, ok := strings.CutSuffix(name, ".offset"); ok {
 				name = base
 				off, err := strconv.Atoi(value)
-				if err != nil {
-					warn("%s: must be an integer", key)
+				if err != nil || off < -maxOutputOffset || off > maxOutputOffset {
+					warn("%s: must be an integer between -%d and %d", key, maxOutputOffset, maxOutputOffset)
 					continue
 				}
 				override()
@@ -406,6 +410,10 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 				if prev, ok := relKeys[name]; ok && prev != key {
 					warn("%s: overrides line %d (%s)", key, seen[prev], prev)
 					delete(raw, prev)
+					// Stale lines of the other relation keys must not trigger a
+					// second override warning from override() or a later switch.
+					delete(seen, prev)
+					delete(seen, key)
 				}
 				override()
 				relKeys[name] = key
