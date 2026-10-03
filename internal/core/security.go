@@ -186,7 +186,7 @@ func (c *Core) publishProtected(ctx context.Context) error {
 	for _, sc := range c.screens {
 		c.seq++
 		o := sc.mon.Output()
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Off: sc.off, Background: "#000000"}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: "#000000"}
 		if s, ok := c.lockSurface(sc); ok {
 			scene.Windows = []ports.SceneWindow{{ID: s.ID, Rect: Rect{W: o.W, H: o.H}, Fullscreen: true, Focused: s.ID == focus}}
 		}

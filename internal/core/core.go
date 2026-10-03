@@ -282,7 +282,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	for _, s := range c.screens {
 		c.settings(s.mon)
 	}
-	c.applyConfigScales()
+	c.applyOutputConfig()
 	return nil
 }
 
@@ -549,7 +549,7 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {

@@ -1409,3 +1409,97 @@ func TestPoweredOffScreenStaysNeighbor(t *testing.T) {
 		t.Fatalf("focus-monitor-right: %s, want the powered-off DP-2", got)
 	}
 }
+
+func TestRotatedOutputLayout(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{{Name: left.Name, Transform: 1}}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	if len(out.Outputs) != 2 {
+		t.Fatalf("%+v", out.Outputs)
+	}
+	if o := out.Outputs[0]; o.Info.Name != "DP-1" || o.Width != 100 || o.Height != 200 || o.Transform != 1 {
+		t.Fatalf("DP-1: %+v", o)
+	}
+	if o := out.Outputs[1]; o.Info.Name != "DP-2" || o.X != 100 || o.Width != 400 || o.Height != 200 || o.Transform != 0 {
+		t.Fatalf("DP-2: %+v", o)
+	}
+	r.mapWindow(t, 1)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	for _, s := range set {
+		switch s.Output {
+		case "DP-1":
+			if s.OutputWidth != 100 || s.OutputHeight != 200 || s.Transform != 1 {
+				t.Fatalf("DP-1 scene: %dx%d t=%d", s.OutputWidth, s.OutputHeight, s.Transform)
+			}
+		case "DP-2":
+			if s.OutputWidth != 400 || s.OutputHeight != 200 || s.Transform != 0 {
+				t.Fatalf("DP-2 scene: %dx%d t=%d", s.OutputWidth, s.OutputHeight, s.Transform)
+			}
+		}
+	}
+}
+
+func TestRotatedOutputNeighbor(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Outputs = []ports.OutputConfig{
+			{Name: "DP-1", Transform: 1},
+			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
+		}
+	}, left, right)
+	out := lastOutputs(t, r.commands)
+	if o := out.Outputs[1]; o.Info.Name != "DP-2" || o.Y != 200 {
+		t.Fatalf("DP-2: %+v", o)
+	}
+	r.mapWindow(t, 1)
+	r.key(t, "Down", ports.ModAlt|ports.ModCtrl)
+	if got := lastOutputs(t, r.commands).Focused; got != "DP-2" {
+		t.Fatalf("focus-monitor-down: %s", got)
+	}
+}
+
+func TestTransformReload(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Binds["Alt+equal"] = "scale-up"
+		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+	}, left, right)
+	// Scale DP-2 (focus follows the key to it) with the bind first.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	set := r.key(t, "equal", ports.ModAlt)
+	scale := set[1].Scale
+	if scale == 1 {
+		t.Fatal("scale-up did not change the scale")
+	}
+	if out := lastOutputs(t, r.commands); out.Outputs[0].Width != 200 || out.Outputs[1].X != 200 {
+		t.Fatalf("%+v", out.Outputs)
+	}
+
+	r.cfg.Outputs[0].Transform = 1
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	set = receive(t, r.scenes)
+	out := lastOutputs(t, r.commands)
+	if o := out.Outputs[0]; o.Width != 100 || o.Height != 200 || o.Transform != 1 {
+		t.Fatalf("DP-1: %+v", o)
+	}
+	if o := out.Outputs[1]; o.X != 100 {
+		t.Fatalf("DP-2 not re-placed: %+v", o)
+	}
+	if set[1].Scale != scale || out.Outputs[1].Scale != scale {
+		t.Fatalf("scale %v changed to %v by a transform reload", scale, set[1].Scale)
+	}
+
+	// A transform change on the scaled output itself keeps its live scale.
+	r.cfg.Outputs[1].Transform = 1
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	set = receive(t, r.scenes)
+	if set[1].Scale != scale || set[1].Transform != 1 {
+		t.Fatalf("scale %v transform %d", set[1].Scale, set[1].Transform)
+	}
+	// Back to normal.
+	r.cfg.Outputs[0].Transform = 0
+	r.reload <- ports.ConfigChanged{Config: r.cfg}
+	_ = receive(t, r.scenes)
+	if o := lastOutputs(t, r.commands).Outputs[0]; o.Width != 200 || o.Transform != 0 {
+		t.Fatalf("DP-1: %+v", o)
+	}
+}
