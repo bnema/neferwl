@@ -73,7 +73,9 @@ func TestCursorResyncIsNotMotion(t *testing.T) {
 	r.now = r.now.Add(3 * time.Second)
 	r.cur.EXPECT().Move(2.0, 2.0).Once()
 	r.c.move("A", 2, 2, false)
-	r.idleHide() // 5s after the last motion, not 2s after the resync
+	r.now = r.now.Add(2 * time.Second)
+	r.cur.EXPECT().Hide().Once()
+	r.fire() // 5s after the last motion, only 2s after the resync
 	r.c.move("A", 3, 3, false)
 }
 
