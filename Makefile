@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch check perf-check bin tty logs pkg install
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch check perf-check color-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -62,6 +62,11 @@ arch:
 perf-check:
 	CGO_ENABLED=0 go test ./internal/app ./internal/adapters/drm ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestOutputRoutingAllocations|TestReportSeenAllocations|TestFrameLifecycleTransitionsAllocations|TestFullscreenShownAllocations|TestFrameDecisionAllocations|TestCommitFrameAllocations|TestColorPipelineAllocations|TestShownBySnapshotAllocations|TestDueFramesAllocations|TestRenderSteadyStateAllocations|TestAccountFlipAllocations|TestFlipDoneAllocations|TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestCapturedCommitApplyAllocations|TestCapturedViewportApplyAllocations|TestEffectiveInputEmptyTreeAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget)$$' -count=1
 check: vet test arch fakes-check log-check perf-check
+
+# On-demand SDR/HDR colour check with examples/testpattern on a headless
+# NeferWL. Needs a GPU and /dev/udmabuf; not part of check.
+color-check:
+	CGO_ENABLED=0 go test -tags colorcheck ./internal/app -run '^TestColorCheck' -count=1 -v
 
 # Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
 # come from the module proxy in prepare(); the build itself runs offline.

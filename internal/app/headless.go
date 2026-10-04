@@ -11,20 +11,36 @@ import (
 	"github.com/bnema/zerowrap"
 )
 
+// headlessOptions are the settings of the virtual outputs.
+type headlessOptions struct {
+	sizes [][2]int
+	shots string
+	hdr   bool
+	raw   bool // also write latest-pq.png (headless.Options.RawHDR)
+}
+
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output. Modes
 // are fixed, so apply answers every configuration without backend work.
-func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+//
+// The raw PQ dump (o.raw) needs readable HDR targets, set on these
+// renderers only: the DRM path never reads them back.
+//
+// Virtual outputs have no display to list modifiers, so each renderer is
+// told it drives one (vulkan.Renderer.SetVirtualOutput); without it a real
+// GPU refuses the HDR targets and the output falls back to SDR.
+func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+	newRenderer = virtualRenderer(newRenderer, o.raw)
 	set := newOutputSet(ctx, ch.captured)
 	set.wireSecurity(ch)
 	inventory := ports.OutputHeads{}
-	for i, size := range sizes {
+	for i, size := range o.sizes {
 		name := fmt.Sprintf("HEADLESS-%d", i+1)
 		mode := ports.OutputMode{Width: size[0], Height: size[1], RefreshMilli: 60000, Preferred: true}
 		inventory.Heads = append(inventory.Heads, ports.OutputHead{Info: ports.OutputInfo{Name: name, Width: size[0], Height: size[1], RefreshMilli: 60000}, Modes: []ports.OutputMode{mode}, Current: &mode, Enabled: true})
-		dir := shots
-		if dir != "" && len(sizes) > 1 {
-			dir = filepath.Join(shots, name)
+		dir := o.shots
+		if dir != "" && len(o.sizes) > 1 {
+			dir = filepath.Join(o.shots, name)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				// Outputs already started stop and release their captures.
 				return joinErr(err, set.wait())
@@ -32,7 +48,7 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 		}
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: hdr, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
+		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
 		started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, secure, instance
 			return headless.Run(octx, opts, sc, cc, cu, cap)
@@ -52,7 +68,7 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 	}
 	apply.heads(inventory)
 	// The pointer starts centred on the first output, like libinput's.
-	curs.move("HEADLESS-1", float64(sizes[0][0])/2, float64(sizes[0][1])/2, false)
+	curs.move("HEADLESS-1", float64(o.sizes[0][0])/2, float64(o.sizes[0][1])/2, false)
 	for {
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
@@ -97,6 +113,25 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 			err := set.finish(stopped.name)
 			return joinErr(err, set.wait())
 		}
+	}
+}
+
+// virtualRenderer wraps a renderer factory for headless outputs. Vulkan is
+// the only implementation of these settings; they are not on the port.
+// readback makes the HDR targets readable (HDRPixels).
+func virtualRenderer(newRenderer func(w, h int) (ports.Renderer, error), readback bool) func(w, h int) (ports.Renderer, error) {
+	return func(w, h int) (ports.Renderer, error) {
+		r, err := newRenderer(w, h)
+		if err != nil {
+			return nil, err
+		}
+		if v, ok := r.(interface{ SetVirtualOutput(bool) }); ok {
+			v.SetVirtualOutput(true)
+		}
+		if v, ok := r.(interface{ SetHDRReadback(bool) }); ok && readback {
+			v.SetHDRReadback(true)
+		}
+		return r, nil
 	}
 }
 

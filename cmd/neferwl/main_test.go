@@ -23,6 +23,8 @@ func TestExitCodes(t *testing.T) {
 		{[]string{"neferwl", "--help"}, 0},
 		{[]string{"neferwl", "--backend=invalid"}, 2},
 		{[]string{"neferwl", "--backend=drm", "--screenshot=/tmp/shots"}, 2},
+		{[]string{"neferwl", "--backend=headless", "--screenshot=/tmp/shots", "--screenshot-raw"}, 2},
+		{[]string{"neferwl", "--backend=headless", "--headless-hdr", "--screenshot-raw"}, 2},
 		{[]string{"neferwl", "--timeout=-1s"}, 2},
 		{[]string{"neferwl", "extra"}, 2},
 		{[]string{"neferwl", "--config=/nonexistent/neferwl.conf"}, 1},

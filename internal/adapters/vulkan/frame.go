@@ -310,6 +310,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	tg.hold(s, dmg)
 	r.damageDrawn = oldWindows
 	r.last = tg
+	if hdr {
+		r.lastHDRTarget = r.current
+	}
 	r.dropUnused()
 	r.dropShm()
 	if !r.syncFD {

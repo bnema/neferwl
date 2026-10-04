@@ -162,6 +162,7 @@ func run() error {
 	noTerminal := flags.Bool("no-terminal", false, "skip initial terminal")
 	noXwayland := flags.Bool("no-xwayland", false, "no X11 display for X11 apps")
 	headlessHDR := flags.Bool("headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
+	screenshotRaw := flags.Bool("screenshot-raw", false, "test-only: also write latest-pq.png, the raw PQ codes of an HDR output")
 	timeout := flags.Duration("timeout", 0, "duration before exit (0 disables timeout)")
 	debugFlag := flags.String("debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion and input-keys, which log every flip, pointer motion or key)")
 	configFlag := flags.String("config", "", "config path (empty uses XDG default)")
@@ -183,6 +184,11 @@ func run() error {
 	}
 	if *screenshot != "" && *backend != "headless" {
 		err := usageError{fmt.Errorf("--screenshot requires --backend=headless")}
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+	if *screenshotRaw && (*screenshot == "" || !*headlessHDR) {
+		err := usageError{fmt.Errorf("--screenshot-raw requires --screenshot and --headless-hdr")}
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
@@ -275,7 +281,7 @@ func run() error {
 	for _, w := range warnings {
 		configLog.Warn().Int("line", w.Line).Msg(w.Msg)
 	}
-	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, HeadlessHDR: *headlessHDR, Session: *session, ScreenshotDir: *screenshot, Sizes: sizes, Script: script})
+	err = app.Run(ctx, app.Options{Backend: *backend, Config: cfg, ConfigPath: path, Timeout: *timeout, NoTerminal: *noTerminal, NoXwayland: *noXwayland, HeadlessHDR: *headlessHDR, Session: *session, ScreenshotDir: *screenshot, ScreenshotRaw: *screenshotRaw, Sizes: sizes, Script: script})
 	// SIGINT and SIGTERM cancel the context and are clean exits.
 	if err != nil && ctx.Err() != nil && errors.Is(err, context.Canceled) {
 		err = nil

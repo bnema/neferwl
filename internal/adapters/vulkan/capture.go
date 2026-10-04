@@ -508,6 +508,60 @@ func (r *Renderer) debugCapture() (*captureFrame, error) {
 	return f, nil
 }
 
+// readHDRTarget copies the exported PQ target last rendered (XRGB2101010
+// words, one per pixel) through a free capture slot and waits for the GPU.
+// Exported targets are transfer sources only when hdrReadback is set; it
+// errors when there is no HDR frame to read, every slot is leased or the
+// copy fails. read gets the words in the slot's mapped memory, valid only
+// during the call: copy what must outlive it.
+func (r *Renderer) readHDRTarget(read func(words []uint32)) error {
+	switch {
+	case r.device == 0 || r.dd == nil:
+		return errors.New("renderer closed")
+	case r.hdrNits == 0 || !r.hdrReadback:
+		return errors.New("HDR readback not enabled")
+	case r.lastHDRTarget < 0 || r.lastHDRTarget >= len(r.targets):
+		return errors.New("no exported HDR target")
+	case r.last != &r.hdrOwn:
+		return errors.New("no HDR frame rendered")
+	case r.submitted != r.frame:
+		return errors.New("last frame not submitted")
+	}
+	if err := r.waitFrame(r.submitted); err != nil {
+		return err
+	}
+	if err := r.createCaptureSlots(); err != nil {
+		return err
+	}
+	slot, err := r.freeCapture()
+	if err != nil {
+		return err
+	}
+	if slot == nil {
+		return ports.ErrCaptureBusy
+	}
+	target := r.targets[r.lastHDRTarget]
+	err = r.oneShot(func(cmd vk.CommandBuffer) {
+		d := r.dd
+		// Acquire from the display, copy, release back.
+		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: target.image, SubresourceRange: colorRange}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
+		d.CmdCopyImageToBuffer(cmd, target.image, vk.ImageLayoutTransferSrcOptimal, slot.buffer, 1, &region)
+		hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: slot.buffer, Size: wholeSize}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
+		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
+		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
+		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+	})
+	if err != nil {
+		return err
+	}
+	read(unsafe.Slice((*uint32)(slot.mapped), r.width*r.height))
+	return nil
+}
+
 // recordCaptureCopy copies image t (in layout) into the slot's buffer.
 // Exported targets are borrowed from the display without a layout
 // change: the display may be reading them at the same time.

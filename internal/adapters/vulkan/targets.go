@@ -47,7 +47,8 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
 	r.dropTargets()
 	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.physical != 0 {
-		// Test-only transfer-source targets have different format requirements.
+		// Readback targets (GPU tests, headless --screenshot-raw) are also
+		// transfer sources, which changes the format requirements.
 		r.hdrMods = r.probeModifiers(r.physical, vk.FormatA2r10g10b10UnormPack32)
 	}
 	if n > 0 && r.hdrNits > 0 && r.hdr.pipeline == 0 {
@@ -85,6 +86,11 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	return out, nil
 }
 
+// SetVirtualOutput marks the output as having no display (headless): an
+// empty display modifier list then accepts every exportable HDR modifier,
+// as it does for SDR. DRM never sets it. Call before ExportTargets.
+func (r *Renderer) SetVirtualOutput(on bool) { r.virtual = on }
+
 // UseTarget selects the exported image the next frames draw into.
 func (r *Renderer) UseTarget(i int) {
 	if i >= 0 && i < len(r.targets) {
@@ -101,7 +107,8 @@ func (r *Renderer) target() *target {
 }
 
 // exportModifiers intersects the selected signal format modifiers with
-// those supported by the display. HDR never assumes an unspecified list.
+// those supported by the display. HDR never assumes an unspecified list,
+// except for a virtual output (no display) or a test readback.
 func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 	var out []uint64
 	available := r.renderMods
@@ -109,7 +116,7 @@ func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 		available = r.hdrMods
 	}
 	for _, m := range available {
-		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback)) || slices.Contains(display, m) {
+		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback || r.virtual)) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
 	}
@@ -122,6 +129,9 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	r.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
 }
 
+// probeModifiers lists the single-plane, exportable modifiers of format that
+// support the target usage. HDR targets need transfer-src only when
+// hdrReadback is set (GPU tests, headless --screenshot-raw; never DRM).
 func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
 	fp := vk.FormatProperties2{SType: vk.StructureTypeFormatProperties2, Next: unsafe.Pointer(&list)}
@@ -139,7 +149,8 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 		need |= formatFeatureTransferSrc
 	}
 	var result []uint64
-	// SDR targets are composed and read back; HDR targets are color attachments.
+	// SDR targets are composed and read back; HDR targets are color
+	// attachments, and transfer sources only with hdrReadback.
 	for _, m := range mods[:list.DrmFormatModifierCount] {
 		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, format, m.DrmFormatModifier) {
 			result = append(result, m.DrmFormatModifier)
@@ -262,5 +273,6 @@ func (r *Renderer) dropTargets() {
 		}
 		r.freeTarget(t)
 	}
-	r.targets, r.current = nil, 0
+	// New targets hold no HDR frame until the next Render.
+	r.targets, r.current, r.lastHDRTarget = nil, 0, -1
 }

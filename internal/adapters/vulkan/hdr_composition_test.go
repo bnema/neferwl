@@ -6,7 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
@@ -20,7 +19,7 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 	}
 	t.Cleanup(r.Close)
 	r.SetHDR(203)
-	r.hdrReadback = true
+	r.SetHDRReadback(true)
 	if r.physical == 0 {
 		t.Skip("no exportable GPU")
 	}
@@ -40,34 +39,11 @@ func hdrTestRenderer(t *testing.T) *Renderer {
 // not transfer-src), staging through a capture slot's buffer.
 func pqTargetWords(t *testing.T, r *Renderer) []uint32 {
 	t.Helper()
-	if err := r.waitFrame(r.submitted); err != nil {
+	var words []uint32
+	if err := r.readHDRTarget(func(w []uint32) { words = slices.Clone(w) }); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.createCaptureSlots(); err != nil {
-		t.Fatal(err)
-	}
-	slot := r.captures[0]
-	if slot.leased {
-		t.Fatal("capture slot 0 leased")
-	}
-	target := r.targets[0]
-	err := r.oneShot(func(cmd vk.CommandBuffer) {
-		d := r.dd
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: vk.ImageLayoutGeneral, NewLayout: vk.ImageLayoutTransferSrcOptimal, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: target.image, SubresourceRange: colorRange}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTopOfPipeBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
-		region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-		d.CmdCopyImageToBuffer(cmd, target.image, vk.ImageLayoutTransferSrcOptimal, slot.buffer, 1, &region)
-		hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: slot.buffer, Size: wholeSize}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
-		b.SrcAccessMask, b.DstAccessMask = vk.AccessTransferReadBit, 0
-		b.OldLayout, b.NewLayout = vk.ImageLayoutTransferSrcOptimal, vk.ImageLayoutGeneral
-		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return unsafe.Slice((*uint32)(slot.mapped), r.width*r.height)
+	return words
 }
 
 func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
@@ -76,13 +52,14 @@ func hdrTargetAt(t *testing.T, r *Renderer, x, y int) [3]float64 {
 	return [3]float64{float64(pixel>>20&1023) / 1023, float64(pixel>>10&1023) / 1023, float64(pixel&1023) / 1023}
 }
 
-func TestHDRWindowedComposition(t *testing.T) {
-	r := hdrTestRenderer(t)
+// hdrPQScene is a 64×16 XR30 udmabuf client holding 1000-nit neutral, red
+// and blue BT.2020 thirds (x/20), drawn full-output.
+func hdrPQScene(t *testing.T, r *Renderer) (ports.Scene, map[ports.WindowID]ports.SurfaceContent, [3][3]float64) {
+	t.Helper()
 	format := ports.DMABufFormat{Format: fourcc('X', 'R', '3', '0'), Modifier: 0}
 	if !slices.Contains(r.DMABuf().Formats, format) {
 		t.Skip("linear XR30 import unavailable")
 	}
-	// 1000-nit neutral, red and blue BT.2020 client pixels.
 	nits := [3][3]float64{{1000, 1000, 1000}, {1000, 0, 0}, {0, 0, 1000}}
 	f := udmabuf(t, 64, 16, func(x, _ int) [4]byte {
 		v := nits[min(x/20, 2)]
@@ -93,7 +70,117 @@ func TestHDRWindowedComposition(t *testing.T) {
 	buf := &ports.DMABuf{ID: 2020, Width: 64, Height: 16, Format: format.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
 	c := ports.SurfaceContent{ID: 1, Seq: 1, Width: 64, Height: 16, LogicalW: 64, LogicalH: 16, Opaque: true, DMABuf: buf, Color: ports.SurfaceColor{TF: ports.ColorTFPQ, Primaries: ports.ColorPrimariesBT2020}}
 	scene := ports.Scene{Seq: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 16}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
+	return scene, map[ports.WindowID]ports.SurfaceContent{1: c}, nits
+}
+
+// HDRPixels returns the exported PQ target's codes scaled to 16 bits, and
+// nothing on an SDR renderer.
+func TestHDRPixels(t *testing.T) {
+	r := hdrTestRenderer(t)
+	if r.HDRPixels() != nil {
+		t.Fatal("HDRPixels before any frame")
+	}
+	scene, contents, nits := hdrPQScene(t, r)
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	img := r.HDRPixels()
+	if img == nil {
+		t.Fatal("HDRPixels nil after an HDR frame")
+	}
+	if img.Bounds() != image.Rect(0, 0, 64, 16) {
+		t.Fatalf("bounds %v", img.Bounds())
+	}
+	for i, v := range nits {
+		x := i*20 + 5
+		got := img.RGBA64At(x, 8)
+		raw := hdrTargetAt(t, r, x, 8) // code/1023, the same words
+		for ch, c := range []uint16{got.R, got.G, got.B} {
+			code := uint32(math.Round(raw[ch] * 1023))
+			if want := uint16(code<<6 | code>>4); c != want {
+				t.Errorf("sample %d channel %d: %#04x want %#04x", i, ch, c, want)
+			}
+			if d := math.Abs(float64(c)/65535 - pqEncode(v[ch])); d > .012 {
+				t.Errorf("sample %d channel %d: %.4f want %.4f", i, ch, float64(c)/65535, pqEncode(v[ch]))
+			}
+		}
+		if got.A != 0xffff {
+			t.Errorf("sample %d alpha %#04x", i, got.A)
+		}
+	}
+	// An HDR virtual output without SetHDRReadback has no readable target.
+	plain, err := New(64, 16)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer plain.Close()
+	plain.SetHDR(203)
+	plain.SetVirtualOutput(true)
+	bufs, err := plain.ExportTargets(1, nil)
+	if err != nil {
+		t.Skipf("no HDR target: %v", err)
+	}
+	defer bufs[0].Planes[0].File.Close()
+	if err := render(plain, ports.Scene{Background: "#ffffff"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if plain.HDRPixels() != nil {
+		t.Fatal("HDRPixels without SetHDRReadback")
+	}
+	sdr, err := New(64, 4)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer sdr.Close()
+	if err := render(sdr, ports.Scene{Background: "#ffffff"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if sdr.HDRPixels() != nil {
+		t.Fatal("HDRPixels on an SDR renderer")
+	}
+}
+
+// HDRPixels reads the target the last HDR frame drew into, not the one
+// selected for the next frame, and never a target exported after it.
+func TestHDRPixelsReadsRenderedTarget(t *testing.T) {
+	r := hdrTestRenderer(t)
+	scene, contents, nits := hdrPQScene(t, r)
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	// New targets replace the one the frame drew into: nothing to read.
+	bufs, err := r.ExportTargets(2, r.hdrMods)
+	if err != nil {
+		t.Skipf("no two HDR targets: %v", err)
+	}
+	for _, b := range bufs {
+		defer b.Planes[0].File.Close()
+	}
+	if r.HDRPixels() != nil {
+		t.Fatal("HDRPixels from targets no frame drew into")
+	}
+	r.UseTarget(0)
+	if err := render(r, scene, contents); err != nil {
+		t.Fatal(err)
+	}
+	r.UseTarget(1)
+	img := r.HDRPixels()
+	if img == nil {
+		t.Fatal("HDRPixels nil after an HDR frame")
+	}
+	for i, v := range nits {
+		got := img.RGBA64At(i*20+5, 8)
+		for ch, c := range []uint16{got.R, got.G, got.B} {
+			if d := math.Abs(float64(c)/65535 - pqEncode(v[ch])); d > .012 {
+				t.Errorf("sample %d channel %d: %.4f want %.4f", i, ch, float64(c)/65535, pqEncode(v[ch]))
+			}
+		}
+	}
+}
+
+func TestHDRWindowedComposition(t *testing.T) {
+	r := hdrTestRenderer(t)
+	scene, contents, nits := hdrPQScene(t, r)
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}

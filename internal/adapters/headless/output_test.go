@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"image"
+	"image/color"
 	"image/png"
 	"maps"
 	"os"
@@ -290,6 +291,81 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// RawHDR writes the renderer's raw PQ codes as a 16-bit latest-pq.png next
+// to the 8-bit screenshots.
+func TestHeadlessRawHDRScreenshot(t *testing.T) {
+	dir := t.TempDir()
+	want := image.NewRGBA64(image.Rect(0, 0, 2, 2))
+	for i := range 4 {
+		want.SetRGBA64(i%2, i/2, color.RGBA64{R: uint16(i*0x1111 + 0x0123), G: 0x8000 + uint16(i), B: 0xffc0, A: 0xffff})
+	}
+	f, err := os.CreateTemp(t.TempDir(), "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(203)).Return().Once()
+	r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+	rendered := make(chan struct{}, 4)
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		rendered <- struct{}{}
+		return nil, nil
+	}).Maybe()
+	r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
+	r.EXPECT().HDRPixels().Return(want).Maybe()
+	r.EXPECT().Close().Return().Once()
+	scenes := make(chan ports.Scene, 1)
+	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
+	}()
+	select {
+	case <-rendered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no frame")
+	}
+	// The files are written after Render returns.
+	path := filepath.Join(dir, "latest-pq.png")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no latest-pq.png")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	got, err := png.Decode(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.(*image.NRGBA64); !ok && got.ColorModel() != color.RGBA64Model {
+		t.Fatalf("not a 16-bit image: %T", got)
+	}
+	for y := range 2 {
+		for x := range 2 {
+			if g, w := color.RGBA64Model.Convert(got.At(x, y)), want.RGBA64At(x, y); g != color.Color(w) {
+				t.Errorf("(%d,%d) = %v, want %v", x, y, g, w)
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "latest.png")); err != nil {
+		t.Errorf("8-bit screenshot: %v", err)
 	}
 }
 

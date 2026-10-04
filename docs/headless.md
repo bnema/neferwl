@@ -38,3 +38,14 @@ WAYLAND_DISPLAY=<name from the log> go run ./examples/testime -preedit nihon -co
 `-count <n>` exits after n commits, and `-delay` sets the time between preedit and commit.
 
 The headless backend does not draw the cursor on screen. After a layout change, pointer focus updates on the next move.
+
+## Colour check
+
+`make color-check` checks that known colours come out right. It needs a GPU and `/dev/udmabuf`, and is not part of `make check` or CI (build tag `colorcheck`, test in `internal/app/colorcheck_test.go`). It runs a headless NeferWL with one 640×360 output, starts `examples/testpattern -fullscreen` as a real client, and compares 5×5 boxes at the centre of each patch of the pattern:
+
+- `TestColorCheckSDR`: an sRGB `wl_shm` client on an SDR output; the bytes of `latest.png` must equal the sRGB values (±1 per channel).
+- `TestColorCheckHDR`: a virtual HDR output (`--headless-hdr`) read back through the raw PQ codes in `latest-pq.png`. An sRGB client must give `PQ(BT.709→BT.2020 · linear · 203 nits)`, and a PQ client (`-mode hdr`: BT.2020, `st2084_pq`, XR30 dmabuf) its own PQ codes. A channel passes within ±0.012 PQ, or, for a channel expected below 0.05 nit, within 0.03 nit of luminance, which absorbs the fp16 residue near black where PQ is very steep (about 0.02 nit measured on a zero channel of a BT.2020 primary on an RX 9070 XT). If the output does not report PQ (virtual HDR fell back to SDR), the test fails.
+
+`--screenshot-raw` is the flag behind it: with `--screenshot` and `--headless-hdr` it also writes `latest-pq.png` next to `latest.png`, a 16-bit PNG holding the 10-bit PQ codes of the exported HDR target (each code scaled to 16 bits, no cursor, no tone mapping). It is a test flag and follows the same session-protection rules as the other screenshot files. It needs an HDR modifier that supports transfer-src (test-only; the DRM path never asks for it).
+
+The check cannot see hardware scanout or the KMS plane colour pipeline. On a real HDR screen, run `WAYLAND_DISPLAY=<name> go run ./examples/testpattern -mode hdr -fullscreen` (or `-mode sdr`) and compare the patches by eye. The client asks for fullscreen 1.2 s after its first commit, because the compositor ignores earlier requests.
