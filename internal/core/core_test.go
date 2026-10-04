@@ -385,6 +385,7 @@ func TestLayerKeyboardFocus(t *testing.T) {
 
 func TestWorkspaceSwitch(t *testing.T) {
 	cfg := config.Defaults()
+	cfg.Animations.On = false // the test reads the settled scene right after the key
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -433,6 +434,7 @@ func TestWorkspaceSwitch(t *testing.T) {
 
 func TestClickAfterWorkspaceSwitch(t *testing.T) {
 	cfg := config.Defaults()
+	cfg.Animations.On = false // the test reads the settled scene right after the key
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -1022,7 +1024,7 @@ func TestExternalFullscreenInOverview(t *testing.T) {
 // focus-window-down from a fullscreen tile at the bottom of its column
 // goes to the next workspace and fullscreen stays.
 func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed"; c.Animations.On = false }, left)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	r.key(t, "f", ports.ModAlt|ports.ModShift)

@@ -133,6 +133,9 @@ type Core struct {
 	// stepping is the screen a page flip advances (nil: all of them); it is
 	// set while step publishes.
 	stepping *screen
+	// shots is the snapshot of what the screens show before an action
+	// (transition.go), reused by every action.
+	shots []viewShot
 	// motionTime is the time of the last pointer motion; pointerAt is the
 	// last position sent in the pointer's window.
 	motionTime time.Duration

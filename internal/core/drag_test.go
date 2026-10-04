@@ -484,7 +484,7 @@ func TestLockClearsDrag(t *testing.T) {
 }
 
 func TestDragEdgeScroll(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
+	r := startDragRig(t, animationsOff, dragOut)
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -623,7 +623,7 @@ func TestClientDragUsesLastPress(t *testing.T) {
 }
 
 func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
+	r := startDragRig(t, animationsOff, dragOut)
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)

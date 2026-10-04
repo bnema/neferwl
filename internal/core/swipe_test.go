@@ -121,9 +121,19 @@ func (r *swipeRig) flick(t *testing.T, n int, dx, dy float64) ports.Scene {
 func (r *swipeRig) workspaces(t *testing.T) {
 	t.Helper()
 	r.mapWindow(t, 1)
-	r.key(t, "Next", ports.ModAlt)
+	r.keySettled(t, "Next")
 	r.mapWindow(t, 2)
-	r.key(t, "Prior", ports.ModAlt)
+	r.keySettled(t, "Prior")
+}
+
+// keySettled presses a workspace key and waits for the slide it starts, so
+// the next step begins from the settled view.
+func (r *swipeRig) keySettled(t *testing.T, sym string) {
+	t.Helper()
+	r.key(t, sym, ports.ModAlt)
+	if r.cfg.Animations.On {
+		r.settle(t)
+	}
 }
 
 func rectOf(s ports.Scene, id ports.WindowID) (ports.Rect, bool) {
@@ -324,8 +334,8 @@ func TestSwipeFromEmptyWorkspaceLandsWithoutJump(t *testing.T) {
 	r := startSwipe(t, nil)
 	r.workspaces(t)
 	// Workspace 3 is the trailing empty one; start there and swipe up to 2.
-	r.key(t, "Next", ports.ModAlt)
-	r.key(t, "Next", ports.ModAlt)
+	r.keySettled(t, "Next")
+	r.keySettled(t, "Next")
 	r.begin()
 	var s ports.Scene
 	for range 6 {
@@ -382,6 +392,10 @@ func TestSwipeDropsWhenWorkspacesChange(t *testing.T) {
 	r.move(t, 0, 30)
 	// A key switches workspace mid-swipe: the swipe lets go at once.
 	s := r.key(t, "Next", ports.ModAlt)[0]
+	if got, ok := rectOf(s, 2); !ok || got.Y == 0 {
+		t.Fatalf("workspace 2 at %v %t after the key, want the old position", got, ok)
+	}
+	s = r.settle(t)
 	if got, ok := rectOf(s, 2); !ok || got.Y != 0 {
 		t.Fatalf("workspace 2 at %v %t after the key", got, ok)
 	}
@@ -463,7 +477,7 @@ func TestSwipeIgnoredAfterSwitchingAwayAndBack(t *testing.T) {
 }
 
 func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
-	r := startSwipe(t, nil)
+	r := startSwipe(t, animationsOff)
 	before, _ := rectOf(threeColumns(t, r), 2)
 	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 	// Window 4 on DP-2, so it has a workspace below to switch to.
@@ -554,7 +568,7 @@ func (r *swipeRig) drain() {
 }
 
 func TestKeyWithoutSlideMovesAtOnce(t *testing.T) {
-	r := startSwipe(t, nil)
+	r := startSwipe(t, animationsOff)
 	threeColumns(t, r)
 	r.key(t, "Left", ports.ModAlt)
 	s := r.key(t, "Left", ports.ModAlt)[0]
@@ -837,6 +851,7 @@ func TestSwipeRetargetKeepsVelocity(t *testing.T) {
 	for range 3 {
 		r.key(t, "Left", ports.ModAlt)
 	}
+	r.settle(t)
 	// A flick toward the right lands on a later column: the view moves
 	// right, so column 1 moves left.
 	r.flick(t, 4, 40, 0)
@@ -849,8 +864,8 @@ func TestSwipeRetargetKeepsVelocity(t *testing.T) {
 		t.Fatalf("view did not move right: column 1 at %d", prev.X)
 	}
 	r.key(t, "Right", ports.ModAlt)
-	// The retargeted spring takes its start time at the first frame, which
-	// leaves the view where it is; it moves on from the second, never back.
+	// The retargeted spring keeps the speed of the landing: the view moves
+	// on from the first frame and never goes back.
 	for i := range 2 {
 		s := r.frame(t, 16*time.Millisecond)
 		got, _ := rectOf(s, 1)

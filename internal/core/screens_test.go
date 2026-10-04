@@ -400,7 +400,7 @@ func TestMonitorActionsFollowGeometry(t *testing.T) {
 }
 
 func TestUnplugMovesWorkspacesAndReplugReturnsThem(t *testing.T) {
-	r := startMulti(t, nil, left, right)
+	r := startMulti(t, animationsOff, left, right)
 	r.mapWindow(t, 1)
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
 	r.mapWindow(t, 2)
@@ -763,7 +763,7 @@ func TestKeyboardScreenFocusSticksUntilPointerLeaves(t *testing.T) {
 }
 
 func TestStateSnapshot(t *testing.T) {
-	r := startMulti(t, nil, left, right)
+	r := startMulti(t, animationsOff, left, right)
 	r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
 	receive(t, r.scenes)
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
