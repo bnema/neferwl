@@ -7,8 +7,8 @@ import (
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
 // are positions: Cmd+N targets Workspaces[N-1]. An empty workspace always sits
-// below the last one, and an empty unnamed workspace is removed once left,
-// except the first. Output-wide settings apply to every workspace.
+// below the last one, and an empty unnamed workspace is removed once left.
+// Output-wide settings apply to every workspace.
 //
 // Named workspaces come from config and are never removed while configured.
 // Named workspaces are outside normal numbered up/down navigation. Their
@@ -167,11 +167,10 @@ func (m *Monitor) newWorkspace() *Workspace {
 }
 
 // normalize keeps one trailing empty unnamed workspace and drops other empty
-// unnamed ones that are neither the first nor active. The active workspace
-// never changes.
+// unnamed ones that are not active. The active workspace never changes.
 func (m *Monitor) normalize() {
 	spare := func(i int) bool { return m.Workspaces[i].empty() && m.Workspaces[i].Name == "" }
-	for i := len(m.Workspaces) - 2; i >= 1; i-- {
+	for i := len(m.Workspaces) - 2; i >= 0; i-- {
 		if spare(i) && i != m.Active {
 			m.Workspaces = append(m.Workspaces[:i], m.Workspaces[i+1:]...)
 			if i < m.Active {
