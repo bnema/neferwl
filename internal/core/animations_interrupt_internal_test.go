@@ -124,19 +124,82 @@ func TestOutputUnplugMidRectMotion(t *testing.T) {
 	}
 }
 
-// The last output going away keeps its screen as a placeholder: its rect
-// motions must not outlive it (no frame would ever settle them but the
-// fallback timer).
+// The last output going away keeps its screen as a placeholder: none of its
+// springs (rect motions, a workspace switch) may outlive the output, or the
+// fallback timer would wake core for a screen nothing draws. When an output
+// comes back, a new move animates and lands from a fresh Seq.
 func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 	c, ic := indicatorCore(t)
 	sc := c.cur()
 	movingRects(t, c, ic, sc)
+	// A workspace switch spring runs too.
+	m := sc.mon
+	m.switchOff, m.switchMotion = 0.5, c.spring(workspaceSpring(0.5, 0), ic.now)
+	if !m.switchMotion.on || !sc.springing() {
+		t.Fatal("no workspace switch to interrupt")
+	}
 	c.removeScreen("A")
+	if sc.mon.springing() || len(sc.rects) != 0 || sc.rectsWS != nil || sc.mon.switchMotion.on || sc.mon.switchOff != 0 {
+		t.Fatalf("the placeholder keeps springs: monitor %t, rects %d, switch %t (%v)", sc.mon.springing(), len(sc.rects), sc.mon.switchMotion.on, sc.mon.switchOff)
+	}
 	if err := c.publish(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	<-c.ch.Scenes
-	if len(sc.rects) != 0 || c.animating() {
-		t.Fatalf("the placeholder keeps motions: rects %d, animating %t", len(sc.rects), c.animating())
+	gone := (<-c.ch.Scenes)[0]
+	if c.animating() || c.frameC != nil {
+		t.Fatalf("the placeholder keeps asking for frames: animating %t, timer %t", c.animating(), c.frameC != nil)
+	}
+
+	// The output comes back: its windows are where the move left them.
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+	settled := indicatorScene(t, c)
+	if settled.Seq <= gone.Seq {
+		t.Fatalf("scene after the replug reuses Seq %d (placeholder %d)", settled.Seq, gone.Seq)
+	}
+	x := func(s ports.Scene, id WindowID) int {
+		for _, w := range s.Windows {
+			if w.ID == id {
+				return w.Rect.X
+			}
+		}
+		t.Fatalf("window %d not in the scene", id)
+		return 0
+	}
+	if x(settled, 2) != 0 || x(settled, 1) != 150 {
+		t.Fatalf("after the replug 1 at %d and 2 at %d, want the settled 150 and 0", x(settled, 1), x(settled, 2))
+	}
+	if c.animating() || len(c.cur().rects) != 0 {
+		t.Fatal("a motion runs after the replug")
+	}
+
+	// A new move animates from the settled rects and lands.
+	before := c.snapshot()
+	c.applyAction(ActionMoveColumnRight)
+	c.transition(before, ic.now)
+	start := indicatorScene(t, c)
+	if x(start, 1) != 150 || x(start, 2) != 0 {
+		t.Fatalf("right after the move 1 at %d and 2 at %d, want the old 150 and 0", x(start, 1), x(start, 2))
+	}
+	ic.now = ic.now.Add(16 * time.Millisecond)
+	if err := c.step(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	mid := (<-c.ch.Scenes)[0]
+	if got := x(mid, 1); got >= 150 || got <= 0 {
+		t.Fatalf("window 1 at %d on the first frame, want between 0 and 150", got)
+	}
+	if mid.Seq == start.Seq {
+		t.Fatalf("an animating frame reuses Seq %d", mid.Seq)
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	if err := c.step(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	end := (<-c.ch.Scenes)[0]
+	if x(end, 1) != 0 || x(end, 2) != 150 || end.Seq == mid.Seq {
+		t.Fatalf("landed 1 at %d and 2 at %d (Seq %d after %d), want 0 and 150 and a fresh Seq", x(end, 1), x(end, 2), end.Seq, mid.Seq)
+	}
+	if c.animating() || c.frameC != nil {
+		t.Fatal("still animating after the landing")
 	}
 }

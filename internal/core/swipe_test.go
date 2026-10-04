@@ -2,14 +2,11 @@ package core_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/core"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/mock"
 )
 
 // swipeRig runs core on one 800x600 output with no gaps or border, a
@@ -17,8 +14,7 @@ import (
 type swipeRig struct {
 	*multiRig
 	frames chan ports.OutputFrame
-	mu     sync.Mutex
-	now    time.Time
+	clk    *stepClock
 	// at is the device time of the next swipe event.
 	at time.Duration
 	// outs are the plugged outputs, for landed.
@@ -42,26 +38,13 @@ func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	if edit != nil {
 		edit(&cfg)
 	}
-	r := &swipeRig{frames: make(chan ports.OutputFrame), now: time.Unix(100, 0)}
+	r := &swipeRig{frames: make(chan ports.OutputFrame), clk: newStepClock(t)}
 	r.multiRig = &multiRig{
 		client: make(chan ports.ClientEvent, 16), input: make(chan ports.InputEvent, 64),
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
 		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
 	}
-	clock := portsmocks.NewMockClock(t)
-	clock.EXPECT().Now().RunAndReturn(func() time.Time {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		return r.now
-	}).Maybe()
-	// The fallback timer never fires: frames come from the test. One timer
-	// built before core runs: a mock created by core while the test ends
-	// would race its own cleanup check.
-	timer := portsmocks.NewMockTimer(t)
-	timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
-	timer.EXPECT().Stop().Return(true).Maybe()
-	clock.EXPECT().NewTimer(mock.Anything).Return(timer).Maybe()
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Clock: clock, Frames: r.frames})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Clock: r.clk.clock, Frames: r.frames})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,21 +59,8 @@ func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	return r
 }
 
-// landed is the scene set once every spring an action started on any output
-// landed: the set itself when nothing animates (animations off, or an
-// action that moves nothing).
-func (r *swipeRig) landed(t *testing.T, set []ports.Scene) []ports.Scene {
-	t.Helper()
-	if landed, ok := r.settleAll(t, r.outs...); ok {
-		return landed
-	}
-	return set
-}
-
 func (r *swipeRig) advance(d time.Duration) {
-	r.mu.Lock()
-	r.now = r.now.Add(d)
-	r.mu.Unlock()
+	r.clk.advance(d)
 }
 
 // begin starts a swipe; nothing moves until it picks an axis.
@@ -127,30 +97,11 @@ func (r *swipeRig) settle(t *testing.T) ports.Scene {
 	return r.frame(t, 5*time.Second)
 }
 
-// flipAll moves the clock by d, sends a page flip for each output and
-// returns the latest scene set they published (ok false: none, nothing
-// animated). The last flip names no output: core takes it only after it
-// handled the previous ones, so the scene channel then holds their result.
-func (r *swipeRig) flipAll(t *testing.T, d time.Duration, outputs ...string) (set []ports.Scene, ok bool) {
-	t.Helper()
-	r.advance(d)
-	for _, o := range outputs {
-		send(r.frames, ports.OutputFrame{Output: o})
-	}
-	send(r.frames, ports.OutputFrame{Output: "sync"})
-	select {
-	case set = <-r.scenes:
-		return set, true
-	default:
-		return nil, false
-	}
-}
-
-// settleAll moves the clock past every spring on the outputs and returns
-// the scene set that results (ok false: nothing was animating).
+// settleAll moves the clock past every spring, flips the outputs and
+// returns the scene set that results (ok false: nothing was animating).
 func (r *swipeRig) settleAll(t *testing.T, outputs ...string) ([]ports.Scene, bool) {
 	t.Helper()
-	return r.flipAll(t, 5*time.Second, outputs...)
+	return r.clk.settle(t, r.frames, r.scenes, outputs...)
 }
 
 // flick sends a quick swipe of n updates of (dx, dy) and lifts the

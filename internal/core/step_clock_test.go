@@ -44,13 +44,21 @@ func (s *stepClock) advance(d time.Duration) {
 	s.mu.Unlock()
 }
 
-// settle moves the clock past every spring, flips each output and returns
-// the set core published for them (ok false: no spring ran, so nothing
-// moved). The last flip names no output: core takes it only after it
-// handled the previous ones, so the scene channel then holds their result.
-func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes chan []ports.Scene, outputs ...string) ([]ports.Scene, bool) {
+// flip moves the clock by d and sends a page flip for each output, then
+// returns the scene set core published for them (ok false: none, so no
+// spring ran). Core publishes before it takes its next event, so a flip that
+// names no output is a barrier: once its send returns, every earlier event
+// is handled and the scene channel holds the result. One is sent first too,
+// and a scene left over from earlier events is dropped, so a scene found
+// afterwards is the flips' own.
+func (s *stepClock) flip(t *testing.T, frames chan ports.OutputFrame, scenes chan []ports.Scene, d time.Duration, outputs ...string) ([]ports.Scene, bool) {
 	t.Helper()
-	s.advance(5 * time.Second)
+	send(frames, ports.OutputFrame{Output: "sync"})
+	select {
+	case <-scenes:
+	default:
+	}
+	s.advance(d)
 	for _, o := range outputs {
 		send(frames, ports.OutputFrame{Output: o})
 	}
@@ -63,6 +71,12 @@ func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes c
 	}
 }
 
+// settle is flip past every spring.
+func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes chan []ports.Scene, outputs ...string) ([]ports.Scene, bool) {
+	t.Helper()
+	return s.flip(t, frames, scenes, 5*time.Second, outputs...)
+}
+
 // landRig is a multiRig whose settle lands every running spring: with
 // animations on it runs on a clock the test moves (swipeRig) and sends the
 // page flips; with animations off it is the plain rig and land is the
@@ -71,6 +85,8 @@ func (s *stepClock) settle(t *testing.T, frames chan ports.OutputFrame, scenes c
 type landRig struct {
 	*multiRig
 	land func([]ports.Scene) []ports.Scene
+	// lands counts the settles that found a spring running.
+	lands *int
 }
 
 // startLanding runs core on the given outputs (gaps and terminal policy as
@@ -84,7 +100,7 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 			}
 			c.Animations.On = false
 		}, outs...)
-		return &landRig{multiRig: r, land: func(set []ports.Scene) []ports.Scene { return set }}
+		return &landRig{multiRig: r, land: func(set []ports.Scene) []ports.Scene { return set }, lands: new(int)}
 	}
 	defaults := altCmdDefaults()
 	r := startSwipeOn(t, func(c *ports.Config) {
@@ -94,10 +110,26 @@ func startLanding(t *testing.T, animated bool, edit func(*ports.Config), outs ..
 		}
 		c.Animations.On = true
 	}, outs...)
-	return &landRig{multiRig: r.multiRig, land: func(set []ports.Scene) []ports.Scene { return r.landed(t, set) }}
+	lands := new(int)
+	// An on variant that never saw a spring would be the off variant again.
+	t.Cleanup(func() {
+		if *lands == 0 {
+			t.Error("no spring ever ran: the animations-on variant checked nothing")
+		}
+	})
+	return &landRig{multiRig: r.multiRig, lands: lands, land: func(set []ports.Scene) []ports.Scene {
+		landed, ok := r.settleAll(t, r.outs...)
+		if !ok {
+			return set
+		}
+		*lands++
+		return landed
+	}}
 }
 
-// both runs body with animations off, then on.
+// both runs body with animations off, then on. A rig of the on run fails the
+// test when it never settled a running spring (startLanding,
+// startAnimatedDragRig).
 func both(t *testing.T, body func(t *testing.T, animated bool)) {
 	t.Helper()
 	t.Run("off", func(t *testing.T) { body(t, false) })

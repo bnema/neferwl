@@ -54,7 +54,7 @@ func TestBorderSceneInvariantsAnimated(t *testing.T) {
 						moved++
 					}
 					// Settled means no spring runs: a further flip has nothing to do.
-					if _, again := r.flipAll(t, 16*time.Millisecond, left.Name, right.Name); again {
+					if _, again := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, left.Name, right.Name); again {
 						t.Fatal("a flip after the settle still published: a spring runs")
 					}
 					return settled

@@ -8,19 +8,10 @@ import (
 
 var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial: "3", Width: 3440, Height: 1440}
 
-// sizedRig runs an ultrawide with the named workspace "focus" (1920x1080)
-// bound to Alt+w, and shows it.
-func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, ports.Scene) {
-	t.Helper()
-	r, s := sizedLanding(t, false, overflow, edit)
-	return r.multiRig, s
-}
-
-// sizedLanding is sizedRig with animations on or off; the scene it returns
-// and every one of its keyLanded and mapLanded are settled.
-func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, ports.Scene) {
-	t.Helper()
-	r := startLanding(t, animated, func(c *ports.Config) {
+// sizedConfig is the config of the sized-workspace rigs: gaps off, two
+// columns, the named workspace "focus" (1920x1080) bound to Alt+w.
+func sizedConfig(overflow string, edit func(*ports.Config)) func(*ports.Config) {
+	return func(c *ports.Config) {
 		c.Layout.Gaps = 0
 		c.Layout.MaxColumns = 2
 		c.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}, LayoutRules: ports.LayoutRules{Overflow: overflow}}}
@@ -28,7 +19,23 @@ func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports
 		if edit != nil {
 			edit(c)
 		}
-	}, ultrawide)
+	}
+}
+
+// sizedRig runs an ultrawide with the named workspace "focus" (1920x1080)
+// bound to Alt+w, and shows it. The animations setting is the default's
+// unless edit changes it.
+func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, ports.Scene) {
+	t.Helper()
+	r := startMulti(t, sizedConfig(overflow, edit), ultrawide)
+	return r, r.key(t, "w", ports.ModAlt)[0]
+}
+
+// sizedLanding is sizedRig with animations forced on or off; the scene it
+// returns and every keyLanded and mapLanded of the rig are settled.
+func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, ports.Scene) {
+	t.Helper()
+	r := startLanding(t, animated, sizedConfig(overflow, edit), ultrawide)
 	return r, r.keyLanded(t, "w", ports.ModAlt)[0]
 }
 

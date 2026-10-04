@@ -27,6 +27,8 @@ type dragRig struct {
 	frames  chan ports.OutputFrame
 	clock   *stepClock
 	outputs []string
+	// lands counts the settles that found a spring running.
+	lands int
 }
 
 // startDrag runs core with Super as Cmd, no border, 10 px gaps, and
@@ -73,6 +75,12 @@ func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...p
 	if animated {
 		r.frames, r.clock = make(chan ports.OutputFrame), newStepClock(t)
 		ch.Frames, ch.Clock = r.frames, r.clock.clock
+		// An on variant that never saw a spring would be the off variant again.
+		t.Cleanup(func() {
+			if r.lands == 0 {
+				t.Error("no spring ever ran: the animations-on variant checked nothing")
+			}
+		})
 	}
 	c, err := core.New(cfg, ch)
 	if err != nil {
@@ -115,9 +123,8 @@ const barrier ports.WindowID = 1 << 30
 func (r *dragRig) settle(t *testing.T) []ports.Scene {
 	t.Helper()
 	if r.frames != nil {
-		r.clock.advance(5 * time.Second)
-		for _, o := range r.outputs {
-			send(r.frames, ports.OutputFrame{Output: o})
+		if _, ok := r.clock.settle(t, r.frames, r.scenes, r.outputs...); ok {
+			r.lands++
 		}
 	}
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
