@@ -108,6 +108,39 @@ func TestRun(t *testing.T) {
 	}
 }
 
+// A scene whose Seq the output already holds is not drawn again.
+func TestHeadlessSameSeqRendersOnce(t *testing.T) {
+	scenes := make(chan ports.Scene)
+	contents := make(chan ports.SurfaceContent)
+	r, f := recordingRenderer(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+	}()
+	scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
+	scenes <- scene
+	waitFrames(t, f, 1)
+	scenes <- scene
+	// Unshown content sends Run round its loop: the held scene is handled.
+	contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
+	contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
+	time.Sleep(50 * time.Millisecond)
+	if s, _ := f.snapshot(); len(s) != 1 {
+		t.Fatalf("%d frames for a scene with the held Seq", len(s))
+	}
+	scene.Seq = 6
+	scenes <- scene
+	waitFrames(t, f, 2)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := f.snapshot(); len(s) != 2 {
+		t.Fatalf("%d frames, want 2", len(s))
+	}
+}
+
 // Content of a window the output does not show draws no frame.
 func TestRunSkipsContentNotShown(t *testing.T) {
 	scenes := make(chan ports.Scene, 1)

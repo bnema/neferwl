@@ -199,6 +199,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
 			return
 		}
+		// The core keeps the Seq of a scene that draws the same: nothing to do.
+		if haveScene && s.Seq != 0 && s.Seq == scene.Seq && s.Security == scene.Security {
+			return
+		}
 		scene, haveScene, dirty = s, true, true
 	}
 	update := func(c ports.SurfaceContent) {

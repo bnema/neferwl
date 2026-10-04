@@ -540,7 +540,6 @@ func (c *Core) publish(ctx context.Context) error {
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
 	for i, sc := range c.screens {
-		c.seq++
 		o := sc.mon.Output()
 		// frame is the viewport of the workspace on screen: the whole output
 		// unless it has a size override (never in the overview).
@@ -549,7 +548,7 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
+		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		layout := sc.mon.Layout()
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
@@ -615,7 +614,18 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scene.CaptureIndicators = c.captureIndicators(sc)
-		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil {
+		scene.Capture = c.captureSceneFor(sc, capture)
+		// A scene carrying a capture image always gets a fresh Seq; any other
+		// keeps its output's Seq while it draws the same, so an idle output
+		// is not recomposed.
+		withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
+		if !withCapture && sc.last.Seq != 0 && scene.SameAs(sc.last) {
+			scene.Seq = sc.last.Seq
+		} else {
+			c.seq++
+			scene.Seq = c.seq
+		}
+		if withCapture {
 			switch sc {
 			case capture.hiddenScr:
 				scene.CaptureScene = c.captureScene(scene.Seq)
@@ -623,6 +633,7 @@ func (c *Core) publish(ctx context.Context) error {
 				scene.CaptureScene = c.captureWindowScene(capture, scene.Seq)
 			}
 		}
+		sc.last = scene
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()

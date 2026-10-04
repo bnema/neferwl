@@ -28,6 +28,9 @@ type screen struct {
 	// CaptureIndicators): immutable, shared by the next one while unchanged.
 	capScene *ports.SceneCapture
 	capMarks []ports.CaptureIndicator
+	// last is the scene published for this screen: an identical next one
+	// keeps its Seq (Scene.SameAs). Zero after a protected publish.
+	last ports.Scene
 }
 
 func (s *screen) name() string { return s.info.Name }

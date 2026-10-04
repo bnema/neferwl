@@ -1334,6 +1334,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			if !o.sceneCurrent(s) {
 				continue
 			}
+			// The core keeps the Seq of a scene that draws the same: nothing to do.
+			if haveScene && s.Seq != 0 && s.Seq == scene.Seq && s.Security == scene.Security {
+				continue
+			}
 			if o.protected {
 				s.CaptureScene = nil
 				if o.wantOff != s.Off {

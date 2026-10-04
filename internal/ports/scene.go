@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"os"
+	"slices"
 )
 
 // Scene carries core → renderer immutable snapshots with fresh Windows slices,
@@ -66,6 +67,37 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
+}
+
+// SameAs reports whether o draws exactly what s draws: every field other
+// than Seq is equal. A scene carrying a CaptureScene is never the same
+// (conservative: the capture image is not compared). Add every new Scene
+// field here; TestSceneSameAsCoversEveryField fails until the field count
+// is updated.
+func (s Scene) SameAs(o Scene) bool {
+	if s.Security != o.Security || s.Output != o.Output ||
+		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
+		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
+		s.Background != o.Background || s.Border != o.Border ||
+		s.WorkspaceClip != o.WorkspaceClip || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
+		return false
+	}
+	if s.CaptureScene != nil || o.CaptureScene != nil {
+		return false
+	}
+	if (s.Capture == nil) != (o.Capture == nil) {
+		return false
+	}
+	if s.Capture != nil {
+		a, b := *s.Capture, *o.Capture
+		if a.Shown != b.Shown || a.Session != b.Session || a.Revision != b.Revision ||
+			a.Workspace != b.Workspace || a.Window != b.Window || !slices.Equal(a.Excluded, b.Excluded) {
+			return false
+		}
+	}
+	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
+		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
+		slices.Equal(s.CaptureIndicators, o.CaptureIndicators)
 }
 
 // Shows reports whether the scene draws the surface of id: only its

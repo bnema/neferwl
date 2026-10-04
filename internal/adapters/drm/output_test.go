@@ -1052,3 +1052,25 @@ func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 		t.Fatalf("stamp kept across the security reset: %s", sr.o.wantedAt)
 	}
 }
+
+// A scene whose Seq the output already holds draws nothing new: no frame,
+// until a scene with a new Seq arrives.
+func TestOutputSameSeqRendersOnce(t *testing.T) {
+	sr := startStampRun(t)
+	scene := ports.Scene{Seq: 5, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
+	sr.scenes <- scene
+	waitFor(t, func() bool { return sr.frameCommit() == 1 })
+	sr.flips <- flipEvent{crtc: tCrtc, user: sr.lastCommit().user, when: time.Second, seq: 1}
+	sr.scenes <- scene
+	// Unshown content only sends Run round its loop: the flip and the held
+	// scene are handled by the time the second one is taken.
+	sr.contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
+	sr.contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
+	if n := sr.frameCommit(); n != 1 {
+		t.Fatalf("%d frames after a scene with the held Seq", n)
+	}
+	scene.Seq = 6
+	sr.scenes <- scene
+	waitFor(t, func() bool { return sr.frameCommit() == 2 })
+	sr.stop()
+}

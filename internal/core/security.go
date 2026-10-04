@@ -185,6 +185,8 @@ func (c *Core) publishProtected(ctx context.Context) error {
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	for _, sc := range c.screens {
 		c.seq++
+		// The desktop scene that follows must not reuse a Seq from before.
+		sc.last = ports.Scene{}
 		o := sc.mon.Output()
 		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: "#000000"}
 		if s, ok := c.lockSurface(sc); ok {
