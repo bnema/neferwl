@@ -608,21 +608,24 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			ps := settled[k]
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade, Dim: max(0, p.Dim)}
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
 			if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 				// A scale motion: the content follows the drawn size. A
 				// card in flight drawn at its size still needs Zoom 1:
 				// without it the renderer would shrink it by Preview.
 				sw.Zoom = p.Zoom
 			}
-			if p.Peek {
-				sw.Dim = min(sw.Dim+c.cfg.Stash.Dim, 1)
-			}
+			// A peek's veil is the configured one plus its animated offset.
+			sw.Dim = max(0, min(p.Dim+c.peekDim(p), 1))
 			if p.Leaving {
 				// A window fading out after it closed or hid: drawn, but
 				// hidden to everything else, its configures included.
 				sw.Hidden = false
 				scene.Windows = append(scene.Windows, sw)
+				// A window the layout still holds keeps its last configure
+				// (prune would forget it, and its next one would start from
+				// nothing).
+				c.configures.keep(p.ID)
 				continue
 			}
 			if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {

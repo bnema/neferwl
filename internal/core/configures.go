@@ -130,6 +130,10 @@ func (s *configures) mark(v ports.ConfigureWindow) {
 	delete(s.answer, v.ID)
 }
 
+// keep marks id as seen without a configure: a window drawn while it leaves
+// keeps what was sent to it.
+func (s *configures) keep(id WindowID) { s.seen[id] = true }
+
 // prune forgets the windows no next call saw since the last prune: they
 // left the layout.
 func (s *configures) prune() {

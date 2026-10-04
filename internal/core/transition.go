@@ -46,6 +46,9 @@ type viewShot struct {
 	// rects are the windows the screen drew (cards in the overview),
 	// hidden windows left out. The slice is reused like list.
 	rects []rectShot
+	// stash holds the settled placements of the stash windows the screen
+	// drew, for the ones an action hides (transitionStash). Reused too.
+	stash []Placement
 }
 
 // rectOffsets are the four components of a rect motion: x, y, w, h.
@@ -62,6 +65,11 @@ type rectShot struct {
 	// fade and fadeV are the fade offset of a running fade motion and its
 	// speed, so an overview toggle carries it over (transitionOverview).
 	fade, fadeV float64
+	// dim and dimV are the dim offset of a running dim motion and its
+	// speed; veil is the peek veil the window's settled placement drew
+	// (Stash.Dim, 0 for another window). A stash navigation takes the
+	// veil from what was on screen to the new one (transitionRects).
+	dim, dimV, veil float64
 }
 
 // rectMotion takes a window's drawn rect to its settled one: each component
@@ -159,7 +167,13 @@ func (m *rectMotion) show(p *Placement) {
 	settled := p.Rect
 	p.Rect = m.apply(settled)
 	p.Fade = max(0, min(1, m.settledFade()+m.df))
-	p.Dim = max(0, min(1, p.Dim+m.ddim))
+	// A peek's Dim is an offset from its veil (publish adds Stash.Dim and
+	// clamps the sum): it may go below 0, down to cancelling the veil.
+	lo := 0.0
+	if p.Peek {
+		lo = -1
+	}
+	p.Dim = max(lo, min(1, p.Dim+m.ddim))
 	if m.scale && settled.W > 0 && settled.H > 0 {
 		zoom := p.Preview
 		if zoom == 0 {
@@ -243,7 +257,8 @@ func (c *Core) refreshShown() {
 
 // withLeaving is layout with the leaving windows' last placements added,
 // Hidden and Leaving, into the screen's reused buffer (the layout itself
-// is left alone). A leaving tile goes where the tiles are painted: before
+// is left alone). A window the layout still lists, Hidden (a hidden stash),
+// is replaced where it is. A leaving tile goes where the tiles are painted: before
 // the first window that opens the floats (a float above the tiles, as the
 // renderer orders them), so it never flashes over a float; a leaving float
 // goes last, over the tiles. Within a group smallest ID first: a stable
@@ -263,6 +278,12 @@ func (s *screen) withLeaving(layout []Placement) []Placement {
 		}
 		p := rm.left
 		p.Hidden, p.Leaving, p.Focused, p.Fade, p.Dim, p.Zoom = true, true, false, 0, 0, 0
+		if j := slices.IndexFunc(out, func(q Placement) bool { return q.ID == p.ID && q.Hidden && !q.Leaving }); j >= 0 {
+			// The layout still lists the window, Hidden (a stash that
+			// hid): the entry is drawn in its place, never twice.
+			out[j] = p
+			continue
+		}
 		lo, hi := floats, len(out)
 		if !p.Floating {
 			lo, hi = 0, floats
@@ -467,6 +488,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		if len(out) < len(full) {
 			s.list = full[len(out)].list[:0]
 			s.rects = full[len(out)].rects[:0]
+			s.stash = full[len(out)].stash[:0]
 		}
 		s.sc = sc
 		w := m.Current()
@@ -493,8 +515,14 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 				r.off, r.vel = rm.sample(now)
 				r.fade = rm.df
 				sampleComponent(rm.fade, &r.fade, &r.fadeV, now)
+				r.dim = rm.ddim
+				sampleComponent(rm.dim, &r.dim, &r.dimV, now)
 			}
+			r.veil = c.peekDim(p)
 			s.rects = append(s.rects, r)
+			if !m.ov.open && w.stashIndex(p.ID) >= 0 {
+				s.stash = append(s.stash, p)
+			}
 		}
 		if m.shown == nil && !m.ov.open {
 			// A landing slide measures in the list it began on.
@@ -544,6 +572,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 		}
 		c.transitionCamera(b, before, now)
 		c.transitionRects(b, before, now)
+		c.transitionStash(b, now)
 	}
 }
 
@@ -619,7 +648,12 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 		}
 		old := &from.rects[i]
 		oldRect := Rect{X: old.rect.X + dx, Y: old.rect.Y + dy, W: old.rect.W, H: old.rect.H}
-		if oldRect == p.Rect {
+		// A window that becomes a peek or stops being one (a stash
+		// navigation) changes its veil: the offset takes the one drawn to
+		// the new one. Otherwise a running dim motion goes on as it is.
+		dimOff := old.dim + old.veil - c.peekDim(p)
+		dimMoves := old.veil != c.peekDim(p)
+		if oldRect == p.Rect && !dimMoves {
 			// The settled rect did not change: a running motion goes on
 			// as it is, and there is none to start.
 			continue
@@ -629,20 +663,66 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 		}
 		// Where the window was drawn, unrounded, relative to where it goes.
 		rm := sc.rects[p.ID]
-		// A re-flow may change the aspect: the content zoom (appear) stops
-		// following the frame and snaps to the settled size; the fade goes
-		// on.
-		rm.scale = false
-		c.retargetComponent(&rm.x, &rm.dx, float64(oldRect.X-p.Rect.X)+old.off.x, old.vel.x, now)
-		c.retargetComponent(&rm.y, &rm.dy, float64(oldRect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
-		c.retargetComponent(&rm.w, &rm.dw, float64(oldRect.W-p.Rect.W)+old.off.w, old.vel.w, now)
-		c.retargetComponent(&rm.h, &rm.dh, float64(oldRect.H-p.Rect.H)+old.off.h, old.vel.h, now)
+		if oldRect != p.Rect {
+			// A re-flow may change the aspect: the content zoom (appear)
+			// stops following the frame and snaps to the settled size; the
+			// fade goes on.
+			rm.scale = false
+			c.retargetComponent(&rm.x, &rm.dx, float64(oldRect.X-p.Rect.X)+old.off.x, old.vel.x, now)
+			c.retargetComponent(&rm.y, &rm.dy, float64(oldRect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
+			c.retargetComponent(&rm.w, &rm.dw, float64(oldRect.W-p.Rect.W)+old.off.w, old.vel.w, now)
+			c.retargetComponent(&rm.h, &rm.dh, float64(oldRect.H-p.Rect.H)+old.off.h, old.vel.h, now)
+		}
+		if dimMoves {
+			c.retargetComponent(&rm.dim, &rm.ddim, dimOff, old.dimV, now)
+		}
 		if rm.on() {
 			sc.rects[p.ID], sc.rectsWS = rm, m.Current()
 		} else {
 			delete(sc.rects, p.ID)
 		}
 	}
+}
+
+// transitionStash animates the stash windows an action shows or hides on
+// the workspace b's screen keeps on screen (a toggle-stash-visible, a click
+// that closes the stash, a navigation that brings a window to a margin or
+// sends it off): one drawn after and not before appears (appearAt), one
+// drawn before and hidden after leaves from its last settled placement
+// (leave). A window that is gone from the layout (unstashed, moved) or
+// fullscreen is not touched: its rect motion, if any, is transitionRects's.
+// Nothing during a session lock or with a covering fullscreen window (it
+// keeps its direct scanout path).
+func (c *Core) transitionStash(b *viewShot, now time.Time) {
+	sc := b.sc
+	m := sc.mon
+	w := m.Current()
+	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 {
+		return
+	}
+	layout := m.Layout()
+	for _, p := range b.stash {
+		i := slices.IndexFunc(layout, func(q Placement) bool { return q.ID == p.ID })
+		if i >= 0 && layout[i].Hidden && !p.Fullscreen {
+			c.leave(sc, p, now)
+		}
+	}
+	for _, p := range layout {
+		if p.Hidden || p.Fullscreen || w.stashIndex(p.ID) < 0 || slices.ContainsFunc(b.rects, func(r rectShot) bool { return r.id == p.ID }) {
+			continue
+		}
+		c.appearAt(sc, p, now)
+	}
+}
+
+// peekDim is the veil the settled placement p draws: the configured stash
+// dim for a peek, none for another window. The placement's Dim is an
+// offset from it.
+func (c *Core) peekDim(p Placement) float64 {
+	if p.Peek {
+		return c.cfg.Stash.Dim
+	}
+	return 0
 }
 
 // transitionOverview starts the motions of an action that opened or closed

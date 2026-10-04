@@ -1024,18 +1024,24 @@ func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
 // and their popups wait, a click selects a peek, and the script state
 // tells the stash and whether it is hidden.
 func TestStashEndToEnd(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
+		stashEndToEnd(t, r)
+	})
+}
+
+func stashEndToEnd(t *testing.T, r *landRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
-		r.mapWindow(t, id)
+		r.mapLanded(t, id)
 	}
-	r.key(t, "s", ports.ModAlt|ports.ModShift) // 3 stashed
-	r.key(t, "Left", ports.ModAlt)             // stays on 3: its stash's only window
-	sc := r.key(t, "s", ports.ModAlt)
+	r.keyLanded(t, "s", ports.ModAlt|ports.ModShift) // 3 stashed
+	r.keyLanded(t, "Left", ports.ModAlt)             // stays on 3: its stash's only window
+	sc := r.keyLanded(t, "s", ports.ModAlt)
 	if got := shown(sc)["DP-1"]; !slices.Equal(got, []ports.WindowID{1, 2}) {
 		t.Fatalf("hidden stash: %v", got)
 	}
-	r.key(t, "Left", ports.ModAlt) // tiles: from 2 to 1
-	sc = r.key(t, "s", ports.ModAlt|ports.ModShift)
+	r.keyLanded(t, "Left", ports.ModAlt) // tiles: from 2 to 1
+	sc = r.keyLanded(t, "s", ports.ModAlt|ports.ModShift)
 	// Stash 3 1: 1 selected in the middle, 3 peeking left, dimmed.
 	var peek, sel ports.SceneWindow
 	for _, w := range sc[0].Windows {
@@ -1061,7 +1067,7 @@ func TestStashEndToEnd(t *testing.T) {
 	// A click on the peek (x 0..19 of 200) selects it.
 	r.input <- ports.PointerMotion{X: 5, Y: 50}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	receive(t, r.scenes)
+	r.land(receive(t, r.scenes))
 	st := receive(t, r.state)
 	for st.Window == nil || st.Window.ID != 3 {
 		st = receive(t, r.state)
@@ -1077,7 +1083,7 @@ func TestStashEndToEnd(t *testing.T) {
 		t.Fatalf("tile %+v", w)
 	}
 	r.input <- ports.PointerButton{Button: 0x110}
-	r.key(t, "s", ports.ModAlt)
+	r.keyLanded(t, "s", ports.ModAlt)
 	st = receive(t, r.state)
 	for !st.Windows[0].Hidden {
 		st = receive(t, r.state)
