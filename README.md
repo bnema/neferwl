@@ -20,11 +20,50 @@ I wanted a compositor I would never have to think about. It takes the newest Way
 
 It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no bar, no wallpaper. If you want them, bring your own: any layer-shell client works. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
+## OK, but why Go?
+
+Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). The usual objection to Go is the garbage collector. It is a fair one, so here is how NeferWL deals with it, and why Go turns out to fit a compositor well.
+
+### A compositor is a concurrency problem
+
+A compositor sits in the middle of many independent streams that never stop: keyboard and pointer events, client requests and buffer commits, one vblank and page-flip cycle per monitor, frame fences from the GPU, presentation feedback, screen captures, config reloads, hotplug, idle and lock state. None of them should wait on another. A slow client must not delay a flip, and rendering must not delay input.
+
+Go has this built in. Goroutines are cheap, channels carry messages between them, and the runtime spreads them over every CPU core. NeferWL follows one idiom everywhere: **each piece of state has one owner goroutine, and others talk to it over channels.**
+
+- **Input** runs on its own thread, reads libinput and sends events to core.
+- **Core** owns windows, workspaces and focus. It turns input and client events into layouts and scenes.
+- **The Wayland server** owns client connections. It sends client events and surface content, and receives commands back.
+- **Each output** owns its DRM state, renders its scenes with Vulkan, commits frames and reports flips and presentation times.
+- **Capture, config, idle, sessions and leases** each run in their own goroutine.
+
+About 35 channels connect them, all created in one place, so the full data flow is easy to read. There is no mutex on window state, no lock ordering to get wrong, and the race detector checks every test. When CAP_SYS_NICE is granted, the input and output goroutines lock their OS thread and request real-time scheduling, so a busy CPU cannot delay a cursor move or a flip.
+
+### Keeping the garbage collector out of the way
+
+- **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
+- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](docs/performance.md).
+- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
+- **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
+- **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.
+
+### A pleasure to work on
+
+A full build takes seconds, and tests, race detection, profiling and formatting come with the language. I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
+
+- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
+- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan without cgo, generated from `vk.xml`.
+- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): Wayland protocol bindings, generated from the upstream XML.
+- [wlturbo](https://github.com/bnema/wlturbo): a fast Wayland client.
+- [neferclient](https://github.com/bnema/neferclient): a client toolkit on top of them: connection, outputs, surface roles, seat and dmabuf presentation.
+
 ## Features
 
-- **Games.** Fullscreen is exclusive: nothing is drawn above a fullscreen window but a locker, so it is scanned out directly, with tearing, VRR and explicit sync when the client asks for them. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **Games.** Fullscreen is exclusive: nothing is drawn above a fullscreen window but a locker, so it is scanned out directly, with tearing and VRR when the client asks for them. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **Explicit sync.** On by default for every client, with no flag to set. Client fences go straight to the GPU and to KMS, so frames are shown when they are ready, without implicit-sync stalls.
 - **HDR.** HDR10 output on capable displays. HDR clients (games, browsers, video players) are shown at full range; SDR content is shown at a configured brightness.
 - **Column tiling.** Columns scroll to the right, as in PaperWM and Niri, or stay on screen and split, as in Sway. Per output or per workspace.
+- **Overview.** `cmd+o` by default (or a four-finger swipe up) shows the workspaces of a monitor as live, scaled previews. In `fixed` mode, windows hidden behind a maximized column show as a stack of cards behind it, so nothing is lost out of sight. Pick a window with the keyboard, the touchpad or a click.
+- **Stash.** Set aside a window you do not need right now. Each workspace has its own stash, with no limit on the number of windows. By default, `cmd+s` shows it as a floating strip over your tiles, or hides it again; `cmd+shift+s` sends a window into the stash or back to its column.
 - **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
 - **Multi-monitor.** Each output has its own workspaces. When an output is unplugged its workspaces move to another one, and return when it is plugged back. Fractional scale per output.
 - **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, nefercap, cliphist, swayidle, wlr-randr and input methods such as fcitx5 work through their standard protocols. See [Desktop integration](docs/desktop.md).
@@ -57,7 +96,7 @@ The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `term
 - `wp_single_pixel_buffer_v1`: solid backgrounds and letterbox bars are drawn as fills, without client buffers.
 - Direct scanout of a fullscreen window's buffer; dmabuf feedback gives it a scanout-ready format first. A lone opaque window can use an overlay plane. On HDR outputs, SDR windows also bypass composition when the plane has a colour pipeline.
 - `wp_tearing_control_v1` and VRR while a fullscreen window covers the output.
-- `wp_linux_drm_syncobj_v1`: client fences go to KMS. NVIDIA drivers need it.
+- `wp_linux_drm_syncobj_v1`: client fences go to KMS.
 - `wp_presentation`, `wp_fifo_v1`, `wp_commit_timing_v1` for frame pacing.
 - `wp_fractional_scale_v1` and `wp_viewporter`: clients render at the output scale, nothing is rescaled.
 - Damage tracking, occlusion of surfaces behind opaque ones, no work on idle outputs. Frame, cursor, overlay and VRR in one atomic commit.
@@ -91,12 +130,6 @@ make install   # builds dist/neferwl-*.pkg.tar.zst from HEAD, then installs it w
 
 On other distributions, download a `linux_amd64` or `linux_arm64` archive from [Releases](https://github.com/bnema/neferwl/releases) and check it against `checksums.txt`, or run `make bin` to build `bin/neferwl`.
 
-## Releases
-
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It runs the CI checks, then GoReleaser builds the archives, `checksums.txt`, a provenance attestation and the GitHub release. Last, `packaging/aur/publish.sh` builds `neferwl-bin` and `neferwl-git` with makepkg, checks every source checksum for x86_64 and aarch64, and pushes them to the AUR. Pre-release tags (`v0.2.0-rc1`) get a GitHub release and are kept off the AUR.
-
-The workflow needs the `AUR_SSH_PRIVATE_KEY`, `AUR_USERNAME` and `AUR_EMAIL` repository secrets.
-
 ## Configuration
 
 NeferWL reads `$XDG_CONFIG_HOME/neferwl/config`, or `~/.config/neferwl/config`. `neferwl --config <path>` selects another file, and `neferwl validate-config [path]` checks a file without starting the compositor.
@@ -113,24 +146,6 @@ The file has one `key = value` per line, and `#` starts a comment. A missing fil
 - [Screen capture](docs/capture.md): capture protocols, the indicator, the executable allowlist, sandboxed clients and portals.
 - [Headless mode](docs/headless.md): run without a screen, take screenshots, play input scripts and test input methods.
 - [Performance](docs/performance.md): how to profile, the allocation guards, and reference numbers.
-
-## But why Go?
-
-Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). The usual objection to Go is the garbage collector. It is a fair one, so here is how NeferWL deals with it.
-
-- **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
-- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](docs/performance.md).
-- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
-- **The concurrency model fits.** Input, each output and each client own their own state in their own goroutine, and talk over channels. There is no mutex on window state, and the race detector checks every test.
-- **It is a pleasure to work on.** A full build takes seconds, and tests, race detection, profiling and formatting come with the language.
-
-I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
-
-- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
-- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan without cgo, generated from `vk.xml`.
-- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): Wayland protocol bindings, generated from the upstream XML.
-- [wlturbo](https://github.com/bnema/wlturbo): a fast Wayland client.
-- [neferclient](https://github.com/bnema/neferclient): a client toolkit on top of them: connection, outputs, surface roles, seat and dmabuf presentation.
 
 ## Developing the bindings
 
