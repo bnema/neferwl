@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
+	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/neferwl/internal/sessionlock"
 )
 
 // Native Close validation is exercised by DRM's generated-KMS tests. This

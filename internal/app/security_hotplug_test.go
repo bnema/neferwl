@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/bnema/neferwl/internal/sessionlock"
 )
 
 func hotplugEvent(t *testing.T, events <-chan ports.SecurityBackendEvent) ports.SecurityBackendEvent {
