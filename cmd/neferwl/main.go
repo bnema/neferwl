@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/pprof"
@@ -25,6 +26,24 @@ import (
 )
 
 type usageError struct{ error }
+
+// openScript opens the --input script. It returns a nil interface, not a
+// typed-nil *os.File, when no script was requested: app.Run tests the
+// interface against nil to decide whether to read a script. closeScript
+// closes what openScript opened; it does nothing for stdin and for no script.
+func openScript(path string) (script io.ReadCloser, closeScript func(), err error) {
+	switch path {
+	case "":
+		return nil, func() {}, nil
+	case "-":
+		return os.Stdin, func() {}, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return f, func() { _ = f.Close() }, nil
+}
 
 // version is set with -ldflags "-X main.version=..." by packaged builds.
 var version string
@@ -215,19 +234,12 @@ func run() error {
 		fmt.Fprintln(os.Stderr, cfgErr)
 		return cfgErr
 	}
-	var script *os.File
-	if *inputPath != "" {
-		if *inputPath == "-" {
-			script = os.Stdin
-		} else {
-			var err error
-			script, err = os.Open(*inputPath)
-			if err != nil {
-				return err
-			}
-			defer script.Close()
-		}
+	script, closeScript, err := openScript(*inputPath)
+	if err != nil {
+		return err
 	}
+	// app.Run closes the script on shutdown; this covers the returns before it.
+	defer closeScript()
 	selected := mergeDebug(cfg.Log.Debug, *debugFlag)
 	if _, err := logging.ParseDebug(selected); err != nil {
 		fmt.Fprintln(os.Stderr, err)
