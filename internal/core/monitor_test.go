@@ -72,23 +72,41 @@ func TestMonitorRemovesEmptyWorkspaceOnceLeft(t *testing.T) {
 	}
 }
 
-func TestMonitorFirstWorkspaceStays(t *testing.T) {
+func TestMonitorEmptyFirstWorkspaceRemovedOnceLeft(t *testing.T) {
 	m := monitor()
 	m.AddWindow(1)
 	m.RemoveWindow(1)
 	m.FocusNumber(2)
+	// The only workspace stays.
 	if len(m.Workspaces) != 1 || m.Active != 0 {
 		t.Fatal(windows(m), m.Active)
 	}
-	// Leaving an empty first workspace does not remove it.
 	m.AddWindow(1)
 	m.FocusNumber(2)
 	m.AddWindow(2)
 	m.FocusNumber(1)
 	m.RemoveWindow(1)
+	// Still on the now-empty workspace 1: it stays while active.
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{}, {2}, {}}) || m.Active != 0 {
+		t.Fatal(windows(m), m.Active)
+	}
+	// Once left it is removed: workspace 2 becomes 1.
 	m.FocusNumber(2)
-	if !reflect.DeepEqual(windows(m), [][]WindowID{{}, {2}, {}}) {
-		t.Fatal(windows(m))
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{2}, {}}) || m.Active != 0 {
+		t.Fatal(windows(m), m.Active)
+	}
+}
+
+// A window closing elsewhere empties workspace 1: the first non-empty
+// workspace is promoted at once and the view stays on its windows.
+func TestMonitorEmptyFirstWorkspaceRemovedFromElsewhere(t *testing.T) {
+	m := monitor()
+	m.AddWindow(1)
+	m.FocusNumber(2)
+	m.AddWindow(2)
+	m.RemoveWindow(1)
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{2}, {}}) || m.Active != 0 {
+		t.Fatal(windows(m), m.Active)
 	}
 }
 
@@ -153,8 +171,8 @@ func TestMonitorActions(t *testing.T) {
 	if id, _ := m.Focused(); id != 1 {
 		t.Fatal(id)
 	}
-	// Workspace 1 is empty but first: it stays.
-	if len(m.Workspaces) != 4 {
+	// The empty workspace 1 is removed once left.
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{2}, {1}, {}}) || m.Active != 1 {
 		t.Fatal(windows(m))
 	}
 	if e := m.Apply("spawn foot"); !e.Spawn {
