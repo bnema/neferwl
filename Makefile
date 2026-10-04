@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check arch check perf-check bin tty logs pkg install
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch check perf-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -50,12 +50,18 @@ FAKES := ^\s*type\s+\w*(fake|stub|spy|dummy|mock)\w*|^\s*\w*(fake|stub|spy|dummy
 fakes-check:
 	@rc=0; grep -rniE '$(FAKES)' --include='*_test.go' --exclude='*_mock_test.go' internal cmd || rc=$$?; \
 	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'handwritten test double: add an interface and a Mockery entry (see AGENTS.md)' >&2; exit 1; }
+# The component field comes from logging.For: a second one on a scoped logger
+# duplicates the JSON key. grep exit 1 (no match) passes; 0 and 2 fail.
+LOGCOMPONENT := "component"|FieldComponent
+log-check:
+	@rc=0; grep -rnE '$(LOGCOMPONENT)' --include='*.go' --exclude='*_test.go' --exclude-dir=logging internal cmd || rc=$$?; \
+	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'component log field: derive a logger with logging.For instead (see AGENTS.md)' >&2; exit 1; }
 arch:
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
 # Fast, mandatory guards for tiled content publications and SHM copies.
 perf-check:
 	CGO_ENABLED=0 go test ./internal/app ./internal/adapters/drm ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestOutputRoutingAllocations|TestReportSeenAllocations|TestFrameLifecycleTransitionsAllocations|TestFullscreenShownAllocations|TestFrameDecisionAllocations|TestCommitFrameAllocations|TestColorPipelineAllocations|TestShownBySnapshotAllocations|TestDueFramesAllocations|TestRenderSteadyStateAllocations|TestAccountFlipAllocations|TestFlipDoneAllocations|TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestCapturedCommitApplyAllocations|TestCapturedViewportApplyAllocations|TestEffectiveInputEmptyTreeAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget)$$' -count=1
-check: vet test arch fakes-check perf-check
+check: vet test arch fakes-check log-check perf-check
 
 # Arch package of the committed HEAD (packaging/arch/PKGBUILD). Go modules
 # come from the module proxy in prepare(); the build itself runs offline.

@@ -642,11 +642,11 @@ func translateKeyboard(code uint32, pressed bool, t time.Duration, opts Options,
 // to core for the locker. VT switching is allowed and does not release the lock.
 func translateKey(ke ports.KeyEvent, opts Options, security ports.SecurityState) (ports.InputEvent, error) {
 	if opts.LogKeys && !security.Protected {
-		opts.Log.Debug().Str("component", "input").Uint32("code", ke.Keycode).Str("keysym", ke.Keysym).Bool("pressed", ke.Pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
+		opts.Log.Debug().Uint32("code", ke.Keycode).Str("keysym", ke.Keysym).Bool("pressed", ke.Pressed).Uint8("mods", uint8(ke.Mods)).Msg("key")
 	}
 	switch action, vt := hotkey(ke, security.Protected); action {
 	case hotkeyQuit:
-		opts.Log.Warn().Str("component", "input").Str("reason", "emergency-key").Msg("quit")
+		opts.Log.Warn().Str("reason", "emergency-key").Msg("quit")
 		return nil, ErrEmergencyQuit
 	case hotkeyVT:
 		opts.Seat.SwitchVT(vt)

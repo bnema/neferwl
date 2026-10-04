@@ -373,7 +373,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		}
 	} else if opts.SyncobjNode != "" {
 		if node, err = openSyncobj(opts.SyncobjNode); err != nil {
-			log.Info().Str("component", "wayland").Err(err).Msg("explicit sync off")
+			log.Info().Err(err).Msg("explicit sync off")
 			node = nil
 		} else if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
 			node.close()

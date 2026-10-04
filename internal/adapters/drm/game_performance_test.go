@@ -18,7 +18,7 @@ func TestScaledScanoutRectAndCachedRefusal(t *testing.T) {
 	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
 	c := ports.SurfaceContent{ID: 1, Width: 100, Height: 50, LogicalW: 200, LogicalH: 100, Source: [4]float32{5, 2, 90, 46}, DMABuf: &ports.DMABuf{ID: 9, Format: fourccXRGB}}
 	var log bytes.Buffer
-	o.log = zerowrap.New(zerowrap.Config{Output: &log})
+	o.renderLog = zerowrap.New(zerowrap.Config{Output: &log})
 	surfaces := map[ports.WindowID]ports.SurfaceContent{1: c}
 	if fb, _, _ := o.scanoutFrame(s, surfaces); fb != 0 || o.reason != "scale_refused" {
 		t.Fatalf("fb %d reason %s", fb, o.reason)
@@ -99,5 +99,19 @@ func TestContentTypeFrameAndReset(t *testing.T) {
 	}
 	if _, ok := (*commits)[3].req.value(tConn, 81); ok {
 		t.Fatal("absent property set")
+	}
+}
+
+// A scanout decision is logged once, under the render component only.
+func TestScanoutReasonLogsOneComponent(t *testing.T) {
+	o, _, _ := testOutput(t)
+	var log bytes.Buffer
+	o.renderLog = zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &log}).WithField("component", "render")
+	o.setScanoutReason("test")
+	o.setOverlayReason("test")
+	for _, line := range bytes.Split(bytes.TrimSpace(log.Bytes()), []byte("\n")) {
+		if n := bytes.Count(line, []byte(`"component"`)); n != 1 {
+			t.Fatalf("%d component fields in %s", n, line)
+		}
 	}
 }

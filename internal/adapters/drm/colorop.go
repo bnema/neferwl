@@ -176,7 +176,7 @@ func (o *Output) colorRefused(err error, fb uint32, fence *os.File, vrr bool, cu
 	if ov.buf != 0 && ov.color.mode != colorBypass {
 		o.overlay.setVerdict(ov.color.format, cur.on, false)
 	}
-	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Bool("cursor", cur.on).Msg("plane colour pipeline refused")
+	o.renderLog.Info().Err(err).Str("connector", o.conn.name).Bool("cursor", cur.on).Msg("plane colour pipeline refused")
 	return true
 }
 
@@ -197,7 +197,7 @@ func (o *Output) colorConflict(err error, cursorOn bool) bool {
 		}
 	}
 	if hit {
-		o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("plane colour pipeline refused with the cursor")
+		o.renderLog.Info().Err(err).Str("connector", o.conn.name).Msg("plane colour pipeline refused with the cursor")
 	}
 	return hit
 }
@@ -225,7 +225,7 @@ func (o *Output) colorAllowed(p *plane, format uint32, test func(req *atomicReq)
 	}
 	p.setVerdict(format, cursor, err == nil)
 	if err != nil {
-		o.log.Info().Str("component", "render").Err(err).Uint32("format", format).Uint32("plane", p.id).Bool("cursor", cursor).Str("connector", o.conn.name).Msg("plane colour pipeline refused")
+		o.renderLog.Info().Err(err).Uint32("format", format).Uint32("plane", p.id).Bool("cursor", cursor).Str("connector", o.conn.name).Msg("plane colour pipeline refused")
 	}
 	return err == nil
 }
@@ -244,7 +244,7 @@ func (o *Output) setupColor() {
 	}
 	blob, err := o.k.createBlob(ctmBytes(bt709ToBT2020))
 	if err != nil {
-		o.log.Warn().Str("component", "drm").Err(err).Str("connector", o.conn.name).Msg("colour matrix blob; plane colour pipelines off")
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("colour matrix blob; plane colour pipelines off")
 		o.dropPipelines()
 		return
 	}
@@ -270,7 +270,7 @@ func (o *Output) readColor() {
 		}
 		cp, why := readColorPipeline(o.k, p)
 		p.pipeline = cp
-		o.log.Info().Str("component", "drm").Str("connector", o.conn.name).Uint32("plane", p.id).Bool("matched", cp != nil).Str("reason", why).Msg("plane colour pipeline")
+		o.log.Info().Str("connector", o.conn.name).Uint32("plane", p.id).Bool("matched", cp != nil).Str("reason", why).Msg("plane colour pipeline")
 	}
 }
 

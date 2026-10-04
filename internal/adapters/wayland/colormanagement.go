@@ -196,7 +196,7 @@ func (h *colorSurface) SetImageDescription(r *cm.WpColorManagementSurfaceV1, des
 		return
 	}
 	h.surf.next.color = d.SurfaceColor
-	h.surf.server.log.Debug().Str("component", "wayland").Uint32("tf", d.TF).Uint32("primaries", d.Primaries).Msg("surface color description set")
+	h.surf.server.log.Debug().Uint32("tf", d.TF).Uint32("primaries", d.Primaries).Msg("surface color description set")
 }
 func (h *colorSurface) UnsetImageDescription(r *cm.WpColorManagementSurfaceV1) {
 	if h.surf == nil || h.surf.destroyed {
@@ -204,7 +204,7 @@ func (h *colorSurface) UnsetImageDescription(r *cm.WpColorManagementSurfaceV1) {
 		return
 	}
 	h.surf.next.color = SurfaceColor{}
-	h.surf.server.log.Debug().Str("component", "wayland").Msg("surface color description unset")
+	h.surf.server.log.Debug().Msg("surface color description unset")
 }
 
 type colorFeedback struct {
