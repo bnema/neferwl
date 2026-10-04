@@ -302,24 +302,35 @@ type SeqDamage struct {
 // DamageSince is the union of changes after content seq up to this one,
 // and false when the history does not reach back to seq (redraw all).
 func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
+	out, ok := c.AppendDamageSince(nil, seq)
+	if !ok {
+		return nil, false
+	}
+	return out, true
+}
+
+// AppendDamageSince is DamageSince appending to dst, so a caller reusing
+// its slice allocates nothing. When the history does not reach back to seq
+// it returns dst unchanged and false.
+func (c SurfaceContent) AppendDamageSince(dst []Rect, seq uint64) ([]Rect, bool) {
 	if seq >= c.Seq {
-		return nil, true
+		return dst, true
 	}
 	h := c.DamageHistory
 	if len(h) == 0 || h[0].Seq > seq+1 || h[len(h)-1].Seq != c.Seq {
-		return nil, false
+		return dst, false
 	}
-	var out []Rect
+	n := len(dst)
 	for _, d := range h {
 		if d.Seq <= seq {
 			continue
 		}
 		if d.Full {
-			return nil, false
+			return dst[:n], false
 		}
-		out = append(out, d.Rects...)
+		dst = append(dst, d.Rects...)
 	}
-	return out, true
+	return dst, true
 }
 
 // Subsurface is a child surface at X, Y logical pixels from the root

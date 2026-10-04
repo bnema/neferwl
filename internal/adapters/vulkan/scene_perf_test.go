@@ -62,20 +62,36 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			if allocs := testing.AllocsPerRun(50, frameDraws); allocs != 0 {
 				t.Errorf("moving window draws: %.1f allocs/frame, want 0", allocs)
 			}
-			// A content change under an unchanged scene Seq: partial redraw
-			// from the window damage, clipped to the changed region.
-			changed := [2]ports.SurfaceContent{content, content}
-			changed[1].Seq, changed[1].Version = 2, 2
-			same := scene
-			same.Seq = r.last.sceneSeq
+			// A content change under an unchanged scene Seq: a partial
+			// redraw clipped to the changed buffer region, replicating the
+			// partial sequence of Render. The stand-in target holds the
+			// previous content Seq of the window, and is never updated, so
+			// every run is damaged.
+			dc := content
+			dc.Seq, dc.Version = 2, 2
+			dc.DamageHistory = []ports.SeqDamage{{Seq: 2, Rects: []ports.Rect{{X: 1, Y: 1, W: 2, H: 2}}}}
+			pcontents := map[ports.WindowID]ports.SurfaceContent{1: dc}
+			held := &target{valid: true, sceneSeq: scene.Seq, windows: map[ports.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, r.width, r.height)}}}
+			var area image.Rectangle
+			var whole bool
 			partial := func() {
-				n++
-				contents[1] = changed[n%2]
-				_ = r.draws(same, contents, r.frameDamage(r.last, same, bounds))
+				dmg := r.frameDamage(held, scene, bounds)
+				ds := r.draws(scene, pcontents, dmg)
+				dmg.finish()
+				ds = append(ds, draw{})
+				copy(ds[1:], ds[:len(ds)-1])
+				ds[0] = r.fillDraw(dmg.area, parseColor(scene.Background))
+				ds = dmg.clip(ds)
+				r.scratchDraws = ds
+				r.orient(ds, scene.Transform)
+				area, whole = dmg.area, dmg.all()
 			}
 			partial()
+			if whole || area.Empty() || area.Dx()*area.Dy() >= bounds.Dx()*bounds.Dy() {
+				t.Fatalf("not a partial redraw: all %v, area %v of %v", whole, area, bounds)
+			}
 			if allocs := testing.AllocsPerRun(50, partial); allocs != 0 {
-				t.Errorf("content-damage draws: %.1f allocs/frame, want 0", allocs)
+				t.Errorf("partial redraw draws: %.1f allocs/frame, want 0", allocs)
 			}
 		})
 	}

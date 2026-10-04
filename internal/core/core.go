@@ -588,12 +588,13 @@ func (c *Core) publish(ctx context.Context) error {
 		if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
 			scene.DropHints = slices.Clone(d.target.hints)
 		}
-		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		if sc.mon.ov.open {
 			// Frame the selection and separate numbered and named row groups.
 			_, scene.Separators = sc.mon.overviewRows()
 			scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
+		} else {
+			// Only the focused output lights the focused window's lines.
+			scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		}
 		// A window alone on screen needs no pulse to show it has the focus.
 		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, frame) == 1

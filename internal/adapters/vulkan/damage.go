@@ -22,6 +22,8 @@ type damageRegion struct {
 	seen  map[ports.WindowID]bool
 	bound image.Rectangle
 	drawn map[ports.WindowID]heldWindow
+	// rects is scratch for a content's damage rects (reused across frames).
+	rects []ports.Rect
 }
 
 // heldWindow is a window a target holds: its content Seq and rect.
@@ -50,7 +52,7 @@ func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle
 		r.damageDrawn = make(map[ports.WindowID]heldWindow)
 	}
 	clear(r.damageDrawn)
-	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds}
+	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0]}
 	if tg.valid && s.Seq != 0 && tg.sceneSeq == s.Seq {
 		r.damage.held = tg
 	}
@@ -86,13 +88,12 @@ func (d *damageRegion) window(id ports.WindowID, c ports.SurfaceContent, rect im
 		d.add(rect)
 		return
 	}
-	rects, known := c.DamageSince(held)
+	var known bool
+	d.rects, known = c.AppendDamageSince(d.rects[:0], held)
 	if !known {
 		d.add(rect)
-		return
 	}
-	// Mapped by content, called next: nothing more here.
-	_ = rects
+	// Otherwise mapped by content, called next: nothing more here.
 }
 
 // content maps a root surface's buffer damage onto full (where its w×h
@@ -107,10 +108,12 @@ func (d *damageRegion) content(id ports.WindowID, c *ports.SurfaceContent, full,
 	if !ok || held == c.Seq || len(c.Children) > 0 {
 		return
 	}
-	rects, known := c.DamageSince(held)
+	var known bool
+	d.rects, known = c.AppendDamageSince(d.rects[:0], held)
 	if !known || c.Width <= 0 || c.Height <= 0 {
 		return
 	}
+	rects := d.rects
 	if c.Transform != 0 {
 		d.add(dst)
 		return
