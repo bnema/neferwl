@@ -18,7 +18,7 @@
 
 I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes, no bar, no wallpaper. If you want them, bring your own: any layer-shell client works. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+It is small on purpose, and it will stay small. Drawing is kept to simple primitives: no blur, no shadows, no rounded corners, no themes, no animated transitions or effects. There is no built-in bar or wallpaper either; for those, bring your own: any layer-shell client works. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
 ## OK, but why Go?
 
@@ -58,7 +58,9 @@ A full build takes seconds, and tests, race detection, profiling and formatting 
 
 ## Features
 
-- **Games.** Fullscreen is exclusive: nothing is drawn above a fullscreen window but a locker, so it is scanned out directly, with tearing and VRR when the client asks for them. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **Games.** A fullscreen window is scanned out directly: its buffer goes to the display without a composition pass. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
+- **VRR.** Variable refresh rate turns on while a fullscreen window covers the output, so the display follows the game's frame rate. On by default (`render.vrr`).
+- **Screen tearing.** A game in direct scanout that asks for tearing gets it, for the lowest input latency. On by default (`render.tearing`).
 - **Explicit sync.** On by default for every client, with no flag to set. Client fences go straight to the GPU and to KMS, so frames are shown when they are ready, without implicit-sync stalls.
 - **HDR.** HDR10 output on capable displays. HDR clients (games, browsers, video players) are shown at full range; SDR content is shown at a configured brightness.
 - **Column tiling.** Columns scroll to the right, as in PaperWM and Niri, or stay on screen and split, as in Sway. Per output or per workspace.
