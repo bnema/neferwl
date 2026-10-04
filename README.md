@@ -18,7 +18,7 @@
 
 I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-It is small on purpose, and it will stay small. Drawing is kept to simple primitives: no blur, no shadows, no rounded corners, no themes, no animated transitions or effects. There is no built-in bar or wallpaper either; for those, bring your own: any layer-shell client works. The only motion is a touchpad swipe that follows your fingers, and a brief pulse on the window you just focused, which you can turn off. Anything else that costs a frame is left out. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+It is small on purpose, and it will stay small. Drawing is kept to simple primitives: no blur, no shadows, no rounded corners, no themes. There is no built-in bar or wallpaper either; for those, bring your own: any layer-shell client works. Windows and the view move with short springs (about 300 ms) when you scroll, switch workspaces, move columns or windows, or resize them, and a brief pulse marks the window you just focused. They stay cheap: nothing runs while the screen is still, frames follow the display, apps are resized once, to their final size, and do not redraw during a transition, and nothing is copied, blurred or scaled. `animations = off` makes every change instant. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
 
 ## OK, but why Go?
 

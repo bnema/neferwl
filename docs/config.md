@@ -44,8 +44,10 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `mouse.accel-profile` | `adaptive` | `adaptive`: faster moves go further; `flat`: constant speed |
 | `mouse.left-handed` | `off` | Swaps the left and right mouse buttons |
 | `cursor.hide-after` | `5s` | Hides the pointer cursor after this long without motion; the next motion shows it. 100ms to 1h, or `off` |
+| `animations` | `on` | `off` makes every change instant: swipe landings, scrolling, workspace switches, window moves and resizes, the focus pulse |
+| `animations.slowdown` | `1` | Multiplies the duration of every transition, `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, a window alone on screen (e.g. a maximized column), the overview and a window focused as it opens |
+| `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, a window alone on screen (e.g. a maximized column), the overview and a window focused as it opens. Off while `animations = off` |
 | `focus.effect` | `screen` | What the focus indicator draws: `screen` brightens the window slightly, visible on black too. HDR (PQ) client content is not brightened on HDR outputs |
 | `focus.strength` | `0.04` | Peak of the focus effect, `0.01` to `0.2`: black reaches about 10/255 at `0.04` |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; use the overview to show an occupied one, or a `workspace <name>` bind to show it and toggle back |
