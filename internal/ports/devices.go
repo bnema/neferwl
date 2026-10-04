@@ -62,6 +62,11 @@ type Renderer interface {
 	// waits for the GPU: debug only. Nil when it cannot (every capture
 	// slot leased, or the copy failed).
 	Pixels() *image.RGBA
+	// HDRPixels reads the last HDR frame's XRGB2101010 target back, each
+	// 10-bit code scaled to 16 bits (c<<6 | c>>4), A = 0xffff. It waits for
+	// the GPU: debug only. Nil when the output is SDR, the target is not
+	// readable, a slot is busy or the copy failed.
+	HDRPixels() *image.RGBA64
 	// BeginCapture submits a GPU copy of the last rendered frame into a
 	// free slot and returns without waiting. ErrCaptureBusy when every
 	// slot is leased; another error when the copy cannot be tracked (no

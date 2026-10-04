@@ -49,6 +49,9 @@ type Options struct {
 	// before any client starts, and withdraws them on exit.
 	Session       bool
 	ScreenshotDir string
+	// ScreenshotRaw also writes latest-pq.png, the raw PQ codes of a
+	// virtual HDR output (test-only; needs ScreenshotDir and HeadlessHDR).
+	ScreenshotRaw bool
 	// Sizes are the headless outputs (width, height), left to right; empty
 	// means one 1920x1080 output. With several outputs, screenshots go to
 	// one subdirectory per output (HEADLESS-1, HEADLESS-2, ...).
@@ -306,7 +309,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			})
 			return
 		}
-		done <- runHeadless(ctx, sizes, opts.ScreenshotDir, opts.HeadlessHDR, apply, outputIO, curs, newRenderer, logging.For(ctx, "render"))
+		done <- runHeadless(ctx, headlessOptions{sizes: sizes, shots: opts.ScreenshotDir, hdr: opts.HeadlessHDR, raw: opts.ScreenshotRaw}, apply, outputIO, curs, newRenderer, logging.For(ctx, "render"))
 	}()
 
 	if hw != nil {
