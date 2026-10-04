@@ -221,6 +221,17 @@ func (m motion) sampleAt(now time.Time) (pos, vel float64) {
 	return pos, m.v
 }
 
+// scale multiplies the motion's distance and speed by k: the spring is
+// linear in its start offset and speed, so the progress is unchanged.
+func (m *motion) scale(k float64) {
+	if !m.on {
+		return
+	}
+	m.spring.From *= k
+	m.spring.Velocity *= k
+	m.v *= k
+}
+
 // velocity is the speed of the last sample, in units per second.
 func (m motion) velocity() float64 { return m.v }
 

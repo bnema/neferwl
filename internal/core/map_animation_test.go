@@ -81,6 +81,25 @@ func TestMapFullscreenRequestDropsEntrance(t *testing.T) {
 	}
 }
 
+// A fullscreen request inside the grace after the map is ignored (Wine at a
+// remembered size): the entrance goes on.
+func TestMapFullscreenRequestWithinGraceKeepsEntrance(t *testing.T) {
+	r := startSwipe(t, nil)
+	s := r.multiRig.mapWindow(t, 1)[0]
+	if windowOf(t, s, 1).Fade != 1 {
+		t.Fatal("no entrance to keep")
+	}
+	r.client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true}
+	// The flip is a barrier: the request is handled, a leftover scene dropped.
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 30*time.Millisecond, wide.Name)
+	if !ok {
+		t.Fatal("no frame: the entrance stopped")
+	}
+	if w := windowOf(t, set[0], 1); w.Fullscreen || !(w.Fade > 0 && w.Fade < 1) {
+		t.Fatalf("ignored fullscreen request changed the window: %+v", w)
+	}
+}
+
 func windowOf(t *testing.T, s ports.Scene, id ports.WindowID) ports.SceneWindow {
 	t.Helper()
 	for _, w := range s.Windows {

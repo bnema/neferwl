@@ -1107,9 +1107,7 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.WindowMapped:
 				c.mapWindow(v)
 			case ports.WindowResized:
-				if _, w := c.screenOf(v.ID); w != nil {
-					w.ResizeFloating(v.ID, v.Width, v.Height)
-				}
+				c.resizeFloating(v)
 			case ports.PopupRequest:
 				if err := c.placePopup(ctx, v); err != nil {
 					return nil
@@ -1185,9 +1183,11 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
-					if v.Fullscreen {
-						// A game asking for fullscreen right after its map
-						// does not fade in: it keeps the direct scanout path.
+					if w := s.mon.Current(); v.Fullscreen && w.fullscreen == v.ID {
+						// A taskbar or late fullscreen request that took
+						// effect: the window does not fade in, it keeps the
+						// direct scanout path. One that was ignored (the
+						// grace after the map) leaves the entrance running.
 						delete(s.rects, v.ID)
 					}
 				}

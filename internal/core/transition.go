@@ -338,6 +338,53 @@ func (c *Core) appearMapped(id WindowID, now time.Time) {
 	}
 }
 
+// resizeFloating applies a floating window's committed size. A float maps
+// before its first commit, so core first lays it out at a default size;
+// when its entrance runs, the settled rect changing under it would break
+// the aspect of the 90 % rect. The entrance's rect offsets (and their
+// springs, which are linear in their start and speed) are scaled by the
+// settled size ratio: the progress and speed carry over, and the window
+// still grows from 90 % of its real size around its centre.
+func (c *Core) resizeFloating(v ports.WindowResized) {
+	sc, w := c.screenOf(v.ID)
+	if w == nil {
+		return
+	}
+	rm, running := sc.rects[v.ID]
+	running = running && rm.scale && !rm.leaving
+	var old Rect
+	if running {
+		old = settledRect(sc.mon, v.ID)
+	}
+	w.ResizeFloating(v.ID, v.Width, v.Height)
+	if !running {
+		return
+	}
+	cur := settledRect(sc.mon, v.ID)
+	if old.W <= 0 || old.H <= 0 || cur.W <= 0 || cur.H <= 0 || old == cur {
+		return
+	}
+	kw, kh := float64(cur.W)/float64(old.W), float64(cur.H)/float64(old.H)
+	rm.dx, rm.dw = rm.dx*kw, rm.dw*kw
+	rm.dy, rm.dh = rm.dy*kh, rm.dh*kh
+	rm.x.scale(kw)
+	rm.w.scale(kw)
+	rm.y.scale(kh)
+	rm.h.scale(kh)
+	sc.rects[v.ID] = rm
+}
+
+// settledRect is where m's layout puts the visible window id, zero if it
+// shows none.
+func settledRect(m *Monitor, id WindowID) Rect {
+	for _, p := range m.Layout() {
+		if p.ID == id && !p.Hidden {
+			return p.Rect
+		}
+	}
+	return Rect{}
+}
+
 // leave keeps drawing a window the action closed or hid, from its last
 // settled placement p: it fades out and shrinks to 90 % around its centre,
 // then its entry goes. Nothing with animations off, or for a placement that

@@ -198,3 +198,61 @@ func TestMapExceptions(t *testing.T) {
 		}
 	})
 }
+
+// A float maps before its first commit: Width and Height are 0, so core lays
+// it out at a default size, and the real one comes in WindowResized. The
+// entrance must restart from 90 % of the real size, not stay distorted.
+func TestMapFloatEntranceFollowsItsFirstCommit(t *testing.T) {
+	c, ic, _ := fadeCore(t)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	c.mapWindow(ports.WindowMapped{ID: 1})
+	c.stopAnimations()
+	c.mapWindow(ports.WindowMapped{ID: 2, Floating: true})
+	indicatorScene(t, c)
+	guess := settledOf(t, sc, 2).Rect
+
+	c.resizeFloating(ports.WindowResized{ID: 2, Width: 60, Height: 20})
+	s := indicatorScene(t, c)
+	real := settledOf(t, sc, 2).Rect
+	if real == guess || real.W == real.H*guess.W/guess.H {
+		t.Fatalf("the resize did not change the settled shape: %+v then %+v", guess, real)
+	}
+	w := sceneWindow(t, s, 2)
+	want := scaledRect(real, appearScale)
+	near := func(a, b int) bool { return a-b <= 1 && b-a <= 1 }
+	if w.Fade != 1 || !near(w.Rect.X, want.X) || !near(w.Rect.Y, want.Y) || !near(w.Rect.W, want.W) || !near(w.Rect.H, want.H) {
+		t.Fatalf("first frame %+v, want 90 %% of the real %+v = %+v", w, real, want)
+	}
+	if math.Abs(w.Zoom-appearScale) > 0.02 {
+		t.Fatalf("zoom %v, want ~0.9 (aspect kept)", w.Zoom)
+	}
+
+	// Mid-way the frame keeps the real aspect, the zoom follows its width.
+	ic.now = ic.now.Add(40 * time.Millisecond)
+	c.animate(ic.now, nil)
+	w = sceneWindow(t, indicatorScene(t, c), 2)
+	ratio, wantRatio := float64(w.Rect.W)/float64(w.Rect.H), float64(real.W)/float64(real.H)
+	if math.Abs(ratio-wantRatio)/wantRatio > 0.06 || !(w.Rect.W > want.W && w.Rect.W < real.W) || math.Abs(w.Zoom-float64(w.Rect.W)/float64(real.W)) > 0.01 {
+		t.Fatalf("mid-way %+v: aspect %.3f want %.3f", w, ratio, wantRatio)
+	}
+
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	if w := sceneWindow(t, indicatorScene(t, c), 2); w.Fade != 0 || w.Zoom != 0 || w.Rect != real {
+		t.Fatalf("settled %+v, want %+v", w, real)
+	}
+}
+
+// A resize with no entrance running only moves the settled rect.
+func TestResizeFloatWithoutEntranceKeepsNoMotion(t *testing.T) {
+	c, _, _ := fadeCore(t)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	c.mapWindow(ports.WindowMapped{ID: 1, Floating: true})
+	c.stopAnimations()
+	c.resizeFloating(ports.WindowResized{ID: 1, Width: 60, Height: 20})
+	if len(sc.rects) != 0 {
+		t.Fatalf("a resize started a motion: %+v", sc.rects)
+	}
+}

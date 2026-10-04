@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -262,6 +263,11 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 			}
 		}
 	}()
+	// Stopped before the scenes are read, or at the latest when the test
+	// ends (an early Fatal or Skip).
+	var halt sync.Once
+	stopCollector := func() { halt.Do(func() { close(stop); <-collected }) }
+	t.Cleanup(stopCollector)
 	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
@@ -269,8 +275,7 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 		}
 		t.Fatal(err)
 	}
-	close(stop)
-	<-collected
+	stopCollector()
 	for len(scenes) > 0 {
 		got = append(got, <-scenes)
 	}
