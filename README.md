@@ -10,7 +10,7 @@
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
 > [!WARNING]
-> **Early alpha.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
+> **Early alpha, but stable enough for daily use.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
 
 ---
 
