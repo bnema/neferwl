@@ -74,8 +74,8 @@ func TestHDRExportTarget(t *testing.T) {
 	}
 	defer r.Close()
 	r.SetHDR(203)
-	// Only this GPU test requests transfer-src on an HDR target.
-	r.hdrReadback = true
+	// GPU tests and headless --screenshot-raw (SetHDRReadback); never DRM.
+	r.SetHDRReadback(true)
 	if r.physical == 0 {
 		t.Skip("no exportable GPU")
 	}

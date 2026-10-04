@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
@@ -220,6 +221,101 @@ func TestSecurityCursorAndPNGSuppressed(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("stale screenshot delivered")
+	}
+}
+
+// The raw HDR file follows the screenshot security gating: nothing is read
+// back or written for a protected session, none is read back once the
+// session turned protected after latest.png, and a frame that crossed a
+// transition during the readback is not written.
+func TestSecurityRawHDRSuppressed(t *testing.T) {
+	unprotected := ports.SecurityState{Generation: 1}
+	protected := ports.SecurityState{Generation: 2, Protected: true}
+	tests := []struct {
+		name string
+		// hdrPixels: HDRPixels is expected and flips the session protected.
+		hdrPixels bool
+		// flipAfterLatest: the session turns protected once latest.png exists.
+		flipAfterLatest bool
+		startProtected  bool
+		wantLatest      bool
+	}{
+		{name: "protected from the start", startProtected: true},
+		{name: "protected after latest.png, before the readback", flipAfterLatest: true, wantLatest: true},
+		{name: "protected during the readback", hdrPixels: true, wantLatest: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var state atomic.Value
+			state.Store(unprotected)
+			if tc.startProtected {
+				state.Store(protected)
+			}
+			gate := portsmocks.NewMockSessionSecurity(t)
+			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+				if tc.flipAfterLatest {
+					if _, err := os.Stat(filepath.Join(dir, "latest.png")); err == nil {
+						state.Store(protected)
+					}
+				}
+				return state.Load().(ports.SecurityState)
+			})
+			f, err := os.CreateTemp(t.TempDir(), "target")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().SetHDR(float64(203)).Return().Once()
+			r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+			rendered := make(chan ports.Scene, 4)
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+				rendered <- s
+				return nil, nil
+			}).Maybe()
+			if !tc.startProtected {
+				r.EXPECT().Pixels().Return(image.NewRGBA(image.Rect(0, 0, 2, 2))).Maybe()
+			}
+			// Without an HDRPixels expectation, a readback fails the test.
+			if tc.hdrPixels {
+				r.EXPECT().HDRPixels().RunAndReturn(func() *image.RGBA64 {
+					state.Store(protected)
+					return image.NewRGBA64(image.Rect(0, 0, 2, 2))
+				}).Once()
+			}
+			r.EXPECT().Close().Return().Once()
+			scenes := make(chan ports.Scene, 1)
+			scenes <- ports.Scene{Seq: 1, Security: unprotected, OutputWidth: 2, OutputHeight: 2}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() {
+				done <- Run(ctx, Options{Security: gate, Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Name: "H", Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
+			}()
+			// The black protection frame follows the frame under test (or is
+			// the only one): the raw block is over once it is rendered.
+			for s := securityReceive(t, rendered); !s.Security.Protected; s = securityReceive(t, rendered) {
+			}
+			cancel()
+			if err := securityReceive(t, done); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "latest.png")); (err == nil) != tc.wantLatest {
+				t.Errorf("latest.png: %v, want present %v", err, tc.wantLatest)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "latest-pq.png")); !os.IsNotExist(err) {
+				t.Errorf("latest-pq.png delivered: %v", err)
+			}
+		})
+	}
+	// The write gate itself refuses a stale or protected 16-bit image.
+	gate := portsmocks.NewMockSessionSecurity(t)
+	gate.EXPECT().Snapshot().Return(protected)
+	path := filepath.Join(t.TempDir(), "latest-pq.png")
+	if err := writePNGSecure(path, image.NewRGBA64(image.Rect(0, 0, 1, 1)), gate, ports.SecurityState{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("stale raw screenshot delivered")
 	}
 }
 

@@ -19,7 +19,7 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 		}
 		return r, nil
 	}
-	r, err := virtualRenderer(newRenderer)(64, 16)
+	r, err := virtualRenderer(newRenderer, false)(64, 16)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

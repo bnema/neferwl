@@ -35,7 +35,8 @@ type Renderer struct {
 	hdrNits    float64
 	hdr        hdrPass
 	hdrError   error
-	// hdrReadback is used only by the GPU test to permit transfer from a 10-bit target.
+	// hdrReadback makes exported HDR targets transfer sources, for GPU tests
+	// and headless --screenshot-raw (SetHDRReadback); never DRM.
 	hdrReadback bool
 	// virtual: the output has no display (headless), so ExportTargets
 	// accepts an empty modifier list for HDR (SetVirtualOutput).
@@ -43,6 +44,9 @@ type Renderer struct {
 	physical vk.PhysicalDevice
 	// One converted cursor image is kept; changes replace it in bounded memory.
 	cursorCache cursorConversion
+	// lastHDRTarget is the index in targets of the exported PQ target the
+	// last HDR frame rendered into; -1 when the current targets hold none.
+	lastHDRTarget int
 	// last is the target of the last frame: what captures copy.
 	last *target
 	// captures are the readback slots (capture.go), allocated on the
@@ -114,7 +118,7 @@ func New(width, height int) (r *Renderer, err error) {
 	if width <= 0 || height <= 0 || width > math.MaxUint32 || height > math.MaxUint32 || uint64(width)*uint64(height) > uint64(math.MaxInt/4) {
 		return nil, fmt.Errorf("invalid renderer dimensions %d x %d", width, height)
 	}
-	r = &Renderer{width: width, height: height, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}}
+	r = &Renderer{width: width, height: height, lastHDRTarget: -1, imports: map[uint64]*imported{}, pools: map[uint64]*mapping{}, shm: map[shmKey]*shmSurface{}}
 	defer func() {
 		if err != nil {
 			r.Close()
@@ -356,6 +360,35 @@ func (r *Renderer) Pixels() *image.RGBA {
 	}
 	for i := 0; i < len(out.Pix); i += 4 {
 		out.Pix[i], out.Pix[i+2] = out.Pix[i+2], out.Pix[i]
+	}
+	return out
+}
+
+// SetHDRReadback makes the exported HDR targets transfer sources so that
+// HDRPixels can read them (they are not in production: the DRM path never
+// sets it). Call before ExportTargets. Not on the port.
+func (r *Renderer) SetHDRReadback(on bool) { r.hdrReadback = on }
+
+// HDRPixels reads the last HDR frame's XRGB2101010 target back, each 10-bit
+// code scaled to 16 bits (c<<6 | c>>4), alpha opaque. It waits for the GPU:
+// debug only. Nil when the output is SDR, the target is not readable (no
+// SetHDRReadback), no HDR frame was rendered, every slot is leased or the
+// copy failed.
+func (r *Renderer) HDRPixels() *image.RGBA64 {
+	var out *image.RGBA64
+	err := r.readHDRTarget(func(words []uint32) {
+		out = image.NewRGBA64(image.Rect(0, 0, r.width, r.height))
+		for i, w := range words {
+			p := out.Pix[i*8 : i*8+8]
+			for ch, c := range [3]uint32{w >> 20 & 1023, w >> 10 & 1023, w & 1023} {
+				v := uint16(c<<6 | c>>4)
+				p[ch*2], p[ch*2+1] = byte(v>>8), byte(v)
+			}
+			p[6], p[7] = 0xff, 0xff
+		}
+	})
+	if err != nil {
+		return nil
 	}
 	return out
 }

@@ -34,10 +34,13 @@ type Options struct {
 	LoadCursor    func(c ports.CursorChange, scale float64, t ports.BufferTransform, limit int) (ports.CursorImage, error)
 	Width, Height int
 	ScreenshotDir string
-	HDR           bool                       // virtual HDR output for protocol testing only
-	Formats       chan<- ports.OutputFormats // confirmed color state; nil disables reporting
-	Log           zerowrap.Logger
-	NewRenderer   func(w, h int) (ports.Renderer, error)
+	HDR           bool // virtual HDR output for protocol testing only
+	// RawHDR also writes latest-pq.png, the raw PQ codes of an HDR output
+	// (16-bit), next to the screenshots. Test-only; needs HDR and ScreenshotDir.
+	RawHDR      bool
+	Formats     chan<- ports.OutputFormats // confirmed color state; nil disables reporting
+	Log         zerowrap.Logger
+	NewRenderer func(w, h int) (ports.Renderer, error)
 	// NewCaptureRenderer makes the child renderer of a hidden workspace
 	// capture session (Scene.CaptureScene). Nil: such captures fail closed.
 	NewCaptureRenderer func(w, h int) (ports.Renderer, error)
@@ -594,6 +597,21 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security); err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
+			if opts.RawHDR && opts.HDR {
+				// No cursor on the raw image. Only a confirmed HDR output
+				// has a readable PQ target; else HDRPixels is nil.
+				if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
+					continue
+				}
+				raw := r.HDRPixels()
+				if raw == nil {
+					opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("raw HDR readback unavailable; frame skipped")
+					continue
+				}
+				if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, "latest-pq.png"), raw, opts.Security, scene.Security); err != nil {
+					return fmt.Errorf("raw HDR screenshot: %w", err)
+				}
+			}
 		}
 		opts.Log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
 	}
@@ -603,7 +621,7 @@ func (opts Options) protected() bool {
 	return opts.Security != nil && opts.Security.Snapshot().Protected
 }
 
-func writePNGSecure(path string, img *image.RGBA, security ports.SessionSecurity, state ports.SecurityState) error {
+func writePNGSecure(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) error {
 	if security != nil && (state.Protected || security.Snapshot() != state) {
 		return nil
 	}

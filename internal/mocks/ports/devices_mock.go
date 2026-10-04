@@ -452,6 +452,52 @@ func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifier
 	return _c
 }
 
+// HDRPixels provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) HDRPixels() *image.RGBA64 {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for HDRPixels")
+	}
+
+	var r0 *image.RGBA64
+	if returnFunc, ok := ret.Get(0).(func() *image.RGBA64); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*image.RGBA64)
+		}
+	}
+	return r0
+}
+
+// MockRenderer_HDRPixels_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HDRPixels'
+type MockRenderer_HDRPixels_Call struct {
+	*mock.Call
+}
+
+// HDRPixels is a helper method to define mock.On call
+func (_e *MockRenderer_Expecter) HDRPixels() *MockRenderer_HDRPixels_Call {
+	return &MockRenderer_HDRPixels_Call{Call: _e.mock.On("HDRPixels")}
+}
+
+func (_c *MockRenderer_HDRPixels_Call) Run(run func()) *MockRenderer_HDRPixels_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockRenderer_HDRPixels_Call) Return(rGBA64 *image.RGBA64) *MockRenderer_HDRPixels_Call {
+	_c.Call.Return(rGBA64)
+	return _c
+}
+
+func (_c *MockRenderer_HDRPixels_Call) RunAndReturn(run func() *image.RGBA64) *MockRenderer_HDRPixels_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Pixels provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) Pixels() *image.RGBA {
 	ret := _mock.Called()
