@@ -122,6 +122,18 @@ type Placement struct {
 	// Inset reserves room for drawn lines: all sides of a float; for
 	// tiles without gaps, only the right and bottom shared sides.
 	Neighbors, Inset ports.Sides
+	// Leaving marks a window that closed or hid but is still drawn while
+	// it fades out (transition.go). It stays Hidden, so input, focus,
+	// popups and configures ignore it; only the scene shows it.
+	Leaving bool
+	// Fade, Dim and Zoom are set on shown layouts only (refreshShown),
+	// animated: the window's fade (0 opaque, 1 invisible), a veil opacity
+	// added to the one Peek draws, and the content zoom as drawn when a
+	// scale motion runs (Preview times the drawn/settled width, 1 when the
+	// content is drawn at its size; 0 without one). Preview itself stays
+	// the settled one: input and popups read it to tell a card from a
+	// window.
+	Fade, Dim, Zoom float64
 }
 
 // Overflow says what happens past MaxColumns columns.

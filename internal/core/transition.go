@@ -58,10 +58,26 @@ type rectShot struct {
 
 // rectMotion takes a window's drawn rect to its settled one: each component
 // is an offset from the settled value, sprung to 0 (dx, dy, dw, dh hold the
-// current offsets, updated by advance).
+// current offsets, updated by advance). fade and dim are offsets too, from
+// the settled Fade (0, or 1 for a leaving window) and the settled Dim.
+//
+// With scale, the window's content follows its drawn size: the shown
+// placement gets a Zoom of the settled zoom (its Preview, or 1) times
+// shown.W / settled.W (refreshShown), which the scene carries as Preview.
+// The walk shrinks content toward the content rect's top-left, so this
+// suits aspect-preserving changes only.
+//
+// A leaving motion draws a window that closed or hid while it fades out:
+// left is its last settled placement, which refreshShown appends (Hidden
+// and Leaving) to the settled and shown layouts, keeping them aligned.
 type rectMotion struct {
 	x, y, w, h     motion
 	dx, dy, dw, dh float64
+	fade, dim      motion
+	df, ddim       float64
+	scale          bool
+	leaving        bool
+	left           Placement
 }
 
 // apply is r moved by the current offsets; a size never drops below 1.
@@ -95,6 +111,8 @@ func (m *rectMotion) advance(now time.Time) {
 	m.dy = stepComponent(&m.y, m.dy, now)
 	m.dw = stepComponent(&m.w, m.dw, now)
 	m.dh = stepComponent(&m.h, m.dh, now)
+	m.df = stepComponent(&m.fade, m.df, now)
+	m.ddim = stepComponent(&m.dim, m.ddim, now)
 }
 
 func stepComponent(m *motion, cur float64, now time.Time) float64 {
@@ -110,7 +128,39 @@ func stepComponent(m *motion, cur float64, now time.Time) float64 {
 }
 
 // on reports whether any component still runs.
-func (m *rectMotion) on() bool { return m.x.on || m.y.on || m.w.on || m.h.on }
+func (m *rectMotion) on() bool {
+	return m.x.on || m.y.on || m.w.on || m.h.on || m.fade.on || m.dim.on
+}
+
+// settledFade is the Fade the motion springs to: a leaving window fades
+// out, any other is opaque.
+func (m *rectMotion) settledFade() float64 {
+	if m.leaving {
+		return 1
+	}
+	return 0
+}
+
+// show is p as drawn: its rect moved by the offsets, its fade and dim
+// offsets added, and its content zoomed with its size when scale is set.
+func (m *rectMotion) show(p *Placement) {
+	settled := p.Rect
+	p.Rect = m.apply(settled)
+	p.Fade = max(0, min(1, m.settledFade()+m.df))
+	p.Dim = m.ddim
+	if m.scale && settled.W > 0 {
+		zoom := p.Preview
+		if zoom == 0 {
+			zoom = 1
+		}
+		zoom *= float64(p.Rect.W) / float64(settled.W)
+		if zoom >= 0.999 {
+			// Drawn at its size: no zoom (publish emits Preview 0).
+			zoom = 1
+		}
+		p.Zoom = zoom
+	}
+}
 
 // retargetComponent starts m for an offset of off from its settled value at
 // now, with the speed v it had then. A component with nothing to move and no
@@ -129,6 +179,11 @@ func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now ti
 // with the rect motions applied: what is drawn and hit-tested). Rect motions
 // belong to the workspace they began on and to a closed overview: any other
 // change drops them.
+//
+// Leaving motions add an entry for a window the layout no longer shows:
+// appended to both layouts in ID order, Hidden (no input, focus, popups or
+// configure) and Leaving (drawn, fading). The two layouts stay
+// index-aligned: publish reads the settled entry at the shown one's index.
 func (c *Core) refreshShown() {
 	for _, sc := range c.screens {
 		m := sc.mon
@@ -138,11 +193,13 @@ func (c *Core) refreshShown() {
 		sc.settledLayout = m.Layout()
 		if len(sc.rects) > 0 {
 			// A window that left the layout (or is hidden) keeps no motion:
-			// it would ask for frames with nothing to move.
-			for id := range sc.rects {
-				if !slices.ContainsFunc(sc.settledLayout, func(p Placement) bool {
+			// it would ask for frames with nothing to move. A leaving one
+			// is the opposite: it goes once the layout shows the window.
+			for id, rm := range sc.rects {
+				shown := slices.ContainsFunc(sc.settledLayout, func(p Placement) bool {
 					return p.ID == id && !p.Hidden && p.Preview == 0
-				}) {
+				})
+				if shown == rm.leaving {
 					delete(sc.rects, id)
 				}
 			}
@@ -151,18 +208,118 @@ func (c *Core) refreshShown() {
 			sc.shown = sc.settledLayout
 			continue
 		}
+		sc.settledLayout = sc.appendLeaving(sc.settledLayout)
 		buf := append(sc.shownBuf[:0], sc.settledLayout...)
 		for i := range buf {
 			p := &buf[i]
-			if p.Hidden || p.Preview > 0 {
+			if p.Hidden && !p.Leaving {
 				continue
 			}
 			if rm, ok := sc.rects[p.ID]; ok {
-				p.Rect = rm.apply(p.Rect)
+				rm.show(p)
 			}
 		}
 		sc.shownBuf, sc.shown = buf, buf
 	}
+}
+
+// appendLeaving appends the leaving windows' last placements to layout,
+// Hidden and Leaving, smallest ID first (a stable order keeps the scenes
+// comparable frame to frame).
+func (s *screen) appendLeaving(layout []Placement) []Placement {
+	n := len(layout)
+	for _, rm := range s.rects {
+		if !rm.leaving {
+			continue
+		}
+		p := rm.left
+		p.Hidden, p.Leaving, p.Focused, p.Fade, p.Dim, p.Zoom = true, true, false, 0, 0, 0
+		i := n
+		for i < len(layout) && layout[i].ID < p.ID {
+			i++
+		}
+		layout = slices.Insert(layout, i, p)
+	}
+	return layout
+}
+
+// appear starts the entrance of a window the action made visible on sc:
+// it fades in from invisible and grows from 90 % of its settled rect,
+// around its centre. Nothing with animations off or if the layout does not
+// show it. A leaving motion of the same window is replaced.
+func (c *Core) appear(sc *screen, id WindowID, now time.Time) {
+	if !c.animOn() {
+		return
+	}
+	for _, p := range sc.mon.Layout() {
+		if p.ID == id && !p.Hidden {
+			c.appearAt(sc, p, now)
+			return
+		}
+	}
+}
+
+// appearAt is appear for a window whose settled placement is p.
+func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
+	if !c.animOn() || p.Hidden {
+		return
+	}
+	if sc.rects == nil {
+		sc.rects = make(map[WindowID]rectMotion)
+	}
+	var rm rectMotion
+	rm.scale = true
+	c.scaleFrom(&rm, p.Rect, appearScale, now)
+	c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
+}
+
+// leave keeps drawing a window the action closed or hid, from its last
+// settled placement p: it fades out and shrinks to 90 % around its centre,
+// then its entry goes. Nothing with animations off, or for a placement that
+// was not drawn.
+func (c *Core) leave(sc *screen, p Placement, now time.Time) {
+	if !c.animOn() || p.Hidden || p.Preview > 0 || p.Rect.W <= 0 || p.Rect.H <= 0 {
+		return
+	}
+	if sc.rects == nil {
+		sc.rects = make(map[WindowID]rectMotion)
+	}
+	rm := rectMotion{scale: true, leaving: true, left: p}
+	rm.left.Hidden, rm.left.Leaving, rm.left.Focused = true, true, false
+	// The entry settles at 90 % of the rect it left, its content zoomed
+	// to match (Preview): the offsets run from the full rect to that.
+	end := scaledRect(p.Rect, appearScale)
+	rm.left.Preview = appearScale
+	c.retargetComponent(&rm.x, &rm.dx, float64(p.Rect.X-end.X), 0, now)
+	c.retargetComponent(&rm.y, &rm.dy, float64(p.Rect.Y-end.Y), 0, now)
+	c.retargetComponent(&rm.w, &rm.dw, float64(p.Rect.W-end.W), 0, now)
+	c.retargetComponent(&rm.h, &rm.dh, float64(p.Rect.H-end.H), 0, now)
+	rm.left.Rect = end
+	c.retargetComponent(&rm.fade, &rm.df, -1, 0, now)
+	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
+}
+
+// appearScale is the size, relative to the settled rect, a window appears
+// from and leaves to.
+const appearScale = 0.9
+
+// scaledRect is r scaled by k around its centre, in float.
+func scaledRect(r Rect, k float64) Rect {
+	w, h := float64(r.W)*k, float64(r.H)*k
+	x := float64(r.X) + (float64(r.W)-w)/2
+	y := float64(r.Y) + (float64(r.H)-h)/2
+	return Rect{X: int(math.Round(x)), Y: int(math.Round(y)), W: int(math.Round(w)), H: int(math.Round(h))}
+}
+
+// scaleFrom starts rm's rect components from settled scaled by k around
+// its centre, toward settled.
+func (c *Core) scaleFrom(rm *rectMotion, settled Rect, k float64, now time.Time) {
+	w, h := float64(settled.W)*k, float64(settled.H)*k
+	c.retargetComponent(&rm.x, &rm.dx, (float64(settled.W)-w)/2, 0, now)
+	c.retargetComponent(&rm.y, &rm.dy, (float64(settled.H)-h)/2, 0, now)
+	c.retargetComponent(&rm.w, &rm.dw, w-float64(settled.W), 0, now)
+	c.retargetComponent(&rm.h, &rm.dh, h-float64(settled.H), 0, now)
 }
 
 // snapshot records what every screen without an open overview shows at now.

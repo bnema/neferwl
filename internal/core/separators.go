@@ -49,7 +49,9 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 	tiles := 0
 	for i := range ps {
 		p := &ps[i]
-		if p.Fullscreen || !onScreen(*p, o) {
+		// A leaving float keeps its own lines while it fades; a leaving
+		// tile's were shared with its neighbours, which re-flowed.
+		if p.Fullscreen || !(onScreen(*p, o) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
 			continue
 		}
 		if !p.Floating {

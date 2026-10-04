@@ -605,9 +605,23 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			ps := settled[k]
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade, Dim: p.Dim}
+			if p.Zoom > 0 {
+				// A scale motion: the content follows the drawn size.
+				sw.Preview = p.Zoom
+				if sw.Preview >= 1 {
+					sw.Preview = 0
+				}
+			}
 			if p.Peek {
-				sw.Dim = c.cfg.Stash.Dim
+				sw.Dim = min(sw.Dim+c.cfg.Stash.Dim, 1)
+			}
+			if p.Leaving {
+				// A window fading out after it closed or hid: drawn, but
+				// hidden to everything else, its configures included.
+				sw.Hidden = false
+				scene.Windows = append(scene.Windows, sw)
+				continue
 			}
 			if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
 				drawable = true
