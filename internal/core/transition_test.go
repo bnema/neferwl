@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -261,6 +262,128 @@ func TestMovedWorkspaceOffIsInstant(t *testing.T) {
 		t.Fatalf("1 at %+v and 2 at %+v right after the key, want the settled rects", got1, got2)
 	}
 	r.noFrameScene(t, wide.Name, other.Name)
+}
+
+// A workspace that comes back to the screen it left within the spring of
+// its first move slides its windows only: the screen's running workspace
+// slide (its list still holds the workspace) must not start a vertical one.
+func TestMovedBackWorkspaceHasNoSwitchSlide(t *testing.T) {
+	r, other := movedRig(t, nil)
+	twoColumns(t, r)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	// Within the first spring: the source is still sliding.
+	if _, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name); !ok {
+		t.Fatal("no frame while the windows slide")
+	}
+	set := r.key(t, "Left", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	dst := outScene(t, set, wide.Name)
+	for id := ports.WindowID(1); id <= 2; id++ {
+		if got := rectNow(t, dst, id); got.Y != 0 {
+			t.Fatalf("window %d at %+v right after moving back, want y=0 (no vertical slide)", id, got)
+		}
+	}
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name)
+	if !ok {
+		t.Fatal("no frame while the windows slide back")
+	}
+	dst = outScene(t, set, wide.Name)
+	for id := ports.WindowID(1); id <= 2; id++ {
+		if got := rectNow(t, dst, id); got.Y != 0 {
+			t.Fatalf("window %d at %+v on the first frame, want y=0 (rects slide only)", id, got)
+		}
+	}
+	set, _ = r.settleAll(t, wide.Name, other.Name)
+	dst = outScene(t, set, wide.Name)
+	if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1 != (ports.Rect{W: 400, H: 600}) || got2 != (ports.Rect{X: 400, W: 400, H: 600}) {
+		t.Fatalf("settled 1 at %+v and 2 at %+v", got1, got2)
+	}
+	r.noFrameScene(t, wide.Name, other.Name)
+}
+
+// The start rects are the source's translated by the difference of the
+// outputs' positions on both axes, with the source's size; they settle on
+// the destination's layout.
+func TestMovedWorkspaceStartsFromSourceGeometry(t *testing.T) {
+	big := ports.OutputInfo{Name: "DP-2", Width: 1024, Height: 768, RefreshMilli: 60000}
+	for _, tc := range []struct {
+		name         string
+		dst          ports.OutputInfo
+		anchor       ports.OutputAnchor
+		key          string
+		start, final [2]ports.Rect
+	}{
+		{
+			name: "right same size", dst: ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000},
+			anchor: ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1"}, key: "Right",
+			start: [2]ports.Rect{{X: -800, W: 400, H: 600}, {X: -400, W: 400, H: 600}},
+			final: [2]ports.Rect{{W: 400, H: 600}, {X: 400, W: 400, H: 600}},
+		},
+		{
+			name: "below larger", dst: big,
+			anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}, key: "Down",
+			start: [2]ports.Rect{{Y: -600, W: 400, H: 600}, {X: 400, Y: -600, W: 400, H: 600}},
+			final: [2]ports.Rect{{W: 512, H: 768}, {X: 512, W: 512, H: 768}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := startSwipeOn(t, func(c *ports.Config) {
+				c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2", Anchor: tc.anchor}}
+				c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
+			}, wide, tc.dst)
+			twoColumns(t, r)
+			dst := outScene(t, r.key(t, tc.key, ports.ModAlt|ports.ModCtrl|ports.ModShift), tc.dst.Name)
+			for i, id := range []ports.WindowID{1, 2} {
+				if got := rectNow(t, dst, id); got != tc.start[i] {
+					t.Fatalf("window %d starts at %+v, want %+v", id, got, tc.start[i])
+				}
+			}
+			set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, tc.dst.Name)
+			if !ok {
+				t.Fatal("no frame while the windows slide")
+			}
+			if got := rectNow(t, outScene(t, set, tc.dst.Name), 1); got == tc.start[0] || got == tc.final[0] {
+				t.Fatalf("window 1 at %+v on the first frame, want it between start and final", got)
+			}
+			set, _ = r.settleAll(t, wide.Name, tc.dst.Name)
+			dst = outScene(t, set, tc.dst.Name)
+			for i, id := range []ports.WindowID{1, 2} {
+				if got := rectNow(t, dst, id); got != tc.final[i] {
+					t.Fatalf("window %d settles at %+v, want %+v", id, got, tc.final[i])
+				}
+			}
+		})
+	}
+}
+
+// A named workspace pulled to the focused screen from the one showing it
+// moves like a monitor move: its windows slide in from the source.
+func TestPulledNamedWorkspaceSlidesIn(t *testing.T) {
+	r, other := movedRig(t, func(c *ports.Config) {
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "web"}}
+		c.Binds["Alt+w"] = "workspace web"
+	})
+	// web shows on DP-2 with a window, then DP-1 pulls it.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.key(t, "w", ports.ModAlt)
+	r.settleAll(t, wide.Name, other.Name)
+	r.mapWindow(t, 1)
+	r.settleAll(t, wide.Name, other.Name)
+	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
+	set := r.key(t, "w", ports.ModAlt)
+	if got := rectNow(t, outScene(t, set, wide.Name), 1); got.X != 800 {
+		t.Fatalf("window 1 at %+v right after the pull, want x=800 (where DP-2 drew it)", got)
+	}
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name)
+	if !ok {
+		t.Fatal("no frame while the window slides")
+	}
+	if got := rectNow(t, outScene(t, set, wide.Name), 1).X; got <= 0 || got >= 800 {
+		t.Fatalf("window 1 at x=%d on the first frame, want between 0 and 800", got)
+	}
+	set, _ = r.settleAll(t, wide.Name, other.Name)
+	if got := rectNow(t, outScene(t, set, wide.Name), 1); got != (ports.Rect{W: 800, H: 600}) {
+		t.Fatalf("settled at %+v", got)
+	}
 }
 
 // Focusing another monitor moves no window: it is not animated.

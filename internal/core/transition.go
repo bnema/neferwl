@@ -407,11 +407,13 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 // off, with the overview open before or after, or while a swipe follows the
 // fingers on that screen. Per-window rect motions join the camera here.
 //
-// A workspace moved to another monitor (move-workspace-to-monitor-*) is
-// animated on both screens: the destination's windows slide in from where
-// the source drew them, the source slides to its next workspace. The
-// focus-monitor-* actions move nothing: no window changes place, so they
-// are not animated (the focus pulse marks the new focus).
+// A workspace moved to another monitor (move-workspace-to-monitor-*, or a
+// named workspace pulled to the focused one by a "workspace <name>" bind
+// while it shows on another) is animated on both screens: the destination's
+// windows slide in from where the source drew them (no workspace slide
+// there), the source slides to its next workspace. The focus-monitor-*
+// actions move nothing: no window changes place, so they are not animated
+// (the focus pulse marks the new focus).
 func (c *Core) transition(before []viewShot, now time.Time) {
 	if !c.animOn() {
 		return
@@ -421,7 +423,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 		if b.ws == nil || !c.hasScreen(b.sc) || b.sc.mon.ov.open || c.following(b.sc) {
 			continue
 		}
-		c.transitionCamera(b, now)
+		c.transitionCamera(b, before, now)
 		c.transitionRects(b, before, now)
 	}
 }
@@ -433,7 +435,7 @@ func (c *Core) following(sc *screen) bool {
 }
 
 // transitionCamera slides the columns or the monitor from what b showed.
-func (c *Core) transitionCamera(b *viewShot, now time.Time) {
+func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 	m := b.sc.mon
 	w := m.Current()
 	switch {
@@ -445,7 +447,11 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 		// carries over, and the spring starts now like every action's.
 		w.shift = b.view - float64(w.ViewX)
 		w.motion = c.spring(viewSpring(w.shift, b.viewV), now)
-	case b.ok && m.shown == nil:
+	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
+		// A screen that received its workspace from another monitor does
+		// not slide to it: a running slide's list (switchList) may still
+		// hold the workspace, which would start a slide from nowhere. Only
+		// its windows move (transitionRects).
 		j := indexOf(b.list, w)
 		if j < 0 {
 			return
