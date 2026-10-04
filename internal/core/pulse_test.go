@@ -184,6 +184,36 @@ func TestFocusPulseSkipsAloneOnScreen(t *testing.T) {
 	}
 }
 
+// A landing slide still shows the neighbours: the pulse waits for it to
+// settle, then decides on the settled layout.
+func TestFocusPulseWaitsForSlide(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		alone bool
+	}{{"alone after landing", true}, {"beside another", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ic := pulseCore(t)
+			m := c.cur().mon
+			m.Current().FocusID(1)
+			indicatorScene(t, c)
+			m.switchMotion = newMotion(workspaceSpring(0.5, 0), ic.now)
+			ic.now = ic.now.Add(pulseSettle)
+			if c.pulseTick() || c.pulse.timerC == nil {
+				t.Fatal("pulse decided during a slide")
+			}
+			m.stopSwitch()
+			if tc.alone {
+				m.Current().ToggleFullWidth()
+			}
+			indicatorScene(t, c)
+			ic.now = ic.now.Add(pulseRecheck)
+			if got := c.pulseTick(); got == tc.alone {
+				t.Fatalf("pulse started %v after landing, window alone %v", got, tc.alone)
+			}
+		})
+	}
+}
+
 // A popup grab or layer taking the keyboard stops the pulse; the window
 // getting it back is not a new focus and does not pulse again.
 func TestFocusPulseIgnoresKeyboardDetours(t *testing.T) {

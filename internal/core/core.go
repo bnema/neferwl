@@ -577,7 +577,7 @@ func (c *Core) publish(ctx context.Context) error {
 			scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
 		}
 		// A window alone on screen needs no pulse to show it has the focus.
-		alone := visibleCount(layout, frame) == 1
+		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, frame) == 1
 		for _, p := range layout {
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen

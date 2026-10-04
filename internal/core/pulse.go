@@ -23,6 +23,8 @@ const (
 	pulseRise     = 90 * time.Millisecond
 	pulseFall     = 230 * time.Millisecond
 	pulseCooldown = time.Second
+	// pulseRecheck is how often a pulse waiting for a slide to land checks again.
+	pulseRecheck = pulseSettle / 3
 )
 
 // focusPulse is the pulse state. target is the window focus last seen and
@@ -94,6 +96,12 @@ func (c *Core) pulseTick() bool {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, wait)
 		return false
 	}
+	// A landing slide still shows its neighbours: decide on the settled
+	// layout, or a window left alone would start a pulse cut short.
+	if c.cur().mon.springing() {
+		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
+		return false
+	}
 	if p.target == p.last && now.Sub(p.lastAt) < pulseCooldown {
 		return false
 	}
@@ -127,7 +135,7 @@ func (c *Core) advancePulse(now time.Time) float64 {
 func visibleCount(layout []Placement, frame Rect) int {
 	n := 0
 	for _, p := range layout {
-		if !p.Hidden && p.Preview == 0 && p.Rect.Overlaps(frame) {
+		if p.Preview == 0 && onScreen(p, frame) {
 			n++
 		}
 	}
