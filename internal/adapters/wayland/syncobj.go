@@ -308,7 +308,7 @@ func (sw *syncWaiter) watchImplicit(b *ports.DMABuf, waits *[4]*syncWait) error 
 
 func (sw *syncWaiter) warnPollError() {
 	sw.pollError.Do(func() {
-		sw.log.Warn().Str("component", "wayland").Msg("implicit fence poll error")
+		sw.log.Warn().Msg("implicit fence poll error")
 	})
 }
 
@@ -464,7 +464,7 @@ func (s *Server) releaseSync(h syncHold) {
 	}
 	if h.release.set() {
 		if err := h.release.tl.dev.signal(h.release.tl.handle, h.release.point); err != nil {
-			s.log.Warn().Str("component", "wayland").Err(err).Msg("release point")
+			s.log.Warn().Err(err).Msg("release point")
 		}
 		h.release.tl.uses--
 		s.dropTimeline(h.release.tl)
@@ -495,7 +495,7 @@ func (s *surface) takeSyncPoints() {
 	if err != nil {
 		// Keep points owned by the captured commit for safe discard. An
 		// unobservable acquire must never reach native rendering.
-		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire point")
+		s.server.log.Warn().Err(err).Msg("acquire point")
 	}
 	cs.wait = w
 	s.next.sync = cs
@@ -542,7 +542,7 @@ func (s *surface) prepareSync(cs *commitSync) bool {
 		if f != nil {
 			f.Close()
 		}
-		s.server.log.Warn().Str("component", "wayland").Err(err).Msg("acquire fence export rejected")
+		s.server.log.Warn().Err(err).Msg("acquire fence export rejected")
 		return false
 	}
 	cs.fence = f

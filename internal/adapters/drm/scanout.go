@@ -220,7 +220,7 @@ func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]por
 					cfb.scaleFailed = rect
 					cfb.scaleRefused = true
 					reason = "scale_refused"
-					o.log.Info().Str("component", "render").Err(err).Str("reason", reason).Str("connector", o.conn.name).Msg("scanout scaling refused")
+					o.renderLog.Info().Err(err).Str("reason", reason).Str("connector", o.conn.name).Msg("scanout scaling refused")
 				} else {
 					cfb.scaleTested = rect
 					cfb.scaleTestedOK = true
@@ -328,7 +328,7 @@ func (o *Output) decideFrame(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 // setScanoutReason logs a direct-scanout transition once.
 func (o *Output) setScanoutReason(reason string) {
 	if reason != o.reason {
-		o.log.Info().Str("component", "render").Bool("direct_scanout", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("scanout")
+		o.renderLog.Info().Bool("direct_scanout", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("scanout")
 		o.reason = reason
 	}
 }
@@ -336,7 +336,7 @@ func (o *Output) setScanoutReason(reason string) {
 // setOverlayReason logs an overlay transition once.
 func (o *Output) setOverlayReason(reason string) {
 	if reason != o.overlayReason {
-		o.log.Info().Str("component", "render").Bool("overlay", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("overlay")
+		o.renderLog.Info().Bool("overlay", reason == "").Str("reason", reason).Str("connector", o.conn.name).Msg("overlay")
 		o.overlayReason = reason
 	}
 }
@@ -395,7 +395,7 @@ func (o *Output) planeFB(p *plane, b *ports.DMABuf, now time.Time, reason func(*
 		}
 		id, err := o.k.addFB(b, format)
 		if err != nil {
-			o.log.Info().Str("component", "render").Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
+			o.renderLog.Info().Err(err).Uint32("format", b.Format).Uint64("modifier", b.Modifier).Msg("scanout import failed")
 			fb.importErr, *why = true, "import_failed"
 			return 0, *why
 		}

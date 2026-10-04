@@ -20,7 +20,7 @@ func Realtime(log zerowrap.Logger) error {
 	}, 0)
 	if errors.Is(err, unix.EPERM) {
 		unavailable.Do(func() {
-			log.Info().Str("component", "sched").Msg("realtime scheduling unavailable, grant CAP_SYS_NICE")
+			log.Info().Msg("realtime scheduling unavailable, grant CAP_SYS_NICE")
 		})
 		return nil
 	}

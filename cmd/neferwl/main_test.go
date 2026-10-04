@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -37,5 +38,59 @@ func TestExitCodes(t *testing.T) {
 	}
 	if !strings.Contains(mergeDebug([]string{"core"}, "render"), "render") {
 		t.Fatal("union")
+	}
+}
+
+func TestOpenScript(t *testing.T) {
+	file := t.TempDir() + "/script"
+	if err := os.WriteFile(file, []byte("quit\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, path string
+		check      func(t *testing.T, script io.ReadCloser, err error)
+	}{
+		{"none", "", func(t *testing.T, script io.ReadCloser, err error) {
+			if err != nil || script != nil {
+				t.Fatalf("got %#v, %v; want a nil interface", script, err)
+			}
+		}},
+		{"stdin", "-", func(t *testing.T, script io.ReadCloser, err error) {
+			if err != nil || script != io.ReadCloser(os.Stdin) {
+				t.Fatalf("got %#v, %v; want os.Stdin", script, err)
+			}
+		}},
+		{"missing", "/nonexistent/script", func(t *testing.T, script io.ReadCloser, err error) {
+			if err == nil || script != nil {
+				t.Fatalf("got %#v, %v; want a nil interface and an error", script, err)
+			}
+		}},
+		{"file", file, func(t *testing.T, script io.ReadCloser, err error) {
+			if err != nil || script == nil {
+				t.Fatalf("got %#v, %v", script, err)
+			}
+			if got, err := io.ReadAll(script); err != nil || string(got) != "quit\n" {
+				t.Fatalf("read %q, %v", got, err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script, closeScript, err := openScript(tc.path)
+			if closeScript == nil {
+				t.Fatal("nil close func")
+			}
+			tc.check(t, script, err)
+			closeScript()
+			if tc.path == "-" {
+				if _, err := os.Stdin.Stat(); err != nil {
+					t.Fatalf("stdin closed: %v", err)
+				}
+			}
+			if tc.name == "file" {
+				if _, err := script.Read(make([]byte, 1)); err == nil || err == io.EOF {
+					t.Fatalf("file left open: %v", err)
+				}
+			}
+		})
 	}
 }

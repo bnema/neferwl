@@ -152,7 +152,7 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 	}
 	o.global = g
 	s.outputs = append(s.outputs, o)
-	s.log.Info().Str("output", p.Info.Name).Int("x", p.X).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
+	s.log.Info().Str("output", p.Info.Name).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Msg("output added")
 }
 
 // setOutputs applies the global layout from core: new outputs are
@@ -208,10 +208,12 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 		if o.place == p {
 			continue
 		}
-		scaleChanged := o.place.Scale != p.Scale
 		// A 90° to 270° change keeps the logical size: lock surfaces are
 		// logical-sized and need no reconfigure then.
 		logicalChanged := o.place.Width != p.Width || o.place.Height != p.Height
+		// The first layout from core moves an output off the placement it was
+		// added with, so this line carries the real position.
+		s.log.Info().Str("output", p.Info.Name).Int("x", p.X).Int("y", p.Y).Int("w", p.Width).Int("h", p.Height).Float64("scale", p.Scale).Int("transform", int(p.Transform)).Bool("primary", p.Primary).Msg("output changed")
 		o.place = p
 		if logicalChanged {
 			for _, l := range s.lockSurfaces {
@@ -232,9 +234,6 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 			if x.Version() < 3 {
 				x.SendDone()
 			}
-		}
-		if scaleChanged {
-			s.log.Info().Str("output", p.Info.Name).Float64("scale", p.Scale).Int("w", p.Width).Int("h", p.Height).Msg("output scale")
 		}
 	}
 	// Surfaces follow the scale of their output.

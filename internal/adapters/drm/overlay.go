@@ -183,14 +183,14 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
 		o.overlay.setVerdict(ov.color.format, o.cursorShown(), false)
 		o.setOverlayReason("color_refused")
-		o.log.Info().Str("component", "render").Err(err).Uint32("format", ov.color.format).Str("connector", o.conn.name).Msg("overlay colour pipeline refused")
+		o.renderLog.Info().Err(err).Uint32("format", ov.color.format).Str("connector", o.conn.name).Msg("overlay colour pipeline refused")
 		return false
 	}
 	if cfb := o.clientFBs[ov.buf]; cfb != nil && refused(err) {
 		cfb.overlayFailed = "overlay_refused"
 	}
 	o.setOverlayReason("overlay_refused")
-	o.log.Info().Str("component", "render").Err(err).Str("connector", o.conn.name).Msg("overlay refused")
+	o.renderLog.Info().Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
 }
 

@@ -198,8 +198,9 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 				if opts.Config.Performance.Realtime {
 					runtime.LockOSThread()
 					// Let this dedicated thread exit with its scheduling policy.
-					if err := sched.Realtime(logging.For(ctx, "sched")); err != nil {
-						log.Warn().Str("component", "sched").Err(err).Msg("input scheduling")
+					schedLog := logging.For(ctx, "sched")
+					if err := sched.Realtime(schedLog); err != nil {
+						schedLog.Warn().Err(err).Msg("input scheduling")
 					}
 				}
 				return libinput.Run(ctx, libinput.Options{
