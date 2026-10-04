@@ -31,13 +31,20 @@ type target struct {
 	// exported images are shared with the display: ownership goes to the
 	// foreign queue family after each frame, and KMS reads them.
 	exported bool
-	// What the image holds (damage.go): the scene (an immutable snapshot,
-	// held by reference), its Seq and each window's content Seq; valid
-	// once a frame was drawn whole.
-	valid    bool
-	sceneSeq uint64
-	scene    ports.Scene
-	windows  map[ports.WindowID]heldWindow
+	// What the image holds (damage.go): the scene, its Seq and each
+	// window's content Seq; valid once a frame was drawn whole. Scenes are
+	// immutable for core, but output adapters reuse their slices in place
+	// (DRM overlay frames, capture), so the compared slices of scene point
+	// into the target's own buffers, copied by hold.
+	valid          bool
+	sceneSeq       uint64
+	scene          ports.Scene
+	heldWindows    []ports.SceneWindow
+	heldSeparators []ports.Separator
+	heldLayers     []ports.SceneLayer
+	heldHints      []ports.Rect
+	heldIndicators []ports.CaptureIndicator
+	windows        map[ports.WindowID]heldWindow
 }
 
 // fourccXRGB is DRM_FORMAT_XRGB8888: B8G8R8A8 in memory, alpha ignored.

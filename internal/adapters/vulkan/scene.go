@@ -161,6 +161,30 @@ func (w *sceneWalk) layers(afterWindows bool) {
 	}
 }
 
+// drawsAsWindow reports whether windows() paints win as a window (not
+// hidden, a popup or empty).
+func drawsAsWindow(win ports.SceneWindow) bool {
+	return !win.Hidden && !win.Popup && win.Rect.W > 0 && win.Rect.H > 0
+}
+
+// opensFloats reports whether win, once reached, closes the tiles: the tile
+// lines and the dim veil are painted under it (an overview preview of a
+// float is not one).
+func opensFloats(win ports.SceneWindow) bool {
+	return !win.Below && win.Floating && win.Preview == 0
+}
+
+// floatsStart is the index of the first window that opens the floats in s,
+// or -1 when none does: where windows() splits its paint order.
+func floatsStart(s ports.Scene) int {
+	for i, win := range s.Windows {
+		if drawsAsWindow(win) && opensFloats(win) {
+			return i
+		}
+	}
+	return -1
+}
+
 // windows draws ordered placements with borders. Tile lines go after
 // the column group, before the first float above it; an overview preview
 // of a float is not one. The veil goes under that float, or under every
@@ -171,10 +195,10 @@ func (w *sceneWalk) windows() {
 	}
 	tileLines := false
 	for _, win := range w.s.Windows {
-		if win.Hidden || win.Popup || win.Rect.W <= 0 || win.Rect.H <= 0 {
+		if !drawsAsWindow(win) {
 			continue
 		}
-		if !win.Below && win.Floating && win.Preview == 0 && !tileLines {
+		if opensFloats(win) && !tileLines {
 			w.separators(0)
 			tileLines = true
 			if w.s.Dim > 0 && !w.s.DimBehind {

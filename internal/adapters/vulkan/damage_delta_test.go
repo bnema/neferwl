@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,14 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 )
+
+// TestSceneFieldCount fails when Scene gains or loses a field: sceneDelta
+// lists the fields that force a full redraw.
+func TestSceneFieldCount(t *testing.T) {
+	const fields = 20
+	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
+		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
+}
 
 // TestSceneWindowFieldCount fails when SceneWindow gains or loses a field:
 // sceneDelta compares windows by struct equality, so a new field is covered
@@ -158,11 +167,125 @@ func TestSceneDeltaAllocations(t *testing.T) {
 	assert.Zero(t, allocs, "sceneDelta must not allocate")
 }
 
+// The paint order splits at the first window that opens the floats: when
+// that window changes, the whole output is redrawn.
+func TestSceneDeltaFloatsStartMoves(t *testing.T) {
+	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	tile := func(id ports.WindowID, x int) ports.SceneWindow { return win(id, x, 0, 100, 100) }
+	float := func(id ports.WindowID, x int) ports.SceneWindow {
+		w := win(id, x, 0, 100, 100)
+		w.Floating = true
+		return w
+	}
+	delta := func(a, b []ports.SceneWindow) bool {
+		_, ok := sceneDelta(deltaScene(1, a...), deltaScene(2, b...), phys, 1<<30)
+		return ok
+	}
+	// A tile becomes a float: the tile lines and the veil move under it.
+	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	// The first float moves in the list.
+	assert.False(t, delta([]ports.SceneWindow{float(1, 0), float(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	// A hidden or popup float opens nothing; showing it does.
+	hidden := float(2, 100)
+	hidden.Hidden = true
+	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), hidden}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	popup := float(2, 100)
+	popup.Popup = true
+	assert.False(t, delta([]ports.SceneWindow{tile(1, 0), popup}, []ports.SceneWindow{tile(1, 0), float(2, 100)}))
+	// A below float or an overview preview does not open the floats.
+	below := float(2, 100)
+	below.Below = true
+	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), below}))
+	preview := float(2, 100)
+	preview.Preview = 0.5
+	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), tile(2, 100)}, []ports.SceneWindow{tile(1, 0), preview}))
+	// The same first float with another rect stays a delta.
+	assert.True(t, delta([]ports.SceneWindow{tile(1, 0), float(2, 100)}, []ports.SceneWindow{tile(1, 0), float(2, 130)}))
+}
+
+// The target keeps its own copy of the compared slices: a caller reusing
+// its slices in place (DRM overlay frames, capture) must not change what the
+// target holds.
+func TestTargetHoldCopiesSlices(t *testing.T) {
+	ws := []ports.SceneWindow{win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100)}
+	seps := []ports.Separator{{Rect: ports.Rect{X: 100, W: 2, H: 100}}}
+	layers := []ports.SceneLayer{{ID: 9, Rect: ports.Rect{W: 10, H: 10}}}
+	hints := []ports.Rect{{W: 5, H: 5}}
+	marks := []ports.CaptureIndicator{{Rect: ports.Rect{W: 5, H: 5}}}
+	s := deltaScene(1)
+	s.Windows, s.Separators, s.Layers, s.DropHints, s.CaptureIndicators = ws, seps, layers, hints, marks
+	tg := &target{}
+	d := &damageRegion{drawn: map[ports.WindowID]heldWindow{}}
+	tg.hold(s, d)
+	ws[1].Rect.X, seps[0].Rect.X, layers[0].ID, hints[0].W, marks[0].Rect.W = 150, 150, 8, 6, 6
+	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	// Compared with the mutated slices as the new scene, the held copy
+	// differs in each; with a held reference nothing would differ.
+	cur := s
+	cur.Seq = 2
+	_, ok := sceneDelta(tg.scene, cur, phys, 1<<30)
+	assert.False(t, ok, "layers, hints and indicators changed: full redraw")
+	cur.Layers, cur.DropHints, cur.CaptureIndicators = tg.heldLayers, tg.heldHints, tg.heldIndicators
+	area, ok := sceneDelta(tg.scene, cur, phys, 1<<30)
+	require.True(t, ok)
+	assert.Equal(t, image.Rect(100, 0, 250, 100), area, "window 2, old and new")
+	// Zero allocations once the buffers are warm.
+	allocs := testing.AllocsPerRun(50, func() { tg.hold(s, d) })
+	assert.Zero(t, allocs, "hold must not allocate once warm")
+}
+
+// deltaCase is a frame sequence of two windows whose second one resizes.
+type deltaCase struct {
+	name      string
+	scale     float64
+	out       ports.BufferTransform
+	sceneDim  float64
+	floating  bool // window 2 is a float: the veil and tile lines go under it
+	windowDim bool // window 1 is dimmed on some frames
+}
+
+func (c deltaCase) scene(seq uint64, i, w2 int, windows []ports.SceneWindow, seps []ports.Separator) ports.Scene {
+	windows[0], windows[1] = win(1, 0, 0, 20, 48), win(2, 20, 0, w2, 48)
+	windows[1].Floating = c.floating
+	if c.windowDim && i%3 == 0 {
+		windows[0].Dim = 0.5
+	}
+	seps[0] = ports.Separator{Rect: ports.Rect{X: 20, W: 1, H: 48}}
+	return ports.Scene{Seq: seq, Transform: c.out, OutputWidth: 64, OutputHeight: 48, Scale: c.scale, Background: "#101010",
+		Dim: c.sceneDim, Windows: windows, Separators: seps}
+}
+
+func deltaCases() []deltaCase {
+	return []deltaCase{
+		{name: "scale 1", scale: 1},
+		{name: "scale 1.5", scale: 1.5},
+		{name: "transform 90", scale: 1, out: 1},
+		{name: "scene dim over tiles", scale: 1, sceneDim: 0.4, floating: true},
+		{name: "window dim", scale: 1, windowDim: true},
+		{name: "scale 1.5 rotated, all", scale: 1.5, out: 1, sceneDim: 0.3, floating: true, windowDim: true},
+	}
+}
+
 // A partial redraw after a window resize is pixel-identical to a full
-// redraw, on both targets of a double-buffered output.
+// redraw, on both targets of a double-buffered output. With reuse the scene
+// slices are rewritten in place for every frame, like an output adapter
+// that reuses them: the target must not have kept a reference.
 func TestRendererSceneDeltaMatchesFullRedraw(t *testing.T) {
+	for _, reuse := range []bool{false, true} {
+		for _, tc := range deltaCases() {
+			name := tc.name
+			if reuse {
+				name += " reused slices"
+			}
+			t.Run(name, func(t *testing.T) { sceneDeltaMatchesFullRedraw(t, tc, reuse) })
+		}
+	}
+}
+
+func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
+	tw, th := tc.out.Size(int(64*tc.scale+0.5), int(48*tc.scale+0.5))
 	newR := func() *Renderer {
-		r, err := New(64, 48)
+		r, err := New(tw, th)
 		if err != nil {
 			t.Skipf("Vulkan unavailable: %v", err)
 		}
@@ -184,23 +307,28 @@ func TestRendererSceneDeltaMatchesFullRedraw(t *testing.T) {
 	green := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
 	green.ID, green.Surface, green.Seq, green.Version = 2, 2, 1, 1
 	contents := map[ports.WindowID]ports.SurfaceContent{1: red, 2: green}
-	mk := func(seq uint64, w2 int) ports.Scene {
-		s := ports.Scene{Seq: seq, OutputWidth: 64, OutputHeight: 48, Scale: 1, Background: "#101010",
-			Windows: []ports.SceneWindow{win(1, 0, 0, 20, 48), win(2, 20, 0, w2, 48)}}
-		s.Separators = []ports.Separator{{Rect: ports.Rect{X: 20, W: 1, H: 48}}}
-		return s
-	}
+	shared := make([]ports.SceneWindow, 2)
+	sharedSeps := make([]ports.Separator, 1)
 	var partial int
-	for i, w2 := range []int{20, 20, 30, 24, 24, 40, 20} {
-		s := mk(uint64(10+i), w2)
+	for i, w2 := range []int{20, 20, 30, 24, 24, 40, 20, 22} {
+		windows, seps := shared, sharedSeps
+		if !reuse {
+			windows, seps = make([]ports.SceneWindow, 2), make([]ports.Separator, 1)
+		}
+		if reuse {
+			clear(windows)
+		}
+		s := tc.scene(uint64(10+i), i, w2, windows, seps)
 		damaged.UseTarget(i % 2)
 		before := damaged.redrawn
 		require.NoError(t, render(damaged, s, contents))
-		if damaged.redrawn-before < 64*48 {
+		if damaged.redrawn-before < tw*th {
 			partial++
 		}
 		plain := s
 		plain.Seq = 0
+		plain.Windows = slices.Clone(s.Windows)
+		plain.Separators = slices.Clone(s.Separators)
 		require.NoError(t, render(full, plain, contents))
 		a, b := readPixels(t, damaged), readPixels(t, full)
 		if !bytes.Equal(a.Pix, b.Pix) {

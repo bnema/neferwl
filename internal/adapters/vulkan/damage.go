@@ -189,10 +189,33 @@ func (d *damageRegion) clip(ds []draw) []draw {
 }
 
 // hold records what the target holds after this frame: only the windows
-// it drew.
+// it drew, and the scene with its compared slices copied into the target's
+// buffers (zero allocations once they are large enough): the caller may
+// rewrite its slices in place later.
 func (tg *target) hold(s ports.Scene, d *damageRegion) {
+	tg.heldWindows = append(tg.heldWindows[:0], s.Windows...)
+	tg.heldSeparators = append(tg.heldSeparators[:0], s.Separators...)
+	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
+	tg.heldHints = append(tg.heldHints[:0], s.DropHints...)
+	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
 	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
+	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
+	tg.scene.DropHints, tg.scene.CaptureIndicators = tg.heldHints, tg.heldIndicators
+	// Only whether they are set matters (any capture redraws everything):
+	// sentinels, so no pointer into the caller's capture state is kept.
+	tg.scene.Capture, tg.scene.CaptureScene = nil, nil
+	if s.Capture != nil {
+		tg.scene.Capture = &heldCapture
+	}
+	if s.CaptureScene != nil {
+		tg.scene.CaptureScene = &heldCaptureScene
+	}
 }
+
+var (
+	heldCapture      ports.SceneCapture
+	heldCaptureScene ports.Scene
+)
 
 // sceneDelta is the region (physical, through phys) where cur differs from
 // old, two scenes of one output; ok is false when the whole output must be
@@ -212,6 +235,12 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
 		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||
 		len(old.Windows) != len(cur.Windows) {
+		return image.Rectangle{}, false
+	}
+	// windows() paints the tile lines and the Dim veil under the first
+	// window that opens the floats: when that moves, the paint order of the
+	// whole output changed, not only the rects of the windows that differ.
+	if floatsStart(old) != floatsStart(cur) {
 		return image.Rectangle{}, false
 	}
 	var area image.Rectangle
