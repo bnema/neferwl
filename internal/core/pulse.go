@@ -96,9 +96,10 @@ func (c *Core) pulseTick() bool {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, wait)
 		return false
 	}
-	// A landing slide still shows its neighbours: decide on the settled
-	// layout, or a window left alone would start a pulse cut short.
-	if c.cur().mon.springing() {
+	// A swipe or its landing slide still shows the neighbours: decide on
+	// the settled layout, or a window left alone would start a pulse cut
+	// short.
+	if !c.cur().mon.settled() {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
 		return false
 	}
@@ -129,6 +130,19 @@ func (c *Core) advancePulse(now time.Time) float64 {
 	}
 	p.id = 0
 	return 0
+}
+
+// settled reports whether no swipe or slide moves the monitor's layout.
+func (m *Monitor) settled() bool {
+	if m.switchMotion != nil || m.switchOff != 0 {
+		return false
+	}
+	for w := range m.all() {
+		if w.motion != nil || w.shift != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // visibleCount is the number of windows of layout shown in frame.
