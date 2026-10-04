@@ -391,3 +391,49 @@ func TestRetargetKeepsSubPixelOffsets(t *testing.T) {
 		t.Fatalf("dx = %v equals the rounded rect's: the fraction was lost", got.dx)
 	}
 }
+
+// An action that moves other windows leaves a running rect motion alone: it
+// is not restarted from the rounded rect nor resampled (same start, speed
+// and offsets), while the windows the action moved animate.
+func TestRectMotionOfUnmovedWindowIsUntouched(t *testing.T) {
+	c, ic := indicatorCore(t)
+	c.cfg.Animations.On = true
+	m := c.cur().mon
+	for id := WindowID(1); id <= 3; id++ {
+		m.AddWindow(id)
+	}
+	// 2 and 3 share a column; 1 is a column of its own.
+	c.applyAction(ActionConsumeOrExpelLeft)
+	settleShown(t, c)
+	sc := c.cur()
+
+	// A runs a rect motion, one frame in.
+	sp := viewSpring(60.5, 0)
+	sc.rects = map[WindowID]rectMotion{1: {x: c.spring(sp, ic.now), dx: 60.5}}
+	sc.rectsWS = m.Current()
+	ic.now = ic.now.Add(30 * time.Millisecond)
+	c.animate(ic.now, nil)
+	settleShown(t, c)
+	a := sc.rects[1]
+	if !a.x.on || a.dx == 0 || a.dx == 60.5 || a.x.velocity() == 0 {
+		t.Fatalf("setup: A's motion %+v is not mid-flight", a)
+	}
+
+	// B: swapping the stacked 2 and 3 moves those two only.
+	ic.now = ic.now.Add(time.Millisecond)
+	before := c.snapshot(ic.now)
+	c.applyAction(ActionMoveWindowUp)
+	c.transition(before, ic.now)
+	if got, ok := sc.rects[1]; !ok || got != a {
+		t.Fatalf("A's motion changed: %+v, was %+v", got, a)
+	}
+	for _, id := range []WindowID{2, 3} {
+		b, ok := sc.rects[id]
+		if !ok || !b.y.on || b.dy == 0 {
+			t.Fatalf("window %d does not animate: %+v", id, b)
+		}
+		if b.x.on {
+			t.Fatalf("window %d moved sideways: %+v", id, b)
+		}
+	}
+}
