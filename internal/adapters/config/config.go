@@ -169,6 +169,8 @@ func Defaults() ports.Config {
 	c.Touchpad.ScrollFactor = 1
 	c.Mouse.AccelProfile = ports.AccelAdaptive
 	c.Cursor.HideAfter = 5 * time.Second
+	c.Animations.On = true
+	c.Animations.Slowdown = 1
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen
 	c.Focus.Strength = 0.04
@@ -749,6 +751,18 @@ func set(c *ports.Config, key, v string) error {
 			return fmt.Errorf("must be off or a duration between 100ms and %s, e.g. 5s", maxCursorHideAfter)
 		}
 		c.Cursor.HideAfter = d
+	case "animations":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Animations.On = b
+	case "animations.slowdown":
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || !(f >= 0.1 && f <= 10) {
+			return fmt.Errorf("must be between 0.1 and 10")
+		}
+		c.Animations.Slowdown = f
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {

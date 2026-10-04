@@ -78,6 +78,27 @@ func TestFollowMove(t *testing.T) {
 	}
 }
 
+func TestAnimations(t *testing.T) {
+	d := Defaults().Animations
+	if !d.On || d.Slowdown != 1 {
+		t.Fatal("animations defaults", d)
+	}
+	c, w := parseString(t, "animations = off\nanimations.slowdown = 2\n")
+	if c.Animations.On || c.Animations.Slowdown != 2 || len(w) != 0 {
+		t.Fatal(c.Animations, w)
+	}
+	for _, line := range []string{"animations = maybe", "animations.slowdown = 0", "animations.slowdown = 11"} {
+		c, w = parseString(t, line+"\n")
+		if c.Animations != d || len(w) != 1 {
+			t.Fatal(line, c.Animations, w)
+		}
+	}
+	_, w = parseString(t, "animations.slowdown = 11\n")
+	if len(w) != 1 || !strings.Contains(w[0].Msg, "must be between 0.1 and 10") {
+		t.Fatal(w)
+	}
+}
+
 func TestFocusIndicator(t *testing.T) {
 	d := Defaults().Focus
 	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.04 {
