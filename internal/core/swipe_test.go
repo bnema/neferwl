@@ -477,7 +477,7 @@ func TestSwipeIgnoredAfterSwitchingAwayAndBack(t *testing.T) {
 }
 
 func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
-	r := startSwipe(t, animationsOff)
+	r := startSwipe(t, nil)
 	before, _ := rectOf(threeColumns(t, r), 2)
 	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
 	// Window 4 on DP-2, so it has a workspace below to switch to.
@@ -492,7 +492,11 @@ func TestSwipeKeptWhenAnotherOutputSwitchesWorkspace(t *testing.T) {
 	// The pointer goes to DP-2 and a bind switches its workspace.
 	r.input <- ports.PointerMotion{X: 1000, Y: 300}
 	scene(t, r.scenes)
-	for _, sc := range r.key(t, "Next", ports.ModAlt) {
+	r.key(t, "Next", ports.ModAlt)
+	// DP-2 slides to its other workspace on its own flips.
+	r.advance(5 * time.Second)
+	r.frames <- ports.OutputFrame{Output: "DP-2"}
+	for _, sc := range receive(t, r.scenes) {
 		if _, ok := rectOf(sc, 4); ok {
 			t.Fatal("DP-2 did not switch workspace")
 		}
@@ -564,16 +568,6 @@ func (r *swipeRig) drain() {
 		case <-time.After(50 * time.Millisecond):
 			return
 		}
-	}
-}
-
-func TestKeyWithoutSlideMovesAtOnce(t *testing.T) {
-	r := startSwipe(t, animationsOff)
-	threeColumns(t, r)
-	r.key(t, "Left", ports.ModAlt)
-	s := r.key(t, "Left", ports.ModAlt)[0]
-	if got, _ := rectOf(s, 1); got.X != 0 {
-		t.Fatalf("column 1 at %d", got.X)
 	}
 }
 

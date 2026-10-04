@@ -66,11 +66,16 @@ func TestReloadToOffSettlesALanding(t *testing.T) {
 
 // noFrameScene sends page flips and expects no scene: no spring runs, so
 // the flips have nothing to move and publish nothing.
-func (r *swipeRig) noFrameScene(t *testing.T) {
+func (r *swipeRig) noFrameScene(t *testing.T, outputs ...string) {
 	t.Helper()
+	if len(outputs) == 0 {
+		outputs = []string{wide.Name}
+	}
 	for range 2 {
 		r.advance(16 * time.Millisecond)
-		r.frames <- ports.OutputFrame{Output: wide.Name}
+		for _, o := range outputs {
+			r.frames <- ports.OutputFrame{Output: o}
+		}
 	}
 	select {
 	case s := <-r.scenes:

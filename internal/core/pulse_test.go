@@ -185,30 +185,54 @@ func TestFocusPulseSkipsAloneOnScreen(t *testing.T) {
 	}
 }
 
-// A swipe or its landing slide still shows the neighbours: the pulse waits
-// for the layout to settle, then decides on it.
+// A swipe, its landing slide or a transition still shows the neighbours: the
+// pulse waits for the layout to settle, then decides on it.
 func TestFocusPulseWaitsForSlide(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		slide func(*Monitor, time.Time)
+		slide func(*testing.T, *Core, time.Time)
 		alone bool
 	}{
-		{"workspace landing, alone", func(m *Monitor, now time.Time) { m.switchMotion = newMotion(workspaceSpring(0.5, 0), now, 1) }, true},
-		{"workspace drag, alone", func(m *Monitor, _ time.Time) { m.switchOff = 0.3 }, true},
-		{"column drag, beside another", func(m *Monitor, _ time.Time) { m.Current().shift = 40 }, false},
+		{"workspace landing, alone", func(_ *testing.T, c *Core, now time.Time) {
+			c.cur().mon.switchMotion = newMotion(workspaceSpring(0.5, 0), now, 1)
+		}, true},
+		{"workspace drag, alone", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.switchOff = 0.3 }, true},
+		{"column drag, beside another", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.Current().shift = 40 }, false},
+		{"rect motion, beside another", func(_ *testing.T, c *Core, now time.Time) {
+			sc := c.cur()
+			sc.rects = map[WindowID]rectMotion{1: {x: c.spring(viewSpring(40, 0), now), dx: 40}}
+			sc.rectsWS = sc.mon.Current()
+		}, false},
+		{"camera transition of a key, beside another", func(t *testing.T, c *Core, now time.Time) {
+			m := c.cur().mon
+			for id := WindowID(3); id <= 4; id++ {
+				m.AddWindow(id)
+			}
+			indicatorScene(t, c)
+			before := c.snapshot()
+			for range 3 {
+				c.applyAction(ActionFocusColumnLeft)
+			}
+			c.transition(before, now)
+			if !m.Current().motion.on || m.settled() {
+				t.Fatal("no camera transition after the focus moved the view")
+			}
+		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, ic := pulseCore(t)
 			m := c.cur().mon
 			m.Current().FocusID(1)
 			indicatorScene(t, c)
-			tc.slide(m, ic.now)
+			tc.slide(t, c, ic.now)
+			indicatorScene(t, c)
 			ic.now = ic.now.Add(pulseSettle)
 			if c.pulseTick() || c.pulse.timerC == nil {
 				t.Fatal("pulse decided during a slide")
 			}
 			m.stopSwitch()
 			m.Current().stopSlide()
+			c.cur().stopRects()
 			if tc.alone {
 				m.Current().ToggleFullWidth()
 			}

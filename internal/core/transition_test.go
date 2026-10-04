@@ -129,22 +129,47 @@ func TestAnimationsOffKeysLandAtOnce(t *testing.T) {
 	r.noFrameScene(t)
 }
 
-// With the overview open before or after, nothing slides.
+// With the overview open before or after, nothing slides: opening it on a
+// scrolled view starts no motion, and neither does a bind that moves the view
+// while it is open.
 func TestNoTransitionWithOverview(t *testing.T) {
-	r := startSwipe(t, nil)
-	r.workspaces(t)
-	r.key(t, "o", ports.ModAlt)
-	r.key(t, "o", ports.ModAlt)
-	r.noFrameScene(t)
+	for _, tc := range []struct {
+		name string
+		// open is what the overview shows before the keys of the bind.
+		sym  string
+		mods ports.Mods
+	}{
+		{"open and close", "", 0},
+		{"focus bind while open", "Left", ports.ModAlt},
+		{"workspace bind while open", "Next", ports.ModAlt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := startSwipe(t, nil)
+			fourColumns(t, r)
+			r.key(t, "Right", ports.ModAlt) // 2 is on screen: no scroll
+			r.keySettled(t, "Right")        // the view scrolls away from 0
+			r.keySettled(t, "Right")
+			r.key(t, "o", ports.ModAlt)
+			r.noFrameScene(t)
+			if tc.sym != "" {
+				r.key(t, tc.sym, tc.mods)
+				r.noFrameScene(t)
+			}
+			r.key(t, "o", ports.ModAlt)
+			r.noFrameScene(t)
+		})
+	}
 }
 
-// A workspace that goes to another monitor gets no motion on either side.
+// A workspace that goes to another monitor gets no rect or switch motion on
+// either side.
 func TestMovedWorkspaceHasNoMotion(t *testing.T) {
 	r := startSwipe(t, nil)
-	r.mapWindow(t, 1)
-	r.plug(t, ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000})
+	twoColumns(t, r)
+	other := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
+	r.plug(t, other)
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
-	r.noFrameScene(t)
+	r.noFrameScene(t, wide.Name, other.Name)
 }
 
 // rectNow is the rect of window id in s; it must be in the scene.
@@ -309,25 +334,6 @@ func TestFullscreenRectTransition(t *testing.T) {
 	}
 }
 
-// A workspace that moves to another monitor gets no rect or switch motion
-// on either monitor.
-func TestMovedWorkspaceGetsNoRectMotion(t *testing.T) {
-	r := startSwipe(t, nil)
-	twoColumns(t, r)
-	other := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
-	r.plug(t, other)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
-	for _, o := range []string{wide.Name, other.Name} {
-		r.advance(16 * time.Millisecond)
-		r.frames <- ports.OutputFrame{Output: o}
-	}
-	select {
-	case s := <-r.scenes:
-		t.Fatalf("a flip published a scene (%d outputs): a motion runs", len(s))
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
 // With animations off a layout change lands at once.
 func TestAnimationsOffRectsLandAtOnce(t *testing.T) {
 	r := startSwipe(t, animationsOff)
@@ -355,5 +361,63 @@ func TestChainedMovesStartFromShownRects(t *testing.T) {
 	end := r.settle(t)
 	if got1, got2 := rectNow(t, end, 1), rectNow(t, end, 2); got1.X != 0 || got2.X != 400 {
 		t.Fatalf("settled 1 at %+v and 2 at %+v, want 0 and 400", got1, got2)
+	}
+}
+
+// A click on a column that is partly off screen focuses it: the scene right
+// after the click still shows the old view, a frame an intermediate one and
+// the settled scene the new one.
+func TestClickFocusTransition(t *testing.T) {
+	r := startSwipe(t, func(c *ports.Config) { c.Binds["Cmd+Ctrl+Right"] = "set-column-width +10%" })
+	threeColumns(t, r)
+	// Column 3 grows to 480: column 2 sticks out 80 px on the left.
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	if got := xOf(t, r.settle(t), 2); got != -80 {
+		t.Fatalf("column 2 at %d, want -80", got)
+	}
+	// The release of the modifiers: a plain click, not a window drag.
+	r.input <- ports.KeyEvent{Keysym: "Alt_L"}
+	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.drain()
+	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
+	s := scene(t, r.scenes)
+	if got := xOf(t, s, 2); got != -80 {
+		t.Fatalf("column 2 at %d right after the click, want the old -80", got)
+	}
+	got := xOf(t, r.frame(t, 16*time.Millisecond), 2)
+	if got <= -80 || got >= 0 {
+		t.Fatalf("column 2 at %d on the first frame, want between -80 and 0", got)
+	}
+	if got := xOf(t, r.settle(t), 2); got != 0 {
+		t.Fatalf("column 2 at %d settled, want 0", got)
+	}
+}
+
+// A discrete swipe step (fixed overflow: nothing follows the fingers) moves
+// through a rect motion: the scene right after the lift shows the old rects.
+func TestDiscreteSwipeTransition(t *testing.T) {
+	r := startSwipe(t, func(c *ports.Config) { c.Layout.Overflow = "fixed" })
+	r.mapWindow(t, 1)
+	r.mapWindow(t, 2)
+	r.key(t, "f", ports.ModAlt) // maximize window 2
+	if got := rectNow(t, r.settle(t), 2); got.W != 800 {
+		t.Fatalf("window 2 is %d wide, want maximized 800", got.W)
+	}
+	r.begin()
+	for range 10 {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
+	}
+	s := r.end(t, false)
+	if got := rectNow(t, s, 2); got.W != 800 {
+		t.Fatalf("window 2 is %d wide right after the lift, want the old 800", got.W)
+	}
+	got := rectNow(t, r.frame(t, 16*time.Millisecond), 2)
+	if got.W <= 400 || got.W >= 800 {
+		t.Fatalf("window 2 is %d wide on the first frame, want between 400 and 800", got.W)
+	}
+	s = r.settle(t)
+	if got1, got2 := rectNow(t, s, 1), rectNow(t, s, 2); got1.W != 400 || got2.X != 400 || got2.W != 400 {
+		t.Fatalf("settled 1 at %+v and 2 at %+v, want 1 beside 2 on halves", got1, got2)
 	}
 }
