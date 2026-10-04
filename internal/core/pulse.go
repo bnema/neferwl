@@ -14,14 +14,17 @@ import (
 // pulseSettle before the pulse starts, a focus change stops a running one, and
 // the window that pulsed last does not pulse again within pulseCooldown
 // (switching back after another window held the focus is a new change).
-// Fast switching therefore shows nothing. Fullscreen windows, overview
-// previews, a window focused as it maps and a protected session never pulse.
+// Fast switching therefore shows nothing. Fullscreen windows, a window alone
+// on screen (e.g. a maximized column), overview previews, a window focused as
+// it maps and a protected session never pulse.
 
 const (
 	pulseSettle   = 150 * time.Millisecond
 	pulseRise     = 90 * time.Millisecond
 	pulseFall     = 230 * time.Millisecond
 	pulseCooldown = time.Second
+	// pulseRecheck is how often a pulse waiting for a slide to land checks again.
+	pulseRecheck = pulseSettle / 3
 )
 
 // focusPulse is the pulse state. target is the window focus last seen and
@@ -93,6 +96,13 @@ func (c *Core) pulseTick() bool {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, wait)
 		return false
 	}
+	// A swipe or its landing slide still shows the neighbours: decide on
+	// the settled layout, or a window left alone would start a pulse cut
+	// short.
+	if !c.cur().mon.settled() {
+		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
+		return false
+	}
 	if p.target == p.last && now.Sub(p.lastAt) < pulseCooldown {
 		return false
 	}
@@ -120,6 +130,30 @@ func (c *Core) advancePulse(now time.Time) float64 {
 	}
 	p.id = 0
 	return 0
+}
+
+// settled reports whether no swipe or slide moves the monitor's layout.
+func (m *Monitor) settled() bool {
+	if m.switchMotion != nil || m.switchOff != 0 {
+		return false
+	}
+	for w := range m.all() {
+		if w.motion != nil || w.shift != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// visibleCount is the number of windows of layout shown in frame.
+func visibleCount(layout []Placement, frame Rect) int {
+	n := 0
+	for _, p := range layout {
+		if p.Preview == 0 && onScreen(p, frame) {
+			n++
+		}
+	}
+	return n
 }
 
 // pulsing reports whether a pulse runs on the screen.
