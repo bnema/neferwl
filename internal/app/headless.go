@@ -14,7 +14,12 @@ import (
 // runHeadless drives one virtual output per size, named HEADLESS-1, -2, ...
 // With several outputs, screenshots go to a subdirectory per output. Modes
 // are fixed, so apply answers every configuration without backend work.
+//
+// Virtual outputs have no display to list modifiers, so each renderer is
+// told it drives one (vulkan.Renderer.SetVirtualOutput); without it a real
+// GPU refuses the HDR targets and the output falls back to SDR.
 func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
+	newRenderer = virtualRenderer(newRenderer)
 	set := newOutputSet(ctx, ch.captured)
 	set.wireSecurity(ch)
 	inventory := ports.OutputHeads{}
@@ -97,6 +102,21 @@ func runHeadless(ctx context.Context, sizes [][2]int, shots string, hdr bool, ap
 			err := set.finish(stopped.name)
 			return joinErr(err, set.wait())
 		}
+	}
+}
+
+// virtualRenderer wraps a renderer factory for headless outputs. Vulkan is
+// the only implementation of the virtual-output setting; it is not a port.
+func virtualRenderer(newRenderer func(w, h int) (ports.Renderer, error)) func(w, h int) (ports.Renderer, error) {
+	return func(w, h int) (ports.Renderer, error) {
+		r, err := newRenderer(w, h)
+		if err != nil {
+			return nil, err
+		}
+		if v, ok := r.(interface{ SetVirtualOutput(bool) }); ok {
+			v.SetVirtualOutput(true)
+		}
+		return r, nil
 	}
 }
 

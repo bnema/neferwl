@@ -85,6 +85,11 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	return out, nil
 }
 
+// SetVirtualOutput marks the output as having no display (headless): an
+// empty display modifier list then accepts every exportable HDR modifier,
+// as it does for SDR. DRM never sets it. Call before ExportTargets.
+func (r *Renderer) SetVirtualOutput(on bool) { r.virtual = on }
+
 // UseTarget selects the exported image the next frames draw into.
 func (r *Renderer) UseTarget(i int) {
 	if i >= 0 && i < len(r.targets) {
@@ -101,7 +106,8 @@ func (r *Renderer) target() *target {
 }
 
 // exportModifiers intersects the selected signal format modifiers with
-// those supported by the display. HDR never assumes an unspecified list.
+// those supported by the display. HDR never assumes an unspecified list,
+// except for a virtual output (no display) or a test readback.
 func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 	var out []uint64
 	available := r.renderMods
@@ -109,7 +115,7 @@ func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 		available = r.hdrMods
 	}
 	for _, m := range available {
-		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback)) || slices.Contains(display, m) {
+		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback || r.virtual)) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
 	}

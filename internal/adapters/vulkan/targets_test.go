@@ -127,6 +127,34 @@ func TestHDRExportTarget(t *testing.T) {
 	}
 }
 
+// A virtual (headless) HDR output has no display to list modifiers: the
+// export accepts every exportable one. A DRM output (no SetVirtualOutput)
+// still refuses an unspecified list.
+func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
+	r, err := New(64, 16)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	if r.physical == 0 || len(r.hdrMods) == 0 {
+		t.Skip("no exportable HDR GPU")
+	}
+	r.SetHDR(203)
+	if bufs, err := r.ExportTargets(1, nil); err == nil {
+		bufs[0].Planes[0].File.Close()
+		t.Fatal("HDR export without a display list succeeded on a non-virtual output")
+	}
+	r.SetVirtualOutput(true)
+	bufs, err := r.ExportTargets(1, nil)
+	if err != nil {
+		t.Fatalf("virtual HDR export: %v", err)
+	}
+	defer bufs[0].Planes[0].File.Close()
+	if bufs[0].Format != fourccXR30 {
+		t.Fatalf("format: %#x", bufs[0].Format)
+	}
+}
+
 // Test-only target readback: production HDR images do not have transfer-src.
 func checkHDRPixel(t *testing.T, r *Renderer, rgb [3]float64) {
 	t.Helper()

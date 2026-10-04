@@ -37,7 +37,10 @@ type Renderer struct {
 	hdrError   error
 	// hdrReadback is used only by the GPU test to permit transfer from a 10-bit target.
 	hdrReadback bool
-	physical    vk.PhysicalDevice
+	// virtual: the output has no display (headless), so ExportTargets
+	// accepts an empty modifier list for HDR (SetVirtualOutput).
+	virtual  bool
+	physical vk.PhysicalDevice
 	// One converted cursor image is kept; changes replace it in bounded memory.
 	cursorCache cursorConversion
 	// last is the target of the last frame: what captures copy.
