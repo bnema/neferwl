@@ -46,13 +46,13 @@ func startSwipe(t *testing.T, edit func(*ports.Config)) *swipeRig {
 		defer r.mu.Unlock()
 		return r.now
 	}).Maybe()
-	// The fallback timer never fires: frames come from the test.
-	clock.EXPECT().NewTimer(mock.Anything).RunAndReturn(func(time.Duration) ports.Timer {
-		timer := portsmocks.NewMockTimer(t)
-		timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
-		timer.EXPECT().Stop().Return(true).Maybe()
-		return timer
-	}).Maybe()
+	// The fallback timer never fires: frames come from the test. One timer
+	// built before core runs: a mock created by core while the test ends
+	// would race its own cleanup check.
+	timer := portsmocks.NewMockTimer(t)
+	timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
+	timer.EXPECT().Stop().Return(true).Maybe()
+	clock.EXPECT().NewTimer(mock.Anything).Return(timer).Maybe()
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Clock: clock, Frames: r.frames})
 	if err != nil {
 		t.Fatal(err)
