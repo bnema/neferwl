@@ -351,7 +351,7 @@ func (c *Core) stopAnimations() {
 				w.stopSlide()
 			}
 		}
-		clear(sc.rects)
+		sc.stopRects()
 	}
 	c.stopFrame()
 }

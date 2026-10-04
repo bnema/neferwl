@@ -562,7 +562,7 @@ func (c *Core) publish(ctx context.Context) error {
 		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		// layout is what is drawn; settled (same indexes) is where the
 		// windows are going, and alone sizes the configures.
-		layout, settled := sc.shown, sc.settled
+		layout, settled := sc.shown, sc.settledLayout
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
 			real = make(map[WindowID]Placement)
@@ -629,11 +629,16 @@ func (c *Core) publish(ctx context.Context) error {
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scene.CaptureIndicators = c.captureIndicators(sc)
 		scene.Capture = c.captureSceneFor(sc, capture)
-		// A scene carrying a capture image always gets a fresh Seq; any other
+		// A scene carrying a capture image always gets a fresh Seq, and so
+		// does one of an animating screen (the one being stepped, or any
+		// when none is): the outputs drop a scene they already show, and a
+		// spring that starts at the previous scene, or rounds to it in its
+		// tail, would get no flip and wait for the fallback timer. Any other
 		// keeps its output's Seq while it draws the same, so an idle output
 		// is not recomposed.
 		withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
-		if !withCapture && sc.last.Seq != 0 && scene.SameAs(sc.last) {
+		animating := (sc.springing() || c.pulsing(sc)) && (c.stepping == nil || c.stepping == sc)
+		if !withCapture && !animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
 			scene.Seq = sc.last.Seq
 		} else {
 			c.seq++
@@ -696,11 +701,26 @@ func (c *Core) publish(ctx context.Context) error {
 // step moves the running slides of only (nil: every screen) to now and
 // publishes the frame.
 func (c *Core) step(ctx context.Context, only *screen) error {
-	c.stopFrame()
+	// The fallback timer guards every animating output: a flip of one keeps
+	// it running while another still animates, or that one could starve.
+	if only == nil || !c.animatingOther(only) {
+		c.stopFrame()
+	}
 	c.animate(c.now(), only)
 	c.stepping = only
 	defer func() { c.stepping = nil }()
 	return c.slid(ctx, false)
+}
+
+// animatingOther reports whether a spring or the pulse runs on a screen
+// other than only.
+func (c *Core) animatingOther(only *screen) bool {
+	for _, sc := range c.screens {
+		if sc != only && (sc.springing() || c.pulsing(sc)) {
+			return true
+		}
+	}
+	return false
 }
 
 // slid publishes a moved view; shown reports another workspace came on

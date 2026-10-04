@@ -13,7 +13,7 @@ import (
 // (Workspace.shift, Monitor.switchOff), starting from what was on screen.
 // Nothing here runs for events that come from clients or outputs.
 //
-// A window's rect transition (option B) is presentation too: configures keep
+// A window's rect transition (presentation-only rect transition) is presentation too: configures keep
 // using the settled rect, so the client resizes once to its final size; what
 // is drawn and hit-tested is the settled rect plus an offset that a spring
 // takes to zero. The offsets are relative to the camera-shifted layout, so a
@@ -27,6 +27,10 @@ type viewShot struct {
 	// (viewX plus shift).
 	viewX int
 	view  float64
+	// viewV and switchV are the speeds of the running view and workspace
+	// springs (units per second, 0 without one). An action may stop them
+	// (Monitor.Focus), so the transition reads them here.
+	viewV, switchV float64
 	// list and pos are the numbered workspaces and the monitor's fractional
 	// position in them (index of the current one plus switchOff); ok is
 	// false when there is none (a shown stash workspace).
@@ -108,14 +112,25 @@ func (c *Core) refreshShown() {
 	for _, sc := range c.screens {
 		m := sc.mon
 		if len(sc.rects) > 0 && (m.ov.open || sc.rectsWS != m.Current()) {
-			clear(sc.rects)
+			sc.stopRects()
 		}
-		sc.settled = m.Layout()
+		sc.settledLayout = m.Layout()
+		if len(sc.rects) > 0 {
+			// A window that left the layout (or is hidden) keeps no motion:
+			// it would ask for frames with nothing to move.
+			for id := range sc.rects {
+				if !slices.ContainsFunc(sc.settledLayout, func(p Placement) bool {
+					return p.ID == id && !p.Hidden && p.Preview == 0
+				}) {
+					delete(sc.rects, id)
+				}
+			}
+		}
 		if len(sc.rects) == 0 {
-			sc.shown = sc.settled
+			sc.shown = sc.settledLayout
 			continue
 		}
-		buf := append(sc.shownBuf[:0], sc.settled...)
+		buf := append(sc.shownBuf[:0], sc.settledLayout...)
 		for i := range buf {
 			p := &buf[i]
 			if p.Hidden || p.Preview > 0 {
@@ -146,6 +161,12 @@ func (c *Core) snapshot() []viewShot {
 		if !m.ov.open {
 			w := m.Current()
 			s.ws, s.viewX, s.view = w, w.ViewX, float64(w.ViewX)+w.shift
+			if w.motion.on {
+				s.viewV = w.motion.velocity()
+			}
+			if m.switchMotion.on {
+				s.switchV = m.switchMotion.velocity()
+			}
 			for _, p := range sc.shown {
 				if !p.Hidden && p.Preview == 0 {
 					s.rects = append(s.rects, rectShot{p.ID, p.Rect})
@@ -207,16 +228,14 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		v := w.motion.velocity()
 		w.shift = b.view - float64(w.ViewX)
-		w.motion = c.spring(viewSpring(w.shift, v), now)
+		w.motion = c.spring(viewSpring(w.shift, b.viewV), now)
 	case b.ok && m.shown == nil && !c.movedAway(b.sc, b.ws):
 		j := indexOf(b.list, w)
 		if j < 0 {
 			return
 		}
 		off := b.pos - float64(j)
-		v := m.switchMotion.velocity()
 		// The snapshot's list is reused by the next action: the slide keeps
 		// its own copy.
 		m.switchOff, m.switchList = off, slices.Clone(b.list)
@@ -224,7 +243,7 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 			m.stopSwitch()
 			return
 		}
-		m.switchMotion = c.spring(workspaceSpring(off, v), now)
+		m.switchMotion = c.spring(workspaceSpring(off, b.switchV), now)
 	}
 }
 
@@ -236,8 +255,8 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 func (c *Core) transitionRects(b *viewShot, now time.Time) {
 	sc := b.sc
 	m := sc.mon
-	if m.ov.open || m.Current() != b.ws {
-		clear(sc.rects)
+	if m.Current() != b.ws {
+		sc.stopRects()
 		return
 	}
 	for _, p := range m.Layout() {

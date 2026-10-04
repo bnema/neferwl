@@ -194,10 +194,8 @@ func newMotion(s spring, now time.Time, slow float64) motion {
 	}
 	v := s.Velocity
 	s.Velocity *= slow
-	end := time.Duration(math.MaxInt64)
-	if f := float64(s.duration()) * slow; f < float64(math.MaxInt64) {
-		end = time.Duration(f)
-	}
+	// The slowdown is capped by the config, so this cannot overflow.
+	end := time.Duration(float64(s.duration()) * slow)
 	return motion{spring: s, start: now, end: end, slow: slow, v: v, on: true}
 }
 
