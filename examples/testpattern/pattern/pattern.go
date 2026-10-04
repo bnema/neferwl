@@ -101,6 +101,18 @@ func PQEncode(nits float64) float64 {
 	return math.Pow((3424.0/4096+2413.0/128*x)/(1+2392.0/128*x), 2523.0/32)
 }
 
+// PQDecode is the SMPTE ST 2084 EOTF: it turns a unit-range PQ signal into
+// absolute luminance in nits (0–10000). It inverts PQEncode.
+func PQDecode(signal float64) float64 {
+	if signal <= 0 {
+		return 0
+	}
+	e := math.Pow(min(signal, 1), 32.0/2523)
+	num := max(e-3424.0/4096, 0)
+	den := 2413.0/128 - 2392.0/128*e
+	return 10000 * math.Pow(num/den, 16384.0/2610)
+}
+
 // SRGBToLinear decodes a unit-range sRGB component.
 func SRGBToLinear(v float64) float64 {
 	if v <= 0.04045 {

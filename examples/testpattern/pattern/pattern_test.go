@@ -70,6 +70,26 @@ func TestPQEncode(t *testing.T) {
 	}
 }
 
+func TestPQDecodeInvertsPQEncode(t *testing.T) {
+	for _, nits := range []float64{0.001, 0.02, 1, 10, 100, 203, 400, 1000, 4000, 10000} {
+		if got := PQDecode(PQEncode(nits)); math.Abs(got-nits) > nits*1e-9+1e-9 {
+			t.Errorf("PQDecode(PQEncode(%v)) = %v", nits, got)
+		}
+	}
+	for _, v := range []float64{0, 0.0313, 0.1508, 0.5807, 0.75, 1} {
+		if got := PQEncode(PQDecode(v)); math.Abs(got-v) > 1e-9 {
+			t.Errorf("PQEncode(PQDecode(%v)) = %v", v, got)
+		}
+	}
+	if PQDecode(0) != 0 || PQDecode(-1) != 0 || math.Abs(PQDecode(1)-10000) > 1e-6 {
+		t.Fatal("PQDecode endpoints")
+	}
+	// The compositor's near-black residue (0.0313 PQ) is a few hundredths of a nit.
+	if v := PQDecode(0.0313); v < 0.01 || v > 0.05 {
+		t.Fatalf("PQDecode(0.0313) = %v nits", v)
+	}
+}
+
 func TestSRGBToLinear(t *testing.T) {
 	if SRGBToLinear(0) != 0 || math.Abs(SRGBToLinear(1)-1) > 1e-12 {
 		t.Fatal("endpoints")
