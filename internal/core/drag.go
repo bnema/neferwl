@@ -228,16 +228,26 @@ func resized(r Rect, edges ports.ResizeEdges, dx, dy, least int, u Rect) Rect {
 }
 
 // endDrag drops the window on release: a tile lands on its target.
+//
+// The drop is a transition like a bind's: the snapshot before it is what
+// the screens draw, the transition after it slides the dropped tile and
+// re-flows its neighbours. A tile does not follow the pointer during the
+// drag (dragMotion): the scene draws it in its slot with the drop hints, so
+// the slot is where the user last saw it and where it slides from. A float
+// follows the pointer and is already where it lands: no transition.
 func (c *Core) endDrag(ctx context.Context) error {
 	d := c.drag
 	c.drag = nil
 	if !d.float {
 		if t := c.dropAt(d.id, c.cursorX, c.cursorY); t.kind != dropNone {
+			now := c.now()
+			shots := c.snapshot(now)
 			c.drop(d.id, t)
 			// Slots and guests follow the windows, as after a bind.
 			if err := c.workspaceVisible(ctx, false); err != nil {
 				return err
 			}
+			c.transition(shots, now)
 		}
 	}
 	if err := c.publish(ctx); err != nil {
