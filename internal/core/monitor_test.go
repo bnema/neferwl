@@ -173,7 +173,7 @@ func TestMonitorActions(t *testing.T) {
 	}
 	// The empty workspace 1 is removed once left.
 	if !reflect.DeepEqual(windows(m), [][]WindowID{{2}, {1}, {}}) || m.Active != 1 {
-		t.Fatal(windows(m))
+		t.Fatal(windows(m), m.Active)
 	}
 	if e := m.Apply("spawn foot"); !e.Spawn {
 		t.Fatal(e)
@@ -307,6 +307,29 @@ func TestLonePresetColumnKeepsWidth(t *testing.T) {
 func named(m *Monitor, specs ...NamedWorkspace) *Monitor {
 	m.SetNamed(specs)
 	return m
+}
+
+// An empty workspace 1 stays while a named workspace is shown over it, so
+// the toggle can return to it; leaving it for another number drops it.
+func TestEmptyFirstWorkspaceUnderNamed(t *testing.T) {
+	m := named(monitor(), NamedWorkspace{Name: "dev"})
+	m.AddWindow(1)
+	m.FocusNumber(2)
+	m.AddWindow(2)
+	m.FocusNumber(1)
+	m.RemoveWindow(1)
+	m.Apply("workspace dev")
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{}, {2}, {}}) || m.Current().Name != "dev" {
+		t.Fatal(windows(m), m.Current().Name)
+	}
+	m.Apply("workspace dev")
+	if m.Current() != m.Workspaces[0] || !reflect.DeepEqual(windows(m), [][]WindowID{{}, {2}, {}}) {
+		t.Fatal(windows(m), m.Active)
+	}
+	m.FocusNumber(2)
+	if !reflect.DeepEqual(windows(m), [][]WindowID{{2}, {}}) || m.Active != 0 {
+		t.Fatal(windows(m), m.Active)
+	}
 }
 
 func TestHiddenWorkspaceToggle(t *testing.T) {
