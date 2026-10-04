@@ -7,7 +7,7 @@ import (
 
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	wlr "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	"github.com/bnema/zerowrap"

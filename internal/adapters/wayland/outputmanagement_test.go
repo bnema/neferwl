@@ -6,7 +6,7 @@ import (
 	"time"
 
 	wlr "github.com/bnema/go-wayland-bindings/server/wlroutputmanagement"
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )

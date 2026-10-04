@@ -2,11 +2,12 @@ package headlessinput
 
 import (
 	"context"
-	"github.com/bnema/neferwl/internal/adapters/xkb"
-	"github.com/bnema/neferwl/internal/logging"
-	"github.com/bnema/neferwl/internal/ports"
 	"strings"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/xkb"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestScript(t *testing.T) {

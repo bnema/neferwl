@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/securitycontext"
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/wlturbo"
 	"golang.org/x/sys/unix"
 )

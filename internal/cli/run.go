@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/app"
-	"github.com/bnema/neferwl/internal/logging"
 	"golang.org/x/term"
 )
 

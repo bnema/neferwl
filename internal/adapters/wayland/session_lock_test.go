@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
-	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 	lockclient "github.com/bnema/wlturbo/protocol/extsessionlock"

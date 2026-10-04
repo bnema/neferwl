@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 )
 
 // notify-send runs with the child environment and the summary and body as

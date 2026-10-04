@@ -14,7 +14,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 )
 
 func TestWaylandInfo(t *testing.T) {
