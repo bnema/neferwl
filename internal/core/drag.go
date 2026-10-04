@@ -243,11 +243,11 @@ func (c *Core) endDrag(ctx context.Context) error {
 			now := c.now()
 			shots := c.snapshot(now)
 			c.drop(d.id, t)
+			c.transition(shots, now)
 			// Slots and guests follow the windows, as after a bind.
 			if err := c.workspaceVisible(ctx, false); err != nil {
 				return err
 			}
-			c.transition(shots, now)
 		}
 	}
 	if err := c.publish(ctx); err != nil {

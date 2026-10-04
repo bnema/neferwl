@@ -329,6 +329,8 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
@@ -348,6 +350,8 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	if hints := dragScene(r.settle(t), "A").DropHints; len(hints) != 4 {
 		t.Fatalf("swap outline %+v", hints)
 	}
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
@@ -360,6 +364,8 @@ func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	r.moveTo(float64(b.X+b.W/2), float64(b.Y+b.H/2), 6)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {3}, {2}}, slices.Equal) {
@@ -521,15 +527,19 @@ func TestDragDropTileSlides(t *testing.T) {
 		if want[1].Y <= want[3].Y || want[1].X != want[3].X {
 			t.Fatalf("1 is not stacked below 3 once settled: %+v", want)
 		}
-		// One configure for the dropped tile, to its final size.
-		var sizes [][2]int
+		// A window is configured at most once by the drop, to its settled
+		// size, never to a size along the slide; the dropped tile always.
+		sizes := map[ports.WindowID][][2]int{}
 		for _, v := range r.drain() {
-			if v, ok := v.(ports.ConfigureWindow); ok && v.ID == 1 {
-				sizes = append(sizes, [2]int{v.Width, v.Height})
+			if v, ok := v.(ports.ConfigureWindow); ok {
+				sizes[v.ID] = append(sizes[v.ID], [2]int{v.Width, v.Height})
 			}
 		}
-		if len(sizes) != 1 || sizes[0] != [2]int{want[1].W, want[1].H} {
-			t.Fatalf("configures of window 1 %v, want exactly [%dx%d]", sizes, want[1].W, want[1].H)
+		for id, rect := range want {
+			got := sizes[id]
+			if len(got) > 1 || len(got) == 1 && got[0] != [2]int{rect.W, rect.H} || id == 1 && len(got) != 1 {
+				t.Fatalf("configures of window %d %v, want at most one at %dx%d (exactly one for window 1)", id, got, rect.W, rect.H)
+			}
 		}
 	})
 }
@@ -557,6 +567,8 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	// Top band of 2 stacks 1 above it.
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+3), 3)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1, 2}}, slices.Equal) {
 		t.Fatal(got)
@@ -564,8 +576,12 @@ func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 }
 
 func TestDragAcrossOutputs(t *testing.T) {
-	b := ports.OutputInfo{Name: "B", Width: 800, Height: 600}
-	r := startDragRig(t, nil, dragOut, b)
+	both(t, func(t *testing.T, animated bool) {
+		dragAcrossOutputs(t, startDragMode(t, animated, nil, dragOut, ports.OutputInfo{Name: "B", Width: 800, Height: 600}))
+	})
+}
+
+func dragAcrossOutputs(t *testing.T, r *dragRig) {
 	r.client <- ports.WindowMapped{ID: 1}
 	r.client <- ports.WindowMapped{ID: 2}
 	r.settle(t)
@@ -586,6 +602,7 @@ func TestDragAcrossOutputs(t *testing.T) {
 	if len(dragScene(set, "B").DropHints) == 0 || len(dragScene(set, "A").DropHints) != 0 {
 		t.Fatalf("hints A %+v B %+v", dragScene(set, "A").DropHints, dragScene(set, "B").DropHints)
 	}
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if _, ok := windowIn(set, "B", 1); !ok {
@@ -722,6 +739,8 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	r.press(t, 0x110, ports.ModSuper)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+3), 2)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4, 1}, {2}, {3}}, slices.Equal) {
@@ -733,6 +752,8 @@ func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+two.H/2), 4)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4}, {2, 1}, {3}}, slices.Equal) {
 		t.Fatal(got)
