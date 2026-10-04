@@ -170,7 +170,7 @@ func (b *drmBackend) prepareSeatDisable() {
 	}
 	wg.Wait()
 	if n := late.Load(); n > 0 {
-		b.log.Warn().Str("component", "drm").Int("outputs", int(n)).Dur("timeout", seatDisableTimeout).Msg("outputs did not prepare for the seat disable in time; disabling anyway")
+		b.log.Warn().Int("outputs", int(n)).Dur("timeout", seatDisableTimeout).Msg("outputs did not prepare for the seat disable in time; disabling anyway")
 	}
 }
 
@@ -231,7 +231,7 @@ func openDRM(ctx context.Context, cfg ports.Config) (*drmBackend, error) {
 			errs = append(errs, err)
 			continue
 		}
-		card, err := drm.OpenCard(fd, path, want, log)
+		card, err := drm.OpenCard(fd, path, want, log, logging.For(ctx, "render"))
 		if err != nil {
 			log.Warn().Err(err).Str("card", path).Msg("card unusable")
 			errs = append(errs, err)
@@ -547,8 +547,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 							runtime.LockOSThread()
 							// Keep the thread locked until this goroutine exits: an RT
 							// thread must not return to Go's general-purpose pool.
-							if err := sched.Realtime(log); err != nil {
-								log.Warn().Str("component", "sched").Err(err).Msg("output scheduling")
+							schedLog := logging.For(ctx, "sched")
+							if err := sched.Realtime(schedLog); err != nil {
+								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
 						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, ch.presented, cap, ch.captured)

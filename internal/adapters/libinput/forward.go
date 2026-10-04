@@ -65,7 +65,7 @@ func (f *forwarder) push(ev ports.InputEvent) {
 	f.queue = append(f.queue, ev)
 	if len(f.queue) > forwardWarn && !f.long {
 		f.long = true
-		f.log.Warn().Str("component", "input").Int("queued", len(f.queue)).Msg("core is not reading input; events queue up")
+		f.log.Warn().Int("queued", len(f.queue)).Msg("core is not reading input; events queue up")
 	}
 	f.mu.Unlock()
 	select {
@@ -97,7 +97,7 @@ func (f *forwarder) pop() (ports.InputEvent, bool) {
 	f.queue = f.queue[1:]
 	if f.long && len(f.queue) < forwardWarn {
 		f.long = false
-		f.log.Warn().Str("component", "input").Int("queued", len(f.queue)).Msg("input queue drained")
+		f.log.Warn().Int("queued", len(f.queue)).Msg("input queue drained")
 	}
 	return ev, true
 }

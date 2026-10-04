@@ -45,6 +45,8 @@ type Output struct {
 	monitor Monitor
 	hdr     hdrState
 	log     zerowrap.Logger
+	// renderLog is the render-component logger (see Card.renderLog).
+	renderLog zerowrap.Logger
 	// clock paces the periodic stats and renderer trim (nil: system).
 	clock ports.Clock
 	// Properties: CRTC and connector property IDs by name.
@@ -195,7 +197,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -649,7 +651,7 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 		// The same frame without the connector hint tells whether the hint
 		// is the cause.
 		if o.contentProp != 0 && o.contentWanted != o.contentValue && errors.Is(err, unix.EINVAL) && o.frameTest(fb, fence, vrr, cur, ov, rect, pc, false) {
-			o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
+			o.log.Warn().Err(err).Msg("content type refused; disabled")
 			o.contentProp = 0
 			return o.commitWithRect(fb, fence, false, vrr, f, ov, rect, pc)
 		}
@@ -786,7 +788,7 @@ func (o *Output) commitState(vrr bool) error {
 			}
 			if len(without.objs) == 0 || o.k.commit(without, atomicTestOnly, 0) == nil {
 				o.contentProp = 0
-				o.log.Warn().Str("component", "drm").Err(err).Msg("content type refused; disabled")
+				o.log.Warn().Err(err).Msg("content type refused; disabled")
 				return o.commitState(vrr)
 			}
 		}
@@ -861,7 +863,7 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 	}
 	if err != nil && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ERANGE)) {
 		// KMS refuses this buffer on the plane: compose it instead.
-		o.log.Info().Str("component", "render").Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
+		o.renderLog.Info().Err(err).Uint32("format", c.DMABuf.Format).Uint64("modifier", c.DMABuf.Modifier).Msg("scanout flip refused")
 		cfb.failed = "flip_refused"
 		o.setScanoutReason("flip_refused")
 		return false, nil

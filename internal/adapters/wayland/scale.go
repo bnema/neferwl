@@ -285,7 +285,7 @@ func (s *surface) validateViewport(bw, bh int) bool {
 			if s.current != nil {
 				bufferID = s.current.ID()
 			}
-			s.server.log.Warn().Str("component", "wayland").Uint32("surface", surfaceID).Uint32("viewport", viewportID).
+			s.server.log.Warn().Uint32("surface", surfaceID).Uint32("viewport", viewportID).
 				Bool("fresh", s.commitFresh).Bool("retained", !s.commitFresh).Bool("skipped_destroyed", s.commitSkipped).
 				Uint32("buffer", bufferID).Uint32("queued_buffer", s.queuedBuffer).Int("buffer_width", bw).Int("buffer_height", bh).
 				Int("committed_scale", s.bufferScale).Int("queued_scale", s.queuedScale).

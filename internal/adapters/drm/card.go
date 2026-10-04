@@ -18,11 +18,14 @@ import (
 // goroutine. One reader goroutine reads commit events for all of them
 // and hands each to its output by CRTC.
 type Card struct {
-	fd    int
-	path  string
-	want  Want
-	log   zerowrap.Logger
-	crtcs []uint32
+	fd   int
+	path string
+	want Want
+	log  zerowrap.Logger
+	// renderLog carries the render component: direct scanout and overlay
+	// decisions belong to the render path, not to KMS bookkeeping.
+	renderLog zerowrap.Logger
+	crtcs     []uint32
 	// outputs by connector name; owned by the goroutine that calls Scan.
 	outputs  map[string]*Output
 	leasable map[string]connector
@@ -42,14 +45,15 @@ type Card struct {
 }
 
 // OpenCard turns on atomic modesetting and reads the card's CRTCs. fd
-// stays owned by the caller. A card without atomic KMS is refused.
-func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error) {
+// stays owned by the caller. A card without atomic KMS is refused. log
+// carries the drm component and renderLog the render component.
+func OpenCard(fd int, path string, want Want, log, renderLog zerowrap.Logger) (*Card, error) {
 	if err := enableAtomic(fd); err != nil {
 		return nil, fmt.Errorf("drm: atomic modesetting unsupported by %s: %w", path, err)
 	}
 	// Before any plane or property read: the property set depends on it.
 	if err := enableColorPipeline(fd); err != nil {
-		log.Info().Str("component", "drm").Err(err).Str("card", path).Msg("plane colour pipelines unavailable")
+		log.Info().Err(err).Str("card", path).Msg("plane colour pipelines unavailable")
 	}
 	crtcs, _, err := resources(fd)
 	if err != nil {
@@ -60,7 +64,7 @@ func OpenCard(fd int, path string, want Want, log zerowrap.Logger) (*Card, error
 		flips[c] = make(chan flipEvent, 4)
 	}
 	k := kmsDevice{fd: fd, gemMu: &sync.Mutex{}, modifiers: hasCap(fd, capAddFB2Modifiers)}
-	return &Card{fd: fd, path: path, want: want, log: log, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
+	return &Card{fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.

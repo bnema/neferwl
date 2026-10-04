@@ -356,7 +356,7 @@ func (s *surface) queueUpdate() {
 			if err != nil {
 				// Partial registrations were cancelled; discard this update.
 				u.failed = true
-				s.server.log.Warn().Str("component", "wayland").Err(err).Msg("implicit buffer wait")
+				s.server.log.Warn().Err(err).Msg("implicit buffer wait")
 			}
 		}
 	}

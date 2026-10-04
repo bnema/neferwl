@@ -579,7 +579,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				continue
 			}
 			if shot == nil {
-				opts.Log.Debug().Str("component", "headless").Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
+				opts.Log.Debug().Str("output", opts.Name).Int("frame", frame).Msg("screenshot readback unavailable; frame skipped")
 				continue
 			}
 			if opts.Cursor != nil {
@@ -595,7 +595,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
 		}
-		opts.Log.Debug().Str("component", "render").Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
+		opts.Log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
 	}
 }
 
@@ -632,7 +632,7 @@ func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[po
 		return
 	}
 	if q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}) {
-		opts.Log.Warn().Str("component", "render").Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
+		opts.Log.Warn().Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
 	}
 	q.Flush(opts.Presented)
 }

@@ -53,9 +53,9 @@ func (o *Output) bypassForSeatDisable() {
 	req.reset()
 	o.forceBypass(req)
 	if err := o.k.commit(req, 0, 0); err != nil {
-		o.log.Warn().Str("component", "drm").Err(err).Str("connector", o.conn.name).Msg("colour pipeline not reset before seat disable")
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("colour pipeline not reset before seat disable")
 		return
 	}
 	o.colorBypassed()
-	o.log.Info().Str("component", "drm").Str("connector", o.conn.name).Msg("colour pipeline reset before seat disable")
+	o.log.Info().Str("connector", o.conn.name).Msg("colour pipeline reset before seat disable")
 }
