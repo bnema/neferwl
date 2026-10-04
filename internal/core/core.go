@@ -67,6 +67,8 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	// overviewReal is publish's scratch map of the real layouts under an open overview.
+	overviewReal    map[WindowID]Placement
 	security        ports.SecurityState
 	lockSurfaces    []ports.LockSurfacePlacement
 	lockFocus       WindowID
@@ -559,13 +561,18 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
 		// layout is what is drawn; settled (same indexes) is where the
 		// windows are going, and alone sizes the configures.
 		layout, settled := sc.shown, sc.settledLayout
+		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
-			real = make(map[WindowID]Placement)
+			// Local to this screen's build: reused, cleared each time.
+			if c.overviewReal == nil {
+				c.overviewReal = make(map[WindowID]Placement)
+			}
+			clear(c.overviewReal)
+			real = c.overviewReal
 			for w := range sc.mon.all() {
 				for _, p := range w.Layout() {
 					real[p.ID] = p

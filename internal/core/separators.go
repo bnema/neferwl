@@ -38,6 +38,11 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 		if p.Floating {
 			id = p.ID
 		}
+		if out == nil {
+			// One line per side of every tile, and the focused one's four
+			// lit lines: the common case grows no further.
+			out = make([]ports.Separator, 0, 4*len(ps)+4)
+		}
 		out = append(out, ports.Separator{Rect: r, Active: active, Window: id})
 	}
 	var focused *Placement

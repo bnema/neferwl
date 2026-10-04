@@ -9,7 +9,10 @@ import (
 )
 
 // TestRenderSteadyStateAllocations measures the cost of a small stable scene,
-// on a normal and on a rotated output (orient works in place).
+// on a normal and on a rotated output (orient works in place), and that
+// building the draws of a scene with a moving window (a new Seq and window
+// slice every frame, as an animation publishes) allocates nothing.
+// TODO(A2): add the partial redraw seeded by sceneDelta once it is merged.
 func TestRenderSteadyStateAllocations(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
@@ -40,6 +43,39 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
 			} else {
 				t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
+			}
+			// A moving window: scenes are prebuilt (core allocates them, not
+			// the renderer), each with a fresh Seq, so every frame draws
+			// everything again. The draw building must not allocate.
+			var moving [4]ports.Scene
+			for i := range moving {
+				moving[i] = ports.Scene{Seq: uint64(100 + i), Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: i, W: tc.sceneW - 4, H: tc.sceneH - 4}}}}
+			}
+			bounds := image.Rect(0, 0, r.width, r.height)
+			n := 0
+			frameDraws := func() {
+				n++
+				s := moving[n%len(moving)]
+				_ = r.draws(s, contents, r.frameDamage(r.last, s, bounds))
+			}
+			frameDraws()
+			if allocs := testing.AllocsPerRun(50, frameDraws); allocs != 0 {
+				t.Errorf("moving window draws: %.1f allocs/frame, want 0", allocs)
+			}
+			// A content change under an unchanged scene Seq: partial redraw
+			// from the window damage, clipped to the changed region.
+			changed := [2]ports.SurfaceContent{content, content}
+			changed[1].Seq, changed[1].Version = 2, 2
+			same := scene
+			same.Seq = r.last.sceneSeq
+			partial := func() {
+				n++
+				contents[1] = changed[n%2]
+				_ = r.draws(same, contents, r.frameDamage(r.last, same, bounds))
+			}
+			partial()
+			if allocs := testing.AllocsPerRun(50, partial); allocs != 0 {
+				t.Errorf("content-damage draws: %.1f allocs/frame, want 0", allocs)
 			}
 		})
 	}
