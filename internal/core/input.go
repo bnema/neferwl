@@ -143,8 +143,13 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		c.scrollStop(v)
 		// In the overview, scrolling moves the selection.
 		if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+			// Only a scroll that can step needs the shot (not the end of
+			// one, nor the rest of a finger scroll that stepped).
 			now := c.now()
-			shots := c.snapshot(now)
+			var shots []viewShot
+			if m := c.cur().mon; !v.Vertical.Stop && !v.Horizontal.Stop && !(v.Source == ports.AxisFinger && m.ov.scrolled) {
+				shots = c.snapshot(now)
+			}
 			if c.cur().mon.overviewScroll(v) {
 				c.transition(shots, now)
 				if err := c.workspaceVisible(ctx, true); err != nil {
@@ -196,7 +201,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	// A launcher or a menu holding the keyboard gets them first.
 	if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
 		now := c.now()
-		shots := c.snapshot(now)
+		var shots []viewShot
+		if key.Pressed && overviewKeyNamed(key) {
+			shots = c.snapshot(now)
+		}
 		if key.Pressed && mon.overviewKey(key) {
 			c.pressed[heldKey(key)] = true
 			c.transition(shots, now)

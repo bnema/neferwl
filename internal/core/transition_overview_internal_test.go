@@ -292,7 +292,7 @@ func TestOverviewClickDuringOpenUsesShownCards(t *testing.T) {
 // full size still carries Zoom 1 (Preview alone would shrink it).
 func TestCardZoomClampedAndEmitted(t *testing.T) {
 	var rm rectMotion
-	rm.scale, rm.dw = true, 400
+	rm.scale, rm.dw, rm.dh = true, 400, 240
 	p := Placement{ID: 1, Rect: Rect{W: 100, H: 60}, Preview: overviewCardZoom}
 	rm.show(&p)
 	if p.Zoom != 1 || p.Preview != overviewCardZoom {
@@ -319,5 +319,127 @@ func TestOverviewRectsDroppedOnStateChange(t *testing.T) {
 	indicatorScene(t, c)
 	if len(sc.rects) != 0 {
 		t.Fatalf("%d card motions survived the close without a transition", len(sc.rects))
+	}
+}
+
+// The overview has no camera: toggling it, moving in it and closing it never
+// start a column or workspace slide, right after the action (settled or not).
+func TestOverviewStartsNoCameraSlide(t *testing.T) {
+	c, ic, sc := overviewRig(t)
+	m := sc.mon
+	for _, id := range []WindowID{4, 5} {
+		m.AddWindow(id) // more columns than fit: the view scrolls
+	}
+	settleShown(t, c)
+	c.animate(ic.now.Add(5*time.Second), nil)
+	ic.now = ic.now.Add(5 * time.Second)
+	noCamera := func(when string) {
+		t.Helper()
+		if m.switchMotion.on || m.Current().motion.on {
+			t.Fatalf("%s: a camera spring runs (switch %v, view %v)", when, m.switchMotion.on, m.Current().motion.on)
+		}
+	}
+	noCamera("before")
+	toggleOverview(c, sc, ic.now)
+	noCamera("after open")
+	frame(t, c, ic, 30*time.Millisecond)
+	noCamera("mid open")
+	for _, mv := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		shots := c.snapshot(ic.now)
+		m.OverviewMove(mv[0], mv[1])
+		c.transition(shots, ic.now)
+		noCamera("after move")
+		frame(t, c, ic, 30*time.Millisecond)
+	}
+	toggleOverview(c, sc, ic.now)
+	noCamera("after close")
+	frame(t, c, ic, 5*time.Second)
+	noCamera("settled")
+}
+
+// A card that still fades in (Fade >= 0.5) takes no click; a visible one
+// does, and a faded card lets the one under it be picked.
+func TestOverviewInSkipsFadedCards(t *testing.T) {
+	r := Rect{X: 0, Y: 0, W: 100, H: 100}
+	layout := []Placement{
+		{ID: 1, Rect: r, Preview: 0.2},
+		{ID: 2, Rect: r, Preview: 0.2, Fade: 0.6},
+	}
+	if id := overviewIn(layout, 50, 50); id != 1 {
+		t.Fatalf("picked %d, want 1 (2 is nearly invisible)", id)
+	}
+	layout[1].Fade = 0.4
+	if id := overviewIn(layout, 50, 50); id != 2 {
+		t.Fatalf("picked %d, want 2 (visible enough)", id)
+	}
+	layout = layout[1:]
+	layout[0].Fade = 0.9
+	if id := overviewIn(layout, 50, 50); id != 0 {
+		t.Fatalf("picked %d, want none", id)
+	}
+	// And through the shown layout of a running opening.
+	c, ic, sc := overviewRig(t)
+	toggleOverview(c, sc, ic.now)
+	s := indicatorScene(t, c)
+	w3 := sceneWindow(t, s, 3)
+	if w3.Fade != 1 {
+		t.Fatalf("setup: window 3 fade %v", w3.Fade)
+	}
+	if id := overviewIn(sc.shownLayout(), float64(w3.Rect.X+w3.Rect.W/2), float64(w3.Rect.Y+w3.Rect.H/2)); id == 3 {
+		t.Fatal("the invisible card of the next row was picked")
+	}
+}
+
+// A fade that runs on a card carries over a state change: picking it
+// mid-fade (here by closing the overview on it) starts from the fade it
+// had, it does not jump to opaque.
+func TestOverviewCarriesFadeAcrossState(t *testing.T) {
+	c, ic, sc := overviewRig(t)
+	toggleOverview(c, sc, ic.now)
+	s := frame(t, c, ic, 40*time.Millisecond)
+	mid := sceneWindow(t, s, 3).Fade
+	if !(mid > 0.05 && mid < 0.95) {
+		t.Fatalf("setup: window 3 fade %v mid-way", mid)
+	}
+	shots := c.snapshot(ic.now)
+	sc.mon.OverviewPick(3)
+	c.transition(shots, ic.now)
+	if sc.mon.ov.open {
+		t.Fatal("the overview stayed open")
+	}
+	got := sceneWindow(t, indicatorScene(t, c), 3)
+	if math.Abs(got.Fade-mid) > 0.02 {
+		t.Fatalf("fade %v after the pick, want the sampled %v", got.Fade, mid)
+	}
+	s = frame(t, c, ic, 5*time.Second)
+	if w := sceneWindow(t, s, 3); w.Fade != 0 {
+		t.Fatalf("settled fade %v", w.Fade)
+	}
+}
+
+// The content zoom follows the smaller of the width and height ratios: when
+// the aspect does not hold, content never exceeds the frame.
+func TestScaleZoomFollowsSmallerRatio(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		dw, dh float64
+		want   float64
+	}{
+		{"narrower", -50, 0, 0.5},
+		{"shorter", 0, -50, 0.5},
+		{"both", -20, -40, 0.6},
+		{"aspect kept", -30, -30, 0.7},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := rectMotion{scale: true, dw: tc.dw, dh: tc.dh}
+			p := Placement{ID: 1, Rect: Rect{W: 100, H: 100}}
+			rm.show(&p)
+			if math.Abs(p.Zoom-tc.want) > 1e-9 {
+				t.Fatalf("zoom %v, want %v", p.Zoom, tc.want)
+			}
+			if float64(p.Rect.W)*1 < p.Zoom*100-1e-9 || float64(p.Rect.H) < p.Zoom*100-1e-9 {
+				t.Fatalf("content %vx%v exceeds the frame %+v", p.Zoom*100, p.Zoom*100, p.Rect)
+			}
+		})
 	}
 }

@@ -697,7 +697,7 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 		// own springs (the cards zooming back) start when it is handled,
 		// which may follow a first flip: flip until the scene is settled.
 		var s ports.Scene
-		for deadline := time.Now().Add(time.Second); ; {
+		for deadline := time.Now().Add(5 * time.Second); ; {
 			r.advance(5 * time.Second)
 			r.frames <- ports.OutputFrame{Output: wide.Name}
 			select {

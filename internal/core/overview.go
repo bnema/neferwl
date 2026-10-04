@@ -810,6 +810,9 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 	return nil
 }
 
+// overviewClickFade is the fade from which a card takes no click.
+const overviewClickFade = 0.5
+
 // overviewAt is the preview under the output-local point, if any. Front
 // cards take priority over peeks, including peeks appended after a front
 // tile in another row's layout.
@@ -818,19 +821,20 @@ func (m *Monitor) overviewAt(x, y float64) WindowID {
 }
 
 // overviewIn is overviewAt in a given layout: the click path passes the
-// shown one, so a card is hit where it is drawn while it moves.
+// shown one, so a card is hit where it is drawn while it moves. A card
+// that is nearly invisible (still fading in) is not clickable.
 func overviewIn(layout []Placement, x, y float64) WindowID {
 	for i := len(layout) - 1; i >= 0; i-- {
 		p := layout[i]
 		r := p.Rect
-		if p.Preview > 0 && !p.Hidden && !p.Peek && x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
+		if p.Preview > 0 && !p.Hidden && !p.Peek && p.Fade < overviewClickFade && x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
 			return p.ID
 		}
 	}
 	for i := len(layout) - 1; i >= 0; i-- {
 		p := layout[i]
 		r := p.Rect
-		if p.Preview > 0 && !p.Hidden && x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
+		if p.Preview > 0 && !p.Hidden && p.Fade < overviewClickFade && x >= float64(r.X) && x < float64(r.X+r.W) && y >= float64(r.Y) && y < float64(r.Y+r.H) {
 			return p.ID
 		}
 	}
@@ -1004,6 +1008,19 @@ func (c *Core) overviewKeyboardTaken() bool {
 	id := c.keyboardFocus()
 	_, _, layer := c.layerOf(id)
 	return layer || c.popups[id] != nil
+}
+
+// overviewKeyNamed reports whether key is one overviewKey handles (a bare key); it
+// lets input snapshot only for those.
+func overviewKeyNamed(key ports.KeyEvent) bool {
+	if key.Mods != 0 {
+		return false
+	}
+	switch keyName(key.Keysym) {
+	case "h", "Left", "l", "Right", "k", "Up", "j", "Down", "Return", "KP_Enter", "Escape":
+		return true
+	}
+	return false
 }
 
 // overviewKey runs an overview key: true when the key was one.

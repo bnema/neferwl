@@ -59,6 +59,9 @@ type rectShot struct {
 	id       WindowID
 	rect     Rect
 	off, vel rectOffsets
+	// fade and fadeV are the fade offset of a running fade motion and its
+	// speed, so an overview toggle carries it over (transitionOverview).
+	fade, fadeV float64
 }
 
 // rectMotion takes a window's drawn rect to its settled one: each component
@@ -70,7 +73,9 @@ type rectShot struct {
 // placement gets a Zoom of the settled zoom (its Preview, or 1) times
 // shown.W / settled.W (refreshShown), which the scene carries as Preview.
 // The walk shrinks content toward the content rect's top-left, so this
-// suits aspect-preserving changes only. An overview card's settled zoom is
+// suits aspect-preserving changes: the zoom follows the smaller of the width
+// and height ratios, so content never exceeds its frame when the aspect
+// differs a little (rounding) or a lot (the frame is then letterboxed). An overview card's settled zoom is
 // its Preview: a window that opens into a card goes from 1 to Preview with
 // its width, and back.
 //
@@ -155,7 +160,7 @@ func (m *rectMotion) show(p *Placement) {
 	p.Rect = m.apply(settled)
 	p.Fade = max(0, min(1, m.settledFade()+m.df))
 	p.Dim = max(0, min(1, p.Dim+m.ddim))
-	if m.scale && settled.W > 0 {
+	if m.scale && settled.W > 0 && settled.H > 0 {
 		zoom := p.Preview
 		if zoom == 0 {
 			zoom = 1
@@ -164,7 +169,7 @@ func (m *rectMotion) show(p *Placement) {
 				zoom = appearScale
 			}
 		}
-		zoom *= float64(p.Rect.W) / float64(settled.W)
+		zoom *= min(float64(p.Rect.W)/float64(settled.W), float64(p.Rect.H)/float64(settled.H))
 		if zoom >= 0.999 {
 			// Drawn at its size: content is never magnified. publish
 			// emits no Zoom for a window, and Zoom 1 for a card (whose
@@ -319,6 +324,13 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 		return
 	}
 	shots := c.snapshot(now)
+	for i := range shots {
+		// A screen with its overview open re-lays its cards at once: a map
+		// is not an overview action (transition skips a shot without ws).
+		if shots[i].overview {
+			shots[i].ws = nil
+		}
+	}
 	c.placement.place(c, v)
 	c.transition(shots, now)
 	c.appearMapped(v.ID, now)
@@ -479,6 +491,8 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			r := rectShot{id: p.ID, rect: p.Rect}
 			if rm, ok := sc.rects[p.ID]; ok {
 				r.off, r.vel = rm.sample(now)
+				r.fade = rm.df
+				sampleComponent(rm.fade, &r.fade, &r.fadeV, now)
 			}
 			s.rects = append(s.rects, r)
 		}
@@ -639,10 +653,12 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 // before (another row, a column the overview hid) fades in with no motion
 // of its own; one drawn before and not after just goes. Motions of the
 // other state are dropped first: their rects are not the ones snapshot
-// measured from.
+// measured from. A fade that ran on a window drawn in both states carries
+// over (picking a card that still fades in does not pop it).
 func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 	sc := b.sc
-	if b.overview != sc.mon.ov.open {
+	changed := b.overview != sc.mon.ov.open
+	if changed {
 		sc.stopRects()
 	}
 	for _, p := range sc.mon.Layout() {
@@ -651,6 +667,9 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 		}
 		rm := sc.rects[p.ID]
 		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if i >= 0 && changed {
+			c.retargetComponent(&rm.fade, &rm.df, b.rects[i].fade, b.rects[i].fadeV, now)
+		}
 		if i < 0 {
 			c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
 		} else if old := &b.rects[i]; old.rect != p.Rect {

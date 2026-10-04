@@ -49,12 +49,18 @@ func noButtonSent(t *testing.T, ch chan ports.ClientCommand) {
 }
 
 func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
-	r := startMulti(t, nil, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
-	r.mapWindow(t, 3)
-	set := r.key(t, "o", ports.ModAlt)
+	both(t, func(t *testing.T, animated bool) {
+		overviewClickPicksOnPointerOutput(t, startLanding(t, animated, nil, left, right))
+	})
+}
+
+func overviewClickPicksOnPointerOutput(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapLanded(t, 2)
+	r.mapLanded(t, 3)
+	// Settled: a card still fading in takes no click.
+	set := r.keyLanded(t, "o", ports.ModAlt)
 	p, ok := scenePreview(outputScene(t, set, "DP-2"), 2)
 	if !ok {
 		t.Fatal("no preview of window 2 on DP-2")

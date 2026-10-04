@@ -292,6 +292,7 @@ func TestScaleMotionMultipliesSettledPreview(t *testing.T) {
 	var rm rectMotion
 	rm.scale, rm.dw = true, 50
 	p := Placement{ID: 1, Rect: Rect{W: 100, H: 100}, Preview: 0.2}
+	rm.dh = 50 // aspect kept: the zoom follows the smaller ratio
 	rm.show(&p)
 	if p.Rect.W != 150 || math.Abs(p.Zoom-0.3) > 1e-9 || p.Preview != 0.2 {
 		t.Fatalf("shown %+v, want width 150, zoom 0.3 and the settled preview", p)
