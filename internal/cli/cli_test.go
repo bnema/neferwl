@@ -63,7 +63,7 @@ func TestCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args           []string
 		code           int
-		stdout, stderr string // substrings; stderr "" means empty
+		stdout, stderr string // substrings; "" means empty
 	}{
 		{[]string{"--help"}, 0, "neferwl state [output-of <pid>]", ""},
 		{[]string{"state", "-h"}, 0, "usage: neferwl state [output-of <pid>]", ""},
@@ -94,8 +94,8 @@ func TestCommands(t *testing.T) {
 		if code != tc.code {
 			t.Errorf("%v: exit %d, want %d (%s)", tc.args, code, tc.code, stderr)
 		}
-		if !strings.Contains(stdout, tc.stdout) {
-			t.Errorf("%v: stdout %q lacks %q", tc.args, stdout, tc.stdout)
+		if (tc.stdout == "") != (stdout == "") || !strings.Contains(stdout, tc.stdout) {
+			t.Errorf("%v: stdout %q, want %q", tc.args, stdout, tc.stdout)
 		}
 		switch {
 		case tc.stderr == "" && stderr != "":

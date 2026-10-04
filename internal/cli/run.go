@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/app"
 	"github.com/bnema/neferwl/internal/logging"
+	"golang.org/x/term"
 )
 
 // runFlags are the root command flags.
@@ -172,14 +173,15 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		reason = "timeout"
 	}
 	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
-	if err != nil {
+	// On a terminal the run log already went to stderr (logging.Open).
+	if err != nil && term.IsTerminal(int(os.Stderr.Fd())) {
 		return loggedError{err}
 	}
-	return nil
+	return err
 }
 
-// loggedError is an error already written to the run log, which also goes
-// to stderr on a terminal; exitCode does not print it again.
+// loggedError is an error the run log already printed on stderr; exitCode
+// does not print it again.
 type loggedError struct{ error }
 
 func (e loggedError) Unwrap() error { return e.error }
