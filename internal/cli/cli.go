@@ -121,13 +121,16 @@ func printUsage(w io.Writer, cmd Command, fs *flag.FlagSet) {
 	}
 }
 
-// exitCode prints err to w and maps it to the process exit code. A
-// canceled context (SIGINT, SIGTERM) is a clean exit.
+// exitCode prints err to w, unless the run log already has it, and maps
+// it to the process exit code. A canceled context (SIGINT, SIGTERM) is a
+// clean exit.
 func exitCode(w io.Writer, err error) int {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return 0
 	}
-	fmt.Fprintln(w, err)
+	if !errors.As(err, new(loggedError)) {
+		fmt.Fprintln(w, err)
+	}
 	var usage usageError
 	if errors.As(err, &usage) {
 		return 2

@@ -63,6 +63,10 @@ func (f *runFlags) validate(args []string) ([][2]int, error) {
 	case len(args) != 0:
 		return nil, usagef("unexpected arguments: %v", args)
 	}
+	// The config file checks its own log.debug names.
+	if _, err := logging.ParseDebug(f.debug); err != nil {
+		return nil, usageError{fmt.Errorf("--debug: %w", err)}
+	}
 	return parseSizes(f.size)
 }
 
@@ -96,7 +100,6 @@ func setupRun(fs *flag.FlagSet) Runner {
 // run starts the compositor once the flags are valid. SIGINT and SIGTERM
 // stop it; other commands keep the default signal behaviour.
 func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
-	tuneGC()
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if f.screenshot != "" {
@@ -114,11 +117,8 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	}
 	// app.Run closes the script on shutdown; this covers the returns before it.
 	defer closeScript()
-	selected := mergeDebug(cfg.Log.Debug, f.debug)
-	if _, err := logging.ParseDebug(selected); err != nil {
-		return usagef("%w", err)
-	}
-	ctx, closeLog, err := logging.Open(ctx, f.backend, cfg.Log.Level, selected)
+	tuneGC()
+	ctx, closeLog, err := logging.Open(ctx, f.backend, cfg.Log.Level, mergeDebug(cfg.Log.Debug, f.debug))
 	if err != nil {
 		return err
 	}
@@ -172,14 +172,26 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		reason = "timeout"
 	}
 	log.Info().Str("reason", reason).AnErr("error", err).Dur("uptime", time.Since(start)).Msg("exit")
-	return err
+	if err != nil {
+		return loggedError{err}
+	}
+	return nil
 }
 
+// loggedError is an error already written to the run log, which also goes
+// to stderr on a terminal; exitCode does not print it again.
+type loggedError struct{ error }
+
+func (e loggedError) Unwrap() error { return e.error }
+
 // mergeDebug joins the configured debug categories and the --debug value
-// in one allocation.
+// in at most one allocation.
 func mergeDebug(configured []string, cli string) string {
-	if len(configured) == 0 {
+	switch {
+	case len(configured) == 0:
 		return cli
+	case len(configured) == 1 && cli == "":
+		return configured[0]
 	}
 	n := len(cli) + len(configured)
 	for _, c := range configured {
