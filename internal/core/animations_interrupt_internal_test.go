@@ -18,7 +18,7 @@ func movingRects(t *testing.T, c *Core, ic *indicatorClock, sc *screen) {
 	sc.mon.AddWindow(2)
 	settleShown(t, c)
 	c.focusScreen = c.screenIndex(sc.name())
-	before := c.snapshot()
+	before := c.snapshot(ic.now)
 	c.applyAction(ActionMoveColumnLeft)
 	c.transition(before, ic.now)
 	if len(sc.rects) != 2 {
@@ -173,7 +173,7 @@ func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 	}
 
 	// A new move animates from the settled rects and lands.
-	before := c.snapshot()
+	before := c.snapshot(ic.now)
 	c.applyAction(ActionMoveColumnRight)
 	c.transition(before, ic.now)
 	start := indicatorScene(t, c)

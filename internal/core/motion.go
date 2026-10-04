@@ -214,6 +214,13 @@ func (m *motion) at(now time.Time) (float64, bool) {
 	return m.spring.valueAt(tau), false
 }
 
+// sampleAt is the position and speed m has at now, in units per second,
+// without moving m: m is a copy, so at's bookkeeping (start, v) stays out.
+func (m motion) sampleAt(now time.Time) (pos, vel float64) {
+	pos, _ = m.at(now)
+	return pos, m.v
+}
+
 // velocity is the speed of the last sample, in units per second.
 func (m motion) velocity() float64 { return m.v }
 

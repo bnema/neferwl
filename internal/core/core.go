@@ -132,9 +132,6 @@ type Core struct {
 	swipe     *swipeGesture
 	frameC    <-chan time.Time
 	frameStop func() bool
-	// stepping is the screen a page flip advances (nil: all of them); it is
-	// set while step publishes.
-	stepping *screen
 	// shots is the snapshot of what the screens show before an action
 	// (transition.go), reused by every action.
 	shots []viewShot
@@ -499,7 +496,13 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 	}
 }
 
-func (c *Core) publish(ctx context.Context) error {
+func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, nil) }
+
+// publishFrame publishes the scenes. only is the screen whose page flip
+// moved the springs (nil: any, or none moved): the pulse advances with the
+// focused screen's flip, and only a flip's own screen gets a fresh Seq for
+// its animation, so another output keeps its Seq while it draws the same.
+func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
@@ -543,7 +546,7 @@ func (c *Core) publish(ctx context.Context) error {
 	// its value so the focused scene keeps its Seq.
 	if c.pulse.id == 0 {
 		c.pulse.value = 0
-	} else if c.stepping == nil || c.stepping == c.cur() {
+	} else if only == nil || only == c.cur() {
 		c.pulse.value = c.advancePulse(c.now())
 	}
 	pulse := c.pulse.value
@@ -645,7 +648,7 @@ func (c *Core) publish(ctx context.Context) error {
 		// keeps its output's Seq while it draws the same, so an idle output
 		// is not recomposed.
 		withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
-		animating := (sc.springing() || c.pulsing(sc)) && (c.stepping == nil || c.stepping == sc)
+		animating := (sc.springing() || c.pulsing(sc)) && (only == nil || only == sc)
 		if !withCapture && !animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
 			scene.Seq = sc.last.Seq
 		} else {
@@ -689,7 +692,7 @@ func (c *Core) publish(ctx context.Context) error {
 		return errSecurityChanged
 	}
 	if c.syncSecurity() {
-		return c.publish(ctx)
+		return c.publishFrame(ctx, only)
 	}
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
@@ -715,9 +718,7 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 		c.stopFrame()
 	}
 	c.animate(c.now(), only)
-	c.stepping = only
-	defer func() { c.stepping = nil }()
-	return c.slid(ctx, false)
+	return c.slidFrame(ctx, false, only)
 }
 
 // animatingOther reports whether a spring or the pulse runs on a screen
@@ -734,10 +735,15 @@ func (c *Core) animatingOther(only *screen) bool {
 // slid publishes a moved view; shown reports another workspace came on
 // screen.
 func (c *Core) slid(ctx context.Context, shown bool) error {
+	return c.slidFrame(ctx, shown, nil)
+}
+
+// slidFrame is slid for the page flip of only (nil: any screen).
+func (c *Core) slidFrame(ctx context.Context, shown bool, only *screen) error {
 	if err := c.workspaceVisible(ctx, shown); err != nil {
 		return err
 	}
-	if err := c.publish(ctx); err != nil {
+	if err := c.publishFrame(ctx, only); err != nil {
 		return err
 	}
 	return c.rehit(ctx)

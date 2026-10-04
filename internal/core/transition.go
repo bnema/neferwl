@@ -27,8 +27,9 @@ type viewShot struct {
 	// (viewX plus shift).
 	viewX int
 	view  float64
-	// viewV and switchV are the speeds of the running view and workspace
-	// springs (units per second, 0 without one). An action may stop them
+	// viewV and switchV are the speeds the running view and workspace
+	// springs have at the snapshot's time (units per second, 0 without
+	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
 	// list and pos are the numbered workspaces and the monitor's fractional
@@ -37,15 +38,22 @@ type viewShot struct {
 	list []*Workspace
 	pos  float64
 	ok   bool
-	// rects are the rects the screen drew for the windows of ws, hidden
-	// windows and previews left out. The slice is reused like list.
+	// rects are the windows of ws the screen drew, hidden windows and
+	// previews left out. The slice is reused like list.
 	rects []rectShot
 }
 
-// rectShot is the rect a window was drawn at.
+// rectOffsets are the four components of a rect motion: x, y, w, h.
+type rectOffsets struct{ x, y, w, h float64 }
+
+// rectShot is where a window was drawn: its settled rect plus the float
+// offsets of its running rect motion (zero without one), which the drawn
+// rect only rounds. vel is the speed of each offset component, in units per
+// second. Offsets and speeds are sampled at the snapshot's time.
 type rectShot struct {
-	id   WindowID
-	rect Rect
+	id       WindowID
+	rect     Rect
+	off, vel rectOffsets
 }
 
 // rectMotion takes a window's drawn rect to its settled one: each component
@@ -61,6 +69,23 @@ func (m *rectMotion) apply(r Rect) Rect {
 	return Rect{
 		X: r.X + int(math.Round(m.dx)), Y: r.Y + int(math.Round(m.dy)),
 		W: max(r.W+int(math.Round(m.dw)), 1), H: max(r.H+int(math.Round(m.dh)), 1),
+	}
+}
+
+// sample is where the offsets and their speeds would be at now, without
+// moving the motion: a running component is sampled on a copy.
+func (m *rectMotion) sample(now time.Time) (off, vel rectOffsets) {
+	off = rectOffsets{m.dx, m.dy, m.dw, m.dh}
+	sampleComponent(m.x, &off.x, &vel.x, now)
+	sampleComponent(m.y, &off.y, &vel.y, now)
+	sampleComponent(m.w, &off.w, &vel.w, now)
+	sampleComponent(m.h, &off.h, &vel.h, now)
+	return off, vel
+}
+
+func sampleComponent(m motion, off, vel *float64, now time.Time) {
+	if m.on {
+		*off, *vel = m.sampleAt(now)
 	}
 }
 
@@ -88,13 +113,9 @@ func stepComponent(m *motion, cur float64, now time.Time) float64 {
 func (m *rectMotion) on() bool { return m.x.on || m.y.on || m.w.on || m.h.on }
 
 // retargetComponent starts m for an offset of off from its settled value at
-// now, keeping the speed it has now. A component with nothing to move and no
+// now, with the speed v it had then. A component with nothing to move and no
 // speed stops.
-func (c *Core) retargetComponent(m *motion, cur *float64, off float64, now time.Time) {
-	v := m.velocity()
-	if !m.on {
-		v = 0
-	}
+func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now time.Time) {
 	*cur = off
 	if off == 0 && v == 0 {
 		*m = motion{}
@@ -144,10 +165,14 @@ func (c *Core) refreshShown() {
 	}
 }
 
-// snapshot records what every screen without an open overview shows. The
-// returned slice and the lists in it belong to Core and are reused by the
-// next snapshot: use it before the next action only.
-func (c *Core) snapshot() []viewShot {
+// snapshot records what every screen without an open overview shows at now.
+// Running motions are sampled at now on a copy, so a transition that
+// follows chains from their speed at the time of the action, not from the
+// last frame's. The view is the one drawn (the layouts it is measured
+// against are), only its speed is sampled. The returned slice and the lists
+// in it belong to Core and are reused by the next snapshot: use it before
+// the next action only.
+func (c *Core) snapshot(now time.Time) []viewShot {
 	full := c.shots[:cap(c.shots)]
 	out := c.shots[:0]
 	for _, sc := range c.screens {
@@ -162,15 +187,22 @@ func (c *Core) snapshot() []viewShot {
 			w := m.Current()
 			s.ws, s.viewX, s.view = w, w.ViewX, float64(w.ViewX)+w.shift
 			if w.motion.on {
-				s.viewV = w.motion.velocity()
+				_, s.viewV = w.motion.sampleAt(now)
 			}
 			if m.switchMotion.on {
-				s.switchV = m.switchMotion.velocity()
+				_, s.switchV = m.switchMotion.sampleAt(now)
 			}
-			for _, p := range sc.shown {
-				if !p.Hidden && p.Preview == 0 {
-					s.rects = append(s.rects, rectShot{p.ID, p.Rect})
+			// settledLayout and shown are index-aligned and differ only by
+			// the offsets of sc.rects: the shot keeps both unrounded.
+			for _, p := range sc.settledLayout {
+				if p.Hidden || p.Preview != 0 {
+					continue
 				}
+				r := rectShot{id: p.ID, rect: p.Rect}
+				if rm, ok := sc.rects[p.ID]; ok {
+					r.off, r.vel = rm.sample(now)
+				}
+				s.rects = append(s.rects, r)
 			}
 			if m.shown == nil {
 				// A landing slide measures in the list it began on.
@@ -267,21 +299,21 @@ func (c *Core) transitionRects(b *viewShot, now time.Time) {
 		if i < 0 {
 			continue
 		}
-		old := b.rects[i].rect
-		if old == p.Rect {
-			// Still sliding to the settled rect, or already there.
-			if _, ok := sc.rects[p.ID]; !ok {
-				continue
-			}
+		old := &b.rects[i]
+		if old.rect == p.Rect {
+			// The settled rect did not change: a running motion goes on
+			// as it is, and there is none to start.
+			continue
 		}
 		if sc.rects == nil {
 			sc.rects = make(map[WindowID]rectMotion)
 		}
+		// Where the window was drawn, unrounded, relative to where it goes.
 		rm := sc.rects[p.ID]
-		c.retargetComponent(&rm.x, &rm.dx, float64(old.X-p.Rect.X), now)
-		c.retargetComponent(&rm.y, &rm.dy, float64(old.Y-p.Rect.Y), now)
-		c.retargetComponent(&rm.w, &rm.dw, float64(old.W-p.Rect.W), now)
-		c.retargetComponent(&rm.h, &rm.dh, float64(old.H-p.Rect.H), now)
+		c.retargetComponent(&rm.x, &rm.dx, float64(old.rect.X-p.Rect.X)+old.off.x, old.vel.x, now)
+		c.retargetComponent(&rm.y, &rm.dy, float64(old.rect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
+		c.retargetComponent(&rm.w, &rm.dw, float64(old.rect.W-p.Rect.W)+old.off.w, old.vel.w, now)
+		c.retargetComponent(&rm.h, &rm.dh, float64(old.rect.H-p.Rect.H)+old.off.h, old.vel.h, now)
 		if rm.on() {
 			sc.rects[p.ID], sc.rectsWS = rm, b.ws
 		} else {

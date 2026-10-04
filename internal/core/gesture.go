@@ -279,7 +279,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			return false
 		}
 		before := c.cur().mon.Current()
-		shots := c.snapshot()
+		shots := c.snapshot(now)
 		c.keyboard.takeBack()
 		if mon := c.cur().mon; mon.ov.open {
 			mon.overviewFocus(a)

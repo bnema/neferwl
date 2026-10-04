@@ -209,7 +209,7 @@ func TestFocusPulseWaitsForSlide(t *testing.T) {
 				m.AddWindow(id)
 			}
 			indicatorScene(t, c)
-			before := c.snapshot()
+			before := c.snapshot(now)
 			for range 3 {
 				c.applyAction(ActionFocusColumnLeft)
 			}

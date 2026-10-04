@@ -125,7 +125,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			// A click focuses the window and its output.
 			s, w := c.screenOf(id)
 			if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
-				before := c.snapshot()
+				before := c.snapshot(c.now())
 				w.Click(id)
 				c.focusScreen = c.screenIndex(s.name())
 				c.transition(before, c.now())
@@ -262,7 +262,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			}
 			before := c.cur().mon.Current()
 			swiped := c.swipedWorkspace()
-			shots := c.snapshot()
+			shots := c.snapshot(c.now())
 			c.keyboard.takeBack() // a bind acts on the windows
 			effect := c.applyAction(action)
 			if effect.Quit {
