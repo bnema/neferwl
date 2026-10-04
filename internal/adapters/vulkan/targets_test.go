@@ -209,25 +209,44 @@ func TestFilterModifiersKeepsMultiPlane(t *testing.T) {
 }
 
 // Every exported target carries one file per memory plane of its modifier
-// (DCC modifiers have two to four), each with a layout, and each file is
-// an independent descriptor of the shared memory.
+// (DCC modifiers have two to four), each with a layout, and drawing into
+// each target works: the frames read back through the producing renderer.
+// A multi-plane image cannot be read back through a viewer import, which
+// only imports one-plane buffers.
 func TestExportTargetsPlanes(t *testing.T) {
 	r, err := New(64, 32)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	bufs, err := r.ExportTargets(2, nil, false)
-	if err != nil {
-		t.Skipf("no exportable targets: %v", err)
-	}
-	defer func() {
+	closeAll := func(bufs []ports.DMABuf) {
 		for _, b := range bufs {
 			for _, p := range b.Planes {
 				p.File.Close()
 			}
 		}
-	}()
+	}
+	// Single-plane export never returns a multi-plane modifier.
+	one, err := r.ExportTargets(1, nil, true)
+	if err != nil {
+		t.Skipf("no single-plane targets: %v", err)
+	}
+	if len(one[0].Planes) != 1 || r.modPlanes[one[0].Modifier] > 1 {
+		t.Fatalf("single-plane export has %d planes (modifier %#x)", len(one[0].Planes), one[0].Modifier)
+	}
+	closeAll(one)
+	multi := false
+	for _, m := range r.renderMods {
+		multi = multi || r.modPlanes[m] > 1
+	}
+	if !multi {
+		t.Skip("device has no multi-plane target modifier")
+	}
+	bufs, err := r.ExportTargets(2, nil, false)
+	if err != nil {
+		t.Skipf("no exportable targets: %v", err)
+	}
+	defer closeAll(bufs)
 	for _, b := range bufs {
 		want := max(r.modPlanes[b.Modifier], 1)
 		if uint32(len(b.Planes)) != want {
@@ -238,6 +257,10 @@ func TestExportTargetsPlanes(t *testing.T) {
 			if p.File == nil || p.Stride == 0 {
 				t.Fatalf("modifier %#x plane %d: %+v", b.Modifier, i, p)
 			}
+			// The planes share one memory object: planes 1.. lie after plane 0.
+			if i > 0 && p.Offset == 0 {
+				t.Fatalf("modifier %#x plane %d at offset 0", b.Modifier, i)
+			}
 			if seen[int(p.File.Fd())] {
 				t.Fatalf("modifier %#x: plane %d shares a file", b.Modifier, i)
 			}
@@ -245,17 +268,16 @@ func TestExportTargetsPlanes(t *testing.T) {
 		}
 		t.Logf("modifier %#x planes %d", b.Modifier, len(b.Planes))
 	}
-	// Single-plane export never returns a multi-plane modifier.
-	one, err := r.ExportTargets(1, nil, true)
-	if err != nil {
-		t.Skipf("no single-plane targets: %v", err)
-	}
-	defer func() {
-		for _, p := range one[0].Planes {
-			p.File.Close()
+	for i, tc := range []struct {
+		bg   string
+		want color.RGBA
+	}{{"#ff0000", color.RGBA{255, 0, 0, 255}}, {"#0000ff", color.RGBA{0, 0, 255, 255}}} {
+		r.UseTarget(i)
+		if err := render(r, ports.Scene{Background: tc.bg}, nil); err != nil {
+			t.Fatal(err)
 		}
-	}()
-	if len(one[0].Planes) != 1 {
-		t.Fatalf("single-plane export has %d planes", len(one[0].Planes))
+		if got := readPixels(t, r).At(3, 3); got != tc.want {
+			t.Fatalf("target %d (modifier %#x): read back %v, want %v", i, bufs[i].Modifier, got, tc.want)
+		}
 	}
 }

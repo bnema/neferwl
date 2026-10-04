@@ -104,6 +104,11 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
 		o.freeImages()
 		kind, cause = got+1, err
+		if kind == imagesSinglePlane && o.planes == 1 {
+			// The refused images already had one plane: single-plane
+			// images would be the same ones.
+			kind = imagesLinear
+		}
 	}
 }
 
@@ -154,6 +159,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 	if err != nil {
 		return err
 	}
+	o.planes = 0
 	for i := range bufs {
 		if len(bufs[i].Planes) == 0 || len(bufs[i].Planes) > maxFBPlanes {
 			err = errors.Join(err, fmt.Errorf("output image has %d planes", len(bufs[i].Planes)))
@@ -194,6 +200,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 		_, _ = r.ExportTargets(0, nil, false)
 		return err
 	}
+	o.planes = len(bufs[0].Planes)
 	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Msg("zero-copy output")
 	return nil
 }

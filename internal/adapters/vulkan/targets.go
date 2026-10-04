@@ -255,9 +255,9 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.device, t.image, &props)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	n := max(r.modPlanes[props.DrmFormatModifier], 1)
+	n := min(max(r.modPlanes[props.DrmFormatModifier], 1), maxModifierPlanes)
 	var layouts [maxModifierPlanes]vk.SubresourceLayout
-	for i := range min(n, maxModifierPlanes) {
+	for i := range n {
 		sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT << i}
 		d.GetImageSubresourceLayout(r.device, t.image, &sub, &layouts[i])
 	}
@@ -291,7 +291,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 		}
 		planes = append(planes, ports.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-target"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
 	}
-	r.log.Info().Uint64("modifier", props.DrmFormatModifier).Uint32("planes", n).Msg("render target exported")
+	r.log.Debug().Uint64("modifier", props.DrmFormatModifier).Uint32("planes", n).Msg("render target exported")
 	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: planes}
 	ok = true
 	return t, buf, nil

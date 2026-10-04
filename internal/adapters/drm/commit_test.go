@@ -120,14 +120,23 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
+		var b ports.DMABuf
+		for range 2 {
+			f, w, _ := os.Pipe()
+			w.Close()
+			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+		}
+		return b
+	}
+	linear := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -191,6 +200,34 @@ func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
 		if err := f.Close(); !errors.Is(err, os.ErrClosed) {
 			t.Fatalf("plane file %d left open (close: %v)", i, err)
 		}
+	}
+}
+
+// Refused driver images that already had one plane are not retried as
+// single-plane images: the next export is linear.
+func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
+	o, k, commits := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesLinear || len(*commits) != 3 {
+		t.Fatalf("kind %d, %d commits", o.kind, len(*commits))
 	}
 }
 
