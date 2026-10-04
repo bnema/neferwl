@@ -17,9 +17,13 @@ import (
 type imageKind int
 
 const (
-	imagesDriver imageKind = iota // exported, modifier chosen by the driver
-	imagesLinear                  // exported, linear
+	imagesDriver      imageKind = iota // exported, modifier chosen by the driver (DCC planes allowed)
+	imagesSinglePlane                  // exported, driver modifier with one memory plane
+	imagesLinear                       // exported, linear
 )
+
+// maxFBPlanes is the number of planes a KMS framebuffer holds (fbCmd2).
+const maxFBPlanes = 4
 
 // showImages sets up images from kind on and modesets them. KMS may refuse
 // an image only in a modeset: a TEST_ONLY modeset checks it first, and the
@@ -131,7 +135,12 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 		} else if kind == imagesLinear {
 			mods = []uint64{0}
 		}
-		if err = o.exportImages(r, mods); err == nil {
+		if kind == imagesSinglePlane && len(mods) == 1 && mods[0] == 0 {
+			// The display only lists linear, already one plane: the driver
+			// attempt was the single-plane one.
+			continue
+		}
+		if err = o.exportImages(r, mods, kind == imagesSinglePlane); err == nil {
 			return kind, nil
 		}
 		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
@@ -140,12 +149,15 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 }
 
 // exportImages makes the renderer's exported targets the output images.
-func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
-	bufs, err := r.ExportTargets(len(o.fbs), mods, false)
+func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool) error {
+	bufs, err := r.ExportTargets(len(o.fbs), mods, singlePlane)
 	if err != nil {
 		return err
 	}
 	for i := range bufs {
+		if len(bufs[i].Planes) == 0 || len(bufs[i].Planes) > maxFBPlanes {
+			err = errors.Join(err, fmt.Errorf("output image has %d planes", len(bufs[i].Planes)))
+		}
 		if err == nil {
 			format := uint32(fourccXRGB)
 			if o.hdr.on {
@@ -153,7 +165,11 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 			}
 			o.fbs[i], err = o.k.addFB(&bufs[i], format)
 		}
-		bufs[i].Planes[0].File.Close()
+		// Every plane owns its file; the framebuffer keeps its own
+		// reference to the buffer.
+		for _, p := range bufs[i].Planes {
+			p.File.Close()
+		}
 	}
 	// GPU memory starts undefined (old VRAM contents): clear both images
 	// before the modeset shows one.
@@ -178,7 +194,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 		_, _ = r.ExportTargets(0, nil, false)
 		return err
 	}
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")
+	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Msg("zero-copy output")
 	return nil
 }
 

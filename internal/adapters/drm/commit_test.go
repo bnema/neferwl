@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -111,10 +112,11 @@ func TestCursorRefusedDoesNotBlameScanoutBuffer(t *testing.T) {
 	}
 }
 
-// showImages validates the images with a TEST_ONLY modeset and falls back
-// to linear images when KMS refuses the driver's.
+// showImages validates the images with a TEST_ONLY modeset, retries with
+// single-plane driver images, then falls back to linear images when KMS
+// refuses both.
 func TestShowImagesTestsBeforeModeset(t *testing.T) {
-	o, k, commits := testOutput(t, unix.EINVAL)
+	o, k, commits := testOutput(t, unix.EINVAL, unix.EINVAL)
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
@@ -124,7 +126,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -135,7 +137,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	want := []uint32{atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicAllowModes}
+	want := []uint32{atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicAllowModes}
 	if len(*commits) != len(want) {
 		t.Fatalf("%d commits", len(*commits))
 	}
@@ -146,6 +148,49 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	}
 	if o.kind != imagesLinear {
 		t.Fatalf("kind %d", o.kind)
+	}
+}
+
+// A refused multi-plane (DCC) driver image is retried with single-plane
+// driver images before linear; every plane file of every buffer is closed
+// once the framebuffers exist.
+func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
+	o, k, _ := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	var files []*os.File
+	buf := func(planes int) ports.DMABuf {
+		b := ports.DMABuf{}
+		for range planes {
+			f, w, _ := os.Pipe()
+			w.Close()
+			files = append(files, f)
+			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+		}
+		return b
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(3), buf(3)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{buf(1), buf(1)}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesSinglePlane {
+		t.Fatalf("kind %d", o.kind)
+	}
+	if len(files) != 8 {
+		t.Fatalf("%d plane files", len(files))
+	}
+	for i, f := range files {
+		if err := f.Close(); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("plane file %d left open (close: %v)", i, err)
+		}
 	}
 }
 
