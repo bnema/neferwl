@@ -5,13 +5,11 @@ import (
 	"errors"
 	"reflect"
 	"slices"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -46,7 +44,56 @@ func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
 	}
 }
 
-func TestOwner(t *testing.T) {
+// modeLanding gives a hand-rolled core test its animation mode: off, or on with
+// a clock the test moves and the page flips it sends. land returns the scene
+// set once every spring has landed (the set itself when none runs, and
+// always with animations off). An on run that never saw a spring would be
+// the off run again, so it fails.
+type modeLanding struct {
+	t       *testing.T
+	clk     *stepClock
+	frames  chan ports.OutputFrame
+	scenes  chan []ports.Scene
+	outputs []string
+	lands   int
+}
+
+// newLanding sets cfg's animations and, when on, the clock and flips of ch.
+func newLanding(t *testing.T, animated bool, cfg *ports.Config, ch *core.Channels, outputs ...string) *modeLanding {
+	t.Helper()
+	cfg.Animations.On = animated
+	l := &modeLanding{t: t, scenes: ch.Scenes, outputs: outputs}
+	if animated {
+		l.clk, l.frames = newStepClock(t), make(chan ports.OutputFrame)
+		ch.Clock, ch.Frames = l.clk.clock, l.frames
+		t.Cleanup(func() {
+			if l.lands == 0 {
+				t.Error("no spring ever ran: the animations-on variant checked nothing")
+			}
+		})
+	}
+	return l
+}
+
+func (l *modeLanding) land(set []ports.Scene) []ports.Scene {
+	l.t.Helper()
+	if l.clk == nil {
+		return set
+	}
+	landed, ok := l.clk.settle(l.t, l.frames, l.scenes, l.outputs...)
+	if !ok {
+		return set
+	}
+	l.lands++
+	return landed
+}
+
+// one is land for the first output's scene.
+func (l *modeLanding) one(s ports.Scene) ports.Scene { return l.land([]ports.Scene{s})[0] }
+
+func TestOwner(t *testing.T) { both(t, owner) }
+
+func owner(t *testing.T, animated bool) {
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 8
@@ -58,7 +105,9 @@ func TestOwner(t *testing.T) {
 	spawn := make(chan ports.SpawnRequest, 8)
 	scenes := make(chan []ports.Scene, 1)
 	errs := make(chan error, 8)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: errs})
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Spawn: spawn, Scenes: scenes, ConfigErrors: errs}
+	l := newLanding(t, animated, &cfg, &ch, "OUT-1")
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +121,7 @@ func TestOwner(t *testing.T) {
 		t.Fatal(s)
 	}
 	client <- ports.WindowMapped{ID: 1}
-	s = scene(t, scenes)
+	s = l.one(scene(t, scenes))
 	// A single column fills the usable width.
 	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != 0 {
 		t.Fatal(s)
@@ -117,7 +166,7 @@ func TestOwner(t *testing.T) {
 	}
 	cfg.Layout.Gaps = 4
 	reload <- ports.ConfigChanged{Config: cfg}
-	s = scene(t, scenes)
+	s = l.one(scene(t, scenes))
 	if s.Windows[0].Rect.W != 92 {
 		t.Fatal(s)
 	}
@@ -283,7 +332,9 @@ func TestPointerFocusAndGrab(t *testing.T) {
 	}
 }
 
-func TestBorderInset(t *testing.T) {
+func TestBorderInset(t *testing.T) { both(t, borderInset) }
+
+func borderInset(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 2
 	client := make(chan ports.ClientEvent, 8)
@@ -291,7 +342,9 @@ func TestBorderInset(t *testing.T) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
+	l := newLanding(t, animated, &cfg, &ch, "OUT-1")
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,14 +355,14 @@ func TestBorderInset(t *testing.T) {
 	scene(t, scenes)
 	// Alone, the window is borderless and gets the full rect.
 	client <- ports.WindowMapped{ID: 1}
-	r := scene(t, scenes).Windows[0].Rect
+	r := l.one(scene(t, scenes)).Windows[0].Rect
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: r.W, Height: r.H, Activated: true, Output: "OUT-1", Visible: true}) {
 		t.Fatalf("%v for outer %v", v, r)
 	}
 	// With a second column, the left window owns the shared separator: its
 	// client is 2px narrower on the right; the right window keeps its rect.
 	client <- ports.WindowMapped{ID: 2}
-	s := scene(t, scenes)
+	s := l.one(scene(t, scenes))
 	r = s.Windows[1].Rect
 	if s.Windows[0].Inset != ports.SideRight || s.Windows[1].Inset != 0 || len(s.Separators) == 0 {
 		t.Fatal(s)
@@ -556,7 +609,9 @@ func TestShiftReleasedFirst(t *testing.T) {
 	}
 }
 
-func TestOutputScale(t *testing.T) {
+func TestOutputScale(t *testing.T) { both(t, outputScale) }
+
+func outputScale(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
 	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}}
@@ -568,7 +623,9 @@ func TestOutputScale(t *testing.T) {
 	reload := make(chan ports.ConfigChanged, 1)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes})
+	ch := core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes}
+	l := newLanding(t, animated, &cfg, &ch, "DP-2")
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +642,7 @@ func TestOutputScale(t *testing.T) {
 		t.Fatal(v)
 	}
 	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
+	l.one(scene(t, scenes))
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 2560, Height: 1080, Activated: true, Output: "DP-2", Visible: true}) {
 		t.Fatal(v)
 	}
@@ -594,7 +651,13 @@ func TestOutputScale(t *testing.T) {
 	}
 	// The pointer arrives in global logical pixels.
 	input <- ports.PointerMotion{X: 500, Y: 200}
-	if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 500, Y: 200}) {
+	if animated {
+		// The page flips that landed the map's springs re-hit the pointer
+		// (still at the origin, over the window): focus was already sent.
+		if v, ok := command(t, commands).(ports.PointerMotionTo); !ok || v.ID != 1 || v.X != 500 || v.Y != 200 {
+			t.Fatal(v)
+		}
+	} else if v := command(t, commands); v != (ports.PointerFocus{ID: 1, X: 500, Y: 200}) {
 		t.Fatal(v)
 	}
 	// Cmd+- steps down through the clean scales of 5120x2160: 2 → 5/3.
@@ -679,7 +742,9 @@ func TestPointerWarp(t *testing.T) {
 	}
 }
 
-func TestPointerConstraint(t *testing.T) {
+func TestPointerConstraint(t *testing.T) { both(t, pointerConstraint) }
+
+func pointerConstraint(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 0
@@ -689,7 +754,9 @@ func TestPointerConstraint(t *testing.T) {
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
 	constraints := make(chan ports.PointerConstraint, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints})
+	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes, Constraints: constraints}
+	l := newLanding(t, animated, &cfg, &ch, "A", "B")
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,7 +770,7 @@ func TestPointerConstraint(t *testing.T) {
 	input <- ports.PointerMotion{X: 150, Y: 40}
 	scene(t, scenes) // the pointer moves the focus to B
 	client <- ports.WindowMapped{ID: 1}
-	r := receive(t, scenes)[1].Windows[0].Rect
+	r := l.land(receive(t, scenes))[1].Windows[0].Rect
 	// The confine region is window-local and clipped to the window.
 	client <- ports.PointerConstrained{ID: 1, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 10, Y: 10, W: 1000, H: 20}}}
 	scene(t, scenes)
@@ -887,7 +954,9 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 // A window that asks for fullscreen as it maps (Wine at a remembered
 // monitor size) stays in its column: the windows it opens next are seen.
 // A later request is honoured.
-func TestFullscreenAtMapIgnored(t *testing.T) {
+func TestFullscreenAtMapIgnored(t *testing.T) { both(t, fullscreenAtMapIgnored) }
+
+func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Layout.Overflow = "fixed"
 	cfg.Focus.Animation = ports.FocusAnimationOff
@@ -895,11 +964,15 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	// Core reads the time on its goroutine.
-	var now atomic.Int64
-	clock := portsmocks.NewMockClock(t)
-	clock.EXPECT().Now().RunAndReturn(func() time.Time { return time.Unix(now.Load(), 0) })
-	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: clock})
+	// Core reads the time on its goroutine: the clock is the test's.
+	ch := core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}
+	l := newLanding(t, animated, &cfg, &ch, "OUT-1")
+	clk := l.clk
+	if clk == nil {
+		clk = newStepClock(t)
+		ch.Clock = clk.clock
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -923,7 +996,10 @@ func TestFullscreenAtMapIgnored(t *testing.T) {
 			t.Fatalf("startup fullscreen applied: %+v", s.Windows)
 		}
 	}
-	now.Add(1)
+	// With animations on this lands the maps' springs: the clock moves past
+	// the grace, as the next line does anyway.
+	l.one(s)
+	clk.advance(time.Second)
 	// Only the focused window may cover the screen (ADR 011).
 	client <- ports.WindowUnmapped{ID: 3}
 	scene(t, scenes)
@@ -968,16 +1044,21 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 }
 
 // A taskbar's fullscreen request is the user's: it applies at once.
-func TestExternalFullscreenAtMapApplies(t *testing.T) {
+func TestExternalFullscreenAtMapApplies(t *testing.T) { both(t, externalFullscreenAtMapApplies) }
+
+func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 	cfg := config.Defaults()
 	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	clock := portsmocks.NewMockClock(t)
-	clock.EXPECT().Now().Return(time.Unix(0, 0))
-	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: clock})
+	ch := core.Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}
+	l := newLanding(t, animated, &cfg, &ch, "OUT-1")
+	if l.clk == nil {
+		ch.Clock = newStepClock(t).clock
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,7 +1068,7 @@ func TestExternalFullscreenAtMapApplies(t *testing.T) {
 	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, scenes)
 	client <- ports.WindowMapped{ID: 1}
-	scene(t, scenes)
+	l.one(scene(t, scenes))
 	client <- ports.WindowFullscreenRequest{ID: 1, Fullscreen: true, External: true}
 	s := scene(t, scenes)
 	if len(s.Windows) != 1 || !s.Windows[0].Fullscreen {

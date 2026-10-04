@@ -63,6 +63,19 @@ func (r *swipeRig) advance(d time.Duration) {
 	r.clk.advance(d)
 }
 
+// mapWindow maps a window and, with animations on, lands its entrance (and
+// the neighbours' re-flow) so the scene is the settled one: the tests of a
+// swipe rig look at what the map leaves. The entrance itself is checked on
+// the raw multiRig.mapWindow (TestMap*).
+func (r *swipeRig) mapWindow(t *testing.T, id ports.WindowID) []ports.Scene {
+	t.Helper()
+	set := r.multiRig.mapWindow(t, id)
+	if landed, ok := r.settleAll(t, r.outs...); ok {
+		return landed
+	}
+	return set
+}
+
 // begin starts a swipe; nothing moves until it picks an axis.
 func (r *swipeRig) begin() {
 	r.at += time.Second

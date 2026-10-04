@@ -1105,8 +1105,7 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.InputRegionChanged:
 				c.windows.setRegion(v)
 			case ports.WindowMapped:
-				c.windows.mapped(v, c.now())
-				c.placement.place(c, v)
+				c.mapWindow(v)
 			case ports.WindowResized:
 				if _, w := c.screenOf(v.ID); w != nil {
 					w.ResizeFloating(v.ID, v.Width, v.Height)
@@ -1186,6 +1185,11 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
+					if v.Fullscreen {
+						// A game asking for fullscreen right after its map
+						// does not fade in: it keeps the direct scanout path.
+						delete(s.rects, v.ID)
+					}
 				}
 			case ports.WorkspaceActivate:
 				before := c.cur().mon.Current()

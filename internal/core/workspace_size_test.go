@@ -46,18 +46,26 @@ func within(r, o ports.Rect) bool {
 }
 
 func TestWorkspaceSizeInheritsByDefault(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Gaps = 0 }, ultrawide)
-	set := r.mapWindow(t, 1)
-	if set[0].WorkspaceClip != (ports.Rect{}) || set[0].Windows[0].Rect != (ports.Rect{W: 3440, H: 1440}) {
-		t.Fatalf("%+v", set[0])
-	}
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Gaps = 0 }, ultrawide)
+		set := r.mapLanded(t, 1)
+		if set[0].WorkspaceClip != (ports.Rect{}) || set[0].Windows[0].Rect != (ports.Rect{W: 3440, H: 1440}) {
+			t.Fatalf("%+v", set[0])
+		}
+	})
 }
 
 func TestWorkspaceSizeScrollColumnsStayInFrame(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	s := r.mapWindow(t, 3)[0]
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "scroll", nil)
+		workspaceSizeScrollColumnsStayInFrame(t, r)
+	})
+}
+
+func workspaceSizeScrollColumnsStayInFrame(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.mapLanded(t, 2)
+	s := r.mapLanded(t, 3)[0]
 	if s.WorkspaceClip != frame || s.OutputWidth != 3440 || s.OutputHeight != 1440 {
 		t.Fatalf("clip %+v output %dx%d", s.WorkspaceClip, s.OutputWidth, s.OutputHeight)
 	}
@@ -77,9 +85,15 @@ func TestWorkspaceSizeScrollColumnsStayInFrame(t *testing.T) {
 }
 
 func TestWorkspaceSizeFixedColumnsFillFrame(t *testing.T) {
-	r, _ := sizedRig(t, "fixed", nil)
-	r.mapWindow(t, 1)
-	s := r.mapWindow(t, 2)[0]
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "fixed", nil)
+		workspaceSizeFixedColumnsFillFrame(t, r)
+	})
+}
+
+func workspaceSizeFixedColumnsFillFrame(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	s := r.mapLanded(t, 2)[0]
 	for i, want := range []ports.Rect{{X: 760, Y: 180, W: 960, H: 1080}, {X: 1720, Y: 180, W: 960, H: 1080}} {
 		if s.Windows[i].Rect != want {
 			t.Fatalf("%d: %+v", i, s.Windows[i])
@@ -149,8 +163,14 @@ func TestWorkspaceSizeFloatsContained(t *testing.T) {
 }
 
 func TestWorkspaceSizeReloadAndRemoval(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
-	r.mapWindow(t, 1)
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "scroll", nil)
+		workspaceSizeReloadAndRemoval(t, r)
+	})
+}
+
+func workspaceSizeReloadAndRemoval(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
 	cfg := r.cfg
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1000, 600}}}
 	r.reload <- ports.ConfigChanged{Config: cfg}
@@ -178,28 +198,40 @@ func TestWorkspaceSizeReloadAndRemoval(t *testing.T) {
 }
 
 func TestWorkspaceSizeFollowsOutputResize(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
-	r.mapWindow(t, 1)
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "scroll", nil)
+		workspaceSizeFollowsOutputResize(t, r)
+	})
+}
+
+func workspaceSizeFollowsOutputResize(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
 	smaller := ultrawide
 	smaller.Width, smaller.Height = 1600, 900
-	s := r.plug(t, smaller)[0]
+	s := r.land(r.plug(t, smaller))[0]
 	// 1920x1080 no longer fits: it clamps to the monitor.
 	if s.WorkspaceClip != (ports.Rect{}) || s.Windows[0].Rect != (ports.Rect{W: 1600, H: 900}) {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
-	s = r.plug(t, ultrawide)[0]
+	s = r.land(r.plug(t, ultrawide))[0]
 	if s.WorkspaceClip != frame || s.Windows[0].Rect != frame {
 		t.Fatalf("%+v %+v", s.WorkspaceClip, s.Windows[0])
 	}
 }
 
 func TestWorkspaceSizeReservedZoneIntersectsFrame(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "scroll", nil)
+		workspaceSizeReservedZoneIntersectsFrame(t, r)
+	})
+}
+
+func workspaceSizeReservedZoneIntersectsFrame(t *testing.T, r *landRig) {
 	// A bar inside the top of the monitor but above the frame reserves nothing of it.
 	bar := ports.LayerSurface{ID: 9, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Height: 100, ExclusiveZone: 100}
 	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{bar}}
 	receive(t, r.scenes)
-	s := r.mapWindow(t, 1)[0]
+	s := r.mapLanded(t, 1)[0]
 	if s.Windows[0].Rect != frame {
 		t.Fatalf("%+v", s.Windows[0])
 	}

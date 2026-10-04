@@ -4,6 +4,8 @@ import (
 	"math"
 	"slices"
 	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Transitions start after a user action (a bind, a click that focuses, a
@@ -293,6 +295,47 @@ func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
 	c.scaleFrom(&rm, p.Rect, appearScale, now)
 	c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
 	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
+}
+
+// mapWindow handles a window's map: it joins its workspace, the tiles the
+// new one displaces re-flow with rect motions, and a window that comes on
+// screen appears (appearMapped). A map is the one client event that
+// animates; the settled layout is the same with animations off, so the
+// client is configured once, to its final size.
+func (c *Core) mapWindow(v ports.WindowMapped) {
+	now := c.now()
+	c.windows.mapped(v, now)
+	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {
+		// Mapped before (a re-map keeps its place), animations off or a
+		// session lock: nothing to animate.
+		c.placement.place(c, v)
+		return
+	}
+	shots := c.snapshot(now)
+	c.placement.place(c, v)
+	c.transition(shots, now)
+	c.appearMapped(v.ID, now)
+}
+
+// appearMapped starts the entrance of a window that just mapped when it
+// shows on its screen's current workspace as a tile or an ordinary float:
+// not with the overview open or a session lock, not fullscreen (it keeps
+// the direct scanout path), not a float below the columns, not a stash
+// peek.
+func (c *Core) appearMapped(id WindowID, now time.Time) {
+	sc, w := c.screenOf(id)
+	if sc == nil || c.security.Protected || sc.mon.ov.open || sc.mon.Current() != w {
+		return
+	}
+	for _, p := range sc.mon.Layout() {
+		if p.ID != id {
+			continue
+		}
+		if !p.Hidden && !p.Fullscreen && !p.Below && !p.Peek && p.Preview == 0 {
+			c.appearAt(sc, p, now)
+		}
+		return
+	}
 }
 
 // leave keeps drawing a window the action closed or hid, from its last
