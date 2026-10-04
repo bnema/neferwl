@@ -414,6 +414,11 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// Fade makes the whole window translucent, border and content: 0 is
+	// opaque, 1 invisible (like SurfaceContent.Fade). A window appearing
+	// or leaving animates it; a faded window is composed, never scanned
+	// out.
+	Fade float64
 	// FocusEffect, above 0, is the focus indicator's effect at this frame
 	// (focus.animation, focus.effect): the window's surfaces are lifted
 	// toward white by that fraction (screen blend). Renderers without the

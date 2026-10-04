@@ -26,7 +26,7 @@ func TestSceneFieldCount(t *testing.T) {
 // sceneDelta compares windows by struct equality, so a new field is covered
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
-	const fields = 13
+	const fields = 14
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }
@@ -336,4 +336,43 @@ func sceneDeltaMatchesFullRedraw(t *testing.T, tc deltaCase, reuse bool) {
 		}
 	}
 	assert.Positive(t, partial, "no frame was redrawn partially")
+}
+
+// A window's Fade changes only how it draws inside its rect: the delta is
+// that rect. A leaving entry (core keeps a closed or hidden window in the
+// scene while it fades) changes the window list when it appears and when
+// it goes: both redraw everything, like any list change; while it fades,
+// only its rect is redrawn.
+func TestDamageDeltaFadeAndLeavingEntry(t *testing.T) {
+	bounds := image.Rect(0, 0, 1000, 500)
+	settled := deltaScene(1, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+
+	faded := deltaScene(2, win(1, 0, 0, 500, 500), win(2, 500, 0, 500, 500))
+	faded.Windows[1].Fade = 0.5
+	d := newDamage(held(settled), faded, bounds)
+	require.False(t, d.all())
+	assert.Equal(t, image.Rect(500, 0, 1000, 500), d.area)
+
+	// Window 2 was unmapped: the layout re-flows and a leaving entry is
+	// appended. The list changed: full redraw.
+	leaving := deltaScene(3, win(1, 0, 0, 1000, 500), win(2, 500, 0, 500, 500))
+	leaving.Windows[1].Fade = 0.1
+	assert.True(t, newDamage(held(settled), leaving, bounds).all())
+
+	// The fade advances: its rect only, the neighbours untouched.
+	next := deltaScene(4, win(1, 0, 0, 1000, 500), win(2, 500, 0, 500, 500))
+	next.Windows[1].Fade = 0.6
+	d = newDamage(held(leaving), next, bounds)
+	require.False(t, d.all())
+	assert.Equal(t, image.Rect(500, 0, 1000, 500), d.area)
+
+	// The entry settled and is dropped: full redraw (its pixels are stale).
+	gone := deltaScene(5, win(1, 0, 0, 1000, 500))
+	assert.True(t, newDamage(held(next), gone, bounds).all())
+
+	// A leaving float opens the floats where it is appended: the tile
+	// lines and the veil move under it, so floatsStart differs.
+	float := deltaScene(6, win(1, 0, 0, 1000, 500), win(2, 100, 100, 200, 200))
+	float.Windows[1].Floating, float.Windows[1].Fade = true, 0.1
+	assert.True(t, newDamage(held(gone), float, bounds).all())
 }

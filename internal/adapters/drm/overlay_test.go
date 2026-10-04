@@ -113,6 +113,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
 		t.Fatalf("dimmed window reason %q", reason)
 	}
+	// A fading window needs its translucency composed.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Fade = 0.5
+	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+		t.Fatalf("fading window reason %q", reason)
+	}
 	// A window with the focus effect needs it composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].FocusEffect = 0.05

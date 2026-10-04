@@ -22,7 +22,11 @@ type sceneWalk struct {
 	zoom float64
 	// pulse is the focus effect of the window being placed
 	// (ports.SceneWindow.FocusEffect); 0 otherwise.
-	pulse  float32
+	pulse float32
+	// alpha is the opacity of the window being drawn, 1 - its Fade
+	// (ports.SceneWindow.Fade): its fills, lines and surfaces are scaled by
+	// it (premultiplied); 1 otherwise.
+	alpha  float32
 	bounds image.Rectangle
 	draws  []draw
 }
@@ -33,7 +37,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
@@ -129,21 +133,25 @@ func (w *sceneWalk) physRectF(x, y, width, height float64) image.Rectangle {
 	return image.Rect(p(x), p(y), p(x+width), p(y+height))
 }
 
-// fill draws a solid rect (physical pixels).
+// fill draws a solid rect (physical pixels), at the walk's alpha.
 func (w *sceneWalk) fill(rect image.Rectangle, c [3]uint8) {
 	rect = rect.Intersect(w.bounds)
 	if rect.Empty() {
 		return
 	}
-	w.draws = append(w.draws, w.r.fillDraw(rect, c))
+	dr := w.r.fillDraw(rect, c)
+	if w.alpha < 1 {
+		w.r.fadeSolid(&dr, w.alpha)
+	}
+	w.draws = append(w.draws, dr)
 }
 
 // dim paints a translucent black quad over rect (physical), clipped to the
-// output. Damage clipping later limits it to the region being repainted,
-// just like other fills.
+// output, at alpha scaled by the walk's alpha. Damage clipping later limits
+// it to the region being repainted, just like other fills.
 func (w *sceneWalk) dim(rect image.Rectangle, alpha float64) {
 	if rect = rect.Intersect(w.bounds); !rect.Empty() {
-		w.draws = append(w.draws, w.r.dimDraw(rect, alpha))
+		w.draws = append(w.draws, w.r.dimDraw(rect, alpha*float64(w.alpha)))
 	}
 }
 
@@ -205,6 +213,12 @@ func (w *sceneWalk) windows() {
 				w.dim(w.bounds, w.s.Dim)
 			}
 		}
+		if win.Fade >= 1 {
+			// Faded out: it still opens the floats (its lines and veil are
+			// painted under where it would be), but draws nothing.
+			continue
+		}
+		w.alpha = 1 - float32(max(0, win.Fade))
 		// Content sits inside the border; core sized the client to match.
 		b, inset := 0, ports.Sides(0)
 		if !win.Fullscreen {
@@ -231,6 +245,7 @@ func (w *sceneWalk) windows() {
 			// A stashed window peeking in: dimmed with its border.
 			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
+		w.alpha = 1
 	}
 	if !tileLines {
 		w.separators(0)
@@ -389,7 +404,11 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	if content.Solid != nil {
-		if dr := r.solidDraw(rect, content); dr.pc.color[3] > 0 {
+		dr := r.solidDraw(rect, content)
+		if w.alpha < 1 {
+			r.fadeSolid(&dr, w.alpha)
+		}
+		if dr.pc.color[3] > 0 {
 			w.draws = append(w.draws, dr)
 		}
 		return
@@ -402,6 +421,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
 		r.setContentColor(&dr, content)
+		dr.pc.color[3] *= w.alpha
 		dr.pc.mapy[2] = w.pulse
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
@@ -439,6 +459,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content)
+	dr.pc.color[3] *= w.alpha
 	dr.pc.mapy[2] = w.pulse
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
