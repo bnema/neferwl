@@ -8,8 +8,8 @@ import (
 	"time"
 
 	ext "github.com/bnema/go-wayland-bindings/server/extworkspace"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
-	"github.com/bnema/neferwl/internal/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
 )

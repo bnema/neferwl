@@ -8,7 +8,7 @@ import (
 	"time"
 
 	dl "github.com/bnema/go-wayland-bindings/server/drmlease"
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/wlturbo"

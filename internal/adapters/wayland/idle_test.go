@@ -8,7 +8,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/extidlenotify"
 	"github.com/bnema/go-wayland-bindings/server/idleinhibit"
 	"github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
-	"github.com/bnema/neferwl/internal/logging"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/wlturbo"
