@@ -1228,6 +1228,9 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				continue
 			}
+			if !c.animOn() {
+				c.stopAnimations()
+			}
 			// A rotation can shrink the layout under a still pointer.
 			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)
 			if c.workspaceVisible(ctx, false) != nil {

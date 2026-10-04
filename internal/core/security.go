@@ -33,13 +33,7 @@ func (c *Core) syncSecurity() bool {
 	}
 	c.dropSwipe()
 	c.swipe = nil
-	for _, sc := range c.screens {
-		sc.mon.stopSwitch()
-		for w := range sc.mon.all() {
-			w.stopSlide()
-		}
-	}
-	c.stopFrame()
+	c.stopAnimations()
 	c.stopPulse()
 	if state.Protected {
 		c.dropCaptureSessions()

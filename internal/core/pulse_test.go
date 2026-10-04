@@ -12,6 +12,7 @@ import (
 func pulseCore(t *testing.T) (*Core, *indicatorClock) {
 	t.Helper()
 	c, ic := indicatorCore(t)
+	c.cfg.Animations.On = true
 	c.cfg.Focus.Animation = ports.FocusAnimationPulse
 	c.cfg.Focus.Strength = 0.05
 	c.cur().mon.AddWindow(1)
@@ -257,5 +258,22 @@ func TestFocusPulseOff(t *testing.T) {
 	indicatorScene(t, c)
 	if c.pulse.timerC != nil {
 		t.Fatal("enabling the pulse pulses the focused window")
+	}
+}
+
+func TestFocusPulseOffWithAnimationsOff(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.cfg.Animations.On = false
+	if c.pulseOn() {
+		t.Fatal("pulse on with animations off")
+	}
+	c.cur().mon.Current().FocusID(1)
+	indicatorScene(t, c)
+	if c.pulse.timerC != nil || c.pulse.id != 0 {
+		t.Fatal("pulse armed with animations off")
+	}
+	ic.now = ic.now.Add(pulseSettle)
+	if c.pulseTick() || c.animating() {
+		t.Fatal("pulse with animations off")
 	}
 }

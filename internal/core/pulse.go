@@ -43,7 +43,9 @@ type focusPulse struct {
 	timerStop func() bool
 }
 
-func (c *Core) pulseOn() bool { return c.cfg.Focus.Animation == ports.FocusAnimationPulse }
+func (c *Core) pulseOn() bool {
+	return c.animOn() && c.cfg.Focus.Animation == ports.FocusAnimationPulse
+}
 
 // pulseFocus follows the window focus. held is false while something else
 // (a popup grab, a layer, a lock surface) has the keyboard: the running pulse

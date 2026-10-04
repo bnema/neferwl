@@ -216,7 +216,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		w.shift = shown - float64(w.ViewX)
-		w.motion = newMotion(viewSpring(w.shift, velocity), now, 1)
+		if c.animOn() {
+			w.motion = c.spring(viewSpring(w.shift, velocity), now)
+		} else {
+			w.stopSlide()
+		}
 	case swipeWorkspaces:
 		if g.listChanged(m) {
 			m.stopSwitch()
@@ -240,7 +244,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		m.switchOff, m.switchList = off, g.list
-		m.switchMotion = newMotion(workspaceSpring(off, velocity), now, 1)
+		if c.animOn() {
+			m.switchMotion = c.spring(workspaceSpring(off, velocity), now)
+		} else {
+			m.stopSwitch()
+		}
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 || (step < 0) == m.ov.open {
@@ -315,6 +323,34 @@ func (c *Core) hasScreen(s *screen) bool {
 		}
 	}
 	return false
+}
+
+// animOn reports whether transitions run (animations = on).
+func (c *Core) animOn() bool { return c.cfg.Animations.On }
+
+// spring starts s at now, slowed down by animations.slowdown. Every motion
+// core creates goes through it, except a retarget, which keeps the slowdown
+// of the motion it replaces.
+func (c *Core) spring(s spring, now time.Time) motion {
+	return newMotion(s, now, c.cfg.Animations.Slowdown)
+}
+
+// stopAnimations settles every running spring where it is going and stops
+// the frame timer: a session lock or a switch to animations = off. A swipe
+// in progress keeps its fingers' view: only running springs stop. Per-window
+// rect motions stop here too once they exist.
+func (c *Core) stopAnimations() {
+	for _, sc := range c.screens {
+		if sc.mon.switchMotion.on {
+			sc.mon.stopSwitch()
+		}
+		for w := range sc.mon.all() {
+			if w.motion.on {
+				w.stopSlide()
+			}
+		}
+	}
+	c.stopFrame()
 }
 
 // animate moves the running springs to now; settled ones stop.
