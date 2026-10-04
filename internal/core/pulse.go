@@ -14,8 +14,9 @@ import (
 // pulseSettle before the pulse starts, a focus change stops a running one, and
 // the window that pulsed last does not pulse again within pulseCooldown
 // (switching back after another window held the focus is a new change).
-// Fast switching therefore shows nothing. Fullscreen windows, overview
-// previews, a window focused as it maps and a protected session never pulse.
+// Fast switching therefore shows nothing. Fullscreen windows, a window alone
+// on screen (e.g. a maximized column), overview previews, a window focused as
+// it maps and a protected session never pulse.
 
 const (
 	pulseSettle   = 150 * time.Millisecond
@@ -120,6 +121,17 @@ func (c *Core) advancePulse(now time.Time) float64 {
 	}
 	p.id = 0
 	return 0
+}
+
+// visibleCount is the number of windows of layout shown in frame.
+func visibleCount(layout []Placement, frame Rect) int {
+	n := 0
+	for _, p := range layout {
+		if !p.Hidden && p.Preview == 0 && p.Rect.Overlaps(frame) {
+			n++
+		}
+	}
+	return n
 }
 
 // pulsing reports whether a pulse runs on the screen.

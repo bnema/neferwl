@@ -164,6 +164,26 @@ func TestFocusPulseSkipsFullscreen(t *testing.T) {
 	}
 }
 
+// A window alone on screen (a maximized column here) needs no pulse; once
+// another window shows beside it, focusing it pulses again.
+func TestFocusPulseSkipsAloneOnScreen(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.cur().mon.Current().FocusID(1)
+	c.cur().mon.Current().ToggleFullWidth()
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if c.pulseTick() || c.animating() {
+		t.Fatal("a window alone on screen pulses")
+	}
+	c.cur().mon.Current().ToggleFullWidth()
+	c.cur().mon.Current().FocusID(2)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if !c.pulseTick() || c.pulse.id != 2 {
+		t.Fatal("a window beside another did not pulse")
+	}
+}
+
 // A popup grab or layer taking the keyboard stops the pulse; the window
 // getting it back is not a new focus and does not pulse again.
 func TestFocusPulseIgnoresKeyboardDetours(t *testing.T) {
