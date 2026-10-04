@@ -161,14 +161,113 @@ func TestNoTransitionWithOverview(t *testing.T) {
 	}
 }
 
-// A workspace that goes to another monitor gets no rect or switch motion on
-// either side.
-func TestMovedWorkspaceHasNoMotion(t *testing.T) {
-	r := startSwipe(t, nil)
-	twoColumns(t, r)
+// movedRig plugs a second 800x600 output right of the first.
+func movedRig(t *testing.T, edit func(*ports.Config)) (*swipeRig, ports.OutputInfo) {
+	t.Helper()
 	other := ports.OutputInfo{Name: "DP-2", Width: 800, Height: 600, RefreshMilli: 60000}
-	r.plug(t, other)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	return startSwipeOn(t, edit, wide, other), other
+}
+
+func outScene(t *testing.T, set []ports.Scene, output string) ports.Scene {
+	t.Helper()
+	for _, s := range set {
+		if s.Output == output {
+			return s
+		}
+	}
+	t.Fatalf("no scene for %s", output)
+	return ports.Scene{}
+}
+
+// A workspace that goes to another monitor slides in on it from where the
+// source drew it, in the destination's coordinates, and settles.
+func TestMovedWorkspaceSlidesInOnDestination(t *testing.T) {
+	r, other := movedRig(t, nil)
+	twoColumns(t, r)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	dst := outScene(t, set, other.Name)
+	// DP-2 starts at x=800: the source's 0 and 400 are -800 and -400 there.
+	if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1.X != -800 || got2.X != -400 {
+		t.Fatalf("right after the key 1 at %+v and 2 at %+v, want the source's rects (-800, -400)", got1, got2)
+	}
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name)
+	if !ok {
+		t.Fatal("no frame while the windows slide")
+	}
+	dst = outScene(t, set, other.Name)
+	for id, end := range map[ports.WindowID]int{1: 0, 2: 400} {
+		if got := rectNow(t, dst, id).X; got <= end-800 || got >= end {
+			t.Fatalf("window %d at %d on the first frame, want between %d and %d", id, got, end-800, end)
+		}
+	}
+	set, _ = r.settleAll(t, wide.Name, other.Name)
+	dst = outScene(t, set, other.Name)
+	if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1.X != 0 || got2.X != 400 {
+		t.Fatalf("settled 1 at %+v and 2 at %+v, want 0 and 400", got1, got2)
+	}
+	r.noFrameScene(t, wide.Name, other.Name)
+}
+
+// The source screen slides to the workspace it falls back on when that one
+// was in the list it showed, else it changes at once.
+func TestMovedWorkspaceSourceSwitchRule(t *testing.T) {
+	r, other := movedRig(t, nil)
+	r.workspaces(t) // window 1 on the first workspace, 2 on the second
+	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	src := outScene(t, set, wide.Name)
+	// The second workspace was below the moved one: it slides up from there.
+	if got := rectNow(t, src, 2).Y; got != 600 {
+		t.Fatalf("source shows window 2 at y=%d right after the key, want 600 (sliding in)", got)
+	}
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name)
+	if !ok {
+		t.Fatal("no frame while the source slides")
+	}
+	if got := rectNow(t, outScene(t, set, wide.Name), 2).Y; got <= 0 || got >= 600 {
+		t.Fatalf("window 2 at y=%d on the first frame, want between 0 and 600", got)
+	}
+	set, _ = r.settleAll(t, wide.Name, other.Name)
+	if got := rectNow(t, outScene(t, set, wide.Name), 2); got.Y != 0 {
+		t.Fatalf("settled window 2 at %+v, want y=0", got)
+	}
+}
+
+// A source whose new workspace was not in the list it showed (the moved one
+// was alone: a fresh empty one replaces it) changes at once: nothing slides
+// in, only the destination's windows move.
+func TestMovedWorkspaceSourceWithoutNeighbourIsInstant(t *testing.T) {
+	r, other := movedRig(t, nil)
+	twoColumns(t, r)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	if n := len(outScene(t, set, wide.Name).Windows); n != 0 {
+		t.Fatalf("source draws %d windows right after the key, want none", n)
+	}
+	set, ok := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, wide.Name, other.Name)
+	if !ok {
+		t.Fatal("no frame while the windows slide")
+	}
+	if n := len(outScene(t, set, wide.Name).Windows); n != 0 {
+		t.Fatalf("source draws %d windows on the first frame, want none", n)
+	}
+}
+
+// With animations off the moved workspace lands at once on both screens.
+func TestMovedWorkspaceOffIsInstant(t *testing.T) {
+	r, other := movedRig(t, animationsOff)
+	twoColumns(t, r)
+	set := r.key(t, "Right", ports.ModAlt|ports.ModCtrl|ports.ModShift)
+	dst := outScene(t, set, other.Name)
+	if got1, got2 := rectNow(t, dst, 1), rectNow(t, dst, 2); got1.X != 0 || got2.X != 400 {
+		t.Fatalf("1 at %+v and 2 at %+v right after the key, want the settled rects", got1, got2)
+	}
+	r.noFrameScene(t, wide.Name, other.Name)
+}
+
+// Focusing another monitor moves no window: it is not animated.
+func TestFocusMonitorHasNoMotion(t *testing.T) {
+	r, other := movedRig(t, nil)
+	twoColumns(t, r)
+	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
 	r.noFrameScene(t, wide.Name, other.Name)
 }
 

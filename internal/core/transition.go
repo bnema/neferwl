@@ -406,6 +406,12 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 // showed to what the action left, at now. It does nothing with animations
 // off, with the overview open before or after, or while a swipe follows the
 // fingers on that screen. Per-window rect motions join the camera here.
+//
+// A workspace moved to another monitor (move-workspace-to-monitor-*) is
+// animated on both screens: the destination's windows slide in from where
+// the source drew them, the source slides to its next workspace. The
+// focus-monitor-* actions move nothing: no window changes place, so they
+// are not animated (the focus pulse marks the new focus).
 func (c *Core) transition(before []viewShot, now time.Time) {
 	if !c.animOn() {
 		return
@@ -416,7 +422,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 			continue
 		}
 		c.transitionCamera(b, now)
-		c.transitionRects(b, now)
+		c.transitionRects(b, before, now)
 	}
 }
 
@@ -439,7 +445,7 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 		// carries over, and the spring starts now like every action's.
 		w.shift = b.view - float64(w.ViewX)
 		w.motion = c.spring(viewSpring(w.shift, b.viewV), now)
-	case b.ok && m.shown == nil && !c.movedAway(b.sc, b.ws):
+	case b.ok && m.shown == nil:
 		j := indexOf(b.list, w)
 		if j < 0 {
 			return
@@ -461,23 +467,34 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 // transitionCamera left it (the view where it was on screen), so a window
 // the view scrolls differs only by what the layout itself changed. Windows
 // that were not drawn before (new, or hidden) or are hidden now get none.
-func (c *Core) transitionRects(b *viewShot, now time.Time) {
+//
+// A workspace that arrived from another monitor starts from the rects its
+// source screen drew (found in before), translated to this screen's
+// coordinates; a source whose workspace left, or any other change of
+// workspace, gets none.
+func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 	sc := b.sc
 	m := sc.mon
+	from, dx, dy := b, 0, 0
 	if m.Current() != b.ws {
+		// The motions are those of the workspace this screen left.
 		sc.stopRects()
-		return
+		if from = movedFrom(b, before); from == nil {
+			return
+		}
+		dx, dy = from.sc.x-sc.x, from.sc.y-sc.y
 	}
 	for _, p := range m.Layout() {
 		if p.Hidden || p.Preview > 0 {
 			continue
 		}
-		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		i := slices.IndexFunc(from.rects, func(r rectShot) bool { return r.id == p.ID })
 		if i < 0 {
 			continue
 		}
-		old := &b.rects[i]
-		if old.rect == p.Rect {
+		old := &from.rects[i]
+		oldRect := Rect{X: old.rect.X + dx, Y: old.rect.Y + dy, W: old.rect.W, H: old.rect.H}
+		if oldRect == p.Rect {
 			// The settled rect did not change: a running motion goes on
 			// as it is, and there is none to start.
 			continue
@@ -491,25 +508,26 @@ func (c *Core) transitionRects(b *viewShot, now time.Time) {
 		// following the frame and snaps to the settled size; the fade goes
 		// on.
 		rm.scale = false
-		c.retargetComponent(&rm.x, &rm.dx, float64(old.rect.X-p.Rect.X)+old.off.x, old.vel.x, now)
-		c.retargetComponent(&rm.y, &rm.dy, float64(old.rect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
-		c.retargetComponent(&rm.w, &rm.dw, float64(old.rect.W-p.Rect.W)+old.off.w, old.vel.w, now)
-		c.retargetComponent(&rm.h, &rm.dh, float64(old.rect.H-p.Rect.H)+old.off.h, old.vel.h, now)
+		c.retargetComponent(&rm.x, &rm.dx, float64(oldRect.X-p.Rect.X)+old.off.x, old.vel.x, now)
+		c.retargetComponent(&rm.y, &rm.dy, float64(oldRect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
+		c.retargetComponent(&rm.w, &rm.dw, float64(oldRect.W-p.Rect.W)+old.off.w, old.vel.w, now)
+		c.retargetComponent(&rm.h, &rm.dh, float64(oldRect.H-p.Rect.H)+old.off.h, old.vel.h, now)
 		if rm.on() {
-			sc.rects[p.ID], sc.rectsWS = rm, b.ws
+			sc.rects[p.ID], sc.rectsWS = rm, m.Current()
 		} else {
 			delete(sc.rects, p.ID)
 		}
 	}
 }
 
-// movedAway reports whether w, the workspace sc showed, went to another
-// screen: it gets no motion on either side.
-func (c *Core) movedAway(sc *screen, w *Workspace) bool {
-	for _, o := range c.screens {
-		if o != sc && o.mon.has(w) {
-			return true
+// movedFrom is the shot of the other screen that showed the workspace b's
+// screen shows now (moved to it by an action), or nil.
+func movedFrom(b *viewShot, before []viewShot) *viewShot {
+	w := b.sc.mon.Current()
+	for i := range before {
+		if o := &before[i]; o.ws == w && o.sc != b.sc {
+			return o
 		}
 	}
-	return false
+	return nil
 }
