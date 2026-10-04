@@ -104,7 +104,7 @@ func (c *Core) pulseTick() bool {
 	// A swipe or its landing slide still shows the neighbours: decide on
 	// the settled layout, or a window left alone would start a pulse cut
 	// short.
-	if !c.cur().mon.settled() {
+	if !c.cur().isSettled() {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
 		return false
 	}
@@ -137,7 +137,8 @@ func (c *Core) advancePulse(now time.Time) float64 {
 	return 0
 }
 
-// settled reports whether no swipe or slide moves the monitor's layout.
+// settled reports whether no swipe or slide moves the monitor's layout
+// (screen.isSettled adds the rect motions).
 func (m *Monitor) settled() bool {
 	if m.switchMotion.on || m.switchOff != 0 {
 		return false

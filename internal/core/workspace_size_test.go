@@ -73,7 +73,7 @@ func TestWorkspaceSizeFixedColumnsFillFrame(t *testing.T) {
 }
 
 func TestWorkspaceSizeFullscreenFillsFrame(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", nil)
+	r, _ := sizedRig(t, "scroll", animationsOff)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]
@@ -92,7 +92,7 @@ func TestWorkspaceSizeFullscreenFillsFrame(t *testing.T) {
 }
 
 func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
-	r, _ := sizedRig(t, "fixed", nil)
+	r, _ := sizedRig(t, "fixed", animationsOff)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]

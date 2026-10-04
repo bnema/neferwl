@@ -333,7 +333,7 @@ func TestDragTileZonesAndHints(t *testing.T) {
 }
 
 func TestDragTileGapInsert(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+	r := startDragRig(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.MaxColumns = 3 }, dragOut)
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)

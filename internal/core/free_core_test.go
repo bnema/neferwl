@@ -21,7 +21,7 @@ func windowIn(set []ports.Scene, output string, id ports.WindowID) (ports.SceneW
 }
 
 func TestFreeFloatKeepsPlaceAcrossMonitors(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Gaps = 0 }, left, right)
+	r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = 0 }, left, right)
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
 	r.key(t, "space", ports.ModAlt|ports.ModShift)

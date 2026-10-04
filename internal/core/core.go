@@ -511,6 +511,7 @@ func (c *Core) publish(ctx context.Context) error {
 			sc.mon.Current().settleLeft()
 		}
 	}
+	c.refreshShown()
 	c.captureExpire()
 	capture, err := c.captureEvaluate(ctx)
 	if err != nil {
@@ -559,7 +560,9 @@ func (c *Core) publish(ctx context.Context) error {
 			clip = frame
 		}
 		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
-		layout := sc.mon.Layout()
+		// layout is what is drawn; settled (same indexes) is where the
+		// windows are going, and alone sizes the configures.
+		layout, settled := sc.shown, sc.settled
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
 			real = make(map[WindowID]Placement)
@@ -587,7 +590,8 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		// A window alone on screen needs no pulse to show it has the focus.
 		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, frame) == 1
-		for _, p := range layout {
+		for k, p := range layout {
+			ps := settled[k]
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
 			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
@@ -604,7 +608,7 @@ func (c *Core) publish(ctx context.Context) error {
 			t := configureTarget{output: sc.name(), area: frame, focused: focused, captured: capture != nil && capture.window == p.ID}
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
-				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+				t.client, t.imposed = c.clientRect(ps), sc.mon.Current().imposedFloat(p.ID)
 			} else if t.captured && p.Hidden {
 				// A captured hidden window is sized like its capture.
 				t.client = capture.windowSz
@@ -614,8 +618,8 @@ func (c *Core) publish(ctx context.Context) error {
 					t.client = c.clientRect(rp)
 				}
 			}
-			cp, t := c.captureConfigure(sc, p, t)
-			if v, send := c.configures.nextWithCapture(p, t, cp); send {
+			cp, t := c.captureConfigure(sc, ps, t)
+			if v, send := c.configures.nextWithCapture(ps, t, cp); send {
 				if err := c.command(ctx, v); err != nil {
 					return err
 				}
@@ -812,7 +816,7 @@ func (c *Core) shownClient(id WindowID) (full, visible Rect, ok bool) {
 	if s == nil {
 		return Rect{}, Rect{}, false
 	}
-	for _, p := range s.mon.Layout() {
+	for _, p := range s.shownLayout() {
 		if p.ID != id || p.Hidden || p.Preview > 0 {
 			continue
 		}
@@ -962,7 +966,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
-	for _, p := range sc.mon.Layout() {
+	for _, p := range sc.shownLayout() {
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
 		// be narrower than its border. The point is clamped to its client.
@@ -1102,6 +1106,7 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.RemoveWindow(v.ID)
+					delete(s.rects, v.ID)
 				}
 				c.releaseSlots()
 				if c.pointer == v.ID {

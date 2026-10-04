@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"slices"
 	"time"
 )
@@ -11,6 +12,12 @@ import (
 // settled one; the transition only adds presentation springs over it
 // (Workspace.shift, Monitor.switchOff), starting from what was on screen.
 // Nothing here runs for events that come from clients or outputs.
+//
+// A window's rect transition (option B) is presentation too: configures keep
+// using the settled rect, so the client resizes once to its final size; what
+// is drawn and hit-tested is the settled rect plus an offset that a spring
+// takes to zero. The offsets are relative to the camera-shifted layout, so a
+// window the view scrolls moves with the camera spring only.
 
 // viewShot is what one screen showed before an action.
 type viewShot struct {
@@ -26,6 +33,100 @@ type viewShot struct {
 	list []*Workspace
 	pos  float64
 	ok   bool
+	// rects are the rects the screen drew for the windows of ws, hidden
+	// windows and previews left out. The slice is reused like list.
+	rects []rectShot
+}
+
+// rectShot is the rect a window was drawn at.
+type rectShot struct {
+	id   WindowID
+	rect Rect
+}
+
+// rectMotion takes a window's drawn rect to its settled one: each component
+// is an offset from the settled value, sprung to 0 (dx, dy, dw, dh hold the
+// current offsets, updated by advance).
+type rectMotion struct {
+	x, y, w, h     motion
+	dx, dy, dw, dh float64
+}
+
+// apply is r moved by the current offsets; a size never drops below 1.
+func (m *rectMotion) apply(r Rect) Rect {
+	return Rect{
+		X: r.X + int(math.Round(m.dx)), Y: r.Y + int(math.Round(m.dy)),
+		W: max(r.W+int(math.Round(m.dw)), 1), H: max(r.H+int(math.Round(m.dh)), 1),
+	}
+}
+
+// advance moves the offsets to now; a settled component stops at 0.
+func (m *rectMotion) advance(now time.Time) {
+	m.dx = stepComponent(&m.x, m.dx, now)
+	m.dy = stepComponent(&m.y, m.dy, now)
+	m.dw = stepComponent(&m.w, m.dw, now)
+	m.dh = stepComponent(&m.h, m.dh, now)
+}
+
+func stepComponent(m *motion, cur float64, now time.Time) float64 {
+	if !m.on {
+		return cur
+	}
+	v, done := m.at(now)
+	if done {
+		*m = motion{}
+		return 0
+	}
+	return v
+}
+
+// on reports whether any component still runs.
+func (m *rectMotion) on() bool { return m.x.on || m.y.on || m.w.on || m.h.on }
+
+// retargetComponent starts m for an offset of off from its settled value at
+// now, keeping the speed it has now. A component with nothing to move and no
+// speed stops.
+func (c *Core) retargetComponent(m *motion, cur *float64, off float64, now time.Time) {
+	v := m.velocity()
+	if !m.on {
+		v = 0
+	}
+	*cur = off
+	if off == 0 && v == 0 {
+		*m = motion{}
+		return
+	}
+	*m = c.spring(viewSpring(off, v), now)
+}
+
+// refreshShown builds the layouts of every screen once per publish: the
+// settled one (what configures are sized from) and the shown one (the same
+// with the rect motions applied: what is drawn and hit-tested). Rect motions
+// belong to the workspace they began on and to a closed overview: any other
+// change drops them.
+func (c *Core) refreshShown() {
+	for _, sc := range c.screens {
+		m := sc.mon
+		if len(sc.rects) > 0 && (m.ov.open || sc.rectsWS != m.Current()) {
+			clear(sc.rects)
+		}
+		sc.settled = m.Layout()
+		if len(sc.rects) == 0 {
+			sc.shown = sc.settled
+			continue
+		}
+		buf := append(sc.shownBuf[:0], sc.settled...)
+		for i := range buf {
+			p := &buf[i]
+			if p.Hidden || p.Preview > 0 {
+				continue
+			}
+			if rm, ok := sc.rects[p.ID]; ok {
+				p.Rect = rm.apply(p.Rect)
+			}
+		}
+		sc.shownBuf, sc.shown = buf, buf
+	}
 }
 
 // snapshot records what every screen without an open overview shows. The
@@ -39,11 +140,17 @@ func (c *Core) snapshot() []viewShot {
 		var s viewShot
 		if len(out) < len(full) {
 			s.list = full[len(out)].list[:0]
+			s.rects = full[len(out)].rects[:0]
 		}
 		s.sc = sc
 		if !m.ov.open {
 			w := m.Current()
 			s.ws, s.viewX, s.view = w, w.ViewX, float64(w.ViewX)+w.shift
+			for _, p := range sc.shown {
+				if !p.Hidden && p.Preview == 0 {
+					s.rects = append(s.rects, rectShot{p.ID, p.Rect})
+				}
+			}
 			if m.shown == nil {
 				// A landing slide measures in the list it began on.
 				list := m.Workspaces
@@ -79,6 +186,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 			continue
 		}
 		c.transitionCamera(b, now)
+		c.transitionRects(b, now)
 	}
 }
 
@@ -117,6 +225,49 @@ func (c *Core) transitionCamera(b *viewShot, now time.Time) {
 			return
 		}
 		m.switchMotion = c.spring(workspaceSpring(off, v), now)
+	}
+}
+
+// transitionRects starts or retargets the rect motions of the windows whose
+// layout the action changed. The new layout is measured with the camera as
+// transitionCamera left it (the view where it was on screen), so a window
+// the view scrolls differs only by what the layout itself changed. Windows
+// that were not drawn before (new, or hidden) or are hidden now get none.
+func (c *Core) transitionRects(b *viewShot, now time.Time) {
+	sc := b.sc
+	m := sc.mon
+	if m.ov.open || m.Current() != b.ws {
+		clear(sc.rects)
+		return
+	}
+	for _, p := range m.Layout() {
+		if p.Hidden || p.Preview > 0 {
+			continue
+		}
+		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if i < 0 {
+			continue
+		}
+		old := b.rects[i].rect
+		if old == p.Rect {
+			// Still sliding to the settled rect, or already there.
+			if _, ok := sc.rects[p.ID]; !ok {
+				continue
+			}
+		}
+		if sc.rects == nil {
+			sc.rects = make(map[WindowID]rectMotion)
+		}
+		rm := sc.rects[p.ID]
+		c.retargetComponent(&rm.x, &rm.dx, float64(old.X-p.Rect.X), now)
+		c.retargetComponent(&rm.y, &rm.dy, float64(old.Y-p.Rect.Y), now)
+		c.retargetComponent(&rm.w, &rm.dw, float64(old.W-p.Rect.W), now)
+		c.retargetComponent(&rm.h, &rm.dh, float64(old.H-p.Rect.H), now)
+		if rm.on() {
+			sc.rects[p.ID], sc.rectsWS = rm, b.ws
+		} else {
+			delete(sc.rects, p.ID)
+		}
 	}
 }
 

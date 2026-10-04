@@ -340,7 +340,7 @@ func (c *Core) spring(s spring, now time.Time) motion {
 // stopAnimations settles every running spring where it is going and stops
 // the frame timer: a session lock or a switch to animations = off. A swipe
 // in progress keeps its fingers' view: only running springs stop. Per-window
-// rect motions stop here too once they exist.
+// rect motions stop too.
 func (c *Core) stopAnimations() {
 	for _, sc := range c.screens {
 		if sc.mon.switchMotion.on {
@@ -351,6 +351,7 @@ func (c *Core) stopAnimations() {
 				w.stopSlide()
 			}
 		}
+		clear(sc.rects)
 	}
 	c.stopFrame()
 }
@@ -379,13 +380,21 @@ func (c *Core) animate(now time.Time, only *screen) {
 				}
 			}
 		}
+		for id, rm := range sc.rects {
+			rm.advance(now)
+			if rm.on() {
+				sc.rects[id] = rm
+			} else {
+				delete(sc.rects, id)
+			}
+		}
 	}
 }
 
 // sliding reports whether a spring runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && (c.screens[i].mon.springing() || c.pulsing(c.screens[i]))
+	return i >= 0 && (c.screens[i].springing() || c.pulsing(c.screens[i]))
 }
 
 // animating reports whether a spring or the focus pulse runs on any output.
@@ -394,7 +403,7 @@ func (c *Core) animating() bool {
 		return true
 	}
 	for _, sc := range c.screens {
-		if sc.mon.springing() {
+		if sc.springing() {
 			return true
 		}
 	}
@@ -418,7 +427,7 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && (sc.mon.springing() || c.pulsing(sc)) {
+		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.pulsing(sc)) {
 			refresh = min(refresh, r)
 		}
 	}

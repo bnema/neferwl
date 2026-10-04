@@ -15,6 +15,7 @@ func TestBorderSceneInvariants(t *testing.T) {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
 				rng := rand.New(rand.NewSource(20260928))
 				r := startMulti(t, func(c *ports.Config) {
+					c.Animations.On = false
 					c.Border.Width = 2
 					c.Layout.MaxColumns = 3
 					c.Layout.Overflow = overflow

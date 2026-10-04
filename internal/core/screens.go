@@ -31,6 +31,33 @@ type screen struct {
 	// last is the scene published for this screen: an identical next one
 	// keeps its Seq (Scene.SameAs). Zero after a protected publish.
 	last ports.Scene
+	// settled is the monitor's layout as of the last publish: what configures
+	// are sized from. shown is the same with the rect motions applied: what is
+	// drawn and hit-tested. They are the same slice while no rect motion
+	// runs. Both are built once per publish (refreshShown); shown is nil
+	// before the first publish, then callers measure the monitor's layout.
+	settled, shown []Placement
+	shownBuf       []Placement
+	// rects are the running per-window rect motions (transition.go) of
+	// rectsWS, the workspace they began on; created lazily.
+	rects   map[WindowID]rectMotion
+	rectsWS *Workspace
+}
+
+// springing reports whether a camera or rect spring runs on the screen.
+func (s *screen) springing() bool { return s.mon.springing() || len(s.rects) > 0 }
+
+// isSettled reports whether nothing moves the screen's layout: no swipe,
+// no slide, no rect motion.
+func (s *screen) isSettled() bool { return s.mon.settled() && len(s.rects) == 0 }
+
+// shownLayout is the layout as drawn, for hit-testing and popups; before
+// the first publish it is the monitor's.
+func (s *screen) shownLayout() []Placement {
+	if s.shown != nil {
+		return s.shown
+	}
+	return s.mon.Layout()
 }
 
 func (s *screen) name() string { return s.info.Name }
