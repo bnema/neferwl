@@ -12,7 +12,15 @@ var ultrawide = ports.OutputInfo{Name: "DP-3", Make: "Acme", Model: "W", Serial:
 // bound to Alt+w, and shows it.
 func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRig, ports.Scene) {
 	t.Helper()
-	r := startMulti(t, func(c *ports.Config) {
+	r, s := sizedLanding(t, false, overflow, edit)
+	return r.multiRig, s
+}
+
+// sizedLanding is sizedRig with animations on or off; the scene it returns
+// and every one of its keyLanded and mapLanded are settled.
+func sizedLanding(t *testing.T, animated bool, overflow string, edit func(*ports.Config)) (*landRig, ports.Scene) {
+	t.Helper()
+	r := startLanding(t, animated, func(c *ports.Config) {
 		c.Layout.Gaps = 0
 		c.Layout.MaxColumns = 2
 		c.Workspaces = []ports.WorkspaceConfig{{Name: "focus", Size: [2]int{1920, 1080}, LayoutRules: ports.LayoutRules{Overflow: overflow}}}
@@ -21,7 +29,7 @@ func sizedRig(t *testing.T, overflow string, edit func(*ports.Config)) (*multiRi
 			edit(c)
 		}
 	}, ultrawide)
-	return r, r.key(t, "w", ports.ModAlt)[0]
+	return r, r.keyLanded(t, "w", ports.ModAlt)[0]
 }
 
 var frame = ports.Rect{X: 760, Y: 180, W: 1920, H: 1080}
@@ -73,48 +81,52 @@ func TestWorkspaceSizeFixedColumnsFillFrame(t *testing.T) {
 }
 
 func TestWorkspaceSizeFullscreenFillsFrame(t *testing.T) {
-	r, _ := sizedRig(t, "scroll", animationsOff)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]
-	full := 0
-	for _, w := range s.Windows {
-		if w.Fullscreen {
-			full++
-			if w.Rect != frame {
-				t.Fatalf("%+v", w)
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "scroll", nil)
+		r.mapLanded(t, 1)
+		r.mapLanded(t, 2)
+		s := r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)[0]
+		full := 0
+		for _, w := range s.Windows {
+			if w.Fullscreen {
+				full++
+				if w.Rect != frame {
+					t.Fatalf("%+v", w)
+				}
 			}
 		}
-	}
-	if full != 1 {
-		t.Fatal(s.Windows)
-	}
+		if full != 1 {
+			t.Fatal(s.Windows)
+		}
+	})
 }
 
 func TestWorkspaceSizeFixedFullscreenKeepsFrame(t *testing.T) {
-	r, _ := sizedRig(t, "fixed", animationsOff)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	s := r.key(t, "f", ports.ModAlt|ports.ModShift)[0]
-	if s.WorkspaceClip != frame {
-		t.Fatalf("fullscreen clip %+v", s.WorkspaceClip)
-	}
-	for _, w := range s.Windows {
-		if w.Fullscreen && w.Rect != frame {
-			t.Fatalf("%+v", w)
+	both(t, func(t *testing.T, animated bool) {
+		r, _ := sizedLanding(t, animated, "fixed", nil)
+		r.mapLanded(t, 1)
+		r.mapLanded(t, 2)
+		s := r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)[0]
+		if s.WorkspaceClip != frame {
+			t.Fatalf("fullscreen clip %+v", s.WorkspaceClip)
 		}
-	}
-	// Reload keeps the size; removing it frees the workspace.
-	cfg := r.cfg
-	r.reload <- ports.ConfigChanged{Config: cfg}
-	if s := receive(t, r.scenes)[0]; s.WorkspaceClip != frame {
-		t.Fatalf("after reload %+v", s.WorkspaceClip)
-	}
-	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", LayoutRules: ports.LayoutRules{Overflow: "fixed"}}}
-	r.reload <- ports.ConfigChanged{Config: cfg}
-	if s := receive(t, r.scenes)[0]; s.WorkspaceClip != (ports.Rect{}) {
-		t.Fatalf("after size removal %+v", s.WorkspaceClip)
-	}
+		for _, w := range s.Windows {
+			if w.Fullscreen && w.Rect != frame {
+				t.Fatalf("%+v", w)
+			}
+		}
+		// Reload keeps the size; removing it frees the workspace.
+		cfg := r.cfg
+		r.reload <- ports.ConfigChanged{Config: cfg}
+		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != frame {
+			t.Fatalf("after reload %+v", s.WorkspaceClip)
+		}
+		cfg.Workspaces = []ports.WorkspaceConfig{{Name: "focus", LayoutRules: ports.LayoutRules{Overflow: "fixed"}}}
+		r.reload <- ports.ConfigChanged{Config: cfg}
+		if s := r.land(receive(t, r.scenes))[0]; s.WorkspaceClip != (ports.Rect{}) {
+			t.Fatalf("after size removal %+v", s.WorkspaceClip)
+		}
+	})
 }
 
 func TestWorkspaceSizeFloatsContained(t *testing.T) {

@@ -400,33 +400,35 @@ func TestMonitorActionsFollowGeometry(t *testing.T) {
 }
 
 func TestUnplugMovesWorkspacesAndReplugReturnsThem(t *testing.T) {
-	r := startMulti(t, animationsOff, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
-	// Unplug DP-2 while it is focused: its workspace joins DP-1 below its own.
-	r.output <- ports.OutputRemoved{Name: "DP-2"}
-	set := receive(t, r.scenes)
-	if len(set) != 1 || len(shown(set)["DP-1"]) != 1 || shown(set)["DP-1"][0] != 1 {
-		t.Fatal(shown(set))
-	}
-	// Cmd+2 shows the guest.
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
-	set = receive(t, r.scenes)
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt}
-	if got := shown(set)["DP-1"]; len(got) != 1 || got[0] != 2 {
-		t.Fatal(got)
-	}
-	// Replugged while on screen: the guest stays until the user leaves it.
-	set = r.plug(t, right)
-	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 2 || len(got["DP-2"]) != 0 {
-		t.Fatal(got)
-	}
-	r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt, Pressed: true}
-	set = receive(t, r.scenes)
-	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
-		t.Fatal(got)
-	}
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, nil, left, right)
+		r.mapLanded(t, 1)
+		r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.mapLanded(t, 2)
+		// Unplug DP-2 while it is focused: its workspace joins DP-1 below its own.
+		r.output <- ports.OutputRemoved{Name: "DP-2"}
+		set := r.land(receive(t, r.scenes))
+		if len(set) != 1 || len(shown(set)["DP-1"]) != 1 || shown(set)["DP-1"][0] != 1 {
+			t.Fatal(shown(set))
+		}
+		// Cmd+2 shows the guest.
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+		set = r.land(receive(t, r.scenes))
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt}
+		if got := shown(set)["DP-1"]; len(got) != 1 || got[0] != 2 {
+			t.Fatal(got)
+		}
+		// Replugged while on screen: the guest stays until the user leaves it.
+		set = r.land(r.plug(t, right))
+		if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 2 || len(got["DP-2"]) != 0 {
+			t.Fatal(got)
+		}
+		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt, Pressed: true}
+		set = r.land(receive(t, r.scenes))
+		if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+			t.Fatal(got)
+		}
+	})
 }
 
 func TestReplugReturnsHiddenGuestAtOnce(t *testing.T) {
@@ -763,38 +765,40 @@ func TestKeyboardScreenFocusSticksUntilPointerLeaves(t *testing.T) {
 }
 
 func TestStateSnapshot(t *testing.T) {
-	r := startMulti(t, animationsOff, left, right)
-	r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
-	receive(t, r.scenes)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	<-r.state // the channel holds the latest snapshot only
-	r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
-	receive(t, r.scenes)
-	// Snapshots from before window 2 may still be queued: wait for it.
-	st := receive(t, r.state)
-	for len(st.Windows) < 2 {
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, nil, left, right)
+		r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
+		r.land(receive(t, r.scenes))
+		r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+		<-r.state // the channel holds the latest snapshot only
+		r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
+		r.land(receive(t, r.scenes))
+		// Snapshots from before window 2 may still be queued: wait for it.
+		st := receive(t, r.state)
+		for len(st.Windows) < 2 {
+			st = receive(t, r.state)
+		}
+		want := ports.State{
+			Output:  "DP-2",
+			Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
+			Windows: []ports.WindowState{
+				{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
+				{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
+			},
+		}
+		want.Window = &want.Windows[1]
+		if !reflect.DeepEqual(st, want) {
+			t.Fatalf("got  %+v\nwant %+v", st, want)
+		}
+		// Moving to workspace 2 of DP-2: two workspaces there, window 2 off screen.
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+		r.land(receive(t, r.scenes))
 		st = receive(t, r.state)
-	}
-	want := ports.State{
-		Output:  "DP-2",
-		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
-		Windows: []ports.WindowState{
-			{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
-			{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
-		},
-	}
-	want.Window = &want.Windows[1]
-	if !reflect.DeepEqual(st, want) {
-		t.Fatalf("got  %+v\nwant %+v", st, want)
-	}
-	// Moving to workspace 2 of DP-2: two workspaces there, window 2 off screen.
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
-	receive(t, r.scenes)
-	st = receive(t, r.state)
-	// The window keeps its workspace ID; the output now shows the new one.
-	if o := st.Outputs[1]; o.Name != "DP-2" || o.Active != 2 || o.Count != 2 || o.WorkspaceID == 0 || o.WorkspaceID == 2 || st.Windows[1].WorkspaceID != 2 || st.Windows[1].Visible || st.Window != nil {
-		t.Fatalf("%+v", st)
-	}
+		// The window keeps its workspace ID; the output now shows the new one.
+		if o := st.Outputs[1]; o.Name != "DP-2" || o.Active != 2 || o.Count != 2 || o.WorkspaceID == 0 || o.WorkspaceID == 2 || st.Windows[1].WorkspaceID != 2 || st.Windows[1].Visible || st.Window != nil {
+			t.Fatalf("%+v", st)
+		}
+	})
 }
 
 func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {

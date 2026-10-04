@@ -421,3 +421,44 @@ func TestDiscreteSwipeTransition(t *testing.T) {
 		t.Fatalf("settled 1 at %+v and 2 at %+v, want 1 beside 2 on halves", got1, got2)
 	}
 }
+
+// A window unmapped while its rect motion runs leaves the scene at once, its
+// motion goes with it, the others keep theirs, and once those settle no
+// frame is wanted: a motion kept for a gone window would ask for frames with
+// nothing to move.
+func TestUnmapMidRectMotion(t *testing.T) {
+	r := startSwipe(t, nil)
+	threeColumns(t, r)
+	// 3, focused, swaps with 2: both move.
+	r.key(t, "Left", ports.ModAlt|ports.ModShift)
+	mid := r.frame(t, 16*time.Millisecond)
+	if x := rectNow(t, mid, 3).X; x <= 0 || x >= 400 {
+		t.Fatalf("window 3 at %d on the first frame, want it moving", x)
+	}
+	moving := rectNow(t, mid, 2).X
+	r.client <- ports.WindowUnmapped{ID: 3}
+	s := scene(t, r.scenes)
+	if _, ok := rectOf(s, 3); ok {
+		t.Fatal("the unmapped window is still shown")
+	}
+	for _, w := range s.Windows {
+		if w.ID == 3 {
+			t.Fatalf("window 3 still in the scene: %+v", w)
+		}
+	}
+	// The neighbour's own motion carries on from where it was drawn.
+	if got := rectNow(t, s, 2).X; got != moving {
+		t.Fatalf("window 2 jumped from %d to %d on the unmap", moving, got)
+	}
+	if got := rectNow(t, r.frame(t, 16*time.Millisecond), 2).X; got == moving {
+		t.Fatalf("window 2 stopped at %d: its motion died with the unmapped window", got)
+	}
+	s = r.settle(t)
+	if _, ok := rectOf(s, 3); ok {
+		t.Fatal("the unmapped window came back")
+	}
+	if got := rectNow(t, s, 2).X; got != 400 {
+		t.Fatalf("window 2 settled at %d, want 400", got)
+	}
+	r.noFrameScene(t)
+}

@@ -21,11 +21,19 @@ type swipeRig struct {
 	now    time.Time
 	// at is the device time of the next swipe event.
 	at time.Duration
+	// outs are the plugged outputs, for landed.
+	outs []string
 }
 
 var wide = ports.OutputInfo{Name: "DP-1", Width: 800, Height: 600, RefreshMilli: 60000}
 
 func startSwipe(t *testing.T, edit func(*ports.Config)) *swipeRig {
+	t.Helper()
+	return startSwipeOn(t, edit, wide)
+}
+
+// startSwipeOn is startSwipe with the given outputs plugged in order.
+func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *swipeRig {
 	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
@@ -61,8 +69,22 @@ func startSwipe(t *testing.T, edit func(*ports.Config)) *swipeRig {
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
-	r.plug(t, wide)
+	for _, o := range outs {
+		r.plug(t, o)
+		r.outs = append(r.outs, o.Name)
+	}
 	return r
+}
+
+// landed is the scene set once every spring an action started on any output
+// landed: the set itself when nothing animates (animations off, or an
+// action that moves nothing).
+func (r *swipeRig) landed(t *testing.T, set []ports.Scene) []ports.Scene {
+	t.Helper()
+	if landed, ok := r.settleAll(t, r.outs...); ok {
+		return landed
+	}
+	return set
 }
 
 func (r *swipeRig) advance(d time.Duration) {
@@ -103,6 +125,32 @@ func (r *swipeRig) frame(t *testing.T, d time.Duration) ports.Scene {
 func (r *swipeRig) settle(t *testing.T) ports.Scene {
 	t.Helper()
 	return r.frame(t, 5*time.Second)
+}
+
+// flipAll moves the clock by d, sends a page flip for each output and
+// returns the latest scene set they published (ok false: none, nothing
+// animated). The last flip names no output: core takes it only after it
+// handled the previous ones, so the scene channel then holds their result.
+func (r *swipeRig) flipAll(t *testing.T, d time.Duration, outputs ...string) (set []ports.Scene, ok bool) {
+	t.Helper()
+	r.advance(d)
+	for _, o := range outputs {
+		send(r.frames, ports.OutputFrame{Output: o})
+	}
+	send(r.frames, ports.OutputFrame{Output: "sync"})
+	select {
+	case set = <-r.scenes:
+		return set, true
+	default:
+		return nil, false
+	}
+}
+
+// settleAll moves the clock past every spring on the outputs and returns
+// the scene set that results (ok false: nothing was animating).
+func (r *swipeRig) settleAll(t *testing.T, outputs ...string) ([]ports.Scene, bool) {
+	t.Helper()
+	return r.flipAll(t, 5*time.Second, outputs...)
 }
 
 // flick sends a quick swipe of n updates of (dx, dy) and lifts the

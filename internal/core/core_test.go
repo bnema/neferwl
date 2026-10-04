@@ -383,15 +383,46 @@ func TestLayerKeyboardFocus(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSwitch(t *testing.T) {
+func TestWorkspaceSwitch(t *testing.T) { workspaceSwitch(t, false) }
+
+// With animations on the scene right after the key shows the slide's start:
+// the test lands it before it asserts.
+func TestWorkspaceSwitchAnimated(t *testing.T) { workspaceSwitch(t, true) }
+
+// settledScene lands the springs an action started on the single output
+// OUT-1 of a rig with a stepClock and returns its scene; animations off:
+// the scene itself.
+func settledScene(t *testing.T, sc *stepClock, frames chan ports.OutputFrame, scenes chan []ports.Scene, s ports.Scene, mustAnimate bool) ports.Scene {
+	t.Helper()
+	if sc == nil {
+		return s
+	}
+	set, ok := sc.settle(t, frames, scenes, "OUT-1")
+	if !ok {
+		if mustAnimate {
+			t.Fatal("the action started no animation: the case checks nothing")
+		}
+		return s
+	}
+	return set[0]
+}
+
+func workspaceSwitch(t *testing.T, animated bool) {
 	cfg := config.Defaults()
-	cfg.Animations.On = false // the test reads the settled scene right after the key
+	cfg.Animations.On = animated
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
+	var sc *stepClock
+	frames := make(chan ports.OutputFrame)
+	if animated {
+		sc = newStepClock(t)
+		ch.Clock, ch.Frames = sc.clock, frames
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +438,7 @@ func TestWorkspaceSwitch(t *testing.T) {
 	}
 	// AZERTY: the 2 key prints eacute; the default bind is on its physical key (code 3).
 	input <- ports.KeyEvent{Keysym: "eacute", Base: "eacute", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
-	s := scene(t, scenes)
+	s := settledScene(t, sc, frames, scenes, scene(t, scenes), animated)
 	if len(s.Windows) != 1 || !s.Windows[0].Hidden {
 		t.Fatal(s)
 	}
@@ -426,21 +457,32 @@ func TestWorkspaceSwitch(t *testing.T) {
 	}
 	// A new window opens on workspace 2, alone and borderless.
 	client <- ports.WindowMapped{ID: 2}
-	s = scene(t, scenes)
+	s = settledScene(t, sc, frames, scenes, scene(t, scenes), false)
 	if len(s.Windows) != 2 || s.Windows[1].ID != 2 || s.Windows[1].Hidden || s.Windows[1].Inset != 0 {
 		t.Fatal(s)
 	}
 }
 
-func TestClickAfterWorkspaceSwitch(t *testing.T) {
+func TestClickAfterWorkspaceSwitch(t *testing.T) { clickAfterWorkspaceSwitch(t, false) }
+
+func TestClickAfterWorkspaceSwitchAnimated(t *testing.T) { clickAfterWorkspaceSwitch(t, true) }
+
+func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	cfg := config.Defaults()
-	cfg.Animations.On = false // the test reads the settled scene right after the key
+	cfg.Animations.On = animated
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes})
+	ch := core.Channels{Client: client, Input: input, Output: output, Commands: commands, Scenes: scenes}
+	var sc *stepClock
+	frames := make(chan ports.OutputFrame)
+	if animated {
+		sc = newStepClock(t)
+		ch.Clock, ch.Frames = sc.clock, frames
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +502,7 @@ func TestClickAfterWorkspaceSwitch(t *testing.T) {
 	}
 	// Cmd+2 hides window 1; the pointer must leave it.
 	input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true}
-	scene(t, scenes)
+	settledScene(t, sc, frames, scenes, scene(t, scenes), animated)
 	var cleared bool
 	for len(commands) > 0 {
 		if v, ok := (<-commands).(ports.PointerFocus); ok && v.ID == 0 {
@@ -474,7 +516,7 @@ func TestClickAfterWorkspaceSwitch(t *testing.T) {
 	input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	input <- ports.PointerButton{Button: 0x110}
 	client <- ports.WindowMapped{ID: 2}
-	s := scene(t, scenes)
+	s := settledScene(t, sc, frames, scenes, scene(t, scenes), false)
 	if s.Windows[0].ID != 1 || !s.Windows[0].Hidden || s.Windows[1].Hidden {
 		t.Fatal(s)
 	}
@@ -1024,18 +1066,20 @@ func TestExternalFullscreenInOverview(t *testing.T) {
 // focus-window-down from a fullscreen tile at the bottom of its column
 // goes to the next workspace and fullscreen stays.
 func TestFocusWindowDownKeepsFullscreen(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Layout.Overflow = "fixed"; c.Animations.On = false }, left)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	r.key(t, "f", ports.ModAlt|ports.ModShift)
-	set := r.key(t, "Down", ports.ModAlt)
-	if got, _ := windowsOf(set, "DP-1"); len(got) != 0 {
-		t.Fatal("still on the first workspace:", got)
-	}
-	set = r.key(t, "Up", ports.ModAlt)
-	if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
-		t.Fatal("fullscreen lost:", got, focused)
-	}
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) { c.Layout.Overflow = "fixed" }, left)
+		r.mapLanded(t, 1)
+		r.mapLanded(t, 2)
+		r.keyLanded(t, "f", ports.ModAlt|ports.ModShift)
+		set := r.keyLanded(t, "Down", ports.ModAlt)
+		if got, _ := windowsOf(set, "DP-1"); len(got) != 0 {
+			t.Fatal("still on the first workspace:", got)
+		}
+		set = r.keyLanded(t, "Up", ports.ModAlt)
+		if got, focused := windowsOf(set, "DP-1"); !reflect.DeepEqual(got, []ports.WindowID{2}) || focused != 2 {
+			t.Fatal("fullscreen lost:", got, focused)
+		}
+	})
 }
 
 // A refused fullscreen request still gets a configure, unchanged: clients

@@ -21,11 +21,35 @@ type dragRig struct {
 	scenes   chan []ports.Scene
 	last     []ports.Scene
 	epoch    *atomic.Value
+	// With a clock the test moves (animated rigs), frames carries the page
+	// flips and outputs lists the plugged ones: settle lands every spring
+	// before it reads the scene.
+	frames  chan ports.OutputFrame
+	clock   *stepClock
+	outputs []string
 }
 
 // startDrag runs core with Super as Cmd, no border, 10 px gaps, and
 // the given outputs. edit may change the config.
 func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	return newDragRig(t, false, edit, outs...)
+}
+
+// startAnimatedDragRig is startDragRig with animations on and a clock the
+// test moves: settle moves it past every spring and sends the page flips,
+// so the scene it returns is the settled one, deterministically.
+func startAnimatedDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	return newDragRig(t, true, func(c *ports.Config) {
+		c.Animations.On = true
+		if edit != nil {
+			edit(c)
+		}
+	}, outs...)
+}
+
+func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
@@ -45,7 +69,12 @@ func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 		output: make(chan ports.OutputEvent), commands: make(chan ports.ClientCommand, 4096),
 		scenes: make(chan []ports.Scene, 1), epoch: epoch,
 	}
-	c, err := core.New(cfg, core.Channels{Security: gate, Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes})
+	ch := core.Channels{Security: gate, Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
+	if animated {
+		r.frames, r.clock = make(chan ports.OutputFrame), newStepClock(t)
+		ch.Frames, ch.Clock = r.frames, r.clock.clock
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +84,7 @@ func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	t.Cleanup(func() { cancel(); <-done })
 	for _, o := range outs {
 		r.output <- ports.OutputAdded{Info: o}
+		r.outputs = append(r.outputs, o.Name)
 		r.settle(t)
 	}
 	return r
@@ -79,9 +109,17 @@ func send[T any](ch chan T, v T) {
 const barrier ports.WindowID = 1 << 30
 
 // settle returns the scene set once core handled every event sent so
-// far. The second barrier is taken only after the first one published.
+// far. The second barrier is taken only after the first one published. An
+// animated rig first moves its clock past every spring and flips each
+// output, so the set is the settled one.
 func (r *dragRig) settle(t *testing.T) []ports.Scene {
 	t.Helper()
+	if r.frames != nil {
+		r.clock.advance(5 * time.Second)
+		for _, o := range r.outputs {
+			send(r.frames, ports.OutputFrame{Output: o})
+		}
+	}
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	select {
@@ -332,8 +370,28 @@ func TestDragTileZonesAndHints(t *testing.T) {
 	}
 }
 
+// startDragMode is the drag rig with animations off, or on and landed by
+// settle.
+func startDragMode(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	if animated {
+		return startAnimatedDragRig(t, edit, outs...)
+	}
+	return startDragRig(t, func(c *ports.Config) {
+		if edit != nil {
+			edit(c)
+		}
+		c.Animations.On = false
+	}, outs...)
+}
+
 func TestDragTileGapInsert(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.MaxColumns = 3 }, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		dragTileGapInsert(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+	})
+}
+
+func dragTileGapInsert(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -484,7 +542,10 @@ func TestLockClearsDrag(t *testing.T) {
 }
 
 func TestDragEdgeScroll(t *testing.T) {
-	r := startDragRig(t, animationsOff, dragOut)
+	both(t, func(t *testing.T, animated bool) { dragEdgeScroll(t, startDragMode(t, animated, nil, dragOut)) })
+}
+
+func dragEdgeScroll(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -623,7 +684,12 @@ func TestClientDragUsesLastPress(t *testing.T) {
 }
 
 func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
-	r := startDragRig(t, animationsOff, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		edgeScrollPublishesWithoutTarget(t, startDragMode(t, animated, nil, dragOut))
+	})
+}
+
+func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
