@@ -130,6 +130,9 @@ type Core struct {
 	swipe     *swipeGesture
 	frameC    <-chan time.Time
 	frameStop func() bool
+	// stepping is the screen a page flip advances (nil: all of them); it is
+	// set while step publishes.
+	stepping *screen
 	// motionTime is the time of the last pointer motion; pointerAt is the
 	// last position sent in the pointer's window.
 	motionTime time.Duration
@@ -530,10 +533,14 @@ func (c *Core) publish(ctx context.Context) error {
 	focus := c.keyboardFocus()
 	window, _ := c.cur().mon.Focused()
 	c.pulseFocus(window, focus == window)
-	var pulse float64
-	if c.pulse.id != 0 {
-		pulse = c.advancePulse(c.now())
+	// The pulse runs on the focused output: a flip of another output reuses
+	// its value so the focused scene keeps its Seq.
+	if c.pulse.id == 0 {
+		c.pulse.value = 0
+	} else if c.stepping == nil || c.stepping == c.cur() {
+		c.pulse.value = c.advancePulse(c.now())
 	}
+	pulse := c.pulse.value
 	// drawable: the scene can show a pulse on the focused window.
 	drawable := false
 	scenes := make([]ports.Scene, 0, len(c.screens))
@@ -679,10 +686,13 @@ func (c *Core) publish(ctx context.Context) error {
 	return nil
 }
 
-// step moves the running slides to now and publishes the frame.
-func (c *Core) step(ctx context.Context) error {
+// step moves the running slides of only (nil: every screen) to now and
+// publishes the frame.
+func (c *Core) step(ctx context.Context, only *screen) error {
 	c.stopFrame()
-	c.animate(c.now())
+	c.animate(c.now(), only)
+	c.stepping = only
+	defer func() { c.stepping = nil }()
 	return c.slid(ctx, false)
 }
 
@@ -1156,7 +1166,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Frames = nil
 				continue
 			}
-			if c.sliding(f.Output) && c.step(ctx) != nil {
+			if i := c.screenIndex(f.Output); i >= 0 && c.sliding(f.Output) && c.step(ctx, c.screens[i]) != nil {
 				return nil
 			}
 			continue
@@ -1165,7 +1175,7 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			c.frameC, c.frameStop = nil, nil
-			if c.step(ctx) != nil {
+			if c.step(ctx, nil) != nil {
 				return nil
 			}
 			continue

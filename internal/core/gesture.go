@@ -353,9 +353,13 @@ func (c *Core) stopAnimations() {
 	c.stopFrame()
 }
 
-// animate moves the running springs to now; settled ones stop.
-func (c *Core) animate(now time.Time) {
+// animate moves the running springs to now; settled ones stop. A non-nil only
+// limits it to that screen (its own page flip); nil moves every screen.
+func (c *Core) animate(now time.Time, only *screen) {
 	for _, sc := range c.screens {
+		if only != nil && sc != only {
+			continue
+		}
 		m := sc.mon
 		if m.switchMotion.on {
 			v, done := m.switchMotion.at(now)

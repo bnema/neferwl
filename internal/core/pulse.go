@@ -32,13 +32,16 @@ const (
 // are the previous pulse, for the cooldown. drawable is whether the last
 // scene could show a pulse on target.
 type focusPulse struct {
-	target    WindowID
-	since     time.Time
-	id        WindowID
-	start     time.Time
-	last      WindowID
-	lastAt    time.Time
-	drawable  bool
+	target   WindowID
+	since    time.Time
+	id       WindowID
+	start    time.Time
+	last     WindowID
+	lastAt   time.Time
+	drawable bool
+	// value is the effect of the last sample, kept for scenes published
+	// between the focused output's own flips.
+	value     float64
 	timerC    <-chan time.Time
 	timerStop func() bool
 }
