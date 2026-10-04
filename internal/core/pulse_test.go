@@ -193,7 +193,7 @@ func TestFocusPulseWaitsForSlide(t *testing.T) {
 		slide func(*Monitor, time.Time)
 		alone bool
 	}{
-		{"workspace landing, alone", func(m *Monitor, now time.Time) { m.switchMotion = newMotion(workspaceSpring(0.5, 0), now) }, true},
+		{"workspace landing, alone", func(m *Monitor, now time.Time) { m.switchMotion = newMotion(workspaceSpring(0.5, 0), now, 1) }, true},
 		{"workspace drag, alone", func(m *Monitor, _ time.Time) { m.switchOff = 0.3 }, true},
 		{"column drag, beside another", func(m *Monitor, _ time.Time) { m.Current().shift = 40 }, false},
 	} {
