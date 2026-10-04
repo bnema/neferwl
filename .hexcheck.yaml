@@ -5,7 +5,7 @@ components:
   # sessionlock is the display owner's proof ledger, not core placement policy.
   adapters: { role: adapter, paths: [internal/adapters/**, internal/logging/**, internal/sessionlock/**] }
   # app is the composition root: it wires adapters to core, like cmd.
-  entrypoints: { role: entrypoint, paths: [cmd/**, internal/app/**] }
+  entrypoints: { role: entrypoint, paths: [cmd/**, internal/app/**, internal/cli/**] }
   generated: { role: ignore, paths: [internal/mocks/**] }
 rules:
   no-adapter-imports-in-core: error
