@@ -34,7 +34,7 @@ type Monitor struct {
 	// at Active+switchOff while a swipe follows the fingers or its spring
 	// (switchMotion) lands.
 	switchOff    float64
-	switchMotion *motion
+	switchMotion motion
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchOff is then from the current
 	// workspace's place in it.

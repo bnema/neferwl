@@ -154,7 +154,7 @@ type Workspace struct {
 	// shift slides the columns on screen past ViewX, in logical pixels,
 	// while a swipe follows the fingers or its spring (motion) lands.
 	shift  float64
-	motion *motion
+	motion motion
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.

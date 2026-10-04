@@ -90,7 +90,7 @@ func TestSpringOverdamped(t *testing.T) {
 
 func TestMotionEndsOnTarget(t *testing.T) {
 	start := time.Unix(10, 0)
-	m := newMotion(workspaceSpring(0.4, 0), start)
+	m := newMotion(workspaceSpring(0.4, 0), start, 1)
 	if v, done := m.at(start); done || v != 0.4 {
 		t.Fatalf("start %v %t", v, done)
 	}
@@ -364,5 +364,97 @@ func TestSnapFocusWideColumn(t *testing.T) {
 		if focus := w.snapFocus(view, forward); focus != 1 {
 			t.Fatalf("forward=%t: focus %d, want the wide column 1", forward, focus)
 		}
+	}
+}
+
+func TestSpringVelocityAt(t *testing.T) {
+	springs := map[string]spring{
+		"critical": {From: -300, DampingRatio: 1, Stiffness: 800, Epsilon: 0.0001},
+		"under":    {From: -300, DampingRatio: 0.5, Stiffness: 800, Epsilon: 0.0001},
+		"over":     {From: -300, DampingRatio: 6, Stiffness: 1200, Epsilon: 0.0001},
+	}
+	const h = time.Microsecond
+	for name, s := range springs {
+		for _, v0 := range []float64{0, 3000} {
+			s := s
+			s.Velocity = v0
+			if got := s.velocityAt(0); math.Abs(got-v0) > 1e-9*max(1, math.Abs(v0)) {
+				t.Errorf("%s v0=%v: velocityAt(0) = %v", name, v0, got)
+			}
+			for _, at := range []time.Duration{5, 50, 200} {
+				at *= time.Millisecond
+				want := (s.valueAt(at+h) - s.valueAt(at-h)) / (2 * h.Seconds())
+				got := s.velocityAt(at)
+				if math.Abs(got-want) > 1e-3*max(1, math.Abs(want)) {
+					t.Errorf("%s v0=%v at %v: velocityAt = %v, derivative %v", name, v0, at, got, want)
+				}
+			}
+		}
+	}
+}
+
+func TestMotionSlowdownScalesTime(t *testing.T) {
+	start := time.Unix(10, 0)
+	s := viewSpring(-300, 0)
+	one, two := newMotion(s, start, 1), newMotion(s, start, 2)
+	if two.end != 2*one.end {
+		t.Fatalf("end %v, want %v", two.end, 2*one.end)
+	}
+	for _, d := range []time.Duration{5 * time.Millisecond, 40 * time.Millisecond, 150 * time.Millisecond} {
+		a, _ := one.at(start.Add(d))
+		b, _ := two.at(start.Add(2 * d))
+		if math.Abs(a-b) > 1e-9 {
+			t.Errorf("at %v: %v vs %v", d, a, b)
+		}
+	}
+	if m := newMotion(s, start, 0); m.slow != 1 || m.end != one.end {
+		t.Fatalf("slowdown 0 is not 1: %+v", m)
+	}
+}
+
+func TestMotionVelocity(t *testing.T) {
+	start := time.Unix(10, 0)
+	for _, slow := range []float64{1, 2.5} {
+		m := newMotion(viewSpring(-300, 3000), start, slow)
+		if v := m.velocity(); v != 3000 {
+			t.Fatalf("slow %v: initial velocity %v", slow, v)
+		}
+		d := 30 * time.Millisecond
+		m.at(start.Add(d))
+		tau := time.Duration(float64(d) / slow)
+		if want := m.spring.velocityAt(tau) / slow; m.velocity() != want {
+			t.Fatalf("slow %v: velocity %v, want %v", slow, m.velocity(), want)
+		}
+		if _, done := m.at(start.Add(time.Hour)); !done || m.velocity() != 0 {
+			t.Fatalf("slow %v: settled velocity %v", slow, m.velocity())
+		}
+	}
+}
+
+func TestRetargetKeepsVelocityAndSlowdown(t *testing.T) {
+	start := time.Unix(10, 0)
+	w := &Workspace{ViewX: 100, shift: -300}
+	w.motion = newMotion(viewSpring(w.shift, 2000), start, 2)
+	w.motion.at(start.Add(20 * time.Millisecond))
+	v := w.motion.velocity()
+	if v <= 0 {
+		t.Fatalf("velocity %v", v)
+	}
+	w.ViewX = 40
+	w.retarget(100)
+	if w.shift != -240 || !w.motion.on || w.motion.slow != 2 {
+		t.Fatalf("shift %v motion %+v", w.shift, w.motion)
+	}
+	if got := w.motion.velocity(); got != v {
+		t.Fatalf("velocity %v after retarget, want %v", got, v)
+	}
+	if got := w.motion.spring.Velocity; math.Abs(got-2*v) > 1e-9 {
+		t.Fatalf("spring velocity %v, want %v in spring time", got, 2*v)
+	}
+	var idle Workspace
+	idle.ViewX = 5
+	idle.retarget(0)
+	if idle.motion.on || idle.shift != 0 {
+		t.Fatal("retarget without a slide must not start one")
 	}
 }

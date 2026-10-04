@@ -150,16 +150,55 @@ func (s spring) duration() time.Duration {
 
 func seconds(s float64) time.Duration { return time.Duration(s * float64(time.Second)) }
 
+// velocityAt is the spring speed t after it started, in units per second.
+func (s spring) velocityAt(t time.Duration) float64 {
+	sec := t.Seconds()
+	beta, omega0 := s.coefficients()
+	x0 := s.From - s.To
+	envelope := math.Exp(-beta * sec)
+	switch {
+	case math.Abs(beta-omega0) <= f32Epsilon:
+		// Critically damped.
+		return envelope * (s.Velocity - beta*(beta*x0+s.Velocity)*sec)
+	case beta < omega0:
+		w := math.Sqrt(omega0*omega0 - beta*beta)
+		b := (beta*x0 + s.Velocity) / w
+		cos, sin := math.Cos(w*sec), math.Sin(w*sec)
+		return envelope * (-beta*(x0*cos+b*sin) + w*(b*cos-x0*sin))
+	default:
+		w := math.Sqrt(beta*beta - omega0*omega0)
+		b := (beta*x0 + s.Velocity) / w
+		cosh, sinh := math.Cosh(w*sec), math.Sinh(w*sec)
+		return envelope * (-beta*(x0*cosh+b*sinh) + w*(x0*sinh+b*cosh))
+	}
+}
+
 // motion is a spring started at a given time; a zero start begins at the
-// first frame.
+// first frame. It is a value: on tells whether one runs. slow stretches
+// the spring's time (a slowdown of 2 takes twice as long) and v is the
+// current speed in units per second, so a retarget can keep it.
 type motion struct {
 	spring spring
 	start  time.Time
 	end    time.Duration
+	slow   float64
+	v      float64
+	on     bool
 }
 
-func newMotion(s spring, now time.Time) *motion {
-	return &motion{spring: s, start: now, end: s.duration()}
+// newMotion starts s at now, slowed down slow times (slow <= 0 is 1). The
+// spring's Velocity is in units per second of real time.
+func newMotion(s spring, now time.Time, slow float64) motion {
+	if slow <= 0 {
+		slow = 1
+	}
+	v := s.Velocity
+	s.Velocity *= slow
+	end := time.Duration(math.MaxInt64)
+	if f := float64(s.duration()) * slow; f < float64(math.MaxInt64) {
+		end = time.Duration(f)
+	}
+	return motion{spring: s, start: now, end: end, slow: slow, v: v, on: true}
 }
 
 // at is the position at now and whether the motion has settled.
@@ -169,10 +208,16 @@ func (m *motion) at(now time.Time) (float64, bool) {
 	}
 	t := now.Sub(m.start)
 	if t >= m.end {
+		m.v = 0
 		return m.spring.To, true
 	}
-	return m.spring.valueAt(max(t, 0)), false
+	tau := time.Duration(float64(max(t, 0)) / m.slow)
+	m.v = m.spring.velocityAt(tau) / m.slow
+	return m.spring.valueAt(tau), false
 }
+
+// velocity is the speed of the last sample, in units per second.
+func (m motion) velocity() float64 { return m.v }
 
 // rubberBand resists movement past the edges: the further out, the less
 // it moves, never more than limit.

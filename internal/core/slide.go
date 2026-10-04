@@ -17,17 +17,17 @@ func (w *Workspace) slidable() bool {
 	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
 }
 
-func (w *Workspace) stopSlide() { w.shift, w.motion = 0, nil }
+func (w *Workspace) stopSlide() { w.shift, w.motion = 0, motion{} }
 
 // retarget keeps the view where it is on screen when ViewX moved from
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
-	if w.ViewX == before || w.motion == nil {
+	if w.ViewX == before || !w.motion.on {
 		return
 	}
 	w.shift += float64(before - w.ViewX)
-	w.motion = newMotion(viewSpring(w.shift, 0), time.Time{})
+	w.motion = newMotion(viewSpring(w.shift, w.motion.velocity()), time.Time{}, w.motion.slow)
 }
 
 func (w *Workspace) shiftPixels() int { return int(math.Round(w.shift)) }
@@ -105,7 +105,7 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 	return focus
 }
 
-func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, nil, nil }
+func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, motion{}, nil }
 
 // framedSwitch keeps transitions involving a sized workspace settled. A
 // monitor-wide animation has no per-workspace crop; it must not expose

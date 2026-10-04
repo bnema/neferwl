@@ -171,7 +171,7 @@ func (c *Core) decide(g *swipeGesture) {
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
-		w.motion = nil
+		w.motion = motion{}
 		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.Usable.W)))
 	case !g.horizontal && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
@@ -180,7 +180,7 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
 		g.list = slices.Clone(m.Workspaces)
-		m.switchMotion, m.switchList = nil, nil
+		m.switchMotion, m.switchList = motion{}, nil
 		g.snap = newSnapSwipe(float64(m.Active)+m.switchOff, float64(m.Active), 1/workspaceSwipeMovement, indexPoints(len(m.Workspaces)), workspaceBand)
 	default:
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
@@ -216,7 +216,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		w.shift = shown - float64(w.ViewX)
-		w.motion = newMotion(viewSpring(w.shift, velocity), now)
+		w.motion = newMotion(viewSpring(w.shift, velocity), now, 1)
 	case swipeWorkspaces:
 		if g.listChanged(m) {
 			m.stopSwitch()
@@ -240,7 +240,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		m.switchOff, m.switchList = off, g.list
-		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
+		m.switchMotion = newMotion(workspaceSpring(off, velocity), now, 1)
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 || (step < 0) == m.ov.open {
@@ -321,7 +321,7 @@ func (c *Core) hasScreen(s *screen) bool {
 func (c *Core) animate(now time.Time) {
 	for _, sc := range c.screens {
 		m := sc.mon
-		if m.switchMotion != nil {
+		if m.switchMotion.on {
 			v, done := m.switchMotion.at(now)
 			m.switchOff = v
 			if done {
@@ -329,7 +329,7 @@ func (c *Core) animate(now time.Time) {
 			}
 		}
 		for w := range m.all() {
-			if w.motion != nil {
+			if w.motion.on {
 				v, done := w.motion.at(now)
 				w.shift = v
 				if done {
@@ -360,11 +360,11 @@ func (c *Core) animating() bool {
 }
 
 func (m *Monitor) springing() bool {
-	if m.switchMotion != nil {
+	if m.switchMotion.on {
 		return true
 	}
 	for w := range m.all() {
-		if w.motion != nil {
+		if w.motion.on {
 			return true
 		}
 	}

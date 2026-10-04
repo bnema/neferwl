@@ -825,3 +825,38 @@ func TestSwipeWindowMappedMidSwipe(t *testing.T) {
 		}
 	}
 }
+
+// A press that moves the view during a landing slide redirects the slide
+// without stopping or reversing it: the view keeps its speed.
+func TestSwipeRetargetKeepsVelocity(t *testing.T) {
+	r := startSwipe(t, nil)
+	for id := ports.WindowID(1); id <= 4; id++ {
+		r.mapWindow(t, id)
+	}
+	// Focus on 4, the view shows 3 and 4. Go back to the first column.
+	for range 3 {
+		r.key(t, "Left", ports.ModAlt)
+	}
+	// A flick toward the right lands on a later column: the view moves
+	// right, so column 1 moves left.
+	r.flick(t, 4, 40, 0)
+	mid := r.frame(t, 16*time.Millisecond)
+	prev, ok := rectOf(mid, 1)
+	if !ok {
+		t.Fatal("column 1 hidden during the landing")
+	}
+	if prev.X >= 0 {
+		t.Fatalf("view did not move right: column 1 at %d", prev.X)
+	}
+	r.key(t, "Right", ports.ModAlt)
+	// The retargeted spring takes its start time at the first frame, which
+	// leaves the view where it is; it moves on from the second, never back.
+	for i := range 2 {
+		s := r.frame(t, 16*time.Millisecond)
+		got, _ := rectOf(s, 1)
+		if got.X > prev.X || (i == 1 && got.X == prev.X) {
+			t.Fatalf("frame %d: column 1 at %d after %d, the view reversed or stopped", i, got.X, prev.X)
+		}
+		prev = got
+	}
+}
