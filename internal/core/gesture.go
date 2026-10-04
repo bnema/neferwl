@@ -255,9 +255,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			return false
 		}
 		before := m.Current()
+		shots := c.snapshot(now)
 		m.ToggleOverview()
 		c.focusScreen = c.screenIndex(g.screen.name())
 		c.keyboard.takeBack()
+		c.transition(shots, now)
 		return m.Current() != before
 	case swipeDiscrete:
 		step := g.snap.step(e.Cancelled, e.Time)
@@ -285,8 +287,8 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			mon.overviewFocus(a)
 		} else {
 			c.applyAction(a)
-			c.transition(shots, now)
 		}
+		c.transition(shots, now)
 		return c.cur().mon.Current() != before
 	}
 	return shown

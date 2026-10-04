@@ -130,9 +130,9 @@ func TestAnimationsOffKeysLandAtOnce(t *testing.T) {
 	r.noFrameScene(t)
 }
 
-// With the overview open before or after, nothing slides: opening it on a
-// scrolled view starts no motion, and neither does a bind that moves the view
-// while it is open.
+// The overview has no camera: opening it on a scrolled view, a bind that
+// moves the selection and closing it only move the cards (rect motions), which
+// settle: no spring runs afterwards and nothing slides the view.
 func TestNoTransitionWithOverview(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -150,13 +150,17 @@ func TestNoTransitionWithOverview(t *testing.T) {
 			r.key(t, "Right", ports.ModAlt) // 2 is on screen: no scroll
 			r.keySettled(t, "Right")        // the view scrolls away from 0
 			r.keySettled(t, "Right")
+			// settleAll: a bind that moves nothing starts no spring.
 			r.key(t, "o", ports.ModAlt)
+			r.settleAll(t, wide.Name)
 			r.noFrameScene(t)
 			if tc.sym != "" {
 				r.key(t, tc.sym, tc.mods)
+				r.settleAll(t, wide.Name)
 				r.noFrameScene(t)
 			}
 			r.key(t, "o", ports.ModAlt)
+			r.settleAll(t, wide.Name)
 			r.noFrameScene(t)
 		})
 	}

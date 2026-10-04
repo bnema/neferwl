@@ -41,7 +41,8 @@ type screen struct {
 	// motions run (refreshShown), reused across publishes.
 	shownBuf, settledBuf []Placement
 	// rects are the running per-window rect motions (transition.go) of
-	// rectsWS, the workspace they began on; created lazily.
+	// rectsWS, the workspace they began on (nil: the overview); created
+	// lazily.
 	rects   map[WindowID]rectMotion
 	rectsWS *Workspace
 }
@@ -55,6 +56,15 @@ func (s *screen) settled() bool { return s.mon.settled() && len(s.rects) == 0 }
 
 // stopRects drops the rect motions: the windows are drawn where they are.
 func (s *screen) stopRects() { clear(s.rects); s.rectsWS = nil }
+
+// rectsOwner is what the screen's rect motions belong to: its workspace on
+// screen, or nil in the overview, where the rows change under the cards.
+func (s *screen) rectsOwner() *Workspace {
+	if s.mon.ov.open {
+		return nil
+	}
+	return s.mon.Current()
+}
 
 // shownLayout is the layout as drawn, for hit-testing and popups; before
 // the first publish it is the monitor's.

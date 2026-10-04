@@ -2,6 +2,7 @@ package core_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -692,17 +693,28 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 		if !closeFirst {
 			r.input <- ports.KeyEvent{Keysym: "Escape", Pressed: true}
 		}
-		// Past any spring: the view shows where it settled.
-		r.advance(5 * time.Second)
-		r.frames <- ports.OutputFrame{Output: wide.Name}
-		s := sceneMatch(t, r.scenes, func(s ports.Scene) bool {
-			for _, w := range s.Windows {
-				if w.Preview > 0 {
-					return false
-				}
+		// Past any spring: the view shows where it settled. The escape's
+		// own springs (the cards zooming back) start when it is handled,
+		// which may follow a first flip: flip until the scene is settled.
+		var s ports.Scene
+		for deadline := time.Now().Add(time.Second); ; {
+			r.advance(5 * time.Second)
+			r.frames <- ports.OutputFrame{Output: wide.Name}
+			select {
+			case set := <-r.scenes:
+				s = set[0]
+			case <-time.After(20 * time.Millisecond):
 			}
-			return true
-		})
+			if len(s.Windows) > 0 && !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool {
+				// Neither a card nor a window still zooming back.
+				return w.Preview > 0 || w.Zoom > 0 || w.Fade > 0
+			}) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("closeFirst=%v: the scene never settled: %+v", closeFirst, s.Windows)
+			}
+		}
 		for _, id := range []ports.WindowID{1, 2, 3} {
 			before, _ := rectOf(settled, id)
 			if after, _ := rectOf(s, id); before != after {

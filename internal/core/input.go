@@ -143,7 +143,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		c.scrollStop(v)
 		// In the overview, scrolling moves the selection.
 		if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+			now := c.now()
+			shots := c.snapshot(now)
 			if c.cur().mon.overviewScroll(v) {
+				c.transition(shots, now)
 				if err := c.workspaceVisible(ctx, true); err != nil {
 					return err
 				}
@@ -192,8 +195,11 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	// run binds, and are not forwarded.
 	// A launcher or a menu holding the keyboard gets them first.
 	if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
+		now := c.now()
+		shots := c.snapshot(now)
 		if key.Pressed && mon.overviewKey(key) {
 			c.pressed[heldKey(key)] = true
+			c.transition(shots, now)
 			if err := c.workspaceVisible(ctx, true); err != nil {
 				return err
 			}

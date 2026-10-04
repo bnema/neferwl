@@ -25,6 +25,9 @@ import (
 type viewShot struct {
 	sc *screen
 	ws *Workspace
+	// overview is set when the screen showed its overview: ws is then the
+	// row on screen, the camera fields stay zero, and rects are the cards.
+	overview bool
 	// viewX is ws's settled view and view where its columns were on screen
 	// (viewX plus shift).
 	viewX int
@@ -40,8 +43,8 @@ type viewShot struct {
 	list []*Workspace
 	pos  float64
 	ok   bool
-	// rects are the windows of ws the screen drew, hidden windows and
-	// previews left out. The slice is reused like list.
+	// rects are the windows the screen drew (cards in the overview),
+	// hidden windows left out. The slice is reused like list.
 	rects []rectShot
 }
 
@@ -67,7 +70,9 @@ type rectShot struct {
 // placement gets a Zoom of the settled zoom (its Preview, or 1) times
 // shown.W / settled.W (refreshShown), which the scene carries as Preview.
 // The walk shrinks content toward the content rect's top-left, so this
-// suits aspect-preserving changes only.
+// suits aspect-preserving changes only. An overview card's settled zoom is
+// its Preview: a window that opens into a card goes from 1 to Preview with
+// its width, and back.
 //
 // A leaving motion draws a window that closed or hid while it fades out:
 // left is its last settled placement, which refreshShown appends (Hidden
@@ -161,7 +166,9 @@ func (m *rectMotion) show(p *Placement) {
 		}
 		zoom *= float64(p.Rect.W) / float64(settled.W)
 		if zoom >= 0.999 {
-			// Drawn at its size: no zoom (publish emits Preview 0).
+			// Drawn at its size: content is never magnified. publish
+			// emits no Zoom for a window, and Zoom 1 for a card (whose
+			// Preview would shrink it).
 			zoom = 1
 		}
 		p.Zoom = zoom
@@ -183,8 +190,8 @@ func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now ti
 // refreshShown builds the layouts of every screen once per publish: the
 // settled one (what configures are sized from) and the shown one (the same
 // with the rect motions applied: what is drawn and hit-tested). Rect motions
-// belong to the workspace they began on and to a closed overview: any other
-// change drops them.
+// belong to the workspace they began on, or to the open overview (rectsOwner):
+// any other change drops them.
 //
 // Leaving motions add an entry for a window the layout no longer shows:
 // appended to both layouts in ID order, Hidden (no input, focus, popups or
@@ -193,7 +200,7 @@ func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now ti
 func (c *Core) refreshShown() {
 	for _, sc := range c.screens {
 		m := sc.mon
-		if len(sc.rects) > 0 && (m.ov.open || sc.rectsWS != m.Current()) {
+		if len(sc.rects) > 0 && sc.rectsWS != sc.rectsOwner() {
 			sc.stopRects()
 		}
 		sc.settledLayout = m.Layout()
@@ -203,7 +210,7 @@ func (c *Core) refreshShown() {
 			// is the opposite: it goes once the layout shows the window.
 			for id, rm := range sc.rects {
 				shown := slices.ContainsFunc(sc.settledLayout, func(p Placement) bool {
-					return p.ID == id && !p.Hidden && p.Preview == 0
+					return p.ID == id && !p.Hidden
 				})
 				if shown == rm.leaving {
 					delete(sc.rects, id)
@@ -450,37 +457,40 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			s.rects = full[len(out)].rects[:0]
 		}
 		s.sc = sc
+		w := m.Current()
+		s.ws, s.overview = w, m.ov.open
 		if !m.ov.open {
-			w := m.Current()
-			s.ws, s.viewX, s.view = w, w.ViewX, float64(w.ViewX)+w.shift
-			if w.motion.on {
-				_, s.viewV = w.motion.sampleAt(now)
+			// The overview does not scroll or slide: no camera.
+			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.shift
+		}
+		if w.motion.on {
+			_, s.viewV = w.motion.sampleAt(now)
+		}
+		if m.switchMotion.on {
+			_, s.switchV = m.switchMotion.sampleAt(now)
+		}
+		// settledLayout and shown are index-aligned and differ only by
+		// the offsets of sc.rects: the shot keeps both unrounded. The
+		// overview's cards are recorded like windows.
+		for _, p := range sc.settledLayout {
+			if p.Hidden {
+				continue
 			}
-			if m.switchMotion.on {
-				_, s.switchV = m.switchMotion.sampleAt(now)
+			r := rectShot{id: p.ID, rect: p.Rect}
+			if rm, ok := sc.rects[p.ID]; ok {
+				r.off, r.vel = rm.sample(now)
 			}
-			// settledLayout and shown are index-aligned and differ only by
-			// the offsets of sc.rects: the shot keeps both unrounded.
-			for _, p := range sc.settledLayout {
-				if p.Hidden || p.Preview != 0 {
-					continue
-				}
-				r := rectShot{id: p.ID, rect: p.Rect}
-				if rm, ok := sc.rects[p.ID]; ok {
-					r.off, r.vel = rm.sample(now)
-				}
-				s.rects = append(s.rects, r)
+			s.rects = append(s.rects, r)
+		}
+		if m.shown == nil && !m.ov.open {
+			// A landing slide measures in the list it began on.
+			list := m.Workspaces
+			if m.switchList != nil {
+				list = m.switchList
 			}
-			if m.shown == nil {
-				// A landing slide measures in the list it began on.
-				list := m.Workspaces
-				if m.switchList != nil {
-					list = m.switchList
-				}
-				if i := indexOf(list, w); i >= 0 {
-					s.list = append(s.list, list...)
-					s.pos, s.ok = float64(i)+m.switchOff, true
-				}
+			if i := indexOf(list, w); i >= 0 {
+				s.list = append(s.list, list...)
+				s.pos, s.ok = float64(i)+m.switchOff, true
 			}
 		}
 		out = append(out, s)
@@ -494,8 +504,9 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 
 // transition starts the springs that take each screen from what before
 // showed to what the action left, at now. It does nothing with animations
-// off, with the overview open before or after, or while a swipe follows the
-// fingers on that screen. Per-window rect motions join the camera here.
+// off, or while a swipe follows the fingers on that screen. Per-window rect
+// motions join the camera here; with the overview open before or after
+// there is no camera, only the cards' (transitionOverview).
 //
 // A workspace moved to another monitor (move-workspace-to-monitor-*, or a
 // named workspace pulled to the focused one by a "workspace <name>" bind
@@ -510,7 +521,11 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 	}
 	for i := range before {
 		b := &before[i]
-		if b.ws == nil || !c.hasScreen(b.sc) || b.sc.mon.ov.open || c.following(b.sc) {
+		if b.ws == nil || !c.hasScreen(b.sc) || c.following(b.sc) {
+			continue
+		}
+		if b.overview || b.sc.mon.ov.open {
+			c.transitionOverview(b, now)
 			continue
 		}
 		c.transitionCamera(b, before, now)
@@ -616,12 +631,54 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 	}
 }
 
+// transitionOverview starts the motions of an action that opened or closed
+// the overview, or moved inside it (the selection, the rows). The camera
+// springs stay stopped (ToggleOverview): every window drawn before and
+// after moves from its shown rect to its settled one, its content scaled
+// with it (a card's Zoom, rectMotion.show). A window drawn after and not
+// before (another row, a column the overview hid) fades in with no motion
+// of its own; one drawn before and not after just goes. Motions of the
+// other state are dropped first: their rects are not the ones snapshot
+// measured from.
+func (c *Core) transitionOverview(b *viewShot, now time.Time) {
+	sc := b.sc
+	if b.overview != sc.mon.ov.open {
+		sc.stopRects()
+	}
+	for _, p := range sc.mon.Layout() {
+		if p.Hidden {
+			continue
+		}
+		rm := sc.rects[p.ID]
+		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if i < 0 {
+			c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+		} else if old := &b.rects[i]; old.rect != p.Rect {
+			rm.scale = true
+			c.retargetComponent(&rm.x, &rm.dx, float64(old.rect.X-p.Rect.X)+old.off.x, old.vel.x, now)
+			c.retargetComponent(&rm.y, &rm.dy, float64(old.rect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
+			c.retargetComponent(&rm.w, &rm.dw, float64(old.rect.W-p.Rect.W)+old.off.w, old.vel.w, now)
+			c.retargetComponent(&rm.h, &rm.dh, float64(old.rect.H-p.Rect.H)+old.off.h, old.vel.h, now)
+		} else {
+			continue
+		}
+		if !rm.on() {
+			delete(sc.rects, p.ID)
+			continue
+		}
+		if sc.rects == nil {
+			sc.rects = make(map[WindowID]rectMotion)
+		}
+		sc.rects[p.ID], sc.rectsWS = rm, sc.rectsOwner()
+	}
+}
+
 // movedFrom is the shot of the other screen that showed the workspace b's
 // screen shows now (moved to it by an action), or nil.
 func movedFrom(b *viewShot, before []viewShot) *viewShot {
 	w := b.sc.mon.Current()
 	for i := range before {
-		if o := &before[i]; o.ws == w && o.sc != b.sc {
+		if o := &before[i]; o.ws == w && o.sc != b.sc && !o.overview {
 			return o
 		}
 	}

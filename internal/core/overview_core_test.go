@@ -82,10 +82,17 @@ func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
 }
 
 func TestOverviewCoreClickOutsidePreviewKeepsOverview(t *testing.T) {
-	r := startMulti(t, nil, right)
+	both(t, func(t *testing.T, animated bool) {
+		overviewClickOutsidePreview(t, startLanding(t, animated, nil, right))
+	})
+}
+
+func overviewClickOutsidePreview(t *testing.T, r *landRig) {
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
-	set := r.key(t, "o", ports.ModAlt)
+	// The cards settle where the overview lays them out: the opening
+	// animation starts them at the windows' own rects.
+	set := r.keyLanded(t, "o", ports.ModAlt)
 	for _, w := range set[0].Windows {
 		if w.Preview > 0 && w.Rect.X <= 1 && w.Rect.Y <= 1 && w.Rect.X+w.Rect.W > 1 && w.Rect.Y+w.Rect.H > 1 {
 			t.Fatalf("(1, 1) is inside preview %+v", w)

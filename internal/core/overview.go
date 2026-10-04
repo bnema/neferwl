@@ -814,7 +814,12 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 // cards take priority over peeks, including peeks appended after a front
 // tile in another row's layout.
 func (m *Monitor) overviewAt(x, y float64) WindowID {
-	layout := m.Layout()
+	return overviewIn(m.Layout(), x, y)
+}
+
+// overviewIn is overviewAt in a given layout: the click path passes the
+// shown one, so a card is hit where it is drawn while it moves.
+func overviewIn(layout []Placement, x, y float64) WindowID {
 	for i := len(layout) - 1; i >= 0; i-- {
 		p := layout[i]
 		r := p.Rect
@@ -843,11 +848,16 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	if !sc.mon.ov.open {
 		return false, nil
 	}
-	id := sc.mon.overviewAt(c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
+	// The cards are hit where they are drawn: a click during the open or a
+	// navigation animation picks what moves under the pointer.
+	id := overviewIn(sc.shownLayout(), c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
 	if id == 0 {
 		return false, nil
 	}
+	now := c.now()
+	shots := c.snapshot(now)
 	sc.mon.OverviewPick(id)
+	c.transition(shots, now)
 	c.focusScreen = i
 	c.keyboard.takeBack()
 	if err := c.workspaceVisible(ctx, true); err != nil {

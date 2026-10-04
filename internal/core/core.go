@@ -609,8 +609,10 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
 			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade, Dim: max(0, p.Dim)}
-			if p.Zoom > 0 && p.Zoom < 1 {
-				// A scale motion: the content follows the drawn size.
+			if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
+				// A scale motion: the content follows the drawn size. A
+				// card in flight drawn at its size still needs Zoom 1:
+				// without it the renderer would shrink it by Preview.
 				sw.Zoom = p.Zoom
 			}
 			if p.Peek {
