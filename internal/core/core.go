@@ -411,20 +411,23 @@ func onScreen(p Placement, o Rect) bool {
 // floatDim is the veil opacity of a layout: dim only when a float is
 // drawn above the tiles, never for a demoted covering float alone nor for
 // an overview preview.
+// A leaving float (fading out after it closed or hid) keeps the veil,
+// scaled by what is left of it, so the veil fades with the last float.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
-	shown := false
+	k := 0.0
 	for _, p := range layout {
-		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
+		if p.Floating && !p.Below && p.Preview == 0 && (onScreen(p, o) || p.Leaving && p.Rect.Overlaps(o)) {
 			if p.Fullscreen {
 				return 0
 			}
-			shown = true
+			if p.Leaving {
+				k = max(k, 1-p.Fade)
+			} else {
+				k = 1
+			}
 		}
 	}
-	if !shown {
-		return 0
-	}
-	return dim
+	return dim * k
 }
 
 // visible reports whether the window, layer surface or popup is on screen
@@ -605,13 +608,10 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			ps := settled[k]
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade, Dim: p.Dim}
-			if p.Zoom > 0 {
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade, Dim: max(0, p.Dim)}
+			if p.Zoom > 0 && p.Zoom < 1 {
 				// A scale motion: the content follows the drawn size.
-				sw.Preview = p.Zoom
-				if sw.Preview >= 1 {
-					sw.Preview = 0
-				}
+				sw.Zoom = p.Zoom
 			}
 			if p.Peek {
 				sw.Dim = min(sw.Dim+c.cfg.Stash.Dim, 1)

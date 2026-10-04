@@ -37,7 +37,9 @@ type screen struct {
 	// runs. Both are built once per publish (refreshShown); shown is nil
 	// before the first publish, then callers measure the monitor's layout.
 	settledLayout, shown []Placement
-	shownBuf             []Placement
+	// shownBuf and settledBuf back shown and settledLayout while rect
+	// motions run (refreshShown), reused across publishes.
+	shownBuf, settledBuf []Placement
 	// rects are the running per-window rect motions (transition.go) of
 	// rectsWS, the workspace they began on; created lazily.
 	rects   map[WindowID]rectMotion

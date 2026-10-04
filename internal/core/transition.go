@@ -147,11 +147,15 @@ func (m *rectMotion) show(p *Placement) {
 	settled := p.Rect
 	p.Rect = m.apply(settled)
 	p.Fade = max(0, min(1, m.settledFade()+m.df))
-	p.Dim = m.ddim
+	p.Dim = max(0, min(1, p.Dim+m.ddim))
 	if m.scale && settled.W > 0 {
 		zoom := p.Preview
 		if zoom == 0 {
 			zoom = 1
+			if m.leaving {
+				// A leaving window settles shrunk, its content with it.
+				zoom = appearScale
+			}
 		}
 		zoom *= float64(p.Rect.W) / float64(settled.W)
 		if zoom >= 0.999 {
@@ -208,7 +212,7 @@ func (c *Core) refreshShown() {
 			sc.shown = sc.settledLayout
 			continue
 		}
-		sc.settledLayout = sc.appendLeaving(sc.settledLayout)
+		sc.settledLayout = sc.withLeaving(sc.settledLayout)
 		buf := append(sc.shownBuf[:0], sc.settledLayout...)
 		for i := range buf {
 			p := &buf[i]
@@ -223,24 +227,41 @@ func (c *Core) refreshShown() {
 	}
 }
 
-// appendLeaving appends the leaving windows' last placements to layout,
-// Hidden and Leaving, smallest ID first (a stable order keeps the scenes
-// comparable frame to frame).
-func (s *screen) appendLeaving(layout []Placement) []Placement {
-	n := len(layout)
+// withLeaving is layout with the leaving windows' last placements added,
+// Hidden and Leaving, into the screen's reused buffer (the layout itself
+// is left alone). A leaving tile goes where the tiles are painted: before
+// the first window that opens the floats (a float above the tiles, as the
+// renderer orders them), so it never flashes over a float; a leaving float
+// goes last, over the tiles. Within a group smallest ID first: a stable
+// order keeps the scenes comparable frame to frame.
+func (s *screen) withLeaving(layout []Placement) []Placement {
+	out := append(s.settledBuf[:0], layout...)
+	floats := len(out)
+	for i, p := range out {
+		if p.Floating && !p.Below && p.Preview == 0 && !p.Hidden {
+			floats = i
+			break
+		}
+	}
 	for _, rm := range s.rects {
 		if !rm.leaving {
 			continue
 		}
 		p := rm.left
 		p.Hidden, p.Leaving, p.Focused, p.Fade, p.Dim, p.Zoom = true, true, false, 0, 0, 0
-		i := n
-		for i < len(layout) && layout[i].ID < p.ID {
+		lo, hi := floats, len(out)
+		if !p.Floating {
+			lo, hi = 0, floats
+			floats++
+		}
+		i := lo
+		for i < hi && (!out[i].Leaving || out[i].ID < p.ID) {
 			i++
 		}
-		layout = slices.Insert(layout, i, p)
+		out = slices.Insert(out, i, p)
 	}
-	return layout
+	s.settledBuf = out
+	return out
 }
 
 // appear starts the entrance of a window the action made visible on sc:
@@ -288,9 +309,8 @@ func (c *Core) leave(sc *screen, p Placement, now time.Time) {
 	rm := rectMotion{scale: true, leaving: true, left: p}
 	rm.left.Hidden, rm.left.Leaving, rm.left.Focused = true, true, false
 	// The entry settles at 90 % of the rect it left, its content zoomed
-	// to match (Preview): the offsets run from the full rect to that.
+	// to match (show): the offsets run from the full rect to that.
 	end := scaledRect(p.Rect, appearScale)
-	rm.left.Preview = appearScale
 	c.retargetComponent(&rm.x, &rm.dx, float64(p.Rect.X-end.X), 0, now)
 	c.retargetComponent(&rm.y, &rm.dy, float64(p.Rect.Y-end.Y), 0, now)
 	c.retargetComponent(&rm.w, &rm.dw, float64(p.Rect.W-end.W), 0, now)
@@ -467,6 +487,10 @@ func (c *Core) transitionRects(b *viewShot, now time.Time) {
 		}
 		// Where the window was drawn, unrounded, relative to where it goes.
 		rm := sc.rects[p.ID]
+		// A re-flow may change the aspect: the content zoom (appear) stops
+		// following the frame and snaps to the settled size; the fade goes
+		// on.
+		rm.scale = false
 		c.retargetComponent(&rm.x, &rm.dx, float64(old.rect.X-p.Rect.X)+old.off.x, old.vel.x, now)
 		c.retargetComponent(&rm.y, &rm.dy, float64(old.rect.Y-p.Rect.Y)+old.off.y, old.vel.y, now)
 		c.retargetComponent(&rm.w, &rm.dw, float64(old.rect.W-p.Rect.W)+old.off.w, old.vel.w, now)

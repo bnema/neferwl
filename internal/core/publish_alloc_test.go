@@ -14,8 +14,11 @@ import (
 // and the layouts are rebuilt for every publish, so the floor is not 0.
 // Measured: 43 before presizing the scene windows and separators, 36 after;
 // 70 with the overview open (its rows and card layouts are rebuilt too).
+// Leaving entries (a closed window still fading) add none: the settled
+// layout with them goes into a reused buffer.
 const (
 	publishAllocBudget         = 36
+	publishLeavingAllocBudget  = publishAllocBudget
 	publishOverviewAllocBudget = 70
 )
 
@@ -130,5 +133,61 @@ func TestPublishOverviewAllocations(t *testing.T) {
 	t.Logf("overview allocs per step = %v", n)
 	if n > publishOverviewAllocBudget {
 		t.Errorf("overview publish allocs per frame = %v, budget %d", n, publishOverviewAllocBudget)
+	}
+}
+
+// TestPublishLeavingAllocations pins the cost of a frame with leaving
+// entries on every screen (two of the six windows closed, fading out, the
+// other four with rect motions): not above a frame without them.
+func TestPublishLeavingAllocations(t *testing.T) {
+	c := publishRig(t, 2)
+	t0 := time.Now()
+	for _, sc := range c.screens {
+		if sc.name() == "" {
+			continue
+		}
+		c.refreshShown()
+		layout := sc.settledLayout
+		sc.rects = make(map[WindowID]rectMotion, 6)
+		sp := viewSpring(100, 0)
+		for i, p := range layout {
+			if i < 2 {
+				sc.mon.RemoveWindow(p.ID)
+				c.leave(sc, p, t0)
+				continue
+			}
+			sc.rects[p.ID] = rectMotion{
+				x: c.spring(sp, t0), y: c.spring(sp, t0),
+				w: c.spring(sp, t0), h: c.spring(sp, t0),
+				dx: 100, dy: 100, dw: 100, dh: 100,
+			}
+		}
+		sc.rectsWS = sc.mon.Current()
+	}
+	step := publishStep(t, c)
+	step()
+	for _, sc := range c.screens {
+		if sc.name() == "" {
+			continue
+		}
+		leaving := 0
+		for _, p := range sc.shown {
+			if p.Leaving {
+				leaving++
+			}
+		}
+		if len(sc.rects) != 6 || leaving != 2 || len(sc.shown) != 6 {
+			t.Fatalf("setup: rects %d leaving %d shown %d", len(sc.rects), leaving, len(sc.shown))
+		}
+	}
+	n := testing.AllocsPerRun(50, step)
+	t.Logf("leaving allocs per step = %v", n)
+	for _, sc := range c.screens {
+		if sc.name() != "" && len(sc.rects) != 6 {
+			t.Fatalf("motions settled during the measure: rects %d", len(sc.rects))
+		}
+	}
+	if n > publishLeavingAllocBudget {
+		t.Errorf("publish allocs per frame with leaving entries = %v, budget %d", n, publishLeavingAllocBudget)
 	}
 }
