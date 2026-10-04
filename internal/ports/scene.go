@@ -430,8 +430,13 @@ type SceneWindow struct {
 	// needs its kind here and in the push constants (a misc flag).
 	FocusEffect float64
 	// Preview, above 0, draws the window's surfaces that much smaller in
-	// Rect (an overview thumbnail): the client keeps its size.
+	// Rect (an overview thumbnail): the client keeps its size. A preview
+	// is a card: it never opens the floats.
 	Preview float64
+	// Zoom, above 0, is the content scale of a window whose frame is
+	// animating (appearing, leaving, an overview card in flight): it
+	// replaces Preview for drawing only; the window keeps its kind.
+	Zoom float64
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

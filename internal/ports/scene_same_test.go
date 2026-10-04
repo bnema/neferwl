@@ -38,6 +38,7 @@ func TestSceneSameAs(t *testing.T) {
 	for name, edit := range map[string]func(*Scene){
 		"window rect":       func(s *Scene) { s.Windows[0].Rect.X++ },
 		"window fade":       func(s *Scene) { s.Windows[0].Fade = 0.5 },
+		"window zoom":       func(s *Scene) { s.Windows[0].Zoom = 0.9 },
 		"window count":      func(s *Scene) { s.Windows = nil },
 		"security":          func(s *Scene) { s.Security.Generation++ },
 		"background":        func(s *Scene) { s.Background = "#111111" },

@@ -231,7 +231,11 @@ func (w *sceneWalk) windows() {
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
 		if !content.Empty() {
-			if win.Preview > 0 {
+			// An animating frame zooms its content (Zoom); a card draws
+			// at its Preview.
+			if win.Zoom > 0 {
+				w.zoom = win.Zoom
+			} else if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
 			w.pulse = float32(max(0, min(win.FocusEffect, 1)))

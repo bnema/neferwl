@@ -86,3 +86,58 @@ func TestSceneWindowFadeHDR(t *testing.T) {
 		t.Fatalf("hdr faded white = %v, want rgb %v alpha 0.5", c, want)
 	}
 }
+
+// An appearing or leaving float carries a Zoom, not a Preview: it still
+// opens the floats, so the tile lines and the veil are painted under it,
+// exactly as for the same float unzoomed; only its content draw shrinks.
+func TestSceneZoomedFloatOpensFloats(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	scene := func(zoom float64) ports.Scene {
+		return ports.Scene{
+			Dim: 0.4, Background: "#000000", Border: ports.Border{Width: 1, Active: "#ffffff", Inactive: "#808080"},
+			Windows: []ports.SceneWindow{
+				{ID: 1, Rect: ports.Rect{W: 80, H: 60}},
+				{ID: 2, Floating: true, Rect: ports.Rect{X: 20, Y: 10, W: 40, H: 40}, Inset: ports.SideAll, Fade: 0.5, Zoom: zoom},
+			},
+			Separators: []ports.Separator{
+				{Rect: ports.Rect{X: 40, W: 1, H: 60}},
+				{Rect: ports.Rect{X: 20, Y: 10, W: 1, H: 40}, Window: 2},
+			},
+		}
+	}
+	contents := map[ports.WindowID]ports.SurfaceContent{
+		2: {ID: 2, Width: 1, Height: 1, LogicalW: 38, LogicalH: 38, Solid: &ports.SolidColor{R: 1, G: 1, B: 1, A: 1}},
+	}
+	walk := func(s ports.Scene) []draw {
+		return slices.Clone(r.draws(s, contents, newDamage(&target{}, s, image.Rect(0, 0, 80, 60))))
+	}
+	plain, zoomed := walk(scene(0)), walk(scene(0.9))
+	// tile fill, tile line, veil, float fill, float content, float line
+	if len(plain) != 6 || len(zoomed) != 6 {
+		t.Fatalf("draws: plain %d zoomed %d, want 6", len(plain), len(zoomed))
+	}
+	for i := range plain {
+		if i == 4 {
+			continue
+		}
+		if plain[i].pc != zoomed[i].pc {
+			t.Fatalf("draw %d differs with the zoom: %+v vs %+v", i, plain[i].pc, zoomed[i].pc)
+		}
+	}
+	if veil := zoomed[2].pc; veil.rect != [4]int32{0, 0, 80, 60} || veil.color != [4]float32{0, 0, 0, 0.4} {
+		t.Fatalf("veil = %+v, want the full-output 0.4 dim under the float", veil)
+	}
+	if zoomed[1].pc.rect != [4]int32{40, 0, 41, 60} {
+		t.Fatalf("tile line = %+v, want it painted before the float", zoomed[1].pc.rect)
+	}
+	pr, zr := plain[4].pc.rect, zoomed[4].pc.rect
+	if !(zr[2]-zr[0] < pr[2]-pr[0]) || zr[0] != pr[0] || zr[1] != pr[1] {
+		t.Fatalf("zoomed content %v, want smaller than %v from the same origin", zr, pr)
+	}
+	// A card (Preview) keeps not opening the floats: no tile lines, no veil.
+	card := scene(0)
+	card.Windows[1].Preview = 0.9
+	if ds := walk(card); len(ds) != 5 || ds[1].pc.color[3] != 0.5 {
+		t.Fatalf("card draws = %d, want 5 (lines after, no veil): %+v", len(ds), ds)
+	}
+}

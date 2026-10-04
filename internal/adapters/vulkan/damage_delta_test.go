@@ -26,7 +26,7 @@ func TestSceneFieldCount(t *testing.T) {
 // sceneDelta compares windows by struct equality, so a new field is covered
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
-	const fields = 14
+	const fields = 15
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }

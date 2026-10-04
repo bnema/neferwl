@@ -115,7 +115,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// Its veil is composed over it: the plane would show it bright.
 		return ports.SurfaceContent{}, "dim"
 	}
-	if full.Fade > 0 || full.Preview > 0 {
+	if full.Fade > 0 || full.Preview > 0 || full.Zoom > 0 {
 		// A fading or zoomed window is composed: the plane would show it
 		// whole and opaque.
 		return ports.SurfaceContent{}, "window_fade"

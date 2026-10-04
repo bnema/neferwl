@@ -119,6 +119,12 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
 		t.Fatalf("fading window reason %q", reason)
 	}
+	// A zoomed (animating) window is drawn smaller than its buffer.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Zoom = 0.9
+	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+		t.Fatalf("zoomed window reason %q", reason)
+	}
 	// A window with the focus effect needs it composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].FocusEffect = 0.05
