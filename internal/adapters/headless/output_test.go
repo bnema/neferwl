@@ -125,7 +125,6 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 	// Unshown content sends Run round its loop: the held scene is handled.
 	contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
 	contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
-	time.Sleep(50 * time.Millisecond)
 	if s, _ := f.snapshot(); len(s) != 1 {
 		t.Fatalf("%d frames for a scene with the held Seq", len(s))
 	}

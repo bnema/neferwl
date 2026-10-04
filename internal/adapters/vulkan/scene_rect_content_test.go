@@ -7,7 +7,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// A window animated by option B shows a rect that differs from its content
+// A window under a presentation-only rect transition shows a rect that differs from its content
 // (the client has its final size already). These walk tests need no Vulkan
 // device: a single-pixel buffer is a solid quad.
 func TestSceneContentVsWindowRect(t *testing.T) {

@@ -92,10 +92,9 @@ func TestAnimations(t *testing.T) {
 		if c.Animations != d || len(w) != 1 {
 			t.Fatal(line, c.Animations, w)
 		}
-	}
-	_, w = parseString(t, "animations.slowdown = 11\n")
-	if len(w) != 1 || !strings.Contains(w[0].Msg, "must be between 0.1 and 10") {
-		t.Fatal(w)
+		if strings.Contains(line, "slowdown") && !strings.Contains(w[0].Msg, "must be between 0.1 and 10") {
+			t.Fatal(line, w)
+		}
 	}
 }
 

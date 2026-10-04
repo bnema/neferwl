@@ -36,26 +36,31 @@ func TestSceneSameAs(t *testing.T) {
 	assert.True(t, Scene{}.SameAs(Scene{Seq: 3}))
 
 	for name, edit := range map[string]func(*Scene){
-		"window rect":   func(s *Scene) { s.Windows[0].Rect.X++ },
-		"window count":  func(s *Scene) { s.Windows = nil },
-		"security":      func(s *Scene) { s.Security.Generation++ },
-		"background":    func(s *Scene) { s.Background = "#111111" },
-		"border":        func(s *Scene) { s.Border.Width++ },
-		"output":        func(s *Scene) { s.Output = "B" },
-		"size":          func(s *Scene) { s.OutputWidth++ },
-		"scale":         func(s *Scene) { s.Scale = 2 },
-		"off":           func(s *Scene) { s.Off = true },
-		"clip":          func(s *Scene) { s.WorkspaceClip.W = 1 },
-		"dim":           func(s *Scene) { s.Dim = 0.5 },
-		"dim behind":    func(s *Scene) { s.DimBehind = true },
-		"separator":     func(s *Scene) { s.Separators[0].Active = true },
-		"drop hint":     func(s *Scene) { s.DropHints[0].W++ },
-		"layer":         func(s *Scene) { s.Layers[0].Rect.H++ },
-		"indicator":     func(s *Scene) { s.CaptureIndicators[0].Pill = true },
-		"excluded":      func(s *Scene) { s.Capture.Excluded[0] = 4 },
-		"capture field": func(s *Scene) { s.Capture.Revision++ },
-		"capture nil":   func(s *Scene) { s.Capture = nil },
-		"capture scene": func(s *Scene) { s.CaptureScene = &Scene{} },
+		"window rect":       func(s *Scene) { s.Windows[0].Rect.X++ },
+		"window count":      func(s *Scene) { s.Windows = nil },
+		"security":          func(s *Scene) { s.Security.Generation++ },
+		"background":        func(s *Scene) { s.Background = "#111111" },
+		"border":            func(s *Scene) { s.Border.Width++ },
+		"output":            func(s *Scene) { s.Output = "B" },
+		"size":              func(s *Scene) { s.OutputWidth++ },
+		"scale":             func(s *Scene) { s.Scale = 2 },
+		"off":               func(s *Scene) { s.Off = true },
+		"clip":              func(s *Scene) { s.WorkspaceClip.W = 1 },
+		"dim":               func(s *Scene) { s.Dim = 0.5 },
+		"dim behind":        func(s *Scene) { s.DimBehind = true },
+		"separator":         func(s *Scene) { s.Separators[0].Active = true },
+		"drop hint":         func(s *Scene) { s.DropHints[0].W++ },
+		"layer":             func(s *Scene) { s.Layers[0].Rect.H++ },
+		"indicator":         func(s *Scene) { s.CaptureIndicators[0].Pill = true },
+		"excluded":          func(s *Scene) { s.Capture.Excluded[0] = 4 },
+		"transform":         func(s *Scene) { s.Transform = 1 },
+		"capture shown":     func(s *Scene) { s.Capture.Shown++ },
+		"capture session":   func(s *Scene) { s.Capture.Session++ },
+		"capture workspace": func(s *Scene) { s.Capture.Workspace++ },
+		"capture window":    func(s *Scene) { s.Capture.Window++ },
+		"capture revision":  func(s *Scene) { s.Capture.Revision++ },
+		"capture nil":       func(s *Scene) { s.Capture = nil },
+		"capture scene":     func(s *Scene) { s.CaptureScene = &Scene{} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			o := sameSceneBase()
@@ -78,4 +83,12 @@ func TestSceneSameAsCoversEveryField(t *testing.T) {
 	const fields = 20
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
+}
+
+// TestSceneCaptureSameAsCoversEveryField fails when SceneCapture gains or
+// loses a field: update Scene.SameAs, then this count.
+func TestSceneCaptureSameAsCoversEveryField(t *testing.T) {
+	const fields = 6
+	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(SceneCapture{}))),
+		"SceneCapture fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }
