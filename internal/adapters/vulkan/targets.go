@@ -31,10 +31,12 @@ type target struct {
 	// exported images are shared with the display: ownership goes to the
 	// foreign queue family after each frame, and KMS reads them.
 	exported bool
-	// What the image holds (damage.go): the scene Seq and each window's
-	// content Seq; valid once a frame was drawn whole.
+	// What the image holds (damage.go): the scene (an immutable snapshot,
+	// held by reference), its Seq and each window's content Seq; valid
+	// once a frame was drawn whole.
 	valid    bool
 	sceneSeq uint64
+	scene    ports.Scene
 	windows  map[ports.WindowID]heldWindow
 }
 

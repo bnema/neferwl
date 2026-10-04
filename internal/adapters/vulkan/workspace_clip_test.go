@@ -56,15 +56,17 @@ func TestWorkspaceClipWindowsPopupsAndLayers(t *testing.T) {
 		t.Fatalf("popup escaped clip: %v", got)
 	}
 	// Popups above layers belong to output-wide controls, not the workspace.
+	// Scenes are immutable snapshots (the target holds the previous one):
+	// a changed window goes in a fresh slice, as core publishes it.
 	scene.Seq++
-	scene.Windows[0].OverLayers = true
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Popup: true, OverLayers: true}}
 	if err := render(r, scene, contents); err != nil {
 		t.Fatal(err)
 	}
 	if got := readPixels(t, r).RGBAAt(10, 10); got != red {
 		t.Fatalf("output-wide popup clipped: %v", got)
 	}
-	scene.Windows[0].OverLayers = false
+	scene.Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 48}, Popup: true}}
 	// Switching back to inherited geometry repaints the margins.
 	scene.Seq++
 	scene.WorkspaceClip = ports.Rect{}

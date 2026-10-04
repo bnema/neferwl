@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image"
 	"math"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -10,8 +11,10 @@ import (
 // Damage: an output target keeps what it holds (scene Seq, each window's
 // content Seq). When the scene is the same, only the region changed since
 // then is redrawn: every quad is clipped to it on the CPU and the pass
-// keeps the rest of the image. A changed scene, a target never drawn or
-// a history too short redraws everything.
+// keeps the rest of the image. A scene with a new Seq redraws only the
+// windows and separators that differ from the scene the target holds
+// (sceneDelta). A scene that differs in anything else, a target never
+// drawn or a history too short redraws everything.
 
 // damageRegion collects the region of a target to redraw this frame and
 // what the target will hold after it: the windows drawn, their content
@@ -34,11 +37,34 @@ type heldWindow struct {
 
 func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion {
 	d := &damageRegion{seen: map[ports.WindowID]bool{}, bound: bounds, drawn: map[ports.WindowID]heldWindow{}}
-	// Seq 0 is a scene core did not number (setup, tests): redraw all.
-	if tg.valid && s.Seq != 0 && tg.sceneSeq == s.Seq {
-		d.held = tg
-	}
+	d.hold(tg, s)
 	return d
+}
+
+// hold decides what the target keeps. Seq 0 is a scene core did not
+// number (setup, tests): redraw all. The same Seq keeps everything; a new
+// one keeps all but what sceneDelta finds changed.
+func (d *damageRegion) hold(tg *target, s ports.Scene) {
+	if !tg.valid || s.Seq == 0 {
+		return
+	}
+	if tg.sceneSeq == s.Seq {
+		d.held = tg
+		return
+	}
+	scale := s.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	phys := func(r ports.Rect) image.Rectangle {
+		p := func(v int) int { return int(math.Round(float64(v) * scale)) }
+		return image.Rect(p(r.X), p(r.Y), p(r.X+r.W), p(r.Y+r.H)).Intersect(d.bound)
+	}
+	// The limit only bounds the CPU cost of clipping every quad.
+	limit := d.bound.Dx() * d.bound.Dy() * 9 / 10
+	if area, ok := sceneDelta(tg.scene, s, phys, limit); ok {
+		d.held, d.area = tg, area
+	}
 }
 
 // frameDamage reuses the bookkeeping maps. drawn is swapped with the
@@ -53,9 +79,7 @@ func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle
 	}
 	clear(r.damageDrawn)
 	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0]}
-	if tg.valid && s.Seq != 0 && tg.sceneSeq == s.Seq {
-		r.damage.held = tg
-	}
+	r.damage.hold(tg, s)
 	return &r.damage
 }
 
@@ -167,5 +191,62 @@ func (d *damageRegion) clip(ds []draw) []draw {
 // hold records what the target holds after this frame: only the windows
 // it drew.
 func (tg *target) hold(s ports.Scene, d *damageRegion) {
-	tg.valid, tg.sceneSeq, tg.windows = true, s.Seq, d.drawn
+	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
+}
+
+// sceneDelta is the region (physical, through phys) where cur differs from
+// old, two scenes of one output; ok is false when the whole output must be
+// redrawn: anything but the windows and separators differs, the windows
+// are not the same list, or the region covers more than limit pixels.
+// Each window that differs (any field) adds its old and new rects, each
+// separator present in only one scene adds its own. A new Scene field
+// belongs here too (see Scene.SameAs, TestSceneSameAsCoversEveryField); a
+// new SceneWindow field is checked by TestSceneWindowFieldCount.
+func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
+	if old.Security != cur.Security || old.Output != cur.Output ||
+		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
+		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
+		old.Background != cur.Background || old.Border != cur.Border ||
+		old.WorkspaceClip != cur.WorkspaceClip || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
+		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
+		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
+		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||
+		len(old.Windows) != len(cur.Windows) {
+		return image.Rectangle{}, false
+	}
+	var area image.Rectangle
+	for i := range old.Windows {
+		a, b := old.Windows[i], cur.Windows[i]
+		if a.ID != b.ID {
+			return image.Rectangle{}, false
+		}
+		if a != b {
+			area = area.Union(phys(a.Rect)).Union(phys(b.Rect))
+		}
+	}
+	// Separators: a line in one list more often than in the other.
+	for _, sep := range old.Separators {
+		if countSeparator(old.Separators, sep) != countSeparator(cur.Separators, sep) {
+			area = area.Union(phys(sep.Rect))
+		}
+	}
+	for _, sep := range cur.Separators {
+		if countSeparator(old.Separators, sep) != countSeparator(cur.Separators, sep) {
+			area = area.Union(phys(sep.Rect))
+		}
+	}
+	if area.Dx()*area.Dy() > limit {
+		return image.Rectangle{}, false
+	}
+	return area, true
+}
+
+func countSeparator(list []ports.Separator, sep ports.Separator) int {
+	n := 0
+	for _, o := range list {
+		if o == sep {
+			n++
+		}
+	}
+	return n
 }

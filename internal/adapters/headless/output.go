@@ -617,7 +617,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 			}
 		}
-		opts.Log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
+		if ev := opts.Log.Debug(); ev.Enabled() {
+			ev.Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Int("redrawn", r.TakeRedrawn()).Msg("frame")
+		}
 	}
 }
 
