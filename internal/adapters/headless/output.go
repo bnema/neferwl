@@ -66,10 +66,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var confirmed *ports.OutputHDR
 	if opts.HDR {
 		r.SetHDR(203)
-		if bufs, err := r.ExportTargets(1, nil); err != nil {
+		if bufs, err := r.ExportTargets(1, nil, false); err != nil {
 			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
 			r.SetHDR(0)
-			_, _ = r.ExportTargets(0, nil)
+			_, _ = r.ExportTargets(0, nil, false)
 		} else {
 			for _, b := range bufs {
 				for _, p := range b.Planes {

@@ -340,7 +340,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(203)).Return().Once()
-	r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+	r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 	rendered := make(chan struct{}, 4)
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		rendered <- struct{}{}
@@ -413,16 +413,16 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 				t.Cleanup(func() {
 					if _, err := f.Stat(); err == nil {
 						t.Error("exported fd not closed")
 					}
 				})
 			} else {
-				r.EXPECT().ExportTargets(1, []uint64(nil)).Return(nil, errors.New("no compatible target")).Once()
+				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, errors.New("no compatible target")).Once()
 				r.EXPECT().SetHDR(float64(0)).Return().Once()
-				r.EXPECT().ExportTargets(0, []uint64(nil)).Return(nil, nil).Once()
+				r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
 			}
 			r.EXPECT().Close().Return().Once()
 			formats := make(chan ports.OutputFormats, 1)

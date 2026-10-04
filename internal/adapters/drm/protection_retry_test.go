@@ -32,7 +32,7 @@ func runProtectedStartup(t *testing.T, o *Output, k *mockkms, renders func() (*o
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		return renders()
@@ -266,7 +266,7 @@ func TestProtectedShowImagesHDRKeepsHDRForKMSErrors(t *testing.T) {
 			r.EXPECT().SetHDR(float64(203)).Return().Once()
 			r.EXPECT().UseTarget(mock.Anything).Return().Maybe()
 			r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
-			r.EXPECT().ExportTargets(2, []uint64{0}).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+			r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXR30)).Return(70, nil).Maybe()
 			k.EXPECT().createBlob(mock.Anything).Return(321, nil).Maybe()
 			k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()

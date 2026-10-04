@@ -529,7 +529,7 @@ func TestCaptureSurvivesHDRToggle(t *testing.T) {
 	hdrShot := readPixels(t, r).RGBAAt(3, 3)
 	leased := captureWait(t, r) // HDR capture held across the toggle
 	r.SetHDR(0)
-	if _, err := r.ExportTargets(0, nil); err != nil {
+	if _, err := r.ExportTargets(0, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	scene.Seq++
@@ -556,7 +556,7 @@ func TestCaptureSurvivesHDRToggle(t *testing.T) {
 	}
 	// Back to HDR: the capture pass and slots are reused.
 	r.SetHDR(203)
-	if _, err := r.ExportTargets(1, r.hdrMods); err != nil {
+	if _, err := r.ExportTargets(1, r.hdrMods, false); err != nil {
 		t.Skipf("no HDR target: %v", err)
 	}
 	scene.Seq++

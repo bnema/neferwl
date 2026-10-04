@@ -565,7 +565,7 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		f, w, _ := os.Pipe()
@@ -651,7 +651,7 @@ func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()
@@ -790,7 +790,7 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 		t.Cleanup(func() { _ = f.Close() })
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
 	r.EXPECT().Render(ports.Scene{Background: "#000000"}, mock.Anything).Return(nil, nil).Twice()
 	r.EXPECT().Render(mock.MatchedBy(func(s ports.Scene) bool { return s.Background != "#000000" }), mock.Anything).Return(nil, boom).Once()
 	r.EXPECT().Close().Return().Once()
@@ -852,7 +852,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe() // SDR output
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{makeBuf(), makeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	rendered := make(chan ports.Scene, 3)
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
@@ -968,7 +968,7 @@ func startStampRun(t *testing.T) *stampRun {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()

@@ -385,8 +385,8 @@ func (_c *MockRenderer_EndCapture_Call) RunAndReturn(run func(captureFrame ports
 }
 
 // ExportTargets provides a mock function for the type MockRenderer
-func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
-	ret := _mock.Called(n, modifiers)
+func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
+	ret := _mock.Called(n, modifiers, singlePlane)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ExportTargets")
@@ -394,18 +394,18 @@ func (_mock *MockRenderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMA
 
 	var r0 []ports.DMABuf
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(int, []uint64) ([]ports.DMABuf, error)); ok {
-		return returnFunc(n, modifiers)
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) ([]ports.DMABuf, error)); ok {
+		return returnFunc(n, modifiers, singlePlane)
 	}
-	if returnFunc, ok := ret.Get(0).(func(int, []uint64) []ports.DMABuf); ok {
-		r0 = returnFunc(n, modifiers)
+	if returnFunc, ok := ret.Get(0).(func(int, []uint64, bool) []ports.DMABuf); ok {
+		r0 = returnFunc(n, modifiers, singlePlane)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]ports.DMABuf)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(int, []uint64) error); ok {
-		r1 = returnFunc(n, modifiers)
+	if returnFunc, ok := ret.Get(1).(func(int, []uint64, bool) error); ok {
+		r1 = returnFunc(n, modifiers, singlePlane)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -420,11 +420,12 @@ type MockRenderer_ExportTargets_Call struct {
 // ExportTargets is a helper method to define mock.On call
 //   - n int
 //   - modifiers []uint64
-func (_e *MockRenderer_Expecter) ExportTargets(n any, modifiers any) *MockRenderer_ExportTargets_Call {
-	return &MockRenderer_ExportTargets_Call{Call: _e.mock.On("ExportTargets", n, modifiers)}
+//   - singlePlane bool
+func (_e *MockRenderer_Expecter) ExportTargets(n any, modifiers any, singlePlane any) *MockRenderer_ExportTargets_Call {
+	return &MockRenderer_ExportTargets_Call{Call: _e.mock.On("ExportTargets", n, modifiers, singlePlane)}
 }
 
-func (_c *MockRenderer_ExportTargets_Call) Run(run func(n int, modifiers []uint64)) *MockRenderer_ExportTargets_Call {
+func (_c *MockRenderer_ExportTargets_Call) Run(run func(n int, modifiers []uint64, singlePlane bool)) *MockRenderer_ExportTargets_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 int
 		if args[0] != nil {
@@ -434,9 +435,14 @@ func (_c *MockRenderer_ExportTargets_Call) Run(run func(n int, modifiers []uint6
 		if args[1] != nil {
 			arg1 = args[1].([]uint64)
 		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -447,7 +453,7 @@ func (_c *MockRenderer_ExportTargets_Call) Return(dMABufs []ports.DMABuf, err er
 	return _c
 }
 
-func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifiers []uint64) ([]ports.DMABuf, error)) *MockRenderer_ExportTargets_Call {
+func (_c *MockRenderer_ExportTargets_Call) RunAndReturn(run func(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error)) *MockRenderer_ExportTargets_Call {
 	_c.Call.Return(run)
 	return _c
 }

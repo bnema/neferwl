@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
@@ -35,6 +36,11 @@ type Renderer struct {
 	hdrNits    float64
 	hdr        hdrPass
 	hdrError   error
+	// modPlanes is the memory plane count of each probed target modifier
+	// (SDR and HDR): DCC modifiers have more than one.
+	modPlanes map[uint64]uint32
+	// log reports the chosen target modifier; the zero value discards.
+	log zerowrap.Logger
 	// hdrReadback makes exported HDR targets transfer sources, for GPU tests
 	// and headless --screenshot-raw (SetHDRReadback); never DRM.
 	hdrReadback bool
@@ -339,6 +345,10 @@ func (r *Renderer) TakeRedrawn() int {
 	r.redrawn = 0
 	return n
 }
+
+// SetLogger sets the logger (with its component field) for render target
+// events. Not on the port; the zero logger discards.
+func (r *Renderer) SetLogger(l zerowrap.Logger) { r.log = l }
 
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.

@@ -57,7 +57,7 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 		o.hdr.on = false
 		o.freeImages()
 		r.SetHDR(0)
-		_, _ = r.ExportTargets(0, nil)
+		_, _ = r.ExportTargets(0, nil, false)
 		// A failed test commit can leave the old HDR mode on screen;
 		// retain its blob until the SDR modeset succeeds or Close restores it.
 	} else {
@@ -141,7 +141,7 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 
 // exportImages makes the renderer's exported targets the output images.
 func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
-	bufs, err := r.ExportTargets(len(o.fbs), mods)
+	bufs, err := r.ExportTargets(len(o.fbs), mods, false)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64) error {
 	}
 	if err != nil {
 		o.freeImages()
-		_, _ = r.ExportTargets(0, nil)
+		_, _ = r.ExportTargets(0, nil, false)
 		return err
 	}
 	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Msg("zero-copy output")

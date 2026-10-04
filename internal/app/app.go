@@ -294,6 +294,7 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 			if err != nil {
 				return nil, err
 			}
+			r.SetLogger(renderLog)
 			renderLog.Info().Str("queue_priority", r.QueuePriority()).Msg("vulkan queue")
 			return r, nil
 		}

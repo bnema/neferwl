@@ -47,9 +47,11 @@ type Renderer interface {
 	// ExportTargets allocates n images of the renderer's size that the
 	// display can scan out, with one of the given XRGB8888 (SDR) or
 	// XRGB2101010 (HDR) modifiers (none: any the device exports),
-	// and returns them as dmabufs.
+	// and returns them as dmabufs; a modifier may have several memory
+	// planes (DCC metadata), each plane owning its file. singlePlane
+	// restricts the choice to one-plane modifiers.
 	// n = 0 drops the targets.
-	ExportTargets(n int, modifiers []uint64) ([]DMABuf, error)
+	ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]DMABuf, error)
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)
 	// CursorBuffers allocates two linear ARGB8888 images of size×size the

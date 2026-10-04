@@ -25,7 +25,7 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 	}
 	defer r.Close()
 	// A device that cannot export at all says nothing about the wiring.
-	sdr, err := r.ExportTargets(1, nil)
+	sdr, err := r.ExportTargets(1, nil, false)
 	if err != nil {
 		t.Skipf("no exportable target: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 		}
 	}
 	r.SetHDR(203)
-	bufs, err := r.ExportTargets(1, nil)
+	bufs, err := r.ExportTargets(1, nil, false)
 	if err != nil {
 		t.Fatalf("virtual HDR export: %v", err)
 	}

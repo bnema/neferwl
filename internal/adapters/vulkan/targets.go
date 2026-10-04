@@ -3,12 +3,14 @@ package vulkan
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"unsafe"
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
+	"golang.org/x/sys/unix"
 )
 
 // Render targets (ADR 014). A DRM output scans out images the renderer
@@ -44,7 +46,9 @@ const fourccXR30 = 'X' | 'R'<<8 | '3'<<16 | '0'<<24
 
 // ExportTargets allocates n exported images of the output size, replacing
 // the previous ones; n = 0 only drops them (back to the internal image).
-func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, error) {
+// singlePlane keeps only one-plane modifiers (no DCC metadata planes), for
+// displays that refuse the multi-plane framebuffers of the others.
+func (r *Renderer) ExportTargets(n int, modifiers []uint64, singlePlane bool) ([]ports.DMABuf, error) {
 	r.dropTargets()
 	if n > 0 && r.hdrNits > 0 && r.hdrReadback && r.physical != 0 {
 		// Readback targets (GPU tests, headless --screenshot-raw) are also
@@ -60,7 +64,7 @@ func (r *Renderer) ExportTargets(n int, modifiers []uint64) ([]ports.DMABuf, err
 	if !r.dd.HasGetMemoryFdKHR() || !r.dd.HasGetImageDrmFormatModifierPropertiesEXT() || len(r.dmabuf.Formats) == 0 {
 		return nil, errors.New("device cannot export dmabufs")
 	}
-	mods := r.exportModifiers(modifiers)
+	mods := r.exportModifiers(modifiers, singlePlane)
 	if len(mods) == 0 {
 		if r.hdrNits == 0 {
 			return nil, errors.New("no XRGB8888 modifier both the device and the display accept")
@@ -108,14 +112,18 @@ func (r *Renderer) target() *target {
 
 // exportModifiers intersects the selected signal format modifiers with
 // those supported by the display. HDR never assumes an unspecified list,
-// except for a virtual output (no display) or a test readback.
-func (r *Renderer) exportModifiers(display []uint64) []uint64 {
+// except for a virtual output (no display) or a test readback. singlePlane
+// drops the modifiers with more than one memory plane.
+func (r *Renderer) exportModifiers(display []uint64, singlePlane bool) []uint64 {
 	var out []uint64
 	available := r.renderMods
 	if r.hdrNits > 0 {
 		available = r.hdrMods
 	}
 	for _, m := range available {
+		if singlePlane && r.modPlanes[m] > 1 {
+			continue
+		}
 		if (len(display) == 0 && (r.hdrNits == 0 || r.hdrReadback || r.virtual)) || slices.Contains(display, m) {
 			out = append(out, m)
 		}
@@ -123,14 +131,15 @@ func (r *Renderer) exportModifiers(display []uint64) []uint64 {
 	return out
 }
 
-// probeRenderModifiers lists single-plane, exportable SDR and HDR targets.
+// probeRenderModifiers lists exportable SDR and HDR targets.
 func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 	r.renderMods = r.probeModifiers(physical, vk.FormatB8g8r8a8Unorm)
 	r.hdrMods = r.probeModifiers(physical, vk.FormatA2r10g10b10UnormPack32)
 }
 
-// probeModifiers lists the single-plane, exportable modifiers of format that
-// support the target usage. HDR targets need transfer-src only when
+// probeModifiers lists the exportable modifiers of format (one to four memory
+// planes: DCC adds metadata planes) that support the target usage, and
+// records their plane counts in modPlanes. HDR targets need transfer-src only when
 // hdrReadback is set (GPU tests, headless --screenshot-raw; never DRM).
 func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
 	list := vk.DrmFormatModifierPropertiesListEXT{SType: vk.StructureTypeDRMFormatModifierPropertiesListEXT}
@@ -148,15 +157,35 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 	} else if r.hdrReadback {
 		need |= formatFeatureTransferSrc
 	}
-	var result []uint64
 	// SDR targets are composed and read back; HDR targets are color
 	// attachments, and transfer sources only with hdrReadback.
-	for _, m := range mods[:list.DrmFormatModifierCount] {
-		if m.DrmFormatModifierPlaneCount == 1 && m.DrmFormatModifierTilingFeatures&need == need && r.exportable(physical, format, m.DrmFormatModifier) {
-			result = append(result, m.DrmFormatModifier)
-		}
+	result, planes := filterModifiers(mods[:list.DrmFormatModifierCount], need, func(m uint64) bool { return r.exportable(physical, format, m) })
+	if r.modPlanes == nil {
+		r.modPlanes = make(map[uint64]uint32)
 	}
+	// A modifier has the same plane count for every format (DCC planes
+	// come from the modifier), so SDR and HDR share the map.
+	maps.Copy(r.modPlanes, planes)
 	return result
+}
+
+// maxModifierPlanes is the DRM limit of planes in a framebuffer.
+const maxModifierPlanes = 4
+
+// filterModifiers keeps the modifiers with 1..4 memory planes whose tiling
+// features include need and that pass exportable, and returns each kept
+// modifier's plane count.
+func filterModifiers(mods []vk.DrmFormatModifierPropertiesEXT, need vk.FormatFeatureFlags, exportable func(uint64) bool) ([]uint64, map[uint64]uint32) {
+	var result []uint64
+	planes := make(map[uint64]uint32, len(mods))
+	for _, m := range mods {
+		if m.DrmFormatModifierPlaneCount < 1 || m.DrmFormatModifierPlaneCount > maxModifierPlanes || m.DrmFormatModifierTilingFeatures&need != need || !exportable(m.DrmFormatModifier) {
+			continue
+		}
+		result = append(result, m.DrmFormatModifier)
+		planes[m.DrmFormatModifier] = m.DrmFormatModifierPlaneCount
+	}
+	return result, planes
 }
 
 func (r *Renderer) exportable(physical vk.PhysicalDevice, format vk.Format, modifier uint64) bool {
@@ -226,9 +255,12 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if err := checked("vkGetImageDrmFormatModifierPropertiesEXT", d.GetImageDrmFormatModifierPropertiesEXT(r.device, t.image, &props)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	var layout vk.SubresourceLayout
-	sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT}
-	d.GetImageSubresourceLayout(r.device, t.image, &sub, &layout)
+	n := max(r.modPlanes[props.DrmFormatModifier], 1)
+	var layouts [maxModifierPlanes]vk.SubresourceLayout
+	for i := range min(n, maxModifierPlanes) {
+		sub := vk.ImageSubresource{AspectMask: vk.ImageAspectMemoryPlane0BitEXT << i}
+		d.GetImageSubresourceLayout(r.device, t.image, &sub, &layouts[i])
+	}
 	t.view, err = r.imageView(t.image, format)
 	if err != nil {
 		return nil, ports.DMABuf{}, err
@@ -238,11 +270,29 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	if err := checked("vkGetMemoryFdKHR", d.GetMemoryFdKHR(r.device, &get, &fd)); err != nil {
 		return nil, ports.DMABuf{}, err
 	}
-	f := os.NewFile(uintptr(fd), "neferwl-target")
-	if f == nil {
+	// Every plane owns its file: the planes share the one memory object,
+	// so planes 1.. are duplicates of the exported fd.
+	planes := make([]ports.DMABufPlane, 0, n)
+	closePlanes := func() {
+		for _, p := range planes {
+			_ = p.File.Close()
+		}
+	}
+	first := os.NewFile(uintptr(fd), "neferwl-target")
+	if first == nil {
 		return nil, ports.DMABuf{}, fmt.Errorf("invalid exported fd %d", fd)
 	}
-	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: []ports.DMABufPlane{{File: f, Offset: uint32(layout.Offset), Stride: uint32(layout.RowPitch)}}}
+	planes = append(planes, ports.DMABufPlane{File: first, Offset: uint32(layouts[0].Offset), Stride: uint32(layouts[0].RowPitch)})
+	for i := uint32(1); i < n; i++ {
+		dup, err := unix.FcntlInt(first.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			closePlanes()
+			return nil, ports.DMABuf{}, fmt.Errorf("duplicate exported fd for plane %d: %w", i, err)
+		}
+		planes = append(planes, ports.DMABufPlane{File: os.NewFile(uintptr(dup), "neferwl-target"), Offset: uint32(layouts[i].Offset), Stride: uint32(layouts[i].RowPitch)})
+	}
+	r.log.Info().Uint64("modifier", props.DrmFormatModifier).Uint32("planes", n).Msg("render target exported")
+	buf := ports.DMABuf{Width: r.width, Height: r.height, Format: fourcc, Modifier: props.DrmFormatModifier, Planes: planes}
 	ok = true
 	return t, buf, nil
 }

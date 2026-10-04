@@ -339,7 +339,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	display.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	display.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	display.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	display.EXPECT().UseTarget(mock.Anything).Return()
 	display.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	display.EXPECT().Close().Return().Once()
@@ -447,7 +447,7 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		switch {
@@ -543,7 +543,7 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()

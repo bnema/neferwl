@@ -50,7 +50,7 @@ func damageMatchesFullRedraw(t *testing.T, tr, out ports.BufferTransform) {
 		return r
 	}
 	damaged, full := newR(), newR()
-	bufsD, err := damaged.ExportTargets(2, nil)
+	bufsD, err := damaged.ExportTargets(2, nil, false)
 	if err != nil {
 		t.Skipf("no exportable targets: %v", err)
 	}

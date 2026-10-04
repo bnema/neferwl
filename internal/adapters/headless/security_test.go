@@ -267,7 +267,7 @@ func TestSecurityRawHDRSuppressed(t *testing.T) {
 			}
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().SetHDR(float64(203)).Return().Once()
-			r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+			r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 			rendered := make(chan ports.Scene, 4)
 			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 				rendered <- s
