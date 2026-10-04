@@ -326,6 +326,10 @@ func (c *Core) removeScreen(name string) {
 	if len(c.screens) == 1 {
 		c.screens[0].info = ports.OutputInfo{}
 		c.screens[0].layers = nil
+		// Nothing draws the placeholder: its springs would only wake the
+		// fallback timer, and start from the old output's geometry if an
+		// output came back.
+		c.screens[0].stopAnimations()
 		return
 	}
 	gone := c.screens[i]

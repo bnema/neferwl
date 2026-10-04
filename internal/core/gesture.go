@@ -343,17 +343,22 @@ func (c *Core) spring(s spring, now time.Time) motion {
 // rect motions stop too.
 func (c *Core) stopAnimations() {
 	for _, sc := range c.screens {
-		if sc.mon.switchMotion.on {
-			sc.mon.stopSwitch()
-		}
-		for w := range sc.mon.all() {
-			if w.motion.on {
-				w.stopSlide()
-			}
-		}
-		sc.stopRects()
+		sc.stopAnimations()
 	}
 	c.stopFrame()
+}
+
+// stopAnimations settles the screen's running springs where they are going.
+func (s *screen) stopAnimations() {
+	if s.mon.switchMotion.on {
+		s.mon.stopSwitch()
+	}
+	for w := range s.mon.all() {
+		if w.motion.on {
+			w.stopSlide()
+		}
+	}
+	s.stopRects()
 }
 
 // animate moves the running springs to now; settled ones stop. A non-nil only
