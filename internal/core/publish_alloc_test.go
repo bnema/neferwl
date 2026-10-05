@@ -9,16 +9,20 @@ import (
 )
 
 // Allocation budgets of one animation frame (step) on two screens of six
-// windows each, with camera and rect motions running, and on one screen with
-// the overview open. Every scene sent is freshly built (immutable once sent),
-// and the layouts are rebuilt for every publish, so the floor is not 0.
-// Measured: 43 before presizing the scene windows and separators, 36 after;
-// 70 with the overview open (its rows and card layouts are rebuilt too).
-// Leaving entries (a closed window still fading) add none: the settled
-// layout with them goes into a reused buffer.
+// windows each, with camera and rect motions (position, fade, dim, scale)
+// running, and on one screen with the overview opening (its cards' scale
+// and fade motions running). Every scene sent is freshly built (immutable
+// once sent), and the layouts are rebuilt for every publish, so the floor
+// is not 0. Measured: 43 before presizing the scene windows and separators,
+// 36 after, 32 once the fallback timer is made once and reset per frame
+// (the fallback path, step(ctx, nil), re-arms it; the flip path with
+// another screen animating keeps it and costs the same). Leaving entries
+// (a closed window still fading) add none: 24, less than a frame with six
+// moving windows (fewer configure targets). The opening overview costs 70
+// (its rows and card layouts are rebuilt too).
 const (
-	publishAllocBudget         = 36
-	publishLeavingAllocBudget  = publishAllocBudget
+	publishAllocBudget         = 32
+	publishLeavingAllocBudget  = 24
 	publishOverviewAllocBudget = 70
 )
 
@@ -56,11 +60,12 @@ func publishRig(t *testing.T, screens int) *Core {
 	return c
 }
 
-// publishStep is one animation frame whose scene is taken from the channel.
-func publishStep(t *testing.T, c *Core) func() {
+// publishStep is one animation frame of only (nil: the fallback timer's,
+// every screen) whose scene is taken from the channel.
+func publishStep(t *testing.T, c *Core, only *screen) func() {
 	ctx := context.Background()
 	return func() {
-		if err := c.step(ctx, nil); err != nil {
+		if err := c.step(ctx, only); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -71,7 +76,41 @@ func publishStep(t *testing.T, c *Core) func() {
 	}
 }
 
-// TestPublishAllocations pins the cost of publishing an animation frame.
+// startRectMotions gives every window of sc a rect motion on each
+// component: position and size, fade, dim and content scale.
+func startRectMotions(c *Core, sc *screen, t0 time.Time) {
+	sc.rects = make(map[WindowID]rectMotion, 6)
+	sp := viewSpring(100, 0)
+	for _, p := range sc.settledLayout {
+		sc.rects[p.ID] = rectMotion{
+			x: c.spring(sp, t0), y: c.spring(sp, t0),
+			w: c.spring(sp, t0), h: c.spring(sp, t0),
+			dx: 100, dy: 100, dw: 100, dh: 100,
+			fade: c.spring(viewSpring(0.5, 0), t0), df: 0.5,
+			dim: c.spring(viewSpring(0.5, 0), t0), ddim: 0.5,
+			scale: true,
+		}
+	}
+	sc.rectsWS = sc.mon.Current()
+}
+
+// checkRunning fails unless every real screen still has six rect motions
+// and its camera motion.
+func checkRunning(t *testing.T, c *Core, when string) {
+	t.Helper()
+	for _, sc := range c.screens {
+		if sc.name() == "" {
+			continue
+		}
+		if len(sc.rects) != 6 || !sc.mon.Current().motion.on || len(sc.shown) < 6 {
+			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().motion.on, len(sc.shown))
+		}
+	}
+}
+
+// TestPublishAllocations pins the cost of publishing an animation frame, on
+// the fallback timer (every screen) and on a page flip of one screen while
+// the other still animates (the flip path keeps the timer).
 func TestPublishAllocations(t *testing.T) {
 	c := publishRig(t, 2)
 	t0 := time.Now()
@@ -82,55 +121,47 @@ func TestPublishAllocations(t *testing.T) {
 		ws := sc.mon.Current()
 		ws.motion = c.spring(viewSpring(100, 0), t0)
 		ws.shift = 100
-		sc.rects = make(map[WindowID]rectMotion, 6)
-		sp := viewSpring(100, 0)
-		for _, p := range sc.settledLayout {
-			sc.rects[p.ID] = rectMotion{
-				x: c.spring(sp, t0), y: c.spring(sp, t0),
-				w: c.spring(sp, t0), h: c.spring(sp, t0),
-				dx: 100, dy: 100, dw: 100, dh: 100,
-			}
-		}
-		sc.rectsWS = ws
+		startRectMotions(c, sc, t0)
 	}
-	step := publishStep(t, c)
-	step()
-	for _, sc := range c.screens {
-		if sc.name() == "" {
-			continue
+	for _, tc := range []struct {
+		name string
+		only *screen
+	}{{"fallback", nil}, {"flip", c.screens[1]}} {
+		step := publishStep(t, c, tc.only)
+		step()
+		checkRunning(t, c, "setup")
+		if tc.only != nil && !c.animatingOther(tc.only) {
+			t.Fatal("setup: the other screen does not animate")
 		}
-		if len(sc.rects) != 6 || !sc.mon.Current().motion.on || len(sc.shown) < 6 {
-			t.Fatalf("setup: rects %d camera %v shown %d", len(sc.rects), sc.mon.Current().motion.on, len(sc.shown))
+		n := testing.AllocsPerRun(50, step)
+		t.Logf("%s allocs per step = %v", tc.name, n)
+		checkRunning(t, c, "motions settled during the measure")
+		if n > publishAllocBudget {
+			t.Errorf("%s publish allocs per frame = %v, budget %d", tc.name, n, publishAllocBudget)
 		}
-	}
-	n := testing.AllocsPerRun(50, step)
-	t.Logf("allocs per step = %v", n)
-	for _, sc := range c.screens {
-		if sc.name() == "" {
-			continue
-		}
-		if len(sc.rects) != 6 || !sc.mon.Current().motion.on {
-			t.Fatalf("motions settled during the measure: rects %d", len(sc.rects))
-		}
-	}
-	if n > publishAllocBudget {
-		t.Errorf("publish allocs per frame = %v, budget %d", n, publishAllocBudget)
 	}
 }
 
-// TestPublishOverviewAllocations pins the cost of publishing with the
-// overview open, which guards the reuse of Core.overviewReal.
+// TestPublishOverviewAllocations pins the cost of publishing while the
+// overview opens: its cards fly from the full rects (scale and fade motions
+// on every card), which guards the reuse of Core.overviewReal.
 func TestPublishOverviewAllocations(t *testing.T) {
 	c := publishRig(t, 1)
 	sc := c.cur()
+	now := time.Now()
+	shots := c.snapshot(now)
 	sc.mon.ToggleOverview()
-	step := publishStep(t, c)
+	c.transition(shots, now)
+	step := publishStep(t, c, nil)
 	step()
-	if !sc.mon.ov.open || len(c.overviewReal) != 6 {
-		t.Fatalf("setup: overview %v, real layouts %d", sc.mon.ov.open, len(c.overviewReal))
+	if !sc.mon.ov.open || len(c.overviewReal) != 6 || len(sc.rects) == 0 || !c.animating() {
+		t.Fatalf("setup: overview %v, real layouts %d, rects %d, animating %v", sc.mon.ov.open, len(c.overviewReal), len(sc.rects), c.animating())
 	}
 	n := testing.AllocsPerRun(50, step)
 	t.Logf("overview allocs per step = %v", n)
+	if len(sc.rects) == 0 {
+		t.Fatal("card motions settled during the measure")
+	}
 	if n > publishOverviewAllocBudget {
 		t.Errorf("overview publish allocs per frame = %v, budget %d", n, publishOverviewAllocBudget)
 	}
@@ -138,7 +169,8 @@ func TestPublishOverviewAllocations(t *testing.T) {
 
 // TestPublishLeavingAllocations pins the cost of a frame with leaving
 // entries on every screen (two of the six windows closed, fading out, the
-// other four with rect motions): not above a frame without them.
+// other four with rect motions): the measured 24, under a frame without
+// them (the leaving entries take no configure target).
 func TestPublishLeavingAllocations(t *testing.T) {
 	c := publishRig(t, 2)
 	t0 := time.Now()
@@ -164,7 +196,7 @@ func TestPublishLeavingAllocations(t *testing.T) {
 		}
 		sc.rectsWS = sc.mon.Current()
 	}
-	step := publishStep(t, c)
+	step := publishStep(t, c, nil)
 	step()
 	for _, sc := range c.screens {
 		if sc.name() == "" {
