@@ -32,12 +32,8 @@ func (w *Workspace) overviewMaximized() bool {
 }
 
 func (w *Workspace) columnOf(id WindowID) int {
-	for i, c := range w.Columns {
-		if slices.Contains(c.Windows, id) {
-			return i
-		}
-	}
-	return -1
+	c, _ := w.cell(id)
+	return c - 1
 }
 
 // stack lists what is on screen followed by what it hides, top to bottom.

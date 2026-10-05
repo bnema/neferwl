@@ -52,6 +52,9 @@ func (c *Core) state() ports.State {
 				if i := w.stashIndex(id); i >= 0 {
 					v.StashIndex, v.StashCount, v.Hidden = i+1, len(w.Stash), w.stashHidden
 				}
+				if !v.Floating {
+					v.Column, v.Row = w.cell(id)
+				}
 				st.Windows = append(st.Windows, v)
 			}
 		}

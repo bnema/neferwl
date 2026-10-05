@@ -307,6 +307,16 @@ func (w *Workspace) windows() []WindowID {
 	return ids
 }
 
+// cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
+func (w *Workspace) cell(id WindowID) (col, row int) {
+	for ci, c := range w.Columns {
+		if ri := slices.Index(c.Windows, id); ri >= 0 {
+			return ci + 1, ri + 1
+		}
+	}
+	return 0, 0
+}
+
 func (w *Workspace) floatIndex(id WindowID) int {
 	return slices.IndexFunc(w.Floats, func(f Float) bool { return f.ID == id })
 }

@@ -107,6 +107,7 @@ While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland so
 - the focused output and window;
 - every window, with its app ID, PID, output, workspace, `workspace_id` (the ID string of its workspace, numbered or hidden) and whether it is on screen (`visible`);
 - `floating: true` for floating windows. Stashed windows also have their 1-based place in their workspace's stash (`stash_index` of `stash_count`, both `0` outside it) and `hidden: true` while the stash is hidden.
+- for tiled windows, their 1-based `column` (layout order, left to right with `overflow = "scroll"`; with `overflow = "fixed"`, spiral and expanded columns break that, so a later column can sit below or beside an earlier one) and `row` (top to bottom in the column); both are `0` when `floating` is true. Sort by `column`, `row` for layout order.
 
 ```sh
 neferwl state                        # the whole state as JSON

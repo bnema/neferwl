@@ -45,6 +45,10 @@ type WindowState struct {
 	// StashIndex is the 1-based place of a stashed window in its stash of
 	// StashCount windows; both are 0 outside the stash.
 	StashIndex, StashCount int
+	// Column and Row are the 1-based place of a tiled window: its column in
+	// layout order (not geometry under fixed overflow), its row top to
+	// bottom in that column; both are 0 for floating windows.
+	Column, Row int
 	// Hidden is set for a stashed window while its stash is hidden.
 	Hidden bool
 }
