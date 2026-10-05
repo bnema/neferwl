@@ -135,9 +135,9 @@ func (s *configures) mark(v ports.ConfigureWindow) {
 // hidden stash window): a destroyed one is forgotten (forget).
 func (s *configures) keep(id WindowID) { s.seen[id] = true }
 
-// forget drops what was sent to id: the window is destroyed. xdg reuses
-// window IDs, so a remapped one must start from nothing, or an unchanged
-// first configure would be withheld.
+// forget drops what was sent to id: the window is unmapped. A toplevel
+// that maps again keeps its ID, so it must start from nothing, or an
+// unchanged first configure would be withheld.
 func (s *configures) forget(id WindowID) {
 	delete(s.sent, id)
 	delete(s.answer, id)
