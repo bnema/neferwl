@@ -2,7 +2,7 @@ package core
 
 import "testing"
 
-func TestOverviewStashVerticalSelectsFront(t *testing.T) {
+func TestOverviewLeaveStashThenVerticalSelectsFront(t *testing.T) {
 	for _, accept := range []bool{false, true} {
 		m := stackMonitor()
 		w := m.Current()
@@ -15,6 +15,7 @@ func TestOverviewStashVerticalSelectsFront(t *testing.T) {
 		if m.cardAt(w) < 0 {
 			t.Fatal("not in stash")
 		}
+		m.OverviewMove(1, 0) // leave stash before cycling the main stack
 		m.OverviewMove(0, 1)
 		p := previewOf(t, m.Layout(), 9)
 		if !p.Focused || p.Peek || m.cardAt(w) >= 0 {

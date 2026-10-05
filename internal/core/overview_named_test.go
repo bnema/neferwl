@@ -36,6 +36,7 @@ func TestOverviewNamedFollowsInvocationWorkspace(t *testing.T) {
 	if m.Current().Name != "dev" {
 		t.Fatal("down from workspace 1 did not reach invoked named workspace")
 	}
+	m.OverviewMove(1, 0) // leave the named workspace's stash pile
 	m.OverviewMove(0, 1)
 	if m.Current() != numbered[1] {
 		t.Fatal("down from named did not resume numbered sequence")
@@ -181,6 +182,7 @@ func TestOverviewNamedNavigation(t *testing.T) {
 	if id := m.card(); id != 6 {
 		t.Fatalf("named stash selection: %d", id)
 	}
+	m.OverviewMove(1, 0)
 	m.OverviewMove(0, 1)
 	if m.Current().Name != "game" || m.card() != 0 {
 		t.Fatalf("next named workspace: %q, card %d", m.Current().Name, m.card())
@@ -190,6 +192,7 @@ func TestOverviewNamedNavigation(t *testing.T) {
 		t.Fatal("past last named workspace")
 	}
 	m.OverviewMove(0, -1)
+	m.OverviewMove(1, 0)
 	m.OverviewMove(0, -1)
 	if m.Current() != numbered[1] || !slices.Equal(m.Workspaces, numbered) {
 		t.Fatal("return to numbered workspaces changed numbering")
@@ -266,6 +269,7 @@ func TestOverviewNamedBrowseKeepsNumberedReturn(t *testing.T) {
 		if click {
 			m.OverviewPick(7)
 		} else {
+			m.OverviewMove(1, 0)
 			m.OverviewMove(0, 1)
 			m.ToggleOverview()
 		}
@@ -414,6 +418,7 @@ func TestOverviewNamedScrollAndSwipe(t *testing.T) {
 	if m.Current().Name != "dev" {
 		t.Fatal("swipe did not cross groups")
 	}
+	m.overviewFocus(ActionFocusColumnRight)
 	m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, V120: 120}})
 	if m.Current().Name != "game" {
 		t.Fatal("scroll did not reach next named workspace")

@@ -363,28 +363,36 @@ func (m *Monitor) showOverview(w *Workspace) {
 	m.selectRow()
 }
 
-// OverviewMove routes every vertical input through moveStack, then falls
-// through to workspace navigation at the stack boundary. Horizontal moves
-// stay inside a column group; left on a single card sends it behind.
+// OverviewMove shares navigation rules across keys, scrolls and swipes.
+// Vertical moves stay in a selected stash pile; horizontal moves leave it.
 func (m *Monitor) OverviewMove(dx, dy int) {
-	w := m.Current()
 	if dy != 0 {
-		if m.moveStack(-dy) {
-			return
-		}
-		rows := m.overviewWorkspaces()
-		i := indexOf(rows, w) + dy
-		if i < 0 || i >= len(rows) {
-			return
-		}
-		m.showOverview(rows[i])
+		m.overviewVertical(dy)
+	} else if dx != 0 {
+		m.overviewHorizontal(dx)
+	}
+}
+
+func (m *Monitor) overviewVertical(dy int) {
+	w := m.Current()
+	if at := m.cardAt(w); at >= 0 {
+		m.selectCard(w, min(max(at+dy, 0), len(w.Stash)-1))
 		return
 	}
-	if at := m.cardAt(w); at >= 0 {
-		switch {
-		case at+dx >= 0 && at+dx < len(w.Stash):
-			m.selectCard(w, at+dx)
-		case dx > 0 && len(w.stack()) > 0:
+	if m.moveStack(-dy) {
+		return
+	}
+	rows := m.overviewWorkspaces()
+	i := indexOf(rows, w) + dy
+	if i >= 0 && i < len(rows) {
+		m.showOverview(rows[i])
+	}
+}
+
+func (m *Monitor) overviewHorizontal(dx int) {
+	w := m.Current()
+	if m.cardAt(w) >= 0 {
+		if dx > 0 && len(w.stack()) > 0 {
 			m.ov.card, m.ov.cardOf = 0, nil
 			item := m.stackFront(w)
 			if item.kind == stackColumns {
