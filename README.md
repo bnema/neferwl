@@ -65,7 +65,7 @@ NeferWL uses libraries that other Go projects can use too:
 
 ### Desktop integration
 
-Use Noctalia, Waybar, fuzzel, mako, [nefercap](https://github.com/bnema/nefercap), cliphist, [neferafk](https://github.com/bnema/neferafk), swayidle, wlr-randr or input methods such as fcitx5 through standard protocols. No built-in bar, launcher or notifications.
+Bring your own desktop UI: any layer-shell client, such as Noctalia or Waybar, works. No built-in bar, launcher or notifications. For capture and idle management, see [nefercap](https://github.com/bnema/nefercap) and [neferafk](https://github.com/bnema/neferafk).
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts. See [Desktop integration](docs/desktop.md).
 
