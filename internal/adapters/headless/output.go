@@ -579,7 +579,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests = capture.Waiting(requests, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, drawn), seen)
+		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
@@ -671,12 +671,14 @@ func (opts Options) flush(q *presented.Queue) {
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames.
-func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) *ports.FlipInfo {
+func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	shows := map[ports.WindowID]uint64{}
 	for id, c := range surfaces {
-		if scene.Shows(id) {
+		// A closed window drawn from its kept content is not shown to
+		// its client.
+		if scene.Shows(id) && !kept(id) {
 			shows[id] = c.Seq
 		}
 	}

@@ -76,7 +76,7 @@ func TestScanoutCandidate(t *testing.T) {
 		if tc.cont != nil {
 			tc.cont(&c)
 		}
-		if _, reason := scanoutCandidate(s, map[ports.WindowID]ports.SurfaceContent{1: c}, 200, 100); reason != tc.reason {
+		if _, reason := scanoutCandidate(s, map[ports.WindowID]ports.SurfaceContent{1: c}, 200, 100, nil); reason != tc.reason {
 			t.Errorf("%s: reason %q, want %q", tc.name, reason, tc.reason)
 		}
 	}
@@ -105,7 +105,7 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	root := ports.SurfaceContent{ID: 1, Seq: 7, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, SHM: &ports.SHMBuffer{},
 		Geometry: ports.Rect{W: 100, H: 50},
 		Children: []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Seq: 3, Width: 200, Height: 100, LogicalW: 100, LogicalH: 50, Opaque: true, DMABuf: game, Async: true, Acquire: acquire}}}}
-	c, reason := scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: root}, 200, 100)
+	c, reason := scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: root}, 200, 100, nil)
 	if reason != "" || c.DMABuf != game || c.ID != 1 || c.Seq != 7 || !c.Async || c.Acquire != acquire || c.Geometry != (ports.Rect{}) {
 		t.Fatalf("candidate %+v, reason %q", c, reason)
 	}
@@ -114,12 +114,12 @@ func TestScanoutCandidateClientSubsurface(t *testing.T) {
 	// one; alone it is not a dmabuf.
 	solidRoot := root
 	solidRoot.SHM, solidRoot.Solid = nil, &ports.SolidColor{A: 1}
-	c, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100)
+	c, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100, nil)
 	if reason != "" || c.DMABuf != game || c.Solid != nil || c.ID != 1 || c.Seq != 7 {
 		t.Fatalf("solid root with dmabuf child: candidate %+v, reason %q", c, reason)
 	}
 	solidRoot.Children = nil
-	if _, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100); reason != "not_dmabuf" {
+	if _, reason = scanoutCandidate(scene, map[ports.WindowID]ports.SurfaceContent{1: solidRoot}, 200, 100, nil); reason != "not_dmabuf" {
 		t.Fatalf("solid root alone: reason %q, want not_dmabuf", reason)
 	}
 }

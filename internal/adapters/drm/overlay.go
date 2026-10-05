@@ -59,7 +59,10 @@ type overlayWin struct {
 // overlayCandidate finds the one window the overlay can show: an opaque
 // dmabuf at integer physical coordinates, drawn 1:1, with no other window
 // or layer above it, and the plane colour mode it needs. reason is why none.
-func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
+//
+// kept is scanoutCandidate's: a window drawn from a withdrawn content is
+// composed, never put on the plane.
+func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(ports.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
 	if s.Transform != 0 {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
 	}
@@ -85,7 +88,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// window (a peeking stashed one) needs the veil drawn over it, a
 		// fading one its translucency, and one with the focus effect its
 		// lift; an overview preview is drawn smaller than its buffer.
-		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) {
+		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
 				pick, mode = w, m
 				continue
@@ -97,6 +100,15 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		}
 	}
 	if pick == nil {
+		if kept != nil && len(s.Windows) > 0 {
+			// The one window that could have gone on the plane fades out
+			// after its close: composed from its kept content.
+			for i := range s.Windows {
+				if w := &s.Windows[i]; !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 && kept(w.ID) {
+					return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "leaving"
+				}
+			}
+		}
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "no_candidate"
 	}
 	if s.Dim > 0 {

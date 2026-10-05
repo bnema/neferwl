@@ -36,6 +36,10 @@ type Output struct {
 	securityInvalid  bool
 	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
 	runContext       context.Context // bounds compositor clear waits during Run startup
+	// kept reports a window drawn from a content its client withdrew (it
+	// closed and fades out; surfaces.Table.Kept): composed only, never on
+	// a plane, never reported shown. Set by Run; nil before.
+	kept func(ports.WindowID) bool
 
 	k       kms
 	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
@@ -1031,6 +1035,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 	table := surfaces.New()
 	drawn := table.Map()
+	o.kept = table.Kept
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	var want ports.CursorChange

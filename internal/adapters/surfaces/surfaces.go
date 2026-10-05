@@ -20,12 +20,21 @@ import (
 // content waited on it, and wayland closes it once the buffer is released.
 //
 // Buffer lifetime: wayland releases the buffer to the client once the
-// output reports the empty content as seen, so the client may draw into or
-// destroy it during the fade. A dmabuf stays importable through the
-// renderer's own duplicated descriptors (a destroyed one shows as stale
-// pixels at worst); a wl_shm pool stays mapped by the renderer while it is
-// drawn, so a destroyed pool is still readable (a client that truncates the
-// file under a mapping has always been able to fault a reader).
+// output reports the empty content as seen, so the client may draw into,
+// destroy or reuse it during the fade. A kept content is therefore only
+// ever composed by the renderer, from what it already holds: the dmabuf
+// import (its own duplicated descriptors keep the memory alive; a reused
+// buffer shows stale pixels at worst) or the GPU copy of the wl_shm buffer
+// (the GPU never reads the pool mapping, and a pool's fd close does not
+// unmap it). A kept content is never scanned out on a plane and never
+// reported as shown: outputs ask Kept. Window capture never reaches it:
+// core resolves a window session through its workspace, which the closed
+// window has left, so the session ends (CaptureReasonWindowGone) before
+// the leaving scene; an output or workspace capture composes the fading
+// window like the screen does.
+// Every Acquire fence of the kept content (root and children) is dropped:
+// the frame that first drew it waited on them, and wayland closes them
+// when the buffers are released.
 type Table struct {
 	m map[ports.WindowID]ports.SurfaceContent
 	// kept are the windows drawn from a content their client withdrew.
@@ -57,6 +66,16 @@ func (t *Table) Update(c ports.SurfaceContent, scene ports.Scene) {
 		return
 	}
 	prev.Acquire = nil
+	if len(prev.Children) > 0 {
+		// The slice is shared with wayland's publication: copy before
+		// zeroing (one allocation per unmap).
+		children := make([]ports.Subsurface, len(prev.Children))
+		copy(children, prev.Children)
+		for i := range children {
+			children[i].Acquire = nil
+		}
+		prev.Children = children
+	}
 	t.m[c.ID] = prev
 	t.kept[c.ID] = struct{}{}
 }
@@ -72,7 +91,9 @@ func (t *Table) Prune(scene ports.Scene) {
 	}
 }
 
-// Kept reports whether id is drawn from a content its client withdrew.
+// Kept reports whether id is drawn from a content its client withdrew: a
+// buffer the client may have got back. Outputs compose it only: no plane
+// scans it out, no capture or presentation report counts it as shown.
 func (t *Table) Kept(id ports.WindowID) bool {
 	_, ok := t.kept[id]
 	return ok

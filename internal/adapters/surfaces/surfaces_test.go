@@ -99,3 +99,26 @@ func TestUpdateAllocations(t *testing.T) {
 		t.Fatalf("%v allocations per update", n)
 	}
 }
+
+// The kept content's children lose their Acquire fences too, on a copy:
+// wayland's own slice (shared with its publication) is left alone.
+func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
+	tb := New()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	children := []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{DMABuf: &ports.DMABuf{ID: 2}, Acquire: r}}}
+	full := ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}, Children: children}
+	tb.Update(full, shows(1))
+	tb.Update(ports.SurfaceContent{ID: 1, Seq: 2}, shows(1))
+	kept := tb.Map()[1]
+	if len(kept.Children) != 1 || kept.Children[0].Acquire != nil || kept.Children[0].DMABuf != children[0].DMABuf {
+		t.Fatalf("kept children %+v", kept.Children)
+	}
+	if children[0].Acquire != r {
+		t.Fatal("wayland's slice was modified")
+	}
+}

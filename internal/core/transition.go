@@ -434,6 +434,9 @@ func (c *Core) appearMapped(id WindowID, now time.Time) {
 // is the same with animations off. A fullscreen window, one under a
 // session lock or with the overview open just goes.
 func (c *Core) unmapWindow(v ports.WindowUnmapped) {
+	// The window is destroyed: its ID may come back for another one, which
+	// must be configured from nothing (a leaving entry keeps no configure).
+	c.configures.forget(v.ID)
 	sc, w := c.screenOf(v.ID)
 	if sc == nil {
 		return

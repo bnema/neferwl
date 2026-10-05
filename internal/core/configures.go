@@ -131,8 +131,18 @@ func (s *configures) mark(v ports.ConfigureWindow) {
 }
 
 // keep marks id as seen without a configure: a window drawn while it leaves
-// keeps what was sent to it.
+// keeps what was sent to it. Only for a window the layout still holds (a
+// hidden stash window): a destroyed one is forgotten (forget).
 func (s *configures) keep(id WindowID) { s.seen[id] = true }
+
+// forget drops what was sent to id: the window is destroyed. xdg reuses
+// window IDs, so a remapped one must start from nothing, or an unchanged
+// first configure would be withheld.
+func (s *configures) forget(id WindowID) {
+	delete(s.sent, id)
+	delete(s.answer, id)
+	delete(s.seen, id)
+}
 
 // prune forgets the windows no next call saw since the last prune: they
 // left the layout.

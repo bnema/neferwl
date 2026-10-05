@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"math"
 	"slices"
 	"testing"
 	"time"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -282,17 +284,122 @@ func TestUnmapExceptions(t *testing.T) {
 	})
 }
 
-// A session lock during the fade drops the leaving entry with the other
-// motions (stopRects), as do animations turned off.
-func TestUnmapLeavingDroppedByLock(t *testing.T) {
-	c, _, _, sc := twoSettled(t)
-	c.unmapWindow(ports.WindowUnmapped{ID: 2})
-	if s := indicatorScene(t, c); !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
-		t.Fatal("no leaving entry")
+// An interruption during the fade drops the leaving entry with the other
+// motions (stopRects): a real session lock, an output unplug, an overview
+// toggle and a workspace switch. Nothing of the closed window is left.
+func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
+	leaving := func(t *testing.T) (*Core, *indicatorClock, *screen) {
+		t.Helper()
+		c, ic, _, sc := twoSettled(t)
+		c.unmapWindow(ports.WindowUnmapped{ID: 2})
+		if s := indicatorScene(t, c); !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+			t.Fatal("no leaving entry")
+		}
+		return c, ic, sc
 	}
-	c.stopAnimations()
+	gone := func(t *testing.T, c *Core, sc *screen, s ports.Scene) {
+		t.Helper()
+		if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) {
+			t.Fatalf("the leaving entry survived: %+v", s.Windows)
+		}
+		// Other motions may run (the overview's cards): none for 2.
+		if _, ok := sc.rects[2]; ok || slices.ContainsFunc(sc.shown, func(p Placement) bool { return p.Leaving }) {
+			t.Fatalf("rects %+v shown %+v", sc.rects, sc.shown)
+		}
+	}
+	t.Run("session lock", func(t *testing.T) {
+		c, _, sc := leaving(t)
+		state := ports.SecurityState{Generation: 1, Protected: true}
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
+		c.ch.Security = gate
+		if err := c.publish(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		locked := (<-c.ch.Scenes)[0]
+		if len(locked.Windows) != 0 || len(sc.rects) != 0 || c.animating() {
+			t.Fatalf("locked scene %+v rects %d animating %t", locked.Windows, len(sc.rects), c.animating())
+		}
+		state = ports.SecurityState{Generation: 2}
+		gone(t, c, sc, indicatorScene(t, c))
+	})
+	t.Run("unplug", func(t *testing.T) {
+		c, _, sc := leaving(t)
+		c.removeScreen("A")
+		if c.animating() || len(sc.rects) != 0 {
+			t.Fatalf("motions survived the unplug: %d", len(sc.rects))
+		}
+		c.addScreen(ports.OutputInfo{Name: "A", Width: 300, Height: 200})
+		gone(t, c, c.cur(), indicatorScene(t, c))
+	})
+	t.Run("overview toggle", func(t *testing.T) {
+		c, ic, sc := leaving(t)
+		act(c, ic, ActionToggleOverview)
+		gone(t, c, sc, indicatorScene(t, c))
+	})
+	t.Run("workspace switch", func(t *testing.T) {
+		c, ic, sc := leaving(t)
+		act(c, ic, ActionFocusWorkspaceDown)
+		gone(t, c, sc, indicatorScene(t, c))
+	})
+}
+
+// A window ID reused by a new toplevel while the old one fades out (xdg
+// reuses IDs): the leaving entry goes, the new window appears from where the
+// old one was drawn (appearFrom), is listed once, and gets its tile
+// configure (the destroyed window's last configure is forgotten).
+func TestUnmapThenRemapDuringFade(t *testing.T) {
+	c, ic, cmds, sc := twoSettled(t)
+	c.unmapWindow(ports.WindowUnmapped{ID: 2})
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(40 * time.Millisecond)
+	c.animate(ic.now, nil)
+	mid := sceneWindow(t, indicatorScene(t, c), 2)
+	if !(mid.Fade > 0 && mid.Fade < 1) {
+		t.Fatalf("not fading: %+v", mid)
+	}
+	drainConfigures(cmds)
+	if _, ok := c.configures.sent[2]; ok {
+		t.Fatal("the destroyed window's configure is remembered")
+	}
+
+	c.mapWindow(ports.WindowMapped{ID: 2})
 	s := indicatorScene(t, c)
-	if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 || len(sc.shown) != 1 {
-		t.Fatalf("after the stop: %+v", s.Windows)
+	n := 0
+	for _, w := range s.Windows {
+		if w.ID == 2 {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("window 2 listed %d times: %+v", n, s.Windows)
+	}
+	if slices.ContainsFunc(sc.shown, func(p Placement) bool { return p.Leaving }) || slices.ContainsFunc(sc.settledLayout, func(p Placement) bool { return p.Leaving }) {
+		t.Fatalf("leaving entry left: %+v", sc.shown)
+	}
+	rm, ok := sc.rects[2]
+	if !ok || rm.leaving {
+		t.Fatalf("no entrance for the remapped window: %+v", rm)
+	}
+	w := sceneWindow(t, s, 2)
+	// The entrance chains over the exit: drawn as the fade left it, not
+	// invisible at 90 %.
+	if w.Hidden || math.Abs(w.Fade-mid.Fade) > 1e-9 || w.Rect != mid.Rect {
+		t.Fatalf("remapped window right after the map: %+v, want as drawn before %+v", w, mid)
+	}
+	settled := settledOf(t, sc, 2)
+	var got []ports.ConfigureWindow
+	for len(cmds) > 0 {
+		if v, ok := (<-cmds).(ports.ConfigureWindow); ok && v.ID == 2 {
+			got = append(got, v)
+		}
+	}
+	if len(got) != 1 || got[0].Width != settled.Rect.W || !got[0].Visible {
+		t.Fatalf("configures of the remapped window: %+v, want one to %+v", got, settled.Rect)
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	if w := sceneWindow(t, indicatorScene(t, c), 2); w.Fade != 0 || w.Rect != settled.Rect || len(sc.rects) != 0 {
+		t.Fatalf("remapped window settled: %+v", w)
 	}
 }
