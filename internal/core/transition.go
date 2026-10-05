@@ -657,7 +657,10 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		out = append(out, s)
 	}
 	for i := len(out); i < len(full); i++ {
+		// Shots of unplugged screens keep nothing of them alive.
 		full[i].sc, full[i].ws = nil, nil
+		clear(full[i].list[:cap(full[i].list)])
+		full[i].list = full[i].list[:0]
 	}
 	c.shots = out
 	return out

@@ -1015,19 +1015,6 @@ func (c *Core) overviewKeyboardTaken() bool {
 	return layer || c.popups[id] != nil
 }
 
-// overviewKeyNamed reports whether key is one overviewKey handles (a bare key); it
-// lets input snapshot only for those.
-func overviewKeyNamed(key ports.KeyEvent) bool {
-	if key.Mods != 0 {
-		return false
-	}
-	switch keyName(key.Keysym) {
-	case "h", "Left", "l", "Right", "k", "Up", "j", "Down", "Return", "KP_Enter", "Escape":
-		return true
-	}
-	return false
-}
-
 // overviewKey runs an overview key: true when the key was one.
 func (m *Monitor) overviewKey(key ports.KeyEvent) bool {
 	if key.Mods != 0 {
