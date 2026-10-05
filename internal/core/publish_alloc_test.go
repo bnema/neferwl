@@ -12,18 +12,22 @@ import (
 // windows each, with camera and rect motions (position, fade, dim, scale)
 // running, and on one screen with the overview opening (its cards' scale
 // and fade motions running). Every scene sent is freshly built (immutable
-// once sent), and the layouts are rebuilt for every publish, so the floor
-// is not 0. Measured: 43 before presizing the scene windows and separators,
-// 36 after, 32 once the fallback timer is made once and reset per frame
-// (the fallback path, step(ctx, nil), re-arms it; the flip path with
-// another screen animating keeps it and costs the same). Leaving entries
-// (a closed window still fading) add none: 24, less than a frame with six
-// moving windows (fewer configure targets). The opening overview costs 70
-// (its rows and card layouts are rebuilt too).
+// once sent), so the floor is not 0. Measured: 43 before presizing the scene
+// windows and separators, 36 after, 32 once the fallback timer is made once
+// and reset per frame (the fallback path, step(ctx, nil), re-arms it; the
+// flip path with another screen animating keeps it and costs the same), then
+// 6 once the layouts are built in the owner's reused buffers (layoutInto:
+// the screens' layout, the workspaces' column, row and tile rects) instead of
+// fresh slices. What is left is the scenes themselves (windows, separators,
+// the scene set) and the screen placements. Leaving entries (a closed window
+// still fading) add none: 4, less than a frame with six moving windows
+// (fewer configure targets). The opening overview costs 18 (the stack
+// items, the row map and the neighbor list it rebuilds every frame; its
+// layouts reuse the buffers too).
 const (
-	publishAllocBudget         = 32
-	publishLeavingAllocBudget  = 24
-	publishOverviewAllocBudget = 70
+	publishAllocBudget         = 6
+	publishLeavingAllocBudget  = 4
+	publishOverviewAllocBudget = 18
 )
 
 // publishRig is a Core on the real clock (a mock clock would count its own
@@ -169,7 +173,7 @@ func TestPublishOverviewAllocations(t *testing.T) {
 
 // TestPublishLeavingAllocations pins the cost of a frame with leaving
 // entries on every screen (two of the six windows closed, fading out, the
-// other four with rect motions): the measured 24, under a frame without
+// other four with rect motions): the measured 4, under a frame without
 // them (the leaving entries take no configure target).
 func TestPublishLeavingAllocations(t *testing.T) {
 	c := publishRig(t, 2)

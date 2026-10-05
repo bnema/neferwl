@@ -518,10 +518,9 @@ func (m *Monitor) overviewRows() (map[*Workspace]int, []ports.Separator) {
 // overviewLayout places the current workspace and its overview neighbors,
 // each with its full-width stash pile and covering-float stack. Other rows
 // stay hidden; numbered and named workspaces share the same preview geometry.
-func (m *Monitor) overviewLayout() []Placement {
+func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	cur := m.Current()
 	rows, _ := m.overviewRows()
-	var result []Placement
 	for w := range m.all() {
 		ry, shown := rows[w]
 		if shown {
@@ -535,11 +534,8 @@ func (m *Monitor) overviewLayout() []Placement {
 			}
 		}
 		if !shown {
-			for _, id := range w.windows() {
-				if w.floatIndex(id) < 0 {
-					result = append(result, Placement{ID: id, Hidden: true})
-				}
-			}
+			// Columns and stash only: the floats were listed above.
+			result = w.appendHidden(result, false)
 		}
 	}
 	return result
@@ -664,7 +660,9 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 // overviewZoom is the scale that fits every column of w in the usable
 // width, within the overview bounds.
 func (w *Workspace) overviewZoom() float64 {
-	_, span, _ := w.previewTiles()
+	// Only the span is read: the tiles go in the zoom scratch, dead on return.
+	var span int
+	w.zoomBuf, span, _ = w.previewTilesInto(w.zoomBuf[:0])
 	if span <= 0 {
 		return overviewMaxZoom
 	}
@@ -705,13 +703,23 @@ func (w *Workspace) rowHeight() int {
 // corner. Fixed overflow uses its on-screen geometry; scroll overflow uses
 // an unscrolled row. span is the row's width; sel is the focused column.
 func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
+	return w.previewTilesInto(make([]Placement, 0, w.columnWindows()))
+}
+
+// previewTilesInto is previewTiles appending to tiles (dst[:0] to reuse its
+// storage: the result then aliases it). The column rects use w.colBuf, dead
+// when it returns.
+func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect) {
+	var span int
+	var sel Rect
 	if w.pinned() {
 		c := w.cover()
 		// The row shows the columns a pinned fullscreen window hides,
 		// laid out as without it; its own tile stays marked fullscreen.
 		v := *w
 		v.fullscreen = 0
-		tiles, span, sel = v.previewTiles()
+		tiles, span, sel = v.previewTilesInto(tiles)
+		w.colBuf, w.rowBuf = v.colBuf, v.rowBuf
 		for i := range tiles {
 			tiles[i].Fullscreen = tiles[i].ID == c
 		}
@@ -721,7 +729,8 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 	h := max(w.Usable.H-2*g, 0)
 	var rects []Rect
 	if w.Overflow == OverflowFixed {
-		rects = w.columnRects()
+		w.colBuf = w.columnRectsInto(w.colBuf, false)
+		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
 	maximized := w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
@@ -743,7 +752,8 @@ func (w *Workspace) previewTiles() (tiles []Placement, span int, sel Rect) {
 			}
 			continue
 		}
-		for j, t := range rowRects(r, c, g) {
+		w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
+		for j, t := range w.rowBuf {
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
 		}
 		if w.Overflow != OverflowFixed {

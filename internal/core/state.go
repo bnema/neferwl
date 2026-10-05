@@ -38,7 +38,10 @@ func (c *Core) state() ports.State {
 		st.Outputs = append(st.Outputs, o)
 		// Visible follows the configures: drawn on the output.
 		shown := map[WindowID]bool{}
-		for _, p := range m.Layout() {
+		// Read at once, into publish's scratch: the snapshot holds no
+		// placement.
+		c.realBuf = m.layoutInto(c.realBuf)
+		for _, p := range c.realBuf {
 			shown[p.ID] = onScreen(p, m.Frame())
 		}
 		for w := range m.all() {

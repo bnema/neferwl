@@ -68,7 +68,10 @@ type binding struct {
 }
 type Core struct {
 	// overviewReal is publish's scratch map of the real layouts under an open overview.
-	overviewReal    map[WindowID]Placement
+	overviewReal map[WindowID]Placement
+	// realBuf backs the layout read through at once by publish (each
+	// workspace while overviewReal is filled) and by state(); never retained.
+	realBuf         []Placement
 	security        ports.SecurityState
 	lockSurfaces    []ports.LockSurfacePlacement
 	lockFocus       WindowID
@@ -590,7 +593,8 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			clear(c.overviewReal)
 			real = c.overviewReal
 			for w := range sc.mon.all() {
-				for _, p := range w.Layout() {
+				c.realBuf = w.layoutInto(c.realBuf)
+				for _, p := range c.realBuf {
 					real[p.ID] = p
 				}
 			}

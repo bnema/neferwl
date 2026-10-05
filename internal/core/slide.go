@@ -174,12 +174,17 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		if k == base || k < 0 || k >= len(list) || !m.has(list[k]) {
 			continue
 		}
-		next := list[k].Layout()
+		next := list[k].layoutInto(m.slideBuf)
+		m.slideBuf = next
 		for i := range next {
 			next[i].Focused = false
 		}
 		// Windows of the neighbor are already listed hidden: replace them.
-		shown := map[WindowID]Placement{}
+		if m.slideShown == nil {
+			m.slideShown = map[WindowID]Placement{}
+		}
+		shown := m.slideShown
+		clear(shown)
 		for _, p := range offset(next, k) {
 			shown[p.ID] = p
 		}

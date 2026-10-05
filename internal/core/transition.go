@@ -232,7 +232,13 @@ func (c *Core) refreshShown() {
 		if len(sc.rects) > 0 && sc.rectsWS != sc.rectsOwner() {
 			sc.stopRects()
 		}
-		sc.settledLayout = m.Layout()
+		sc.layoutBuf = m.layoutInto(sc.layoutBuf)
+		sc.settledLayout = sc.layoutBuf
+		if len(sc.settledLayout) == 0 {
+			// Empty stays nil, as a fresh Layout() was: shown nil falls
+			// back to the live layout until the next publish.
+			sc.settledLayout = nil
+		}
 		if len(sc.rects) > 0 {
 			// A window that left the layout (or is hidden) keeps no motion:
 			// it would ask for frames with nothing to move. A leaving one

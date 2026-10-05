@@ -217,18 +217,17 @@ func (w *Workspace) stashRect() Rect {
 	return Rect{X: u.X + (u.W-fw)/2, Y: u.Y + (u.H-fh)/2, W: fw, H: fh}
 }
 
-// stashLayout places the stash: the selected window centred, its
+// appendStash appends the placements of the stash to out: the selected window centred, its
 // neighbors gap% of the usable width away, showing what the margins
 // leave of them, the others hidden. cover is the covering fullscreen
 // window, if any.
-func (w *Workspace) stashLayout(focusedID, cover WindowID) []Placement {
+func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Placement {
 	u := w.Usable
 	center := w.stashRect()
 	fw, fh := center.W, center.H
 	// Peeks stay in the margins: they never overlap the selected window.
 	gap := u.W * w.stashGap / 100
 	peek := max((u.W-fw)/2-gap, 0)
-	out := make([]Placement, 0, len(w.Stash))
 	for i, f := range w.Stash {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
 		switch {

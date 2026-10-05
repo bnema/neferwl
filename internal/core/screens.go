@@ -37,9 +37,13 @@ type screen struct {
 	// runs. Both are built once per publish (refreshShown); shown is nil
 	// before the first publish, then callers measure the monitor's layout.
 	settledLayout, shown []Placement
-	// shownBuf and settledBuf back shown and settledLayout while rect
-	// motions run (refreshShown), reused across publishes.
-	shownBuf, settledBuf []Placement
+	// layoutBuf backs settledLayout (and shown, while no rect motion runs),
+	// rebuilt in place by every refreshShown; shownBuf and settledBuf back
+	// shown and settledLayout while rect motions run. All three are owner
+	// goroutine scratch reused across publishes: a Scene never aliases them
+	// (its windows are copied from the placements), and a caller that
+	// keeps a layout past the next publish copies it (Layout() is fresh).
+	layoutBuf, shownBuf, settledBuf []Placement
 	// leaveIDs is withLeaving's scratch list.
 	leaveIDs []WindowID
 	// rects are the running per-window rect motions (transition.go) of

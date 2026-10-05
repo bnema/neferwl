@@ -9,7 +9,8 @@ import (
 
 // BenchmarkRefreshShown is one publish's layout build on a screen of 24
 // windows, 20 of them with a rect motion and 6 more leaving: the cost of
-// matching the motions to the layout every frame.
+// matching the motions to the layout every frame. The layout is built in the
+// screen's reused buffers: 0 allocs/op (33 before).
 func BenchmarkRefreshShown(b *testing.B) {
 	var cfg ports.Config
 	cfg.Keyboard.CmdKey = "super"
