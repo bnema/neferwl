@@ -10,7 +10,6 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
-	"golang.org/x/sys/unix"
 )
 
 // Render targets (ADR 014). A DRM output scans out images the renderer
@@ -312,7 +311,7 @@ func (r *Renderer) exportTarget(mods []uint64) (*target, ports.DMABuf, error) {
 	}
 	planes = append(planes, ports.DMABufPlane{File: first, Offset: uint32(layouts[0].Offset), Stride: uint32(layouts[0].RowPitch)})
 	for i := uint32(1); i < n; i++ {
-		dup, err := unix.FcntlInt(first.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		dup, err := dupFile(first)
 		if err != nil {
 			closePlanes()
 			return nil, ports.DMABuf{}, fmt.Errorf("duplicate exported fd for plane %d: %w", i, err)
