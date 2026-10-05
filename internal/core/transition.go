@@ -37,6 +37,11 @@ type viewShot struct {
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
+	// stashAt, stashLen and stashPos are the stash's selection, size and
+	// drawn position (selection plus stashOff, in stash windows) when it
+	// was on screen; stashV is its slide's speed.
+	stashAt, stashLen int
+	stashPos, stashV  float64
 	// list and pos are the numbered workspaces and the monitor's fractional
 	// position in them (index of the current one plus switchOff); ok is
 	// false when there is none (a shown stash workspace).
@@ -170,7 +175,7 @@ func (m *rectMotion) show(p *Placement) {
 	// A peek's Dim is an offset from its veil (publish adds Stash.Dim and
 	// clamps the sum): it may go below 0, down to cancelling the veil.
 	lo := 0.0
-	if p.Peek {
+	if p.Peek || p.Veil > 0 {
 		lo = -1
 	}
 	p.Dim = max(lo, min(1, p.Dim+m.ddim))
@@ -622,6 +627,10 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		if m.switchMotion.on {
 			_, s.switchV = m.switchMotion.sampleAt(now)
 		}
+		s.stashAt, s.stashLen, s.stashPos = w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashOff
+		if w.stashMotion.on {
+			_, s.stashV = w.stashMotion.sampleAt(now)
+		}
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
 		// overview's cards are recorded like windows.
@@ -701,7 +710,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 // following reports whether a swipe moves sc's view with the fingers.
 func (c *Core) following(sc *screen) bool {
 	g := c.swipe
-	return g != nil && g.screen == sc && (g.mode == swipeColumns || g.mode == swipeWorkspaces)
+	return g != nil && g.screen == sc && (g.mode == swipeColumns || g.mode == swipeWorkspaces || g.mode == swipeStash)
 }
 
 // transitionCamera slides the columns or the monitor from what b showed.
@@ -710,6 +719,17 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 	w := m.Current()
 	switch {
 	case w == b.ws:
+		if stashSlid(b, w) {
+			// A stash navigation slides the view from where it was drawn:
+			// the windows keep their settled places (transitionRects).
+			if off := b.stashPos - float64(w.stashAt); math.Abs(off) <= 3 {
+				w.stashOff = off
+				w.stashMotion = c.spring(w.stashSpring(off, b.stashV), now)
+			} else {
+				w.stopStash()
+			}
+			return
+		}
 		if w.ViewX == b.viewX || !w.slidable() {
 			return
 		}
@@ -736,6 +756,12 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		}
 		m.switchMotion = c.spring(m.switchSpring(off, b.switchV), now)
 	}
+}
+
+// stashSlid reports whether an action moved the selection of the stash b
+// showed on w: a navigation, not a toggle, an unstash or a hide.
+func stashSlid(b *viewShot, w *Workspace) bool {
+	return w.stashAt != b.stashAt && len(w.Stash) == b.stashLen && w.stashShown()
 }
 
 // transitionRects starts or retargets the rect motions of the windows whose
@@ -774,7 +800,7 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 		// navigation) changes its veil: the offset takes the one drawn to
 		// the new one. Otherwise a running dim motion goes on as it is.
 		dimOff := old.dim + old.veil - c.peekDim(p)
-		dimMoves := old.veil != c.peekDim(p)
+		dimMoves := math.Abs(old.veil-c.peekDim(p)) > 1e-9
 		if oldRect == p.Rect && !dimMoves {
 			// The settled rect did not change: a running motion goes on
 			// as it is, and there is none to start.
@@ -819,7 +845,7 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 	sc := b.sc
 	m := sc.mon
 	w := m.Current()
-	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 {
+	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 || stashSlid(b, w) {
 		return
 	}
 	layout := m.Layout()
@@ -845,10 +871,7 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 // dim for a peek, none for another window. The placement's Dim is an
 // offset from it.
 func (c *Core) peekDim(p Placement) float64 {
-	if p.Peek {
-		return c.cfg.Stash.Dim
-	}
-	return 0
+	return c.cfg.Stash.Dim * p.Veil
 }
 
 // transitionOverview starts the motions of an action that opened or closed

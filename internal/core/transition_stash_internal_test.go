@@ -267,10 +267,11 @@ func TestOverviewPileScalesFromStash(t *testing.T) {
 	}
 }
 
-// A navigation that brings a window to a margin makes it appear, one that
-// sends a peek off screen makes it leave; the others only change their veil
-// and rect.
-func TestStashNavigationAppearsAndLeaves(t *testing.T) {
+// A navigation slides the stash view: the windows keep the places they
+// were drawn at and move with one spring, with no rect motion of their own.
+// What the view brings in is off screen until it reaches the margin; what
+// it sends off goes once the slide ends.
+func TestStashNavigationSlides(t *testing.T) {
 	c, ic, sc, cmds := stashRig(t, true)
 	w := sc.mon.Current()
 	w.AddWindow(5)
@@ -280,32 +281,36 @@ func TestStashNavigationAppearsAndLeaves(t *testing.T) {
 		t.Fatalf("setup: stash %+v at %d", w.Stash, w.stashAt)
 	}
 	settleShown(t, c)
-	act(c, ic, ActionFocusColumnLeft) // 2 selected, 3 comes in, 5 stays a peek
+	centre := sceneWindow(t, indicatorScene(t, c), 5).Rect
+	act(c, ic, ActionFocusColumnLeft) // 2 selected, 3 comes in, 5 becomes a peek
 	s := indicatorScene(t, c)
-	if w := sceneWindow(t, s, 3); w.Hidden || w.Fade != 1 {
-		t.Fatalf("window 3 comes to the margin: %+v, want invisible at first", w)
+	if got := sceneWindow(t, s, 5); got.Hidden || got.Rect != centre || got.Dim != 0 {
+		t.Fatalf("window 5 jumped: %+v, want %+v unveiled", got, centre)
 	}
-	if w := sceneWindow(t, s, 5); w.Hidden || w.Fade != 0 {
-		t.Fatalf("window 5 stays a peek: %+v", w)
+	if got := sceneWindow(t, s, 3); !got.Hidden {
+		t.Fatalf("window 3 is on screen before the slide: %+v", got)
+	}
+	if len(sc.rects) != 0 || !w.stashMotion.on {
+		t.Fatalf("%d rect motions, slide %v: the view slides alone", len(sc.rects), w.stashMotion.on)
+	}
+	if got := frame(t, c, ic, 40*time.Millisecond); !(sceneWindow(t, got, 5).Dim > 0) {
+		t.Fatal("window 5 has no veil mid-slide")
 	}
 	settledAll := frame(t, c, ic, 5*time.Second)
-	if w := sceneWindow(t, settledAll, 3); w.Fade != 0 || w.Hidden {
-		t.Fatalf("window 3 settled %+v", w)
+	if got := sceneWindow(t, settledAll, 3); got.Hidden || got.Dim != 0.5 {
+		t.Fatalf("window 3 settled %+v", got)
 	}
 	drainConfigures(cmds)
 	act(c, ic, ActionFocusColumnLeft) // 3 selected, 4 comes in, 5 goes
+	frame(t, c, ic, 5*time.Second)
 	s = indicatorScene(t, c)
-	if w := sceneWindow(t, s, 4); w.Hidden || w.Fade != 1 {
-		t.Fatalf("window 4 comes to the margin: %+v", w)
+	if got := sceneWindow(t, s, 5); !got.Hidden {
+		t.Fatalf("window 5 still drawn after the settle: %+v", got)
 	}
-	if w := sceneWindow(t, s, 5); w.Hidden || w.Fade != 0 || w.Rect.W == 0 {
-		t.Fatalf("window 5 leaves from its peek rect: %+v", w)
+	if got := sceneWindow(t, s, 4); got.Hidden {
+		t.Fatalf("window 4 not at the margin: %+v", got)
 	}
-	s = frame(t, c, ic, 5*time.Second)
-	if w := sceneWindow(t, s, 5); !w.Hidden {
-		t.Fatalf("window 5 still drawn after the settle: %+v", w)
-	}
-	if c.animating() {
+	if c.animating() || w.stashOff != 0 {
 		t.Fatal("still animating")
 	}
 }
@@ -381,18 +386,17 @@ func TestStashShowDuringHideDoesNotJump(t *testing.T) {
 	}
 }
 
-// A peek sliding to a margin that a fast second navigation sends off screen
-// leaves from where it was drawn, mid-slide, not from its settled rect.
-func TestStashNavigationLeavesFromSlide(t *testing.T) {
-	c, ic, sc, _ := stashRig(t, true)
+// A second navigation during the slide goes on from the view as drawn: no
+// window jumps, and the one sent off goes once the slide ends.
+func TestStashNavigationChainsFromSlide(t *testing.T) {
+	c, ic, _, _ := stashRig(t, true)
 	// 2 selected, 3 peeks left. Left: 3 centred, 2 peeks right, 4 enters.
 	act(c, ic, ActionFocusColumnLeft)
 	indicatorScene(t, c)
 	s := frame(t, c, ic, 30*time.Millisecond)
 	last := sceneWindow(t, s, 2)
-	settled := settledOf(t, sc, 2)
-	if last.Rect == settled.Rect {
-		t.Fatal("setup: window 2 already at rest")
+	if !c.cur().mon.Current().stashMotion.on {
+		t.Fatal("setup: the slide already ended")
 	}
 	// Left again: 4 centred, 3 peeks right, 2 goes off.
 	act(c, ic, ActionFocusColumnLeft)

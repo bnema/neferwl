@@ -234,23 +234,56 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 	// Peeks stay in the margins: they never overlap the selected window.
 	gap := u.W * w.stashGap / 100
 	peek := max((u.W-fw)/2-gap, 0)
+	// pitch is the distance between two stash windows; the view is moved
+	// by stashOff of it, rounded once so every window shares the offset.
+	pitch := w.stashPitch()
+	shift := int(math.Round(w.stashOff * float64(pitch)))
 	for i, f := range w.Stash {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
+		d := i - w.stashAt
+		r := Rect{X: center.X + d*pitch - shift, Y: center.Y, W: fw, H: fh}
 		switch {
 		case f.ID == cover:
 			p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
 		case w.stashHidden || cover != 0 && !w.stashOverCover():
 			p.Hidden = true
-		case i == w.stashAt:
+		case d == 0 && shift == 0:
 			p.Rect = center
-		case peek > 0 && i == w.stashAt-1:
-			p.Rect, p.Peek = Rect{X: center.X - gap - fw, Y: center.Y, W: fw, H: fh}, true
-		case peek > 0 && i == w.stashAt+1:
-			p.Rect, p.Peek = Rect{X: center.X + fw + gap, Y: center.Y, W: fw, H: fh}, true
+		case d == 0:
+			// The selection is no peek, but its veil grows as it slides.
+			p.Rect, p.Veil = r, w.stashVeil(d)
+		case peek > 0 && (d == -1 || d == 1) && shift == 0:
+			p.Rect, p.Peek, p.Veil = r, true, 1
+		case shift != 0 && d >= -3 && d <= 3 && r.Overlaps(u):
+			// A slide shows what the view moves in, and keeps what it
+			// moves out until it is gone.
+			p.Rect, p.Peek, p.Veil = r, true, w.stashVeil(d)
 		default:
 			p.Hidden = true
 		}
 		out = append(out, p)
 	}
 	return out
+}
+
+// stashPitch is the distance between two stash windows, in pixels.
+func (w *Workspace) stashPitch() int {
+	return max(w.stashRect().W+w.Usable.W*w.stashGap/100, 1)
+}
+
+// stashSpring lands a stash slide from off (in stash windows) with the
+// speed velocity; it snaps under half a pixel like the other slides.
+func (w *Workspace) stashSpring(off, velocity float64) spring {
+	s := workspaceSpring(off, velocity)
+	s.Snap = pixelSnap / float64(w.stashPitch())
+	return s
+}
+
+func (w *Workspace) stopStash() { w.stashOff, w.stashMotion = 0, motion{} }
+
+// stashVeil is how much of the peek veil the stash window d places away
+// from stashAt draws: none at the centre of the view, all of it one window
+// away or more.
+func (w *Workspace) stashVeil(d int) float64 {
+	return min(math.Abs(float64(d)-w.stashOff), 1)
 }

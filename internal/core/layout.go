@@ -115,6 +115,10 @@ type Placement struct {
 	// Peek is a stashed window peeking in beside the selected one, or an
 	// overview preview of a neighbor workspace: dimmed.
 	Peek bool
+	// Veil is the share (0..1) of the peek veil (Stash.Dim) the window
+	// draws: 1 for a settled peek, less while a stash slide brings it to
+	// the centre. Set wherever Peek is, and on a sliding stash selection.
+	Veil float64
 	// Preview is the scale of an overview preview: its buffer is drawn
 	// that much smaller in Rect, the client keeps its size. 0 otherwise.
 	Preview float64
@@ -194,8 +198,13 @@ type Workspace struct {
 	// Stash holds the windows set aside by toggle-window-stash, left to
 	// right (stash.go); stashAt is the selected one. stashFocus is set
 	// while it has the focus, under a focused native float.
-	Stash       []Float
-	stashAt     int
+	Stash   []Float
+	stashAt int
+	// stashOff slides the stash view: the selected window is drawn at
+	// stashAt+stashOff, in stash windows (a swipe or its landing spring,
+	// motion stashMotion). Pure presentation over stashAt.
+	stashOff    float64
+	stashMotion motion
 	stashFocus  bool
 	stashHidden bool
 	// stashWidth is the width of a stashed window (0: the default) and

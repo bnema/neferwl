@@ -559,6 +559,9 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
 				p.Rect.X += dx
 				p.Rect.Y += dy
 				p.Peek = p.Peek || peek || dim
+				if p.Peek {
+					p.Veil = 1
+				}
 				p.Focused = p.Focused && !peek && !dim && lit
 			}
 			out = append(out, p)
@@ -798,6 +801,9 @@ func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, spa
 		x0, y0 := scale(r.X), scale(r.Y)
 		tiles[i].Rect = Rect{X: x + x0, Y: y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
 		tiles[i].Preview, tiles[i].Peek = z, dim
+		if dim {
+			tiles[i].Veil = 1
+		}
 		tiles[i].Focused = tiles[i].Focused && !dim && lit
 	}
 	return tiles

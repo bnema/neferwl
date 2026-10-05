@@ -12,9 +12,11 @@ import (
 // up or down it slides between workspaces. Each swipe moves one step at
 // most (snapswipe.go): the next column edge or the next workspace. When
 // the fingers lift, a quick swipe goes on to that step, a slow one settles
-// on the closest, and a spring takes the view there (motion.go). Where the
-// view cannot slide (fixed overflow, the stash, a float, a fullscreen
-// window, the overview), the swipe runs one focus action instead.
+// on the closest, and a spring takes the view there (motion.go). Sideways
+// over the shown stash the swipe slides the stash the same way, one window
+// at most. Where the view cannot slide (fixed overflow, a float, a
+// fullscreen window, the overview), the swipe runs one focus action
+// instead.
 
 const (
 	// swipeDecide is the touchpad distance before the swipe picks its axis
@@ -26,6 +28,9 @@ const (
 	// workspaceSwipeMovement is the touchpad distance that slides one
 	// workspace.
 	workspaceSwipeMovement = 300.0
+	// stashSwipeMovement is the touchpad distance that slides the stash by
+	// one window.
+	stashSwipeMovement = 300.0
 )
 
 type swipeMode uint8
@@ -40,6 +45,10 @@ const (
 	// the overview closed, down shows or hides the stash, and up hides
 	// it when it is shown, else opens the overview.
 	swipeOverview
+	// swipeStash is a sideways swipe over the shown stash: its view
+	// follows the fingers, with a stop on each window, and lands on a
+	// neighbor of the selection at most.
+	swipeStash
 	// swipeDropped ignores the rest of a swipe whose workspace changed.
 	swipeDropped
 )
@@ -66,6 +75,10 @@ type swipeGesture struct {
 	// list is the numbered workspaces when a workspace slide began: the
 	// slide indexes it, so it ends if the list changes.
 	list []*Workspace
+	// ids and home are the stash windows and the selection when a stash
+	// swipe began: it ends if either changes.
+	ids  []WindowID
+	home int
 	// opens is the monitor's overviewOpens when the swipe picked its
 	// mode: a slide the overview opened over is dropped, even once the
 	// overview closed again.
@@ -84,6 +97,15 @@ func (g *swipeGesture) listChanged(m *Monitor) bool {
 // over it.
 func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 	return m.overviewOpens != g.opens || m.Current() != g.ws || !g.ws.slidable() || !slices.Equal(g.ws.snapPoints(), g.points)
+}
+
+// stashChanged reports whether a stash swipe lost its stash: it is no
+// longer shown or focused, its windows or selection changed, or the
+// overview opened over it.
+func (g *swipeGesture) stashChanged(m *Monitor) bool {
+	w := g.ws
+	return m.overviewOpens != g.opens || m.Current() != w || !w.stashFocused() || !w.stashShown() || w.stashAt != g.home ||
+		!slices.EqualFunc(w.Stash, g.ids, func(f Float, id WindowID) bool { return f.ID == id })
 }
 
 // swipeSign turns finger movement into view movement: natural scroll moves
@@ -151,6 +173,14 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		}
 		m.switchOff = g.snap.pos() - float64(m.Active)
 		return true
+	case swipeStash:
+		if g.stashChanged(m) {
+			g.ws.stopStash()
+			g.mode = swipeDropped
+			return true
+		}
+		g.ws.stashOff = g.snap.pos() - float64(g.ws.stashAt)
+		return true
 	}
 	return false
 }
@@ -173,6 +203,14 @@ func (c *Core) decide(g *swipeGesture) {
 		// With animations off nothing slides either: the swipe runs a
 		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
+	case g.horizontal && w.stashFocused() && w.stashShown():
+		g.mode, g.ws, g.home = swipeStash, w, w.stashAt
+		g.ids = g.ids[:0]
+		for _, f := range w.Stash {
+			g.ids = append(g.ids, f.ID)
+		}
+		w.stashMotion = motion{}
+		g.snap = newSnapSwipe(float64(w.stashAt)+w.stashOff, float64(w.stashAt), 1/stashSwipeMovement, indexPoints(len(w.Stash)), workspaceBand)
 	case g.horizontal && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
 		w.motion = motion{}
@@ -253,6 +291,35 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		} else {
 			m.stopSwitch()
 		}
+	case swipeStash:
+		w := g.ws
+		if g.stashChanged(m) {
+			w.stopStash()
+			return false
+		}
+		shown := float64(w.stashAt) + w.stashOff
+		target, velocity := g.snap.end(e.Cancelled, e.Time)
+		dir := 0
+		if !e.Cancelled {
+			dir = int(math.Round(target)) - w.stashAt
+		}
+		if c.cur() == g.screen && dir != 0 {
+			// The landing is the focus action's: the selection, the focus
+			// and the veils move as a bind moves them.
+			a := ActionFocusColumnRight
+			if dir < 0 {
+				a = ActionFocusColumnLeft
+			}
+			c.keyboard.takeBack()
+			c.applyAction(a)
+		}
+		w.stashOff = shown - float64(w.stashAt)
+		if c.animOn() {
+			w.stashMotion = c.spring(w.stashSpring(w.stashOff, velocity), now)
+		} else {
+			w.stopStash()
+		}
+		return w.stashAt != g.home
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 {
@@ -343,6 +410,8 @@ func (c *Core) dropSwipe() {
 		g.ws.stopSlide()
 	case swipeWorkspaces:
 		g.screen.mon.stopSwitch()
+	case swipeStash:
+		g.ws.stopStash()
 	}
 	g.mode = swipeDropped
 }
@@ -386,6 +455,9 @@ func (s *screen) stopAnimations() {
 		if w.motion.on {
 			w.stopSlide()
 		}
+		if w.stashMotion.on {
+			w.stopStash()
+		}
 	}
 	s.stopRects()
 }
@@ -411,6 +483,13 @@ func (c *Core) animate(now time.Time, only *screen) {
 				w.shift = v
 				if done {
 					w.stopSlide()
+				}
+			}
+			if w.stashMotion.on {
+				v, done := w.stashMotion.at(now)
+				w.stashOff = v
+				if done {
+					w.stopStash()
 				}
 			}
 		}
@@ -449,7 +528,7 @@ func (m *Monitor) springing() bool {
 		return true
 	}
 	for w := range m.all() {
-		if w.motion.on {
+		if w.motion.on || w.stashMotion.on {
 			return true
 		}
 	}

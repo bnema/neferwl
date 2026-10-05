@@ -166,6 +166,7 @@ func (m *Monitor) newWorkspace() *Workspace {
 	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
 	w.overviewAfter = nil
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
+	w.stashOff, w.stashMotion = 0, motion{}
 	(*m.nextID)++
 	w.ID = *m.nextID
 	return &w

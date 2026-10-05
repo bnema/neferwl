@@ -144,7 +144,7 @@ func (m *Monitor) settled() bool {
 		return false
 	}
 	for w := range m.all() {
-		if w.motion.on || w.shift != 0 {
+		if w.motion.on || w.shift != 0 || w.stashMotion.on || w.stashOff != 0 {
 			return false
 		}
 	}
