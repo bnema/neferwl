@@ -107,7 +107,7 @@ func chainCases() []chainCase {
 			}
 		}, []Action{ActionFocusColumnLeft, ActionFocusColumnLeft, ActionFocusColumnLeft},
 			[]Action{ActionFocusColumnRight, ActionFocusColumnRight, ActionFocusColumnRight},
-			func(c *Core) motion { return c.cur().mon.Current().motion }},
+			func(c *Core) motion { return c.cur().mon.Current().view.motion }},
 		{"workspace switch", func(c *Core) {
 			m := c.cur().mon
 			m.AddWindow(1)
@@ -115,7 +115,7 @@ func chainCases() []chainCase {
 			m.AddWindow(2)
 			m.Focus(0)
 		}, []Action{ActionFocusWorkspaceDown}, []Action{ActionFocusWorkspaceDown},
-			func(c *Core) motion { return c.cur().mon.switchMotion }},
+			func(c *Core) motion { return c.cur().mon.switchView.motion }},
 		{"rect", func(c *Core) {
 			m := c.cur().mon
 			m.AddWindow(1)
@@ -138,7 +138,7 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 	settleShown(t, c)
 	for _, sc := range []*screen{a, b} {
 		w := sc.mon.Current()
-		w.shift, w.motion = 100, c.spring(viewSpring(100, 0), ic.now)
+		w.view.off, w.view.motion = 100, c.spring(viewSpring(100, 0), ic.now)
 	}
 	// The one frame timer is made on the first arm and reset afterwards:
 	// a re-arm shows as a Reset on the clock.
@@ -154,7 +154,7 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 	}
 
 	// With nothing else animating the flip's own publish decides.
-	b.mon.Current().stopSlide()
+	b.mon.Current().view.stop()
 	if err := c.step(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestNoCameraTransitionWhileSwipeFollows(t *testing.T) {
 	}
 	settleShown(t, c)
 	w := sc.mon.Current()
-	w.shift = 25
+	w.view.off = 25
 	c.swipe = &swipeGesture{screen: sc, ws: w, mode: swipeColumns}
 	before := c.snapshot(ic.now)
 	viewX := w.ViewX
@@ -218,8 +218,8 @@ func TestNoCameraTransitionWhileSwipeFollows(t *testing.T) {
 		t.Fatal("the focus did not move the view: the case checks nothing")
 	}
 	c.transition(before, ic.now)
-	if w.motion.on || w.shift != 25 {
-		t.Fatalf("camera motion %v, shift %v: the transition took over the fingers' view", w.motion.on, w.shift)
+	if w.view.motion.on || w.view.off != 25 {
+		t.Fatalf("camera motion %v, shift %v: the transition took over the fingers' view", w.view.motion.on, w.view.off)
 	}
 }
 
@@ -243,11 +243,11 @@ func TestNoSwitchMotionForSizedWorkspace(t *testing.T) {
 			before := c.snapshot(ic.now)
 			m.Focus(1)
 			c.transition(before, ic.now)
-			if got := m.switchMotion.on; got == tc.sized {
+			if got := m.switchView.motion.on; got == tc.sized {
 				t.Fatalf("switch motion %v with a sized workspace %v", got, tc.sized)
 			}
-			if tc.sized && m.switchOff != 0 {
-				t.Fatalf("switchOff %v left for a framed switch", m.switchOff)
+			if tc.sized && m.switchView.off != 0 {
+				t.Fatalf("switchOff %v left for a framed switch", m.switchView.off)
 			}
 		})
 	}

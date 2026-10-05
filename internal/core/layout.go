@@ -140,6 +140,9 @@ type Placement struct {
 	Fade, Dim, Zoom float64
 }
 
+// peeking marks p a peek with the share veil of the peek veil.
+func (p *Placement) peeking(veil float64) { p.Peek, p.Veil = true, veil }
+
 // Overflow says what happens past MaxColumns columns.
 type Overflow string
 
@@ -167,10 +170,8 @@ type Workspace struct {
 	maximized []WindowID
 	Focus     int
 	ViewX     int
-	// shift slides the columns on screen past ViewX, in logical pixels,
-	// while a swipe follows the fingers or its spring (motion) lands.
-	shift  float64
-	motion motion
+	// view slides the columns on screen past ViewX, in logical pixels.
+	view slide
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.
@@ -200,11 +201,10 @@ type Workspace struct {
 	// while it has the focus, under a focused native float.
 	Stash   []Float
 	stashAt int
-	// stashOff slides the stash view: the selected window is drawn at
-	// stashAt+stashOff, in stash windows (a swipe or its landing spring,
-	// motion stashMotion). Pure presentation over stashAt.
-	stashOff    float64
-	stashMotion motion
+	// stashView slides the stash: the selected window is drawn at
+	// stashAt+stashView.off, in stash windows. Pure presentation over
+	// stashAt.
+	stashView   slide
 	stashFocus  bool
 	stashHidden bool
 	// stashWidth is the width of a stashed window (0: the default) and

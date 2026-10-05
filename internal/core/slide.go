@@ -11,26 +11,50 @@ import (
 // over the settled state (ViewX, Focus, Active): the layout ends where the
 // state says as soon as a slide stops.
 
+// slide is a view offset that a swipe sets while the fingers follow it, and
+// a spring then takes to 0 (off: pixels for the columns, windows for the
+// stash, workspaces for the monitor). Pure presentation over settled state.
+type slide struct {
+	off    float64
+	motion motion
+}
+
+// stop lands the slide where its state says.
+func (s *slide) stop() { *s = slide{} }
+
+// step moves a running spring to now and stops it once it settles.
+func (s *slide) step(now time.Time) {
+	if !s.motion.on {
+		return
+	}
+	v, done := s.motion.at(now)
+	s.off = v
+	if done {
+		s.stop()
+	}
+}
+
+// busy reports whether the slide is off its state or its spring runs.
+func (s *slide) busy() bool { return s.motion.on || s.off != 0 }
+
 // slidable reports whether a swipe can scroll the columns: only scroll
 // overflow, with the focus on the columns and no fullscreen window.
 func (w *Workspace) slidable() bool {
 	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
 }
 
-func (w *Workspace) stopSlide() { w.shift, w.motion = 0, motion{} }
-
 // retarget keeps the view where it is on screen when ViewX moved from
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
-	if w.ViewX == before || !w.motion.on {
+	if w.ViewX == before || !w.view.motion.on {
 		return
 	}
-	w.shift += float64(before - w.ViewX)
-	w.motion = newMotion(viewSpring(w.shift, w.motion.velocity()), time.Time{}, w.motion.slow)
+	w.view.off += float64(before - w.ViewX)
+	w.view.motion = newMotion(viewSpring(w.view.off, w.view.motion.velocity()), time.Time{}, w.view.motion.slow)
 }
 
-func (w *Workspace) shiftPixels() int { return int(math.Round(w.shift)) }
+func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.off)) }
 
 // switchSpring is the workspace slide's spring from off: it snaps once it
 // is under half a logical pixel of the output height from its target
@@ -116,7 +140,8 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 	return focus
 }
 
-func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, motion{}, nil }
+// stopSwitch lands the workspace slide and forgets the list it measured in.
+func (m *Monitor) stopSwitch() { m.switchView.stop(); m.switchList = nil }
 
 // framedSwitch keeps transitions involving a sized workspace settled. A
 // monitor-wide animation has no per-workspace crop; it must not expose
@@ -133,7 +158,7 @@ func (m *Monitor) framedSwitch() bool {
 	if base < 0 {
 		return false
 	}
-	pos := float64(base) + m.switchOff
+	pos := float64(base) + m.switchView.off
 	for _, i := range [2]int{int(math.Floor(pos)), int(math.Ceil(pos))} {
 		if i >= 0 && i < len(list) && m.has(list[i]) && list[i].Output != m.Output() {
 			return true
@@ -147,7 +172,7 @@ func (m *Monitor) framedSwitch() bool {
 // A landing slide places them as the list was when the swipe began
 // (switchList): an empty workspace dropped since shows as background.
 func (m *Monitor) slideLayout(cur []Placement) []Placement {
-	if m.switchOff == 0 || m.shown != nil || m.framedSwitch() {
+	if m.switchView.off == 0 || m.shown != nil || m.framedSwitch() {
 		return cur
 	}
 	list := m.Workspaces
@@ -159,7 +184,7 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		return cur
 	}
 	h := float64(m.template.Output.H)
-	pos := float64(base) + m.switchOff
+	pos := float64(base) + m.switchView.off
 	offset := func(p []Placement, k int) []Placement {
 		dy := int(math.Round((float64(k) - pos) * h))
 		for i := range p {

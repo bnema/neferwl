@@ -351,6 +351,11 @@ func (c *Core) removeScreen(name string) {
 		return
 	}
 	gone := c.screens[i]
+	if c.swipe != nil && c.swipe.screen == gone {
+		// Its slide would stay on the workspaces the host adopts.
+		c.dropSwipe()
+		c.swipe = nil
+	}
 	focused := c.cur()
 	c.screens = slices.Delete(c.screens, i, i+1)
 	c.focusScreen = max(slices.Index(c.screens, focused), 0)

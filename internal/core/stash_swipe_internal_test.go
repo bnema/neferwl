@@ -1,9 +1,11 @@
 package core
 
 import (
+	"math"
 	"testing"
 	"time"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -58,17 +60,17 @@ func TestStashSwipeFollowsFingers(t *testing.T) {
 	s, w := newStashSwipe(t, nil)
 	s.begin()
 	s.move(-10) // under the decision threshold
-	if w.stashOff != 0 {
-		t.Fatalf("moved %v before picking an axis", w.stashOff)
+	if w.stashView.off != 0 {
+		t.Fatalf("moved %v before picking an axis", w.stashView.off)
 	}
 	s.move(-20)
 	if g := s.c.swipe; g == nil || g.mode != swipeStash {
 		t.Fatalf("swipe %+v, want a stash swipe", g)
 	}
-	before := w.stashOff
+	before := w.stashView.off
 	s.move(-40)
-	if !(w.stashOff < before) || w.stashAt != 2 {
-		t.Fatalf("offset %v then %v, stashAt %d: the view must follow and the selection stay", before, w.stashOff, w.stashAt)
+	if !(w.stashView.off < before) || w.stashAt != 2 {
+		t.Fatalf("offset %v then %v, stashAt %d: the view must follow and the selection stay", before, w.stashView.off, w.stashAt)
 	}
 	sc := sceneWindow(t, indicatorScene(t, s.c), 2)
 	if sc.Dim <= 0 || sc.Dim >= 0.5 {
@@ -88,7 +90,7 @@ func TestStashSwipeNeverSkipsAWindow(t *testing.T) {
 			t.Fatalf("%d updates: the stash lost the focus", n)
 		}
 		// The view itself never went past the neighbor either.
-		if view := float64(w.stashAt) + w.stashOff; view < 1-0.1 {
+		if view := float64(w.stashAt) + w.stashView.off; view < 1-0.1 {
 			t.Fatalf("%d updates: the view is at %v, past the neighbor at 1", n, view)
 		}
 	}
@@ -108,8 +110,8 @@ func TestStashSwipeShortSwipeReturns(t *testing.T) {
 	}
 	s.ic.now = s.ic.now.Add(5 * time.Second)
 	s.c.animate(s.ic.now, nil)
-	if w.stashOff != 0 || w.stashMotion.on {
-		t.Fatalf("offset %v, spring %v: want settled", w.stashOff, w.stashMotion.on)
+	if w.stashView.off != 0 || w.stashView.motion.on {
+		t.Fatalf("offset %v, spring %v: want settled", w.stashView.off, w.stashView.motion.on)
 	}
 }
 
@@ -158,8 +160,8 @@ func TestStashSwipeNaturalScrollInverts(t *testing.T) {
 func TestStashSwipeAnimationsOffStepsOnce(t *testing.T) {
 	s, w := newStashSwipe(t, func(c *Core) { c.cfg.Animations.On = false })
 	s.flick(40, -80)
-	if w.stashAt != 1 || w.stashOff != 0 {
-		t.Fatalf("stashAt %d, offset %v with animations off", w.stashAt, w.stashOff)
+	if w.stashAt != 1 || w.stashView.off != 0 {
+		t.Fatalf("stashAt %d, offset %v with animations off", w.stashAt, w.stashView.off)
 	}
 }
 
@@ -176,8 +178,8 @@ func TestStashSwipeDropsWhenSelectionChanges(t *testing.T) {
 	}
 	at := w.stashAt
 	s.end(false)
-	if w.stashAt != at || w.stashOff != 0 {
-		t.Fatalf("stashAt %d then %d, offset %v: the dropped swipe moved the stash", at, w.stashAt, w.stashOff)
+	if w.stashAt != at || w.stashView.off != 0 {
+		t.Fatalf("stashAt %d then %d, offset %v: the dropped swipe moved the stash", at, w.stashAt, w.stashView.off)
 	}
 }
 
@@ -187,14 +189,14 @@ func TestStashSwipeCatchesLandingSlide(t *testing.T) {
 	s.flick(10, -80)
 	s.ic.now = s.ic.now.Add(30 * time.Millisecond)
 	s.c.animate(s.ic.now, nil)
-	mid := w.stashOff
-	if mid == 0 || !w.stashMotion.on {
-		t.Fatalf("setup: offset %v, spring %v", mid, w.stashMotion.on)
+	mid := w.stashView.off
+	if mid == 0 || !w.stashView.motion.on {
+		t.Fatalf("setup: offset %v, spring %v", mid, w.stashView.motion.on)
 	}
 	s.begin()
 	s.move(-20)
 	s.move(-20)
-	if w.stashMotion.on {
+	if w.stashView.motion.on {
 		t.Fatal("the landing spring still runs under the fingers")
 	}
 }
@@ -217,17 +219,77 @@ func TestStashSwipeLandingShowsNoWorkspace(t *testing.T) {
 }
 
 // A native float with the focus over the stash keeps the swipe discrete: the
-// stash must not slide behind it and snap back.
+// stash must not slide behind it and snap back. One that takes the focus
+// mid-swipe lets go of the stash.
 func TestStashSwipeUnderFocusedFloatIsDiscrete(t *testing.T) {
 	s, w := newStashSwipe(t, nil)
-	w.floatFocus = true
+	w.AddFloating(9, 100, 80)
+	if !w.floatFocus {
+		t.Fatal("setup: the float has no focus")
+	}
 	s.begin()
 	s.move(-40)
 	if g := s.c.swipe; g.mode != swipeDiscrete {
 		t.Fatalf("mode %v, want discrete", g.mode)
 	}
-	if w.stashOff != 0 {
-		t.Fatalf("stash slid by %v under a focused float", w.stashOff)
+	if w.stashView.off != 0 {
+		t.Fatalf("stash slid by %v under a focused float", w.stashView.off)
+	}
+}
+
+func TestStashSwipeDropsWhenAFloatTakesTheFocus(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.begin()
+	s.move(-40)
+	s.move(-40)
+	w.AddFloating(9, 100, 80)
+	s.move(-40)
+	if g := s.c.swipe; g.mode != swipeDropped || w.stashView.off != 0 {
+		t.Fatalf("mode %v, offset %v: want dropped and settled", g.mode, w.stashView.off)
+	}
+}
+
+// A session lock lets go of the swipe and settles the stash it moved.
+func TestStashSwipeSecurityLockSettlesTheStash(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.begin()
+	s.move(-40)
+	s.move(-40)
+	if w.stashView.off == 0 {
+		t.Fatal("setup: the stash did not follow")
+	}
+	gate := portsmocks.NewMockSessionSecurity(t)
+	gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+	s.c.ch.Security = gate
+	if !s.c.syncSecurity() {
+		t.Fatal("the lock was not taken")
+	}
+	if s.c.swipe != nil || w.stashView.off != 0 {
+		t.Fatalf("swipe %v, offset %v after the lock", s.c.swipe, w.stashView.off)
+	}
+}
+
+// With the focus on another output when the fingers lift, the selection
+// stays and the view springs back.
+func TestStashSwipeLiftOnAnotherOutputSpringsBack(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+	s.begin()
+	s.move(-40)
+	s.move(-80)
+	s.move(-80)
+	s.c.focusScreen = 1
+	s.end(false)
+	if w.stashAt != 2 {
+		t.Fatalf("stashAt %d, want the selection kept at 2", w.stashAt)
+	}
+	if !w.stashView.motion.on {
+		t.Fatal("the view does not spring back")
+	}
+	s.ic.now = s.ic.now.Add(5 * time.Second)
+	s.c.animate(s.ic.now, nil)
+	if w.stashView.off != 0 {
+		t.Fatalf("offset %v after the spring", w.stashView.off)
 	}
 }
 
@@ -238,7 +300,7 @@ func TestStashSwipeLosingItsScreenSettlesTheStash(t *testing.T) {
 		s.begin()
 		s.move(-40)
 		s.move(-40)
-		if w.stashOff == 0 {
+		if w.stashView.off == 0 {
 			t.Fatal("setup: the stash did not follow")
 		}
 		s.c.swipe.screen = &screen{} // its output unplugged
@@ -247,8 +309,8 @@ func TestStashSwipeLosingItsScreenSettlesTheStash(t *testing.T) {
 		} else {
 			s.move(-40)
 		}
-		if w.stashOff != 0 || s.c.swipe != nil {
-			t.Fatalf("end=%v: offset %v, swipe %v: want settled and gone", onEnd, w.stashOff, s.c.swipe)
+		if w.stashView.off != 0 || s.c.swipe != nil {
+			t.Fatalf("end=%v: offset %v, swipe %v: want settled and gone", onEnd, w.stashView.off, s.c.swipe)
 		}
 	}
 }
@@ -257,12 +319,12 @@ func TestStashSwipeLosingItsScreenSettlesTheStash(t *testing.T) {
 func TestOverviewStopsStashSlide(t *testing.T) {
 	s, w := newStashSwipe(t, nil)
 	s.flick(10, -80)
-	if !w.stashMotion.on {
+	if !w.stashView.motion.on {
 		t.Fatal("setup: no landing spring")
 	}
 	s.c.cur().mon.ToggleOverview()
-	if w.stashMotion.on || w.stashOff != 0 {
-		t.Fatalf("spring %v, offset %v under the overview", w.stashMotion.on, w.stashOff)
+	if w.stashView.motion.on || w.stashView.off != 0 {
+		t.Fatalf("spring %v, offset %v under the overview", w.stashView.motion.on, w.stashView.off)
 	}
 }
 
@@ -280,20 +342,72 @@ func TestStashNavigationChainsManyWithoutJump(t *testing.T) {
 	if len(w.Stash) != 7 {
 		t.Fatalf("setup: %d stashed", len(w.Stash))
 	}
-	prev := float64(w.stashAt) + w.stashOff
+	prev := float64(w.stashAt) + w.stashView.off
 	for i := range 5 {
 		act(c, ic, ActionFocusColumnLeft)
-		pos := float64(w.stashAt) + w.stashOff
+		pos := float64(w.stashAt) + w.stashView.off
 		if pos < prev-1e-6 || pos > prev+1e-6 {
 			t.Fatalf("navigation %d: the drawn view jumped from %v to %v", i, prev, pos)
 		}
 		ic.now = ic.now.Add(10 * time.Millisecond)
 		c.animate(ic.now, nil)
-		prev = float64(w.stashAt) + w.stashOff
+		prev = float64(w.stashAt) + w.stashView.off
+	}
+	// The view is still several windows from the selection: the window it
+	// is on is drawn there, however far it is from stashAt.
+	at := int(math.Round(float64(w.stashAt) + w.stashView.off))
+	if at-w.stashAt < 3 {
+		t.Fatalf("setup: the view is %d windows from the selection", at-w.stashAt)
+	}
+	near := w.Stash[at].ID
+	if got := sceneWindow(t, indicatorScene(t, c), near); got.Hidden || got.Rect.W == 0 {
+		t.Fatalf("window %d, %d away from the selection, is not drawn under the view: %+v", near, at-w.stashAt, got)
 	}
 	ic.now = ic.now.Add(5 * time.Second)
 	c.animate(ic.now, nil)
-	if w.stashOff != 0 || w.stashMotion.on {
-		t.Fatalf("offset %v, spring %v: want settled", w.stashOff, w.stashMotion.on)
+	if w.stashView.off != 0 || w.stashView.motion.on {
+		t.Fatalf("offset %v, spring %v: want settled", w.stashView.off, w.stashView.motion.on)
+	}
+	if got := sceneWindow(t, indicatorScene(t, c), near); !got.Hidden {
+		t.Fatalf("window %d still drawn after the settle: %+v", near, got)
+	}
+}
+
+// The captured workspace draws the veil the screen does, fractional while
+// the stash slides.
+func TestCaptureSceneDrawsTheSlidingVeil(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.begin()
+	s.move(-40)
+	s.move(-80)
+	s.c.cfg.Stash.Dim = 0.5
+	for _, p := range w.Layout() {
+		if p.Veil > 0 && p.Veil < 1 && s.c.peekDim(p) != s.c.cfg.Stash.Dim*p.Veil {
+			t.Fatalf("placement %d veil %v draws %v", p.ID, p.Veil, s.c.peekDim(p))
+		}
+	}
+	var sliding bool
+	for _, p := range w.Layout() {
+		sliding = sliding || p.Veil > 0 && p.Veil < 1
+	}
+	if !sliding {
+		t.Fatal("setup: no window has a partial veil")
+	}
+}
+
+// An output unplugged under the swipe: the host adopts its workspaces, and
+// the stash they carry must not stay shifted.
+func TestStashSwipeUnpluggedOutputSettlesTheAdoptedStash(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+	s.begin()
+	s.move(-40)
+	s.move(-80)
+	if w.stashView.off == 0 {
+		t.Fatal("setup: the stash did not follow")
+	}
+	s.c.removeScreen("A")
+	if s.c.swipe != nil || w.stashView.off != 0 {
+		t.Fatalf("swipe %v, offset %v after the unplug", s.c.swipe, w.stashView.off)
 	}
 }

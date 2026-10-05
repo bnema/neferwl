@@ -231,13 +231,11 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 	u := w.Usable
 	center := w.stashRect()
 	fw, fh := center.W, center.H
-	// Peeks stay in the margins: they never overlap the selected window.
-	gap := u.W * w.stashGap / 100
-	peek := max((u.W-fw)/2-gap, 0)
 	// pitch is the distance between two stash windows; the view is moved
-	// by stashOff of it, rounded once so every window shares the offset.
-	pitch := w.stashPitch()
-	shift := int(math.Round(w.stashOff * float64(pitch)))
+	// by stashView.off of it, rounded once so every window shares the
+	// offset.
+	pitch := fw + u.W*w.stashGap/100
+	shift := int(math.Round(w.stashView.off * float64(max(pitch, 1))))
 	for i, f := range w.Stash {
 		p := Placement{ID: f.ID, Floating: true, Focused: f.ID == focusedID, Inset: ports.SideAll}
 		d := i - w.stashAt
@@ -247,17 +245,15 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 			p.Rect, p.Fullscreen, p.Inset = w.Output, true, 0
 		case w.stashHidden || cover != 0 && !w.stashOverCover():
 			p.Hidden = true
-		case d == 0 && shift == 0:
-			p.Rect = center
 		case d == 0:
 			// The selection is no peek, but its veil grows as it slides.
 			p.Rect, p.Veil = r, w.stashVeil(d)
-		case peek > 0 && (d == -1 || d == 1) && shift == 0:
-			p.Rect, p.Peek, p.Veil = r, true, 1
-		case shift != 0 && r.Overlaps(u):
-			// A slide shows what the view moves in, and keeps what it
-			// moves out until it is gone.
-			p.Rect, p.Peek, p.Veil = r, true, w.stashVeil(d)
+		case (shift != 0 || d == -1 || d == 1) && r.Overlaps(u):
+			// A neighbor shows in its margin, if it leaves one. A slide
+			// shows what the view moves in, and keeps what it moves out
+			// until it is gone.
+			p.Rect = r
+			p.peeking(w.stashVeil(d))
 		default:
 			p.Hidden = true
 		}
@@ -279,11 +275,9 @@ func (w *Workspace) stashSpring(off, velocity float64) spring {
 	return s
 }
 
-func (w *Workspace) stopStash() { w.stashOff, w.stashMotion = 0, motion{} }
-
 // stashVeil is how much of the peek veil the stash window d places away
 // from stashAt draws: none at the centre of the view, all of it one window
 // away or more.
 func (w *Workspace) stashVeil(d int) float64 {
-	return min(math.Abs(float64(d)-w.stashOff), 1)
+	return min(math.Abs(float64(d)-w.stashView.off), 1)
 }

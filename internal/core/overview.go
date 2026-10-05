@@ -75,7 +75,7 @@ func (m *Monitor) ToggleOverview() {
 	// A slide in progress lands at once: the overview lays out the
 	// settled state.
 	m.stopSwitch()
-	m.each(func(w *Workspace) { w.stopSlide(); w.stopStash() })
+	m.each(func(w *Workspace) { w.view.stop(); w.stashView.stop() })
 	m.ov.open, m.ov.from, m.ov.back = true, w, m.back
 	m.ov.scrollX, m.ov.scrollY, m.ov.scrolled, m.ov.sideways = 0, 0, false, false
 	m.overviewOpens++
@@ -558,9 +558,8 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
 			if !p.Hidden {
 				p.Rect.X += dx
 				p.Rect.Y += dy
-				p.Peek = p.Peek || peek || dim
-				if p.Peek {
-					p.Veil = 1
+				if p.Peek || peek || dim {
+					p.peeking(1)
 				}
 				p.Focused = p.Focused && !peek && !dim && lit
 			}
@@ -800,9 +799,9 @@ func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, spa
 		r := tiles[i].Rect
 		x0, y0 := scale(r.X), scale(r.Y)
 		tiles[i].Rect = Rect{X: x + x0, Y: y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
-		tiles[i].Preview, tiles[i].Peek = z, dim
+		tiles[i].Preview = z
 		if dim {
-			tiles[i].Veil = 1
+			tiles[i].peeking(1)
 		}
 		tiles[i].Focused = tiles[i].Focused && !dim && lit
 	}

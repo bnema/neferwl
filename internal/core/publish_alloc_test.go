@@ -106,8 +106,8 @@ func checkRunning(t *testing.T, c *Core, when string) {
 		if sc.name() == "" {
 			continue
 		}
-		if len(sc.rects) != 6 || !sc.mon.Current().motion.on || len(sc.shown) < 6 {
-			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().motion.on, len(sc.shown))
+		if len(sc.rects) != 6 || !sc.mon.Current().view.motion.on || len(sc.shown) < 6 {
+			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().view.motion.on, len(sc.shown))
 		}
 	}
 }
@@ -123,8 +123,8 @@ func TestPublishAllocations(t *testing.T) {
 			continue
 		}
 		ws := sc.mon.Current()
-		ws.motion = c.spring(viewSpring(100, 0), t0)
-		ws.shift = 100
+		ws.view.motion = c.spring(viewSpring(100, 0), t0)
+		ws.view.off = 100
 		startRectMotions(c, sc, t0)
 	}
 	for _, tc := range []struct {

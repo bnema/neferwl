@@ -12,7 +12,7 @@ import (
 // discrete swipe step): a snapshot of what each screen shows is taken before
 // the action and diffed after it. The state the action leaves is the
 // settled one; the transition only adds presentation springs over it
-// (Workspace.shift, Monitor.switchOff), starting from what was on screen.
+// (Workspace.shift, Monitor.switchView.off), starting from what was on screen.
 // Nothing here runs for events that come from clients or outputs.
 //
 // A window's rect transition (presentation-only rect transition) is presentation too: configures keep
@@ -177,7 +177,7 @@ func (m *rectMotion) show(p *Placement) {
 	// A peek's Dim is an offset from its veil (publish adds Stash.Dim and
 	// clamps the sum): it may go below 0, down to cancelling the veil.
 	lo := 0.0
-	if p.Peek || p.Veil > 0 {
+	if p.Veil > 0 {
 		lo = -1
 	}
 	p.Dim = max(lo, min(1, p.Dim+m.ddim))
@@ -621,17 +621,17 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.ws, s.overview = w, m.ov.open
 		if !m.ov.open {
 			// The overview does not scroll or slide: no camera.
-			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.shift
+			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.view.off
 		}
-		if w.motion.on {
-			_, s.viewV = w.motion.sampleAt(now)
+		if w.view.motion.on {
+			_, s.viewV = w.view.motion.sampleAt(now)
 		}
-		if m.switchMotion.on {
-			_, s.switchV = m.switchMotion.sampleAt(now)
+		if m.switchView.motion.on {
+			_, s.switchV = m.switchView.motion.sampleAt(now)
 		}
-		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashOff
-		if w.stashMotion.on {
-			_, s.stashV = w.stashMotion.sampleAt(now)
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.off
+		if w.stashView.motion.on {
+			_, s.stashV = w.stashView.motion.sampleAt(now)
 		}
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
@@ -662,7 +662,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			}
 			if i := indexOf(list, w); i >= 0 {
 				s.list = append(s.list, list...)
-				s.pos, s.ok = float64(i)+m.switchOff, true
+				s.pos, s.ok = float64(i)+m.switchView.off, true
 			}
 		}
 		out = append(out, s)
@@ -724,8 +724,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		if stashSlid(b, w) {
 			// A stash navigation slides the view from where it was drawn:
 			// the windows keep their settled places (transitionRects).
-			w.stashOff = b.stashPos - float64(w.stashAt)
-			w.stashMotion = c.spring(w.stashSpring(w.stashOff, b.stashV), now)
+			w.stashView.off = b.stashPos - float64(w.stashAt)
+			w.stashView.motion = c.spring(w.stashSpring(w.stashView.off, b.stashV), now)
 			return
 		}
 		if w.ViewX == b.viewX || !w.slidable() {
@@ -733,8 +733,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		w.shift = b.view - float64(w.ViewX)
-		w.motion = c.spring(viewSpring(w.shift, b.viewV), now)
+		w.view.off = b.view - float64(w.ViewX)
+		w.view.motion = c.spring(viewSpring(w.view.off, b.viewV), now)
 	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
 		// A screen that received its workspace from another monitor does
 		// not slide to it: a running slide's list (switchList) may still
@@ -747,12 +747,12 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		off := b.pos - float64(j)
 		// The snapshot's list is reused by the next action: the slide keeps
 		// its own copy.
-		m.switchOff, m.switchList = off, slices.Clone(b.list)
+		m.switchView.off, m.switchList = off, slices.Clone(b.list)
 		if off == 0 || m.framedSwitch() {
 			m.stopSwitch()
 			return
 		}
-		m.switchMotion = c.spring(m.switchSpring(off, b.switchV), now)
+		m.switchView.motion = c.spring(m.switchSpring(off, b.switchV), now)
 	}
 }
 

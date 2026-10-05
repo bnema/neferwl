@@ -140,11 +140,11 @@ func (c *Core) advancePulse(now time.Time) float64 {
 // settled reports whether no swipe or slide moves the monitor's layout
 // (screen.settled adds the rect motions).
 func (m *Monitor) settled() bool {
-	if m.switchMotion.on || m.switchOff != 0 {
+	if m.switchView.busy() {
 		return false
 	}
 	for w := range m.all() {
-		if w.motion.on || w.shift != 0 || w.stashMotion.on || w.stashOff != 0 {
+		if w.view.busy() || w.stashView.busy() {
 			return false
 		}
 	}

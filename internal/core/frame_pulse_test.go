@@ -42,8 +42,8 @@ func TestFlipOfOtherOutputKeepsPulseSeq(t *testing.T) {
 	}
 	// A camera transition runs on B.
 	w := b.mon.Current()
-	w.shift = 100
-	w.motion = newMotion(viewSpring(w.shift, 0), ic.now, 1)
+	w.view.off = 100
+	w.view.motion = newMotion(viewSpring(w.view.off, 0), ic.now, 1)
 
 	ic.now = ic.now.Add(pulseRise / 2)
 	first := stepScenes(t, c, a)

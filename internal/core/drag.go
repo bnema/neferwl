@@ -578,7 +578,7 @@ func (w *Workspace) scrollBy(dir int) bool {
 	if view == w.ViewX {
 		return false
 	}
-	w.stopSlide()
+	w.view.stop()
 	w.ViewX = view
 	return true
 }

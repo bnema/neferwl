@@ -290,8 +290,8 @@ func TestStashNavigationSlides(t *testing.T) {
 	if got := sceneWindow(t, s, 3); !got.Hidden {
 		t.Fatalf("window 3 is on screen before the slide: %+v", got)
 	}
-	if len(sc.rects) != 0 || !w.stashMotion.on {
-		t.Fatalf("%d rect motions, slide %v: the view slides alone", len(sc.rects), w.stashMotion.on)
+	if len(sc.rects) != 0 || !w.stashView.motion.on {
+		t.Fatalf("%d rect motions, slide %v: the view slides alone", len(sc.rects), w.stashView.motion.on)
 	}
 	if got := frame(t, c, ic, 40*time.Millisecond); !(sceneWindow(t, got, 5).Dim > 0) {
 		t.Fatal("window 5 has no veil mid-slide")
@@ -310,7 +310,7 @@ func TestStashNavigationSlides(t *testing.T) {
 	if got := sceneWindow(t, s, 4); got.Hidden {
 		t.Fatalf("window 4 not at the margin: %+v", got)
 	}
-	if c.animating() || w.stashOff != 0 {
+	if c.animating() || w.stashView.off != 0 {
 		t.Fatal("still animating")
 	}
 }
@@ -395,7 +395,7 @@ func TestStashNavigationChainsFromSlide(t *testing.T) {
 	indicatorScene(t, c)
 	s := frame(t, c, ic, 30*time.Millisecond)
 	last := sceneWindow(t, s, 2)
-	if !c.cur().mon.Current().stashMotion.on {
+	if !c.cur().mon.Current().stashView.motion.on {
 		t.Fatal("setup: the slide already ended")
 	}
 	// Left again: 4 centred, 3 peeks right, 2 goes off.
