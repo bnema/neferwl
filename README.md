@@ -10,68 +10,86 @@
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
 > [!WARNING]
-> **Early alpha, but stable enough for daily use.** NeferWL is developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested; expect bugs and breaking config changes.
-
----
+> **Early alpha, used daily by its developer.** Tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested. Expect bugs and breaking config changes.
 
 ## Why NeferWL
 
-I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
+I wanted a compositor I would never have to think about: give games the GPU, use current Wayland protocols and kernel features, and stay out of the way.
 
-It is small on purpose, and it will stay small. Drawing is kept to simple primitives: no blur, no shadows, no rounded corners, no themes. There is no built-in bar or wallpaper either; for those, bring your own: any layer-shell client works. Animations are experimental and off by default (`animations = on` turns them on); off, every change is instant and touchpad swipes switch on release. With them, three-finger swipes follow the fingers, windows and the view move with short springs (about 180 ms) when you scroll, switch workspaces, move columns or windows, resize them, drop a dragged tile or send a workspace to another monitor; windows fade in and out when they open, close or leave with the stash, the overview zooms its cards, and a brief pulse marks the window you just focused. They stay cheap: nothing runs while the screen is still, frames follow the display, only the region that moves is redrawn, apps are resized once, to their final size, and do not redraw during a transition, and nothing is copied or blurred. About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change.
+NeferWL keeps drawing simple. No blur, shadows, rounded corners or themes. Bring your own bar and wallpaper using layer-shell clients.
 
-## OK, but why Go?
-
-Most Wayland compositors are written in C (wlroots, Sway, Mutter), C++ (KWin, Hyprland, gamescope) or Rust (niri, COSMIC). The usual objection to Go is the garbage collector. It is a fair one, so here is how NeferWL deals with it, and why Go turns out to fit a compositor well.
-
-### A compositor is a concurrency problem
-
-A compositor sits in the middle of many independent streams that never stop: keyboard and pointer events, client requests and buffer commits, one vblank and page-flip cycle per monitor, frame fences from the GPU, presentation feedback, screen captures, config reloads, hotplug, idle and lock state. None of them should wait on another. A slow client must not delay a flip, and rendering must not delay input.
-
-Go has this built in. Goroutines are cheap, channels carry messages between them, and the runtime spreads them over every CPU core. NeferWL follows one idiom everywhere: **each piece of state has one owner goroutine, and others talk to it over channels.**
-
-- **Input** runs on its own thread, reads libinput and sends events to core.
-- **Core** owns windows, workspaces and focus. It turns input and client events into layouts and scenes.
-- **The Wayland server** owns client connections. It sends client events and surface content, and receives commands back.
-- **Each output** owns its DRM state, renders its scenes with Vulkan, commits frames and reports flips and presentation times.
-- **Capture, config, idle, sessions and leases** each run in their own goroutine.
-
-About 35 channels connect them, all created in one place, so the full data flow is easy to read. There is no mutex on window state, no lock ordering to get wrong, and the race detector checks every test. When CAP_SYS_NICE is granted, the input and output goroutines lock their OS thread and request real-time scheduling, so a busy CPU cannot delay a cursor move or a flip.
-
-### Keeping the garbage collector out of the way
-
-- **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
-- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](docs/performance.md).
-- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
-- **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
-- **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.
-
-### A pleasure to work on
-
-A full build takes seconds, and tests, race detection, profiling and formatting come with the language. I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
-
-- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
-- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan without cgo, generated from `vk.xml`.
-- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): Wayland protocol bindings, generated from the upstream XML.
-- [wlturbo](https://github.com/bnema/wlturbo): a fast Wayland client.
-- [neferclient](https://github.com/bnema/neferclient): a client toolkit on top of them: connection, outputs, surface roles, seat and dmabuf presentation.
+Animations are optional and experimental (`animations = on`). About 40–80 MB of RAM with two 4K monitors, and almost no CPU use on a still screen. See [Performance](docs/performance.md).
 
 ## Features
 
-- **Games.** A fullscreen window is scanned out directly: its buffer goes to the display without a composition pass. Wine runs natively on Wayland; Steam and other X11 clients run through xwayland-satellite. See [the performance path](#the-performance-path).
-- **VRR.** Variable refresh rate turns on while a fullscreen window covers the output, so the display follows the game's frame rate. On by default (`render.vrr`).
-- **Screen tearing.** A game in direct scanout that asks for tearing gets it, for the lowest input latency. On by default (`render.tearing`).
-- **Explicit sync.** On by default for every client, with no flag to set. Client fences go straight to the GPU and to KMS, so frames are shown when they are ready, without implicit-sync stalls.
-- **HDR.** HDR10 output on capable displays. HDR clients (games, browsers, video players) are shown at full range; SDR content is shown at a configured brightness.
-- **Column tiling.** Columns scroll to the right, as in PaperWM and Niri, or stay on screen and split, as in Sway. Per output or per workspace.
-- **Overview.** `cmd+o` by default (or a four-finger swipe up) shows the workspaces of a monitor as live, scaled previews. In `fixed` mode, windows hidden behind a maximized column show as a stack of cards behind it, so nothing is lost out of sight. Pick a window with the keyboard, the touchpad or a click.
-- **Stash.** Set aside a window you do not need right now. Each workspace has its own stash, with no limit on the number of windows. By default, `cmd+s` (or a four-finger swipe down) shows it as a floating strip over your tiles, or hides it again (a four-finger swipe up hides it too, while it is shown); `cmd+shift+s` sends a window into the stash or back to its column.
-- **Workspaces.** Numbered workspaces are created and removed as needed. Named workspaces declare their columns (width and command); NeferWL starts the commands and places each window.
-- **Multi-monitor.** Each output has its own workspaces. When an output is unplugged its workspaces move to another one, and return when it is plugged back. Fractional scale per output.
-- **External clients.** No built-in bar, launcher or notifications. Waybar, fuzzel, mako, nefercap, cliphist, swayidle, wlr-randr and input methods such as fcitx5 work through their standard protocols. See [Desktop integration](docs/desktop.md).
-- **Simple config.** One flat `key = value` file, reloaded on save without closing windows. A bad line only warns and keeps its default, and `neferwl validate-config` checks a file before you use it. A JSON state file describes outputs, workspaces and windows for scripts.
+### Display and games
 
-Config example:
+- **Direct scanout:** eligible fullscreen buffers go straight to the display, without composition.
+- **VRR and tearing:** enabled by default for supported fullscreen use (`render.vrr`, `render.tearing`). Tearing requires direct scanout and a client request.
+- **Explicit sync:** client fences go to the GPU and KMS. Enabled by default, with no flag to set.
+- **HDR:** HDR10 on capable displays, with configurable brightness for SDR content.
+- **Multi-monitor:** separate workspaces and fractional scale per output. Workspaces move when a monitor is unplugged and return when it reconnects.
+- **X11 apps:** Steam and other X11 clients run through xwayland-satellite. Wine can run natively on Wayland.
+
+### Windows and workspaces
+
+- **Column tiling:** scroll horizontally, as in PaperWM and niri, or keep columns on screen in a fixed layout. Choose per output or workspace.
+- **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse.
+- **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace. `cmd+shift+s` moves a window into or out of it.
+- **Workspaces:** numbered workspaces appear as needed. Named workspaces can start commands and place their windows in predefined columns.
+
+### Desktop integration
+
+Use Waybar, fuzzel, mako, nefercap, cliphist, swayidle, wlr-randr or input methods such as fcitx5 through standard protocols. No built-in bar, launcher or notifications.
+
+Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts. See [Desktop integration](docs/desktop.md).
+
+## Install
+
+### Arch Linux
+
+Choose an AUR package:
+
+```sh
+paru -S neferwl-bin   # latest release, pre-built for x86_64 and aarch64
+paru -S neferwl-git   # latest main, built from source
+```
+
+Or install from a checkout with Go 1.27:
+
+```sh
+make install   # build a package from HEAD and install it with pacman
+```
+
+`make pkg` builds the package without installing it.
+
+The package provides:
+
+- `neferwl` with CAP_SYS_NICE for real-time scheduling.
+- A **NeferWL** session for display managers such as Ly, GDM and SDDM.
+- `neferwl-session`, which starts `neferwl.service` and manages `graphical-session.target` so desktop services start and stop with the session.
+
+Running `neferwl --session` directly also exports the display environment to D-Bus and systemd user services. See [Desktop integration](docs/desktop.md) for session setup.
+
+### Other distributions
+
+Download a `linux_amd64` or `linux_arm64` archive from [Releases](https://github.com/bnema/neferwl/releases) and verify it against `checksums.txt`. To build locally, run `make bin`; the binary is `bin/neferwl`.
+
+## Hardware support
+
+NeferWL requires Linux, atomic KMS and a Vulkan 1.3 device that can export images as dmabufs. It reports an error at startup if these requirements are not met.
+
+| GPU | Status |
+| --- | --- |
+| AMD | Developed and tested on radv |
+| NVIDIA | Untested; explicit sync is implemented, but support is incomplete |
+| Intel | Untested |
+
+Reports from NVIDIA and Intel users are welcome.
+
+## Configuration
+
+The default file is `$XDG_CONFIG_HOME/neferwl/config`, or `~/.config/neferwl/config`.
 
 ```text
 keyboard.layout = fr
@@ -83,88 +101,238 @@ output.DP-1.scale = 1.5
 
 layout.max-columns = 3
 
-# A bind-only dev workspace: editor and terminal, started and placed for you.
+# Start and place an editor and terminal when this workspace is opened.
 workspace.dev.monitor = DP-1
 workspace.dev.column.1 = 67%, code --new-window
 workspace.dev.column.2 = 33%, foot
 bind.cmd+d = workspace dev
 ```
 
-The terminal command comes from `terminal`, then `$TERMINAL`, then `foot`. `terminal.auto-open = first` opens it once on the initial numbered workspace; `all` opens it on each visible empty workspace without slots, and `off` disables automatic opening. `--no-terminal` overrides automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR`, and `$VISUAL`.
+See [Configuration](docs/config.md) for all keys, actions and default bindings, or [examples/config](examples/config) for commented defaults.
 
-## The performance path
+- Use one `key = value` per line; `#` starts a comment.
+- Missing keys use defaults. Invalid lines warn and keep that key's default; other lines still apply.
+- Save to reload. The log lists changed keys.
+- Use `neferwl --config <path>` to select a file, or `neferwl validate-config [path]` to check it without starting the compositor.
 
-- `zwp_linux_dmabuf_v1` v6: client buffers are sampled in place. Vulkan composes into exported scanout images and the frame fence goes to KMS as `IN_FENCE_FD`. No CPU copy, no CPU wait.
-- `wp_single_pixel_buffer_v1`: solid backgrounds and letterbox bars are drawn as fills, without client buffers.
-- Direct scanout of a fullscreen window's buffer; dmabuf feedback gives it a scanout-ready format first. A lone opaque window can use an overlay plane. On HDR outputs, SDR windows also bypass composition when the plane has a colour pipeline.
-- `wp_tearing_control_v1` and VRR while a fullscreen window covers the output.
-- `wp_linux_drm_syncobj_v1`: client fences go to KMS.
-- `wp_presentation`, `wp_fifo_v1`, `wp_commit_timing_v1` for frame pacing.
-- `wp_fractional_scale_v1` and `wp_viewporter`: clients render at the output scale, nothing is rescaled.
-- Damage tracking, occlusion of surfaces behind opaque ones, no work on idle outputs. Frame, cursor, overlay and VRR in one atomic commit.
-- Input is read on its own thread and never waits on rendering; the cursor has a hardware plane. With CAP_SYS_NICE, input and output threads request real-time scheduling. Relative pointer, pointer constraints and keyboard shortcuts inhibit for games. `zwp_input_timestamps_v1` gives clients microsecond input timestamps from libinput.
-- `wp_drm_lease_v1` leases headset connectors to SteamVR and Monado.
+### Default configuration
 
-## Hardware support
+<details>
+<summary>All default settings and key bindings</summary>
 
-NeferWL runs on Linux. It needs a GPU and kernel driver with atomic KMS, and a Vulkan 1.3 device that can export images as dmabufs. Without them, it stops at startup with an error.
+These values apply without a config file. Empty values use the system setting; `terminal` uses `$TERMINAL`, then `foot`. No startup commands or named workspaces are configured by default. `cmd` means Super.
 
-- **AMD:** developed and tested on radv.
-- **NVIDIA:** untested. Explicit sync, which NVIDIA drivers need, is implemented. Reports from NVIDIA users are welcome.
-- **Intel:** untested.
+```text
+# Keyboard and commands
+keyboard.layout =
+keyboard.variant =
+keyboard.options =
+keyboard.repeat-rate = 25
+keyboard.repeat-delay = 600
+keyboard.cmd = super
+terminal =
+terminal.auto-open = first
+xwayland = xwayland-satellite
 
-## Install (Arch Linux)
+# Appearance and layout
+background = #111111
+border.width = 2
+border.active = #808080
+border.inactive = #111111
+floating.dim = 0.3
+layout.gaps = 0
+layout.max-columns = 2
+layout.overflow = scroll
+layout.presets = 1/3, 1/2, 2/3, 1
+stash.width = 80
+stash.gap = 2
+stash.dim = 0.5
+stash.capture = on
 
-From the AUR:
+# Input
+touchpad.natural-scroll = off
+touchpad.tap = on
+touchpad.accel-speed = 0
+touchpad.accel-profile = adaptive
+touchpad.left-handed = off
+touchpad.scroll-factor = 1
+mouse.natural-scroll = off
+mouse.accel-speed = 0
+mouse.accel-profile = adaptive
+mouse.left-handed = off
+cursor.hide-after = 5s
 
-```sh
-paru -S neferwl-bin   # latest release, pre-built for x86_64 and aarch64
-paru -S neferwl-git   # latest main, built from source
+# Focus and animations
+focus.follow-move = off
+animations = off
+animations.speed = normal
+focus.animation = pulse
+focus.effect = screen
+focus.strength = 0.04
+
+# Rendering and logging
+render.direct-scanout = on
+render.tearing = on
+render.vrr = on
+render.vrr-flip-gap = 1ms
+performance.realtime = on
+log.level = info
+log.debug =
+
+# Launch, close and session
+bind.cmd+return = spawn-terminal
+bind.ctrl+cmd+space = spawn fuzzel
+bind.cmd+q = close-window
+bind.ctrl+alt+backspace = quit
+
+# Focus and move
+bind.cmd+left = focus-column-left
+bind.cmd+right = focus-column-right
+bind.cmd+up = focus-window-up
+bind.cmd+down = focus-window-down
+bind.cmd+h = focus-column-left
+bind.cmd+l = focus-column-right
+bind.cmd+k = focus-window-up
+bind.cmd+j = focus-window-down
+bind.cmd+shift+left = move-column-left
+bind.cmd+shift+right = move-column-right
+bind.cmd+shift+h = move-column-left
+bind.cmd+shift+l = move-column-right
+bind.cmd+shift+up = move-window-up
+bind.cmd+shift+down = move-window-down
+bind.cmd+shift+k = move-window-up
+bind.cmd+shift+j = move-window-down
+bind.cmd+bracketleft = consume-or-expel-window-left
+bind.cmd+bracketright = consume-or-expel-window-right
+
+# Resize and window modes
+bind.cmd+alt+left = set-column-width -10%
+bind.cmd+alt+right = set-column-width +10%
+bind.cmd+alt+up = set-window-height -10%
+bind.cmd+alt+down = set-window-height +10%
+bind.cmd+alt+h = set-column-width -10%
+bind.cmd+alt+l = set-column-width +10%
+bind.cmd+alt+k = set-window-height -10%
+bind.cmd+alt+j = set-window-height +10%
+bind.cmd+shift+space = toggle-floating
+bind.cmd+r = cycle-column-width
+bind.cmd+f = maximize-column
+bind.cmd+shift+f = toggle-fullscreen
+bind.cmd+s = toggle-stash-visible
+bind.cmd+shift+s = toggle-window-stash
+bind.cmd+o = toggle-overview
+
+# Workspaces
+bind.cmd+pageup = focus-workspace-up
+bind.cmd+pagedown = focus-workspace-down
+bind.cmd+shift+pageup = move-column-to-workspace-up
+bind.cmd+shift+pagedown = move-column-to-workspace-down
+bind.cmd+ctrl+shift+up = move-workspace-up
+bind.cmd+ctrl+shift+down = move-workspace-down
+bind.cmd+ctrl+shift+k = move-workspace-up
+bind.cmd+ctrl+shift+j = move-workspace-down
+bind.cmd+code:2 = focus-workspace 1
+bind.cmd+code:3 = focus-workspace 2
+bind.cmd+code:4 = focus-workspace 3
+bind.cmd+code:5 = focus-workspace 4
+bind.cmd+code:6 = focus-workspace 5
+bind.cmd+code:7 = focus-workspace 6
+bind.cmd+code:8 = focus-workspace 7
+bind.cmd+code:9 = focus-workspace 8
+bind.cmd+code:10 = focus-workspace 9
+bind.cmd+shift+code:2 = move-column-to-workspace 1
+bind.cmd+shift+code:3 = move-column-to-workspace 2
+bind.cmd+shift+code:4 = move-column-to-workspace 3
+bind.cmd+shift+code:5 = move-column-to-workspace 4
+bind.cmd+shift+code:6 = move-column-to-workspace 5
+bind.cmd+shift+code:7 = move-column-to-workspace 6
+bind.cmd+shift+code:8 = move-column-to-workspace 7
+bind.cmd+shift+code:9 = move-column-to-workspace 8
+bind.cmd+shift+code:10 = move-column-to-workspace 9
+
+# Monitors and scale
+bind.cmd+ctrl+left = focus-monitor-left
+bind.cmd+ctrl+right = focus-monitor-right
+bind.cmd+ctrl+h = focus-monitor-left
+bind.cmd+ctrl+l = focus-monitor-right
+bind.cmd+ctrl+shift+left = move-workspace-to-monitor-left
+bind.cmd+ctrl+shift+right = move-workspace-to-monitor-right
+bind.cmd+ctrl+shift+h = move-workspace-to-monitor-left
+bind.cmd+ctrl+shift+l = move-workspace-to-monitor-right
+bind.cmd+code:13 = scale-up
+bind.cmd+code:12 = scale-down
 ```
 
-From a checkout (needs Go 1.27):
+Per-output defaults (replace `<name>` with a connector such as `DP-1`):
 
-```sh
-make install   # builds dist/neferwl-*.pkg.tar.zst from HEAD, then installs it with pacman
+```text
+output.<name> = preferred
+output.<name>.scale = 1
+output.<name>.transform = normal
+output.<name>.primary = off
+output.<name>.offset = 0
+output.<name>.hdr = off
+output.<name>.sdr-brightness = 203
 ```
 
-`make pkg` only builds the package. The package installs `neferwl` with CAP_SYS_NICE (real-time scheduling, see [performance](docs/performance.md)) and a **NeferWL** session for display managers such as Ly, GDM and SDDM. The session runs `neferwl-session`, which starts `neferwl.service` under systemd. This starts `graphical-session.target` and services bound to it (bars, notification daemons, portals, and XDG autostart) with NeferWL and stops them with it. Running `neferwl --session` alone still exports the display environment to D-Bus and systemd user services.
+Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `.below` is set. Per-output layouts inherit `layout.*`; named workspaces inherit their output's layout and size, use the focused output unless `.monitor` is set, and have no predefined columns. Media keys have no default bindings.
 
-On other distributions, download a `linux_amd64` or `linux_arm64` archive from [Releases](https://github.com/bnema/neferwl/releases) and check it against `checksums.txt`, or run `make bin` to build `bin/neferwl`.
+See [Configuration](docs/config.md) for accepted values and workspace options.
 
-## Configuration
+</details>
 
-NeferWL reads `$XDG_CONFIG_HOME/neferwl/config`, or `~/.config/neferwl/config`. `neferwl --config <path>` selects another file, and `neferwl validate-config [path]` checks a file without starting the compositor.
+### Automatic terminal
 
-The file has one `key = value` per line, and `#` starts a comment. A missing file or key means the default. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. Changes apply when you save, and each reload logs the keys that changed.
+The command comes from `terminal`, then `$TERMINAL`, then `foot`.
 
-[docs/config.md](docs/config.md) lists every key, action and default bind. `examples/config` is a commented copy of the defaults.
+| `terminal.auto-open` | Behaviour |
+| --- | --- |
+| `first` | Open once on the initial numbered workspace |
+| `all` | Open on each visible empty workspace without predefined slots |
+| `off` | Do not open automatically |
+
+`--no-terminal` disables automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR` and `$VISUAL`.
+
+## Why Go?
+
+A compositor handles input, client requests, GPU fences and display flips at the same time. Go's goroutines and channels fit that workload: **each piece of state has one owner, and other goroutines send it messages.**
+
+Input, core, the Wayland server and each output run independently. Window state needs no mutex, and tests run with the race detector. With CAP_SYS_NICE, input and output threads request real-time scheduling.
+
+### Keeping GC away from frames
+
+- **Reuse memory on hot paths.** `make check` includes allocation guards for frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates.
+- **Keep buffers off the Go heap.** Client buffers live in shared or GPU memory. The live Go heap is only a few megabytes.
+- **Build without cgo.** libwayland, Vulkan and libinput load at runtime through [purego](https://github.com/ebitengine/purego).
+- **Render only changes.** Damage tracking limits redraws, opaque surfaces hide work behind them, and idle outputs do nothing.
+
+Builds take seconds. Testing, race detection, profiling and formatting come with Go. For measurements and the rendering pipeline, see [Performance](docs/performance.md).
+
+### Reusable libraries
+
+NeferWL uses libraries that other Go projects can use too:
+
+- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
+- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan bindings generated from `vk.xml`, without cgo.
+- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): protocol bindings generated from upstream XML.
+- [wlturbo](https://github.com/bnema/wlturbo): a Wayland client library.
+- [neferclient](https://github.com/bnema/neferclient): a client toolkit for connections, outputs, surface roles, seats and dmabuf presentation.
 
 ## Documentation
 
-- [Configuration](docs/config.md): every key, action and default bind, and HDR.
-- [Desktop integration](docs/desktop.md): running commands, clipboard, input methods, X11 apps, idle and screen off, bars, and the state file for scripts.
-- [Session locking](docs/session-lock.md): external lockers, output confirmation, owner recovery and security limits.
-- [Screen capture](docs/capture.md): capture protocols, the indicator, the executable allowlist, sandboxed clients and portals.
-- [Headless mode](docs/headless.md): run without a screen, take screenshots, play input scripts and test input methods.
-- [Performance](docs/performance.md): how to profile, the allocation guards, and reference numbers.
-
-## Developing the bindings
-
-NeferWL uses tagged releases of [purego-libwayland](https://github.com/bnema/purego-libwayland) and [purego-vulkan](https://github.com/bnema/purego-vulkan). To change a binding and NeferWL together, clone the binding next to NeferWL and use a Go workspace, which is not committed:
-
-```sh
-go work init . ../purego-libwayland ../purego-vulkan
-```
-
-`make pkg` ignores the workspace and builds the versions in `go.mod`. Tag the binding change and update `go.mod` before packaging.
+- [Configuration](docs/config.md): keys, actions, bindings and HDR.
+- [Desktop integration](docs/desktop.md): sessions, clipboard, input methods, X11 apps and scripting.
+- [Session locking](docs/session-lock.md): external lockers, recovery and security limits.
+- [Screen capture](docs/capture.md): protocols, indicator, executable allowlist and portals.
+- [Headless mode](docs/headless.md): screenshots, input scripts and input-method testing without a screen.
+- [Performance](docs/performance.md): rendering, frame pacing, profiling and reference measurements.
 
 ## Contributing
 
-Contributions are welcome. Open an issue first, for a bug fix or a feature, and wait until it is accepted before you send a pull request. Pull requests without an accepted issue are closed.
+Open an issue and wait for acceptance before sending a pull request, including for bug fixes. Pull requests without an accepted issue are closed.
 
-Before you open a pull request, `make check`, `make race`, `make mocks-check` and `staticcheck ./...` must pass. Repository rules are in [AGENTS.md](AGENTS.md).
+Before submitting, run `make check`, `make race`, `make mocks-check` and `staticcheck ./...`. See [AGENTS.md](AGENTS.md) for repository rules.
 
 ## License
 
-NeferWL is licensed under the [GNU General Public License v3.0](LICENSE).
+[GNU General Public License v3.0](LICENSE).
