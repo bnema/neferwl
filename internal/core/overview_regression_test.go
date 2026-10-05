@@ -62,7 +62,7 @@ func TestOverviewSingleCoveringFloat(t *testing.T) {
 					}
 				}
 				if click {
-					id := m.overviewAt(float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2))
+					id := overviewIn(m.Layout(), float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2))
 					if id != 9 {
 						t.Fatalf("hit %d, want 9", id)
 					}

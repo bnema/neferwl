@@ -125,8 +125,11 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			// A click focuses the window and its output.
 			s, w := c.screenOf(id)
 			if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
+				now := c.now()
+				before := c.snapshot(now)
 				w.Click(id)
 				c.focusScreen = c.screenIndex(s.name())
+				c.transition(before, now)
 				if err := c.publish(ctx); err != nil {
 					return err
 				}
@@ -140,7 +143,12 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		c.scrollStop(v)
 		// In the overview, scrolling moves the selection.
 		if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+			// overviewScroll owns which scrolls step; the shot costs no
+			// allocation once warm.
+			now := c.now()
+			shots := c.snapshot(now)
 			if c.cur().mon.overviewScroll(v) {
+				c.transition(shots, now)
 				if err := c.workspaceVisible(ctx, true); err != nil {
 					return err
 				}
@@ -189,8 +197,14 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	// run binds, and are not forwarded.
 	// A launcher or a menu holding the keyboard gets them first.
 	if mon := c.cur().mon; mon.ov.open && !c.overviewKeyboardTaken() {
+		now := c.now()
+		var shots []viewShot
+		if key.Pressed {
+			shots = c.snapshot(now)
+		}
 		if key.Pressed && mon.overviewKey(key) {
 			c.pressed[heldKey(key)] = true
+			c.transition(shots, now)
 			if err := c.workspaceVisible(ctx, true); err != nil {
 				return err
 			}
@@ -260,6 +274,8 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			}
 			before := c.cur().mon.Current()
 			swiped := c.swipedWorkspace()
+			now := c.now()
+			shots := c.snapshot(now)
 			c.keyboard.takeBack() // a bind acts on the windows
 			effect := c.applyAction(action)
 			if effect.Quit {
@@ -280,6 +296,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 			if c.swipedWorkspace() != swiped {
 				c.dropSwipe()
 			}
+			c.transition(shots, now)
 			if err := c.workspaceVisible(ctx, c.cur().mon.Current() != before); err != nil {
 				return err
 			}

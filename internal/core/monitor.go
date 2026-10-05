@@ -24,6 +24,10 @@ type Monitor struct {
 	shown      *Workspace // hidden workspace on screen, nil for Workspaces[Active]
 	back       *Workspace // where a named workspace toggle returns to
 	template   Workspace
+	// slideBuf and slideShown are slideLayout's scratch (the neighbor's
+	// layout and its placements by window), reused and never handed out.
+	slideBuf   []Placement
+	slideShown map[WindowID]Placement
 	nextID     *uint64 // shared by the monitors of one Core; owner goroutine only
 	named      []NamedWorkspace
 	// followMove shows the target workspace after a move to it.
@@ -34,7 +38,7 @@ type Monitor struct {
 	// at Active+switchOff while a swipe follows the fingers or its spring
 	// (switchMotion) lands.
 	switchOff    float64
-	switchMotion *motion
+	switchMotion motion
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchOff is then from the current
 	// workspace's place in it.
@@ -157,6 +161,7 @@ func (m *Monitor) Current() *Workspace {
 
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
+	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
 	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
 	w.overviewAfter = nil
@@ -408,20 +413,24 @@ func (m *Monitor) Focused() (WindowID, bool) {
 }
 
 // Layout places every window: the workspace on screen laid out, others hidden.
-func (m *Monitor) Layout() []Placement {
+// The slice is fresh, the caller's to keep; the per-frame paths use layoutInto.
+func (m *Monitor) Layout() []Placement { return m.layoutInto(nil) }
+
+// layoutInto is Layout built in dst[:0]: the result aliases dst's storage,
+// so a reused dst's previous result is overwritten and only a caller done
+// with it may pass it. It is never the monitor's own scratch.
+func (m *Monitor) layoutInto(dst []Placement) []Placement {
 	if m.ov.open {
-		return m.overviewLayout()
+		return m.overviewLayout(dst[:0])
 	}
-	var result []Placement
+	result := dst[:0]
 	cur := m.Current()
 	for w := range m.all() {
 		if w == cur {
-			result = append(result, w.Layout()...)
+			result = w.appendLayout(result)
 			continue
 		}
-		for _, id := range w.windows() {
-			result = append(result, Placement{ID: id, Hidden: true})
-		}
+		result = w.appendHidden(result, true)
 	}
 	return m.slideLayout(result)
 }

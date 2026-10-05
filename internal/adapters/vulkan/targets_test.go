@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image/color"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -11,20 +12,24 @@ import (
 
 // Frames drawn into exported targets reach their dmabufs: another renderer
 // importing a target (as KMS scans it out) sees the frame, and readback
-// reads the target drawn last.
+// reads the target drawn last. The viewer imports one-plane buffers only,
+// so the targets are single-plane here; TestExportTargetsPlanes covers the
+// multi-plane (DCC) ones.
 func TestExportTargets(t *testing.T) {
 	r, err := New(64, 32)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
 	defer r.Close()
-	bufs, err := r.ExportTargets(2, nil)
+	bufs, err := r.ExportTargets(2, nil, true)
 	if err != nil {
 		t.Skipf("no exportable targets: %v", err)
 	}
 	defer func() {
 		for _, b := range bufs {
-			b.Planes[0].File.Close()
+			for _, p := range b.Planes {
+				p.File.Close()
+			}
 		}
 	}()
 	if len(bufs) != 2 || bufs[0].Width != 64 || bufs[0].Format != fourccXRGB || bufs[0].Planes[0].Stride < 64*4 {
@@ -83,7 +88,7 @@ func TestHDRExportTarget(t *testing.T) {
 	if len(r.hdrMods) == 0 {
 		t.Skip("no HDR modifier supporting transfer-src")
 	}
-	bufs, err := r.ExportTargets(1, r.hdrMods)
+	bufs, err := r.ExportTargets(1, r.hdrMods, false)
 	if err != nil {
 		t.Skipf("no HDR-exportable target: %v", err)
 	}
@@ -140,12 +145,12 @@ func TestVirtualHDRExportsWithoutDisplayList(t *testing.T) {
 		t.Skip("no exportable HDR GPU")
 	}
 	r.SetHDR(203)
-	if bufs, err := r.ExportTargets(1, nil); err == nil {
+	if bufs, err := r.ExportTargets(1, nil, false); err == nil {
 		bufs[0].Planes[0].File.Close()
 		t.Fatal("HDR export without a display list succeeded on a non-virtual output")
 	}
 	r.SetVirtualOutput(true)
-	bufs, err := r.ExportTargets(1, nil)
+	bufs, err := r.ExportTargets(1, nil, false)
 	if err != nil {
 		t.Fatalf("virtual HDR export: %v", err)
 	}
@@ -164,6 +169,201 @@ func checkHDRPixel(t *testing.T, r *Renderer, rgb [3]float64) {
 		got := float64(v>>uint(i*10)&1023) / 1023
 		if math.Abs(got-want) > 0.005 {
 			t.Fatalf("rgb %v channel %d: PQ %.5f want %.5f", rgb, i, got, want)
+		}
+	}
+}
+
+// Targets may use DCC modifiers: one to four memory planes are kept and
+// their counts recorded; singlePlane drops the multi-plane ones.
+func TestFilterModifiersKeepsMultiPlane(t *testing.T) {
+	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
+	mods := []vk.DrmFormatModifierPropertiesEXT{
+		{DrmFormatModifier: 0, DrmFormatModifierPlaneCount: 1, DrmFormatModifierTilingFeatures: need},
+		{DrmFormatModifier: 10, DrmFormatModifierPlaneCount: 3, DrmFormatModifierTilingFeatures: need},
+		{DrmFormatModifier: 11, DrmFormatModifierPlaneCount: 4, DrmFormatModifierTilingFeatures: need},
+		{DrmFormatModifier: 12, DrmFormatModifierPlaneCount: 5, DrmFormatModifierTilingFeatures: need},
+		{DrmFormatModifier: 13, DrmFormatModifierPlaneCount: 0, DrmFormatModifierTilingFeatures: need},
+		{DrmFormatModifier: 14, DrmFormatModifierPlaneCount: 2},
+		{DrmFormatModifier: 15, DrmFormatModifierPlaneCount: 2, DrmFormatModifierTilingFeatures: need},
+	}
+	got, planes := filterModifiers(mods, need, func(m uint64) bool { return m != 15 })
+	if !slices.Equal(got, []uint64{0, 10, 11}) {
+		t.Fatalf("kept %v", got)
+	}
+	if planes[0] != 1 || planes[10] != 3 || planes[11] != 4 || len(planes) != 3 {
+		t.Fatalf("planes %v", planes)
+	}
+	r := &Renderer{renderMods: got, modPlanes: planes}
+	if all := r.exportModifiers(nil, false); !slices.Equal(all, []uint64{0, 10, 11}) {
+		t.Fatalf("multi-plane export %v", all)
+	}
+	if one := r.exportModifiers(nil, true); !slices.Equal(one, []uint64{0}) {
+		t.Fatalf("single-plane export %v", one)
+	}
+	if one := r.exportModifiers([]uint64{10, 11}, true); len(one) != 0 {
+		t.Fatalf("single-plane with only DCC offered: %v", one)
+	}
+	if two := r.exportModifiers([]uint64{10, 0}, false); !slices.Equal(two, []uint64{0, 10}) {
+		t.Fatalf("display intersection %v", two)
+	}
+}
+
+// Every exported target carries one file per memory plane of its modifier
+// (DCC modifiers have two to four), each with a layout, and drawing into
+// each target works: the frames read back through the producing renderer.
+// A multi-plane image cannot be read back through a viewer import, which
+// only imports one-plane buffers.
+func TestExportTargetsPlanes(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	closeAll := func(bufs []ports.DMABuf) {
+		for _, b := range bufs {
+			for _, p := range b.Planes {
+				p.File.Close()
+			}
+		}
+	}
+	// Single-plane export never returns a multi-plane modifier.
+	one, err := r.ExportTargets(1, nil, true)
+	if err != nil {
+		t.Skipf("no single-plane targets: %v", err)
+	}
+	if len(one[0].Planes) != 1 || r.modPlanes[one[0].Modifier] > 1 {
+		t.Fatalf("single-plane export has %d planes (modifier %#x)", len(one[0].Planes), one[0].Modifier)
+	}
+	closeAll(one)
+	multi := false
+	for _, m := range r.renderMods {
+		multi = multi || r.modPlanes[m] > 1
+	}
+	if !multi {
+		t.Skip("device has no multi-plane target modifier")
+	}
+	bufs, err := r.ExportTargets(2, nil, false)
+	if err != nil {
+		t.Skipf("no exportable targets: %v", err)
+	}
+	defer closeAll(bufs)
+	for _, b := range bufs {
+		want := max(r.modPlanes[b.Modifier], 1)
+		if uint32(len(b.Planes)) != want {
+			t.Fatalf("modifier %#x: %d plane files, want %d", b.Modifier, len(b.Planes), want)
+		}
+		seen := map[int]bool{}
+		for i, p := range b.Planes {
+			if p.File == nil || p.Stride == 0 {
+				t.Fatalf("modifier %#x plane %d: %+v", b.Modifier, i, p)
+			}
+			// The planes share one memory object: planes 1.. lie after plane 0.
+			if i > 0 && p.Offset == 0 {
+				t.Fatalf("modifier %#x plane %d at offset 0", b.Modifier, i)
+			}
+			if seen[int(p.File.Fd())] {
+				t.Fatalf("modifier %#x: plane %d shares a file", b.Modifier, i)
+			}
+			seen[int(p.File.Fd())] = true
+		}
+		t.Logf("modifier %#x planes %d", b.Modifier, len(b.Planes))
+	}
+	for i, tc := range []struct {
+		bg   string
+		want color.RGBA
+	}{{"#ff0000", color.RGBA{255, 0, 0, 255}}, {"#0000ff", color.RGBA{0, 0, 255, 255}}} {
+		r.UseTarget(i)
+		if err := render(r, ports.Scene{Background: tc.bg}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := readPixels(t, r).At(3, 3); got != tc.want {
+			t.Fatalf("target %d (modifier %#x): read back %v, want %v", i, bufs[i].Modifier, got, tc.want)
+		}
+	}
+}
+
+// A target exported for a display modifier list carries one of its
+// modifiers, whichever they are: KMS refuses a framebuffer whose modifier
+// the plane does not advertise, so the intersection must hold on the real
+// driver (RADV also exports DCC variants displays do not list).
+func TestExportTargetsStayInTheDisplayList(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	if len(r.renderMods) == 0 {
+		t.Skip("device exports no render modifier")
+	}
+	for _, m := range r.renderMods {
+		bufs, err := r.ExportTargets(1, []uint64{m}, false)
+		if err != nil {
+			t.Fatalf("modifier %#x is exportable but export failed: %v", m, err)
+		}
+		got := bufs[0].Modifier
+		for _, p := range bufs[0].Planes {
+			p.File.Close()
+		}
+		if got != m {
+			t.Fatalf("display lists only %#x, target has modifier %#x", m, got)
+		}
+	}
+	// A list with no exportable modifier is an error, not a guess.
+	if bufs, err := r.ExportTargets(1, []uint64{0x1234567}, false); err == nil {
+		for _, p := range bufs[0].Planes {
+			p.File.Close()
+		}
+		t.Fatalf("export with an unexportable display list gave modifier %#x", bufs[0].Modifier)
+	}
+}
+
+// The AMD DCC retile modifiers cost a compute pass per frame: they are never
+// targets, whatever the display lists. Plain DCC (pipe-aligned or not), the
+// non-DCC tiled modifier and non-AMD modifiers with bit 14 set stay.
+func TestFilterModifiersDropsDCCRetile(t *testing.T) {
+	const (
+		retile       = 0x200000010567b03  // AMD DCC, DCC_RETILE (laptop RADV)
+		pipeAligned  = 0x20000000056bb03  // AMD DCC, pipe-aligned
+		unaligned    = 0x200000000563b03  // AMD DCC, not pipe-aligned
+		tiled        = 0x200000010401b03  // AMD tiled, no DCC
+		foreignRetil = 0x0100000000004003 // vendor 1, bit 14 set: not AMD's
+	)
+	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
+	var mods []vk.DrmFormatModifierPropertiesEXT
+	for _, m := range []uint64{retile, pipeAligned, unaligned, tiled, foreignRetil, 0} {
+		planes := uint32(1)
+		if m == retile || m == pipeAligned || m == unaligned {
+			planes = 3
+		}
+		mods = append(mods, vk.DrmFormatModifierPropertiesEXT{DrmFormatModifier: m, DrmFormatModifierPlaneCount: planes, DrmFormatModifierTilingFeatures: need})
+	}
+	got, planes := filterModifiers(mods, need, func(uint64) bool { return true })
+	if want := []uint64{pipeAligned, unaligned, tiled, foreignRetil, 0}; !slices.Equal(got, want) {
+		t.Fatalf("kept %#x, want %#x", got, want)
+	}
+	if _, ok := planes[retile]; ok {
+		t.Fatalf("retile modifier has a plane count: %v", planes)
+	}
+	r := &Renderer{renderMods: got, modPlanes: planes}
+	if out := r.exportModifiers([]uint64{retile, tiled}, false); !slices.Equal(out, []uint64{tiled}) {
+		t.Fatalf("display listing the retile modifier: %#x", out)
+	}
+	if out := r.exportModifiers([]uint64{retile}, false); len(out) != 0 {
+		t.Fatalf("display listing only the retile modifier: %#x", out)
+	}
+}
+
+// The device's exportable modifiers hold no AMD DCC retile one, whatever
+// RADV lists (it lists them on GPUs with several render backends).
+func TestProbedModifiersHaveNoDCCRetile(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	for _, m := range append(slices.Clone(r.renderMods), r.hdrMods...) {
+		if retilesDCC(m) {
+			t.Fatalf("target modifier %#x retiles DCC", m)
 		}
 	}
 }

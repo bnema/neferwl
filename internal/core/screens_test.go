@@ -127,15 +127,21 @@ func TestOutputsLeftToRight(t *testing.T) {
 }
 
 func TestLayoutPerOutput(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) {
-		c.Layout.MaxColumns = 2
-		c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
-	}, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) {
+			c.Layout.MaxColumns = 2
+			c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", MaxColumns: 4, Overflow: "fixed"}}
+		}, left, right)
+		layoutPerOutput(t, r)
+	})
+}
+
+func layoutPerOutput(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
 	var set []ports.Scene
 	for id := ports.WindowID(2); id <= 6; id++ {
-		set = r.mapWindow(t, id)
+		set = r.mapLanded(t, id)
 	}
 	// DP-2: four columns of 100; the fifth window splits the last one
 	// (fixed) instead of scrolling.
@@ -166,26 +172,32 @@ func widths(set []ports.Scene, output string) []int {
 }
 
 func TestLayoutPerOutputFollowsMonitorAndReload(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) {
-		c.Layout.MaxColumns = 1
-		c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", LayoutRules: ports.LayoutRules{MaxColumns: 2}}}
-	}, right)
-	r.mapWindow(t, 1)
-	if got := widths(r.mapWindow(t, 2), "DP-2"); !slices.Equal(got, []int{200, 200}) {
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) {
+			c.Layout.MaxColumns = 1
+			c.Layout.Outputs = []ports.OutputLayout{{Output: "Acme B 2", LayoutRules: ports.LayoutRules{MaxColumns: 2}}}
+		}, right)
+		layoutPerOutputFollowsMonitorAndReload(t, r)
+	})
+}
+
+func layoutPerOutputFollowsMonitorAndReload(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	if got := widths(r.mapLanded(t, 2), "DP-2"); !slices.Equal(got, []int{200, 200}) {
 		t.Fatal(got)
 	}
 	// Another monitor on DP-2: the key rule no longer applies.
 	other := right
 	other.Serial = "3"
-	if got := widths(r.plug(t, other), "DP-2"); !slices.Equal(got, []int{400, 400}) {
+	if got := widths(r.land(r.plug(t, other)), "DP-2"); !slices.Equal(got, []int{400, 400}) {
 		t.Fatal(got)
 	}
 	// Back to the first monitor, then a reload drops the rule.
-	r.plug(t, right)
+	r.land(r.plug(t, right))
 	cfg := r.cfg
 	cfg.Layout.Outputs = nil
 	r.reload <- ports.ConfigChanged{Config: cfg}
-	if got := widths(receive(t, r.scenes), "DP-2"); !slices.Equal(got, []int{400, 400}) {
+	if got := widths(r.land(receive(t, r.scenes)), "DP-2"); !slices.Equal(got, []int{400, 400}) {
 		t.Fatal(got)
 	}
 }
@@ -301,10 +313,15 @@ func TestFocusColumnCrossesOutputs(t *testing.T) {
 }
 
 func TestPointerCrossesOutputs(t *testing.T) {
-	r := startMulti(t, nil, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
+	both(t, func(t *testing.T, animated bool) {
+		pointerCrossesOutputs(t, startLanding(t, animated, nil, left, right))
+	})
+}
+
+func pointerCrossesOutputs(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapLanded(t, 2)
 	for len(r.commands) > 0 {
 		<-r.commands
 	}
@@ -400,33 +417,35 @@ func TestMonitorActionsFollowGeometry(t *testing.T) {
 }
 
 func TestUnplugMovesWorkspacesAndReplugReturnsThem(t *testing.T) {
-	r := startMulti(t, nil, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
-	// Unplug DP-2 while it is focused: its workspace joins DP-1 below its own.
-	r.output <- ports.OutputRemoved{Name: "DP-2"}
-	set := receive(t, r.scenes)
-	if len(set) != 1 || len(shown(set)["DP-1"]) != 1 || shown(set)["DP-1"][0] != 1 {
-		t.Fatal(shown(set))
-	}
-	// Cmd+2 shows the guest.
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
-	set = receive(t, r.scenes)
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt}
-	if got := shown(set)["DP-1"]; len(got) != 1 || got[0] != 2 {
-		t.Fatal(got)
-	}
-	// Replugged while on screen: the guest stays until the user leaves it.
-	set = r.plug(t, right)
-	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 2 || len(got["DP-2"]) != 0 {
-		t.Fatal(got)
-	}
-	r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt, Pressed: true}
-	set = receive(t, r.scenes)
-	if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
-		t.Fatal(got)
-	}
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, nil, left, right)
+		r.mapLanded(t, 1)
+		r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+		r.mapLanded(t, 2)
+		// Unplug DP-2 while it is focused: its workspace joins DP-1 below its own.
+		r.output <- ports.OutputRemoved{Name: "DP-2"}
+		set := r.land(receive(t, r.scenes))
+		if len(set) != 1 || len(shown(set)["DP-1"]) != 1 || shown(set)["DP-1"][0] != 1 {
+			t.Fatal(shown(set))
+		}
+		// Cmd+2 shows the guest.
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+		set = r.land(receive(t, r.scenes))
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt}
+		if got := shown(set)["DP-1"]; len(got) != 1 || got[0] != 2 {
+			t.Fatal(got)
+		}
+		// Replugged while on screen: the guest stays until the user leaves it.
+		set = r.land(r.plug(t, right))
+		if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 2 || len(got["DP-2"]) != 0 {
+			t.Fatal(got)
+		}
+		r.input <- ports.KeyEvent{Keysym: "1", Keycode: 2, Mods: ports.ModAlt, Pressed: true}
+		set = r.land(receive(t, r.scenes))
+		if got := shown(set); len(got["DP-1"]) != 1 || got["DP-1"][0] != 1 || len(got["DP-2"]) != 1 || got["DP-2"][0] != 2 {
+			t.Fatal(got)
+		}
+	})
 }
 
 func TestReplugReturnsHiddenGuestAtOnce(t *testing.T) {
@@ -763,38 +782,40 @@ func TestKeyboardScreenFocusSticksUntilPointerLeaves(t *testing.T) {
 }
 
 func TestStateSnapshot(t *testing.T) {
-	r := startMulti(t, nil, left, right)
-	r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
-	receive(t, r.scenes)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	<-r.state // the channel holds the latest snapshot only
-	r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
-	receive(t, r.scenes)
-	// Snapshots from before window 2 may still be queued: wait for it.
-	st := receive(t, r.state)
-	for len(st.Windows) < 2 {
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, nil, left, right)
+		r.client <- ports.WindowMapped{ID: 1, AppID: "foot", PID: 100}
+		r.land(receive(t, r.scenes))
+		r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+		<-r.state // the channel holds the latest snapshot only
+		r.client <- ports.WindowMapped{ID: 2, AppID: "firefox", PID: 200}
+		r.land(receive(t, r.scenes))
+		// Snapshots from before window 2 may still be queued: wait for it.
+		st := receive(t, r.state)
+		for len(st.Windows) < 2 {
+			st = receive(t, r.state)
+		}
+		want := ports.State{
+			Output:  "DP-2",
+			Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
+			Windows: []ports.WindowState{
+				{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
+				{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
+			},
+		}
+		want.Window = &want.Windows[1]
+		if !reflect.DeepEqual(st, want) {
+			t.Fatalf("got  %+v\nwant %+v", st, want)
+		}
+		// Moving to workspace 2 of DP-2: two workspaces there, window 2 off screen.
+		r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
+		r.land(receive(t, r.scenes))
 		st = receive(t, r.state)
-	}
-	want := ports.State{
-		Output:  "DP-2",
-		Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
-		Windows: []ports.WindowState{
-			{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
-			{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
-		},
-	}
-	want.Window = &want.Windows[1]
-	if !reflect.DeepEqual(st, want) {
-		t.Fatalf("got  %+v\nwant %+v", st, want)
-	}
-	// Moving to workspace 2 of DP-2: two workspaces there, window 2 off screen.
-	r.input <- ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModAlt, Pressed: true}
-	receive(t, r.scenes)
-	st = receive(t, r.state)
-	// The window keeps its workspace ID; the output now shows the new one.
-	if o := st.Outputs[1]; o.Name != "DP-2" || o.Active != 2 || o.Count != 2 || o.WorkspaceID == 0 || o.WorkspaceID == 2 || st.Windows[1].WorkspaceID != 2 || st.Windows[1].Visible || st.Window != nil {
-		t.Fatalf("%+v", st)
-	}
+		// The window keeps its workspace ID; the output now shows the new one.
+		if o := st.Outputs[1]; o.Name != "DP-2" || o.Active != 2 || o.Count != 2 || o.WorkspaceID == 0 || o.WorkspaceID == 2 || st.Windows[1].WorkspaceID != 2 || st.Windows[1].Visible || st.Window != nil {
+			t.Fatalf("%+v", st)
+		}
+	})
 }
 
 func TestStateFollowsAppIDAndHiddenWorkspace(t *testing.T) {
@@ -1003,18 +1024,24 @@ func TestFocusColumnFromFloatStaysOnMonitor(t *testing.T) {
 // and their popups wait, a click selects a peek, and the script state
 // tells the stash and whether it is hidden.
 func TestStashEndToEnd(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
+	both(t, func(t *testing.T, animated bool) {
+		r := startLanding(t, animated, func(c *ports.Config) { c.Stash.Gap, c.Stash.Dim = 0, 0.5 }, left)
+		stashEndToEnd(t, r)
+	})
+}
+
+func stashEndToEnd(t *testing.T, r *landRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
-		r.mapWindow(t, id)
+		r.mapLanded(t, id)
 	}
-	r.key(t, "s", ports.ModAlt|ports.ModShift) // 3 stashed
-	r.key(t, "Left", ports.ModAlt)             // stays on 3: its stash's only window
-	sc := r.key(t, "s", ports.ModAlt)
+	r.keyLanded(t, "s", ports.ModAlt|ports.ModShift) // 3 stashed
+	r.keyLanded(t, "Left", ports.ModAlt)             // stays on 3: its stash's only window
+	sc := r.keyLanded(t, "s", ports.ModAlt)
 	if got := shown(sc)["DP-1"]; !slices.Equal(got, []ports.WindowID{1, 2}) {
 		t.Fatalf("hidden stash: %v", got)
 	}
-	r.key(t, "Left", ports.ModAlt) // tiles: from 2 to 1
-	sc = r.key(t, "s", ports.ModAlt|ports.ModShift)
+	r.keyLanded(t, "Left", ports.ModAlt) // tiles: from 2 to 1
+	sc = r.keyLanded(t, "s", ports.ModAlt|ports.ModShift)
 	// Stash 3 1: 1 selected in the middle, 3 peeking left, dimmed.
 	var peek, sel ports.SceneWindow
 	for _, w := range sc[0].Windows {
@@ -1040,7 +1067,7 @@ func TestStashEndToEnd(t *testing.T) {
 	// A click on the peek (x 0..19 of 200) selects it.
 	r.input <- ports.PointerMotion{X: 5, Y: 50}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	receive(t, r.scenes)
+	r.land(receive(t, r.scenes))
 	st := receive(t, r.state)
 	for st.Window == nil || st.Window.ID != 3 {
 		st = receive(t, r.state)
@@ -1056,7 +1083,7 @@ func TestStashEndToEnd(t *testing.T) {
 		t.Fatalf("tile %+v", w)
 	}
 	r.input <- ports.PointerButton{Button: 0x110}
-	r.key(t, "s", ports.ModAlt)
+	r.keyLanded(t, "s", ports.ModAlt)
 	st = receive(t, r.state)
 	for !st.Windows[0].Hidden {
 		st = receive(t, r.state)
@@ -1182,11 +1209,16 @@ func TestDialogFocusStaysOnMonitor(t *testing.T) {
 // A click on a tile behind the shown stash hides the stash and focuses
 // the tile.
 func TestStashHidesOnBackgroundClick(t *testing.T) {
-	// Gap 10 at 80%: no peeks, the margins show the tile behind.
-	r := startMulti(t, func(c *ports.Config) { c.Stash.Gap = 10 }, left)
-	r.mapWindow(t, 1)
-	r.mapWindow(t, 2)
-	r.key(t, "s", ports.ModAlt|ports.ModShift) // 2 stashed and focused, over tile 1
+	both(t, func(t *testing.T, animated bool) {
+		// Gap 10 at 80%: no peeks, the margins show the tile behind.
+		stashHidesOnBackgroundClick(t, startLanding(t, animated, func(c *ports.Config) { c.Stash.Gap = 10 }, left))
+	})
+}
+
+func stashHidesOnBackgroundClick(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.mapLanded(t, 2)
+	r.keyLanded(t, "s", ports.ModAlt|ports.ModShift) // 2 stashed and focused, over tile 1
 	r.input <- ports.PointerMotion{X: 5, Y: 50}
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	st := stateAfter(t, r.state, func(st ports.State) bool { return st.Window != nil && st.Window.ID == 1 })
@@ -1510,12 +1542,17 @@ func TestTransformReload(t *testing.T) {
 // A reload that shrinks the layout under a still pointer brings it back onto
 // an output.
 func TestTransformReloadClampsPointer(t *testing.T) {
-	r := startMulti(t, func(c *ports.Config) {
-		c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
-	}, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
+	both(t, func(t *testing.T, animated bool) {
+		transformReloadClampsPointer(t, startLanding(t, animated, func(c *ports.Config) {
+			c.Outputs = []ports.OutputConfig{{Name: "DP-1"}, {Name: "DP-2"}}
+		}, left, right))
+	})
+}
+
+func transformReloadClampsPointer(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapLanded(t, 2)
 	// DP-2 spans x 200..600: (550, 50) is (350, 50) on window 2.
 	for len(r.commands) > 0 {
 		<-r.commands

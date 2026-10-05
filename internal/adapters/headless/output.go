@@ -15,6 +15,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/presented"
+	"github.com/bnema/neferwl/internal/adapters/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -66,10 +67,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var confirmed *ports.OutputHDR
 	if opts.HDR {
 		r.SetHDR(203)
-		if bufs, err := r.ExportTargets(1, nil); err != nil {
+		if bufs, err := r.ExportTargets(1, nil, false); err != nil {
 			opts.Log.Warn().Err(err).Str("output", opts.Name).Msg("virtual HDR unavailable; falling back to SDR")
 			r.SetHDR(0)
-			_, _ = r.ExportTargets(0, nil)
+			_, _ = r.ExportTargets(0, nil, false)
 		} else {
 			for _, b := range bufs {
 				for _, p := range b.Planes {
@@ -87,7 +88,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 	}
-	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
+	table := surfaces.New()
+	drawn := table.Map()
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
@@ -199,16 +201,18 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if opts.Security != nil && (s.Security != security || s.Security != opts.Security.Snapshot()) {
 			return
 		}
+		// The core keeps the Seq of a scene that draws the same: nothing to do.
+		if haveScene && s.Seq != 0 && s.Seq == scene.Seq && s.Security == scene.Security {
+			return
+		}
 		scene, haveScene, dirty = s, true, true
+		// A closed window's last content goes once no scene draws it.
+		table.Prune(scene)
 	}
 	update := func(c ports.SurfaceContent) {
 		seen[c.ID] = max(seen[c.ID], c.Seq)
 		dirty = dirty || capture.Shows(scene, c.ID)
-		if c.Empty() {
-			delete(surfaces, c.ID)
-		} else {
-			surfaces[c.ID] = c
-		}
+		table.Update(c, scene)
 	}
 	clk := opts.Clock
 	if clk == nil {
@@ -469,7 +473,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				failRequests("security epoch changed")
 				continue
 			}
-			pipeline.SubmitHidden(scene, surfaces, hidden)
+			pipeline.SubmitHidden(scene, drawn, hidden)
 			clear(hidden)
 			// A slow child may outlive Wayland's stale-report timeout even
 			// though this owner waits. Publish its non-expiring holds first.
@@ -490,7 +494,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		// Captures never show the capture indicator: their frame goes first.
-		took, pdone, perr := pipeline.SubmitPlain(r, scene, surfaces, normal)
+		took, pdone, perr := pipeline.SubmitPlain(r, scene, drawn, normal)
 		if pdone != nil {
 			// The plain render reads client buffers even when its requests
 			// are rejected by a gate transition: own and wait its fence
@@ -517,7 +521,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				failRequests("security epoch changed")
 				continue
 			}
-			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), surfaces)
+			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), drawn)
 			if xdone != nil {
 				// The excluded-frame composition reads client buffers even when the displayed
 				// frame is skipped by a gate/off transition. Own and wait its
@@ -545,7 +549,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			failRequests("security epoch changed")
 			continue
 		}
-		done, err := r.Render(scene, surfaces)
+		done, err := r.Render(scene, drawn)
 		if err != nil {
 			return fmt.Errorf("render frame: %w", err)
 		}
@@ -575,7 +579,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests = capture.Waiting(requests, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, surfaces), seen)
+		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
@@ -613,7 +617,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 			}
 		}
-		opts.Log.Debug().Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Msg("frame")
+		if ev := opts.Log.Debug(); ev.Enabled() {
+			ev.Int("frame", frame).Uint64("seq", scene.Seq).Int("windows", len(scene.Windows)).Dur("ms", time.Since(start)).Int("redrawn", r.TakeRedrawn()).Msg("frame")
+		}
 	}
 }
 
@@ -665,12 +671,14 @@ func (opts Options) flush(q *presented.Queue) {
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames.
-func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) *ports.FlipInfo {
+func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	shows := map[ports.WindowID]uint64{}
 	for id, c := range surfaces {
-		if scene.Shows(id) {
+		// A closed window drawn from its kept content is not shown to
+		// its client.
+		if scene.Shows(id) && !kept(id) {
 			shows[id] = c.Seq
 		}
 	}

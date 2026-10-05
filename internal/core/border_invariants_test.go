@@ -2,7 +2,9 @@ package core_test
 
 import (
 	"math/rand"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -13,49 +15,151 @@ func TestBorderSceneInvariants(t *testing.T) {
 	for _, overflow := range []string{"fixed", "scroll"} {
 		for _, gap := range []int{0, 6} {
 			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
-				rng := rand.New(rand.NewSource(20260928))
 				r := startMulti(t, func(c *ports.Config) {
+					c.Animations.On = false
 					c.Border.Width = 2
 					c.Layout.MaxColumns = 3
 					c.Layout.Overflow = overflow
 					c.Layout.Gaps = gap
 				}, left, right)
-				var ids []ports.WindowID
-				next := ports.WindowID(1)
-				// A single keypress may publish a scene even when the action is
-				// inapplicable; check every resulting scene independently.
-				keys := []struct {
-					sym  string
-					mods ports.Mods
-				}{
-					{"Left", ports.ModAlt | ports.ModShift}, {"Right", ports.ModAlt | ports.ModShift},
-					{"Left", ports.ModAlt}, {"Right", ports.ModAlt},
-					{"Left", ports.ModAlt | ports.ModCtrl}, {"Right", ports.ModAlt | ports.ModCtrl},
-					{"Left", ports.ModAlt | ports.ModCtrl | ports.ModShift}, {"Right", ports.ModAlt | ports.ModCtrl | ports.ModShift},
-					{"bracketleft", ports.ModAlt}, {"bracketright", ports.ModAlt},
-					{"f", ports.ModAlt}, {"f", ports.ModAlt | ports.ModShift},
-					{"s", ports.ModAlt}, {"S", ports.ModAlt | ports.ModShift}, {"Up", ports.ModAlt}, {"Down", ports.ModAlt},
-				}
-				for step := range 180 {
-					var scenes []ports.Scene
-					switch {
-					case len(ids) < 2 || rng.Intn(5) == 0 && len(ids) < 12:
-						scenes = r.mapWindow(t, next)
-						ids = append(ids, next)
-						next++
-					case rng.Intn(9) == 0:
-						i := rng.Intn(len(ids))
-						r.client <- ports.WindowUnmapped{ID: ids[i]}
-						scenes = receive(t, r.scenes)
-						ids = append(ids[:i], ids[i+1:]...)
-					default:
-						k := keys[rng.Intn(len(keys))]
-						scenes = r.key(t, k.sym, k.mods)
-					}
-					checkBorderScenes(t, step, gap, scenes)
-				}
+				borderScenario(t, r, gap, nil)
 			})
 		}
+	}
+}
+
+// With animations on, the scene right after an action shows the old layout
+// moving: only the weak invariants hold there. Once every spring settled
+// (the test moves the clock and sends the page flips) the full ones do,
+// whatever the actions that ran mid-transition. Insets and lit lines come
+// from the settled topology by design: separators follow the shown layout.
+func TestBorderSceneInvariantsAnimated(t *testing.T) {
+	for _, overflow := range []string{"fixed", "scroll"} {
+		for _, gap := range []int{0, 6} {
+			t.Run(overflow+map[int]string{0: "-flush", 6: "-gaps"}[gap], func(t *testing.T) {
+				r := startSwipeOn(t, func(c *ports.Config) {
+					c.Animations.On = true
+					c.Border.Width = 2
+					c.Layout.MaxColumns = 3
+					c.Layout.Overflow = overflow
+					c.Layout.Gaps = gap
+				}, left, right)
+				moved := 0
+				borderScenario(t, r.multiRig, gap, func(set []ports.Scene) []ports.Scene {
+					settled, ok := r.settleAll(t, left.Name, right.Name)
+					if !ok {
+						return set
+					}
+					if !sameRects(set, settled) {
+						moved++
+					}
+					// Settled means no spring runs: a further flip has nothing to do.
+					if _, again := r.clk.flip(t, r.frames, r.scenes, 16*time.Millisecond, left.Name, right.Name); again {
+						t.Fatal("a flip after the settle still published: a spring runs")
+					}
+					return settled
+				})
+				if moved == 0 {
+					t.Fatal("no scene was ever mid-transition: the case checks nothing")
+				}
+				t.Logf("%d steps checked mid-transition and settled", moved)
+			})
+		}
+	}
+}
+
+// borderScenario drives 180 random steps and checks every scene set. With
+// settle set the steps are animated: the set a step publishes is checked
+// with the weak invariants, then the settled set (settle returns the set
+// itself when nothing animated) with the full ones. One step in four skips
+// the settling, so the next action starts mid-transition; the last step
+// always settles.
+func borderScenario(t *testing.T, r *multiRig, gap int, settle func([]ports.Scene) []ports.Scene) {
+	t.Helper()
+	rng := rand.New(rand.NewSource(20260928))
+	var ids []ports.WindowID
+	next := ports.WindowID(1)
+	// A single keypress may publish a scene even when the action is
+	// inapplicable; check every resulting scene independently.
+	keys := []struct {
+		sym  string
+		mods ports.Mods
+	}{
+		{"Left", ports.ModAlt | ports.ModShift}, {"Right", ports.ModAlt | ports.ModShift},
+		{"Left", ports.ModAlt}, {"Right", ports.ModAlt},
+		{"Left", ports.ModAlt | ports.ModCtrl}, {"Right", ports.ModAlt | ports.ModCtrl},
+		{"Left", ports.ModAlt | ports.ModCtrl | ports.ModShift}, {"Right", ports.ModAlt | ports.ModCtrl | ports.ModShift},
+		{"bracketleft", ports.ModAlt}, {"bracketright", ports.ModAlt},
+		{"f", ports.ModAlt}, {"f", ports.ModAlt | ports.ModShift},
+		{"s", ports.ModAlt}, {"S", ports.ModAlt | ports.ModShift}, {"Up", ports.ModAlt}, {"Down", ports.ModAlt},
+	}
+	const steps = 180
+	for step := range steps {
+		var scenes []ports.Scene
+		switch {
+		case len(ids) < 2 || rng.Intn(5) == 0 && len(ids) < 12:
+			scenes = r.mapWindow(t, next)
+			ids = append(ids, next)
+			next++
+		case rng.Intn(9) == 0:
+			i := rng.Intn(len(ids))
+			r.client <- ports.WindowUnmapped{ID: ids[i]}
+			scenes = receive(t, r.scenes)
+			ids = append(ids[:i], ids[i+1:]...)
+		default:
+			k := keys[rng.Intn(len(keys))]
+			scenes = r.key(t, k.sym, k.mods)
+		}
+		if settle == nil {
+			checkBorderScenes(t, step, gap, scenes)
+			continue
+		}
+		checkBorderScenesMoving(t, step, scenes)
+		if rng.Intn(4) != 0 || step == steps-1 {
+			checkBorderScenes(t, step, gap, settle(scenes))
+		}
+	}
+}
+
+// sameRects reports whether two scene sets draw every window at the same
+// rect.
+func sameRects(a, b []ports.Scene) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !slices.EqualFunc(a[i].Windows, b[i].Windows, func(x, y ports.SceneWindow) bool { return x.ID == y.ID && x.Rect == y.Rect }) {
+			return false
+		}
+	}
+	return true
+}
+
+// checkBorderScenesMoving is what holds for a scene published while
+// windows still move: every separator lies inside its output and belongs
+// to a window that is shown, and at most one window is focused.
+func checkBorderScenesMoving(t *testing.T, step int, scenes []ports.Scene) {
+	t.Helper()
+	focused := 0
+	for _, s := range scenes {
+		o := ports.Rect{W: s.OutputWidth, H: s.OutputHeight}
+		for _, sep := range s.Separators {
+			r := sep.Rect
+			if r.W <= 0 || r.H <= 0 || r.X < 0 || r.Y < 0 || r.X+r.W > o.W || r.Y+r.H > o.H {
+				t.Fatalf("step %d %s (moving): line outside output: %+v; scene %+v", step, s.Output, sep, s)
+			}
+			if sep.Window != 0 && !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == sep.Window && !w.Hidden }) {
+				t.Fatalf("step %d %s (moving): line belongs to a hidden or absent window: %+v; scene %+v", step, s.Output, sep, s)
+			}
+		}
+		for _, w := range s.Windows {
+			if w.Focused && !w.Hidden && !w.Popup {
+				focused++
+			}
+		}
+	}
+	if focused > 1 {
+		t.Fatalf("step %d (moving): several focused windows: %+v", step, scenes)
 	}
 }
 

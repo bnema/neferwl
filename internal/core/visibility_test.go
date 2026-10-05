@@ -91,6 +91,7 @@ func TestConfigureVisible(t *testing.T) {
 		t.Fatal("popup of a visible window not on screen")
 	}
 	m.AddWindow(4)
+	publish() // visibility reads the layout of the last publish
 	if c.visible(1) || c.visible(10) {
 		t.Fatal("popup of a scrolled-off window still on screen")
 	}

@@ -30,7 +30,9 @@ func (o *Output) shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[port
 	}
 	clear(o.showsScratch)
 	for id, seq := range seen {
-		if s.Shows(id) {
+		// A closed window drawn from its kept content is not shown to its
+		// client: the empty content has no frame to present.
+		if s.Shows(id) && (o.kept == nil || !o.kept(id)) {
 			o.showsScratch[id] = seq
 		}
 	}

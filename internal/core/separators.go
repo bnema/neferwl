@@ -38,13 +38,20 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 		if p.Floating {
 			id = p.ID
 		}
+		if out == nil {
+			// One line per side of every tile, and the focused one's four
+			// lit lines: the common case grows no further.
+			out = make([]ports.Separator, 0, 4*len(ps)+4)
+		}
 		out = append(out, ports.Separator{Rect: r, Active: active, Window: id})
 	}
 	var focused *Placement
 	tiles := 0
 	for i := range ps {
 		p := &ps[i]
-		if p.Fullscreen || !onScreen(*p, o) {
+		// A leaving float keeps its own lines while it fades; a leaving
+		// tile's were shared with its neighbours, which re-flowed.
+		if p.Fullscreen || !(onScreen(*p, o) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
 			continue
 		}
 		if !p.Floating {

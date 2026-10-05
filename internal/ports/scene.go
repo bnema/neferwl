@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 	"os"
+	"slices"
 )
 
 // Scene carries core → renderer immutable snapshots with fresh Windows slices,
@@ -66,6 +67,37 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
+}
+
+// SameAs reports whether o draws exactly what s draws: every field other
+// than Seq is equal. A scene carrying a CaptureScene is never the same
+// (conservative: the capture image is not compared). Add every new Scene
+// field here; TestSceneSameAsCoversEveryField fails until the field count
+// is updated.
+func (s Scene) SameAs(o Scene) bool {
+	if s.Security != o.Security || s.Output != o.Output ||
+		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
+		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
+		s.Background != o.Background || s.Border != o.Border ||
+		s.WorkspaceClip != o.WorkspaceClip || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
+		return false
+	}
+	if s.CaptureScene != nil || o.CaptureScene != nil {
+		return false
+	}
+	if (s.Capture == nil) != (o.Capture == nil) {
+		return false
+	}
+	if s.Capture != nil {
+		a, b := *s.Capture, *o.Capture
+		if a.Shown != b.Shown || a.Session != b.Session || a.Revision != b.Revision ||
+			a.Workspace != b.Workspace || a.Window != b.Window || !slices.Equal(a.Excluded, b.Excluded) {
+			return false
+		}
+	}
+	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
+		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
+		slices.Equal(s.CaptureIndicators, o.CaptureIndicators)
 }
 
 // Shows reports whether the scene draws the surface of id: only its
@@ -175,6 +207,11 @@ type SurfaceContent struct {
 	// Opaque ignores the alpha byte: an x format, or an opaque region that
 	// covers the whole surface. It is false while Fade is set.
 	Opaque bool
+	// OpaqueRect is the largest rect of the opaque region inside a surface
+	// that is not wholly Opaque, in logical pixels from the surface origin:
+	// the pixels there ignore alpha too, so the surfaces below it are hidden
+	// by it. Empty when there is none or while Fade is set.
+	OpaqueRect Rect
 	// Fade is how much wp_alpha_modifier_v1 fades the surface: 0 none,
 	// 1 invisible. Its opacity is multiplied by 1-Fade.
 	Fade   float32
@@ -270,24 +307,35 @@ type SeqDamage struct {
 // DamageSince is the union of changes after content seq up to this one,
 // and false when the history does not reach back to seq (redraw all).
 func (c SurfaceContent) DamageSince(seq uint64) ([]Rect, bool) {
+	out, ok := c.AppendDamageSince(nil, seq)
+	if !ok {
+		return nil, false
+	}
+	return out, true
+}
+
+// AppendDamageSince is DamageSince appending to dst, so a caller reusing
+// its slice allocates nothing. When the history does not reach back to seq
+// it returns dst unchanged and false.
+func (c SurfaceContent) AppendDamageSince(dst []Rect, seq uint64) ([]Rect, bool) {
 	if seq >= c.Seq {
-		return nil, true
+		return dst, true
 	}
 	h := c.DamageHistory
 	if len(h) == 0 || h[0].Seq > seq+1 || h[len(h)-1].Seq != c.Seq {
-		return nil, false
+		return dst, false
 	}
-	var out []Rect
+	n := len(dst)
 	for _, d := range h {
 		if d.Seq <= seq {
 			continue
 		}
 		if d.Full {
-			return nil, false
+			return dst[:n], false
 		}
-		out = append(out, d.Rects...)
+		dst = append(dst, d.Rects...)
 	}
-	return out, true
+	return dst, true
 }
 
 // Subsurface is a child surface at X, Y logical pixels from the root
@@ -371,6 +419,11 @@ type SceneWindow struct {
 	// Dim darkens the window, border included, with black at this
 	// opacity, 0 to 1: a stashed window peeking in. 0 draws nothing.
 	Dim float64
+	// Fade makes the whole window translucent, border and content: 0 is
+	// opaque, 1 invisible (like SurfaceContent.Fade). A window appearing
+	// or leaving animates it; a faded window is composed, never scanned
+	// out.
+	Fade float64
 	// FocusEffect, above 0, is the focus indicator's effect at this frame
 	// (focus.animation, focus.effect): the window's surfaces are lifted
 	// toward white by that fraction (screen blend). Renderers without the
@@ -382,8 +435,13 @@ type SceneWindow struct {
 	// needs its kind here and in the push constants (a misc flag).
 	FocusEffect float64
 	// Preview, above 0, draws the window's surfaces that much smaller in
-	// Rect (an overview thumbnail): the client keeps its size.
+	// Rect (an overview thumbnail): the client keeps its size. A preview
+	// is a card: it never opens the floats.
 	Preview float64
+	// Zoom, above 0, is the content scale of a window whose frame is
+	// animating (appearing, leaving, an overview card in flight): it
+	// replaces Preview for drawing only; the window keeps its kind.
+	Zoom float64
 	// Popups are drawn from their content only: no border, no background.
 	Popup bool
 	// OverLayers popups hang from a layer surface: drawn over the top and

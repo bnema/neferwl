@@ -49,12 +49,18 @@ func noButtonSent(t *testing.T, ch chan ports.ClientCommand) {
 }
 
 func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
-	r := startMulti(t, nil, left, right)
-	r.mapWindow(t, 1)
-	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	r.mapWindow(t, 2)
-	r.mapWindow(t, 3)
-	set := r.key(t, "o", ports.ModAlt)
+	both(t, func(t *testing.T, animated bool) {
+		overviewClickPicksOnPointerOutput(t, startLanding(t, animated, nil, left, right))
+	})
+}
+
+func overviewClickPicksOnPointerOutput(t *testing.T, r *landRig) {
+	r.mapLanded(t, 1)
+	r.keyLanded(t, "Right", ports.ModAlt|ports.ModCtrl)
+	r.mapLanded(t, 2)
+	r.mapLanded(t, 3)
+	// Settled: a card still fading in takes no click.
+	set := r.keyLanded(t, "o", ports.ModAlt)
 	p, ok := scenePreview(outputScene(t, set, "DP-2"), 2)
 	if !ok {
 		t.Fatal("no preview of window 2 on DP-2")
@@ -82,10 +88,17 @@ func TestOverviewCoreClickPicksOnPointerOutput(t *testing.T) {
 }
 
 func TestOverviewCoreClickOutsidePreviewKeepsOverview(t *testing.T) {
-	r := startMulti(t, nil, right)
+	both(t, func(t *testing.T, animated bool) {
+		overviewClickOutsidePreview(t, startLanding(t, animated, nil, right))
+	})
+}
+
+func overviewClickOutsidePreview(t *testing.T, r *landRig) {
 	r.mapWindow(t, 1)
 	r.mapWindow(t, 2)
-	set := r.key(t, "o", ports.ModAlt)
+	// The cards settle where the overview lays them out: the opening
+	// animation starts them at the windows' own rects.
+	set := r.keyLanded(t, "o", ports.ModAlt)
 	for _, w := range set[0].Windows {
 		if w.Preview > 0 && w.Rect.X <= 1 && w.Rect.Y <= 1 && w.Rect.X+w.Rect.W > 1 && w.Rect.Y+w.Rect.H > 1 {
 			t.Fatalf("(1, 1) is inside preview %+v", w)

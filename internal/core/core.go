@@ -67,6 +67,11 @@ type binding struct {
 	key  string
 }
 type Core struct {
+	// overviewReal is publish's scratch map of the real layouts under an open overview.
+	overviewReal map[WindowID]Placement
+	// realBuf backs the layout read through at once by publish (each
+	// workspace while overviewReal is filled) and by state(); never retained.
+	realBuf         []Placement
 	security        ports.SecurityState
 	lockSurfaces    []ports.LockSurfacePlacement
 	lockFocus       WindowID
@@ -126,10 +131,15 @@ type Core struct {
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
 	// swipe is the touchpad swipe in progress. frameC fires when no page
-	// flip came in time to move a running slide (frameStop stops it).
-	swipe     *swipeGesture
-	frameC    <-chan time.Time
-	frameStop func() bool
+	// flip came in time to move a running slide; nil when not armed. It is
+	// the channel of frameTimer, made once and reset per frame: an
+	// animation frame allocates no timer.
+	swipe      *swipeGesture
+	frameC     <-chan time.Time
+	frameTimer ports.Timer
+	// shots is the snapshot of what the screens show before an action
+	// (transition.go), reused by every action.
+	shots []viewShot
 	// motionTime is the time of the last pointer motion; pointerAt is the
 	// last position sent in the pointer's window.
 	motionTime time.Duration
@@ -355,13 +365,25 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 
 // newTimer makes a timer on clock, or the system timer when clock is nil.
 func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
-	if clock != nil {
-		t := clock.NewTimer(d)
-		return t.C(), t.Stop
-	}
-	t := time.NewTimer(d)
-	return t.C, t.Stop
+	t := newPortTimer(clock, d)
+	return t.C(), t.Stop
 }
+
+// newPortTimer makes a ports.Timer on clock, or on the system clock when
+// clock is nil.
+func newPortTimer(clock ports.Clock, d time.Duration) ports.Timer {
+	if clock != nil {
+		return clock.NewTimer(d)
+	}
+	return sysTimer{time.NewTimer(d)}
+}
+
+// sysTimer is a time.Timer as a ports.Timer.
+type sysTimer struct{ t *time.Timer }
+
+func (t sysTimer) C() <-chan time.Time        { return t.t.C }
+func (t sysTimer) Stop() bool                 { return t.t.Stop() }
+func (t sysTimer) Reset(d time.Duration) bool { return t.t.Reset(d) }
 
 func (c *Core) now() time.Time {
 	if c.ch.Clock != nil {
@@ -405,21 +427,20 @@ func onScreen(p Placement, o Rect) bool {
 
 // floatDim is the veil opacity of a layout: dim only when a float is
 // drawn above the tiles, never for a demoted covering float alone nor for
-// an overview preview.
+// an overview preview. A leaving float (fading out after it closed or hid)
+// drops the veil at once: a veil that fades changes Scene.Dim every frame,
+// which redraws the whole output for the length of the fade, where the
+// float's own fade redraws only its rect.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
-	shown := false
 	for _, p := range layout {
 		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
 			if p.Fullscreen {
 				return 0
 			}
-			shown = true
+			return dim
 		}
 	}
-	if !shown {
-		return 0
-	}
-	return dim
+	return 0
 }
 
 // visible reports whether the window, layer surface or popup is on screen
@@ -491,7 +512,13 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 	}
 }
 
-func (c *Core) publish(ctx context.Context) error {
+func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, nil) }
+
+// publishFrame publishes the scenes. only is the screen whose page flip
+// moved the springs (nil: any, or none moved): the pulse advances with the
+// focused screen's flip, and only a flip's own screen gets a fresh Seq for
+// its animation, so another output keeps its Seq while it draws the same.
+func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
@@ -505,6 +532,7 @@ func (c *Core) publish(ctx context.Context) error {
 			sc.mon.Current().settleLeft()
 		}
 	}
+	c.refreshShown()
 	c.captureExpire()
 	capture, err := c.captureEvaluate(ctx)
 	if err != nil {
@@ -530,17 +558,20 @@ func (c *Core) publish(ctx context.Context) error {
 	focus := c.keyboardFocus()
 	window, _ := c.cur().mon.Focused()
 	c.pulseFocus(window, focus == window)
-	var pulse float64
-	if c.pulse.id != 0 {
-		pulse = c.advancePulse(c.now())
+	// The pulse runs on the focused output: a flip of another output reuses
+	// its value so the focused scene keeps its Seq.
+	if c.pulse.id == 0 {
+		c.pulse.value = 0
+	} else if only == nil || only == c.cur() {
+		c.pulse.value = c.advancePulse(c.now())
 	}
+	pulse := c.pulse.value
 	// drawable: the scene can show a pulse on the focused window.
 	drawable := false
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
 	for i, sc := range c.screens {
-		c.seq++
 		o := sc.mon.Output()
 		// frame is the viewport of the workspace on screen: the whole output
 		// unless it has a size override (never in the overview).
@@ -549,13 +580,21 @@ func (c *Core) publish(ctx context.Context) error {
 		if frame != (Rect{W: o.W, H: o.H}) {
 			clip = frame
 		}
-		scene := ports.Scene{Security: c.security, Output: sc.name(), Seq: c.seq, OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0), Layers: shownLayers(sc)}
-		layout := sc.mon.Layout()
+		// layout is what is drawn; settled (same indexes) is where the
+		// windows are going, and alone sizes the configures.
+		layout, settled := sc.shown, sc.settledLayout
+		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
 		var real map[WindowID]Placement
 		if sc.mon.ov.open {
-			real = make(map[WindowID]Placement)
+			// Local to this screen's build: reused, cleared each time.
+			if c.overviewReal == nil {
+				c.overviewReal = make(map[WindowID]Placement)
+			}
+			clear(c.overviewReal)
+			real = c.overviewReal
 			for w := range sc.mon.all() {
-				for _, p := range w.Layout() {
+				c.realBuf = w.layoutInto(c.realBuf)
+				for _, p := range c.realBuf {
 					real[p.ID] = p
 				}
 			}
@@ -569,21 +608,42 @@ func (c *Core) publish(ctx context.Context) error {
 		if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
 			scene.DropHints = slices.Clone(d.target.hints)
 		}
-		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		if sc.mon.ov.open {
 			// Frame the selection and separate numbered and named row groups.
 			_, scene.Separators = sc.mon.overviewRows()
 			scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
+		} else {
+			// Only the focused output lights the focused window's lines.
+			scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		}
 		// A window alone on screen needs no pulse to show it has the focus.
 		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, frame) == 1
-		for _, p := range layout {
+		for k, p := range layout {
+			ps := settled[k]
 			// Only the focused output has an activated window.
 			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
-			if p.Peek {
-				sw.Dim = c.cfg.Stash.Dim
+			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
+			if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
+				// A scale motion: the content follows the drawn size. A
+				// card in flight drawn at its size still needs Zoom 1:
+				// without it the renderer would shrink it by Preview.
+				sw.Zoom = p.Zoom
+			}
+			// A peek's veil is the configured one plus its animated offset.
+			sw.Dim = max(0, min(p.Dim+c.peekDim(p), 1))
+			if p.Leaving {
+				// A window fading out after it closed or hid: drawn, but
+				// hidden to everything else, its configures included.
+				sw.Hidden = false
+				scene.Windows = append(scene.Windows, sw)
+				// A window the workspace still holds (a hidden stash
+				// window) keeps its last configure: prune would forget it,
+				// and its next one would start from nothing. A closed one
+				// was forgotten at its unmap and stays so.
+				if w, _ := sc.mon.find(p.ID); w != nil {
+					c.configures.keep(p.ID)
+				}
+				continue
 			}
 			if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
 				drawable = true
@@ -595,7 +655,7 @@ func (c *Core) publish(ctx context.Context) error {
 			t := configureTarget{output: sc.name(), area: frame, focused: focused, captured: capture != nil && capture.window == p.ID}
 			if !p.Hidden && p.Preview == 0 {
 				// Only a sized configure needs the client size.
-				t.client, t.imposed = c.clientRect(p), sc.mon.Current().imposedFloat(p.ID)
+				t.client, t.imposed = c.clientRect(ps), sc.mon.Current().imposedFloat(p.ID)
 			} else if t.captured && p.Hidden {
 				// A captured hidden window is sized like its capture.
 				t.client = capture.windowSz
@@ -605,8 +665,8 @@ func (c *Core) publish(ctx context.Context) error {
 					t.client = c.clientRect(rp)
 				}
 			}
-			cp, t := c.captureConfigure(sc, p, t)
-			if v, send := c.configures.nextWithCapture(p, t, cp); send {
+			cp, t := c.captureConfigure(sc, ps, t)
+			if v, send := c.configures.nextWithCapture(ps, t, cp); send {
 				if err := c.command(ctx, v); err != nil {
 					return err
 				}
@@ -615,7 +675,23 @@ func (c *Core) publish(ctx context.Context) error {
 		}
 		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 		scene.CaptureIndicators = c.captureIndicators(sc)
-		if scene.Capture = c.captureSceneFor(sc, capture); scene.Capture != nil {
+		scene.Capture = c.captureSceneFor(sc, capture)
+		// A scene carrying a capture image always gets a fresh Seq, and so
+		// does one of an animating screen (the one being stepped, or any
+		// when none is): the outputs drop a scene they already show, and a
+		// spring that starts at the previous scene, or rounds to it in its
+		// tail, would get no flip and wait for the fallback timer. Any other
+		// keeps its output's Seq while it draws the same, so an idle output
+		// is not recomposed.
+		withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
+		animating := (sc.springing() || c.pulsing(sc)) && (only == nil || only == sc)
+		if !withCapture && !animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
+			scene.Seq = sc.last.Seq
+		} else {
+			c.seq++
+			scene.Seq = c.seq
+		}
+		if withCapture {
 			switch sc {
 			case capture.hiddenScr:
 				scene.CaptureScene = c.captureScene(scene.Seq)
@@ -623,6 +699,7 @@ func (c *Core) publish(ctx context.Context) error {
 				scene.CaptureScene = c.captureWindowScene(capture, scene.Seq)
 			}
 		}
+		sc.last = scene
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
@@ -651,7 +728,7 @@ func (c *Core) publish(ctx context.Context) error {
 		return errSecurityChanged
 	}
 	if c.syncSecurity() {
-		return c.publish(ctx)
+		return c.publishFrame(ctx, only)
 	}
 	latest(c.ch.Scenes, scenes)
 	c.publishState()
@@ -668,20 +745,41 @@ func (c *Core) publish(ctx context.Context) error {
 	return nil
 }
 
-// step moves the running slides to now and publishes the frame.
-func (c *Core) step(ctx context.Context) error {
-	c.stopFrame()
-	c.animate(c.now())
-	return c.slid(ctx, false)
+// step moves the running slides of only (nil: every screen) to now and
+// publishes the frame.
+func (c *Core) step(ctx context.Context, only *screen) error {
+	// The fallback timer guards every animating output: a flip of one keeps
+	// it running while another still animates, or that one could starve.
+	if only == nil || !c.animatingOther(only) {
+		c.stopFrame()
+	}
+	c.animate(c.now(), only)
+	return c.slidFrame(ctx, false, only)
+}
+
+// animatingOther reports whether a spring or the pulse runs on a screen
+// other than only.
+func (c *Core) animatingOther(only *screen) bool {
+	for _, sc := range c.screens {
+		if sc != only && (sc.springing() || c.pulsing(sc)) {
+			return true
+		}
+	}
+	return false
 }
 
 // slid publishes a moved view; shown reports another workspace came on
 // screen.
 func (c *Core) slid(ctx context.Context, shown bool) error {
+	return c.slidFrame(ctx, shown, nil)
+}
+
+// slidFrame is slid for the page flip of only (nil: any screen).
+func (c *Core) slidFrame(ctx context.Context, shown bool, only *screen) error {
 	if err := c.workspaceVisible(ctx, shown); err != nil {
 		return err
 	}
-	if err := c.publish(ctx); err != nil {
+	if err := c.publishFrame(ctx, only); err != nil {
 		return err
 	}
 	return c.rehit(ctx)
@@ -788,7 +886,7 @@ func (c *Core) shownClient(id WindowID) (full, visible Rect, ok bool) {
 	if s == nil {
 		return Rect{}, Rect{}, false
 	}
-	for _, p := range s.mon.Layout() {
+	for _, p := range s.shownLayout() {
 		if p.ID != id || p.Hidden || p.Preview > 0 {
 			continue
 		}
@@ -938,7 +1036,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
-	for _, p := range sc.mon.Layout() {
+	for _, p := range sc.shownLayout() {
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
 		// be narrower than its border. The point is clamped to its client.
@@ -1029,12 +1127,9 @@ func (c *Core) Run(ctx context.Context) error {
 			case ports.InputRegionChanged:
 				c.windows.setRegion(v)
 			case ports.WindowMapped:
-				c.windows.mapped(v, c.now())
-				c.placement.place(c, v)
+				c.mapWindow(v)
 			case ports.WindowResized:
-				if _, w := c.screenOf(v.ID); w != nil {
-					w.ResizeFloating(v.ID, v.Width, v.Height)
-				}
+				c.resizeFloating(v)
 			case ports.PopupRequest:
 				if err := c.placePopup(ctx, v); err != nil {
 					return nil
@@ -1076,9 +1171,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.drag != nil && c.drag.id == v.ID {
 					c.abortDrag()
 				}
-				if s, _ := c.screenOf(v.ID); s != nil {
-					s.mon.RemoveWindow(v.ID)
-				}
+				c.unmapWindow(v)
 				c.releaseSlots()
 				if c.pointer == v.ID {
 					c.pointer = 0
@@ -1109,6 +1202,13 @@ func (c *Core) Run(ctx context.Context) error {
 				}
 				if s, _ := c.screenOf(v.ID); s != nil {
 					s.mon.SetFullscreen(v.ID, v.Fullscreen)
+					if w := s.mon.Current(); v.Fullscreen && w.fullscreen == v.ID {
+						// A taskbar or late fullscreen request that took
+						// effect: the window does not fade in, it keeps the
+						// direct scanout path. One that was ignored (the
+						// grace after the map) leaves the entrance running.
+						delete(s.rects, v.ID)
+					}
 				}
 			case ports.WorkspaceActivate:
 				before := c.cur().mon.Current()
@@ -1145,7 +1245,7 @@ func (c *Core) Run(ctx context.Context) error {
 				c.ch.Frames = nil
 				continue
 			}
-			if c.sliding(f.Output) && c.step(ctx) != nil {
+			if i := c.screenIndex(f.Output); i >= 0 && c.sliding(f.Output) && c.step(ctx, c.screens[i]) != nil {
 				return nil
 			}
 			continue
@@ -1153,8 +1253,8 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
-			c.frameC, c.frameStop = nil, nil
-			if c.step(ctx) != nil {
+			c.frameC = nil
+			if c.step(ctx, nil) != nil {
 				return nil
 			}
 			continue
@@ -1216,6 +1316,9 @@ func (c *Core) Run(ctx context.Context) error {
 				default:
 				}
 				continue
+			}
+			if !c.animOn() {
+				c.stopAnimations()
 			}
 			// A rotation can shrink the layout under a still pointer.
 			c.cursorX, c.cursorY = c.clampPointer(c.cursorX, c.cursorY, c.cursorX, c.cursorY)

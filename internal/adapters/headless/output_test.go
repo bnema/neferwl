@@ -84,18 +84,27 @@ func TestRun(t *testing.T) {
 	if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
 		t.Errorf("coalescing: %+v %+v", s, c)
 	}
+	// An empty content of a window the scene still draws (it unmapped
+	// and fades out) keeps the last one; a scene without it drops it.
 	contents <- ports.SurfaceContent{ID: 1}
 	waitFrames(t, f, 2)
 	if _, c := f.snapshot(); len(c) < 2 {
 		t.Fatal("no second frame")
-	} else if _, ok := c[1][1]; ok {
+	} else if kept, ok := c[1][1]; !ok || kept.SHM == nil || kept.SHM.Pool != 1 {
+		t.Errorf("content of the shown window dropped on its empty content: %+v", c[1])
+	}
+	scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
+	waitFrames(t, f, 3)
+	if _, c := f.snapshot(); len(c) < 3 {
+		t.Fatal("no third frame")
+	} else if _, ok := c[2][1]; ok {
 		t.Error("content not deleted")
 	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"frame-000001.png", "frame-000002.png", "latest.png"} {
+	for _, name := range []string{"frame-000001.png", "frame-000002.png", "frame-000003.png", "latest.png"} {
 		file, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)
@@ -105,6 +114,38 @@ func TestRun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// A scene whose Seq the output already holds is not drawn again.
+func TestHeadlessSameSeqRendersOnce(t *testing.T) {
+	scenes := make(chan ports.Scene)
+	contents := make(chan ports.SurfaceContent)
+	r, f := recordingRenderer(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+	}()
+	scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
+	scenes <- scene
+	waitFrames(t, f, 1)
+	scenes <- scene
+	// Unshown content sends Run round its loop: the held scene is handled.
+	contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
+	contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
+	if s, _ := f.snapshot(); len(s) != 1 {
+		t.Fatalf("%d frames for a scene with the held Seq", len(s))
+	}
+	scene.Seq = 6
+	scenes <- scene
+	waitFrames(t, f, 2)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := f.snapshot(); len(s) != 2 {
+		t.Fatalf("%d frames, want 2", len(s))
 	}
 }
 
@@ -308,7 +349,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(203)).Return().Once()
-	r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+	r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 	rendered := make(chan struct{}, 4)
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		rendered <- struct{}{}
@@ -381,16 +422,16 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				r.EXPECT().ExportTargets(1, []uint64(nil)).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
+				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return([]ports.DMABuf{{Planes: []ports.DMABufPlane{{File: f}}}}, nil).Once()
 				t.Cleanup(func() {
 					if _, err := f.Stat(); err == nil {
 						t.Error("exported fd not closed")
 					}
 				})
 			} else {
-				r.EXPECT().ExportTargets(1, []uint64(nil)).Return(nil, errors.New("no compatible target")).Once()
+				r.EXPECT().ExportTargets(1, []uint64(nil), false).Return(nil, errors.New("no compatible target")).Once()
 				r.EXPECT().SetHDR(float64(0)).Return().Once()
-				r.EXPECT().ExportTargets(0, []uint64(nil)).Return(nil, nil).Once()
+				r.EXPECT().ExportTargets(0, []uint64(nil), false).Return(nil, nil).Once()
 			}
 			r.EXPECT().Close().Return().Once()
 			formats := make(chan ports.OutputFormats, 1)

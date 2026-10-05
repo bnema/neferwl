@@ -28,6 +28,57 @@ type screen struct {
 	// CaptureIndicators): immutable, shared by the next one while unchanged.
 	capScene *ports.SceneCapture
 	capMarks []ports.CaptureIndicator
+	// last is the scene published for this screen: an identical next one
+	// keeps its Seq (Scene.SameAs). Zero after a protected publish.
+	last ports.Scene
+	// settledLayout is the monitor's layout as of the last publish: what
+	// configures are sized from. shown is the same with the rect motions applied: what is
+	// drawn and hit-tested. They are the same slice while no rect motion
+	// runs. Both are built once per publish (refreshShown); shown is nil
+	// before the first publish, then callers measure the monitor's layout.
+	settledLayout, shown []Placement
+	// layoutBuf backs settledLayout (and shown, while no rect motion runs),
+	// rebuilt in place by every refreshShown; shownBuf and settledBuf back
+	// shown and settledLayout while rect motions run. All three are owner
+	// goroutine scratch reused across publishes: a Scene never aliases them
+	// (its windows are copied from the placements), and a caller that
+	// keeps a layout past the next publish copies it (Layout() is fresh).
+	layoutBuf, shownBuf, settledBuf []Placement
+	// leaveIDs is withLeaving's scratch list.
+	leaveIDs []WindowID
+	// rects are the running per-window rect motions (transition.go) of
+	// rectsWS, the workspace they began on (nil: the overview); created
+	// lazily.
+	rects   map[WindowID]rectMotion
+	rectsWS *Workspace
+}
+
+// springing reports whether a camera or rect spring runs on the screen.
+func (s *screen) springing() bool { return s.mon.springing() || len(s.rects) > 0 }
+
+// settled reports whether nothing moves the screen's layout: no swipe,
+// no slide, no rect motion.
+func (s *screen) settled() bool { return s.mon.settled() && len(s.rects) == 0 }
+
+// stopRects drops the rect motions: the windows are drawn where they are.
+func (s *screen) stopRects() { clear(s.rects); s.rectsWS = nil }
+
+// rectsOwner is what the screen's rect motions belong to: its workspace on
+// screen, or nil in the overview, where the rows change under the cards.
+func (s *screen) rectsOwner() *Workspace {
+	if s.mon.ov.open {
+		return nil
+	}
+	return s.mon.Current()
+}
+
+// shownLayout is the layout as drawn, for hit-testing and popups; before
+// the first publish it is the monitor's.
+func (s *screen) shownLayout() []Placement {
+	if s.shown != nil {
+		return s.shown
+	}
+	return s.mon.Layout()
 }
 
 func (s *screen) name() string { return s.info.Name }
@@ -293,6 +344,10 @@ func (c *Core) removeScreen(name string) {
 	if len(c.screens) == 1 {
 		c.screens[0].info = ports.OutputInfo{}
 		c.screens[0].layers = nil
+		// Nothing draws the placeholder: its springs would only wake the
+		// fallback timer, and start from the old output's geometry if an
+		// output came back.
+		c.screens[0].stopAnimations()
 		return
 	}
 	gone := c.screens[i]

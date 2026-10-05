@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -111,21 +112,40 @@ func TestCursorRefusedDoesNotBlameScanoutBuffer(t *testing.T) {
 	}
 }
 
-// showImages validates the images with a TEST_ONLY modeset and falls back
-// to linear images when KMS refuses the driver's.
+// tiledMod stands for a non-linear driver modifier in the image tests.
+const tiledMod = 0x200000000401b03
+
+// showImages validates the images with a TEST_ONLY modeset, retries with
+// single-plane driver images, then falls back to linear images when KMS
+// refuses both.
 func TestShowImagesTestsBeforeModeset(t *testing.T) {
-	o, k, commits := testOutput(t, unix.EINVAL)
+	o, k, commits := testOutput(t, unix.EINVAL, unix.EINVAL)
 	o.cursor = nil
 	r := portsmocks.NewMockRenderer(t)
 	buf := func() ports.DMABuf {
+		var b ports.DMABuf
+		for range 2 {
+			f, w, _ := os.Pipe()
+			w.Close()
+			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+		}
+		b.Modifier = tiledMod
+		return b
+	}
+	linear := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	tiled1 := func() ports.DMABuf {
+		b := linear()
+		b.Modifier = tiledMod
+		return b
+	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64(nil)).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, []uint64{0}).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{tiled1(), tiled1()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
@@ -135,7 +155,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	want := []uint32{atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicAllowModes}
+	want := []uint32{atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicTestOnly | atomicAllowModes, atomicAllowModes}
 	if len(*commits) != len(want) {
 		t.Fatalf("%d commits", len(*commits))
 	}
@@ -146,6 +166,207 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 	}
 	if o.kind != imagesLinear {
 		t.Fatalf("kind %d", o.kind)
+	}
+}
+
+// A refused multi-plane (DCC) driver image is retried with single-plane
+// driver images before linear; every plane file of every buffer is closed
+// once the framebuffers exist.
+func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
+	o, k, _ := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	var files []*os.File
+	buf := func(planes int) ports.DMABuf {
+		b := ports.DMABuf{Modifier: tiledMod}
+		for range planes {
+			f, w, _ := os.Pipe()
+			w.Close()
+			files = append(files, f)
+			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
+		}
+		return b
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(3), buf(3)}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{buf(1), buf(1)}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesSinglePlane {
+		t.Fatalf("kind %d", o.kind)
+	}
+	if len(files) != 8 {
+		t.Fatalf("%d plane files", len(files))
+	}
+	for i, f := range files {
+		if err := f.Close(); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("plane file %d left open (close: %v)", i, err)
+		}
+	}
+}
+
+// SDR images are asked for the modifiers the primary plane lists for
+// XRGB8888, in IN_FORMATS order, never the renderer's own choice: RADV's
+// preferred DCC variant (pipe-aligned) is not one amdgpu lists, and KMS
+// refuses a framebuffer with a modifier the plane does not advertise
+// (ADDFB2: EINVAL). Other formats' modifiers are not offered.
+func TestShowImagesOffersThePrimaryPlanesXRGBModifiers(t *testing.T) {
+	const dccListed, tiled, other = 0x200000000563b03, 0x200000000401b03, 0x200000000401903
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{
+		{Format: fourccXRGB, Modifier: dccListed}, {Format: fourccXR30, Modifier: other},
+		{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0},
+	}
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64{dccListed, tiled, 0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesDriver {
+		t.Fatalf("kind %d", o.kind)
+	}
+}
+
+// When the renderer has no modifier in common with the plane, the images
+// fall back to single-plane ones with the same list, then to linear.
+func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
+	const listed = 0x200000000563b03
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	none := errors.New("no XRGB8888 modifier both the device and the display accept")
+	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, false).Return(nil, none).Once()
+	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, true).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesSinglePlane {
+		t.Fatalf("kind %d", o.kind)
+	}
+}
+
+// A plane without IN_FORMATS lists every format with modifier 0 only
+// (readPlanes): the images are linear straight away, with no driver or
+// single-plane attempt KMS would refuse.
+func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
+	o, k, commits := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	// No ExportTargets(..., true) and no second call: the mock fails on them.
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
+		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	}).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesDriver || o.imageMod != 0 || len(*commits) != 2 {
+		t.Fatalf("kind %d, modifier %#x, %d commits", o.kind, o.imageMod, len(*commits))
+	}
+}
+
+// KMS refusing images that are already linear ends the attempt with that
+// error: the single-plane and linear kinds would export the same images.
+func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
+	o, k, commits := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
+		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	}).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	err := o.showImages(r, imagesDriver, nil)
+	if !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("error %v, want the KMS refusal", err)
+	}
+	if len(*commits) != 1 || o.fbs != [2]uint32{} {
+		t.Fatalf("%d commits, fbs %v", len(*commits), o.fbs)
+	}
+}
+
+// linearBuf is a one-plane linear dmabuf over a closed pipe.
+func linearBuf() ports.DMABuf {
+	f, w, _ := os.Pipe()
+	w.Close()
+	return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+}
+
+// Refused driver images that already had one plane are not retried as
+// single-plane images: the next export is linear.
+func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
+	o, k, commits := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Modifier: tiledMod, Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	linear := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesLinear || len(*commits) != 3 {
+		t.Fatalf("kind %d, %d commits", o.kind, len(*commits))
 	}
 }
 
@@ -161,7 +382,7 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()
@@ -262,7 +483,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 	r.EXPECT().CursorBuffers(64).Return([2]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).Return(nil)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()
@@ -355,7 +576,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
-	r.EXPECT().ExportTargets(2, mock.Anything).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(ports.Scene, map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
 		f, w, _ := os.Pipe()

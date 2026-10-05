@@ -144,7 +144,7 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 		return sc, l.Rect, true
 	}
 	for _, sc := range c.screens {
-		for _, pl := range sc.mon.Layout() {
+		for _, pl := range sc.shownLayout() {
 			if pl.ID == id {
 				// Hidden or scrolled off: not on screen, like its popups.
 				// A preview takes no input and shows no popups.
@@ -161,7 +161,7 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 // peeking reports whether id is a stashed window peeking in on screen.
 func (c *Core) peeking(id WindowID) bool {
 	for _, sc := range c.screens {
-		for _, pl := range sc.mon.Layout() {
+		for _, pl := range sc.shownLayout() {
 			if pl.ID == id {
 				return pl.Peek
 			}

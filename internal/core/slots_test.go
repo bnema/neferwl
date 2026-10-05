@@ -21,6 +21,11 @@ type slotRig struct {
 	workspaces chan ports.Workspaces
 	errs       chan error
 	cfg        ports.Config
+	// With animations on and a clock the test moves (startSlotsMode),
+	// land flips the output past every spring.
+	clk    *stepClock
+	frames chan ports.OutputFrame
+	lands  int
 }
 
 // startSlots runs core with a hidden "dev" workspace of two slots, toggled
@@ -28,7 +33,18 @@ type slotRig struct {
 // fixed overflow.
 func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	t.Helper()
+	return startSlotsMode(t, nil, numbered...)
+}
+
+// startSlotsMode is startSlots with animations forced off (*false) or on
+// with a clock the test moves (*true), whose springs land through land;
+// nil keeps the default config on the system clock.
+func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
+	t.Helper()
 	cfg := altCmdDefaults()
+	if animated != nil {
+		cfg.Animations.On = *animated
+	}
 	cfg.Border.Width = 0
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{
 		{Index: 1, Width: "70%", Argv: []string{"code"}},
@@ -45,7 +61,17 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	}
 	output := make(chan ports.OutputEvent, 1)
 	commands := make(chan ports.ClientCommand, 1024)
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, Workspaces: r.workspaces, ConfigErrors: r.errs})
+	ch := core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, Workspaces: r.workspaces, ConfigErrors: r.errs}
+	if animated != nil && *animated {
+		r.clk, r.frames = newStepClock(t), make(chan ports.OutputFrame)
+		ch.Clock, ch.Frames = r.clk.clock, r.frames
+		t.Cleanup(func() {
+			if r.lands == 0 {
+				t.Error("no spring ever ran: the animations-on variant checked nothing")
+			}
+		})
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +86,22 @@ func startSlots(t *testing.T, numbered ...bool) *slotRig {
 	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
 	scene(t, r.scenes)
 	return r
+}
+
+// land is s once every spring has landed: the scene the flips publish, or s
+// itself when nothing animates (always with animations off or on the
+// system clock).
+func (r *slotRig) land(t *testing.T, s ports.Scene) ports.Scene {
+	t.Helper()
+	if r.clk == nil {
+		return s
+	}
+	set, ok := r.clk.settle(t, r.frames, r.scenes, "OUT-1")
+	if !ok {
+		return s
+	}
+	r.lands++
+	return set[0]
 }
 
 // token returns the SlotEnv value of a spawn request.
@@ -194,7 +236,10 @@ func TestSlotsSpawnAtStartAndFillInOrder(t *testing.T) {
 }
 
 func TestSlotRefilledOnlyWhenShown(t *testing.T) {
-	r := startSlots(t)
+	both(t, func(t *testing.T, animated bool) { slotRefilledOnlyWhenShown(t, startSlotsMode(t, &animated)) })
+}
+
+func slotRefilledOnlyWhenShown(t *testing.T, r *slotRig) {
 	// Wait for both windows: a one-window scene from before the unmap
 	// would let the key below race it.
 	_, foot := r.fill(t)
@@ -209,7 +254,7 @@ func TestSlotRefilledOnlyWhenShown(t *testing.T) {
 	}
 	r.client <- ports.WindowMapped{ID: 4, Slot: token(t, again)}
 	s := sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(visible(s)) == 2 })
-	if got := visible(s); got[4].X != 70 {
+	if got := visible(r.land(t, s)); got[4].X != 70 {
 		t.Fatal(got)
 	}
 	// Leaving and showing dev again with full slots spawns nothing.
@@ -344,7 +389,10 @@ func TestSlotOldTokenIsNormal(t *testing.T) {
 // A slot whose command never maps a window gets one show to do it; on the
 // next show it is respawned and its old token no longer fills it.
 func TestPendingSlotRespawnedOnSecondShow(t *testing.T) {
-	r := startSlots(t)
+	both(t, func(t *testing.T, animated bool) { pendingSlotRespawnedOnSecondShow(t, startSlotsMode(t, &animated)) })
+}
+
+func pendingSlotRespawnedOnSecondShow(t *testing.T, r *slotRig) {
 	code, foot := receive(t, r.spawn), receive(t, r.spawn)
 	r.client <- ports.WindowMapped{ID: 2, Slot: token(t, code)}
 	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
@@ -363,7 +411,7 @@ func TestPendingSlotRespawnedOnSecondShow(t *testing.T) {
 	}
 	r.client <- ports.WindowMapped{ID: 8, Slot: token(t, again)}
 	s = sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 3 })
-	if got := visible(s); got[8].W != 30 {
+	if got := visible(r.land(t, s)); got[8].W != 30 {
 		t.Fatalf("respawned window not in its slot: %v", got)
 	}
 }

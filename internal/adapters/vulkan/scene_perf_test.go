@@ -9,7 +9,11 @@ import (
 )
 
 // TestRenderSteadyStateAllocations measures the cost of a small stable scene,
-// on a normal and on a rotated output (orient works in place).
+// on a normal and on a rotated output (orient works in place), and that
+// building the draws of a scene with a moving window (a new Seq and window
+// slice every frame, as an animation publishes) allocates nothing.
+// A new scene Seq with one of two windows moved is a partial redraw seeded by
+// sceneDelta and allocates nothing either.
 func TestRenderSteadyStateAllocations(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
@@ -40,6 +44,93 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
 			} else {
 				t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
+			}
+			// A moving window: scenes are prebuilt (core allocates them, not
+			// the renderer), each with a fresh Seq, so every frame draws
+			// everything again. The draw building must not allocate.
+			var moving [4]ports.Scene
+			for i := range moving {
+				moving[i] = ports.Scene{Seq: uint64(100 + i), Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: i, W: tc.sceneW - 4, H: tc.sceneH - 4}}}}
+			}
+			bounds := image.Rect(0, 0, r.width, r.height)
+			n := 0
+			frameDraws := func() {
+				n++
+				s := moving[n%len(moving)]
+				_ = r.draws(s, contents, r.frameDamage(r.last, s, bounds))
+			}
+			frameDraws()
+			if allocs := testing.AllocsPerRun(50, frameDraws); allocs != 0 {
+				t.Errorf("moving window draws: %.1f allocs/frame, want 0", allocs)
+			}
+			// A content change under an unchanged scene Seq: a partial
+			// redraw clipped to the changed buffer region, replicating the
+			// partial sequence of Render. The stand-in target holds the
+			// previous content Seq of the window, and is never updated, so
+			// every run is damaged.
+			dc := content
+			dc.Seq, dc.Version = 2, 2
+			dc.DamageHistory = []ports.SeqDamage{{Seq: 2, Rects: []ports.Rect{{X: 1, Y: 1, W: 2, H: 2}}}}
+			pcontents := map[ports.WindowID]ports.SurfaceContent{1: dc}
+			held := &target{valid: true, sceneSeq: scene.Seq, windows: map[ports.WindowID]heldWindow{1: {seq: 1, rect: image.Rect(0, 0, r.width, r.height)}}}
+			var area image.Rectangle
+			var whole bool
+			partial := func() {
+				dmg := r.frameDamage(held, scene, bounds)
+				ds := r.draws(scene, pcontents, dmg)
+				dmg.finish()
+				ds = append(ds, draw{})
+				copy(ds[1:], ds[:len(ds)-1])
+				ds[0] = r.fillDraw(dmg.area, parseColor(scene.Background))
+				ds = dmg.clip(ds)
+				r.scratchDraws = ds
+				r.orient(ds, scene.Transform)
+				area, whole = dmg.area, dmg.all()
+			}
+			partial()
+			if whole || area.Empty() || area.Dx()*area.Dy() >= bounds.Dx()*bounds.Dy() {
+				t.Fatalf("not a partial redraw: all %v, area %v of %v", whole, area, bounds)
+			}
+			if allocs := testing.AllocsPerRun(50, partial); allocs != 0 {
+				t.Errorf("partial redraw draws: %.1f allocs/frame, want 0", allocs)
+			}
+			// A new scene Seq with one window moved: the delta against the
+			// scene the target holds seeds the partial redraw (A2). The
+			// stand-in target holds the old scene and is never updated.
+			half := tc.sceneW / 2
+			content2 := solidContent(t, 8, 8, color.RGBA{G: 255, A: 255})
+			content2.ID, content2.Surface, content2.Seq, content2.Version = 2, 2, 1, 1
+			dcontents := map[ports.WindowID]ports.SurfaceContent{1: content, 2: content2}
+			before := ports.Scene{Seq: 200, Transform: tc.transform, Scale: 1, Windows: []ports.SceneWindow{
+				{ID: 1, Rect: ports.Rect{W: half, H: tc.sceneH}},
+				{ID: 2, Rect: ports.Rect{X: half, W: tc.sceneW - half, H: tc.sceneH}},
+			}}
+			moved := before
+			moved.Seq = 201
+			moved.Windows = []ports.SceneWindow{before.Windows[0], {ID: 2, Rect: ports.Rect{X: half + 1, W: tc.sceneW - half - 1, H: tc.sceneH}}}
+			full := image.Rect(0, 0, r.width, r.height)
+			held = &target{valid: true, sceneSeq: before.Seq, scene: before, windows: map[ports.WindowID]heldWindow{
+				1: {seq: 1, rect: image.Rect(0, 0, half, tc.sceneH)},
+				2: {seq: 1, rect: image.Rect(half, 0, tc.sceneW, tc.sceneH)},
+			}}
+			seeded := func() {
+				dmg := r.frameDamage(held, moved, bounds)
+				ds := r.draws(moved, dcontents, dmg)
+				dmg.finish()
+				ds = append(ds, draw{})
+				copy(ds[1:], ds[:len(ds)-1])
+				ds[0] = r.fillDraw(dmg.area, parseColor(moved.Background))
+				ds = dmg.clip(ds)
+				r.scratchDraws = ds
+				r.orient(ds, moved.Transform)
+				area, whole = dmg.area, dmg.all()
+			}
+			seeded()
+			if whole || area.Empty() || area.Dx()*area.Dy() >= full.Dx()*full.Dy() {
+				t.Fatalf("sceneDelta did not seed a partial redraw: all %v, area %v of %v", whole, area, bounds)
+			}
+			if allocs := testing.AllocsPerRun(50, seeded); allocs != 0 {
+				t.Errorf("sceneDelta-seeded partial redraw draws: %.1f allocs/frame, want 0", allocs)
 			}
 		})
 	}

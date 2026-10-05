@@ -393,7 +393,7 @@ func (s *surface) applyCommit(u *update) {
 		s.bufferScale = u.scale
 	}
 	s.transform = u.transform
-	oldOpaque := s.content.Opaque
+	oldOpaque, oldOpaqueRect := s.content.Opaque, s.content.OpaqueRect
 	if u.opaqueSet {
 		s.opaque = u.opaque
 	}
@@ -455,6 +455,7 @@ func (s *surface) applyCommit(u *update) {
 				c.LogicalW, c.LogicalH = s.logicalSize(c.Width, c.Height)
 				s.formatOpaque = c.Opaque
 				c.Opaque = (c.Opaque || s.opaqueCovers(c.LogicalW, c.LogicalH)) && u.fade == 0
+				c.OpaqueRect = s.opaqueRect(c.Opaque, c.LogicalW, c.LogicalH, u.fade)
 				c.Fade = u.fade
 				resized := !s.has || c.Width != s.content.Width || c.Height != s.content.Height || c.LogicalW != s.content.LogicalW || c.LogicalH != s.content.LogicalH
 				s.commitDamage(u, true, resized, c.Width, c.Height)
@@ -484,13 +485,14 @@ func (s *surface) applyCommit(u *update) {
 			s.content.Source, _ = s.source(s.content.Width, s.content.Height)
 			s.content.LogicalW, s.content.LogicalH = s.logicalSize(s.content.Width, s.content.Height)
 			s.content.Opaque = (s.formatOpaque || s.opaqueCovers(s.content.LogicalW, s.content.LogicalH)) && u.fade == 0
+			s.content.OpaqueRect = s.opaqueRect(s.content.Opaque, s.content.LogicalW, s.content.LogicalH, u.fade)
 			s.content.Fade = u.fade
 		}
 	}
 	if s.current == nil {
 		s.content, s.has = ports.SurfaceContent{}, false
 	}
-	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque || oldFade != s.content.Fade {
+	if fresh || damaged || oldW != s.content.LogicalW || oldH != s.content.LogicalH || oldSource != s.content.Source || oldColor != s.color || oldRepresentation != s.representation || oldTransform != s.content.Transform || oldOpaque != s.content.Opaque || oldOpaqueRect != s.content.OpaqueRect || oldFade != s.content.Fade {
 		s.version++
 		s.root().treeDirty = true
 	}
@@ -519,7 +521,7 @@ func (s *surface) applyCommit(u *update) {
 	}
 	reshaped := s.has && (s.content.LogicalW != oldW || s.content.LogicalH != oldH || s.content.Source != oldSource || s.content.Transform != oldTransform)
 	// Opacity changes how every pixel blends, so it repaints the whole surface.
-	opacity := s.has && (s.content.Opaque != oldOpaque || s.content.Fade != oldFade)
+	opacity := s.has && (s.content.Opaque != oldOpaque || s.content.OpaqueRect != oldOpaqueRect || s.content.Fade != oldFade)
 	drawn := fresh || damaged || moved || geometry || hinted || reshaped || opacity || s.sub.parent != nil
 	if drawn {
 		if moved || geometry || reshaped || opacity {
@@ -621,6 +623,25 @@ func (s *surface) SetBufferTransform(r *wayland.Surface, v int32) {
 // w×h surface. A partial region is ignored: it is only an optimization hint.
 func (s *surface) opaqueCovers(w, h int) bool {
 	return w > 0 && h > 0 && covers(s.opaque, ports.Rect{W: w, H: h})
+}
+
+// opaqueRect is the largest rect of the committed opaque region inside the
+// w×h surface, for a surface that is not wholly opaque (opaque) and not
+// faded: clients often leave an edge out of a region that covers nearly
+// all of the surface (a 983×1230 region on a 984×1231 surface). The zero
+// Rect means none.
+func (s *surface) opaqueRect(opaque bool, w, h int, fade float32) ports.Rect {
+	var best ports.Rect
+	if opaque || fade != 0 || w <= 0 || h <= 0 {
+		return best
+	}
+	for _, r := range s.opaque {
+		x0, y0, x1, y1 := max(r.X, 0), max(r.Y, 0), min(r.X+r.W, w), min(r.Y+r.H, h)
+		if x1 > x0 && y1 > y0 && (x1-x0)*(y1-y0) > best.W*best.H {
+			best = ports.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
+		}
+	}
+	return best
 }
 
 // maxCoverRects bounds the region covers checks: beyond it, not covered.

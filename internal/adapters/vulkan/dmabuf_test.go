@@ -14,7 +14,7 @@ import (
 
 // udmabuf turns memfd pages into a real dmabuf: a linear buffer any GPU
 // driver imports, like a client's.
-func udmabuf(t *testing.T, w, h int, fill func(x, y int) [4]byte) *os.File {
+func udmabuf(t testing.TB, w, h int, fill func(x, y int) [4]byte) *os.File {
 	t.Helper()
 	dev, err := os.OpenFile("/dev/udmabuf", os.O_RDWR, 0)
 	if err != nil {

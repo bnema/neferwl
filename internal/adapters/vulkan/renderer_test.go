@@ -393,7 +393,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 }
 
 // solidContent is a w×h B8G8R8A8 buffer of one color.
-func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
+func solidContent(t testing.TB, w, h int, c color.RGBA) ports.SurfaceContent {
 	px := make([]byte, w*h*4)
 	for i := 0; i < len(px); i += 4 {
 		px[i], px[i+1], px[i+2], px[i+3] = c.B, c.G, c.R, 255
@@ -402,7 +402,7 @@ func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
 }
 
 // shmContent puts pixels in a memfd pool, like a wl_shm client.
-func shmContent(t *testing.T, w, h, stride int, pixels []byte) *ports.SurfaceContent {
+func shmContent(t testing.TB, w, h, stride int, pixels []byte) *ports.SurfaceContent {
 	t.Helper()
 	fd, err := unix.MemfdCreate("shm-test", unix.MFD_CLOEXEC)
 	if err != nil {
@@ -559,5 +559,44 @@ func TestRendererAlphaBlend(t *testing.T) {
 		if !near(got.R, tc.r) || !near(got.G, tc.g) || !near(got.B, tc.b) {
 			t.Errorf("%s: pixel (%d,%d) = %v, want ~{%d %d %d}", tc.name, tc.x, tc.y, got, tc.r, tc.g, tc.b)
 		}
+	}
+}
+
+// A window kept after its client closed (a closing window fading out) still
+// draws from the GPU copy of its content: the pool file is closed and its
+// mapping gone, and the copy is found without reading the pool.
+func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	c := solidContent(t, 16, 16, color.RGBA{R: 255, A: 255})
+	c.ID, c.Surface, c.Seq, c.Version = 1, 1, 1, 1
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	// Wayland closed the pool; the mapping was dropped meanwhile.
+	if err := c.SHM.File.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r.dropPools()
+	for pool, m := range r.pools {
+		_ = unix.Munmap(m.data)
+		delete(r.pools, pool)
+	}
+	// The window moves (a fade-out), so it draws again.
+	scene.Seq = 2
+	scene.Windows[0].Rect.X = 4
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	got := readPixels(t, r)
+	if g, want := got.At(18, 8), (color.RGBA{R: 255, A: 255}); g != want {
+		t.Fatalf("kept window pixel %v, want %v", g, want)
+	}
+	if g, want := got.At(1, 8), (color.RGBA{A: 255}); g != want {
+		t.Fatalf("background pixel %v, want %v", g, want)
 	}
 }

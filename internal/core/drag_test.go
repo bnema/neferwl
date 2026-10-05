@@ -21,11 +21,37 @@ type dragRig struct {
 	scenes   chan []ports.Scene
 	last     []ports.Scene
 	epoch    *atomic.Value
+	// With a clock the test moves (animated rigs), frames carries the page
+	// flips and outputs lists the plugged ones: settle lands every spring
+	// before it reads the scene.
+	frames  chan ports.OutputFrame
+	clock   *stepClock
+	outputs []string
+	// lands counts the settles that found a spring running.
+	lands int
 }
 
 // startDrag runs core with Super as Cmd, no border, 10 px gaps, and
 // the given outputs. edit may change the config.
 func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	return newDragRig(t, false, edit, outs...)
+}
+
+// startAnimatedDragRig is startDragRig with animations on and a clock the
+// test moves: settle moves it past every spring and sends the page flips,
+// so the scene it returns is the settled one, deterministically.
+func startAnimatedDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	return newDragRig(t, true, func(c *ports.Config) {
+		c.Animations.On = true
+		if edit != nil {
+			edit(c)
+		}
+	}, outs...)
+}
+
+func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
 	cfg := config.Defaults()
 	cfg.Border.Width = 0
@@ -45,7 +71,18 @@ func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 		output: make(chan ports.OutputEvent), commands: make(chan ports.ClientCommand, 4096),
 		scenes: make(chan []ports.Scene, 1), epoch: epoch,
 	}
-	c, err := core.New(cfg, core.Channels{Security: gate, Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes})
+	ch := core.Channels{Security: gate, Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
+	if animated {
+		r.frames, r.clock = make(chan ports.OutputFrame), newStepClock(t)
+		ch.Frames, ch.Clock = r.frames, r.clock.clock
+		// An on variant that never saw a spring would be the off variant again.
+		t.Cleanup(func() {
+			if r.lands == 0 {
+				t.Error("no spring ever ran: the animations-on variant checked nothing")
+			}
+		})
+	}
+	c, err := core.New(cfg, ch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +92,7 @@ func startDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	t.Cleanup(func() { cancel(); <-done })
 	for _, o := range outs {
 		r.output <- ports.OutputAdded{Info: o}
+		r.outputs = append(r.outputs, o.Name)
 		r.settle(t)
 	}
 	return r
@@ -79,9 +117,16 @@ func send[T any](ch chan T, v T) {
 const barrier ports.WindowID = 1 << 30
 
 // settle returns the scene set once core handled every event sent so
-// far. The second barrier is taken only after the first one published.
+// far. The second barrier is taken only after the first one published. An
+// animated rig first moves its clock past every spring and flips each
+// output, so the set is the settled one.
 func (r *dragRig) settle(t *testing.T) []ports.Scene {
 	t.Helper()
+	if r.frames != nil {
+		if _, ok := r.clock.settle(t, r.frames, r.scenes, r.outputs...); ok {
+			r.lands++
+		}
+	}
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
 	select {
@@ -255,7 +300,12 @@ func TestDragEscapeRestoresFloat(t *testing.T) {
 }
 
 func TestDragTileZonesAndHints(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		dragTileZonesAndHints(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+	})
+}
+
+func dragTileZonesAndHints(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -279,6 +329,8 @@ func TestDragTileZonesAndHints(t *testing.T) {
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
 		t.Fatal(got)
 	}
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
@@ -298,6 +350,8 @@ func TestDragTileZonesAndHints(t *testing.T) {
 	if hints := dragScene(r.settle(t), "A").DropHints; len(hints) != 4 {
 		t.Fatalf("swap outline %+v", hints)
 	}
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {2}, {3}}, slices.Equal) {
@@ -310,6 +364,8 @@ func TestDragTileZonesAndHints(t *testing.T) {
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	r.moveTo(float64(b.X+b.W/2), float64(b.Y+b.H/2), 6)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1}, {3}, {2}}, slices.Equal) {
@@ -332,8 +388,28 @@ func TestDragTileZonesAndHints(t *testing.T) {
 	}
 }
 
+// startDragMode is the drag rig with animations off, or on and landed by
+// settle.
+func startDragMode(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
+	t.Helper()
+	if animated {
+		return startAnimatedDragRig(t, edit, outs...)
+	}
+	return startDragRig(t, func(c *ports.Config) {
+		if edit != nil {
+			edit(c)
+		}
+		c.Animations.On = false
+	}, outs...)
+}
+
 func TestDragTileGapInsert(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		dragTileGapInsert(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut))
+	})
+}
+
+func dragTileGapInsert(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -367,8 +443,114 @@ func TestDragTileGapInsert(t *testing.T) {
 	}
 }
 
+// release sends the button release and returns the scene set core
+// publishes for it, without moving the clock (settle would).
+func (r *dragRig) release(t *testing.T) []ports.Scene {
+	t.Helper()
+	r.in(ports.PointerButton{Button: 0x110})
+	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
+	send(r.client, ports.ClientEvent(ports.WindowResized{ID: barrier}))
+	select {
+	case r.last = <-r.scenes:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no scene")
+	}
+	return r.last
+}
+
+// A dropped tile slides from where the drag scene drew it (its own slot:
+// a tile does not follow the pointer) and its neighbours re-flow; the
+// client gets one configure, for the final size. With animations off the
+// drop is instant.
+func TestDragDropTileSlides(t *testing.T) {
+	both(t, func(t *testing.T, animated bool) {
+		r := startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3 }, dragOut)
+		for id := ports.WindowID(1); id <= 3; id++ {
+			r.client <- ports.WindowMapped{ID: id}
+			r.settle(t)
+		}
+		set := r.settle(t)
+		one0, two0, three0 := dragRect(t, set, "A", 1), dragRect(t, set, "A", 2), dragRect(t, set, "A", 3)
+		r.moveTo(float64(one0.X+one0.W/2), float64(one0.Y+one0.H/2), 1)
+		r.settle(t)
+		r.press(t, 0x110, ports.ModSuper)
+		// The bottom band of 3: 1 stacks below it.
+		r.moveTo(float64(three0.X+three0.W/2), float64(three0.Y+three0.H-5), 2)
+		set = r.settle(t)
+		if got := dragRect(t, set, "A", 1); got != one0 {
+			t.Fatalf("tile left its slot during the drag: %+v, was %+v", got, one0)
+		}
+		r.drain()
+		set = r.release(t)
+		if len(dragScene(set, "A").DropHints) != 0 {
+			t.Fatal("hints left")
+		}
+		if !animated {
+			if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
+				t.Fatal(got)
+			}
+			// Instant: the scene right after the drop is the settled one.
+			if got := dragRect(t, set, "A", 1); got == one0 || got.X != dragRect(t, r.settle(t), "A", 1).X {
+				t.Fatalf("not dropped at once: %+v", got)
+			}
+			return
+		}
+		// Right after the release the windows are still where the drag
+		// scene drew them.
+		for id, want := range map[ports.WindowID]ports.Rect{1: one0, 2: two0, 3: three0} {
+			if got := dragRect(t, set, "A", id); got != want {
+				t.Fatalf("window %d at %+v right after the drop, want its old %+v", id, got, want)
+			}
+		}
+		mid, ok := r.clock.flip(t, r.frames, r.scenes, 30*time.Millisecond, "A")
+		if !ok {
+			t.Fatal("no frame after the drop: nothing animates")
+		}
+		r.lands++
+		// The dropped tile is between its old slot and its new one, and the
+		// column it joined re-flows too.
+		got := dragRect(t, mid, "A", 1)
+		if got == one0 || got.X <= one0.X && got.Y <= one0.Y {
+			t.Fatalf("window 1 at %+v on the first frame, still at its old %+v", got, one0)
+		}
+		if got2 := dragRect(t, mid, "A", 2); got2 == two0 {
+			t.Fatalf("neighbour 2 did not start moving: %+v", got2)
+		}
+		set = r.settle(t)
+		if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{2}, {3, 1}}, slices.Equal) {
+			t.Fatal(got)
+		}
+		want := map[ports.WindowID]ports.Rect{}
+		for id := ports.WindowID(1); id <= 3; id++ {
+			want[id] = dragRect(t, set, "A", id)
+		}
+		if want[1].Y <= want[3].Y || want[1].X != want[3].X {
+			t.Fatalf("1 is not stacked below 3 once settled: %+v", want)
+		}
+		// A window is configured at most once by the drop, to its settled
+		// size, never to a size along the slide; the dropped tile always.
+		sizes := map[ports.WindowID][][2]int{}
+		for _, v := range r.drain() {
+			if v, ok := v.(ports.ConfigureWindow); ok {
+				sizes[v.ID] = append(sizes[v.ID], [2]int{v.Width, v.Height})
+			}
+		}
+		for id, rect := range want {
+			got := sizes[id]
+			if len(got) > 1 || len(got) == 1 && got[0] != [2]int{rect.W, rect.H} || id == 1 && len(got) != 1 {
+				t.Fatalf("configures of window %d %v, want at most one at %dx%d (exactly one for window 1)", id, got, rect.W, rect.H)
+			}
+		}
+	})
+}
+
 func TestDragFixedNoGapZone(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		dragFixedNoGapZone(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+	})
+}
+
+func dragFixedNoGapZone(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 2; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -385,6 +567,8 @@ func TestDragFixedNoGapZone(t *testing.T) {
 	// Top band of 2 stacks 1 above it.
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+3), 3)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{1, 2}}, slices.Equal) {
 		t.Fatal(got)
@@ -392,8 +576,12 @@ func TestDragFixedNoGapZone(t *testing.T) {
 }
 
 func TestDragAcrossOutputs(t *testing.T) {
-	b := ports.OutputInfo{Name: "B", Width: 800, Height: 600}
-	r := startDragRig(t, nil, dragOut, b)
+	both(t, func(t *testing.T, animated bool) {
+		dragAcrossOutputs(t, startDragMode(t, animated, nil, dragOut, ports.OutputInfo{Name: "B", Width: 800, Height: 600}))
+	})
+}
+
+func dragAcrossOutputs(t *testing.T, r *dragRig) {
 	r.client <- ports.WindowMapped{ID: 1}
 	r.client <- ports.WindowMapped{ID: 2}
 	r.settle(t)
@@ -414,6 +602,7 @@ func TestDragAcrossOutputs(t *testing.T) {
 	if len(dragScene(set, "B").DropHints) == 0 || len(dragScene(set, "A").DropHints) != 0 {
 		t.Fatalf("hints A %+v B %+v", dragScene(set, "A").DropHints, dragScene(set, "B").DropHints)
 	}
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if _, ok := windowIn(set, "B", 1); !ok {
@@ -484,7 +673,10 @@ func TestLockClearsDrag(t *testing.T) {
 }
 
 func TestDragEdgeScroll(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
+	both(t, func(t *testing.T, animated bool) { dragEdgeScroll(t, startDragMode(t, animated, nil, dragOut)) })
+}
+
+func dragEdgeScroll(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -526,7 +718,12 @@ func TestDragEdgeScroll(t *testing.T) {
 }
 
 func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
-	r := startDragRig(t, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		dragFullFixedStacksInOutlinedColumn(t, startDragMode(t, animated, func(c *ports.Config) { c.Layout.MaxColumns = 3; c.Layout.Overflow = "fixed" }, dragOut))
+	})
+}
+
+func dragFullFixedStacksInOutlinedColumn(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 3; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)
@@ -542,6 +739,8 @@ func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 	r.press(t, 0x110, ports.ModSuper)
 	r.moveTo(float64(one.X+one.W/2), float64(one.Y+3), 2)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	set = r.settle(t)
 	if got := columnsOf(set, "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4, 1}, {2}, {3}}, slices.Equal) {
@@ -553,6 +752,8 @@ func TestDragFullFixedStacksInOutlinedColumn(t *testing.T) {
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	r.moveTo(float64(two.X+two.W/2), float64(two.Y+two.H/2), 4)
 	r.settle(t)
+	// The drop itself must run a spring: the guard counts from here.
+	r.lands = 0
 	r.in(ports.PointerButton{Button: 0x110})
 	if got := columnsOf(r.settle(t), "A"); !slices.EqualFunc(got, [][]ports.WindowID{{4}, {2, 1}, {3}}, slices.Equal) {
 		t.Fatal(got)
@@ -623,7 +824,12 @@ func TestClientDragUsesLastPress(t *testing.T) {
 }
 
 func TestEdgeScrollPublishesWithoutTarget(t *testing.T) {
-	r := startDragRig(t, nil, dragOut)
+	both(t, func(t *testing.T, animated bool) {
+		edgeScrollPublishesWithoutTarget(t, startDragMode(t, animated, nil, dragOut))
+	})
+}
+
+func edgeScrollPublishesWithoutTarget(t *testing.T, r *dragRig) {
 	for id := ports.WindowID(1); id <= 4; id++ {
 		r.client <- ports.WindowMapped{ID: id}
 		r.settle(t)

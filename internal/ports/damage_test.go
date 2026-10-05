@@ -35,3 +35,23 @@ func TestDamageSince(t *testing.T) {
 		t.Fatal("stale history used")
 	}
 }
+
+func TestAppendDamageSince(t *testing.T) {
+	a, b := Rect{X: 1, W: 2, H: 2}, Rect{Y: 5, W: 1, H: 1}
+	c := SurfaceContent{Seq: 7, DamageHistory: []SeqDamage{{Seq: 6, Rects: []Rect{a}}, {Seq: 7, Rects: []Rect{b}}}}
+	keep := []Rect{{W: 9}}
+	if got, ok := c.AppendDamageSince(keep, 5); !ok || !slices.Equal(got, []Rect{{W: 9}, a, b}) {
+		t.Fatalf("append %v %v", got, ok)
+	}
+	// A refused history leaves dst as it was.
+	c.DamageHistory[1].Full = true
+	if got, ok := c.AppendDamageSince(keep, 5); ok || !slices.Equal(got, keep) {
+		t.Fatalf("full change: %v %v", got, ok)
+	}
+	// Reusing the slice allocates nothing.
+	c.DamageHistory[1].Full = false
+	buf := make([]Rect, 0, 4)
+	if n := testing.AllocsPerRun(20, func() { buf, _ = c.AppendDamageSince(buf[:0], 5) }); n != 0 {
+		t.Fatalf("allocs = %v", n)
+	}
+}

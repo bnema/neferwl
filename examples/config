@@ -72,6 +72,15 @@ cursor.hide-after = 5s
 
 # on: moving a column or window to another workspace shows that workspace.
 focus.follow-move = off
+# Experimental, off by default.
+# on: windows and the view move with springs, windows fade in and out as
+# they open, close or leave with the stash, the overview zooms its cards;
+# off: every change is instant and three-finger swipes act when the
+# fingers lift.
+# speed: slow, normal, fast, or a number from 0.1 (10x slower) to 10
+# (10x faster).
+animations = off
+animations.speed = normal
 # Focus indicator on the newly focused window: an animation (pulse or off)
 # of an effect (screen: a slight brightening), peaking at strength
 # (0.01 to 0.2; 0.04: black reaches about 10/255).

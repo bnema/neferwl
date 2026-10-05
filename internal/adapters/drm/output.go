@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/presented"
+	"github.com/bnema/neferwl/internal/adapters/surfaces"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -35,6 +36,10 @@ type Output struct {
 	securityInvalid  bool
 	inactiveOnClose  bool            // affirmative terminal KMS result, owned by Close
 	runContext       context.Context // bounds compositor clear waits during Run startup
+	// kept reports a window drawn from a content its client withdrew (it
+	// closed and fades out; surfaces.Table.Kept): composed only, never on
+	// a plane, never reported shown. Set by Run; nil before.
+	kept func(ports.WindowID) bool
 
 	k       kms
 	flipped <-chan flipEvent // commit events of this CRTC, from Card.ReadEvents
@@ -176,6 +181,10 @@ type Output struct {
 	protectNotBefore time.Time
 	// kind is how the images were made.
 	kind imageKind
+	// planes is the memory plane count of the last exported images.
+	planes int
+	// imageMod is the modifier of the exported images (0: linear).
+	imageMod uint64
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
 	formats   chan<- ports.OutputFormats
@@ -1026,7 +1035,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			o.probeAsync(r)
 		}
 	}
-	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
+	table := surfaces.New()
+	drawn := table.Map()
+	o.kept = table.Kept
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	var want ports.CursorChange
@@ -1334,6 +1345,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			if !o.sceneCurrent(s) {
 				continue
 			}
+			// The core keeps the Seq of a scene that draws the same: nothing to do.
+			if haveScene && s.Seq != 0 && s.Seq == scene.Seq && s.Security == scene.Security {
+				continue
+			}
 			if o.protected {
 				s.CaptureScene = nil
 				if o.wantOff != s.Off {
@@ -1347,6 +1362,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			scene, haveScene, dirty = s, true, true
 			o.wantOff = s.Off
+			// A closed window's last content goes once no scene draws it.
+			table.Prune(scene)
 		case c := <-cursor:
 			o.observeSecurity()
 			if o.protected {
@@ -1359,11 +1376,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				stateDirty = true
 			}
 		case c := <-contents:
-			if c.Empty() {
-				delete(surfaces, c.ID)
-			} else {
-				surfaces[c.ID] = c
-			}
+			table.Update(c, scene)
 			if c.Seq > seen[c.ID] {
 				seen[c.ID] = c.Seq
 				reportDirty = true
@@ -1463,7 +1476,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, pipeline)
+		direct, err := o.submitFrame(ctx, r, scene, drawn, seen, requests, pipeline)
 		var fatal renderError
 		if errors.As(err, &fatal) || errors.Is(err, errSecurityScene) {
 			// A failed render or epoch rejection did not hand these requests to the worker.

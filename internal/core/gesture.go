@@ -36,7 +36,9 @@ const (
 	swipeWorkspaces
 	swipeDiscrete
 	// swipeOverview is a vertical four-finger swipe: up opens the
-	// overview, down closes it on the selection (niri's gesture).
+	// overview, down closes it on the selection (niri's gesture). With
+	// the overview closed, down shows or hides the stash, and up hides
+	// it when it is shown, else opens the overview.
 	swipeOverview
 	// swipeDropped ignores the rest of a swipe whose workspace changed.
 	swipeDropped
@@ -166,12 +168,14 @@ func (c *Core) decide(g *swipeGesture) {
 	case g.fingers == 4:
 		// Four fingers sideways do nothing.
 		g.mode = swipeDropped
-	case m.ov.open:
+	case m.ov.open || !c.animOn():
 		// The overview does not slide: the swipe moves its selection.
+		// With animations off nothing slides either: the swipe runs a
+		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
-		w.motion = nil
+		w.motion = motion{}
 		g.snap = newSnapSwipe(float64(w.ViewX)+w.shift, float64(w.ViewX), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.Usable.W)))
 	case !g.horizontal && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
@@ -180,7 +184,7 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
 		g.list = slices.Clone(m.Workspaces)
-		m.switchMotion, m.switchList = nil, nil
+		m.switchMotion, m.switchList = motion{}, nil
 		g.snap = newSnapSwipe(float64(m.Active)+m.switchOff, float64(m.Active), 1/workspaceSwipeMovement, indexPoints(len(m.Workspaces)), workspaceBand)
 	default:
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
@@ -216,7 +220,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		w.shift = shown - float64(w.ViewX)
-		w.motion = newMotion(viewSpring(w.shift, velocity), now)
+		if c.animOn() {
+			w.motion = c.spring(viewSpring(w.shift, velocity), now)
+		} else {
+			w.stopSlide()
+		}
 	case swipeWorkspaces:
 		if g.listChanged(m) {
 			m.stopSwitch()
@@ -240,16 +248,28 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 		}
 		m.switchOff, m.switchList = off, g.list
-		m.switchMotion = newMotion(workspaceSpring(off, velocity), now)
+		if c.animOn() {
+			m.switchMotion = c.spring(m.switchSpring(off, velocity), now)
+		} else {
+			m.stopSwitch()
+		}
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
-		if step == 0 || (step < 0) == m.ov.open {
+		if step == 0 {
+			return false
+		}
+		if !m.ov.open && (step > 0 || m.Current().stashShown()) {
+			return c.swipeStash(g, now)
+		}
+		if (step < 0) == m.ov.open {
 			return false
 		}
 		before := m.Current()
+		shots := c.snapshot(now)
 		m.ToggleOverview()
 		c.focusScreen = c.screenIndex(g.screen.name())
 		c.keyboard.takeBack()
+		c.transition(shots, now)
 		return m.Current() != before
 	case swipeDiscrete:
 		step := g.snap.step(e.Cancelled, e.Time)
@@ -271,15 +291,34 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			return false
 		}
 		before := c.cur().mon.Current()
+		shots := c.snapshot(now)
 		c.keyboard.takeBack()
 		if mon := c.cur().mon; mon.ov.open {
 			mon.overviewFocus(a)
 		} else {
 			c.applyAction(a)
 		}
+		c.transition(shots, now)
 		return c.cur().mon.Current() != before
 	}
 	return shown
+}
+
+// swipeStash runs toggle-stash-visible for a four-finger swipe down, or up
+// while the stash is shown, with the overview closed, on the swipe's screen
+// unless the pointer took the focus to another output meanwhile. It reports
+// whether the stash showed or hid: an empty stash stays as it is.
+func (c *Core) swipeStash(g *swipeGesture, now time.Time) bool {
+	if c.cur() != g.screen {
+		return false
+	}
+	w := g.screen.mon.Current()
+	hidden, over := w.stashHidden, w.stashOver
+	shots := c.snapshot(now)
+	c.keyboard.takeBack()
+	c.applyAction(ActionToggleStashVisible)
+	c.transition(shots, now)
+	return w.stashHidden != hidden || w.stashOver != over
 }
 
 // swipedWorkspace is the workspace on the swipe's screen, or nil without
@@ -317,11 +356,49 @@ func (c *Core) hasScreen(s *screen) bool {
 	return false
 }
 
-// animate moves the running springs to now; settled ones stop.
-func (c *Core) animate(now time.Time) {
+// animOn reports whether transitions run (animations = on).
+func (c *Core) animOn() bool { return c.cfg.Animations.On }
+
+// spring starts s at now, stretched by animations.speed (Slowdown). Every motion
+// core creates goes through it, except a retarget, which keeps the slowdown
+// of the motion it replaces.
+func (c *Core) spring(s spring, now time.Time) motion {
+	return newMotion(s, now, c.cfg.Animations.Slowdown)
+}
+
+// stopAnimations settles every running spring where it is going and stops
+// the frame timer: a session lock or a switch to animations = off. A swipe
+// in progress keeps its fingers' view: only running springs stop. Per-window
+// rect motions stop too.
+func (c *Core) stopAnimations() {
 	for _, sc := range c.screens {
+		sc.stopAnimations()
+	}
+	c.stopFrame()
+}
+
+// stopAnimations settles the screen's running springs where they are going.
+func (s *screen) stopAnimations() {
+	if s.mon.switchMotion.on {
+		s.mon.stopSwitch()
+	}
+	for w := range s.mon.all() {
+		if w.motion.on {
+			w.stopSlide()
+		}
+	}
+	s.stopRects()
+}
+
+// animate moves the running springs to now; settled ones stop. A non-nil only
+// limits it to that screen (its own page flip); nil moves every screen.
+func (c *Core) animate(now time.Time, only *screen) {
+	for _, sc := range c.screens {
+		if only != nil && sc != only {
+			continue
+		}
 		m := sc.mon
-		if m.switchMotion != nil {
+		if m.switchMotion.on {
 			v, done := m.switchMotion.at(now)
 			m.switchOff = v
 			if done {
@@ -329,12 +406,20 @@ func (c *Core) animate(now time.Time) {
 			}
 		}
 		for w := range m.all() {
-			if w.motion != nil {
+			if w.motion.on {
 				v, done := w.motion.at(now)
 				w.shift = v
 				if done {
 					w.stopSlide()
 				}
+			}
+		}
+		for id, rm := range sc.rects {
+			rm.advance(now)
+			if rm.on() {
+				sc.rects[id] = rm
+			} else {
+				delete(sc.rects, id)
 			}
 		}
 	}
@@ -343,7 +428,7 @@ func (c *Core) animate(now time.Time) {
 // sliding reports whether a spring runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && (c.screens[i].mon.springing() || c.pulsing(c.screens[i]))
+	return i >= 0 && (c.screens[i].springing() || c.pulsing(c.screens[i]))
 }
 
 // animating reports whether a spring or the focus pulse runs on any output.
@@ -352,7 +437,7 @@ func (c *Core) animating() bool {
 		return true
 	}
 	for _, sc := range c.screens {
-		if sc.mon.springing() {
+		if sc.springing() {
 			return true
 		}
 	}
@@ -360,11 +445,11 @@ func (c *Core) animating() bool {
 }
 
 func (m *Monitor) springing() bool {
-	if m.switchMotion != nil {
+	if m.switchMotion.on {
 		return true
 	}
 	for w := range m.all() {
-		if w.motion != nil {
+		if w.motion.on {
 			return true
 		}
 	}
@@ -376,22 +461,30 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && (sc.mon.springing() || c.pulsing(sc)) {
+		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.pulsing(sc)) {
 			refresh = min(refresh, r)
 		}
 	}
 	return 2 * time.Second * 1000 / time.Duration(refresh)
 }
 
-// armFrame starts the fallback timer of a running slide.
+// armFrame starts the fallback timer of a running slide. The timer is made
+// on the first arm and reset afterwards (Go 1.23 timers deliver nothing
+// stale after a Stop or Reset), so a frame costs no allocation.
 func (c *Core) armFrame() {
-	c.stopFrame()
-	c.frameC, c.frameStop = newTimer(c.ch.Clock, c.frameFallback())
+	d := c.frameFallback()
+	if c.frameTimer == nil {
+		c.frameTimer = newPortTimer(c.ch.Clock, d)
+	} else {
+		c.frameTimer.Stop()
+		c.frameTimer.Reset(d)
+	}
+	c.frameC = c.frameTimer.C()
 }
 
 func (c *Core) stopFrame() {
-	if c.frameStop != nil {
-		c.frameStop()
+	if c.frameC != nil {
+		c.frameTimer.Stop()
 	}
-	c.frameC, c.frameStop = nil, nil
+	c.frameC = nil
 }

@@ -326,6 +326,22 @@ func (r *Renderer) solidDraw(rect image.Rectangle, content *ports.SurfaceContent
 	return dr
 }
 
+// fadeSolid scales a solid draw's premultiplied color by k (a window's
+// fade). The shader decodes a solid's rgb on HDR outputs: there the rgb is
+// re-encoded so the decode yields the scaled linear premultiplied color, as
+// solidDraw does.
+func (r *Renderer) fadeSolid(dr *draw, k float32) {
+	c := &dr.pc.color
+	if r.hdrNits > 0 {
+		for i := range 3 {
+			c[i] = float32(linearToSRGB(srgbToLinear(float64(c[i])) * float64(k)))
+		}
+	} else {
+		c[0], c[1], c[2] = c[0]*k, c[1]*k, c[2]*k
+	}
+	c[3] *= k
+}
+
 // dimDraw is premultiplied black: blending ONE, ONE_MINUS_SRC_ALPHA
 // leaves the destination at (1-alpha) of its previous value.
 func (r *Renderer) dimDraw(rect image.Rectangle, alpha float64) draw {

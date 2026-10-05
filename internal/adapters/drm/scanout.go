@@ -85,7 +85,11 @@ func fullscreenShown(s *ports.Scene) bool {
 // scanoutCandidate returns the window content the output can scan out
 // directly, or a reason why it cannot. w, h are the output's physical size.
 // The plane's formats are checked by scanoutFB.
-func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int) (ports.SurfaceContent, string) {
+//
+// kept reports a window drawn from a content its client withdrew (it
+// closed and fades out): the client may already have its buffer back, so
+// it is never put on a plane (nil: none is).
+func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int, kept func(ports.WindowID) bool) (ports.SurfaceContent, string) {
 	if s.Transform != 0 {
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
 		return ports.SurfaceContent{}, "output_transform"
@@ -107,6 +111,9 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full == nil {
 		return ports.SurfaceContent{}, "no_fullscreen"
 	}
+	if kept != nil && kept(full.ID) {
+		return ports.SurfaceContent{}, "leaving"
+	}
 	if len(s.DropHints) > 0 {
 		// Drag hints are drawn over the window.
 		return ports.SurfaceContent{}, "drop_hint"
@@ -114,6 +121,11 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if full.Dim > 0 {
 		// Its veil is composed over it: the plane would show it bright.
 		return ports.SurfaceContent{}, "dim"
+	}
+	if full.Fade > 0 || full.Preview > 0 || full.Zoom > 0 {
+		// A fading or zoomed window is composed: the plane would show it
+		// whole and opaque.
+		return ports.SurfaceContent{}, "window_fade"
 	}
 	// Core leaves the layers a fullscreen window hides out of the scene:
 	// one above the windows here is drawn.
@@ -200,7 +212,7 @@ func clientSubsurface(c ports.SurfaceContent) (ports.SurfaceContent, string) {
 func (o *Output) scanoutFrame(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent) (fb uint32, c ports.SurfaceContent, mode colorMode) {
 	reason := "disabled"
 	if o.scanout {
-		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height())
+		c, reason = scanoutCandidate(scene, surfaces, o.Width(), o.Height(), o.kept)
 		if reason == "" {
 			mode, reason = planeColor(c.Color, c.DMABuf.Format, c.Opaque, o.hdr.on, o.primary.pipeline)
 		}
@@ -255,7 +267,7 @@ func (o *Output) overlayFrame(s ports.Scene, surfaces map[ports.WindowID]ports.S
 		var w ports.SceneWindow
 		var c ports.SurfaceContent
 		var mode colorMode
-		w, c, mode, reason = overlayCandidate(s, surfaces, o.hdr.on, o.overlay.pipeline)
+		w, c, mode, reason = overlayCandidate(s, surfaces, o.hdr.on, o.overlay.pipeline, o.kept)
 		if reason == "" && mode != colorBypass {
 			if ok, known := o.overlay.verdict(c.DMABuf.Format, o.cursorShown()); known && !ok {
 				reason = "color_refused"

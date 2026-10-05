@@ -44,8 +44,10 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `mouse.accel-profile` | `adaptive` | `adaptive`: faster moves go further; `flat`: constant speed |
 | `mouse.left-handed` | `off` | Swaps the left and right mouse buttons |
 | `cursor.hide-after` | `5s` | Hides the pointer cursor after this long without motion; the next motion shows it. 100ms to 1h, or `off` |
+| `animations` | `off` | **Experimental.** `on` animates changes; `off` makes every change instant and the three-finger swipe no longer follows the fingers: swipe landings, scrolling, workspace switches, window moves and resizes, drag drops, workspaces sent to another monitor, the overview, windows opening and closing, the stash showing and hiding, the focus pulse |
+| `animations.speed` | `normal` | Speed of every spring (not the focus pulse): `slow`, `normal` or `fast` (a view move lands in about 260, 180 or 130 ms), or a number relative to `normal`, from `0.1` (10× slower) to `10` (10× faster) |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, a window alone on screen (e.g. a maximized column), the overview and a window focused as it opens |
+| `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, a window alone on screen (e.g. a maximized column), the overview and a window focused as it opens. Off while `animations = off` |
 | `focus.effect` | `screen` | What the focus indicator draws: `screen` brightens the window slightly, visible on black too. HDR (PQ) client content is not brightened on HDR outputs |
 | `focus.strength` | `0.04` | Peak of the focus effect, `0.01` to `0.2`: black reaches about 10/255 at `0.04` |
 | `workspace.<name>.*` | none | Named workspaces are outside the numbered list; use the overview to show an occupied one, or a `workspace <name>` bind to show it and toggle back |
@@ -134,7 +136,7 @@ bind.Cmd+p = workspace presentation
 
 ## Touchpad
 
-A three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
+With `animations = on`, a three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
 
 - Left or right scrolls the columns (`scroll` overflow) to the next column edge; the focus moves to a column fully on screen.
 - Up or down slides to the next numbered workspace.
@@ -142,6 +144,8 @@ A three-finger swipe follows the fingers and moves one step at most, so a quick 
 The view sticks a little near each step and catches up between them. Past the next step it resists; lift and swipe again to go further. When the fingers lift, a quick swipe goes on to the next step and a slow one settles on the closest.
 
 With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
+
+With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe runs `focus-column-left/right` or `focus-workspace-up/down`.
 
 Where the view cannot scroll (`fixed` overflow, the stash, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
 
@@ -218,7 +222,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-stash`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors sit `stash.gap` beside it and show up to the screen edges, dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
 
-While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible` to get back to the tiles. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
+While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible`, or with a four-finger swipe down or up, to get back to the tiles; a swipe down shows it again. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
 Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile; `focus-window-up` at the top of a column raises it again. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive, except for the fullscreen window's own dialogs. A dialog belongs to a window through `xdg_toplevel.set_parent`, or through `zxdg_importer_v2` when another program opens it, as the desktop portal does.
 
@@ -255,7 +259,7 @@ The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows`
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `h` / `l` browse the stash and `l` past its last window returns to the front card. A successful up/down move through the stack leaves the stash and selects the new front card. `return` or a click on a card closes the overview with the stash shown on that window.
 
-A four-finger swipe up opens the overview and a swipe down closes it on the selection, whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll` for two-finger scrolling and `mouse.natural-scroll` for the wheel. A two-finger scroll sideways moves it to the next column after a short distance, then one column per longer distance, and stays on the columns until the fingers lift; up or down it moves one step per scroll, so a card in a stack is easy to pick. The wheel moves one step per notch. A three-finger swipe moves it one step when the fingers lift.
+A four-finger swipe up opens the overview, or hides the [stash](#stash) when it is shown, and a swipe down closes the overview on the selection (with the overview closed, a swipe down shows or hides the stash), whatever `touchpad.natural-scroll` says. Two-finger scrolling and the mouse wheel move the selection: left and right through the columns, up and down through stack cards before crossing workspaces, following `touchpad.natural-scroll` for two-finger scrolling and `mouse.natural-scroll` for the wheel. A two-finger scroll sideways moves it to the next column after a short distance, then one column per longer distance, and stays on the columns until the fingers lift; up or down it moves one step per scroll, so a card in a stack is easy to pick. The wheel moves one step per notch. A three-finger swipe moves it one step when the fingers lift.
 
 Return or a click on a front tile or peeking card commits it; card changes remain provisional until then. `close-window` targets the selected preview. Move-to-workspace binds (`move-column-to-workspace*`, `move-window-to-workspace*`) move the selected preview at once and keep the overview open; with `focus.follow-move`, the selection follows it. Escape does not undo a move, and the row that received the window keeps it focused. A selected stash card, or a row with no preview, does not move. Other window mutation binds (moving within the row, resizing, maximizing, fullscreen and stash toggles) and moving a workspace to another monitor are disabled while the overview is open. Workspace and monitor navigation, launch and quit binds remain active.
 

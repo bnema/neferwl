@@ -43,7 +43,7 @@ func overlayScene() (ports.Scene, map[ports.WindowID]ports.SurfaceContent) {
 func TestScanoutWorkspaceClipCannotBeBypassed(t *testing.T) {
 	s, contents := fullscreenScene()
 	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
-	if _, reason := scanoutCandidate(s, contents, 200, 100); reason != "workspace_clip" {
+	if _, reason := scanoutCandidate(s, contents, 200, 100, nil); reason != "workspace_clip" {
 		t.Fatalf("fullscreen bypassed clip: %q", reason)
 	}
 	if fullscreenShown(&s) {
@@ -54,28 +54,28 @@ func TestScanoutWorkspaceClipCannotBeBypassed(t *testing.T) {
 func TestOverlayWorkspaceClip(t *testing.T) {
 	s, contents := overlayScene()
 	s.WorkspaceClip = ports.Rect{X: 50, W: 100, H: 100}
-	if _, _, _, reason := overlayCandidate(s, contents, false, nil); reason != "workspace_clip" {
+	if _, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "workspace_clip" {
 		t.Fatalf("overflowing workspace overlay: %q", reason)
 	}
 	s.WorkspaceClip = ports.Rect{X: 100, W: 100, H: 100}
-	if win, _, _, reason := overlayCandidate(s, contents, false, nil); reason != "" || win.ID != 2 {
+	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
 		t.Fatalf("contained workspace overlay: %v %q", win.ID, reason)
 	}
 }
 
 func TestOverlayCandidate(t *testing.T) {
 	s, c := overlayScene()
-	if w, _, _, reason := overlayCandidate(s, c, false, nil); reason != "" || w.ID != 2 {
+	if w, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" || w.ID != 2 {
 		t.Fatalf("candidate %v %q", w.ID, reason)
 	}
 	// A rotated output composes: planes are not rotated.
 	rs, rc := overlayScene()
 	rs.Transform = 1
-	if _, _, _, reason := overlayCandidate(rs, rc, false, nil); reason != "output_transform" {
+	if _, _, _, reason := overlayCandidate(rs, rc, false, nil, nil); reason != "output_transform" {
 		t.Fatalf("rotated output reason %q", reason)
 	}
 	c[2] = ports.SurfaceContent{ID: 2, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{Format: fourccNV12}}
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("YUV overlay reason %q", reason)
 	}
 	// A transformed buffer is composed: the plane would show it unrotated.
@@ -83,46 +83,58 @@ func TestOverlayCandidate(t *testing.T) {
 	rotated := c[2]
 	rotated.Transform = 1
 	c[2] = rotated
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("transformed overlay reason %q", reason)
 	}
 	_, c = overlayScene()
 	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{W: 10, H: 10}})
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "window_above" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("reason %q", reason)
 	}
 	s, _ = overlayScene()
 	s.Scale = 1.5
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "scaled" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "scaled" {
 		t.Fatalf("reason %q", reason)
 	}
 	s, _ = overlayScene()
 	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 5, H: 5}}}
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "layer_above" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
 		t.Fatalf("reason %q", reason)
 	}
 	// The dim veil is composed under the float: nothing leaves for the plane.
 	s, _ = overlayScene()
 	s.Dim = 0.3
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "dim" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "dim" {
 		t.Fatalf("dim reason %q", reason)
 	}
 	// A dimmed window (a peeking stashed one) needs its veil composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].Dim = 0.5
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("dimmed window reason %q", reason)
+	}
+	// A fading window needs its translucency composed.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Fade = 0.5
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
+		t.Fatalf("fading window reason %q", reason)
+	}
+	// A zoomed (animating) window is drawn smaller than its buffer.
+	s, _ = overlayScene()
+	s.Windows[len(s.Windows)-1].Zoom = 0.9
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
+		t.Fatalf("zoomed window reason %q", reason)
 	}
 	// A window with the focus effect needs it composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].FocusEffect = 0.05
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("pulsing window reason %q", reason)
 	}
 	// An overview preview is drawn smaller than its buffer: composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].Preview = 0.5
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("preview reason %q", reason)
 	}
 	// A viewport crop is composed: the plane would show the whole buffer.
@@ -130,13 +142,13 @@ func TestOverlayCandidate(t *testing.T) {
 	cropped := c[2]
 	cropped.Source = [4]float32{10, 10, 50, 50}
 	c[2] = cropped
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "no_candidate" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("cropped overlay reason %q", reason)
 	}
 	// A full-buffer source is no crop.
 	cropped.Source = [4]float32{0, 0, 100, 100}
 	c[2] = cropped
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" {
 		t.Fatalf("full source reason %q", reason)
 	}
 }
@@ -212,12 +224,12 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 func TestOverlayPopupAndBorder(t *testing.T) {
 	s, c := overlayScene()
 	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: ports.Rect{W: 5, H: 5}}}, s.Windows...)
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "window_above" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("popup: %q", reason)
 	}
 	s, _ = overlayScene()
 	s.Separators = []ports.Separator{{Rect: ports.Rect{W: 2, H: 2}}}
-	if _, _, _, reason := overlayCandidate(s, c, false, nil); reason != "border" {
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
 		t.Fatalf("border: %q", reason)
 	}
 }

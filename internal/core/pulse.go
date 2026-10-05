@@ -32,18 +32,23 @@ const (
 // are the previous pulse, for the cooldown. drawable is whether the last
 // scene could show a pulse on target.
 type focusPulse struct {
-	target    WindowID
-	since     time.Time
-	id        WindowID
-	start     time.Time
-	last      WindowID
-	lastAt    time.Time
-	drawable  bool
+	target   WindowID
+	since    time.Time
+	id       WindowID
+	start    time.Time
+	last     WindowID
+	lastAt   time.Time
+	drawable bool
+	// value is the effect of the last sample, kept for scenes published
+	// between the focused output's own flips.
+	value     float64
 	timerC    <-chan time.Time
 	timerStop func() bool
 }
 
-func (c *Core) pulseOn() bool { return c.cfg.Focus.Animation == ports.FocusAnimationPulse }
+func (c *Core) pulseOn() bool {
+	return c.animOn() && c.cfg.Focus.Animation == ports.FocusAnimationPulse
+}
 
 // pulseFocus follows the window focus. held is false while something else
 // (a popup grab, a layer, a lock surface) has the keyboard: the running pulse
@@ -99,7 +104,7 @@ func (c *Core) pulseTick() bool {
 	// A swipe or its landing slide still shows the neighbours: decide on
 	// the settled layout, or a window left alone would start a pulse cut
 	// short.
-	if !c.cur().mon.settled() {
+	if !c.cur().settled() {
 		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
 		return false
 	}
@@ -132,13 +137,14 @@ func (c *Core) advancePulse(now time.Time) float64 {
 	return 0
 }
 
-// settled reports whether no swipe or slide moves the monitor's layout.
+// settled reports whether no swipe or slide moves the monitor's layout
+// (screen.settled adds the rect motions).
 func (m *Monitor) settled() bool {
-	if m.switchMotion != nil || m.switchOff != 0 {
+	if m.switchMotion.on || m.switchOff != 0 {
 		return false
 	}
 	for w := range m.all() {
-		if w.motion != nil || w.shift != 0 {
+		if w.motion.on || w.shift != 0 {
 			return false
 		}
 	}

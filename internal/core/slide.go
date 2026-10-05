@@ -17,20 +17,31 @@ func (w *Workspace) slidable() bool {
 	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
 }
 
-func (w *Workspace) stopSlide() { w.shift, w.motion = 0, nil }
+func (w *Workspace) stopSlide() { w.shift, w.motion = 0, motion{} }
 
 // retarget keeps the view where it is on screen when ViewX moved from
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
-	if w.ViewX == before || w.motion == nil {
+	if w.ViewX == before || !w.motion.on {
 		return
 	}
 	w.shift += float64(before - w.ViewX)
-	w.motion = newMotion(viewSpring(w.shift, 0), time.Time{})
+	w.motion = newMotion(viewSpring(w.shift, w.motion.velocity()), time.Time{}, w.motion.slow)
 }
 
 func (w *Workspace) shiftPixels() int { return int(math.Round(w.shift)) }
+
+// switchSpring is the workspace slide's spring from off: it snaps once it
+// is under half a logical pixel of the output height from its target
+// (slideLayout rounds the offset times the height).
+func (m *Monitor) switchSpring(off, velocity float64) spring {
+	s := workspaceSpring(off, velocity)
+	if h := m.template.Output.H; h > 0 {
+		s.Snap = pixelSnap / float64(h)
+	}
+	return s
+}
 
 // swipeScale turns touchpad distance into pixels: viewSwipeMovement
 // scrolls one usable width.
@@ -105,7 +116,7 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 	return focus
 }
 
-func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, nil, nil }
+func (m *Monitor) stopSwitch() { m.switchOff, m.switchMotion, m.switchList = 0, motion{}, nil }
 
 // framedSwitch keeps transitions involving a sized workspace settled. A
 // monitor-wide animation has no per-workspace crop; it must not expose
@@ -163,12 +174,17 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 		if k == base || k < 0 || k >= len(list) || !m.has(list[k]) {
 			continue
 		}
-		next := list[k].Layout()
+		next := list[k].layoutInto(m.slideBuf)
+		m.slideBuf = next
 		for i := range next {
 			next[i].Focused = false
 		}
 		// Windows of the neighbor are already listed hidden: replace them.
-		shown := map[WindowID]Placement{}
+		if m.slideShown == nil {
+			m.slideShown = map[WindowID]Placement{}
+		}
+		shown := m.slideShown
+		clear(shown)
 		for _, p := range offset(next, k) {
 			shown[p.ID] = p
 		}

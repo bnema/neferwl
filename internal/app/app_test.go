@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,7 +102,13 @@ func TestQuitJoinsWorkers(t *testing.T) {
 	}
 }
 
-func TestHeadlessSpawnClose(t *testing.T) {
+// Animations off: the lone window is at its final rect in the first scene.
+func TestHeadlessSpawnClose(t *testing.T) { headlessSpawnClose(t, false) }
+
+// Animations on: the window appears (faded, 90 %), then settles at 1920.
+func TestHeadlessSpawnCloseAnimated(t *testing.T) { headlessSpawnClose(t, true) }
+
+func headlessSpawnClose(t *testing.T, animated bool) {
 	if _, err := exec.LookPath("weston-simple-shm"); err != nil {
 		t.Skip("weston-simple-shm not installed")
 	}
@@ -109,7 +116,8 @@ func TestHeadlessSpawnClose(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"weston-simple-shm"}
-	scenes := make(chan []ports.Scene, 64)
+	cfg.Animations.On = animated
+	scenes := make(chan []ports.Scene, 4096)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inputReady := make(chan chan<- ports.InputEvent, 1)
@@ -144,6 +152,12 @@ func TestHeadlessSpawnClose(t *testing.T) {
 			case set := <-scenes:
 				s := set[0]
 				if len(s.Windows) == count {
+					if count == 1 && animated {
+						// The entrance runs first: wait for the settled scene.
+						if w := s.Windows[0]; w.Fade != 0 || w.Rect.W != 1920 {
+							continue
+						}
+					}
 					// A lone column fills the 1920 output (default zero gaps).
 					if count == 1 && s.Windows[0].Rect.W != 1920 {
 						t.Errorf("width = %d, want 1920", s.Windows[0].Rect.W)
@@ -214,7 +228,13 @@ func TestHeadlessTyping(t *testing.T) {
 	}
 }
 
-func TestHeadlessPointerClickFocus(t *testing.T) {
+func TestHeadlessPointerClickFocus(t *testing.T) { headlessPointerClickFocus(t, false) }
+
+// Animations on: the maps' frames and the settled scenes are all tapped; the
+// click still lands on window 1 once the second column settled.
+func TestHeadlessPointerClickFocusAnimated(t *testing.T) { headlessPointerClickFocus(t, true) }
+
+func headlessPointerClickFocus(t *testing.T, animated bool) {
 	if _, err := exec.LookPath("foot"); err != nil {
 		t.Skip("foot unavailable")
 	}
@@ -225,17 +245,45 @@ func TestHeadlessPointerClickFocus(t *testing.T) {
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
 	// Pulse frames would fill the scene tap before the click.
 	cfg.Focus.Animation = ports.FocusAnimationOff
+	cfg.Animations.On = animated
+	// The tap drops a scene it has no room for: a collector keeps up with
+	// the animation frames.
 	scenes := make(chan []ports.Scene, 128)
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
+	var got [][]ports.Scene
+	stop := make(chan struct{})
+	collected := make(chan struct{})
+	go func() {
+		defer close(collected)
+		for {
+			select {
+			case set := <-scenes:
+				got = append(got, set)
+			case <-stop:
+				return
+			}
+		}
+	}()
+	// Stopped before the scenes are read, or at the latest when the test
+	// ends (an early Fatal or Skip).
+	var halt sync.Once
+	stopCollector := func() { halt.Do(func() { close(stop); <-collected }) }
+	t.Cleanup(stopCollector)
+	// The script ends with the default quit bind: the run stops when it
+	// is done, the timeout is only a backstop.
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\nkey Ctrl+Alt+BackSpace\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)
 		}
 		t.Fatal(err)
 	}
-	two, focused := false, false
+	stopCollector()
 	for len(scenes) > 0 {
-		s := (<-scenes)[0]
+		got = append(got, <-scenes)
+	}
+	two, focused := false, false
+	for _, set := range got {
+		s := set[0]
 		if len(s.Windows) == 2 {
 			two = true
 			for _, w := range s.Windows {

@@ -143,7 +143,14 @@ type Config struct {
 	// Cursor.HideAfter hides the pointer cursor after this long without
 	// motion; the next motion shows it. 0 never hides it.
 	Cursor struct{ HideAfter time.Duration }
-	Focus  struct {
+	// Animations: On enables motion (off lands everything instantly);
+	// Slowdown scales every spring's duration (not the focus pulse), 0.1 to
+	// 10 (the config's animations.speed maps to it).
+	Animations struct {
+		On       bool
+		Slowdown float64
+	}
+	Focus struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool

@@ -22,7 +22,11 @@ type sceneWalk struct {
 	zoom float64
 	// pulse is the focus effect of the window being placed
 	// (ports.SceneWindow.FocusEffect); 0 otherwise.
-	pulse  float32
+	pulse float32
+	// alpha is the opacity of the window being drawn, 1 - its Fade
+	// (ports.SceneWindow.Fade): its fills, lines and surfaces are scaled by
+	// it (premultiplied); 1 otherwise.
+	alpha  float32
 	bounds image.Rectangle
 	draws  []draw
 }
@@ -33,7 +37,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	// The walk stays in scene-physical space (the target's size, swapped for
 	// a rotated output); orient maps the draws to the target afterwards.
 	sw, sh := r.sceneSize(s.Transform)
-	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
+	w := &sceneWalk{r: r, s: s, contents: contents, dmg: dmg, scale: s.Scale, zoom: 1, alpha: 1, bounds: image.Rect(0, 0, sw, sh), draws: r.scratchDraws[:0]}
 	r.scratchCovers = r.scratchCovers[:0]
 	if w.scale <= 0 {
 		w.scale = 1
@@ -129,21 +133,25 @@ func (w *sceneWalk) physRectF(x, y, width, height float64) image.Rectangle {
 	return image.Rect(p(x), p(y), p(x+width), p(y+height))
 }
 
-// fill draws a solid rect (physical pixels).
+// fill draws a solid rect (physical pixels), at the walk's alpha.
 func (w *sceneWalk) fill(rect image.Rectangle, c [3]uint8) {
 	rect = rect.Intersect(w.bounds)
 	if rect.Empty() {
 		return
 	}
-	w.draws = append(w.draws, w.r.fillDraw(rect, c))
+	dr := w.r.fillDraw(rect, c)
+	if w.alpha < 1 {
+		w.r.fadeSolid(&dr, w.alpha)
+	}
+	w.draws = append(w.draws, dr)
 }
 
 // dim paints a translucent black quad over rect (physical), clipped to the
-// output. Damage clipping later limits it to the region being repainted,
-// just like other fills.
+// output, at alpha scaled by the walk's alpha. Damage clipping later limits
+// it to the region being repainted, just like other fills.
 func (w *sceneWalk) dim(rect image.Rectangle, alpha float64) {
 	if rect = rect.Intersect(w.bounds); !rect.Empty() {
-		w.draws = append(w.draws, w.r.dimDraw(rect, alpha))
+		w.draws = append(w.draws, w.r.dimDraw(rect, alpha*float64(w.alpha)))
 	}
 }
 
@@ -161,6 +169,30 @@ func (w *sceneWalk) layers(afterWindows bool) {
 	}
 }
 
+// drawsAsWindow reports whether windows() paints win as a window (not
+// hidden, a popup or empty).
+func drawsAsWindow(win ports.SceneWindow) bool {
+	return !win.Hidden && !win.Popup && win.Rect.W > 0 && win.Rect.H > 0
+}
+
+// opensFloats reports whether win, once reached, closes the tiles: the tile
+// lines and the dim veil are painted under it (an overview preview of a
+// float is not one).
+func opensFloats(win ports.SceneWindow) bool {
+	return !win.Below && win.Floating && win.Preview == 0
+}
+
+// floatsStart is the index of the first window that opens the floats in s,
+// or -1 when none does: where windows() splits its paint order.
+func floatsStart(s ports.Scene) int {
+	for i, win := range s.Windows {
+		if drawsAsWindow(win) && opensFloats(win) {
+			return i
+		}
+	}
+	return -1
+}
+
 // windows draws ordered placements with borders. Tile lines go after
 // the column group, before the first float above it; an overview preview
 // of a float is not one. The veil goes under that float, or under every
@@ -171,16 +203,22 @@ func (w *sceneWalk) windows() {
 	}
 	tileLines := false
 	for _, win := range w.s.Windows {
-		if win.Hidden || win.Popup || win.Rect.W <= 0 || win.Rect.H <= 0 {
+		if !drawsAsWindow(win) {
 			continue
 		}
-		if !win.Below && win.Floating && win.Preview == 0 && !tileLines {
+		if opensFloats(win) && !tileLines {
 			w.separators(0)
 			tileLines = true
 			if w.s.Dim > 0 && !w.s.DimBehind {
 				w.dim(w.bounds, w.s.Dim)
 			}
 		}
+		if win.Fade >= 1 {
+			// Faded out: it still opens the floats (its lines and veil are
+			// painted under where it would be), but draws nothing.
+			continue
+		}
+		w.alpha = 1 - float32(max(0, win.Fade))
 		// Content sits inside the border; core sized the client to match.
 		b, inset := 0, ports.Sides(0)
 		if !win.Fullscreen {
@@ -193,7 +231,11 @@ func (w *sceneWalk) windows() {
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
 		if !content.Empty() {
-			if win.Preview > 0 {
+			// An animating frame zooms its content (Zoom); a card draws
+			// at its Preview.
+			if win.Zoom > 0 {
+				w.zoom = win.Zoom
+			} else if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
 			w.pulse = float32(max(0, min(win.FocusEffect, 1)))
@@ -207,6 +249,7 @@ func (w *sceneWalk) windows() {
 			// A stashed window peeking in: dimmed with its border.
 			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
+		w.alpha = 1
 	}
 	if !tileLines {
 		w.separators(0)
@@ -267,26 +310,54 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 	}
 }
 
-// opaqueChildren gives the physical rects shown by the opaque subsurfaces
+// opaqueChildren gives the physical rects shown opaque by the subsurfaces
 // above the root (e.g. a game's GPU surface over its window's shm buffer):
-// they hide the surfaces below them. A child whose buffer will not draw is
-// left out, so the surface below it still shows: a dmabuf that fails to
-// import (opaqueChildren pre-imports it) or an unreadable shm buffer.
+// they hide the surfaces below them. A child that is not wholly opaque but
+// has an opaque region (Firefox's page, whose region stops a pixel short of
+// its edges) hides the surfaces below only inside that rect. A child whose
+// buffer will not draw is left out, so the surface below it still shows: a
+// dmabuf that fails to import (opaqueChildren pre-imports it) or an
+// unreadable shm buffer.
 func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
 	covers := w.r.scratchCovers[:0]
 	for i := range content.Children {
 		ch := &content.Children[i]
-		if ch.Below || !ch.Opaque {
+		if ch.Below || !ch.Opaque && ch.OpaqueRect.W <= 0 {
 			continue
 		}
-		_, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+float64(ch.X)*w.zoom, oy+float64(ch.Y)*w.zoom, clip)
+		full, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+float64(ch.X)*w.zoom, oy+float64(ch.Y)*w.zoom, clip)
 		if !ok || !w.drawable(&ch.SurfaceContent) {
 			continue
+		}
+		if !ch.Opaque {
+			if dst = opaqueCover(&ch.SurfaceContent, full, dst); dst.Empty() {
+				continue
+			}
 		}
 		covers = append(covers, dst)
 	}
 	w.r.scratchCovers = covers
 	return covers
+}
+
+// opaqueCover is the part of dst (physical, what the surface shows of full)
+// that its OpaqueRect maps to. Edges round inward, so every pixel of it is
+// inside the region; an edge on the surface's own edge stays on dst's.
+func opaqueCover(c *ports.SurfaceContent, full, dst image.Rectangle) image.Rectangle {
+	lw, lh := c.LogicalW, c.LogicalH
+	if lw <= 0 || lh <= 0 {
+		lw, lh = c.Width, c.Height
+	}
+	o := c.OpaqueRect
+	if lw <= 0 || lh <= 0 || o.W <= 0 || o.H <= 0 {
+		return image.Rectangle{}
+	}
+	// ceil and floor of full.Min + v*size/n, v >= 0.
+	lo := func(min, v, size, n int) int { return min + (v*size+n-1)/n }
+	hi := func(min, v, size, n int) int { return min + v*size/n }
+	r := image.Rect(lo(full.Min.X, max(o.X, 0), full.Dx(), lw), lo(full.Min.Y, max(o.Y, 0), full.Dy(), lh),
+		hi(full.Min.X, min(o.X+o.W, lw), full.Dx(), lw), hi(full.Min.Y, min(o.Y+o.H, lh), full.Dy(), lh))
+	return r.Intersect(dst)
 }
 
 // drawable reports whether the child's buffer will draw. GPU buffer
@@ -340,6 +411,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 // surface draws one surface buffer with its origin at (x, y) logical,
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
+// A cover over only part of it clips the draw to the rest.
 func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
@@ -353,7 +425,74 @@ func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip im
 	if root {
 		w.dmg.content(key.win, content, full, dst)
 	}
+	n := len(w.draws)
 	w.content(dst, full, content, key, seq, root)
+	if len(w.draws) == n+1 && len(covers) > 0 {
+		// The quad's mapping comes from full: only its rect shrinks.
+		d := w.draws[n]
+		w.draws = w.draws[:n]
+		w.split(d, dst, covers)
+	}
+}
+
+// Splitting a quad around covers is bounded: covers come from the client, and
+// each can cut a quad into four strips, recursively. Past these bounds the
+// quad is drawn whole: the covers above it hide the rest, at the cost of
+// overdraw.
+const (
+	maxSplitCovers = 8  // covers crossing the quad that are still split around
+	maxSplitStrips = 32 // draws one quad may become
+)
+
+// split appends d, a quad over rect, minus the covers, or the whole quad
+// when the covers cut it into too many strips.
+func (w *sceneWalk) split(d draw, rect image.Rectangle, covers []image.Rectangle) {
+	crossing := 0
+	for _, c := range covers {
+		if !rect.Intersect(c).Empty() {
+			crossing++
+		}
+	}
+	n := len(w.draws)
+	if crossing <= maxSplitCovers {
+		w.uncovered(d, rect, covers, n+maxSplitStrips)
+		if len(w.draws) <= n+maxSplitStrips {
+			return
+		}
+		w.draws = w.draws[:n]
+	}
+	w.quad(d, rect)
+}
+
+// uncovered appends d, a quad over rect, minus the covers: the strips of
+// rect around each cover, in turn. d keeps its mapping. It stops once the
+// draws pass limit, for the caller to drop them.
+func (w *sceneWalk) uncovered(d draw, rect image.Rectangle, covers []image.Rectangle, limit int) {
+	if len(w.draws) > limit {
+		return
+	}
+	for i, c := range covers {
+		in := rect.Intersect(c)
+		if in.Empty() {
+			continue
+		}
+		rest := covers[i+1:]
+		w.uncovered(d, image.Rect(rect.Min.X, rect.Min.Y, rect.Max.X, in.Min.Y), rest, limit)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Max.Y, rect.Max.X, rect.Max.Y), rest, limit)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Min.Y, in.Min.X, in.Max.Y), rest, limit)
+		w.uncovered(d, image.Rect(in.Max.X, in.Min.Y, rect.Max.X, in.Max.Y), rest, limit)
+		return
+	}
+	w.quad(d, rect)
+}
+
+// quad appends d over rect, unless it is empty.
+func (w *sceneWalk) quad(d draw, rect image.Rectangle) {
+	if rect.Empty() {
+		return
+	}
+	d.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
+	w.draws = append(w.draws, d)
 }
 
 // content draws the part of a buffer mapped onto full (physical pixels)
@@ -365,7 +504,11 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	if content.Solid != nil {
-		if dr := r.solidDraw(rect, content); dr.pc.color[3] > 0 {
+		dr := r.solidDraw(rect, content)
+		if w.alpha < 1 {
+			r.fadeSolid(&dr, w.alpha)
+		}
+		if dr.pc.color[3] > 0 {
 			w.draws = append(w.draws, dr)
 		}
 		return
@@ -378,6 +521,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		}
 		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
 		r.setContentColor(&dr, content)
+		dr.pc.color[3] *= w.alpha
 		dr.pc.mapy[2] = w.pulse
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
@@ -399,22 +543,32 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	b := content.SHM
-	pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
-	if err != nil {
-		return
-	}
 	st := shmState{w: content.Width, h: content.Height, seq: seq, windowSeq: content.Seq}
-	// Damage history is the root surface's: children copy in full.
-	var damage func(uint64) ([]ports.Rect, bool)
-	if root {
-		damage = content.DamageSince
-	}
-	c, err := r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage)
-	if err != nil {
-		return
+	// The copy of this content, if any, needs no pool: a kept (closing)
+	// window whose pool file is closed still draws.
+	c := r.shmCached(key, st)
+	if c != nil {
+		// As a drawn pool, for Trim; nothing is mapped for it.
+		if m := r.pools[b.Pool]; m != nil {
+			m.last = r.frame
+		}
+	} else {
+		pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
+		if err != nil {
+			return
+		}
+		// Damage history is the root surface's: children copy in full.
+		var damage func(uint64) ([]ports.Rect, bool)
+		if root {
+			damage = content.DamageSince
+		}
+		if c, err = r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage); err != nil {
+			return
+		}
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content)
+	dr.pc.color[3] *= w.alpha
 	dr.pc.mapy[2] = w.pulse
 	dr.set = c.set
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}

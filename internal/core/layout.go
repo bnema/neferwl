@@ -122,6 +122,18 @@ type Placement struct {
 	// Inset reserves room for drawn lines: all sides of a float; for
 	// tiles without gaps, only the right and bottom shared sides.
 	Neighbors, Inset ports.Sides
+	// Leaving marks a window that closed or hid but is still drawn while
+	// it fades out (transition.go). It stays Hidden, so input, focus,
+	// popups and configures ignore it; only the scene shows it.
+	Leaving bool
+	// Fade, Dim and Zoom are set on shown layouts only (refreshShown),
+	// animated: the window's fade (0 opaque, 1 invisible), a veil opacity
+	// added to the one Peek draws (0..1), and the content zoom as drawn
+	// when a scale motion runs (Preview times the drawn/settled width, 1
+	// when the content is drawn at its size; 0 without one). Preview
+	// itself stays the settled one: input, popups and the renderer's paint
+	// order read it to tell a card from a window.
+	Fade, Dim, Zoom float64
 }
 
 // Overflow says what happens past MaxColumns columns.
@@ -154,7 +166,7 @@ type Workspace struct {
 	// shift slides the columns on screen past ViewX, in logical pixels,
 	// while a swipe follows the fingers or its spring (motion) lands.
 	shift  float64
-	motion *motion
+	motion motion
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.
@@ -204,6 +216,14 @@ type Workspace struct {
 	homePos int
 	// termAt is when core last spawned a terminal for this workspace.
 	termAt time.Time
+	// colBuf, rowBuf and tileBuf are appendLayout's scratch (column rects,
+	// the rows of one column, the tiles before the floats are merged in),
+	// reused across calls and never handed out: owner goroutine only, and
+	// appendLayout does not nest on one workspace.
+	colBuf, rowBuf []Rect
+	tileBuf        []Placement
+	// zoomBuf is overviewZoom's scratch for the tiles it measures.
+	zoomBuf []Placement
 }
 
 // origPlace remembers where a stashed window was: its column, its row in a
@@ -240,6 +260,35 @@ type Float struct {
 
 func (w *Workspace) empty() bool {
 	return len(w.Columns) == 0 && len(w.Floats) == 0 && len(w.Stash) == 0
+}
+
+// columnWindows counts the windows in the columns.
+func (w *Workspace) columnWindows() int {
+	n := 0
+	for _, c := range w.Columns {
+		n += len(c.Windows)
+	}
+	return n
+}
+
+// appendHidden appends every window of w as a Hidden placement, in the order
+// of windows (columns, stash, then floats when floats is set), without
+// building the list.
+func (w *Workspace) appendHidden(dst []Placement, floats bool) []Placement {
+	for _, c := range w.Columns {
+		for _, id := range c.Windows {
+			dst = append(dst, Placement{ID: id, Hidden: true})
+		}
+	}
+	for _, f := range w.Stash {
+		dst = append(dst, Placement{ID: f.ID, Hidden: true})
+	}
+	if floats {
+		for _, f := range w.Floats {
+			dst = append(dst, Placement{ID: f.ID, Hidden: true})
+		}
+	}
+	return dst
 }
 
 // windows lists every window: columns first, then the stash, then native
@@ -1349,15 +1398,22 @@ func (w *Workspace) scroll() {
 
 // columnRects returns each column's area on screen, before stacking windows.
 func (w *Workspace) columnRects() []Rect {
-	return w.columnRectsFor(false)
+	return w.columnRectsInto(nil, false)
 }
 
 // columnRectsFor shares the fixed layout geometry with the overview's hidden
 // columns card, without changing FullWidth or the clients' saved buffers.
 func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
+	return w.columnRectsInto(nil, ignoreFullWidth)
+}
+
+// columnRectsInto is columnRectsFor built in dst's storage (dst[:0] grown
+// when too small): the result aliases dst, so a caller passing a reused
+// buffer must be done with the previous result.
+func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 	g := w.gap()
 	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
-	rects := make([]Rect, len(w.Columns))
+	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.ViewX + w.shiftPixels()
 	x := w.Usable.X + g
 	for i := range w.Columns {
@@ -1371,7 +1427,8 @@ func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
 	}
 	k := max(w.MaxColumns, 1)
 	if e := slices.IndexFunc(w.Columns, func(c Column) bool { return c.Expanded }); w.Overflow == OverflowFixed && e >= 0 && k > 1 && len(w.Columns) > 1 {
-		return w.expandedRects(e, k, y, h)
+		// rects is dead here: the expanded rects reuse its storage.
+		return w.expandedRects(rects[:0], e, k, y, h)
 	}
 	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
 		return rects
@@ -1388,7 +1445,7 @@ func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
 // expandedRects places expanded column e over k-1 cells in its place. The
 // columns before it stack in a strip on its left, those after it on its
 // right; the two strips share the last cell.
-func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
+func (w *Workspace) expandedRects(rects []Rect, e, k, y, h int) []Rect {
 	g := w.gap()
 	cell := max((w.Usable.W-g*(k+1))/k, 0)
 	wide := (k-1)*cell + (k-2)*g
@@ -1399,15 +1456,14 @@ func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
 		leftW = max((rest-g)/2, 0)
 		rightW = max(rest-g-leftW, 0)
 	}
-	rects := make([]Rect, 0, len(w.Columns))
 	x := w.Usable.X + g
 	if len(before) > 0 {
-		rects = append(rects, stackRects(Rect{X: x, Y: y, W: leftW, H: h}, len(before), g)...)
+		rects = stackRectsInto(rects, Rect{X: x, Y: y, W: leftW, H: h}, len(before), g)
 		x += leftW + g
 	}
 	rects = append(rects, Rect{X: x, Y: y, W: wide, H: h})
 	if len(after) > 0 {
-		rects = append(rects, stackRects(Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)...)
+		rects = stackRectsInto(rects, Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)
 	}
 	// Gaps wider than a narrow output would push columns past its edge.
 	right := w.Usable.X + w.Usable.W
@@ -1422,7 +1478,15 @@ func (w *Workspace) expandedRects(e, k, y, h int) []Rect {
 // the rounding remainder. Rows past the bottom (gaps taller than r) are
 // clamped to it, like windows stacked in a column.
 func stackRects(r Rect, n, gap int) []Rect {
-	rows := make([]Rect, n)
+	return stackRectsInto(nil, r, n, gap)
+}
+
+// stackRectsInto appends the n rows of stackRects to dst (reset with dst[:0]
+// to reuse its storage).
+func stackRectsInto(dst []Rect, r Rect, n, gap int) []Rect {
+	base := len(dst)
+	dst = slices.Grow(dst, n)[:base+n]
+	rows := dst[base:]
 	avail := max(r.H-(n-1)*gap, 0)
 	height := avail / n
 	yy, bottom := r.Y, r.Y+r.H
@@ -1436,17 +1500,25 @@ func stackRects(r Rect, n, gap int) []Rect {
 		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
 		yy += hh + gap
 	}
-	return rows
+	return dst
 }
 
 // rowRects splits column rect r into the rows of c: by c.Shares when they
 // are valid, else equally (stackRects).
 func rowRects(r Rect, c Column, gap int) []Rect {
+	return rowRectsInto(nil, r, c, gap)
+}
+
+// rowRectsInto appends the rows of rowRects to dst (reset with dst[:0] to
+// reuse its storage).
+func rowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 	n := len(c.Windows)
 	if !validShares(c) {
-		return stackRects(r, n, gap)
+		return stackRectsInto(dst, r, n, gap)
 	}
-	rows := make([]Rect, n)
+	base := len(dst)
+	dst = slices.Grow(dst, n)[:base+n]
+	rows := dst[base:]
 	avail := max(r.H-(n-1)*gap, 0)
 	yy, bottom, used := r.Y, r.Y+r.H, 0
 	for i, share := range c.Shares {
@@ -1460,7 +1532,7 @@ func rowRects(r Rect, c Column, gap int) []Rect {
 		rows[i] = Rect{X: r.X, Y: yy, W: r.W, H: hh}
 		yy += hh + gap
 	}
-	return rows
+	return dst
 }
 
 // validShares reports whether c.Shares has one share per window, each at
@@ -1489,12 +1561,27 @@ func split(r Rect, gap int, vertical bool) (Rect, Rect) {
 	return Rect{X: r.X, Y: r.Y, W: w, H: r.H}, Rect{X: r.X + w + gap, Y: r.Y, W: max(r.W-gap-w, 0), H: r.H}
 }
 
-func (w *Workspace) Layout() []Placement {
-	var result []Placement
+// Layout places every window of the workspace in a fresh slice the caller
+// owns. The per-frame paths use layoutInto instead.
+func (w *Workspace) Layout() []Placement { return w.appendLayout(nil) }
+
+// layoutInto is Layout built in dst[:0]: the result aliases dst's storage
+// (a reused buffer's previous result is overwritten), so only a caller that
+// is done with the previous one may pass it. It never returns the
+// workspace's own scratch.
+func (w *Workspace) layoutInto(dst []Placement) []Placement { return w.appendLayout(dst[:0]) }
+
+// appendLayout appends the workspace's placements to dst.
+func (w *Workspace) appendLayout(dst []Placement) []Placement {
 	gap := w.gap()
-	cols := w.columnRects()
+	// The column and row rects live in the workspace's scratch: each is dead
+	// once the placements it feeds are built (owner goroutine only, and
+	// layoutInto does not nest on a workspace).
+	w.colBuf = w.columnRectsInto(w.colBuf, false)
+	cols := w.colBuf
 	focusedID, _ := w.Focused()
 	cover := w.cover()
+	tiles := w.tileBuf[:0]
 	for i, c := range w.Columns {
 		col := cols[i]
 		n := len(c.Windows)
@@ -1505,7 +1592,8 @@ func (w *Workspace) Layout() []Placement {
 		if fullColumn {
 			col.W = w.Output.W
 		}
-		rows := rowRects(col, c, gap)
+		w.rowBuf = rowRectsInto(w.rowBuf[:0], col, c, gap)
+		rows := w.rowBuf
 		for j, id := range c.Windows {
 			r := rows[j]
 			full := w.fullscreen == id && id != 0
@@ -1523,14 +1611,15 @@ func (w *Workspace) Layout() []Placement {
 			if hidden {
 				r = Rect{}
 			}
-			result = append(result, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
+			tiles = append(tiles, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
 		}
 	}
-	setVisibleNeighbors(result, gap, w.Output)
+	setVisibleNeighbors(tiles, gap, w.Output)
+	// tiles lives in the workspace's scratch until they are copied below.
+	w.tileBuf = tiles
 	// The column/stash group sits between demoted covering floats and
 	// floats above it. Keep the order within each group stable.
-	tiles := result
-	result = nil
+	result := dst
 	const (
 		belowTiles = iota
 		coveringFloats
@@ -1570,9 +1659,9 @@ func (w *Workspace) Layout() []Placement {
 		// The stash the user showed over a covering window tops it, under
 		// the dialogs it may open meanwhile.
 		appendFloats(coveringFloats)
-		result = append(result, w.stashLayout(focusedID, cover)...)
+		result = w.appendStash(result, focusedID, cover)
 	} else {
-		result = append(result, w.stashLayout(focusedID, cover)...)
+		result = w.appendStash(result, focusedID, cover)
 		appendFloats(coveringFloats)
 	}
 	appendFloats(dialogs)

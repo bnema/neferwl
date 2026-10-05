@@ -116,7 +116,7 @@ func TestOverviewPick(t *testing.T) {
 	m := overviewMonitor()
 	m.ToggleOverview()
 	below := previewOf(t, m.Layout(), 4).Rect
-	id := m.overviewAt(float64(below.X+1), float64(below.Y+1))
+	id := overviewIn(m.Layout(), float64(below.X+1), float64(below.Y+1))
 	if id != 4 {
 		t.Fatalf("hit %d", id)
 	}
@@ -173,7 +173,7 @@ func TestOverviewFullscreenFloatPickAndCancel(t *testing.T) {
 	m := gameMonitor(OverflowFixed)
 	m.ToggleOverview()
 	r := previewOf(t, m.Layout(), 2).Rect
-	if id := m.overviewAt(float64(r.X+1), float64(r.Y+1)); id != 2 {
+	if id := overviewIn(m.Layout(), float64(r.X+1), float64(r.Y+1)); id != 2 {
 		t.Fatalf("hit %d", id)
 	}
 	m.OverviewMove(0, 1)
@@ -412,7 +412,7 @@ func TestOverviewPilePick(t *testing.T) {
 	m := pileMonitor()
 	m.ToggleOverview()
 	r := previewOf(t, m.Layout(), 7).Rect
-	id := m.overviewAt(float64(r.X+1), float64(r.Y+r.H-1))
+	id := overviewIn(m.Layout(), float64(r.X+1), float64(r.Y+r.H-1))
 	if id != 7 {
 		t.Fatalf("hit %d", id)
 	}
@@ -486,7 +486,7 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 						t.Fatalf("%d overlaps %d", id, other)
 					}
 				}
-				if p.Rect.W > 0 && p.Rect.H > 0 && m.overviewAt(float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2)) != id {
+				if p.Rect.W > 0 && p.Rect.H > 0 && overviewIn(m.Layout(), float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2)) != id {
 					t.Fatalf("%d not hit at %+v", id, p.Rect)
 				}
 			}
