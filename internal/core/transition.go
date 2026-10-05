@@ -427,10 +427,12 @@ func (c *Core) appearMapped(id WindowID, now time.Time) {
 
 // unmapWindow handles a window's unmap: it leaves its workspace, the tiles
 // around it re-flow with rect motions, and a window that was drawn as a
-// tile or an ordinary float keeps fading out from its last settled
-// placement (leave). Like a map, an unmap is a client event that animates;
-// the settled layout is the same with animations off. A fullscreen window,
-// one under a session lock or with the overview open just goes.
+// tile or an ordinary float keeps fading out from where it was drawn
+// (leaveFrom with the snapshot's record of it: a window closed mid-motion
+// leaves from its drawn rect, fade and speed, not from its settled rect).
+// Like a map, an unmap is a client event that animates; the settled layout
+// is the same with animations off. A fullscreen window, one under a
+// session lock or with the overview open just goes.
 func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	sc, w := c.screenOf(v.ID)
 	if sc == nil {
@@ -443,7 +445,7 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	}
 	now := c.now()
 	// The placement that leaves is the settled one of the last publish:
-	// where the window was going (its rect motion, if any, ends with it).
+	// where the window was going.
 	var left Placement
 	if sc.mon.Current() == w {
 		for _, p := range sc.settledLayout {
@@ -454,16 +456,22 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 		}
 	}
 	shots := c.snapshot(now)
+	var shot *rectShot
 	for i := range shots {
 		if shots[i].overview {
 			shots[i].ws = nil
+		}
+		if shots[i].sc == sc {
+			if j := slices.IndexFunc(shots[i].rects, func(r rectShot) bool { return r.id == v.ID }); j >= 0 {
+				shot = &shots[i].rects[j]
+			}
 		}
 	}
 	sc.mon.RemoveWindow(v.ID)
 	delete(sc.rects, v.ID)
 	c.transition(shots, now)
 	if left.ID == v.ID && !left.Leaving && !left.Fullscreen && !left.Below && !left.Peek {
-		c.leave(sc, left, now)
+		c.leaveFrom(sc, left, shot, now)
 	}
 }
 

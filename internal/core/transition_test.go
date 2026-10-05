@@ -650,7 +650,7 @@ func TestDiscreteSwipeTransition(t *testing.T) {
 
 // A window unmapped while its rect motion runs stops moving: with
 // animations on it stays in the scene only as a leaving entry (drawn where
-// it was going, fading out, hidden to input), the others keep their
+// it was, fading out and shrinking, hidden to input), the others keep their
 // motions, and once everything settles it is gone and no frame is wanted:
 // a motion kept for a gone window would ask for frames with nothing to
 // move. With animations off it leaves the scene at once.
@@ -672,15 +672,17 @@ func TestUnmapMidRectMotion(t *testing.T) {
 				}
 			}
 			moving := rectNow(t, mid, 2).X
+			drawn3 := rectNow(t, mid, 3)
 			r.client <- ports.WindowUnmapped{ID: 3}
 			s := scene(t, r.scenes)
 			w3, shown3 := listedIn(s, 3)
 			switch {
 			case tt.edit != nil && shown3:
 				t.Fatalf("the unmapped window is still shown with animations off: %+v", w3)
-			case tt.edit == nil && (!shown3 || w3.Fade != 0 || w3.Rect.X != 0 || w3.Rect.W != 400):
-				// It leaves from the settled rect it was moving to.
-				t.Fatalf("the unmapped window right after the unmap: %+v (shown %t), want it leaving from its settled slot", w3, shown3)
+			case tt.edit == nil && (!shown3 || w3.Fade != 0 || w3.Rect != drawn3):
+				// It leaves from where it was drawn, not from the settled
+				// slot it was moving to.
+				t.Fatalf("the unmapped window right after the unmap: %+v (shown %t), want it leaving from %+v", w3, shown3, drawn3)
 			}
 			// The neighbour's own motion carries on from where it was drawn.
 			if got := rectNow(t, s, 2).X; got != moving {

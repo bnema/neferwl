@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -86,6 +87,14 @@ func TestUnmapTiledLeavesAndReflows(t *testing.T) {
 	if len(sc.rects) != 0 || c.animating() {
 		t.Fatal("still animating after the settle")
 	}
+	// The destroyed window got no configure at any point, and its last one
+	// is forgotten once it left the scene.
+	if ids := drainConfigures(cmds); slices.Contains(ids, 2) {
+		t.Fatalf("the destroyed window was configured: %v", ids)
+	}
+	if _, ok := c.configures.sent[2]; ok {
+		t.Fatal("configures still remember the destroyed window")
+	}
 }
 
 // A float leaves too, from its settled rect.
@@ -112,27 +121,91 @@ func TestUnmapFloatingLeaves(t *testing.T) {
 	}
 }
 
-// A window closed while its own rect motion runs leaves from the rect it
-// was going to, its motion replaced by the leaving one.
-func TestUnmapMidMotionLeavesFromSettled(t *testing.T) {
+// A window closed while its own rect motion runs (its entrance here)
+// leaves from what was drawn: the first leaving frame shows the rect and
+// fade it had, not its settled rect, and the leaving motion replaces the
+// running one.
+func TestUnmapMidMotionLeavesFromDrawn(t *testing.T) {
 	c, ic, _, sc := twoSettled(t)
 	c.mapWindow(ports.WindowMapped{ID: 3})
 	indicatorScene(t, c)
 	ic.now = ic.now.Add(30 * time.Millisecond)
 	c.animate(ic.now, nil)
-	indicatorScene(t, c)
+	before := sceneWindow(t, indicatorScene(t, c), 3)
 	settled3 := settledOf(t, sc, 3)
-	if drawn := sceneWindow(t, indicatorScene(t, c), 3).Rect; drawn == settled3.Rect {
-		t.Fatal("window 3 is not in flight: the case checks nothing")
+	if before.Rect == settled3.Rect || !(before.Fade > 0 && before.Fade < 1) {
+		t.Fatalf("window 3 is not in flight (%+v): the case checks nothing", before)
 	}
 	c.unmapWindow(ports.WindowUnmapped{ID: 3})
 	s := indicatorScene(t, c)
 	w := sceneWindow(t, s, 3)
-	if w.Rect != settled3.Rect || w.Fade != 0 {
-		t.Fatalf("leaving window right after the unmap: %+v, want its settled %+v", w, settled3.Rect)
+	if w.Rect != before.Rect || math.Abs(w.Fade-before.Fade) > 1e-9 {
+		t.Fatalf("leaving window right after the unmap: %+v, want drawn as before %+v", w, before)
 	}
 	if rm, ok := sc.rects[3]; !ok || !rm.leaving {
 		t.Fatalf("no leaving motion for window 3: %+v", rm)
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	if s := indicatorScene(t, c); slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 3 }) || len(sc.rects) != 0 {
+		t.Fatalf("the closed window is still there: %+v", s.Windows)
+	}
+}
+
+// A tile closed while the stash hides: the absent leaving tile goes by
+// withLeaving's two-pass rule (absent tiles by ID before the floats, the
+// hidden stash windows replaced in place), the same on every refresh.
+func TestUnmapWhileStashHidesOrdersDeterministically(t *testing.T) {
+	c, ic, sc, cmds := stashRig(t, true)
+	sc.mon.AddWindow(5)
+	sc.mon.AddWindow(6)
+	settleShown(t, c)
+	drainConfigures(cmds)
+	act(c, ic, ActionToggleStashVisible) // 2 and 3 hide, leaving in place
+	c.unmapWindow(ports.WindowUnmapped{ID: 5})
+	var want []WindowID
+	for i := range 20 {
+		s := indicatorScene(t, c)
+		var ids []WindowID
+		for _, w := range s.Windows {
+			ids = append(ids, w.ID)
+		}
+		if i == 0 {
+			want = ids
+			k := slices.Index(sc.settledLayout, settledOf(t, sc, 5))
+			if k < 0 || !sc.settledLayout[k].Leaving || !sc.shown[k].Leaving {
+				t.Fatalf("the closed tile is not a leaving entry: %+v", sc.settledLayout)
+			}
+			for _, id := range []WindowID{2, 3} {
+				if j := slices.Index(ids, id); j < 0 || !sc.settledLayout[j].Leaving {
+					t.Fatalf("stash window %d not replaced in place: %v", id, ids)
+				}
+			}
+			// The absent tile sits before any drawn float (the leaving
+			// stash windows); a hidden, undrawn one may precede it.
+			i5 := slices.Index(ids, 5)
+			for j, w := range s.Windows {
+				if w.Floating && !w.Hidden && j < i5 {
+					t.Fatalf("order %v: float %d before the leaving tile 5", ids, w.ID)
+				}
+			}
+			continue
+		}
+		if !slices.Equal(ids, want) {
+			t.Fatalf("publish %d: order %v, first %v", i, ids, want)
+		}
+	}
+	if ids := drainConfigures(cmds); slices.Contains(ids, 5) {
+		t.Fatalf("the closed window was configured: %v", ids)
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	s := indicatorScene(t, c)
+	if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 5 }) || len(sc.rects) != 0 {
+		t.Fatalf("after the settle: %+v", s.Windows)
+	}
+	if ids := drainConfigures(cmds); slices.Contains(ids, 5) {
+		t.Fatalf("the destroyed window was configured after the fade: %v", ids)
 	}
 }
 
