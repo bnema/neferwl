@@ -147,7 +147,7 @@ With `natural-scroll = off`, a swipe left shows the columns to the left and a sw
 
 With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe runs `focus-column-left/right` or `focus-workspace-up/down`.
 
-Where the view cannot scroll (`fixed` overflow, the stash, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
+Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. Where the view cannot scroll (`fixed` overflow, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
@@ -222,7 +222,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 Each workspace has a stash: a horizontal strip of windows set aside with `toggle-window-stash`, in the order they arrived. The selected window is centred over the tiles, `stash.width` of the usable width (80% by default) and 80% of its height. Its left and right neighbors sit `stash.gap` beside it and show up to the screen edges, dimmed (`stash.dim`); a click on one selects it. The others wait off screen.
 
-While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible`, or with a four-finger swipe down or up, to get back to the tiles; a swipe down shows it again. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
+While the stash has the focus, `focus-column-left/right` and the three-finger swipe move through it, sliding the view, and stop at its ends; `focus-window-up/down` do nothing. Hide it with `toggle-stash-visible`, or with a four-finger swipe down or up, to get back to the tiles; a swipe down shows it again. Scripts see each stashed window's place, and whether the stash is hidden, in the [state file](desktop.md#state-for-scripts).
 
 Native floating windows are not in the stash: they stay centred in the usable output area. A window-sized float that fills that area (within two border widths plus two logical pixels per axis) stays below the columns when you focus a tile; `focus-window-up` at the top of a column raises it again. It does not hide bars or pin focus. Small dialogs and file pickers always stay above the columns; shrinking a float promotes it above them. Real fullscreen remains exclusive, except for the fullscreen window's own dialogs. A dialog belongs to a window through `xdg_toplevel.set_parent`, or through `zxdg_importer_v2` when another program opens it, as the desktop portal does.
 
