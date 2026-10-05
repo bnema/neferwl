@@ -28,6 +28,7 @@ func steppingClock(t *testing.T) *portsmocks.MockClock {
 		timer := portsmocks.NewMockTimer(t)
 		timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
 		timer.EXPECT().Stop().Return(true).Maybe()
+		timer.EXPECT().Reset(mock.Anything).Return(false).Maybe()
 		return timer
 	}).Maybe()
 	return clock

@@ -128,10 +128,12 @@ type Core struct {
 	// (ports.UserActivity), sent at most once per ActivityInterval.
 	activity time.Time
 	// swipe is the touchpad swipe in progress. frameC fires when no page
-	// flip came in time to move a running slide (frameStop stops it).
-	swipe     *swipeGesture
-	frameC    <-chan time.Time
-	frameStop func() bool
+	// flip came in time to move a running slide; nil when not armed. It is
+	// the channel of frameTimer, made once and reset per frame: an
+	// animation frame allocates no timer.
+	swipe      *swipeGesture
+	frameC     <-chan time.Time
+	frameTimer ports.Timer
 	// shots is the snapshot of what the screens show before an action
 	// (transition.go), reused by every action.
 	shots []viewShot
@@ -360,13 +362,25 @@ func New(cfg ports.Config, ch Channels) (*Core, error) {
 
 // newTimer makes a timer on clock, or the system timer when clock is nil.
 func newTimer(clock ports.Clock, d time.Duration) (<-chan time.Time, func() bool) {
-	if clock != nil {
-		t := clock.NewTimer(d)
-		return t.C(), t.Stop
-	}
-	t := time.NewTimer(d)
-	return t.C, t.Stop
+	t := newPortTimer(clock, d)
+	return t.C(), t.Stop
 }
+
+// newPortTimer makes a ports.Timer on clock, or on the system clock when
+// clock is nil.
+func newPortTimer(clock ports.Clock, d time.Duration) ports.Timer {
+	if clock != nil {
+		return clock.NewTimer(d)
+	}
+	return sysTimer{time.NewTimer(d)}
+}
+
+// sysTimer is a time.Timer as a ports.Timer.
+type sysTimer struct{ t *time.Timer }
+
+func (t sysTimer) C() <-chan time.Time        { return t.t.C }
+func (t sysTimer) Stop() bool                 { return t.t.Stop() }
+func (t sysTimer) Reset(d time.Duration) bool { return t.t.Reset(d) }
 
 func (c *Core) now() time.Time {
 	if c.ch.Clock != nil {
@@ -1236,7 +1250,7 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
-			c.frameC, c.frameStop = nil, nil
+			c.frameC = nil
 			if c.step(ctx, nil) != nil {
 				return nil
 			}

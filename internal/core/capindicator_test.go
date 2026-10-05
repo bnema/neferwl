@@ -12,10 +12,11 @@ import (
 
 // indicatorClock is a clock the test moves; its timers never fire by
 // themselves: the test calls captureFlashTick, and the durations asked for
-// are recorded.
+// are recorded: timers holds the NewTimer durations, resets the Reset ones.
 type indicatorClock struct {
 	now    time.Time
 	timers []time.Duration
+	resets []time.Duration
 }
 
 func indicatorCore(t *testing.T) (*Core, *indicatorClock) {
@@ -28,6 +29,10 @@ func indicatorCore(t *testing.T) (*Core, *indicatorClock) {
 		timer := portsmocks.NewMockTimer(t)
 		timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
 		timer.EXPECT().Stop().Return(true).Maybe()
+		timer.EXPECT().Reset(mock.Anything).RunAndReturn(func(d time.Duration) bool {
+			ic.resets = append(ic.resets, d)
+			return false
+		}).Maybe()
 		return timer
 	}).Maybe()
 	var cfg ports.Config
@@ -193,6 +198,7 @@ func TestCaptureIndicatorHiddenWorkspacePill(t *testing.T) {
 	timer := portsmocks.NewMockTimer(t)
 	timer.EXPECT().C().Return(make(chan time.Time)).Maybe()
 	timer.EXPECT().Stop().Return(true).Maybe()
+	timer.EXPECT().Reset(mock.Anything).Return(false).Maybe()
 	clock.EXPECT().NewTimer(mock.Anything).Return(timer).Maybe()
 	c.ch.Clock = clock
 	c.configures.cw.reset()

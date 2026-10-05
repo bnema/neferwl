@@ -146,15 +146,17 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 		w := sc.mon.Current()
 		w.shift, w.motion = 100, c.spring(viewSpring(100, 0), ic.now)
 	}
+	// The one frame timer is made on the first arm and reset afterwards:
+	// a re-arm shows as a Reset on the clock.
 	c.armFrame()
-	armed := c.frameC
+	resets := len(ic.resets)
 	ic.now = ic.now.Add(16 * time.Millisecond)
 	if err := c.step(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
 	<-c.ch.Scenes
-	if c.frameC == nil || c.frameC != armed {
-		t.Fatal("a flip of A re-armed or dropped the fallback timer while B animates")
+	if c.frameC == nil || len(ic.resets) != resets {
+		t.Fatalf("a flip of A re-armed or dropped the fallback timer while B animates: armed %t, resets %d", c.frameC != nil, len(ic.resets)-resets)
 	}
 
 	// With nothing else animating the flip's own publish decides.
@@ -163,8 +165,8 @@ func TestStepKeepsFallbackTimerWhileAnotherOutputAnimates(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-c.ch.Scenes
-	if c.frameC == nil || c.frameC == armed {
-		t.Fatal("A still animates but its timer was not re-armed")
+	if c.frameC == nil || len(ic.resets) != resets+1 {
+		t.Fatalf("A still animates but its timer was not re-armed: armed %t, resets %d", c.frameC != nil, len(ic.resets)-resets)
 	}
 	ic.now = ic.now.Add(5 * time.Second)
 	if err := c.step(context.Background(), nil); err != nil {

@@ -465,15 +465,23 @@ func (c *Core) frameFallback() time.Duration {
 	return 2 * time.Second * 1000 / time.Duration(refresh)
 }
 
-// armFrame starts the fallback timer of a running slide.
+// armFrame starts the fallback timer of a running slide. The timer is made
+// on the first arm and reset afterwards (Go 1.23 timers deliver nothing
+// stale after a Stop or Reset), so a frame costs no allocation.
 func (c *Core) armFrame() {
-	c.stopFrame()
-	c.frameC, c.frameStop = newTimer(c.ch.Clock, c.frameFallback())
+	d := c.frameFallback()
+	if c.frameTimer == nil {
+		c.frameTimer = newPortTimer(c.ch.Clock, d)
+	} else {
+		c.frameTimer.Stop()
+		c.frameTimer.Reset(d)
+	}
+	c.frameC = c.frameTimer.C()
 }
 
 func (c *Core) stopFrame() {
-	if c.frameStop != nil {
-		c.frameStop()
+	if c.frameC != nil {
+		c.frameTimer.Stop()
 	}
-	c.frameC, c.frameStop = nil, nil
+	c.frameC = nil
 }
