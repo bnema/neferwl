@@ -185,7 +185,7 @@ func TestPublishLeavingAllocations(t *testing.T) {
 		for i, p := range layout {
 			if i < 2 {
 				sc.mon.RemoveWindow(p.ID)
-				c.leave(sc, p, t0)
+				c.leaveFrom(sc, p, nil, t0)
 				continue
 			}
 			sc.rects[p.ID] = rectMotion{

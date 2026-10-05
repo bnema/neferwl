@@ -271,7 +271,7 @@ func TestOverviewClickDuringOpenUsesShownCards(t *testing.T) {
 	if x < float64(settled.Rect.X+settled.Rect.W) {
 		t.Fatalf("setup: x %v is inside the settled card %+v", x, settled.Rect)
 	}
-	if id := sc.mon.overviewAt(x, y); id == 2 {
+	if id := overviewIn(sc.mon.Layout(), x, y); id == 2 {
 		t.Fatalf("setup: the settled layout picks 2 at %v,%v", x, y)
 	}
 	c.cursorX, c.cursorY = x+float64(sc.x), y+float64(sc.y)

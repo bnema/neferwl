@@ -813,16 +813,11 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 // overviewClickFade is the fade from which a card takes no click.
 const overviewClickFade = 0.5
 
-// overviewAt is the preview under the output-local point, if any. Front
-// cards take priority over peeks, including peeks appended after a front
-// tile in another row's layout.
-func (m *Monitor) overviewAt(x, y float64) WindowID {
-	return overviewIn(m.Layout(), x, y)
-}
-
-// overviewIn is overviewAt in a given layout: the click path passes the
-// shown one, so a card is hit where it is drawn while it moves. A card
-// that is nearly invisible (still fading in) is not clickable.
+// overviewIn is the preview under the output-local point in layout, if
+// any. Front cards take priority over peeks, including peeks appended after
+// a front tile in another row's layout. The click path passes the shown
+// layout, so a card is hit where it is drawn while it moves. A card that is
+// nearly invisible (still fading in) is not clickable.
 func overviewIn(layout []Placement, x, y float64) WindowID {
 	for i := len(layout) - 1; i >= 0; i-- {
 		p := layout[i]

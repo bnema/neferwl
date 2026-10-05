@@ -304,7 +304,7 @@ func TestOverviewNamedNeighborPick(t *testing.T) {
 	if p.Hidden {
 		t.Fatal("named stash neighbor hidden")
 	}
-	id := m.overviewAt(float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2))
+	id := overviewIn(m.Layout(), float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2))
 	if id != 6 {
 		t.Fatalf("stash hit: %d", id)
 	}

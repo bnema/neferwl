@@ -42,7 +42,7 @@ func BenchmarkRefreshShown(b *testing.B) {
 	}
 	for i, p := range sc.settledLayout[24:] {
 		sc.mon.RemoveWindow(p.ID)
-		c.leave(sc, p, t0)
+		c.leaveFrom(sc, p, nil, t0)
 		_ = i
 	}
 	sc.rectsWS = sc.mon.Current()

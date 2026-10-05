@@ -438,7 +438,7 @@ func TestWithLeavingOrderIsDeterministic(t *testing.T) {
 	sc.mon.RemoveWindow(5)
 	c.applyAction(ActionToggleStashVisible)
 	for _, p := range left {
-		c.leave(sc, p, ic.now)
+		c.leaveFrom(sc, p, nil, ic.now)
 	}
 	var want []WindowID
 	for i := range 40 {

@@ -115,12 +115,12 @@ func TestOverviewStackClickAndHitPriority(t *testing.T) {
 		if frontColumn {
 			x = front.Rect.X + front.Rect.W/2
 		}
-		if got := m.overviewAt(float64(x), float64(y)); got != front.ID {
+		if got := overviewIn(m.Layout(), float64(x), float64(y)); got != front.ID {
 			t.Fatalf("overlap hit %d want %d (front %+v back %+v)", got, front.ID, front.Rect, back.Rect)
 		}
 		// The up/right exposed corner belongs to the peeking card.
 		x, y = back.Rect.X+back.Rect.W-1, back.Rect.Y+1
-		if got := m.overviewAt(float64(x), float64(y)); got != back.ID {
+		if got := overviewIn(m.Layout(), float64(x), float64(y)); got != back.ID {
 			t.Fatalf("peek hit %d want %d", got, back.ID)
 		}
 		m.OverviewPick(back.ID)
