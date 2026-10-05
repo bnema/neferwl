@@ -42,6 +42,59 @@ archives:
       - packaging/neferwl.desktop
       - packaging/neferwl-portals.conf
 
+nfpms:
+  - id: neferwl
+    ids: [neferwl]
+    package_name: neferwl
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+    formats: [deb]
+    vendor: bnema
+    homepage: https://github.com/bnema/neferwl
+    maintainer: "bnema <b@bnema.dev>"
+    description: A Wayland compositor that spends its frames on your apps, not on itself
+    license: GPL-3.0-only
+    section: x11
+    bindir: /usr/bin
+    # Loaded at runtime (purego, no cgo): dpkg-shlibdeps cannot see them.
+    dependencies:
+      - libc6
+      - libinput10
+      - libseat1
+      - libudev1
+      - libxkbcommon0
+      - libvulkan1
+      - mesa-vulkan-drivers | vulkan-icd
+      - dbus
+      - libcap2-bin
+    suggests:
+      - xwayland-satellite
+      - foot
+      - fuzzel
+      - xdg-desktop-portal-gtk
+      - xdg-desktop-portal-wlr
+    scripts:
+      postinstall: packaging/deb/postinst
+    contents:
+      - src: packaging/neferwl-session
+        dst: /usr/bin/neferwl-session
+        file_info: {mode: 0755}
+      - src: packaging/neferwl.service
+        dst: /usr/lib/systemd/user/neferwl.service
+      - src: packaging/neferwl-shutdown.target
+        dst: /usr/lib/systemd/user/neferwl-shutdown.target
+      - src: packaging/neferwl.desktop
+        dst: /usr/share/wayland-sessions/neferwl.desktop
+      - src: packaging/neferwl-portals.conf
+        dst: /usr/share/xdg-desktop-portal/neferwl-portals.conf
+      - src: examples/config
+        dst: /usr/share/doc/neferwl/config.example
+      - src: examples/capture-allow
+        dst: /usr/share/doc/neferwl/capture-allow.example
+      - src: README.md
+        dst: /usr/share/doc/neferwl/README.md
+      - src: LICENSE
+        dst: /usr/share/doc/neferwl/copyright
+
 checksum:
   name_template: checksums.txt
   algorithm: sha256
@@ -106,6 +159,16 @@ release:
     gh release download {{ .Tag }} -R bnema/neferwl -p 'neferwl_{{ .Version }}_linux_amd64.tar.gz' -p checksums.txt
     sha256sum -c --ignore-missing checksums.txt
     gh attestation verify neferwl_{{ .Version }}_linux_amd64.tar.gz -R bnema/neferwl
+    ```
+
+    ### Install on Ubuntu 24.04 and 26.04
+
+    Replace `amd64` with `arm64` on ARM.
+
+    ```sh
+    gh release download {{ .Tag }} -R bnema/neferwl -p 'neferwl_{{ .Version }}_amd64.deb' -p checksums.txt
+    sha256sum -c --ignore-missing checksums.txt
+    sudo apt install ./neferwl_{{ .Version }}_amd64.deb
     ```
 
     The archive holds the `neferwl` binary, the session files from `packaging/` and `examples/config`. See the [README](https://github.com/bnema/neferwl#readme) for runtime dependencies and the session setup.
