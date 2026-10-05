@@ -12,7 +12,7 @@ import (
 // discrete swipe step): a snapshot of what each screen shows is taken before
 // the action and diffed after it. The state the action leaves is the
 // settled one; the transition only adds presentation springs over it
-// (Workspace.shift, Monitor.switchView.off), starting from what was on screen.
+// (Workspace.view, stashView, Monitor.switchView), starting from what was on screen.
 // Nothing here runs for events that come from clients or outputs.
 //
 // A window's rect transition (presentation-only rect transition) is presentation too: configures keep
@@ -39,12 +39,12 @@ type viewShot struct {
 	viewV, switchV float64
 	// stashShown, stashAt, stashLen and stashPos are whether the stash was
 	// on screen, its selection, size and drawn position (selection plus
-	// stashOff, in stash windows); stashV is its slide's speed.
+	// stashView.off, in stash windows); stashV is its slide's speed.
 	stashShown        bool
 	stashAt, stashLen int
 	stashPos, stashV  float64
 	// list and pos are the numbered workspaces and the monitor's fractional
-	// position in them (index of the current one plus switchOff); ok is
+	// position in them (index of the current one plus switchView.off); ok is
 	// false when there is none (a shown stash workspace).
 	list []*Workspace
 	pos  float64

@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-// Slides move what is on screen smoothly: a workspace's columns (shift) and
-// the monitor between workspaces (switchOff). Both are pure presentation
-// over the settled state (ViewX, Focus, Active): the layout ends where the
-// state says as soon as a slide stops.
+// Slides move what is on screen smoothly: a workspace's columns (view), its
+// stash (stashView) and the monitor between workspaces (switchView). All
+// are pure presentation over the settled state (ViewX, Focus, stashAt,
+// Active): the layout ends where the state says as soon as a slide stops.
 
 // slide is a view offset that a swipe sets while the fingers follow it, and
 // a spring then takes to 0 (off: pixels for the columns, windows for the
