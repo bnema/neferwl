@@ -146,6 +146,45 @@ func TestPublishAllocations(t *testing.T) {
 	}
 }
 
+// TestPublishStashSlideAllocations pins the cost of publishing a frame while
+// the stash slides: windows laid out at a fractional offset, each with a
+// partial veil, with the same budget as any other animation frame.
+func TestPublishStashSlideAllocations(t *testing.T) {
+	c := publishRig(t, 1)
+	sc := c.screens[0]
+	ws := sc.mon.Current()
+	for _, id := range []WindowID{2, 3, 4, 5} {
+		ws.FocusID(id)
+		ws.ToggleWindowStash()
+	}
+	sc.arrange()
+	c.refreshShown()
+	ws.stashView.off = 0.5
+	ws.stashView.motion = c.spring(ws.stashSpring(0.5, 0), time.Now())
+	step := publishStep(t, c, nil)
+	step()
+	if !ws.stashView.motion.on || !ws.stashShown() {
+		t.Fatal("setup: no stash slide on screen")
+	}
+	var partial int
+	for _, p := range sc.shown {
+		if p.Veil > 0 && p.Veil < 1 {
+			partial++
+		}
+	}
+	if partial == 0 {
+		t.Fatal("setup: no window draws a partial veil")
+	}
+	n := testing.AllocsPerRun(50, step)
+	t.Logf("stash slide allocs per step = %v", n)
+	if !ws.stashView.motion.on {
+		t.Fatal("the slide settled during the measure")
+	}
+	if n > publishAllocBudget {
+		t.Errorf("stash slide publish allocs per frame = %v, budget %d", n, publishAllocBudget)
+	}
+}
+
 // TestPublishOverviewAllocations pins the cost of publishing while the
 // overview opens: its cards fly from the full rects (scale and fade motions
 // on every card), which guards the reuse of Core.overviewReal.
