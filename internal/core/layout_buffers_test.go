@@ -1,6 +1,7 @@
 package core
 
 import (
+	"maps"
 	"reflect"
 	"slices"
 	"testing"
@@ -49,9 +50,6 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 
 	m = base(OverflowScroll, 4)
 	m.Current().Apply(ActionToggleWindowStash)
-	m.Current().Apply(ActionToggleWindowStash)
-	m.Focus(2)
-	m.Current().Apply(ActionToggleWindowStash)
 	v["stash"] = m
 
 	m = base(OverflowScroll, 4)
@@ -76,6 +74,21 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	m.Apply(ActionFocusWorkspaceUp)
 	m.switchOff = 0.4
 	v["slide"] = m
+
+	// The variants must hold what they are named for, on the workspace on
+	// screen (the one whose scratch the tests exercise).
+	for name, has := range map[string]func(*Workspace) bool{
+		"stash":          func(w *Workspace) bool { return len(w.Stash) > 0 && len(w.Columns) > 0 },
+		"floats":         func(w *Workspace) bool { return len(w.Floats) == 2 && len(w.Columns) > 0 },
+		"shares":         func(w *Workspace) bool { return validShares(w.Columns[0]) },
+		"fixed-expanded": func(w *Workspace) bool { return w.Columns[1].Expanded },
+		"fullscreen":     func(w *Workspace) bool { return w.fullscreen == 2 },
+		"scroll":         func(w *Workspace) bool { return len(w.Columns) == 5 },
+	} {
+		if w := v[name].Current(); len(w.Columns) == 0 || !has(w) {
+			t.Fatalf("variant %s: the workspace on screen lacks its feature: %+v", name, w.Columns)
+		}
+	}
 	return v
 }
 
@@ -85,7 +98,7 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 func TestLayoutIntoMatchesLayout(t *testing.T) {
 	variants := layoutVariants(t)
 	var buf []Placement
-	for _, name := range slices.Sorted(mapsKeys(variants)) {
+	for _, name := range slices.Sorted(maps.Keys(variants)) {
 		m := variants[name]
 		want := m.Layout()
 		if len(want) == 0 {
@@ -113,16 +126,6 @@ func TestLayoutIntoMatchesLayout(t *testing.T) {
 	}
 }
 
-func mapsKeys[K comparable, V any](m map[K]V) func(func(K) bool) {
-	return func(yield func(K) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
-}
-
 // TestLayoutResultsDoNotAlias: Layout() returns a slice the caller owns. A
 // retained result stays unchanged after further layouts of the same monitor
 // or workspace (nested or later, reused-buffer calls included), and two
@@ -144,6 +147,32 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			buf = m.Current().layoutInto(buf)
 			m.Current().previewTiles()
 			m.Current().overviewZoom()
+		}
+		// layoutInto builds in the caller's buffer, never in a scratch of
+		// the workspace: with the capacity there it returns that storage.
+		w := m.Current()
+		big := make([]Placement, 0, 2*len(buf)+8)
+		res := w.layoutInto(big)
+		if len(res) == 0 || &res[0] != &big[:1][0] {
+			t.Fatalf("%s: Workspace.layoutInto did not build in the caller's buffer", name)
+		}
+		if res = m.layoutInto(big); len(res) == 0 || &res[0] != &big[:1][0] {
+			t.Fatalf("%s: Monitor.layoutInto did not build in the caller's buffer", name)
+		}
+		// A result kept across the calls that use the workspace scratch
+		// (zoom tiles, preview tiles, columns, rows, a second layout) is
+		// unchanged.
+		mine := w.layoutInto(make([]Placement, 0, len(res)))
+		mineKept := slices.Clone(mine)
+		w.overviewZoom()
+		w.peekStep()
+		w.previewTiles()
+		w.columnRects()
+		_ = w.Layout()
+		_ = w.layoutInto(nil)
+		_ = m.Layout()
+		if !slices.Equal(mine, mineKept) {
+			t.Fatalf("%s: a kept layoutInto result changed across scratch-using calls\n got %+v\nwant %+v", name, mine, mineKept)
 		}
 		// Change the layout itself, then lay out again.
 		if m.ov.open {
@@ -207,10 +236,54 @@ func cloneScene(s ports.Scene) ports.Scene {
 func TestPublishedScenesAreNeverMutated(t *testing.T) {
 	type kept struct{ sent, copy ports.Scene }
 	var all []kept
-	take := func(c *Core) {
+	// fresh is every screen's layout as a fresh Layout() gives it, taken
+	// before a step: the scene it publishes lists the same windows in the
+	// same order, and, where nothing moves (no rect motion, no camera), the
+	// same rects. A layout scratch shared with the real layouts the overview
+	// reads would show here.
+	type expect struct {
+		out    string
+		layout []Placement
+		still  bool
+	}
+	fresh := func(c *Core) []expect {
+		var e []expect
+		for _, sc := range c.screens {
+			if sc.name() != "" {
+				e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().motion.on})
+			}
+		}
+		return e
+	}
+	check := func(set []ports.Scene, want []expect, frame int) {
 		t.Helper()
+		if len(set) != len(want) {
+			t.Fatalf("frame %d: %d scenes, %d screens", frame, len(set), len(want))
+		}
+		for i, s := range set {
+			e := want[i]
+			if s.Output != e.out || len(s.Windows) != len(e.layout) {
+				t.Fatalf("frame %d: scene %s has %d windows, layout %d", frame, s.Output, len(s.Windows), len(e.layout))
+			}
+			for k, p := range e.layout {
+				w := s.Windows[k]
+				if w.ID != p.ID || w.Hidden != p.Hidden || (e.still && w.Rect != p.Rect) {
+					t.Fatalf("frame %d: scene %s window %d is %+v, the layout has %+v", frame, s.Output, k, w, p)
+				}
+			}
+		}
+	}
+	frame := 0
+	step := func(c *Core) {
+		t.Helper()
+		want := fresh(c)
+		if err := c.step(t.Context(), nil); err != nil {
+			t.Fatal(err)
+		}
 		select {
 		case set := <-c.ch.Scenes:
+			check(set, want, frame)
+			frame++
 			for _, s := range set {
 				all = append(all, kept{s, cloneScene(s)})
 			}
@@ -231,10 +304,7 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 		startRectMotions(c, sc, t0)
 	}
 	for range 12 {
-		if err := c.step(t.Context(), nil); err != nil {
-			t.Fatal(err)
-		}
-		take(c)
+		step(c)
 	}
 
 	// The overview opening: card motions, the real layouts, separators.
@@ -244,13 +314,24 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 	o.cur().mon.ToggleOverview()
 	o.transition(shots, now)
 	for range 12 {
-		if err := o.step(t.Context(), nil); err != nil {
-			t.Fatal(err)
+		step(o)
+	}
+	// The overview settled (no card motion): its scenes list the previews
+	// exactly as the monitor lays them out, frame after frame.
+	o.cur().stopRects()
+	still := 0
+	for range 3 {
+		if w := fresh(o); !w[0].still {
+			t.Fatal("setup: the overview still moves")
 		}
-		take(o)
+		step(o)
+		still++
+	}
+	if !o.cur().mon.ov.open || still == 0 {
+		t.Fatal("setup: overview closed")
 	}
 
-	if len(all) < 36 {
+	if len(all) < 39 {
 		t.Fatalf("only %d scenes", len(all))
 	}
 	changed := 0
@@ -266,5 +347,31 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 		if !reflect.DeepEqual(k.sent, k.copy) {
 			t.Fatalf("scene %d (%s) was mutated after it was sent", i, k.sent.Output)
 		}
+	}
+}
+
+// TestSettledLayoutEmptyFallsBackToLive: an empty layout is nil (as a fresh
+// Layout() was), so a screen with nothing published yet measures the live
+// layout: a window added after a publish of an empty monitor is listed by
+// shownLayout without another publish.
+func TestSettledLayoutEmptyFallsBackToLive(t *testing.T) {
+	c := publishRig(t, 1)
+	sc := c.cur()
+	for _, p := range slices.Clone(sc.settledLayout) {
+		sc.mon.RemoveWindow(p.ID)
+	}
+	if err := c.publish(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if sc.settledLayout != nil || sc.shown != nil {
+		t.Fatalf("empty layout kept: settled %v shown %v (cap %d)", sc.settledLayout, sc.shown, cap(sc.layoutBuf))
+	}
+	if got := sc.shownLayout(); len(got) != 0 {
+		t.Fatalf("empty monitor lists %+v", got)
+	}
+	sc.mon.AddWindow(77)
+	got := sc.shownLayout()
+	if len(got) != 1 || got[0].ID != 77 || got[0].Hidden {
+		t.Fatalf("the window added after the publish is not listed: %+v", got)
 	}
 }
