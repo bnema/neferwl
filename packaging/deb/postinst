@@ -1,0 +1,8 @@
+#!/bin/sh
+# Real-time input and output threads and the high-priority Vulkan queue need
+# CAP_SYS_NICE. Apps launched by NeferWL do not inherit it.
+set -e
+
+if [ "$1" = configure ]; then
+	setcap cap_sys_nice=ep /usr/bin/neferwl || echo 'neferwl: setcap failed, real-time scheduling is off'
+fi
