@@ -393,7 +393,7 @@ func TestRendererPreviewSmooth(t *testing.T) {
 }
 
 // solidContent is a w×h B8G8R8A8 buffer of one color.
-func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
+func solidContent(t testing.TB, w, h int, c color.RGBA) ports.SurfaceContent {
 	px := make([]byte, w*h*4)
 	for i := 0; i < len(px); i += 4 {
 		px[i], px[i+1], px[i+2], px[i+3] = c.B, c.G, c.R, 255
@@ -402,7 +402,7 @@ func solidContent(t *testing.T, w, h int, c color.RGBA) ports.SurfaceContent {
 }
 
 // shmContent puts pixels in a memfd pool, like a wl_shm client.
-func shmContent(t *testing.T, w, h, stride int, pixels []byte) *ports.SurfaceContent {
+func shmContent(t testing.TB, w, h, stride int, pixels []byte) *ports.SurfaceContent {
 	t.Helper()
 	fd, err := unix.MemfdCreate("shm-test", unix.MFD_CLOEXEC)
 	if err != nil {
