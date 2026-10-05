@@ -40,6 +40,8 @@ type screen struct {
 	// shownBuf and settledBuf back shown and settledLayout while rect
 	// motions run (refreshShown), reused across publishes.
 	shownBuf, settledBuf []Placement
+	// leaveIDs is withLeaving's scratch list.
+	leaveIDs []WindowID
 	// rects are the running per-window rect motions (transition.go) of
 	// rectsWS, the workspace they began on (nil: the overview); created
 	// lazily.

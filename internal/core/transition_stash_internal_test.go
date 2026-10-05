@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -27,6 +28,21 @@ func stashRig(t *testing.T, on bool) (*Core, *indicatorClock, *screen, chan port
 	settleShown(t, c)
 	drainConfigures(cmds)
 	return c, ic, sc, cmds
+}
+
+// configuresOf drains the commands into the configures sent per window.
+func configuresOf(cmds chan ports.ClientCommand) map[WindowID][]ports.ConfigureWindow {
+	out := map[WindowID][]ports.ConfigureWindow{}
+	for {
+		select {
+		case cmd := <-cmds:
+			if v, ok := cmd.(ports.ConfigureWindow); ok {
+				out[v.ID] = append(out[v.ID], v)
+			}
+		default:
+			return out
+		}
+	}
 }
 
 // act is a bind: snapshot, action, transition.
@@ -73,8 +89,15 @@ func TestStashShowAppears(t *testing.T) {
 		t.Fatalf("window 4 stays off screen: %+v", w)
 	}
 	// The action configures what it changes once, at the settled size.
-	if ids := drainConfigures(cmds); !slices.Contains(ids, 2) {
-		t.Fatalf("configures %v, want window 2 shown", ids)
+	cfgs := configuresOf(cmds)
+	for _, id := range []WindowID{2, 3} {
+		if len(cfgs[id]) != 1 {
+			t.Fatalf("window %d configured %d times, want once: %+v", id, len(cfgs[id]), cfgs[id])
+		}
+		want := c.clientRect(settledPlacement(t, sc, id))
+		if v := cfgs[id][0]; !v.Visible || v.Width != want.W || v.Height != want.H {
+			t.Fatalf("window %d configure %+v, want %dx%d (the settled client rect)", id, v, want.W, want.H)
+		}
 	}
 
 	s = frame(t, c, ic, 40*time.Millisecond)
@@ -308,5 +331,165 @@ func TestStashNavigationAppearsAndLeaves(t *testing.T) {
 	}
 	if c.animating() {
 		t.Fatal("still animating")
+	}
+}
+
+// near fails the test unless a and b differ by less than eps.
+func near(t *testing.T, what string, a, b, eps float64) {
+	t.Helper()
+	if math.Abs(a-b) > eps {
+		t.Fatalf("%s jumped: %v then %v", what, a, b)
+	}
+}
+
+// A hide during the show's fade-in continues from what was drawn: no jump
+// in fade or rect, then it settles gone.
+func TestStashHideDuringShowDoesNotJump(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	act(c, ic, ActionToggleStashVisible)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	indicatorScene(t, c)
+	act(c, ic, ActionToggleStashVisible) // show
+	indicatorScene(t, c)
+	s := frame(t, c, ic, 30*time.Millisecond)
+	last := sceneWindow(t, s, 2)
+	if !(last.Fade > 0 && last.Fade < 1) {
+		t.Fatalf("setup: fade %v", last.Fade)
+	}
+	act(c, ic, ActionToggleStashVisible) // hide, same instant
+	w := sceneWindow(t, indicatorScene(t, c), 2)
+	if w.Hidden {
+		t.Fatalf("window 2 vanished: %+v", w)
+	}
+	near(t, "fade", last.Fade, w.Fade, 0.02)
+	near(t, "width", float64(last.Rect.W), float64(w.Rect.W), 2)
+	near(t, "x", float64(last.Rect.X), float64(w.Rect.X), 2)
+	near(t, "zoom", contentScale(last), contentScale(w), 0.03)
+	s = frame(t, c, ic, 5*time.Second)
+	if w := sceneWindow(t, s, 2); !w.Hidden || c.animating() || len(sc.rects) != 0 {
+		t.Fatalf("after the settle: %+v, %d rects", w, len(sc.rects))
+	}
+}
+
+// A show during the hide's fade-out continues from what was drawn.
+func TestStashShowDuringHideDoesNotJump(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	act(c, ic, ActionToggleStashVisible) // hide
+	indicatorScene(t, c)
+	s := frame(t, c, ic, 30*time.Millisecond)
+	last := sceneWindow(t, s, 2)
+	if !(last.Fade > 0 && last.Fade < 1) {
+		t.Fatalf("setup: fade %v", last.Fade)
+	}
+	act(c, ic, ActionToggleStashVisible) // show
+	w := sceneWindow(t, indicatorScene(t, c), 2)
+	if w.Hidden {
+		t.Fatalf("window 2 hidden: %+v", w)
+	}
+	near(t, "fade", last.Fade, w.Fade, 0.02)
+	near(t, "width", float64(last.Rect.W), float64(w.Rect.W), 2)
+	near(t, "x", float64(last.Rect.X), float64(w.Rect.X), 2)
+	near(t, "zoom", contentScale(last), contentScale(w), 0.03)
+	// The entrance now runs back to opaque (the fade's speed carries over:
+	// it may still rise a few frames before it turns).
+	s = frame(t, c, ic, 150*time.Millisecond)
+	if n := sceneWindow(t, s, 2); !(n.Fade < w.Fade) {
+		t.Fatalf("fade %v then %v, want it to clear", w.Fade, n.Fade)
+	}
+	s = frame(t, c, ic, 5*time.Second)
+	p := settledPlacement(t, sc, 2)
+	if w := sceneWindow(t, s, 2); w.Fade != 0 || w.Zoom != 0 || w.Rect != p.Rect || c.animating() {
+		t.Fatalf("settled %+v, want %+v", w, p.Rect)
+	}
+}
+
+// A peek sliding to a margin that a fast second navigation sends off screen
+// leaves from where it was drawn, mid-slide, not from its settled rect.
+func TestStashNavigationLeavesFromSlide(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	// 2 selected, 3 peeks left. Left: 3 centred, 2 peeks right, 4 enters.
+	act(c, ic, ActionFocusColumnLeft)
+	indicatorScene(t, c)
+	s := frame(t, c, ic, 30*time.Millisecond)
+	last := sceneWindow(t, s, 2)
+	settled := settledPlacement(t, sc, 2)
+	if last.Rect == settled.Rect {
+		t.Fatal("setup: window 2 already at rest")
+	}
+	// Left again: 4 centred, 3 peeks right, 2 goes off.
+	act(c, ic, ActionFocusColumnLeft)
+	w := sceneWindow(t, indicatorScene(t, c), 2)
+	if w.Hidden {
+		t.Fatalf("window 2 vanished: %+v", w)
+	}
+	near(t, "x", float64(last.Rect.X), float64(w.Rect.X), 2)
+	near(t, "width", float64(last.Rect.W), float64(w.Rect.W), 2)
+	near(t, "dim", last.Dim, w.Dim, 0.03)
+	if s = frame(t, c, ic, 5*time.Second); !sceneWindow(t, s, 2).Hidden {
+		t.Fatal("window 2 still drawn after the settle")
+	}
+}
+
+// Leaving entries land in the same order whatever the map's: a hidden stash
+// float (replaced in place) and absent tiles and floats (ID order, tiles
+// before the first float, floats last).
+func TestWithLeavingOrderIsDeterministic(t *testing.T) {
+	c, ic := indicatorCore(t)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	w := sc.mon.Current()
+	for id := WindowID(1); id <= 4; id++ {
+		sc.mon.AddWindow(id)
+	}
+	w.FocusID(4)
+	c.applyAction(ActionToggleWindowStash) // 4 stashed, shown
+	w.AddFloating(5, 20, 10)
+	settleShown(t, c)
+	var left []Placement
+	for _, p := range sc.settledLayout {
+		if p.ID == 2 || p.ID == 3 || p.ID == 4 || p.ID == 5 {
+			left = append(left, p)
+		}
+	}
+	if len(left) != 4 {
+		t.Fatalf("setup: %d placements", len(left))
+	}
+	// 2 and 3 close (absent tiles), 5 closes (absent float), 4 hides.
+	sc.mon.RemoveWindow(2)
+	sc.mon.RemoveWindow(3)
+	sc.mon.RemoveWindow(5)
+	c.applyAction(ActionToggleStashVisible)
+	for _, p := range left {
+		c.leave(sc, p, ic.now)
+	}
+	var want []WindowID
+	for i := range 40 {
+		c.refreshShown()
+		var ids []WindowID
+		for _, p := range sc.settledLayout {
+			ids = append(ids, p.ID)
+		}
+		if i == 0 {
+			want = ids
+			if n := len(ids); n < 4 {
+				t.Fatalf("layout %v", ids)
+			}
+			i2, i3 := slices.Index(ids, 2), slices.Index(ids, 3)
+			i4, i5 := slices.Index(ids, 4), slices.Index(ids, 5)
+			// Absent tiles by ID, then the leaving stash float (in its
+			// slot), the absent float last.
+			if !(i2 >= 0 && i2 < i3 && i3 < i4 && i4 < i5 && i5 == len(ids)-1) {
+				t.Fatalf("order %v: want tiles 2, 3, then the stash float 4, then 5", ids)
+			}
+			if k := slices.Index(ids, 4); !sc.settledLayout[k].Leaving {
+				t.Fatal("the hidden stash window is not replaced in place")
+			}
+			continue
+		}
+		if !slices.Equal(ids, want) {
+			t.Fatalf("run %d: order %v, first run %v", i, ids, want)
+		}
 	}
 }

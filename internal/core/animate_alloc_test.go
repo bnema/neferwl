@@ -39,13 +39,25 @@ func TestAnimateAllocations(t *testing.T) {
 		sc.rects[WindowID(100+i)] = rm
 	}
 
+	// A stash peek's veil moves alone (a navigation): dim-only motions,
+	// some going below zero, as an offset from Stash.Dim.
+	for i := range 4 {
+		var rm rectMotion
+		from := 0.5
+		if i%2 == 1 {
+			from = -0.5
+		}
+		rm.dim, rm.ddim = c.spring(viewSpring(from, 0), t0), from
+		sc.rects[WindowID(200+i)] = rm
+	}
+
 	now := t0.Add(10 * time.Millisecond)
 	for name, only := range map[string]*screen{"all": nil, "only": sc} {
 		if n := testing.AllocsPerRun(100, func() { c.animate(now, only) }); n != 0 {
 			t.Errorf("animate(%s) allocs = %v, want 0", name, n)
 		}
 	}
-	if !ws.motion.on || !m.switchMotion.on || len(sc.rects) != 20 {
+	if !ws.motion.on || !m.switchMotion.on || len(sc.rects) != 24 {
 		t.Fatalf("motions settled: camera %v switch %v rects %d", ws.motion.on, m.switchMotion.on, len(sc.rects))
 	}
 }

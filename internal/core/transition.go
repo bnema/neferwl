@@ -261,42 +261,59 @@ func (c *Core) refreshShown() {
 // is replaced where it is. A leaving tile goes where the tiles are painted: before
 // the first window that opens the floats (a float above the tiles, as the
 // renderer orders them), so it never flashes over a float; a leaving float
-// goes last, over the tiles. Within a group smallest ID first: a stable
-// order keeps the scenes comparable frame to frame.
+// goes last, over the tiles. Within a group the absent ones go smallest ID
+// first: a stable order keeps the scenes comparable frame to frame.
 func (s *screen) withLeaving(layout []Placement) []Placement {
 	out := append(s.settledBuf[:0], layout...)
+	// Pass 1: an entry the layout still lists, Hidden (a stash that hid),
+	// replaces it where it is, never twice. Where the pass goes through the
+	// map does not matter: every entry has its own place. The absent ones
+	// are collected for pass 2.
+	ids := s.leaveIDs[:0]
+	for id, rm := range s.rects {
+		if !rm.leaving {
+			continue
+		}
+		j := slices.IndexFunc(out, func(q Placement) bool { return q.ID == id && q.Hidden && !q.Leaving })
+		if j < 0 {
+			ids = append(ids, id)
+			continue
+		}
+		out[j] = rm.leavingPlacement()
+	}
+	// Pass 2: the absent ones in ID order, each at the end of its group
+	// (tiles before the first float, a leaving stash float included;
+	// floats last), so the order never depends on the map's.
 	floats := len(out)
 	for i, p := range out {
-		if p.Floating && !p.Below && p.Preview == 0 && !p.Hidden {
+		if p.Floating && !p.Below && p.Preview == 0 && (!p.Hidden || p.Leaving) {
 			floats = i
 			break
 		}
 	}
-	for _, rm := range s.rects {
-		if !rm.leaving {
+	slices.Sort(ids)
+	for _, id := range ids {
+		p := s.rects[id].leavingPlacement()
+		if p.Floating {
+			out = append(out, p)
 			continue
 		}
-		p := rm.left
-		p.Hidden, p.Leaving, p.Focused, p.Fade, p.Dim, p.Zoom = true, true, false, 0, 0, 0
-		if j := slices.IndexFunc(out, func(q Placement) bool { return q.ID == p.ID && q.Hidden && !q.Leaving }); j >= 0 {
-			// The layout still lists the window, Hidden (a stash that
-			// hid): the entry is drawn in its place, never twice.
-			out[j] = p
-			continue
-		}
-		lo, hi := floats, len(out)
-		if !p.Floating {
-			lo, hi = 0, floats
-			floats++
-		}
-		i := lo
-		for i < hi && (!out[i].Leaving || out[i].ID < p.ID) {
-			i++
-		}
-		out = slices.Insert(out, i, p)
+		out = slices.Insert(out, floats, p)
+		floats++
 	}
-	s.settledBuf = out
+	s.leaveIDs, s.settledBuf = ids, out
 	return out
+}
+
+// leavingPlacement is the placement a leaving motion draws: its last
+// settled one, Hidden and Leaving (the scene draws it; input, focus,
+// popups and configures see a hidden window, as the C0 design has it).
+// Hidden stays set on purpose: the leaving entry never takes input, even
+// though its stash window is still in the layout.
+func (m rectMotion) leavingPlacement() Placement {
+	p := m.left
+	p.Hidden, p.Leaving, p.Focused, p.Fade, p.Dim, p.Zoom = true, true, false, 0, 0, 0
+	return p
 }
 
 // appear starts the entrance of a window the action made visible on sc:
@@ -315,7 +332,10 @@ func (c *Core) appear(sc *screen, id WindowID, now time.Time) {
 	}
 }
 
-// appearAt is appear for a window whose settled placement is p.
+// appearAt is appear for a window whose settled placement is p. A leaving
+// motion of the same window (a show during a hide) is continued from, not
+// replaced: the entrance starts at the fade, rect and speeds it was drawn
+// with.
 func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
 	if !c.animOn() || p.Hidden {
 		return
@@ -325,9 +345,36 @@ func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
 	}
 	var rm rectMotion
 	rm.scale = true
-	c.scaleFrom(&rm, p.Rect, appearScale, now)
-	c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+	if old, ok := sc.rects[p.ID]; ok && old.leaving {
+		c.appearFrom(&rm, p, &old, now)
+	} else {
+		c.scaleFrom(&rm, p.Rect, appearScale, now)
+		c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+	}
 	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
+}
+
+// appearFrom starts rm, the entrance to the settled placement p, from where
+// the leaving motion old draws its window at now: its rect (old.left.Rect
+// plus its offsets, sampled), fade, veil and their speeds. The leaving fade
+// is an offset from 1, the entrance's from 0.
+func (c *Core) appearFrom(rm *rectMotion, p Placement, old *rectMotion, now time.Time) {
+	settled := p.Rect
+	off, vel := old.sample(now)
+	base := old.left.Rect
+	fade, fadeV := old.df, 0.0
+	sampleComponent(old.fade, &fade, &fadeV, now)
+	dim, dimV := old.ddim, 0.0
+	sampleComponent(old.dim, &dim, &dimV, now)
+	// The veil the leaving entry drew (its peek's, plus the offset) to the
+	// one the settled placement draws.
+	dim += c.peekDim(old.left) - c.peekDim(p)
+	c.retargetComponent(&rm.x, &rm.dx, float64(base.X-settled.X)+off.x, vel.x, now)
+	c.retargetComponent(&rm.y, &rm.dy, float64(base.Y-settled.Y)+off.y, vel.y, now)
+	c.retargetComponent(&rm.w, &rm.dw, float64(base.W-settled.W)+off.w, vel.w, now)
+	c.retargetComponent(&rm.h, &rm.dh, float64(base.H-settled.H)+off.h, vel.h, now)
+	c.retargetComponent(&rm.fade, &rm.df, 1+fade, fadeV, now)
+	c.retargetComponent(&rm.dim, &rm.ddim, dim, dimV, now)
 }
 
 // mapWindow handles a window's map: it joins its workspace, the tiles the
@@ -430,6 +477,14 @@ func settledRect(m *Monitor, id WindowID) Rect {
 // then its entry goes. Nothing with animations off, or for a placement that
 // was not drawn.
 func (c *Core) leave(sc *screen, p Placement, now time.Time) {
+	c.leaveFrom(sc, p, nil, now)
+}
+
+// leaveFrom is leave for a window that was drawn as shot says (the
+// snapshot's record of it, nil for a window at rest): the exit starts at the
+// rect, fade and dim the window had on screen, with their speeds, so a hide
+// during an entrance or a slide does not jump.
+func (c *Core) leaveFrom(sc *screen, p Placement, shot *rectShot, now time.Time) {
 	if !c.animOn() || p.Hidden || p.Preview > 0 || p.Rect.W <= 0 || p.Rect.H <= 0 {
 		return
 	}
@@ -438,15 +493,24 @@ func (c *Core) leave(sc *screen, p Placement, now time.Time) {
 	}
 	rm := rectMotion{scale: true, leaving: true, left: p}
 	rm.left.Hidden, rm.left.Leaving, rm.left.Focused = true, true, false
+	var off, vel rectOffsets
+	fade, fadeV, dim, dimV := 0.0, 0.0, 0.0, 0.0
+	if shot != nil {
+		off, vel, fade, fadeV, dim, dimV = shot.off, shot.vel, shot.fade, shot.fadeV, shot.dim, shot.dimV
+	}
 	// The entry settles at 90 % of the rect it left, its content zoomed
-	// to match (show): the offsets run from the full rect to that.
+	// to match (show): the offsets run from the rect it was drawn at (the
+	// full one at rest) to that.
 	end := scaledRect(p.Rect, appearScale)
-	c.retargetComponent(&rm.x, &rm.dx, float64(p.Rect.X-end.X), 0, now)
-	c.retargetComponent(&rm.y, &rm.dy, float64(p.Rect.Y-end.Y), 0, now)
-	c.retargetComponent(&rm.w, &rm.dw, float64(p.Rect.W-end.W), 0, now)
-	c.retargetComponent(&rm.h, &rm.dh, float64(p.Rect.H-end.H), 0, now)
+	c.retargetComponent(&rm.x, &rm.dx, float64(p.Rect.X-end.X)+off.x, vel.x, now)
+	c.retargetComponent(&rm.y, &rm.dy, float64(p.Rect.Y-end.Y)+off.y, vel.y, now)
+	c.retargetComponent(&rm.w, &rm.dw, float64(p.Rect.W-end.W)+off.w, vel.w, now)
+	c.retargetComponent(&rm.h, &rm.dh, float64(p.Rect.H-end.H)+off.h, vel.h, now)
 	rm.left.Rect = end
-	c.retargetComponent(&rm.fade, &rm.df, -1, 0, now)
+	// The leaving fade is an offset from 1: the window drawn at fade f is
+	// at f-1.
+	c.retargetComponent(&rm.fade, &rm.df, fade-1, fadeV, now)
+	c.retargetComponent(&rm.dim, &rm.ddim, dim, dimV, now)
 	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
 }
 
@@ -704,7 +768,11 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 	for _, p := range b.stash {
 		i := slices.IndexFunc(layout, func(q Placement) bool { return q.ID == p.ID })
 		if i >= 0 && layout[i].Hidden && !p.Fullscreen {
-			c.leave(sc, p, now)
+			var shot *rectShot
+			if j := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID }); j >= 0 {
+				shot = &b.rects[j]
+			}
+			c.leaveFrom(sc, p, shot, now)
 		}
 	}
 	for _, p := range layout {
