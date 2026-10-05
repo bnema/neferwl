@@ -80,11 +80,15 @@ func TestFollowMove(t *testing.T) {
 
 func TestAnimations(t *testing.T) {
 	d := Defaults().Animations
-	if !d.On || d.Slowdown != 1 {
+	if d.On || d.Slowdown != 1 {
 		t.Fatal("animations defaults", d)
 	}
-	c, w := parseString(t, "animations = off\nanimations.slowdown = 2\n")
-	if c.Animations.On || c.Animations.Slowdown != 2 || len(w) != 0 {
+	c, w := parseString(t, "animations = on\nanimations.slowdown = 2\n")
+	if !c.Animations.On || c.Animations.Slowdown != 2 || len(w) != 0 {
+		t.Fatal(c.Animations, w)
+	}
+	c, w = parseString(t, "animations = off\n")
+	if c.Animations.On || len(w) != 0 {
 		t.Fatal(c.Animations, w)
 	}
 	for _, line := range []string{"animations = maybe", "animations.slowdown = 0", "animations.slowdown = 11"} {

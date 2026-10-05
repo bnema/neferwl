@@ -169,7 +169,8 @@ func Defaults() ports.Config {
 	c.Touchpad.ScrollFactor = 1
 	c.Mouse.AccelProfile = ports.AccelAdaptive
 	c.Cursor.HideAfter = 5 * time.Second
-	c.Animations.On = true
+	// Animations are experimental: off unless the config turns them on.
+	c.Animations.On = false
 	c.Animations.Slowdown = 1
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen

@@ -36,6 +36,9 @@ func startSwipeOn(t *testing.T, edit func(*ports.Config), outs ...ports.OutputIn
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 0
 	cfg.Terminal.AutoOpen = "never"
+	// The rig steps animations frame by frame: they are on unless edit
+	// turns them off.
+	cfg.Animations.On = true
 	if edit != nil {
 		edit(&cfg)
 	}
