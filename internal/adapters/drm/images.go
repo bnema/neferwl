@@ -101,6 +101,12 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 			o.freeImages()
 			return err
 		}
+		if o.imageMod == 0 {
+			// The refused images were already linear: the later kinds
+			// would export the same ones again.
+			o.freeImages()
+			return err
+		}
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
 		o.freeImages()
 		kind, cause = got+1, err
@@ -125,14 +131,12 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 		// for the image format: DRM core refuses (ADDFB2: EINVAL) a
 		// framebuffer whose format and modifier no plane advertises, and
 		// the renderer's own preference may be such a one (RADV's
-		// pipe-aligned DCC, which amdgpu does not list for scanout). SDR
-		// with no modifier listed for the format leaves the choice to the
-		// renderer.
-		format := uint32(fourccXRGB)
-		if o.hdr.on {
-			format = fourccXR30
-		}
-		mods := o.primaryModifiers(format)
+		// pipe-aligned DCC, which amdgpu does not list for scanout). A
+		// plane without IN_FORMATS lists every format with modifier 0
+		// (readPlanes), so it gets linear images straight away rather than
+		// two refused driver attempts. Only a plane listing no modifier
+		// at all for the format (SDR) leaves the choice to the renderer.
+		mods := o.primaryModifiers(o.imageFormat())
 		if o.hdr.on {
 			if len(mods) == 0 {
 				return kind, fmt.Errorf("primary plane has no XRGB2101010 modifiers")
@@ -159,6 +163,14 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 	return imagesLinear, fmt.Errorf("%s: GPU cannot export scanout images (ADR 014): %w", o.conn.name, err)
 }
 
+// imageFormat is the framebuffer format of the output images.
+func (o *Output) imageFormat() uint32 {
+	if o.hdr.on {
+		return fourccXR30
+	}
+	return fourccXRGB
+}
+
 // primaryModifiers lists the modifiers the primary plane accepts for
 // format, in IN_FORMATS order.
 func (o *Output) primaryModifiers(format uint32) []uint64 {
@@ -177,17 +189,13 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 	if err != nil {
 		return err
 	}
-	o.planes = 0
+	o.planes, o.imageMod = 0, 0
 	for i := range bufs {
 		if len(bufs[i].Planes) == 0 || len(bufs[i].Planes) > maxFBPlanes {
 			err = errors.Join(err, fmt.Errorf("output image has %d planes", len(bufs[i].Planes)))
 		}
 		if err == nil {
-			format := uint32(fourccXRGB)
-			if o.hdr.on {
-				format = fourccXR30
-			}
-			o.fbs[i], err = o.k.addFB(&bufs[i], format)
+			o.fbs[i], err = o.k.addFB(&bufs[i], o.imageFormat())
 		}
 		// Every plane owns its file; the framebuffer keeps its own
 		// reference to the buffer.
@@ -218,7 +226,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 		_, _ = r.ExportTargets(0, nil, false)
 		return err
 	}
-	o.planes = len(bufs[0].Planes)
+	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
 	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Msg("zero-copy output")
 	return nil
 }

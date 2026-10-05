@@ -112,6 +112,9 @@ func TestCursorRefusedDoesNotBlameScanoutBuffer(t *testing.T) {
 	}
 }
 
+// tiledMod stands for a non-linear driver modifier in the image tests.
+const tiledMod = 0x200000000401b03
+
 // showImages validates the images with a TEST_ONLY modeset, retries with
 // single-plane driver images, then falls back to linear images when KMS
 // refuses both.
@@ -126,6 +129,7 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 			w.Close()
 			b.Planes = append(b.Planes, ports.DMABufPlane{File: f})
 		}
+		b.Modifier = tiledMod
 		return b
 	}
 	linear := func() ports.DMABuf {
@@ -133,9 +137,14 @@ func TestShowImagesTestsBeforeModeset(t *testing.T) {
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
+	tiled1 := func() ports.DMABuf {
+		b := linear()
+		b.Modifier = tiledMod
+		return b
+	}
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64(nil), true).Return([]ports.DMABuf{tiled1(), tiled1()}, nil).Once()
 	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
@@ -168,7 +177,7 @@ func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
 	o.cursor = nil
 	var files []*os.File
 	buf := func(planes int) ports.DMABuf {
-		b := ports.DMABuf{}
+		b := ports.DMABuf{Modifier: tiledMod}
 		for range planes {
 			f, w, _ := os.Pipe()
 			w.Close()
@@ -269,6 +278,65 @@ func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
 	}
 }
 
+// A plane without IN_FORMATS lists every format with modifier 0 only
+// (readPlanes): the images are linear straight away, with no driver or
+// single-plane attempt KMS would refuse.
+func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
+	o, k, commits := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	// No ExportTargets(..., true) and no second call: the mock fails on them.
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
+		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	}).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesDriver || o.imageMod != 0 || len(*commits) != 2 {
+		t.Fatalf("kind %d, modifier %#x, %d commits", o.kind, o.imageMod, len(*commits))
+	}
+}
+
+// KMS refusing images that are already linear ends the attempt with that
+// error: the single-plane and linear kinds would export the same images.
+func TestShowImagesRefusedLinearImagesAreNotExportedAgain(t *testing.T) {
+	o, k, commits := testOutput(t, unix.EINVAL)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).RunAndReturn(func(int, []uint64, bool) ([]ports.DMABuf, error) {
+		return []ports.DMABuf{linearBuf(), linearBuf()}, nil
+	}).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil)
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	err := o.showImages(r, imagesDriver, nil)
+	if !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("error %v, want the KMS refusal", err)
+	}
+	if len(*commits) != 1 || o.fbs != [2]uint32{} {
+		t.Fatalf("%d commits, fbs %v", len(*commits), o.fbs)
+	}
+}
+
+// linearBuf is a one-plane linear dmabuf over a closed pipe.
+func linearBuf() ports.DMABuf {
+	f, w, _ := os.Pipe()
+	w.Close()
+	return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+}
+
 // Refused driver images that already had one plane are not retried as
 // single-plane images: the next export is linear.
 func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
@@ -277,12 +345,17 @@ func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
 	buf := func() ports.DMABuf {
 		f, w, _ := os.Pipe()
 		w.Close()
+		return ports.DMABuf{Modifier: tiledMod, Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	linear := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	r := portsmocks.NewMockRenderer(t)
 	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
 	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{linear(), linear()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)

@@ -183,6 +183,8 @@ type Output struct {
 	kind imageKind
 	// planes is the memory plane count of the last exported images.
 	planes int
+	// imageMod is the modifier of the exported images (0: linear).
+	imageMod uint64
 	// formats receives the direct scanout formats after each modeset;
 	// sampled and device are what they are built from (Want).
 	formats   chan<- ports.OutputFormats

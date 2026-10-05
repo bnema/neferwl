@@ -73,7 +73,7 @@ func TestHDRModesetPropertiesAndPlaneRefusal(t *testing.T) {
 }
 
 func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
-	o, k, commits := testOutput(t, unix.EINVAL, unix.EINVAL)
+	o, k, commits := testOutput(t, unix.EINVAL)
 	o.cursor = nil
 	o.hdr.cap = hdrCapability{Capable: true}
 	o.hdr.settings = HDRSettings{Enabled: true, SDRBrightness: 203}
@@ -88,7 +88,7 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	var calls []string
 	r.EXPECT().SetHDR(float64(203)).Run(func(float64) { calls = append(calls, "hdr") }).Return().Once()
 	r.EXPECT().SetHDR(float64(0)).Run(func(float64) { calls = append(calls, "sdr") }).Return().Once()
-	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Twice()
+	r.EXPECT().ExportTargets(2, []uint64{0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().ExportTargets(0, []uint64(nil), false).Run(func(int, []uint64, bool) { calls = append(calls, "drop") }).Return(nil, nil).Once()
 	r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
 	r.EXPECT().UseTarget(mock.Anything).Return()
@@ -108,16 +108,16 @@ func TestHDRTestCommitFallbackReexportsSDR(t *testing.T) {
 	if o.hdr.on || !o.hdr.failed {
 		t.Fatalf("HDR on %t failed %t", o.hdr.on, o.hdr.failed)
 	}
-	if len(*commits) != 4 {
+	// The HDR images were already linear: refusing them ends HDR at once,
+	// there is no second identical linear export.
+	if len(*commits) != 3 {
 		t.Fatalf("commits: %d", len(*commits))
 	}
-	for i := range 2 {
-		if (*commits)[i].flags != atomicTestOnly|atomicAllowModes {
-			t.Fatalf("HDR test %d flags: %#x", i, (*commits)[i].flags)
-		}
+	if (*commits)[0].flags != atomicTestOnly|atomicAllowModes {
+		t.Fatalf("HDR test flags: %#x", (*commits)[0].flags)
 	}
-	if (*commits)[2].flags != atomicTestOnly|atomicAllowModes || (*commits)[3].flags != atomicAllowModes {
-		t.Fatalf("SDR commits: %#x %#x", (*commits)[2].flags, (*commits)[3].flags)
+	if (*commits)[1].flags != atomicTestOnly|atomicAllowModes || (*commits)[2].flags != atomicAllowModes {
+		t.Fatalf("SDR commits: %#x %#x", (*commits)[1].flags, (*commits)[2].flags)
 	}
 	if v, _ := (*commits)[0].req.value(o.conn.id, 100); v != 321 {
 		t.Fatalf("HDR test metadata: %d", v)
