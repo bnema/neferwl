@@ -40,7 +40,7 @@ Animations are optional and experimental (`animations = on`). About 40–80 MB o
 
 ### Desktop integration
 
-Use Waybar, fuzzel, mako, nefercap, cliphist, swayidle, wlr-randr or input methods such as fcitx5 through standard protocols. No built-in bar, launcher or notifications.
+Use Noctalia, Waybar, fuzzel, mako, [nefercap](https://github.com/bnema/nefercap), cliphist, [neferafk](https://github.com/bnema/neferafk), swayidle, wlr-randr or input methods such as fcitx5 through standard protocols. No built-in bar, launcher or notifications.
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts. See [Desktop integration](docs/desktop.md).
 
