@@ -10,36 +10,39 @@
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
 > [!WARNING]
-> **Early alpha, used daily by its developer.** Tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested. Expect bugs and breaking config changes.
+> **Early alpha, but I use it every day.** Developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested. Expect bugs and breaking config changes.
 
 ## Why NeferWL
 
 I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-It is small on purpose, and it will stay small. No blur, shadows, rounded corners or themes. No built-in bar or wallpaper either. Use the ones you like.
+It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
 
-Animations are experimental and off by default. Enable them with `animations = on`, or leave them off for instant changes.
+Animations are experimental and off by default (`animations = on`). Off, every change is instant. On, three-finger swipes follow your fingers, and windows and the view glide on short springs (about 180 ms). Windows fade in and out, the overview zooms its cards, and a brief pulse marks the window you just focused. They stay cheap: nothing runs while the screen is still, only the region that moves is redrawn, and apps are resized once, to their final size.
 
-NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen is still. See [Performance](docs/performance.md).
+About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change. See [Performance](docs/performance.md).
 
 ## OK, but why Go?
 
-A slow client must not delay a flip, and rendering must not delay input. Go gives me cheap goroutines and channels to keep them apart. NeferWL follows one rule throughout: **each piece of state has one owner goroutine, and others talk to it over channels.**
+Most Wayland compositors are written in C, C++ or Rust. The usual objection to Go is the garbage collector. Fair, so here is how NeferWL deals with it.
 
-Input, core, the Wayland server and each output run independently. Window state needs no mutex, and tests run with the race detector. With CAP_SYS_NICE, input and output threads request real-time scheduling.
+A compositor is a pile of streams that never stop: input, client commits, one vblank per monitor, GPU fences, captures, hotplug. A slow client must not delay a flip, and rendering must not delay input. Go gives me cheap goroutines and channels to keep them apart. NeferWL follows one rule throughout: **each piece of state has one owner goroutine, and others talk to it over channels.**
+
+Input, core, the Wayland server and each output run independently. No mutex on window state, no lock ordering to get wrong, and the race detector checks every test. With CAP_SYS_NICE, input and output threads request real-time scheduling, so a busy CPU cannot delay a cursor move or a flip.
 
 ### Keeping GC away from frames
 
 - **Reuse memory on hot paths.** `make check` includes allocation guards for frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates.
-- **Keep buffers off the Go heap.** Client buffers live in shared or GPU memory. The live Go heap is only a few megabytes.
+- **Keep buffers off the Go heap.** Client buffers live in shared or GPU memory. The live Go heap is only a few megabytes: playing 4K HDR video with 65 tiled subsurfaces, GC takes under 9 % of a process that itself uses 13 % of a core.
 - **Build without cgo.** libwayland, Vulkan and libinput load at runtime through [purego](https://github.com/ebitengine/purego).
 - **Render only changes.** Damage tracking limits redraws, opaque surfaces hide work behind them, and idle outputs do nothing.
+- **Tune on real hardware.** Under VRR, cursor moves ride on the game's next frame, and game frames keep a short gap after each flip so the panel does not drop to its slowest rate.
 
-Builds take seconds. Testing, race detection, profiling and formatting come with Go. For measurements and the rendering pipeline, see [Performance](docs/performance.md).
+A full build takes seconds, and testing, race detection, profiling and formatting come with Go. That makes it a pleasure to work on. For measurements and the rendering pipeline, see [Performance](docs/performance.md).
 
 ### Reusable libraries
 
-NeferWL uses libraries that other Go projects can use too:
+I like bringing more tools to the Go ecosystem, so NeferWL grew its own libraries along the way. Other Go projects can use them:
 
 - [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
 - [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan bindings generated from `vk.xml`, without cgo.
@@ -67,7 +70,7 @@ NeferWL uses libraries that other Go projects can use too:
 
 ### Desktop integration
 
-Bring your own desktop UI: any layer-shell client, such as Noctalia or Waybar, works. No built-in bar, launcher or notifications. For capture and idle management, see [nefercap](https://github.com/bnema/nefercap) and [neferafk](https://github.com/bnema/neferafk).
+Bring your own desktop UI: any layer-shell client, such as Noctalia or Waybar, works. No built-in bar, launcher or notifications; input methods like fcitx5 work through their standard protocols. For capture and idle management, see [nefercap](https://github.com/bnema/nefercap) and [neferafk](https://github.com/bnema/neferafk).
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts. See [Desktop integration](docs/desktop.md).
 
