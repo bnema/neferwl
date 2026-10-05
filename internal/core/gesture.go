@@ -359,7 +359,7 @@ func (c *Core) hasScreen(s *screen) bool {
 // animOn reports whether transitions run (animations = on).
 func (c *Core) animOn() bool { return c.cfg.Animations.On }
 
-// spring starts s at now, slowed down by animations.slowdown. Every motion
+// spring starts s at now, stretched by animations.speed (Slowdown). Every motion
 // core creates goes through it, except a retarget, which keeps the slowdown
 // of the motion it replaces.
 func (c *Core) spring(s spring, now time.Time) motion {

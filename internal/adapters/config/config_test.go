@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -80,23 +81,29 @@ func TestFollowMove(t *testing.T) {
 
 func TestAnimations(t *testing.T) {
 	d := Defaults().Animations
-	if d.On || d.Slowdown != 1 {
+	if d.On || d.Slowdown != normalSlowdown {
 		t.Fatal("animations defaults", d)
 	}
-	c, w := parseString(t, "animations = on\nanimations.slowdown = 2\n")
-	if !c.Animations.On || c.Animations.Slowdown != 2 || len(w) != 0 {
+	c, w := parseString(t, "animations = on\nanimations.speed = 0.5\n")
+	if !c.Animations.On || c.Animations.Slowdown != 2*normalSlowdown || len(w) != 0 {
 		t.Fatal(c.Animations, w)
+	}
+	for v, slowdown := range map[string]float64{"slow": 1, "normal": 0.7, "fast": 0.5, "10": 0.07, "0.1": 7} {
+		c, w = parseString(t, "animations.speed = "+v+"\n")
+		if math.Abs(c.Animations.Slowdown-slowdown) > 1e-9 || len(w) != 0 {
+			t.Fatal(v, c.Animations, w)
+		}
 	}
 	c, w = parseString(t, "animations = off\n")
 	if c.Animations.On || len(w) != 0 {
 		t.Fatal(c.Animations, w)
 	}
-	for _, line := range []string{"animations = maybe", "animations.slowdown = 0", "animations.slowdown = 11"} {
+	for _, line := range []string{"animations = maybe", "animations.speed = 0", "animations.speed = 11", "animations.speed = turbo", "animations.slowdown = 2"} {
 		c, w = parseString(t, line+"\n")
 		if c.Animations != d || len(w) != 1 {
 			t.Fatal(line, c.Animations, w)
 		}
-		if strings.Contains(line, "slowdown") && !strings.Contains(w[0].Msg, "must be between 0.1 and 10") {
+		if strings.Contains(line, "speed") && !strings.Contains(w[0].Msg, "must be slow, normal, fast or a number between 0.1 and 10") {
 			t.Fatal(line, w)
 		}
 	}

@@ -144,7 +144,8 @@ type Config struct {
 	// motion; the next motion shows it. 0 never hides it.
 	Cursor struct{ HideAfter time.Duration }
 	// Animations: On enables motion (off lands everything instantly);
-	// Slowdown scales every spring's duration (not the focus pulse), 0.1 to 10.
+	// Slowdown scales every spring's duration (not the focus pulse), 0.1 to
+	// 10 (the config's animations.speed maps to it).
 	Animations struct {
 		On       bool
 		Slowdown float64

@@ -77,9 +77,10 @@ focus.follow-move = off
 # they open, close or leave with the stash, the overview zooms its cards;
 # off: every change is instant and three-finger swipes act when the
 # fingers lift.
-# slowdown multiplies every spring's duration (0.1 to 10).
+# speed: slow, normal, fast, or a number from 0.1 (10x slower) to 10
+# (10x faster).
 animations = off
-animations.slowdown = 1
+animations.speed = normal
 # Focus indicator on the newly focused window: an animation (pulse or off)
 # of an effect (screen: a slight brightening), peaking at strength
 # (0.01 to 0.2; 0.04: black reaches about 10/255).

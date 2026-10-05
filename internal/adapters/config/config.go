@@ -171,7 +171,7 @@ func Defaults() ports.Config {
 	c.Cursor.HideAfter = 5 * time.Second
 	// Animations are experimental: off unless the config turns them on.
 	c.Animations.On = false
-	c.Animations.Slowdown = 1
+	c.Animations.Slowdown = normalSlowdown
 	c.Focus.Animation = ports.FocusAnimationPulse
 	c.Focus.Effect = ports.FocusEffectScreen
 	c.Focus.Strength = 0.04
@@ -758,12 +758,17 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Animations.On = b
-	case "animations.slowdown":
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil || !(f >= 0.1 && f <= 10) {
-			return fmt.Errorf("must be between 0.1 and 10")
+	case "animations.speed":
+		f, ok := animationSpeeds[v]
+		if !ok {
+			var err error
+			f, err = strconv.ParseFloat(v, 64)
+			if err != nil || !(f >= 0.1 && f <= 10) {
+				return fmt.Errorf("must be slow, normal, fast or a number between 0.1 and 10")
+			}
 		}
-		c.Animations.Slowdown = f
+		// Core stretches springs by a duration factor: the inverse.
+		c.Animations.Slowdown = normalSlowdown / f
 	case "focus.follow-move":
 		b, err := onOff(v)
 		if err != nil {
@@ -1021,6 +1026,14 @@ func positive(dst *int, v string, max int) error {
 	*dst = n
 	return nil
 }
+
+// normalSlowdown is the spring duration factor of animations.speed =
+// normal (1): a view move lands in about 180 ms.
+const normalSlowdown = 0.7
+
+// animationSpeeds are the named animations.speed values, relative to
+// normal: a view move lands in about 260 ms at slow and 130 ms at fast.
+var animationSpeeds = map[string]float64{"slow": 0.7, "normal": 1, "fast": 1.4}
 
 func onOff(v string) (bool, error) {
 	switch v {
