@@ -2,7 +2,7 @@
 pkgname=neferwl
 pkgver=0.0.0
 pkgrel=1
-pkgdesc='Minimal Wayland compositor with column tiling, for the TTY'
+pkgdesc='A Wayland compositor that spends its frames on your apps, not on itself'
 arch=('x86_64')
 url='https://github.com/bnema/neferwl'
 license=('GPL-3.0-only')

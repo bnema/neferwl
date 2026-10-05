@@ -118,7 +118,7 @@ aurs:
   - name: neferwl-bin
     ids: [neferwl]
     homepage: https://github.com/bnema/neferwl
-    description: Minimal Wayland compositor with column tiling, for the TTY
+    description: A Wayland compositor that spends its frames on your apps, not on itself
     maintainers:
       - "bnema <b at bnema dot dev>"
     license: GPL-3.0-only
