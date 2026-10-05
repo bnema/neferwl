@@ -14,7 +14,7 @@
 
 ## Why NeferWL
 
-I wanted a compositor I would never have to think about: give games the GPU, use current Wayland protocols and kernel features, and stay out of the way.
+I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
 NeferWL keeps drawing simple. No blur, shadows, rounded corners or themes. Bring your own bar and wallpaper using layer-shell clients.
 
