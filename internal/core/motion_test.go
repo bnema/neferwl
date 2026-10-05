@@ -458,3 +458,57 @@ func TestRetargetKeepsVelocityAndSlowdown(t *testing.T) {
 		t.Fatal("retarget without a slide must not start one")
 	}
 }
+
+// A pixel spring settles once its rounded position can no longer differ
+// from the target: well before its epsilon tail, and from then on the
+// spring itself (run to its epsilon) never leaves half a pixel of the
+// target. A level spring (fade, veil) runs to its epsilon.
+func TestMotionPixelSnapCutsTail(t *testing.T) {
+	start := time.Unix(10, 0)
+	for _, tc := range []struct {
+		name     string
+		from, v0 float64
+	}{{"from rest", 100, 0}, {"flung past", 100, -3000}, {"flung back", 100, 3000}, {"short", 3, 0}, {"stopped near", 0.4, 60}} {
+		m := newMotion(viewSpring(tc.from, tc.v0), start, 1)
+		var settledAt time.Duration
+		for d := time.Duration(0); d <= m.end; d += time.Millisecond {
+			if _, done := m.at(start.Add(d)); done {
+				settledAt = d
+				break
+			}
+		}
+		if settledAt == 0 || settledAt >= m.end {
+			t.Fatalf("%s: settled at %v of %v", tc.name, settledAt, m.end)
+		}
+		if v, done := m.at(start.Add(settledAt)); !done || v != 0 {
+			t.Fatalf("%s: settled value %v %v", tc.name, v, done)
+		}
+		for d := settledAt; d <= m.end+time.Second; d += 100 * time.Microsecond {
+			if x := m.spring.valueAt(d); math.Abs(x) >= pixelSnap {
+				t.Fatalf("%s: %v past the snap at %v (settled at %v)", tc.name, x, d, settledAt)
+			}
+		}
+		t.Logf("%s: settled at %v, epsilon end %v", tc.name, settledAt, m.end)
+	}
+	level := newMotion(levelSpring(1, 0), start, 1)
+	if v, done := level.at(start.Add(level.end - time.Millisecond)); done || v == 0 {
+		t.Fatalf("a level spring snapped: %v %v", v, done)
+	}
+	if _, done := level.at(start.Add(level.end)); !done {
+		t.Fatal("a level spring never ends")
+	}
+}
+
+// A workspace slide snaps in output pixels: at a 600 px output half a pixel
+// is 1/1200 of a workspace.
+func TestSwitchSpringSnapsAtOutputPixels(t *testing.T) {
+	m := newMonitorWithIDs("", "", new(uint64))
+	m.template.Output = Rect{W: 800, H: 600}
+	s := m.switchSpring(0.5, 0)
+	if s.Snap != pixelSnap/600 {
+		t.Fatalf("snap %v", s.Snap)
+	}
+	if s.settled(0.5/600, 0) || !s.settled(0.2/600, 0) {
+		t.Fatal("snap threshold")
+	}
+}

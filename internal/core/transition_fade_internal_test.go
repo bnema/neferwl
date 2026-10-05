@@ -254,7 +254,7 @@ func TestDimMotionAnimatesSceneDim(t *testing.T) {
 	settleShown(t, c)
 	sc.rects = map[WindowID]rectMotion{}
 	var rm rectMotion
-	c.retargetComponent(&rm.dim, &rm.ddim, 0.5, 0, ic.now)
+	c.retargetLevel(&rm.dim, &rm.ddim, 0.5, 0, ic.now)
 	sc.rects[1], sc.rectsWS = rm, sc.mon.Current()
 	if w := sceneWindow(t, indicatorScene(t, c), 1); w.Dim != 0.5 {
 		t.Fatalf("dim %v, want the 0.5 offset", w.Dim)

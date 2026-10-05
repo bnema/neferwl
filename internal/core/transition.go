@@ -198,12 +198,22 @@ func (m *rectMotion) show(p *Placement) {
 // now, with the speed v it had then. A component with nothing to move and no
 // speed stops.
 func (c *Core) retargetComponent(m *motion, cur *float64, off, v float64, now time.Time) {
-	*cur = off
-	if off == 0 && v == 0 {
+	c.retargetWith(m, cur, viewSpring(off, v), now)
+}
+
+// retargetLevel is retargetComponent for a fade or veil offset (a level in
+// 0..1): its spring runs to its fine epsilon, no pixel snap.
+func (c *Core) retargetLevel(m *motion, cur *float64, off, v float64, now time.Time) {
+	c.retargetWith(m, cur, levelSpring(off, v), now)
+}
+
+func (c *Core) retargetWith(m *motion, cur *float64, s spring, now time.Time) {
+	*cur = s.From
+	if s.From == 0 && s.Velocity == 0 {
 		*m = motion{}
 		return
 	}
-	*m = c.spring(viewSpring(off, v), now)
+	*m = c.spring(s, now)
 }
 
 // refreshShown builds the layouts of every screen once per publish: the
@@ -349,7 +359,7 @@ func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
 		c.appearFrom(&rm, p, &old, now)
 	} else {
 		c.scaleFrom(&rm, p.Rect, appearScale, now)
-		c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+		c.retargetLevel(&rm.fade, &rm.df, 1, 0, now)
 	}
 	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
 }
@@ -373,8 +383,8 @@ func (c *Core) appearFrom(rm *rectMotion, p Placement, old *rectMotion, now time
 	c.retargetComponent(&rm.y, &rm.dy, float64(base.Y-settled.Y)+off.y, vel.y, now)
 	c.retargetComponent(&rm.w, &rm.dw, float64(base.W-settled.W)+off.w, vel.w, now)
 	c.retargetComponent(&rm.h, &rm.dh, float64(base.H-settled.H)+off.h, vel.h, now)
-	c.retargetComponent(&rm.fade, &rm.df, 1+fade, fadeV, now)
-	c.retargetComponent(&rm.dim, &rm.ddim, dim, dimV, now)
+	c.retargetLevel(&rm.fade, &rm.df, 1+fade, fadeV, now)
+	c.retargetLevel(&rm.dim, &rm.ddim, dim, dimV, now)
 }
 
 // mapWindow handles a window's map: it joins its workspace, the tiles the
@@ -562,8 +572,8 @@ func (c *Core) leaveFrom(sc *screen, p Placement, shot *rectShot, now time.Time)
 	rm.left.Rect = end
 	// The leaving fade is an offset from 1: the window drawn at fade f is
 	// at f-1.
-	c.retargetComponent(&rm.fade, &rm.df, fade-1, fadeV, now)
-	c.retargetComponent(&rm.dim, &rm.ddim, dim, dimV, now)
+	c.retargetLevel(&rm.fade, &rm.df, fade-1, fadeV, now)
+	c.retargetLevel(&rm.dim, &rm.ddim, dim, dimV, now)
 	sc.rects[p.ID], sc.rectsWS = rm, sc.mon.Current()
 }
 
@@ -729,7 +739,7 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 			m.stopSwitch()
 			return
 		}
-		m.switchMotion = c.spring(workspaceSpring(off, b.switchV), now)
+		m.switchMotion = c.spring(m.switchSpring(off, b.switchV), now)
 	}
 }
 
@@ -791,7 +801,7 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 			c.retargetComponent(&rm.h, &rm.dh, float64(oldRect.H-p.Rect.H)+old.off.h, old.vel.h, now)
 		}
 		if dimMoves {
-			c.retargetComponent(&rm.dim, &rm.ddim, dimOff, old.dimV, now)
+			c.retargetLevel(&rm.dim, &rm.ddim, dimOff, old.dimV, now)
 		}
 		if rm.on() {
 			sc.rects[p.ID], sc.rectsWS = rm, m.Current()
@@ -869,10 +879,10 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 		rm := sc.rects[p.ID]
 		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
 		if i >= 0 && changed {
-			c.retargetComponent(&rm.fade, &rm.df, b.rects[i].fade, b.rects[i].fadeV, now)
+			c.retargetLevel(&rm.fade, &rm.df, b.rects[i].fade, b.rects[i].fadeV, now)
 		}
 		if i < 0 {
-			c.retargetComponent(&rm.fade, &rm.df, 1, 0, now)
+			c.retargetLevel(&rm.fade, &rm.df, 1, 0, now)
 		} else if old := &b.rects[i]; old.rect != p.Rect {
 			rm.scale = true
 			c.retargetComponent(&rm.x, &rm.dx, float64(old.rect.X-p.Rect.X)+old.off.x, old.vel.x, now)

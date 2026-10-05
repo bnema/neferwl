@@ -32,6 +32,17 @@ func (w *Workspace) retarget(before int) {
 
 func (w *Workspace) shiftPixels() int { return int(math.Round(w.shift)) }
 
+// switchSpring is the workspace slide's spring from off: it snaps once it
+// is under half a logical pixel of the output height from its target
+// (slideLayout rounds the offset times the height).
+func (m *Monitor) switchSpring(off, velocity float64) spring {
+	s := workspaceSpring(off, velocity)
+	if h := m.template.Output.H; h > 0 {
+		s.Snap = pixelSnap / float64(h)
+	}
+	return s
+}
+
 // swipeScale turns touchpad distance into pixels: viewSwipeMovement
 // scrolls one usable width.
 func (w *Workspace) swipeScale() float64 {

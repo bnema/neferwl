@@ -37,7 +37,7 @@ func BenchmarkRefreshShown(b *testing.B) {
 		sc.rects[p.ID] = rectMotion{
 			x: c.spring(sp, t0), y: c.spring(sp, t0), w: c.spring(sp, t0), h: c.spring(sp, t0),
 			dx: 100, dy: 100, dw: 100, dh: 100,
-			fade: c.spring(viewSpring(0.5, 0), t0), df: 0.5, scale: true,
+			fade: c.spring(levelSpring(0.5, 0), t0), df: 0.5, scale: true,
 		}
 	}
 	for i, p := range sc.settledLayout[24:] {

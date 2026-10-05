@@ -29,8 +29,8 @@ func TestAnimateAllocations(t *testing.T) {
 			x: c.spring(sp, t0), y: c.spring(sp, t0),
 			w: c.spring(sp, t0), h: c.spring(sp, t0),
 			dx: 50, dy: 50, dw: 50, dh: 50,
-			fade: c.spring(viewSpring(1, 0), t0), df: 1,
-			dim: c.spring(viewSpring(0.5, 0), t0), ddim: 0.5,
+			fade: c.spring(levelSpring(1, 0), t0), df: 1,
+			dim: c.spring(levelSpring(0.5, 0), t0), ddim: 0.5,
 			scale: true,
 		}
 		if i%2 == 0 {
@@ -47,7 +47,7 @@ func TestAnimateAllocations(t *testing.T) {
 		if i%2 == 1 {
 			from = -0.5
 		}
-		rm.dim, rm.ddim = c.spring(viewSpring(from, 0), t0), from
+		rm.dim, rm.ddim = c.spring(levelSpring(from, 0), t0), from
 		sc.rects[WindowID(200+i)] = rm
 	}
 

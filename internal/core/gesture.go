@@ -246,7 +246,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 		m.switchOff, m.switchList = off, g.list
 		if c.animOn() {
-			m.switchMotion = c.spring(workspaceSpring(off, velocity), now)
+			m.switchMotion = c.spring(m.switchSpring(off, velocity), now)
 		} else {
 			m.stopSwitch()
 		}
