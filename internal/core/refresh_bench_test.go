@@ -40,10 +40,9 @@ func BenchmarkRefreshShown(b *testing.B) {
 			fade: c.spring(levelSpring(0.5, 0), t0), df: 0.5, scale: true,
 		}
 	}
-	for i, p := range sc.settledLayout[24:] {
+	for _, p := range sc.settledLayout[24:] {
 		sc.mon.RemoveWindow(p.ID)
 		c.leaveFrom(sc, p, nil, t0)
-		_ = i
 	}
 	sc.rectsWS = sc.mon.Current()
 	c.refreshShown()
