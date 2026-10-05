@@ -194,10 +194,10 @@ func TestFocusPulseWaitsForSlide(t *testing.T) {
 		alone bool
 	}{
 		{"workspace landing, alone", func(_ *testing.T, c *Core, now time.Time) {
-			c.cur().mon.switchMotion = newMotion(workspaceSpring(0.5, 0), now, 1)
+			c.cur().mon.switchView.motion = newMotion(workspaceSpring(0.5, 0), now, 1)
 		}, true},
-		{"workspace drag, alone", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.switchOff = 0.3 }, true},
-		{"column drag, beside another", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.Current().shift = 40 }, false},
+		{"workspace drag, alone", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.switchView.off = 0.3 }, true},
+		{"column drag, beside another", func(_ *testing.T, c *Core, _ time.Time) { c.cur().mon.Current().view.off = 40 }, false},
 		{"rect motion, beside another", func(_ *testing.T, c *Core, now time.Time) {
 			sc := c.cur()
 			sc.rects = map[WindowID]rectMotion{1: {x: c.spring(viewSpring(40, 0), now), dx: 40}}
@@ -214,7 +214,7 @@ func TestFocusPulseWaitsForSlide(t *testing.T) {
 				c.applyAction(ActionFocusColumnLeft)
 			}
 			c.transition(before, now)
-			if !m.Current().motion.on || m.settled() {
+			if !m.Current().view.motion.on || m.settled() {
 				t.Fatal("no camera transition after the focus moved the view")
 			}
 		}, false},
@@ -231,7 +231,7 @@ func TestFocusPulseWaitsForSlide(t *testing.T) {
 				t.Fatal("pulse decided during a slide")
 			}
 			m.stopSwitch()
-			m.Current().stopSlide()
+			m.Current().view.stop()
 			c.cur().stopRects()
 			if tc.alone {
 				m.Current().ToggleFullWidth()

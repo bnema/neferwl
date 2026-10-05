@@ -34,13 +34,11 @@ type Monitor struct {
 	followMove bool
 	// stashCapture puts new windows in the shown stash (stash.capture).
 	stashCapture bool
-	// switchOff slides the view between numbered workspaces: the view is
-	// at Active+switchOff while a swipe follows the fingers or its spring
-	// (switchMotion) lands.
-	switchOff    float64
-	switchMotion motion
+	// switchView slides the view between numbered workspaces: the view is
+	// at Active+switchView.off, in workspaces.
+	switchView slide
 	// switchList is the numbered list a landing slide measures from (the
-	// one its swipe began on); switchOff is then from the current
+	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
 	switchList []*Workspace
 	// ov holds the overview selection and its Escape snapshot.

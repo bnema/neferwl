@@ -134,13 +134,13 @@ func TestLastOutputUnplugMidRectMotion(t *testing.T) {
 	movingRects(t, c, ic, sc)
 	// A workspace switch spring runs too.
 	m := sc.mon
-	m.switchOff, m.switchMotion = 0.5, c.spring(workspaceSpring(0.5, 0), ic.now)
-	if !m.switchMotion.on || !sc.springing() {
+	m.switchView.off, m.switchView.motion = 0.5, c.spring(workspaceSpring(0.5, 0), ic.now)
+	if !m.switchView.motion.on || !sc.springing() {
 		t.Fatal("no workspace switch to interrupt")
 	}
 	c.removeScreen("A")
-	if sc.mon.springing() || len(sc.rects) != 0 || sc.rectsWS != nil || sc.mon.switchMotion.on || sc.mon.switchOff != 0 {
-		t.Fatalf("the placeholder keeps springs: monitor %t, rects %d, switch %t (%v)", sc.mon.springing(), len(sc.rects), sc.mon.switchMotion.on, sc.mon.switchOff)
+	if sc.mon.springing() || len(sc.rects) != 0 || sc.rectsWS != nil || sc.mon.switchView.motion.on || sc.mon.switchView.off != 0 {
+		t.Fatalf("the placeholder keeps springs: monitor %t, rects %d, switch %t (%v)", sc.mon.springing(), len(sc.rects), sc.mon.switchView.motion.on, sc.mon.switchView.off)
 	}
 	if err := c.publish(context.Background()); err != nil {
 		t.Fatal(err)

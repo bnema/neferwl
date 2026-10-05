@@ -12,7 +12,7 @@ import (
 // discrete swipe step): a snapshot of what each screen shows is taken before
 // the action and diffed after it. The state the action leaves is the
 // settled one; the transition only adds presentation springs over it
-// (Workspace.shift, Monitor.switchOff), starting from what was on screen.
+// (Workspace.view, stashView, Monitor.switchView), starting from what was on screen.
 // Nothing here runs for events that come from clients or outputs.
 //
 // A window's rect transition (presentation-only rect transition) is presentation too: configures keep
@@ -37,8 +37,14 @@ type viewShot struct {
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
+	// stashShown, stashAt, stashLen and stashPos are whether the stash was
+	// on screen, its selection, size and drawn position (selection plus
+	// stashView.off, in stash windows); stashV is its slide's speed.
+	stashShown        bool
+	stashAt, stashLen int
+	stashPos, stashV  float64
 	// list and pos are the numbered workspaces and the monitor's fractional
-	// position in them (index of the current one plus switchOff); ok is
+	// position in them (index of the current one plus switchView.off); ok is
 	// false when there is none (a shown stash workspace).
 	list []*Workspace
 	pos  float64
@@ -66,9 +72,10 @@ type rectShot struct {
 	// speed, so an overview toggle carries it over (transitionOverview).
 	fade, fadeV float64
 	// dim and dimV are the dim offset of a running dim motion and its
-	// speed; veil is the peek veil the window's settled placement drew
-	// (Stash.Dim, 0 for another window). A stash navigation takes the
-	// veil from what was on screen to the new one (transitionRects).
+	// speed; veil is the veil the window's settled placement drew
+	// (Stash.Dim times Placement.Veil, 0 for another window). An action
+	// that changes it takes the veil from what was on screen to the new
+	// one (transitionRects).
 	dim, dimV, veil float64
 }
 
@@ -170,7 +177,7 @@ func (m *rectMotion) show(p *Placement) {
 	// A peek's Dim is an offset from its veil (publish adds Stash.Dim and
 	// clamps the sum): it may go below 0, down to cancelling the veil.
 	lo := 0.0
-	if p.Peek {
+	if p.Veil > 0 {
 		lo = -1
 	}
 	p.Dim = max(lo, min(1, p.Dim+m.ddim))
@@ -614,13 +621,17 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.ws, s.overview = w, m.ov.open
 		if !m.ov.open {
 			// The overview does not scroll or slide: no camera.
-			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.shift
+			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.view.off
 		}
-		if w.motion.on {
-			_, s.viewV = w.motion.sampleAt(now)
+		if w.view.motion.on {
+			_, s.viewV = w.view.motion.sampleAt(now)
 		}
-		if m.switchMotion.on {
-			_, s.switchV = m.switchMotion.sampleAt(now)
+		if m.switchView.motion.on {
+			_, s.switchV = m.switchView.motion.sampleAt(now)
+		}
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.off
+		if w.stashView.motion.on {
+			_, s.stashV = w.stashView.motion.sampleAt(now)
 		}
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
@@ -651,7 +662,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			}
 			if i := indexOf(list, w); i >= 0 {
 				s.list = append(s.list, list...)
-				s.pos, s.ok = float64(i)+m.switchOff, true
+				s.pos, s.ok = float64(i)+m.switchView.off, true
 			}
 		}
 		out = append(out, s)
@@ -701,7 +712,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 // following reports whether a swipe moves sc's view with the fingers.
 func (c *Core) following(sc *screen) bool {
 	g := c.swipe
-	return g != nil && g.screen == sc && (g.mode == swipeColumns || g.mode == swipeWorkspaces)
+	return g != nil && g.screen == sc && (g.mode == swipeColumns || g.mode == swipeWorkspaces || g.mode == swipeStash)
 }
 
 // transitionCamera slides the columns or the monitor from what b showed.
@@ -710,13 +721,20 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 	w := m.Current()
 	switch {
 	case w == b.ws:
+		if stashSlid(b, w) {
+			// A stash navigation slides the view from where it was drawn:
+			// the windows keep their settled places (transitionRects).
+			w.stashView.off = b.stashPos - float64(w.stashAt)
+			w.stashView.motion = c.spring(w.stashSpring(w.stashView.off, b.stashV), now)
+			return
+		}
 		if w.ViewX == b.viewX || !w.slidable() {
 			return
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		w.shift = b.view - float64(w.ViewX)
-		w.motion = c.spring(viewSpring(w.shift, b.viewV), now)
+		w.view.off = b.view - float64(w.ViewX)
+		w.view.motion = c.spring(viewSpring(w.view.off, b.viewV), now)
 	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
 		// A screen that received its workspace from another monitor does
 		// not slide to it: a running slide's list (switchList) may still
@@ -729,13 +747,19 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		off := b.pos - float64(j)
 		// The snapshot's list is reused by the next action: the slide keeps
 		// its own copy.
-		m.switchOff, m.switchList = off, slices.Clone(b.list)
+		m.switchView.off, m.switchList = off, slices.Clone(b.list)
 		if off == 0 || m.framedSwitch() {
 			m.stopSwitch()
 			return
 		}
-		m.switchMotion = c.spring(m.switchSpring(off, b.switchV), now)
+		m.switchView.motion = c.spring(m.switchSpring(off, b.switchV), now)
 	}
+}
+
+// stashSlid reports whether an action moved the selection of the stash b
+// showed on w: a navigation, not a toggle, an unstash or a hide.
+func stashSlid(b *viewShot, w *Workspace) bool {
+	return b.stashShown && w.stashAt != b.stashAt && len(w.Stash) == b.stashLen && w.stashShown()
 }
 
 // transitionRects starts or retargets the rect motions of the windows whose
@@ -771,10 +795,12 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 		old := &from.rects[i]
 		oldRect := Rect{X: old.rect.X + dx, Y: old.rect.Y + dy, W: old.rect.W, H: old.rect.H}
 		// A window that becomes a peek or stops being one (a stash
-		// navigation) changes its veil: the offset takes the one drawn to
-		// the new one. Otherwise a running dim motion goes on as it is.
+		// toggle) changes its veil: the offset takes the one drawn to the
+		// new one. A stash slide moves the veil with the view, so the veil
+		// of a navigation matches. Otherwise a running dim motion goes on
+		// as it is.
 		dimOff := old.dim + old.veil - c.peekDim(p)
-		dimMoves := old.veil != c.peekDim(p)
+		dimMoves := math.Abs(old.veil-c.peekDim(p)) > veilEps
 		if oldRect == p.Rect && !dimMoves {
 			// The settled rect did not change: a running motion goes on
 			// as it is, and there is none to start.
@@ -808,8 +834,8 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 
 // transitionStash animates the stash windows an action shows or hides on
 // the workspace b's screen keeps on screen (a toggle-stash-visible, a click
-// that closes the stash, a navigation that brings a window to a margin or
-// sends it off): one drawn after and not before appears (appearAt), one
+// that closes the stash; a navigation slides the view instead, see
+// stashSlid): one drawn after and not before appears (appearAt), one
 // drawn before and hidden after leaves from its last settled placement
 // (leave). A window that is gone from the layout (unstashed, moved) or
 // fullscreen is not touched: its rect motion, if any, is transitionRects's.
@@ -819,7 +845,7 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 	sc := b.sc
 	m := sc.mon
 	w := m.Current()
-	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 {
+	if w != b.ws || len(w.Stash) == 0 || c.security.Protected || w.cover() != 0 || stashSlid(b, w) {
 		return
 	}
 	layout := m.Layout()
@@ -841,14 +867,15 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 	}
 }
 
+// veilEps absorbs the float drift between a slide's drawn veil and the
+// settled one: a veil that differs by less is the same.
+const veilEps = 1e-9
+
 // peekDim is the veil the settled placement p draws: the configured stash
 // dim for a peek, none for another window. The placement's Dim is an
 // offset from it.
 func (c *Core) peekDim(p Placement) float64 {
-	if p.Peek {
-		return c.cfg.Stash.Dim
-	}
-	return 0
+	return c.cfg.Stash.Dim * p.Veil
 }
 
 // transitionOverview starts the motions of an action that opened or closed

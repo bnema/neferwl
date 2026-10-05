@@ -115,6 +115,10 @@ type Placement struct {
 	// Peek is a stashed window peeking in beside the selected one, or an
 	// overview preview of a neighbor workspace: dimmed.
 	Peek bool
+	// Veil is the share (0..1) of the peek veil (Stash.Dim) the window
+	// draws: 1 for a settled peek, less while a stash slide brings it to
+	// the centre. Set wherever Peek is, and on a sliding stash selection.
+	Veil float64
 	// Preview is the scale of an overview preview: its buffer is drawn
 	// that much smaller in Rect, the client keeps its size. 0 otherwise.
 	Preview float64
@@ -128,13 +132,16 @@ type Placement struct {
 	Leaving bool
 	// Fade, Dim and Zoom are set on shown layouts only (refreshShown),
 	// animated: the window's fade (0 opaque, 1 invisible), a veil opacity
-	// added to the one Peek draws (0..1), and the content zoom as drawn
+	// added to the one Veil draws (0..1), and the content zoom as drawn
 	// when a scale motion runs (Preview times the drawn/settled width, 1
 	// when the content is drawn at its size; 0 without one). Preview
 	// itself stays the settled one: input, popups and the renderer's paint
 	// order read it to tell a card from a window.
 	Fade, Dim, Zoom float64
 }
+
+// peeking marks p a peek drawing share of the peek veil (Stash.Dim).
+func (p *Placement) peeking(veil float64) { p.Peek, p.Veil = true, veil }
 
 // Overflow says what happens past MaxColumns columns.
 type Overflow string
@@ -163,10 +170,8 @@ type Workspace struct {
 	maximized []WindowID
 	Focus     int
 	ViewX     int
-	// shift slides the columns on screen past ViewX, in logical pixels,
-	// while a swipe follows the fingers or its spring (motion) lands.
-	shift  float64
-	motion motion
+	// view slides the columns on screen past ViewX, in logical pixels.
+	view slide
 	// Output is the effective viewport in monitor coordinates: the whole
 	// monitor unless the workspace has a size override, then a centered
 	// rectangle no larger than the monitor. Fullscreen fills it.
@@ -194,8 +199,12 @@ type Workspace struct {
 	// Stash holds the windows set aside by toggle-window-stash, left to
 	// right (stash.go); stashAt is the selected one. stashFocus is set
 	// while it has the focus, under a focused native float.
-	Stash       []Float
-	stashAt     int
+	Stash   []Float
+	stashAt int
+	// stashView slides the stash: the selected window is drawn at
+	// stashAt+stashView.off, in stash windows. Pure presentation over
+	// stashAt.
+	stashView   slide
 	stashFocus  bool
 	stashHidden bool
 	// stashWidth is the width of a stashed window (0: the default) and

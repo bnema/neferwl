@@ -114,6 +114,31 @@ func TestStashStrip(t *testing.T) {
 	}
 }
 
+// Neighbors show only in a margin that is left: with an odd width the gap
+// can match the narrower side, and the wider one must not show a sliver.
+func TestStashNeighborNeedsAMargin(t *testing.T) {
+	w := &Workspace{}
+	w.SetOutput(1001, 600)
+	w.SetMaxColumns(2)
+	w.stashGap = 10
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	for _, id := range []WindowID{3, 2} {
+		w.FocusID(id)
+		w.Apply(ActionToggleWindowStash)
+	}
+	w.FocusID(3)
+	if p := placement(w, 3); p.Rect.X != 100 || p.Rect.W != 800 {
+		t.Fatalf("setup: selected at %+v, want X 100 W 800", p.Rect)
+	}
+	for _, id := range []WindowID{2} {
+		if p := placement(w, id); !p.Hidden || p.Peek {
+			t.Fatalf("window %d shows as a sliver where no margin is left: %+v", id, p)
+		}
+	}
+}
+
 // Hiding the stash is the way out: tiles get the focus, a new stashed
 // window shows it again, and the native floats stay as they are.
 func TestToggleStashVisible(t *testing.T) {

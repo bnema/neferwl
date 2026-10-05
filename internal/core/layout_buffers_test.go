@@ -72,7 +72,7 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	m.Apply(ActionFocusWorkspaceDown)
 	m.AddWindow(20)
 	m.Apply(ActionFocusWorkspaceUp)
-	m.switchOff = 0.4
+	m.switchView.off = 0.4
 	v["slide"] = m
 
 	// The variants must hold what they are named for, on the workspace on
@@ -182,9 +182,9 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 		}
 		_ = m.Layout()
 		_ = m.Current().Layout()
-		m.switchOff = 0.3
+		m.switchView.off = 0.3
 		_ = m.Layout()
-		m.switchOff = 0
+		m.switchView.off = 0
 
 		if !slices.Equal(first, kept) {
 			t.Fatalf("%s: a retained Monitor.Layout() changed\n got %+v\nwant %+v", name, first, kept)
@@ -250,7 +250,7 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 		var e []expect
 		for _, sc := range c.screens {
 			if sc.name() != "" {
-				e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().motion.on})
+				e = append(e, expect{sc.name(), sc.mon.Layout(), len(sc.rects) == 0 && !sc.mon.Current().view.motion.on})
 			}
 		}
 		return e
@@ -299,8 +299,8 @@ func TestPublishedScenesAreNeverMutated(t *testing.T) {
 			continue
 		}
 		ws := sc.mon.Current()
-		ws.motion = c.spring(viewSpring(100, 0), t0)
-		ws.shift = 100
+		ws.view.motion = c.spring(viewSpring(100, 0), t0)
+		ws.view.off = 100
 		startRectMotions(c, sc, t0)
 	}
 	for range 12 {

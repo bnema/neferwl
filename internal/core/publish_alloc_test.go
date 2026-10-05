@@ -106,8 +106,8 @@ func checkRunning(t *testing.T, c *Core, when string) {
 		if sc.name() == "" {
 			continue
 		}
-		if len(sc.rects) != 6 || !sc.mon.Current().motion.on || len(sc.shown) < 6 {
-			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().motion.on, len(sc.shown))
+		if len(sc.rects) != 6 || !sc.mon.Current().view.motion.on || len(sc.shown) < 6 {
+			t.Fatalf("%s: rects %d camera %v shown %d", when, len(sc.rects), sc.mon.Current().view.motion.on, len(sc.shown))
 		}
 	}
 }
@@ -123,8 +123,8 @@ func TestPublishAllocations(t *testing.T) {
 			continue
 		}
 		ws := sc.mon.Current()
-		ws.motion = c.spring(viewSpring(100, 0), t0)
-		ws.shift = 100
+		ws.view.motion = c.spring(viewSpring(100, 0), t0)
+		ws.view.off = 100
 		startRectMotions(c, sc, t0)
 	}
 	for _, tc := range []struct {
@@ -143,6 +143,45 @@ func TestPublishAllocations(t *testing.T) {
 		if n > publishAllocBudget {
 			t.Errorf("%s publish allocs per frame = %v, budget %d", tc.name, n, publishAllocBudget)
 		}
+	}
+}
+
+// TestPublishStashSlideAllocations pins the cost of publishing a frame while
+// the stash slides: windows laid out at a fractional offset, each with a
+// partial veil, with the same budget as any other animation frame.
+func TestPublishStashSlideAllocations(t *testing.T) {
+	c := publishRig(t, 1)
+	sc := c.screens[0]
+	ws := sc.mon.Current()
+	for _, id := range []WindowID{2, 3, 4, 5} {
+		ws.FocusID(id)
+		ws.ToggleWindowStash()
+	}
+	sc.arrange()
+	c.refreshShown()
+	ws.stashView.off = 0.5
+	ws.stashView.motion = c.spring(ws.stashSpring(0.5, 0), time.Now())
+	step := publishStep(t, c, nil)
+	step()
+	if !ws.stashView.motion.on || !ws.stashShown() {
+		t.Fatal("setup: no stash slide on screen")
+	}
+	var partial int
+	for _, p := range sc.shown {
+		if p.Veil > 0 && p.Veil < 1 {
+			partial++
+		}
+	}
+	if partial == 0 {
+		t.Fatal("setup: no window draws a partial veil")
+	}
+	n := testing.AllocsPerRun(50, step)
+	t.Logf("stash slide allocs per step = %v", n)
+	if !ws.stashView.motion.on {
+		t.Fatal("the slide settled during the measure")
+	}
+	if n > publishAllocBudget {
+		t.Errorf("stash slide publish allocs per frame = %v, budget %d", n, publishAllocBudget)
 	}
 }
 

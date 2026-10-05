@@ -28,7 +28,7 @@ func TestSizedTransitionsStaySettledAndOverviewSpansMonitor(t *testing.T) {
 	m.Workspaces = append(m.Workspaces, w)
 	m.Active = len(m.Workspaces) - 1
 	m.shown = nil
-	m.switchOff = -0.4
+	m.switchView.off = -0.4
 	if got := m.Frame(); got != m.Current().Output || !m.framedSwitch() {
 		t.Fatalf("sliding frame %+v", got)
 	}
@@ -38,7 +38,7 @@ func TestSizedTransitionsStaySettledAndOverviewSpansMonitor(t *testing.T) {
 	if len(during) != len(before) || during[0].Rect != before[0].Rect {
 		t.Fatalf("sized workspace animated outside frame: %+v", during)
 	}
-	m.switchOff = 0
+	m.switchView.off = 0
 	if got := m.Frame(); got != m.Current().Output {
 		t.Fatalf("settled frame %+v", got)
 	}
@@ -55,7 +55,7 @@ func TestSizedNeighborDisablesSlideButInheritedNeighborDoesNot(t *testing.T) {
 	m.AddWindow(1)
 	m.Workspaces[1].SetSize(100, 100)
 	before := m.Layout()
-	m.switchOff = 0.4
+	m.switchView.off = 0.4
 	if !m.framedSwitch() || m.Layout()[0].Rect != before[0].Rect {
 		t.Fatal("slide toward sized neighbor escaped viewport")
 	}

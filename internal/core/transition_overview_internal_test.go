@@ -335,8 +335,8 @@ func TestOverviewStartsNoCameraSlide(t *testing.T) {
 	ic.now = ic.now.Add(5 * time.Second)
 	noCamera := func(when string) {
 		t.Helper()
-		if m.switchMotion.on || m.Current().motion.on {
-			t.Fatalf("%s: a camera spring runs (switch %v, view %v)", when, m.switchMotion.on, m.Current().motion.on)
+		if m.switchView.motion.on || m.Current().view.motion.on {
+			t.Fatalf("%s: a camera spring runs (switch %v, view %v)", when, m.switchView.motion.on, m.Current().view.motion.on)
 		}
 	}
 	noCamera("before")
