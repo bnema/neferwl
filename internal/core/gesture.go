@@ -36,7 +36,8 @@ const (
 	swipeWorkspaces
 	swipeDiscrete
 	// swipeOverview is a vertical four-finger swipe: up opens the
-	// overview, down closes it on the selection (niri's gesture).
+	// overview, down closes it on the selection (niri's gesture); down
+	// with the overview closed shows or hides the stash.
 	swipeOverview
 	// swipeDropped ignores the rest of a swipe whose workspace changed.
 	swipeDropped
@@ -251,7 +252,13 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		}
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
-		if step == 0 || (step < 0) == m.ov.open {
+		if step == 0 {
+			return false
+		}
+		if step > 0 && !m.ov.open {
+			return c.swipeStash(g, now)
+		}
+		if (step < 0) == m.ov.open {
 			return false
 		}
 		before := m.Current()
@@ -292,6 +299,23 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		return c.cur().mon.Current() != before
 	}
 	return shown
+}
+
+// swipeStash runs toggle-stash-visible for a four-finger swipe down with the
+// overview closed, on the swipe's screen unless the pointer took the focus
+// to another output meanwhile. It reports whether the stash showed or
+// hid: an empty stash stays as it is.
+func (c *Core) swipeStash(g *swipeGesture, now time.Time) bool {
+	if c.cur() != g.screen {
+		return false
+	}
+	w := g.screen.mon.Current()
+	hidden, over := w.stashHidden, w.stashOver
+	shots := c.snapshot(now)
+	c.keyboard.takeBack()
+	c.applyAction(ActionToggleStashVisible)
+	c.transition(shots, now)
+	return w.stashHidden != hidden || w.stashOver != over
 }
 
 // swipedWorkspace is the workspace on the swipe's screen, or nil without

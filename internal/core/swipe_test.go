@@ -671,6 +671,96 @@ func TestFourFingerSwipeOverview(t *testing.T) {
 	}
 }
 
+// four lifts a four-finger swipe of n updates of (dx, dy) after the
+// fingers went down, and returns the scene right after the lift.
+func (r *swipeRig) four(t *testing.T, dx, dy float64, n int) ports.Scene {
+	t.Helper()
+	r.at += time.Second
+	r.input <- ports.SwipeBegin{Fingers: 4, Time: r.at}
+	for range n {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: dx, DY: dy, Time: r.at}
+	}
+	return r.end(t, false)
+}
+
+// stashedThird maps three windows and stashes the third (shown, focused),
+// settled.
+func stashedThird(t *testing.T, r *swipeRig) ports.Scene {
+	t.Helper()
+	threeColumns(t, r)
+	s := r.key(t, "s", ports.ModAlt|ports.ModShift)[0]
+	if r.cfg.Animations.On {
+		s = r.settle(t)
+	}
+	return s
+}
+
+// A four-finger swipe down with the overview closed hides the stash, and
+// the next one shows it again with its windows fading in; the stash's
+// windows stay where the swipe found them otherwise.
+func TestFourFingerSwipeDownTogglesStash(t *testing.T) {
+	r := startSwipe(t, nil)
+	if !r.cfg.Animations.On {
+		t.Fatal("animations are off in the rig")
+	}
+	if w := windowOf(t, stashedThird(t, r), 3); w.Hidden {
+		t.Fatalf("setup: the stash is hidden: %+v", w)
+	}
+	r.four(t, 0, 40, 10)
+	if w := windowOf(t, r.frame(t, 15*time.Millisecond), 3); w.Hidden || !(w.Fade > 0 && w.Fade < 1) {
+		t.Fatalf("hiding: window 3 hidden %t, fade %v, want it leaving", w.Hidden, w.Fade)
+	}
+	if w := windowOf(t, r.settle(t), 3); !w.Hidden {
+		t.Fatalf("swipe down left the stash shown: %+v", w)
+	}
+	r.four(t, 0, 40, 10)
+	if w := windowOf(t, r.frame(t, 15*time.Millisecond), 3); w.Hidden || !(w.Fade > 0 && w.Fade < 1) {
+		t.Fatalf("showing: window 3 hidden %t, fade %v, want it appearing", w.Hidden, w.Fade)
+	}
+	if w := windowOf(t, r.settle(t), 3); w.Hidden || w.Fade != 0 {
+		t.Fatalf("second swipe down did not show the stash: %+v", w)
+	}
+}
+
+// With nothing in the stash a swipe down changes nothing: the scene is the
+// same one, with no new Seq and no animation.
+func TestFourFingerSwipeDownEmptyStash(t *testing.T) {
+	r := startSwipe(t, nil)
+	before := threeColumns(t, r)
+	after := r.four(t, 0, 40, 10)
+	if after.Seq != before.Seq || !after.SameAs(before) {
+		t.Fatalf("empty stash: scene changed, seq %d then %d", before.Seq, after.Seq)
+	}
+	if _, ok := r.settleAll(t, r.outs...); ok {
+		t.Fatal("empty stash: the swipe started an animation")
+	}
+}
+
+// With the overview open a swipe down closes it and does not touch the
+// stash, shown or hidden.
+func TestFourFingerSwipeDownInOverviewKeepsStash(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		r := startSwipe(t, nil)
+		stashedThird(t, r)
+		if hidden {
+			r.key(t, "s", ports.ModAlt)
+			r.settle(t)
+		}
+		r.four(t, 0, -40, 10)
+		r.settle(t)
+		s := r.four(t, 0, 40, 10)
+		for _, w := range s.Windows {
+			if w.Preview > 0 {
+				t.Fatalf("hidden=%v: swipe down left the overview open", hidden)
+			}
+		}
+		if w := windowOf(t, r.settle(t), 3); w.Hidden != hidden {
+			t.Fatalf("hidden=%v: window 3 hidden %t after the overview closed", hidden, w.Hidden)
+		}
+	}
+}
+
 // Opening the overview during a column swipe drops the swipe: the rest
 // of it neither slides the columns under the overview nor lands them,
 // also once the overview closed again (escape before the rest).
