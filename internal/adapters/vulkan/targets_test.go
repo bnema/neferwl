@@ -316,3 +316,54 @@ func TestExportTargetsStayInTheDisplayList(t *testing.T) {
 		t.Fatalf("export with an unexportable display list gave modifier %#x", bufs[0].Modifier)
 	}
 }
+
+// The AMD DCC retile modifiers cost a compute pass per frame: they are never
+// targets, whatever the display lists. Plain DCC (pipe-aligned or not), the
+// non-DCC tiled modifier and non-AMD modifiers with bit 14 set stay.
+func TestFilterModifiersDropsDCCRetile(t *testing.T) {
+	const (
+		retile       = 0x200000010567b03  // AMD DCC, DCC_RETILE (laptop RADV)
+		pipeAligned  = 0x20000000056bb03  // AMD DCC, pipe-aligned
+		unaligned    = 0x200000000563b03  // AMD DCC, not pipe-aligned
+		tiled        = 0x200000010401b03  // AMD tiled, no DCC
+		foreignRetil = 0x0100000000004003 // vendor 1, bit 14 set: not AMD's
+	)
+	need := vk.FormatFeatureFlags(vk.FormatFeatureColorAttachmentBit)
+	var mods []vk.DrmFormatModifierPropertiesEXT
+	for _, m := range []uint64{retile, pipeAligned, unaligned, tiled, foreignRetil, 0} {
+		planes := uint32(1)
+		if m == retile || m == pipeAligned || m == unaligned {
+			planes = 3
+		}
+		mods = append(mods, vk.DrmFormatModifierPropertiesEXT{DrmFormatModifier: m, DrmFormatModifierPlaneCount: planes, DrmFormatModifierTilingFeatures: need})
+	}
+	got, planes := filterModifiers(mods, need, func(uint64) bool { return true })
+	if want := []uint64{pipeAligned, unaligned, tiled, foreignRetil, 0}; !slices.Equal(got, want) {
+		t.Fatalf("kept %#x, want %#x", got, want)
+	}
+	if _, ok := planes[retile]; ok {
+		t.Fatalf("retile modifier has a plane count: %v", planes)
+	}
+	r := &Renderer{renderMods: got, modPlanes: planes}
+	if out := r.exportModifiers([]uint64{retile, tiled}, false); !slices.Equal(out, []uint64{tiled}) {
+		t.Fatalf("display listing the retile modifier: %#x", out)
+	}
+	if out := r.exportModifiers([]uint64{retile}, false); len(out) != 0 {
+		t.Fatalf("display listing only the retile modifier: %#x", out)
+	}
+}
+
+// The device's exportable modifiers hold no AMD DCC retile one, whatever
+// RADV lists (it lists them on GPUs with several render backends).
+func TestProbedModifiersHaveNoDCCRetile(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	for _, m := range append(slices.Clone(r.renderMods), r.hdrMods...) {
+		if retilesDCC(m) {
+			t.Fatalf("target modifier %#x retiles DCC", m)
+		}
+	}
+}

@@ -147,7 +147,8 @@ func (r *Renderer) probeRenderModifiers(physical vk.PhysicalDevice) {
 }
 
 // probeModifiers lists the exportable modifiers of format (one to four memory
-// planes: DCC adds metadata planes) that support the target usage, and
+// planes: DCC adds metadata planes; DCC retile modifiers are left out, see
+// retilesDCC) that support the target usage, and
 // records their plane counts in modPlanes. HDR targets need transfer-src only when
 // hdrReadback is set (GPU tests, headless --screenshot-raw; never DRM).
 func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
@@ -181,14 +182,32 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 // maxModifierPlanes is the DRM limit of planes in a framebuffer.
 const maxModifierPlanes = 4
 
+// AMD format modifiers (drm_fourcc.h): the vendor is in bits 56-63, and a DCC
+// modifier with the retile bit keeps a second, display-aligned copy of the
+// DCC metadata.
+const (
+	modVendorShift = 56
+	modVendorAMD   = 0x02
+	amdModRetile   = 1 << 14 // AMD_FMT_MOD_DCC_RETILE
+)
+
+// retilesDCC reports whether m is an AMD DCC modifier with the retile bit.
+// RADV renders such an image into pipe-aligned DCC and runs a compute pass
+// that rewrites the display copy: an extra full-surface GPU pass per frame,
+// so these modifiers are never offered for targets. Plain DCC (pipe-aligned
+// or not) costs no such pass.
+func retilesDCC(m uint64) bool {
+	return m>>modVendorShift == modVendorAMD && m&amdModRetile != 0
+}
+
 // filterModifiers keeps the modifiers with 1..4 memory planes whose tiling
-// features include need and that pass exportable, and returns each kept
-// modifier's plane count.
+// features include need, that are not DCC retile modifiers and that pass
+// exportable, and returns each kept modifier's plane count.
 func filterModifiers(mods []vk.DrmFormatModifierPropertiesEXT, need vk.FormatFeatureFlags, exportable func(uint64) bool) ([]uint64, map[uint64]uint32) {
 	var result []uint64
 	planes := make(map[uint64]uint32, len(mods))
 	for _, m := range mods {
-		if m.DrmFormatModifierPlaneCount < 1 || m.DrmFormatModifierPlaneCount > maxModifierPlanes || m.DrmFormatModifierTilingFeatures&need != need || !exportable(m.DrmFormatModifier) {
+		if m.DrmFormatModifierPlaneCount < 1 || m.DrmFormatModifierPlaneCount > maxModifierPlanes || m.DrmFormatModifierTilingFeatures&need != need || retilesDCC(m.DrmFormatModifier) || !exportable(m.DrmFormatModifier) {
 			continue
 		}
 		result = append(result, m.DrmFormatModifier)

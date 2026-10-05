@@ -134,8 +134,11 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 		// pipe-aligned DCC, which amdgpu does not list for scanout). A
 		// plane without IN_FORMATS lists every format with modifier 0
 		// (readPlanes), so it gets linear images straight away rather than
-		// two refused driver attempts. Only a plane listing no modifier
-		// at all for the format (SDR) leaves the choice to the renderer.
+		// two refused driver attempts. The renderer never picks an AMD
+		// DCC retile modifier, whatever the plane lists: it costs an extra
+		// GPU pass per frame (vulkan retilesDCC). Only a plane listing no
+		// modifier at all for the format (SDR) leaves the choice to the
+		// renderer.
 		mods := o.primaryModifiers(o.imageFormat())
 		if o.hdr.on {
 			if len(mods) == 0 {
