@@ -121,13 +121,19 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 		if o.runContext != nil && o.runContext.Err() != nil {
 			return kind, o.runContext.Err()
 		}
-		mods := []uint64(nil)
+		// The renderer is asked for the modifiers the primary plane lists
+		// for the image format: DRM core refuses (ADDFB2: EINVAL) a
+		// framebuffer whose format and modifier no plane advertises, and
+		// the renderer's own preference may be such a one (RADV's
+		// pipe-aligned DCC, which amdgpu does not list for scanout). SDR
+		// with no modifier listed for the format leaves the choice to the
+		// renderer.
+		format := uint32(fourccXRGB)
 		if o.hdr.on {
-			for _, f := range o.primary.formats {
-				if f.Format == fourccXR30 {
-					mods = append(mods, f.Modifier)
-				}
-			}
+			format = fourccXR30
+		}
+		mods := o.primaryModifiers(format)
+		if o.hdr.on {
 			if len(mods) == 0 {
 				return kind, fmt.Errorf("primary plane has no XRGB2101010 modifiers")
 			}
@@ -151,6 +157,18 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
 	}
 	return imagesLinear, fmt.Errorf("%s: GPU cannot export scanout images (ADR 014): %w", o.conn.name, err)
+}
+
+// primaryModifiers lists the modifiers the primary plane accepts for
+// format, in IN_FORMATS order.
+func (o *Output) primaryModifiers(format uint32) []uint64 {
+	var mods []uint64
+	for _, f := range o.primary.formats {
+		if f.Format == format {
+			mods = append(mods, f.Modifier)
+		}
+	}
+	return mods
 }
 
 // exportImages makes the renderer's exported targets the output images.

@@ -203,6 +203,72 @@ func TestShowImagesRetriesSinglePlaneBeforeLinear(t *testing.T) {
 	}
 }
 
+// SDR images are asked for the modifiers the primary plane lists for
+// XRGB8888, in IN_FORMATS order, never the renderer's own choice: RADV's
+// preferred DCC variant (pipe-aligned) is not one amdgpu lists, and KMS
+// refuses a framebuffer with a modifier the plane does not advertise
+// (ADDFB2: EINVAL). Other formats' modifiers are not offered.
+func TestShowImagesOffersThePrimaryPlanesXRGBModifiers(t *testing.T) {
+	const dccListed, tiled, other = 0x200000000563b03, 0x200000000401b03, 0x200000000401903
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{
+		{Format: fourccXRGB, Modifier: dccListed}, {Format: fourccXR30, Modifier: other},
+		{Format: fourccXRGB, Modifier: tiled}, {Format: fourccXRGB, Modifier: 0},
+	}
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, []uint64{dccListed, tiled, 0}, false).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesDriver {
+		t.Fatalf("kind %d", o.kind)
+	}
+}
+
+// When the renderer has no modifier in common with the plane, the images
+// fall back to single-plane ones with the same list, then to linear.
+func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
+	const listed = 0x200000000563b03
+	o, k, _ := testOutput(t)
+	o.cursor = nil
+	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: listed}, {Format: fourccXRGB, Modifier: 0}}
+	buf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	r := portsmocks.NewMockRenderer(t)
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	none := errors.New("no XRGB8888 modifier both the device and the display accept")
+	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, false).Return(nil, none).Once()
+	r.EXPECT().ExportTargets(2, []uint64{listed, 0}, true).Return([]ports.DMABuf{buf(), buf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
+	if err := o.showImages(r, imagesDriver, nil); err != nil {
+		t.Fatal(err)
+	}
+	if o.kind != imagesSinglePlane {
+		t.Fatalf("kind %d", o.kind)
+	}
+}
+
 // Refused driver images that already had one plane are not retried as
 // single-plane images: the next export is linear.
 func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {

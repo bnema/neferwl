@@ -281,3 +281,38 @@ func TestExportTargetsPlanes(t *testing.T) {
 		}
 	}
 }
+
+// A target exported for a display modifier list carries one of its
+// modifiers, whichever they are: KMS refuses a framebuffer whose modifier
+// the plane does not advertise, so the intersection must hold on the real
+// driver (RADV also exports DCC variants displays do not list).
+func TestExportTargetsStayInTheDisplayList(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	if len(r.renderMods) == 0 {
+		t.Skip("device exports no render modifier")
+	}
+	for _, m := range r.renderMods {
+		bufs, err := r.ExportTargets(1, []uint64{m}, false)
+		if err != nil {
+			t.Fatalf("modifier %#x is exportable but export failed: %v", m, err)
+		}
+		got := bufs[0].Modifier
+		for _, p := range bufs[0].Planes {
+			p.File.Close()
+		}
+		if got != m {
+			t.Fatalf("display lists only %#x, target has modifier %#x", m, got)
+		}
+	}
+	// A list with no exportable modifier is an error, not a guess.
+	if bufs, err := r.ExportTargets(1, []uint64{0x1234567}, false); err == nil {
+		for _, p := range bufs[0].Planes {
+			p.File.Close()
+		}
+		t.Fatalf("export with an unexportable display list gave modifier %#x", bufs[0].Modifier)
+	}
+}
