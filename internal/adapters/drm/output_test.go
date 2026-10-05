@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"image"
+	"maps"
 	"os"
 	"strings"
 	"sync"
@@ -1073,4 +1074,90 @@ func TestOutputSameSeqRendersOnce(t *testing.T) {
 	sr.scenes <- scene
 	waitFor(t, func() bool { return sr.frameCommit() == 2 })
 	sr.stop()
+}
+
+// Run: the empty content of a window that unmapped while the scene still
+// draws it (its close animation) keeps the last content for the renderer,
+// without its Acquire fence; a scene that no longer lists the window drops
+// it.
+func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
+	o, k, _ := testOutput(t)
+	o.cursor, o.tearing = nil, false
+	r := portsmocks.NewMockRenderer(t)
+	pipeBuf := func() ports.DMABuf {
+		f, w, _ := os.Pipe()
+		w.Close()
+		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
+	}
+	var mu sync.Mutex
+	var last map[ports.WindowID]ports.SurfaceContent
+	var lastSeq uint64
+	r.EXPECT().SetHDR(float64(0)).Return().Maybe()
+	r.EXPECT().ExportTargets(2, mock.Anything, false).Return([]ports.DMABuf{pipeBuf(), pipeBuf()}, nil).Once()
+	r.EXPECT().UseTarget(mock.Anything).Return()
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, c map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		mu.Lock()
+		last, lastSeq = maps.Clone(c), s.Seq
+		mu.Unlock()
+		f, w, _ := os.Pipe()
+		_, _ = w.Write([]byte{1})
+		w.Close()
+		return f, nil
+	})
+	r.EXPECT().Close().Return().Once()
+	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()
+	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
+	k.EXPECT().destroyBlob(mock.Anything).Return(nil).Maybe()
+	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
+	// drawn waits for a frame of scene seq and returns what it drew for
+	// window 1.
+	drawn := func(seq uint64, cond func(ports.SurfaceContent, bool) bool) (ports.SurfaceContent, bool) {
+		t.Helper()
+		var c ports.SurfaceContent
+		var ok bool
+		waitFor(t, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			c, ok = last[1]
+			return lastSeq == seq && cond(c, ok)
+		})
+		return c, ok
+	}
+	scenes := make(chan ports.Scene, 1)
+	contents := make(chan ports.SurfaceContent, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, make(chan ports.OutputPresented, 64), nil, nil)
+	}()
+	acq, acqW, _ := os.Pipe()
+	defer acq.Close()
+	defer acqW.Close()
+	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 10, H: 10}}
+	scenes <- ports.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+	full := ports.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &ports.DMABuf{ID: 5, Planes: []ports.DMABufPlane{{}}}, Acquire: acq}
+	contents <- full
+	drawn(1, func(c ports.SurfaceContent, ok bool) bool { return ok && c.Acquire == acq })
+	// The window unmaps: its empty content arrives before the scene that
+	// draws it leaving (fading). The last content stays, fence dropped.
+	contents <- ports.SurfaceContent{ID: 1, Seq: 2}
+	kept, _ := drawn(1, func(c ports.SurfaceContent, ok bool) bool { return !ok || c.Acquire == nil })
+	if kept.DMABuf != full.DMABuf || kept.Seq != 1 {
+		t.Fatalf("frame after the empty content drew %+v, want the last content", kept)
+	}
+	// A leaving frame: still drawn from the kept content.
+	win.Fade = 0.5
+	scenes <- ports.Scene{Seq: 2, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
+	if c, ok := drawn(2, func(ports.SurfaceContent, bool) bool { return true }); !ok || c.DMABuf != full.DMABuf {
+		t.Fatalf("the leaving frame drew %+v (ok %t), want the kept content", c, ok)
+	}
+	// The scene no longer lists it: gone.
+	scenes <- ports.Scene{Seq: 3, OutputWidth: 200, OutputHeight: 100}
+	if c, ok := drawn(3, func(ports.SurfaceContent, bool) bool { return true }); ok {
+		t.Fatalf("the kept content %+v survived a scene without the window", c)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }

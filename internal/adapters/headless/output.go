@@ -15,6 +15,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/presented"
+	"github.com/bnema/neferwl/internal/adapters/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -87,7 +88,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 	}
-	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
+	table := surfaces.New()
+	drawn := table.Map()
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
@@ -204,15 +206,13 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return
 		}
 		scene, haveScene, dirty = s, true, true
+		// A closed window's last content goes once no scene draws it.
+		table.Prune(scene)
 	}
 	update := func(c ports.SurfaceContent) {
 		seen[c.ID] = max(seen[c.ID], c.Seq)
 		dirty = dirty || capture.Shows(scene, c.ID)
-		if c.Empty() {
-			delete(surfaces, c.ID)
-		} else {
-			surfaces[c.ID] = c
-		}
+		table.Update(c, scene)
 	}
 	clk := opts.Clock
 	if clk == nil {
@@ -473,7 +473,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				failRequests("security epoch changed")
 				continue
 			}
-			pipeline.SubmitHidden(scene, surfaces, hidden)
+			pipeline.SubmitHidden(scene, drawn, hidden)
 			clear(hidden)
 			// A slow child may outlive Wayland's stale-report timeout even
 			// though this owner waits. Publish its non-expiring holds first.
@@ -494,7 +494,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 		}
 		// Captures never show the capture indicator: their frame goes first.
-		took, pdone, perr := pipeline.SubmitPlain(r, scene, surfaces, normal)
+		took, pdone, perr := pipeline.SubmitPlain(r, scene, drawn, normal)
 		if pdone != nil {
 			// The plain render reads client buffers even when its requests
 			// are rejected by a gate transition: own and wait its fence
@@ -521,7 +521,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				failRequests("security epoch changed")
 				continue
 			}
-			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), surfaces)
+			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), drawn)
 			if xdone != nil {
 				// The excluded-frame composition reads client buffers even when the displayed
 				// frame is skipped by a gate/off transition. Own and wait its
@@ -549,7 +549,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			failRequests("security epoch changed")
 			continue
 		}
-		done, err := r.Render(scene, surfaces)
+		done, err := r.Render(scene, drawn)
 		if err != nil {
 			return fmt.Errorf("render frame: %w", err)
 		}
@@ -579,7 +579,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests = capture.Waiting(requests, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, surfaces), seen)
+		opts.report(&reports, flipInfo(scene, drawn), seen)
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {

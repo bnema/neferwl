@@ -12,6 +12,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/presented"
+	"github.com/bnema/neferwl/internal/adapters/surfaces"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -1028,7 +1029,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			o.probeAsync(r)
 		}
 	}
-	surfaces := make(map[ports.WindowID]ports.SurfaceContent)
+	table := surfaces.New()
+	drawn := table.Map()
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	var want ports.CursorChange
@@ -1353,6 +1355,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			scene, haveScene, dirty = s, true, true
 			o.wantOff = s.Off
+			// A closed window's last content goes once no scene draws it.
+			table.Prune(scene)
 		case c := <-cursor:
 			o.observeSecurity()
 			if o.protected {
@@ -1365,11 +1369,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				stateDirty = true
 			}
 		case c := <-contents:
-			if c.Empty() {
-				delete(surfaces, c.ID)
-			} else {
-				surfaces[c.ID] = c
-			}
+			table.Update(c, scene)
 			if c.Seq > seen[c.ID] {
 				seen[c.ID] = c.Seq
 				reportDirty = true
@@ -1469,7 +1469,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		direct, err := o.submitFrame(ctx, r, scene, surfaces, seen, requests, pipeline)
+		direct, err := o.submitFrame(ctx, r, scene, drawn, seen, requests, pipeline)
 		var fatal renderError
 		if errors.As(err, &fatal) || errors.Is(err, errSecurityScene) {
 			// A failed render or epoch rejection did not hand these requests to the worker.

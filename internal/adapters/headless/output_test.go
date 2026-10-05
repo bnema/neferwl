@@ -84,18 +84,27 @@ func TestRun(t *testing.T) {
 	if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
 		t.Errorf("coalescing: %+v %+v", s, c)
 	}
+	// An empty content of a window the scene still draws (it unmapped
+	// and fades out) keeps the last one; a scene without it drops it.
 	contents <- ports.SurfaceContent{ID: 1}
 	waitFrames(t, f, 2)
 	if _, c := f.snapshot(); len(c) < 2 {
 		t.Fatal("no second frame")
-	} else if _, ok := c[1][1]; ok {
+	} else if kept, ok := c[1][1]; !ok || kept.SHM == nil || kept.SHM.Pool != 1 {
+		t.Errorf("content of the shown window dropped on its empty content: %+v", c[1])
+	}
+	scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2, Windows: shown[1:]}
+	waitFrames(t, f, 3)
+	if _, c := f.snapshot(); len(c) < 3 {
+		t.Fatal("no third frame")
+	} else if _, ok := c[2][1]; ok {
 		t.Error("content not deleted")
 	}
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"frame-000001.png", "frame-000002.png", "latest.png"} {
+	for _, name := range []string{"frame-000001.png", "frame-000002.png", "frame-000003.png", "latest.png"} {
 		file, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)

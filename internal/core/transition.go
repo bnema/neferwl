@@ -425,6 +425,48 @@ func (c *Core) appearMapped(id WindowID, now time.Time) {
 	}
 }
 
+// unmapWindow handles a window's unmap: it leaves its workspace, the tiles
+// around it re-flow with rect motions, and a window that was drawn as a
+// tile or an ordinary float keeps fading out from its last settled
+// placement (leave). Like a map, an unmap is a client event that animates;
+// the settled layout is the same with animations off. A fullscreen window,
+// one under a session lock or with the overview open just goes.
+func (c *Core) unmapWindow(v ports.WindowUnmapped) {
+	sc, w := c.screenOf(v.ID)
+	if sc == nil {
+		return
+	}
+	if !c.animOn() || c.security.Protected || sc.mon.ov.open {
+		sc.mon.RemoveWindow(v.ID)
+		delete(sc.rects, v.ID)
+		return
+	}
+	now := c.now()
+	// The placement that leaves is the settled one of the last publish:
+	// where the window was going (its rect motion, if any, ends with it).
+	var left Placement
+	if sc.mon.Current() == w {
+		for _, p := range sc.settledLayout {
+			if p.ID == v.ID {
+				left = p
+				break
+			}
+		}
+	}
+	shots := c.snapshot(now)
+	for i := range shots {
+		if shots[i].overview {
+			shots[i].ws = nil
+		}
+	}
+	sc.mon.RemoveWindow(v.ID)
+	delete(sc.rects, v.ID)
+	c.transition(shots, now)
+	if left.ID == v.ID && !left.Leaving && !left.Fullscreen && !left.Below && !left.Peek {
+		c.leave(sc, left, now)
+	}
+}
+
 // resizeFloating applies a floating window's committed size. A float maps
 // before its first commit, so core first lays it out at a default size;
 // when its entrance runs, the settled rect changing under it would break

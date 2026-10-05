@@ -1154,10 +1154,7 @@ func (c *Core) Run(ctx context.Context) error {
 				if c.drag != nil && c.drag.id == v.ID {
 					c.abortDrag()
 				}
-				if s, _ := c.screenOf(v.ID); s != nil {
-					s.mon.RemoveWindow(v.ID)
-					delete(s.rects, v.ID)
-				}
+				c.unmapWindow(v)
 				c.releaseSlots()
 				if c.pointer == v.ID {
 					c.pointer = 0

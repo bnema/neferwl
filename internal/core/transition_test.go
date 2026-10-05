@@ -648,43 +648,75 @@ func TestDiscreteSwipeTransition(t *testing.T) {
 	}
 }
 
-// A window unmapped while its rect motion runs leaves the scene at once, its
-// motion goes with it, the others keep theirs, and once those settle no
-// frame is wanted: a motion kept for a gone window would ask for frames with
-// nothing to move.
+// A window unmapped while its rect motion runs stops moving: with
+// animations on it stays in the scene only as a leaving entry (drawn where
+// it was going, fading out, hidden to input), the others keep their
+// motions, and once everything settles it is gone and no frame is wanted:
+// a motion kept for a gone window would ask for frames with nothing to
+// move. With animations off it leaves the scene at once.
 func TestUnmapMidRectMotion(t *testing.T) {
-	r := startSwipe(t, nil)
-	threeColumns(t, r)
-	// 3, focused, swaps with 2: both move.
-	r.key(t, "Left", ports.ModAlt|ports.ModShift)
-	mid := r.frame(t, 16*time.Millisecond)
-	if x := rectNow(t, mid, 3).X; x <= 0 || x >= 400 {
-		t.Fatalf("window 3 at %d on the first frame, want it moving", x)
+	for _, tt := range []struct {
+		name string
+		edit func(*ports.Config)
+	}{{"on", nil}, {"off", animationsOff}} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := startSwipe(t, tt.edit)
+			threeColumns(t, r)
+			// 3, focused, swaps with 2: both move.
+			mid := r.key(t, "Left", ports.ModAlt|ports.ModShift)[0]
+			if tt.edit == nil {
+				// Off: the swap is instant, a flip draws no new scene.
+				mid = r.frame(t, 16*time.Millisecond)
+				if x := rectNow(t, mid, 3).X; x <= 0 || x >= 400 {
+					t.Fatalf("window 3 at %d on the first frame, want it moving", x)
+				}
+			}
+			moving := rectNow(t, mid, 2).X
+			r.client <- ports.WindowUnmapped{ID: 3}
+			s := scene(t, r.scenes)
+			w3, shown3 := listedIn(s, 3)
+			switch {
+			case tt.edit != nil && shown3:
+				t.Fatalf("the unmapped window is still shown with animations off: %+v", w3)
+			case tt.edit == nil && (!shown3 || w3.Fade != 0 || w3.Rect.X != 0 || w3.Rect.W != 400):
+				// It leaves from the settled rect it was moving to.
+				t.Fatalf("the unmapped window right after the unmap: %+v (shown %t), want it leaving from its settled slot", w3, shown3)
+			}
+			// The neighbour's own motion carries on from where it was drawn.
+			if got := rectNow(t, s, 2).X; got != moving {
+				t.Fatalf("window 2 jumped from %d to %d on the unmap", moving, got)
+			}
+			if tt.edit == nil {
+				next := r.frame(t, 16*time.Millisecond)
+				if got := rectNow(t, next, 2).X; got == moving {
+					t.Fatalf("window 2 stopped at %d: its motion died with the unmapped window", got)
+				}
+				if w, ok := listedIn(next, 3); !ok || !(w.Fade > 0 && w.Fade < 1) || w.Rect.W >= 400 {
+					t.Fatalf("the leaving window on the next frame: %+v (shown %t), want it fading and shrinking", w, ok)
+				}
+			} else if moving != 400 {
+				t.Fatalf("window 2 at %d with animations off, want 400", moving)
+			}
+			if tt.edit == nil {
+				s = r.settle(t)
+			}
+			if _, ok := listedIn(s, 3); ok {
+				t.Fatal("the unmapped window came back")
+			}
+			if got := rectNow(t, s, 2).X; got != 400 {
+				t.Fatalf("window 2 settled at %d, want 400", got)
+			}
+			r.noFrameScene(t)
+		})
 	}
-	moving := rectNow(t, mid, 2).X
-	r.client <- ports.WindowUnmapped{ID: 3}
-	s := scene(t, r.scenes)
-	if _, ok := rectOf(s, 3); ok {
-		t.Fatal("the unmapped window is still shown")
-	}
+}
+
+// listedIn is the scene window id, shown or not.
+func listedIn(s ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
 	for _, w := range s.Windows {
-		if w.ID == 3 {
-			t.Fatalf("window 3 still in the scene: %+v", w)
+		if w.ID == id {
+			return w, true
 		}
 	}
-	// The neighbour's own motion carries on from where it was drawn.
-	if got := rectNow(t, s, 2).X; got != moving {
-		t.Fatalf("window 2 jumped from %d to %d on the unmap", moving, got)
-	}
-	if got := rectNow(t, r.frame(t, 16*time.Millisecond), 2).X; got == moving {
-		t.Fatalf("window 2 stopped at %d: its motion died with the unmapped window", got)
-	}
-	s = r.settle(t)
-	if _, ok := rectOf(s, 3); ok {
-		t.Fatal("the unmapped window came back")
-	}
-	if got := rectNow(t, s, 2).X; got != 400 {
-		t.Fatalf("window 2 settled at %d, want 400", got)
-	}
-	r.noFrameScene(t)
+	return ports.SceneWindow{}, false
 }
