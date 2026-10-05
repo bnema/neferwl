@@ -75,7 +75,8 @@ focus.follow-move = off
 # Experimental, off by default.
 # on: windows and the view move with springs, windows fade in and out as
 # they open, close or leave with the stash, the overview zooms its cards;
-# off: every change is instant.
+# off: every change is instant and three-finger swipes act when the
+# fingers lift.
 # slowdown multiplies every spring's duration (0.1 to 10).
 animations = off
 animations.slowdown = 1

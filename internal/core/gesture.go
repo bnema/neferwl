@@ -168,8 +168,10 @@ func (c *Core) decide(g *swipeGesture) {
 	case g.fingers == 4:
 		// Four fingers sideways do nothing.
 		g.mode = swipeDropped
-	case m.ov.open:
+	case m.ov.open || !c.animOn():
 		// The overview does not slide: the swipe moves its selection.
+		// With animations off nothing slides either: the swipe runs a
+		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()

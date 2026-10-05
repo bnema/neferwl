@@ -44,7 +44,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `mouse.accel-profile` | `adaptive` | `adaptive`: faster moves go further; `flat`: constant speed |
 | `mouse.left-handed` | `off` | Swaps the left and right mouse buttons |
 | `cursor.hide-after` | `5s` | Hides the pointer cursor after this long without motion; the next motion shows it. 100ms to 1h, or `off` |
-| `animations` | `off` | **Experimental.** `on` animates changes; `off` makes every change instant: swipe landings, scrolling, workspace switches, window moves and resizes, drag drops, workspaces sent to another monitor, the overview, windows opening and closing, the stash showing and hiding, the focus pulse |
+| `animations` | `off` | **Experimental.** `on` animates changes; `off` makes every change instant and the three-finger swipe no longer follows the fingers: swipe landings, scrolling, workspace switches, window moves and resizes, drag drops, workspaces sent to another monitor, the overview, windows opening and closing, the stash showing and hiding, the focus pulse |
 | `animations.slowdown` | `1` | Multiplies the duration of every spring (not the focus pulse), `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.animation` | `pulse` | Focus indicator on a window that keeps the focus for 150 ms: `pulse` (brief rise and fall) or `off`. Skipped for fullscreen windows, a window alone on screen (e.g. a maximized column), the overview and a window focused as it opens. Off while `animations = off` |
@@ -136,7 +136,7 @@ bind.Cmd+p = workspace presentation
 
 ## Touchpad
 
-A three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
+With `animations = on`, a three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
 
 - Left or right scrolls the columns (`scroll` overflow) to the next column edge; the focus moves to a column fully on screen.
 - Up or down slides to the next numbered workspace.
@@ -144,6 +144,8 @@ A three-finger swipe follows the fingers and moves one step at most, so a quick 
 The view sticks a little near each step and catches up between them. Past the next step it resists; lift and swipe again to go further. When the fingers lift, a quick swipe goes on to the next step and a slow one settles on the closest.
 
 With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
+
+With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe runs `focus-column-left/right` or `focus-workspace-up/down`.
 
 Where the view cannot scroll (`fixed` overflow, the stash, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
 

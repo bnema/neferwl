@@ -9,12 +9,41 @@ import (
 
 func animationsOff(c *ports.Config) { c.Animations.On = false }
 
-func TestAnimationsOffFlickLandsAtOnce(t *testing.T) {
+// stillMoves sends n swipe updates of (dx, dy) and expects no scene: with
+// animations off the view does not follow the fingers.
+func (r *swipeRig) stillMoves(t *testing.T, n int, dx, dy float64) {
+	t.Helper()
+	for range n {
+		r.at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DX: dx, DY: dy, Time: r.at}
+	}
+	select {
+	case s := <-r.scenes:
+		t.Fatalf("a swipe update published a scene (%d windows): the view follows the fingers", len(s))
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func focusedID(s ports.Scene) ports.WindowID {
+	for _, w := range s.Windows {
+		if w.Focused {
+			return w.ID
+		}
+	}
+	return 0
+}
+
+func TestAnimationsOffColumnSwipeFocusesAtOnce(t *testing.T) {
 	r := startSwipe(t, animationsOff)
-	threeColumns(t, r)
-	s := r.flick(t, 10, -40, 0)
-	if got, ok := rectOf(s, 1); !ok || got.X != 0 {
-		t.Fatalf("column 1 at %+v (shown %t) right after the lift, want the settled rect", got, ok)
+	before := threeColumns(t, r)
+	r.begin()
+	r.stillMoves(t, 10, -40, 0)
+	s := r.end(t, false)
+	if got := focusedID(s); got != 2 {
+		t.Fatalf("focused %d right after the lift, want 2", got)
+	}
+	if got, _ := rectOf(before, 3); got.X == 0 {
+		t.Fatalf("bad setup: column 3 at %+v", got)
 	}
 	r.noFrameScene(t)
 }
@@ -23,9 +52,7 @@ func TestAnimationsOffWorkspaceSwipeLandsAtOnce(t *testing.T) {
 	r := startSwipe(t, animationsOff)
 	r.workspaces(t)
 	r.begin()
-	for range 9 {
-		r.move(t, 0, 30)
-	}
+	r.stillMoves(t, 9, 0, 30)
 	s := r.end(t, false)
 	if _, ok := rectOf(s, 1); ok {
 		t.Fatal("old workspace still shown right after the lift")
@@ -35,16 +62,16 @@ func TestAnimationsOffWorkspaceSwipeLandsAtOnce(t *testing.T) {
 	}
 }
 
-func TestAnimationsOffFingersStillFollowed(t *testing.T) {
+func TestAnimationsOffSlowSwipeStays(t *testing.T) {
 	r := startSwipe(t, animationsOff)
-	before, _ := rectOf(threeColumns(t, r), 2)
+	before := threeColumns(t, r)
 	r.begin()
-	r.input <- ports.SwipeUpdate{DX: -10, Time: r.at}
-	r.move(t, -10, 0)
-	s := r.move(t, -290, 0)
-	if got, _ := rectOf(s, 2); got.X-before.X != 200 {
-		t.Fatalf("column moved %d px with the fingers, want 200", got.X-before.X)
+	r.stillMoves(t, 2, -10, 0)
+	r.input <- ports.SwipeEnd{Time: r.at + time.Second}
+	if s := scene(t, r.scenes); !s.SameAs(before) {
+		t.Fatalf("a short slow swipe changed the scene: %+v, was %+v", s.Windows, before.Windows)
 	}
+	r.noFrameScene(t)
 }
 
 func TestReloadToOffSettlesALanding(t *testing.T) {
