@@ -24,7 +24,7 @@ NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU whi
 
 ## OK, but why Go?
 
-A compositor handles input, client requests, GPU fences and display flips at the same time. Go's goroutines and channels fit that workload: **each piece of state has one owner, and other goroutines send it messages.**
+A slow client must not delay a flip, and rendering must not delay input. Go gives me cheap goroutines and channels to keep them apart. NeferWL follows one rule throughout: **each piece of state has one owner goroutine, and others talk to it over channels.**
 
 Input, core, the Wayland server and each output run independently. Window state needs no mutex, and tests run with the race detector. With CAP_SYS_NICE, input and output threads request real-time scheduling.
 
