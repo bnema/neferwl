@@ -278,7 +278,7 @@ func TestOverviewStackNoFloatVeil(t *testing.T) {
 	}
 }
 
-// l past the last stash card returns to the front card, even with no columns.
+// l leaves the pile for the front card, even with no columns.
 func TestOverviewPileRightToFloatCard(t *testing.T) {
 	m := monitor()
 	m.SetOutput(300, 200)

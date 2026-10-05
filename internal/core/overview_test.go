@@ -448,6 +448,14 @@ func TestOverviewPileOnly(t *testing.T) {
 	if m.Current() != w || m.cardAt(w) != 0 {
 		t.Fatal("vertical navigation escaped a stash-only workspace")
 	}
+	m.OverviewMove(1, 0)
+	if m.cardAt(w) >= 0 || m.ov.selected != 0 {
+		t.Fatal("right did not deselect the stash-only pile")
+	}
+	m.OverviewMove(0, 1)
+	if m.Current() == w {
+		t.Fatal("vertical navigation after leaving the pile did not change workspace")
+	}
 	m.CancelOverview()
 	m.Focus(1)
 	m.ToggleOverview()
