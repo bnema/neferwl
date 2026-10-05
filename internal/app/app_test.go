@@ -268,7 +268,9 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	var halt sync.Once
 	stopCollector := func() { halt.Do(func() { close(stop); <-collected }) }
 	t.Cleanup(stopCollector)
-	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\n")), Timeout: 5 * time.Second, testScenes: scenes})
+	// The script ends with the default quit bind: the run stops when it
+	// is done, the timeout is only a backstop.
+	err := Run(context.Background(), Options{Backend: "headless", NoXwayland: true, Config: cfg, Script: io.NopCloser(strings.NewReader("sleep 1s\nkey Super+Return\nsleep 1s\nmove 600 300\nclick\nsleep 500ms\nkey Ctrl+Alt+BackSpace\n")), Timeout: 5 * time.Second, testScenes: scenes})
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "vulkan") {
 			t.Skipf("Vulkan unavailable: %v", err)

@@ -9,15 +9,6 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-func settledOf(t *testing.T, sc *screen, id WindowID) Placement {
-	t.Helper()
-	i := slices.IndexFunc(sc.settledLayout, func(p Placement) bool { return p.ID == id })
-	if i < 0 {
-		t.Fatalf("window %d not in the settled layout %+v", id, sc.settledLayout)
-	}
-	return sc.settledLayout[i]
-}
-
 // A tiled map: the new window fades in from 90 % of its settled rect, its
 // neighbour slides from where it was, the client is configured once, to
 // the final size, and everything settles exactly.

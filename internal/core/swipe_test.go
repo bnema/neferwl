@@ -772,38 +772,39 @@ func TestOverviewOpenedMidSwipeDropsIt(t *testing.T) {
 		r.move(t, -40, 0)
 		r.move(t, -40, 0)
 		r.key(t, "o", ports.ModAlt)
+		// s is the latest scene.
+		var s ports.Scene
 		if closeFirst {
-			r.key(t, "Escape", 0)
+			s = r.key(t, "Escape", 0)[0]
 		}
 		for range 20 {
 			r.at += 8 * time.Millisecond
 			r.input <- ports.SwipeUpdate{DX: -80, Time: r.at}
 		}
+		// The updates publish nothing (the overview gesture, or a dropped
+		// swipe); the lift always publishes, so its scene is received
+		// before the next event: core is idle when the escape and the
+		// flips arrive, each waits for its own scene.
 		r.input <- ports.SwipeEnd{Time: r.at}
+		s = scene(t, r.scenes)
 		if !closeFirst {
-			r.input <- ports.KeyEvent{Keysym: "Escape", Pressed: true}
+			s = r.key(t, "Escape", 0)[0]
 		}
-		// Past any spring: the view shows where it settled. The escape's
-		// own springs (the cards zooming back) start when it is handled,
-		// which may follow a first flip: flip until the scene is settled.
-		var s ports.Scene
-		for deadline := time.Now().Add(5 * time.Second); ; {
-			r.advance(5 * time.Second)
-			r.frames <- ports.OutputFrame{Output: wide.Name}
-			select {
-			case set := <-r.scenes:
-				s = set[0]
-			case <-time.After(20 * time.Millisecond):
-			}
-			if len(s.Windows) > 0 && !slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool {
-				// Neither a card nor a window still zooming back.
-				return w.Preview > 0 || w.Zoom > 0 || w.Fade > 0
-			}) {
+		// Past any spring: the escape's own springs (the cards zooming
+		// back) may chain after the swipe's landing, so settle until
+		// none runs.
+		for range 4 {
+			set, ok := r.settleAll(t, wide.Name)
+			if !ok {
 				break
 			}
-			if time.Now().After(deadline) {
-				t.Fatalf("closeFirst=%v: the scene never settled: %+v", closeFirst, s.Windows)
-			}
+			s = set[0]
+		}
+		if len(s.Windows) == 0 || slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool {
+			// Neither a card nor a window still zooming back.
+			return w.Preview > 0 || w.Zoom > 0 || w.Fade > 0
+		}) {
+			t.Fatalf("closeFirst=%v: the scene never settled: %+v", closeFirst, s.Windows)
 		}
 		for _, id := range []ports.WindowID{1, 2, 3} {
 			before, _ := rectOf(settled, id)

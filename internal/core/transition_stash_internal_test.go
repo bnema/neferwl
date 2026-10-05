@@ -30,35 +30,11 @@ func stashRig(t *testing.T, on bool) (*Core, *indicatorClock, *screen, chan port
 	return c, ic, sc, cmds
 }
 
-// configuresOf drains the commands into the configures sent per window.
-func configuresOf(cmds chan ports.ClientCommand) map[WindowID][]ports.ConfigureWindow {
-	out := map[WindowID][]ports.ConfigureWindow{}
-	for {
-		select {
-		case cmd := <-cmds:
-			if v, ok := cmd.(ports.ConfigureWindow); ok {
-				out[v.ID] = append(out[v.ID], v)
-			}
-		default:
-			return out
-		}
-	}
-}
-
 // act is a bind: snapshot, action, transition.
 func act(c *Core, ic *indicatorClock, a Action) {
 	shots := c.snapshot(ic.now)
 	c.applyAction(a)
 	c.transition(shots, ic.now)
-}
-
-func settledPlacement(t *testing.T, sc *screen, id WindowID) Placement {
-	t.Helper()
-	i := slices.IndexFunc(sc.settledLayout, func(p Placement) bool { return p.ID == id })
-	if i < 0 {
-		t.Fatalf("window %d not in the settled layout", id)
-	}
-	return sc.settledLayout[i]
 }
 
 // Showing the stash fades in and grows every window it brings on screen;
@@ -79,7 +55,7 @@ func TestStashShowAppears(t *testing.T) {
 	act(c, ic, ActionToggleStashVisible)
 	s := indicatorScene(t, c)
 	for _, id := range []WindowID{2, 3} {
-		p := settledPlacement(t, sc, id)
+		p := settledOf(t, sc, id)
 		w := sceneWindow(t, s, id)
 		if w.Hidden || w.Fade != 1 || w.Rect != scaledRect(p.Rect, appearScale) || w.Zoom < 0.85 || w.Zoom > 0.95 {
 			t.Fatalf("window %d first frame %+v, want invisible at 90 %% of %+v", id, w, p.Rect)
@@ -94,7 +70,7 @@ func TestStashShowAppears(t *testing.T) {
 		if len(cfgs[id]) != 1 {
 			t.Fatalf("window %d configured %d times, want once: %+v", id, len(cfgs[id]), cfgs[id])
 		}
-		want := c.clientRect(settledPlacement(t, sc, id))
+		want := c.clientRect(settledOf(t, sc, id))
 		if v := cfgs[id][0]; !v.Visible || v.Width != want.W || v.Height != want.H {
 			t.Fatalf("window %d configure %+v, want %dx%d (the settled client rect)", id, v, want.W, want.H)
 		}
@@ -109,7 +85,7 @@ func TestStashShowAppears(t *testing.T) {
 	}
 	s = frame(t, c, ic, 5*time.Second)
 	for _, id := range []WindowID{2, 3} {
-		p := settledPlacement(t, sc, id)
+		p := settledOf(t, sc, id)
 		if w := sceneWindow(t, s, id); w.Fade != 0 || w.Zoom != 0 || w.Rect != p.Rect {
 			t.Fatalf("window %d settled %+v, want %+v", id, w, p.Rect)
 		}
@@ -128,7 +104,7 @@ func TestStashHideLeaves(t *testing.T) {
 	c, ic, sc, cmds := stashRig(t, true)
 	left := map[WindowID]Placement{}
 	for _, id := range []WindowID{2, 3} {
-		left[id] = settledPlacement(t, sc, id)
+		left[id] = settledOf(t, sc, id)
 	}
 	act(c, ic, ActionToggleStashVisible)
 	s := indicatorScene(t, c)
@@ -266,7 +242,7 @@ func TestOverviewPileScalesFromStash(t *testing.T) {
 	s = indicatorScene(t, c)
 	for _, id := range []WindowID{2, 3} {
 		w := sceneWindow(t, s, id)
-		p := settledPlacement(t, sc, id)
+		p := settledOf(t, sc, id)
 		if w.Hidden || w.Preview != overviewCardZoom || w.Rect != from[id] || w.Zoom != 1 {
 			t.Fatalf("window %d first frame %+v, want its stash rect %+v at content scale 1 (card %+v)", id, w, from[id], p.Rect)
 		}
@@ -275,7 +251,7 @@ func TestOverviewPileScalesFromStash(t *testing.T) {
 	s = frame(t, c, ic, 40*time.Millisecond)
 	for _, id := range []WindowID{2, 3} {
 		w := sceneWindow(t, s, id)
-		p := settledPlacement(t, sc, id)
+		p := settledOf(t, sc, id)
 		if !(w.Rect.W < from[id].W && w.Rect.W > p.Rect.W) || !(w.Zoom > overviewCardZoom && w.Zoom < 1) {
 			t.Fatalf("window %d mid-way %+v, want between %+v and %+v", id, w, from[id], p.Rect)
 		}
@@ -284,7 +260,7 @@ func TestOverviewPileScalesFromStash(t *testing.T) {
 	s = frame(t, c, ic, 5*time.Second)
 	for _, id := range []WindowID{2, 3} {
 		w := sceneWindow(t, s, id)
-		p := settledPlacement(t, sc, id)
+		p := settledOf(t, sc, id)
 		if w.Rect != p.Rect || w.Zoom != 0 || w.Fade != 0 || w.Preview != overviewCardZoom {
 			t.Fatalf("window %d settled %+v, want the pile card %+v", id, w, p)
 		}
@@ -399,7 +375,7 @@ func TestStashShowDuringHideDoesNotJump(t *testing.T) {
 		t.Fatalf("fade %v then %v, want it to clear", w.Fade, n.Fade)
 	}
 	s = frame(t, c, ic, 5*time.Second)
-	p := settledPlacement(t, sc, 2)
+	p := settledOf(t, sc, 2)
 	if w := sceneWindow(t, s, 2); w.Fade != 0 || w.Zoom != 0 || w.Rect != p.Rect || c.animating() {
 		t.Fatalf("settled %+v, want %+v", w, p.Rect)
 	}
@@ -414,7 +390,7 @@ func TestStashNavigationLeavesFromSlide(t *testing.T) {
 	indicatorScene(t, c)
 	s := frame(t, c, ic, 30*time.Millisecond)
 	last := sceneWindow(t, s, 2)
-	settled := settledPlacement(t, sc, 2)
+	settled := settledOf(t, sc, 2)
 	if last.Rect == settled.Rect {
 		t.Fatal("setup: window 2 already at rest")
 	}

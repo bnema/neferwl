@@ -18,21 +18,6 @@ func fadeCore(t *testing.T) (*Core, *indicatorClock, chan ports.ClientCommand) {
 	return c, ic, cmds
 }
 
-// drainConfigures returns the IDs configured since the last drain.
-func drainConfigures(cmds chan ports.ClientCommand) []WindowID {
-	var ids []WindowID
-	for {
-		select {
-		case cmd := <-cmds:
-			if v, ok := cmd.(ports.ConfigureWindow); ok {
-				ids = append(ids, v.ID)
-			}
-		default:
-			return ids
-		}
-	}
-}
-
 func sceneWindow(t *testing.T, s ports.Scene, id WindowID) ports.SceneWindow {
 	t.Helper()
 	i := slices.IndexFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == id })

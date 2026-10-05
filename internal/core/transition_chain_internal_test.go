@@ -10,12 +10,6 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// settleShown publishes so the screens' shown layouts are current.
-func settleShown(t *testing.T, c *Core) {
-	t.Helper()
-	indicatorScene(t, c)
-}
-
 // A bind that stops a spring while it acts (Monitor.Focus) must not lose its
 // speed: the transition that follows starts from what the snapshot recorded.
 func TestChainedActionsKeepVelocity(t *testing.T) {
