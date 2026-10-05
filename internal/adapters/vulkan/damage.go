@@ -253,21 +253,51 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 			area = area.Union(phys(a.Rect)).Union(phys(b.Rect))
 		}
 	}
-	// Separators: a line in one list more often than in the other.
-	for _, sep := range old.Separators {
-		if countSeparator(old.Separators, sep) != countSeparator(cur.Separators, sep) {
-			area = area.Union(phys(sep.Rect))
-		}
-	}
-	for _, sep := range cur.Separators {
-		if countSeparator(old.Separators, sep) != countSeparator(cur.Separators, sep) {
-			area = area.Union(phys(sep.Rect))
-		}
-	}
+	area = area.Union(separatorDelta(old.Separators, cur.Separators, phys))
 	if area.Dx()*area.Dy() > limit {
 		return image.Rectangle{}, false
 	}
 	return area, true
+}
+
+// separatorDelta is the region where the separator lists differ: a line in
+// one list more often than in the other. Core builds the lists in layout
+// order (one pass over the placements, sides in a fixed order), so between
+// two frames of the same windows they are index-aligned: equal lists cost
+// one comparison, and with lists of the same length only the pairs that
+// differ by index are counted in the other list (a focus change lights a
+// few lines, not all). Lists of different lengths (a line scrolled on or
+// off) count every line.
+func separatorDelta(old, cur []ports.Separator, phys func(ports.Rect) image.Rectangle) image.Rectangle {
+	var area image.Rectangle
+	if slices.Equal(old, cur) {
+		return area
+	}
+	if len(old) == len(cur) {
+		for i := range old {
+			if old[i] == cur[i] {
+				continue
+			}
+			if countSeparator(old, old[i]) != countSeparator(cur, old[i]) {
+				area = area.Union(phys(old[i].Rect))
+			}
+			if countSeparator(old, cur[i]) != countSeparator(cur, cur[i]) {
+				area = area.Union(phys(cur[i].Rect))
+			}
+		}
+		return area
+	}
+	for _, sep := range old {
+		if countSeparator(old, sep) != countSeparator(cur, sep) {
+			area = area.Union(phys(sep.Rect))
+		}
+	}
+	for _, sep := range cur {
+		if countSeparator(old, sep) != countSeparator(cur, sep) {
+			area = area.Union(phys(sep.Rect))
+		}
+	}
+	return area
 }
 
 func countSeparator(list []ports.Separator, sep ports.Separator) int {

@@ -150,10 +150,14 @@ func TestDamageDeltaSeparators(t *testing.T) {
 }
 
 func TestSceneDeltaAllocations(t *testing.T) {
+	// Many separators (twenty tiles' worth): the same-length lists are
+	// compared index by index, and a list that lost a line still allocates
+	// nothing.
+	const seps = 80
 	old := deltaScene(1, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 400, 500))
 	cur := deltaScene(2, win(1, 0, 0, 300, 500), win(2, 300, 0, 300, 500), win(3, 600, 0, 380, 500))
-	for i := range 6 {
-		s := ports.Separator{Rect: ports.Rect{X: i * 100, W: 2, H: 500}}
+	for i := range seps {
+		s := ports.Separator{Rect: ports.Rect{X: i * 10, W: 2, H: 500}}
 		old.Separators = append(old.Separators, s)
 		cur.Separators = append(cur.Separators, s)
 	}
@@ -161,10 +165,34 @@ func TestSceneDeltaAllocations(t *testing.T) {
 	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
 	var area image.Rectangle
 	var ok bool
-	allocs := testing.AllocsPerRun(50, func() { area, ok = sceneDelta(old, cur, phys, 450000) })
+	allocs := testing.AllocsPerRun(50, func() { area, ok = sceneDelta(old, cur, phys, 1<<30) })
 	require.True(t, ok)
 	assert.False(t, area.Empty())
+	assert.True(t, image.Rect(50, 0, 52, 500).In(area), "the changed line is damaged: %v", area)
 	assert.Zero(t, allocs, "sceneDelta must not allocate")
+
+	short := cur
+	short.Separators = cur.Separators[:seps-1]
+	allocs = testing.AllocsPerRun(50, func() { area, ok = sceneDelta(old, short, phys, 1<<30) })
+	require.True(t, ok)
+	assert.True(t, image.Rect((seps-1)*10, 0, (seps-1)*10+2, 500).In(area), "the dropped line is damaged: %v", area)
+	assert.Zero(t, allocs, "sceneDelta must not allocate with lists of different lengths")
+}
+
+// Separators are damaged where a line is in one list more often than in
+// the other, whatever the order: equal lists add nothing, a changed pair
+// adds both rects, a rotated list adds nothing, a duplicated line that
+// replaces another adds both, a line added or dropped adds that line.
+func TestSceneDeltaSeparators(t *testing.T) {
+	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }
+	line := func(x int) ports.Separator { return ports.Separator{Rect: ports.Rect{X: x, W: 2, H: 10}} }
+	a, b, c := line(0), line(100), line(200)
+	assert.True(t, separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, b}, phys).Empty())
+	assert.Equal(t, image.Rect(100, 0, 202, 10), separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, c}, phys))
+	assert.True(t, separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{b, c, a}, phys).Empty())
+	assert.Equal(t, image.Rect(0, 0, 102, 10), separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{a, a, c}, phys))
+	assert.Equal(t, image.Rect(200, 0, 202, 10), separatorDelta([]ports.Separator{a, b}, []ports.Separator{a, b, c}, phys))
+	assert.Equal(t, image.Rect(0, 0, 2, 10), separatorDelta([]ports.Separator{a, b, c}, []ports.Separator{b, c}, phys))
 }
 
 // The paint order splits at the first window that opens the floats: when
