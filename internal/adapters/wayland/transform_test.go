@@ -161,13 +161,16 @@ func TestOpaqueRegionContent(t *testing.T) {
 	if prev.Opaque {
 		t.Fatalf("partial region made the surface opaque: %+v", prev)
 	}
+	if want := (ports.Rect{W: 15, H: 20}); prev.OpaqueRect != want {
+		t.Fatalf("partial region: OpaqueRect %v, want %v", prev.OpaqueRect, want)
+	}
 	// Two halves cover the whole surface, even through a larger rect.
 	// Opacity changes blending everywhere: the commit damages it all.
 	whole := tc.region(t, ports.Rect{W: 15, H: 20}, ports.Rect{X: 15, W: 100, H: 20})
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, whole)
 	tc.commit(t)
 	got := tc.next(t)
-	if !got.Opaque {
+	if !got.Opaque || got.OpaqueRect != (ports.Rect{}) {
 		t.Fatalf("covering region: %+v", got)
 	}
 	if rects, ok := got.DamageSince(prev.Seq); ok {
@@ -186,8 +189,45 @@ func TestOpaqueRegionContent(t *testing.T) {
 	}
 	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, uint32(0))
 	tc.commit(t)
-	if got := tc.next(t); got.Opaque {
+	if got := tc.next(t); got.Opaque || got.OpaqueRect != (ports.Rect{}) {
 		t.Fatalf("NULL region: %+v", got)
+	}
+	// A region one pixel short of the surface (what Firefox sets) is not
+	// opaque, but its rect is reported.
+	short := tc.region(t, ports.Rect{W: 29, H: 19})
+	requestProtocol(t, tc.c, tc.surf, wayland.SurfaceRequestSetOpaqueRegion, short)
+	tc.commit(t)
+	if got := tc.next(t); got.Opaque || got.OpaqueRect != (ports.Rect{W: 29, H: 19}) {
+		t.Fatalf("short region: %+v", got)
+	}
+}
+
+// opaqueRect is the largest rect of the region inside the surface, none for
+// an opaque or faded surface.
+func TestOpaqueRect(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		region []ports.Rect
+		opaque bool
+		w, h   int
+		fade   float32
+		want   ports.Rect
+	}{
+		{"none", nil, false, 10, 10, 0, ports.Rect{}},
+		{"one pixel short", []ports.Rect{{W: 983, H: 1230}}, false, 984, 1231, 0, ports.Rect{W: 983, H: 1230}},
+		{"clipped to the surface", []ports.Rect{{X: -5, Y: 2, W: 100, H: 100}}, false, 10, 10, 0, ports.Rect{Y: 2, W: 10, H: 8}},
+		{"largest of several", []ports.Rect{{W: 2, H: 2}, {X: 3, Y: 3, W: 5, H: 4}}, false, 10, 10, 0, ports.Rect{X: 3, Y: 3, W: 5, H: 4}},
+		{"outside", []ports.Rect{{X: 10, W: 5, H: 5}}, false, 10, 10, 0, ports.Rect{}},
+		{"wholly opaque", []ports.Rect{{W: 9, H: 9}}, true, 10, 10, 0, ports.Rect{}},
+		{"faded", []ports.Rect{{W: 9, H: 9}}, false, 10, 10, 0.5, ports.Rect{}},
+		{"no size", []ports.Rect{{W: 9, H: 9}}, false, 0, 0, 0, ports.Rect{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &surface{opaque: tc.region}
+			if got := s.opaqueRect(tc.opaque, tc.w, tc.h, tc.fade); got != tc.want {
+				t.Fatalf("opaqueRect = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

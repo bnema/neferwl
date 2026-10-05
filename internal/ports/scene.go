@@ -207,6 +207,11 @@ type SurfaceContent struct {
 	// Opaque ignores the alpha byte: an x format, or an opaque region that
 	// covers the whole surface. It is false while Fade is set.
 	Opaque bool
+	// OpaqueRect is the largest rect of the opaque region inside a surface
+	// that is not wholly Opaque, in logical pixels from the surface origin:
+	// the pixels there ignore alpha too, so the surfaces below it are hidden
+	// by it. Empty when there is none or while Fade is set.
+	OpaqueRect Rect
 	// Fade is how much wp_alpha_modifier_v1 fades the surface: 0 none,
 	// 1 invisible. Its opacity is multiplied by 1-Fade.
 	Fade   float32

@@ -310,26 +310,54 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 	}
 }
 
-// opaqueChildren gives the physical rects shown by the opaque subsurfaces
+// opaqueChildren gives the physical rects shown opaque by the subsurfaces
 // above the root (e.g. a game's GPU surface over its window's shm buffer):
-// they hide the surfaces below them. A child whose buffer will not draw is
-// left out, so the surface below it still shows: a dmabuf that fails to
-// import (opaqueChildren pre-imports it) or an unreadable shm buffer.
+// they hide the surfaces below them. A child that is not wholly opaque but
+// has an opaque region (Firefox's page, whose region stops a pixel short of
+// its edges) hides the surfaces below only inside that rect. A child whose
+// buffer will not draw is left out, so the surface below it still shows: a
+// dmabuf that fails to import (opaqueChildren pre-imports it) or an
+// unreadable shm buffer.
 func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
 	covers := w.r.scratchCovers[:0]
 	for i := range content.Children {
 		ch := &content.Children[i]
-		if ch.Below || !ch.Opaque {
+		if ch.Below || !ch.Opaque && ch.OpaqueRect.W <= 0 {
 			continue
 		}
-		_, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+float64(ch.X)*w.zoom, oy+float64(ch.Y)*w.zoom, clip)
+		full, dst, ok := w.surfaceRects(&ch.SurfaceContent, ox+float64(ch.X)*w.zoom, oy+float64(ch.Y)*w.zoom, clip)
 		if !ok || !w.drawable(&ch.SurfaceContent) {
 			continue
+		}
+		if !ch.Opaque {
+			if dst = opaqueCover(&ch.SurfaceContent, full, dst); dst.Empty() {
+				continue
+			}
 		}
 		covers = append(covers, dst)
 	}
 	w.r.scratchCovers = covers
 	return covers
+}
+
+// opaqueCover is the part of dst (physical, what the surface shows of full)
+// that its OpaqueRect maps to. Edges round inward, so every pixel of it is
+// inside the region; an edge on the surface's own edge stays on dst's.
+func opaqueCover(c *ports.SurfaceContent, full, dst image.Rectangle) image.Rectangle {
+	lw, lh := c.LogicalW, c.LogicalH
+	if lw <= 0 || lh <= 0 {
+		lw, lh = c.Width, c.Height
+	}
+	o := c.OpaqueRect
+	if lw <= 0 || lh <= 0 || o.W <= 0 || o.H <= 0 {
+		return image.Rectangle{}
+	}
+	// ceil and floor of full.Min + v*size/n, v >= 0.
+	lo := func(min, v, size, n int) int { return min + (v*size+n-1)/n }
+	hi := func(min, v, size, n int) int { return min + v*size/n }
+	r := image.Rect(lo(full.Min.X, max(o.X, 0), full.Dx(), lw), lo(full.Min.Y, max(o.Y, 0), full.Dy(), lh),
+		hi(full.Min.X, min(o.X+o.W, lw), full.Dx(), lw), hi(full.Min.Y, min(o.Y+o.H, lh), full.Dy(), lh))
+	return r.Intersect(dst)
 }
 
 // drawable reports whether the child's buffer will draw. GPU buffer
@@ -383,6 +411,7 @@ func (w *sceneWalk) surfaceRects(content *ports.SurfaceContent, x, y float64, cl
 // surface draws one surface buffer with its origin at (x, y) logical,
 // clipped to clip (logical), unless an opaque surface above it (covers,
 // physical) hides all of it: its buffer is then neither copied nor drawn.
+// A cover over only part of it clips the draw to the rest.
 func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip image.Rectangle, key shmKey, seq uint64, covers []image.Rectangle, root bool) {
 	full, dst, ok := w.surfaceRects(content, x, y, clip)
 	if !ok {
@@ -396,7 +425,36 @@ func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip im
 	if root {
 		w.dmg.content(key.win, content, full, dst)
 	}
+	n := len(w.draws)
 	w.content(dst, full, content, key, seq, root)
+	if len(w.draws) == n+1 && len(covers) > 0 {
+		// The quad's mapping comes from full: only its rect shrinks.
+		d := w.draws[n]
+		w.draws = w.draws[:n]
+		w.uncovered(d, dst, covers)
+	}
+}
+
+// uncovered appends d, a quad over rect, minus the covers: the strips of
+// rect around each cover, in turn. d keeps its mapping.
+func (w *sceneWalk) uncovered(d draw, rect image.Rectangle, covers []image.Rectangle) {
+	for i, c := range covers {
+		in := rect.Intersect(c)
+		if in.Empty() {
+			continue
+		}
+		rest := covers[i+1:]
+		w.uncovered(d, image.Rect(rect.Min.X, rect.Min.Y, rect.Max.X, in.Min.Y), rest)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Max.Y, rect.Max.X, rect.Max.Y), rest)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Min.Y, in.Min.X, in.Max.Y), rest)
+		w.uncovered(d, image.Rect(in.Max.X, in.Min.Y, rect.Max.X, in.Max.Y), rest)
+		return
+	}
+	if rect.Empty() {
+		return
+	}
+	d.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
+	w.draws = append(w.draws, d)
 }
 
 // content draws the part of a buffer mapped onto full (physical pixels)
