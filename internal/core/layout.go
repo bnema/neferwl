@@ -140,7 +140,7 @@ type Placement struct {
 	Fade, Dim, Zoom float64
 }
 
-// peeking marks p a peek with the share veil of the peek veil.
+// peeking marks p a peek drawing share of the peek veil (Stash.Dim).
 func (p *Placement) peeking(veil float64) { p.Peek, p.Veil = true, veil }
 
 // Overflow says what happens past MaxColumns columns.

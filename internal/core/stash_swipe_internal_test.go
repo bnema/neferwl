@@ -373,24 +373,32 @@ func TestStashNavigationChainsManyWithoutJump(t *testing.T) {
 	}
 }
 
-// The captured workspace draws the veil the screen does, fractional while
-// the stash slides.
+// A captured workspace caught mid-slide draws the veil the screen does:
+// a share of Stash.Dim, not the full one and not none.
 func TestCaptureSceneDrawsTheSlidingVeil(t *testing.T) {
 	s, w := newStashSwipe(t, nil)
+	s.c.cfg.Stash.Dim = 0.5
 	s.begin()
 	s.move(-40)
 	s.move(-80)
-	s.c.cfg.Stash.Dim = 0.5
-	for _, p := range w.Layout() {
-		if p.Veil > 0 && p.Veil < 1 && s.c.peekDim(p) != s.c.cfg.Stash.Dim*p.Veil {
-			t.Fatalf("placement %d veil %v draws %v", p.ID, p.Veil, s.c.peekDim(p))
+	sc := s.c.screens[0]
+	s.c.configures.cw.load(sc, w)
+	scene := s.c.captureScene(1)
+	if scene == nil {
+		t.Fatal("no capture scene")
+	}
+	var partial bool
+	for _, p := range s.c.configures.cw.placements {
+		if p.Veil <= 0 || p.Veil >= 1 {
+			continue
+		}
+		partial = true
+		got := sceneWindow(t, *scene, p.ID).Dim
+		if want := s.c.cfg.Stash.Dim * p.Veil; math.Abs(got-want) > 1e-9 {
+			t.Fatalf("window %d captured with dim %v, want %v", p.ID, got, want)
 		}
 	}
-	var sliding bool
-	for _, p := range w.Layout() {
-		sliding = sliding || p.Veil > 0 && p.Veil < 1
-	}
-	if !sliding {
+	if !partial {
 		t.Fatal("setup: no window has a partial veil")
 	}
 }

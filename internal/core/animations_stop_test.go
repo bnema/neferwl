@@ -16,6 +16,6 @@ func TestStopAnimationsSettlesEverySpring(t *testing.T) {
 	}
 	c.stopAnimations()
 	if c.animating() || w.view.motion.on || w.view.off != 0 || m.switchView.motion.on || m.switchView.off != 0 || c.frameC != nil {
-		t.Fatalf("springs left: shift %v, switch %v, motion %v %v, timer %v", w.view.off, m.switchView.off, w.view.motion.on, m.switchView.motion.on, c.frameC != nil)
+		t.Fatalf("springs left: view %v, switch %v, motions %v %v, timer %v", w.view.off, m.switchView.off, w.view.motion.on, m.switchView.motion.on, c.frameC != nil)
 	}
 }
