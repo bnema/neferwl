@@ -431,25 +431,63 @@ func (w *sceneWalk) surface(content *ports.SurfaceContent, x, y float64, clip im
 		// The quad's mapping comes from full: only its rect shrinks.
 		d := w.draws[n]
 		w.draws = w.draws[:n]
-		w.uncovered(d, dst, covers)
+		w.split(d, dst, covers)
 	}
 }
 
+// Splitting a quad around covers is bounded: covers come from the client, and
+// each can cut a quad into four strips, recursively. Past these bounds the
+// quad is drawn whole: the covers above it hide the rest, at the cost of
+// overdraw.
+const (
+	maxSplitCovers = 8  // covers crossing the quad that are still split around
+	maxSplitStrips = 32 // draws one quad may become
+)
+
+// split appends d, a quad over rect, minus the covers, or the whole quad
+// when the covers cut it into too many strips.
+func (w *sceneWalk) split(d draw, rect image.Rectangle, covers []image.Rectangle) {
+	crossing := 0
+	for _, c := range covers {
+		if !rect.Intersect(c).Empty() {
+			crossing++
+		}
+	}
+	n := len(w.draws)
+	if crossing <= maxSplitCovers {
+		w.uncovered(d, rect, covers, n+maxSplitStrips)
+		if len(w.draws) <= n+maxSplitStrips {
+			return
+		}
+		w.draws = w.draws[:n]
+	}
+	w.quad(d, rect)
+}
+
 // uncovered appends d, a quad over rect, minus the covers: the strips of
-// rect around each cover, in turn. d keeps its mapping.
-func (w *sceneWalk) uncovered(d draw, rect image.Rectangle, covers []image.Rectangle) {
+// rect around each cover, in turn. d keeps its mapping. It stops once the
+// draws pass limit, for the caller to drop them.
+func (w *sceneWalk) uncovered(d draw, rect image.Rectangle, covers []image.Rectangle, limit int) {
+	if len(w.draws) > limit {
+		return
+	}
 	for i, c := range covers {
 		in := rect.Intersect(c)
 		if in.Empty() {
 			continue
 		}
 		rest := covers[i+1:]
-		w.uncovered(d, image.Rect(rect.Min.X, rect.Min.Y, rect.Max.X, in.Min.Y), rest)
-		w.uncovered(d, image.Rect(rect.Min.X, in.Max.Y, rect.Max.X, rect.Max.Y), rest)
-		w.uncovered(d, image.Rect(rect.Min.X, in.Min.Y, in.Min.X, in.Max.Y), rest)
-		w.uncovered(d, image.Rect(in.Max.X, in.Min.Y, rect.Max.X, in.Max.Y), rest)
+		w.uncovered(d, image.Rect(rect.Min.X, rect.Min.Y, rect.Max.X, in.Min.Y), rest, limit)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Max.Y, rect.Max.X, rect.Max.Y), rest, limit)
+		w.uncovered(d, image.Rect(rect.Min.X, in.Min.Y, in.Min.X, in.Max.Y), rest, limit)
+		w.uncovered(d, image.Rect(in.Max.X, in.Min.Y, rect.Max.X, in.Max.Y), rest, limit)
 		return
 	}
+	w.quad(d, rect)
+}
+
+// quad appends d over rect, unless it is empty.
+func (w *sceneWalk) quad(d draw, rect image.Rectangle) {
 	if rect.Empty() {
 		return
 	}

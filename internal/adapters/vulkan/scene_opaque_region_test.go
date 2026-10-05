@@ -249,3 +249,84 @@ func BenchmarkComposeOpaqueRegionChild(b *testing.B) {
 		})
 	}
 }
+
+// crossingCovers is a root of w×h pixels under n opaque 10×10 children
+// staggered over it, so that each cover crosses the root and the others.
+func crossingCovers(t testing.TB, w, h, n int) ports.SurfaceContent {
+	root := solidContent(t, w, h, color.RGBA{R: 255, A: 255})
+	root.ID, root.Surface, root.Seq, root.Version = 1, 1, 1, 1
+	for i := range n {
+		child := solidContent(t, 10, 10, color.RGBA{G: 255, A: 255})
+		child.Surface, child.Version, child.Opaque = uint64(2+i), 1, true
+		root.Children = append(root.Children, ports.Subsurface{SurfaceContent: child, X: (i * 7) % (w - 10), Y: (i * 5) % (h - 10)})
+	}
+	return root
+}
+
+// A client chooses how many opaque subsurfaces cross its root, and each one
+// cuts the root quad into strips: the split stops at maxSplitCovers covers
+// or maxSplitStrips draws, and the root then draws whole (overdraw only, the
+// covers above it still hide the rest).
+func TestSceneSplitIsBounded(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	const w, h = 60, 40
+	scene := ports.Scene{Seq: 1, Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
+	full := image.Rect(0, 0, w, h)
+	for _, n := range []int{1, maxSplitCovers, maxSplitCovers + 1, 40} {
+		contents := map[ports.WindowID]ports.SurfaceContent{1: crossingCovers(t, w, h, n)}
+		ds := r.draws(scene, contents, newDamage(r.target(), scene, image.Rect(0, 0, 64, 48)))
+		rects := drawRects(ds)
+		root := len(rects) - n // the children draw once each, after the root
+		if root < 1 || root > maxSplitStrips {
+			t.Errorf("%d covers: %d root draws, want 1..%d", n, root, maxSplitStrips)
+		}
+		if n > maxSplitCovers && (root != 1 || rects[0] != full) {
+			t.Errorf("%d covers: root draws %v, want the whole quad %v", n, rects[:root], full)
+		}
+		if n == 1 && root < 2 {
+			t.Errorf("one cover: %d root draws, want the quad split around it", root)
+		}
+		bounds := image.Rect(0, 0, 64, 48)
+		frame := func() { _ = r.draws(scene, contents, r.frameDamage(r.target(), scene, bounds)) }
+		frame()
+		if allocs := testing.AllocsPerRun(20, frame); allocs != 0 {
+			t.Errorf("%d covers: %.1f allocs/frame, want 0", n, allocs)
+		}
+	}
+}
+
+// With the split given up on, the covers above the whole root quad still
+// show: the window's pixels are the children's inside them and the root's
+// elsewhere.
+func TestRendererSplitBoundKeepsRoot(t *testing.T) {
+	r, err := New(64, 48)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	const w, h, n = 60, 40, 40
+	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: w, H: h}}}}
+	root := crossingCovers(t, w, h, n)
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: root}); err != nil {
+		t.Fatal(err)
+	}
+	got := readPixels(t, r)
+	red, green := color.RGBA{R: 255, A: 255}, color.RGBA{G: 255, A: 255}
+	for y := range h {
+		for x := range w {
+			want := red
+			for _, c := range root.Children {
+				if image.Pt(x, y).In(image.Rect(c.X, c.Y, c.X+10, c.Y+10)) {
+					want = green
+				}
+			}
+			if g := got.At(x, y); g != want {
+				t.Fatalf("At(%d,%d)=%v want %v", x, y, g, want)
+			}
+		}
+	}
+}
