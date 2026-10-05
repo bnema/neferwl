@@ -436,16 +436,8 @@ func TestSlideMovesPointerFocus(t *testing.T) {
 	r.settle(t)
 	var focus ports.PointerFocus
 	var motion ports.PointerMotionTo
-	// Core sends the pointer update right after the scene: wait for it.
-	for {
-		var v ports.ClientCommand
-		select {
-		case v = <-r.commands:
-		case <-time.After(50 * time.Millisecond):
-		}
-		if v == nil {
-			break
-		}
+	// Core sends the pointer update right after the scene.
+	for _, v := range r.sent() {
 		switch v := v.(type) {
 		case ports.PointerFocus:
 			focus = v
@@ -561,15 +553,7 @@ func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
 	scene(t, r.scenes)
 	r.drain()
 	r.input <- ports.SwipeEnd{Time: r.at}
-	for {
-		var v ports.ClientCommand
-		select {
-		case v = <-r.commands:
-		case <-time.After(50 * time.Millisecond):
-		}
-		if v == nil {
-			break
-		}
+	for _, v := range r.sent() {
 		if f, ok := v.(ports.FocusWindow); ok && f.ID == 3 {
 			t.Fatal("swipe from DP-1 moved the focus on DP-2")
 		}
@@ -578,11 +562,21 @@ func TestDiscreteSwipeSkippedWhenPointerChangesOutput(t *testing.T) {
 
 // drain waits for core to handle what was sent, then empties commands.
 func (r *swipeRig) drain() {
+	for range r.sent() {
+	}
+}
+
+// sent waits for core to handle what was sent and returns the commands it
+// sent meanwhile (the sync flip is a barrier, see published).
+func (r *swipeRig) sent() []ports.ClientCommand {
+	send(r.frames, ports.OutputFrame{Output: "sync"})
+	var out []ports.ClientCommand
 	for {
 		select {
-		case <-r.commands:
-		case <-time.After(50 * time.Millisecond):
-			return
+		case v := <-r.commands:
+			out = append(out, v)
+		default:
+			return out
 		}
 	}
 }

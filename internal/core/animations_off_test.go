@@ -17,10 +17,22 @@ func (r *swipeRig) stillMoves(t *testing.T, n int, dx, dy float64) {
 		r.at += 8 * time.Millisecond
 		r.input <- ports.SwipeUpdate{DX: dx, DY: dy, Time: r.at}
 	}
+	if s, ok := r.published(); ok {
+		t.Fatalf("a swipe update published a scene (%d windows): the view follows the fingers", len(s))
+	}
+}
+
+// published reports the scene set core published for the events sent so
+// far, if any. A flip that names no output is a barrier: core handles its
+// events in order and publishes before taking the next one, so once the
+// send returns every earlier event is handled.
+func (r *swipeRig) published() ([]ports.Scene, bool) {
+	send(r.frames, ports.OutputFrame{Output: "sync"})
 	select {
 	case s := <-r.scenes:
-		t.Fatalf("a swipe update published a scene (%d windows): the view follows the fingers", len(s))
-	case <-time.After(50 * time.Millisecond):
+		return s, true
+	default:
+		return nil, false
 	}
 }
 
@@ -104,10 +116,8 @@ func (r *swipeRig) noFrameScene(t *testing.T, outputs ...string) {
 			r.frames <- ports.OutputFrame{Output: o}
 		}
 	}
-	select {
-	case s := <-r.scenes:
+	if s, ok := r.published(); ok {
 		t.Fatalf("a flip published a scene (%d windows): a spring still runs", len(s))
-	case <-time.After(50 * time.Millisecond):
 	}
 }
 
