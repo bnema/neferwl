@@ -723,6 +723,89 @@ func TestFourFingerSwipeDownTogglesStash(t *testing.T) {
 	}
 }
 
+// A four-finger swipe up hides the shown stash, with the same fade as a
+// swipe down, instead of opening the overview.
+func TestFourFingerSwipeUpHidesShownStash(t *testing.T) {
+	r := startSwipe(t, nil)
+	stashedThird(t, r)
+	s := r.four(t, 0, -40, 10)
+	for _, w := range s.Windows {
+		if w.Preview > 0 {
+			t.Fatal("swipe up opened the overview with the stash shown")
+		}
+	}
+	if w := windowOf(t, r.frame(t, 15*time.Millisecond), 3); w.Hidden || !(w.Fade > 0 && w.Fade < 1) {
+		t.Fatalf("hiding: window 3 hidden %t, fade %v, want it leaving", w.Hidden, w.Fade)
+	}
+	s = r.settle(t)
+	if w := windowOf(t, s, 3); !w.Hidden {
+		t.Fatalf("swipe up left the stash shown: %+v", w)
+	}
+	for _, w := range s.Windows {
+		if w.Preview > 0 {
+			t.Fatal("overview open after the stash hid")
+		}
+	}
+}
+
+// With the stash hidden or empty a swipe up opens the overview.
+func TestFourFingerSwipeUpOpensOverviewWithoutShownStash(t *testing.T) {
+	inOverview := func(s ports.Scene) bool {
+		for _, w := range s.Windows {
+			if w.Preview > 0 {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range []string{"hidden", "empty"} {
+		r := startSwipe(t, nil)
+		if name == "hidden" {
+			stashedThird(t, r)
+			r.key(t, "s", ports.ModAlt)
+			r.settle(t)
+		} else {
+			threeColumns(t, r)
+		}
+		r.four(t, 0, -40, 10)
+		if !inOverview(r.settle(t)) {
+			t.Fatalf("%s stash: swipe up did not open the overview", name)
+		}
+	}
+}
+
+// The stash shown over a covering fullscreen window is on screen: a swipe
+// up hides it and leaves the window fullscreen.
+func TestFourFingerSwipeUpHidesStashOverCover(t *testing.T) {
+	r := startSwipe(t, nil)
+	stashedThird(t, r)
+	r.key(t, "s", ports.ModAlt) // hide
+	r.settle(t)
+	r.key(t, "f", ports.ModAlt|ports.ModShift)
+	r.settleAll(t, r.outs...)
+	shown := r.key(t, "s", ports.ModAlt)[0] // show over the cover
+	sc, _ := r.settleAll(t, r.outs...)
+	if len(sc) == 0 {
+		sc = []ports.Scene{shown}
+	}
+	if w := windowOf(t, sc[0], 3); w.Hidden {
+		t.Fatalf("setup: the stash is hidden over the cover: %+v", w)
+	}
+	s := r.four(t, 0, -40, 10)
+	for _, w := range s.Windows {
+		if w.Preview > 0 {
+			t.Fatal("swipe up opened the overview with the stash over the cover")
+		}
+	}
+	// Over a cover the stash hides without a fade: the scene is final.
+	if w := windowOf(t, s, 3); !w.Hidden {
+		t.Fatalf("swipe up left the stash over the cover: %+v", w)
+	}
+	if w := windowOf(t, s, 2); !w.Fullscreen {
+		t.Fatalf("the covering window left fullscreen: %+v", w)
+	}
+}
+
 // With nothing in the stash a swipe down changes nothing: the scene is the
 // same one, with no new Seq and no animation.
 func TestFourFingerSwipeDownEmptyStash(t *testing.T) {

@@ -36,8 +36,9 @@ const (
 	swipeWorkspaces
 	swipeDiscrete
 	// swipeOverview is a vertical four-finger swipe: up opens the
-	// overview, down closes it on the selection (niri's gesture); down
-	// with the overview closed shows or hides the stash.
+	// overview, down closes it on the selection (niri's gesture). With
+	// the overview closed, down shows or hides the stash, and up hides
+	// it when it is shown, else opens the overview.
 	swipeOverview
 	// swipeDropped ignores the rest of a swipe whose workspace changed.
 	swipeDropped
@@ -255,7 +256,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		if step == 0 {
 			return false
 		}
-		if step > 0 && !m.ov.open {
+		if !m.ov.open && (step > 0 || m.Current().stashShown()) {
 			return c.swipeStash(g, now)
 		}
 		if (step < 0) == m.ov.open {
@@ -301,10 +302,10 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	return shown
 }
 
-// swipeStash runs toggle-stash-visible for a four-finger swipe down with the
-// overview closed, on the swipe's screen unless the pointer took the focus
-// to another output meanwhile. It reports whether the stash showed or
-// hid: an empty stash stays as it is.
+// swipeStash runs toggle-stash-visible for a four-finger swipe down, or up
+// while the stash is shown, with the overview closed, on the swipe's screen
+// unless the pointer took the focus to another output meanwhile. It reports
+// whether the stash showed or hid: an empty stash stays as it is.
 func (c *Core) swipeStash(g *swipeGesture, now time.Time) bool {
 	if c.cur() != g.screen {
 		return false

@@ -191,6 +191,12 @@ func (w *Workspace) stashOverCover() bool {
 	return w.stashOver != 0 && w.stashOver == w.cover() && !w.stashHidden && len(w.Stash) > 0
 }
 
+// stashShown reports whether the stash is on screen: it holds windows, is
+// not hidden, and no covering fullscreen window hides it.
+func (w *Workspace) stashShown() bool {
+	return len(w.Stash) > 0 && !w.stashHidden && (w.cover() == 0 || w.stashOverCover())
+}
+
 // dropStashOver ends the stash override when the focus leaves it: the
 // stash hides again under the covering window, as it was.
 func (w *Workspace) dropStashOver() {
