@@ -18,7 +18,7 @@ I wanted a compositor I would never have to think about. It takes the newest Way
 
 It is small on purpose, and it will stay small. No blur, no shadows, no rounded corners, no themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
 
-Animations are experimental and off by default (`animations = on`). Off, every change is instant. On, three-finger swipes follow your fingers, and windows and the view glide on short springs (about 180 ms). Windows fade in and out, the overview zooms its cards, and a brief pulse marks the window you just focused. They stay cheap: nothing runs while the screen is still, only the region that moves is redrawn, and apps are resized once, to their final size.
+Animations are short, cheap and off by default (experimental, `animations = on`).
 
 About 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen does not change. See [Performance](docs/performance.md).
 
