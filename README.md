@@ -20,6 +20,31 @@ NeferWL keeps drawing simple. No blur, shadows, rounded corners or themes. Bring
 
 Animations are optional and experimental (`animations = on`). About 40–80 MB of RAM with two 4K monitors, and almost no CPU use on a still screen. See [Performance](docs/performance.md).
 
+## OK, but why Go?
+
+A compositor handles input, client requests, GPU fences and display flips at the same time. Go's goroutines and channels fit that workload: **each piece of state has one owner, and other goroutines send it messages.**
+
+Input, core, the Wayland server and each output run independently. Window state needs no mutex, and tests run with the race detector. With CAP_SYS_NICE, input and output threads request real-time scheduling.
+
+### Keeping GC away from frames
+
+- **Reuse memory on hot paths.** `make check` includes allocation guards for frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates.
+- **Keep buffers off the Go heap.** Client buffers live in shared or GPU memory. The live Go heap is only a few megabytes.
+- **Build without cgo.** libwayland, Vulkan and libinput load at runtime through [purego](https://github.com/ebitengine/purego).
+- **Render only changes.** Damage tracking limits redraws, opaque surfaces hide work behind them, and idle outputs do nothing.
+
+Builds take seconds. Testing, race detection, profiling and formatting come with Go. For measurements and the rendering pipeline, see [Performance](docs/performance.md).
+
+### Reusable libraries
+
+NeferWL uses libraries that other Go projects can use too:
+
+- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
+- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan bindings generated from `vk.xml`, without cgo.
+- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): protocol bindings generated from upstream XML.
+- [wlturbo](https://github.com/bnema/wlturbo): a Wayland client library.
+- [neferclient](https://github.com/bnema/neferclient): a client toolkit for connections, outputs, surface roles, seats and dmabuf presentation.
+
 ## Features
 
 ### Display and games
@@ -292,31 +317,6 @@ The command comes from `terminal`, then `$TERMINAL`, then `foot`.
 | `off` | Do not open automatically |
 
 `--no-terminal` disables automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR` and `$VISUAL`.
-
-## Why Go?
-
-A compositor handles input, client requests, GPU fences and display flips at the same time. Go's goroutines and channels fit that workload: **each piece of state has one owner, and other goroutines send it messages.**
-
-Input, core, the Wayland server and each output run independently. Window state needs no mutex, and tests run with the race detector. With CAP_SYS_NICE, input and output threads request real-time scheduling.
-
-### Keeping GC away from frames
-
-- **Reuse memory on hot paths.** `make check` includes allocation guards for frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates.
-- **Keep buffers off the Go heap.** Client buffers live in shared or GPU memory. The live Go heap is only a few megabytes.
-- **Build without cgo.** libwayland, Vulkan and libinput load at runtime through [purego](https://github.com/ebitengine/purego).
-- **Render only changes.** Damage tracking limits redraws, opaque surfaces hide work behind them, and idle outputs do nothing.
-
-Builds take seconds. Testing, race detection, profiling and formatting come with Go. For measurements and the rendering pipeline, see [Performance](docs/performance.md).
-
-### Reusable libraries
-
-NeferWL uses libraries that other Go projects can use too:
-
-- [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
-- [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan bindings generated from `vk.xml`, without cgo.
-- [go-wayland-bindings](https://github.com/bnema/go-wayland-bindings): protocol bindings generated from upstream XML.
-- [wlturbo](https://github.com/bnema/wlturbo): a Wayland client library.
-- [neferclient](https://github.com/bnema/neferclient): a client toolkit for connections, outputs, surface roles, seats and dmabuf presentation.
 
 ## Documentation
 
