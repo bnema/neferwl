@@ -424,24 +424,20 @@ func onScreen(p Placement, o Rect) bool {
 
 // floatDim is the veil opacity of a layout: dim only when a float is
 // drawn above the tiles, never for a demoted covering float alone nor for
-// an overview preview.
-// A leaving float (fading out after it closed or hid) keeps the veil,
-// scaled by what is left of it, so the veil fades with the last float.
+// an overview preview. A leaving float (fading out after it closed or hid)
+// drops the veil at once: a veil that fades changes Scene.Dim every frame,
+// which redraws the whole output for the length of the fade, where the
+// float's own fade redraws only its rect.
 func floatDim(layout []Placement, o Rect, dim float64) float64 {
-	k := 0.0
 	for _, p := range layout {
-		if p.Floating && !p.Below && p.Preview == 0 && (onScreen(p, o) || p.Leaving && p.Rect.Overlaps(o)) {
+		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
 			if p.Fullscreen {
 				return 0
 			}
-			if p.Leaving {
-				k = max(k, 1-p.Fade)
-			} else {
-				k = 1
-			}
+			return dim
 		}
 	}
-	return dim * k
+	return 0
 }
 
 // visible reports whether the window, layer surface or popup is on screen
@@ -636,10 +632,13 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 				// hidden to everything else, its configures included.
 				sw.Hidden = false
 				scene.Windows = append(scene.Windows, sw)
-				// A window the layout still holds keeps its last configure
-				// (prune would forget it, and its next one would start from
-				// nothing).
-				c.configures.keep(p.ID)
+				// A window the workspace still holds (a hidden stash
+				// window) keeps its last configure: prune would forget it,
+				// and its next one would start from nothing. A closed one
+				// was forgotten at its unmap and stays so.
+				if w, _ := sc.mon.find(p.ID); w != nil {
+					c.configures.keep(p.ID)
+				}
 				continue
 			}
 			if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {

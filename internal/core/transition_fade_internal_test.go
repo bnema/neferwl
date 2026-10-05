@@ -41,7 +41,7 @@ func TestAppearDerivesFadeAndZoom(t *testing.T) {
 	drainConfigures(cmds)
 	settled := sc.settledLayout[slices.IndexFunc(sc.settledLayout, func(p Placement) bool { return p.ID == 2 })]
 
-	c.appear(sc, 2, ic.now)
+	c.appearAt(sc, settledOf(t, sc, 2), ic.now)
 	s := indicatorScene(t, c)
 	w := sceneWindow(t, s, 2)
 	if w.Fade != 1 || w.Hidden {
@@ -98,7 +98,7 @@ func TestAppearOffIsInstant(t *testing.T) {
 	sc := c.cur()
 	sc.mon.AddWindow(1)
 	settleShown(t, c)
-	c.appear(sc, 1, ic.now)
+	c.appearAt(sc, settledOf(t, sc, 1), ic.now)
 	if len(sc.rects) != 0 || c.animating() {
 		t.Fatal("appear started a motion with animations off")
 	}
@@ -122,7 +122,7 @@ func TestLeavingEntryLifecycle(t *testing.T) {
 
 	// Close window 2: the layout re-flows; its last placement leaves.
 	sc.mon.RemoveWindow(2)
-	c.leave(sc, left, ic.now)
+	c.leaveFrom(sc, left, nil, ic.now)
 	s := indicatorScene(t, c)
 	if len(sc.settledLayout) != len(sc.shown) {
 		t.Fatalf("settled %d and shown %d entries", len(sc.settledLayout), len(sc.shown))
@@ -188,7 +188,7 @@ func TestLeavingEntryDroppedWhenShownAgain(t *testing.T) {
 	settleShown(t, c)
 	left := sc.settledLayout[1]
 	sc.mon.RemoveWindow(2)
-	c.leave(sc, left, ic.now)
+	c.leaveFrom(sc, left, nil, ic.now)
 	if s := indicatorScene(t, c); len(s.Windows) != 2 || !sc.shown[1].Leaving {
 		t.Fatalf("no leaving entry: %+v", s.Windows)
 	}
@@ -219,7 +219,7 @@ func TestLeavingEntryDroppedByStopRects(t *testing.T) {
 	settleShown(t, c)
 	left := sc.settledLayout[1]
 	sc.mon.RemoveWindow(2)
-	c.leave(sc, left, ic.now)
+	c.leaveFrom(sc, left, nil, ic.now)
 	if s := indicatorScene(t, c); len(s.Windows) != 2 {
 		t.Fatalf("%d windows, want the tile and the leaving entry", len(s.Windows))
 	}
@@ -238,7 +238,7 @@ func TestLeaveOffIsInstant(t *testing.T) {
 	settleShown(t, c)
 	left := sc.settledLayout[0]
 	sc.mon.RemoveWindow(1)
-	c.leave(sc, left, ic.now)
+	c.leaveFrom(sc, left, nil, ic.now)
 	if s := indicatorScene(t, c); len(s.Windows) != 0 || len(sc.rects) != 0 {
 		t.Fatalf("leaving entry with animations off: %+v", s.Windows)
 	}
@@ -302,7 +302,7 @@ func TestSnapshotSkipsLeavingEntries(t *testing.T) {
 	settleShown(t, c)
 	left := sc.settledLayout[1]
 	sc.mon.RemoveWindow(2)
-	c.leave(sc, left, ic.now)
+	c.leaveFrom(sc, left, nil, ic.now)
 	settleShown(t, c)
 	shots := c.snapshot(ic.now)
 	if len(shots) != 1 || len(shots[0].rects) != 1 || shots[0].rects[0].id != 1 {
@@ -331,7 +331,7 @@ func TestLeavingPaintOrder(t *testing.T) {
 
 	// Close the tile: its entry sits before the float.
 	sc.mon.RemoveWindow(2)
-	c.leave(sc, tile, ic.now)
+	c.leaveFrom(sc, tile, nil, ic.now)
 	s := indicatorScene(t, c)
 	order := func(s ports.Scene) []WindowID {
 		ids := make([]WindowID, 0, len(s.Windows))
@@ -352,23 +352,23 @@ func TestLeavingPaintOrder(t *testing.T) {
 		t.Fatalf("veil %v with the float still shown, want 0.4", s.Dim)
 	}
 
-	// Close the float too: its entry goes last and keeps the veil, which
-	// fades with it.
+	// Close the float too: its entry goes last, and the veil goes at
+	// once (a fading veil would redraw the whole output every frame of
+	// the fade; the float's own fade redraws only its rect).
 	sc.mon.RemoveWindow(3)
-	c.leave(sc, float, ic.now)
+	c.leaveFrom(sc, float, nil, ic.now)
 	s = indicatorScene(t, c)
 	if got := order(s); !slices.Equal(got, []WindowID{1, 2, 3}) {
 		t.Fatalf("order with a leaving float %v, want [1 2 3] (float last)", got)
 	}
-	if s.Dim != 0.4 {
-		t.Fatalf("veil %v right after the float left, want 0.4", s.Dim)
+	if s.Dim != 0 {
+		t.Fatalf("veil %v right after the float left, want none", s.Dim)
 	}
 	ic.now = ic.now.Add(60 * time.Millisecond)
 	c.animate(ic.now, nil)
 	s = indicatorScene(t, c)
-	f := sceneWindow(t, s, 3)
-	if !(s.Dim > 0 && s.Dim < 0.4) || math.Abs(s.Dim-0.4*(1-f.Fade)) > 1e-9 {
-		t.Fatalf("veil %v mid-fade (float fade %v), want 0.4*(1-fade)", s.Dim, f.Fade)
+	if f := sceneWindow(t, s, 3); s.Dim != 0 || !(f.Fade > 0 && f.Fade < 1) {
+		t.Fatalf("veil %v mid-fade (float fade %v), want none while the float fades", s.Dim, f.Fade)
 	}
 	ic.now = ic.now.Add(5 * time.Second)
 	c.animate(ic.now, nil)
@@ -386,7 +386,7 @@ func TestRetargetClearsScaleKeepsFade(t *testing.T) {
 	sc := c.cur()
 	sc.mon.AddWindow(1)
 	settleShown(t, c)
-	c.appear(sc, 1, ic.now)
+	c.appearAt(sc, settledOf(t, sc, 1), ic.now)
 	settleShown(t, c)
 	if rm := sc.rects[1]; !rm.scale || !rm.fade.on {
 		t.Fatalf("setup: %+v", rm)
