@@ -132,7 +132,7 @@ type Placement struct {
 	Leaving bool
 	// Fade, Dim and Zoom are set on shown layouts only (refreshShown),
 	// animated: the window's fade (0 opaque, 1 invisible), a veil opacity
-	// added to the one Peek draws (0..1), and the content zoom as drawn
+	// added to the one Veil draws (0..1), and the content zoom as drawn
 	// when a scale motion runs (Preview times the drawn/settled width, 1
 	// when the content is drawn at its size; 0 without one). Preview
 	// itself stays the settled one: input, popups and the renderer's paint

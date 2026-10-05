@@ -104,7 +104,7 @@ func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 // overview opened over it.
 func (g *swipeGesture) stashChanged(m *Monitor) bool {
 	w := g.ws
-	return m.overviewOpens != g.opens || m.Current() != w || !w.stashFocused() || !w.stashShown() || w.stashAt != g.home ||
+	return m.overviewOpens != g.opens || m.Current() != w || !w.stashFocused() || w.floatFocus || !w.stashShown() || w.stashAt != g.home ||
 		!slices.EqualFunc(w.Stash, g.ids, func(f Float, id WindowID) bool { return f.ID == id })
 }
 
@@ -132,7 +132,12 @@ func (c *Core) swipeBegin(b ports.SwipeBegin) bool {
 // swipeUpdate moves the swipe; it reports whether the scene changed.
 func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 	g := c.swipe
-	if g == nil || !c.hasScreen(g.screen) {
+	if g == nil {
+		return false
+	}
+	if !c.hasScreen(g.screen) {
+		// Its screen went: let go of what it moved, or that stays shifted.
+		c.dropSwipe()
 		c.swipe = nil
 		return false
 	}
@@ -203,9 +208,9 @@ func (c *Core) decide(g *swipeGesture) {
 		// With animations off nothing slides either: the swipe runs a
 		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
-	case g.horizontal && w.stashFocused() && w.stashShown():
+	case g.horizontal && w.stashFocused() && !w.floatFocus && w.stashShown():
 		g.mode, g.ws, g.home = swipeStash, w, w.stashAt
-		g.ids = g.ids[:0]
+		g.ids = make([]WindowID, 0, len(w.Stash))
 		for _, f := range w.Stash {
 			g.ids = append(g.ids, f.ID)
 		}
@@ -233,6 +238,9 @@ func (c *Core) decide(g *swipeGesture) {
 // screen.
 func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	g := c.swipe
+	if g != nil && !c.hasScreen(g.screen) {
+		c.dropSwipe()
+	}
 	c.swipe = nil
 	if g == nil || !c.hasScreen(g.screen) {
 		return false
@@ -297,7 +305,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			w.stopStash()
 			return false
 		}
-		shown := float64(w.stashAt) + w.stashOff
+		drawn := float64(w.stashAt) + w.stashOff
 		target, velocity := g.snap.end(e.Cancelled, e.Time)
 		dir := 0
 		if !e.Cancelled {
@@ -313,13 +321,14 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.keyboard.takeBack()
 			c.applyAction(a)
 		}
-		w.stashOff = shown - float64(w.stashAt)
+		w.stashOff = drawn - float64(w.stashAt)
 		if c.animOn() {
 			w.stashMotion = c.spring(w.stashSpring(w.stashOff, velocity), now)
 		} else {
 			w.stopStash()
 		}
-		return w.stashAt != g.home
+		// The stash never brings another workspace on screen.
+		return false
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 {

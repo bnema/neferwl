@@ -22,6 +22,8 @@ func TestAnimateAllocations(t *testing.T) {
 	ws.shift = 100
 	m.switchMotion = c.spring(workspaceSpring(100, 0), t0)
 	m.switchOff = 100
+	ws.stashMotion = c.spring(workspaceSpring(0.5, 0), t0)
+	ws.stashOff = 0.5
 	sc.rects = make(map[WindowID]rectMotion, 20)
 	for i := range 20 {
 		sp := viewSpring(50, 0)
@@ -57,7 +59,7 @@ func TestAnimateAllocations(t *testing.T) {
 			t.Errorf("animate(%s) allocs = %v, want 0", name, n)
 		}
 	}
-	if !ws.motion.on || !m.switchMotion.on || len(sc.rects) != 24 {
+	if !ws.motion.on || !ws.stashMotion.on || !m.switchMotion.on || len(sc.rects) != 24 {
 		t.Fatalf("motions settled: camera %v switch %v rects %d", ws.motion.on, m.switchMotion.on, len(sc.rects))
 	}
 }

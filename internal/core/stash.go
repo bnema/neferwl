@@ -254,7 +254,7 @@ func (w *Workspace) appendStash(out []Placement, focusedID, cover WindowID) []Pl
 			p.Rect, p.Veil = r, w.stashVeil(d)
 		case peek > 0 && (d == -1 || d == 1) && shift == 0:
 			p.Rect, p.Peek, p.Veil = r, true, 1
-		case shift != 0 && d >= -3 && d <= 3 && r.Overlaps(u):
+		case shift != 0 && r.Overlaps(u):
 			// A slide shows what the view moves in, and keeps what it
 			// moves out until it is gone.
 			p.Rect, p.Peek, p.Veil = r, true, w.stashVeil(d)

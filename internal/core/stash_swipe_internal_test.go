@@ -153,7 +153,8 @@ func TestStashSwipeNaturalScrollInverts(t *testing.T) {
 	}
 }
 
-// With animations off a swipe steps the way it always did.
+// With animations off a swipe takes the discrete path (nothing slides) and
+// still steps one window.
 func TestStashSwipeAnimationsOffStepsOnce(t *testing.T) {
 	s, w := newStashSwipe(t, func(c *Core) { c.cfg.Animations.On = false })
 	s.flick(40, -80)
@@ -195,5 +196,104 @@ func TestStashSwipeCatchesLandingSlide(t *testing.T) {
 	s.move(-20)
 	if w.stashMotion.on {
 		t.Fatal("the landing spring still runs under the fingers")
+	}
+}
+
+// The stash never brings another workspace on screen: its landing must not
+// report a shown workspace, which would respawn the empty slots of a named
+// one.
+func TestStashSwipeLandingShowsNoWorkspace(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.begin()
+	for range 10 {
+		s.move(-80)
+	}
+	if shown := s.c.swipeEnd(ports.SwipeEnd{Time: s.at}); shown {
+		t.Fatal("a stash landing reported a workspace shown")
+	}
+	if w.stashAt != 1 {
+		t.Fatalf("stashAt %d, want the landing on 1", w.stashAt)
+	}
+}
+
+// A native float with the focus over the stash keeps the swipe discrete: the
+// stash must not slide behind it and snap back.
+func TestStashSwipeUnderFocusedFloatIsDiscrete(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	w.floatFocus = true
+	s.begin()
+	s.move(-40)
+	if g := s.c.swipe; g.mode != swipeDiscrete {
+		t.Fatalf("mode %v, want discrete", g.mode)
+	}
+	if w.stashOff != 0 {
+		t.Fatalf("stash slid by %v under a focused float", w.stashOff)
+	}
+}
+
+// A swipe whose screen is gone lets go of the stash it shifted.
+func TestStashSwipeLosingItsScreenSettlesTheStash(t *testing.T) {
+	for _, onEnd := range []bool{false, true} {
+		s, w := newStashSwipe(t, nil)
+		s.begin()
+		s.move(-40)
+		s.move(-40)
+		if w.stashOff == 0 {
+			t.Fatal("setup: the stash did not follow")
+		}
+		s.c.swipe.screen = &screen{} // its output unplugged
+		if onEnd {
+			s.end(false)
+		} else {
+			s.move(-40)
+		}
+		if w.stashOff != 0 || s.c.swipe != nil {
+			t.Fatalf("end=%v: offset %v, swipe %v: want settled and gone", onEnd, w.stashOff, s.c.swipe)
+		}
+	}
+}
+
+// The overview shows the settled state: a stash landing spring stops.
+func TestOverviewStopsStashSlide(t *testing.T) {
+	s, w := newStashSwipe(t, nil)
+	s.flick(10, -80)
+	if !w.stashMotion.on {
+		t.Fatal("setup: no landing spring")
+	}
+	s.c.cur().mon.ToggleOverview()
+	if w.stashMotion.on || w.stashOff != 0 {
+		t.Fatalf("spring %v, offset %v under the overview", w.stashMotion.on, w.stashOff)
+	}
+}
+
+// Quick chained navigations keep the view where it is drawn, however far it
+// is from the selection: nothing jumps, and the slide settles on the last.
+func TestStashNavigationChainsManyWithoutJump(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	w := sc.mon.Current()
+	for id := WindowID(5); id <= 8; id++ {
+		sc.mon.AddWindow(id)
+		w.FocusID(id)
+		c.applyAction(ActionToggleWindowStash)
+	}
+	settleShown(t, c)
+	if len(w.Stash) != 7 {
+		t.Fatalf("setup: %d stashed", len(w.Stash))
+	}
+	prev := float64(w.stashAt) + w.stashOff
+	for i := range 5 {
+		act(c, ic, ActionFocusColumnLeft)
+		pos := float64(w.stashAt) + w.stashOff
+		if pos < prev-1e-6 || pos > prev+1e-6 {
+			t.Fatalf("navigation %d: the drawn view jumped from %v to %v", i, prev, pos)
+		}
+		ic.now = ic.now.Add(10 * time.Millisecond)
+		c.animate(ic.now, nil)
+		prev = float64(w.stashAt) + w.stashOff
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	if w.stashOff != 0 || w.stashMotion.on {
+		t.Fatalf("offset %v, spring %v: want settled", w.stashOff, w.stashMotion.on)
 	}
 }

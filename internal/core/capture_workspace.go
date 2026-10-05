@@ -161,9 +161,7 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 		if !p.Hidden {
 			w.Rect = rebase(p.Rect)
 		}
-		if p.Peek {
-			w.Dim = c.cfg.Stash.Dim
-		}
+		w.Dim = c.peekDim(p)
 		s.Windows = append(s.Windows, w)
 	}
 	s.Separators = separators(cw.placements, c.cfg.Border.Width, cw.ws.gap(), f, false)

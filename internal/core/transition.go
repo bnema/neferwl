@@ -37,9 +37,10 @@ type viewShot struct {
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
-	// stashAt, stashLen and stashPos are the stash's selection, size and
-	// drawn position (selection plus stashOff, in stash windows) when it
-	// was on screen; stashV is its slide's speed.
+	// stashShown, stashAt, stashLen and stashPos are whether the stash was
+	// on screen, its selection, size and drawn position (selection plus
+	// stashOff, in stash windows); stashV is its slide's speed.
+	stashShown        bool
 	stashAt, stashLen int
 	stashPos, stashV  float64
 	// list and pos are the numbered workspaces and the monitor's fractional
@@ -71,9 +72,10 @@ type rectShot struct {
 	// speed, so an overview toggle carries it over (transitionOverview).
 	fade, fadeV float64
 	// dim and dimV are the dim offset of a running dim motion and its
-	// speed; veil is the peek veil the window's settled placement drew
-	// (Stash.Dim, 0 for another window). A stash navigation takes the
-	// veil from what was on screen to the new one (transitionRects).
+	// speed; veil is the veil the window's settled placement drew
+	// (Stash.Dim times Placement.Veil, 0 for another window). An action
+	// that changes it takes the veil from what was on screen to the new
+	// one (transitionRects).
 	dim, dimV, veil float64
 }
 
@@ -627,7 +629,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		if m.switchMotion.on {
 			_, s.switchV = m.switchMotion.sampleAt(now)
 		}
-		s.stashAt, s.stashLen, s.stashPos = w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashOff
+		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashOff
 		if w.stashMotion.on {
 			_, s.stashV = w.stashMotion.sampleAt(now)
 		}
@@ -722,12 +724,8 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		if stashSlid(b, w) {
 			// A stash navigation slides the view from where it was drawn:
 			// the windows keep their settled places (transitionRects).
-			if off := b.stashPos - float64(w.stashAt); math.Abs(off) <= 3 {
-				w.stashOff = off
-				w.stashMotion = c.spring(w.stashSpring(off, b.stashV), now)
-			} else {
-				w.stopStash()
-			}
+			w.stashOff = b.stashPos - float64(w.stashAt)
+			w.stashMotion = c.spring(w.stashSpring(w.stashOff, b.stashV), now)
 			return
 		}
 		if w.ViewX == b.viewX || !w.slidable() {
@@ -761,7 +759,7 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 // stashSlid reports whether an action moved the selection of the stash b
 // showed on w: a navigation, not a toggle, an unstash or a hide.
 func stashSlid(b *viewShot, w *Workspace) bool {
-	return w.stashAt != b.stashAt && len(w.Stash) == b.stashLen && w.stashShown()
+	return b.stashShown && w.stashAt != b.stashAt && len(w.Stash) == b.stashLen && w.stashShown()
 }
 
 // transitionRects starts or retargets the rect motions of the windows whose
@@ -797,10 +795,12 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 		old := &from.rects[i]
 		oldRect := Rect{X: old.rect.X + dx, Y: old.rect.Y + dy, W: old.rect.W, H: old.rect.H}
 		// A window that becomes a peek or stops being one (a stash
-		// navigation) changes its veil: the offset takes the one drawn to
-		// the new one. Otherwise a running dim motion goes on as it is.
+		// toggle) changes its veil: the offset takes the one drawn to the
+		// new one. A stash slide moves the veil with the view, so the veil
+		// of a navigation matches. Otherwise a running dim motion goes on
+		// as it is.
 		dimOff := old.dim + old.veil - c.peekDim(p)
-		dimMoves := math.Abs(old.veil-c.peekDim(p)) > 1e-9
+		dimMoves := math.Abs(old.veil-c.peekDim(p)) > veilEps
 		if oldRect == p.Rect && !dimMoves {
 			// The settled rect did not change: a running motion goes on
 			// as it is, and there is none to start.
@@ -834,8 +834,8 @@ func (c *Core) transitionRects(b *viewShot, before []viewShot, now time.Time) {
 
 // transitionStash animates the stash windows an action shows or hides on
 // the workspace b's screen keeps on screen (a toggle-stash-visible, a click
-// that closes the stash, a navigation that brings a window to a margin or
-// sends it off): one drawn after and not before appears (appearAt), one
+// that closes the stash; a navigation slides the view instead, see
+// stashSlid): one drawn after and not before appears (appearAt), one
 // drawn before and hidden after leaves from its last settled placement
 // (leave). A window that is gone from the layout (unstashed, moved) or
 // fullscreen is not touched: its rect motion, if any, is transitionRects's.
@@ -866,6 +866,10 @@ func (c *Core) transitionStash(b *viewShot, now time.Time) {
 		c.appearAt(sc, p, now)
 	}
 }
+
+// veilEps absorbs the float drift between a slide's drawn veil and the
+// settled one: a veil that differs by less is the same.
+const veilEps = 1e-9
 
 // peekDim is the veil the settled placement p draws: the configured stash
 // dim for a peek, none for another window. The placement's Dim is an
