@@ -799,8 +799,8 @@ func TestStateSnapshot(t *testing.T) {
 			Output:  "DP-2",
 			Outputs: []ports.OutputState{{Name: "DP-1", Active: 1, Count: 1, WorkspaceID: 1}, {Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 2}},
 			Windows: []ports.WindowState{
-				{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true},
-				{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true},
+				{ID: 1, AppID: "foot", PID: 100, Output: "DP-1", Workspace: 1, WorkspaceID: 1, Visible: true, Column: 1, Row: 1},
+				{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true, Column: 1, Row: 1},
 			},
 		}
 		want.Window = &want.Windows[1]
