@@ -561,3 +561,42 @@ func TestRendererAlphaBlend(t *testing.T) {
 		}
 	}
 }
+
+// A window kept after its client closed (a closing window fading out) still
+// draws from the GPU copy of its content: the pool file is closed and its
+// mapping gone, and the copy is found without reading the pool.
+func TestRendererSHMKeptWindowDrawsFromCopy(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	scene := ports.Scene{Scale: 1, Background: "#000000", Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 16, H: 16}}}}
+	c := solidContent(t, 16, 16, color.RGBA{R: 255, A: 255})
+	c.ID, c.Surface, c.Seq, c.Version = 1, 1, 1, 1
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	// Wayland closed the pool; the mapping was dropped meanwhile.
+	if err := c.SHM.File.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r.dropPools()
+	for pool, m := range r.pools {
+		_ = unix.Munmap(m.data)
+		delete(r.pools, pool)
+	}
+	// The window moves (a fade-out), so it draws again.
+	scene.Seq = 2
+	scene.Windows[0].Rect.X = 4
+	if err := render(r, scene, map[ports.WindowID]ports.SurfaceContent{1: c}); err != nil {
+		t.Fatal(err)
+	}
+	got := readPixels(t, r)
+	if g, want := got.At(18, 8), (color.RGBA{R: 255, A: 255}); g != want {
+		t.Fatalf("kept window pixel %v, want %v", g, want)
+	}
+	if g, want := got.At(1, 8), (color.RGBA{A: 255}); g != want {
+		t.Fatalf("background pixel %v, want %v", g, want)
+	}
+}

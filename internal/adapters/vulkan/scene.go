@@ -543,19 +543,28 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		return
 	}
 	b := content.SHM
-	pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
-	if err != nil {
-		return
-	}
 	st := shmState{w: content.Width, h: content.Height, seq: seq, windowSeq: content.Seq}
-	// Damage history is the root surface's: children copy in full.
-	var damage func(uint64) ([]ports.Rect, bool)
-	if root {
-		damage = content.DamageSince
-	}
-	c, err := r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage)
-	if err != nil {
-		return
+	// The copy of this content, if any, needs no pool: a kept (closing)
+	// window whose pool file is closed still draws.
+	c := r.shmCached(key, st)
+	if c != nil {
+		// As a drawn pool, for Trim; nothing is mapped for it.
+		if m := r.pools[b.Pool]; m != nil {
+			m.last = r.frame
+		}
+	} else {
+		pixels, err := r.shmPixels(b, b.Offset+(content.Height-1)*b.Stride+content.Width*4)
+		if err != nil {
+			return
+		}
+		// Damage history is the root surface's: children copy in full.
+		var damage func(uint64) ([]ports.Rect, bool)
+		if root {
+			damage = content.DamageSince
+		}
+		if c, err = r.shmCopyFor(key, st, pixels, b.Offset, b.Stride, damage); err != nil {
+			return
+		}
 	}
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content)

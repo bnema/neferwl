@@ -178,9 +178,27 @@ type shmSurface struct {
 	last uint64 // frame that drew it
 }
 
-// shmCopyFor returns the GPU buffer holding a surface's content st, copying
-// the client pixels (stride bytes per row from offset) into one when no
-// buffer holds them yet. A buffer holding an older content of the same
+// shmCached returns the GPU buffer already holding a surface's content st,
+// or nil. It needs no client pixels: a kept window whose pool is closed
+// still draws from it.
+func (r *Renderer) shmCached(key shmKey, st shmState) *shmCopy {
+	s := r.shm[key]
+	if s == nil {
+		return nil
+	}
+	s.last = r.frame
+	for _, c := range s.bufs {
+		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq {
+			c.gpu.last = r.frame
+			return c
+		}
+	}
+	return nil
+}
+
+// shmCopyFor copies a surface's content st from the client pixels (stride
+// bytes per row from offset) into a GPU buffer; the caller found none
+// holding it (shmCached). A buffer holding an older content of the same
 // size gets only what changed since (damage, in buffer pixels; false:
 // everything).
 func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, stride int, damage func(since uint64) ([]ports.Rect, bool)) (*shmCopy, error) {
@@ -190,12 +208,6 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 		r.shm[key] = s
 	}
 	s.last = r.frame
-	for _, c := range s.bufs {
-		if c != nil && c.valid && c.holds.w == st.w && c.holds.h == st.h && c.holds.seq == st.seq {
-			c.gpu.last = r.frame
-			return c, nil
-		}
-	}
 	// The older buffer takes the new content.
 	i := 0
 	if s.bufs[0] != nil && (s.bufs[1] == nil || s.bufs[1].gpu.last < s.bufs[0].gpu.last) {
