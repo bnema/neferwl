@@ -18,7 +18,9 @@ I wanted a compositor I would never have to think about. It takes the newest Way
 
 It is small on purpose, and it will stay small. No blur, shadows, rounded corners or themes. No built-in bar or wallpaper either. Use the ones you like.
 
-Animations are optional and experimental (`animations = on`). About 40–80 MB of RAM with two 4K monitors, and almost no CPU use on a still screen. See [Performance](docs/performance.md).
+Animations are experimental and off by default. Enable them with `animations = on`, or leave them off for instant changes.
+
+NeferWL uses about 40–80 MB of RAM with two 4K monitors, and almost no CPU while the screen is still. See [Performance](docs/performance.md).
 
 ## OK, but why Go?
 
