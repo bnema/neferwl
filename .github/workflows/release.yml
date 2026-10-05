@@ -30,6 +30,17 @@ jobs:
         with:
           distribution: goreleaser
           version: '~> v2'
+          # Snapshot first: the .deb is installed on Ubuntu before anything ships.
+          args: release --snapshot --clean --skip=aur
+      - name: Smoke-test the .deb on Ubuntu LTS
+        run: |
+          for v in 24.04 26.04; do
+            packaging/deb/smoke-test.sh "$v" dist/neferwl_*_amd64.deb
+          done
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,6 +48,7 @@ jobs:
         with:
           subject-path: |
             dist/*.tar.gz
+            dist/*.deb
             dist/checksums.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

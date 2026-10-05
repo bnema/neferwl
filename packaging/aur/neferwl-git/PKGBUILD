@@ -4,7 +4,7 @@
 pkgname=neferwl-git
 pkgver=0.1.0.r78.ge0b15ca
 pkgrel=1
-pkgdesc='Minimal Wayland compositor with column tiling, for the TTY (git version)'
+pkgdesc='A Wayland compositor that spends its frames on your apps, not on itself (git version)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/bnema/neferwl'
 license=('GPL-3.0-only')
