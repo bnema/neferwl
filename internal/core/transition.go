@@ -326,26 +326,12 @@ func (m rectMotion) leavingPlacement() Placement {
 	return p
 }
 
-// appear starts the entrance of a window the action made visible on sc:
-// it fades in from invisible and grows from 90 % of its settled rect,
-// around its centre. Nothing with animations off or if the layout does not
-// show it. A leaving motion of the same window is replaced.
-func (c *Core) appear(sc *screen, id WindowID, now time.Time) {
-	if !c.animOn() {
-		return
-	}
-	for _, p := range sc.mon.Layout() {
-		if p.ID == id && !p.Hidden {
-			c.appearAt(sc, p, now)
-			return
-		}
-	}
-}
-
-// appearAt is appear for a window whose settled placement is p. A leaving
-// motion of the same window (a show during a hide) is continued from, not
-// replaced: the entrance starts at the fade, rect and speeds it was drawn
-// with.
+// appearAt starts the entrance of a window the action made visible on sc,
+// whose settled placement is p: it fades in from invisible and grows from
+// 90 % of its settled rect, around its centre. Nothing with animations off
+// or for a hidden placement. A leaving motion of the same window (a show
+// during a hide) is continued from, not replaced: the entrance starts at
+// the fade, rect and speeds it was drawn with.
 func (c *Core) appearAt(sc *screen, p Placement, now time.Time) {
 	if !c.animOn() || p.Hidden {
 		return
@@ -481,7 +467,12 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 		}
 	}
 	sc.mon.RemoveWindow(v.ID)
-	delete(sc.rects, v.ID)
+	// A window already leaving (a stash hide still fading) keeps its
+	// motion: the fade goes on from where it is, drawn from the content
+	// the renderer kept. Any other motion goes with the window.
+	if rm, ok := sc.rects[v.ID]; !ok || !rm.leaving {
+		delete(sc.rects, v.ID)
+	}
 	c.transition(shots, now)
 	if left.ID == v.ID && !left.Leaving && !left.Fullscreen && !left.Below && !left.Peek {
 		c.leaveFrom(sc, left, shot, now)
@@ -535,17 +526,12 @@ func settledRect(m *Monitor, id WindowID) Rect {
 	return Rect{}
 }
 
-// leave keeps drawing a window the action closed or hid, from its last
+// leaveFrom keeps drawing a window the action closed or hid, from its last
 // settled placement p: it fades out and shrinks to 90 % around its centre,
 // then its entry goes. Nothing with animations off, or for a placement that
-// was not drawn.
-func (c *Core) leave(sc *screen, p Placement, now time.Time) {
-	c.leaveFrom(sc, p, nil, now)
-}
-
-// leaveFrom is leave for a window that was drawn as shot says (the
-// snapshot's record of it, nil for a window at rest): the exit starts at the
-// rect, fade and dim the window had on screen, with their speeds, so a hide
+// was not drawn. shot is the snapshot's record of how the window was drawn
+// (nil for a window at rest): the exit starts at the rect, fade and dim the
+// window had on screen, with their speeds, so a hide
 // during an entrance or a slide does not jump.
 func (c *Core) leaveFrom(sc *screen, p Placement, shot *rectShot, now time.Time) {
 	if !c.animOn() || p.Hidden || p.Preview > 0 || p.Rect.W <= 0 || p.Rect.H <= 0 {

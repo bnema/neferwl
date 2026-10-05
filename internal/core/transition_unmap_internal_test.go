@@ -403,3 +403,59 @@ func TestUnmapThenRemapDuringFade(t *testing.T) {
 		t.Fatalf("remapped window settled: %+v", w)
 	}
 }
+
+// A stash window that closes while its hide still fades keeps that fade:
+// the motion runs on from where it was (the renderer draws it from the
+// content it kept), and it is not restarted as a fresh exit. Its configure
+// record is forgotten at the unmap and not kept while it fades, so a
+// remapped window with the same ID starts from nothing.
+func TestUnmapDuringStashHideKeepsTheFade(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	act(c, ic, ActionToggleStashVisible) // 2 and 3 hide, leaving in place
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(40 * time.Millisecond)
+	c.animate(ic.now, nil)
+	s := indicatorScene(t, c)
+	before := sceneWindow(t, s, 2)
+	rm, ok := sc.rects[2]
+	if !ok || !rm.leaving || !(before.Fade > 0 && before.Fade < 1) {
+		t.Fatalf("setup: leaving %v fade %v", ok && rm.leaving, before.Fade)
+	}
+	c.configures.sent[2] = ports.ConfigureWindow{ID: 2, Width: 10}
+	c.unmapWindow(ports.WindowUnmapped{ID: 2})
+	after, ok := sc.rects[2]
+	if !ok || !after.leaving || after.fade != rm.fade || after.x != rm.x {
+		t.Fatalf("the hide's motion was replaced: before %+v after %+v", rm, after)
+	}
+	s = indicatorScene(t, c)
+	if w := sceneWindow(t, s, 2); w.Fade < before.Fade || w.Hidden {
+		t.Fatalf("after the unmap: %+v, want the fade to go on from %v", w, before.Fade)
+	}
+	if _, kept := c.configures.sent[2]; kept {
+		t.Fatal("a closed window's configure survived the publish")
+	}
+	ic.now = ic.now.Add(5 * time.Second)
+	c.animate(ic.now, nil)
+	s = indicatorScene(t, c)
+	if slices.ContainsFunc(s.Windows, func(w ports.SceneWindow) bool { return w.ID == 2 }) || len(sc.rects) != 0 {
+		t.Fatalf("after the settle: %+v", s.Windows)
+	}
+}
+
+// A stash window that hides keeps its configure while it fades: the
+// workspace still holds it, and its next show must not start from nothing.
+func TestStashHideKeepsConfigureWhileFading(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	act(c, ic, ActionToggleStashVisible)
+	for range 3 {
+		ic.now = ic.now.Add(20 * time.Millisecond)
+		c.animate(ic.now, nil)
+		indicatorScene(t, c)
+	}
+	if _, ok := sc.rects[2]; !ok {
+		t.Fatal("setup: window 2 is not fading")
+	}
+	if _, ok := c.configures.sent[2]; !ok {
+		t.Fatal("the hidden stash window's configure was pruned while it fades")
+	}
+}
