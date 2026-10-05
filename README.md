@@ -16,7 +16,7 @@
 
 I wanted a compositor I would never have to think about. It takes the newest Wayland protocols and kernel features as they land, gives games the whole GPU, and otherwise stays out of sight.
 
-NeferWL keeps drawing simple. No blur, shadows, rounded corners or themes. Bring your own bar and wallpaper using layer-shell clients.
+It is small on purpose, and it will stay small. No blur, shadows, rounded corners or themes. No built-in bar or wallpaper either; use the ones you like.
 
 Animations are optional and experimental (`animations = on`). About 40–80 MB of RAM with two 4K monitors, and almost no CPU use on a still screen. See [Performance](docs/performance.md).
 
