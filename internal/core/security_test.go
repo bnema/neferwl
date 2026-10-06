@@ -28,7 +28,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 	cfg.Terminal.Command = []string{"terminal"}
 	cfg.Terminal.AutoOpen = "off"
 	cfg.Binds = map[string]string{"Super+q": "quit"}
-	c, err := core.New(cfg, core.Channels{Security: gate, Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes, Spawn: spawn, Constraints: constraints, Terminal: true})
+	c, err := core.New(cfg, core.Channels{Client: client, Input: input, Output: output, Config: reload, Commands: commands, Scenes: scenes, Spawn: spawn, Constraints: constraints}, core.Options{Security: gate, Terminal: true})
 	if err != nil {
 		t.Fatal(err)
 	}

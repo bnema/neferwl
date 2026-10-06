@@ -14,7 +14,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	state := ports.SecurityState{Generation: 1, Protected: true}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
-	c.ch.Security = gate
+	c.opts.Security = gate
 	c.captureOpen(ports.CaptureSessionOpen{ID: 7, Workspace: ws.ID})
 	c.captureExclusionBegin(ports.CaptureExclusionBegin{Session: 7})
 	c.capt.flashes = []capFlash{{target: capTarget{output: "A"}, until: c.now().Add(time.Hour)}}
@@ -92,7 +92,7 @@ func TestLockFocusMovesToFocusedOutputSurfaceUntilPinned(t *testing.T) {
 			state := ports.SecurityState{Generation: 1, Protected: true}
 			gate := portsmocks.NewMockSessionSecurity(t)
 			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
-			c.ch.Security = gate
+			c.opts.Security = gate
 			c.syncSecurity()
 			ctx := context.Background()
 			mapped := func(s ...ports.LockSurfacePlacement) {
@@ -127,7 +127,7 @@ func TestWiredZeroEpochRejectsRawInputAndCommandKeepsOwnerEpoch(t *testing.T) {
 	gate := portsmocks.NewMockSessionSecurity(t)
 	next := ports.SecurityState{Generation: 1, Protected: true}
 	gate.EXPECT().Snapshot().Return(next)
-	c.ch.Security = gate
+	c.opts.Security = gate
 	if _, ok := c.admitInput(ports.KeyEvent{Pressed: true}); ok {
 		t.Fatal("raw wired input admitted")
 	}

@@ -16,13 +16,13 @@ const termRetry = 5 * time.Second
 
 // keepsTerminal reports whether empty workspaces get a terminal.
 func (c *Core) keepsTerminal() bool {
-	return c.ch.Terminal && c.cfg.Terminal.AutoOpen != "off" && len(c.cfg.Terminal.Command) > 0
+	return c.opts.Terminal && c.cfg.Terminal.AutoOpen != "off" && len(c.cfg.Terminal.Command) > 0
 }
 
 // fillEmpty returns the terminals to spawn for empty workspaces on screen.
 // Workspaces with slots are left to them.
 func (c *Core) fillEmpty() []ports.SpawnRequest {
-	now := time.Now()
+	now := c.now()
 	c.placement.expireTerminals(now)
 	if !c.keepsTerminal() {
 		return nil

@@ -39,7 +39,7 @@ func indicatorCore(t *testing.T) (*Core, *indicatorClock) {
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 0
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64), Clock: clock})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{Clock: clock})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestCaptureIndicatorFlashClearedByProtectionAndWorksAfterUnlock(t *testing.
 	state := ports.SecurityState{Generation: 1}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state }).Maybe()
-	c.ch.Security = gate
+	c.opts.Security = gate
 	if !c.captureFrame(ports.CaptureFrameTaken{Output: "A"}) {
 		t.Fatal("first frame shows nothing new")
 	}
@@ -200,7 +200,7 @@ func TestCaptureIndicatorHiddenWorkspacePill(t *testing.T) {
 	timer.EXPECT().Stop().Return(true).Maybe()
 	timer.EXPECT().Reset(mock.Anything).Return(false).Maybe()
 	clock.EXPECT().NewTimer(mock.Anything).Return(timer).Maybe()
-	c.ch.Clock = clock
+	c.opts.Clock = clock
 	c.configures.cw.reset()
 	c.captureOpen(ports.CaptureSessionOpen{ID: 1, Workspace: ws.ID})
 	c.captureFrame(ports.CaptureFrameTaken{Session: 1, Workspace: ws.ID})
@@ -238,7 +238,7 @@ func TestCaptureIndicatorNoAllocationWhenIdle(t *testing.T) {
 	}
 	// A live flash, steady state, allocates nothing either (measured on the
 	// system clock: the generated clock mock allocates on every call).
-	c.ch.Clock = nil
+	c.opts.Clock = nil
 	c.captureFrame(ports.CaptureFrameTaken{Output: "A"})
 	if n := testing.AllocsPerRun(100, func() { c.captureExpire(); c.armCaptureTimer() }); n != 0 {
 		t.Fatalf("%v allocations keeping a flash", n)
@@ -301,7 +301,7 @@ func TestCaptureIndicatorInflatesThinTargets(t *testing.T) {
 // scratch or shared while unchanged.
 func TestCaptureRecordingPublishAllocations(t *testing.T) {
 	c, _ := indicatorCore(t)
-	c.ch.Clock = nil
+	c.opts.Clock = nil
 	cmds := make(chan ports.ClientCommand, 64)
 	c.ch.Commands = cmds
 	c.captureOpen(ports.CaptureSessionOpen{ID: 1, Output: "A", Region: Rect{X: 10, Y: 10, W: 50, H: 40}})

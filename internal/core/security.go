@@ -13,10 +13,10 @@ func (c *Core) syncSecurity() bool {
 	if c.inputActive {
 		return false
 	}
-	if c.ch.Security == nil {
+	if c.opts.Security == nil {
 		return false
 	}
-	state := c.ch.Security.Snapshot()
+	state := c.opts.Security.Snapshot()
 	if state == c.security {
 		return false
 	}
@@ -44,11 +44,11 @@ func (c *Core) syncSecurity() bool {
 // Check spawns without adopting a new epoch midway through processing an
 // event: commands emitted by that event must retain its original owner epoch.
 func (c *Core) inputEpochChanged() bool {
-	return c.inputActive && c.ch.Security != nil && c.ch.Security.Snapshot() != c.security
+	return c.inputActive && c.opts.Security != nil && c.opts.Security.Snapshot() != c.security
 }
 
 func (c *Core) protectionRequested() bool {
-	return c.security.Protected || c.ch.Security != nil && c.ch.Security.Snapshot() != c.security
+	return c.security.Protected || c.opts.Security != nil && c.opts.Security.Snapshot() != c.security
 }
 
 func (c *Core) securityCheckpoint(ctx context.Context) error {
@@ -89,7 +89,7 @@ func blockedProtectedEvent(ev ports.ClientEvent) bool {
 }
 
 func (c *Core) applyLockChanged(v ports.SessionLockChanged) bool {
-	if c.ch.Security == nil || v.State != c.security || v.State != c.ch.Security.Snapshot() {
+	if c.opts.Security == nil || v.State != c.security || v.State != c.opts.Security.Snapshot() {
 		return false
 	}
 	if !c.security.Protected {
@@ -211,7 +211,7 @@ func (c *Core) admitInput(ev ports.InputEvent) (ports.InputEvent, bool) {
 			return nil, false
 		}
 		ev = v.Event
-	} else if c.ch.Security != nil || c.security != (ports.SecurityState{}) {
+	} else if c.opts.Security != nil || c.security != (ports.SecurityState{}) {
 		return nil, false
 	}
 	// The producer resets native keymap state and quarantines physically held
@@ -219,7 +219,7 @@ func (c *Core) admitInput(ev ports.InputEvent) (ports.InputEvent, bool) {
 	// it must not infer modifier meaning from evdev codes or XKB bit positions.
 	// No release without a press in this epoch (password keys must not reach
 	// the desktop after unlock). Standalone legacy channel tests remain raw.
-	if c.ch.Security != nil {
+	if c.opts.Security != nil {
 		if b, ok := ev.(ports.PointerButton); ok && !b.Pressed && !c.buttons[b.Button] {
 			return nil, false
 		}

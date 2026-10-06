@@ -12,7 +12,7 @@ func TestStateColumnRow(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 1
-	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 16), Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

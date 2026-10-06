@@ -20,7 +20,7 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 			epoch.Store(ports.SecurityState{Generation: 2})
 			gate := portsmocks.NewMockSessionSecurity(t)
 			gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
-			c.ch.Security = gate
+			c.opts.Security = gate
 			c.syncSecurity()
 			spawn := make(chan ports.SpawnRequest, 1)
 			c.ch.Spawn = spawn
@@ -29,7 +29,7 @@ func TestFullSpawnQueueSlotsTerminalsExplicitRemainTransitionSafe(t *testing.T) 
 			key := slotKey{workspace: "dev", index: 1}
 			c.cfg.Terminal.Command = []string{"terminal"}
 			c.cfg.Terminal.AutoOpen = "always"
-			c.ch.Terminal = kind == "terminal"
+			c.opts.Terminal = kind == "terminal"
 			if kind == "slot" {
 				c.slots[key] = &slotState{argv: []string{"slot"}}
 				c.toSpawn = []slotKey{key}
@@ -131,7 +131,7 @@ func TestRunStartupPendingDisabledWhileLockedResumesOnUnlockEvent(t *testing.T) 
 	epoch.Store(locked)
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
-	c.ch.Security = gate
+	c.opts.Security = gate
 	spawn := make(chan ports.SpawnRequest, 1)
 	c.ch.Spawn = spawn
 	client := make(chan ports.ClientEvent, 1)
@@ -175,7 +175,7 @@ func TestStartupSuccessfulHandoffConsumesDespiteImmediateTransition(t *testing.T
 		}
 		return epoch.Load().(ports.SecurityState)
 	})
-	c.ch.Security = gate
+	c.opts.Security = gate
 	c.spawnStartup(context.Background())
 	if len(c.startup) != 0 {
 		t.Fatal("successful handoff kept pending startup")
@@ -202,7 +202,7 @@ func TestRunSelectableStartupConsumedOnceAcrossReceiverTransition(t *testing.T) 
 	epoch.Store(ports.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return epoch.Load().(ports.SecurityState) })
-	c.ch.Security = gate
+	c.opts.Security = gate
 	spawn := make(chan ports.SpawnRequest)
 	c.ch.Spawn = spawn
 	client := make(chan ports.ClientEvent, 1)

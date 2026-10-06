@@ -289,7 +289,7 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Layout.Overflow = string(OverflowFixed)
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

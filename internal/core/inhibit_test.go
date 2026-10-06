@@ -39,7 +39,7 @@ func TestShortcutsInhibit(t *testing.T) {
 	spawn := make(chan ports.SpawnRequest, 4)
 	state := make(chan ports.State, 1)
 	output := make(chan ports.OutputEvent, 1)
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn, State: state})
+	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn, State: state}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
 	scenes := make(chan []ports.Scene, 1)
 	spawn := make(chan ports.SpawnRequest, 4)
 	output := make(chan ports.OutputEvent, 1)
-	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn})
+	c, err := core.New(cfg, core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: spawn}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

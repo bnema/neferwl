@@ -28,4 +28,4 @@ ruleSettings:
     excludePaths: [internal/ports/client_events.go, internal/ports/client_commands.go, internal/ports/input_events.go, internal/ports/output_events.go, internal/ports/lease.go, internal/ports/session_lock_messages.go, internal/ports/session_backend.go]
   suspicious-business-logic-in-adapter:
     # app is the composition root; starting core and wiring channels is its job.
-    excludePaths: [internal/app/app.go]
+    excludePaths: [internal/app/app.go, internal/app/session.go]

@@ -16,14 +16,14 @@ import (
 )
 
 type Launcher struct {
-	// Security is the optional defensive admission gate. Set before Run.
-	Security ports.SessionSecurity
+	// security is the optional defensive admission gate, supplied at construction.
+	security ports.SessionSecurity
 	env      []string
 	log      zerowrap.Logger
 }
 
-func New(env []string, log zerowrap.Logger) *Launcher {
-	return &Launcher{env: append([]string(nil), env...), log: log}
+func New(env []string, security ports.SessionSecurity, log zerowrap.Logger) *Launcher {
+	return &Launcher{env: append([]string(nil), env...), security: security, log: log}
 }
 
 func ChildEnv(base []string, waylandDisplay, runtimeDir string, cursorSize int) []string {
@@ -101,10 +101,10 @@ func (l *Launcher) Run(ctx context.Context, reqs <-chan ports.SpawnRequest) erro
 }
 
 func (l *Launcher) admitted(req ports.SpawnRequest) bool {
-	if l.Security == nil {
+	if l.security == nil {
 		return true
 	}
-	state := l.Security.Snapshot()
+	state := l.security.Snapshot()
 	return !state.Protected && req.Security == state
 }
 

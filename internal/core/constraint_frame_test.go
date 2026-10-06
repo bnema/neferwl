@@ -15,10 +15,7 @@ func partlyShown(t *testing.T) *Core {
 	var cfg ports.Config
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{
-		Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1),
-		State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16),
-	})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1), Commands: make(chan ports.ClientCommand, 16)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -124,7 +124,7 @@ func TestOverviewNamedAnchorSurvivesReplug(t *testing.T) {
 	cfg.Layout.MaxColumns = 3
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Monitor: "OUT-1"}}
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +394,7 @@ func TestOverviewNamedDividerPublished(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 3
-	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 256), Scenes: scenes})
+	c, err := New(cfg, Channels{Commands: make(chan ports.ClientCommand, 256), Scenes: scenes}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

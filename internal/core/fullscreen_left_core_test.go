@@ -19,7 +19,7 @@ func TestCoreLeftFullscreenLatch(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes, Clock: laterClock(t)})
+	c, err := New(cfg, Channels{Client: client, Output: output, Commands: commands, Scenes: scenes}, Options{Clock: laterClock(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

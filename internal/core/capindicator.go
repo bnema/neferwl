@@ -51,7 +51,7 @@ func (c *Core) captureFrame(v ports.CaptureFrameTaken) bool {
 		// Nothing of the target is left on screen to mark.
 		return changed
 	}
-	return c.capt.flash(t, c.now(), c.ch.Clock) || changed
+	return c.capt.flash(t, c.now(), c.opts.Clock) || changed
 }
 
 // flash marks t until ports.CaptureFlash after now and arms the timer. It
@@ -153,7 +153,7 @@ func (c *Core) captureFlashTick() bool {
 	}
 	now := c.now()
 	c.capt.expire(now)
-	c.capt.armTimer(now, c.ch.Clock)
+	c.capt.armTimer(now, c.opts.Clock)
 	return len(c.capt.flashes) != n
 }
 
@@ -163,7 +163,7 @@ func (c *Core) armCaptureTimer() {
 		return
 	}
 	if c.capt.timerStop == nil {
-		c.capt.armTimer(c.now(), c.ch.Clock)
+		c.capt.armTimer(c.now(), c.opts.Clock)
 	}
 }
 

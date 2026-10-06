@@ -14,8 +14,7 @@ import (
 
 func TestSpawnAdmissionRequiresCurrentUnlockedEpoch(t *testing.T) {
 	var gate sessionsecurity.Gate
-	l := New(nil, logging.For(context.Background(), "launcher"))
-	l.Security = &gate
+	l := New(nil, &gate, logging.For(context.Background(), "launcher"))
 	if !l.admitted(ports.SpawnRequest{}) {
 		t.Fatal("initial unlocked request refused")
 	}
@@ -43,8 +42,7 @@ func TestSpawnRechecksBeforeProcessStart(t *testing.T) {
 	security := portsmocks.NewMockSessionSecurity(t)
 	security.EXPECT().Snapshot().Return(ports.SecurityState{}).Once()
 	security.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true}).Once()
-	l := New([]string{"PATH=/bin"}, logging.For(ctx, "launcher"))
-	l.Security = security
+	l := New([]string{"PATH=/bin"}, security, logging.For(ctx, "launcher"))
 	result := filepath.Join(t.TempDir(), "must-not-exist")
 	requests := make(chan ports.SpawnRequest, 1)
 	requests <- ports.SpawnRequest{Argv: []string{"touch", result}}

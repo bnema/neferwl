@@ -71,10 +71,11 @@ func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...p
 		output: make(chan ports.OutputEvent), commands: make(chan ports.ClientCommand, 4096),
 		scenes: make(chan []ports.Scene, 1), epoch: epoch,
 	}
-	ch := core.Channels{Security: gate, Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
+	ch := core.Channels{Client: r.client, Input: r.input, Output: r.output, Commands: r.commands, Scenes: r.scenes}
+	opts := core.Options{Security: gate}
 	if animated {
 		r.frames, r.clock = make(chan ports.OutputFrame), newStepClock(t)
-		ch.Frames, ch.Clock = r.frames, r.clock.clock
+		ch.Frames, opts.Clock = r.frames, r.clock.clock
 		// An on variant that never saw a spring would be the off variant again.
 		t.Cleanup(func() {
 			if r.lands == 0 {
@@ -82,7 +83,7 @@ func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...p
 			}
 		})
 	}
-	c, err := core.New(cfg, ch)
+	c, err := core.New(cfg, ch, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

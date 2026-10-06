@@ -21,8 +21,6 @@ var errSecurityChanged = errors.New("security epoch changed during input")
 // its only sender and may drain a stale set; consumers only receive. Each
 // send holds one scene per output.
 type Channels struct {
-	// Security is the defensive session gate; nil preserves standalone operation.
-	Security ports.SessionSecurity
 	Client   <-chan ports.ClientEvent
 	Input    <-chan ports.InputEvent
 	Output   <-chan ports.OutputEvent
@@ -45,14 +43,19 @@ type Channels struct {
 	// Scales, when set, receives each scale a scale bind sets, to persist it.
 	// Core does not wait: a full channel drops the change.
 	Scales chan<- ports.ScaleChanged
-	// Terminal enables automatic terminal opening according to terminal.auto-open.
-	Terminal bool
-	// Clock tells the time for fullscreenGrace and slides; nil is the
-	// system clock.
-	Clock ports.Clock
 	// Frames, when set, reports outputs' page flips: a running slide moves
 	// one step per flip. Without flips it moves on a timer.
 	Frames <-chan ports.OutputFrame
+}
+
+// Options are the services and policy core is constructed with.
+type Options struct {
+	// Security is the defensive session gate; nil preserves standalone operation.
+	Security ports.SessionSecurity
+	// Clock supplies every core timestamp and timer; nil uses the system clock.
+	Clock ports.Clock
+	// Terminal enables automatic terminal opening according to terminal.auto-open.
+	Terminal bool
 }
 
 // fullscreenGrace is how long after mapping a window's fullscreen request
@@ -81,6 +84,7 @@ type Core struct {
 	startup         [][]string
 	nextWorkspaceID uint64
 	ch              Channels
+	opts            Options
 	cfg             ports.Config
 	screens         []*screen
 	focusScreen     int
@@ -350,12 +354,12 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 	}
 	return nil
 }
-func New(cfg ports.Config, ch Channels) (*Core, error) {
+func New(cfg ports.Config, ch Channels, opts Options) (*Core, error) {
 	if cap(ch.Scenes) != 1 || (ch.Layouts != nil && cap(ch.Layouts) != 1) || (ch.Constraints != nil && cap(ch.Constraints) != 1) || (ch.State != nil && cap(ch.State) != 1) || (ch.Workspaces != nil && cap(ch.Workspaces) != 1) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures()}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -386,8 +390,8 @@ func (t sysTimer) Stop() bool                 { return t.t.Stop() }
 func (t sysTimer) Reset(d time.Duration) bool { return t.t.Reset(d) }
 
 func (c *Core) now() time.Time {
-	if c.ch.Clock != nil {
-		return c.ch.Clock.Now()
+	if c.opts.Clock != nil {
+		return c.opts.Clock.Now()
 	}
 	return time.Now()
 }
@@ -396,7 +400,7 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
-	if c.ch.Security != nil {
+	if c.opts.Security != nil {
 		v = ports.SecurityCommand{State: c.security, Command: v}
 	}
 	select {

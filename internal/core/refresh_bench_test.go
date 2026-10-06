@@ -17,7 +17,7 @@ func BenchmarkRefreshShown(b *testing.B) {
 	cfg.Layout.MaxColumns = 4
 	cfg.Animations.On = true
 	cfg.Animations.Slowdown = 10
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{})
 	if err != nil {
 		b.Fatal(err)
 	}

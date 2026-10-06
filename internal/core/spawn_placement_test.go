@@ -17,7 +17,7 @@ func TestSlotClaimWithoutWorkspace(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Layout.MaxColumns = 1
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
 	cfg := ports.Config{}
 	cfg.Keyboard.CmdKey = "alt"
 	cfg.Layout.MaxColumns = 1
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
