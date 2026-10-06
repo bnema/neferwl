@@ -139,15 +139,16 @@ bind.Cmd+p = workspace presentation
 With `animations = on`, a three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
 
 - Left or right scrolls the columns (`scroll` overflow) to the next column edge; the focus moves to a column fully on screen.
-- Up or down slides to the next numbered workspace.
+- Up or down slides to the next numbered workspace in scroll and fixed layouts.
+- In [Cascade](#cascade), up/down scrolls one band and left/right switches workspaces.
 
 The view sticks a little near each step and catches up between them. Past the next step it resists; lift and swipe again to go further. When the fingers lift, a quick swipe goes on to the next step and a slow one settles on the closest.
 
-With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
+In scroll and fixed layouts with `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
 
-With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe runs `focus-column-left/right` or `focus-workspace-up/down`.
+With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe navigates content or workspaces along the layout's axes. Cascade band swipes stop at the first and last band.
 
-Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. Where the view cannot scroll (`fixed` overflow, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
+Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. In scroll and fixed layouts where the view cannot scroll (a floating or fullscreen window, fixed overflow, or a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift. Cascade keeps horizontal workspace navigation; vertical band swipes do nothing while a floating or fullscreen window has focus.
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 

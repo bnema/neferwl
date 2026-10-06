@@ -517,7 +517,7 @@ func (w *Workspace) addColumn(col Column) {
 	} else if len(w.Columns) > 0 {
 		at = w.Focus + 1
 	}
-	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
+	if w.policy().equalCells && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
 	w.Columns = append(w.Columns, Column{})
@@ -777,17 +777,8 @@ func (w *Workspace) focusWindow(dir int) bool {
 		w.scroll()
 		return true
 	}
-	if w.Overflow == OverflowCascade {
-		if i := w.bandNeighbor(dir); i >= 0 {
-			w.Focus = i
-			w.Columns[i].Focus = 0
-			if dir < 0 {
-				w.Columns[i].Focus = len(w.Columns[i].Windows) - 1
-			}
-			w.raiseColumns()
-			w.scroll()
-			return true
-		}
+	if w.policy().wraps && w.focusBand(dir) {
+		return true
 	}
 	if w.onScreenFocus() {
 		if i := w.screenNeighbor(0, dir); i >= 0 {
@@ -998,7 +989,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 // insertColumn adds a column at index at (clamped) and focuses it.
 func (w *Workspace) insertColumn(at int, col Column) {
 	at = min(max(at, 0), len(w.Columns))
-	if w.Overflow == OverflowFixed && len(w.Columns) > 0 {
+	if w.policy().equalCells && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)
@@ -1009,7 +1000,7 @@ func (w *Workspace) insertColumn(at int, col Column) {
 // CycleWidth steps the focused column through the presets. Fixed overflow
 // ignores presets: it toggles the expanded column instead.
 func (w *Workspace) CycleWidth() {
-	if w.Overflow == OverflowCascade {
+	if w.policy().wraps {
 		return
 	}
 	if w.Overflow == OverflowFixed {
@@ -1391,8 +1382,8 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 	}
 	g := w.gap()
 	// Fixed overflow never scrolls, so presets would push columns off screen.
-	if w.Overflow == OverflowCascade {
-		return max((w.Usable.W-g*(max(w.MaxColumns, 1)+1))/max(w.MaxColumns, 1), 0)
+	if w.policy().wraps {
+		return w.cellWidth()
 	}
 	if w.Columns[i].Width == (Width{}) || w.policy().equalCells {
 		if len(w.Columns) == 1 {
@@ -1414,7 +1405,7 @@ func (w *Workspace) columnX(i int) int {
 func (w *Workspace) scroll() {
 	before := w.View
 	defer func() { w.retarget(before) }()
-	if w.Overflow == OverflowCascade {
+	if w.policy().wraps {
 		w.View = w.band(w.Focus) * w.Usable.H
 		return
 	}
@@ -1455,7 +1446,7 @@ func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
 // when too small): the result aliases dst, so a caller passing a reused
 // buffer must be done with the previous result.
 func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
-	if w.Overflow == OverflowCascade {
+	if w.policy().wraps {
 		return w.cascadeRectsInto(dst, ignoreFullWidth)
 	}
 	g := w.gap()
@@ -1646,7 +1637,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			full := w.fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			maximized := (w.Overflow == OverflowFixed || w.Overflow == OverflowCascade) && w.Columns[w.Focus].FullWidth && i != w.Focus && (w.Overflow == OverflowFixed || w.band(i) == w.band(w.Focus))
+			maximized := w.policy().equalCells && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
 			hidden := (cover != 0 && id != cover) || ((fullColumn || w.policy().equalCells && w.fullscreen != 0) && !full) || maximized
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.

@@ -352,7 +352,7 @@ func TestLargeWidthAndBounds(t *testing.T) {
 		t.Fatal(w.Output)
 	}
 }
-func TestUnchangedUsablePreservesViewX(t *testing.T) {
+func TestUnchangedUsablePreservesView(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
@@ -363,7 +363,7 @@ func TestUnchangedUsablePreservesViewX(t *testing.T) {
 	}
 	w.SetUsable(w.Usable)
 	if w.View != before {
-		t.Fatalf("ViewX changed from %d to %d", before, w.View)
+		t.Fatalf("View changed from %d to %d", before, w.View)
 	}
 }
 

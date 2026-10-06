@@ -8,7 +8,7 @@ import (
 
 // Slides move what is on screen smoothly: a workspace's columns (view), its
 // stash (stashView) and the monitor between workspaces (switchView). All
-// are pure presentation over the settled state (ViewX, Focus, stashAt,
+// are pure presentation over the settled state (View, Focus, stashAt,
 // Active): the layout ends where the state says as soon as a slide stops.
 
 // slide is a view offset that a swipe sets while the fingers follow it, and
@@ -43,7 +43,7 @@ func (w *Workspace) slidable() bool {
 	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
 }
 
-// retarget keeps the view where it is on screen when ViewX moved from
+// retarget keeps the view where it is on screen when View moved from
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
@@ -78,7 +78,7 @@ func (w *Workspace) swipeScale() float64 {
 // snapSpacing of the usable width merge into the first: a swipe step
 // always moves the view visibly.
 func (w *Workspace) snapPoints() []float64 {
-	if w.Overflow == OverflowCascade {
+	if w.policy().wraps {
 		return w.cascadePoints()
 	}
 	g := w.gap()
@@ -116,7 +116,7 @@ const snapSpacing = 0.1
 // fully shown at the current view, else the furthest fully shown column
 // toward the swipe (forward is rightward).
 func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
-	if w.Overflow == OverflowCascade {
+	if w.policy().wraps {
 		return w.cascadeFocus(view)
 	}
 	g := w.gap()

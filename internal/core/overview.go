@@ -293,7 +293,7 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 	// Fixed overflow maximizes at most one column: only the one holding
 	// the anchor window, wherever active binds moved it. Scroll overflow
 	// keeps each column's own width.
-	if w.Overflow == OverflowFixed {
+	if w.policy().equalCells {
 		w.unmaximize()
 		for i := range w.Columns {
 			if s.fullWidth != 0 && slices.Contains(w.Columns[i].Windows, s.fullWidth) {
@@ -748,9 +748,9 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 	maximized := w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
-		if w.Overflow == OverflowCascade {
+		if w.policy().wraps {
 			k := max(w.MaxColumns, 1)
-			width := max((w.Usable.W-g*(k+1))/k, 0)
+			width := w.cellWidth()
 			r.X = w.band(i)*w.Usable.W + g + (i%k)*(width+g)
 			r.W = width
 		} else if w.Overflow == OverflowFixed {

@@ -94,7 +94,67 @@ func TestCascadeCovers(t *testing.T) {
 	}
 }
 
-func TestCascadeViewportSnapAndPolicy(t *testing.T) {
+func TestCascadeClearsMaximizationOnBandChanges(t *testing.T) {
+	for _, move := range []struct {
+		name string
+		run  func(*Workspace)
+	}{
+		{"focus", func(w *Workspace) { w.FocusWindow(1) }},
+		{"append", func(w *Workspace) { w.AddWindow(5) }},
+		{"insert", func(w *Workspace) { w.insertColumn(4, Column{Windows: []WindowID{5}}) }},
+	} {
+		t.Run(move.name, func(t *testing.T) {
+			w := cascadeWorkspace(4)
+			w.FocusID(1)
+			w.ToggleFullWidth()
+			move.run(w)
+			for _, col := range w.Columns {
+				if col.FullWidth {
+					t.Fatal("stale maximization")
+				}
+			}
+		})
+	}
+}
+
+func TestCascadeGeometryReusesBuffer(t *testing.T) {
+	w := cascadeWorkspace(7)
+	buf := w.columnRectsInto(nil, false)
+	if n := testing.AllocsPerRun(100, func() { buf = w.columnRectsInto(buf, false) }); n != 0 {
+		t.Fatalf("allocations=%v", n)
+	}
+}
+
+func TestMixedLayoutSwitchKeepsSourceAxis(t *testing.T) {
+	m := NewMonitor()
+	m.SetOutput(900, 600)
+	m.Current().Overflow = OverflowCascade
+	m.AddWindow(1)
+	m.Focus(1)
+	m.AddWindow(2)
+	m.Current().Overflow = OverflowScroll
+	m.Focus(0)
+	m.switchAxis = m.Current().policy().workspace
+	m.switchView.off = .5
+	ps := m.layoutInto(nil)
+	for _, p := range ps {
+		if p.ID == 1 && (p.Rect.X != -450 || p.Rect.Y != 0) {
+			t.Fatalf("cascade source offset=%v", p.Rect)
+		}
+	}
+	m.stopSwitch()
+	m.Focus(1)
+	m.switchAxis = m.Current().policy().workspace
+	m.switchView.off = -.5
+	ps = m.layoutInto(nil)
+	for _, p := range ps {
+		if p.ID == 2 && (p.Rect.X != 0 || p.Rect.Y != 300) {
+			t.Fatalf("scroll source offset=%v", p.Rect)
+		}
+	}
+}
+
+func TestCascadeViewportSnap(t *testing.T) {
 	w := cascadeWorkspace(7)
 	w.FocusID(3)
 	if w.snapFocus(600, true) != 5 {
@@ -102,9 +162,6 @@ func TestCascadeViewportSnapAndPolicy(t *testing.T) {
 	}
 	if w.snapFocus(1200, true) != 6 {
 		t.Fatal("short band neighbour")
-	}
-	if w.policy().content != verticalAxis || w.policy().workspace != horizontalAxis {
-		t.Fatal("axes")
 	}
 	w.SetUsable(Rect{})
 	if got := w.snapPoints(); len(got) != 1 || got[0] != 0 {
