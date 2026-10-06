@@ -355,9 +355,8 @@ func TestOverviewPileKeepsRowCentred(t *testing.T) {
 	}
 }
 
-// h from column 1 enters the pile on the stash's selection, h/l browse
-// it, l past its end returns to column 1; Return shows the stash on the
-// chosen window.
+// Left enters the stash pile, up/down browse it without changing rows,
+// and right leaves it immediately. Confirm shows the chosen stash window.
 func TestOverviewPileNavigation(t *testing.T) {
 	m := pileMonitor()
 	w := m.Current()
@@ -372,26 +371,32 @@ func TestOverviewPileNavigation(t *testing.T) {
 	if previewOf(t, m.Layout(), 1).Focused {
 		t.Fatal("column still selected")
 	}
-	m.OverviewMove(-1, 0)
-	m.OverviewMove(-1, 0)
-	m.OverviewMove(-1, 0) // stops at the first entry
-	if at := m.cardAt(w); at != 0 {
-		t.Fatalf("left end %d", at)
+	m.OverviewMove(-1, 0) // left stays on the selected stash card
+	if at := m.cardAt(w); at != 2 {
+		t.Fatalf("left changed stash selection to %d", at)
 	}
-	m.OverviewMove(1, 0)
+	m.OverviewMove(0, 1) // stops at the last entry, not the next workspace
+	if m.Current() != w || m.cardAt(w) != 2 {
+		t.Fatal("down escaped the stash pile")
+	}
+	m.OverviewMove(0, -1)
+	m.OverviewMove(0, -1)
+	m.OverviewMove(0, -1) // stops at the first entry
+	if at := m.cardAt(w); at != 0 || m.Current() != w {
+		t.Fatalf("up end %d, workspace changed %v", at, m.Current() != w)
+	}
+	m.OverviewMove(0, 1)
 	m.ToggleOverview()
 	if f, _ := m.Focused(); f != 6 || w.stashHidden || m.ov.open {
 		t.Fatalf("confirm on %d, hidden %v", f, w.stashHidden)
 	}
-	// Back in on the stash's selection (6), then l past the last entry
-	// (7) returns to column 1.
+	// Right returns to column 1 from any stash card.
 	w.FocusID(1)
 	m.ToggleOverview()
 	m.OverviewMove(-1, 0)
 	if at := m.cardAt(w); at != 1 {
 		t.Fatalf("entered at %d", at)
 	}
-	m.OverviewMove(1, 0)
 	m.OverviewMove(1, 0)
 	if m.cardAt(w) >= 0 {
 		t.Fatal("still in the pile")
@@ -440,6 +445,20 @@ func TestOverviewPileOnly(t *testing.T) {
 	m.Focus(0)
 	m.ToggleOverview()
 	m.OverviewMove(0, 1)
+	if m.Current() != w || m.cardAt(w) != 0 {
+		t.Fatal("vertical navigation escaped a stash-only workspace")
+	}
+	m.OverviewMove(1, 0)
+	if m.cardAt(w) >= 0 || m.ov.selected != 0 {
+		t.Fatal("right did not deselect the stash-only pile")
+	}
+	m.OverviewMove(0, 1)
+	if m.Current() == w {
+		t.Fatal("vertical navigation after leaving the pile did not change workspace")
+	}
+	m.CancelOverview()
+	m.Focus(1)
+	m.ToggleOverview()
 	if p := previewOf(t, m.Layout(), 1); p.Focused || !p.Peek || p.Hidden {
 		t.Fatalf("neighbor pile %+v", p)
 	}
