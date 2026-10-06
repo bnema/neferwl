@@ -125,7 +125,7 @@ func TestSeparatorsScroll(t *testing.T) {
 	if before[1] != 0 || before[3]&ports.SideRight != 0 {
 		t.Fatalf("scrolled tiles reserve off-output lines: %v", before)
 	}
-	if w.ViewX == 0 {
+	if w.View == 0 {
 		t.Fatal("expected a scrolled view")
 	}
 	m.Apply(ActionFocusColumnLeft)

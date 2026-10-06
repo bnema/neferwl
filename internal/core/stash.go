@@ -132,6 +132,9 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 		}
 		c.Windows = slices.Insert(c.Windows, row, id)
 		c.Focus = row
+		if w.policy().equalCells && w.Focus != i {
+			w.unmaximize()
+		}
 		w.Focus = i
 		w.scroll()
 		return

@@ -48,16 +48,16 @@ func TestOperations(t *testing.T) {
 	w.AddWindow(2)
 	w.AddWindow(3)
 	// Three auto columns, two visible: each (100-3*5)/2 = 42 wide.
-	if w.Focus != 2 || w.ViewX != 46 || w.columnWidth(0) != 42 {
+	if w.Focus != 2 || w.View != 46 || w.columnWidth(0) != 42 {
 		t.Fatalf("scroll: %+v", w)
 	}
 	w.FocusColumn(-1)
-	if w.ViewX != 46 {
-		t.Fatal(w.ViewX)
+	if w.View != 46 {
+		t.Fatal(w.View)
 	}
 	w.FocusColumn(-1)
-	if w.ViewX != 0 {
-		t.Fatal(w.ViewX)
+	if w.View != 0 {
+		t.Fatal(w.View)
 	}
 	w.MoveColumn(1)
 	if w.Focus != 1 || w.Columns[1].Windows[0] != 1 {
@@ -264,7 +264,7 @@ func FuzzWorkspaceOps(f *testing.F) {
 				if w.Focus < 0 || w.Focus >= len(w.Columns) {
 					t.Fatal("focus")
 				}
-				left := w.columnX(w.Focus) - w.ViewX
+				left := w.columnX(w.Focus) - w.View
 				width := w.columnWidth(w.Focus)
 				minX, maxX := w.Usable.X+w.gap(), w.Usable.X+w.Usable.W-w.gap()
 				if w.fullscreenColumn(w.Focus) {
@@ -352,18 +352,18 @@ func TestLargeWidthAndBounds(t *testing.T) {
 		t.Fatal(w.Output)
 	}
 }
-func TestUnchangedUsablePreservesViewX(t *testing.T) {
+func TestUnchangedUsablePreservesView(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
 	w.AddWindow(3)
-	before := w.ViewX
+	before := w.View
 	if before == 0 {
 		t.Fatal("expected a scrolled workspace")
 	}
 	w.SetUsable(w.Usable)
-	if w.ViewX != before {
-		t.Fatalf("ViewX changed from %d to %d", before, w.ViewX)
+	if w.View != before {
+		t.Fatalf("View changed from %d to %d", before, w.View)
 	}
 }
 
@@ -428,8 +428,8 @@ func TestFixedOverflowSpiral(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v\nwant %v", got, want)
 	}
-	if w.ViewX != 0 {
-		t.Fatal("fixed overflow scrolled", w.ViewX)
+	if w.View != 0 {
+		t.Fatal("fixed overflow scrolled", w.View)
 	}
 	// Up to max-columns it is the plain equal split.
 	w2 := &Workspace{MaxColumns: 2, Overflow: OverflowFixed}

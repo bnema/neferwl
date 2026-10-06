@@ -340,7 +340,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 		r := Rect{X: w.Usable.X + g, Y: w.Usable.Y + g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
 		return dropTarget{kind: dropInsert, hints: outline(r, t)}
 	}
-	if w.Overflow != OverflowFixed {
+	if !w.policy().equalCells {
 		if tgt, ok := w.gapDrop(cols, id, src, lone, x, y, t); ok {
 			return tgt
 		}
@@ -531,7 +531,7 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 	}
 	sc := c.screens[i]
 	w := sc.mon.Current()
-	if w.Overflow == OverflowFixed || len(w.Columns) == 0 || w.pinned() {
+	if w.policy().equalCells || len(w.Columns) == 0 || w.pinned() {
 		return false
 	}
 	lx := int(c.cursorX) - sc.x
@@ -557,7 +557,7 @@ func (w *Workspace) scrollBy(dir int) bool {
 	g := w.gap()
 	n := len(w.Columns)
 	maxView := max(w.columnX(n-1)+w.columnWidth(n-1)+g-(w.Usable.X+w.Usable.W), 0)
-	view := w.ViewX
+	view := w.View
 	if dir < 0 {
 		// The first column not fully on screen at the left.
 		for i := n - 1; i >= 0; i-- {
@@ -575,11 +575,11 @@ func (w *Workspace) scrollBy(dir int) bool {
 		}
 	}
 	view = min(max(view, 0), maxView)
-	if view == w.ViewX {
+	if view == w.View {
 		return false
 	}
 	w.view.stop()
-	w.ViewX = view
+	w.View = view
 	return true
 }
 

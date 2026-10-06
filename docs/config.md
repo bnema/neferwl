@@ -30,7 +30,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Colors for focused / other window lines; only the focused output lights up |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
-| `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
+| `layout.overflow` | `scroll` | Past the max: `scroll` right, `fixed` spiral split, or `cascade` into vertically scrolling bands |
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
@@ -139,15 +139,16 @@ bind.Cmd+p = workspace presentation
 With `animations = on`, a three-finger swipe follows the fingers and moves one step at most, so a quick swipe never skips a column or a workspace:
 
 - Left or right scrolls the columns (`scroll` overflow) to the next column edge; the focus moves to a column fully on screen.
-- Up or down slides to the next numbered workspace.
+- Up or down slides to the next numbered workspace in scroll and fixed layouts.
+- In [Cascade](#cascade), up/down scrolls one band and left/right switches workspaces.
 
 The view sticks a little near each step and catches up between them. Past the next step it resists; lift and swipe again to go further. When the fingers lift, a quick swipe goes on to the next step and a slow one settles on the closest.
 
-With `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
+In scroll and fixed layouts with `natural-scroll = off`, a swipe left shows the columns to the left and a swipe up shows the workspace above. `natural-scroll = on` moves the content with the fingers, so both are reversed.
 
-With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe runs `focus-column-left/right` or `focus-workspace-up/down`.
+With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe navigates content or workspaces along the layout's axes. Cascade band swipes stop at the first and last band.
 
-Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. Where the view cannot scroll (`fixed` overflow, a floating or fullscreen window, a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift.
+Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. In scroll and fixed layouts where the view cannot scroll (a floating or fullscreen window, fixed overflow, or a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift. Cascade keeps horizontal workspace navigation; vertical band swipes do nothing while a floating or fullscreen window has focus.
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
@@ -186,6 +187,16 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
   ```
 - `none` removes a default bind.
 - `spawn <command>` runs a program without a shell; see [Running commands](desktop.md#running-commands).
+
+### Cascade
+
+Set `layout.overflow = cascade` globally, per output, or on a named workspace. Columns fill equal-width cells, up to `max-columns` per band, then continue in a fresh band below. Incomplete bands keep empty cells. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
+
+Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
+
+Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-up/down` commands still mean previous/next workspace, even when the transition is horizontal. Four-finger and stash gestures keep their existing behaviour.
+
+The overview presents bands side by side in one workspace card. Selecting a window reveals its band. Cascade supports dropping onto tiles, but not gap insertion or edge scrolling during a drag.
 
 ### Actions
 

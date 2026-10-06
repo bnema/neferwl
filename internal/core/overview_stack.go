@@ -180,7 +180,7 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
 func (w *Workspace) selectOverviewColumn(i int) {
 	w.floatFocus, w.stashFocus = false, false
-	if w.Overflow == OverflowFixed && w.Focus != i && w.Focus < len(w.Columns) {
+	if w.policy().equalCells && w.Focus != i && w.Focus < len(w.Columns) {
 		w.unmaximize()
 	}
 	w.Focus = i

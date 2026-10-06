@@ -28,15 +28,16 @@ type viewShot struct {
 	// overview is set when the screen showed its overview: ws is then the
 	// row on screen, the camera fields stay zero, and rects are the cards.
 	overview bool
-	// viewX is ws's settled view and view where its columns were on screen
-	// (viewX plus shift).
-	viewX int
-	view  float64
+	// settledView is ws's settled view and view where its columns were on screen
+	// (settledView plus shift).
+	settledView int
+	view        float64
 	// viewV and switchV are the speeds the running view and workspace
 	// springs have at the snapshot's time (units per second, 0 without
 	// one), not at their last frame. An action may stop them
 	// (Monitor.Focus), so the transition reads them here.
 	viewV, switchV float64
+	switchAxis     layoutAxis
 	// stashShown, stashAt, stashLen and stashPos are whether the stash was
 	// on screen, its selection, size and drawn position (selection plus
 	// stashView.off, in stash windows); stashV is its slide's speed.
@@ -621,7 +622,11 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		s.ws, s.overview = w, m.ov.open
 		if !m.ov.open {
 			// The overview does not scroll or slide: no camera.
-			s.viewX, s.view = w.ViewX, float64(w.ViewX)+w.view.off
+			s.settledView, s.view = w.View, float64(w.View)+w.view.off
+			s.switchAxis = w.policy().workspace
+			if m.switchView.busy() {
+				s.switchAxis = m.switchAxis
+			}
 		}
 		if w.view.motion.on {
 			_, s.viewV = w.view.motion.sampleAt(now)
@@ -728,12 +733,12 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 			w.stashView.motion = c.spring(w.stashSpring(w.stashView.off, b.stashV), now)
 			return
 		}
-		if w.ViewX == b.viewX || !w.slidable() {
+		if w.View == b.settledView || !w.slidable() {
 			return
 		}
 		// A running landing slide was retargeted by scroll(): its velocity
 		// carries over, and the spring starts now like every action's.
-		w.view.off = b.view - float64(w.ViewX)
+		w.view.off = b.view - float64(w.View)
 		w.view.motion = c.spring(viewSpring(w.view.off, b.viewV), now)
 	case b.ok && m.shown == nil && movedFrom(b, before) == nil:
 		// A screen that received its workspace from another monitor does
@@ -748,6 +753,7 @@ func (c *Core) transitionCamera(b *viewShot, before []viewShot, now time.Time) {
 		// The snapshot's list is reused by the next action: the slide keeps
 		// its own copy.
 		m.switchView.off, m.switchList = off, slices.Clone(b.list)
+		m.switchAxis = b.switchAxis
 		if off == 0 || m.framedSwitch() {
 			m.stopSwitch()
 			return

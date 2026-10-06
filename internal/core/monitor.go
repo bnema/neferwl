@@ -37,6 +37,8 @@ type Monitor struct {
 	// switchView slides the view between numbered workspaces: the view is
 	// at Active+switchView.off, in workspaces.
 	switchView slide
+	// switchAxis is frozen from the source workspace for each transition.
+	switchAxis layoutAxis
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
@@ -508,9 +510,13 @@ func (m *Monitor) applyNamed() {
 	}
 	m.each(func(w *Workspace) {
 		s := specs[w.Name]
+		before := w.Overflow
 		w.Overflow = m.template.Overflow
 		if s.Overflow != "" {
 			w.Overflow = s.Overflow
+		}
+		if before != w.Overflow && w.policy().equalCells {
+			w.unmaximize()
 		}
 		w.SetMaxColumns(m.template.MaxColumns)
 		if s.MaxColumns > 0 {

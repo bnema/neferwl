@@ -334,9 +334,9 @@ func TestActivateHiddenStashEndsScrollFullscreen(t *testing.T) {
 	if id, _ := w.Focused(); id != 3 || w.fullscreen != 0 {
 		t.Fatalf("focused %d fullscreen %d", id, w.fullscreen)
 	}
-	view := w.ViewX
+	view := w.View
 	w.scroll()
-	if w.ViewX != view {
-		t.Fatalf("view %d, settled %d", view, w.ViewX)
+	if w.View != view {
+		t.Fatalf("view %d, settled %d", view, w.View)
 	}
 }

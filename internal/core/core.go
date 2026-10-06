@@ -251,7 +251,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	}
 	overflow := func(v string) (Overflow, error) {
 		switch o := Overflow(v); o {
-		case "", OverflowScroll, OverflowFixed:
+		case "", OverflowScroll, OverflowFixed, OverflowCascade:
 			return o, nil
 		}
 		return "", fmt.Errorf("invalid overflow %q", v)
