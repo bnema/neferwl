@@ -15,7 +15,7 @@ func TestCoreCoveringFloatSceneAndHit(t *testing.T) {
 	cfg.Floating.Dim = 0.3
 	scenes := make(chan []ports.Scene, 1)
 	commands := make(chan ports.ClientCommand, 128)
-	c, err := New(cfg, Channels{Scenes: scenes, Commands: commands})
+	c, err := New(cfg, Channels{Scenes: scenes, Commands: commands}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestCoreOverviewDimsBehind(t *testing.T) {
 	cfg.Layout.MaxColumns = 2
 	cfg.Floating.Dim = 0.3
 	scenes := make(chan []ports.Scene, 1)
-	c, err := New(cfg, Channels{Scenes: scenes, Commands: make(chan ports.ClientCommand, 128)})
+	c, err := New(cfg, Channels{Scenes: scenes, Commands: make(chan ports.ClientCommand, 128)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

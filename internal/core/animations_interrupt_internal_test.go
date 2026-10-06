@@ -43,7 +43,7 @@ func TestSessionLockMidRectMotion(t *testing.T) {
 	state := ports.SecurityState{}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
-	c.ch.Security = gate
+	c.opts.Security = gate
 	sc := c.cur()
 	movingRects(t, c, ic, sc)
 	if !c.animating() || c.frameC == nil || sc.last.Seq == 0 {

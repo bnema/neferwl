@@ -16,7 +16,7 @@ func TestConfigureVisible(t *testing.T) {
 	cfg.Layout.MaxColumns = 1
 	commands := make(chan ports.ClientCommand, 256)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes})
+	c, err := New(cfg, Channels{Commands: commands, Scenes: scenes}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

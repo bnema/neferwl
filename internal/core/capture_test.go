@@ -33,7 +33,7 @@ func captureCore(t *testing.T) *captureRig {
 		scenes:     make(chan []ports.Scene, 1),
 		workspaces: make(chan ports.Workspaces, 1),
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes, Workspaces: r.workspaces})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Output: r.output, Commands: r.commands, Scenes: r.scenes, Workspaces: r.workspaces}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +514,7 @@ func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
 	client := make(chan ports.ClientEvent, 4)
 	output := make(chan ports.OutputEvent, 4)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes, Clock: clock})
+	c, err := core.New(cfg, core.Channels{Client: client, Output: output, Commands: make(chan ports.ClientCommand, 64), Scenes: scenes}, core.Options{Clock: clock})
 	if err != nil {
 		t.Fatal(err)
 	}

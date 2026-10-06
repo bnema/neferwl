@@ -260,7 +260,7 @@ func TestStashSwipeSecurityLockSettlesTheStash(t *testing.T) {
 	}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
-	s.c.ch.Security = gate
+	s.c.opts.Security = gate
 	if !s.c.syncSecurity() {
 		t.Fatal("the lock was not taken")
 	}

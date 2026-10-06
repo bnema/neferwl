@@ -312,7 +312,7 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 		state := ports.SecurityState{Generation: 1, Protected: true}
 		gate := portsmocks.NewMockSessionSecurity(t)
 		gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state })
-		c.ch.Security = gate
+		c.opts.Security = gate
 		if err := c.publish(context.Background()); err != nil {
 			t.Fatal(err)
 		}

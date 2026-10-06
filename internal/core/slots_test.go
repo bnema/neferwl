@@ -62,16 +62,17 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 	output := make(chan ports.OutputEvent, 1)
 	commands := make(chan ports.ClientCommand, 1024)
 	ch := core.Channels{Client: r.client, Input: r.input, Output: output, Config: r.reload, Commands: commands, Spawn: r.spawn, Scenes: r.scenes, Workspaces: r.workspaces, ConfigErrors: r.errs}
+	opts := core.Options{}
 	if animated != nil && *animated {
 		r.clk, r.frames = newStepClock(t), make(chan ports.OutputFrame)
-		ch.Clock, ch.Frames = r.clk.clock, r.frames
+		opts.Clock, ch.Frames = r.clk.clock, r.frames
 		t.Cleanup(func() {
 			if r.lands == 0 {
 				t.Error("no spring ever ran: the animations-on variant checked nothing")
 			}
 		})
 	}
-	c, err := core.New(cfg, ch)
+	c, err := core.New(cfg, ch, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +424,7 @@ func TestStartupCommands(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Startup = [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"waybar"}}
 	spawn := make(chan ports.SpawnRequest, 4)
-	c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []ports.Scene, 1), ConfigErrors: make(chan error, 1)})
+	c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []ports.Scene, 1), ConfigErrors: make(chan error, 1)}, core.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

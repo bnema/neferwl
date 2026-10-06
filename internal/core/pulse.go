@@ -77,7 +77,7 @@ func (c *Core) pulseFocus(window WindowID, held bool) {
 	if c.justMapped(window) {
 		return
 	}
-	p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseSettle)
+	p.timerC, p.timerStop = newTimer(c.opts.Clock, pulseSettle)
 }
 
 // justMapped reports whether the window got the focus as it mapped: opening
@@ -98,14 +98,14 @@ func (c *Core) pulseTick() bool {
 	}
 	now := c.now()
 	if wait := pulseSettle - now.Sub(p.since); wait > 0 {
-		p.timerC, p.timerStop = newTimer(c.ch.Clock, wait)
+		p.timerC, p.timerStop = newTimer(c.opts.Clock, wait)
 		return false
 	}
 	// A swipe or its landing slide still shows the neighbours: decide on
 	// the settled layout, or a window left alone would start a pulse cut
 	// short.
 	if !c.cur().settled() {
-		p.timerC, p.timerStop = newTimer(c.ch.Clock, pulseRecheck)
+		p.timerC, p.timerStop = newTimer(c.opts.Clock, pulseRecheck)
 		return false
 	}
 	if p.target == p.last && now.Sub(p.lastAt) < pulseCooldown {

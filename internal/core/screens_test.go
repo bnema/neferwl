@@ -41,6 +41,12 @@ func startMulti(t *testing.T, edit func(*ports.Config), outs ...ports.OutputInfo
 // startRig is startMulti; terminal enables the configured automatic-open policy.
 func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
 	t.Helper()
+	return startRigWith(t, core.Options{Terminal: terminal}, edit, outs...)
+}
+
+// startRigWith is startRig with explicit core options.
+func startRigWith(t *testing.T, opts core.Options, edit func(*ports.Config), outs ...ports.OutputInfo) *multiRig {
+	t.Helper()
 	cfg := altCmdDefaults()
 	cfg.Border.Width = 0
 	if edit != nil {
@@ -51,7 +57,7 @@ func startRig(t *testing.T, terminal bool, edit func(*ports.Config), outs ...por
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
 		commands: make(chan ports.ClientCommand, 1024), scenes: make(chan []ports.Scene, 1), spawn: make(chan ports.SpawnRequest, 16), state: make(chan ports.State, 1), cfg: cfg,
 	}
-	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state, Terminal: terminal})
+	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Spawn: r.spawn, State: r.state}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,7 +628,7 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 	output := make(chan ports.OutputEvent, 1)
 	scenes := make(chan []ports.Scene, 1)
 	state := make(chan ports.State, 1)
-	c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state, Terminal: true})
+	c, err := core.New(cfg, core.Channels{Output: output, Commands: commands, Spawn: spawn, Scenes: scenes, State: state}, core.Options{Terminal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,6 +756,39 @@ func TestEmptyWorkspaceGetsTerminal(t *testing.T) {
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
 	if len(r.spawn) != 0 {
 		t.Fatal("respawned at once")
+	}
+}
+
+// A terminal that exits is not respawned before termRetry has passed on
+// the injected clock, and is once it has.
+func TestTerminalRetryFollowsClock(t *testing.T) {
+	clk := newStepClock(t)
+	r := startRigWith(t, core.Options{Terminal: true, Clock: clk.clock}, func(c *ports.Config) { c.Terminal.AutoOpen = "all" }, left)
+	first := receive(t, r.spawn)
+	r.client <- ports.WindowMapped{ID: 1, Slot: token(t, first)}
+	receive(t, r.scenes)
+	r.client <- ports.WindowUnmapped{ID: 1}
+	receive(t, r.scenes)
+	if len(r.spawn) != 0 {
+		t.Fatal("respawned at once")
+	}
+	// churn empties the workspace again, so fillEmpty runs at the clock's time.
+	churn := func(id ports.WindowID) {
+		r.client <- ports.WindowMapped{ID: id}
+		receive(t, r.scenes)
+		r.client <- ports.WindowUnmapped{ID: id}
+		receive(t, r.scenes)
+	}
+	// termRetry is private to core: stay far below and far above it.
+	clk.advance(time.Second)
+	churn(2)
+	if len(r.spawn) != 0 {
+		t.Fatal("respawned before the retry interval")
+	}
+	clk.advance(time.Minute)
+	churn(3)
+	if req := receive(t, r.spawn); req.Argv[0] != "foot" {
+		t.Fatal(req)
 	}
 }
 

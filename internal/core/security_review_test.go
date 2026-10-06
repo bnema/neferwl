@@ -38,7 +38,7 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 		}
 		return v
 	})
-	c.ch.Security = gate
+	c.opts.Security = gate
 	c.sentOutputs = ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
 	commands := make(chan ports.ClientCommand)
 	c.ch.Commands = commands
@@ -68,7 +68,7 @@ func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 	state := ports.SecurityState{Generation: 2}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().Return(state)
-	c.ch.Security = gate
+	c.opts.Security = gate
 	c.syncSecurity()
 	key := ports.KeyEvent{Keycode: 58, Keysym: "Control_L", Pressed: true, Mods: ports.ModCtrl, State: ports.ModState{Depressed: 1 << 19, Latched: 1 << 21, Locked: 1 << 23, Group: 2}}
 	ev, ok := c.admitInput(ports.SecurityInput{State: state, Event: key})
@@ -97,7 +97,7 @@ func TestSlotsPendingBackpressureSuppressesSpawnAndDefersSlots(t *testing.T) {
 		}
 		return v
 	})
-	c.ch.Security = gate
+	c.opts.Security = gate
 	commands := make(chan ports.ClientCommand)
 	c.ch.Commands = commands
 	spawn := make(chan ports.SpawnRequest, 2)
@@ -132,7 +132,7 @@ func TestTerminalPendingBackpressureSuppressesSpawnAndRestoresRetry(t *testing.T
 	c, _, _ := hiddenCaptureCommands(t)
 	c.cur().mon.RemoveWindow(1)
 	c.cur().mon.RemoveWindow(2)
-	c.ch.Terminal = true
+	c.opts.Terminal = true
 	c.cfg.Terminal.AutoOpen = "always"
 	c.cfg.Terminal.Command = []string{"terminal"}
 	var state atomic.Value
@@ -147,7 +147,7 @@ func TestTerminalPendingBackpressureSuppressesSpawnAndRestoresRetry(t *testing.T
 		}
 		return v
 	})
-	c.ch.Security = gate
+	c.opts.Security = gate
 	commands := make(chan ports.ClientCommand)
 	c.ch.Commands = commands
 	spawn := make(chan ports.SpawnRequest, 1)
@@ -173,7 +173,7 @@ func TestStartupWorkspaceSnapshotHasNoOutputBeforeOutputAdded(t *testing.T) {
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	workspaces := make(chan ports.Workspaces, 1)
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: workspaces})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: workspaces}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

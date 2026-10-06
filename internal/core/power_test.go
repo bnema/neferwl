@@ -13,12 +13,17 @@ import (
 
 func powerCore(t *testing.T) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []ports.Scene) {
 	t.Helper()
+	return powerCoreWith(t, core.Options{})
+}
+
+func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan ports.ClientEvent, chan ports.OutputEvent, chan ports.ClientCommand, chan []ports.Scene) {
+	t.Helper()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 4)
 	output := make(chan ports.OutputEvent, 2)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(config.Defaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)})
+	c, err := core.New(config.Defaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,6 +166,36 @@ func TestUserActivity(t *testing.T) {
 		break
 	}
 	time.Sleep(ports.ActivityInterval)
+	input <- ports.PointerMotion{X: 2, Y: 2}
+	commandOf[ports.UserActivity](t, commands)
+}
+
+// With an injected clock, the throttle follows it: no second UserActivity
+// until the clock has advanced past the interval.
+func TestUserActivityFollowsClock(t *testing.T) {
+	clk := newStepClock(t)
+	input, _, _, commands, _ := powerCoreWith(t, core.Options{Clock: clk.clock})
+	input <- ports.PointerMotion{X: 1, Y: 1}
+	commandOf[ports.UserActivity](t, commands)
+	clk.advance(ports.ActivityInterval / 2)
+	// Core takes input in order and the input channel holds 4: once the
+	// sixth send returns, the first motion is handled, and a wrongly
+	// unthrottled activity would already be in commands.
+	for range 6 {
+		input <- ports.PointerMotion{X: 1, Y: 1}
+	}
+	for {
+		select {
+		case c := <-commands:
+			if _, ok := c.(ports.UserActivity); ok {
+				t.Fatal("second UserActivity before the interval passed on the clock")
+			}
+			continue
+		default:
+		}
+		break
+	}
+	clk.advance(ports.ActivityInterval)
 	input <- ports.PointerMotion{X: 2, Y: 2}
 	commandOf[ports.UserActivity](t, commands)
 }

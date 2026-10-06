@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -12,14 +12,7 @@ import (
 // and a headless output falls back to SDR. Skips without Vulkan or without a
 // device that exports dmabufs (lavapipe in CI).
 func TestVirtualRendererExportsHDRTargets(t *testing.T) {
-	newRenderer := func(w, h int) (ports.Renderer, error) {
-		r, err := vulkan.New(w, h)
-		if err != nil {
-			return nil, err
-		}
-		return r, nil
-	}
-	r, err := virtualRenderer(newRenderer, false)(64, 16)
+	r, err := newVulkanRenderer(logging.For(t.Context(), "render"), true, false)(64, 16)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}
@@ -43,5 +36,18 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 		for _, p := range b.Planes {
 			_ = p.File.Close()
 		}
+	}
+}
+
+// A failed assembly returns an error and releases what it acquired: without
+// a runtime directory wayland.New, the last fallible step, fails.
+func TestAssembleSessionFailure(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	s, err := assembleSession(t.Context(), Options{Backend: "headless", Config: ports.Config{}})
+	if err == nil {
+		t.Fatal("assembleSession succeeded without XDG_RUNTIME_DIR")
+	}
+	if s != nil {
+		t.Fatal("failed assembly returned a session")
 	}
 }

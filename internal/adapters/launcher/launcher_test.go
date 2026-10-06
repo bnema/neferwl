@@ -35,7 +35,7 @@ func TestRun(t *testing.T) {
 	done := make(chan error, 1)
 	reqs := make(chan ports.SpawnRequest, 3)
 	go func() {
-		done <- New([]string{"PATH=/bin", "FILE=" + file}, logging.For(ctx, "launcher")).Run(ctx, reqs)
+		done <- New([]string{"PATH=/bin", "FILE=" + file}, nil, logging.For(ctx, "launcher")).Run(ctx, reqs)
 	}()
 	reqs <- ports.SpawnRequest{}
 	reqs <- ports.SpawnRequest{Argv: []string{"nonexistent-neferwl-binary"}}
@@ -78,7 +78,7 @@ func TestChildPath(t *testing.T) {
 	defer cancel()
 	reqs := make(chan ports.SpawnRequest, 1)
 	done := make(chan error, 1)
-	go func() { done <- New([]string{"PATH=" + dir}, logging.For(ctx, "launcher")).Run(ctx, reqs) }()
+	go func() { done <- New([]string{"PATH=" + dir}, nil, logging.For(ctx, "launcher")).Run(ctx, reqs) }()
 	reqs <- ports.SpawnRequest{Argv: []string{name, result}}
 	deadline := time.After(3 * time.Second)
 	for {

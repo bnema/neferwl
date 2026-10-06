@@ -23,14 +23,8 @@ type headlessOptions struct {
 // With several outputs, screenshots go to a subdirectory per output. Modes
 // are fixed, so apply answers every configuration without backend work.
 //
-// The raw PQ dump (o.raw) needs readable HDR targets, set on these
-// renderers only: the DRM path never reads them back.
-//
-// Virtual outputs have no display to list modifiers, so each renderer is
-// told it drives one (vulkan.Renderer.SetVirtualOutput); without it a real
-// GPU refuses the HDR targets and the output falls back to SDR.
+// newRenderer is configured for virtual outputs by newVulkanRenderer.
 func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
-	newRenderer = virtualRenderer(newRenderer, o.raw)
 	set := newOutputSet(ctx, ch.captured)
 	set.wireSecurity(ch)
 	inventory := ports.OutputHeads{}
@@ -113,25 +107,6 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 			err := set.finish(stopped.name)
 			return joinErr(err, set.wait())
 		}
-	}
-}
-
-// virtualRenderer wraps a renderer factory for headless outputs. Vulkan is
-// the only implementation of these settings; they are not on the port.
-// readback makes the HDR targets readable (HDRPixels).
-func virtualRenderer(newRenderer func(w, h int) (ports.Renderer, error), readback bool) func(w, h int) (ports.Renderer, error) {
-	return func(w, h int) (ports.Renderer, error) {
-		r, err := newRenderer(w, h)
-		if err != nil {
-			return nil, err
-		}
-		if v, ok := r.(interface{ SetVirtualOutput(bool) }); ok {
-			v.SetVirtualOutput(true)
-		}
-		if v, ok := r.(interface{ SetHDRReadback(bool) }); ok && readback {
-			v.SetHDRReadback(true)
-		}
-		return r, nil
 	}
 }
 

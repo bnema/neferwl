@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -13,7 +12,7 @@ import (
 // they reconnect on.
 func (c *Core) userActivity(ctx context.Context) error {
 	clear(c.offGone)
-	now := time.Now()
+	now := c.now()
 	if now.Sub(c.activity) < ports.ActivityInterval {
 		return nil
 	}

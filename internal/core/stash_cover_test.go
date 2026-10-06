@@ -15,7 +15,7 @@ func stashCoverCore(t *testing.T, overflow Overflow, float bool) (*Core, *Worksp
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.Overflow = string(overflow)
 	cfg.Layout.MaxColumns = 2
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

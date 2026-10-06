@@ -118,8 +118,8 @@ func newPipes(realSession bool) *pipes {
 	return p
 }
 
-// core is core's side. Security, Terminal and Clock are not channels: the
-// caller sets them.
+// core is core's side: channels only. The security gate, clock and terminal
+// flag are not channels; assembleSession passes them as core.Options.
 func (p *pipes) core() core.Channels {
 	return core.Channels{
 		Client:       p.client,

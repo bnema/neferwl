@@ -138,7 +138,7 @@ func TestBringNamedLookupAllocations(t *testing.T) {
 // newSizedCore returns a core with buffered output channels and no outputs.
 func newSizedCore(t *testing.T, cfg ports.Config) *Core {
 	t.Helper()
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Layouts: make(chan ports.Layout, 1), Constraints: make(chan ports.PointerConstraint, 1), State: make(chan ports.State, 1), Workspaces: make(chan ports.Workspaces, 1)}, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
