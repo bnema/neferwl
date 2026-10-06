@@ -186,11 +186,8 @@ func TestFloatOnlyMonitorDirectionalExit(t *testing.T) {
 	}
 }
 
-// Two-finger scrolling moves the overview selection one column per step,
-// along the axis the fingers move most; a small scroll does nothing and
-// lifting the fingers starts over. Outside the overview it goes to the
-// window.
-func TestOverviewTwoFingerScroll(t *testing.T) {
+// Three-finger navigation changes selection during movement and resets on lift.
+func TestOverviewThreeFingerNavigation(t *testing.T) {
 	cfg := config.Defaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -223,25 +220,29 @@ func TestOverviewTwoFingerScroll(t *testing.T) {
 	input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper, Pressed: true}
 	sceneMatch(t, scenes, focused(3))
 	input <- ports.KeyEvent{Keysym: "o", Mods: ports.ModSuper}
-	finger := func(dx, dy float64) ports.PointerAxis {
-		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}, Vertical: ports.ScrollAxis{Set: true, Value: dy}}
+	finger := func(dx, dy float64) ports.SwipeUpdate {
+		return ports.SwipeUpdate{DX: dx, DY: dy}
 	}
+	input <- ports.SwipeBegin{Fingers: 3}
 	// 50 left, lifted, then 50, 50 and 100 left: one step (to 2), the
 	// next ones are longer. Without the reset it would be two (to 1), and
 	// the l below would land on 2.
 	input <- finger(-50, 5)
-	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	input <- ports.SwipeEnd{}
+	input <- ports.SwipeBegin{Fingers: 3}
 	input <- finger(-50, 5)
 	input <- finger(-50, 0)
 	input <- finger(-100, 0)
 	sceneMatch(t, scenes, focused(2))
-	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	input <- ports.SwipeEnd{}
+	input <- ports.SwipeBegin{Fingers: 3}
 	input <- ports.KeyEvent{Keysym: "l", Pressed: true}
 	sceneMatch(t, scenes, focused(3))
 	input <- ports.KeyEvent{Keysym: "l"}
 	input <- finger(-60, 0)
 	sceneMatch(t, scenes, focused(2))
-	input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	input <- ports.SwipeEnd{}
+	input <- ports.SwipeBegin{Fingers: 3}
 	// A wheel notch down has nowhere to go (no workspace below with
 	// windows); a finger scroll left moves on.
 	input <- ports.PointerAxis{Source: ports.AxisWheel, Vertical: ports.ScrollAxis{Set: true, Value: 15, V120: 120}}

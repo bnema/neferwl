@@ -24,7 +24,7 @@ type overviewState struct {
 	selected         WindowID
 	selectedAt       int
 	scrollX, scrollY float64
-	// scrolled is set once a two-finger scroll stepped up or down: it
+	// scrolled is set once a three-finger gesture stepped up or down: it
 	// waits for the fingers to lift before the next step. sideways is set
 	// once it stepped to a column: it stays on columns and steps once per
 	// overviewScrollRepeat.
@@ -931,7 +931,7 @@ const (
 	// overviewScrollStep is the scroll distance, in libinput's pointer
 	// units, that moves the selection one column or workspace.
 	overviewScrollStep = 60
-	// overviewScrollRepeat is the two-finger distance of each further
+	// overviewScrollRepeat is the three-finger distance of each further
 	// column step in one scroll: longer than the first, so a short scroll
 	// reaches the next column exactly and a long one goes on.
 	overviewScrollRepeat = 150
@@ -939,7 +939,8 @@ const (
 
 // overviewScroll moves the overview selection with a scroll frame: a row
 // step when the vertical scroll reaches overviewScrollStep and leads, else
-// a column step. Two fingers step to the next column after
+// a column step. Three-finger updates (encoded here as AxisFinger) step
+// to the next column after
 // overviewScrollStep, then once per overviewScrollRepeat, and stay on
 // columns until they lift; up or down they step once per scroll, so a card
 // in a stack is easy to pick.
