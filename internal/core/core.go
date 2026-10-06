@@ -52,8 +52,7 @@ type Channels struct {
 type Options struct {
 	// Security is the defensive session gate; nil preserves standalone operation.
 	Security ports.SessionSecurity
-	// Clock tells the time for fullscreenGrace and slides; nil is the
-	// system clock.
+	// Clock supplies every core timestamp and timer; nil uses the system clock.
 	Clock ports.Clock
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool

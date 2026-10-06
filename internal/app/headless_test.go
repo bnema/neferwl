@@ -1,10 +1,11 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
-	"github.com/bnema/neferwl/internal/ports"
 )
 
 // The headless renderer factory tells a real renderer it drives a virtual
@@ -43,9 +44,9 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 // a runtime directory wayland.New, the last fallible step, fails.
 func TestAssembleSessionFailure(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
-	s, err := assembleSession(t.Context(), Options{Backend: "headless", Config: ports.Config{}})
-	if err == nil {
-		t.Fatal("assembleSession succeeded without XDG_RUNTIME_DIR")
+	s, err := assembleSession(t.Context(), Options{Backend: "headless", Config: config.Defaults(), NoXwayland: true})
+	if err == nil || !strings.Contains(err.Error(), "XDG_RUNTIME_DIR") {
+		t.Fatalf("expected runtime directory failure, got %v", err)
 	}
 	if s != nil {
 		t.Fatal("failed assembly returned a session")
