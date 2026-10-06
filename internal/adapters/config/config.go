@@ -914,8 +914,8 @@ func setLayoutRule(r *ports.LayoutRules, field, v string) error {
 	case "max-columns":
 		return positive(&r.MaxColumns, v, 16)
 	case "overflow":
-		if v != "scroll" && v != "fixed" {
-			return fmt.Errorf("must be scroll or fixed")
+		if v != "scroll" && v != "fixed" && v != "cascade" {
+			return fmt.Errorf("must be scroll, fixed or cascade")
 		}
 		r.Overflow = v
 		return nil
@@ -952,9 +952,9 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 				rules = o.Over(rules)
 			}
 		}
-		if w.Over(rules).Overflow == "fixed" && len(w.Slots) > 0 {
+		if overflow := w.Over(rules).Overflow; (overflow == "fixed" || overflow == "cascade") && len(w.Slots) > 0 {
 			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
-			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = fixed (columns share the width)", w.Name)})
+			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = %s (columns share the width)", w.Name, overflow)})
 		}
 		if !bound[w.Name] {
 			line := 0

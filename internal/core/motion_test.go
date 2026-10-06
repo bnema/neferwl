@@ -433,14 +433,14 @@ func TestMotionVelocity(t *testing.T) {
 
 func TestRetargetKeepsVelocityAndSlowdown(t *testing.T) {
 	start := time.Unix(10, 0)
-	w := &Workspace{ViewX: 100, view: slide{off: -300}}
+	w := &Workspace{View: 100, view: slide{off: -300}}
 	w.view.motion = newMotion(viewSpring(w.view.off, 2000), start, 2)
 	w.view.motion.at(start.Add(20 * time.Millisecond))
 	v := w.view.motion.velocity()
 	if v <= 0 {
 		t.Fatalf("velocity %v", v)
 	}
-	w.ViewX = 40
+	w.View = 40
 	w.retarget(100)
 	if w.view.off != -240 || !w.view.motion.on || w.view.motion.slow != 2 {
 		t.Fatalf("shift %v motion %+v", w.view.off, w.view.motion)
@@ -452,7 +452,7 @@ func TestRetargetKeepsVelocityAndSlowdown(t *testing.T) {
 		t.Fatalf("spring velocity %v, want %v in spring time", got, 2*v)
 	}
 	var idle Workspace
-	idle.ViewX = 5
+	idle.View = 5
 	idle.retarget(0)
 	if idle.view.motion.on || idle.view.off != 0 {
 		t.Fatal("retarget without a slide must not start one")

@@ -30,7 +30,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Colors for focused / other window lines; only the focused output lights up |
 | `layout.gaps` | `0` | Space between windows |
 | `layout.max-columns` | `2` | Columns that share the screen before scrolling |
-| `layout.overflow` | `scroll` | Past the max: `scroll` right, or `fixed` spiral split |
+| `layout.overflow` | `scroll` | Past the max: `scroll` right, `fixed` spiral split, or `cascade` into vertically scrolling bands |
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
 | `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
@@ -186,6 +186,16 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
   ```
 - `none` removes a default bind.
 - `spawn <command>` runs a program without a shell; see [Running commands](desktop.md#running-commands).
+
+### Cascade
+
+Set `layout.overflow = cascade` globally, per output, or on a named workspace. Columns fill equal-width cells, up to `max-columns` per band, then continue in a fresh band below. Incomplete bands keep empty cells. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
+
+Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
+
+Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-up/down` commands still mean previous/next workspace, even when the transition is horizontal. Four-finger and stash gestures keep their existing behaviour.
+
+The overview presents bands side by side in one workspace card. Selecting a window reveals its band. Cascade supports dropping onto tiles, but not gap insertion or edge scrolling during a drag.
 
 ### Actions
 

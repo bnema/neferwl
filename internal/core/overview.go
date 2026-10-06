@@ -748,7 +748,12 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 	maximized := w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
-		if w.Overflow == OverflowFixed {
+		if w.Overflow == OverflowCascade {
+			k := max(w.MaxColumns, 1)
+			width := max((w.Usable.W-g*(k+1))/k, 0)
+			r.X = w.band(i)*w.Usable.W + g + (i%k)*(width+g)
+			r.W = width
+		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
 			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
 		} else if w.fullscreenColumn(i) {

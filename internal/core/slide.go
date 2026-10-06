@@ -47,10 +47,10 @@ func (w *Workspace) slidable() bool {
 // before during a landing slide: the slide heads for the new view.
 // Without a landing slide the view moves at once, as it always has.
 func (w *Workspace) retarget(before int) {
-	if w.ViewX == before || !w.view.motion.on {
+	if w.View == before || !w.view.motion.on {
 		return
 	}
-	w.view.off += float64(before - w.ViewX)
+	w.view.off += float64(before - w.View)
 	w.view.motion = newMotion(viewSpring(w.view.off, w.view.motion.velocity()), time.Time{}, w.view.motion.slow)
 }
 
@@ -61,7 +61,7 @@ func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.off)) }
 // (slideLayout rounds the offset times the height).
 func (m *Monitor) switchSpring(off, velocity float64) spring {
 	s := workspaceSpring(off, velocity)
-	if h := m.template.Output.H; h > 0 {
+	if h := m.switchAxis.span(m.template.Output); h > 0 {
 		s.Snap = pixelSnap / float64(h)
 	}
 	return s
@@ -70,7 +70,7 @@ func (m *Monitor) switchSpring(off, velocity float64) spring {
 // swipeScale turns touchpad distance into pixels: viewSwipeMovement
 // scrolls one usable width.
 func (w *Workspace) swipeScale() float64 {
-	return float64(w.Usable.W) / viewSwipeMovement
+	return float64(w.policy().content.span(w.Usable)) / viewSwipeMovement
 }
 
 // snapPoints are the sorted views that align a column edge with the usable
@@ -78,6 +78,9 @@ func (w *Workspace) swipeScale() float64 {
 // snapSpacing of the usable width merge into the first: a swipe step
 // always moves the view visibly.
 func (w *Workspace) snapPoints() []float64 {
+	if w.Overflow == OverflowCascade {
+		return w.cascadePoints()
+	}
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	last := len(w.Columns) - 1
@@ -113,13 +116,16 @@ const snapSpacing = 0.1
 // fully shown at the current view, else the furthest fully shown column
 // toward the swipe (forward is rightward).
 func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
+	if w.Overflow == OverflowCascade {
+		return w.cascadeFocus(view)
+	}
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	full := func(i int) bool {
 		x := w.columnX(i) - view
 		return x >= minX && x+w.columnWidth(i) <= maxX
 	}
-	if full(w.Focus) && view == w.ViewX {
+	if full(w.Focus) && view == w.View {
 		return w.Focus
 	}
 	focus = -1
@@ -183,13 +189,13 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 	if base < 0 {
 		return cur
 	}
-	h := float64(m.template.Output.H)
+	h := float64(m.switchAxis.span(m.template.Output))
 	pos := float64(base) + m.switchView.off
 	offset := func(p []Placement, k int) []Placement {
 		dy := int(math.Round((float64(k) - pos) * h))
 		for i := range p {
 			if !p[i].Hidden {
-				p[i].Rect.Y += dy
+				m.switchAxis.offset(&p[i].Rect, dy)
 			}
 		}
 		return p

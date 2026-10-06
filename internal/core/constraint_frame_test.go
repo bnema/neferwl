@@ -27,7 +27,7 @@ func partlyShown(t *testing.T) *Core {
 	for id := WindowID(1); id <= 3; id++ {
 		s.mon.AddWindow(id)
 	}
-	s.mon.Current().ViewX += 25
+	s.mon.Current().View += 25
 	return c
 }
 

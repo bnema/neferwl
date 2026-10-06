@@ -36,8 +36,8 @@ func TestScrollBy(t *testing.T) {
 		w.AddWindow(id)
 	}
 	w.FocusID(1)
-	if w.ViewX != 0 {
-		t.Fatal(w.ViewX)
+	if w.View != 0 {
+		t.Fatal(w.View)
 	}
 	if w.scrollBy(-1) {
 		t.Fatal("scrolled past the start")
@@ -52,7 +52,7 @@ func TestScrollBy(t *testing.T) {
 	if steps != 2 {
 		t.Fatal(steps)
 	}
-	last := w.columnX(3) + w.columnWidth(3) - w.ViewX
+	last := w.columnX(3) + w.columnWidth(3) - w.View
 	if last != w.Usable.X+w.Usable.W-w.gap() {
 		t.Fatal(last)
 	}
@@ -62,8 +62,8 @@ func TestScrollBy(t *testing.T) {
 	}
 	for w.scrollBy(-1) {
 	}
-	if w.ViewX != 0 {
-		t.Fatal(w.ViewX)
+	if w.View != 0 {
+		t.Fatal(w.View)
 	}
 }
 

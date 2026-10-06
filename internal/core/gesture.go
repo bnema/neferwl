@@ -191,7 +191,7 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 			g.mode = swipeDropped
 			return true
 		}
-		g.ws.view.off = g.snap.pos() - float64(g.ws.ViewX)
+		g.ws.view.off = g.snap.pos() - float64(g.ws.View)
 		return true
 	case swipeWorkspaces:
 		if g.listChanged(m) {
@@ -241,16 +241,17 @@ func (c *Core) decide(g *swipeGesture) {
 		}
 		w.stashView.motion = motion{}
 		g.snap = newSnapSwipe(float64(w.stashAt)+w.stashView.off, float64(w.stashAt), 1/stashSwipeMovement, indexPoints(len(w.Stash)), workspaceBand)
-	case g.horizontal && w.slidable():
+	case g.horizontal == (w.policy().content == horizontalAxis) && w.slidable():
 		g.mode, g.ws, g.points = swipeColumns, w, w.snapPoints()
 		w.view.motion = motion{}
-		g.snap = newSnapSwipe(float64(w.ViewX)+w.view.off, float64(w.ViewX), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.Usable.W)))
-	case !g.horizontal && m.shown == nil:
+		g.snap = newSnapSwipe(float64(w.View)+w.view.off, float64(w.View), w.swipeScale(), g.points, workspaceBand.scaled(float64(w.policy().content.span(w.Usable))))
+	case g.horizontal == (w.policy().workspace == horizontalAxis) && m.shown == nil:
 		// A landing slide measured in an older list lands at once first.
 		if m.switchList != nil && !slices.Equal(m.switchList, m.Workspaces) {
 			m.stopSwitch()
 		}
 		g.mode, g.ws = swipeWorkspaces, m.Workspaces[m.Active]
+		m.switchAxis = w.policy().workspace
 		g.list = slices.Clone(m.Workspaces)
 		m.switchView.motion, m.switchList = motion{}, nil
 		g.snap = newSnapSwipe(float64(m.Active)+m.switchView.off, float64(m.Active), 1/workspaceSwipeMovement, indexPoints(len(m.Workspaces)), workspaceBand)
@@ -282,18 +283,18 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			w.view.stop()
 			return false
 		}
-		shown := float64(w.ViewX) + w.view.off
+		shown := float64(w.View) + w.view.off
 		target, velocity := g.snap.end(e.Cancelled, e.Time)
 		if !e.Cancelled {
 			view := int(math.Round(target))
 			w.Focus = w.snapFocus(view, target >= shown)
-			w.ViewX = view
+			w.View = view
 			// A column wider than the view aligns as focus moves align it.
 			w.scroll()
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.keyboard.takeBack()
 		}
-		w.view.off = shown - float64(w.ViewX)
+		w.view.off = shown - float64(w.View)
 		if c.animOn() {
 			w.view.motion = c.spring(viewSpring(w.view.off, velocity), now)
 		} else {
@@ -380,6 +381,18 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		if step == 0 {
 			return false
 		}
+		if g.screen.mon.Current().Overflow == OverflowCascade && !g.horizontal {
+			w := g.screen.mon.Current()
+			if c.cur() != g.screen || w.onFloat() || w.fullscreen != 0 {
+				return false
+			}
+			if next := w.bandNeighbor(step); next >= 0 {
+				w.Focus = next
+				w.scroll()
+				return true
+			}
+			return false
+		}
 		a := ActionFocusWorkspaceDown
 		switch {
 		case g.horizontal && step < 0:
@@ -388,6 +401,12 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			a = ActionFocusColumnRight
 		case step < 0:
 			a = ActionFocusWorkspaceUp
+		}
+		if g.screen.mon.Current().Overflow == OverflowCascade && g.horizontal {
+			a = ActionFocusWorkspaceDown
+			if step < 0 {
+				a = ActionFocusWorkspaceUp
+			}
 		}
 		// Focus actions act on the focused screen: the swipe's, unless the
 		// pointer took the focus to another output meanwhile.

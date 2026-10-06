@@ -210,11 +210,11 @@ func TestNoCameraTransitionWhileSwipeFollows(t *testing.T) {
 	w.view.off = 25
 	c.swipe = &swipeGesture{screen: sc, ws: w, mode: swipeColumns}
 	before := c.snapshot(ic.now)
-	viewX := w.ViewX
+	viewX := w.View
 	for range 3 {
 		c.applyAction(ActionFocusColumnLeft)
 	}
-	if w.ViewX == viewX {
+	if w.View == viewX {
 		t.Fatal("the focus did not move the view: the case checks nothing")
 	}
 	c.transition(before, ic.now)

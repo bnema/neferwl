@@ -196,8 +196,8 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 	}
 	// A fourth column scrolls: still 1/3 each.
 	m.AddWindow(4)
-	if w := m.Current(); w.columnWidth(3) != 33 || w.ViewX == 0 {
-		t.Fatal(w.ViewX)
+	if w := m.Current(); w.columnWidth(3) != 33 || w.View == 0 {
+		t.Fatal(w.View)
 	}
 	// A preset on one column is kept; auto columns keep their share.
 	m.SetPresets([]Width{{Num: 1, Den: 2}})

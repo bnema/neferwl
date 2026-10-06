@@ -64,8 +64,8 @@ type OutputAnchor struct {
 type LayoutRules struct {
 	// MaxColumns is how many columns share the screen at once.
 	MaxColumns int
-	// Overflow is "scroll" (further columns scroll) or "fixed" (they split
-	// the last one).
+	// Overflow is "scroll" (horizontal scrolling), "fixed" (spiral splits),
+	// or "cascade" (vertically scrolling bands of columns).
 	Overflow string
 }
 

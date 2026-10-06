@@ -158,14 +158,14 @@ func TestOverviewBrowsedRowsRestored(t *testing.T) {
 	for _, ov := range []Overflow{OverflowScroll, OverflowFixed} {
 		for name, path := range paths {
 			m, ws2 := browsedMonitor(ov)
-			view := ws2.ViewX
+			view := ws2.View
 			m.ToggleOverview()
 			for _, d := range path {
 				m.OverviewMove(d[0], d[1])
 			}
 			m.CancelOverview()
-			if id, _ := ws2.Focused(); id != 5 || ws2.ViewX != view || m.Current() != m.Workspaces[0] {
-				t.Fatalf("%v %s: focus %d view %v (want %v) current %v", ov, name, id, ws2.ViewX, view, m.Active)
+			if id, _ := ws2.Focused(); id != 5 || ws2.View != view || m.Current() != m.Workspaces[0] {
+				t.Fatalf("%v %s: focus %d view %v (want %v) current %v", ov, name, id, ws2.View, view, m.Active)
 			}
 		}
 	}

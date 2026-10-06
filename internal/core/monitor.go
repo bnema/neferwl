@@ -37,6 +37,8 @@ type Monitor struct {
 	// switchView slides the view between numbered workspaces: the view is
 	// at Active+switchView.off, in workspaces.
 	switchView slide
+	// switchAxis is frozen from the source workspace for each transition.
+	switchAxis layoutAxis
 	// switchList is the numbered list a landing slide measures from (the
 	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
