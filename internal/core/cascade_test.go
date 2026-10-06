@@ -117,6 +117,49 @@ func TestCascadeClearsMaximizationOnBandChanges(t *testing.T) {
 	}
 }
 
+func TestCascadeReloadAndStashRestoreClearMaximization(t *testing.T) {
+	w := cascadeWorkspace(3)
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	w.restore(4, &origPlace{stacked: []WindowID{2}, col: 1})
+	for _, c := range w.Columns {
+		if c.FullWidth {
+			t.Fatal("restore retained maximization")
+		}
+	}
+	m := NewMonitor()
+	m.SetOutput(900, 600)
+	for i := WindowID(1); i <= 3; i++ {
+		m.AddWindow(i)
+	}
+	m.Current().FocusID(1)
+	m.Current().ToggleFullWidth()
+	m.Current().FocusID(3)
+	m.SetOverflow(OverflowCascade)
+	for _, c := range m.Current().Columns {
+		if c.FullWidth {
+			t.Fatal("reload retained maximization")
+		}
+	}
+}
+
+func TestCascadeGestureValidityDoesNotAllocate(t *testing.T) {
+	m := NewMonitor()
+	m.SetOutput(900, 600)
+	m.SetOverflow(OverflowCascade)
+	for i := WindowID(1); i <= 7; i++ {
+		m.AddWindow(i)
+	}
+	g := &swipeGesture{ws: m.Current(), points: m.Current().snapPoints(), horizontal: false, opens: m.overviewOpens}
+	if n := testing.AllocsPerRun(100, func() {
+		if g.columnsChanged(m) {
+			t.Fatal("unchanged gesture invalidated")
+		}
+	}); n != 0 {
+		t.Fatalf("allocations=%v", n)
+	}
+}
+
 func TestCascadeGeometryReusesBuffer(t *testing.T) {
 	w := cascadeWorkspace(7)
 	buf := w.columnRectsInto(nil, false)

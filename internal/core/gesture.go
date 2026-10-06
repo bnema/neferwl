@@ -102,15 +102,12 @@ func (g *swipeGesture) columnsChanged(m *Monitor) bool {
 		return true
 	}
 	if g.ws.policy().wraps {
-		n := 1
-		if len(g.ws.Columns) > 0 && g.ws.Usable.H > 0 {
-			n = g.ws.band(len(g.ws.Columns)-1) + 1
-		}
+		n, spacing := g.ws.cascadeBands()
 		if len(g.points) != n {
 			return true
 		}
 		for i, p := range g.points {
-			if p != float64(i*g.ws.Usable.H) {
+			if p != float64(i*spacing) {
 				return true
 			}
 		}
@@ -424,10 +421,6 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			if w.onFloat() || w.fullscreen != 0 || w.bandNeighbor(step) < 0 {
 				return false
 			}
-			a = ActionFocusWindowDown
-			if step < 0 {
-				a = ActionFocusWindowUp
-			}
 		}
 		// Focus actions act on the focused screen: the swipe's, unless the
 		// pointer took the focus to another output meanwhile.
@@ -440,7 +433,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		before := c.cur().mon.Current()
 		shots := c.snapshot(now)
 		c.keyboard.takeBack()
-		c.applyAction(a)
+		if p.wraps && !workspace {
+			w.focusBand(step)
+		} else {
+			c.applyAction(a)
+		}
 		c.transition(shots, now)
 		return c.cur().mon.Current() != before
 	}

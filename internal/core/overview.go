@@ -749,9 +749,8 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
 		if w.policy().wraps {
-			k := max(w.MaxColumns, 1)
 			width := w.cellWidth()
-			r.X = w.band(i)*w.Usable.W + g + (i%k)*(width+g)
+			r.X = w.band(i)*w.Usable.W + w.cellX(i)
 			r.W = width
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]

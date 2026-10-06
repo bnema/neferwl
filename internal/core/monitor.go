@@ -510,9 +510,13 @@ func (m *Monitor) applyNamed() {
 	}
 	m.each(func(w *Workspace) {
 		s := specs[w.Name]
+		before := w.Overflow
 		w.Overflow = m.template.Overflow
 		if s.Overflow != "" {
 			w.Overflow = s.Overflow
+		}
+		if before != w.Overflow && w.policy().equalCells {
+			w.unmaximize()
 		}
 		w.SetMaxColumns(m.template.MaxColumns)
 		if s.MaxColumns > 0 {
