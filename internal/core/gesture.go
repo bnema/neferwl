@@ -15,8 +15,8 @@ import (
 // on the closest, and a spring takes the view there (motion.go). Sideways
 // over the shown stash the swipe slides the stash the same way, one window
 // at most. Where the view cannot slide (fixed overflow, a float, a
-// fullscreen window, the overview), the swipe runs one focus action
-// instead.
+// fullscreen window), the swipe runs one focus action instead.
+// In the overview, three fingers use distance-based selection during movement.
 
 const (
 	// swipeDecide is the touchpad distance before the swipe picks its axis
@@ -40,6 +40,8 @@ const (
 	swipeColumns
 	swipeWorkspaces
 	swipeDiscrete
+	// swipeNavigation navigates overview cards during a three-finger gesture.
+	swipeNavigation
 	// swipeOverview is a vertical four-finger swipe: up opens the
 	// overview, down closes it on the selection (niri's gesture). With
 	// the overview closed, down shows or hides the stash, and up hides
@@ -126,6 +128,10 @@ func (c *Core) swipeBegin(b ports.SwipeBegin) bool {
 		changed = true
 	}
 	c.swipe = &swipeGesture{screen: c.cur(), fingers: b.Fingers}
+	if b.Fingers == 3 && c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+		c.scrollStop(ports.PointerAxis{Horizontal: ports.ScrollAxis{Stop: true}})
+		c.swipe.mode = swipeNavigation
+	}
 	return changed
 }
 
@@ -140,6 +146,23 @@ func (c *Core) swipeUpdate(u ports.SwipeUpdate) bool {
 		c.dropSwipe()
 		c.swipe = nil
 		return false
+	}
+	if g.mode == swipeNavigation {
+		m := g.screen.mon
+		if !m.ov.open || c.cur() != g.screen || c.overviewKeyboardTaken() {
+			g.mode = swipeDropped
+			return false
+		}
+		now := c.now()
+		shots := c.snapshot(now)
+		changed := m.overviewScroll(ports.PointerAxis{Source: ports.AxisFinger,
+			Horizontal: ports.ScrollAxis{Set: true, Value: u.DX * c.swipeSign()},
+			Vertical:   ports.ScrollAxis{Set: true, Value: u.DY * c.swipeSign()}})
+		if changed {
+			c.keyboard.takeBack()
+			c.transition(shots, now)
+		}
+		return changed
 	}
 	if g.mode == swipeUndecided {
 		g.cx += u.DX
@@ -203,9 +226,11 @@ func (c *Core) decide(g *swipeGesture) {
 	case g.fingers == 4:
 		// Four fingers sideways do nothing.
 		g.mode = swipeDropped
-	case m.ov.open || !c.animOn():
-		// The overview does not slide: the swipe moves its selection.
-		// With animations off nothing slides either: the swipe runs a
+	case m.ov.open:
+		// Overview navigation is chosen at begin, never on release.
+		g.mode = swipeDropped
+	case !c.animOn():
+		// With animations off nothing slides: the swipe runs a
 		// focus action when the fingers lift.
 		g.mode, g.snap = swipeDiscrete, newStepSwipe()
 	case g.horizontal && w.stashFocused() && !w.floatFocus && w.stashShown():
@@ -248,6 +273,9 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	now := c.now()
 	m := g.screen.mon
 	switch g.mode {
+	case swipeNavigation:
+		c.scrollStop(ports.PointerAxis{Horizontal: ports.ScrollAxis{Stop: true}})
+		return false
 	case swipeColumns:
 		w := g.ws
 		if g.columnsChanged(m) {
@@ -366,14 +394,13 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		if c.cur() != g.screen {
 			return false
 		}
+		if c.cur().mon.ov.open {
+			return false
+		}
 		before := c.cur().mon.Current()
 		shots := c.snapshot(now)
 		c.keyboard.takeBack()
-		if mon := c.cur().mon; mon.ov.open {
-			mon.overviewFocus(a)
-		} else {
-			c.applyAction(a)
-		}
+		c.applyAction(a)
 		c.transition(shots, now)
 		return c.cur().mon.Current() != before
 	}

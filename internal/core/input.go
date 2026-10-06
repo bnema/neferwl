@@ -141,8 +141,9 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		return nil
 	case ports.PointerAxis:
 		c.scrollStop(v)
-		// In the overview, scrolling moves the selection.
-		if c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
+		// Only wheel/continuous scrolling navigates the overview.
+		// Two-finger scrolling belongs to clients, never to navigation.
+		if v.Source != ports.AxisFinger && c.cur().mon.ov.open && !c.overviewKeyboardTaken() {
 			// overviewScroll owns which scrolls step; the shot costs no
 			// allocation once warm.
 			now := c.now()
@@ -172,8 +173,9 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		}
 		return nil
 	case ports.SwipeUpdate:
+		before := c.cur().mon.Current()
 		if c.swipeUpdate(v) {
-			return c.slid(ctx, false)
+			return c.slid(ctx, c.cur().mon.Current() != before)
 		}
 		return nil
 	case ports.SwipeEnd:

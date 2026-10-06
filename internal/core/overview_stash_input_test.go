@@ -9,7 +9,7 @@ import (
 )
 
 func TestOverviewStashInputNavigation(t *testing.T) {
-	for _, input := range []string{"swipe", "finger", "wheel", "bind"} {
+	for _, input := range []string{"swipe", "wheel", "bind"} {
 		t.Run(input, func(t *testing.T) {
 			c, _, sc, _ := stashRig(t, true)
 			m := sc.mon
@@ -28,12 +28,8 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 						c.swipeUpdate(ports.SwipeUpdate{DX: float64(dx) * 40, DY: float64(dy) * 40, Time: at})
 					}
 					c.swipeEnd(ports.SwipeEnd{Cancelled: cancelled, Time: at})
-				case "finger", "wheel":
-					source := ports.AxisFinger
-					if input == "wheel" {
-						source = ports.AxisWheel
-					}
-					m.overviewScroll(ports.PointerAxis{Source: source,
+				case "wheel":
+					m.overviewScroll(ports.PointerAxis{Source: ports.AxisWheel,
 						Horizontal: ports.ScrollAxis{Set: dx != 0, Value: float64(dx) * 70, V120: int32(dx * 120)},
 						Vertical:   ports.ScrollAxis{Set: dy != 0, Value: float64(dy) * 70, V120: int32(dy * 120)}})
 					c.scrollStop(ports.PointerAxis{Vertical: ports.ScrollAxis{Stop: true}})
@@ -45,12 +41,6 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 						a = ActionFocusColumnRight
 					}
 					m.overviewFocus(a)
-				}
-			}
-			if input == "swipe" {
-				move(0, -1, true)
-				if m.cardAt(w) != 2 {
-					t.Fatal("cancelled swipe changed selection")
 				}
 			}
 			move(0, -1, false)

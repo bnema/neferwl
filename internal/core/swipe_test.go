@@ -601,6 +601,7 @@ func TestSwipeInOverview(t *testing.T) {
 		r.at += 8 * time.Millisecond
 		r.input <- ports.SwipeUpdate{DX: -40, Time: r.at}
 	}
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return selected(s) == 2 })
 	s := r.end(t, false)
 	if id := selected(s); id != 2 {
 		t.Fatalf("selected %d after a left swipe, want 2", id)
@@ -945,16 +946,18 @@ func TestOverviewScrollStopOnOtherOutput(t *testing.T) {
 	on := func(id ports.WindowID) func(ports.Scene) bool {
 		return func(s ports.Scene) bool { return s.Output == wide.Name && selected(s) == id }
 	}
-	finger := func(dx float64) ports.PointerAxis {
-		return ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: dx}}
+	finger := func(dx float64) ports.SwipeUpdate {
+		return ports.SwipeUpdate{DX: dx}
 	}
 	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- ports.SwipeBegin{Fingers: 3}
 	r.input <- finger(-70)
 	sceneMatch(t, r.scenes, on(2))
 	// The pointer crosses to DP-2 and the fingers lift there.
 	r.input <- ports.PointerMotion{X: 1000, Y: 300}
-	r.input <- ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Stop: true}}
+	r.input <- ports.SwipeEnd{}
 	r.input <- ports.PointerMotion{X: 100, Y: 300}
+	r.input <- ports.SwipeBegin{Fingers: 3}
 	r.input <- finger(-70)
 	sceneMatch(t, r.scenes, on(1))
 }
