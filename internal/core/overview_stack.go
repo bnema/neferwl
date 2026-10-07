@@ -42,6 +42,35 @@ func (w *Workspace) columnOf(id WindowID) int {
 // stashed one is its card in the pile.
 func (w *Workspace) stack() []stackItem {
 	var items []stackItem
+	w.walkStack(func(item stackItem) bool {
+		items = append(items, item)
+		return true
+	})
+	return items
+}
+
+// stacked reports whether the stack has several cards, without building it:
+// the render path asks for every workspace of every frame.
+func (w *Workspace) stacked() bool {
+	_, n := w.stackHead()
+	return n > 1
+}
+
+// stackHead is the first item of the stack and the number of items, counted
+// up to 2, without building the stack.
+func (w *Workspace) stackHead() (first stackItem, n int) {
+	w.walkStack(func(item stackItem) bool {
+		if n == 0 {
+			first = item
+		}
+		n++
+		return n < 2
+	})
+	return first, n
+}
+
+// walkStack yields the items of stack in order until yield returns false.
+func (w *Workspace) walkStack(yield func(stackItem) bool) {
 	c, columns := WindowID(0), len(w.Columns) > 0
 	if w.pinned() {
 		c = w.cover()
@@ -49,33 +78,38 @@ func (w *Workspace) stack() []stackItem {
 	switch {
 	case c == 0, w.stashIndex(c) >= 0:
 	case w.floatIndex(c) >= 0:
-		items = append(items, stackItem{stackFloat, c})
+		if !yield(stackItem{stackFloat, c}) {
+			return
+		}
 	case w.overviewMaximized():
-		items = append(items, stackItem{stackColumn, c})
+		if !yield(stackItem{stackColumn, c}) {
+			return
+		}
 	default:
 		// One card of all columns, its own marked fullscreen.
-		items = append(items, stackItem{kind: stackColumns})
+		if !yield(stackItem{kind: stackColumns}) {
+			return
+		}
 		columns = false
 	}
 	for i := len(w.Floats) - 1; i >= 0; i-- {
 		f := w.Floats[i]
-		if !f.below && w.coversFloat(f) {
-			items = append(items, stackItem{stackFloat, f.ID})
+		if !f.below && w.coversFloat(f) && !yield(stackItem{stackFloat, f.ID}) {
+			return
 		}
 	}
-	if (c == 0 || w.isFloat(c)) && w.overviewMaximized() {
-		items = append(items, stackItem{stackColumn, w.Columns[w.Focus].Windows[0]})
+	if (c == 0 || w.isFloat(c)) && w.overviewMaximized() && !yield(stackItem{stackColumn, w.Columns[w.Focus].Windows[0]}) {
+		return
 	}
-	if columns {
-		items = append(items, stackItem{kind: stackColumns})
+	if columns && !yield(stackItem{kind: stackColumns}) {
+		return
 	}
 	for i := len(w.Floats) - 1; i >= 0; i-- {
 		f := w.Floats[i]
-		if f.below && w.coversFloat(f) {
-			items = append(items, stackItem{stackFloat, f.ID})
+		if f.below && w.coversFloat(f) && !yield(stackItem{stackFloat, f.ID}) {
+			return
 		}
 	}
-	return items
 }
 
 // itemOf resolves a clicked tile to the card currently containing it.
@@ -234,10 +268,10 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 
 // previewItem draws a group using screen geometry and a single card at its
 // configured size. A prior maximized column retains its full-width buffer.
-func (m *Monitor) previewItem(w *Workspace, item stackItem, slot Rect, dim, lit bool) []Placement {
+func (m *Monitor) previewItem(w *Workspace, item stackItem, axis layoutAxis, slot Rect, dim, lit bool) []Placement {
 	if item.kind == stackColumns {
 		if !w.overviewMaximized() {
-			return w.previewRow(slot, dim, lit)
+			return w.previewRow(axis, slot, dim, lit)
 		}
 		// The hidden columns fill the screen as if the maximized column,
 		// shown on its own card, were not there. In particular, an earlier
@@ -260,20 +294,20 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, slot Rect, dim, lit 
 		}
 		sel := rects[selected]
 		sel.X -= w.Usable.X
-		return w.previewRowTiles(slot, dim, lit, tiles, w.Usable.W, sel)
+		return w.previewRowTiles(axis, slot, dim, lit, false, tiles, w.Usable.W, sel)
 	}
 	g := w.gap()
 	if item.kind == stackFloat && item.id == w.cover() {
 		// A fullscreen float shows at the size of a fullscreen column.
 		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
-		return w.previewRowTiles(slot, dim, lit, []Placement{{ID: item.id, Rect: r, Focused: true, Fullscreen: true}}, w.Usable.W, r)
+		return w.previewRowTiles(axis, slot, dim, lit, false, []Placement{{ID: item.id, Rect: r, Focused: true, Fullscreen: true}}, w.Usable.W, r)
 	}
 	if item.kind == stackFloat {
 		f := w.Floats[w.floatIndex(item.id)]
 		r := w.floatRect(f)
 		r.X -= w.Usable.X
 		r.Y -= w.Usable.Y
-		return w.previewRowTiles(slot, dim, lit, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
+		return w.previewRowTiles(axis, slot, dim, lit, false, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
 	}
 	i := w.columnOf(item.id)
 	if i < 0 {
@@ -288,7 +322,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, slot Rect, dim, lit 
 	for j, t := range w.rowBuf {
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus, Fullscreen: c.Windows[j] == w.cover()})
 	}
-	return w.previewRowTiles(slot, dim, lit, tiles, w.Usable.W, r)
+	return w.previewRowTiles(axis, slot, dim, lit, false, tiles, w.Usable.W, r)
 }
 
 // hiddenColumnRects lays out the columns behind the maximized one with the
@@ -304,13 +338,14 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 // stackRow draws up to two cards on each side of the provisional front,
 // fanned along axis.
 func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bool) []Placement {
+	first, n := w.stackHead()
+	if n == 0 {
+		return w.previewRow(axis, slot, dim, lit)
+	}
+	if n == 1 {
+		return m.previewItem(w, first, axis, slot, dim, lit)
+	}
 	items := w.stack()
-	if len(items) == 0 {
-		return w.previewRow(slot, dim, lit)
-	}
-	if len(items) == 1 {
-		return m.previewItem(w, items[0], slot, dim, lit)
-	}
 	at := 0
 	if w == m.Current() {
 		at = slices.Index(items, m.stackFront(w))
@@ -324,7 +359,7 @@ func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bo
 		return r.X, r.Y
 	}
 	for i, item := range items {
-		cards[i] = m.previewItem(w, item, w.frontSlot(axis, slot), dim, lit)
+		cards[i] = m.previewItem(w, item, axis, w.frontSlot(axis, slot), dim, lit)
 	}
 
 	// fan's behind side advances through the linear stack.

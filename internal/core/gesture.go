@@ -418,7 +418,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			}
 		} else if p.wraps {
 			// A content swipe cannot escape the last band to another workspace.
-			if w.onFloat() || w.fullscreen != 0 || w.bandNeighbor(step) < 0 {
+			if w.onFloat() || w.fullscreen != 0 || w.laneNeighbor(step) < 0 {
 				return false
 			}
 		}

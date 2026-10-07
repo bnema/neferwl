@@ -187,26 +187,62 @@ func TestPublishStashSlideAllocations(t *testing.T) {
 
 // TestPublishOverviewAllocations pins the cost of publishing while the
 // overview opens: its cards fly from the full rects (scale and fade motions
-// on every card), which guards the reuse of Core.overviewReal.
+// on every card), which guards the reuse of Core.overviewReal. The current
+// workspace is scroll or cascade, alone or between two workspaces with
+// windows (their slots and stacks are laid out every frame too).
 func TestPublishOverviewAllocations(t *testing.T) {
-	c := publishRig(t, 1)
-	sc := c.cur()
-	now := time.Now()
-	shots := c.snapshot(now)
-	sc.mon.ToggleOverview()
-	c.transition(shots, now)
-	step := publishStep(t, c, nil)
-	step()
-	if !sc.mon.ov.open || len(c.overviewReal) != 6 || len(sc.rects) == 0 || !c.animating() {
-		t.Fatalf("setup: overview %v, real layouts %d, rects %d, animating %v", sc.mon.ov.open, len(c.overviewReal), len(sc.rects), c.animating())
-	}
-	n := testing.AllocsPerRun(50, step)
-	t.Logf("overview allocs per step = %v", n)
-	if len(sc.rects) == 0 {
-		t.Fatal("card motions settled during the measure")
-	}
-	if n > publishOverviewAllocBudget {
-		t.Errorf("overview publish allocs per frame = %v, budget %d", n, publishOverviewAllocBudget)
+	for _, overflow := range []Overflow{OverflowScroll, OverflowCascade} {
+		for _, neighbors := range []bool{false, true} {
+			name := string(overflow) + "/alone"
+			if neighbors {
+				name = string(overflow) + "/neighbors"
+			}
+			t.Run(name, func(t *testing.T) {
+				c := publishRig(t, 1)
+				sc := c.cur()
+				m := sc.mon
+				if neighbors {
+					// Windows 1..6 are on workspace 0: move to 1 with a
+					// workspace on each side.
+					m.Focus(1)
+					for id := WindowID(10); id < 16; id++ {
+						m.AddWindow(id)
+					}
+					m.Focus(2)
+					for id := WindowID(20); id < 26; id++ {
+						m.AddWindow(id)
+					}
+					m.Focus(1)
+				}
+				m.Current().Overflow = overflow
+				sc.arrange()
+				c.refreshShown()
+				now := time.Now()
+				shots := c.snapshot(now)
+				m.ToggleOverview()
+				c.transition(shots, now)
+				step := publishStep(t, c, nil)
+				step()
+				want, slots := 6, 1
+				if neighbors {
+					want, slots = 18, 3
+				}
+				if rows, _ := m.overviewRows(); len(rows) != slots {
+					t.Fatalf("setup: %d overview slots, want %d", len(rows), slots)
+				}
+				if !m.ov.open || m.overviewAxis() != m.Current().policy().workspace || len(c.overviewReal) != want || len(sc.rects) == 0 || !c.animating() {
+					t.Fatalf("setup: overview %v, real layouts %d (want %d), rects %d, animating %v", m.ov.open, len(c.overviewReal), want, len(sc.rects), c.animating())
+				}
+				n := testing.AllocsPerRun(50, step)
+				t.Logf("%s overview allocs per step = %v", name, n)
+				if len(sc.rects) == 0 {
+					t.Fatal("card motions settled during the measure")
+				}
+				if n > publishOverviewAllocBudget {
+					t.Errorf("overview publish allocs per frame = %v, budget %d", n, publishOverviewAllocBudget)
+				}
+			})
+		}
 	}
 }
 

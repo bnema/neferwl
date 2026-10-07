@@ -31,6 +31,11 @@ type overviewState struct {
 	scrolled, sideways bool
 }
 
+// dropScroll forgets the scroll an overview axis accumulated, which belongs
+// to the old axis once it turns. The finger latch (scrolled) stays: it waits
+// for the fingers to lift.
+func (o *overviewState) dropScroll() { o.scrollX, o.scrollY, o.sideways = 0, 0, false }
+
 // rowSnapshot is a row as the overview first showed it: browsing moves its
 // focus and scroll, closing puts them back.
 type rowSnapshot struct {
@@ -353,6 +358,9 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 // a named group uses its invocation anchor as the toggle return target, not
 // rows merely browsed in the overview.
 func (m *Monitor) showOverview(w *Workspace) {
+	if w.policy().workspace != m.overviewAxis() {
+		m.ov.dropScroll()
+	}
 	if w != m.Current() && m.isHidden(w) && !m.isHidden(m.Current()) {
 		m.back = m.Current()
 		if indexOf(m.Workspaces, w.overviewAfter) >= 0 {
@@ -366,7 +374,111 @@ func (m *Monitor) showOverview(w *Workspace) {
 // OverviewMove shares navigation rules across keys, scrolls and swipes. It
 // is the physical entry point: it maps dx and dy to the overview's moves.
 func (m *Monitor) OverviewMove(dx, dy int) {
+	if m.overviewAxis() == horizontalAxis {
+		if dy != 0 {
+			m.overviewLane(dy)
+		} else if dx != 0 {
+			m.overviewAcross(dx)
+		}
+		return
+	}
 	m.overviewMoveVertical(dx, dy)
+}
+
+// overviewWorkspaceStep is a focus-workspace bind. A vertical overview
+// walks the stack cards before changing workspace (overviewVertical). A
+// side-by-side one always changes workspace, since its stack fans left and
+// right. A selected stash card cycles the pile first, in every layout.
+func (m *Monitor) overviewWorkspaceStep(d int) {
+	if m.overviewAxis() == verticalAxis {
+		m.overviewVertical(d)
+		return
+	}
+	if !m.cycleCard(m.Current(), d) {
+		m.overviewStep(d)
+	}
+}
+
+// cycleCard brings the stash card d entries from the selected one of w to
+// the front, stopping at either end. It reports whether a card was selected.
+func (m *Monitor) cycleCard(w *Workspace, d int) bool {
+	at := m.cardAt(w)
+	if at < 0 {
+		return false
+	}
+	m.selectCard(w, min(max(at+d, 0), len(w.Stash)-1))
+	return true
+}
+
+// overviewLane is the vertical move of an overview whose workspaces sit side
+// by side (cascade): a selected stash card cycles the pile; else the
+// selection goes to the previous or next lane (band), at the closest column,
+// stopping at the first and last. Covering floats stack along the horizontal
+// axis, not this one.
+func (m *Monitor) overviewLane(dy int) {
+	w := m.Current()
+	if m.cycleCard(w, dy) || m.stackFront(w).kind != stackColumns || len(w.Columns) == 0 {
+		return
+	}
+	if i := w.laneNeighbor(dy); i >= 0 {
+		m.selectLaneColumn(w, i)
+	}
+}
+
+// selectLaneColumn selects column i of w.
+func (m *Monitor) selectLaneColumn(w *Workspace, i int) {
+	w.selectOverviewColumn(i)
+	m.ov.selected = w.Columns[i].Windows[w.Columns[i].Focus]
+	m.ov.selectedAt = i
+}
+
+// overviewAcross is the horizontal move of an overview whose workspaces sit
+// side by side (cascade): a column inside the selected lane. Past the
+// lane's first column it goes to the stash, else to the previous workspace;
+// past the last column, to the next workspace. Covering floats fan along
+// this axis and are traversed before the stash or a workspace: the card on
+// the left is the one behind.
+func (m *Monitor) overviewAcross(dx int) {
+	w := m.Current()
+	if m.cardAt(w) >= 0 {
+		if dx < 0 || len(w.stack()) == 0 {
+			// Left leaves the pile; a stash-only workspace has nothing
+			// to its right to select.
+			m.overviewStep(dx)
+			return
+		}
+		m.ov.card, m.ov.cardOf = 0, nil
+		m.ov.selected = 0
+		if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
+			first, _ := w.laneBounds(w.laneOf(w.Focus))
+			m.selectLaneColumn(w, first)
+		}
+		return
+	}
+	if m.stackFront(w).kind != stackColumns || len(w.Columns) == 0 {
+		m.laneEdge(w, dx)
+		return
+	}
+	first, last := w.laneBounds(w.laneOf(w.Focus))
+	if next := w.Focus + dx; next >= first && next <= last {
+		m.selectLaneColumn(w, next)
+		return
+	}
+	m.laneEdge(w, dx)
+}
+
+// laneEdge is a horizontal move off the edge of the selected lane, or off a
+// card that is not the columns: the stack first, then the stash on the left
+// or a workspace.
+func (m *Monitor) laneEdge(w *Workspace, dx int) {
+	if m.moveStack(-dx) {
+		return
+	}
+	if dx < 0 && len(w.Stash) > 0 {
+		m.selectCard(w, w.stashAt)
+		return
+	}
+	m.overviewStep(dx)
 }
 
 // overviewMoveVertical is the move of an overview whose workspaces stack
@@ -381,9 +493,7 @@ func (m *Monitor) overviewMoveVertical(dx, dy int) {
 }
 
 func (m *Monitor) overviewVertical(dy int) {
-	w := m.Current()
-	if at := m.cardAt(w); at >= 0 {
-		m.selectCard(w, min(max(at+dy, 0), len(w.Stash)-1))
+	if m.cycleCard(m.Current(), dy) {
 		return
 	}
 	if m.moveStack(-dy) {
@@ -402,6 +512,8 @@ func (m *Monitor) overviewStep(d int) {
 	}
 }
 
+// overviewHorizontal is the horizontal move of an overview whose workspaces
+// stack vertically: it never changes workspace.
 func (m *Monitor) overviewHorizontal(dx int) {
 	w := m.Current()
 	if m.cardAt(w) >= 0 {
@@ -500,21 +612,36 @@ func (m *Monitor) OverviewPick(id WindowID) {
 }
 
 // overviewAxis is the axis the overview lays workspaces out along, and the
-// stacked cards of a row fan along.
-func (m *Monitor) overviewAxis() layoutAxis { return verticalAxis }
+// stacked cards of a row fan along: the navigation axis of the current
+// workspace's layout.
+func (m *Monitor) overviewAxis() layoutAxis { return m.Current().policy().workspace }
 
-// overviewRows centers the selected row with its neighbors above and below.
-// Each shown workspace gets a slot, in output-local pixels, to place its
-// previews in. The numbered/named boundary gets extra spacing and an
-// inactive horizontal rule. Row widths, stash piles and preview scales
-// remain unchanged.
+// overviewRows places the current workspace and its overview neighbors in
+// slots, in output-local pixels, along the overview axis; each workspace
+// places its previews in its slot. The numbered/named boundary gets extra
+// spacing and an inactive rule across the axis.
+//
+// Vertical axis: full-width slots, the current one centred; the rule is
+// horizontal. Horizontal axis: full-height slots as wide as their content,
+// stash pile and stack peeks included, the current one centred; the rule is
+// vertical, in the spacing between two slots.
 func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 	cur := m.Current()
 	u := cur.overviewArea()
 	gap := max(1, u.H*3/100)
-	hc := cur.rowHeight()
-	y := u.Y + (u.H-hc)/2
-	rows := map[*Workspace]Rect{cur: {X: u.X, Y: y, W: u.W, H: hc}}
+	axis := m.overviewAxis()
+	var cs Rect
+	if axis == horizontalAxis {
+		// The row stays centred on the area; the pile extends the slot to
+		// the left, pushing the previous workspace, unless it would leave
+		// the area.
+		pile, row := cur.pileWidth(), cur.rowWidth()
+		cs = Rect{X: max(u.X+(u.W-row)/2-pile, u.X), Y: u.Y, W: pile + row, H: u.H}
+	} else {
+		hc := cur.rowHeight()
+		cs = Rect{X: u.X, Y: u.Y + (u.H-hc)/2, W: u.W, H: hc}
+	}
+	rows := map[*Workspace]Rect{cur: cs}
 	var dividers []ports.Separator
 	list := m.overviewWorkspaces()
 	i := indexOf(list, cur)
@@ -528,23 +655,53 @@ func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 		if boundary {
 			spacing *= 2
 		}
-		top, h := y+hc, w.rowHeight()
-		if next < i {
-			rows[w] = Rect{X: u.X, Y: y - spacing - h, W: u.W, H: h}
-			top = y - spacing
-		} else {
-			rows[w] = Rect{X: u.X, Y: y + hc + spacing, W: u.W, H: h}
-		}
+		slot, gapAt := neighborSlot(axis, u, cs, w, next < i, spacing)
+		rows[w] = slot
 		if boundary {
-			margin := u.W * 4 / 100
-			dividers = append(dividers, ports.Separator{Rect: Rect{X: u.X + margin, Y: top + spacing/2, W: u.W - 2*margin, H: 1}})
+			dividers = append(dividers, overviewDivider(axis, u, gapAt+spacing/2))
 		}
 	}
 	return rows, dividers
 }
 
+// neighborSlot is the slot of w, the neighbor before or after the current
+// slot cs along axis, spacing away; gapAt is where the spacing begins.
+func neighborSlot(axis layoutAxis, u, cs Rect, w *Workspace, before bool, spacing int) (slot Rect, gapAt int) {
+	if axis == horizontalAxis {
+		slot = Rect{Y: u.Y, W: w.slotWidth(), H: u.H}
+		if before {
+			gapAt = cs.X - spacing
+			slot.X = gapAt - slot.W
+		} else {
+			gapAt = cs.X + cs.W
+			slot.X = gapAt + spacing
+		}
+		return slot, gapAt
+	}
+	h := w.rowHeight()
+	slot = Rect{X: u.X, W: u.W, H: h}
+	if before {
+		gapAt = cs.Y - spacing
+		slot.Y = gapAt - h
+	} else {
+		gapAt = cs.Y + cs.H
+		slot.Y = gapAt + spacing
+	}
+	return slot, gapAt
+}
+
+// overviewDivider is the inactive rule across axis at pos, inset from the
+// edges of u.
+func overviewDivider(axis layoutAxis, u Rect, pos int) ports.Separator {
+	if axis == horizontalAxis {
+		return ports.Separator{Rect: Rect{X: pos, Y: u.Y + u.H*4/100, W: 1, H: u.H * 92 / 100}}
+	}
+	margin := u.W * 4 / 100
+	return ports.Separator{Rect: Rect{X: u.X + margin, Y: pos, W: u.W - 2*margin, H: 1}}
+}
+
 // overviewLayout places the current workspace and its overview neighbors,
-// each with its full-width stash pile and covering-float stack. Other rows
+// each with its stash pile and covering-float stack. Other rows
 // stay hidden; numbered and named workspaces share the same preview geometry.
 func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	cur := m.Current()
@@ -556,7 +713,7 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 			at := m.cardAt(w)
 			result = append(result, m.stackRow(w, axis, slot, w != cur, at < 0)...)
 			if len(w.Stash) > 0 {
-				result = append(result, w.pile(w.frontSlot(axis, slot), w != cur, at)...)
+				result = append(result, w.pile(w.pileBand(axis, slot), w != cur, at)...)
 			}
 		}
 		for _, f := range w.Floats {
@@ -658,8 +815,8 @@ func (w *Workspace) cardStep() int {
 	return min(overviewCardStep, a.W/100, a.H/50)
 }
 
-// pile places the stash of w as cards on the left of band, the front band
-// of its row (see frontSlot): entry front (the stash selection when -1) in
+// pile places the stash of w as cards on the left of band (see pileBand):
+// entry front (the stash selection when -1) in
 // front, the next ones behind it, dimmed, the rest hidden. Only a front card
 // of the current row (dim false) with front set is selected.
 func (w *Workspace) pile(band Rect, dim bool, front int) []Placement {
@@ -693,19 +850,48 @@ func (w *Workspace) pile(band Rect, dim bool, front int) []Placement {
 // overviewZoom is the scale that fits every column of w in the usable
 // width, within the overview bounds.
 func (w *Workspace) overviewZoom() float64 {
+	z, _ := w.zoomSpan()
+	return z
+}
+
+// zoomSpan is overviewZoom with the unscaled span of the tiles it fits. A
+// cascade workspace spans one screen whatever its band count.
+func (w *Workspace) zoomSpan() (float64, int) {
 	// Only the span is read: the tiles go in the zoom scratch, dead on return.
 	var span int
 	w.zoomBuf, span, _ = w.previewTilesInto(w.zoomBuf[:0])
 	if span <= 0 {
-		return overviewMaxZoom
+		return overviewMaxZoom, span
 	}
 	room := float64(w.overviewArea().W-w.pileWidth()) * 0.96
 	z := min(max(room/float64(span), overviewMinZoom), overviewMaxZoom)
-	if len(w.stack()) > 1 {
+	if w.stacked() {
 		// Reserve two clear peeks on either side of the front row.
 		z = min(z, overviewMaxZoom/(1+4*overviewPeekStep))
 	}
-	return z
+	return z, span
+}
+
+// slotWidth is the width of the slot of w in a horizontal overview: its
+// stash pile and its row.
+func (w *Workspace) slotWidth() int {
+	return w.pileWidth() + w.rowWidth()
+}
+
+// rowWidth is the width of the row of w in a horizontal overview: what its
+// tiles take (at most what the pile leaves of the area), plus the room for
+// the covering floats peeking on either side of the front card.
+func (w *Workspace) rowWidth() int {
+	z, span := w.zoomSpan()
+	if span <= 0 {
+		// An empty workspace keeps the room of a screen.
+		span = w.Usable.W
+	}
+	width := min(int(math.Round(float64(span)*z)), w.overviewArea().W-w.pileWidth())
+	if w.stacked() {
+		width += 4 * w.peekStep()
+	}
+	return width
 }
 
 // peekStep is the shared step for a stack row and its front-card inset.
@@ -714,12 +900,29 @@ func (w *Workspace) peekStep() int {
 }
 
 // frontSlot is the part of slot the front card of w takes: slot shifted
-// along axis past the room reserved for two cards peeking before it. A
-// single-card row keeps slot.
+// along axis past the room reserved for two cards peeking before it, and
+// (along a horizontal axis, where the slot is as wide as its cards) without
+// the room of the two after it. A single-card row keeps slot.
 func (w *Workspace) frontSlot(axis layoutAxis, slot Rect) Rect {
-	if len(w.stack()) > 1 {
-		axis.offset(&slot, 2*w.peekStep())
+	if w.stacked() {
+		p := w.peekStep()
+		axis.offset(&slot, 2*p)
+		if axis == horizontalAxis {
+			slot.W -= 4 * p
+		}
 	}
+	return slot
+}
+
+// pileBand is the band the stash pile of w aligns with in its slot. A
+// vertical overview aligns it with the front card (see frontSlot). A
+// horizontal one puts it level with the selected lane, left of the whole
+// stack of cards.
+func (w *Workspace) pileBand(axis layoutAxis, slot Rect) Rect {
+	if axis == verticalAxis {
+		return w.frontSlot(axis, slot)
+	}
+	slot.Y += (slot.H - int(math.Round(float64(w.Usable.H)*w.overviewZoom()))) / 2
 	return slot
 }
 
@@ -727,7 +930,7 @@ func (w *Workspace) frontSlot(axis layoutAxis, slot Rect) Rect {
 // and two below). Neighbor rows use the same measure as the current row.
 func (w *Workspace) rowHeight() int {
 	h := int(math.Round(float64(w.Usable.H) * w.overviewZoom()))
-	if len(w.stack()) > 1 {
+	if w.stacked() {
 		h += 4 * w.peekStep()
 	}
 	return h
@@ -771,9 +974,10 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
 		if w.policy().wraps {
-			width := w.cellWidth()
-			r.X = w.band(i)*w.Usable.W + w.cellX(i)
-			r.W = width
+			// The band is the lane: it is encoded in Y, one screen apart.
+			r.X = w.cellX(i)
+			r.Y = g + w.band(i)*w.Usable.H
+			r.W = w.cellWidth()
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
 			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
@@ -794,12 +998,15 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		for j, t := range w.rowBuf {
 			tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: i == w.Focus && j == c.Focus})
 		}
-		if w.Overflow != OverflowFixed {
+		if w.Overflow != OverflowFixed && !w.policy().wraps {
 			span = max(span, r.X+r.W+g)
 		}
 		if i == w.Focus {
 			sel = r
 		}
+	}
+	if w.policy().wraps && len(w.Columns) > 0 {
+		span = w.Usable.W
 	}
 	return tiles, span, sel
 }
@@ -809,17 +1016,30 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 // row is wider, right of the stash pile. Dimmed rows (neighbor
 // workspaces) have no focus; neither has a row whose pile has it (lit
 // false).
-func (w *Workspace) previewRow(slot Rect, dim, lit bool) []Placement {
+func (w *Workspace) previewRow(axis layoutAxis, slot Rect, dim, lit bool) []Placement {
 	tiles, span, sel := w.previewTiles()
-	return w.previewRowTiles(slot, dim, lit, tiles, span, sel)
+	return w.previewRowTiles(axis, slot, dim, lit, w.policy().wraps, tiles, span, sel)
 }
 
 // previewRowTiles scales tiles, laid out unscrolled over span with sel the
-// focused one, into slot. Placement stays inside slot.
-func (w *Workspace) previewRowTiles(slot Rect, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
+// focused one, into slot of an overview along axis. Placement stays inside
+// slot.
+//
+// With lanes set (the tiles of a cascade workspace), the tiles carry their
+// band in Y, one Usable.H apart. The band of sel is the selected lane,
+// centred across the axis; the other bands sit a lane away from it, dimmed,
+// and are hidden when they leave the area. A workspace whose lanes run along
+// the overview axis shows only its selected lane. In a horizontal overview,
+// tiles entirely outside the area are hidden.
+func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes bool, tiles []Placement, span int, sel Rect) []Placement {
 	z := w.overviewZoom()
 	scale := func(v int) int { return int(math.Round(float64(v) * z)) }
 	width := scale(span)
+	u := w.overviewArea()
+	top := slot.Y
+	if axis == horizontalAxis {
+		top = slot.Y + (slot.H-scale(w.Usable.H))/2
+	}
 	// Rows stay centred on the output like rows without a stash; the pile
 	// only pushes a row right when they would overlap.
 	left := w.pileWidth()
@@ -829,18 +1049,41 @@ func (w *Workspace) previewRowTiles(slot Rect, dim, lit bool, tiles []Placement,
 		x = ux + uw/2 - scale(sel.X+sel.W/2)
 		x = min(max(x, ux+uw-width), ux)
 	}
+	stride := w.policy().content.span(w.Usable)
+	lanes = lanes && stride > 0
+	// Lanes along the overview axis would overlap the neighbor workspaces.
+	otherLanes := w.policy().content != axis
+	laneStep := scale(stride) + max(1, u.H*3/100)
+	selLane := 0
+	if lanes {
+		selLane = max(sel.Y, 0) / stride
+	}
 	for i := range tiles {
 		if tiles[i].Hidden {
 			continue
 		}
 		r := tiles[i].Rect
-		x0, y0 := scale(r.X), scale(r.Y)
-		tiles[i].Rect = Rect{X: x + x0, Y: slot.Y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
+		lane, ly := 0, r.Y
+		if lanes {
+			l := r.Y / stride
+			lane, ly = l-selLane, r.Y-l*stride
+		}
+		x0, y0 := scale(r.X), scale(ly)
+		tiles[i].Rect = Rect{X: x + x0, Y: top + y0 + lane*laneStep, W: scale(r.X+r.W) - x0, H: scale(ly+r.H) - y0}
 		tiles[i].Preview = z
-		if dim {
+		if dim || lane != 0 {
 			tiles[i].peeking(1)
 		}
-		tiles[i].Focused = tiles[i].Focused && !dim && lit
+		tiles[i].Focused = tiles[i].Focused && !dim && lit && lane == 0
+		out := false
+		if axis == horizontalAxis {
+			// A row wider than its slot scrolls: what leaves the slot
+			// would sit on the neighbor workspaces.
+			out = tiles[i].Rect.X < ux || tiles[i].Rect.X+tiles[i].Rect.W > ux+uw
+		}
+		if lane != 0 && !otherLanes || out || (lanes || axis == horizontalAxis) && !tiles[i].Rect.Overlaps(u) {
+			tiles[i].Hidden, tiles[i].Preview, tiles[i].Focused = true, 0, false
+		}
 	}
 	return tiles
 }
@@ -944,10 +1187,14 @@ func (m *Monitor) overviewFocus(a Action) bool {
 		m.OverviewMove(-1, 0)
 	case ActionFocusColumnRight:
 		m.OverviewMove(1, 0)
-	case ActionFocusWindowUp, ActionFocusWorkspacePrev:
+	case ActionFocusWindowUp:
 		m.OverviewMove(0, -1)
-	case ActionFocusWindowDown, ActionFocusWorkspaceNext:
+	case ActionFocusWindowDown:
 		m.OverviewMove(0, 1)
+	case ActionFocusWorkspacePrev:
+		m.overviewWorkspaceStep(-1)
+	case ActionFocusWorkspaceNext:
+		m.overviewWorkspaceStep(1)
 	default:
 		return false
 	}
@@ -1007,20 +1254,43 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		add(&m.ov.scrollY, a.Vertical)
 	}
 	add(&m.ov.scrollX, a.Horizontal)
+	// A step that turns the overview returns, so the axis holds for the loop.
+	axis := m.overviewAxis()
+	cascade := axis == horizontalAxis
 	for {
 		switch {
 		case math.Abs(m.ov.scrollY) >= overviewScrollStep && math.Abs(m.ov.scrollY) >= math.Abs(m.ov.scrollX):
-			m.OverviewMove(0, sign(m.ov.scrollY))
-			m.ov.scrollY -= float64(sign(m.ov.scrollY)) * overviewScrollStep
+			d := sign(m.ov.scrollY)
+			// The step leaves before the move: a move that turns the
+			// overview drops the scroll left (showOverview).
+			m.ov.scrollY -= float64(d) * overviewScrollStep
 			m.ov.scrollX = 0
+			if cascade && !finger && m.cardAt(m.Current()) < 0 {
+				m.overviewStep(d)
+			} else {
+				m.OverviewMove(0, d)
+			}
+			if m.overviewTurned(axis, finger) {
+				return true
+			}
 			if finger {
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 				return true
 			}
 		case math.Abs(m.ov.scrollX) >= stepX:
-			m.OverviewMove(sign(m.ov.scrollX), 0)
-			m.ov.scrollX -= float64(sign(m.ov.scrollX)) * stepX
+			d := sign(m.ov.scrollX)
+			if cascade && finger {
+				// One workspace per gesture, even over a stash card.
+				m.overviewStep(d)
+				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
+				return true
+			}
+			m.ov.scrollX -= float64(d) * stepX
 			m.ov.scrollY = 0
+			m.OverviewMove(d, 0)
+			if m.overviewTurned(axis, finger) {
+				return true
+			}
 			if finger {
 				m.ov.sideways, stepX = true, overviewScrollRepeat
 			}
@@ -1029,6 +1299,17 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		}
 		changed = true
 	}
+}
+
+// overviewTurned reports whether a scroll step turned the overview from the
+// axis before. A finger scroll then waits for the fingers to lift, so it
+// cannot bounce back.
+func (m *Monitor) overviewTurned(before layoutAxis, finger bool) bool {
+	if m.overviewAxis() == before {
+		return false
+	}
+	m.ov.scrolled = m.ov.scrolled || finger
+	return true
 }
 
 // scrollStop ends a scroll on every monitor: the fingers lifted, maybe
