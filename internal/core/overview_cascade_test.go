@@ -75,39 +75,116 @@ func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	}
 }
 
-// A maximized column fills its band in the preview as on screen, and hides
-// only the other columns of its band.
-func TestOverviewCascadeMaximizedColumnFillsBand(t *testing.T) {
+// A maximized column fills its band in the preview, inset for the columns
+// it hides: they are dimmed cards at their cell size behind it, on their
+// side, the nearest one step out, the farther ones two (the band's edge).
+// Other bands keep their cells.
+func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 	// Four columns, three per band: band 0 holds 0..2, band 1 holds 3.
 	for _, tc := range []struct {
 		n, max int
-		hidden []bool
+		cards  []int // per column: 0 not a card, -k/+k k steps left/right
+		order  []int // paint order of band 0's columns
 	}{
-		{n: 1, max: 0, hidden: []bool{false}},
-		{n: 4, max: 0, hidden: []bool{false, true, true, false}},
-		{n: 4, max: 3, hidden: []bool{false, false, false, false}},
+		{n: 1, max: 0, cards: []int{0}, order: []int{0}},
+		{n: 4, max: 0, cards: []int{0, 1, 2, 0}, order: []int{2, 1, 0}},
+		{n: 4, max: 1, cards: []int{-1, 0, 1, 0}, order: []int{0, 2, 1}},
+		{n: 4, max: 3, cards: []int{0, 0, 0, 0}},
 	} {
 		w := cascadeWorkspace(tc.n)
 		w.Focus = tc.max
 		w.maximize(tc.max)
-		tiles, _, _ := w.previewTiles()
-		g, h := w.gap(), w.Usable.H-2*w.gap()
-		for i, p := range tiles {
-			if p.Hidden != tc.hidden[i] {
-				t.Fatalf("n=%d max=%d column %d hidden %v, want %v", tc.n, tc.max, i, p.Hidden, tc.hidden[i])
-			}
-			if p.Hidden {
-				continue
+		tiles, _, sel := w.previewTiles()
+		g, h, s := w.gap(), w.Usable.H-2*w.gap(), w.bandCardStep()
+		in := 0
+		if slices.ContainsFunc(tc.cards, func(k int) bool { return k != 0 }) {
+			in = 2 * s
+		}
+		var order []int
+		for _, p := range tiles {
+			i := int(p.ID) - 1
+			if i/3 == 0 && tc.order != nil {
+				order = append(order, i)
 			}
 			band := i / 3
 			want := Rect{X: w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(), H: h}
-			if i == tc.max {
-				want.X, want.W = g, w.Usable.W-2*g
+			switch k := tc.cards[i]; {
+			case i == tc.max:
+				want.X, want.W = g+in, w.Usable.W-2*g-2*in
+			case k < 0:
+				want.X = g + (2+k)*s
+			case k > 0:
+				want.X = w.Usable.W - g - (2-k)*s - want.W
 			}
-			if p.Rect != want {
-				t.Fatalf("n=%d max=%d column %d rect %+v, want %+v", tc.n, tc.max, i, p.Rect, want)
+			if p.Hidden || p.Peek != (tc.cards[i] != 0) || p.Focused != (i == tc.max) || p.Rect != want {
+				t.Fatalf("n=%d max=%d column %d: %+v, want rect %+v card %v", tc.n, tc.max, i, p, want, tc.cards[i] != 0)
+			}
+			if i == tc.max && sel != want {
+				t.Fatalf("n=%d max=%d sel %+v, want %+v", tc.n, tc.max, sel, want)
 			}
 		}
+		if tc.order != nil && !slices.Equal(order, tc.order) {
+			t.Fatalf("n=%d max=%d paint order %v, want %v", tc.n, tc.max, order, tc.order)
+		}
+	}
+}
+
+// Moving onto a card behind a maximized column hands it the maximization;
+// Return keeps it there, Escape gives it back. Moving to another band
+// unmaximizes as before.
+func TestOverviewCascadeMaximizedCardSelection(t *testing.T) {
+	for _, d := range cascadeDrivers {
+		t.Run(d.name, func(t *testing.T) {
+			m := cascadeOverview()
+			w := m.Current()
+			w.FocusID(9) // band 2 holds 7, 8, 9
+			w.ToggleFullWidth()
+			m.ToggleOverview()
+			for _, id := range []WindowID{7, 8} {
+				if p := previewOf(t, m.Layout(), id); p.Hidden || !p.Peek {
+					t.Fatalf("card %d: %+v", id, p)
+				}
+			}
+			d.move(m, -1, 0)
+			if focusedID(m) != 8 || !w.Columns[w.Focus].FullWidth || w.Columns[w.columnOf(9)].FullWidth {
+				t.Fatalf("left: focus %d, maximization not moved", focusedID(m))
+			}
+			if p := previewOf(t, m.Layout(), 9); !p.Peek {
+				t.Fatalf("former maximized column not a card: %+v", p)
+			}
+			m.CancelOverview()
+			if focusedID(m) != 9 || !w.Columns[w.Focus].FullWidth || w.Columns[w.columnOf(8)].FullWidth {
+				t.Fatalf("escape: focus %d, maximization not restored", focusedID(m))
+			}
+
+			m.ToggleOverview()
+			d.move(m, -1, 0)
+			d.move(m, -1, 0)
+			m.ToggleOverview() // return
+			if focusedID(m) != 7 || !w.Columns[w.Focus].FullWidth || w.Columns[w.columnOf(9)].FullWidth {
+				t.Fatalf("return: focus %d, maximization not on 7", focusedID(m))
+			}
+
+			m.ToggleOverview()
+			d.move(m, 0, -1)
+			if focusedID(m) != 4 || slices.ContainsFunc(w.Columns, func(c Column) bool { return c.FullWidth }) {
+				t.Fatalf("up: focus %d, a column still maximized", focusedID(m))
+			}
+		})
+	}
+}
+
+// A click on a card behind a maximized cascade column hands it the
+// maximization.
+func TestOverviewCascadeMaximizedCardPick(t *testing.T) {
+	m := cascadeOverview()
+	w := m.Current()
+	w.FocusID(7)
+	w.ToggleFullWidth()
+	m.ToggleOverview()
+	m.OverviewPick(9)
+	if m.ov.open || focusedID(m) != 9 || !w.Columns[w.Focus].FullWidth || w.Columns[w.columnOf(7)].FullWidth {
+		t.Fatalf("pick: open %v, focus %d, maximization not moved", m.ov.open, focusedID(m))
 	}
 }
 

@@ -1052,6 +1052,13 @@ func (w *Workspace) maximize(i int) {
 	}
 }
 
+// hiddenByMaximized reports whether the maximized focused column hides
+// column i on screen: in equal-cell layouts it hides the other columns of
+// its band (the whole row in fixed overflow).
+func (w *Workspace) hiddenByMaximized(i int) bool {
+	return w.policy().equalCells && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
+}
+
 // unmaximize clears the focused column in scroll mode, or all maximized
 // columns in fixed mode (including after Escape changed focus).
 func (w *Workspace) unmaximize() {
@@ -1637,8 +1644,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			full := w.fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			maximized := w.policy().equalCells && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
-			hidden := (cover != 0 && id != cover) || ((fullColumn || w.policy().equalCells && w.fullscreen != 0) && !full) || maximized
+			hidden := (cover != 0 && id != cover) || ((fullColumn || w.policy().equalCells && w.fullscreen != 0) && !full) || w.hiddenByMaximized(i)
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = w.Output

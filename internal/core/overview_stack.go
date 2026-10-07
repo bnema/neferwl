@@ -214,7 +214,11 @@ func (m *Monitor) hiddenColumn(w *Workspace) int {
 // selectOverviewColumn retains the existing ordinary-row live focus semantics.
 func (w *Workspace) selectOverviewColumn(i int) {
 	w.floatFocus, w.stashFocus = false, false
-	if w.policy().equalCells && w.Focus != i && w.Focus < len(w.Columns) {
+	if w.policy().wraps && w.hiddenByMaximized(i) {
+		// A card behind a maximized cascade column takes the
+		// maximization; Escape gives it back (restoreRow).
+		w.transferMaximization(i)
+	} else if w.policy().equalCells && w.Focus != i && w.Focus < len(w.Columns) {
 		w.unmaximize()
 	}
 	w.Focus = i
