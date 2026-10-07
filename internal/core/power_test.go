@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
@@ -147,27 +148,25 @@ func gone(t *testing.T, scenes <-chan []ports.Scene, name string) {
 }
 
 // Input reports user activity to wayland, at most once per interval.
+// The bubble's fake clock makes the interval exact.
 func TestUserActivity(t *testing.T) {
-	input, _, _, commands, _ := powerCore(t)
-	for range 3 {
-		input <- ports.PointerMotion{X: 1, Y: 1}
-	}
-	commandOf[ports.UserActivity](t, commands)
-	deadline := time.After(ports.ActivityInterval / 2)
-	for {
-		select {
-		case c := <-commands:
-			if _, ok := c.(ports.UserActivity); ok {
+	synctest.Test(t, func(t *testing.T) {
+		input, _, _, commands, _ := powerCore(t)
+		for range 3 {
+			input <- ports.PointerMotion{X: 1, Y: 1}
+		}
+		commandOf[ports.UserActivity](t, commands)
+		time.Sleep(ports.ActivityInterval / 2)
+		synctest.Wait()
+		for len(commands) > 0 {
+			if _, ok := (<-commands).(ports.UserActivity); ok {
 				t.Fatal("second UserActivity within the interval")
 			}
-			continue
-		case <-deadline:
 		}
-		break
-	}
-	time.Sleep(ports.ActivityInterval)
-	input <- ports.PointerMotion{X: 2, Y: 2}
-	commandOf[ports.UserActivity](t, commands)
+		time.Sleep(ports.ActivityInterval)
+		input <- ports.PointerMotion{X: 2, Y: 2}
+		commandOf[ports.UserActivity](t, commands)
+	})
 }
 
 // With an injected clock, the throttle follows it: no second UserActivity

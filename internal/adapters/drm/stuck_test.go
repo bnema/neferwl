@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -149,6 +150,10 @@ func fencePipe(t *testing.T) (fence, signal *os.File) {
 // waiting past the limit; once the fence signalled and still no event
 // came, the output modesets.
 func TestUnsignalledFenceDelaysRecovery(t *testing.T) {
+	synctest.Test(t, unsignalledFenceDelaysRecovery)
+}
+
+func unsignalledFenceDelaysRecovery(t *testing.T) {
 	var mu sync.Mutex
 	var signals []*os.File
 	h := startStuck(t, func() *os.File {
@@ -161,6 +166,7 @@ func TestUnsignalledFenceDelaysRecovery(t *testing.T) {
 	h.scenes <- ports.Scene{Seq: 1}
 	waitFor(t, func() bool { return h.count() == 3 })
 	time.Sleep(3 * 200 * time.Millisecond)
+	synctest.Wait()
 	if n := h.count(); n != 3 {
 		t.Fatalf("%d commits while the frame's fence is unsignalled", n)
 	}
@@ -212,7 +218,9 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 
 // An EBUSY run ends when commits stop being refused: a later EBUSY is
 // retried, not taken as the same run lasting past the limit.
-func TestLaterBusyStartsNewRun(t *testing.T) {
+func TestLaterBusyStartsNewRun(t *testing.T) { synctest.Test(t, laterBusyStartsNewRun) }
+
+func laterBusyStartsNewRun(t *testing.T) {
 	o, _, _ := testOutput(t, unix.EBUSY, unix.EBUSY)
 	o.frame.stuckAfter = 100 * time.Millisecond
 	enabled := true
