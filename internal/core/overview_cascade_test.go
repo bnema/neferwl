@@ -90,6 +90,9 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 		{n: 4, max: 0, cards: []int{0, 1, 2, 0}, order: []int{2, 1, 0}},
 		{n: 4, max: 1, cards: []int{-1, 0, 1, 0}, order: []int{0, 2, 1}},
 		{n: 4, max: 3, cards: []int{0, 0, 0, 0}},
+		// Partial bands: the card has its band's half width.
+		{n: 2, max: 0, cards: []int{0, 1}, order: []int{1, 0}},
+		{n: 5, max: 4, cards: []int{0, 0, 0, -1, 0}},
 	} {
 		w := cascadeWorkspace(tc.n)
 		w.Focus = tc.max
@@ -118,6 +121,10 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 			}
 			if p.Hidden || p.Peek != (tc.cards[i] != 0) || p.Focused != (i == tc.max) || p.Rect != want {
 				t.Fatalf("n=%d max=%d column %d: %+v, want rect %+v card %v", tc.n, tc.max, i, p, want, tc.cards[i] != 0)
+			}
+			// The 900-wide band split among its columns, no gaps.
+			if inBand := min(tc.n-band*3, 3); i != tc.max && p.Rect.W != 900/inBand {
+				t.Fatalf("n=%d max=%d column %d width %d, want %d", tc.n, tc.max, i, p.Rect.W, 900/inBand)
 			}
 			if i == tc.max && sel != want {
 				t.Fatalf("n=%d max=%d sel %+v, want %+v", tc.n, tc.max, sel, want)

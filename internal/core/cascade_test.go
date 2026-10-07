@@ -14,6 +14,27 @@ func cascadeWorkspace(n int) *Workspace {
 	return w
 }
 
+// With gaps and a width that does not divide evenly, the columns of a
+// partial band share what the gaps leave, and the configured width follows
+// the band as it fills.
+func TestCascadeBandWidthWithGaps(t *testing.T) {
+	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+	w.SetOutput(1000, 600)
+	w.SetGaps(8)
+	w.AddWindow(1)
+	if got := w.columnWidth(0); got != 1000-2*8 {
+		t.Fatalf("lone column width %d, want %d", got, 1000-2*8)
+	}
+	w.AddWindow(2)
+	cell := (1000 - 3*8) / 2
+	for i, x := range []int{8, 8 + cell + 8} {
+		r := w.columnRectsFor(false)[i]
+		if r.X != x || r.W != cell || w.columnWidth(i) != cell {
+			t.Fatalf("column %d rect %v width %d, want X %d W %d", i, r, w.columnWidth(i), x, cell)
+		}
+	}
+}
+
 // Each band's columns share its width equally, as in fixed overflow: a
 // lone column fills it, a full band of three has thirds.
 func TestCascadeBandsAndReveal(t *testing.T) {
