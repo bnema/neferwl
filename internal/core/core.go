@@ -221,7 +221,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		if _, ok := binds[b]; ok {
 			return fmt.Errorf("duplicate bind %q", combo)
 		}
-		if _, ok := SpawnArgv(Action(a)); ok {
+		if _, ok := SpawnCommands(Action(a)); ok {
 			binds[b] = Action(a)
 			continue
 		}

@@ -236,12 +236,12 @@ render.direct-scanout = off
 render.tearing = off
 render.vrr = off
 startup = wl-paste --watch cliphist store
-startup = wl-paste --primary --watch cliphist store
+startup = wl-paste --primary --watch cliphist store; waybar ;mako;
 `)
 	if len(w) != 0 {
 		t.Fatal(w)
 	}
-	if !reflect.DeepEqual(c.Startup, [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"wl-paste", "--primary", "--watch", "cliphist", "store"}}) {
+	if !reflect.DeepEqual(c.Startup, [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"wl-paste", "--primary", "--watch", "cliphist", "store"}, {"waybar"}, {"mako"}}) {
 		t.Fatalf("startup: %q", c.Startup)
 	}
 	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout || c.Render.Tearing || c.Render.VRR {
@@ -288,6 +288,8 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = set-window-height -101%", "set-window-height needs"},
 		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
 		{"bind.cmd+x = spawn   ", "unknown action"},
+		{"bind.cmd+x = spawn ; ;", "spawn needs a command"},
+		{"startup = ;", "must not be empty"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {

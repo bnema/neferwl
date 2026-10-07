@@ -12,7 +12,14 @@ startup = waybar
 startup = wl-paste --watch cliphist store
 ```
 
-Pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no special meaning: they reach the program as plain arguments. For those, write a script and run it:
+`spawn` binds and `startup` lines can hold several commands separated by `;`. They all start right away, in order; one does not wait for the previous one to finish. Empty commands are ignored. `terminal` takes a single command.
+
+```text
+startup = waybar; mako; wl-paste --watch cliphist store
+bind.cmd+shift+s = spawn grim; notify-send Screenshot saved
+```
+
+Apart from `;`, pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no special meaning: they reach the program as plain arguments. For those, write a script and run it:
 
 ```sh
 #!/bin/sh

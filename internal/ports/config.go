@@ -2,6 +2,7 @@ package ports
 
 import (
 	"image"
+	"strings"
 	"time"
 )
 
@@ -111,6 +112,7 @@ type Config struct {
 	// disables X11.
 	Xwayland string
 	// Startup are commands run once when the session starts, in order.
+	// One startup line may hold several, split by SplitCommands.
 	Startup    [][]string
 	Background struct{ Color string }
 	Floating   struct{ Dim float64 }
@@ -229,6 +231,22 @@ type WorkspaceConfig struct {
 	// Slots are the declared columns (workspace.<name>.column.N), by N.
 	Slots []SlotConfig
 	LayoutRules
+}
+
+// CommandSeparator separates commands in config values that run programs
+// (startup, spawn binds): "waybar; mako" starts both, without waiting.
+const CommandSeparator = ";"
+
+// SplitCommands splits v on CommandSeparator, then each command on
+// whitespace. Empty commands are skipped; no shell is involved.
+func SplitCommands(v string) [][]string {
+	var commands [][]string
+	for part := range strings.SplitSeq(v, CommandSeparator) {
+		if argv := strings.Fields(part); len(argv) > 0 {
+			commands = append(commands, argv)
+		}
+	}
+	return commands
 }
 
 // SlotConfig reserves column N of a workspace for the window of one command.

@@ -439,6 +439,33 @@ func TestStartupCommands(t *testing.T) {
 	}
 }
 
+// A spawn bind with several commands sends each one, in order.
+func TestSpawnBindSeveralCommands(t *testing.T) {
+	cfg := altCmdDefaults()
+	cfg.Terminal.AutoOpen = "off"
+	cfg.Binds["Alt+p"] = "spawn grim -g x; notify-send done"
+	input := make(chan ports.InputEvent, 4)
+	output := make(chan ports.OutputEvent, 1)
+	scenes := make(chan []ports.Scene, 1)
+	spawn := make(chan ports.SpawnRequest, 4)
+	c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: input, Output: output, Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: scenes, ConfigErrors: make(chan error, 1)}, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	output <- ports.OutputAdded{Info: ports.OutputInfo{Name: "OUT-1", Width: 100, Height: 80}}
+	scene(t, scenes)
+	input <- ports.KeyEvent{Keysym: "p", Mods: ports.ModAlt, Pressed: true}
+	for _, want := range [][]string{{"grim", "-g", "x"}, {"notify-send", "done"}} {
+		if got := receive(t, spawn); !slices.Equal(got.Argv, want) {
+			t.Fatalf("spawned %q, want %q", got.Argv, want)
+		}
+	}
+}
+
 // A fullscreen slot window (fixed overflow) keeps its slot: coming back to
 // dev spawns no duplicate.
 func TestSlotKeptWhileFullscreen(t *testing.T) {

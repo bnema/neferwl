@@ -18,7 +18,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `keyboard.cmd` | `super` | Modifier that `cmd` means in binds: `super`, `alt` or `ctrl` |
 | `terminal` | `$TERMINAL`, or `foot` if unset/empty | Command for automatic requests and `spawn-terminal`; whitespace-separated |
 | `terminal.auto-open` | `first` | `first`: one request for the initial numbered workspace per session; `all`: visible empty workspaces without slots, with retry protection; `off`: none. `--no-terminal` disables automatic requests for this run only |
-| `startup` | none | Command run once at session start; repeat the key for more |
+| `startup` | none | Commands run once at session start; separate several with `;` or repeat the key |
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Solid background color |
 | `border.width` | `2` | Lines between visible neighboring tiles and around non-fullscreen floats, in logical pixels; `0` hides them |
@@ -186,7 +186,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
   bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
   ```
 - `none` removes a default bind.
-- `spawn <command>` runs a program without a shell; see [Running commands](desktop.md#running-commands).
+- `spawn <command>` runs a program without a shell; `spawn a; b` runs several. See [Running commands](desktop.md#running-commands).
 
 ### Cascade
 
