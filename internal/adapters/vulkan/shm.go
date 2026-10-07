@@ -2,6 +2,7 @@ package vulkan
 
 import (
 	"fmt"
+	"image"
 	"runtime/debug"
 	"unsafe"
 
@@ -247,14 +248,15 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 	}
 	// The client may shrink its pool under the mapping: its window then
 	// shows garbage for this frame, never a crash, and is copied again.
+	// Damage of the frames since this buffer was written can overlap: each
+	// pixel is copied once.
+	r.shmRects = disjointRects(r.shmRects[:0], rects, st.w, st.h)
 	c.valid = copyGuarded(func() {
-		for _, rc := range rects {
-			x0, y0 := max(rc.X, 0), max(rc.Y, 0)
-			x1, y1 := min(rc.X+rc.W, st.w), min(rc.Y+rc.H, st.h)
-			for y := y0; y < y1; y++ {
-				d := y*row + x0*4
-				s := offset + y*stride + x0*4
-				n := (x1 - x0) * 4
+		for _, rc := range r.shmRects {
+			for y := rc.Min.Y; y < rc.Max.Y; y++ {
+				d := y*row + rc.Min.X*4
+				s := offset + y*stride + rc.Min.X*4
+				n := rc.Dx() * 4
 				copy(dst[d:d+n], pixels[s:s+n])
 				r.copied += n
 			}
@@ -290,4 +292,39 @@ func (r *Renderer) retireShm(s *shmSurface) {
 			r.retire(c.gpu.last, func() { r.freeShmCopy(c) })
 		}
 	}
+}
+
+// disjointRects appends to dst the parts of rects inside a w×h buffer, with
+// no pixel in two of them. It reuses dst's capacity.
+func disjointRects(dst []image.Rectangle, rects []ports.Rect, w, h int) []image.Rectangle {
+	bounds := image.Rect(0, 0, w, h)
+	for _, rc := range rects {
+		pending := len(dst)
+		dst = append(dst, image.Rect(rc.X, rc.Y, rc.X+rc.W, rc.Y+rc.H).Intersect(bounds))
+		// Cut the new rect by each earlier one; the pieces it leaves are
+		// appended after it and cut in turn.
+		for i := pending; i < len(dst); i++ {
+			if dst[i].Empty() {
+				dst[i] = dst[len(dst)-1]
+				dst = dst[:len(dst)-1]
+				i--
+				continue
+			}
+			for _, o := range dst[:pending] {
+				in := dst[i].Intersect(o)
+				if in.Empty() {
+					continue
+				}
+				r := dst[i]
+				dst[i] = image.Rect(r.Min.X, r.Min.Y, r.Max.X, in.Min.Y)
+				dst = append(dst,
+					image.Rect(r.Min.X, in.Max.Y, r.Max.X, r.Max.Y),
+					image.Rect(r.Min.X, in.Min.Y, in.Min.X, in.Max.Y),
+					image.Rect(in.Max.X, in.Min.Y, r.Max.X, in.Max.Y))
+				i--
+				break
+			}
+		}
+	}
+	return dst
 }
