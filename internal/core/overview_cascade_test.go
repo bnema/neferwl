@@ -174,6 +174,38 @@ func TestOverviewCascadeMaximizedCardSelection(t *testing.T) {
 	}
 }
 
+// A click on a window of a card's column records that window in the
+// maximize history, not the column's former focus.
+func TestOverviewCascadeMaximizedCardPickRecordsWindow(t *testing.T) {
+	m := cascadeOverview()
+	w := m.Current()
+	// Column 8 stacks 8 over 50, 8 focused.
+	w.Columns[w.columnOf(8)].Windows = append(w.Columns[w.columnOf(8)].Windows, 50)
+	w.FocusID(7)
+	w.ToggleFullWidth()
+	m.ToggleOverview()
+	m.OverviewPick(50)
+	if len(w.maximized) == 0 || w.maximized[0] != 50 || focusedID(m) != 50 {
+		t.Fatalf("history %v, focus %d; want 50 first", w.maximized, focusedID(m))
+	}
+}
+
+// Only the focused maximized column is inset for cards: a FullWidth column
+// elsewhere fills its band.
+func TestOverviewCascadeUnfocusedMaximizedNotInset(t *testing.T) {
+	w := cascadeWorkspace(6)
+	w.Focus = 4
+	w.maximize(4)
+	w.Columns[0].FullWidth = true
+	tiles, _, _ := w.previewTiles()
+	g := w.gap()
+	for _, p := range tiles {
+		if p.ID == 1 && (p.Rect.X != g || p.Rect.W != w.Usable.W-2*g) {
+			t.Fatalf("unfocused maximized column %+v, want X %d W %d", p.Rect, g, w.Usable.W-2*g)
+		}
+	}
+}
+
 // A click on a card behind a maximized cascade column hands it the
 // maximization.
 func TestOverviewCascadeMaximizedCardPick(t *testing.T) {
