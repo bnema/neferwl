@@ -22,7 +22,7 @@ func (w *Workspace) cellInBand(b int) int {
 	return min(b*k+w.Focus%k, len(w.Columns)-1)
 }
 func (w *Workspace) focusBand(dir int) bool {
-	i := w.bandNeighbor(dir)
+	i := w.laneNeighbor(dir)
 	if i < 0 {
 		return false
 	}
@@ -36,15 +36,6 @@ func (w *Workspace) focusBand(dir int) bool {
 	w.scroll()
 	return true
 }
-func (w *Workspace) bandNeighbor(dir int) int {
-	k := max(w.MaxColumns, 1)
-	b := w.band(w.Focus) + dir
-	if b < 0 || b*k >= len(w.Columns) {
-		return -1
-	}
-	return w.cellInBand(b)
-}
-
 func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 	g := w.gap()
 	width := w.cellWidth()
@@ -76,4 +67,39 @@ func (w *Workspace) cascadeFocus(view int) int {
 	}
 	b := min(max(view/max(w.Usable.H, 1), 0), w.band(len(w.Columns)-1))
 	return w.cellInBand(b)
+}
+
+// laneOf is the lane of column i in the overview: its band, or the only
+// lane of a layout that does not wrap.
+func (w *Workspace) laneOf(i int) int {
+	if w.policy().wraps {
+		return w.band(i)
+	}
+	return 0
+}
+
+// laneBounds is the range of columns of a lane, first > last when the lane
+// does not exist. A layout that does not wrap has the whole row as lane 0.
+func (w *Workspace) laneBounds(lane int) (first, last int) {
+	k := len(w.Columns)
+	if w.policy().wraps {
+		k = max(w.MaxColumns, 1)
+	}
+	first = lane * k
+	if lane < 0 || first >= len(w.Columns) {
+		return 0, -1
+	}
+	return first, min(first+k, len(w.Columns)) - 1
+}
+
+// laneNeighbor is the closest column to the focus in the lane d lanes away,
+// the focus's offset in its lane kept; -1 past the first or last lane.
+func (w *Workspace) laneNeighbor(d int) int {
+	lane := w.laneOf(w.Focus)
+	first, _ := w.laneBounds(lane)
+	nfirst, nlast := w.laneBounds(lane + d)
+	if nfirst > nlast {
+		return -1
+	}
+	return min(nfirst+w.Focus-first, nlast)
 }

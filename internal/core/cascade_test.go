@@ -166,6 +166,62 @@ func TestCascadeGeometryReusesBuffer(t *testing.T) {
 	if n := testing.AllocsPerRun(100, func() { buf = w.columnRectsInto(buf, false) }); n != 0 {
 		t.Fatalf("allocations=%v", n)
 	}
+	// The overview's lane-encoded tiles reuse their buffer too.
+	tiles, _, _ := w.previewTiles()
+	if n := testing.AllocsPerRun(100, func() { tiles, _, _ = w.previewTilesInto(tiles[:0]) }); n != 0 {
+		t.Fatalf("preview tile allocations=%v", n)
+	}
+}
+
+// Lanes are the bands of a cascade workspace and the whole row of any other.
+func TestLaneGeometry(t *testing.T) {
+	w := cascadeWorkspace(7) // bands {0,1,2} {3,4,5} {6}
+	for _, c := range []struct{ i, lane int }{{0, 0}, {2, 0}, {3, 1}, {6, 2}} {
+		if got := w.laneOf(c.i); got != c.lane {
+			t.Fatalf("cascade laneOf(%d)=%d, want %d", c.i, got, c.lane)
+		}
+	}
+	for lane, want := range [][2]int{{0, 2}, {3, 5}, {6, 6}} {
+		if first, last := w.laneBounds(lane); first != want[0] || last != want[1] {
+			t.Fatalf("cascade laneBounds(%d)=%d,%d, want %v", lane, first, last, want)
+		}
+	}
+	for _, lane := range []int{-1, 3} {
+		if first, last := w.laneBounds(lane); first <= last {
+			t.Fatalf("cascade laneBounds(%d)=%d,%d exists", lane, first, last)
+		}
+	}
+	// The closest column of the adjacent lane keeps its offset, clamped.
+	for _, c := range []struct{ focus, d, want int }{{1, 1, 4}, {5, 1, 6}, {4, -1, 1}, {2, -1, -1}, {6, 1, -1}, {6, -1, 3}} {
+		w.Focus = c.focus
+		if got := w.laneNeighbor(c.d); got != c.want {
+			t.Fatalf("cascade laneNeighbor from %d by %d = %d, want %d", c.focus, c.d, got, c.want)
+		}
+	}
+
+	s := &Workspace{Overflow: OverflowScroll, MaxColumns: 3}
+	s.SetOutput(900, 600)
+	for i := 1; i <= 5; i++ {
+		s.AddWindow(WindowID(i))
+	}
+	for i := range s.Columns {
+		if s.laneOf(i) != 0 {
+			t.Fatalf("scroll laneOf(%d)=%d", i, s.laneOf(i))
+		}
+	}
+	if first, last := s.laneBounds(0); first != 0 || last != 4 {
+		t.Fatalf("scroll laneBounds(0)=%d,%d", first, last)
+	}
+	for _, lane := range []int{-1, 1} {
+		if first, last := s.laneBounds(lane); first <= last {
+			t.Fatalf("scroll laneBounds(%d)=%d,%d exists", lane, first, last)
+		}
+	}
+	for _, d := range []int{-1, 1} {
+		if got := s.laneNeighbor(d); got != -1 {
+			t.Fatalf("scroll laneNeighbor(%d)=%d", d, got)
+		}
+	}
 }
 
 func TestMixedLayoutSwitchKeepsSourceAxis(t *testing.T) {

@@ -287,6 +287,11 @@ func (c *Core) apply(cfg ports.Config) error {
 	if err != nil {
 		return err
 	}
+	// Reload is cold-path work; unrelated changes keep a scroll or gesture.
+	axes := make(map[*Monitor]layoutPolicy, len(c.screens))
+	for _, s := range c.screens {
+		axes[s.mon] = s.mon.Current().policy()
+	}
 	c.cfg = cfg
 	c.binds = binds
 	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]
@@ -297,6 +302,12 @@ func (c *Core) apply(cfg ports.Config) error {
 		c.settings(s.mon)
 	}
 	c.applyOutputConfig()
+	for _, s := range c.screens {
+		old, now := axes[s.mon], s.mon.Current().policy()
+		if old.content != now.content || old.workspace != now.workspace {
+			s.mon.ov.dropScroll()
+		}
+	}
 	return nil
 }
 
