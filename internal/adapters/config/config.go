@@ -631,11 +631,11 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Keyboard.CmdKey = v
 	case "startup":
-		argv := strings.Fields(v)
-		if len(argv) == 0 {
+		commands := ports.SplitCommands(v)
+		if len(commands) == 0 {
 			return fmt.Errorf("must not be empty")
 		}
-		c.Startup = append(c.Startup, argv)
+		c.Startup = append(c.Startup, commands...)
 	case "terminal":
 		argv := strings.Fields(v)
 		if len(argv) == 0 {
@@ -1068,7 +1068,7 @@ func stripComment(value string) string {
 
 func checkAction(v string) error {
 	if rest, ok := strings.CutPrefix(v, "spawn "); ok {
-		if len(strings.Fields(rest)) == 0 {
+		if len(ports.SplitCommands(rest)) == 0 {
 			return fmt.Errorf("spawn needs a command")
 		}
 		return nil

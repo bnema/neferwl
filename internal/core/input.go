@@ -284,13 +284,17 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 				return ErrQuit
 			}
 			if effect.Spawn {
-				argv := effect.Argv
-				if argv == nil {
-					argv = append([]string(nil), c.cfg.Terminal.Command...)
+				commands := effect.Commands
+				if commands == nil {
+					commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
 				}
 				// Explicit actions are suppressed on a full launcher queue;
 				// never keep the input owner waiting across an epoch change.
-				c.trySpawn(ctx, ports.SpawnRequest{Argv: argv})
+				for _, argv := range commands {
+					if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
+						break
+					}
+				}
 				if c.inputEpochChanged() {
 					return errSecurityChanged
 				}

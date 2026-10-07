@@ -3,6 +3,8 @@ package core
 import (
 	"strconv"
 	"strings"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 type Action string
@@ -159,22 +161,25 @@ func NamedArg(a Action) (string, bool) {
 	return name, ok && name != "" && !strings.ContainsAny(name, " \t")
 }
 
-// spawnPrefix starts a bind action that runs a command: "spawn fuzzel --flag".
-// Arguments are split on whitespace; there is no shell (use "spawn sh -c ...").
+// spawnPrefix starts a bind action that runs commands: "spawn fuzzel --flag".
+// They are split by ports.SplitCommands; there is no shell.
 const spawnPrefix = "spawn "
 
-// SpawnArgv returns the command of a "spawn <cmd>" action.
-func SpawnArgv(a Action) ([]string, bool) {
+// SpawnCommands returns the commands of a "spawn <cmd>[; <cmd>...]" action.
+func SpawnCommands(a Action) ([][]string, bool) {
 	rest, ok := strings.CutPrefix(string(a), spawnPrefix)
-	argv := strings.Fields(rest)
-	return argv, ok && len(argv) > 0
+	if !ok {
+		return nil, false
+	}
+	commands := ports.SplitCommands(rest)
+	return commands, len(commands) > 0
 }
 
 type Effect struct {
-	Spawn bool
-	Argv  []string // command to run; nil means the configured terminal
-	Close WindowID
-	Quit  bool
+	Spawn    bool
+	Commands [][]string // commands to run; nil means the configured terminal
+	Close    WindowID
+	Quit     bool
 }
 
 // applyAction runs a bind action. Monitor actions change the focused
@@ -395,8 +400,8 @@ func (m *Monitor) moveDest(a Action) (i int, column, ok bool) {
 
 // Apply runs a bind action that only touches this workspace.
 func (w *Workspace) Apply(a Action) Effect {
-	if argv, ok := SpawnArgv(a); ok {
-		return Effect{Spawn: true, Argv: argv}
+	if commands, ok := SpawnCommands(a); ok {
+		return Effect{Spawn: true, Commands: commands}
 	}
 	if w.freeAction(a) {
 		return Effect{}
