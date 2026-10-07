@@ -1095,6 +1095,11 @@ func checkAction(v string) error {
 			return nil
 		}
 	}
+	for old, repl := range map[string]string{"-workspace-up": "-workspace-prev", "-workspace-down": "-workspace-next"} {
+		if base, ok := strings.CutSuffix(v, old); ok && actions[base+repl] {
+			return fmt.Errorf("action %q was renamed to %q", v, base+repl)
+		}
+	}
 	if !actions[v] {
 		return fmt.Errorf(`unknown action %q (or "spawn <command>", "workspace <name>")`, v)
 	}

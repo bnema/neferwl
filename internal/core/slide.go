@@ -37,7 +37,7 @@ func (s *slide) step(now time.Time) {
 // busy reports whether the slide is off its state or its spring runs.
 func (s *slide) busy() bool { return s.motion.on || s.off != 0 }
 
-// slidable reports whether a swipe can scroll the columns: only scroll
+// slidable reports whether a swipe can scroll the columns: scroll or cascade
 // overflow, with the focus on the columns and no fullscreen window.
 func (w *Workspace) slidable() bool {
 	return w.Overflow != OverflowFixed && len(w.Columns) > 0 && w.fullscreen == 0 && !w.onFloat()
@@ -57,8 +57,8 @@ func (w *Workspace) retarget(before int) {
 func (w *Workspace) shiftPixels() int { return int(math.Round(w.view.off)) }
 
 // switchSpring is the workspace slide's spring from off: it snaps once it
-// is under half a logical pixel of the output height from its target
-// (slideLayout rounds the offset times the height).
+// is under half a logical pixel of the output span along the switch axis
+// from its target (slideLayout rounds the offset times that span).
 func (m *Monitor) switchSpring(off, velocity float64) spring {
 	s := workspaceSpring(off, velocity)
 	if h := m.switchAxis.span(m.template.Output); h > 0 {
@@ -192,10 +192,10 @@ func (m *Monitor) slideLayout(cur []Placement) []Placement {
 	h := float64(m.switchAxis.span(m.template.Output))
 	pos := float64(base) + m.switchView.off
 	offset := func(p []Placement, k int) []Placement {
-		dy := int(math.Round((float64(k) - pos) * h))
+		d := int(math.Round((float64(k) - pos) * h))
 		for i := range p {
 			if !p[i].Hidden {
-				m.switchAxis.offset(&p[i].Rect, dy)
+				m.switchAxis.offset(&p[i].Rect, d)
 			}
 		}
 		return p

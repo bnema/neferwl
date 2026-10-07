@@ -68,7 +68,7 @@ func within1(a, b int) bool { return a-b <= 1 && b-a <= 1 }
 
 func hiddenOff(p Placement) bool { return p.Hidden && p.Preview == 0 && !p.Focused }
 
-// T1: the zoom does not depend on the number of bands.
+// The zoom does not depend on the number of bands.
 func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	if one, three := cascadeWorkspace(3).overviewZoom(), cascadeWorkspace(7).overviewZoom(); one != three || one != overviewMaxZoom {
 		t.Fatalf("zoom with one band %v, with three %v", one, three)
@@ -243,7 +243,7 @@ func TestOverviewCascadeMaximizedCardPick(t *testing.T) {
 	}
 }
 
-// T2: the selected band is the centre lane: undimmed, centred, selected tile
+// The selected band is the centre lane: undimmed, centred, selected tile
 // focused.
 func TestOverviewCascadeCentreLane(t *testing.T) {
 	m := cascadeOverview()
@@ -261,7 +261,7 @@ func TestOverviewCascadeCentreLane(t *testing.T) {
 	}
 }
 
-// T3: the other bands are dimmed lanes a screen (and a gap) away; those
+// The other bands are dimmed lanes a screen (and a gap) away; those
 // outside the area are hidden.
 func TestOverviewCascadeOtherLanes(t *testing.T) {
 	m := cascadeOverview()
@@ -309,7 +309,7 @@ func TestOverviewCascadeOtherLanes(t *testing.T) {
 	}
 }
 
-// T4: neighbor workspaces sit left and right of the current slot, dimmed,
+// Neighbor workspaces sit left and right of the current slot, dimmed,
 // their selected lane level with the centre lane.
 func TestOverviewCascadeNeighbors(t *testing.T) {
 	m := cascadeOverview()
@@ -355,7 +355,7 @@ func TestOverviewCascadeNeighbors(t *testing.T) {
 	}
 }
 
-// T5: lanes along the overview axis would overlap the other workspaces: a
+// Lanes along the overview axis would overlap the other workspaces: a
 // cascade neighbor of a scroll workspace shows its selected band only.
 func TestOverviewCascadeNeighborBelowScrollShowsOneBand(t *testing.T) {
 	m := cascadeOverview()
@@ -384,7 +384,7 @@ func TestOverviewCascadeNeighborBelowScrollShowsOneBand(t *testing.T) {
 	}
 }
 
-// T6: the stash pile is inside the current slot, left of the band; the
+// The stash pile is inside the current slot, left of the band; the
 // previous workspace stays clear of it.
 func TestOverviewCascadeStashInSlot(t *testing.T) {
 	m := cascadeOverview()
@@ -449,7 +449,7 @@ func focusedID(m *Monitor) WindowID {
 	return id
 }
 
-// T7: ↑/↓ change band and stop at the ends; ←/→ walk the band, then leave it
+// ↑/↓ change band and stop at the ends; ←/→ walk the band, then leave it
 // for the stash or the neighbor workspaces; Escape restores everything.
 func TestOverviewCascadeKeys(t *testing.T) {
 	for _, d := range cascadeDrivers {
@@ -530,7 +530,7 @@ func TestOverviewCascadeKeys(t *testing.T) {
 }
 
 // T7b: with a stash card selected, up/down and the three-finger vertical
-// swipe cycle the pile as on main; confirming shows the picked window.
+// swipe cycle the pile as in a vertical overview; confirming shows the picked window.
 func TestOverviewCascadeStashPile(t *testing.T) {
 	for _, d := range cascadeDrivers {
 		t.Run(d.name, func(t *testing.T) {
@@ -768,7 +768,7 @@ func TestOverviewCascadeStashToMaximized(t *testing.T) {
 	}
 }
 
-// T8: a named boundary of a cascade overview is a vertical rule strictly
+// A named boundary of a cascade overview is a vertical rule strictly
 // between the two slots.
 func TestOverviewCascadeNamedDivider(t *testing.T) {
 	m := namedOverviewMonitor()
@@ -787,7 +787,7 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	}
 }
 
-// T10: covering floats fan along the horizontal axis: left goes deeper in the
+// Covering floats fan along the horizontal axis: left goes deeper in the
 // stack (the cards behind show on the left), right comes back to the front.
 func TestOverviewCascadeCoveringFloat(t *testing.T) {
 	for _, d := range cascadeDrivers {
@@ -872,7 +872,7 @@ func TestOverviewCascadePinnedFullscreenTile(t *testing.T) {
 	}
 }
 
-// T11: the focus binds keep their meaning in a cascade overview.
+// The focus binds keep their meaning in a cascade overview.
 func TestOverviewCascadeFocusBinds(t *testing.T) {
 	m := cascadeOverview()
 	w := m.Current()
@@ -910,6 +910,19 @@ func TestOverviewCascadeFocusBinds(t *testing.T) {
 	m.overviewFocus(ActionFocusWorkspaceNext)
 	if m.Current() != w || m.cardAt(w) != at {
 		t.Fatalf("focus-workspace-next over a card: card %d", m.cardAt(w))
+	}
+}
+
+// A three-finger step that moves nothing reports no change: no scene
+// transition, no keyboard grab. Here the first band of a cascade has no
+// band above it.
+func TestOverviewCascadeFingerNoopReportsNoChange(t *testing.T) {
+	m := cascadeOverview()
+	m.Current().FocusID(5)
+	m.ToggleOverview()
+	up := ports.PointerAxis{Source: ports.AxisFinger, Vertical: ports.ScrollAxis{Set: true, Value: -overviewScrollStep}}
+	if m.overviewScroll(up) {
+		t.Fatal("a step past the first band reported a change")
 	}
 }
 

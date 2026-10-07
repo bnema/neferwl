@@ -170,7 +170,7 @@ func (m *Monitor) moveStack(d int) bool {
 		return false
 	}
 	m.setFront(w, items[at])
-	m.ov.cardOf, m.ov.card = nil, 0
+	m.clearCard()
 	return true
 }
 
