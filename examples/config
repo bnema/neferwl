@@ -19,7 +19,7 @@ terminal.auto-open = first
 
 # Commands run once when the session starts; separate several with `;` or
 # use one line each. Like spawn, a command runs without a shell: see
-# "Running commands" in the README.
+# "Running commands" in docs/desktop.md.
 # Programs get WAYLAND_DISPLAY and NEFERWL_STATE.
 # startup = waybar; mako
 # startup = wl-paste --watch cliphist store
@@ -41,15 +41,16 @@ layout.gaps = 0
 # A lone column fills the screen without separators.
 layout.max-columns = 2
 # Past max-columns: scroll opens columns to the right; fixed keeps everything
-# on screen, each new window splitting the newest one (spiral).
+# on screen, each new window splitting the newest one (spiral); cascade starts
+# a new band of columns below, scrolling vertically.
 layout.overflow = scroll
 # cycle-column-width steps through these, then back to the equal share.
 layout.presets = 1/3, 1/2, 2/3, 1
 
 # Touchpad. A three-finger swipe up or down slides between workspaces, left
-# or right scrolls the columns. natural-scroll = on moves the content with
-# the fingers, for scroll and swipes. tap = on clicks on a tap: one finger
-# left, two right, three middle.
+# or right scrolls the columns (cascade swaps the two axes). natural-scroll
+# = on moves the content with the fingers, for scroll and swipes. tap = on
+# clicks on a tap: one finger left, two right, three middle.
 touchpad.natural-scroll = off
 touchpad.tap = on
 # Pointer speed from -1 to 1; adaptive speeds up quick moves, flat does not.
@@ -134,7 +135,8 @@ log.debug =
 # Keys are what your layout prints (cmd+é on AZERTY). Write = # and space
 # by name: cmd+equal, cmd+numbersign, cmd+space. `none` removes a default.
 # `spawn <command>` runs a program; arguments split on spaces, `;` starts
-# another command, no shell (pipes and variables go in a script: see "Running commands" in the README).
+# another command, no shell (pipes and variables go in a script: see
+# "Running commands" in docs/desktop.md).
 bind.cmd+return = spawn-terminal
 bind.cmd+left = focus-column-left
 bind.cmd+right = focus-column-right
@@ -180,8 +182,9 @@ bind.cmd+q = close-window
 bind.ctrl+alt+backspace = quit
 bind.ctrl+cmd+space = spawn fuzzel
 
-# Workspaces stack vertically; numbers follow their order. An empty one always
-# waits below the last. cmd+up/down past the column edge also switch workspace.
+# Workspaces stack vertically (side by side with cascade); numbers follow
+# their order. An empty one always waits after the last. cmd+up/down past the
+# column edge also switch workspace.
 bind.cmd+pageup = focus-workspace-prev
 bind.cmd+pagedown = focus-workspace-next
 # move-column-to-workspace moves the whole column; move-window-to-workspace

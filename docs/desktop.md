@@ -12,7 +12,7 @@ startup = waybar
 startup = wl-paste --watch cliphist store
 ```
 
-`spawn` binds and `startup` lines can hold several commands separated by `;`. They all start right away, in order; one does not wait for the previous one to finish. Empty commands are ignored. `terminal` takes a single command.
+`spawn` binds and `startup` lines can hold several commands separated by `;`. They all start right away, in order; one does not wait for the previous one to finish. Empty commands are ignored. A `;` always separates commands, so put an argument containing `;` in a script. `terminal` and workspace slot commands (`column.N`) take a single command.
 
 ```text
 startup = waybar; mako; wl-paste --watch cliphist store
