@@ -106,4 +106,22 @@ func TestDamageHistory(t *testing.T) {
 	if _, ok := third.DamageSince(second.Seq); ok {
 		t.Fatal("undamaged new buffer taken as unchanged")
 	}
+	// A subsurface with no buffer draws nothing: once its layout is
+	// applied (one full change), the root keeps its damage.
+	subc := bindProtocol(t, c, "wl_subcompositor")
+	child, sub := c.AllocateID(), c.AllocateID()
+	requestProtocol(t, c, comp, wayland.CompositorRequestCreateSurface, child)
+	registerProtocol(t, c, child)
+	registerProtocol(t, c, sub)
+	requestProtocol(t, c, subc, wayland.SubcompositorRequestGetSubsurface, sub, child, surf)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[1], int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	third = next()
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, bufs[0], int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestDamageBuffer, int32(1), int32(1), int32(2), int32(2))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	fourth := next()
+	if got, ok := fourth.DamageSince(third.Seq); !ok || len(got) != 1 || got[0] != (ports.Rect{X: 1, Y: 1, W: 2, H: 2}) {
+		t.Fatalf("empty subsurface: damage %v %v", got, ok)
+	}
 }

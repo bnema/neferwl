@@ -252,15 +252,18 @@ func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
 }
 
 // redraw sends the tree of a mapped root to the outputs. Only a commit
-// of the root's own buffer with no other change keeps partial damage.
+// of the root's own buffer with no other change keeps partial damage:
+// subsurfaces without a buffer (clients often keep one for later) are not
+// drawn, so they do not make it full.
 func (s *surface) redraw() {
 	r := s.root()
 	if id := r.windowID(); id != 0 && s.server.channels.Contents != nil {
+		c := r.tree(id)
 		d := damage{full: true}
-		if s == r && len(r.sub.children) == 0 {
+		if s == r && len(c.Children) == 0 {
 			d = r.committed
 		}
-		s.server.emitContent(r.tree(id), d)
+		s.server.emitContent(c, d)
 	}
 }
 
@@ -286,6 +289,8 @@ func (s *surface) detach() {
 	// Parent updates cannot make a detached child's bound commits visible.
 	s.dropQueue()
 	s.flushDesync()
+	// The child's area changes, not the parent's buffer: redraw it all.
+	p.root().committed = damage{full: true}
 	p.redraw()
 	p.emitInput()
 	s.sendScale()
