@@ -87,7 +87,7 @@ func TestOverlayCandidate(t *testing.T) {
 		t.Fatalf("transformed overlay reason %q", reason)
 	}
 	_, c = overlayScene()
-	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{W: 10, H: 10}})
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{X: 150, W: 10, H: 10}})
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("reason %q", reason)
 	}
@@ -97,7 +97,7 @@ func TestOverlayCandidate(t *testing.T) {
 		t.Fatalf("reason %q", reason)
 	}
 	s, _ = overlayScene()
-	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{W: 5, H: 5}}}
+	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerOverlay, Rect: ports.Rect{X: 150, W: 5, H: 5}}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
 		t.Fatalf("reason %q", reason)
 	}
@@ -223,14 +223,49 @@ func TestOverlayTestRefusedFallsBack(t *testing.T) {
 // overlay; a bordered window does too.
 func TestOverlayPopupAndBorder(t *testing.T) {
 	s, c := overlayScene()
-	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: ports.Rect{W: 5, H: 5}}}, s.Windows...)
+	s.Windows = append([]ports.SceneWindow{{ID: 7, Popup: true, Rect: ports.Rect{X: 120, W: 5, H: 5}}}, s.Windows...)
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "window_above" {
 		t.Fatalf("popup: %q", reason)
 	}
 	s, _ = overlayScene()
-	s.Separators = []ports.Separator{{Rect: ports.Rect{W: 2, H: 2}}}
+	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 100, W: 2, H: 100}}}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
 		t.Fatalf("border: %q", reason)
+	}
+	s, _ = overlayScene()
+	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 300, W: 2, H: 2}, Window: 2}}
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
+		t.Fatalf("own border: %q", reason)
+	}
+	s, _ = overlayScene()
+	s.Border.Width = 2
+	s.Windows[1].Inset = ports.SideLeft
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
+		t.Fatalf("inset content: %q", reason)
+	}
+}
+
+// What is drawn elsewhere on screen stays composed on the primary plane: a
+// bar, a popup, another window's lines or a window that do not touch the
+// candidate leave it on the overlay.
+func TestOverlayIgnoresWhatDoesNotCoverIt(t *testing.T) {
+	s, c := overlayScene()
+	s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerTop, Rect: ports.Rect{W: 100, H: 10}}}
+	s.Windows = append(s.Windows,
+		ports.SceneWindow{ID: 7, Popup: true, Rect: ports.Rect{X: 10, Y: 10, W: 20, H: 20}},
+		ports.SceneWindow{ID: 8, Floating: true, Rect: ports.Rect{X: 40, Y: 40, W: 20, H: 20}})
+	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 98, W: 2, H: 100}, Window: 1}}
+	if w, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" || w.ID != 2 {
+		t.Fatalf("candidate %v %q", w.ID, reason)
+	}
+	// Touching edges do not cover it.
+	s.Layers[0].Rect = ports.Rect{W: 100, H: 100}
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" {
+		t.Fatalf("adjacent layer: %q", reason)
+	}
+	s.Layers[0].Rect = ports.Rect{W: 101, H: 10}
+	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
+		t.Fatalf("overlapping layer: %q", reason)
 	}
 }
 

@@ -57,8 +57,10 @@ type overlayWin struct {
 }
 
 // overlayCandidate finds the one window the overlay can show: an opaque
-// dmabuf at integer physical coordinates, drawn 1:1, with no other window
-// or layer above it, and the plane colour mode it needs. reason is why none.
+// dmabuf at integer physical coordinates, drawn 1:1, with no other window,
+// popup, border line or layer drawn over it, and the plane colour mode it
+// needs. What is above it elsewhere on screen stays on the primary plane,
+// which the overlay covers only over the window. reason is why none.
 //
 // kept is scanoutCandidate's: a window drawn from a withdrawn content is
 // composed, never put on the plane.
@@ -78,8 +80,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			continue
 		}
 		if w.Popup {
-			// Popups draw after every window, wherever they are listed.
-			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
+			// Popups draw after every window, wherever they are listed:
+			// checked once the candidate is known.
+			continue
 		}
 		c := surfaces[w.ID]
 		// A viewport crop is composed: the plane would show the whole
@@ -94,9 +97,16 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 				continue
 			}
 		}
-		if pick != nil {
-			// Something is drawn above the candidate.
+		if pick != nil && w.Rect.Overlaps(pick.Rect) {
+			// Something is drawn over the candidate.
 			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
+		}
+	}
+	if pick != nil {
+		for i := range s.Windows {
+			if w := &s.Windows[i]; w.Popup && !w.Hidden && w.Rect.Overlaps(pick.Rect) {
+				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
+			}
 		}
 	}
 	if pick == nil {
@@ -121,13 +131,22 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "drop_hint"
 	}
 	for _, l := range s.Layers {
-		if l.Layer >= ports.LayerTop && l.Rect.W > 0 && l.Rect.H > 0 {
+		if l.Layer >= ports.LayerTop && l.Rect.Overlaps(pick.Rect) {
 			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "layer_above"
 		}
 	}
-	if !pick.Fullscreen && len(s.Separators) > 0 {
-		// The overlay shows the buffer alone; the lines would go with it.
-		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
+	if !pick.Fullscreen {
+		if pick.Inset != 0 && s.Border.Width > 0 {
+			// The content sits inside the lines, not at the window's rect.
+			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
+		}
+		for _, sep := range s.Separators {
+			if sep.Window == pick.ID || sep.Rect.Overlaps(pick.Rect) {
+				// The overlay shows the buffer alone; the lines would go
+				// under it.
+				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
+			}
+		}
 	}
 	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
 		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
