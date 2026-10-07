@@ -194,15 +194,15 @@ func TestOverviewCascadeMaximizedCardPickRecordsWindow(t *testing.T) {
 // elsewhere fills its band.
 func TestOverviewCascadeUnfocusedMaximizedNotInset(t *testing.T) {
 	w := cascadeWorkspace(6)
+	w.SetGaps(8)
 	w.Focus = 4
 	w.maximize(4)
 	w.Columns[0].FullWidth = true
 	tiles, _, _ := w.previewTiles()
 	g := w.gap()
-	for _, p := range tiles {
-		if p.ID == 1 && (p.Rect.X != g || p.Rect.W != w.Usable.W-2*g) {
-			t.Fatalf("unfocused maximized column %+v, want X %d W %d", p.Rect, g, w.Usable.W-2*g)
-		}
+	p := previewOf(t, tiles, 1)
+	if p.Hidden || p.Rect.X != g || p.Rect.W != w.Usable.W-2*g {
+		t.Fatalf("unfocused maximized column %+v, want X %d W %d", p, g, w.Usable.W-2*g)
 	}
 }
 

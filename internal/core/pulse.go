@@ -151,11 +151,11 @@ func (m *Monitor) settled() bool {
 	return true
 }
 
-// visibleCount is the number of windows of layout shown in frame.
-func visibleCount(layout []Placement, frame Rect) int {
+// visibleCount is the number of windows of layout shown in area.
+func visibleCount(layout []Placement, area Rect) int {
 	n := 0
 	for _, p := range layout {
-		if p.Preview == 0 && onScreen(p, frame) {
+		if p.Preview == 0 && onScreen(p, area) {
 			n++
 		}
 	}

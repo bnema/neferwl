@@ -185,6 +185,22 @@ func TestFocusPulseSkipsAloneOnScreen(t *testing.T) {
 	}
 }
 
+// A cascade window alone in its band above a bottom panel is alone on
+// screen: the next band, under the panel, does not count.
+func TestFocusPulseSkipsAloneAbovePanel(t *testing.T) {
+	c, ic := pulseCore(t)
+	m := c.cur().mon
+	m.SetOverflow(OverflowCascade)
+	m.SetMaxColumns(1)
+	m.SetUsable(Rect{W: 300, H: 180})
+	m.Current().FocusID(1)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if c.pulseTick() || c.animating() {
+		t.Fatal("a window alone in its band above a panel pulses")
+	}
+}
+
 // A swipe, its landing slide or a transition still shows the neighbours: the
 // pulse waits for the layout to settle, then decides on it.
 func TestFocusPulseWaitsForSlide(t *testing.T) {
