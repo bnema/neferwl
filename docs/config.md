@@ -148,7 +148,7 @@ In scroll and fixed layouts with `natural-scroll = off`, a swipe left shows the 
 
 With `animations = off`, nothing moves during the swipe: when the fingers lift, a quick or long enough swipe navigates content or workspaces along the layout's axes. Cascade band swipes stop at the first and last band.
 
-Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. In scroll and fixed layouts where the view cannot scroll (a floating or fullscreen window, fixed overflow, or a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-up/down` when the fingers lift. Cascade keeps horizontal workspace navigation; vertical band swipes do nothing while a floating or fullscreen window has focus.
+Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. In scroll and fixed layouts where the view cannot scroll (a floating or fullscreen window, fixed overflow, or a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-prev/next` when the fingers lift. Cascade keeps horizontal workspace navigation; vertical band swipes do nothing while a floating or fullscreen window has focus.
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
@@ -194,7 +194,7 @@ Set `layout.overflow = cascade` globally, per output, or on a named workspace. C
 
 Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
 
-Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-up/down` commands still mean previous/next workspace, even when the transition is horizontal. Four-finger and stash gestures keep their existing behaviour.
+Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-prev/next` commands switch to the previous or next workspace, whether the transition is vertical or horizontal. Four-finger and stash gestures keep their existing behaviour.
 
 The overview presents bands side by side in one workspace card. Selecting a window reveals its band. Cascade supports dropping onto tiles, but not gap insertion or edge scrolling during a drag.
 
@@ -219,13 +219,13 @@ The overview presents bands side by side in one workspace card. Selecting a wind
 | `set-column-width <+N%\|-N%>` | Widen or narrow the focused column by N% of the usable width (1-100), between 10% and 100%. The new width stays until changed; `cycle-column-width` then restarts at the first preset. Does nothing in fixed overflow |
 | `set-window-height <+N%\|-N%>` | Give the focused window N% more or less of its column's height; the other rows give or take it in proportion. Each row keeps at least 10%. A window joining or leaving the column resets equal rows. Does nothing past 9 rows |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
-| `focus-workspace <N>` / `focus-workspace-up/down` | Show a numbered or neighbor workspace |
+| `focus-workspace <N>` / `focus-workspace-prev/next` | Show a numbered or neighbor workspace |
 | `workspace <name>` | Toggle a named workspace |
-| `move-column-to-workspace <N>` / `-up/-down` | Move the focused column |
-| `move-window-to-workspace <N>` / `-up/-down` | Move only the focused window |
+| `move-column-to-workspace <N>` / `-prev/-next` | Move the focused column |
+| `move-window-to-workspace <N>` / `-prev/-next` | Move only the focused window |
 | `focus-monitor-left/right` / `focus-monitor-up/down` | Focus the neighbor monitor in that direction |
 | `move-workspace-to-monitor-left/right` / `move-workspace-to-monitor-up/down` | Move the workspace to the neighbor monitor in that direction; it gets a new home |
-| `move-workspace-up/down` | Swap the current numbered workspace with its neighbor; the view follows it. It never passes the empty workspace at the end |
+| `move-workspace-prev/next` | Swap the current numbered workspace with its neighbor; the view follows it. It never passes the empty workspace at the end |
 | `scale-up` / `scale-down` | Zoom the whole display; one second after the last press, the scale is saved to `output.<name>.scale` and a notification confirms it (`notify-send`) |
 | `quit` | Exit NeferWL |
 
@@ -257,7 +257,7 @@ The drop can be on another monitor; focus follows the window. There, the middle 
 
 ### Overview
 
-`toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows, over a background darkened by `floating.dim`. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Each monitor has one vertical overview. A named workspace appears directly below the numbered workspace from which its `workspace <name>` bind was invoked. Invoking it from another numbered workspace updates this placement; browsing the overview does not. Several named workspaces attached to the same numbered workspace follow configuration order, with horizontal rules separating their group from numbered rows. Named-to-named binds reuse the source's numbered attachment. Unattached named workspaces follow the last occupied numbered row, or the first row if all numbered workspaces are empty. The selected workspace stays centred and its immediate neighbors appear above and below; rows and stash previews keep their full width. Empty workspaces are skipped unless currently selected or serving as the invocation anchor of a visible named row. Named workspaces remain outside the numbered list and normal workspace up/down navigation. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's front card, with the windows it hides behind it; `scroll` overflow keeps its columns selectable in one card. Choosing the fullscreen window keeps it fullscreen; choosing another window leaves fullscreen.
+`toggle-overview` shows scaled previews of the current workspace, including over fullscreen windows, over a background darkened by `floating.dim`. Windows keep their size and previews show their last frames. Covering floats and windows hidden behind a maximized column in `fixed` overflow appear as cards: the on-screen item is in front, hidden columns share one spiral-layout card, up to two cards behind peek above it, and passed cards peek below. Neighbor workspaces show dimmed stacks. Each monitor has one vertical overview. A named workspace appears directly below the numbered workspace from which its `workspace <name>` bind was invoked. Invoking it from another numbered workspace updates this placement; browsing the overview does not. Several named workspaces attached to the same numbered workspace follow configuration order, with horizontal rules separating their group from numbered rows. Named-to-named binds reuse the source's numbered attachment. Unattached named workspaces follow the last occupied numbered row, or the first row if all numbered workspaces are empty. The selected workspace stays centred and its immediate neighbors appear above and below; rows and stash previews keep their full width. Empty workspaces are skipped unless currently selected or serving as the invocation anchor of a visible named row. Named workspaces remain outside the numbered list and normal previous/next workspace navigation. Smaller floats, such as dialogs, stay hidden. A fullscreen floating window, or any fullscreen window with `fixed` overflow, is its workspace's front card, with the windows it hides behind it; `scroll` overflow keeps its columns selectable in one card. Choosing the fullscreen window keeps it fullscreen; choosing another window leaves fullscreen.
 
 | Key | Action |
 | --- | --- |
@@ -266,7 +266,7 @@ The drop can be on another monitor; focus follows the window. There, the middle 
 | `return` | Show the selected front card; picking a hidden column moves the maximization to it. Other rows shown keep their focus, maximization and float order |
 | `escape` | Return to the original workspace; every row shown keeps its focus, maximization and float order |
 
-The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys. In the overview, `focus-workspace-up/down` also traverse cards before crossing workspace rows, including named ones, except inside a selected stash pile.
+The focus binds (`focus-column-left/right`, `focus-window-up/down`, `cmd+arrows` by default) move the selection like these keys. In the overview, `focus-workspace-prev/next` also traverse cards before crossing workspace rows, including named ones, except inside a selected stash pile.
 
 Each workspace's [stash](#stash), hidden or not, shows as a pile of cards on the left of its row, which stays centred unless it would overlap the pile: its selected window in front, up to three others behind it, dimmed. In the pile, `k` / `j` or up/down browse stash cards and stop at either end without changing workspace. Right (`l`) leaves the pile immediately; left (`h`) stays in the pile. On a stash-only workspace, right deselects the pile so up/down can change workspace. Browsing brings the selected card to the front without reordering the stash. `return` or a click on a card closes the overview with the stash shown on that window.
 
@@ -311,10 +311,10 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
 | `ctrl+cmd+space` | `spawn fuzzel` |
-| `cmd+pageup` | `focus-workspace-up` |
-| `cmd+pagedown` | `focus-workspace-down` |
-| `cmd+shift+pageup` | `move-column-to-workspace-up` |
-| `cmd+shift+pagedown` | `move-column-to-workspace-down` |
+| `cmd+pageup` | `focus-workspace-prev` |
+| `cmd+pagedown` | `focus-workspace-next` |
+| `cmd+shift+pageup` | `move-column-to-workspace-prev` |
+| `cmd+shift+pagedown` | `move-column-to-workspace-next` |
 | `cmd+code:2` | `focus-workspace 1` |
 | `cmd+code:3` | `focus-workspace 2` |
 | `cmd+code:4` | `focus-workspace 3` |
@@ -343,7 +343,7 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+ctrl+shift+right` | `move-workspace-to-monitor-right` |
 | `cmd+ctrl+shift+h` | `move-workspace-to-monitor-left` |
 | `cmd+ctrl+shift+l` | `move-workspace-to-monitor-right` |
-| `cmd+ctrl+shift+up` / `cmd+ctrl+shift+k` | `move-workspace-up` |
-| `cmd+ctrl+shift+down` / `cmd+ctrl+shift+j` | `move-workspace-down` |
+| `cmd+ctrl+shift+up` / `cmd+ctrl+shift+k` | `move-workspace-prev` |
+| `cmd+ctrl+shift+down` / `cmd+ctrl+shift+j` | `move-workspace-next` |
 | `cmd+code:13` | `scale-up` |
 | `cmd+code:12` | `scale-down` |

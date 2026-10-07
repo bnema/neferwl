@@ -412,9 +412,9 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			a = ActionFocusColumnLeft
 		}
 		if workspace {
-			a = ActionFocusWorkspaceDown
+			a = ActionFocusWorkspaceNext
 			if step < 0 {
-				a = ActionFocusWorkspaceUp
+				a = ActionFocusWorkspacePrev
 			}
 		} else if p.wraps {
 			// A content swipe cannot escape the last band to another workspace.

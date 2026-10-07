@@ -173,7 +173,7 @@ func TestOverviewCoverActsOnSelection(t *testing.T) {
 				t.Fatalf("behind close %d", e.Close)
 			}
 			w := m.Current()
-			m.Apply(ActionMoveWindowToWorkspaceDown)
+			m.Apply(ActionMoveWindowToWorkspaceNext)
 			if got, _ := m.find(1); got == w || !w.has(2) {
 				t.Fatalf("moved the wrong window: %v", windows(m))
 			}

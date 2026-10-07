@@ -34,9 +34,9 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 						Vertical:   ports.ScrollAxis{Set: dy != 0, Value: float64(dy) * 70, V120: int32(dy * 120)}})
 					c.scrollStop(ports.PointerAxis{Vertical: ports.ScrollAxis{Stop: true}})
 				case "bind":
-					a := ActionFocusWorkspaceDown
+					a := ActionFocusWorkspaceNext
 					if dy < 0 {
-						a = ActionFocusWorkspaceUp
+						a = ActionFocusWorkspacePrev
 					} else if dx > 0 {
 						a = ActionFocusColumnRight
 					}

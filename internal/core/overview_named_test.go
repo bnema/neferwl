@@ -319,7 +319,7 @@ func TestOverviewNamedNeighborPick(t *testing.T) {
 }
 
 func TestOverviewNamedFocusBinds(t *testing.T) {
-	for _, action := range []Action{ActionFocusWindowDown, ActionFocusWorkspaceDown} {
+	for _, action := range []Action{ActionFocusWindowDown, ActionFocusWorkspaceNext} {
 		t.Run(string(action), func(t *testing.T) {
 			m := namedOverviewMonitor()
 			m.ToggleOverview()
@@ -343,12 +343,12 @@ func TestOverviewNamedFocusBinds(t *testing.T) {
 
 func TestOverviewNamedOutsideNavigationUnchanged(t *testing.T) {
 	m := namedOverviewMonitor()
-	m.Apply(ActionFocusWorkspaceDown)
+	m.Apply(ActionFocusWorkspaceNext)
 	if m.shown != nil || !m.Current().empty() {
 		t.Fatal("outside overview, down no longer reaches numbered spare")
 	}
 	m.ToggleNamed("dev")
-	m.Apply(ActionFocusWorkspaceUp)
+	m.Apply(ActionFocusWorkspacePrev)
 	if m.Current().Name != "dev" {
 		t.Fatal("outside overview, named workspace entered numbered list")
 	}
@@ -414,7 +414,7 @@ func TestOverviewNamedDividerPublished(t *testing.T) {
 func TestOverviewNamedScrollAndSwipe(t *testing.T) {
 	m := namedOverviewMonitor()
 	m.ToggleOverview()
-	m.overviewFocus(ActionFocusWorkspaceDown)
+	m.overviewFocus(ActionFocusWorkspaceNext)
 	if m.Current().Name != "dev" {
 		t.Fatal("swipe did not cross groups")
 	}

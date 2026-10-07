@@ -339,7 +339,7 @@ func TestUnmapLeavingDroppedByInterruptions(t *testing.T) {
 	})
 	t.Run("workspace switch", func(t *testing.T) {
 		c, ic, sc := leaving(t)
-		act(c, ic, ActionFocusWorkspaceDown)
+		act(c, ic, ActionFocusWorkspaceNext)
 		gone(t, c, sc, indicatorScene(t, c))
 	})
 }

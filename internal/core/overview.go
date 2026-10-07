@@ -192,8 +192,8 @@ func overviewBlocks(a Action) bool {
 		ActionToggleStashVisible, ActionConsumeOrExpelLeft,
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
 		ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown,
-		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspaceUp,
-		ActionMoveWorkspaceDown, ActionToggleFloating:
+		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev,
+		ActionMoveWorkspaceNext, ActionToggleFloating:
 		return true
 	}
 	return false
@@ -921,9 +921,9 @@ func (m *Monitor) overviewFocus(a Action) bool {
 		m.OverviewMove(-1, 0)
 	case ActionFocusColumnRight:
 		m.OverviewMove(1, 0)
-	case ActionFocusWindowUp, ActionFocusWorkspaceUp:
+	case ActionFocusWindowUp, ActionFocusWorkspacePrev:
 		m.OverviewMove(0, -1)
-	case ActionFocusWindowDown, ActionFocusWorkspaceDown:
+	case ActionFocusWindowDown, ActionFocusWorkspaceNext:
 		m.OverviewMove(0, 1)
 	default:
 		return false

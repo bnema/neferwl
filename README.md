@@ -261,14 +261,14 @@ bind.cmd+shift+s = toggle-window-stash
 bind.cmd+o = toggle-overview
 
 # Workspaces
-bind.cmd+pageup = focus-workspace-up
-bind.cmd+pagedown = focus-workspace-down
-bind.cmd+shift+pageup = move-column-to-workspace-up
-bind.cmd+shift+pagedown = move-column-to-workspace-down
-bind.cmd+ctrl+shift+up = move-workspace-up
-bind.cmd+ctrl+shift+down = move-workspace-down
-bind.cmd+ctrl+shift+k = move-workspace-up
-bind.cmd+ctrl+shift+j = move-workspace-down
+bind.cmd+pageup = focus-workspace-prev
+bind.cmd+pagedown = focus-workspace-next
+bind.cmd+shift+pageup = move-column-to-workspace-prev
+bind.cmd+shift+pagedown = move-column-to-workspace-next
+bind.cmd+ctrl+shift+up = move-workspace-prev
+bind.cmd+ctrl+shift+down = move-workspace-next
+bind.cmd+ctrl+shift+k = move-workspace-prev
+bind.cmd+ctrl+shift+j = move-workspace-next
 bind.cmd+code:2 = focus-workspace 1
 bind.cmd+code:3 = focus-workspace 2
 bind.cmd+code:4 = focus-workspace 3
