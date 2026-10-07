@@ -234,10 +234,10 @@ func (w *Workspace) apply(item stackItem, selected WindowID) {
 
 // previewItem draws a group using screen geometry and a single card at its
 // configured size. A prior maximized column retains its full-width buffer.
-func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool) []Placement {
+func (m *Monitor) previewItem(w *Workspace, item stackItem, slot Rect, dim, lit bool) []Placement {
 	if item.kind == stackColumns {
 		if !w.overviewMaximized() {
-			return w.previewRow(y, dim, lit)
+			return w.previewRow(slot, dim, lit)
 		}
 		// The hidden columns fill the screen as if the maximized column,
 		// shown on its own card, were not there. In particular, an earlier
@@ -260,20 +260,20 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 		}
 		sel := rects[selected]
 		sel.X -= w.Usable.X
-		return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, sel)
+		return w.previewRowTiles(slot, dim, lit, tiles, w.Usable.W, sel)
 	}
 	g := w.gap()
 	if item.kind == stackFloat && item.id == w.cover() {
 		// A fullscreen float shows at the size of a fullscreen column.
 		r := Rect{X: g, Y: g, W: max(w.Usable.W-2*g, 0), H: max(w.Usable.H-2*g, 0)}
-		return w.previewRowTiles(y, dim, lit, []Placement{{ID: item.id, Rect: r, Focused: true, Fullscreen: true}}, w.Usable.W, r)
+		return w.previewRowTiles(slot, dim, lit, []Placement{{ID: item.id, Rect: r, Focused: true, Fullscreen: true}}, w.Usable.W, r)
 	}
 	if item.kind == stackFloat {
 		f := w.Floats[w.floatIndex(item.id)]
 		r := w.floatRect(f)
 		r.X -= w.Usable.X
 		r.Y -= w.Usable.Y
-		return w.previewRowTiles(y, dim, lit, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
+		return w.previewRowTiles(slot, dim, lit, []Placement{{ID: item.id, Rect: r, Floating: true, Focused: true}}, w.Usable.W, r)
 	}
 	i := w.columnOf(item.id)
 	if i < 0 {
@@ -288,7 +288,7 @@ func (m *Monitor) previewItem(w *Workspace, item stackItem, y int, dim, lit bool
 	for j, t := range w.rowBuf {
 		tiles = append(tiles, Placement{ID: c.Windows[j], Rect: t, Focused: j == c.Focus, Fullscreen: c.Windows[j] == w.cover()})
 	}
-	return w.previewRowTiles(y, dim, lit, tiles, w.Usable.W, r)
+	return w.previewRowTiles(slot, dim, lit, tiles, w.Usable.W, r)
 }
 
 // hiddenColumnRects lays out the columns behind the maximized one with the
@@ -301,14 +301,15 @@ func (w *Workspace) hiddenColumnRects() []Rect {
 	return slices.Insert(v.columnRectsFor(true), w.Focus, Rect{})
 }
 
-// stackRow draws up to two cards on each side of the provisional front.
-func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
+// stackRow draws up to two cards on each side of the provisional front,
+// fanned along axis.
+func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bool) []Placement {
 	items := w.stack()
 	if len(items) == 0 {
-		return w.previewRow(y, dim, lit)
+		return w.previewRow(slot, dim, lit)
 	}
 	if len(items) == 1 {
-		return m.previewItem(w, items[0], y, dim, lit)
+		return m.previewItem(w, items[0], slot, dim, lit)
 	}
 	at := 0
 	if w == m.Current() {
@@ -316,12 +317,17 @@ func (m *Monitor) stackRow(w *Workspace, y int, dim, lit bool) []Placement {
 	}
 	cards := make([][]Placement, len(items))
 	step := w.peekStep()
+	// along is the offset of d steps on the overview axis.
+	along := func(d int) (int, int) {
+		var r Rect
+		axis.offset(&r, d*step)
+		return r.X, r.Y
+	}
 	for i, item := range items {
-		cards[i] = m.previewItem(w, item, w.frontRowY(y), dim, lit)
+		cards[i] = m.previewItem(w, item, w.frontSlot(axis, slot), dim, lit)
 	}
 
 	// fan's behind side advances through the linear stack.
 	return fan(cards, at, 2, 2, false,
-		func(d int) (int, int) { return 0, -d * step },
-		func(d int) (int, int) { return 0, d * step }, dim, lit)
+		func(d int) (int, int) { return along(-d) }, along, dim, lit)
 }

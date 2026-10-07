@@ -363,10 +363,16 @@ func (m *Monitor) showOverview(w *Workspace) {
 	m.selectRow()
 }
 
-// OverviewMove shares navigation rules across keys, scrolls and swipes.
-// Vertical moves stay in a selected stash pile; left stays, and right
-// deselects it, even when the row has no main card.
+// OverviewMove shares navigation rules across keys, scrolls and swipes. It
+// is the physical entry point: it maps dx and dy to the overview's moves.
 func (m *Monitor) OverviewMove(dx, dy int) {
+	m.overviewMoveVertical(dx, dy)
+}
+
+// overviewMoveVertical is the move of an overview whose workspaces stack
+// vertically. Vertical moves stay in a selected stash pile; left stays, and
+// right deselects it, even when the row has no main card.
+func (m *Monitor) overviewMoveVertical(dx, dy int) {
 	if dy != 0 {
 		m.overviewVertical(dy)
 	} else if dx != 0 {
@@ -383,8 +389,14 @@ func (m *Monitor) overviewVertical(dy int) {
 	if m.moveStack(-dy) {
 		return
 	}
+	m.overviewStep(dy)
+}
+
+// overviewStep shows the workspace d rows from the current one; it stays
+// on the first or last row.
+func (m *Monitor) overviewStep(d int) {
 	rows := m.overviewWorkspaces()
-	i := indexOf(rows, w) + dy
+	i := indexOf(rows, m.Current()) + d
 	if i >= 0 && i < len(rows) {
 		m.showOverview(rows[i])
 	}
@@ -487,16 +499,22 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	m.closeOverview()
 }
 
+// overviewAxis is the axis the overview lays workspaces out along, and the
+// stacked cards of a row fan along.
+func (m *Monitor) overviewAxis() layoutAxis { return verticalAxis }
+
 // overviewRows centers the selected row with its neighbors above and below.
-// The numbered/named boundary gets extra spacing and an inactive horizontal
-// rule. Row widths, stash piles and preview scales remain unchanged.
-func (m *Monitor) overviewRows() (map[*Workspace]int, []ports.Separator) {
+// Each shown workspace gets a slot, in output-local pixels, to place its
+// previews in. The numbered/named boundary gets extra spacing and an
+// inactive horizontal rule. Row widths, stash piles and preview scales
+// remain unchanged.
+func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 	cur := m.Current()
 	u := cur.overviewArea()
 	gap := max(1, u.H*3/100)
 	hc := cur.rowHeight()
 	y := u.Y + (u.H-hc)/2
-	rows := map[*Workspace]int{cur: y}
+	rows := map[*Workspace]Rect{cur: {X: u.X, Y: y, W: u.W, H: hc}}
 	var dividers []ports.Separator
 	list := m.overviewWorkspaces()
 	i := indexOf(list, cur)
@@ -510,12 +528,12 @@ func (m *Monitor) overviewRows() (map[*Workspace]int, []ports.Separator) {
 		if boundary {
 			spacing *= 2
 		}
-		top := y + hc
+		top, h := y+hc, w.rowHeight()
 		if next < i {
-			rows[w] = y - spacing - w.rowHeight()
+			rows[w] = Rect{X: u.X, Y: y - spacing - h, W: u.W, H: h}
 			top = y - spacing
 		} else {
-			rows[w] = y + hc + spacing
+			rows[w] = Rect{X: u.X, Y: y + hc + spacing, W: u.W, H: h}
 		}
 		if boundary {
 			margin := u.W * 4 / 100
@@ -531,12 +549,15 @@ func (m *Monitor) overviewRows() (map[*Workspace]int, []ports.Separator) {
 func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	cur := m.Current()
 	rows, _ := m.overviewRows()
+	axis := m.overviewAxis()
 	for w := range m.all() {
-		ry, shown := rows[w]
+		slot, shown := rows[w]
 		if shown {
 			at := m.cardAt(w)
-			result = append(result, m.stackRow(w, ry, w != cur, at < 0)...)
-			result = append(result, w.pile(ry, w != cur, at)...)
+			result = append(result, m.stackRow(w, axis, slot, w != cur, at < 0)...)
+			if len(w.Stash) > 0 {
+				result = append(result, w.pile(w.frontSlot(axis, slot), w != cur, at)...)
+			}
 		}
 		for _, f := range w.Floats {
 			if _, drawn := w.itemOf(f.ID); !shown || !drawn {
@@ -637,11 +658,11 @@ func (w *Workspace) cardStep() int {
 	return min(overviewCardStep, a.W/100, a.H/50)
 }
 
-// pile places the stash of w as cards on the left of the row whose top is
-// at y: entry front (the stash selection when -1) in front, the next ones
-// behind it, dimmed, the rest hidden. Only a front card of the current row
-// (dim false) with front set is selected.
-func (w *Workspace) pile(y int, dim bool, front int) []Placement {
+// pile places the stash of w as cards on the left of band, the front band
+// of its row (see frontSlot): entry front (the stash selection when -1) in
+// front, the next ones behind it, dimmed, the rest hidden. Only a front card
+// of the current row (dim false) with front set is selected.
+func (w *Workspace) pile(band Rect, dim bool, front int) []Placement {
 	n := len(w.Stash)
 	if n == 0 {
 		return nil
@@ -658,7 +679,7 @@ func (w *Workspace) pile(y int, dim bool, front int) []Placement {
 	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom()))
 	// Stack rows reserve two peek steps above the front card. Align the
 	// stash with that front band, not with the top of its envelope.
-	x0, y0 := u.X+u.W/100, w.frontRowY(y)+(rowH-ch)/2
+	x0, y0 := band.X+u.W/100, band.Y+(rowH-ch)/2
 	cards := make([][]Placement, n)
 	for i := range w.Stash {
 		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected}}
@@ -692,13 +713,14 @@ func (w *Workspace) peekStep() int {
 	return max(1, int(math.Round(float64(w.Usable.H)*w.overviewZoom()*overviewPeekStep)))
 }
 
-// frontRowY skips the space reserved for two cards peeking above the front.
-// A single-card row starts at y, as before.
-func (w *Workspace) frontRowY(y int) int {
+// frontSlot is the part of slot the front card of w takes: slot shifted
+// along axis past the room reserved for two cards peeking before it. A
+// single-card row keeps slot.
+func (w *Workspace) frontSlot(axis layoutAxis, slot Rect) Rect {
 	if len(w.stack()) > 1 {
-		return y + 2*w.peekStep()
+		axis.offset(&slot, 2*w.peekStep())
 	}
-	return y
+	return slot
 }
 
 // rowHeight includes the largest possible stack envelope (two peeks above
@@ -782,29 +804,30 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 	return tiles, span, sel
 }
 
-// previewRow scales the tiles of w into a row whose top is at y, centred
-// in the usable width, or scrolled so the focused column shows when the
+// previewRow scales the tiles of w into a row placed in slot, centred
+// in the slot's width, or scrolled so the focused column shows when the
 // row is wider, right of the stash pile. Dimmed rows (neighbor
 // workspaces) have no focus; neither has a row whose pile has it (lit
 // false).
-func (w *Workspace) previewRow(y int, dim, lit bool) []Placement {
+func (w *Workspace) previewRow(slot Rect, dim, lit bool) []Placement {
 	tiles, span, sel := w.previewTiles()
-	return w.previewRowTiles(y, dim, lit, tiles, span, sel)
+	return w.previewRowTiles(slot, dim, lit, tiles, span, sel)
 }
 
-func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
-	u := w.overviewArea()
+// previewRowTiles scales tiles, laid out unscrolled over span with sel the
+// focused one, into slot. Placement stays inside slot.
+func (w *Workspace) previewRowTiles(slot Rect, dim, lit bool, tiles []Placement, span int, sel Rect) []Placement {
 	z := w.overviewZoom()
 	scale := func(v int) int { return int(math.Round(float64(v) * z)) }
 	width := scale(span)
 	// Rows stay centred on the output like rows without a stash; the pile
 	// only pushes a row right when they would overlap.
-	x := max(u.X+(u.W-width)/2, u.X+w.pileWidth())
 	left := w.pileWidth()
-	u.X, u.W = u.X+left, u.W-left
-	if width > u.W {
-		x = u.X + u.W/2 - scale(sel.X+sel.W/2)
-		x = min(max(x, u.X+u.W-width), u.X)
+	x := max(slot.X+(slot.W-width)/2, slot.X+left)
+	ux, uw := slot.X+left, slot.W-left
+	if width > uw {
+		x = ux + uw/2 - scale(sel.X+sel.W/2)
+		x = min(max(x, ux+uw-width), ux)
 	}
 	for i := range tiles {
 		if tiles[i].Hidden {
@@ -812,7 +835,7 @@ func (w *Workspace) previewRowTiles(y int, dim, lit bool, tiles []Placement, spa
 		}
 		r := tiles[i].Rect
 		x0, y0 := scale(r.X), scale(r.Y)
-		tiles[i].Rect = Rect{X: x + x0, Y: y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
+		tiles[i].Rect = Rect{X: x + x0, Y: slot.Y + y0, W: scale(r.X+r.W) - x0, H: scale(r.Y+r.H) - y0}
 		tiles[i].Preview = z
 		if dim {
 			tiles[i].peeking(1)
