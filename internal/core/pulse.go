@@ -15,7 +15,7 @@ import (
 // the window that pulsed last does not pulse again within pulseCooldown
 // (switching back after another window held the focus is a new change).
 // Fast switching therefore shows nothing. Fullscreen windows, a window alone
-// on screen (e.g. a maximized column), overview previews, a window focused as
+// in the usable area (e.g. a maximized column), overview previews, a window focused as
 // it maps and a protected session never pulse.
 
 const (

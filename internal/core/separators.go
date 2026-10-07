@@ -10,7 +10,7 @@ import "github.com/bnema/neferwl/internal/ports"
 // first). With gaps, each tile owns its neighbor-facing lines and lights
 // them whole. Hidden, scrolled-off, under-panel, other-workspace and
 // other-output tiles do not count, nor do tiles that share no line. Lines
-// at output edges are omitted. Floating windows differ from tmux tiles:
+// at the edges of the usable area (output or panels) are omitted. Floating windows differ from tmux tiles:
 // each gets its own full border, drawn with that window (Separator.Window),
 // even when it is the only visible window. Only the
 // focused output's focused window can light lines; keyboard grabs by popups

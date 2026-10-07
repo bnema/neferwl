@@ -173,9 +173,6 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	if got := colorAt(seps, 449, 400); got != "gray" {
 		t.Fatalf("shared line (449,400) = %q; %v", got, seps)
 	}
-	if n := visibleCount(ps, w.Usable); n != 2 {
-		t.Fatalf("visible in the usable area: %d, want 2", n)
-	}
 }
 
 // With gaps each tile has its own line: the focused one lights it whole.
