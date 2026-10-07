@@ -1346,8 +1346,14 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		case math.Abs(m.ov.scrollX) >= stepX:
 			d := sign(m.ov.scrollX)
 			if cascade && finger {
-				// One workspace per gesture, even over a stash card.
-				m.overviewStep(d)
+				// One step per gesture: a card behind a maximized
+				// column first, like the arrows, else one workspace,
+				// even over a stash card.
+				if m.bandCardsAt(m.Current()) {
+					m.OverviewMove(d, 0)
+				} else {
+					m.overviewStep(d)
+				}
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 				return true
 			}
@@ -1365,6 +1371,16 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		}
 		changed = true
 	}
+}
+
+// bandCardsAt reports whether the selection of w is a maximized cascade
+// column hiding cards of its band, not a stash card.
+func (m *Monitor) bandCardsAt(w *Workspace) bool {
+	if m.cardAt(w) >= 0 || len(w.Columns) == 0 || !w.Columns[w.Focus].FullWidth {
+		return false
+	}
+	first, last := w.laneBounds(w.laneOf(w.Focus))
+	return first < last
 }
 
 // overviewTurned reports whether a scroll step turned the overview from the

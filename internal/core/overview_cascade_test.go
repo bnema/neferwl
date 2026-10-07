@@ -635,6 +635,36 @@ func TestOverviewCascadeThreeFinger(t *testing.T) {
 	}
 }
 
+// Three fingers sideways walk the cards behind a maximized column one per
+// gesture, like the arrows, then change workspace past the band's edge.
+func TestOverviewCascadeThreeFingerMaximizedCards(t *testing.T) {
+	c, m := cascadeCore(t)
+	w := m.Current()
+	w.ToggleFullWidth() // Column 2 hides 3, the other column of its band.
+	m.ToggleOverview()
+	swipe := func(dx float64) {
+		t.Helper()
+		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
+		for range 4 {
+			c.swipeUpdate(ports.SwipeUpdate{DX: dx})
+		}
+		c.swipeEnd(ports.SwipeEnd{})
+	}
+	swipe(40)
+	if m.Current() != w || m.overviewTarget() != 3 || !w.Columns[w.Focus].FullWidth {
+		t.Fatalf("swipe right: workspace %d, target %d, want maximized 3", indexOf(m.Workspaces, m.Current()), m.overviewTarget())
+	}
+	swipe(-40)
+	if m.Current() != w || m.overviewTarget() != 2 || !w.Columns[w.Focus].FullWidth {
+		t.Fatalf("swipe left: workspace %d, target %d, want maximized 2", indexOf(m.Workspaces, m.Current()), m.overviewTarget())
+	}
+	swipe(40)
+	swipe(40)
+	if m.Current() != m.Workspaces[2] {
+		t.Fatalf("swipe right past the band: workspace %d", indexOf(m.Workspaces, m.Current()))
+	}
+}
+
 // T8: a named boundary of a cascade overview is a vertical rule strictly
 // between the two slots.
 func TestOverviewCascadeNamedDivider(t *testing.T) {
