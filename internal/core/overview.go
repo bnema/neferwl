@@ -1335,8 +1335,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	axis := m.overviewAxis()
 	cascade := axis == horizontalAxis
 	// A finger step reports a change only when the selection moved: at an
-	// edge or over a float it does nothing, and the scene stays.
-	before := m.overviewSelection()
+	// edge or over a float it does nothing, and the scene stays. The
+	// snapshot is taken only before a step: stackFront allocates.
+	var before overviewSelection
 	for {
 		switch {
 		case math.Abs(m.ov.scrollY) >= overviewScrollStep && math.Abs(m.ov.scrollY) >= math.Abs(m.ov.scrollX):
@@ -1345,6 +1346,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			// overview drops the scroll left (showOverview).
 			m.ov.scrollY -= float64(d) * overviewScrollStep
 			m.ov.scrollX = 0
+			if finger {
+				before = m.overviewSelection()
+			}
 			if cascade && !finger && m.cardAt(m.Current()) < 0 {
 				m.overviewStep(d)
 			} else {
@@ -1360,6 +1364,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		case math.Abs(m.ov.scrollX) >= stepX:
 			d := sign(m.ov.scrollX)
 			if cascade && finger {
+				before = m.overviewSelection()
 				// One step per gesture: a card behind a maximized
 				// column first, like the arrows, else one workspace,
 				// even over a stash card.
