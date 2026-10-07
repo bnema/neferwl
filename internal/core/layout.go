@@ -1393,12 +1393,7 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 		return w.cellWidth(i)
 	}
 	if w.Columns[i].Width == (Width{}) || w.policy().equalCells {
-		if len(w.Columns) == 1 {
-			return max(w.Usable.W-2*g, 0)
-		}
-		// Equal shares of the width left after gaps; a remainder under k pixels stays empty.
-		k := min(len(w.Columns), max(w.MaxColumns, 1))
-		return max((w.Usable.W-g*(k+1))/k, 0)
+		return w.equalShare(min(len(w.Columns), max(w.MaxColumns, 1)))
 	}
 	return w.Columns[i].Width.Resolve(w.Usable.W, g)
 }
@@ -1492,7 +1487,7 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 // right; the two strips share the last cell.
 func (w *Workspace) expandedRects(rects []Rect, e, k, y, h int) []Rect {
 	g := w.gap()
-	cell := max((w.Usable.W-g*(k+1))/k, 0)
+	cell := w.equalShare(k)
 	wide := (k-1)*cell + (k-2)*g
 	rest := max(w.Usable.W-2*g-wide-g, 0)
 	before, after := w.Columns[:e], w.Columns[e+1:]

@@ -19,7 +19,13 @@ func (w *Workspace) cascadeBands() (n, spacing int) {
 // fills it.
 func (w *Workspace) cellWidth(i int) int {
 	first, last := w.laneBounds(w.band(i))
-	k := max(last-first+1, 1)
+	return w.equalShare(last - first + 1)
+}
+
+// equalShare is the width of each of k columns sharing the usable width
+// after gaps; a remainder under k pixels stays empty.
+func (w *Workspace) equalShare(k int) int {
+	k = max(k, 1)
 	return max((w.Usable.W-w.gap()*(k+1))/k, 0)
 }
 func (w *Workspace) cellInBand(b int) int {
