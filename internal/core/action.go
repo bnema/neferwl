@@ -318,13 +318,15 @@ func (m *Monitor) Apply(a Action) Effect {
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		// Past the column and any on-screen neighbor or demoted float,
-		// move to the next workspace.
+		// move to the next workspace. Cascade workspaces sit side by side:
+		// up/down stop at the first and last band.
 		dir := 1
 		if a == ActionFocusWindowUp {
 			dir = -1
 		}
 		// A hidden workspace is outside the vertical list.
-		if !m.Current().FocusWindow(dir) && m.shown == nil {
+		w := m.Current()
+		if !w.FocusWindow(dir) && m.shown == nil && !w.policy().wraps {
 			m.Focus(m.Active + dir)
 		}
 		return Effect{}

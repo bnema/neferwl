@@ -192,7 +192,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 Set `layout.overflow = cascade` globally, per output, or on a named workspace. Columns fill bands of up to `max-columns`, then continue in a fresh band below. The columns of a band share its width equally, as in `fixed` overflow: a lone column takes the full width until another joins its band. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
 
-Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
+Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band, and stops at the first and last band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
 
 Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-prev/next` commands switch to the previous or next workspace, whether the transition is vertical or horizontal. Four-finger and stash gestures keep their existing behaviour.
 

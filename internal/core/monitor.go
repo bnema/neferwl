@@ -510,13 +510,19 @@ func (m *Monitor) applyNamed() {
 	}
 	m.each(func(w *Workspace) {
 		s := specs[w.Name]
-		before := w.Overflow
+		before, axis := w.Overflow, w.policy().content
 		w.Overflow = m.template.Overflow
 		if s.Overflow != "" {
 			w.Overflow = s.Overflow
 		}
 		if before != w.Overflow && w.policy().equalCells {
 			w.unmaximize()
+		}
+		// The view offset belongs to the old content axis: SetMaxColumns
+		// scrolls back to the focus along the new one.
+		if w.policy().content != axis {
+			w.view.stop()
+			w.View = 0
 		}
 		w.SetMaxColumns(m.template.MaxColumns)
 		if s.MaxColumns > 0 {
