@@ -24,8 +24,9 @@ type overviewState struct {
 	selected         WindowID
 	selectedAt       int
 	scrollX, scrollY float64
-	// scrolled is set once a three-finger gesture stepped up or down: it
-	// waits for the fingers to lift before the next step. sideways is set
+	// scrolled is set once a three-finger gesture took its one step per
+	// gesture (up or down, a cascade's horizontal step, or a turn of the
+	// overview): it waits for the fingers to lift. sideways is set
 	// once it stepped to a column: it stays on columns and steps once per
 	// overviewScrollRepeat.
 	scrolled, sideways bool
@@ -48,9 +49,9 @@ type rowSnapshot struct {
 
 // The overview scales workspace rows without resizing clients. Covering
 // floats and the columns form a linear stack of cards; small floats stay
-// hidden. Up/down traverse the stack before changing workspace. A pinned
-// fullscreen window is the front card of its row, the windows it hides
-// behind it; choosing one of them leaves fullscreen.
+// hidden. Moves along the workspace axis traverse the stack before changing
+// workspace. A pinned fullscreen window is the front card of its row, the
+// windows it hides behind it; choosing one of them leaves fullscreen.
 
 // A workspace's stash shows as a pile of cards pinned to the left edge of
 // its row: the selected stashed window in front at overviewCardZoom, up to
@@ -63,9 +64,9 @@ const (
 	overviewPeekStep = 0.07
 )
 
-// overviewMaxZoom caps the current row so its neighbors show above and
-// below; overviewMinZoom floors the shrink of wide workspaces, which then
-// scroll to keep the selected column in view.
+// overviewMaxZoom caps the current row so its neighbors show beside it
+// along the workspace axis; overviewMinZoom floors the shrink of wide
+// workspaces, which then scroll to keep the selected column in view.
 const overviewMaxZoom, overviewMinZoom = 0.6, 0.25
 
 // ToggleOverview opens the overview, or closes it on the selection. Over
@@ -110,7 +111,7 @@ func (m *Monitor) remember(w *Workspace) {
 // selectRow resets provisional stack and stash selection for a new row.
 func (m *Monitor) selectRow() {
 	m.remember(m.Current())
-	m.ov.card, m.ov.cardOf = 0, nil
+	m.clearCard()
 	m.ov.front, m.ov.row, m.ov.frontAt = stackItem{}, nil, 0
 	m.ov.selected, m.ov.selectedAt = 0, -1
 	w := m.Current()
@@ -139,6 +140,9 @@ func (m *Monitor) card() WindowID {
 	}
 	return m.ov.card
 }
+
+// clearCard deselects the stash card.
+func (m *Monitor) clearCard() { m.ov.card, m.ov.cardOf = 0, nil }
 
 // cardAt is the pile entry of w that is selected, -1 when none.
 func (m *Monitor) cardAt(w *Workspace) int {
@@ -382,7 +386,13 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 		}
 		return
 	}
-	m.overviewMoveVertical(dx, dy)
+	// Workspaces stack vertically: vertical moves stay in a selected stash
+	// pile; left stays, and right deselects it.
+	if dy != 0 {
+		m.overviewVertical(dy)
+	} else if dx != 0 {
+		m.overviewHorizontal(dx)
+	}
 }
 
 // overviewWorkspaceStep is a focus-workspace bind. A vertical overview
@@ -447,7 +457,7 @@ func (m *Monitor) overviewAcross(dx int) {
 			m.overviewStep(dx)
 			return
 		}
-		m.ov.card, m.ov.cardOf = 0, nil
+		m.clearCard()
 		m.ov.selected = 0
 		if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
 			// The front column: a maximized one keeps its cards behind.
@@ -485,17 +495,9 @@ func (m *Monitor) laneEdge(w *Workspace, dx int) {
 	m.overviewStep(dx)
 }
 
-// overviewMoveVertical is the move of an overview whose workspaces stack
-// vertically. Vertical moves stay in a selected stash pile; left stays, and
-// right deselects it, even when the row has no main card.
-func (m *Monitor) overviewMoveVertical(dx, dy int) {
-	if dy != 0 {
-		m.overviewVertical(dy)
-	} else if dx != 0 {
-		m.overviewHorizontal(dx)
-	}
-}
-
+// overviewVertical is the vertical move of an overview whose workspaces
+// stack vertically: through a selected stash pile, then the stack, then
+// to the next workspace.
 func (m *Monitor) overviewVertical(dy int) {
 	if m.cycleCard(m.Current(), dy) {
 		return
@@ -522,7 +524,7 @@ func (m *Monitor) overviewHorizontal(dx int) {
 	w := m.Current()
 	if m.cardAt(w) >= 0 {
 		if dx > 0 {
-			m.ov.card, m.ov.cardOf = 0, nil
+			m.clearCard()
 			m.ov.selected = 0
 			item := m.stackFront(w)
 			if item.kind == stackColumns {
@@ -594,7 +596,7 @@ func (m *Monitor) OverviewPick(id WindowID) {
 		}
 	}
 	m.showOverview(w)
-	m.ov.card, m.ov.cardOf = 0, nil
+	m.clearCard()
 	if i := w.stashIndex(id); i >= 0 {
 		m.selectCard(w, i)
 	} else if item, ok := w.itemOf(id); ok {
@@ -990,7 +992,7 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		}
 	}
 	for i, c := range w.Columns {
-		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
+		r := Rect{Y: g, H: h}
 		if w.policy().wraps {
 			if w.hiddenByMaximized(i) {
 				continue // A card, above.
@@ -1012,9 +1014,12 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
 			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
-		} else if w.fullscreenColumn(i) {
-			// A fullscreen column shows at the width it had in the row.
-			r.W = max(w.Usable.W-2*g, 0)
+		} else {
+			r.X, r.W = w.columnX(i)-w.Usable.X, w.columnWidth(i)
+			if w.fullscreenColumn(i) {
+				// A fullscreen column shows at the width it had in the row.
+				r.W = max(w.Usable.W-2*g, 0)
+			}
 		}
 		if w.hiddenByMaximized(i) {
 			// Fixed overflow shows the hidden columns on their own card
@@ -1285,10 +1290,11 @@ const (
 // overviewScroll moves the overview selection with a scroll frame: a row
 // step when the vertical scroll reaches overviewScrollStep and leads, else
 // a column step. Three-finger updates (encoded here as AxisFinger) step
-// to the next column after
-// overviewScrollStep, then once per overviewScrollRepeat, and stay on
-// columns until they lift; up or down they step once per scroll, so a card
-// in a stack is easy to pick.
+// to the next column after overviewScrollStep, then once per
+// overviewScrollRepeat, and stay on columns until they lift; up or down they
+// step once per scroll, so a card in a stack is easy to pick. In a cascade
+// overview they take one step per gesture on both axes: a band vertically,
+// a card or workspace horizontally.
 // Continuous scrolling steps once per overviewScrollStep and a wheel once
 // per notch (high-resolution wheels add up their fractions of a notch).
 // Vertical steps select cards first, then rows; natural scroll
@@ -1328,6 +1334,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 	// A step that turns the overview returns, so the axis holds for the loop.
 	axis := m.overviewAxis()
 	cascade := axis == horizontalAxis
+	// A finger step reports a change only when the selection moved: at an
+	// edge or over a float it does nothing, and the scene stays.
+	before := m.overviewSelection()
 	for {
 		switch {
 		case math.Abs(m.ov.scrollY) >= overviewScrollStep && math.Abs(m.ov.scrollY) >= math.Abs(m.ov.scrollX):
@@ -1346,7 +1355,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			}
 			if finger {
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
-				return true
+				return m.overviewSelection() != before
 			}
 		case math.Abs(m.ov.scrollX) >= stepX:
 			d := sign(m.ov.scrollX)
@@ -1360,7 +1369,7 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 					m.overviewStep(d)
 				}
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
-				return true
+				return m.overviewSelection() != before
 			}
 			m.ov.scrollX -= float64(d) * stepX
 			m.ov.scrollY = 0
@@ -1382,6 +1391,20 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 // column hiding cards of its band: not a stash card nor a covering float.
 func (m *Monitor) bandCardsAt(w *Workspace) bool {
 	return m.cardAt(w) < 0 && w.hasBandCards() && m.stackFront(w).kind == stackColumns
+}
+
+// overviewSelection is what an overview step can move: the workspace, its
+// stack front, stash card, focused column and selected window.
+type overviewSelection struct {
+	w              *Workspace
+	front          stackItem
+	card, selected WindowID
+	focus          int
+}
+
+func (m *Monitor) overviewSelection() overviewSelection {
+	w := m.Current()
+	return overviewSelection{w: w, front: m.stackFront(w), card: m.card(), selected: m.ov.selected, focus: w.Focus}
 }
 
 // overviewTurned reports whether a scroll step turned the overview from the
