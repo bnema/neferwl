@@ -13,6 +13,7 @@ func (w *Workspace) cascadeBands() (n, spacing int) {
 	}
 	return w.band(len(w.Columns)-1) + 1, w.Usable.H
 }
+
 // cellWidth is the width of the cell of column i: the columns of its band
 // share the usable width equally, as in fixed overflow, so a lone column
 // fills it.
