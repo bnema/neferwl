@@ -182,6 +182,22 @@ func TestOverviewCascadeMaximizedCardPick(t *testing.T) {
 	w.FocusID(7)
 	w.ToggleFullWidth()
 	m.ToggleOverview()
+	// Each card's strip right of the maximized column hits it: 8 next to
+	// it, 9 at the band's edge.
+	ps := m.Layout()
+	front, near, far := previewOf(t, ps, 7).Rect, previewOf(t, ps, 8).Rect, previewOf(t, ps, 9).Rect
+	for _, c := range []struct {
+		x0, x1 int
+		want   WindowID
+	}{{front.X + front.W, near.X + near.W, 8}, {near.X + near.W, far.X + far.W, 9}} {
+		x := (c.x0 + c.x1) / 2
+		if c.x0 >= c.x1 {
+			t.Fatalf("no strip for %d: front %v near %v far %v", c.want, front, near, far)
+		}
+		if got := overviewIn(ps, float64(x), float64(centreY(far))); got != c.want {
+			t.Fatalf("strip at x=%d hits %d, want %d", x, got, c.want)
+		}
+	}
 	m.OverviewPick(9)
 	if m.ov.open || focusedID(m) != 9 || !w.Columns[w.Focus].FullWidth || w.Columns[w.columnOf(7)].FullWidth {
 		t.Fatalf("pick: open %v, focus %d, maximization not moved", m.ov.open, focusedID(m))

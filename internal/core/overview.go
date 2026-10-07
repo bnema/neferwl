@@ -596,16 +596,18 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	} else if item, ok := w.itemOf(id); ok {
 		m.setFront(w, item)
 		if i := w.columnOf(id); i >= 0 {
-			if item.kind == stackColumns && !w.overviewMaximized() {
-				w.selectOverviewColumn(i)
-			}
-			m.ov.selected = id
+			// The clicked window first: a maximization moving to its
+			// column records it in the maximize history.
 			for j, v := range w.Columns[i].Windows {
 				if v == id {
 					w.Columns[i].Focus = j
 					break
 				}
 			}
+			if item.kind == stackColumns && !w.overviewMaximized() {
+				w.selectOverviewColumn(i)
+			}
+			m.ov.selected = id
 		}
 	}
 	m.closeOverview()
@@ -996,7 +998,11 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 			r.Y = g + w.band(i)*w.Usable.H
 			r.W = w.cellWidth()
 			if c.FullWidth {
-				in := w.bandCardsInset(i)
+				in := 0
+				if i == w.Focus {
+					// Only the focused column has cards behind it.
+					in = w.bandCardsInset(i)
+				}
 				r.X, r.W = g+in, max(w.Usable.W-2*g-2*in, 0)
 			}
 		} else if w.Overflow == OverflowFixed {
