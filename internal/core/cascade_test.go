@@ -14,15 +14,19 @@ func cascadeWorkspace(n int) *Workspace {
 	return w
 }
 
+// Each band's columns share its width equally, as in fixed overflow: a
+// lone column fills it, a full band of three has thirds.
 func TestCascadeBandsAndReveal(t *testing.T) {
-	for _, n := range []int{0, 1, 3, 4, 7} {
+	for _, n := range []int{0, 1, 2, 3, 4, 5, 7} {
 		w := cascadeWorkspace(n)
 		ps := w.Layout()
 		if len(ps) != n {
 			t.Fatalf("n=%d placements=%d", n, len(ps))
 		}
 		for i, p := range ps {
-			want := Rect{X: i % 3 * 300, Y: (i/3)*600 - w.View, W: 300, H: 600}
+			inBand := min(n-i/3*3, 3)
+			cell := 900 / inBand
+			want := Rect{X: i % 3 * cell, Y: (i/3)*600 - w.View, W: cell, H: 600}
 			if p.Rect != want {
 				t.Fatalf("n=%d window=%d rect=%v want=%v", n, p.ID, p.Rect, want)
 			}

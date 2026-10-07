@@ -996,7 +996,7 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 			// the cards it hides.
 			r.X = w.cellX(i)
 			r.Y = g + w.band(i)*w.Usable.H
-			r.W = w.cellWidth()
+			r.W = w.cellWidth(i)
 			if c.FullWidth {
 				in := 0
 				if i == w.Focus {
@@ -1061,7 +1061,7 @@ func (w *Workspace) bandCardsInset(i int) int {
 // (on the band's edge), like the cards of a stack.
 func (w *Workspace) appendBandCard(tiles []Placement, i int) []Placement {
 	g, s, c := w.gap(), w.bandCardStep(), w.Columns[i]
-	r := Rect{Y: g + w.band(i)*w.Usable.H, W: w.cellWidth(), H: max(w.Usable.H-2*g, 0)}
+	r := Rect{Y: g + w.band(i)*w.Usable.H, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
 	k := min(max(i-w.Focus, w.Focus-i), 2)
 	if i < w.Focus {
 		r.X = g + (2-k)*s

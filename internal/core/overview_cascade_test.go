@@ -107,7 +107,7 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 				order = append(order, i)
 			}
 			band := i / 3
-			want := Rect{X: w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(), H: h}
+			want := Rect{X: w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(i), H: h}
 			switch k := tc.cards[i]; {
 			case i == tc.max:
 				want.X, want.W = g+in, w.Usable.W-2*g-2*in

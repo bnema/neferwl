@@ -1390,7 +1390,7 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 	g := w.gap()
 	// Fixed overflow never scrolls, so presets would push columns off screen.
 	if w.policy().wraps {
-		return w.cellWidth()
+		return w.cellWidth(i)
 	}
 	if w.Columns[i].Width == (Width{}) || w.policy().equalCells {
 		if len(w.Columns) == 1 {

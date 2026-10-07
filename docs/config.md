@@ -190,7 +190,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 ### Cascade
 
-Set `layout.overflow = cascade` globally, per output, or on a named workspace. Columns fill equal-width cells, up to `max-columns` per band, then continue in a fresh band below. Incomplete bands keep empty cells. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
+Set `layout.overflow = cascade` globally, per output, or on a named workspace. Columns fill bands of up to `max-columns`, then continue in a fresh band below. The columns of a band share its width equally, as in `fixed` overflow: a lone column takes the full width until another joins its band. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
 
 Left/right focus follows column order across band boundaries. Up/down visits stacked windows first, then the closest column in the adjacent band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
 
