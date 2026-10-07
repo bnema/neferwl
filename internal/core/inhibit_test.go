@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
@@ -30,7 +31,9 @@ func commandOf[T ports.ClientCommand](t *testing.T, commands <-chan ports.Client
 
 // A focused window inhibiting shortcuts gets bound keys; it stops when
 // it loses focus, and binds run again.
-func TestShortcutsInhibit(t *testing.T) {
+func TestShortcutsInhibit(t *testing.T) { synctest.Test(t, shortcutsInhibit) }
+
+func shortcutsInhibit(t *testing.T) {
 	cfg := config.Defaults()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 4)
@@ -60,10 +63,11 @@ func TestShortcutsInhibit(t *testing.T) {
 	if v := commandOf[ports.ForwardKey](t, commands); v != (ports.ForwardKey{ID: 1, Key: bound}) {
 		t.Fatal(v)
 	}
+	synctest.Wait()
 	select {
 	case r := <-spawn:
 		t.Fatalf("bind ran: %v", r)
-	case <-time.After(30 * time.Millisecond):
+	default:
 	}
 	// A new window takes focus: the inhibitor goes inactive, binds run.
 	client <- ports.WindowMapped{ID: 2}

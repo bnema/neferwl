@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -13,7 +13,9 @@ import (
 
 // A scene with Off turns the CRTC inactive and draws nothing; the next
 // scene without Off modesets (ACTIVE=1) and draws a frame.
-func TestRunOutputPower(t *testing.T) {
+func TestRunOutputPower(t *testing.T) { synctest.Test(t, runOutputPower) }
+
+func runOutputPower(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.tearing, o.cursor = false, nil
 	flips := make(chan flipEvent, 1)
@@ -79,7 +81,7 @@ func TestRunOutputPower(t *testing.T) {
 		<-renders
 	}
 	scenes <- off
-	time.Sleep(20 * time.Millisecond)
+	synctest.Wait()
 	select {
 	case <-renders:
 		t.Fatal("rendered while off")
@@ -93,7 +95,7 @@ func TestRunOutputPower(t *testing.T) {
 	vt <- false
 	vt <- true
 	waitFor(t, func() bool { return len(snapshot()) > n })
-	time.Sleep(20 * time.Millisecond)
+	synctest.Wait()
 	for _, c := range snapshot()[n:] {
 		if v, ok := active(c); ok && v != 0 && c.flags&atomicTestOnly == 0 {
 			t.Fatal("VT resume turned the display on")
@@ -120,7 +122,9 @@ func TestRunOutputPower(t *testing.T) {
 // An output started off (it reconnected while turned off) never activates
 // its CRTC before a scene turns it on; its tearing probe, refused by an
 // inactive CRTC, waits until then.
-func TestRunOutputStartOff(t *testing.T) {
+func TestRunOutputStartOff(t *testing.T) { synctest.Test(t, runOutputStartOff) }
+
+func runOutputStartOff(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.tearing, o.cursor = true, nil
 	o.StartOff = true
@@ -180,7 +184,7 @@ func TestRunOutputStartOff(t *testing.T) {
 	}
 	off := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1, Off: true}
 	scenes <- off
-	time.Sleep(20 * time.Millisecond)
+	synctest.Wait()
 	if lit(snapshot()) {
 		t.Fatal("a display started off lit up")
 	}

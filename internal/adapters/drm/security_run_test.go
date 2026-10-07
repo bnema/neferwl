@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -13,6 +14,10 @@ import (
 )
 
 func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
+	synctest.Test(t, securityRunWakePendingResumeAndOff)
+}
+
+func securityRunWakePendingResumeAndOff(t *testing.T) {
 	o, k, commits, mu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
 	var state atomic.Uint64
@@ -74,10 +79,11 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 	})
 	state.Store(3)
 	wake <- ports.SecurityState{} // stale payload: read gate, not payload
+	synctest.Wait()
 	select {
 	case ev := <-events:
 		t.Fatalf("proof while old frame pending: %+v", ev)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	flips <- eventOf(frame)
 	proof := func(kind ports.ProtectionKind) {
@@ -98,10 +104,11 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 	}
 	proof(ports.ProtectionProtectedFrame)
 	scenes <- ports.Scene{Seq: 99} // held desktop scene cannot be replayed
+	synctest.Wait()
 	select {
 	case <-desktop:
 		t.Fatal("stale desktop rendered under protection")
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	active <- false
 	select {

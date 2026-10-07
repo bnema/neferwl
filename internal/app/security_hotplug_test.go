@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/wayland/sessionlock"
@@ -185,6 +186,10 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 }
 
 func TestSecurityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
+	synctest.Test(t, securityOwnerFIFOSaturationDrainsOnNormalStop)
+}
+
+func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent) // block display after registration
@@ -235,10 +240,11 @@ func TestSecurityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 			t.Fatal("FIFO failed to fill")
 		}
 	}
+	synctest.Wait()
 	select {
 	case got := <-accepted:
 		t.Fatalf("full FIFO did not backpressure owner: %d", got)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	var ledger sessionlock.Readiness
 	ledger.Add(registered.Instance)
@@ -330,6 +336,10 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 }
 
 func TestSecurityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
+	synctest.Test(t, securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders)
+}
+
+func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent)
@@ -364,10 +374,11 @@ func TestSecurityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.
 			t.Fatal("FIFO never filled")
 		}
 	}
+	synctest.Wait()
 	select {
 	case <-accepted:
 		t.Fatal("producer did not block at finite FIFO")
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- set.wait() }()

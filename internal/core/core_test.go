@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/config"
@@ -519,9 +520,13 @@ func workspaceSwitch(t *testing.T, animated bool) {
 	}
 }
 
-func TestClickAfterWorkspaceSwitch(t *testing.T) { clickAfterWorkspaceSwitch(t, false) }
+func TestClickAfterWorkspaceSwitch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) { clickAfterWorkspaceSwitch(t, false) })
+}
 
-func TestClickAfterWorkspaceSwitchAnimated(t *testing.T) { clickAfterWorkspaceSwitch(t, true) }
+func TestClickAfterWorkspaceSwitchAnimated(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) { clickAfterWorkspaceSwitch(t, true) })
+}
 
 func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	cfg := config.Defaults()
@@ -551,8 +556,9 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	client <- ports.WindowMapped{ID: 1}
 	scene(t, scenes)
 	input <- ports.PointerMotion{X: 50, Y: 40}
-	for len(commands) < 3 {
-		time.Sleep(time.Millisecond)
+	synctest.Wait()
+	if len(commands) < 3 {
+		t.Fatalf("%d commands after pointer motion, want at least 3", len(commands))
 	}
 	for len(commands) > 0 {
 		<-commands

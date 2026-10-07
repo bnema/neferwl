@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -373,6 +374,10 @@ func TestShowImagesSkipsSinglePlaneWhenDriverImagesHadOnePlane(t *testing.T) {
 // Enabling an output whose images were not made yet (started switched
 // away) tests them and modesets once.
 func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
+	synctest.Test(t, enableAfterStartAwayModesetsOnce)
+}
+
+func enableAfterStartAwayModesetsOnce(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing, o.fbs = nil, false, [2]uint32{}
 	r := portsmocks.NewMockRenderer(t)
@@ -408,7 +413,7 @@ func TestEnableAfterStartAwayModesetsOnce(t *testing.T) {
 		}
 		return n
 	}
-	time.Sleep(20 * time.Millisecond)
+	synctest.Wait()
 	if n := count(atomicAllowModes); n != 0 {
 		t.Fatalf("%d modesets while away", n)
 	}
@@ -470,6 +475,10 @@ func TestCursorOffSkipsLoads(t *testing.T) {
 // Content read while only a cursor commit is in flight is reported when
 // that commit's event arrives, not held until a later frame.
 func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
+	synctest.Test(t, runReportsSeenAfterCursorCommit)
+}
+
+func runReportsSeenAfterCursorCommit(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.tearing, o.cursor.fbs = false, [2]uint32{}
 	flips := make(chan flipEvent, 1)
@@ -524,7 +533,7 @@ func TestRunReportsSeenAfterCursorCommit(t *testing.T) {
 	waitFor(t, func() bool { var ok bool; cur, ok = last(userState); return ok })
 	// A window this output does not show commits while the cursor flies.
 	contents <- ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}}
-	time.Sleep(20 * time.Millisecond)
+	synctest.Wait()
 	flips <- eventOf(cur)
 	select {
 	case p := <-presented:

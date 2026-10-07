@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/presented"
@@ -552,7 +553,9 @@ func TestBufferRefusedIsNotBlamedOnVRR(t *testing.T) {
 // Run: while a frame is in flight its buffers may still be read by the
 // GPU, so a newer content is reported only after the flip event; every
 // frame fence is closed.
-func TestRunReportsSeenAfterFlip(t *testing.T) {
+func TestRunReportsSeenAfterFlip(t *testing.T) { synctest.Test(t, runReportsSeenAfterFlip) }
+
+func runReportsSeenAfterFlip(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
 	flips := make(chan flipEvent, 1)
@@ -605,10 +608,11 @@ func TestRunReportsSeenAfterFlip(t *testing.T) {
 	waitFor(t, func() bool { return frameCommits() == 1 })
 	// Frame 1 is in flight: content 3 replaces what it may be reading.
 	contents <- ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{}}
+	synctest.Wait()
 	select {
 	case p := <-presented:
 		t.Fatalf("report while a frame is in flight: %+v", p)
-	case <-time.After(30 * time.Millisecond):
+	default:
 	}
 	commitMu.Lock()
 	last := (*commits)[len(*commits)-1]
