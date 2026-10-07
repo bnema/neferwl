@@ -970,14 +970,18 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
-	maximized := w.Overflow == OverflowFixed && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
+	maximized := w.policy().equalCells && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
 		if w.policy().wraps {
 			// The band is the lane: it is encoded in Y, one screen apart.
+			// A maximized column fills its band as on screen.
 			r.X = w.cellX(i)
 			r.Y = g + w.band(i)*w.Usable.H
 			r.W = w.cellWidth()
+			if c.FullWidth {
+				r.X, r.W = g, max(w.Usable.W-2*g, 0)
+			}
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
 			r.X, r.Y = r.X-w.Usable.X, r.Y-w.Usable.Y
@@ -985,10 +989,10 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 			// A fullscreen column shows at the width it had in the row.
 			r.W = max(w.Usable.W-2*g, 0)
 		}
-		if maximized && i != w.Focus {
-			// FullWidth hides other columns on screen. Their old buffers
-			// cannot fit their current spiral rects; show only the maximized
-			// column until navigation restores the normal layout.
+		if maximized && i != w.Focus && w.sameBand(i, w.Focus) {
+			// FullWidth hides the other columns of its band on screen.
+			// Their old buffers cannot fit their current rects; show only
+			// the maximized column until navigation restores the layout.
 			for _, id := range c.Windows {
 				tiles = append(tiles, Placement{ID: id, Hidden: true})
 			}

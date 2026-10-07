@@ -75,6 +75,42 @@ func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	}
 }
 
+// A maximized column fills its band in the preview as on screen, and hides
+// only the other columns of its band.
+func TestOverviewCascadeMaximizedColumnFillsBand(t *testing.T) {
+	// Four columns, three per band: band 0 holds 0..2, band 1 holds 3.
+	for _, tc := range []struct {
+		n, max int
+		hidden []bool
+	}{
+		{n: 1, max: 0, hidden: []bool{false}},
+		{n: 4, max: 0, hidden: []bool{false, true, true, false}},
+		{n: 4, max: 3, hidden: []bool{false, false, false, false}},
+	} {
+		w := cascadeWorkspace(tc.n)
+		w.Focus = tc.max
+		w.maximize(tc.max)
+		tiles, _, _ := w.previewTiles()
+		g, h := w.gap(), w.Usable.H-2*w.gap()
+		for i, p := range tiles {
+			if p.Hidden != tc.hidden[i] {
+				t.Fatalf("n=%d max=%d column %d hidden %v, want %v", tc.n, tc.max, i, p.Hidden, tc.hidden[i])
+			}
+			if p.Hidden {
+				continue
+			}
+			band := i / 3
+			want := Rect{X: w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(), H: h}
+			if i == tc.max {
+				want.X, want.W = g, w.Usable.W-2*g
+			}
+			if p.Rect != want {
+				t.Fatalf("n=%d max=%d column %d rect %+v, want %+v", tc.n, tc.max, i, p.Rect, want)
+			}
+		}
+	}
+}
+
 // T2: the selected band is the centre lane: undimmed, centred, selected tile
 // focused.
 func TestOverviewCascadeCentreLane(t *testing.T) {
