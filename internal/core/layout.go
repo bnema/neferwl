@@ -122,7 +122,7 @@ type Placement struct {
 	// Preview is the scale of an overview preview: its buffer is drawn
 	// that much smaller in Rect, the client keeps its size. 0 otherwise.
 	Preview float64
-	// Neighbors are the sides touching a visible tile on this output.
+	// Neighbors are the sides touching a tile visible in the usable area.
 	// Inset reserves room for drawn lines: all sides of a float; for
 	// tiles without gaps, only the right and bottom shared sides.
 	Neighbors, Inset ports.Sides
@@ -1715,11 +1715,11 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 }
 
 // setVisibleNeighbors reserves client space only for shared lines that
-// are actually on this output. A scrolled-off or hidden tile cannot give a
-// lone visible tile a border (or shrink its client).
-func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
+// are actually in the usable area. A scrolled-off, hidden or under-panel
+// tile cannot give a lone visible tile a border (or shrink its client).
+func setVisibleNeighbors(tiles []Placement, gap int, area Rect) {
 	visible := func(p Placement) bool {
-		return !p.Hidden && !p.Fullscreen && p.Rect.Overlaps(output)
+		return !p.Hidden && !p.Fullscreen && p.Rect.Overlaps(area)
 	}
 	overlap := func(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
 	for i := range tiles {
@@ -1733,15 +1733,15 @@ func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
 				continue
 			}
 			b, r := tiles[j].Rect, a.Rect
-			// Only count a shared edge strictly within this output.
+			// Only count a shared edge strictly within the area.
 			switch {
-			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > output.X && r.X+r.W < output.X+output.W:
+			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > area.X && r.X+r.W < area.X+area.W:
 				a.Neighbors |= ports.SideRight
-			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > output.X && r.X < output.X+output.W:
+			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > area.X && r.X < area.X+area.W:
 				a.Neighbors |= ports.SideLeft
-			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > output.Y && r.Y+r.H < output.Y+output.H:
+			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > area.Y && r.Y+r.H < area.Y+area.H:
 				a.Neighbors |= ports.SideBottom
-			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > output.Y && r.Y < output.Y+output.H:
+			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > area.Y && r.Y < area.Y+area.H:
 				a.Neighbors |= ports.SideTop
 			}
 		}

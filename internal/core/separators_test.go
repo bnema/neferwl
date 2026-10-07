@@ -166,8 +166,15 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	if got := colorAt(seps, 200, 578); got != "" {
 		t.Fatalf("line along the panel: %v", seps)
 	}
+	// Two tiles on screen: each lights its half of the shared line.
 	if got := colorAt(seps, 449, 100); got != "lit" {
 		t.Fatalf("shared line (449,100) = %q; %v", got, seps)
+	}
+	if got := colorAt(seps, 449, 400); got != "gray" {
+		t.Fatalf("shared line (449,400) = %q; %v", got, seps)
+	}
+	if n := visibleCount(ps, w.Usable); n != 2 {
+		t.Fatalf("visible in the usable area: %d, want 2", n)
 	}
 }
 

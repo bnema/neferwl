@@ -54,7 +54,9 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 		if p.Fullscreen || !(onScreen(*p, o) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
 			continue
 		}
-		if !p.Floating {
+		// Tiles sharing a line: Neighbors only counts tiles visible in
+		// the usable area, not those under a panel.
+		if !p.Floating && p.Neighbors != 0 {
 			tiles++
 		}
 		for _, s := range sides {
