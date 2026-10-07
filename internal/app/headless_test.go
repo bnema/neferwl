@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,11 +42,12 @@ func TestVirtualRendererExportsHDRTargets(t *testing.T) {
 	}
 }
 
-// A failed assembly returns an error and releases what it acquired: without
-// a runtime directory wayland.New, the last fallible step, fails.
+// A failed assembly returns its error and no session: without a runtime
+// directory wayland.New, the last fallible step, fails.
 func TestAssembleSessionFailure(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "")
-	s, err := assembleSession(t.Context(), Options{Backend: "headless", Config: config.Defaults(), NoXwayland: true})
+	allowPath := filepath.Join(t.TempDir(), "capture-allow")
+	s, err := assembleSession(t.Context(), Options{Backend: "headless", Config: config.Defaults(), NoXwayland: true, captureAllowPath: allowPath, captureAllowOwner: uint32(os.Getuid())})
 	if err == nil || !strings.Contains(err.Error(), "XDG_RUNTIME_DIR") {
 		t.Fatalf("expected runtime directory failure, got %v", err)
 	}
