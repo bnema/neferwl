@@ -5,7 +5,7 @@ import "slices"
 func (w *Workspace) band(i int) int         { return i / max(w.MaxColumns, 1) }
 func (w *Workspace) sameBand(a, b int) bool { return !w.policy().wraps || w.band(a) == w.band(b) }
 func (w *Workspace) cellX(i int) int {
-	return w.gap() + (i%max(w.MaxColumns, 1))*(w.cellWidth()+w.gap())
+	return w.gap() + (i%max(w.MaxColumns, 1))*(w.cellWidth(i)+w.gap())
 }
 func (w *Workspace) cascadeBands() (n, spacing int) {
 	if len(w.Columns) == 0 || w.Usable.H <= 0 {
@@ -13,8 +13,19 @@ func (w *Workspace) cascadeBands() (n, spacing int) {
 	}
 	return w.band(len(w.Columns)-1) + 1, w.Usable.H
 }
-func (w *Workspace) cellWidth() int {
-	k := max(w.MaxColumns, 1)
+
+// cellWidth is the width of the cell of column i: the columns of its band
+// share the usable width equally, as in fixed overflow, so a lone column
+// fills it.
+func (w *Workspace) cellWidth(i int) int {
+	first, last := w.laneBounds(w.band(i))
+	return w.equalShare(last - first + 1)
+}
+
+// equalShare is the width of each of k columns sharing the usable width
+// after gaps; a remainder under k pixels stays empty.
+func (w *Workspace) equalShare(k int) int {
+	k = max(k, 1)
 	return max((w.Usable.W-w.gap()*(k+1))/k, 0)
 }
 func (w *Workspace) cellInBand(b int) int {
@@ -38,11 +49,10 @@ func (w *Workspace) focusBand(dir int) bool {
 }
 func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 	g := w.gap()
-	width := w.cellWidth()
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.View + w.shiftPixels()
 	for i := range w.Columns {
-		r := Rect{X: w.Usable.X + w.cellX(i), Y: w.Usable.Y + g + w.band(i)*w.Usable.H - view, W: width, H: max(w.Usable.H-2*g, 0)}
+		r := Rect{X: w.Usable.X + w.cellX(i), Y: w.Usable.Y + g + w.band(i)*w.Usable.H - view, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
 		if w.Columns[i].FullWidth && !ignoreFullWidth {
 			r.X = w.Usable.X + g
 			r.W = max(w.Usable.W-2*g, 0)

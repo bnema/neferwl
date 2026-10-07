@@ -632,7 +632,8 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
 		}
 		// A window alone on screen needs no pulse to show it has the focus.
-		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, frame) == 1
+		// A tile under a panel (the next cascade band) does not count.
+		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, sc.mon.Current().Usable) == 1
 		for k, p := range layout {
 			ps := settled[k]
 			// Only the focused output has an activated window.

@@ -8,10 +8,11 @@ import "github.com/bnema/neferwl/internal/ports"
 // sides of the focused tile, including corners. With exactly two visible
 // tiles and no gaps, each lights its own half of the shared line (left/top
 // first). With gaps, each tile owns its neighbor-facing lines and lights
-// them whole. Hidden, scrolled-off, other-workspace and other-output tiles
-// do not count. Lines at output edges are omitted. Floating windows differ
-// from tmux tiles: each gets its own full border, drawn with that window
-// (Separator.Window), even when it is the only visible window. Only the
+// them whole. Hidden, scrolled-off, under-panel, other-workspace and
+// other-output tiles do not count, nor do tiles that share no line. Lines
+// at the edges of the usable area (output or panels) are omitted. Floating windows differ from tmux tiles:
+// each gets its own full border, drawn with that window (Separator.Window),
+// even when it is the only visible window. Only the
 // focused output's focused window can light lines; keyboard grabs by popups
 // and layers do not change the underlying window's visual focus.
 
@@ -54,7 +55,9 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 		if p.Fullscreen || !(onScreen(*p, o) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
 			continue
 		}
-		if !p.Floating {
+		// Tiles sharing a line: Neighbors only counts tiles visible in
+		// the usable area, not those under a panel.
+		if !p.Floating && p.Neighbors != 0 {
 			tiles++
 		}
 		for _, s := range sides {

@@ -450,8 +450,12 @@ func (m *Monitor) overviewAcross(dx int) {
 		m.ov.card, m.ov.cardOf = 0, nil
 		m.ov.selected = 0
 		if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
-			first, _ := w.laneBounds(w.laneOf(w.Focus))
-			m.selectLaneColumn(w, first)
+			// The front column: a maximized one keeps its cards behind.
+			i := w.Focus
+			if !w.hasBandCards() {
+				i, _ = w.laneBounds(w.laneOf(w.Focus))
+			}
+			m.selectLaneColumn(w, i)
 		}
 		return
 	}
@@ -596,16 +600,18 @@ func (m *Monitor) OverviewPick(id WindowID) {
 	} else if item, ok := w.itemOf(id); ok {
 		m.setFront(w, item)
 		if i := w.columnOf(id); i >= 0 {
-			if item.kind == stackColumns && !w.overviewMaximized() {
-				w.selectOverviewColumn(i)
-			}
-			m.ov.selected = id
+			// The clicked window first: a maximization moving to its
+			// column records it in the maximize history.
 			for j, v := range w.Columns[i].Windows {
 				if v == id {
 					w.Columns[i].Focus = j
 					break
 				}
 			}
+			if item.kind == stackColumns && !w.overviewMaximized() {
+				w.selectOverviewColumn(i)
+			}
+			m.ov.selected = id
 		}
 	}
 	m.closeOverview()
@@ -970,17 +976,38 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
-	maximized := w.policy().equalCells && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth
+	if w.hasBandCards() {
+		// The columns the maximized one hides are cards behind it,
+		// farthest first so the nearest paint over them.
+		first, last := w.laneBounds(w.laneOf(w.Focus))
+		for d := last - first; d > 0; d-- {
+			if i := w.Focus - d; i >= first {
+				tiles = w.appendBandCard(tiles, i)
+			}
+			if i := w.Focus + d; i <= last {
+				tiles = w.appendBandCard(tiles, i)
+			}
+		}
+	}
 	for i, c := range w.Columns {
 		r := Rect{X: w.columnX(i) - w.Usable.X, Y: g, W: w.columnWidth(i), H: h}
 		if w.policy().wraps {
+			if w.hiddenByMaximized(i) {
+				continue // A card, above.
+			}
 			// The band is the lane: it is encoded in Y, one screen apart.
-			// A maximized column fills its band as on screen.
+			// A maximized column fills its band as on screen, inset for
+			// the cards it hides.
 			r.X = w.cellX(i)
 			r.Y = g + w.band(i)*w.Usable.H
-			r.W = w.cellWidth()
+			r.W = w.cellWidth(i)
 			if c.FullWidth {
-				r.X, r.W = g, max(w.Usable.W-2*g, 0)
+				in := 0
+				if i == w.Focus && w.hasBandCards() {
+					// Only the focused column has cards behind it.
+					in = 2 * w.bandCardStep()
+				}
+				r.X, r.W = g+in, max(w.Usable.W-2*g-2*in, 0)
 			}
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
@@ -989,10 +1016,10 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 			// A fullscreen column shows at the width it had in the row.
 			r.W = max(w.Usable.W-2*g, 0)
 		}
-		if maximized && i != w.Focus && w.sameBand(i, w.Focus) {
-			// FullWidth hides the other columns of its band on screen.
-			// Their old buffers cannot fit their current rects; show only
-			// the maximized column until navigation restores the layout.
+		if w.hiddenByMaximized(i) {
+			// Fixed overflow shows the hidden columns on their own card
+			// (previewItem). Their old buffers cannot fit their current
+			// rects; show only the maximized column here.
 			for _, id := range c.Windows {
 				tiles = append(tiles, Placement{ID: id, Hidden: true})
 			}
@@ -1013,6 +1040,46 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		span = w.Usable.W
 	}
 	return tiles, span, sel
+}
+
+// bandCardStep is the unscaled step between the cards of a cascade band
+// whose maximized column hides the others: the stack peek step.
+func (w *Workspace) bandCardStep() int {
+	return max(1, int(math.Round(float64(w.Usable.H)*overviewPeekStep)))
+}
+
+// hasBandCards reports whether the focused column of a cascade is
+// maximized and hides other columns of its band: the overview shows them
+// as cards behind it, the maximized column inset by two card steps on
+// each side.
+func (w *Workspace) hasBandCards() bool {
+	if !w.policy().wraps || w.Focus < 0 || w.Focus >= len(w.Columns) || !w.Columns[w.Focus].FullWidth {
+		return false
+	}
+	first, last := w.laneBounds(w.laneOf(w.Focus))
+	return first < last
+}
+
+// appendBandCard appends hidden column i of a cascade band as a dimmed card
+// at its cell size behind the maximized column, on its side: the nearest
+// column one step out from the maximized one, the next ones two steps out
+// (on the band's edge), like the cards of a stack.
+func (w *Workspace) appendBandCard(tiles []Placement, i int) []Placement {
+	g, s, c := w.gap(), w.bandCardStep(), w.Columns[i]
+	r := Rect{Y: g + w.band(i)*w.Usable.H, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
+	k := min(max(i-w.Focus, w.Focus-i), 2)
+	if i < w.Focus {
+		r.X = g + (2-k)*s
+	} else {
+		r.X = w.Usable.W - g - (2-k)*s - r.W
+	}
+	w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
+	for j, t := range w.rowBuf {
+		p := Placement{ID: c.Windows[j], Rect: t}
+		p.peeking(1)
+		tiles = append(tiles, p)
+	}
+	return tiles
 }
 
 // previewRow scales the tiles of w into a row placed in slot, centred
@@ -1284,8 +1351,14 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		case math.Abs(m.ov.scrollX) >= stepX:
 			d := sign(m.ov.scrollX)
 			if cascade && finger {
-				// One workspace per gesture, even over a stash card.
-				m.overviewStep(d)
+				// One step per gesture: a card behind a maximized
+				// column first, like the arrows, else one workspace,
+				// even over a stash card.
+				if m.bandCardsAt(m.Current()) {
+					m.OverviewMove(d, 0)
+				} else {
+					m.overviewStep(d)
+				}
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 				return true
 			}
@@ -1303,6 +1376,12 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		}
 		changed = true
 	}
+}
+
+// bandCardsAt reports whether the selection of w is a maximized cascade
+// column hiding cards of its band: not a stash card nor a covering float.
+func (m *Monitor) bandCardsAt(w *Workspace) bool {
+	return m.cardAt(w) < 0 && w.hasBandCards() && m.stackFront(w).kind == stackColumns
 }
 
 // overviewTurned reports whether a scroll step turned the overview from the

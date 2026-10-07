@@ -15,7 +15,7 @@ import (
 // the window that pulsed last does not pulse again within pulseCooldown
 // (switching back after another window held the focus is a new change).
 // Fast switching therefore shows nothing. Fullscreen windows, a window alone
-// on screen (e.g. a maximized column), overview previews, a window focused as
+// in the usable area (e.g. a maximized column), overview previews, a window focused as
 // it maps and a protected session never pulse.
 
 const (
@@ -151,11 +151,11 @@ func (m *Monitor) settled() bool {
 	return true
 }
 
-// visibleCount is the number of windows of layout shown in frame.
-func visibleCount(layout []Placement, frame Rect) int {
+// visibleCount is the number of windows of layout shown in area.
+func visibleCount(layout []Placement, area Rect) int {
 	n := 0
 	for _, p := range layout {
-		if p.Preview == 0 && onScreen(p, frame) {
+		if p.Preview == 0 && onScreen(p, area) {
 			n++
 		}
 	}

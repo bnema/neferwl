@@ -122,7 +122,7 @@ type Placement struct {
 	// Preview is the scale of an overview preview: its buffer is drawn
 	// that much smaller in Rect, the client keeps its size. 0 otherwise.
 	Preview float64
-	// Neighbors are the sides touching a visible tile on this output.
+	// Neighbors are the sides touching a tile visible in the usable area.
 	// Inset reserves room for drawn lines: all sides of a float; for
 	// tiles without gaps, only the right and bottom shared sides.
 	Neighbors, Inset ports.Sides
@@ -1052,6 +1052,13 @@ func (w *Workspace) maximize(i int) {
 	}
 }
 
+// hiddenByMaximized reports whether the maximized focused column hides
+// column i on screen: in equal-cell layouts it hides the other columns of
+// its band (the whole row in fixed overflow).
+func (w *Workspace) hiddenByMaximized(i int) bool {
+	return w.policy().equalCells && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
+}
+
 // unmaximize clears the focused column in scroll mode, or all maximized
 // columns in fixed mode (including after Escape changed focus).
 func (w *Workspace) unmaximize() {
@@ -1383,15 +1390,10 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 	g := w.gap()
 	// Fixed overflow never scrolls, so presets would push columns off screen.
 	if w.policy().wraps {
-		return w.cellWidth()
+		return w.cellWidth(i)
 	}
 	if w.Columns[i].Width == (Width{}) || w.policy().equalCells {
-		if len(w.Columns) == 1 {
-			return max(w.Usable.W-2*g, 0)
-		}
-		// Equal shares of the width left after gaps; a remainder under k pixels stays empty.
-		k := min(len(w.Columns), max(w.MaxColumns, 1))
-		return max((w.Usable.W-g*(k+1))/k, 0)
+		return w.equalShare(min(len(w.Columns), max(w.MaxColumns, 1)))
 	}
 	return w.Columns[i].Width.Resolve(w.Usable.W, g)
 }
@@ -1485,7 +1487,7 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 // right; the two strips share the last cell.
 func (w *Workspace) expandedRects(rects []Rect, e, k, y, h int) []Rect {
 	g := w.gap()
-	cell := max((w.Usable.W-g*(k+1))/k, 0)
+	cell := w.equalShare(k)
 	wide := (k-1)*cell + (k-2)*g
 	rest := max(w.Usable.W-2*g-wide-g, 0)
 	before, after := w.Columns[:e], w.Columns[e+1:]
@@ -1637,8 +1639,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			full := w.fullscreen == id && id != 0
 			// Fixed overflow cannot scroll to other columns while one fills
 			// the view. Keep them in place, but out of the scene.
-			maximized := w.policy().equalCells && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
-			hidden := (cover != 0 && id != cover) || ((fullColumn || w.policy().equalCells && w.fullscreen != 0) && !full) || maximized
+			hidden := (cover != 0 && id != cover) || ((fullColumn || w.policy().equalCells && w.fullscreen != 0) && !full) || w.hiddenByMaximized(i)
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = w.Output
@@ -1652,7 +1653,9 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			tiles = append(tiles, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
 		}
 	}
-	setVisibleNeighbors(tiles, gap, w.Output)
+	// Lines are shared within the usable area: a tile under a panel (the
+	// next cascade band starts right below a bottom one) is no neighbor.
+	setVisibleNeighbors(tiles, gap, w.Usable)
 	// tiles lives in the workspace's scratch until they are copied below.
 	w.tileBuf = tiles
 	// The column/stash group sits between demoted covering floats and
@@ -1707,11 +1710,11 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 }
 
 // setVisibleNeighbors reserves client space only for shared lines that
-// are actually on this output. A scrolled-off or hidden tile cannot give a
-// lone visible tile a border (or shrink its client).
-func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
+// are actually in the usable area. A scrolled-off, hidden or under-panel
+// tile cannot give a lone visible tile a border (or shrink its client).
+func setVisibleNeighbors(tiles []Placement, gap int, area Rect) {
 	visible := func(p Placement) bool {
-		return !p.Hidden && !p.Fullscreen && p.Rect.Overlaps(output)
+		return !p.Hidden && !p.Fullscreen && p.Rect.Overlaps(area)
 	}
 	overlap := func(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
 	for i := range tiles {
@@ -1725,15 +1728,15 @@ func setVisibleNeighbors(tiles []Placement, gap int, output Rect) {
 				continue
 			}
 			b, r := tiles[j].Rect, a.Rect
-			// Only count a shared edge strictly within this output.
+			// Only count a shared edge strictly within the area.
 			switch {
-			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > output.X && r.X+r.W < output.X+output.W:
+			case r.X+r.W+gap == b.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X+r.W > area.X && r.X+r.W < area.X+area.W:
 				a.Neighbors |= ports.SideRight
-			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > output.X && r.X < output.X+output.W:
+			case b.X+b.W+gap == r.X && overlap(r.Y, r.Y+r.H, b.Y, b.Y+b.H) && r.X > area.X && r.X < area.X+area.W:
 				a.Neighbors |= ports.SideLeft
-			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > output.Y && r.Y+r.H < output.Y+output.H:
+			case r.Y+r.H+gap == b.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y+r.H > area.Y && r.Y+r.H < area.Y+area.H:
 				a.Neighbors |= ports.SideBottom
-			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > output.Y && r.Y < output.Y+output.H:
+			case b.Y+b.H+gap == r.Y && overlap(r.X, r.X+r.W, b.X, b.X+b.W) && r.Y > area.Y && r.Y < area.Y+area.H:
 				a.Neighbors |= ports.SideTop
 			}
 		}
