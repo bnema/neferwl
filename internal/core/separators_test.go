@@ -147,6 +147,27 @@ func TestSeparatorsScroll(t *testing.T) {
 	}
 }
 
+// A scroll column scrolled under a side panel is no neighbor: the column
+// next to it in the usable area gets no line on that side.
+// With a gap, the edge the two share lies inside the usable area: only
+// the tile under the panel being out of it keeps the line away.
+func TestSeparatorsScrollUnderSidePanel(t *testing.T) {
+	for _, gap := range []int{0, 8} {
+		ps := []Placement{
+			{ID: 1, Rect: Rect{X: 0, W: 100, H: 600}},
+			{ID: 2, Rect: Rect{X: 100 + gap, W: 400, H: 600}, Focused: true},
+			{ID: 3, Rect: Rect{X: 500 + 2*gap, W: 380, H: 600}},
+		}
+		setVisibleNeighbors(ps, gap, Rect{X: 100, W: 900, H: 600})
+		if ps[0].Neighbors != 0 {
+			t.Fatalf("gap %d: tile under the panel: neighbors %04b, want none", gap, ps[0].Neighbors)
+		}
+		if ps[1].Neighbors != ports.SideRight {
+			t.Fatalf("gap %d: tile at the panel: neighbors %04b, want right only", gap, ps[1].Neighbors)
+		}
+	}
+}
+
 // A cascade band above a bottom panel: the next band starts under the
 // panel, so the focused tile gets no line along the panel, only the one it
 // shares with its band neighbor.

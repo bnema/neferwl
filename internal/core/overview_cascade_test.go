@@ -678,6 +678,77 @@ func TestOverviewCascadeThreeFingerMaximizedCards(t *testing.T) {
 	}
 }
 
+// Left from the first column of a band whose maximized column hides it:
+// the arrows and three fingers walk the cards, then enter the stash, or
+// change workspace without one.
+func TestOverviewCascadeMaximizedLeftEdge(t *testing.T) {
+	for _, stash := range []bool{false, true} {
+		c, m := cascadeCore(t)
+		w := m.Current()
+		if stash {
+			w.AddWindow(40)
+			w.FocusID(40)
+			w.ToggleWindowStash()
+		}
+		w.FocusID(3) // Band {2, 3}: 3 hides 2.
+		w.ToggleFullWidth()
+		m.ToggleOverview()
+		swipe := func() {
+			c.swipeBegin(ports.SwipeBegin{Fingers: 3})
+			for range 4 {
+				c.swipeUpdate(ports.SwipeUpdate{DX: -40})
+			}
+			c.swipeEnd(ports.SwipeEnd{})
+		}
+		swipe()
+		if m.Current() != w || m.overviewTarget() != 2 || !w.Columns[w.Focus].FullWidth {
+			t.Fatalf("stash %v: first swipe: target %d", stash, m.overviewTarget())
+		}
+		swipe()
+		if stash {
+			if m.Current() != w || m.cardAt(w) < 0 {
+				t.Fatalf("past the band: workspace %d, card %d; want the stash", indexOf(m.Workspaces, m.Current()), m.cardAt(w))
+			}
+		} else if m.Current() != m.Workspaces[0] {
+			t.Fatalf("past the band: workspace %d, want 0", indexOf(m.Workspaces, m.Current()))
+		}
+	}
+}
+
+// With four or more columns in a band, the cards three or more columns
+// away sit under the two-step card: arrows still reach every one, in
+// order, each taking the maximization.
+func TestOverviewCascadeFarCardsByArrows(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(1200, 600)
+	m.SetMaxColumns(5)
+	w := m.Current()
+	w.Overflow = OverflowCascade
+	for id := WindowID(1); id <= 5; id++ {
+		m.AddWindow(id)
+	}
+	w.FocusID(1)
+	w.ToggleFullWidth()
+	m.ToggleOverview()
+	ps := m.Layout()
+	edge := previewOf(t, ps, 3).Rect
+	for _, id := range []WindowID{4, 5} {
+		if p := previewOf(t, ps, id); p.Hidden || !p.Peek || p.Rect.X != edge.X {
+			t.Fatalf("far card %d: %+v, want a card under 3 at x %d", id, p, edge.X)
+		}
+	}
+	for _, want := range []WindowID{2, 3, 4, 5} {
+		m.OverviewMove(1, 0)
+		if m.Current() != w || m.overviewTarget() != want || !w.Columns[w.Focus].FullWidth {
+			t.Fatalf("right: target %d, want maximized %d", m.overviewTarget(), want)
+		}
+	}
+	m.CancelOverview()
+	if focusedID(m) != 1 || !w.Columns[w.Focus].FullWidth {
+		t.Fatalf("escape: focus %d, want maximized 1", focusedID(m))
+	}
+}
+
 // Right from a stash card lands on the maximized column, which keeps its
 // maximization, not on the first card of its band.
 func TestOverviewCascadeStashToMaximized(t *testing.T) {

@@ -3,6 +3,8 @@ package core
 import (
 	"slices"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func cascadeWorkspace(n int) *Workspace {
@@ -32,6 +34,57 @@ func TestCascadeBandWidthWithGaps(t *testing.T) {
 		if r.X != x || r.W != cell || w.columnWidth(i) != cell {
 			t.Fatalf("column %d rect %v width %d, want X %d W %d", i, r, w.columnWidth(i), x, cell)
 		}
+	}
+}
+
+// A partial last band after a full one shares the band width with gaps:
+// each band divides by its own column count.
+func TestCascadePartialLastBandWithGaps(t *testing.T) {
+	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 3}
+	w.SetOutput(1000, 600)
+	w.SetGaps(8)
+	for id := WindowID(1); id <= 5; id++ {
+		w.AddWindow(id)
+	}
+	third, half := (1000-4*8)/3, (1000-3*8)/2
+	rects := w.columnRectsFor(false)
+	for i, want := range []struct{ x, w int }{
+		{8, third}, {8 + third + 8, third}, {8 + 2*(third+8), third},
+		{8, half}, {8 + half + 8, half},
+	} {
+		if r := rects[i]; r.X != want.x || r.W != want.w {
+			t.Fatalf("column %d rect %v, want X %d W %d", i, r, want.x, want.w)
+		}
+	}
+	if rects[3].Y-rects[0].Y != 600 {
+		t.Fatalf("band spacing %d, want 600", rects[3].Y-rects[0].Y)
+	}
+}
+
+// A side panel moves and narrows every band: cells start at the usable
+// area's X and share its width.
+func TestCascadeSidePanel(t *testing.T) {
+	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 2}
+	w.SetOutput(1000, 600)
+	w.SetUsable(Rect{X: 100, W: 900, H: 600})
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	rects := w.columnRectsFor(false)
+	for i, want := range []Rect{
+		{X: 100, Y: 0, W: 450, H: 600},
+		{X: 550, Y: 0, W: 450, H: 600},
+		{X: 100, Y: 600, W: 900, H: 600},
+	} {
+		if rects[i].X != want.X || rects[i].W != want.W || rects[i].Y-rects[0].Y != want.Y {
+			t.Fatalf("column %d rect %v, want %v", i, rects[i], want)
+		}
+	}
+	// The panel edge at x=100 is no shared line: column 1 has only its
+	// right neighbor.
+	w.FocusID(1)
+	if p := previewOf(t, w.Layout(), 1); p.Neighbors != ports.SideRight {
+		t.Fatalf("neighbors %04b, want right only", p.Neighbors)
 	}
 }
 
