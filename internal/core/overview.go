@@ -450,8 +450,12 @@ func (m *Monitor) overviewAcross(dx int) {
 		m.ov.card, m.ov.cardOf = 0, nil
 		m.ov.selected = 0
 		if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
-			first, _ := w.laneBounds(w.laneOf(w.Focus))
-			m.selectLaneColumn(w, first)
+			// The front column: a maximized one keeps its cards behind.
+			i := w.Focus
+			if !w.hasBandCards() {
+				i, _ = w.laneBounds(w.laneOf(w.Focus))
+			}
+			m.selectLaneColumn(w, i)
 		}
 		return
 	}
@@ -972,7 +976,7 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
-	if w.policy().wraps && len(w.Columns) > 0 && w.Columns[w.Focus].FullWidth {
+	if w.hasBandCards() {
 		// The columns the maximized one hides are cards behind it,
 		// farthest first so the nearest paint over them.
 		first, last := w.laneBounds(w.laneOf(w.Focus))
@@ -999,9 +1003,9 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 			r.W = w.cellWidth(i)
 			if c.FullWidth {
 				in := 0
-				if i == w.Focus {
+				if i == w.Focus && w.hasBandCards() {
 					// Only the focused column has cards behind it.
-					in = w.bandCardsInset(i)
+					in = 2 * w.bandCardStep()
 				}
 				r.X, r.W = g+in, max(w.Usable.W-2*g-2*in, 0)
 			}
@@ -1044,15 +1048,16 @@ func (w *Workspace) bandCardStep() int {
 	return max(1, int(math.Round(float64(w.Usable.H)*overviewPeekStep)))
 }
 
-// bandCardsInset is how far the maximized column i is inset on each side
-// of its band in the overview, leaving room for up to two cards peeking
-// out on that side; 0 when it hides nothing.
-func (w *Workspace) bandCardsInset(i int) int {
-	first, last := w.laneBounds(w.laneOf(i))
-	if first >= last {
-		return 0
+// hasBandCards reports whether the focused column of a cascade is
+// maximized and hides other columns of its band: the overview shows them
+// as cards behind it, the maximized column inset by two card steps on
+// each side.
+func (w *Workspace) hasBandCards() bool {
+	if !w.policy().wraps || w.Focus < 0 || w.Focus >= len(w.Columns) || !w.Columns[w.Focus].FullWidth {
+		return false
 	}
-	return 2 * w.bandCardStep()
+	first, last := w.laneBounds(w.laneOf(w.Focus))
+	return first < last
 }
 
 // appendBandCard appends hidden column i of a cascade band as a dimmed card
@@ -1374,13 +1379,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 }
 
 // bandCardsAt reports whether the selection of w is a maximized cascade
-// column hiding cards of its band, not a stash card.
+// column hiding cards of its band: not a stash card nor a covering float.
 func (m *Monitor) bandCardsAt(w *Workspace) bool {
-	if m.cardAt(w) >= 0 || len(w.Columns) == 0 || !w.Columns[w.Focus].FullWidth {
-		return false
-	}
-	first, last := w.laneBounds(w.laneOf(w.Focus))
-	return first < last
+	return m.cardAt(w) < 0 && w.hasBandCards() && m.stackFront(w).kind == stackColumns
 }
 
 // overviewTurned reports whether a scroll step turned the overview from the

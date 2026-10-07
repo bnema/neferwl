@@ -663,6 +663,38 @@ func TestOverviewCascadeThreeFingerMaximizedCards(t *testing.T) {
 	if m.Current() != m.Workspaces[2] {
 		t.Fatalf("swipe right past the band: workspace %d", indexOf(m.Workspaces, m.Current()))
 	}
+
+	// A covering float in front: the swipe changes workspace, as without
+	// a maximized column.
+	m.CancelOverview()
+	w.AddFloating(90, 300, 200)
+	m.ToggleOverview()
+	if f := m.stackFront(w); f.kind != stackFloat || !w.Columns[w.Focus].FullWidth {
+		t.Fatalf("setup: front %+v", f)
+	}
+	swipe(-40)
+	if m.Current() != m.Workspaces[0] {
+		t.Fatalf("swipe left over a float: workspace %d", indexOf(m.Workspaces, m.Current()))
+	}
+}
+
+// Right from a stash card lands on the maximized column, which keeps its
+// maximization, not on the first card of its band.
+func TestOverviewCascadeStashToMaximized(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 1)
+	w := m.Current()
+	w.FocusID(9)
+	w.ToggleFullWidth()
+	m.ToggleOverview()
+	m.selectCard(w, w.stashAt) // As a click on the pile does.
+	if m.cardAt(w) < 0 {
+		t.Fatalf("setup: no stash card, target %d", m.overviewTarget())
+	}
+	m.OverviewMove(1, 0)
+	if m.overviewTarget() != 9 || !w.Columns[w.Focus].FullWidth || len(w.maximized) == 0 || w.maximized[0] != 9 {
+		t.Fatalf("target %d, maximized %v; want 9", m.overviewTarget(), w.maximized)
+	}
 }
 
 // T8: a named boundary of a cascade overview is a vertical rule strictly
