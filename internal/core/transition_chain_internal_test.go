@@ -114,7 +114,7 @@ func chainCases() []chainCase {
 			m.Focus(1)
 			m.AddWindow(2)
 			m.Focus(0)
-		}, []Action{ActionFocusWorkspaceDown}, []Action{ActionFocusWorkspaceDown},
+		}, []Action{ActionFocusWorkspaceNext}, []Action{ActionFocusWorkspaceNext},
 			func(c *Core) motion { return c.cur().mon.switchView.motion }},
 		{"rect", func(c *Core) {
 			m := c.cur().mon

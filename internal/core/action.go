@@ -25,15 +25,15 @@ const (
 	ActionToggleOverview     Action = "toggle-overview"
 	ActionCloseWindow        Action = "close-window"
 	ActionQuit               Action = "quit"
-	// Workspaces stack vertically; up/down stop at the ends.
-	ActionFocusWorkspaceUp   Action = "focus-workspace-up"
-	ActionFocusWorkspaceDown Action = "focus-workspace-down"
-	// Move the focused column, or only the focused window, one workspace
-	// up or down.
-	ActionMoveColumnToWorkspaceUp   Action = "move-column-to-workspace-up"
-	ActionMoveColumnToWorkspaceDown Action = "move-column-to-workspace-down"
-	ActionMoveWindowToWorkspaceUp   Action = "move-window-to-workspace-up"
-	ActionMoveWindowToWorkspaceDown Action = "move-window-to-workspace-down"
+	// Workspaces stack vertically; prev/next stop at the ends.
+	ActionFocusWorkspacePrev Action = "focus-workspace-prev"
+	ActionFocusWorkspaceNext Action = "focus-workspace-next"
+	// Move the focused column, or only the focused window, to the previous
+	// or next workspace.
+	ActionMoveColumnToWorkspacePrev Action = "move-column-to-workspace-prev"
+	ActionMoveColumnToWorkspaceNext Action = "move-column-to-workspace-next"
+	ActionMoveWindowToWorkspacePrev Action = "move-window-to-workspace-prev"
+	ActionMoveWindowToWorkspaceNext Action = "move-window-to-workspace-next"
 	// Monitors act on the neighbor in that direction of the global layout
 	// (ADR 011).
 	ActionFocusMonitorLeft           Action = "focus-monitor-left"
@@ -54,8 +54,8 @@ const (
 	ActionMoveWindowUp   Action = "move-window-up"
 	ActionMoveWindowDown Action = "move-window-down"
 	// Swap the active numbered workspace with its neighbor.
-	ActionMoveWorkspaceUp   Action = "move-workspace-up"
-	ActionMoveWorkspaceDown Action = "move-workspace-down"
+	ActionMoveWorkspacePrev Action = "move-workspace-prev"
+	ActionMoveWorkspaceNext Action = "move-workspace-next"
 	// Turn the focused tile into a free floating window, or back.
 	ActionToggleFloating Action = "toggle-floating"
 )
@@ -349,17 +349,17 @@ func (m *Monitor) Apply(a Action) Effect {
 				return Effect{}
 			}
 		}
-	case ActionFocusWorkspaceUp, ActionFocusWorkspaceDown:
-		if m.shown == nil && a == ActionFocusWorkspaceUp {
+	case ActionFocusWorkspacePrev, ActionFocusWorkspaceNext:
+		if m.shown == nil && a == ActionFocusWorkspacePrev {
 			m.Focus(m.Active - 1)
 		} else if m.shown == nil {
 			m.Focus(m.Active + 1)
 		}
 		return Effect{}
-	case ActionMoveWorkspaceUp:
+	case ActionMoveWorkspacePrev:
 		m.MoveWorkspace(-1)
 		return Effect{}
-	case ActionMoveWorkspaceDown:
+	case ActionMoveWorkspaceNext:
 		m.MoveWorkspace(1)
 		return Effect{}
 	}
@@ -372,8 +372,8 @@ func movesToWorkspace(a Action) bool {
 		return op != FocusWorkspace
 	}
 	switch a {
-	case ActionMoveColumnToWorkspaceUp, ActionMoveColumnToWorkspaceDown,
-		ActionMoveWindowToWorkspaceUp, ActionMoveWindowToWorkspaceDown:
+	case ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext,
+		ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext:
 		return true
 	}
 	return false
@@ -390,10 +390,10 @@ func (m *Monitor) moveDest(a Action) (i int, column, ok bool) {
 		return 0, false, false
 	}
 	switch a {
-	case ActionMoveColumnToWorkspaceUp, ActionMoveWindowToWorkspaceUp:
-		return m.Active - 1, a == ActionMoveColumnToWorkspaceUp, m.Active > 0
-	case ActionMoveColumnToWorkspaceDown, ActionMoveWindowToWorkspaceDown:
-		return min(m.Active+1, len(m.Workspaces)-1), a == ActionMoveColumnToWorkspaceDown, true
+	case ActionMoveColumnToWorkspacePrev, ActionMoveWindowToWorkspacePrev:
+		return m.Active - 1, a == ActionMoveColumnToWorkspacePrev, m.Active > 0
+	case ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspaceNext:
+		return min(m.Active+1, len(m.Workspaces)-1), a == ActionMoveColumnToWorkspaceNext, true
 	}
 	return 0, false, false
 }

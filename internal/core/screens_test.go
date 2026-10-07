@@ -380,7 +380,7 @@ func TestMonitorActionsFollowGeometry(t *testing.T) {
 			{Name: "DP-1"},
 			{Name: "DP-2", Anchor: ports.OutputAnchor{Relation: ports.RelationBelow, To: "DP-1"}},
 		}
-		// Without a default bind; these replace move-workspace-up/down.
+		// Without a default bind; these replace move-workspace-prev/next.
 		c.Binds["Cmd+Ctrl+Shift+Up"] = string(core.ActionMoveWorkspaceToMonitorUp)
 		c.Binds["Cmd+Ctrl+Shift+Down"] = string(core.ActionMoveWorkspaceToMonitorDown)
 	}, left, right)

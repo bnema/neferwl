@@ -15,11 +15,11 @@ func TestOverviewMove(t *testing.T) {
 		// row is the workspace index current after the move.
 		row int
 	}{
-		{"column down", ActionMoveColumnToWorkspaceDown, false, 0},
-		{"window down", ActionMoveWindowToWorkspaceDown, false, 0},
+		{"column next", ActionMoveColumnToWorkspaceNext, false, 0},
+		{"window next", ActionMoveWindowToWorkspaceNext, false, 0},
 		{"column numbered", "move-column-to-workspace 2", false, 0},
 		{"window numbered", "move-window-to-workspace 2", false, 0},
-		{"follows", ActionMoveColumnToWorkspaceDown, true, 1},
+		{"follows", ActionMoveColumnToWorkspaceNext, true, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestOverviewMoveWindowFromStack(t *testing.T) {
 	if m.overviewTarget() != 2 {
 		t.Fatalf("selection %d", m.overviewTarget())
 	}
-	m.Apply(ActionMoveWindowToWorkspaceDown)
+	m.Apply(ActionMoveWindowToWorkspaceNext)
 	if !slices.Equal(w.windows(), []WindowID{1, 3}) || !slices.Contains(m.Workspaces[1].windows(), 2) {
 		t.Fatalf("windows %v", windows(m))
 	}
@@ -82,7 +82,7 @@ func TestOverviewMoveSelectedUnderFloat(t *testing.T) {
 	if id == 0 || id == 9 {
 		t.Fatalf("selection %d", id)
 	}
-	m.Apply(ActionMoveColumnToWorkspaceDown)
+	m.Apply(ActionMoveColumnToWorkspaceNext)
 	if !slices.Contains(m.Workspaces[1].windows(), id) || m.Workspaces[1].isFloat(9) {
 		t.Fatalf("moved the wrong window: %v floats %v", windows(m), m.Workspaces[0].Floats)
 	}
@@ -107,20 +107,20 @@ func TestOverviewMoveNoop(t *testing.T) {
 				t.Fatal("no stash card selected")
 			}
 			return m
-		}, ActionMoveColumnToWorkspaceDown},
+		}, ActionMoveColumnToWorkspaceNext},
 		{"hidden small float", func() *Monitor {
 			m := newMonitor("", "")
 			m.SetOutput(300, 200)
 			m.AddFloating(9, 50, 50)
 			m.ToggleOverview()
 			return m
-		}, ActionMoveWindowToWorkspaceDown},
+		}, ActionMoveWindowToWorkspaceNext},
 		{"up from first", func() *Monitor {
 			m := overviewMonitor()
 			m.ToggleOverview()
 			m.OverviewMove(-1, 0)
 			return m
-		}, ActionMoveColumnToWorkspaceUp},
+		}, ActionMoveColumnToWorkspacePrev},
 		{"to its own row", func() *Monitor {
 			m := overviewMonitor()
 			m.ToggleOverview()
@@ -132,7 +132,7 @@ func TestOverviewMoveNoop(t *testing.T) {
 			m.ToggleNamed("game")
 			m.ToggleOverview()
 			return m
-		}, ActionMoveColumnToWorkspaceDown},
+		}, ActionMoveColumnToWorkspaceNext},
 		{"fixed maximize kept", func() *Monitor {
 			m := overviewMonitor()
 			w := m.Current()
@@ -142,7 +142,7 @@ func TestOverviewMoveNoop(t *testing.T) {
 			m.ToggleOverview()
 			m.OverviewMove(0, -1)
 			return m
-		}, ActionMoveColumnToWorkspaceUp},
+		}, ActionMoveColumnToWorkspacePrev},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -163,7 +163,7 @@ func TestOverviewMoveDestinationKeepsFocus(t *testing.T) {
 	m.OverviewMove(0, 1)
 	m.OverviewMove(0, -1)
 	m.OverviewMove(-1, 0)
-	m.Apply(ActionMoveColumnToWorkspaceDown)
+	m.Apply(ActionMoveColumnToWorkspaceNext)
 	m.ToggleOverview()
 	if id, _ := m.Workspaces[1].Focused(); id != 2 {
 		t.Fatalf("destination focus %d, want 2", id)
@@ -179,7 +179,7 @@ func TestOverviewMoveDropsMaximizeHistory(t *testing.T) {
 	w.FocusID(3)
 	w.ToggleFullWidth()
 	m.ToggleOverview()
-	m.Apply(ActionMoveColumnToWorkspaceDown)
+	m.Apply(ActionMoveColumnToWorkspaceNext)
 	if w.has(3) {
 		t.Fatal("3 not moved")
 	}
@@ -209,7 +209,7 @@ func TestOverviewMoveFromFullscreenRow(t *testing.T) {
 		if m.overviewTarget() != 2 {
 			t.Fatalf("follow %v: selection %d", follow, m.overviewTarget())
 		}
-		m.Apply(ActionMoveColumnToWorkspaceDown)
+		m.Apply(ActionMoveColumnToWorkspaceNext)
 		if !slices.Equal(w.windows(), []WindowID{1, 3, 4}) || !slices.Equal(m.Workspaces[1].windows(), []WindowID{2}) {
 			t.Fatalf("follow %v: windows %v", follow, windows(m))
 		}

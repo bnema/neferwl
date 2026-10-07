@@ -182,17 +182,17 @@ bind.ctrl+cmd+space = spawn fuzzel
 
 # Workspaces stack vertically; numbers follow their order. An empty one always
 # waits below the last. cmd+up/down past the column edge also switch workspace.
-bind.cmd+pageup = focus-workspace-up
-bind.cmd+pagedown = focus-workspace-down
+bind.cmd+pageup = focus-workspace-prev
+bind.cmd+pagedown = focus-workspace-next
 # move-column-to-workspace moves the whole column; move-window-to-workspace
-# (N, -up, -down) moves only the focused window and has no default bind.
-bind.cmd+shift+pageup = move-column-to-workspace-up
-bind.cmd+shift+pagedown = move-column-to-workspace-down
+# (N, -prev, -next) moves only the focused window and has no default bind.
+bind.cmd+shift+pageup = move-column-to-workspace-prev
+bind.cmd+shift+pagedown = move-column-to-workspace-next
 # Reorder workspaces: swap the current one with its neighbor.
-bind.cmd+ctrl+shift+up = move-workspace-up
-bind.cmd+ctrl+shift+down = move-workspace-down
-bind.cmd+ctrl+shift+k = move-workspace-up
-bind.cmd+ctrl+shift+j = move-workspace-down
+bind.cmd+ctrl+shift+up = move-workspace-prev
+bind.cmd+ctrl+shift+down = move-workspace-next
+bind.cmd+ctrl+shift+k = move-workspace-prev
+bind.cmd+ctrl+shift+j = move-workspace-next
 bind.cmd+code:2 = focus-workspace 1
 bind.cmd+code:3 = focus-workspace 2
 bind.cmd+code:4 = focus-workspace 3

@@ -31,7 +31,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
 		t.Fatal(d.Binds)
 	}
-	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -10%" || d.Binds["Alt+Cmd+l"] != "set-column-width +10%" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-down" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-up" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
+	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -10%" || d.Binds["Alt+Cmd+l"] != "set-column-width +10%" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-next" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-prev" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -283,6 +283,9 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+ = quit", "missing key"},
 		{"bind.hyper+x = quit", "unknown modifier"},
 		{"bind.cmd+x = bogus", "unknown action"},
+		{"bind.cmd+x = focus-workspace-up", "unknown action"},
+		{"bind.cmd+x = move-workspace-down", "unknown action"},
+		{"bind.cmd+x = move-column-to-workspace-up", "unknown action"},
 		{"bind.cmd+x = set-column-width 10%", "set-column-width needs"},
 		{"bind.cmd+x = set-column-width +0%", "set-column-width needs"},
 		{"bind.cmd+x = set-window-height -101%", "set-window-height needs"},
@@ -301,6 +304,13 @@ func TestWarningsKeepDefaults(t *testing.T) {
 				t.Fatalf("config changed: %+v", c)
 			}
 		})
+	}
+}
+
+func TestWorkspacePrevNextAction(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+x = focus-workspace-next")
+	if len(w) != 0 || c.Binds["Cmd+x"] != "focus-workspace-next" {
+		t.Fatal(c.Binds["Cmd+x"], w)
 	}
 }
 

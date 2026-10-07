@@ -57,10 +57,10 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	v["fullscreen"] = m
 
 	m = base(OverflowScroll, 3)
-	m.Apply(ActionFocusWorkspaceDown)
+	m.Apply(ActionFocusWorkspaceNext)
 	m.AddWindow(20)
 	m.AddWindow(21)
-	m.Apply(ActionFocusWorkspaceUp)
+	m.Apply(ActionFocusWorkspacePrev)
 	v["two-workspaces"] = m
 
 	m = base(OverflowScroll, 3)
@@ -69,9 +69,9 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	v["overview"] = m
 
 	m = base(OverflowScroll, 3)
-	m.Apply(ActionFocusWorkspaceDown)
+	m.Apply(ActionFocusWorkspaceNext)
 	m.AddWindow(20)
-	m.Apply(ActionFocusWorkspaceUp)
+	m.Apply(ActionFocusWorkspacePrev)
 	m.switchView.off = 0.4
 	v["slide"] = m
 

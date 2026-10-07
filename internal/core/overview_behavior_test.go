@@ -15,15 +15,15 @@ func TestOverviewVerticalBoundariesAndInputs(t *testing.T) {
 	if m.stackFront(w) != (stackItem{stackFloat, 9}) {
 		t.Fatal("screen front")
 	}
-	m.overviewFocus(ActionFocusWorkspaceUp)
+	m.overviewFocus(ActionFocusWorkspacePrev)
 	if m.stackFront(w).kind != stackColumns || m.Active != 0 {
 		t.Fatal("swipe did not visit card")
 	}
-	m.overviewFocus(ActionFocusWorkspaceUp)
+	m.overviewFocus(ActionFocusWorkspacePrev)
 	if m.Active != 0 {
 		t.Fatal("up at top crossed workspace boundary")
 	}
-	m.overviewFocus(ActionFocusWorkspaceDown)
+	m.overviewFocus(ActionFocusWorkspaceNext)
 	if m.stackFront(w).kind != stackFloat || m.Active != 0 {
 		t.Fatal("down did not return to front")
 	}

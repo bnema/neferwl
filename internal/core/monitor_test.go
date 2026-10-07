@@ -154,12 +154,12 @@ func TestMonitorActions(t *testing.T) {
 		t.Fatal(m.Active)
 	}
 	// Up at the top workspace stays.
-	m.Apply(ActionFocusWorkspaceUp)
+	m.Apply(ActionFocusWorkspacePrev)
 	if m.Active != 0 {
 		t.Fatal(m.Active)
 	}
 	// Move the focused window (2) down: focus stays on workspace 1.
-	m.Apply(ActionMoveWindowToWorkspaceDown)
+	m.Apply(ActionMoveWindowToWorkspaceNext)
 	if !reflect.DeepEqual(windows(m), [][]WindowID{{1}, {2}, {}}) || m.Active != 0 {
 		t.Fatal(windows(m), m.Active)
 	}
@@ -235,7 +235,7 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 	})
 	t.Run("window only", func(t *testing.T) {
 		m := stack()
-		m.Apply(ActionMoveWindowToWorkspaceDown)
+		m.Apply(ActionMoveWindowToWorkspaceNext)
 		if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2}, {3}, {}}) {
 			t.Fatal(got)
 		}
@@ -243,7 +243,7 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 	t.Run("follow shows the target", func(t *testing.T) {
 		m := stack()
 		m.SetFollowMove(true)
-		m.Apply(ActionMoveColumnToWorkspaceDown)
+		m.Apply(ActionMoveColumnToWorkspaceNext)
 		if id, _ := m.Focused(); m.Active != 1 || id != 3 {
 			t.Fatal(m.Active, id)
 		}
@@ -255,7 +255,7 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 		m := stack()
 		c := &m.Current().Columns[1]
 		c.Slot, c.Focus = 2, 0
-		m.Apply(ActionMoveWindowToWorkspaceDown)
+		m.Apply(ActionMoveWindowToWorkspaceNext)
 		if c := m.Current().Columns[1]; c.Slot != 0 || c.Windows[0] != 3 {
 			t.Fatal(c)
 		}
@@ -265,7 +265,7 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 		m.SetFollowMove(true)
 		m.AddFloating(9, 10, 10)
 		m.Current().FocusID(9)
-		m.Apply(ActionMoveWindowToWorkspaceDown)
+		m.Apply(ActionMoveWindowToWorkspaceNext)
 		if id, _ := m.Focused(); m.Active != 1 || id != 9 {
 			t.Fatal(m.Active, id)
 		}
@@ -273,7 +273,7 @@ func TestMoveColumnToWorkspace(t *testing.T) {
 	t.Run("slot column loses its slot", func(t *testing.T) {
 		m := stack()
 		m.Current().Columns[1].Slot = 2
-		m.Apply(ActionMoveColumnToWorkspaceDown)
+		m.Apply(ActionMoveColumnToWorkspaceNext)
 		if c := m.Workspaces[1].Columns[0]; c.Slot != 0 {
 			t.Fatal(c)
 		}
@@ -344,7 +344,7 @@ func TestHiddenWorkspaceToggle(t *testing.T) {
 	}
 	m.AddWindow(2)
 	// Up/down do not leave a hidden workspace.
-	m.Apply(ActionFocusWorkspaceDown)
+	m.Apply(ActionFocusWorkspaceNext)
 	m.Apply(ActionFocusWindowDown)
 	if m.Current().Name != "dev" {
 		t.Fatal("left the hidden workspace")
@@ -367,8 +367,8 @@ func TestHiddenWorkspaceToggle(t *testing.T) {
 	}
 	// Moving a window up/down from a hidden workspace does nothing.
 	m.Apply("workspace dev")
-	m.Apply(ActionMoveWindowToWorkspaceDown)
-	m.Apply(ActionMoveWindowToWorkspaceUp)
+	m.Apply(ActionMoveWindowToWorkspaceNext)
+	m.Apply(ActionMoveWindowToWorkspacePrev)
 	if id, _ := m.Focused(); id != 2 || m.Current().Name != "dev" {
 		t.Fatal(id, windows(m))
 	}
