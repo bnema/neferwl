@@ -1658,7 +1658,9 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			tiles = append(tiles, Placement{ID: id, Rect: r, Fullscreen: full, Focused: id == focusedID, Hidden: hidden})
 		}
 	}
-	setVisibleNeighbors(tiles, gap, w.Output)
+	// Lines are shared within the usable area: a tile under a panel (the
+	// next cascade band starts right below a bottom one) is no neighbor.
+	setVisibleNeighbors(tiles, gap, w.Usable)
 	// tiles lives in the workspace's scratch until they are copied below.
 	w.tileBuf = tiles
 	// The column/stash group sits between demoted covering floats and

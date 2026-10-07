@@ -147,6 +147,30 @@ func TestSeparatorsScroll(t *testing.T) {
 	}
 }
 
+// A cascade band above a bottom panel: the next band starts under the
+// panel, so the focused tile gets no line along the panel, only the one it
+// shares with its band neighbor.
+func TestSeparatorsCascadeBottomPanel(t *testing.T) {
+	w := &Workspace{Overflow: OverflowCascade, MaxColumns: 2}
+	w.SetOutput(900, 600)
+	w.SetUsable(Rect{W: 900, H: 580})
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	w.FocusID(1)
+	ps := w.Layout()
+	if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
+		t.Fatalf("neighbors %04b, want right only", p.Neighbors)
+	}
+	seps := separators(ps, 2, 0, w.Output, true)
+	if got := colorAt(seps, 200, 578); got != "" {
+		t.Fatalf("line along the panel: %v", seps)
+	}
+	if got := colorAt(seps, 449, 100); got != "lit" {
+		t.Fatalf("shared line (449,100) = %q; %v", got, seps)
+	}
+}
+
 // With gaps each tile has its own line: the focused one lights it whole.
 func TestSeparatorsGaps(t *testing.T) {
 	ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
