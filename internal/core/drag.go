@@ -319,7 +319,7 @@ func (w *Workspace) dropIn(id WindowID, x, y, t int) dropTarget {
 	lone := src >= 0 && len(w.Columns[src].Windows) == 1
 	var cols []visibleColumn
 	for _, p := range layout {
-		if p.Floating || p.Hidden || !p.Rect.Overlaps(w.Output) {
+		if p.Floating || p.Hidden || !p.Rect.Overlaps(w.Usable) {
 			continue
 		}
 		ci := w.columnOf(p.ID)

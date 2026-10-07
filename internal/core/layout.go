@@ -498,7 +498,7 @@ func (w *Workspace) AddWindow(id WindowID) {
 		// A new window never moves the view off a covering fullscreen
 		// window (ADR 011): it waits, hidden, after the focused column.
 		at := len(w.Columns)
-		if !w.policy().appendLast {
+		if !w.policy().equalCells {
 			// A covering float or stashed window may have no column under it.
 			at = min(w.Focus+1, len(w.Columns))
 		}
@@ -511,7 +511,7 @@ func (w *Workspace) AddWindow(id WindowID) {
 // addColumn places a new column like a new window and focuses it.
 func (w *Workspace) addColumn(col Column) {
 	at := 0
-	if w.policy().appendLast {
+	if w.policy().equalCells {
 		// Ordered overflow depends only on window order: new windows go last.
 		at = len(w.Columns)
 	} else if len(w.Columns) > 0 {
@@ -998,7 +998,8 @@ func (w *Workspace) insertColumn(at int, col Column) {
 }
 
 // CycleWidth steps the focused column through the presets. Fixed overflow
-// ignores presets: it toggles the expanded column instead.
+// ignores presets: it toggles the expanded column instead; cascade does
+// nothing.
 func (w *Workspace) CycleWidth() {
 	if w.policy().wraps {
 		return
@@ -1643,7 +1644,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			if full {
 				// Scroll mode aligns the view on the column; fixed never scrolls.
 				r = w.Output
-				if w.Overflow == OverflowScroll || w.Overflow == "" {
+				if !w.policy().equalCells {
 					r.X = col.X
 				}
 			}
