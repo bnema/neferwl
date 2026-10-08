@@ -48,7 +48,7 @@ func TestSceneSameAs(t *testing.T) {
 		"scale":             func(s *Scene) { s.Scale = 2 },
 		"off":               func(s *Scene) { s.Off = true },
 		"clip":              func(s *Scene) { s.WorkspaceClip.W = 1 },
-		"tile clip":         func(s *Scene) { s.TileClip.H = 1 },
+		"tile inset":        func(s *Scene) { s.TileInset.Bottom = 1 },
 		"dim":               func(s *Scene) { s.Dim = 0.5 },
 		"dim behind":        func(s *Scene) { s.DimBehind = true },
 		"separator":         func(s *Scene) { s.Separators[0].Active = true },

@@ -79,6 +79,11 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
 			continue
 		}
+		if a, ok := s.TileArea(); ok && w.Tile() && !w.Rect.Overlaps(a) {
+			// A tile wholly under a panel is not drawn: neither a
+			// candidate nor over one.
+			continue
+		}
 		if w.Popup {
 			// Popups draw after every window, wherever they are listed:
 			// checked once the candidate is known.
@@ -148,13 +153,11 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			}
 		}
 	}
-	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
-		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
+	if clip := s.WorkspaceClip; clip != (ports.Rect{}) && !clip.Contains(pick.Rect) {
 		// The plane cannot apply the workspace's logical viewport crop.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
 	}
-	if clip := s.TileClip; pick.Tile() && clip != (ports.Rect{}) &&
-		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
+	if a, ok := s.TileArea(); ok && pick.Tile() && !a.Contains(pick.Rect) {
 		// Nor the cut of a tile at a panel.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "tile_clip"
 	}

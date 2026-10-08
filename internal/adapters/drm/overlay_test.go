@@ -63,17 +63,23 @@ func TestOverlayWorkspaceClip(t *testing.T) {
 	}
 }
 
-// A tile cut by a panel (TileClip) is composed: the plane would show it
-// whole, over the panel.
-func TestOverlayTileClip(t *testing.T) {
+// A tile cut by a panel (TileInset) is composed: the plane would show it
+// whole, over the panel. A tile wholly under the panel is not drawn, so it
+// neither takes the plane nor blocks the visible tile.
+func TestOverlayTileInset(t *testing.T) {
 	s, contents := overlayScene()
-	s.TileClip = ports.Rect{W: 200, H: 80}
+	s.TileInset = ports.Insets{Bottom: 20}
 	if _, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "tile_clip" {
 		t.Fatalf("tile under a panel on the overlay: %q", reason)
 	}
-	s.TileClip = ports.Rect{W: 200, H: 100}
+	// The next cascade band starts under the panel.
+	s, contents = overlayScene()
+	s.OutputHeight = 120
+	s.TileInset = ports.Insets{Bottom: 20}
+	s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Rect: ports.Rect{Y: 100, W: 100, H: 100}})
+	contents[3] = ports.SurfaceContent{ID: 3, Width: 100, Height: 100, Opaque: true, DMABuf: &ports.DMABuf{ID: 10, Width: 100, Height: 100, Format: fourccXRGB}}
 	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
-		t.Fatalf("tile inside the clip: %v %q", win.ID, reason)
+		t.Fatalf("visible tile with one under the panel: %v %q", win.ID, reason)
 	}
 }
 

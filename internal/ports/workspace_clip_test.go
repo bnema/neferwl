@@ -17,11 +17,12 @@ func TestSceneShowsWorkspaceClip(t *testing.T) {
 	}
 }
 
-// A tile under a panel (outside TileClip) is not drawn; a float, a
-// fullscreen window, a preview or a popup there still is.
-func TestSceneShowsTileClip(t *testing.T) {
+// A tile under a panel (outside TileArea) is not drawn; a float, a
+// fullscreen window, a preview or a popup there still is. Panels covering
+// the whole output leave no tile drawn.
+func TestSceneShowsTileInset(t *testing.T) {
 	under := Rect{Y: 80, W: 50, H: 80}
-	s := Scene{OutputWidth: 100, OutputHeight: 100, TileClip: Rect{W: 100, H: 80}, Windows: []SceneWindow{
+	s := Scene{OutputWidth: 100, OutputHeight: 100, TileInset: Insets{Bottom: 20}, Windows: []SceneWindow{
 		{ID: 1, Rect: Rect{W: 50, H: 80}},
 		{ID: 2, Rect: under},
 		{ID: 3, Rect: under, Floating: true},
@@ -34,8 +35,21 @@ func TestSceneShowsTileClip(t *testing.T) {
 			t.Errorf("window %d shown %v, want %v", id, got, want)
 		}
 	}
-	s.TileClip = Rect{}
+	s.TileInset = Insets{Right: 100, Bottom: 100}
+	if s.Shows(1) || !s.Shows(3) {
+		t.Fatalf("no room for tiles: tile %v, float %v", s.Shows(1), s.Shows(3))
+	}
+	s.TileInset = Insets{}
 	if !s.Shows(2) {
-		t.Fatal("tile under no clip not shown")
+		t.Fatal("tile with no panel not shown")
+	}
+}
+
+func TestRectContains(t *testing.T) {
+	r := Rect{X: 10, Y: 10, W: 20, H: 20}
+	for o, want := range map[Rect]bool{r: true, {X: 15, Y: 15, W: 5, H: 5}: true, {X: 9, Y: 10, W: 5, H: 5}: false, {X: 25, Y: 25, W: 6, H: 5}: false} {
+		if got := r.Contains(o); got != want {
+			t.Errorf("%+v contains %+v = %v, want %v", r, o, got, want)
+		}
 	}
 }

@@ -466,7 +466,7 @@ type viewport struct{ frame, usable Rect }
 func whole(r Rect) viewport { return viewport{frame: r, usable: r} }
 
 // area is where p can be seen, drawn and pointed at. A tile lives in the
-// usable area and is cut at its edge (Scene.TileClip), so a cascade band
+// usable area and is cut at its edge (Scene.TileInset), so a cascade band
 // or a column scrolled under a panel is not seen; a float, a fullscreen
 // window and an overview preview are placed against the frame.
 func (v viewport) area(p Placement) Rect {

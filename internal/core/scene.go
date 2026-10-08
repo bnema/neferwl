@@ -22,12 +22,11 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
 	scene = ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
-	// Tiles stop at the panels; the overview lays out previews over the
-	// whole output. Panels leaving no room at all hide the tiles: a zero
-	// TileClip would not clip.
-	noTiles := !sc.mon.ov.open && view.usable.W*view.usable.H <= 0
-	if !sc.mon.ov.open && view.usable != view.frame {
-		scene.TileClip = view.usable
+	if !sc.mon.ov.open {
+		// Tiles stop at the panels; the overview lays out previews over
+		// the whole output.
+		u := view.usable
+		scene.TileInset = ports.Insets{Top: u.Y, Left: u.X, Right: o.W - u.X - u.W, Bottom: o.H - u.Y - u.H}
 	}
 	var real map[WindowID]Placement
 	if sc.mon.ov.open {
@@ -68,9 +67,6 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
 		sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
-		if noTiles && sw.Tile() {
-			sw.Hidden = true
-		}
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A
 			// card in flight drawn at its size still needs Zoom 1:
@@ -82,7 +78,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		if p.Leaving {
 			// A window fading out after it closed or hid: drawn, but
 			// hidden to everything else, its configures included.
-			sw.Hidden = noTiles && sw.Tile()
+			sw.Hidden = false
 			scene.Windows = append(scene.Windows, sw)
 			// A window the workspace still holds (a hidden stash
 			// window) keeps its last configure: prune would forget it,
@@ -93,7 +89,10 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 			continue
 		}
-		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
+		// A window sliding in still waits for its pulse; one with no room
+		// to be drawn (panels leave no usable area) never gets it.
+		room := view.area(p)
+		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && room.W > 0 && room.H > 0 && p.Preview == 0 && !sc.mon.ov.open {
 			drawable = true
 			if p.ID == c.pulse.id {
 				sw.FocusEffect = pulse

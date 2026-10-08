@@ -27,11 +27,12 @@ type Scene struct {
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
 	WorkspaceClip Rect
-	// TileClip bounds tiles (SceneWindow.Tile) and their lines inside
-	// WorkspaceClip: the usable area exclusive layers leave, so a tile is
-	// never drawn over a panel, whatever its layer. Zero does not clip
-	// (overview, capture scenes).
-	TileClip Rect
+	// TileInset is what exclusive layers (panels) take from the output's
+	// edges. Tiles (SceneWindow.Tile) and their lines are drawn only in
+	// what is left (TileArea), so a tile is never drawn over a panel,
+	// whatever its layer; insets covering the output leave no tile drawn.
+	// Zero: no panel (and the overview, capture scenes).
+	TileInset Insets
 	// Dim darkens the background, bottom layers and tiles (tile lines
 	// included) inside WorkspaceClip when set, with black at this opacity,
 	// 0 to 1, under the first
@@ -79,7 +80,7 @@ func (s Scene) SameAs(o Scene) bool {
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
 		s.Background != o.Background || s.Border != o.Border ||
-		s.WorkspaceClip != o.WorkspaceClip || s.TileClip != o.TileClip || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
+		s.WorkspaceClip != o.WorkspaceClip || s.TileInset != o.TileInset || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}
 	if s.CaptureScene != nil || o.CaptureScene != nil {
@@ -102,13 +103,10 @@ func (s Scene) SameAs(o Scene) bool {
 
 // Shows reports whether the scene draws the surface of id: only its
 // content changes need a new frame. A window scrolled off the output is
-// not drawn. WorkspaceClip also excludes off-viewport windows, TileClip
-// tiles under a panel; OverLayers popups remain output-wide.
+// not drawn (Draws).
 func (s Scene) Shows(id WindowID) bool {
 	for _, w := range s.Windows {
-		if w.ID == id && !w.Hidden && w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) &&
-			(w.OverLayers || s.WorkspaceClip == (Rect{}) || w.Rect.Overlaps(s.WorkspaceClip)) &&
-			(!w.Tile() || s.TileClip == (Rect{}) || w.Rect.Overlaps(s.TileClip)) {
+		if w.ID == id && s.Draws(w) {
 			return true
 		}
 	}
@@ -118,6 +116,33 @@ func (s Scene) Shows(id WindowID) bool {
 		}
 	}
 	return false
+}
+
+// Draws reports whether any of w is drawn: not hidden, on the output,
+// inside WorkspaceClip (OverLayers popups remain output-wide) and, for a
+// tile, inside TileArea.
+func (s Scene) Draws(w SceneWindow) bool {
+	if w.Hidden || !w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) {
+		return false
+	}
+	if !w.OverLayers && s.WorkspaceClip != (Rect{}) && !w.Rect.Overlaps(s.WorkspaceClip) {
+		return false
+	}
+	if a, ok := s.TileArea(); ok && w.Tile() {
+		return w.Rect.Overlaps(a)
+	}
+	return true
+}
+
+// TileArea is where tiles are drawn: the output minus TileInset, empty
+// when the panels cover it. ok is false when TileInset is zero: tiles are
+// not clipped beyond the output and WorkspaceClip.
+func (s Scene) TileArea() (r Rect, ok bool) {
+	in := s.TileInset
+	if in == (Insets{}) {
+		return Rect{}, false
+	}
+	return Rect{X: in.Left, Y: in.Top, W: max(s.OutputWidth-in.Left-in.Right, 0), H: max(s.OutputHeight-in.Top-in.Bottom, 0)}, true
 }
 
 // Border carries the window border style; colors are #rrggbb, "" skips
@@ -188,7 +213,7 @@ type SceneWindow struct {
 }
 
 // Tile reports whether w is a tile: laid out in the usable area and
-// clipped to Scene.TileClip. Floats, fullscreen windows, overview previews
+// clipped to Scene.TileArea. Floats, fullscreen windows, overview previews
 // and popups are placed against the whole viewport.
 func (w SceneWindow) Tile() bool {
 	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0

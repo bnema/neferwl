@@ -230,7 +230,7 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
 		old.Background != cur.Background || old.Border != cur.Border ||
-		old.WorkspaceClip != cur.WorkspaceClip || old.TileClip != cur.TileClip || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
+		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
 		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||

@@ -105,8 +105,8 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 		t.Fatal("window under the panel left the scene")
 	}
 	// It is cut at the panel and takes no pointer there.
-	if scene.TileClip != (Rect{W: 100, H: 60}) {
-		t.Fatalf("tile clip %+v, want the usable area", scene.TileClip)
+	if scene.TileInset != (ports.Insets{Bottom: 20}) {
+		t.Fatalf("tile inset %+v, want the panel's", scene.TileInset)
 	}
 	if id, _, _ := c.hit(10, 70); id != 0 {
 		t.Fatalf("pointer over the panel went to window %d", id)
@@ -114,13 +114,24 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	if id, _, _ := c.hit(10, 30); id != 1 {
 		t.Fatalf("pointer over window 1 went to %d", id)
 	}
+	// Not on screen: its popups are not either, and it loses the pointer.
+	c.popups[10] = &popupState{id: 10, parent: 3, mapped: true, rect: Rect{W: 5, H: 5}}
+	c.popupOrder = append(c.popupOrder, 10)
+	c.pointer = 3
+	check(nil)
+	if c.visible(3) || c.visible(10) || c.pointer != 0 {
+		t.Fatalf("tile under the panel: visible %v, popup %v, pointer %d", c.visible(3), c.visible(10), c.pointer)
+	}
+	// The overview lays previews over the whole output: no inset.
+	m.ToggleOverview()
+	if s := check(nil); s.TileInset != (ports.Insets{}) {
+		t.Fatalf("tile inset %+v in the overview", s.TileInset)
+	}
+	m.ToggleOverview()
 	// Its band scrolled in, the first band is under nothing but off screen.
 	w.FocusID(3)
 	check(map[WindowID]bool{1: false, 2: false, 3: true})
 	// Fullscreen covers the panel: always seen.
-	w.FocusID(1)
-	check(map[WindowID]bool{1: true, 3: false})
-	w.FocusID(3)
 	w.ToggleFullscreen()
 	check(map[WindowID]bool{3: true})
 }
@@ -167,16 +178,25 @@ func TestTileStopsAtPanel(t *testing.T) {
 	}
 }
 
-// Panels that leave no room hide every tile: a zero TileClip would not
-// clip them.
-func TestNoUsableAreaHidesTiles(t *testing.T) {
+// Panels that leave no room draw no tile, a leaving one included, and the
+// focus pulse has nothing to show.
+func TestNoUsableAreaDrawsNoTile(t *testing.T) {
 	c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{})
 	c.cur().mon.AddWindow(1)
+	c.pulse.target = 1
 	scene := check(map[WindowID]bool{1: false})
-	for _, sw := range scene.Windows {
-		if sw.ID == 1 && !sw.Hidden {
-			t.Fatalf("tile drawn with no usable area: %+v", sw)
-		}
+	if scene.Draws(scene.Windows[0]) || c.pulse.drawable {
+		t.Fatalf("tile drawn %v, pulse drawable %v with no usable area", scene.Draws(scene.Windows[0]), c.pulse.drawable)
+	}
+	sc := c.cur()
+	sc.shown = slices.Clone(sc.shownLayout())
+	sc.shown[0].Leaving = true
+	scene, _, err := c.sceneFor(context.Background(), 0, sc, nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scene.Draws(scene.Windows[0]) {
+		t.Fatalf("leaving tile drawn with no usable area: %+v", scene.Windows[0])
 	}
 }
 
