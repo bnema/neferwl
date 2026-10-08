@@ -157,8 +157,11 @@ func (c *Core) outputConfig(name string) (ports.OutputConfig, bool) {
 }
 
 // layout lists the connected outputs; the placeholder is not one.
-func (c *Core) layout() ports.Layout {
-	l := make(ports.Layout, 0, len(c.screens))
+func (c *Core) layout() ports.Layout { return c.layoutInto(make(ports.Layout, 0, len(c.screens))) }
+
+// layoutInto is layout built in l[:0]: the result aliases l's storage.
+func (c *Core) layoutInto(l ports.Layout) ports.Layout {
+	l = l[:0]
 	for _, s := range c.screens {
 		if s.name() != "" {
 			l = append(l, s.placement())

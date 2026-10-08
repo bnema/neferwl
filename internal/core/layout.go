@@ -305,18 +305,20 @@ func (w *Workspace) appendHidden(dst []Placement, floats bool) []Placement {
 
 // windows lists every window: columns first, then the stash, then native
 // floats.
-func (w *Workspace) windows() []WindowID {
-	var ids []WindowID
+func (w *Workspace) windows() []WindowID { return w.appendWindows(nil) }
+
+// appendWindows appends windows' list to dst.
+func (w *Workspace) appendWindows(dst []WindowID) []WindowID {
 	for _, c := range w.Columns {
-		ids = append(ids, c.Windows...)
+		dst = append(dst, c.Windows...)
 	}
 	for _, f := range w.Stash {
-		ids = append(ids, f.ID)
+		dst = append(dst, f.ID)
 	}
 	for _, f := range w.Floats {
-		ids = append(ids, f.ID)
+		dst = append(dst, f.ID)
 	}
-	return ids
+	return dst
 }
 
 // cell is the 1-based column and row of a tiled window, 0, 0 otherwise.
