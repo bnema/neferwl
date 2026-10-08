@@ -89,10 +89,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 			continue
 		}
-		// A window sliding in still waits for its pulse; one with no room
-		// to be drawn (panels leave no usable area) never gets it.
-		room := view.area(p)
-		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && room.W > 0 && room.H > 0 && p.Preview == 0 && !sc.mon.ov.open {
+		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open && hasRoom(view, p) {
 			drawable = true
 			if p.ID == c.pulse.id {
 				sw.FocusEffect = pulse

@@ -27,11 +27,12 @@ type Scene struct {
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
 	WorkspaceClip Rect
-	// TileInset is what exclusive layers (panels) take from the output's
-	// edges. Tiles (SceneWindow.Tile) and their lines are drawn only in
-	// what is left (TileArea), so a tile is never drawn over a panel,
-	// whatever its layer; insets covering the output leave no tile drawn.
-	// Zero: no panel (and the overview, capture scenes).
+	// TileInset is what exclusive layers (panels) and a workspace size
+	// override take from the output's edges: tiles (SceneWindow.Tile) and
+	// their lines are drawn only in what is left, the usable area
+	// (TileArea). A tile is never drawn over a panel, whatever its layer;
+	// insets covering the output leave no tile drawn. Zero: the usable
+	// area is the whole output (and the overview, capture scenes).
 	TileInset Insets
 	// Dim darkens the background, bottom layers and tiles (tile lines
 	// included) inside WorkspaceClip when set, with black at this opacity,

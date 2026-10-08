@@ -122,6 +122,8 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	if c.visible(3) || c.visible(10) || c.pointer != 0 {
 		t.Fatalf("tile under the panel: visible %v, popup %v, pointer %d", c.visible(3), c.visible(10), c.pointer)
 	}
+	delete(c.popups, 10)
+	c.popupOrder = slices.DeleteFunc(c.popupOrder, func(id WindowID) bool { return id == 10 })
 	// The overview lays previews over the whole output: no inset.
 	m.ToggleOverview()
 	if s := check(nil); s.TileInset != (ports.Insets{}) {
@@ -131,7 +133,11 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	// Its band scrolled in, the first band is under nothing but off screen.
 	w.FocusID(3)
 	check(map[WindowID]bool{1: false, 2: false, 3: true})
+	// Scrolled back, its band is under the panel again.
+	w.FocusID(1)
+	check(map[WindowID]bool{1: true, 3: false})
 	// Fullscreen covers the panel: always seen.
+	w.FocusID(3)
 	w.ToggleFullscreen()
 	check(map[WindowID]bool{3: true})
 }
@@ -197,6 +203,20 @@ func TestNoUsableAreaDrawsNoTile(t *testing.T) {
 	}
 	if scene.Draws(scene.Windows[0]) {
 		t.Fatalf("leaving tile drawn with no usable area: %+v", scene.Windows[0])
+	}
+}
+
+// A sized workspace with a panel: the scene's tile area is the workspace's
+// usable area, inside its viewport.
+func TestTileAreaSizedWorkspace(t *testing.T) {
+	c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{W: 100, H: 70})
+	m := c.cur().mon
+	m.Current().SetSize(60, 80)
+	m.AddWindow(1)
+	scene := check(map[WindowID]bool{1: true})
+	a, ok := scene.TileArea()
+	if u := m.Current().Usable; !ok || a != u || u == m.Current().Output {
+		t.Fatalf("tile area %+v %v, want usable %+v inside frame %+v", a, ok, u, m.Current().Output)
 	}
 }
 

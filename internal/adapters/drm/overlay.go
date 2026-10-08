@@ -76,12 +76,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	var mode colorMode
 	for i := range s.Windows {
 		w := &s.Windows[i]
-		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
-			continue
-		}
-		if a, ok := s.TileArea(); ok && w.Tile() && !w.Rect.Overlaps(a) {
-			// A tile wholly under a panel is not drawn: neither a
-			// candidate nor over one.
+		if !s.Draws(*w) {
+			// Not drawn (a tile wholly under a panel included): neither
+			// a candidate nor over one.
 			continue
 		}
 		if w.Popup {
@@ -109,7 +106,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	}
 	if pick != nil {
 		for i := range s.Windows {
-			if w := &s.Windows[i]; w.Popup && !w.Hidden && w.Rect.Overlaps(pick.Rect) {
+			if w := &s.Windows[i]; w.Popup && s.Draws(*w) && w.Rect.Overlaps(pick.Rect) {
 				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 			}
 		}

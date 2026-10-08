@@ -476,6 +476,14 @@ func (v viewport) area(p Placement) Rect {
 	return v.usable
 }
 
+// hasRoom reports whether p's area can show anything: panels can leave
+// tiles no room at all. Unlike shows, it ignores where p is, so a window
+// still sliding in counts.
+func hasRoom(v viewport, p Placement) bool {
+	a := v.area(p)
+	return a.W > 0 && a.H > 0
+}
+
 // shows reports whether the user sees p: not hidden, and overlapping its
 // area.
 func (v viewport) shows(p Placement) bool {

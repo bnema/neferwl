@@ -68,7 +68,7 @@ func (o *Output) wantContent(s ports.Scene, surfaces map[ports.WindowID]ports.Su
 	var full *ports.SceneWindow
 	for i := range s.Windows {
 		w := &s.Windows[i]
-		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
+		if !s.Draws(*w) {
 			continue
 		}
 		if !w.Fullscreen || !covers(&s, w) || full != nil {

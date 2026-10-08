@@ -83,6 +83,17 @@ func TestOverlayTileInset(t *testing.T) {
 	}
 }
 
+// A fullscreen window is scanned out when the only other window is a tile
+// the scene does not draw (no room left by the panels).
+func TestScanoutIgnoresUndrawnTile(t *testing.T) {
+	s, contents := fullscreenScene()
+	s.TileInset = ports.Insets{Bottom: 100}
+	s.Windows = append([]ports.SceneWindow{{ID: 2, Rect: ports.Rect{W: 200, H: 100}}}, s.Windows...)
+	if _, reason := scanoutCandidate(s, contents, 200, 100, nil); reason != "" {
+		t.Fatalf("undrawn tile blocked scanout: %q", reason)
+	}
+}
+
 func TestOverlayCandidate(t *testing.T) {
 	s, c := overlayScene()
 	if w, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" || w.ID != 2 {
