@@ -1035,7 +1035,12 @@ func setRule(r *ports.WindowRule, field, v string) error {
 			return fmt.Errorf("invalid regular expression: %v", err)
 		}
 		// The whole app ID must match: "steam" does not match "steam_app_1".
-		r.AppID = regexp.MustCompile("^(?:" + v + ")$")
+		// A value can still break the wrapping ("\Qsteam" quotes the ")").
+		re, err := regexp.Compile("^(?:" + v + ")$")
+		if err != nil {
+			return fmt.Errorf("invalid regular expression: %v", err)
+		}
+		r.AppID = re
 	case "floating":
 		b, err := onOff(v)
 		if err != nil {
