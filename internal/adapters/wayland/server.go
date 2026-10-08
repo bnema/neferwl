@@ -256,8 +256,10 @@ type Server struct {
 	clipDevices                                 []*clipDevice
 	dataSources, primarySources, controlSources map[*server.Resource]*clipSource
 	// Pointer constraints (constraints.go).
-	regions     map[*server.Resource]*region
-	relatives   map[server.Client][]*relativepointer.ZwpRelativePointerV1
+	regions   map[*server.Resource]*region
+	relatives map[server.Client][]*relativepointer.ZwpRelativePointerV1
+	// gestures are each client's zwp_pointer_gestures_v1 objects (gestures.go).
+	gestures    map[server.Client][]*gestureObject
 	constraints map[*surface]*constraint
 	constraint  *constraint // the active one
 	positioners map[*server.Resource]*positioner
@@ -330,6 +332,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		contentNotify:      make(chan struct{}),
 		regions:            map[*server.Resource]*region{},
 		relatives:          map[server.Client][]*relativepointer.ZwpRelativePointerV1{},
+		gestures:           map[server.Client][]*gestureObject{},
 		constraints:        map[*surface]*constraint{},
 		positioners:        map[*server.Resource]*positioner{},
 		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), keyStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), pointerStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
@@ -737,12 +740,12 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Only input/focus commands require an owner envelope. Config relay
 		// also produces SetKeymap and other epoch-independent commands.
 		switch cmd.(type) {
-		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.FocusWindow, ports.ForwardKey:
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey:
 			return
 		}
 	}
 	switch c := cmd.(type) {
-	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey:
+	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey:
 		s.applyInput(c)
 	case ports.ConfigurePopup:
 		if w := s.windows[c.ID]; w != nil && w.popup != nil {

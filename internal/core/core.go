@@ -135,7 +135,10 @@ type Core struct {
 	// flip came in time to move a running slide; nil when not armed. It is
 	// the channel of frameTimer, made once and reset per frame: an
 	// animation frame allocates no timer.
-	swipe      *swipeGesture
+	swipe *swipeGesture
+	// gesture is the touchpad gesture forwarded to a client
+	// (clientgesture.go).
+	gesture    clientGesture
 	frameC     <-chan time.Time
 	frameTimer ports.Timer
 	// shots is the snapshot of what the screens show before an action
@@ -626,7 +629,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.pointer != 0 && !c.visible(c.pointer) {
 		c.pointer = 0
 		if c.grab == 0 {
-			if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+			if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
 				return err
 			}
 		}
@@ -708,7 +711,7 @@ func (c *Core) rehit(ctx context.Context) error {
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	if id != c.pointer {
 		c.pointer, c.pointerAt = id, [2]float64{x, y}
-		return c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
+		return c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y})
 	}
 	if id == 0 || c.pointerAt == [2]float64{x, y} {
 		return nil

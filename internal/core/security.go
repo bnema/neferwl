@@ -41,6 +41,9 @@ func (c *Core) syncSecurity() bool {
 	}
 	c.dropSwipe()
 	c.swipe = nil
+	// The gesture ends with the pointer focus: wayland cancels it when the
+	// protected epoch clears that focus.
+	c.gesture = clientGesture{}
 	c.stopAnimations()
 	c.stopPulse()
 	if state.Protected {
@@ -64,7 +67,7 @@ func (c *Core) securityCheckpoint(ctx context.Context) error {
 		return nil
 	}
 	// Clear display focus even if the new epoch has no mapped lock surfaces.
-	if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+	if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
 		return err
 	}
 	if err := c.command(ctx, ports.FocusWindow{}); err != nil {
@@ -204,7 +207,7 @@ func (c *Core) publishProtected(ctx context.Context) error {
 	if !c.validLockID(c.pointer) {
 		c.pointer = 0
 	}
-	if err := c.command(ctx, ports.PointerFocus{ID: c.pointer, X: c.pointerAt[0], Y: c.pointerAt[1]}); err != nil {
+	if err := c.pointerFocus(ctx, ports.PointerFocus{ID: c.pointer, X: c.pointerAt[0], Y: c.pointerAt[1]}); err != nil {
 		return err
 	}
 	latest(c.ch.Scenes, scenes)
@@ -259,7 +262,7 @@ func (c *Core) protectedInput(ctx context.Context, ev ports.InputEvent) error {
 		id, x, y := c.lockHit(c.cursorX, c.cursorY)
 		if id != c.pointer {
 			c.pointer = id
-			if err := c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
+			if err := c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
 				return err
 			}
 		}
