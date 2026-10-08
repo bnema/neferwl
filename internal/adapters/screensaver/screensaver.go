@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bnema/neferwl/internal/adapters/busretry"
 	"github.com/bnema/zerowrap"
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -25,8 +26,6 @@ const (
 	busDaemon = "org.freedesktop.DBus"
 	// callTimeout bounds the bus calls Run makes itself.
 	callTimeout = 3 * time.Second
-	// retryMax bounds the delay between Serve's attempts.
-	retryMax = time.Minute
 )
 
 // ErrNameTaken is returned by Run when another program owns the name.
@@ -54,40 +53,15 @@ type Reports struct {
 
 // Serve runs the service until ctx ends. When the bus goes or another
 // program owns the name, it tries again after retry, doubling up to
-// retryMax, so a restarted bus or a released name is picked up.
+// busretry.Max, so a restarted bus or a released name is picked up.
 func Serve(ctx context.Context, address string, r Reports, retry time.Duration, log zerowrap.Logger) {
-	delay := retry
-	var last string
-	for {
-		start := time.Now()
+	busretry.Run(ctx, retry, "D-Bus idle inhibitors", log, func(ctx context.Context) error {
 		s, err := New(ctx, address, log)
-		if err == nil {
-			err = s.Run(ctx, r)
+		if err != nil {
+			return err
 		}
-		if ctx.Err() != nil {
-			return
-		}
-		if err == nil {
-			err = errors.New("screensaver service stopped")
-		}
-		if time.Since(start) > retryMax {
-			// It served a while: the failure is new, not a retry streak.
-			delay, last = retry, ""
-		}
-		// Warn once per kind of failure, not on every attempt.
-		if msg := err.Error(); msg != last {
-			last = msg
-			log.Warn().Err(err).Dur("retry", delay).Msg("D-Bus idle inhibitors ignored until the next attempt")
-		} else {
-			log.Debug().Err(err).Dur("retry", delay).Msg("D-Bus idle inhibitors still ignored")
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
-		delay = min(2*delay, retryMax)
-	}
+		return s.Run(ctx, r)
+	})
 }
 
 // Service owns one private session bus connection. Run must be called once.
