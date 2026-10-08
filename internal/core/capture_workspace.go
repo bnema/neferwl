@@ -91,7 +91,7 @@ func (c *Core) captureConfigure(sc *screen, p Placement, t configureTarget) (*Pl
 		// An overview preview keeps its real size and physical state.
 		return cp, t
 	}
-	t.view = viewport{frame: cw.frame, usable: cw.ws.Usable}
+	t.view = whole(cw.frame) // the capture image has no panels
 	t.focused = false
 	t.client, t.imposed = Rect{}, false
 	if !cp.Hidden {

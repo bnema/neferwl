@@ -183,9 +183,14 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
 		t.Fatalf("neighbors %04b, want right only", p.Neighbors)
 	}
-	seps := separators(ps, 2, 0, whole(w.Output), true)
+	seps := separators(ps, 2, 0, viewport{frame: w.Output, usable: w.Usable}, true)
 	if got := colorAt(seps, 200, 578); got != "" {
 		t.Fatalf("line along the panel: %v", seps)
+	}
+	for _, s := range seps {
+		if s.Window == 3 {
+			t.Fatalf("line of the tile under the panel: %v", seps)
+		}
 	}
 	// Two tiles on screen: each lights its half of the shared line.
 	if got := colorAt(seps, 449, 100); got != "lit" {
