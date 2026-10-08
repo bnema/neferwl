@@ -88,8 +88,10 @@ type PointerAxis struct {
 
 func (PointerAxis) inputEvent() {}
 
-// SwipeBegin starts a three- or four-finger touchpad swipe. Time is the
-// device timestamp (CLOCK_MONOTONIC), shared by the updates and the end.
+// SwipeBegin starts a touchpad swipe of any finger count; core keeps three
+// and four fingers and forwards the others to the window under the
+// pointer. Time is the device timestamp (CLOCK_MONOTONIC), shared by the
+// updates and the end.
 type SwipeBegin struct {
 	Fingers int
 	Time    time.Duration
@@ -112,3 +114,49 @@ type SwipeEnd struct {
 func (SwipeBegin) inputEvent()  {}
 func (SwipeUpdate) inputEvent() {}
 func (SwipeEnd) inputEvent()    {}
+
+// PinchBegin starts a touchpad pinch. Time is the device timestamp
+// (CLOCK_MONOTONIC), shared by the updates and the end. A pinch always goes
+// to the window under the pointer.
+type PinchBegin struct {
+	Fingers int
+	Time    time.Duration
+}
+
+// PinchUpdate moves a pinch: the fingers' centre by the unaccelerated
+// deltas DX, DY (touchpad units), Scale is the spread of the fingers
+// relative to the begin (1.0 there) and Rotation the angle turned since the
+// previous event, in degrees clockwise.
+type PinchUpdate struct {
+	DX, DY   float64
+	Scale    float64
+	Rotation float64
+	Time     time.Duration
+}
+
+// PinchEnd lifts the fingers. Cancelled is set when libinput cancelled the
+// pinch.
+type PinchEnd struct {
+	Cancelled bool
+	Time      time.Duration
+}
+
+// HoldBegin starts a touchpad hold: fingers resting on the pad. Like a
+// pinch it goes to the window under the pointer.
+type HoldBegin struct {
+	Fingers int
+	Time    time.Duration
+}
+
+// HoldEnd lifts the fingers. Cancelled is set when the fingers moved or
+// another finger landed, so the hold became something else.
+type HoldEnd struct {
+	Cancelled bool
+	Time      time.Duration
+}
+
+func (PinchBegin) inputEvent()  {}
+func (PinchUpdate) inputEvent() {}
+func (PinchEnd) inputEvent()    {}
+func (HoldBegin) inputEvent()   {}
+func (HoldEnd) inputEvent()     {}

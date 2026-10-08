@@ -42,61 +42,126 @@ func TestHotkey(t *testing.T) {
 	}
 }
 
-func TestSwipesIgnoreSecondTouchpad(t *testing.T) {
-	var s swipes
+func TestGesturesIgnoreSecondTouchpad(t *testing.T) {
+	var g gestures
 	const pad, other = 1, 2
-	s.begin(pad, 3, time.Second)
-	if ev := s.begin(other, 3, time.Second); ev != nil {
+	g.begin(pad, ports.GestureSwipe, 3, time.Second)
+	if ev := g.begin(other, ports.GestureSwipe, 3, time.Second); ev != nil {
 		t.Fatalf("second touchpad began: %v", ev)
 	}
-	if ev := s.update(other, 1, 1, time.Second); ev != nil {
+	if ev := g.swipeUpdate(other, 1, 1, time.Second); ev != nil {
 		t.Fatalf("second touchpad moved: %v", ev)
 	}
-	if ev := s.end(other, false, time.Second); ev != nil {
+	if ev := g.end(other, ports.GestureSwipe, false, time.Second); ev != nil {
 		t.Fatalf("second touchpad ended the swipe: %v", ev)
 	}
-	if ev := s.update(pad, 1, 1, 2*time.Second); ev == nil {
+	if ev := g.swipeUpdate(pad, 1, 1, 2*time.Second); ev == nil {
 		t.Fatal("first touchpad lost its swipe")
 	}
-	s.end(pad, false, 3*time.Second)
-	if ev := s.begin(other, 3, 4*time.Second); ev == nil {
+	g.end(pad, ports.GestureSwipe, false, 3*time.Second)
+	if ev := g.begin(other, ports.GestureSwipe, 3, 4*time.Second); ev == nil {
 		t.Fatal("second touchpad cannot swipe after the first ended")
 	}
 }
 
-func TestSwipesStreamThreeFingers(t *testing.T) {
-	var s swipes
+func TestGesturesStreamSwipe(t *testing.T) {
+	var g gestures
 	const pad, other = 1, 2
-	if ev := s.begin(pad, 2, time.Second); ev != nil {
-		t.Fatalf("two fingers: %v", ev)
+	if ev := g.begin(pad, ports.GestureSwipe, 0, time.Second); ev != nil {
+		t.Fatalf("no fingers: %v", ev)
 	}
-	if ev := s.update(pad, 1, 1, time.Second); ev != nil {
+	if ev := g.swipeUpdate(pad, 1, 1, time.Second); ev != nil {
 		t.Fatalf("update without a swipe: %v", ev)
 	}
-	if ev := s.begin(pad, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
+	if ev := g.begin(pad, ports.GestureSwipe, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
-	if ev := s.update(pad, -3, 2, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, Time: 2 * time.Second}) {
+	if ev := g.swipeUpdate(pad, -3, 2, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, Time: 2 * time.Second}) {
 		t.Fatalf("update: %v", ev)
 	}
-	if ev := s.end(other, false, 0); ev != nil {
+	if ev := g.end(other, ports.GestureSwipe, false, 0); ev != nil {
 		t.Fatalf("end on another device: %v", ev)
 	}
-	if ev := s.end(pad, true, 3*time.Second); ev != (ports.SwipeEnd{Cancelled: true, Time: 3 * time.Second}) {
+	if ev := g.end(pad, ports.GestureSwipe, true, 3*time.Second); ev != (ports.SwipeEnd{Cancelled: true, Time: 3 * time.Second}) {
 		t.Fatalf("end: %v", ev)
 	}
-	if ev := s.end(pad, false, 0); ev != nil {
+	if ev := g.end(pad, ports.GestureSwipe, false, 0); ev != nil {
 		t.Fatalf("second end: %v", ev)
 	}
 }
 
-func TestSwipesStreamFourFingers(t *testing.T) {
-	var s swipes
-	if ev := s.begin(1, 4, time.Second); ev != (ports.SwipeBegin{Fingers: 4, Time: time.Second}) {
-		t.Fatalf("four fingers: %v", ev)
+// Swipes of every finger count stream; core picks which ones it keeps.
+func TestGesturesStreamAnyFingerCount(t *testing.T) {
+	for _, fingers := range []int{2, 3, 4, 5} {
+		var g gestures
+		if ev := g.begin(1, ports.GestureSwipe, fingers, time.Second); ev != (ports.SwipeBegin{Fingers: fingers, Time: time.Second}) {
+			t.Fatalf("%d fingers: %v", fingers, ev)
+		}
+		if ev := g.begin(1, ports.GestureSwipe, 5, time.Second); ev != nil {
+			t.Fatalf("a second swipe began during a swipe: %v", ev)
+		}
 	}
-	if ev := s.begin(1, 5, time.Second); ev != nil {
-		t.Fatalf("five fingers during a swipe: %v", ev)
+}
+
+func TestGesturesStreamPinch(t *testing.T) {
+	var g gestures
+	const pad = 1
+	if ev := g.begin(pad, ports.GesturePinch, 2, time.Second); ev != (ports.PinchBegin{Fingers: 2, Time: time.Second}) {
+		t.Fatalf("begin: %v", ev)
+	}
+	if ev := g.swipeUpdate(pad, 1, 1, time.Second); ev != nil {
+		t.Fatalf("swipe update during a pinch: %v", ev)
+	}
+	if ev := g.end(pad, ports.GestureHold, false, time.Second); ev != nil {
+		t.Fatalf("hold end during a pinch: %v", ev)
+	}
+	want := ports.PinchUpdate{DX: 1, DY: -2, Scale: 1.5, Rotation: -10, Time: 2 * time.Second}
+	if ev := g.pinchUpdate(pad, 1, -2, 1.5, -10, 2*time.Second); ev != want {
+		t.Fatalf("update: %v", ev)
+	}
+	if ev := g.end(pad, ports.GesturePinch, false, 3*time.Second); ev != (ports.PinchEnd{Time: 3 * time.Second}) {
+		t.Fatalf("end: %v", ev)
+	}
+	if ev := g.pinchUpdate(pad, 1, 1, 1, 0, 4*time.Second); ev != nil {
+		t.Fatalf("update after the end: %v", ev)
+	}
+}
+
+func TestGesturesStreamHold(t *testing.T) {
+	var g gestures
+	const pad = 1
+	if ev := g.begin(pad, ports.GestureHold, 3, time.Second); ev != (ports.HoldBegin{Fingers: 3, Time: time.Second}) {
+		t.Fatalf("begin: %v", ev)
+	}
+	if ev := g.begin(pad, ports.GesturePinch, 2, time.Second); ev != nil {
+		t.Fatalf("pinch began during a hold: %v", ev)
+	}
+	if ev := g.end(pad, ports.GestureHold, true, 2*time.Second); ev != (ports.HoldEnd{Cancelled: true, Time: 2 * time.Second}) {
+		t.Fatalf("end: %v", ev)
+	}
+}
+
+// A device that goes during a gesture ends it cancelled, whatever its kind.
+func TestGesturesAbortOnRemoval(t *testing.T) {
+	for kind, want := range map[ports.GestureKind]ports.InputEvent{
+		ports.GestureSwipe: ports.SwipeEnd{Cancelled: true},
+		ports.GesturePinch: ports.PinchEnd{Cancelled: true},
+		ports.GestureHold:  ports.HoldEnd{Cancelled: true},
+	} {
+		var g gestures
+		g.begin(1, kind, 3, time.Second)
+		if ev := g.abort(2); ev != nil {
+			t.Fatalf("kind %d: another device aborted: %v", kind, ev)
+		}
+		if ev := g.abort(1); ev != want {
+			t.Fatalf("kind %d: abort %v, want %v", kind, ev, want)
+		}
+		if ev := g.abort(1); ev != nil {
+			t.Fatalf("kind %d: second abort %v", kind, ev)
+		}
+		if ev := g.begin(1, kind, 3, time.Second); ev == nil {
+			t.Fatalf("kind %d: no gesture after the abort", kind)
+		}
 	}
 }
 
@@ -262,6 +327,7 @@ func TestSecurityInputAllKindsProductionEpoch(t *testing.T) {
 		ports.KeyEvent{Keysym: "secret", Pressed: true}, ports.PointerMotion{X: 1},
 		ports.PointerButton{Button: 272}, ports.PointerAxis{},
 		ports.SwipeBegin{}, ports.SwipeUpdate{}, ports.SwipeEnd{},
+		ports.PinchBegin{}, ports.PinchUpdate{}, ports.PinchEnd{}, ports.HoldBegin{}, ports.HoldEnd{},
 	}
 	security.EXPECT().Snapshot().Return(old).Times(len(events))
 	security.EXPECT().Snapshot().Return(newState).Once()

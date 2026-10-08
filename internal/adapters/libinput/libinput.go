@@ -33,6 +33,11 @@ const (
 	evSwipeBegin    = 800
 	evSwipeUpdate   = 801
 	evSwipeEnd      = 802
+	evPinchBegin    = 803
+	evPinchUpdate   = 804
+	evPinchEnd      = 805
+	evHoldBegin     = 806
+	evHoldEnd       = 807
 )
 
 var (
@@ -76,6 +81,8 @@ var (
 	gestureDX           func(gev uintptr) float64
 	gestureDY           func(gev uintptr) float64
 	gestureUsec         func(gev uintptr) uint64
+	gestureScale        func(gev uintptr) float64
+	gestureAngle        func(gev uintptr) float64
 	deviceRef           func(dev uintptr) uintptr
 	deviceUnref         func(dev uintptr) uintptr
 	hasNatural          func(dev uintptr) int32
@@ -149,6 +156,8 @@ func load() error {
 		reg(&gestureDX, "event_gesture_get_dx_unaccelerated")
 		reg(&gestureDY, "event_gesture_get_dy_unaccelerated")
 		reg(&gestureUsec, "event_gesture_get_time_usec")
+		reg(&gestureScale, "event_gesture_get_scale")
+		reg(&gestureAngle, "event_gesture_get_angle_delta")
 		reg(&deviceRef, "device_ref")
 		reg(&deviceUnref, "device_unref")
 		reg(&hasNatural, "device_config_scroll_has_natural_scroll")
@@ -325,14 +334,14 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 }
 
 // inputState is the device state Run owns: the device config, the devices
-// it configures (referenced until removed) and the swipe in progress on
-// each touchpad. dev applies the config to libinput; it is a zero-size
+// it configures (referenced until removed) and the gesture in progress on
+// the touchpads. dev applies the config to libinput; it is a zero-size
 // type, so storing it in the interface allocates nothing.
 type inputState struct {
-	cfg     ports.InputDevicesConfig
-	dev     deviceConfig
-	devices map[uintptr]bool
-	swipes  swipes
+	cfg      ports.InputDevicesConfig
+	dev      deviceConfig
+	devices  map[uintptr]bool
+	gestures gestures
 }
 
 // deviceConfig is libinput's device configuration side: what a device is
@@ -478,33 +487,74 @@ func (s *inputState) release() {
 	clear(s.devices)
 }
 
-// swipes streams one three- or four-finger swipe at a time to core, which
-// follows
-// the fingers. owner is the touchpad of the swipe in progress (0: none);
-// another touchpad's swipe is ignored until it ends, so core never sees
-// two streams interleaved.
-type swipes struct{ owner uintptr }
+// gestures streams one touchpad gesture at a time to core: a swipe of any
+// finger count, a pinch or a hold. Core follows the fingers of a three- or
+// four-finger swipe and hands the other gestures to the window under the
+// pointer. owner is the touchpad of the gesture in progress (0: none) and
+// kind its kind; another touchpad's gesture, or another kind's event, is
+// ignored until it ends, so core never sees two streams interleaved.
+type gestures struct {
+	owner uintptr
+	kind  ports.GestureKind
+}
 
-func (s *swipes) begin(dev uintptr, fingers int, at time.Duration) ports.InputEvent {
-	if (fingers != 3 && fingers != 4) || s.owner != 0 {
+func (g *gestures) begin(dev uintptr, kind ports.GestureKind, fingers int, at time.Duration) ports.InputEvent {
+	if dev == 0 || fingers <= 0 || g.owner != 0 {
 		return nil
 	}
-	s.owner = dev
+	g.owner, g.kind = dev, kind
+	switch kind {
+	case ports.GesturePinch:
+		return ports.PinchBegin{Fingers: fingers, Time: at}
+	case ports.GestureHold:
+		return ports.HoldBegin{Fingers: fingers, Time: at}
+	}
 	return ports.SwipeBegin{Fingers: fingers, Time: at}
 }
 
-func (s *swipes) update(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
-	if dev == 0 || s.owner != dev {
+// running reports whether dev has a gesture of the given kind in progress.
+func (g *gestures) running(dev uintptr, kind ports.GestureKind) bool {
+	return dev != 0 && g.owner == dev && g.kind == kind
+}
+
+func (g *gestures) swipeUpdate(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
+	if !g.running(dev, ports.GestureSwipe) {
 		return nil
 	}
 	return ports.SwipeUpdate{DX: dx, DY: dy, Time: at}
 }
 
-func (s *swipes) end(dev uintptr, cancelled bool, at time.Duration) ports.InputEvent {
-	if dev == 0 || s.owner != dev {
+func (g *gestures) pinchUpdate(dev uintptr, dx, dy, scale, rotation float64, at time.Duration) ports.InputEvent {
+	if !g.running(dev, ports.GesturePinch) {
 		return nil
 	}
-	s.owner = 0
+	return ports.PinchUpdate{DX: dx, DY: dy, Scale: scale, Rotation: rotation, Time: at}
+}
+
+// end finishes the gesture of the given kind on dev.
+func (g *gestures) end(dev uintptr, kind ports.GestureKind, cancelled bool, at time.Duration) ports.InputEvent {
+	if !g.running(dev, kind) {
+		return nil
+	}
+	return g.finish(cancelled, at)
+}
+
+// abort cancels whatever gesture dev has in progress (the device went).
+func (g *gestures) abort(dev uintptr) ports.InputEvent {
+	if dev == 0 || g.owner != dev {
+		return nil
+	}
+	return g.finish(true, 0)
+}
+
+func (g *gestures) finish(cancelled bool, at time.Duration) ports.InputEvent {
+	g.owner = 0
+	switch g.kind {
+	case ports.GesturePinch:
+		return ports.PinchEnd{Cancelled: cancelled, Time: at}
+	case ports.GestureHold:
+		return ports.HoldEnd{Cancelled: cancelled, Time: at}
+	}
 	return ports.SwipeEnd{Cancelled: cancelled, Time: at}
 }
 
@@ -552,17 +602,32 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 			delete(in.devices, dev)
 			deviceUnref(dev)
 		}
-		// Core waits for the end of a swipe the device began.
-		return in.swipes.end(dev, true, 0), nil
-	case evSwipeBegin:
+		// Core waits for the end of a gesture the device began.
+		return in.gestures.abort(dev), nil
+	case evSwipeBegin, evPinchBegin, evHoldBegin:
 		ge := gestureEvent(ev)
-		return in.swipes.begin(eventDevice(ev), int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
+		kind := ports.GestureSwipe
+		if eventType(ev) == evPinchBegin {
+			kind = ports.GesturePinch
+		} else if eventType(ev) == evHoldBegin {
+			kind = ports.GestureHold
+		}
+		return in.gestures.begin(eventDevice(ev), kind, int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
 	case evSwipeUpdate:
 		ge := gestureEvent(ev)
-		return in.swipes.update(eventDevice(ev), gestureDX(ge), gestureDY(ge), usec(gestureUsec(ge))), nil
+		return in.gestures.swipeUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), usec(gestureUsec(ge))), nil
+	case evPinchUpdate:
+		ge := gestureEvent(ev)
+		return in.gestures.pinchUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), nil
 	case evSwipeEnd:
 		ge := gestureEvent(ev)
-		return in.swipes.end(eventDevice(ev), gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+		return in.gestures.end(eventDevice(ev), ports.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+	case evPinchEnd:
+		ge := gestureEvent(ev)
+		return in.gestures.end(eventDevice(ev), ports.GesturePinch, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
+	case evHoldEnd:
+		ge := gestureEvent(ev)
+		return in.gestures.end(eventDevice(ev), ports.GestureHold, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil
 	case evKeyboardKey:
 		k := keyboardEvent(ev)
 		code, pressed := keyboardKey(k), keyboardState(k) == 1
