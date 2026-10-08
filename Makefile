@@ -57,7 +57,7 @@ log-check:
 	@rc=0; grep -rnE '$(LOGCOMPONENT)' --include='*.go' --exclude='*_test.go' --exclude-dir=logging internal cmd || rc=$$?; \
 	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'component log field: derive a logger with logging.For instead (see AGENTS.md)' >&2; exit 1; }
 arch: adapter-imports
-	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
+	$(HOME)/go/bin/hexcheck -config .hexcheck.yaml -root . ./...
 # Adapters stay independent: production code may import only the shared
 # adapter libraries below. outputkit holds what both output backends (drm,
 # headless) run; the others are leaf helpers.
