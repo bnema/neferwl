@@ -75,6 +75,7 @@ type Core struct {
 	// realBuf backs the layout read through at once by publish (each
 	// workspace while overviewReal is filled) and by state(); never retained.
 	realBuf         []Placement
+	scratch         publishScratch
 	security        ports.SecurityState
 	lock            lockState
 	inputKeys       map[string]bool
@@ -147,6 +148,17 @@ type Core struct {
 	capt captureState
 	// pulse marks a window that just got the focus (pulse.go).
 	pulse focusPulse
+}
+
+// publishScratch is where publishState and publishWorkspaces build their
+// snapshots each publish: owner goroutine storage, never sent (a snapshot
+// is copied out of it when it changed).
+type publishScratch struct {
+	state      ports.State
+	workspaces ports.Workspaces
+	shown      map[WindowID]bool
+	ids        []WindowID
+	layout     ports.Layout
 }
 
 // sentCache is what core last sent to wayland and on its latest-only
@@ -838,10 +850,13 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 // syncOutputs sends the output layout when it changed; input learns the
 // geometry only when the outputs themselves moved.
 func (c *Core) syncOutputs(ctx context.Context) error {
-	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
+	// Built in the scratch every publish, copied only when sent.
+	c.scratch.layout = c.layoutInto(c.scratch.layout)
+	v := ports.SetOutputs{Outputs: c.scratch.layout, Focused: c.cur().name(), Off: c.offOutputs()}
 	if sameOutputs(v, c.sent.outputs) {
 		return nil
 	}
+	v.Outputs = append(make(ports.Layout, 0, len(v.Outputs)), v.Outputs...)
 	if err := c.command(ctx, v); err != nil {
 		return err
 	}

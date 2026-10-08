@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -18,15 +20,16 @@ import (
 // flip path with another screen animating keeps it and costs the same), then
 // 6 once the layouts are built in the owner's reused buffers (layoutInto:
 // the screens' layout, the workspaces' column, row and tile rects) instead of
-// fresh slices. What is left is the scenes themselves (windows, separators,
-// the scene set) and the screen placements. Leaving entries (a closed window
-// still fading) add none: 4, less than a frame with six moving windows
+// fresh slices, and 5 once the output layout is built in the scratch too
+// (copied only when it changed). What is left is the scenes themselves
+// (windows, separators, the scene set). Leaving entries (a closed window
+// still fading) add none: 3, less than a frame with six moving windows
 // (fewer configure targets). The opening overview costs 18 (the stack
 // items, the row map and the neighbor list it rebuilds every frame; its
 // layouts reuse the buffers too).
 const (
-	publishAllocBudget         = 6
-	publishLeavingAllocBudget  = 4
+	publishAllocBudget         = 5
+	publishLeavingAllocBudget  = 3
 	publishOverviewAllocBudget = 18
 )
 
@@ -34,7 +37,7 @@ const (
 // bookkeeping; the fallback timer is then the system one) with screens
 // screens of six windows each. The Slowdown cap keeps every motion running
 // for seconds, so none settles during a measure even under -race or load.
-func publishRig(t *testing.T, screens int) *Core {
+func publishRig(t testing.TB, screens int) *Core {
 	t.Helper()
 	var cfg ports.Config
 	cfg.Keyboard.CmdKey = "super"
@@ -300,5 +303,120 @@ func TestPublishLeavingAllocations(t *testing.T) {
 	}
 	if n > publishLeavingAllocBudget {
 		t.Errorf("publish allocs per frame with leaving entries = %v, budget %d", n, publishLeavingAllocBudget)
+	}
+}
+
+// TestPublishSubscribersAllocations pins the cost of an animation frame
+// with the state and workspace subscribers attached: their snapshots are
+// built in the owner's scratch and, unchanged during a camera and rect
+// animation, add nothing to the frame. Measured: 32 when each publish built
+// fresh snapshots (state, workspaces and output layout), 5 since. Sent
+// values never share storage with the scratch they were built in.
+func TestPublishSubscribersAllocations(t *testing.T) {
+	c := publishRig(t, 2)
+	c.ch.State = make(chan ports.State, 1)
+	c.ch.Workspaces = make(chan ports.Workspaces, 1)
+	t0 := time.Now()
+	for _, sc := range c.screens {
+		if sc.name() == "" {
+			continue
+		}
+		ws := sc.mon.Current()
+		ws.view.motion = c.spring(viewSpring(100, 0), t0)
+		ws.view.off = 100
+		startRectMotions(c, sc, t0)
+	}
+	step := publishStep(t, c, nil)
+	step()
+	checkRunning(t, c, "setup")
+	if len(c.ch.State) != 1 || len(c.ch.Workspaces) != 1 {
+		t.Fatal("setup: no snapshot sent")
+	}
+	st := <-c.ch.State
+	ws := <-c.ch.Workspaces
+	n := testing.AllocsPerRun(50, step)
+	t.Logf("subscribers allocs per step = %v", n)
+	checkRunning(t, c, "motions settled during the measure")
+	if n > publishAllocBudget {
+		t.Errorf("publish allocs per frame with subscribers = %v, budget %d", n, publishAllocBudget)
+	}
+	if len(c.ch.State) != 0 || len(c.ch.Workspaces) != 0 {
+		t.Error("an unchanged snapshot was sent again")
+	}
+	// Sent values own their storage: the next publish rewrites the scratch
+	// in place.
+	sc := &c.scratch
+	if st.Window == nil || len(st.Windows) == 0 || len(ws.Outputs) == 0 || len(c.sent.outputs.Outputs) == 0 {
+		t.Fatalf("setup: empty snapshots %+v %+v", st, ws)
+	}
+	if &st.Windows[0] == &sc.state.Windows[:1][0] || &st.Outputs[0] == &sc.state.Outputs[:1][0] || inSlice(st.Window, sc.state.Windows) || inSlice(st.Window, st.Windows) {
+		t.Error("the sent state shares the scratch")
+	}
+	for _, sent := range []ports.Workspaces{ws, c.sent.workspaces} {
+		if &sent.Outputs[0] == &sc.workspaces.Outputs[:1][0] {
+			t.Error("the sent workspaces share the scratch")
+		}
+		for k, o := range sent.Outputs {
+			if &o.Workspaces[0] == &sc.workspaces.Outputs[k].Workspaces[:1][0] {
+				t.Errorf("the sent workspaces of %s share the scratch", o.Name)
+			}
+		}
+	}
+	if &c.sent.outputs.Outputs[0] == &sc.layout[:1][0] {
+		t.Error("the sent output layout shares the scratch")
+	}
+	// And a later change leaves them as they were.
+	want := ports.State{Output: st.Output, Outputs: slices.Clone(st.Outputs), Windows: slices.Clone(st.Windows)}
+	w := *st.Window
+	want.Window = &w
+	c.windows.setIdleInhibit(st.Windows[0].ID, true)
+	c.publishState()
+	// A sent value aliasing the scratch would always equal it: nothing sent.
+	select {
+	case got := <-c.ch.State:
+		if !got.Windows[0].IdleInhibit {
+			t.Fatal("change not published")
+		}
+	default:
+		t.Fatal("change not published")
+	}
+	if !reflect.DeepEqual(st, want) {
+		t.Fatal("a sent snapshot changed after a later publish")
+	}
+}
+
+func inSlice[T any](p *T, s []T) bool {
+	s = s[:cap(s)]
+	for i := range s {
+		if p == &s[i] {
+			return true
+		}
+	}
+	return false
+}
+
+// BenchmarkPublishSubscribers is one animation frame on two screens with
+// the state and workspace subscribers attached.
+func BenchmarkPublishSubscribers(b *testing.B) {
+	c := publishRig(b, 2)
+	c.ch.State = make(chan ports.State, 1)
+	c.ch.Workspaces = make(chan ports.Workspaces, 1)
+	t0 := time.Now()
+	for _, sc := range c.screens {
+		if sc.name() == "" {
+			continue
+		}
+		ws := sc.mon.Current()
+		ws.view.motion = c.spring(viewSpring(100, 0), t0)
+		ws.view.off = 100
+		startRectMotions(c, sc, t0)
+	}
+	ctx := context.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		if err := c.step(ctx, nil); err != nil {
+			b.Fatal(err)
+		}
+		<-c.ch.Scenes
 	}
 }
