@@ -186,7 +186,7 @@ Over the shown stash a sideways swipe slides it with the fingers, with a stop on
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
-Three- and four-finger swipes belong to the compositor. Every other touchpad gesture goes to the window under the pointer through `zwp_pointer_gestures_v1` (version 3): swipes of other finger counts, pinch (zoom and rotation) and hold. A gesture stays with the window that had the pointer when it began; it ends as cancelled if the pointer moves to another window or the window closes. Nothing is sent to windows while the session is locked.
+Three- and four-finger swipes belong to the compositor. Every other touchpad gesture goes to the window under the pointer through `zwp_pointer_gestures_v1` (version 3): swipes of other finger counts, pinch (zoom and rotation) and hold. A gesture stays with the window that had the pointer when it began; it ends as cancelled if the pointer moves to another window or the window closes. While the session is locked, only the lock screen gets gestures.
 
 ## HDR
 
