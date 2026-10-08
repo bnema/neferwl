@@ -216,6 +216,7 @@ func (w *Workspace) Click(id WindowID) {
 		w.stashHidden = true
 	}
 	w.FocusID(id)
+	w.focusModal(0)
 }
 
 // stashRect is where the selected stashed window is, border included.

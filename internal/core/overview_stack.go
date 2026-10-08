@@ -227,6 +227,9 @@ func (w *Workspace) selectOverviewColumn(i int) {
 
 // apply commits the selected front card without changing other stack items.
 func (w *Workspace) apply(item stackItem, selected WindowID) {
+	// Picking a card is a user focus: a blocked parent gives it to its
+	// modal dialog.
+	defer w.focusModal(0)
 	switch item.kind {
 	case stackFloat:
 		w.FocusID(item.id)

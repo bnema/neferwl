@@ -51,6 +51,7 @@ import (
 	wire_wlroutputpower "github.com/bnema/go-wayland-bindings/server/wlroutputpowermanagement"
 	wire_wlrscreencopy "github.com/bnema/go-wayland-bindings/server/wlrscreencopy"
 	wire_xdgactivation "github.com/bnema/go-wayland-bindings/server/xdgactivation"
+	wire_xdgdialog "github.com/bnema/go-wayland-bindings/server/xdgdialog"
 	wire_xdgforeign "github.com/bnema/go-wayland-bindings/server/xdgforeign"
 	wire_xdgoutput "github.com/bnema/go-wayland-bindings/server/xdgoutput"
 	wire_xdgshell "github.com/bnema/go-wayland-bindings/server/xdgshell"
@@ -197,6 +198,8 @@ var wireSchemas = map[string]wireSchema{
 	"wp_viewport":                                          {wire_viewporter.WpViewportInterface, &client_viewporter.WpViewport{}, map[uint16]bool{0: true}, nil},
 	"wp_viewporter":                                        {wire_viewporter.WpViewporterInterface, &client_viewporter.WpViewporter{}, map[uint16]bool{0: true}, nil},
 	"xdg_activation_token_v1":                              {wire_xdgactivation.ActivationTokenV1Interface, &client_xdgactivation.XdgActivationToken{}, map[uint16]bool{4: true}, nil},
+	"xdg_dialog_v1":                                        {wire_xdgdialog.DialogV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"xdg_wm_dialog_v1":                                     {wire_xdgdialog.WmDialogV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"xdg_activation_v1":                                    {wire_xdgactivation.ActivationV1Interface, &client_xdgactivation.XdgActivation{}, map[uint16]bool{0: true}, nil},
 	"zxdg_exporter_v2":                                     {wire_xdgforeign.ZxdgExporterV2Interface, nil, map[uint16]bool{0: true}, nil},
 	"zxdg_importer_v2":                                     {wire_xdgforeign.ZxdgImporterV2Interface, nil, map[uint16]bool{0: true}, nil},

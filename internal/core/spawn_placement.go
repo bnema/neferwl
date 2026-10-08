@@ -81,6 +81,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		// A dialog opens on its parent's workspace, over it, fullscreen too.
 		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
 			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
+			pw.SetModal(v.ID, v.Modal)
 			ps.mon.normalize()
 			return
 		}

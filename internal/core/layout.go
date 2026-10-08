@@ -268,6 +268,9 @@ type Float struct {
 	// over is the parent of a dialog: while the parent covers the output
 	// fullscreen, the dialog shows over it and may take the focus.
 	over WindowID
+	// modal marks a dialog that blocks its parent: the user focusing the
+	// parent focuses it (modalOf).
+	modal bool
 }
 
 func (w *Workspace) empty() bool {
@@ -413,6 +416,60 @@ func (w *Workspace) SetDialogParent(id, parent WindowID) {
 		w.Floats[i].over = parent
 		w.reconcileFloats()
 	}
+}
+
+// SetModal marks a dialog as blocking its parent or not. It moves no focus
+// (a client request, ADR 011): the next user focus on the parent goes to
+// the dialog. A dialog maps focused anyway (AddDialog).
+func (w *Workspace) SetModal(id WindowID, modal bool) {
+	if i := w.floatIndex(id); i >= 0 {
+		w.Floats[i].modal = modal
+	}
+}
+
+// modalOf is the modal dialog that blocks window id, 0 when none: the
+// topmost modal dialog of id, or of that dialog in turn (a confirmation
+// over a "Save as…"). Only dialogs on id's workspace count.
+func (w *Workspace) modalOf(id WindowID) WindowID {
+	blocker := WindowID(0)
+	// Each hop goes to another float: at most len(w.Floats) hops.
+	for range len(w.Floats) {
+		next := WindowID(0)
+		for i := len(w.Floats) - 1; i >= 0; i-- {
+			if f := w.Floats[i]; f.modal && f.over == id && id != 0 && f.ID != id && f.ID != blocker {
+				next = f.ID
+				break
+			}
+		}
+		if next == 0 {
+			break
+		}
+		blocker, id = next, next
+	}
+	return blocker
+}
+
+// focusModal sends the focus the user just moved onto the parent of a
+// modal dialog to that dialog, unless the move came from the dialog: a move
+// away from a dialog reaches its parent, and the next one goes on. Nothing
+// happens when the focus did not move.
+func (w *Workspace) focusModal(from WindowID) {
+	to, ok := w.Focused()
+	if !ok || to == from {
+		return
+	}
+	d := w.modalOf(to)
+	if d == 0 || d == from {
+		return
+	}
+	if c := w.cover(); c != 0 && c != d {
+		if i := w.floatIndex(d); i >= 0 && !w.Floats[i].coverDialog(c) {
+			// Hidden under another window's fullscreen: leave it, as
+			// Activate does, so the dialog shows.
+			w.leaveFullscreen()
+		}
+	}
+	w.FocusID(d)
 }
 
 // coverDialog reports whether f is a dialog of the covering fullscreen
@@ -690,6 +747,8 @@ func (w *Workspace) FocusID(id WindowID) bool {
 // fullscreen window it leaves fullscreen for the window there (leaveCover);
 // false means it stays, with no window on that side.
 func (w *Workspace) FocusColumn(dir int) bool {
+	from, _ := w.Focused()
+	defer w.focusModal(from)
 	if w.coverDialogFocused() {
 		// The first move goes back to the fullscreen window under it.
 		w.floatFocus = false
@@ -754,6 +813,8 @@ func (w *Workspace) onScreenFocus() bool {
 // float; false means no window is available in that direction. From a
 // covering fullscreen window it leaves fullscreen for that window.
 func (w *Workspace) FocusWindow(dir int) bool {
+	from, _ := w.Focused()
+	defer w.focusModal(from)
 	if w.coverDialogFocused() {
 		w.floatFocus = false
 		return true
@@ -1155,6 +1216,7 @@ func (w *Workspace) Activate(id WindowID) {
 		w.leaveFullscreen()
 	}
 	w.FocusID(id)
+	w.focusModal(0)
 }
 
 // SetFullscreen applies a client request. It never moves focus: client

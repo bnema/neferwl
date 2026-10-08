@@ -138,7 +138,10 @@ type window struct {
 	// ext-foreign-toplevel-list (identifier) and to its capture sources.
 	gen uint32
 	// parent is set_parent (dialogs); min and max are the size hints.
-	parent         *window
+	parent *window
+	// dialog is set while an xdg_dialog_v1 object exists for the
+	// toplevel; modal is its state.
+	dialog, modal  bool
 	minW, minH     int32
 	maxW, maxH     int32
 	floating       bool
@@ -243,7 +246,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			if w.parent != nil && w.parent.mapped {
 				parent = w.parent.id
 			}
-			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Remap: w.gen > 1})
+			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
