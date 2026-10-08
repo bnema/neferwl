@@ -25,7 +25,7 @@ func parseString(t *testing.T, s string) (ports.Config, []Warning) {
 func TestDefaultsAndLoad(t *testing.T) {
 	t.Setenv("TERMINAL", "")
 	d := Defaults()
-	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 77 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
+	if d.Keyboard.RepeatRate != 25 || d.Keyboard.CmdKey != "super" || !d.Render.DirectScanout || len(d.Binds) != 79 || d.Layout.MaxColumns != 2 || d.Floating.Dim != 0.3 {
 		t.Fatalf("defaults: %+v", d)
 	}
 	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
@@ -397,6 +397,19 @@ func TestBindResolvedCollision(t *testing.T) {
 	c, w = parseString(t, "bind.super+q = quit\n")
 	if c.Binds["Super+q"] != "quit" || c.Binds["Cmd+q"] != "" || len(w) != 0 {
 		t.Fatal(c.Binds, w)
+	}
+}
+
+func TestColumnSwitcherBinds(t *testing.T) {
+	d := Defaults()
+	if d.Binds["Cmd+Tab"] != "switch-column-next" || d.Binds["Cmd+Shift+Tab"] != "switch-column-prev" {
+		t.Fatal(d.Binds)
+	}
+	for _, action := range []string{"switch-column-next", "switch-column-prev"} {
+		c, w := parseString(t, "bind.cmd+x = "+action+"\n")
+		if c.Binds["Cmd+x"] != action || len(w) != 0 {
+			t.Fatalf("%s: binds %v warnings %v", action, c.Binds, w)
+		}
 	}
 }
 
