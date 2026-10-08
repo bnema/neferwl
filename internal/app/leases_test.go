@@ -48,7 +48,7 @@ func TestLeasePublisherSendsChangesOnly(t *testing.T) {
 		t.Fatalf("inventory: %+v", inv)
 	}
 	defer inv.Device.Close()
-	if inv.Device == p.clientFDs[card] {
+	if inv.Device.Fd() == p.clientFDs[card].Fd() {
 		t.Fatal("message shares the publisher's fd")
 	}
 	p.publish(card)

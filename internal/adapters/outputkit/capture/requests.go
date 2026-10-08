@@ -28,7 +28,8 @@ type Requests struct {
 	replies chan<- ports.CaptureDone
 }
 
-// Init binds the requests to the owner's context and reply channel.
+// Init binds the requests to the owner's context and reply channel. It must
+// run before any other method.
 func (r *Requests) Init(ctx context.Context, replies chan<- ports.CaptureDone) {
 	r.List, r.ctx, r.replies = r.storage[:0], ctx, replies
 }
@@ -73,12 +74,11 @@ func (r *Requests) Reset() {
 }
 
 // Stop fails what the owner still holds, then what is queued on incoming,
-// with ErrOutputStopped. ctx is the context replies are sent under. It
-// returns once incoming is empty or closed.
-func (r *Requests) Stop(ctx context.Context, incoming <-chan ports.CaptureRequest) {
+// with ErrOutputStopped. It returns once incoming is empty or closed.
+func (r *Requests) Stop(incoming <-chan ports.CaptureRequest) {
 	for _, q := range r.List {
 		if !Handed(q) {
-			Fail(ctx, q, ErrOutputStopped, r.replies)
+			Fail(r.ctx, q, ErrOutputStopped, r.replies)
 		}
 	}
 	for {
@@ -87,7 +87,7 @@ func (r *Requests) Stop(ctx context.Context, incoming <-chan ports.CaptureReques
 			if !ok {
 				return
 			}
-			Fail(ctx, q, ErrOutputStopped, r.replies)
+			Fail(r.ctx, q, ErrOutputStopped, r.replies)
 		default:
 			return
 		}

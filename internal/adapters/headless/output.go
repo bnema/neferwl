@@ -105,7 +105,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(capture.ErrFrameNotPresented)
 		cancelCaptures()
 		pipeline.Close(r)
-		requests.Stop(ctx, incoming)
+		requests.Stop(incoming)
 	}()
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet

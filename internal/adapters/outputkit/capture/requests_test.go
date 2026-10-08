@@ -52,12 +52,24 @@ func TestRequestsStopDrainsIncoming(t *testing.T) {
 	var r Requests
 	r.Init(context.Background(), replies)
 	r.Admit(ports.CaptureRequest{ID: 1}, nil, ports.Scene{}, false)
+	r.Admit(ports.CaptureRequest{ID: 3}, nil, ports.Scene{}, false)
+	r.List[1] = ports.CaptureRequest{} // handed to the pipeline
 	incoming := make(chan ports.CaptureRequest, 2)
 	incoming <- ports.CaptureRequest{ID: 2}
 	close(incoming)
-	r.Stop(context.Background(), incoming)
+	r.Stop(incoming)
 	require.Len(t, replies, 2)
-	for range 2 {
-		require.ErrorIs(t, (<-replies).Err, ErrOutputStopped)
+	for _, id := range []uint64{1, 2} {
+		done := <-replies
+		require.Equal(t, id, done.ID)
+		require.ErrorIs(t, done.Err, ErrOutputStopped)
 	}
+}
+
+func TestRequestsStopReturnsOnOpenEmptyChannel(t *testing.T) {
+	replies := make(chan ports.CaptureDone, 1)
+	var r Requests
+	r.Init(context.Background(), replies)
+	r.Stop(make(chan ports.CaptureRequest))
+	require.Empty(t, replies)
 }

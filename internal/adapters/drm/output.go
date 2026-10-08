@@ -1056,7 +1056,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	defer func() {
 		cancelCaptures()
 		pipeline.Close(r)
-		requests.Stop(ctx, captures)
+		requests.Stop(captures)
 	}()
 	clk := o.clock
 	if clk == nil {
