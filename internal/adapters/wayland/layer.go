@@ -47,7 +47,9 @@ func (h layerShell) GetLayerSurface(r *wlrlayershell.ZwlrLayerShellV1, id uint32
 		return
 	}
 	state := h.server.surfaces[w.Resource]
-	if state.kind != roleNone || (state.next.attached && state.next.buffer != nil) || state.current != nil {
+	// A surface keeps its layer role once its layer surface is destroyed and
+	// may take a new one; only a live role object blocks it.
+	if state.kind != roleNone && state.kind != roleLayer || state.layer != nil || (state.next.attached && state.next.buffer != nil) || state.current != nil {
 		r.PostError(uint32(wlrlayershell.ZwlrLayerShellV1ErrorAlreadyConstructed), "surface already constructed")
 		return
 	}

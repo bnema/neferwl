@@ -179,6 +179,27 @@ func TestLayerAlreadyConstructed(t *testing.T) {
 	}
 }
 
+// A wl_surface keeps its layer role after its layer surface is destroyed,
+// so the client may give it a new one (swayosd does this on every OSD).
+func TestLayerRecreateOnSameSurface(t *testing.T) {
+	s, _, _, dir := lifecycleServer(t)
+	c := protocolClient(t, s, dir)
+	shell := bindProtocol(t, c, "zwlr_layer_shell_v1")
+	surf, layer := layerProtocol(t, c)
+	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(10), uint32(10))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	requestProtocol(t, c, layer, wlrlayershell.ZwlrLayerSurfaceV1RequestDestroy)
+	requestProtocol(t, c, surf, wayland.SurfaceRequestAttach, uint32(0), int32(0), int32(0))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	again := c.AllocateID()
+	requestProtocol(t, c, shell, wlrlayershell.ZwlrLayerShellV1RequestGetLayerSurface, again, surf, uint32(0), uint32(ports.LayerOverlay), "test")
+	requestProtocol(t, c, again, wlrlayershell.ZwlrLayerSurfaceV1RequestSetSize, uint32(10), uint32(10))
+	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
+	if err := c.Roundtrip(); err != nil {
+		t.Fatalf("recreating the layer surface failed: %v", err)
+	}
+}
+
 type doneProxy struct {
 	wlturbo.BaseProxy
 	done   int
