@@ -23,7 +23,9 @@ type seatState struct {
 	pointerX, pointerY float64
 	// enters holds the serial of the enter event each wl_pointer received
 	// for pointerFocus; a pointer warp must name its pointer's serial.
-	enters      map[*server.Resource]uint32
+	enters map[*server.Resource]uint32
+	// gesture is the touchpad gesture sent to pointerFocus's client.
+	gesture     *activeGesture
 	wheelRest   [2]int32   // v120 not yet sent as axis_discrete, per axis
 	wheelHeld   [2]float64 // axis value held back with it for pre-v8 clients
 	pointers    map[server.Client][]*wayland.Pointer
@@ -63,6 +65,12 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		case ports.PointerButtonTo:
 			target = c.ID
 		case ports.PointerAxisTo:
+			target = c.ID
+		case ports.GestureBeginTo:
+			target = c.ID
+		case ports.GestureUpdateTo:
+			target = c.ID
+		case ports.GestureEndTo:
 			target = c.ID
 		case ports.FocusWindow:
 			target = c.ID
@@ -142,6 +150,12 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		for _, p := range pointers {
 			s.sendAxis(p, c.Axis, steps, values)
 		}
+	case ports.GestureBeginTo:
+		s.beginGesture(c)
+	case ports.GestureUpdateTo:
+		s.updateGesture(c)
+	case ports.GestureEndTo:
+		s.endGesture(c)
 	case ports.SetKeymap:
 		s.setKeymap(c)
 	case ports.FocusWindow:
@@ -486,6 +500,8 @@ func (s *Server) changePointerFocus(id ports.WindowID, x, y float64) {
 		return
 	}
 	s.seat.wheelRest, s.seat.wheelHeld = [2]int32{}, [2]float64{}
+	// A gesture does not follow the pointer to another surface.
+	s.cancelGesture()
 	// The new client sets its own cursor on enter; until then, the arrow.
 	s.cursorSurface = nil
 	s.setCursor(ports.CursorChange{})

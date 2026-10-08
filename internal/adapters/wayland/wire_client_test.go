@@ -32,6 +32,7 @@ import (
 	wire_linuxdmabuf "github.com/bnema/go-wayland-bindings/server/linuxdmabuf"
 	wire_linuxdrmsyncobj "github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	wire_pointerconstraints "github.com/bnema/go-wayland-bindings/server/pointerconstraints"
+	wire_pointergestures "github.com/bnema/go-wayland-bindings/server/pointergestures"
 	wire_pointerwarp "github.com/bnema/go-wayland-bindings/server/pointerwarp"
 	wire_presentationtime "github.com/bnema/go-wayland-bindings/server/presentationtime"
 	wire_primaryselection "github.com/bnema/go-wayland-bindings/server/primaryselection"
@@ -239,6 +240,10 @@ var wireSchemas = map[string]wireSchema{
 	"zwp_primary_selection_device_v1":                      {wire_primaryselection.ZwpPrimarySelectionDeviceV1Interface, &client_primaryselection.PrimarySelectionDevice{}, map[uint16]bool{1: true}, nil},
 	"zwp_primary_selection_offer_v1":                       {wire_primaryselection.ZwpPrimarySelectionOfferV1Interface, &client_primaryselection.PrimarySelectionOffer{}, map[uint16]bool{1: true}, nil},
 	"zwp_primary_selection_source_v1":                      {wire_primaryselection.ZwpPrimarySelectionSourceV1Interface, &client_primaryselection.PrimarySelectionSource{}, map[uint16]bool{1: true}, nil},
+	"zwp_pointer_gestures_v1":                              {wire_pointergestures.ZwpPointerGesturesV1Interface, nil, map[uint16]bool{2: true}, nil},
+	"zwp_pointer_gesture_swipe_v1":                         {wire_pointergestures.ZwpPointerGestureSwipeV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"zwp_pointer_gesture_pinch_v1":                         {wire_pointergestures.ZwpPointerGesturePinchV1Interface, nil, map[uint16]bool{0: true}, nil},
+	"zwp_pointer_gesture_hold_v1":                          {wire_pointergestures.ZwpPointerGestureHoldV1Interface, nil, map[uint16]bool{0: true}, nil},
 	"zwp_relative_pointer_manager_v1":                      {wire_relativepointer.ZwpRelativePointerManagerV1Interface, &client_relativepointer.RelativePointerManager{}, map[uint16]bool{0: true}, nil},
 	"zwp_relative_pointer_v1":                              {wire_relativepointer.ZwpRelativePointerV1Interface, &client_relativepointer.RelativePointer{}, map[uint16]bool{0: true}, nil},
 	"zwp_text_input_manager_v3":                            {wire_textinput.ZwpTextInputManagerV3Interface, &client_textinput.TextInputManagerV3{}, map[uint16]bool{0: true}, nil},
