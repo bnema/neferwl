@@ -1046,6 +1046,8 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	if slices.Contains(col.Windows, w.left) {
 		w.left = 0
 	}
+	// Its windows leave this workspace's recent use with it.
+	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return slices.Contains(col.Windows, v) })
 	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
 	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
 	if len(w.Columns) == 0 {

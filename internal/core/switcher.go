@@ -51,7 +51,7 @@ func (w *Workspace) noteFocus() {
 	}
 	col := w.Columns[w.Focus]
 	id := col.Windows[col.Focus]
-	if len(w.recent) > 0 && w.columnOf(w.recent[0]) == w.Focus {
+	if len(w.recent) > 0 && slices.Contains(col.Windows, w.recent[0]) {
 		w.recent[0] = id
 		return
 	}
