@@ -138,6 +138,10 @@ func (c *Core) swipeSign() float64 {
 // running (its end was lost) ends cancelled first: its slide settles back.
 func (c *Core) swipeBegin(b ports.SwipeBegin) bool {
 	changed := false
+	if c.switching() {
+		c.cancelSwitcher()
+		changed = true
+	}
 	if c.swipe != nil {
 		c.swipeEnd(ports.SwipeEnd{Cancelled: true, Time: b.Time})
 		changed = true

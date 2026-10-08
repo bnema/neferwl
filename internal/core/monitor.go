@@ -333,6 +333,7 @@ func (m *Monitor) RemoveWindow(id WindowID) {
 		w.RemoveWindow(id)
 		m.normalize()
 	}
+	m.sw.remove(id)
 }
 
 // SetFullscreen applies a client request, in place. A client request never
@@ -425,6 +426,9 @@ func (m *Monitor) Layout() []Placement { return m.layoutInto(nil) }
 // so a reused dst's previous result is overwritten and only a caller done
 // with it may pass it. It is never the monitor's own scratch.
 func (m *Monitor) layoutInto(dst []Placement) []Placement {
+	if m.sw.shown && m.sw.ws == m.Current() {
+		return m.switcherLayout(dst[:0])
+	}
 	if m.ov.open {
 		return m.overviewLayout(dst[:0])
 	}
@@ -447,7 +451,7 @@ func (m *Monitor) Output() Rect { return m.template.Output }
 // coordinates: its viewport, or the whole monitor in the overview. Slides
 // involving a sized workspace remain settled inside the current frame.
 func (m *Monitor) Frame() Rect {
-	if m.ov.open {
+	if m.previewing() {
 		return m.Output()
 	}
 	return m.Current().Output

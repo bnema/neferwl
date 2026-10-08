@@ -21,6 +21,12 @@ type indicatorClock struct {
 
 func indicatorCore(t *testing.T) (*Core, *indicatorClock) {
 	t.Helper()
+	return indicatorCoreWith(t, make(chan ports.ClientCommand, 64))
+}
+
+// indicatorCoreWith is indicatorCore sending its commands to commands.
+func indicatorCoreWith(t *testing.T, commands chan ports.ClientCommand) (*Core, *indicatorClock) {
+	t.Helper()
 	ic := &indicatorClock{now: time.Unix(1000, 0)}
 	clock := portsmocks.NewMockClock(t)
 	clock.EXPECT().Now().RunAndReturn(func() time.Time { return ic.now }).Maybe()
@@ -39,7 +45,7 @@ func indicatorCore(t *testing.T) (*Core, *indicatorClock) {
 	cfg.Keyboard.CmdKey = "super"
 	cfg.Layout.MaxColumns = 2
 	cfg.Border.Width = 0
-	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: make(chan ports.ClientCommand, 64)}, Options{Clock: clock})
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1), Commands: commands}, Options{Clock: clock})
 	if err != nil {
 		t.Fatal(err)
 	}

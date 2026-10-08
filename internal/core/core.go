@@ -152,6 +152,13 @@ type Core struct {
 	capt captureState
 	// pulse marks a window that just got the focus (pulse.go).
 	pulse focusPulse
+	// switcher is the column switcher in progress: the screen it is on and
+	// the timer that shows its cards (switcher.go).
+	switcher struct {
+		sc        *screen
+		timerC    <-chan time.Time
+		timerStop func() bool
+	}
 }
 
 // publishScratch is where publishState and publishWorkspaces build their
@@ -263,7 +270,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating:
+			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -975,9 +982,9 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	if id, px, py := c.popupAt(sc, lx, ly, false); id != 0 {
 		return id, px, py
 	}
-	if sc.mon.ov.open {
+	if sc.mon.previewing() {
 		// Previews and the layers under them take no input: a click
-		// picks a preview (overviewClick).
+		// picks a preview (overviewClick, switcherClick).
 		return 0, 0, 0
 	}
 	if !sc.mon.frameHas(lx, ly) {
@@ -1017,6 +1024,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
 	defer c.stopPulseTimer()
+	defer c.cancelSwitcher()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -1086,6 +1094,14 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			if c.pulseTick() && c.publish(ctx) != nil {
+				return nil
+			}
+			continue
+		case <-c.switcher.timerC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.switcherTick() && (c.publish(ctx) != nil || c.rehit(ctx) != nil) {
 				return nil
 			}
 			continue

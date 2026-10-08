@@ -153,7 +153,7 @@ func (c *Core) capResolve(t capTarget) (capResolved, ports.CaptureReason) {
 			return r, ports.CaptureReasonWorkspaceGone
 		}
 		r.sc, r.ws, r.rect = sc, w, w.Output
-		r.hidden = sc.mon.Current() != w || sc.mon.ov.open
+		r.hidden = sc.mon.Current() != w || sc.mon.previewing()
 		return r, ports.CaptureReasonNone
 	}
 	i := c.screenIndex(t.output)
@@ -467,7 +467,7 @@ func (c *Core) captureSceneFor(sc *screen, v *capView) *ports.SceneCapture {
 		return nil
 	}
 	want := ports.SceneCapture{}
-	if !sc.mon.ov.open {
+	if !sc.mon.previewing() {
 		want.Shown = sc.mon.Current().ID
 	}
 	if e := v.exclusion; e != nil {

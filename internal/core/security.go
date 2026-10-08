@@ -46,6 +46,10 @@ func (c *Core) syncSecurity() bool {
 	c.gesture = clientGesture{}
 	c.stopAnimations()
 	c.stopPulse()
+	c.cancelSwitcher()
+	for _, sc := range c.screens {
+		sc.mon.sw = switcherState{}
+	}
 	if state.Protected {
 		c.dropCaptureSessions()
 	}

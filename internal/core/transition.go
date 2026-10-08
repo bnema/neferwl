@@ -421,7 +421,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 // peek.
 func (c *Core) appearMapped(id WindowID, now time.Time) {
 	sc, w := c.screenOf(id)
-	if sc == nil || c.security.Protected || sc.mon.ov.open || sc.mon.Current() != w {
+	if sc == nil || c.security.Protected || sc.mon.previewing() || sc.mon.Current() != w {
 		return
 	}
 	for _, p := range sc.mon.Layout() {
@@ -451,7 +451,7 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	if sc == nil {
 		return
 	}
-	if !c.animOn() || c.security.Protected || sc.mon.ov.open {
+	if !c.animOn() || c.security.Protected || sc.mon.previewing() {
 		sc.mon.RemoveWindow(v.ID)
 		delete(sc.rects, v.ID)
 		return
@@ -619,8 +619,8 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		}
 		s.sc = sc
 		w := m.Current()
-		s.ws, s.overview = w, m.ov.open
-		if !m.ov.open {
+		s.ws, s.overview = w, m.previewing()
+		if !m.previewing() {
 			// The overview does not scroll or slide: no camera.
 			s.settledView, s.view = w.View, float64(w.View)+w.view.off
 			s.switchAxis = w.policy().workspace
@@ -655,11 +655,11 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			}
 			r.veil = c.peekDim(p)
 			s.rects = append(s.rects, r)
-			if !m.ov.open && w.stashIndex(p.ID) >= 0 {
+			if !m.previewing() && w.stashIndex(p.ID) >= 0 {
 				s.stash = append(s.stash, p)
 			}
 		}
-		if m.shown == nil && !m.ov.open {
+		if m.shown == nil && !m.previewing() {
 			// A landing slide measures in the list it began on.
 			list := m.Workspaces
 			if m.switchList != nil {
@@ -704,7 +704,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 		if b.ws == nil || !c.hasScreen(b.sc) || c.following(b.sc) {
 			continue
 		}
-		if b.overview || b.sc.mon.ov.open {
+		if b.overview || b.sc.mon.previewing() {
 			c.transitionOverview(b, now)
 			continue
 		}
@@ -896,7 +896,7 @@ func (c *Core) peekDim(p Placement) float64 {
 // over (picking a card that still fades in does not pop it).
 func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 	sc := b.sc
-	changed := b.overview != sc.mon.ov.open
+	changed := b.overview != sc.mon.previewing()
 	if changed {
 		sc.stopRects()
 	}

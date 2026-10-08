@@ -22,14 +22,14 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
 	scene = ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
-	if !sc.mon.ov.open {
+	if !sc.mon.previewing() {
 		// Tiles stop at the panels; the overview lays out previews over
 		// the whole output.
 		u := view.usable
 		scene.TileInset = ports.Insets{Top: u.Y, Left: u.X, Right: o.W - u.X - u.W, Bottom: o.H - u.Y - u.H}
 	}
 	var real map[WindowID]Placement
-	if sc.mon.ov.open {
+	if sc.mon.previewing() {
 		// Local to this screen's build: reused, cleared each time.
 		if c.overviewReal == nil {
 			c.overviewReal = make(map[WindowID]Placement)
@@ -44,7 +44,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		}
 	}
 	scene.Dim = floatDim(layout, view, c.cfg.Floating.Dim)
-	if sc.mon.ov.open {
+	if sc.mon.previewing() {
 		// Darken the wallpaper around the previews.
 		scene.Dim = c.cfg.Floating.Dim
 		scene.DimBehind = scene.Dim > 0
@@ -56,6 +56,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Frame the selection and separate numbered and named row groups.
 		_, scene.Separators = sc.mon.overviewRows()
 		scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
+	} else if sc.mon.sw.shown {
+		// The switcher's cards: only the selection is framed.
+		scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 	} else {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)
@@ -89,7 +92,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 			continue
 		}
-		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open && hasRoom(view, p) {
+		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.previewing() && hasRoom(view, p) {
 			drawable = true
 			if p.ID == c.pulse.id {
 				sw.FocusEffect = pulse
