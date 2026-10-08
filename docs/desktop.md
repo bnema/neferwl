@@ -100,6 +100,17 @@ startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 exec wlopm --off '*'
 ```
 
+## Power keys
+
+NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL as `XF86PowerOff`, `XF86Sleep` or `XF86Suspend`, `XF86Hibernate`, and nothing happens unless a bind uses it.
+
+```text
+bind.XF86PowerOff = spawn systemctl suspend
+bind.XF86Hibernate = spawn systemctl hibernate
+```
+
+The lid switch is not covered: logind still handles it. The locks last as long as NeferWL runs; if it crashes, logind handles the keys again. If the system bus or logind is missing, NeferWL logs a warning and tries again later, and the keys keep logind's behaviour until it succeeds.
+
 ## Bars
 
 NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling. Every workspace sends an `id`, the same string as its `workspace_id` in the state file. A configured (named) workspace has `name:<configured name>`, stable across launches; renaming it in the config removes its handle and sends a new one. A numbered or dynamic workspace has `<prefix>-<n>`: the prefix is 8 lowercase hex characters drawn once per compositor launch, so the `id` is unique per launch, stable while the workspace exists (across reordering and moves between outputs), and never repeats in the next launch. Numbered workspaces carry an `id` too, so a bar or script can target them during the session, but it is unique for the current launch only: do not store preferences keyed on it across launches. Only named workspaces have an `id` that is stable across launches.

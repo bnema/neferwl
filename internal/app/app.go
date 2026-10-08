@@ -65,10 +65,11 @@ func run(ctx context.Context, opts Options, inject func(chan<- ports.InputEvent)
 	return s.run(ctx, inject)
 }
 
-// screensaverRetry is the first delay before the screensaver service tries
-// the session bus again: without one, only surface inhibitors count, and
-// the session goes on either way.
-const screensaverRetry = 2 * time.Second
+// busRetry is the first delay before a bus service (the screensaver, the
+// logind key lock) tries its bus again: without it, only surface inhibitors
+// count and the power keys keep logind's behaviour, and the session goes on
+// either way.
+const busRetry = 2 * time.Second
 
 // relayConfig forwards reloads to core. A layout change builds a new keymap, hands it
 // to the input goroutine and sends it to clients; a repeat-only change just updates

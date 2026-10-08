@@ -17,6 +17,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/powerkey"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/screensaver"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
@@ -360,7 +361,14 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		go func() {
 			defer workers.Done()
 			reports := screensaver.Reports{Held: p.idleInhibited, Activity: p.idleActivity}
-			screensaver.Serve(ctx, "", reports, screensaverRetry, logging.For(ctx, "screensaver"))
+			screensaver.Serve(ctx, "", reports, busRetry, logging.For(ctx, "screensaver"))
+		}()
+		// The same goes for the system bus: logind's locks keep the power
+		// keys from acting before a bind sees them.
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			powerkey.Serve(ctx, "", busRetry, logging.For(ctx, "powerkey"))
 		}()
 	}
 	var result error
