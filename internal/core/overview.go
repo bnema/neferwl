@@ -202,8 +202,7 @@ func overviewBlocks(a Action) bool {
 		ActionConsumeOrExpelRight, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight,
 		ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown,
 		ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev,
-		ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext,
-		ActionSwitchColumnPrev:
+		ActionMoveWorkspaceNext, ActionToggleFloating:
 		return true
 	}
 	return false

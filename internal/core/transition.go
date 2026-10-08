@@ -25,9 +25,10 @@ import (
 type viewShot struct {
 	sc *screen
 	ws *Workspace
-	// overview is set when the screen showed its overview: ws is then the
-	// row on screen, the camera fields stay zero, and rects are the cards.
-	overview bool
+	// preview is set when the screen showed a preview (the overview or the
+	// column switcher): ws is then the workspace on screen, the camera
+	// fields stay zero, and rects are the cards.
+	preview bool
 	// settledView is ws's settled view and view where its columns were on screen
 	// (settledView plus shift).
 	settledView int
@@ -403,9 +404,9 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 	}
 	shots := c.snapshot(now)
 	for i := range shots {
-		// A screen with its overview open re-lays its cards at once: a map
-		// is not an overview action (transition skips a shot without ws).
-		if shots[i].overview {
+		// A screen showing a preview re-lays its cards at once: a map is
+		// not a preview action (transition skips a shot without ws).
+		if shots[i].preview {
 			shots[i].ws = nil
 		}
 	}
@@ -416,7 +417,7 @@ func (c *Core) mapWindow(v ports.WindowMapped) {
 
 // appearMapped starts the entrance of a window that just mapped when it
 // shows on its screen's current workspace as a tile or an ordinary float:
-// not with the overview open or a session lock, not fullscreen (it keeps
+// not with a preview open or a session lock, not fullscreen (it keeps
 // the direct scanout path), not a float below the columns, not a stash
 // peek.
 func (c *Core) appearMapped(id WindowID, now time.Time) {
@@ -442,7 +443,7 @@ func (c *Core) appearMapped(id WindowID, now time.Time) {
 // leaves from its drawn rect, fade and speed, not from its settled rect).
 // Like a map, an unmap is a client event that animates; the settled layout
 // is the same with animations off. A fullscreen window, one under a
-// session lock or with the overview open just goes.
+// session lock or with a preview open just goes.
 func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	// The window is unmapped: a toplevel that maps again keeps its ID and
 	// must be configured from nothing (a leaving entry keeps no configure).
@@ -471,7 +472,7 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	shots := c.snapshot(now)
 	var shot *rectShot
 	for i := range shots {
-		if shots[i].overview {
+		if shots[i].preview {
 			shots[i].ws = nil
 		}
 		if shots[i].sc == sc {
@@ -620,7 +621,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		}
 		s.sc = sc
 		w := m.Current()
-		s.ws, s.overview = w, m.previewing()
+		s.ws, s.preview = w, m.previewing()
 		if !m.previewing() {
 			// The overview does not scroll or slide: no camera.
 			s.settledView, s.view = w.View, float64(w.View)+w.view.off
@@ -705,7 +706,7 @@ func (c *Core) transition(before []viewShot, now time.Time) {
 		if b.ws == nil || !c.hasScreen(b.sc) || c.following(b.sc) {
 			continue
 		}
-		if b.overview || b.sc.mon.previewing() {
+		if b.preview || b.sc.mon.previewing() {
 			c.transitionOverview(b, now)
 			continue
 		}
@@ -886,18 +887,19 @@ func (c *Core) peekDim(p Placement) float64 {
 }
 
 // transitionOverview starts the motions of an action that opened or closed
-// the overview, or moved inside it (the selection, the rows). The camera
-// springs stay stopped (ToggleOverview): every window drawn before and
-// after moves from its shown rect to its settled one, its content scaled
-// with it (a card's Zoom, rectMotion.show). A window drawn after and not
-// before (another row, a column the overview hid) fades in with no motion
+// a preview (the overview or the column switcher), or moved inside it (the
+// selection, the rows). The camera springs stay stopped (ToggleOverview):
+// every window drawn before and after moves from its shown rect to its
+// settled one, its content scaled with it (a card's Zoom,
+// rectMotion.show). A window drawn after and not before (another row, a
+// column a preview hid) fades in with no motion
 // of its own; one drawn before and not after just goes. Motions of the
 // other state are dropped first: their rects are not the ones snapshot
 // measured from. A fade that ran on a window drawn in both states carries
 // over (picking a card that still fades in does not pop it).
 func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 	sc := b.sc
-	changed := b.overview != sc.mon.previewing()
+	changed := b.preview != sc.mon.previewing()
 	if changed {
 		sc.stopRects()
 	}
@@ -937,7 +939,7 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 func movedFrom(b *viewShot, before []viewShot) *viewShot {
 	w := b.sc.mon.Current()
 	for i := range before {
-		if o := &before[i]; o.ws == w && o.sc != b.sc && !o.overview {
+		if o := &before[i]; o.ws == w && o.sc != b.sc && !o.preview {
 			return o
 		}
 	}

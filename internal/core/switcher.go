@@ -23,10 +23,11 @@ const switcherDelay = 150 * time.Millisecond
 // column in order, the focused column first. Nothing moves until the commit;
 // shown is set once the cards are drawn.
 type switcherState struct {
-	open, shown bool
-	ws          *Workspace
-	order       []WindowID
-	at          int
+	// ws is the workspace the switcher opened on; nil when closed.
+	ws    *Workspace
+	shown bool
+	order []WindowID
+	at    int
 	// sizes are the client sizes the cards are scaled from.
 	sizes map[WindowID]Rect
 }
@@ -94,7 +95,7 @@ func (w *Workspace) switchOrder() []WindowID {
 // heir is the window of id's column that is not id, or 0: call it before id
 // is removed, then hand it to remove.
 func (s *switcherState) heir(id WindowID) WindowID {
-	if !s.open || s.ws == nil || !slices.Contains(s.order, id) {
+	if s.ws == nil || !slices.Contains(s.order, id) {
 		return 0
 	}
 	if i := s.ws.columnOf(id); i >= 0 {
@@ -113,7 +114,7 @@ func (s *switcherState) heir(id WindowID) WindowID {
 // goes, and the selection stays on the same card (or the one that took its
 // place). With fewer than two columns left there is nothing to switch.
 func (s *switcherState) remove(id, heir WindowID) {
-	if !s.open {
+	if s.ws == nil {
 		return
 	}
 	i := slices.Index(s.order, id)
@@ -150,7 +151,7 @@ func (s *switcherState) remove(id, heir WindowID) {
 func (m *Monitor) commitSwitcher() bool {
 	s := m.sw
 	m.sw = switcherState{}
-	if !s.open || s.ws == nil || s.at < 0 || s.at >= len(s.order) {
+	if s.ws == nil || s.at < 0 || s.at >= len(s.order) {
 		return false
 	}
 	id, w := s.order[s.at], s.ws
@@ -185,14 +186,14 @@ func switchDir(a Action) int {
 
 // switching reports whether a switcher is open.
 func (c *Core) switching() bool {
-	return c.switcher.sc != nil && c.switcher.sc.mon.sw.open
+	return c.switcher.sc != nil && c.switcher.sc.mon.sw.ws != nil
 }
 
 // switcherStale reports whether the open switcher belongs to a workspace
 // that is not on its screen any more.
 func (c *Core) switcherStale() bool {
 	m := c.switcher.sc.mon
-	return m.sw.open && m.sw.ws != m.Current()
+	return m.sw.ws != nil && m.sw.ws != m.Current()
 }
 
 func (c *Core) stopSwitcherTimer() {
@@ -260,7 +261,7 @@ func (c *Core) switchStep(dir int) {
 		if dir < 0 {
 			at = len(order) - 1
 		}
-		m.sw = switcherState{open: true, ws: w, order: order, at: at, sizes: sizes}
+		m.sw = switcherState{ws: w, order: order, at: at, sizes: sizes}
 		c.switcher.sc = sc
 		opened = true
 	} else {
@@ -276,41 +277,36 @@ func (c *Core) switchStep(dir int) {
 	}
 }
 
-// switchBind runs a switch-column bind.
-func (c *Core) switchBind(ctx context.Context, dir int) error {
+// switcherRun runs f, which changes the switcher, between a snapshot and
+// the transition of what the screens showed, then publishes and rehits so
+// the pointer never points at a stale window.
+func (c *Core) switcherRun(ctx context.Context, f func()) error {
 	now := c.now()
 	shots := c.snapshot(now)
-	c.keyboard.takeBack() // a bind acts on the windows
-	c.switchStep(dir)
+	f()
 	c.transition(shots, now)
 	if err := c.publish(ctx); err != nil {
 		return err
 	}
 	return c.rehit(ctx)
+}
+
+// switchBind runs a switch-column bind.
+func (c *Core) switchBind(ctx context.Context, dir int) error {
+	return c.switcherRun(ctx, func() {
+		c.keyboard.takeBack() // a bind acts on the windows
+		c.switchStep(dir)
+	})
 }
 
 // releaseSwitcher commits the selection once the command key is up.
 func (c *Core) releaseSwitcher(ctx context.Context) error {
-	now := c.now()
-	shots := c.snapshot(now)
-	c.commitSwitcher()
-	c.transition(shots, now)
-	if err := c.publish(ctx); err != nil {
-		return err
-	}
-	return c.rehit(ctx)
+	return c.switcherRun(ctx, c.commitSwitcher)
 }
 
 // abortSwitcher cancels the switcher and publishes the workspace again.
 func (c *Core) abortSwitcher(ctx context.Context) error {
-	now := c.now()
-	shots := c.snapshot(now)
-	c.cancelSwitcher()
-	c.transition(shots, now)
-	if err := c.publish(ctx); err != nil {
-		return err
-	}
-	return c.rehit(ctx)
+	return c.switcherRun(ctx, c.cancelSwitcher)
 }
 
 // switcherTick runs when the delay passed with the command key held: the
@@ -323,12 +319,9 @@ func (c *Core) switcherTick() bool {
 		return false
 	}
 	m := sc.mon
-	if !c.hasScreen(sc) || c.security.Protected || m.sw.ws != m.Current() {
+	if m.sw.ws != m.Current() {
 		c.cancelSwitcher()
 		return true
-	}
-	if m.sw.shown {
-		return false
 	}
 	now := c.now()
 	shots := c.snapshot(now)
@@ -350,21 +343,17 @@ func (c *Core) switcherClick(ctx context.Context, button uint32) (handled bool, 
 		c.cancelSwitcher()
 		return false, nil
 	}
-	now := c.now()
-	shots := c.snapshot(now)
-	id := overviewIn(sc.shownLayout(), c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
-	if i := slices.Index(sc.mon.sw.order, id); id != 0 && i >= 0 {
-		sc.mon.sw.at = i
-		c.commitSwitcher()
-	} else {
-		c.cancelSwitcher()
-	}
-	c.buttons[button], c.swallow[button] = true, true
-	c.transition(shots, now)
-	if err := c.publish(ctx); err != nil {
-		return true, err
-	}
-	return true, c.rehit(ctx)
+	err = c.switcherRun(ctx, func() {
+		id := overviewIn(sc.shownLayout(), c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
+		if i := slices.Index(sc.mon.sw.order, id); id != 0 && i >= 0 {
+			sc.mon.sw.at = i
+			c.commitSwitcher()
+		} else {
+			c.cancelSwitcher()
+		}
+		c.buttons[button], c.swallow[button] = true, true
+	})
+	return true, err
 }
 
 // switcherLayout lays out the shown switcher: one card per column in

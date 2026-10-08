@@ -236,7 +236,7 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 			return err
 		}
 	}
-	if c.switching() && key.Pressed && keyName(key.Keysym) == "Escape" {
+	if c.switching() && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the switcher; its release goes nowhere either.
 		c.pressed[heldKey(key)] = true
 		return c.abortSwitcher(ctx)

@@ -449,7 +449,8 @@ func (m *Monitor) layoutInto(dst []Placement) []Placement {
 func (m *Monitor) Output() Rect { return m.template.Output }
 
 // Frame is where the workspace on screen draws and takes input, in monitor
-// coordinates: its viewport, or the whole monitor in the overview. Slides
+// coordinates: its viewport, or the whole monitor in a preview (the
+// overview or the column switcher). Slides
 // involving a sized workspace remain settled inside the current frame.
 func (m *Monitor) Frame() Rect {
 	if m.previewing() {
