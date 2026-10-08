@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
-	"github.com/bnema/neferwl/internal/adapters/presented"
-	"github.com/bnema/neferwl/internal/adapters/surfaces"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"

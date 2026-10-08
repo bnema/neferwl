@@ -14,7 +14,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/presented"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
