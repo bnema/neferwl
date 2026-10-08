@@ -101,13 +101,34 @@ make install   # build a package from HEAD and install it with pacman
 
 `make pkg` builds the package without installing it.
 
-The package provides:
+### Ubuntu 24.04 and later
+
+Download the `.deb` for your architecture (`amd64` or `arm64`) and `checksums.txt` from [Releases](https://github.com/bnema/neferwl/releases), then install it with apt, which pulls the runtime dependencies:
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+sudo apt install ./neferwl_<version>_amd64.deb
+```
+
+Optional tools:
+
+```sh
+sudo apt install foot fuzzel xdg-desktop-portal-gtk xdg-desktop-portal-wlr
+```
+
+X11 apps need [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, which you may have to build. The package is tested on Ubuntu 24.04 and 26.04; Debian with the same library packages should work but is untested.
+
+### What the packages provide
+
+The Arch and Debian packages provide:
 
 - `neferwl` with CAP_SYS_NICE for real-time scheduling.
 - A **NeferWL** session for display managers such as Ly, GDM and SDDM.
 - `neferwl-session`, which starts `neferwl.service` and manages `graphical-session.target` so desktop services start and stop with the session.
 
 Running `neferwl --session` directly also exports the display environment to D-Bus and systemd user services. See [Desktop integration](docs/desktop.md) for session setup.
+
+Copy `/usr/share/doc/neferwl/config.example` to `~/.config/neferwl/config` to start from the example config.
 
 ### Other distributions
 
