@@ -335,7 +335,7 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	go func() {
 		defer workers.Done()
 		outputIO := p.outputs(security)
-		apply := newOutputApply(newOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
+		apply := newOutputApply(core.NewOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		if hw != nil {
 			done <- safe("output", func() error {
 				want := func(cfg ports.Config) drm.Want {
