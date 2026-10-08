@@ -140,9 +140,13 @@ func TestPointerGestures(t *testing.T) {
 	quiet(t, c, swipe)
 	quiet(t, c, hold)
 
-	// The pointer leaving the window cancels the gesture.
+	// The pointer leaving the window cancels the gesture. Commands run in
+	// order: the next pinch event being this begin proves the dropped
+	// update above sent nothing.
 	commands <- ports.GestureBeginTo{ID: w.ID, Kind: ports.GesturePinch, Fingers: 2, Time: 4000 * 1e6}
-	next(t, c, pinch)
+	if ev := next(t, c, pinch); ev[0] != 0 || ev[2] != 4000 {
+		t.Fatalf("pinch begin %v", ev)
+	}
 	commands <- ports.PointerFocus{}
 	if ev := next(t, c, pinch); ev[0] != 2 || ev[3] != 1 {
 		t.Fatalf("pinch not cancelled on leave: %v", ev)
@@ -157,6 +161,12 @@ func TestPointerGestures(t *testing.T) {
 	if ev := next(t, c, hold); ev[0] != 0 || ev[4] != 4 {
 		t.Fatalf("hold begin after release %v", ev)
 	}
+	// The end after the cancel sent nothing: the next pinch event is this
+	// begin.
+	commands <- ports.GestureBeginTo{ID: w.ID, Kind: ports.GesturePinch, Fingers: 2, Time: 6000 * 1e6}
+	if ev := next(t, c, pinch); ev[0] != 0 || ev[2] != 6000 {
+		t.Fatalf("pinch begin after cancelled end %v", ev)
+	}
 
 	// The client without the pointer saw nothing.
 	quiet(t, other, oSwipe)
@@ -164,8 +174,8 @@ func TestPointerGestures(t *testing.T) {
 	quiet(t, other, oHold)
 }
 
-// A window with the pointer but no gesture object gets nothing, and a
-// gesture on a window that does not have the pointer is refused.
+// A window with the pointer but no gesture object gets gesture commands
+// without the server failing or the client being disconnected.
 func TestPointerGesturesWithoutObjects(t *testing.T) {
 	s, events, commands, dir := lifecycleServer(t)
 	c := protocolClient(t, s, dir)

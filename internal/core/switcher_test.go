@@ -60,6 +60,18 @@ func TestMRUOrder(t *testing.T) {
 			w.MoveColumn(1)
 			w.noteFocus()
 		}, []WindowID{2, 3, 1}},
+		{"a column taken to another workspace leaves recent", func(w *Workspace) {
+			focusNote(w, 1)
+			focusNote(w, 3)
+			focusNote(w, 2)
+			if _, ok := w.takeColumn(); !ok {
+				t.Fatal("no column taken")
+			}
+			if slices.Contains(w.recent, 2) {
+				t.Fatalf("recent %v keeps the taken window", w.recent)
+			}
+			w.noteFocus()
+		}, []WindowID{3, 1}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

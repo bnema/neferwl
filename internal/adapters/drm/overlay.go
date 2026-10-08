@@ -73,6 +73,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		scale = 1
 	}
 	var pick *ports.SceneWindow
+	var pickAt int
 	var mode colorMode
 	for i := range s.Windows {
 		w := &s.Windows[i]
@@ -95,7 +96,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// lift; an overview preview is drawn smaller than its buffer.
 		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
-				pick, mode = w, m
+				pick, pickAt, mode = w, i, m
 				continue
 			}
 		}
@@ -116,7 +117,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			// The one window that could have gone on the plane fades out
 			// after its close: composed from its kept content.
 			for i := range s.Windows {
-				if w := &s.Windows[i]; !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 && kept(w.ID) {
+				if w := &s.Windows[i]; s.Draws(*w) && kept(w.ID) {
 					return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "leaving"
 				}
 			}
@@ -143,7 +144,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
 		}
 		for _, sep := range s.Separators {
-			if sep.Rect.Overlaps(pick.Rect) {
+			if sep.Rect.Overlaps(pick.Rect) && !linesUnder(s, sep, pick, pickAt) {
 				// The overlay shows the buffer alone; the lines would go
 				// under it.
 				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
@@ -168,6 +169,25 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "fractional_position"
 	}
 	return *pick, c, mode, ""
+}
+
+// linesUnder reports whether sep is painted before the candidate at index
+// pickAt, so stays composed under the plane: the tile lines and the lines
+// of windows listed before it, when the candidate is a float drawn above
+// the tiles.
+func linesUnder(s ports.Scene, sep ports.Separator, pick *ports.SceneWindow, pickAt int) bool {
+	if !pick.Floating || pick.Below {
+		return false
+	}
+	if sep.Window == 0 {
+		return true
+	}
+	for _, w := range s.Windows[:pickAt] {
+		if w.ID == sep.Window {
+			return true
+		}
+	}
+	return false
 }
 
 // overlayProps puts ov on the overlay plane, or turns it off.

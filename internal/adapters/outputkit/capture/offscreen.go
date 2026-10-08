@@ -354,7 +354,7 @@ func (p *Pipeline) SubmitHidden(s ports.Scene, surfaces map[ports.WindowID]ports
 		fail(ErrSecurityState, reqs)
 		return
 	case s.Off:
-		fail(errors.New("output off"), reqs)
+		fail(ErrOutputOff, reqs)
 		return
 	case s.CaptureScene == nil || s.Capture == nil || s.Capture.Workspace == 0 && s.Capture.Window == 0:
 		fail(ErrOffscreenUnavailable, reqs)

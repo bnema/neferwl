@@ -294,11 +294,25 @@ func (r *Renderer) retireShm(s *shmSurface) {
 	}
 }
 
+// maxDisjointRects bounds the pieces disjointRects cuts the damage into: the
+// rects come from the client, and each cut can add three pieces.
+const maxDisjointRects = 64
+
 // disjointRects appends to dst the parts of rects inside a w×h buffer, with
-// no pixel in two of them. It reuses dst's capacity.
+// no pixel in two of them. Past maxDisjointRects pieces it appends their
+// bounding box instead: some undamaged pixels are copied again. It reuses
+// dst's capacity.
 func disjointRects(dst []image.Rectangle, rects []ports.Rect, w, h int) []image.Rectangle {
 	bounds := image.Rect(0, 0, w, h)
+	start := len(dst)
 	for _, rc := range rects {
+		if len(dst)-start > maxDisjointRects {
+			var box image.Rectangle
+			for _, rc := range rects {
+				box = box.Union(image.Rect(rc.X, rc.Y, rc.X+rc.W, rc.Y+rc.H).Intersect(bounds))
+			}
+			return append(dst[:start], box)
+		}
 		pending := len(dst)
 		dst = append(dst, image.Rect(rc.X, rc.Y, rc.X+rc.W, rc.Y+rc.H).Intersect(bounds))
 		// Cut the new rect by each earlier one; the pieces it leaves are

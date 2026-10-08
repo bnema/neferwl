@@ -102,7 +102,7 @@ exec wlopm --off '*'
 
 ## Power keys
 
-NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL, and nothing happens unless a bind uses it.
+NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL, and nothing happens unless a bind uses it. Binds are off while the session is locked, so these keys do nothing on the lock screen.
 
 | logind key | Kernel key | Bind |
 |---|---|---|

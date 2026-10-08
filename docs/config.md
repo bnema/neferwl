@@ -100,7 +100,7 @@ rule.calc.floating = on
 - A named workspace stays on its own monitor: `monitor` is ignored next to a named `workspace`. A name nobody declared warns and the window opens as usual.
 - A window started for a slot (`workspace.<name>.column.N`) goes to its slot, and a dialog stays over its parent: rules do not apply to them.
 - `width` is ignored under `fixed` and `cascade` overflow, where columns share the width.
-- An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored.
+- An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored. An invalid value that repeats a key already set keeps the earlier value, like any other key.
 
 To find an app ID, look at `app_id` in `neferwl state | jq '.windows[] | {id, app_id}'`, or at the `window mapped` line in the log. X11 apps run through xwayland-satellite get their app ID from `WM_CLASS`; it may be empty, and an app that sets it after opening is not matched.
 
@@ -186,7 +186,7 @@ Over the shown stash a sideways swipe slides it with the fingers, with a stop on
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
 
-Three- and four-finger swipes belong to the compositor. Every other touchpad gesture goes to the window under the pointer through `zwp_pointer_gestures_v1` (version 3): swipes of other finger counts, pinch (zoom and rotation) and hold. A gesture stays with the window that had the pointer when it began; it ends as cancelled if the pointer moves to another window or the window closes. Nothing is sent to windows while the session is locked.
+Three- and four-finger swipes belong to the compositor. Every other touchpad gesture goes to the window under the pointer through `zwp_pointer_gestures_v1` (version 3): swipes of other finger counts, pinch (zoom and rotation) and hold. A gesture stays with the window that had the pointer when it began; it ends as cancelled if the pointer moves to another window or the window closes. While the session is locked, only the lock screen gets gestures.
 
 ## HDR
 
