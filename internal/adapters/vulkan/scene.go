@@ -28,7 +28,9 @@ type sceneWalk struct {
 	// it (premultiplied); 1 otherwise.
 	alpha  float32
 	bounds image.Rectangle
-	draws  []draw
+	// tileBounds is bounds cut to Scene.TileClip: where tiles draw.
+	tileBounds image.Rectangle
+	draws      []draw
 }
 
 // draws walks the scene into quads in paint order.
@@ -47,6 +49,11 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	if s.WorkspaceClip != (ports.Rect{}) {
 		c := s.WorkspaceClip
 		w.bounds = w.bounds.Intersect(w.physRect(c.X, c.Y, c.W, c.H))
+	}
+	w.tileBounds = w.bounds
+	if s.TileClip != (ports.Rect{}) {
+		c := s.TileClip
+		w.tileBounds = w.bounds.Intersect(w.physRect(c.X, c.Y, c.W, c.H))
 	}
 	w.windows()
 	w.popups(false)
@@ -219,6 +226,11 @@ func (w *sceneWalk) windows() {
 			continue
 		}
 		w.alpha = 1 - float32(max(0, win.Fade))
+		windowBounds := w.bounds
+		if win.Tile() {
+			// A tile never draws over a panel (Scene.TileClip).
+			w.bounds = w.tileBounds
+		}
 		// Content sits inside the border; core sized the client to match.
 		b, inset := 0, ports.Sides(0)
 		if !win.Fullscreen {
@@ -249,7 +261,7 @@ func (w *sceneWalk) windows() {
 			// A stashed window peeking in: dimmed with its border.
 			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
-		w.alpha = 1
+		w.alpha, w.bounds = 1, windowBounds
 	}
 	if !tileLines {
 		w.separators(0)

@@ -22,6 +22,11 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
 	scene = ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
+	if !sc.mon.ov.open && view.usable != view.frame {
+		// Tiles stop at the panels; the overview lays out previews over
+		// the whole output.
+		scene.TileClip = view.usable
+	}
 	var real map[WindowID]Placement
 	if sc.mon.ov.open {
 		// Local to this screen's build: reused, cleared each time.

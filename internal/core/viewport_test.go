@@ -103,6 +103,16 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	if !found {
 		t.Fatal("window under the panel left the scene")
 	}
+	// It is cut at the panel and takes no pointer there.
+	if scene.TileClip != (Rect{W: 100, H: 60}) {
+		t.Fatalf("tile clip %+v, want the usable area", scene.TileClip)
+	}
+	if id, _, _ := c.hit(10, 70); id != 0 {
+		t.Fatalf("pointer over the panel went to window %d", id)
+	}
+	if id, _, _ := c.hit(10, 30); id != 1 {
+		t.Fatalf("pointer over window 1 went to %d", id)
+	}
 	// Its band scrolled in, the first band is under nothing but off screen.
 	w.FocusID(3)
 	check(map[WindowID]bool{1: false, 2: false, 3: true})

@@ -63,6 +63,20 @@ func TestOverlayWorkspaceClip(t *testing.T) {
 	}
 }
 
+// A tile cut by a panel (TileClip) is composed: the plane would show it
+// whole, over the panel.
+func TestOverlayTileClip(t *testing.T) {
+	s, contents := overlayScene()
+	s.TileClip = ports.Rect{W: 200, H: 80}
+	if _, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "tile_clip" {
+		t.Fatalf("tile under a panel on the overlay: %q", reason)
+	}
+	s.TileClip = ports.Rect{W: 200, H: 100}
+	if win, _, _, reason := overlayCandidate(s, contents, false, nil, nil); reason != "" || win.ID != 2 {
+		t.Fatalf("tile inside the clip: %v %q", win.ID, reason)
+	}
+}
+
 func TestOverlayCandidate(t *testing.T) {
 	s, c := overlayScene()
 	if w, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "" || w.ID != 2 {

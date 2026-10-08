@@ -27,6 +27,11 @@ type Scene struct {
 	// in logical output coordinates. Zero inherits the full output. Layers
 	// remain output-wide; overview previews do not use this clip.
 	WorkspaceClip Rect
+	// TileClip bounds tiles (SceneWindow.Tile) and their lines inside
+	// WorkspaceClip: the usable area exclusive layers leave, so a tile is
+	// never drawn over a panel, whatever its layer. Zero does not clip
+	// (overview, capture scenes).
+	TileClip Rect
 	// Dim darkens the background, bottom layers and tiles (tile lines
 	// included) inside WorkspaceClip when set, with black at this opacity,
 	// 0 to 1, under the first
@@ -74,7 +79,7 @@ func (s Scene) SameAs(o Scene) bool {
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
 		s.Background != o.Background || s.Border != o.Border ||
-		s.WorkspaceClip != o.WorkspaceClip || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
+		s.WorkspaceClip != o.WorkspaceClip || s.TileClip != o.TileClip || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}
 	if s.CaptureScene != nil || o.CaptureScene != nil {
@@ -97,12 +102,13 @@ func (s Scene) SameAs(o Scene) bool {
 
 // Shows reports whether the scene draws the surface of id: only its
 // content changes need a new frame. A window scrolled off the output is
-// not drawn. WorkspaceClip also excludes off-viewport windows; OverLayers
-// popups remain output-wide.
+// not drawn. WorkspaceClip also excludes off-viewport windows, TileClip
+// tiles under a panel; OverLayers popups remain output-wide.
 func (s Scene) Shows(id WindowID) bool {
 	for _, w := range s.Windows {
 		if w.ID == id && !w.Hidden && w.Rect.Overlaps(Rect{W: s.OutputWidth, H: s.OutputHeight}) &&
-			(w.OverLayers || s.WorkspaceClip == (Rect{}) || w.Rect.Overlaps(s.WorkspaceClip)) {
+			(w.OverLayers || s.WorkspaceClip == (Rect{}) || w.Rect.Overlaps(s.WorkspaceClip)) &&
+			(!w.Tile() || s.TileClip == (Rect{}) || w.Rect.Overlaps(s.TileClip)) {
 			return true
 		}
 	}
@@ -179,4 +185,11 @@ type SceneWindow struct {
 	// OverLayers popups hang from a layer surface: drawn over the top and
 	// overlay layers. Window popups stay with the windows, under them.
 	OverLayers bool
+}
+
+// Tile reports whether w is a tile: laid out in the usable area and
+// clipped to Scene.TileClip. Floats, fullscreen windows, overview previews
+// and popups are placed against the whole viewport.
+func (w SceneWindow) Tile() bool {
+	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0
 }

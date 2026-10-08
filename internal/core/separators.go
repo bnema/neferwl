@@ -18,9 +18,9 @@ import "github.com/bnema/neferwl/internal/ports"
 
 var sides = [...]ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom}
 
-// separators are the lines of the windows seen in v, clipped to its frame,
-// inactive ones first so active ones draw over them. lit says whether the
-// focused tile shows focus (only on the focused output).
+// separators are the lines of the windows seen in v, each clipped to its
+// window's area, inactive ones first so active ones draw over them. lit
+// says whether the focused tile shows focus (only on the focused output).
 func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Separator {
 	if width <= 0 {
 		return nil
@@ -28,8 +28,10 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 	o := v.frame
 	var out []ports.Separator
 	add := func(p *Placement, r Rect, active bool) {
-		// A line cannot belong to a scrolled-off window or bleed onto
-		// another output, even when a neighboring tile remains visible.
+		// A line cannot belong to a scrolled-off window, bleed onto
+		// another output or, for a tile, over a panel, even when a
+		// neighboring tile remains visible.
+		o := v.area(*p)
 		x0, y0 := max(r.X, o.X), max(r.Y, o.Y)
 		x1, y1 := min(r.X+r.W, o.X+o.W), min(r.Y+r.H, o.Y+o.H)
 		if x0 >= x1 || y0 >= y1 {
