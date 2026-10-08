@@ -1,6 +1,7 @@
 package vulkan
 
 import (
+	"image"
 	"math/rand"
 	"testing"
 
@@ -42,6 +43,26 @@ func TestDisjointRectsCoverUnionOnce(t *testing.T) {
 			if (got[i] > 0) != want[i] || got[i] > 1 {
 				t.Fatalf("pixel %d covered %d times (want %v) for %v -> %v", i, got[i], want[i], rects, scratch)
 			}
+		}
+	}
+}
+
+// Client damage that would cut into too many pieces falls back to its
+// bounding box: the work stays bounded and every damaged pixel is copied.
+func TestDisjointRectsBoundsAdversarialDamage(t *testing.T) {
+	const w, h = 1024, 1024
+	rects := make([]ports.Rect, 128)
+	for i := range rects {
+		rects[i] = ports.Rect{X: i * 3, Y: i * 3, W: w - i*6, H: 4 + i}
+	}
+	got := disjointRects(nil, rects, w, h)
+	if len(got) != 1 {
+		t.Fatalf("%d pieces, want the bounding box", len(got))
+	}
+	for _, rc := range rects {
+		r := image.Rect(rc.X, rc.Y, rc.X+rc.W, rc.Y+rc.H)
+		if !r.In(got[0]) {
+			t.Fatalf("damage %v outside %v", r, got[0])
 		}
 	}
 }
