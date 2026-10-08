@@ -116,7 +116,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			// The one window that could have gone on the plane fades out
 			// after its close: composed from its kept content.
 			for i := range s.Windows {
-				if w := &s.Windows[i]; !w.Hidden && w.Rect.W > 0 && w.Rect.H > 0 && kept(w.ID) {
+				if w := &s.Windows[i]; s.Draws(*w) && kept(w.ID) {
 					return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "leaving"
 				}
 			}
