@@ -114,7 +114,7 @@ func (c *Core) unmapClient(ctx context.Context, v ports.WindowUnmapped) error {
 	c.releaseSlots()
 	if c.pointer == v.ID {
 		c.pointer = 0
-		if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+		if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
 			return err
 		}
 	}

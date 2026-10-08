@@ -26,18 +26,40 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	case ports.PointerAxis:
 		return c.pointerAxis(ctx, v)
 	case ports.SwipeBegin:
+		if forwardsSwipe(v.Fingers) {
+			return c.gestureBegin(ctx, ports.GestureSwipe, v.Fingers, v.Time)
+		}
+		if err := c.gestureAbort(ctx, v.Time); err != nil {
+			return err
+		}
 		if c.swipeBegin(v) {
 			return c.slid(ctx, false)
 		}
 		return nil
 	case ports.SwipeUpdate:
+		if c.gesture.on {
+			return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GestureSwipe, DX: v.DX, DY: v.DY, Time: v.Time})
+		}
 		before := c.cur().mon.Current()
 		if c.swipeUpdate(v) {
 			return c.slid(ctx, c.cur().mon.Current() != before)
 		}
 		return nil
 	case ports.SwipeEnd:
+		if c.gesture.on && c.gesture.kind == ports.GestureSwipe {
+			return c.gestureEnd(ctx, ports.GestureSwipe, v.Cancelled, v.Time)
+		}
 		return c.slid(ctx, c.swipeEnd(v))
+	case ports.PinchBegin:
+		return c.gestureBegin(ctx, ports.GesturePinch, v.Fingers, v.Time)
+	case ports.PinchUpdate:
+		return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GesturePinch, DX: v.DX, DY: v.DY, Scale: v.Scale, Rotation: v.Rotation, Time: v.Time})
+	case ports.PinchEnd:
+		return c.gestureEnd(ctx, ports.GesturePinch, v.Cancelled, v.Time)
+	case ports.HoldBegin:
+		return c.gestureBegin(ctx, ports.GestureHold, v.Fingers, v.Time)
+	case ports.HoldEnd:
+		return c.gestureEnd(ctx, ports.GestureHold, v.Cancelled, v.Time)
 	case ports.KeyEvent:
 		return c.keyEvent(ctx, v)
 	}
@@ -73,7 +95,7 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	// Layout changes are intentionally re-hit-tested only on motion.
 	if id != c.pointer {
 		c.pointer = id
-		if err := c.command(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
+		if err := c.pointerFocus(ctx, ports.PointerFocus{ID: id, X: x, Y: y}); err != nil {
 			return err
 		}
 	}
