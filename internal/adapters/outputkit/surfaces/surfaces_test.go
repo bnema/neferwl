@@ -122,3 +122,17 @@ func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
 		t.Fatal("wayland's slice was modified")
 	}
 }
+
+// Both backends report a window shown only when the scene draws it and its
+// content is not kept.
+func TestFillShown(t *testing.T) {
+	kept := func(id ports.WindowID) bool { return id == 2 }
+	dst := map[ports.WindowID]uint64{9: 9}
+	FillShown(dst, map[ports.WindowID]uint64{1: 3, 2: 4, 3: 5}, shows(1, 2), kept)
+	if len(dst) != 1 || dst[1] != 3 {
+		t.Fatalf("shown %v", dst)
+	}
+	if !Shown(shows(2), 2, nil) {
+		t.Fatal("nil kept counts nothing as kept")
+	}
+}
