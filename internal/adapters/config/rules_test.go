@@ -59,6 +59,8 @@ func TestRuleWarnings(t *testing.T) {
 		line, rules      int
 	}{
 		{"bad regex", "rule.a.app-id = (\n", "rule.a.app-id: invalid regular expression", 1, 0},
+		// Closing the anchoring group would match any app ID.
+		{"anchor breakout", "rule.a.app-id = steam)|(.*\n", "rule.a.app-id: invalid regular expression", 1, 0},
 		{"missing app-id", "rule.a.floating = on\n", "rule.a: no app-id, rule ignored", 1, 0},
 		{"unknown field", "rule.a.app-id = foo\nrule.a.title = x\n", "rule.a.title: unknown key", 2, 1},
 		{"bad floating", "rule.a.app-id = foo\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 2, 0},

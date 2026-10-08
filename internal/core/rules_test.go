@@ -338,6 +338,25 @@ func TestRemapKeepsPlace(t *testing.T) {
 	}
 }
 
+// A toplevel that maps again after an unmap (a tray app restored) opens as
+// any other window: on the workspace the user looks at, not its rule's.
+func TestRuleSkipsRemapAfterUnmap(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		declareDev(c)
+		c.Rules = []ports.WindowRule{winRule("dev", "discord", func(r *ports.WindowRule) { r.Workspace = "dev" })}
+	}, left)
+	if w := stWindow(r.mapApp(t, 1, "discord"), 1); w.WorkspaceName != "dev" {
+		t.Fatalf("first map not placed by the rule: %+v", w)
+	}
+	r.client <- ports.WindowUnmapped{ID: 1}
+	stateAfter(t, r.state, func(st ports.State) bool { return stWindow(st, 1) == nil })
+	r.client <- ports.WindowMapped{ID: 1, AppID: "discord", Remap: true}
+	st := r.stateWith(t, 1)
+	if w := stWindow(st, 1); w.WorkspaceName != "" || w.Workspace != 1 || stFocus(st) != 1 {
+		t.Fatalf("remap placed by the rule: %+v focus %d", w, stFocus(st))
+	}
+}
+
 func TestRuleReloadAffectsFutureMapsOnly(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
 		declareDev(c)

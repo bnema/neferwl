@@ -85,7 +85,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 			return
 		}
 		// Rules come after the dialog: it stays over its parent.
-		if eff, ok := c.ruleFor(v.AppID); ok {
+		if eff, ok := c.ruleFor(v); ok {
 			c.placeByRule(v, eff)
 			return
 		}
@@ -115,7 +115,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		}
 	}
 	if s, _ := c.screenOf(v.ID); s == nil {
-		if eff, ok := c.ruleFor(v.AppID); ok {
+		if eff, ok := c.ruleFor(v); ok {
 			c.placeByRule(v, eff)
 			return
 		}

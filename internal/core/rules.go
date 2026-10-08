@@ -71,11 +71,16 @@ func parseRules(rs []ports.WindowRule) ([]rule, error) {
 	return out, nil
 }
 
-// ruleFor merges the rules matching appID; ok is false when none does.
-func (c *Core) ruleFor(appID string) (eff ruleEffect, ok bool) {
+// ruleFor merges the rules matching v's app ID; ok is false when none does.
+// A toplevel mapping again after an unmap (a tray app restored) opens as
+// any other window: rules only place its first map.
+func (c *Core) ruleFor(v ports.WindowMapped) (eff ruleEffect, ok bool) {
+	if v.Remap {
+		return eff, false
+	}
 	for i := range c.rules {
 		r := &c.rules[i]
-		if !r.appID.MatchString(appID) {
+		if !r.appID.MatchString(v.AppID) {
 			continue
 		}
 		ok = true
@@ -178,6 +183,15 @@ func (w *Workspace) addFloat(f Float, quiet bool) {
 // where it is (ADR 011 golden rule).
 func (w *Workspace) addColumnQuiet(col Column) {
 	at := len(w.Columns)
+	if w.cover() != 0 {
+		// As AddWindow: under a covering fullscreen window the column
+		// waits hidden, and a maximized layout stays as it is.
+		if !w.policy().equalCells {
+			at = min(w.Focus+1, at)
+		}
+		w.Columns = slices.Insert(w.Columns, at, col)
+		return
+	}
 	if w.policy().equalCells {
 		if at > 0 {
 			w.unmaximize()

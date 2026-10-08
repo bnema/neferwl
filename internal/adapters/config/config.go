@@ -1025,12 +1025,13 @@ func setRule(r *ports.WindowRule, field, v string) error {
 		if v == "" {
 			return fmt.Errorf("needs a regular expression")
 		}
-		// The whole app ID must match: "steam" does not match "steam_app_1".
-		re, err := regexp.Compile("^(?:" + v + ")$")
-		if err != nil {
+		// Compiled alone first, so a value cannot close the anchoring
+		// group ("a)|(b").
+		if _, err := regexp.Compile(v); err != nil {
 			return fmt.Errorf("invalid regular expression: %v", err)
 		}
-		r.AppID = re
+		// The whole app ID must match: "steam" does not match "steam_app_1".
+		r.AppID = regexp.MustCompile("^(?:" + v + ")$")
 	case "floating":
 		b, err := onOff(v)
 		if err != nil {
