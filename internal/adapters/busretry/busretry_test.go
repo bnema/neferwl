@@ -20,7 +20,10 @@ func TestRunRetriesUntilCancelled(t *testing.T) {
 		defer close(done)
 		Run(ctx, time.Millisecond, "test feature", logging.For(ctx, "test"), func(context.Context) error {
 			n++
-			calls <- n
+			select {
+			case calls <- n:
+			case <-ctx.Done():
+			}
 			if n%2 == 0 {
 				return nil
 			}
