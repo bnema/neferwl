@@ -45,6 +45,8 @@ type Monitor struct {
 	switchList []*Workspace
 	// ov holds the overview selection and its Escape snapshot.
 	ov overviewState
+	// sw is the column switcher (switcher.go).
+	sw switcherState
 	// overviewOpens counts the overview's openings: a swipe sliding when
 	// one happens is dropped (gesture.go).
 	overviewOpens int
@@ -327,10 +329,12 @@ func (m *Monitor) AddFloating(id WindowID, width, height int) {
 // RemoveWindow drops the window wherever it is; focus stays on the active
 // workspace.
 func (m *Monitor) RemoveWindow(id WindowID) {
+	heir := m.sw.heir(id)
 	if w, _ := m.find(id); w != nil {
 		w.RemoveWindow(id)
 		m.normalize()
 	}
+	m.sw.remove(id, heir)
 }
 
 // SetFullscreen applies a client request, in place. A client request never
@@ -423,6 +427,9 @@ func (m *Monitor) Layout() []Placement { return m.layoutInto(nil) }
 // so a reused dst's previous result is overwritten and only a caller done
 // with it may pass it. It is never the monitor's own scratch.
 func (m *Monitor) layoutInto(dst []Placement) []Placement {
+	if m.switcherShown() {
+		return m.switcherLayout(dst[:0])
+	}
 	if m.ov.open {
 		return m.overviewLayout(dst[:0])
 	}
@@ -442,10 +449,11 @@ func (m *Monitor) layoutInto(dst []Placement) []Placement {
 func (m *Monitor) Output() Rect { return m.template.Output }
 
 // Frame is where the workspace on screen draws and takes input, in monitor
-// coordinates: its viewport, or the whole monitor in the overview. Slides
+// coordinates: its viewport, or the whole monitor in a preview (the
+// overview or the column switcher). Slides
 // involving a sized workspace remain settled inside the current frame.
 func (m *Monitor) Frame() Rect {
-	if m.ov.open {
+	if m.previewing() {
 		return m.Output()
 	}
 	return m.Current().Output

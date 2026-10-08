@@ -46,6 +46,7 @@ func (c *Core) syncSecurity() bool {
 	c.gesture = clientGesture{}
 	c.stopAnimations()
 	c.stopPulse()
+	c.cancelSwitcher()
 	if state.Protected {
 		c.dropCaptureSessions()
 	}

@@ -58,6 +58,10 @@ const (
 	ActionMoveWorkspaceNext Action = "move-workspace-next"
 	// Turn the focused tile into a free floating window, or back.
 	ActionToggleFloating Action = "toggle-floating"
+	// Switch to the column used before this one, further back while the
+	// command key is held (switcher.go).
+	ActionSwitchColumnNext Action = "switch-column-next"
+	ActionSwitchColumnPrev Action = "switch-column-prev"
 )
 
 // monitorDirection returns the direction of the neighbor screen targeted by

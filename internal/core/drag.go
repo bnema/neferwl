@@ -78,7 +78,7 @@ type dragState struct {
 // not fullscreen, outside the overview.
 func (c *Core) draggable(id WindowID) (*screen, *Workspace, bool) {
 	s, w := c.screenOf(id)
-	if s == nil || w != s.mon.Current() || s.mon.ov.open || id == w.fullscreen || w.cover() != 0 {
+	if s == nil || w != s.mon.Current() || s.mon.previewing() || id == w.fullscreen || w.cover() != 0 {
 		return nil, nil, false
 	}
 	if w.floatIndex(id) < 0 && w.columnOf(id) < 0 {
@@ -288,7 +288,7 @@ func (c *Core) dropAt(id WindowID, x, y float64) dropTarget {
 	m := sc.mon
 	lx, ly := int(x)-sc.x, int(y)-sc.y
 	w := m.Current()
-	if m.ov.open || w.pinned() || !m.frameHas(float64(lx), float64(ly)) {
+	if m.previewing() || w.pinned() || !m.frameHas(float64(lx), float64(ly)) {
 		return dropTarget{}
 	}
 	t := w.dropIn(id, lx, ly, max(4*c.cfg.Border.Width, 4))

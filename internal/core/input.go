@@ -128,6 +128,11 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		}
 		return nil
 	}
+	if v.Pressed && c.switching() {
+		if handled, err := c.switcherClick(ctx, v.Button); err != nil || handled {
+			return err
+		}
+	}
 	if started, err := c.startDrag(ctx, v); err != nil || started {
 		return err
 	}
@@ -224,6 +229,18 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 
 func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	c.mods = key.Mods
+	// Releasing the command key commits the switcher; the release still
+	// goes on to the bind lookup and the clients.
+	if c.switching() && c.mods&c.cmdMod == 0 {
+		if err := c.releaseSwitcher(ctx); err != nil {
+			return err
+		}
+	}
+	if c.switching() && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the switcher; its release goes nowhere either.
+		c.pressed[heldKey(key)] = true
+		return c.abortSwitcher(ctx)
+	}
 	if c.drag != nil && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the drag; its release goes nowhere either.
 		c.cancelDrag()
@@ -308,10 +325,17 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 	if action == ActionScaleUp || action == ActionScaleDown {
 		return c.scaleBind(ctx, action)
 	}
+	if dir := switchDir(action); dir != 0 {
+		return c.switchBind(ctx, dir)
+	}
 	before := c.cur().mon.Current()
 	swiped := c.swipedWorkspace()
 	now := c.now()
+	// Snapshot before the switcher closes: its cards fly back to the layout.
 	shots := c.snapshot(now)
+	if c.switching() {
+		c.cancelSwitcher()
+	}
 	c.keyboard.takeBack() // a bind acts on the windows
 	effect := c.applyAction(action)
 	if effect.Quit {

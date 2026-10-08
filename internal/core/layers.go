@@ -88,9 +88,9 @@ func (c *Core) layerOf(id WindowID) (*screen, ports.SceneLayer, bool) {
 
 // hasFullscreen reports whether a fullscreen window covers the screen. In
 // scroll overflow, one scrolled off by the user no longer does; nor does
-// one shown as an overview preview.
+// one shown as a preview (the overview or the column switcher).
 func hasFullscreen(sc *screen) bool {
-	return !sc.mon.ov.open && sc.mon.Current().cover() != 0
+	return !sc.mon.previewing() && sc.mon.Current().cover() != 0
 }
 
 // shown reports whether a layer surface is drawn. A fullscreen window is

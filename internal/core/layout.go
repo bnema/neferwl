@@ -170,8 +170,11 @@ type Workspace struct {
 	// maximized remembers recently maximized columns by window ID, newest
 	// first; stack() filters removed windows at read time.
 	maximized []WindowID
-	Focus     int
-	View      int
+	// recent holds one window per column the user focused, newest first
+	// (switcher.go); columns that went are dropped when read.
+	recent []WindowID
+	Focus  int
+	View   int
 	// View is the settled offset along the layout's content axis.
 	// view is its presentation offset, in logical pixels.
 	view slide
@@ -641,6 +644,7 @@ func (w *Workspace) unslot(n int) {
 
 func (w *Workspace) RemoveWindow(id WindowID) {
 	w.maximized = slices.DeleteFunc(w.maximized, func(v WindowID) bool { return v == id })
+	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return v == id })
 	if w.fullscreen == id {
 		w.fullscreen = 0
 	}

@@ -280,6 +280,8 @@ bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+s = toggle-stash-visible
 bind.cmd+shift+s = toggle-window-stash
 bind.cmd+o = toggle-overview
+bind.cmd+tab = switch-column-next
+bind.cmd+shift+tab = switch-column-prev
 
 # Workspaces
 bind.cmd+pageup = focus-workspace-prev
