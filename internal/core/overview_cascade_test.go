@@ -75,10 +75,10 @@ func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
 	}
 }
 
-// A maximized column fills its band in the preview, inset for the columns
-// it hides: they are dimmed cards at their cell size behind it, on their
-// side, the nearest one step out, the farther ones two (the band's edge).
-// Other bands keep their cells.
+// A maximized column keeps its full size in the preview (the workspace's
+// ratio); the columns it hides are dimmed cards at their cell size behind
+// it, peeking out on their side, the nearest one step, the farther ones two.
+// The row widens by that room; other bands keep their cells.
 func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 	// Four columns, three per band: band 0 holds 0..2, band 1 holds 3.
 	for _, tc := range []struct {
@@ -97,11 +97,14 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 		w := cascadeWorkspace(tc.n)
 		w.Focus = tc.max
 		w.maximize(tc.max)
-		tiles, _, sel := w.previewTiles()
+		tiles, span, sel := w.previewTiles()
 		g, h, s := w.gap(), w.Usable.H-2*w.gap(), w.bandCardStep()
 		off := 0
 		if slices.ContainsFunc(tc.cards, func(k int) bool { return k != 0 }) {
 			off = 2 * s
+		}
+		if span != w.Usable.W+2*off {
+			t.Fatalf("n=%d max=%d span %d, want %d", tc.n, tc.max, span, w.Usable.W+2*off)
 		}
 		var order []int
 		for _, p := range tiles {
@@ -119,6 +122,9 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 				want.X = g + (2+k)*s
 			case k > 0:
 				want.X = w.Usable.W - g + (2+k)*s - want.W
+			}
+			if p.Rect.X < 0 || p.Rect.X+p.Rect.W > span {
+				t.Fatalf("n=%d max=%d column %d %+v outside span %d", tc.n, tc.max, i, p.Rect, span)
 			}
 			if p.Hidden || p.Peek != (tc.cards[i] != 0) || p.Focused != (i == tc.max) || p.Rect != want {
 				t.Fatalf("n=%d max=%d column %d: %+v, want rect %+v card %v", tc.n, tc.max, i, p, want, tc.cards[i] != 0)
@@ -198,9 +204,9 @@ func TestOverviewCascadeMaximizedCardPickRecordsWindow(t *testing.T) {
 	}
 }
 
-// Only the focused maximized column is inset for cards: a FullWidth column
-// elsewhere fills its band.
-func TestOverviewCascadeUnfocusedMaximizedNotInset(t *testing.T) {
+// A FullWidth column outside the focused band fills its band, shifted like
+// every tile by the room of the focused column's cards.
+func TestOverviewCascadeUnfocusedMaximizedFillsBand(t *testing.T) {
 	w := cascadeWorkspace(6)
 	w.SetGaps(8)
 	w.Focus = 4
