@@ -273,7 +273,7 @@ func TestOverviewMaximizedPreviewsKeepConfigures(t *testing.T) {
 			r := w.columnRectsFor(true)[int(p.ID)-1]
 			p.Rect, p.Hidden = r, false
 		}
-		v, _ := s.next(p, configureTarget{output: "test", client: p.Rect, area: w.Usable})
+		v, _ := s.next(p, configureTarget{output: "test", client: p.Rect, view: whole(w.Usable)})
 		s.mark(v)
 		before[p.ID] = v
 	}
@@ -283,7 +283,7 @@ func TestOverviewMaximizedPreviewsKeepConfigures(t *testing.T) {
 		if p.ID < 1 || p.ID > 4 {
 			continue
 		}
-		v, _ := s.next(p, configureTarget{output: "test", area: w.Usable})
+		v, _ := s.next(p, configureTarget{output: "test", view: whole(w.Usable)})
 		if v.Width != before[p.ID].Width || v.Height != before[p.ID].Height {
 			t.Fatalf("%d resized from %+v to %+v", p.ID, before[p.ID], v)
 		}

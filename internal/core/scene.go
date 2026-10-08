@@ -11,12 +11,12 @@ import (
 // drawable reports that it can show the focus pulse on the focused window.
 func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, capture *capView, pulse float64) (scene ports.Scene, drawable bool, err error) {
 	o := sc.mon.Output()
-	// frame is the viewport of the workspace on screen: the whole output
-	// unless it has a size override (never in the overview).
-	frame := sc.mon.Frame()
+	// view.frame is the viewport of the workspace on screen: the whole
+	// output unless it has a size override (never in the overview).
+	view := sc.mon.viewport()
 	var clip Rect
-	if frame != (Rect{W: o.W, H: o.H}) {
-		clip = frame
+	if view.frame != (Rect{W: o.W, H: o.H}) {
+		clip = view.frame
 	}
 	// layout is what is drawn; settled (same indexes) is where the
 	// windows are going, and alone sizes the configures.
@@ -37,7 +37,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 		}
 	}
-	scene.Dim = floatDim(layout, frame, c.cfg.Floating.Dim)
+	scene.Dim = floatDim(layout, view, c.cfg.Floating.Dim)
 	if sc.mon.ov.open {
 		// Darken the wallpaper around the previews.
 		scene.Dim = c.cfg.Floating.Dim
@@ -52,11 +52,10 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
 	} else {
 		// Only the focused output lights the focused window's lines.
-		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
+		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)
 	}
 	// A window alone on screen needs no pulse to show it has the focus.
-	// A tile under a panel (the next cascade band) does not count.
-	alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, sc.mon.Current().Usable) == 1
+	alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, view) == 1
 	for k, p := range layout {
 		ps := settled[k]
 		// Only the focused output has an activated window.
@@ -91,7 +90,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 		}
 		scene.Windows = append(scene.Windows, sw)
-		t := configureTarget{output: sc.name(), area: frame, focused: focused, captured: capture != nil && capture.window == p.ID}
+		t := configureTarget{output: sc.name(), view: view, focused: focused, captured: capture != nil && capture.window == p.ID}
 		if !p.Hidden && p.Preview == 0 {
 			// Only a sized configure needs the client size.
 			t.client, t.imposed = c.clientRect(ps), sc.mon.Current().imposedFloat(p.ID)

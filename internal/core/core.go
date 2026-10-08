@@ -458,10 +458,25 @@ func (c *Core) clientRect(p Placement) Rect {
 	return p.Rect.Inset(p.Inset, c.cfg.Border.Width)
 }
 
-// onScreen reports whether a placement is drawn on its output o: not
-// hidden and not scrolled off.
-func onScreen(p Placement, o Rect) bool {
-	return !p.Hidden && p.Rect.Overlaps(o)
+// viewport is where a workspace is seen: frame is the whole viewport,
+// usable the part exclusive layers (panels) leave to the tiles.
+type viewport struct{ frame, usable Rect }
+
+// whole is a viewport with no panel: all of r is usable.
+func whole(r Rect) viewport { return viewport{frame: r, usable: r} }
+
+// shows reports whether the user sees p: not hidden, and overlapping the
+// area its kind is laid out in. A tile lives in the usable area, so a
+// cascade band or a column scrolled under a panel is not seen; a float, a
+// fullscreen window and an overview preview are placed against the frame.
+func (v viewport) shows(p Placement) bool {
+	if p.Hidden {
+		return false
+	}
+	if p.Floating || p.Fullscreen || p.Preview > 0 {
+		return p.Rect.Overlaps(v.frame)
+	}
+	return p.Rect.Overlaps(v.usable)
 }
 
 // floatDim is the veil opacity of a layout: dim only when a float is
@@ -470,9 +485,9 @@ func onScreen(p Placement, o Rect) bool {
 // drops the veil at once: a veil that fades changes Scene.Dim every frame,
 // which redraws the whole output for the length of the fade, where the
 // float's own fade redraws only its rect.
-func floatDim(layout []Placement, o Rect, dim float64) float64 {
+func floatDim(layout []Placement, v viewport, dim float64) float64 {
 	for _, p := range layout {
-		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
+		if p.Floating && !p.Below && p.Preview == 0 && v.shows(p) {
 			if p.Fullscreen {
 				return 0
 			}

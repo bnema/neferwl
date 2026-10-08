@@ -146,9 +146,10 @@ func (c *Core) windowRect(id WindowID) (*screen, Rect, bool) {
 	for _, sc := range c.screens {
 		for _, pl := range sc.shownLayout() {
 			if pl.ID == id {
-				// Hidden or scrolled off: not on screen, like its popups.
-				// A preview takes no input and shows no popups.
-				if !onScreen(pl, sc.mon.Frame()) || pl.Preview > 0 {
+				// Hidden, scrolled off or under a panel: not on screen,
+				// like its popups. A preview takes no input and shows no
+				// popups.
+				if !sc.mon.viewport().shows(pl) || pl.Preview > 0 {
 					return nil, Rect{}, false
 				}
 				return sc, c.clientRect(pl), true

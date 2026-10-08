@@ -18,13 +18,14 @@ import "github.com/bnema/neferwl/internal/ports"
 
 var sides = [...]ports.Sides{ports.SideLeft, ports.SideRight, ports.SideTop, ports.SideBottom}
 
-// separators are the lines of a layout on output o, inactive ones first
-// so active ones draw over them. lit says whether the focused tile shows
-// focus (only on the focused output).
-func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separator {
+// separators are the lines of the windows seen in v, clipped to its frame,
+// inactive ones first so active ones draw over them. lit says whether the
+// focused tile shows focus (only on the focused output).
+func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Separator {
 	if width <= 0 {
 		return nil
 	}
+	o := v.frame
 	var out []ports.Separator
 	add := func(p *Placement, r Rect, active bool) {
 		// A line cannot belong to a scrolled-off window or bleed onto
@@ -52,7 +53,7 @@ func separators(ps []Placement, width, gap int, o Rect, lit bool) []ports.Separa
 		p := &ps[i]
 		// A leaving float keeps its own lines while it fades; a leaving
 		// tile's were shared with its neighbours, which re-flowed.
-		if p.Fullscreen || !(onScreen(*p, o) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
+		if p.Fullscreen || !(v.shows(*p) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
 			continue
 		}
 		// Tiles sharing a line: Neighbors only counts tiles visible in
