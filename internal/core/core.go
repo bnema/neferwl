@@ -118,6 +118,7 @@ type Core struct {
 	specs        []NamedWorkspace
 	presets      []Width
 	slots        map[slotKey]*slotState
+	rules        []rule
 	placement    spawnPlacement
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn               []slotKey
@@ -306,6 +307,10 @@ func (c *Core) apply(cfg ports.Config) error {
 	if err != nil {
 		return err
 	}
+	rules, err := parseRules(cfg.Rules)
+	if err != nil {
+		return err
+	}
 	// Reload is cold-path work; unrelated changes keep a scroll or gesture.
 	axes := make(map[*Monitor]layoutPolicy, len(c.screens))
 	for _, s := range c.screens {
@@ -314,7 +319,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	c.cfg = cfg
 	c.binds = binds
 	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]
-	c.specs, c.presets = named, presets
+	c.specs, c.presets, c.rules = named, presets, rules
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
 	for _, s := range c.screens {

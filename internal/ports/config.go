@@ -2,6 +2,7 @@ package ports
 
 import (
 	"image"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -164,6 +165,8 @@ type Config struct {
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig
+	// Rules are the window rules (rule.<name>.* keys), in first-seen order.
+	Rules []WindowRule
 	// Outputs selects and configures physical displays (drm backend).
 	Outputs []OutputConfig
 	Binds   map[string]string
@@ -256,4 +259,21 @@ type SlotConfig struct {
 	Index int
 	Width string
 	Argv  []string
+}
+
+// WindowRule places the windows whose app ID it matches when they first map.
+// Matching rules merge in config order, a later rule winning per field.
+type WindowRule struct {
+	Name string
+	// AppID matches the whole app ID (the config anchors it).
+	AppID *regexp.Regexp
+	// Floating forces a window to float (true) or to tile (false); nil leaves it.
+	Floating *bool
+	// Workspace is a 1-based number of a numbered workspace or the name of a
+	// declared one; empty leaves it.
+	Workspace string
+	// Monitor is a connector (DP-2) or a monitor key ("make model serial").
+	Monitor string
+	// Width is the layout width of the new column of a tiled window.
+	Width string
 }

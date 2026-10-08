@@ -157,8 +157,12 @@ func TestForeignToplevel(t *testing.T) {
 	registerWireProxy(c, xp)
 	requestProtocol(t, c, surf, wayland.SurfaceRequestCommit)
 	ackAndAttach(t, c, surf, xdg, shmBuffer(t, c), serials)
-	if again := mapped(t, events, 2*time.Second); again.ID != w.ID {
-		t.Fatalf("remapped as %d, want %d", again.ID, w.ID)
+	// Core learns it is a remap: window rules only place a first map.
+	if w.Remap {
+		t.Fatal("first map flagged as a remap")
+	}
+	if again := mapped(t, events, 2*time.Second); again.ID != w.ID || !again.Remap {
+		t.Fatalf("remapped as %+v, want ID %d and Remap", again, w.ID)
 	}
 	if got := takeEvents(t, c, p.events); len(got) == 0 || got[len(got)-1] != "done" {
 		t.Fatalf("remap = %q", got)

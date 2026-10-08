@@ -70,6 +70,8 @@ func (p *spawnPlacement) expireTerminals(now time.Time) {
 }
 
 // place claims a token once and puts its window in the target workspace.
+// Without a slot, a window rule (rules.go) may choose its place; otherwise it
+// opens on the focused screen's workspace.
 // Untagged windows return before any map lookup or allocation.
 func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 	if v.Floating {
@@ -80,6 +82,11 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		if ps, pw := c.screenOf(v.Parent); v.Parent != 0 && pw != nil {
 			pw.AddDialog(v.ID, v.Parent, v.Width, v.Height)
 			ps.mon.normalize()
+			return
+		}
+		// Rules come after the dialog: it stays over its parent.
+		if eff, ok := c.ruleFor(v); ok {
+			c.placeByRule(v, eff)
 			return
 		}
 		c.cur().mon.AddFloating(v.ID, v.Width, v.Height)
@@ -108,6 +115,10 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		}
 	}
 	if s, _ := c.screenOf(v.ID); s == nil {
+		if eff, ok := c.ruleFor(v); ok {
+			c.placeByRule(v, eff)
+			return
+		}
 		c.cur().mon.AddWindow(v.ID)
 	}
 }
