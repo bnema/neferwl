@@ -106,6 +106,17 @@ focus.strength = 0.04
 # workspace.dev.column.2 = 33%, foot
 # bind.cmd+d = workspace dev
 
+# Window rules place an app's windows when they first open, without moving
+# the focus or the view. app-id is a regular expression matching the whole
+# app ID (see `neferwl state`); matching rules merge, a later one winning.
+# floating = on|off, workspace = N or a declared name, monitor = DP-2 or a
+# monitor key, width = like a column width.
+# rule.games.app-id = steam_app_.*
+# rule.games.workspace = 3
+# rule.games.monitor = DP-2
+# rule.calc.app-id = org\.gnome\.Calculator
+# rule.calc.floating = on
+
 # Displays (drm backend): WxH, WxH@Hz, preferred or off.
 # The first listed display that is connected and not off is used.
 # output.DP-2 = 5120x2160@165.058
