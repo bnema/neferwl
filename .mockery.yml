@@ -91,6 +91,11 @@ packages:
           dir: internal/app
           pkgname: app
           filename: seatdisable_mock_test.go
+      leaseInventoryCard:
+        config:
+          dir: internal/app
+          pkgname: app
+          filename: leaseinventory_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:

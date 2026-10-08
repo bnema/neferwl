@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -22,7 +21,6 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/seat"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
-	"golang.org/x/sys/unix"
 )
 
 var errTimeout = errors.New("timeout")
@@ -307,59 +305,8 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	set := newOutputSet(ctx, ch.captured)
 	set.wireSecurity(ch)
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
-	clientFDs := map[*drmCard]*os.File{}
-	lastLeaseConnectors := map[*drmCard][]ports.LeaseConnector{}
-	defer func() {
-		for _, f := range clientFDs {
-			f.Close()
-		}
-	}()
-	sendLease := func(msg ports.LeaseMessage) {
-		select {
-		case ch.leaseEvents <- msg:
-		case <-ctx.Done():
-			ports.CloseLeaseFiles(msg)
-		}
-	}
-	publishLeases := func(c *drmCard) {
-		for _, id := range c.FinishedLeases() {
-			sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
-		}
-		var next []ports.LeaseConnector
-		if seatActive && !protected() {
-			next = c.Leasable()
-		}
-		if len(next) == 0 {
-			if protected() || clientFDs[c] != nil {
-				sendLease(ports.LeaseConnectors{Card: c.Path()})
-			}
-			if clientFDs[c] != nil {
-				clientFDs[c].Close()
-				delete(clientFDs, c)
-			}
-			delete(lastLeaseConnectors, c)
-			return
-		}
-		if slices.Equal(lastLeaseConnectors[c], next) && clientFDs[c] != nil {
-			return
-		}
-		if clientFDs[c] == nil {
-			f, err := c.ClientFD()
-			if err != nil {
-				log.Warn().Err(err).Str("card", c.Path()).Msg("lease client fd")
-				return
-			}
-			clientFDs[c] = f
-		}
-		// Each message owns its fd: a queued inventory outlives clientFDs[c].
-		fd, err := unix.FcntlInt(clientFDs[c].Fd(), unix.F_DUPFD_CLOEXEC, 0)
-		if err != nil {
-			log.Warn().Err(err).Str("card", c.Path()).Msg("lease client fd")
-			return
-		}
-		lastLeaseConnectors[c] = next
-		sendLease(ports.LeaseConnectors{Card: c.Path(), Device: os.NewFile(uintptr(fd), c.Path()), Connectors: next})
-	}
+	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
+	defer leases.close()
 	hotplug := make(chan struct{}, 1)
 	go func() {
 		if err := safe("hotplug", func() error { return drm.WatchHotplug(ctx, hotplug) }); err != nil {
@@ -408,9 +355,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		var errs []error
 		for _, c := range b.cards {
 			errs = append(errs, revokeSecurityLeases(c, func(id uint32) {
-				sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+				leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 			}))
-			publishLeases(c)
+			leases.publish(c)
 		}
 		errs = append(errs, discardedOutputErr)
 		err := errors.Join(errs...)
@@ -460,7 +407,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				scanErrors = append(scanErrors, fmt.Errorf("scan %s: %w", c.Path(), err))
 				continue
 			}
-			publishLeases(c)
+			leases.publish(c)
 			stop := func(name string, restart bool) {
 				if r := set.outs[name]; r != nil && cards[name] == c {
 					if _, ok := stopping[name]; !ok {
@@ -640,7 +587,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				barrier()
 			} else {
 				for _, c := range b.cards {
-					publishLeases(c)
+					leases.publish(c)
 				}
 			}
 		case <-revokeDeadline:
@@ -664,14 +611,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 						if err := c.Revoke(id); err != nil {
 							log.Warn().Err(err).Uint32("lease", id).Msg("VT lease revoke")
 						} else {
-							sendLease(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
+							leases.send(ports.LeaseFinished{Card: c.Path(), LeaseID: id})
 						}
 					}
-					publishLeases(c)
+					leases.publish(c)
 				}
 			} else {
 				for _, c := range b.cards {
-					publishLeases(c)
+					leases.publish(c)
 				}
 			}
 		case event := <-ch.leaseRequests:
@@ -680,24 +627,24 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				reply := ports.LeaseReply{ID: req.ID, Err: fmt.Errorf("unknown card %s", req.Card)}
 				if !seatActive || protected() {
 					reply.Err = errors.New("DRM seat inactive or session protected")
-					sendLease(reply)
+					leases.send(reply)
 					break
 				}
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
 						reply.FD, reply.LeaseID, reply.Err = guardedLease(c, ch.security, req.Connectors)
-						publishLeases(c)
+						leases.publish(c)
 						break
 					}
 				}
-				sendLease(reply)
+				leases.send(reply)
 			case ports.LeaseRevoke:
 				for _, c := range b.cards {
 					if c.Path() == req.Card {
 						if err := c.Revoke(req.LeaseID); err != nil {
 							log.Warn().Err(err).Uint32("lease", req.LeaseID).Msg("revoke lease")
 						} else {
-							publishLeases(c)
+							leases.publish(c)
 						}
 						break
 					}
