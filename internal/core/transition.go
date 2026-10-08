@@ -599,7 +599,8 @@ func (c *Core) scaleFrom(rm *rectMotion, settled Rect, k float64, now time.Time)
 	c.retargetComponent(&rm.h, &rm.dh, h-float64(settled.H), 0, now)
 }
 
-// snapshot records what every screen without an open overview shows at now.
+// snapshot records what every screen shows at now, previews (the overview,
+// the switcher's cards) included.
 // Running motions are sampled at now on a copy, so a transition that
 // follows chains from their speed at the time of the action, not from the
 // last frame's. The view is the one drawn (the layouts it is measured
