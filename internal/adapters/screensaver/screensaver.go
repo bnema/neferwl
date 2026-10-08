@@ -53,7 +53,7 @@ type Reports struct {
 
 // Serve runs the service until ctx ends. When the bus goes or another
 // program owns the name, it tries again after retry, doubling up to
-// busretry.Max, so a restarted bus or a released name is picked up.
+// a minute, so a restarted bus or a released name is picked up.
 func Serve(ctx context.Context, address string, r Reports, retry time.Duration, log zerowrap.Logger) {
 	busretry.Run(ctx, retry, "D-Bus idle inhibitors", log, func(ctx context.Context) error {
 		s, err := New(ctx, address, log)

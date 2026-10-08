@@ -11,12 +11,12 @@ import (
 	"github.com/bnema/zerowrap"
 )
 
-// Max bounds the delay between attempts.
-const Max = time.Minute
+// maxDelay bounds the delay between attempts.
+const maxDelay = time.Minute
 
 // Run calls attempt until ctx ends. When attempt returns, it waits retry,
-// doubling up to Max on each failure, and calls it again. An attempt that
-// ran longer than Max before failing starts the delay over: its failure is
+// doubling up to maxDelay on each failure, and calls it again. An attempt that
+// ran longer than maxDelay before failing starts the delay over: its failure is
 // new, not a retry streak. what names the feature in logs ("X ignored until
 // the next attempt"); a failure is warned once per distinct error, then
 // logged at debug level.
@@ -32,7 +32,7 @@ func Run(ctx context.Context, retry time.Duration, what string, log zerowrap.Log
 		if err == nil {
 			err = errors.New(what + " stopped")
 		}
-		if time.Since(start) > Max {
+		if time.Since(start) > maxDelay {
 			delay, last = retry, ""
 		}
 		if msg := err.Error(); msg != last {
@@ -46,6 +46,6 @@ func Run(ctx context.Context, retry time.Duration, what string, log zerowrap.Log
 			return
 		case <-time.After(delay):
 		}
-		delay = min(2*delay, Max)
+		delay = min(2*delay, maxDelay)
 	}
 }
