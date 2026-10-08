@@ -100,7 +100,7 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	var full *ports.SceneWindow
 	for i := range s.Windows {
 		win := &s.Windows[i]
-		if win.Hidden || win.Rect.W <= 0 || win.Rect.H <= 0 {
+		if !s.Draws(*win) {
 			continue
 		}
 		if !win.Fullscreen || !covers(&s, win) || full != nil {

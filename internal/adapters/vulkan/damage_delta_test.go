@@ -17,7 +17,7 @@ import (
 // TestSceneFieldCount fails when Scene gains or loses a field: sceneDelta
 // lists the fields that force a full redraw.
 func TestSceneFieldCount(t *testing.T) {
-	const fields = 20
+	const fields = 21
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
@@ -98,6 +98,7 @@ func TestDamageDeltaFullRedraws(t *testing.T) {
 		"background":     func(s *ports.Scene) { s.Background = "#111111" },
 		"border":         func(s *ports.Scene) { s.Border.Width = 2 },
 		"workspace clip": func(s *ports.Scene) { s.WorkspaceClip = ports.Rect{W: 10, H: 10} },
+		"tile inset":     func(s *ports.Scene) { s.TileInset = ports.Insets{Bottom: 10} },
 		"dim":            func(s *ports.Scene) { s.Dim = 0.5 },
 		"dim behind":     func(s *ports.Scene) { s.DimBehind = true },
 		"drop hints":     func(s *ports.Scene) { s.DropHints = []ports.Rect{{W: 5, H: 5}} },

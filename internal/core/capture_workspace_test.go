@@ -47,7 +47,7 @@ func TestCaptureConfigureSizesHiddenWindowWithoutShowingIt(t *testing.T) {
 	c, _ := hiddenCapture(t)
 	sc := c.screens[0]
 	phys := Placement{ID: 1, Hidden: true}
-	t0 := configureTarget{output: "A", area: sc.mon.Frame()}
+	t0 := configureTarget{output: "A", view: sc.mon.viewport()}
 	cp, tt := c.captureConfigure(sc, phys, t0)
 	if cp == nil || cp.Hidden {
 		t.Fatalf("no real placement: %+v", cp)
@@ -80,7 +80,7 @@ func TestCaptureConfigureLeavesOtherWindowsAlone(t *testing.T) {
 	c, _ := hiddenCapture(t)
 	sc := c.screens[0]
 	phys := Placement{ID: 99, Hidden: true}
-	t0 := configureTarget{output: "A", area: sc.mon.Frame()}
+	t0 := configureTarget{output: "A", view: sc.mon.viewport()}
 	if cp, tt := c.captureConfigure(sc, phys, t0); cp != nil || tt != t0 {
 		t.Fatalf("window of another workspace captured: %+v", cp)
 	}

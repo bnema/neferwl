@@ -28,7 +28,10 @@ type sceneWalk struct {
 	// it (premultiplied); 1 otherwise.
 	alpha  float32
 	bounds image.Rectangle
-	draws  []draw
+	// tileBounds is bounds cut to Scene.TileArea: where tiles and their
+	// lines draw.
+	tileBounds image.Rectangle
+	draws      []draw
 }
 
 // draws walks the scene into quads in paint order.
@@ -47,6 +50,10 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	if s.WorkspaceClip != (ports.Rect{}) {
 		c := s.WorkspaceClip
 		w.bounds = w.bounds.Intersect(w.physRect(c.X, c.Y, c.W, c.H))
+	}
+	w.tileBounds = w.bounds
+	if a, ok := s.TileArea(); ok {
+		w.tileBounds = w.bounds.Intersect(w.physRect(a.X, a.Y, a.W, a.H))
 	}
 	w.windows()
 	w.popups(false)
@@ -207,7 +214,7 @@ func (w *sceneWalk) windows() {
 			continue
 		}
 		if opensFloats(win) && !tileLines {
-			w.separators(0)
+			w.tileSeparators()
 			tileLines = true
 			if w.s.Dim > 0 && !w.s.DimBehind {
 				w.dim(w.bounds, w.s.Dim)
@@ -219,6 +226,11 @@ func (w *sceneWalk) windows() {
 			continue
 		}
 		w.alpha = 1 - float32(max(0, win.Fade))
+		windowBounds := w.bounds
+		if win.Tile() {
+			// A tile never draws over a panel (Scene.TileArea).
+			w.bounds = w.tileBounds
+		}
 		// Content sits inside the border; core sized the client to match.
 		b, inset := 0, ports.Sides(0)
 		if !win.Fullscreen {
@@ -227,7 +239,8 @@ func (w *sceneWalk) windows() {
 		c := win.Rect.Inset(inset, b)
 		body := w.physRect(c.X, c.Y, c.W, c.H)
 		content := w.contents[win.ID]
-		w.dmg.window(win.ID, content, w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H))
+		// Damage counts only what is drawn: never the panel under a tile.
+		w.dmg.window(win.ID, content, w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H).Intersect(w.bounds))
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
 		if !content.Empty() {
@@ -249,11 +262,19 @@ func (w *sceneWalk) windows() {
 			// A stashed window peeking in: dimmed with its border.
 			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
-		w.alpha = 1
+		w.alpha, w.bounds = 1, windowBounds
 	}
 	if !tileLines {
-		w.separators(0)
+		w.tileSeparators()
 	}
+}
+
+// tileSeparators draws the tile lines, cut like the tiles at the panels.
+func (w *sceneWalk) tileSeparators() {
+	b := w.bounds
+	w.bounds = w.tileBounds
+	w.separators(0)
+	w.bounds = b
 }
 
 // separators draws a window's border lines in order, active lines over

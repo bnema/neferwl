@@ -24,6 +24,14 @@ func (r Rect) Overlaps(o Rect) bool {
 		r.X < o.X+o.W && o.X < r.X+r.W && r.Y < o.Y+o.H && o.Y < r.Y+r.H
 }
 
+// Contains reports whether o lies wholly inside r.
+func (r Rect) Contains(o Rect) bool {
+	return o.X >= r.X && o.Y >= r.Y && o.X+o.W <= r.X+r.W && o.Y+o.H <= r.Y+r.H
+}
+
+// Insets are distances from the four edges of an area.
+type Insets struct{ Top, Right, Bottom, Left int }
+
 // Inset shrinks r by b on each side in s.
 func (r Rect) Inset(s Sides, b int) Rect {
 	b = min(max(b, 0), r.W/2, r.H/2)

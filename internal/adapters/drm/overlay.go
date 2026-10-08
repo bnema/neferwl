@@ -76,7 +76,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	var mode colorMode
 	for i := range s.Windows {
 		w := &s.Windows[i]
-		if w.Hidden || w.Rect.W <= 0 || w.Rect.H <= 0 {
+		if !s.Draws(*w) {
+			// Not drawn (a tile wholly under a panel included): neither
+			// a candidate nor over one.
 			continue
 		}
 		if w.Popup {
@@ -104,7 +106,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	}
 	if pick != nil {
 		for i := range s.Windows {
-			if w := &s.Windows[i]; w.Popup && !w.Hidden && w.Rect.Overlaps(pick.Rect) {
+			if w := &s.Windows[i]; w.Popup && s.Draws(*w) && w.Rect.Overlaps(pick.Rect) {
 				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "window_above"
 			}
 		}
@@ -148,10 +150,13 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			}
 		}
 	}
-	if clip := s.WorkspaceClip; clip != (ports.Rect{}) &&
-		(pick.Rect.X < clip.X || pick.Rect.Y < clip.Y || pick.Rect.X+pick.Rect.W > clip.X+clip.W || pick.Rect.Y+pick.Rect.H > clip.Y+clip.H) {
+	if clip := s.WorkspaceClip; clip != (ports.Rect{}) && !clip.Contains(pick.Rect) {
 		// The plane cannot apply the workspace's logical viewport crop.
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "workspace_clip"
+	}
+	if a, ok := s.TileArea(); ok && pick.Tile() && !a.Contains(pick.Rect) {
+		// Nor the cut of a tile at a panel.
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "tile_clip"
 	}
 	c := surfaces[pick.ID]
 	pw, ph := float64(pick.Rect.W)*scale, float64(pick.Rect.H)*scale

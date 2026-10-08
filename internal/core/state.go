@@ -54,8 +54,9 @@ func (c *Core) stateInto(st ports.State) ports.State {
 		// Read at once, into publish's scratch: the snapshot holds no
 		// placement.
 		c.realBuf = m.layoutInto(c.realBuf)
+		view := m.viewport()
 		for _, p := range c.realBuf {
-			shown[p.ID] = onScreen(p, m.Frame())
+			shown[p.ID] = view.shows(p)
 		}
 		for w := range m.all() {
 			n := indexOf(m.Workspaces, w) + 1

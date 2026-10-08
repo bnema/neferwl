@@ -451,6 +451,12 @@ func (m *Monitor) Frame() Rect {
 	return m.Current().Output
 }
 
+// viewport is where the workspace on screen is seen: Frame, and the
+// usable area its tiles live in.
+func (m *Monitor) viewport() viewport {
+	return viewport{frame: m.Frame(), usable: m.Current().Usable}
+}
+
 // frameHas reports whether the output-local point is inside the frame.
 func (m *Monitor) frameHas(x, y float64) bool {
 	f := m.Frame()

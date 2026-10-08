@@ -66,7 +66,7 @@ func TestSeparators(t *testing.T) {
 		{"left column: whole line, split column untouched", tiles(0, grid...), true, []px{{14, 3, "lit"}, {14, 30, "lit"}, {20, 14, "gray"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			seps := separators(tc.ps, 2, 0, bigOutput, tc.lit)
+			seps := separators(tc.ps, 2, 0, whole(bigOutput), tc.lit)
 			for _, c := range tc.check {
 				if got := colorAt(seps, c.x, c.y); got != c.want {
 					t.Errorf("(%d,%d) = %q, want %q; %v", c.x, c.y, got, c.want, seps)
@@ -77,22 +77,22 @@ func TestSeparators(t *testing.T) {
 }
 
 func TestSeparatorsSkip(t *testing.T) {
-	if s := separators(tiles(0, Rect{W: 32, H: 16}), 2, 0, bigOutput, true); len(s) != 0 {
+	if s := separators(tiles(0, Rect{W: 32, H: 16}), 2, 0, whole(bigOutput), true); len(s) != 0 {
 		t.Fatal("lone window:", s)
 	}
-	if s := separators(tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16}), 0, 0, bigOutput, true); len(s) != 0 {
+	if s := separators(tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16}), 0, 0, whole(bigOutput), true); len(s) != 0 {
 		t.Fatal("width 0:", s)
 	}
 	full := tiles(0, Rect{W: 16, H: 16}, Rect{X: 16, W: 16, H: 16})
 	full[0].Fullscreen, full[1].Hidden = true, true
-	if s := separators(full, 2, 0, bigOutput, true); len(s) != 0 {
+	if s := separators(full, 2, 0, whole(bigOutput), true); len(s) != 0 {
 		t.Fatal("fullscreen:", s)
 	}
 }
 
 func TestSeparatorsFloat(t *testing.T) {
 	float := Placement{ID: 1, Rect: Rect{X: 10, Y: 10, W: 20, H: 20}, Floating: true, Focused: true, Inset: ports.SideAll}
-	seps := separators([]Placement{float}, 2, 0, bigOutput, true)
+	seps := separators([]Placement{float}, 2, 0, whole(bigOutput), true)
 	if seps[0].Window != 1 {
 		t.Fatal("float border not tied to its window:", seps)
 	}
@@ -134,7 +134,7 @@ func TestSeparatorsScroll(t *testing.T) {
 		t.Fatalf("expected visible borders to change with the view: %v then %v", before, after)
 	}
 	out := Rect{W: 100, H: 80}
-	seps := separators(w.Layout(), 2, 0, out, true)
+	seps := separators(w.Layout(), 2, 0, whole(out), true)
 	if got := colorAt(seps, 99, 40); got != "" {
 		t.Fatalf("line at the output edge: %v", seps)
 	}
@@ -183,9 +183,14 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 	if p := previewOf(t, ps, 1); p.Neighbors != ports.SideRight {
 		t.Fatalf("neighbors %04b, want right only", p.Neighbors)
 	}
-	seps := separators(ps, 2, 0, w.Output, true)
+	seps := separators(ps, 2, 0, viewport{frame: w.Output, usable: w.Usable}, true)
 	if got := colorAt(seps, 200, 578); got != "" {
 		t.Fatalf("line along the panel: %v", seps)
+	}
+	for _, s := range seps {
+		if s.Window == 3 {
+			t.Fatalf("line of the tile under the panel: %v", seps)
+		}
 	}
 	// Two tiles on screen: each lights its half of the shared line.
 	if got := colorAt(seps, 449, 100); got != "lit" {
@@ -200,7 +205,7 @@ func TestSeparatorsCascadeBottomPanel(t *testing.T) {
 func TestSeparatorsGaps(t *testing.T) {
 	ps := []Placement{{ID: 1, Rect: Rect{X: 0, W: 16, H: 16}, Focused: true}, {ID: 2, Rect: Rect{X: 20, W: 16, H: 16}}}
 	setVisibleNeighbors(ps, 4, bigOutput)
-	seps := separators(ps, 2, 4, bigOutput, true)
+	seps := separators(ps, 2, 4, whole(bigOutput), true)
 	for _, c := range []px{{14, 2, "lit"}, {14, 13, "lit"}, {20, 8, "gray"}, {17, 8, ""}} {
 		if got := colorAt(seps, c.x, c.y); got != c.want {
 			t.Errorf("(%d,%d) = %q, want %q", c.x, c.y, got, c.want)

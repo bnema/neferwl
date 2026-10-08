@@ -91,7 +91,7 @@ func (c *Core) captureConfigure(sc *screen, p Placement, t configureTarget) (*Pl
 		// An overview preview keeps its real size and physical state.
 		return cp, t
 	}
-	t.area = cw.frame
+	t.view = whole(cw.frame) // the capture image has no panels
 	t.focused = false
 	t.client, t.imposed = Rect{}, false
 	if !cp.Hidden {
@@ -146,6 +146,8 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 		return nil
 	}
 	f := cw.frame
+	// The capture image has no panels: all of it is seen.
+	view := whole(f)
 	rebase := func(r Rect) Rect { r.X, r.Y = r.X-f.X, r.Y-f.Y; return r }
 	s := &ports.Scene{
 		Security: c.security,
@@ -153,7 +155,7 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 		Scale: cw.sc.scale, Background: c.cfg.Background.Color,
 		Border:  ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
 		Windows: make([]ports.SceneWindow, 0, len(cw.placements)),
-		Dim:     floatDim(cw.placements, f, c.cfg.Floating.Dim),
+		Dim:     floatDim(cw.placements, view, c.cfg.Floating.Dim),
 	}
 	// A hidden workspace lights nothing: its focus is not shown.
 	for _, p := range cw.placements {
@@ -164,7 +166,7 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 		w.Dim = c.peekDim(p)
 		s.Windows = append(s.Windows, w)
 	}
-	s.Separators = separators(cw.placements, c.cfg.Border.Width, cw.ws.gap(), f, false)
+	s.Separators = separators(cw.placements, c.cfg.Border.Width, cw.ws.gap(), view, false)
 	for i := range s.Separators {
 		s.Separators[i].Rect = rebase(s.Separators[i].Rect)
 	}

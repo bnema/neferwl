@@ -48,6 +48,7 @@ func TestSceneSameAs(t *testing.T) {
 		"scale":             func(s *Scene) { s.Scale = 2 },
 		"off":               func(s *Scene) { s.Off = true },
 		"clip":              func(s *Scene) { s.WorkspaceClip.W = 1 },
+		"tile inset":        func(s *Scene) { s.TileInset.Bottom = 1 },
 		"dim":               func(s *Scene) { s.Dim = 0.5 },
 		"dim behind":        func(s *Scene) { s.DimBehind = true },
 		"separator":         func(s *Scene) { s.Separators[0].Active = true },
@@ -82,7 +83,7 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	const fields = 20
+	const fields = 21
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

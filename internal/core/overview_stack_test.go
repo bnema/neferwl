@@ -273,7 +273,7 @@ func TestOverviewStashRightBringsColumnsFront(t *testing.T) {
 func TestOverviewStackNoFloatVeil(t *testing.T) {
 	m := stackMonitor()
 	m.ToggleOverview()
-	if d := floatDim(m.Layout(), Rect{W: 300, H: 200}, 0.3); d != 0 {
+	if d := floatDim(m.Layout(), whole(Rect{W: 300, H: 200}), 0.3); d != 0 {
 		t.Fatalf("veil %v in the overview", d)
 	}
 }

@@ -118,6 +118,10 @@ func TestPreferredBufferTransform(t *testing.T) {
 	}
 	cursorSeen()
 	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(1), cursor, int32(0), int32(0))
+	// Roundtrip so the server has made it a cursor before the output changes.
+	if got := cursorSeen(); len(got) != 0 {
+		t.Fatalf("cursor surface got transforms %v before rotation", got)
+	}
 
 	setOutputs(1, 1)
 	if got := normal(); !slices.Equal(got, []uint32{1}) {

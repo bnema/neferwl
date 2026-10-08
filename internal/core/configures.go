@@ -5,8 +5,8 @@ import "github.com/bnema/neferwl/internal/ports"
 // configureTarget is where a placement is shown, as the configure needs it.
 type configureTarget struct {
 	output  string
-	area    Rect // the output, to tell whether the window is on screen
-	focused bool // activated: focused on the focused output
+	view    viewport // where the window is seen, to tell whether it is
+	focused bool     // activated: focused on the focused output
 	// client is the placement minus borders; imposed reports core sized a
 	// floating window (native floats pick their own size).
 	client  Rect
@@ -109,14 +109,14 @@ func build(p Placement, t configureTarget, old ports.ConfigureWindow, ok bool) p
 		if p.Fullscreen && !v.Fullscreen {
 			// A float made fullscreen off screen: its preview row shows
 			// it fullscreen, sized for the output, never the preview.
-			v.Width, v.Height, v.Fullscreen, v.Floating = t.area.W, t.area.H, true, false
+			v.Width, v.Height, v.Fullscreen, v.Floating = t.view.frame.W, t.view.frame.H, true, false
 		}
 		if t.realTiled {
 			v.Width, v.Height = t.client.W, t.client.H
 		}
-		v.Activated, v.Visible, v.Output, v.Captured = t.focused, onScreen(p, t.area), t.output, false
+		v.Activated, v.Visible, v.Output, v.Captured = t.focused, t.view.shows(p), t.output, false
 	default:
-		v = ports.ConfigureWindow{ID: p.ID, Width: t.client.W, Height: t.client.H, Fullscreen: p.Fullscreen, Activated: t.focused, Floating: p.Floating && !p.Fullscreen, Output: t.output, Visible: onScreen(p, t.area)}
+		v = ports.ConfigureWindow{ID: p.ID, Width: t.client.W, Height: t.client.H, Fullscreen: p.Fullscreen, Activated: t.focused, Floating: p.Floating && !p.Fullscreen, Output: t.output, Visible: t.view.shows(p)}
 		if v.Floating && !t.imposed {
 			v.Width, v.Height = 0, 0
 		}

@@ -458,10 +458,36 @@ func (c *Core) clientRect(p Placement) Rect {
 	return p.Rect.Inset(p.Inset, c.cfg.Border.Width)
 }
 
-// onScreen reports whether a placement is drawn on its output o: not
-// hidden and not scrolled off.
-func onScreen(p Placement, o Rect) bool {
-	return !p.Hidden && p.Rect.Overlaps(o)
+// viewport is where a workspace is seen: frame is the whole viewport,
+// usable the part exclusive layers (panels) leave to the tiles.
+type viewport struct{ frame, usable Rect }
+
+// whole is a viewport with no panel: all of r is usable.
+func whole(r Rect) viewport { return viewport{frame: r, usable: r} }
+
+// area is where p can be seen, drawn and pointed at. A tile lives in the
+// usable area and is cut at its edge (Scene.TileInset), so a cascade band
+// or a column scrolled under a panel is not seen; a float, a fullscreen
+// window and an overview preview are placed against the frame.
+func (v viewport) area(p Placement) Rect {
+	if p.Floating || p.Fullscreen || p.Preview > 0 {
+		return v.frame
+	}
+	return v.usable
+}
+
+// hasRoom reports whether p's area can show anything: panels can leave
+// tiles no room at all. Unlike shows, it ignores where p is, so a window
+// still sliding in counts.
+func hasRoom(v viewport, p Placement) bool {
+	a := v.area(p)
+	return a.W > 0 && a.H > 0
+}
+
+// shows reports whether the user sees p: not hidden, and overlapping its
+// area.
+func (v viewport) shows(p Placement) bool {
+	return !p.Hidden && p.Rect.Overlaps(v.area(p))
 }
 
 // floatDim is the veil opacity of a layout: dim only when a float is
@@ -470,9 +496,9 @@ func onScreen(p Placement, o Rect) bool {
 // drops the veil at once: a veil that fades changes Scene.Dim every frame,
 // which redraws the whole output for the length of the fade, where the
 // float's own fade redraws only its rect.
-func floatDim(layout []Placement, o Rect, dim float64) float64 {
+func floatDim(layout []Placement, v viewport, dim float64) float64 {
 	for _, p := range layout {
-		if p.Floating && !p.Below && p.Preview == 0 && onScreen(p, o) {
+		if p.Floating && !p.Below && p.Preview == 0 && v.shows(p) {
 			if p.Fullscreen {
 				return 0
 			}
@@ -809,8 +835,7 @@ func (c *Core) shownClient(id WindowID) (full, visible Rect, ok bool) {
 		}
 		r := c.clientRect(p)
 		full = Rect{X: r.X + s.x, Y: r.Y + s.y, W: r.W, H: r.H}
-		f := s.mon.Frame()
-		visible = intersect(r, f)
+		visible = intersect(r, s.mon.viewport().area(p))
 		visible.X, visible.Y = visible.X+s.x, visible.Y+s.y
 		if visible.W <= 0 || visible.H <= 0 {
 			return Rect{}, Rect{}, false
@@ -956,6 +981,7 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	}
 	var id WindowID
 	var sx, sy float64
+	view := sc.mon.viewport()
 	for _, p := range sc.shownLayout() {
 		r := c.clientRect(p)
 		// A peek is clickable wherever it shows, border included: it may
@@ -964,6 +990,8 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 		if p.Peek {
 			box = p.Rect
 		}
+		// Only what is drawn takes the pointer: a tile not over a panel.
+		box = intersect(box, view.area(p))
 		if !p.Hidden && r.W > 0 && r.H > 0 && lx >= float64(box.X) && lx < float64(box.X+box.W) && ly >= float64(box.Y) && ly < float64(box.Y+box.H) {
 			if p.Peek {
 				lx, ly = min(max(lx, float64(r.X)), float64(r.X+r.W-1)), min(max(ly, float64(r.Y)), float64(r.Y+r.H-1))
