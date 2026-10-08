@@ -76,9 +76,7 @@ type Core struct {
 	// workspace while overviewReal is filled) and by state(); never retained.
 	realBuf         []Placement
 	security        ports.SecurityState
-	lockSurfaces    []ports.LockSurfacePlacement
-	lockFocus       WindowID
-	lockPinned      bool // lockFocus was clicked or typed into: it keeps focus
+	lock            lockState
 	inputKeys       map[string]bool
 	inputActive     bool
 	startup         [][]string
@@ -115,18 +113,15 @@ type Core struct {
 	seq         uint64
 	// layerChanged is set once layer state arrives from wayland.
 	layerChanged bool
-	sentOutputs  ports.SetOutputs
+	sent         sentCache
 	specs        []NamedWorkspace
 	presets      []Width
 	slots        map[slotKey]*slotState
 	placement    spawnPlacement
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn               []slotKey
-	sentPending           bool
 	firstTerminalResolved bool
 	windows               windowRegistry
-	sentState             ports.State
-	sentWorkspaces        ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -152,6 +147,15 @@ type Core struct {
 	capt captureState
 	// pulse marks a window that just got the focus (pulse.go).
 	pulse focusPulse
+}
+
+// sentCache is what core last sent to wayland and on its latest-only
+// channels; an unchanged value is not sent again.
+type sentCache struct {
+	outputs    ports.SetOutputs
+	state      ports.State
+	workspaces ports.Workspaces
+	pending    bool // spawn placement pending
 }
 
 func keyName(s string) string {
@@ -314,11 +318,11 @@ func (c *Core) apply(cfg ports.Config) error {
 // publishPending tells wayland at once when slots start waiting, before
 // their windows can map.
 func (c *Core) publishPending(ctx context.Context) error {
-	if p := c.placement.anyPending(); p != c.sentPending {
+	if p := c.placement.anyPending(); p != c.sent.pending {
 		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
 			return err
 		}
-		c.sentPending = p
+		c.sent.pending = p
 	}
 	return nil
 }
@@ -587,134 +591,11 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
 	for i, sc := range c.screens {
-		o := sc.mon.Output()
-		// frame is the viewport of the workspace on screen: the whole output
-		// unless it has a size override (never in the overview).
-		frame := sc.mon.Frame()
-		var clip Rect
-		if frame != (Rect{W: o.W, H: o.H}) {
-			clip = frame
+		scene, shown, err := c.sceneFor(ctx, i, sc, only, capture, pulse)
+		if err != nil {
+			return err
 		}
-		// layout is what is drawn; settled (same indexes) is where the
-		// windows are going, and alone sizes the configures.
-		layout, settled := sc.shown, sc.settledLayout
-		scene := ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
-		var real map[WindowID]Placement
-		if sc.mon.ov.open {
-			// Local to this screen's build: reused, cleared each time.
-			if c.overviewReal == nil {
-				c.overviewReal = make(map[WindowID]Placement)
-			}
-			clear(c.overviewReal)
-			real = c.overviewReal
-			for w := range sc.mon.all() {
-				c.realBuf = w.layoutInto(c.realBuf)
-				for _, p := range c.realBuf {
-					real[p.ID] = p
-				}
-			}
-		}
-		scene.Dim = floatDim(layout, frame, c.cfg.Floating.Dim)
-		if sc.mon.ov.open {
-			// Darken the wallpaper around the previews.
-			scene.Dim = c.cfg.Floating.Dim
-			scene.DimBehind = scene.Dim > 0
-		}
-		if d := c.drag; d != nil && d.target.screen == sc && d.target.kind != dropNone {
-			scene.DropHints = slices.Clone(d.target.hints)
-		}
-		if sc.mon.ov.open {
-			// Frame the selection and separate numbered and named row groups.
-			_, scene.Separators = sc.mon.overviewRows()
-			scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
-		} else {
-			// Only the focused output lights the focused window's lines.
-			scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), frame, i == c.focusScreen)
-		}
-		// A window alone on screen needs no pulse to show it has the focus.
-		// A tile under a panel (the next cascade band) does not count.
-		alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, sc.mon.Current().Usable) == 1
-		for k, p := range layout {
-			ps := settled[k]
-			// Only the focused output has an activated window.
-			focused := p.Focused && i == c.focusScreen
-			sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
-			if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
-				// A scale motion: the content follows the drawn size. A
-				// card in flight drawn at its size still needs Zoom 1:
-				// without it the renderer would shrink it by Preview.
-				sw.Zoom = p.Zoom
-			}
-			// A peek's veil is the configured one plus its animated offset.
-			sw.Dim = max(0, min(p.Dim+c.peekDim(p), 1))
-			if p.Leaving {
-				// A window fading out after it closed or hid: drawn, but
-				// hidden to everything else, its configures included.
-				sw.Hidden = false
-				scene.Windows = append(scene.Windows, sw)
-				// A window the workspace still holds (a hidden stash
-				// window) keeps its last configure: prune would forget it,
-				// and its next one would start from nothing. A closed one
-				// was forgotten at its unmap and stays so.
-				if w, _ := sc.mon.find(p.ID); w != nil {
-					c.configures.keep(p.ID)
-				}
-				continue
-			}
-			if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.ov.open {
-				drawable = true
-				if p.ID == c.pulse.id {
-					sw.FocusEffect = pulse
-				}
-			}
-			scene.Windows = append(scene.Windows, sw)
-			t := configureTarget{output: sc.name(), area: frame, focused: focused, captured: capture != nil && capture.window == p.ID}
-			if !p.Hidden && p.Preview == 0 {
-				// Only a sized configure needs the client size.
-				t.client, t.imposed = c.clientRect(ps), sc.mon.Current().imposedFloat(p.ID)
-			} else if t.captured && p.Hidden {
-				// A captured hidden window is sized like its capture.
-				t.client = capture.windowSz
-			} else if p.Preview > 0 && !p.Hidden {
-				if rp, ok := real[p.ID]; ok && !rp.Hidden {
-					t.realTiled = !rp.Floating
-					t.client = c.clientRect(rp)
-				}
-			}
-			cp, t := c.captureConfigure(sc, ps, t)
-			if v, send := c.configures.nextWithCapture(ps, t, cp); send {
-				if err := c.command(ctx, v); err != nil {
-					return err
-				}
-				c.configures.mark(v)
-			}
-		}
-		scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
-		scene.CaptureIndicators = c.captureIndicators(sc)
-		scene.Capture = c.captureSceneFor(sc, capture)
-		// A scene carrying a capture image always gets a fresh Seq, and so
-		// does one of an animating screen (the one being stepped, or any
-		// when none is): the outputs drop a scene they already show, and a
-		// spring that starts at the previous scene, or rounds to it in its
-		// tail, would get no flip and wait for the fallback timer. Any other
-		// keeps its output's Seq while it draws the same, so an idle output
-		// is not recomposed.
-		withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
-		animating := (sc.springing() || c.pulsing(sc)) && (only == nil || only == sc)
-		if !withCapture && !animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
-			scene.Seq = sc.last.Seq
-		} else {
-			c.seq++
-			scene.Seq = c.seq
-		}
-		if withCapture {
-			switch sc {
-			case capture.hiddenScr:
-				scene.CaptureScene = c.captureScene(scene.Seq)
-			case capture.windowScr:
-				scene.CaptureScene = c.captureWindowScene(capture, scene.Seq)
-			}
-		}
+		drawable = drawable || shown
 		sc.last = scene
 		scenes = append(scenes, scene)
 	}
@@ -958,16 +839,16 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 // geometry only when the outputs themselves moved.
 func (c *Core) syncOutputs(ctx context.Context) error {
 	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
-	if sameOutputs(v, c.sentOutputs) {
+	if sameOutputs(v, c.sent.outputs) {
 		return nil
 	}
 	if err := c.command(ctx, v); err != nil {
 		return err
 	}
-	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sentOutputs.Outputs) {
+	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sent.outputs.Outputs) {
 		latest(c.ch.Layouts, v.Outputs)
 	}
-	c.sentOutputs = v
+	c.sent.outputs = v
 	return nil
 }
 
@@ -1117,140 +998,11 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.blockProtected(ev) {
 				continue
 			}
-			switch v := ev.(type) {
-			case ports.SessionLockChanged:
-				if !c.applyLockChanged(v) {
-					continue
-				}
-			case ports.CaptureSessionOpen:
-				c.captureOpen(v)
-			case ports.CaptureSessionClose:
-				c.captureClose(v.ID)
-			case ports.CaptureFrameTaken:
-				// Nothing new to show (the target flashes already): no scene.
-				if !c.captureFrame(v) {
-					continue
-				}
-			case ports.CaptureExclusionBegin:
-				c.captureExclusionBegin(v)
-			case ports.CaptureExclusionLayer:
-				c.captureExclusionLayer(v)
-			case ports.CaptureExclusionEnd:
-				c.captureExclusionEnd(v.Session)
-			case ports.LayerChanged:
-				c.layerChanged = true
-				c.setLayers(v.Layers)
-			case ports.InputRegionChanged:
-				c.windows.setRegion(v)
-			case ports.WindowMapped:
-				c.mapWindow(v)
-			case ports.WindowResized:
-				c.resizeFloating(v)
-			case ports.PopupRequest:
-				if err := c.placePopup(ctx, v); err != nil {
-					return nil
-				}
-			case ports.PopupMapped:
-				if p := c.popups[v.ID]; p != nil {
-					p.mapped = true
-				}
-			case ports.ShortcutsInhibit:
-				c.windows.setInhibitShortcuts(v.Window, v.Active)
-				if err := c.updateInhibit(ctx); err != nil {
-					return nil
-				}
-				continue
-			case ports.OutputPower:
-				if i := c.screenIndex(v.Output); i >= 0 && c.screens[i].off == v.On {
-					c.screens[i].off = !v.On
-				}
-			case ports.IdleInhibit:
-				c.windows.setIdleInhibit(v.Window, v.Active)
-				c.publishState()
-				continue
-			case ports.WindowAppID:
-				c.windows.setAppID(v.ID, v.AppID)
-			case ports.WindowParent:
-				if _, w := c.screenOf(v.ID); w != nil {
-					w.SetDialogParent(v.ID, v.Parent)
-				}
-			case ports.WindowUnmapped:
-				if c.popups[v.ID] != nil {
-					if err := c.dropPopup(ctx, v.ID); err != nil {
-						return nil
-					}
-				}
-				if err := c.closePopupsOf(ctx, v.ID); err != nil {
-					return nil
-				}
-				c.windows.drop(v.ID)
-				if c.drag != nil && c.drag.id == v.ID {
-					c.abortDrag()
-				}
-				c.unmapWindow(v)
-				c.releaseSlots()
-				if c.pointer == v.ID {
-					c.pointer = 0
-					if err := c.command(ctx, ports.PointerFocus{}); err != nil {
-						return nil
-					}
-				}
-			case ports.PointerConstrained:
-				c.constrained = v
-			case ports.PointerWarp:
-				if c.warpPointer(ctx, v) != nil {
-					return nil
-				}
-			case ports.WindowMoveRequest:
-				if c.clientDrag(ctx, v) != nil {
-					return nil
-				}
-			case ports.WindowFullscreenRequest:
-				c.configures.answer[v.ID] = true
-				if v.Fullscreen && !v.External && c.now().Sub(c.windows.lookup(v.ID).mappedAt) < fullscreenGrace {
-					break
-				}
-				// A taskbar request is a user action on that window, as an
-				// activation: it comes on screen with the focus, leaving
-				// another window's fullscreen.
-				if v.External && v.Fullscreen && c.activate(ctx, v.ID) != nil {
-					return nil
-				}
-				if s, _ := c.screenOf(v.ID); s != nil {
-					s.mon.SetFullscreen(v.ID, v.Fullscreen)
-					if w := s.mon.Current(); v.Fullscreen && w.fullscreen == v.ID {
-						// A taskbar or late fullscreen request that took
-						// effect: the window does not fade in, it keeps the
-						// direct scanout path. One that was ignored (the
-						// grace after the map) leaves the entrance running.
-						delete(s.rects, v.ID)
-					}
-				}
-			case ports.WorkspaceActivate:
-				before := c.cur().mon.Current()
-				for _, id := range v.IDs {
-					for i, sc := range c.screens {
-						if sc.name() == "" {
-							continue
-						}
-						for w := range sc.mon.all() {
-							if w.ID == id {
-								c.focusScreen = i
-								sc.mon.show(w)
-								break
-							}
-						}
-					}
-				}
-				if c.workspaceVisible(ctx, c.cur().mon.Current() != before) != nil {
-					return nil
-				}
-			case ports.WindowActivate:
-				if c.activate(ctx, v.ID) != nil {
-					return nil
-				}
+			publish, stop := c.clientEvent(ctx, ev)
+			if stop {
+				return nil
 			}
-			if err := c.publish(ctx); err != nil {
+			if publish && c.publish(ctx) != nil {
 				return nil
 			}
 		case f, ok := <-c.ch.Frames:

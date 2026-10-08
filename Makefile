@@ -1,4 +1,4 @@
-.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch check perf-check color-check bin tty logs pkg install
+.PHONY: build test vet race mocks mocks-check spv-check fakes-check log-check arch adapter-imports check perf-check color-check bin tty logs pkg install
 
 # 0 runs until quit; set e.g. TTY_TIMEOUT=60s for a safety net.
 TTY_TIMEOUT ?= 0
@@ -56,8 +56,17 @@ LOGCOMPONENT := "component"|FieldComponent
 log-check:
 	@rc=0; grep -rnE '$(LOGCOMPONENT)' --include='*.go' --exclude='*_test.go' --exclude-dir=logging internal cmd || rc=$$?; \
 	[ $$rc -eq 1 ] || { [ $$rc -eq 0 ] && echo 'component log field: derive a logger with logging.For instead (see AGENTS.md)' >&2; exit 1; }
-arch:
+arch: adapter-imports
 	$(HOME)/go/bin/hexcheck -hexcheck.config .hexcheck.yaml -hexcheck.root . ./...
+# Adapters stay independent: production code may import only the shared
+# adapter libraries below. outputkit holds what both output backends (drm,
+# headless) run; the others are leaf helpers.
+ADAPTER_LIBS := outputkit/capture|outputkit/presented|outputkit/surfaces|captureallow|clock|logging|sessionsecurity|syncfile|workspaceid|xkb
+adapter-imports:
+	@edges=$$(CGO_ENABLED=0 go list -f '{{$$p := .ImportPath}}{{range .Imports}}{{$$p}} {{.}}{{"\n"}}{{end}}' ./internal/adapters/...) || exit 1; \
+	bad=$$(echo "$$edges" | grep -E ' \S+/internal/adapters/' | grep -vE '/internal/adapters/($(ADAPTER_LIBS))$$' \
+		| while read -r from to; do case $$to in $$from/*) ;; *) echo "$$from -> $$to";; esac; done); \
+	[ -z "$$bad" ] || { echo "$$bad"; echo 'adapter imports another adapter: use ports or a shared library (Makefile ADAPTER_LIBS)' >&2; exit 1; }
 # Fast, mandatory guards for tiled content publications and SHM copies.
 perf-check:
 	CGO_ENABLED=0 go test ./internal/core ./internal/app ./internal/adapters/drm ./internal/adapters/vulkan ./internal/adapters/wayland -run '^(TestAnimateAllocations|TestPublishAllocations|TestPublishStashSlideAllocations|TestPublishOverviewAllocations|TestPublishLeavingAllocations|TestOutputRoutingAllocations|TestReportSeenAllocations|TestFrameLifecycleTransitionsAllocations|TestFullscreenShownAllocations|TestFrameDecisionAllocations|TestCommitFrameAllocations|TestColorPipelineAllocations|TestShownBySnapshotAllocations|TestDueFramesAllocations|TestRenderSteadyStateAllocations|TestSceneOpaqueRegionAllocations|TestSceneDeltaAllocations|TestAccountFlipAllocations|TestFlipDoneAllocations|TestSceneWalkUnchangedTiledSHM|TestTiledCommitPublishAllocations|TestCapturedCommitApplyAllocations|TestCapturedViewportApplyAllocations|TestEffectiveInputEmptyTreeAllocations|TestHeadlessTiledSHMCallbackAndCopyBudget)$$' -count=1

@@ -2,7 +2,6 @@ package headless
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -12,10 +11,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
-	"github.com/bnema/neferwl/internal/adapters/presented"
-	"github.com/bnema/neferwl/internal/adapters/surfaces"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -93,9 +92,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
-	var requestStorage [capture.MaxRequests]ports.CaptureRequest
-	requests := requestStorage[:0]
+	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
+	requests.Init(ctx, opts.Captured)
 	pipeline := capture.NewPipeline(ctx, opts.Captured)
 	pipeline.Security = opts.Security
 	if opts.NewCaptureRenderer != nil {
@@ -106,23 +105,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(capture.ErrFrameNotPresented)
 		cancelCaptures()
 		pipeline.Close(r)
-		for _, q := range requests {
-			if capture.Handed(q) {
-				continue // already answered, or owned by a worker
-			}
-			capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
-		}
-		for {
-			select {
-			case q, ok := <-incoming:
-				if !ok {
-					return
-				}
-				capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
-			default:
-				return
-			}
-		}
+		requests.Stop(incoming)
 	}()
 	var want ports.CursorChange
 	cursorScale := -1.0 // not loaded yet
@@ -132,16 +115,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var reports presented.Queue
 	var security ports.SecurityState
 	securityKnown := false
-	failRequests := func(reason string) {
+	failRequests := func(reason error) {
 		// Whatever this frame had handed to a worker is failed with it.
-		pipeline.EndGate(capture.GateVerdict(errors.New(reason)))
-		for _, q := range requests {
-			if !capture.Handed(q) {
-				capture.Fail(ctx, q, fmt.Errorf("%s", reason), opts.Captured)
-			}
-		}
-		clear(requests)
-		requests = requestStorage[:0]
+		pipeline.EndGate(capture.GateVerdict(reason))
+		requests.FailPending(reason)
 	}
 	// A transition is its own frame, never a locker-buffer-dependent frame.
 	// Keep its epoch through the fence wait and report only actual completion.
@@ -194,7 +171,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 			// Capture reply backpressure must not postpone the first black
 			// completion/proof. Capture drainage is a separate parent barrier.
-			failRequests("session protected")
+			failRequests(capture.ErrSessionProtected)
 		}
 	}
 	acceptScene := func(s ports.Scene) {
@@ -245,9 +222,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// Requests wait for a scene that shows their indicator, at most
 		// capture.HoldFor (see capture.Hold).
 		var holdDue <-chan time.Time
-		if len(requests) > 0 {
+		if requests.Len() > 0 {
 			var wait time.Duration
-			requests, wait = pipeline.Expire(scene, requests, time.Now())
+			requests.List, wait = pipeline.Expire(scene, requests.List, time.Now())
 			if wait > 0 {
 				holdTimer.Reset(wait)
 				holdDue = holdTimer.C
@@ -300,25 +277,19 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 			if err := checkSecurity(); err != nil {
 				// q has left incoming but is not yet owned by requests/workers.
-				capture.Fail(ctx, q, fmt.Errorf("output stopped"), opts.Captured)
+				capture.Fail(ctx, q, capture.ErrOutputStopped, opts.Captured)
 				if ctx.Err() != nil {
 					return nil
 				}
 				return err
 			}
+			var refuse error
 			if opts.protected() {
-				capture.Fail(ctx, q, fmt.Errorf("session protected"), opts.Captured)
+				refuse = capture.ErrSessionProtected
 			} else if scene.Off {
-				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
-			} else if len(requests) == cap(requests) {
-				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), opts.Captured)
-			} else {
-				q.Since = time.Now()
-				requests = append(requests, q)
-				// Its indicator may already be on screen; else it waits for the
-				// scene that shows it.
-				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
+				refuse = capture.ErrOutputOff
 			}
+			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
 		case <-retry:
 			if err := checkSecurity(); err != nil {
 				if ctx.Err() != nil {
@@ -419,14 +390,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			return err
 		}
 		if opts.protected() {
-			failRequests("session protected")
+			failRequests(capture.ErrSessionProtected)
 		}
-		if scene.Off && len(requests) > 0 {
-			for _, q := range requests {
-				capture.Fail(ctx, q, fmt.Errorf("output off"), opts.Captured)
-			}
-			clear(requests)
-			requests = requestStorage[:0]
+		if scene.Off && requests.Len() > 0 {
+			requests.FailPending(capture.ErrOutputOff)
 		}
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
@@ -458,7 +425,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// Requests the scene cannot serve (exclusion of another session, a
 		// workspace that moved) are failed here; see capture.Pipeline.Split.
 		// A request whose indicator the scene does not show yet stays held.
-		ready, _ := pipeline.Hold(scene, requests, time.Now())
+		ready, _ := pipeline.Hold(scene, requests.List, time.Now())
 		if len(scene.CaptureIndicators) > 0 {
 			// The captures of this frame are delivered only once its frame,
 			// with the indicator, is presented (capture.Pipeline.EndGate).
@@ -470,7 +437,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			// A hidden workspace: a child renderer draws it. The display's
 			// fences do not cover the child, so wait for it before reporting.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-				failRequests("security epoch changed")
+				failRequests(capture.ErrEpochChanged)
 				continue
 			}
 			pipeline.SubmitHidden(scene, drawn, hidden)
@@ -518,7 +485,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			// Exclude requests: the frame without the excluded surfaces is
 			// drawn first (same renderer, queue order), then the displayed one.
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-				failRequests("security epoch changed")
+				failRequests(capture.ErrEpochChanged)
 				continue
 			}
 			xdone, renderErr := r.Render(pipeline.ExcludedScene(scene), drawn)
@@ -539,14 +506,14 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("render excluded frame: %w", renderErr)
 			}
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-				failRequests("security epoch changed")
+				failRequests(capture.ErrEpochChanged)
 				continue
 			}
 			pipeline.SubmitScoped(scene.Security, r, excluded)
 			clear(excluded)
 		}
 		if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-			failRequests("security epoch changed")
+			failRequests(capture.ErrEpochChanged)
 			continue
 		}
 		done, err := r.Render(scene, drawn)
@@ -571,13 +538,13 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// Do not capture or report a frame that crossed a transition during
 		// Render/fence wait. The next loop establishes the new black proof.
 		if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
-			failRequests("security epoch changed")
+			failRequests(capture.ErrEpochChanged)
 			continue
 		}
 		pipeline.SubmitScoped(scene.Security, r, normal)
 		// The indicated frame is presented: release what it gated.
 		pipeline.EndGate(nil)
-		requests = capture.Waiting(requests, scene)
+		requests.List = capture.Waiting(requests.List, scene)
 		frame++
 		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
 		if opts.ScreenshotDir != "" && !opts.protected() {
@@ -671,14 +638,14 @@ func (opts Options) flush(q *presented.Queue) {
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
 // frame callbacks follow headless frames.
-func flipInfo(scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
+func flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
 	shows := map[ports.WindowID]uint64{}
-	for id, c := range surfaces {
+	for id, c := range contents {
 		// A closed window drawn from its kept content is not shown to
 		// its client.
-		if scene.Shows(id) && !kept(id) {
+		if surfaces.Shown(scene, id, kept) {
 			shows[id] = c.Seq
 		}
 	}

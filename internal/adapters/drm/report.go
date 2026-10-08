@@ -3,6 +3,7 @@ package drm
 import (
 	"maps"
 
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -28,14 +29,9 @@ func (o *Output) shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[port
 	if o.showsScratch == nil {
 		o.showsScratch = make(map[ports.WindowID]uint64)
 	}
-	clear(o.showsScratch)
-	for id, seq := range seen {
-		// A closed window drawn from its kept content is not shown to its
-		// client: the empty content has no frame to present.
-		if s.Shows(id) && (o.kept == nil || !o.kept(id)) {
-			o.showsScratch[id] = seq
-		}
-	}
+	// A closed window drawn from its kept content is not shown to its
+	// client: the empty content has no frame to present.
+	surfaces.FillShown(o.showsScratch, seen, s, o.kept)
 	if !maps.Equal(o.showsSnapshot, o.showsScratch) {
 		o.showsSnapshot = maps.Clone(o.showsScratch)
 	}

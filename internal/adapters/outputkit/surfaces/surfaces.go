@@ -4,7 +4,7 @@
 package surfaces
 
 import (
-	"github.com/bnema/neferwl/internal/adapters/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -97,4 +97,22 @@ func (t *Table) Prune(scene ports.Scene) {
 func (t *Table) Kept(id ports.WindowID) bool {
 	_, ok := t.kept[id]
 	return ok
+}
+
+// Shown is the presentation rule both output backends report with: id was
+// shown to its client when scene draws it and its content is not kept. A
+// nil kept counts nothing as kept.
+func Shown(scene ports.Scene, id ports.WindowID, kept func(ports.WindowID) bool) bool {
+	return scene.Shows(id) && (kept == nil || !kept(id))
+}
+
+// FillShown clears dst and fills it with the windows of seen that scene
+// showed to their client (Shown), at their seen Seq.
+func FillShown(dst, seen map[ports.WindowID]uint64, scene ports.Scene, kept func(ports.WindowID) bool) {
+	clear(dst)
+	for id, seq := range seen {
+		if Shown(scene, id, kept) {
+			dst[id] = seq
+		}
+	}
 }

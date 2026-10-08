@@ -9,10 +9,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/clock"
-	"github.com/bnema/neferwl/internal/adapters/presented"
-	"github.com/bnema/neferwl/internal/adapters/surfaces"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -1044,9 +1044,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform ports.BufferTransform
 	frame := 0
-	var requestStorage [capture.MaxRequests]ports.CaptureRequest
-	requests := requestStorage[:0]
+	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
+	requests.Init(ctx, captured)
 	pipeline := capture.NewPipeline(ctx, captured)
 	pipeline.Security = o.Security
 	if o.NewCaptureRenderer != nil {
@@ -1056,19 +1056,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	defer func() {
 		cancelCaptures()
 		pipeline.Close(r)
-		for _, q := range requests {
-			if q.ID != 0 || q.Dst.File != nil {
-				capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
-			}
-		}
-		for {
-			select {
-			case q := <-captures:
-				capture.Fail(ctx, q, fmt.Errorf("output stopped"), captured)
-			default:
-				return
-			}
-		}
+		requests.Stop(captures)
 	}()
 	clk := o.clock
 	if clk == nil {
@@ -1119,12 +1107,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				o.cursor.image, o.cursor.later = false, nil
 			}
 		}
-		if o.protected && len(requests) > 0 {
-			for _, q := range requests {
-				capture.Fail(ctx, q, fmt.Errorf("session protected"), captured)
-			}
-			clear(requests)
-			requests = requestStorage[:0]
+		if o.protected && requests.Len() > 0 {
+			requests.FailPending(capture.ErrSessionProtected)
 		}
 		if o.protected && enabled && !o.frame.pendingCommit() && !o.securityPrepared && !o.protectBackoffActive() {
 			if err := o.prepareSecurity(ctx, r); err != nil {
@@ -1200,9 +1184,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			gapTimer.Stop()
 		}
 		var holdDue <-chan time.Time
-		if len(requests) > 0 {
+		if requests.Len() > 0 {
 			var wait time.Duration
-			requests, wait = pipeline.Expire(scene, requests, time.Now())
+			requests.List, wait = pipeline.Expire(scene, requests.List, time.Now())
 			if wait > 0 {
 				holdTimer.Reset(wait)
 				holdDue = holdTimer.C
@@ -1271,17 +1255,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		case q := <-captures:
 			o.observeSecurity()
+			var refuse error
 			if o.protected || !enabled || o.off || o.wantOff {
-				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
-			} else if len(requests) == cap(requests) {
-				capture.Fail(ctx, q, fmt.Errorf("output capture batch full"), captured)
-			} else {
-				q.Since = time.Now()
-				requests = append(requests, q)
-				// Its indicator may already be on screen; else it waits for the
-				// scene that shows it.
-				dirty = dirty || haveScene && capture.IndicatorShown(scene, q)
+				refuse = capture.ErrOutputOff
 			}
+			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
 		case ack := <-o.seatDisable:
 			o.bypassForSeatDisable()
 			// The seat is about to be disabled: no frame may select the
@@ -1421,12 +1399,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		if o.protected && !o.securityPrepared {
 			continue
 		}
-		if len(requests) > 0 && (o.protected || !enabled || o.off || o.wantOff) {
-			for _, q := range requests {
-				capture.Fail(ctx, q, fmt.Errorf("output off"), captured)
-			}
-			clear(requests)
-			requests = requestStorage[:0]
+		if requests.Len() > 0 && (o.protected || !enabled || o.off || o.wantOff) {
+			requests.FailPending(capture.ErrOutputOff)
 		}
 		if !enabled || o.frame.pendingCommit() {
 			continue
@@ -1476,20 +1450,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			continue
 		}
 		start := time.Now()
-		direct, err := o.submitFrame(ctx, r, scene, drawn, seen, requests, pipeline)
+		direct, err := o.submitFrame(ctx, r, scene, drawn, seen, requests.List, pipeline)
 		var fatal renderError
 		if errors.As(err, &fatal) || errors.Is(err, errSecurityScene) {
-			// A failed render or epoch rejection did not hand these requests to the worker.
-			for _, q := range requests {
-				if capture.Handed(q) {
-					continue // already owned by the worker, or answered
-				}
-				capture.Fail(ctx, q, err, captured)
-			}
-			clear(requests) // held ones included: their frame is gone
+			// A failed render or epoch rejection did not hand these requests
+			// to the worker; held ones go too: their frame is gone.
+			requests.FailPending(err)
 		}
 		// Requests still waiting for their indicator stay; the rest is gone.
-		requests = capture.Waiting(requests, scene)
+		requests.List = capture.Waiting(requests.List, scene)
 		if errors.As(err, &fatal) {
 			return err
 		}

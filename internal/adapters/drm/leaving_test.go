@@ -3,7 +3,7 @@ package drm
 import (
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/surfaces"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/ports"
 )
 

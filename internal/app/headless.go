@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 			dir = filepath.Join(o.shots, name)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				// Outputs already started stop and release their captures.
-				return joinErr(err, set.wait())
+				return errors.Join(err, set.wait())
 			}
 		}
 		cur := &headless.Cursor{}
@@ -105,14 +106,7 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 			}
 			// An owner error is not protection or removal evidence.
 			err := set.finish(stopped.name)
-			return joinErr(err, set.wait())
+			return errors.Join(err, set.wait())
 		}
 	}
-}
-
-func joinErr(a, b error) error {
-	if a != nil {
-		return a
-	}
-	return b
 }

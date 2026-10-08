@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/ports"
 )
 

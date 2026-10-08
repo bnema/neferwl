@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/capture"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
