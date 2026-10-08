@@ -81,10 +81,20 @@ func TestWatch(t *testing.T) {
 				time.Sleep(15 * time.Millisecond)
 			}
 			receive("#00ff00")
-			select {
-			case <-out:
-				t.Fatal("duplicate reload")
-			case <-time.After(250 * time.Millisecond):
+			// A loaded machine may pause past the debounce inside the burst
+			// and reload the truncated file in between: that is a change, not a
+			// duplicate. Only the same config sent twice in a row is one.
+			prev := "#00ff00"
+			for quiet := false; !quiet; {
+				select {
+				case c := <-out:
+					if c.Config.Background.Color == prev {
+						t.Fatal("duplicate reload")
+					}
+					prev = c.Config.Background.Color
+				case <-time.After(250 * time.Millisecond):
+					quiet = true
+				}
 			}
 			// An invalid value keeps the default for that key; other keys still apply.
 			write(path, "background = bad\nborder.width = 5\n")

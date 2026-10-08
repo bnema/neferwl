@@ -163,8 +163,11 @@ func TestActivationPressSerial(t *testing.T) {
 	token = newToken(t, c, manager, serial+100, seat)
 	requestProtocol(t, c, manager, xdgactivation.ActivationV1RequestActivate, token, surf)
 	noActivation(t, c, events)
-	// The focus moved after the press: stale.
+	// The focus moved after the press: stale. Wait for each step: the
+	// focus starts at 0, so a single wait could pass before either
+	// command applies and leave the client focused.
 	commands <- ports.FocusWindow{ID: w.ID}
+	waitFocus(t, s, w.ID)
 	commands <- ports.FocusWindow{}
 	waitFocus(t, s, 0)
 	token = newToken(t, c, manager, serial, seat)
