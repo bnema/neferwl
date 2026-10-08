@@ -81,6 +81,7 @@ func (r *Requests) Stop(incoming <-chan ports.CaptureRequest) {
 			Fail(r.ctx, q, ErrOutputStopped, r.replies)
 		}
 	}
+	r.Reset()
 	for {
 		select {
 		case q, ok := <-incoming:

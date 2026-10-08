@@ -469,7 +469,7 @@ func (s *outputSet) failQueued(r *runningOutput) {
 	for {
 		select {
 		case req := <-r.captures:
-			capture.Fail(s.ctx, req, fmt.Errorf("output stopped"), s.captured)
+			capture.Fail(s.ctx, req, capture.ErrOutputStopped, s.captured)
 		default:
 			return
 		}
@@ -485,7 +485,7 @@ func drainCaptures(ctx context.Context, incoming <-chan ports.CaptureRequest, re
 			if !ok {
 				return
 			}
-			capture.Fail(ctx, q, fmt.Errorf("output stopped"), replies)
+			capture.Fail(ctx, q, capture.ErrOutputStopped, replies)
 		default:
 			return
 		}
