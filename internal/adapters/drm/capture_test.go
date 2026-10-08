@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/capture"
@@ -428,6 +429,10 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 // that shows the border draws the frame without it, copies that, then draws
 // and commits the frame with the border.
 func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
+	synctest.Test(t, runCaptureWaitsForItsIndicatorScene)
+}
+
+func runCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.tearing, o.cursor, o.fbs = false, nil, [2]uint32{}
 	flips := make(chan flipEvent, 4)
@@ -503,10 +508,11 @@ func TestRunCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	req := sessionRequest(t, 1, false)
 	req.Indicate = true
 	captures <- req
+	synctest.Wait()
 	select {
 	case d := <-captured:
 		t.Fatalf("served from a scene without the indicator: %+v", d)
-	case <-time.After(60 * time.Millisecond):
+	default:
 	}
 	require.Equal(t, 3, count(), "no frame is drawn for a held request")
 

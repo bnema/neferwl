@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -15,19 +16,20 @@ import (
 
 // A slow consumer must not block push, and stale motion must collapse into
 // the latest position while keys and buttons keep their order.
+// In the bubble, a push that blocked would deadlock and fail the test.
 func TestForwarderCoalescesMotionWithoutBlocking(t *testing.T) {
+	synctest.Test(t, forwarderCoalescesMotionWithoutBlocking)
+}
+
+func forwarderCoalescesMotionWithoutBlocking(t *testing.T) {
 	f := newForwarder(zerowrap.Default())
 	input := make(chan ports.InputEvent) // unbuffered: core is busy
-	start := time.Now()
 	for i := range 1000 {
 		f.push(ports.PointerMotion{X: float64(i)})
 	}
 	f.push(ports.PointerButton{Button: 272, Pressed: true})
 	f.push(ports.PointerMotion{X: 2000})
 	f.push(ports.PointerMotion{X: 2001})
-	if d := time.Since(start); d > 100*time.Millisecond {
-		t.Fatalf("push blocked for %v", d)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go f.run(ctx, input)
@@ -46,10 +48,11 @@ func TestForwarderCoalescesMotionWithoutBlocking(t *testing.T) {
 			t.Fatalf("event %d not delivered", i)
 		}
 	}
+	synctest.Wait()
 	select {
 	case got := <-input:
 		t.Fatalf("unexpected extra event %#v", got)
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	s := f.take()
 	if s.Motions != 1002 || s.Coalesced != 1000 || s.Sent != 3 {
