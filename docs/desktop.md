@@ -102,14 +102,21 @@ exec wlopm --off '*'
 
 ## Power keys
 
-NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL as `XF86PowerOff`, `XF86Sleep` or `XF86Suspend`, `XF86Hibernate`, and nothing happens unless a bind uses it.
+NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL, and nothing happens unless a bind uses it.
+
+| logind key | Kernel key | Bind |
+|---|---|---|
+| power | `KEY_POWER` | `XF86PowerOff` |
+| suspend | `KEY_SLEEP` | `XF86Sleep` |
+| hibernate | `KEY_SUSPEND` | `XF86Suspend` |
+| reboot | `KEY_RESTART` | `code:408` (no keysym) |
 
 ```text
 bind.XF86PowerOff = spawn systemctl suspend
-bind.XF86Hibernate = spawn systemctl hibernate
+bind.XF86Suspend = spawn systemctl hibernate
 ```
 
-The lid switch is not covered: logind still handles it. The locks last as long as NeferWL runs; if it crashes, logind handles the keys again. If the system bus or logind is missing, NeferWL logs a warning and tries again later, and the keys keep logind's behaviour until it succeeds.
+The lid switch is not covered: logind still handles it. The locks last as long as NeferWL runs; if it crashes, logind handles the keys again. When logind restarts, NeferWL keeps the old locks until it has taken new ones. If the system bus or logind is missing, NeferWL logs a warning and tries again later, and the keys keep logind's behaviour until it succeeds.
 
 ## Bars
 

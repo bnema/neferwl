@@ -31,17 +31,25 @@ const (
 
 // Serve holds the locks until ctx ends. address is the bus to use, the
 // system bus when empty. When the bus or logind goes, it takes the locks
-// again after retry, doubling up to busretry.Max: logind drops a lock with
-// its own restart, and then handles the keys itself until we ask again.
+// again after retry, doubling up to a minute. Meanwhile the old lock stays
+// open: logind keeps an inhibitor across its own restart for as long as a
+// client holds the descriptor, so the keys stay blocked in the gap, and the
+// old lock is closed only once a new one is in place.
 func Serve(ctx context.Context, address string, retry time.Duration, log zerowrap.Logger) {
+	var lock *os.File
+	defer func() {
+		if lock != nil {
+			_ = lock.Close()
+		}
+	}()
 	busretry.Run(ctx, retry, "logind power key lock", log, func(ctx context.Context) error {
-		return hold(ctx, address, log)
+		return hold(ctx, address, log, &lock)
 	})
 }
 
-// hold takes the locks and keeps them until ctx ends (nil) or the bus or
-// logind goes (an error).
-func hold(ctx context.Context, address string, log zerowrap.Logger) error {
+// hold takes the locks, replaces *lock with them, and waits until ctx ends
+// (nil) or the bus or logind goes (an error).
+func hold(ctx context.Context, address string, log zerowrap.Logger, lock **os.File) error {
 	conn, err := connect(ctx, address)
 	if err != nil {
 		return err
@@ -60,9 +68,12 @@ func hold(ctx context.Context, address string, log zerowrap.Logger) error {
 	if err := conn.Object(logind, logindPath).CallWithContext(callCtx, manager+".Inhibit", 0, what, "neferwl", "power keys are bound in the compositor", "block").Store(&fd); err != nil {
 		return fmt.Errorf("inhibit %s: %w", what, err)
 	}
-	// logind releases the lock when this descriptor closes.
-	lock := os.NewFile(uintptr(fd), "logind-inhibit")
-	defer func() { _ = lock.Close() }()
+	// logind releases a lock when its descriptor closes.
+	old := *lock
+	*lock = os.NewFile(uintptr(fd), "logind-inhibit")
+	if old != nil {
+		_ = old.Close()
+	}
 	log.Info().Str("what", what).Msg("holding logind key locks")
 	for {
 		select {
@@ -91,14 +102,14 @@ func connect(ctx context.Context, address string) (*dbus.Conn, error) {
 		conn, err = dbus.Dial(address, dbus.WithContext(ctx))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("system bus: %w", err)
+		return nil, fmt.Errorf("bus: %w", err)
 	}
 	if err = conn.Auth(nil); err == nil {
 		err = conn.Hello()
 	}
 	if err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("system bus: %w", err)
+		return nil, fmt.Errorf("bus: %w", err)
 	}
 	return conn, nil
 }

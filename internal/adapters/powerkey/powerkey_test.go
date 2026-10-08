@@ -120,15 +120,21 @@ func (l *logBuf) count(s string) int {
 	return strings.Count(l.buf.String(), s)
 }
 
+// wait blocks until the log has n lines containing msg.
+func (l *logBuf) wait(t *testing.T, msg string, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); l.count(msg) < n; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("log never had %d x %q", n, msg)
+		}
+	}
+}
+
 // holding waits until Serve has received n lock answers: only then does it
 // own the descriptor.
 func (l *logBuf) holding(t *testing.T, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); l.count("holding logind key locks") < n; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("Serve never held lock %d", n)
-		}
-	}
+	l.wait(t, "holding logind key locks", n)
 }
 
 func run(t *testing.T, address string) (stop func(), log *logBuf) {
@@ -184,19 +190,24 @@ func TestServeHoldsAndReleasesTheLock(t *testing.T) {
 	}
 }
 
-// When logind restarts, the locks are taken again.
+// When logind restarts, the locks are taken again and the old ones closed.
 func TestServeTakesTheLockAgainAfterLogindRestarts(t *testing.T) {
 	address := startBus(t)
 	peer := newPeer(t, address)
 	_, log := run(t, address)
-	peer.next(t)
+	first := peer.next(t)
 	log.holding(t, 1)
 	if _, err := peer.conn.ReleaseName(logind); err != nil {
 		t.Fatal(err)
 	}
+	log.wait(t, "ignored until the next attempt", 1)
+	// The gap: the old lock is still ours, logind keeps it through a restart.
 	peer.own(t)
 	peer.next(t)
 	log.holding(t, 2)
+	if !released(t, first) {
+		t.Fatal("the first lock was not closed once the second was taken")
+	}
 }
 
 // Without logind on the bus, Serve keeps trying until it appears.
@@ -207,7 +218,7 @@ func TestServeWaitsForLogind(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, log := run(t, address)
-	time.Sleep(50 * time.Millisecond)
+	log.wait(t, "ignored until the next attempt", 1)
 	peer.own(t)
 	peer.next(t)
 	log.holding(t, 1)
