@@ -271,6 +271,34 @@ func TestOverlayPopupAndBorder(t *testing.T) {
 	}
 }
 
+// A float above the tiles covers the tile lines and the lines of windows
+// listed before it; its own lines and those of later windows still block
+// the overlay.
+func TestOverlayFloatOverLines(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		sep    ports.WindowID
+		below  bool
+		reason string
+	}{
+		{"tile line", 0, false, ""},
+		{"earlier window line", 1, false, ""},
+		{"own line", 2, false, "border"},
+		{"later window line", 3, false, "border"},
+		{"tile line over a below float", 0, true, "border"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, c := overlayScene()
+			s.Windows[1].Floating, s.Windows[1].Below = true, tc.below
+			s.Windows = append(s.Windows, ports.SceneWindow{ID: 3, Floating: true, Rect: ports.Rect{W: 10, H: 10}})
+			s.Separators = []ports.Separator{{Rect: ports.Rect{X: 150, W: 2, H: 100}, Window: tc.sep}}
+			if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != tc.reason {
+				t.Fatalf("reason %q, want %q", reason, tc.reason)
+			}
+		})
+	}
+}
+
 // What is drawn elsewhere on screen stays composed on the primary plane: a
 // bar, a popup, another window's lines or a window that do not touch the
 // candidate leave it on the overlay.
