@@ -596,6 +596,10 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		if !sc.mon.ov.open {
 			sc.mon.Current().settleLeft()
 		}
+		// A switcher's selection is provisional too.
+		if !sc.mon.previewing() {
+			sc.mon.Current().noteFocus()
+		}
 	}
 	c.refreshShown()
 	c.captureExpire()

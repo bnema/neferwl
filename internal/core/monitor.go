@@ -45,6 +45,8 @@ type Monitor struct {
 	switchList []*Workspace
 	// ov holds the overview selection and its Escape snapshot.
 	ov overviewState
+	// sw is the column switcher (switcher.go).
+	sw switcherState
 	// overviewOpens counts the overview's openings: a swipe sliding when
 	// one happens is dropped (gesture.go).
 	overviewOpens int
