@@ -31,9 +31,15 @@ type switcherState struct {
 	sizes map[WindowID]Rect
 }
 
+// switcherShown reports whether the switcher's cards are drawn. They belong
+// to the workspace that was on screen when they showed: if another one is on
+// screen now (an activation, the taskbar, an output coming back) the cards
+// are stale and the monitor draws its workspace again.
+func (m *Monitor) switcherShown() bool { return m.sw.shown && m.sw.ws == m.Current() }
+
 // previewing reports whether the monitor draws previews instead of its
 // workspace: the overview, or the switcher's cards.
-func (m *Monitor) previewing() bool { return m.ov.open || m.sw.shown }
+func (m *Monitor) previewing() bool { return m.ov.open || m.switcherShown() }
 
 // noteFocus records the focused column as the most recently used. It does
 // nothing while a float or the stash has the focus, and allocates nothing
@@ -85,15 +91,44 @@ func (w *Workspace) switchOrder() []WindowID {
 	return order
 }
 
-// remove drops a closed window from the open switcher: its card goes, the
-// selection stays on the same card (or the one that took its place). With
-// fewer than two columns left there is nothing to switch.
-func (s *switcherState) remove(id WindowID) {
+// heir is the window of id's column that is not id, or 0: call it before id
+// is removed, then hand it to remove.
+func (s *switcherState) heir(id WindowID) WindowID {
+	if !s.open || s.ws == nil || !slices.Contains(s.order, id) {
+		return 0
+	}
+	if i := s.ws.columnOf(id); i >= 0 {
+		for _, v := range s.ws.Columns[i].Windows {
+			if v != id {
+				return v
+			}
+		}
+	}
+	return 0
+}
+
+// remove drops a closed window from the open switcher. When its column
+// still has windows (heir, from before the removal) the card stands for the
+// column's new focused window and the selection stays; otherwise the card
+// goes, and the selection stays on the same card (or the one that took its
+// place). With fewer than two columns left there is nothing to switch.
+func (s *switcherState) remove(id, heir WindowID) {
 	if !s.open {
 		return
 	}
 	i := slices.Index(s.order, id)
 	if i < 0 {
+		return
+	}
+	if j := s.ws.columnOf(heir); heir != 0 && j >= 0 {
+		col := s.ws.Columns[j]
+		next := col.Windows[col.Focus]
+		if size, ok := s.sizes[id]; ok {
+			if _, has := s.sizes[next]; !has {
+				s.sizes[next] = size
+			}
+		}
+		s.order[i] = next
 		return
 	}
 	s.order = slices.Delete(s.order, i, i+1)
@@ -109,26 +144,32 @@ func (s *switcherState) remove(id WindowID) {
 // commitSwitcher closes the switcher and focuses the selected column. The
 // column left hands its maximization to the target. It does nothing when the
 // workspace is not on screen any more, the window went, or the selection is
-// the column already focused.
-func (m *Monitor) commitSwitcher() {
+// the tile already focused (a float or the stash holding the focus does not
+// count: the tile takes it back). It reports whether the selection was still
+// valid on the workspace on screen.
+func (m *Monitor) commitSwitcher() bool {
 	s := m.sw
 	m.sw = switcherState{}
 	if !s.open || s.ws == nil || s.at < 0 || s.at >= len(s.order) {
-		return
+		return false
 	}
 	id, w := s.order[s.at], s.ws
 	if w != m.Current() {
-		return
+		return false
 	}
 	i := w.columnOf(id)
-	if i < 0 || i == w.Focus {
-		return
+	if i < 0 {
+		return false
 	}
-	if w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
+	if i == w.Focus && !w.floatFocus && !w.stashFocused() {
+		return true
+	}
+	if i != w.Focus && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
 		w.transferMaximization(i)
 	}
 	// Activate leaves another window's fullscreen and handles dialogs.
 	w.Activate(id)
+	return true
 }
 
 // switchDir is the direction of a switch action, 0 for any other action.
@@ -145,6 +186,13 @@ func switchDir(a Action) int {
 // switching reports whether a switcher is open.
 func (c *Core) switching() bool {
 	return c.switcher.sc != nil && c.switcher.sc.mon.sw.open
+}
+
+// switcherStale reports whether the open switcher belongs to a workspace
+// that is not on its screen any more.
+func (c *Core) switcherStale() bool {
+	m := c.switcher.sc.mon
+	return m.sw.open && m.sw.ws != m.Current()
 }
 
 func (c *Core) stopSwitcherTimer() {
@@ -164,11 +212,17 @@ func (c *Core) cancelSwitcher() {
 	c.switcher.sc = nil
 }
 
-// commitSwitcher commits the switcher on its own screen and ends it.
+// commitSwitcher commits the switcher on its own screen and ends it. The
+// keyboard follows the committed window, even if the pointer moved the focus
+// to another output meanwhile.
 func (c *Core) commitSwitcher() {
 	c.stopSwitcherTimer()
 	if sc := c.switcher.sc; sc != nil {
-		sc.mon.commitSwitcher()
+		if sc.mon.commitSwitcher() {
+			if i := slices.Index(c.screens, sc); i >= 0 {
+				c.focusScreen = i
+			}
+		}
 	}
 	c.switcher.sc = nil
 }
@@ -179,11 +233,12 @@ func (c *Core) commitSwitcher() {
 // at once.
 func (c *Core) switchStep(dir int) {
 	sc := c.cur()
-	if c.switching() && c.switcher.sc != sc {
-		// The focus moved to another output: start over there.
+	if c.switching() && (c.switcher.sc != sc || c.switcherStale()) {
+		// The focus moved to another output, or another workspace came on
+		// screen: start over.
 		c.cancelSwitcher()
 	}
-	if sc.mon.ov.open {
+	if sc.mon.ov.open || c.drag != nil {
 		return
 	}
 	m := sc.mon
@@ -314,10 +369,9 @@ func (c *Core) switcherClick(ctx context.Context, button uint32) (handled bool, 
 
 // switcherLayout lays out the shown switcher: one card per column in
 // switchOrder, equal boxes in a row centered in the overview area, every
-// window scaled into its box (never up) and the selected card Focused.
-// Like the overview, the selected card gets Focused (so its configure is
-// Activated) while the keyboard stays on the real focus. Every other window
-// is hidden.
+// window scaled into its box (never up). Like the overview, the selected
+// card gets Focused (so its configure is Activated) while the keyboard stays
+// on the real focus. Every other window is hidden.
 func (m *Monitor) switcherLayout(dst []Placement) []Placement {
 	sw := &m.sw
 	w := sw.ws

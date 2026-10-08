@@ -56,7 +56,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Frame the selection and separate numbered and named row groups.
 		_, scene.Separators = sc.mon.overviewRows()
 		scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
-	} else if sc.mon.sw.shown {
+	} else if sc.mon.switcherShown() {
 		// The switcher's cards: only the selection is framed.
 		scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
 	} else {

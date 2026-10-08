@@ -328,13 +328,14 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 	if dir := switchDir(action); dir != 0 {
 		return c.switchBind(ctx, dir)
 	}
-	if c.switching() {
-		c.cancelSwitcher()
-	}
 	before := c.cur().mon.Current()
 	swiped := c.swipedWorkspace()
 	now := c.now()
+	// Snapshot before the switcher closes: its cards fly back to the layout.
 	shots := c.snapshot(now)
+	if c.switching() {
+		c.cancelSwitcher()
+	}
 	c.keyboard.takeBack() // a bind acts on the windows
 	effect := c.applyAction(action)
 	if effect.Quit {

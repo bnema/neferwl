@@ -149,12 +149,10 @@ const (
 // switcherCore is indicatorCore with the switcher binds, up to three
 // columns on screen and n one-window columns (windows 1..n, n focused),
 // published once so the configures carry the windows' sizes.
-func switcherCore(t *testing.T, n int) (*Core, *indicatorClock) {
+func switcherCore(t *testing.T, n int) (*Core, *indicatorClock, <-chan ports.ClientCommand) {
 	t.Helper()
 	commands := make(chan ports.ClientCommand, 64)
 	c, ic := indicatorCoreWith(t, commands)
-	switcherCommands[c] = commands
-	t.Cleanup(func() { delete(switcherCommands, c) })
 	cfg := c.cfg
 	cfg.Layout.MaxColumns = 3
 	cfg.Binds = switcherBinds
@@ -165,7 +163,7 @@ func switcherCore(t *testing.T, n int) (*Core, *indicatorClock) {
 		c.cur().mon.AddWindow(id)
 	}
 	indicatorScene(t, c)
-	return c, ic
+	return c, ic, commands
 }
 
 func tab(mods ports.Mods, pressed bool) ports.KeyEvent {
@@ -178,6 +176,13 @@ func shiftTab(pressed bool) ports.KeyEvent {
 
 func superKey(mods ports.Mods, pressed bool) ports.KeyEvent {
 	return ports.KeyEvent{Keysym: "Super_L", Keycode: keySuper, Mods: mods, Pressed: pressed}
+}
+
+func bind(t *testing.T, c *Core, a Action) {
+	t.Helper()
+	if err := c.runBind(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func sendKeys(t *testing.T, c *Core, keys ...ports.KeyEvent) {
@@ -207,13 +212,9 @@ func switcherFocus(c *Core) WindowID {
 	return id
 }
 
-// switcherCommands is the receiving end of each switcherCore's commands.
-var switcherCommands = map[*Core]chan ports.ClientCommand{}
-
 // forwarded drains the commands and returns the forwarded keys.
-func forwarded(c *Core) []ports.ForwardKey {
+func forwarded(ch <-chan ports.ClientCommand) []ports.ForwardKey {
 	var out []ports.ForwardKey
-	ch := switcherCommands[c]
 	for len(ch) > 0 {
 		if v, ok := (<-ch).(ports.ForwardKey); ok {
 			out = append(out, v)
@@ -321,7 +322,7 @@ func TestSwitchCommitIgnoresGoneWindowAndOtherWorkspace(t *testing.T) {
 // --- P2.2: actions and step ---
 
 func TestSwitchStepOpensOnPreviousColumnAndCycles(t *testing.T) {
-	c, ic := switcherCore(t, 3)
+	c, ic, _ := switcherCore(t, 3)
 	c.mods = ports.ModSuper
 	before := switcherFocus(c)
 	if err := c.runBind(context.Background(), ActionSwitchColumnNext); err != nil {
@@ -334,19 +335,19 @@ func TestSwitchStepOpensOnPreviousColumnAndCycles(t *testing.T) {
 	if len(ic.timers) != 1 || ic.timers[0] != switcherDelay {
 		t.Fatalf("timers %v, want one of %v", ic.timers, switcherDelay)
 	}
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if sw.at != 2 {
 		t.Fatalf("at %d", sw.at)
 	}
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if sw.at != 0 {
 		t.Fatalf("at %d, want wrap to 0", sw.at)
 	}
-	c.runBind(context.Background(), ActionSwitchColumnPrev)
+	bind(t, c, ActionSwitchColumnPrev)
 	if sw.at != 2 {
 		t.Fatalf("at %d, want wrap to 2", sw.at)
 	}
-	c.runBind(context.Background(), ActionSwitchColumnPrev)
+	bind(t, c, ActionSwitchColumnPrev)
 	if sw.at != 1 {
 		t.Fatalf("at %d", sw.at)
 	}
@@ -356,16 +357,16 @@ func TestSwitchStepOpensOnPreviousColumnAndCycles(t *testing.T) {
 }
 
 func TestSwitchPrevOpensOnOldestColumn(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.mods = ports.ModSuper
-	c.runBind(context.Background(), ActionSwitchColumnPrev)
+	bind(t, c, ActionSwitchColumnPrev)
 	if sw := c.cur().mon.sw; !sw.open || sw.at != len(sw.order)-1 {
 		t.Fatalf("at %d of %d", sw.at, len(sw.order))
 	}
 }
 
 func TestSwitchWithoutCmdCommitsAtOnce(t *testing.T) {
-	c, ic := switcherCore(t, 3)
+	c, ic, _ := switcherCore(t, 3)
 	c.mods = 0
 	start := switcherFocus(c)
 	if err := c.runBind(context.Background(), ActionSwitchColumnNext); err != nil {
@@ -377,23 +378,23 @@ func TestSwitchWithoutCmdCommitsAtOnce(t *testing.T) {
 	if switcherFocus(c) == start {
 		t.Fatal("focus did not move")
 	}
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if switcherFocus(c) != start {
 		t.Fatalf("focus %d, want back on %d", switcherFocus(c), start)
 	}
 }
 
 func TestSwitchIgnoredWithOneColumnOrOverview(t *testing.T) {
-	c, _ := switcherCore(t, 1)
+	c, _, _ := switcherCore(t, 1)
 	c.mods = ports.ModSuper
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if c.cur().mon.sw.open || c.switcher.sc != nil {
 		t.Fatal("switcher opened with one column")
 	}
-	c, _ = switcherCore(t, 3)
+	c, _, _ = switcherCore(t, 3)
 	c.cur().mon.ToggleOverview()
 	before := switcherFocus(c)
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if c.cur().mon.sw.open || c.switcher.sc != nil || switcherFocus(c) != before {
 		t.Fatal("switcher acted in the overview")
 	}
@@ -402,7 +403,7 @@ func TestSwitchIgnoredWithOneColumnOrOverview(t *testing.T) {
 // --- P2.3: release commit and timer ---
 
 func TestSwitchQuickTapSwapsWithoutCards(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	start := switcherFocus(c)
 	for len(c.ch.Scenes) > 0 {
 		<-c.ch.Scenes
@@ -435,26 +436,26 @@ func TestSwitchQuickTapSwapsWithoutCards(t *testing.T) {
 }
 
 func TestSwitchHoldCommitsOnReleaseAndForwardsIt(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, cmds := switcherCore(t, 3)
 	start := switcherFocus(c)
 	order := c.cur().mon.Current().switchOrder()
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true), tab(ports.ModSuper, false))
 	if switcherFocus(c) != start || !c.cur().mon.sw.open {
 		t.Fatal("focus moved or switcher closed before the release")
 	}
-	forwarded(c)
+	forwarded(cmds)
 	sendKeys(t, c, superKey(0, false))
 	if switcherFocus(c) != order[1] || c.cur().mon.sw.open || c.switcher.timerC != nil {
 		t.Fatalf("focus %d (want %d), open %v", switcherFocus(c), order[1], c.cur().mon.sw.open)
 	}
-	fk := forwarded(c)
+	fk := forwarded(cmds)
 	if len(fk) != 1 || fk[0].Key.Keysym != "Super_L" || fk[0].Key.Pressed || fk[0].ID != order[1] {
 		t.Fatalf("release not forwarded to the new focus: %+v", fk)
 	}
 }
 
 func TestSwitcherTickShowsCards(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	if c.cur().mon.sw.shown {
 		t.Fatal("shown before the delay")
@@ -468,9 +469,9 @@ func TestSwitcherTickShowsCards(t *testing.T) {
 }
 
 func TestSwitcherTickAfterCloseIsHarmless(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.mods = ports.ModSuper
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	c.cancelSwitcher()
 	if c.switcherTick() {
 		t.Fatal("tick on a closed switcher asks for a scene")
@@ -480,10 +481,10 @@ func TestSwitcherTickAfterCloseIsHarmless(t *testing.T) {
 // --- P3.1: keys and gestures ---
 
 func TestSwitchEscapeCancelsAndIsNotForwarded(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, cmds := switcherCore(t, 3)
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true), tab(ports.ModSuper, false))
-	forwarded(c)
+	forwarded(cmds)
 	esc := ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true}
 	sendKeys(t, c, esc)
 	esc.Pressed = false
@@ -491,7 +492,7 @@ func TestSwitchEscapeCancelsAndIsNotForwarded(t *testing.T) {
 	if c.cur().mon.sw.open || c.switcher.sc != nil || switcherFocus(c) != start {
 		t.Fatalf("open %v focus %d (want %d)", c.cur().mon.sw.open, switcherFocus(c), start)
 	}
-	for _, k := range forwarded(c) {
+	for _, k := range forwarded(cmds) {
 		if k.Key.Keysym == "Escape" {
 			t.Fatalf("Escape forwarded: %+v", k)
 		}
@@ -499,7 +500,7 @@ func TestSwitchEscapeCancelsAndIsNotForwarded(t *testing.T) {
 }
 
 func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	sendKeys(t, c, ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper, Pressed: true})
@@ -515,7 +516,7 @@ func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
 }
 
 func TestSwitchShiftTabGoesBackward(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	sendKeys(t, c, superKey(ports.ModSuper, true), shiftTab(true))
 	sw := c.cur().mon.sw
 	if !sw.open || sw.at != len(sw.order)-1 {
@@ -528,7 +529,7 @@ func TestSwitchShiftTabGoesBackward(t *testing.T) {
 }
 
 func TestSwitchSwipeBeginCancels(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.swipeBegin(ports.SwipeBegin{Fingers: 3})
@@ -538,7 +539,7 @@ func TestSwitchSwipeBeginCancels(t *testing.T) {
 }
 
 func TestSwitchSecurityChangeCancels(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	state := ports.SecurityState{Generation: 1}
 	gate := portsmocks.NewMockSessionSecurity(t)
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState { return state }).Maybe()
@@ -555,7 +556,7 @@ func TestSwitchSecurityChangeCancels(t *testing.T) {
 }
 
 func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	cfg := c.cfg
 	cfg.Keyboard.CmdKey = "alt"
 	if err := c.apply(cfg); err != nil {
@@ -575,7 +576,7 @@ func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
 // --- P3.2: layout ---
 
 func TestSwitcherLayoutCards(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.cfg.Floating.Dim = 0.4
 	area := c.cur().mon.Current().overviewArea()
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
@@ -644,7 +645,7 @@ func focusedIDReal(c *Core) WindowID {
 }
 
 func TestSwitcherLayoutHidesOtherWindowsOfColumns(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.cur().mon.AddWindow(4)
 	w := c.cur().mon.Current()
 	w.ConsumeOrExpel(-1)
@@ -670,18 +671,18 @@ func TestSwitcherLayoutHidesOtherWindowsOfColumns(t *testing.T) {
 }
 
 func TestSwitcherCardsKeepKeysOnRealFocus(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, cmds := switcherCore(t, 3)
 	focus := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	indicatorScene(t, c)
-	forwarded(c)
+	forwarded(cmds)
 	if c.keyboardFocus() != focus {
 		t.Fatalf("keyboard focus %d, want %d", c.keyboardFocus(), focus)
 	}
 	sendKeys(t, c, ports.KeyEvent{Keysym: "x", Keycode: 45, Mods: ports.ModSuper, Pressed: true})
 	// An unbound key goes to the real focus (Cmd+x has no bind here).
-	fk := forwarded(c)
+	fk := forwarded(cmds)
 	if len(fk) != 1 || fk[0].ID != focus || fk[0].Key.Keysym != "x" {
 		t.Fatalf("forwarded %+v, want x to %d", fk, focus)
 	}
@@ -701,13 +702,13 @@ func cardCenter(t *testing.T, c *Core, id WindowID) (float64, float64) {
 }
 
 func TestSwitcherClickOnCardCommits(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, cmds := switcherCore(t, 3)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	indicatorScene(t, c)
 	target := c.cur().mon.sw.order[2]
 	c.cursorX, c.cursorY = cardCenter(t, c, target)
-	forwarded(c)
+	forwarded(cmds)
 	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110, Pressed: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -717,16 +718,15 @@ func TestSwitcherClickOnCardCommits(t *testing.T) {
 	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110}); err != nil {
 		t.Fatal(err)
 	}
-	ch := switcherCommands[c]
-	for len(ch) > 0 {
-		if v, ok := (<-ch).(ports.PointerButtonTo); ok {
+	for len(cmds) > 0 {
+		if v, ok := (<-cmds).(ports.PointerButtonTo); ok {
 			t.Fatalf("click reached a client: %+v", v)
 		}
 	}
 }
 
 func TestSwitcherClickElsewhereCancels(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
@@ -741,7 +741,7 @@ func TestSwitcherClickElsewhereCancels(t *testing.T) {
 }
 
 func TestSwitcherPressBeforeCardsCancelsAndContinues(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	handled, err := c.switcherClick(context.Background(), 0x110)
@@ -756,7 +756,7 @@ func TestSwitcherPressBeforeCardsCancelsAndContinues(t *testing.T) {
 // --- P3.4: robustness ---
 
 func TestSwitcherClosingSelectedWindowKeepsSelectionValid(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	sw := &c.cur().mon.sw
@@ -777,9 +777,9 @@ func TestSwitcherClosingSelectedWindowKeepsSelectionValid(t *testing.T) {
 }
 
 func TestSwitcherClosingBeforeSelectionKeepsCard(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.mods = ports.ModSuper
-	c.runBind(context.Background(), ActionSwitchColumnPrev)
+	bind(t, c, ActionSwitchColumnPrev)
 	sw := &c.cur().mon.sw
 	selected := sw.order[sw.at]
 	c.cur().mon.RemoveWindow(sw.order[0])
@@ -789,7 +789,7 @@ func TestSwitcherClosingBeforeSelectionKeepsCard(t *testing.T) {
 }
 
 func TestSwitcherClosingDownToOneColumnClosesIt(t *testing.T) {
-	c, _ := switcherCore(t, 2)
+	c, _, _ := switcherCore(t, 2)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	c.cur().mon.RemoveWindow(c.cur().mon.sw.order[1])
@@ -807,7 +807,7 @@ func TestSwitcherClosingDownToOneColumnClosesIt(t *testing.T) {
 }
 
 func TestSwitcherOutputRemovalCancels(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
@@ -828,7 +828,7 @@ func TestSwitcherOutputRemovalCancels(t *testing.T) {
 }
 
 func TestSwitcherFocusMovingToAnotherOutputReopensThere(t *testing.T) {
-	c, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 3)
 	c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
 	first := c.cur()
 	for id := WindowID(11); id <= 13; id++ {
@@ -836,12 +836,12 @@ func TestSwitcherFocusMovingToAnotherOutputReopensThere(t *testing.T) {
 	}
 	indicatorScene(t, c)
 	c.mods = ports.ModSuper
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if c.switcher.sc != first {
 		t.Fatal("switcher not on the focused screen")
 	}
 	c.focusScreen = c.screenIndex("B")
-	c.runBind(context.Background(), ActionSwitchColumnNext)
+	bind(t, c, ActionSwitchColumnNext)
 	if first.mon.sw.open {
 		t.Fatal("old switcher left open")
 	}
@@ -853,7 +853,7 @@ func TestSwitcherFocusMovingToAnotherOutputReopensThere(t *testing.T) {
 // With animations on, the cards fly in and the commit flies them back; the
 // windows end where the layout puts them, with no card left.
 func TestSwitcherAnimatedHoldAndCommit(t *testing.T) {
-	c, ic := switcherCore(t, 3)
+	c, ic, _ := switcherCore(t, 3)
 	c.cfg.Animations.On = true
 	target := c.cur().mon.Current().switchOrder()[1]
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
@@ -874,5 +874,229 @@ func TestSwitcherAnimatedHoldAndCommit(t *testing.T) {
 	s := lastScene(t, c)
 	if len(scenePreviews(s)) != 0 || switcherFocus(c) != target {
 		t.Fatalf("cards %d, focus %d (want %d)", len(scenePreviews(s)), switcherFocus(c), target)
+	}
+}
+
+// --- review fixes ---
+
+// twoWorkspaces is a switcher core whose second workspace holds two
+// windows (10, 11) and is not on screen.
+func twoWorkspaces(t *testing.T) (*Core, *Workspace) {
+	t.Helper()
+	c, _, _ := switcherCore(t, 3)
+	c.cfg.Floating.Dim = 0.4
+	m := c.cur().mon
+	first := m.Current()
+	m.Focus(1)
+	m.AddWindow(10)
+	m.AddWindow(11)
+	other := m.Current()
+	m.show(first)
+	if other == first || m.Current() != first {
+		t.Fatal("workspaces not set up")
+	}
+	indicatorScene(t, c)
+	return c, other
+}
+
+func TestSwitcherShownDropsWhenAnotherWorkspaceComesOnScreen(t *testing.T) {
+	c, other := twoWorkspaces(t)
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	c.switcherTick()
+	if s := indicatorScene(t, c); len(scenePreviews(s)) != 3 {
+		t.Fatalf("cards not shown: %+v", s.Windows)
+	}
+	// An xdg-activation request for a window of the other workspace.
+	if err := c.activate(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	m := c.cur().mon
+	if m.Current() != other || m.previewing() {
+		t.Fatalf("on screen %v, previewing %v", m.Current() == other, m.previewing())
+	}
+	s := indicatorScene(t, c)
+	if len(scenePreviews(s)) != 0 || s.Dim != 0 || s.DimBehind {
+		t.Fatalf("scene still dimmed or previewing: dim %v previews %+v", s.Dim, scenePreviews(s))
+	}
+	if m.sw.open || c.switcher.sc != nil || c.switcher.timerC != nil {
+		t.Fatal("stale switcher left open")
+	}
+	var any bool
+	for _, p := range c.cur().shownLayout() {
+		if p.ID == 10 || p.ID == 11 {
+			x, y := float64(p.Rect.X+p.Rect.W/2), float64(p.Rect.Y+p.Rect.H/2)
+			if id, _, _ := c.hit(x, y); id != p.ID {
+				t.Fatalf("hit %d at window %d", id, p.ID)
+			}
+			any = true
+		}
+	}
+	if !any {
+		t.Fatal("workspace windows not laid out")
+	}
+	// The next switch opens fresh on the new workspace.
+	c.mods = ports.ModSuper
+	bind(t, c, ActionSwitchColumnNext)
+	if sw := m.sw; !sw.open || sw.ws != other || sw.at != 1 {
+		t.Fatalf("open %v on other %v at %d", sw.open, sw.ws == other, sw.at)
+	}
+}
+
+func TestSwitcherStepOnStaleWorkspaceOpensFresh(t *testing.T) {
+	c, other := twoWorkspaces(t)
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	c.switcherTick()
+	// Shown on screen, then the workspace changes with no publish between.
+	c.cur().mon.show(other)
+	if c.cur().mon.previewing() {
+		t.Fatal("stale cards still count as previews")
+	}
+	sendKeys(t, c, tab(ports.ModSuper, true))
+	sw := c.cur().mon.sw
+	if !sw.open || sw.ws != other || sw.shown || sw.at != 1 {
+		t.Fatalf("open %v on other %v shown %v at %d", sw.open, sw.ws == other, sw.shown, sw.at)
+	}
+	// A release on a stale switcher commits nothing and closes it.
+	c.cur().mon.show(c.cur().mon.Workspaces[0])
+	focus := switcherFocus(c)
+	sendKeys(t, c, superKey(0, false))
+	if c.cur().mon.sw.open || c.switcher.sc != nil || switcherFocus(c) != focus {
+		t.Fatal("stale switcher survived the release")
+	}
+}
+
+func TestSwitchIgnoredDuringDrag(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	start := switcherFocus(c)
+	d := &dragState{id: start, button: btnLeft}
+	c.drag = d
+	c.buttons[btnLeft] = true
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	if c.cur().mon.sw.open || c.switcher.sc != nil || c.switcher.timerC != nil {
+		t.Fatal("switcher opened during a drag")
+	}
+	if c.drag != d || switcherFocus(c) != start {
+		t.Fatal("drag disturbed")
+	}
+	sendKeys(t, c, ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true})
+	if c.drag != nil {
+		t.Fatal("Escape did not cancel the drag")
+	}
+}
+
+// Another bind closing the shown cards still flies them back: the snapshot
+// is taken while they are drawn, so the windows move from the card rects.
+func TestSwitchBindOverShownCardsFliesBack(t *testing.T) {
+	c, ic, _ := switcherCore(t, 3)
+	c.cfg.Animations.On = true
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	c.switcherTick()
+	for range 200 {
+		ic.now = ic.now.Add(16 * time.Millisecond)
+		if err := c.step(context.Background(), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sc := c.cur()
+	cards := map[WindowID]Rect{}
+	for _, p := range sc.shownLayout() {
+		if p.Preview > 0 {
+			cards[p.ID] = p.Rect
+		}
+	}
+	if len(cards) != 3 || len(sc.rects) != 0 {
+		t.Fatalf("%d cards, %d motions: the cards did not settle", len(cards), len(sc.rects))
+	}
+	bind(t, c, ActionFocusColumnLeft)
+	if c.switching() || sc.mon.sw.shown {
+		t.Fatal("the bind left the switcher open")
+	}
+	settled := map[WindowID]Rect{}
+	for _, p := range sc.mon.Layout() {
+		settled[p.ID] = p.Rect
+	}
+	for id, card := range cards {
+		rm, ok := sc.rects[id]
+		if !ok || !rm.scale {
+			t.Fatalf("window %d has no fly-back motion", id)
+		}
+		if got := rm.apply(settled[id]); got != card {
+			t.Fatalf("window %d flies back from %+v, want its card %+v", id, got, card)
+		}
+	}
+}
+
+func TestSwitcherClosingSelectedWindowPicksColumnsNextWindow(t *testing.T) {
+	m := NewMonitor()
+	m.SetOutput(300, 200)
+	m.SetMaxColumns(3)
+	for id := WindowID(1); id <= 4; id++ {
+		m.AddWindow(id)
+	}
+	w := m.Current()
+	w.FocusID(3)
+	w.ConsumeOrExpel(-1) // columns [1] [2 3] [4]
+	if len(w.Columns) != 3 || len(w.Columns[1].Windows) != 2 {
+		t.Fatalf("columns %+v", w.Columns)
+	}
+	w.FocusID(1)
+	openSwitcher(m, 0)
+	at := slices.IndexFunc(m.sw.order, func(id WindowID) bool { return w.columnOf(id) == 1 })
+	m.sw.at = at
+	gone := m.sw.order[at]
+	other := w.Columns[1].Windows[0]
+	if other == gone {
+		other = w.Columns[1].Windows[1]
+	}
+	m.RemoveWindow(gone)
+	if len(m.sw.order) != 3 || m.sw.at != at || m.sw.order[at] != other {
+		t.Fatalf("order %v at %d, want card %d to stand for %d", m.sw.order, m.sw.at, at, other)
+	}
+	m.commitSwitcher()
+	if id, _ := w.Focused(); id != other {
+		t.Fatalf("focus %d, want %d", id, other)
+	}
+}
+
+func TestSwitchCommitFocusesTileUnderFloat(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	m := c.cur().mon
+	m.AddFloating(9, 100, 80)
+	w := m.Current()
+	if !w.floatFocus {
+		t.Fatal("float not focused")
+	}
+	tile := w.Columns[w.Focus].Windows[0]
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	bind(t, c, ActionSwitchColumnPrev) // back to card 0: the column under the float
+	if m.sw.at != 0 || m.sw.order[0] != tile {
+		t.Fatalf("at %d order %v", m.sw.at, m.sw.order)
+	}
+	sendKeys(t, c, superKey(0, false))
+	if w.floatFocus || switcherFocus(c) != tile {
+		t.Fatalf("float focused %v, focus %d, want tile %d", w.floatFocus, switcherFocus(c), tile)
+	}
+}
+
+func TestSwitchCommitFollowsToItsOutput(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+	first := c.focusScreen
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	want := c.cur().mon.sw.order[1]
+	// The pointer crosses to the other output meanwhile.
+	c.focusScreen = c.screenIndex("B")
+	sendKeys(t, c, superKey(0, false))
+	if c.focusScreen != first || switcherFocus(c) != want {
+		t.Fatalf("focus screen %d (want %d), focus %d (want %d)", c.focusScreen, first, switcherFocus(c), want)
+	}
+}
+
+func TestSwitchUnmodifiedBindThroughKeyEvent(t *testing.T) {
+	c, ic, _ := switcherCore(t, 3)
+	start := switcherFocus(c)
+	sendKeys(t, c, ports.KeyEvent{Keysym: "F9", Keycode: 75, Pressed: true})
+	if c.cur().mon.sw.open || len(ic.timers) != 0 || switcherFocus(c) == start {
+		t.Fatalf("open %v timers %v focus %d (was %d)", c.cur().mon.sw.open, ic.timers, switcherFocus(c), start)
 	}
 }

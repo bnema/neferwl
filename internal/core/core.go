@@ -598,6 +598,10 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.security.Protected {
 		return c.publishProtected(ctx)
 	}
+	if c.switching() && c.switcherStale() {
+		// Another workspace came on screen under the switcher: it is over.
+		c.cancelSwitcher()
+	}
 	for _, sc := range c.screens {
 		// The overview's selection is provisional: it focuses nothing yet.
 		if !sc.mon.ov.open {
