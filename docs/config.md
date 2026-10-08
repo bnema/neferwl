@@ -55,6 +55,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
 | `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
+| `rule.<name>.*` | none | Window rules: place an app's windows by app ID when they first open; see [Window rules](#window-rules) |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
 | `output.<name>.transform` | `normal` | `normal`, `90`, `180`, `270`, `flipped`, `flipped-90`, `flipped-180`, `flipped-270`; 90/270 swap the output's width and height |
@@ -69,6 +70,39 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `performance.realtime` | `on` | Request real-time scheduling for output and input threads |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug components or `all` |
 | `bind.<keys>` | see below | Action for a key combo; `none` removes a default |
+
+## Window rules
+
+A window rule places the windows of an app when they first open. Rules are flat keys named by a rule name (letters, digits, `-` or `_`):
+
+| Key | Meaning |
+|---|---|
+| `rule.<name>.app-id` | Required. A [Go regular expression](https://pkg.go.dev/regexp/syntax) matched against the whole app ID: `steam` does not match `steam_app_1`, `steam.*` does |
+| `rule.<name>.floating` | `on` floats the window (centred, free floating, sized by NeferWL); `off` tiles a fixed-size window that would float |
+| `rule.<name>.workspace` | A workspace number (1-based, past the last one means the last) or the name of a declared `workspace.<name>.*` workspace |
+| `rule.<name>.monitor` | A connector (`DP-2`) or a monitor key (`make model serial`); the focused output when it is not connected |
+| `rule.<name>.width` | Width of the window's new column, like a column width in `workspace.<name>.column.N`: `50%`, `1/3`, `800px` or `1`; tiled windows only |
+
+```ini
+rule.games.app-id = steam_app_.*
+rule.games.workspace = 3
+rule.games.monitor = DP-2
+rule.chat.app-id = discord|org\.telegram\..*
+rule.chat.workspace = chat
+rule.chat.width = 1/3
+rule.calc.app-id = org\.gnome\.Calculator
+rule.calc.floating = on
+```
+
+- Every rule that matches applies, in file order; a later rule wins for each field it sets. A generic rule can set `monitor` and a specific one `width`.
+- Rules apply once, when the window first maps. A later app ID change, a window that maps again, or a config reload moves nothing. Reloading changes rules for windows that open afterwards.
+- A rule never moves you. The window opens on its target workspace without taking the focus or switching the workspace or monitor you are on. When the target is the workspace on screen of the focused output, the window opens as any new window does.
+- A named workspace stays on its own monitor: `monitor` is ignored next to a named `workspace`. A name nobody declared warns and the window opens as usual.
+- A window started for a slot (`workspace.<name>.column.N`) goes to its slot, and a dialog stays over its parent: rules do not apply to them.
+- `width` is ignored under `fixed` and `cascade` overflow, where columns share the width.
+- An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored.
+
+To find an app ID, look at `app_id` in `neferwl state | jq '.windows[] | {id, app_id}'`, or at the `window mapped` line in the log. X11 apps run through xwayland-satellite get their app ID from `WM_CLASS`; it may be empty, and an app that sets it after opening is not matched.
 
 ## Output placement
 
@@ -151,6 +185,8 @@ With `animations = off`, nothing moves during the swipe: when the fingers lift, 
 Over the shown stash a sideways swipe slides it with the fingers, with a stop on each window, and moves one window at most. In scroll and fixed layouts where the view cannot scroll (a floating or fullscreen window, fixed overflow, or a named workspace), a quick swipe runs `focus-column-left/right` or `focus-workspace-prev/next` when the fingers lift. Cascade keeps horizontal workspace navigation; vertical band swipes do nothing while a floating or fullscreen window has focus.
 
 Two-finger scroll goes to the window under the pointer with the touchpad's timestamps, so apps with kinetic scrolling keep their inertia.
+
+Three- and four-finger swipes belong to the compositor. Every other touchpad gesture goes to the window under the pointer through `zwp_pointer_gestures_v1` (version 3): swipes of other finger counts, pinch (zoom and rotation) and hold. A gesture stays with the window that had the pointer when it began; it ends as cancelled if the pointer moves to another window or the window closes. Nothing is sent to windows while the session is locked.
 
 ## HDR
 

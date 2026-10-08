@@ -302,12 +302,15 @@ func (m *Monitor) find(id WindowID) (*Workspace, int) {
 
 // AddWindow places a new window on the workspace on screen; with
 // stash.capture, in its stash when shown.
-func (m *Monitor) AddWindow(id WindowID) {
+func (m *Monitor) AddWindow(id WindowID) { m.addWindow(id, Width{}) }
+
+// addWindow is AddWindow with the width of the new column (zero: automatic).
+func (m *Monitor) addWindow(id WindowID, width Width) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
 	if w := m.Current(); !m.stashCapture || !w.captureStash(id) {
-		w.AddWindow(id)
+		w.addWindow(id, width)
 	}
 	m.normalize()
 }

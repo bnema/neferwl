@@ -492,7 +492,10 @@ func (w *Workspace) Focused() (WindowID, bool) {
 	}
 	return c.Windows[c.Focus], true
 }
-func (w *Workspace) AddWindow(id WindowID) {
+func (w *Workspace) AddWindow(id WindowID) { w.addWindow(id, Width{}) }
+
+// addWindow is AddWindow with the width of the new column (zero: automatic).
+func (w *Workspace) addWindow(id WindowID, width Width) {
 	if id == 0 || w.has(id) {
 		return
 	}
@@ -504,10 +507,10 @@ func (w *Workspace) AddWindow(id WindowID) {
 			// A covering float or stashed window may have no column under it.
 			at = min(w.Focus+1, len(w.Columns))
 		}
-		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}})
+		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Width: width})
 		return
 	}
-	w.addColumn(Column{Windows: []WindowID{id}})
+	w.addColumn(Column{Windows: []WindowID{id}, Width: width})
 }
 
 // addColumn places a new column like a new window and focuses it.

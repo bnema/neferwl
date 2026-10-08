@@ -20,6 +20,9 @@ type WindowMapped struct {
 	// xdg-foreign), 0 when none. A dialog of a fullscreen window shows over
 	// it.
 	Parent WindowID
+	// Remap is set when the toplevel mapped before and was unmapped (a tray
+	// app restored): window rules only place its first map.
+	Remap bool
 }
 
 // SlotEnv is the environment variable neferwl sets on processes it spawns

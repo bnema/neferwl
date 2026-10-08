@@ -33,6 +33,7 @@ func registerGlobals(d *server.Display, o Options, s *Server) error {
 		func() error { return registerDMABuf(d, s, o.DMABuf) },
 		func() error { return registerSinglePixelBuffer(d, s) },
 		func() error { return registerPointerConstraints(d, s) },
+		func() error { return registerPointerGestures(d, s) },
 		func() error { return registerTearing(d, s) },
 		func() error { return registerColorManagement(d, s) },
 		func() error { return registerColorRepresentation(d, s) },

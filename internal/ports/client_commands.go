@@ -192,6 +192,55 @@ type PointerAxisTo struct {
 
 func (PointerAxisTo) clientCommand() {}
 
+// GestureKind is a touchpad gesture a client can receive
+// (zwp_pointer_gestures_v1).
+type GestureKind uint8
+
+const (
+	GestureSwipe GestureKind = iota
+	GesturePinch
+	GestureHold
+)
+
+// GestureBeginTo starts a gesture on a window with the pointer focus.
+// Wayland assigns the serial. Time is the device timestamp
+// (CLOCK_MONOTONIC), like the updates and the end of the gesture.
+type GestureBeginTo struct {
+	ID      WindowID
+	Kind    GestureKind
+	Fingers int
+	Time    time.Duration
+}
+
+func (GestureBeginTo) clientCommand() {}
+
+// GestureUpdateTo moves the gesture of a window. DX and DY are the
+// centre's movement; Scale and Rotation are only for a pinch (see
+// PinchUpdate). A hold has no updates.
+type GestureUpdateTo struct {
+	ID       WindowID
+	Kind     GestureKind
+	DX, DY   float64
+	Scale    float64
+	Rotation float64
+	Time     time.Duration
+}
+
+func (GestureUpdateTo) clientCommand() {}
+
+// GestureEndTo ends the gesture of a window. Cancelled is set when the
+// gesture did not complete: the pointer focus moved, the window went away
+// or the device cancelled it. Ending a gesture that is not running does
+// nothing.
+type GestureEndTo struct {
+	ID        WindowID
+	Kind      GestureKind
+	Cancelled bool
+	Time      time.Duration
+}
+
+func (GestureEndTo) clientCommand() {}
+
 // ForwardKey carries core → wayland unbound keys.
 type ForwardKey struct {
 	ID  WindowID

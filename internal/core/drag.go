@@ -165,7 +165,7 @@ func (c *Core) beginDrag(ctx context.Context, id WindowID, button uint32, resize
 	c.grab = 0
 	if c.pointer != 0 {
 		c.pointer = 0
-		if err := c.command(ctx, ports.PointerFocus{}); err != nil {
+		if err := c.pointerFocus(ctx, ports.PointerFocus{}); err != nil {
 			return err
 		}
 	}
