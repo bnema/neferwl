@@ -233,11 +233,6 @@ func TestOverlayPopupAndBorder(t *testing.T) {
 		t.Fatalf("border: %q", reason)
 	}
 	s, _ = overlayScene()
-	s.Separators = []ports.Separator{{Rect: ports.Rect{X: 300, W: 2, H: 2}, Window: 2}}
-	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
-		t.Fatalf("own border: %q", reason)
-	}
-	s, _ = overlayScene()
 	s.Border.Width = 2
 	s.Windows[1].Inset = ports.SideLeft
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "border" {
@@ -266,6 +261,35 @@ func TestOverlayIgnoresWhatDoesNotCoverIt(t *testing.T) {
 	s.Layers[0].Rect = ports.Rect{W: 101, H: 10}
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "layer_above" {
 		t.Fatalf("overlapping layer: %q", reason)
+	}
+}
+
+// Draw order decides: a window listed before the candidate is under it, one
+// after is over it; a popup is over it wherever it is listed, unless hidden.
+func TestOverlayStackingOrder(t *testing.T) {
+	under := ports.SceneWindow{ID: 8, Floating: true, Below: true, Rect: ports.Rect{X: 120, W: 20, H: 20}}
+	over := under
+	over.Below = false
+	popup := ports.SceneWindow{ID: 7, Popup: true, Rect: ports.Rect{X: 120, W: 20, H: 20}}
+	for name, tc := range map[string]struct {
+		edit func(*ports.Scene)
+		want string
+	}{
+		"window under": {func(s *ports.Scene) { s.Windows = append([]ports.SceneWindow{under}, s.Windows...) }, ""},
+		"window over":  {func(s *ports.Scene) { s.Windows = append(s.Windows, over) }, "window_above"},
+		"popup after":  {func(s *ports.Scene) { s.Windows = append(s.Windows, popup) }, "window_above"},
+		"hidden popup": {func(s *ports.Scene) { p := popup; p.Hidden = true; s.Windows = append(s.Windows, p) }, ""},
+		"popup touching": {func(s *ports.Scene) {
+			p := popup
+			p.Rect.X = 80
+			s.Windows = append(s.Windows, p)
+		}, ""},
+	} {
+		s, c := overlayScene()
+		tc.edit(&s)
+		if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != tc.want {
+			t.Errorf("%s: reason %q, want %q", name, reason, tc.want)
+		}
 	}
 }
 

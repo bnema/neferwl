@@ -141,7 +141,7 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 			return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
 		}
 		for _, sep := range s.Separators {
-			if sep.Window == pick.ID || sep.Rect.Overlaps(pick.Rect) {
+			if sep.Rect.Overlaps(pick.Rect) {
 				// The overlay shows the buffer alone; the lines would go
 				// under it.
 				return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "border"
