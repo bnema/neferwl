@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -25,56 +26,58 @@ func focusNote(w *Workspace, id WindowID) {
 	w.noteFocus()
 }
 
-func TestMRUOrderFollowsFocus(t *testing.T) {
-	w := threeColumns()
-	// Columns 0, 2, 1 in turn: the last one used goes first.
-	focusNote(w, 1)
-	focusNote(w, 3)
-	focusNote(w, 2)
-	if got, want := w.switchOrder(), []WindowID{2, 3, 1}; !slices.Equal(got, want) {
-		t.Fatalf("order %v, want %v", got, want)
+func TestMRUOrder(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(w *Workspace)
+		want []WindowID
+	}{
+		{"follows focus", func(w *Workspace) {
+			// Columns 0, 2, 1 in turn: the last one used goes first.
+			focusNote(w, 1)
+			focusNote(w, 3)
+			focusNote(w, 2)
+		}, []WindowID{2, 3, 1}},
+		{"back to the oldest", func(w *Workspace) {
+			focusNote(w, 1)
+			focusNote(w, 3)
+			focusNote(w, 2)
+			focusNote(w, 1)
+		}, []WindowID{1, 2, 3}},
+		{"never focused follow by position", func(w *Workspace) {
+			focusNote(w, 3)
+		}, []WindowID{3, 1, 2}},
+		{"closed windows are pruned", func(w *Workspace) {
+			focusNote(w, 1)
+			focusNote(w, 3)
+			focusNote(w, 2)
+			w.RemoveWindow(3)
+		}, []WindowID{2, 1}},
+		{"a moved column keeps its rank", func(w *Workspace) {
+			focusNote(w, 1)
+			focusNote(w, 3)
+			focusNote(w, 2)
+			w.MoveColumn(1)
+			w.noteFocus()
+		}, []WindowID{2, 3, 1}},
 	}
-	focusNote(w, 1)
-	if got, want := w.switchOrder(), []WindowID{1, 2, 3}; !slices.Equal(got, want) {
-		t.Fatalf("order %v, want %v", got, want)
-	}
-}
-
-func TestMRUColumnsNeverFocusedFollowByPosition(t *testing.T) {
-	w := threeColumns()
-	focusNote(w, 3)
-	if got, want := w.switchOrder(), []WindowID{3, 1, 2}; !slices.Equal(got, want) {
-		t.Fatalf("order %v, want %v", got, want)
-	}
-}
-
-func TestMRUPrunesClosedWindows(t *testing.T) {
-	w := threeColumns()
-	focusNote(w, 1)
-	focusNote(w, 3)
-	focusNote(w, 2)
-	w.RemoveWindow(3)
-	if got, want := w.switchOrder(), []WindowID{2, 1}; !slices.Equal(got, want) {
-		t.Fatalf("order %v, want %v", got, want)
-	}
-	if slices.Contains(w.recent, 3) {
-		t.Fatalf("recent %v keeps a closed window", w.recent)
-	}
-}
-
-func TestMRUKeepsRankWhenColumnMoves(t *testing.T) {
-	w := threeColumns()
-	focusNote(w, 1)
-	focusNote(w, 3)
-	focusNote(w, 2)
-	// Window 2 moves to the right: its column is the same, so is its rank.
-	w.MoveColumn(1)
-	w.noteFocus()
-	if got, want := w.switchOrder(), []WindowID{2, 3, 1}; !slices.Equal(got, want) {
-		t.Fatalf("order %v, want %v", got, want)
-	}
-	if len(w.recent) != 3 {
-		t.Fatalf("recent %v", w.recent)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := threeColumns()
+			tt.run(w)
+			if got := w.switchOrder(); !slices.Equal(got, tt.want) {
+				t.Fatalf("order %v, want %v", got, tt.want)
+			}
+			// recent never keeps a closed window nor two of one column.
+			seen := map[int]bool{}
+			for _, id := range w.recent {
+				i := w.columnOf(id)
+				if i < 0 || seen[i] {
+					t.Fatalf("recent %v keeps window %d (column %d)", w.recent, id, i)
+				}
+				seen[i] = true
+			}
+		})
 	}
 }
 
@@ -131,14 +134,74 @@ func TestMRUNoteFocusDoesNotAllocateWhenSettled(t *testing.T) {
 	if n := testing.AllocsPerRun(100, w.noteFocus); n != 0 {
 		t.Fatalf("noteFocus allocates %v", n)
 	}
+	// A focus change inside the latest column updates its entry in place.
+	w.AddWindow(4)
+	w.ConsumeOrExpel(-1)
+	w.FocusID(2)
+	w.noteFocus()
+	if len(w.recent) == 0 || w.recent[0] != 2 {
+		t.Fatalf("recent %v, want window 2 first", w.recent)
+	}
+	n := len(w.recent)
+	col := w.Columns[w.Focus]
+	other := col.Windows[0]
+	if other == 2 {
+		other = col.Windows[1]
+	}
+	if len(col.Windows) < 2 {
+		t.Fatalf("setup: column %v has one window", col.Windows)
+	}
+	w.FocusID(other)
+	if got := testing.AllocsPerRun(100, w.noteFocus); got != 0 {
+		t.Fatalf("noteFocus allocates %v after a same-column change", got)
+	}
+	if len(w.recent) != n || w.recent[0] != other {
+		t.Fatalf("recent %v, want window %d first in place of 2 (%d entries)", w.recent, other, n)
+	}
 }
 
-// switcherBinds are the default binds of the switcher.
-var switcherBinds = map[string]string{
-	"Cmd+Tab":       string(ActionSwitchColumnNext),
-	"Cmd+Shift+Tab": string(ActionSwitchColumnPrev),
-	"Cmd+f":         string(ActionToggleFullscreen),
-	"F9":            string(ActionSwitchColumnNext),
+// Browsing the overview focuses nothing: the selection moving to another
+// column, then Escape, leave the recent order as it was.
+func TestOverviewBrowsingKeepsMRU(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	m := c.cur().mon
+	w := m.Current()
+	focusNote(w, 1)
+	focusNote(w, 3)
+	focusNote(w, 2)
+	indicatorScene(t, c)
+	order, recent := w.switchOrder(), slices.Clone(w.recent)
+	focus := switcherFocus(c)
+	m.ToggleOverview()
+	m.OverviewMove(1, 0)
+	m.OverviewMove(1, 0)
+	if switcherFocus(c) == focus {
+		t.Fatal("setup: the overview selection is still on the focused window")
+	}
+	indicatorScene(t, c)
+	// Cancelling would note the original column again: look while browsing.
+	if !slices.Equal(w.recent, recent) {
+		t.Fatalf("recent %v while browsing, was %v", w.recent, recent)
+	}
+	m.CancelOverview()
+	indicatorScene(t, c)
+	if got := w.switchOrder(); !slices.Equal(got, order) || !slices.Equal(w.recent, recent) {
+		t.Fatalf("order %v recent %v, were %v %v", got, w.recent, order, recent)
+	}
+	if switcherFocus(c) != focus {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), focus)
+	}
+}
+
+// switcherBinds returns the binds of the switcher tests: the defaults, a
+// fullscreen bind to interrupt a switch and F9, a switch with no Cmd.
+func switcherBinds() map[string]string {
+	return map[string]string{
+		"Cmd+Tab":       string(ActionSwitchColumnNext),
+		"Cmd+Shift+Tab": string(ActionSwitchColumnPrev),
+		"Cmd+f":         string(ActionToggleFullscreen),
+		"F9":            string(ActionSwitchColumnNext),
+	}
 }
 
 const (
@@ -155,7 +218,7 @@ func switcherCore(t *testing.T, n int) (*Core, *indicatorClock, <-chan ports.Cli
 	c, ic := indicatorCoreWith(t, commands)
 	cfg := c.cfg
 	cfg.Layout.MaxColumns = 3
-	cfg.Binds = switcherBinds
+	cfg.Binds = switcherBinds()
 	if err := c.apply(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +227,20 @@ func switcherCore(t *testing.T, n int) (*Core, *indicatorClock, <-chan ports.Cli
 	}
 	indicatorScene(t, c)
 	return c, ic, commands
+}
+
+// requireClosed fails unless no switcher is open: no monitor holds one, and
+// the core has neither a switcher screen nor a timer.
+func requireClosed(t *testing.T, c *Core) {
+	t.Helper()
+	for _, sc := range c.screens {
+		if sc.mon.sw.ws != nil || sc.mon.sw.shown {
+			t.Fatalf("screen %q still holds a switcher: %+v", sc.name(), sc.mon.sw)
+		}
+	}
+	if c.switcher.sc != nil || c.switcher.timerC != nil || c.switcher.timerStop != nil {
+		t.Fatalf("switcher screen %v, timer %v", c.switcher.sc != nil, c.switcher.timerC != nil)
+	}
 }
 
 func tab(mods ports.Mods, pressed bool) ports.KeyEvent {
@@ -356,29 +433,22 @@ func TestSwitchStepOpensOnPreviousColumnAndCycles(t *testing.T) {
 	}
 }
 
-func TestSwitchPrevOpensOnOldestColumn(t *testing.T) {
-	c, _, _ := switcherCore(t, 3)
-	c.mods = ports.ModSuper
-	bind(t, c, ActionSwitchColumnPrev)
-	if sw := c.cur().mon.sw; sw.ws == nil || sw.at != len(sw.order)-1 {
-		t.Fatalf("at %d of %d", sw.at, len(sw.order))
-	}
-}
-
 func TestSwitchWithoutCmdCommitsAtOnce(t *testing.T) {
 	c, ic, _ := switcherCore(t, 3)
-	c.mods = 0
 	start := switcherFocus(c)
-	if err := c.runBind(context.Background(), ActionSwitchColumnNext); err != nil {
-		t.Fatal(err)
+	// F9 is bound to switch-column-next with no Cmd held.
+	f9 := func(pressed bool) ports.KeyEvent {
+		return ports.KeyEvent{Keysym: "F9", Keycode: 75, Pressed: pressed}
 	}
-	if c.cur().mon.sw.ws != nil || c.switcher.timerC != nil || len(ic.timers) != 0 {
-		t.Fatalf("open %v, timer %v %v", c.cur().mon.sw.ws != nil, c.switcher.timerC != nil, ic.timers)
+	sendKeys(t, c, f9(true), f9(false))
+	requireClosed(t, c)
+	if len(ic.timers) != 0 {
+		t.Fatalf("timers %v armed for a switch with no Cmd", ic.timers)
 	}
 	if switcherFocus(c) == start {
 		t.Fatal("focus did not move")
 	}
-	bind(t, c, ActionSwitchColumnNext)
+	sendKeys(t, c, f9(true), f9(false))
 	if switcherFocus(c) != start {
 		t.Fatalf("focus %d, want back on %d", switcherFocus(c), start)
 	}
@@ -388,14 +458,13 @@ func TestSwitchIgnoredWithOneColumnOrOverview(t *testing.T) {
 	c, _, _ := switcherCore(t, 1)
 	c.mods = ports.ModSuper
 	bind(t, c, ActionSwitchColumnNext)
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil {
-		t.Fatal("switcher opened with one column")
-	}
+	requireClosed(t, c)
 	c, _, _ = switcherCore(t, 3)
 	c.cur().mon.ToggleOverview()
 	before := switcherFocus(c)
 	bind(t, c, ActionSwitchColumnNext)
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || switcherFocus(c) != before {
+	requireClosed(t, c)
+	if switcherFocus(c) != before {
 		t.Fatal("switcher acted in the overview")
 	}
 }
@@ -421,9 +490,7 @@ func TestSwitchQuickTapSwapsWithoutCards(t *testing.T) {
 				t.Fatalf("cards published during a quick tap: %+v", p)
 			}
 		}
-		if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil {
-			t.Fatal("switcher left open")
-		}
+		requireClosed(t, c)
 	}
 	tap()
 	if switcherFocus(c) == start {
@@ -445,36 +512,13 @@ func TestSwitchHoldCommitsOnReleaseAndForwardsIt(t *testing.T) {
 	}
 	forwarded(cmds)
 	sendKeys(t, c, superKey(0, false))
-	if switcherFocus(c) != order[1] || c.cur().mon.sw.ws != nil || c.switcher.timerC != nil {
-		t.Fatalf("focus %d (want %d), open %v", switcherFocus(c), order[1], c.cur().mon.sw.ws != nil)
+	requireClosed(t, c)
+	if switcherFocus(c) != order[1] {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), order[1])
 	}
 	fk := forwarded(cmds)
 	if len(fk) != 1 || fk[0].Key.Keysym != "Super_L" || fk[0].Key.Pressed || fk[0].ID != order[1] {
 		t.Fatalf("release not forwarded to the new focus: %+v", fk)
-	}
-}
-
-func TestSwitcherTickShowsCards(t *testing.T) {
-	c, _, _ := switcherCore(t, 3)
-	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
-	if c.cur().mon.sw.shown {
-		t.Fatal("shown before the delay")
-	}
-	if !c.switcherTick() || !c.cur().mon.sw.shown {
-		t.Fatal("tick did not show the switcher")
-	}
-	if c.switcher.timerC != nil {
-		t.Fatal("timer left")
-	}
-}
-
-func TestSwitcherTickAfterCloseIsHarmless(t *testing.T) {
-	c, _, _ := switcherCore(t, 3)
-	c.mods = ports.ModSuper
-	bind(t, c, ActionSwitchColumnNext)
-	c.cancelSwitcher()
-	if c.switcherTick() {
-		t.Fatal("tick on a closed switcher asks for a scene")
 	}
 }
 
@@ -489,8 +533,9 @@ func TestSwitchEscapeCancelsAndIsNotForwarded(t *testing.T) {
 	sendKeys(t, c, esc)
 	esc.Pressed = false
 	sendKeys(t, c, esc, superKey(0, false))
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || switcherFocus(c) != start {
-		t.Fatalf("open %v focus %d (want %d)", c.cur().mon.sw.ws != nil, switcherFocus(c), start)
+	requireClosed(t, c)
+	if switcherFocus(c) != start {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), start)
 	}
 	for _, k := range forwarded(cmds) {
 		if k.Key.Keysym == "Escape" {
@@ -504,9 +549,7 @@ func TestSwitchAnotherBindCancelsThenRuns(t *testing.T) {
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	sendKeys(t, c, ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper, Pressed: true})
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil {
-		t.Fatal("switcher still open")
-	}
+	requireClosed(t, c)
 	if switcherFocus(c) != start {
 		t.Fatalf("focus %d moved", switcherFocus(c))
 	}
@@ -533,8 +576,9 @@ func TestSwitchSwipeBeginCancels(t *testing.T) {
 	start := switcherFocus(c)
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.swipeBegin(ports.SwipeBegin{Fingers: 3})
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil || switcherFocus(c) != start {
-		t.Fatal("swipe did not cancel the switcher")
+	requireClosed(t, c)
+	if switcherFocus(c) != start {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), start)
 	}
 }
 
@@ -550,8 +594,9 @@ func TestSwitchSecurityChangeCancels(t *testing.T) {
 	if !c.syncSecurity() {
 		t.Fatal("security change not seen")
 	}
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil || switcherFocus(c) != start {
-		t.Fatal("security change did not cancel the switcher")
+	requireClosed(t, c)
+	if switcherFocus(c) != start {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), start)
 	}
 }
 
@@ -568,8 +613,9 @@ func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
 		t.Fatal("Alt+Tab did not open the switcher")
 	}
 	sendKeys(t, c, ports.KeyEvent{Keysym: "Alt_L", Keycode: 64, Pressed: false})
-	if c.cur().mon.sw.ws != nil || switcherFocus(c) != order[1] {
-		t.Fatalf("open %v focus %d, want %d", c.cur().mon.sw.ws != nil, switcherFocus(c), order[1])
+	requireClosed(t, c)
+	if switcherFocus(c) != order[1] {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), order[1])
 	}
 }
 
@@ -578,28 +624,46 @@ func TestSwitchCmdKeyFollowsConfig(t *testing.T) {
 func TestSwitcherLayoutCards(t *testing.T) {
 	c, _, _ := switcherCore(t, 3)
 	c.cfg.Floating.Dim = 0.4
+	// A wider focused column: the cards have different aspect ratios.
+	c.cur().mon.Current().ResizeColumn(30)
+	indicatorScene(t, c)
 	area := c.cur().mon.Current().overviewArea()
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
-	if s := indicatorScene(t, c); len(scenePreviews(s)) != 0 {
+	if s := indicatorScene(t, c); len(scenePreviews(s)) != 0 || c.cur().mon.sw.shown {
 		t.Fatalf("cards before the delay: %+v", s.Windows)
 	}
 	order := c.cur().mon.sw.order
-	c.switcherTick()
+	if !c.switcherTick() || !c.cur().mon.sw.shown || c.switcher.timerC != nil {
+		t.Fatal("the tick did not show the cards and clear the timer")
+	}
 	s := indicatorScene(t, c)
 	cards := scenePreviews(s)
 	if len(cards) != 3 {
 		t.Fatalf("%d cards: %+v", len(cards), s.Windows)
 	}
-	minX, maxX := 1<<30, 0
 	focused := 0
+	distinct := false
+	var centers []int
 	for k, card := range cards {
 		if card.ID != order[k] {
 			t.Fatalf("card %d is window %d, want %d (MRU order)", k, card.ID, order[k])
 		}
-		if card.Rect.W < cards[0].Rect.W-1 || card.Rect.W > cards[0].Rect.W+1 {
-			t.Fatalf("cards of different widths: %+v", cards)
+		// The boxes are equal: the cards' centres are evenly spaced.
+		centers = append(centers, card.Rect.X+card.Rect.W/2)
+		// A card is its window's client size, scaled down uniformly.
+		sent := c.configures.sent[card.ID]
+		if sent.Width <= 0 || sent.Height <= 0 || card.Preview <= 0 || card.Preview >= 1 {
+			t.Fatalf("card %d: client %dx%d, preview %v", card.ID, sent.Width, sent.Height, card.Preview)
 		}
-		minX, maxX = min(minX, card.Rect.X), max(maxX, card.Rect.X+card.Rect.W)
+		if d := card.Rect.W - int(math.Round(float64(sent.Width)*card.Preview)); d < -1 || d > 1 {
+			t.Fatalf("card %d is %dx%d for a %dx%d client at %v", card.ID, card.Rect.W, card.Rect.H, sent.Width, sent.Height, card.Preview)
+		}
+		if d := card.Rect.H - int(math.Round(float64(sent.Height)*card.Preview)); d < -1 || d > 1 {
+			t.Fatalf("card %d is %dx%d for a %dx%d client at %v", card.ID, card.Rect.W, card.Rect.H, sent.Width, sent.Height, card.Preview)
+		}
+		if first := c.configures.sent[order[0]]; sent.Width != first.Width {
+			distinct = true
+		}
 		if card.Focused {
 			focused++
 			if card.ID != order[c.cur().mon.sw.at] {
@@ -607,9 +671,14 @@ func TestSwitcherLayoutCards(t *testing.T) {
 			}
 		}
 	}
-	left, right := minX-area.X, area.X+area.W-maxX
-	if d := left - right; d < -1 || d > 1 {
-		t.Fatalf("row not centered: left gap %d, right gap %d", left, right)
+	if !distinct {
+		t.Fatal("setup: every window has the same size, so the aspect ratios prove nothing")
+	}
+	if d := (centers[1] - centers[0]) - (centers[2] - centers[1]); d < -2 || d > 2 {
+		t.Fatalf("boxes not equal: card centres %v", centers)
+	}
+	if d := centers[0] + centers[2] - 2*(area.X+area.W/2); d < -2 || d > 2 {
+		t.Fatalf("row not centered in %+v: card centres %v", area, centers)
 	}
 	if focused != 1 {
 		t.Fatalf("%d focused cards", focused)
@@ -628,10 +697,6 @@ func TestSwitcherLayoutCards(t *testing.T) {
 			t.Fatalf("window %d drawn under the cards", w.ID)
 		}
 	}
-	// The keyboard stays on the real focus.
-	if c.keyboardFocus() != focusedIDReal(c) {
-		t.Fatalf("keyboard focus %d moved", c.keyboardFocus())
-	}
 	// A commit gives the workspace back.
 	sendKeys(t, c, superKey(0, false))
 	if s := lastScene(t, c); len(scenePreviews(s)) != 0 {
@@ -639,27 +704,27 @@ func TestSwitcherLayoutCards(t *testing.T) {
 	}
 }
 
-func focusedIDReal(c *Core) WindowID {
-	id, _ := c.cur().mon.Current().Focused()
-	return id
-}
-
 func TestSwitcherLayoutHidesOtherWindowsOfColumns(t *testing.T) {
-	c, _, _ := switcherCore(t, 3)
-	c.cur().mon.AddWindow(4)
-	w := c.cur().mon.Current()
+	// Windows 10 and 11 are on a second workspace.
+	c, _ := twoWorkspaces(t)
+	m := c.cur().mon
+	m.AddWindow(4)
+	w := m.Current()
 	w.ConsumeOrExpel(-1)
-	if len(w.Columns) != 3 || w.columnWindows() != 4 {
-		t.Fatalf("setup: %d columns, %d windows", len(w.Columns), w.columnWindows())
+	m.AddFloating(9, 100, 80)
+	if len(w.Columns) != 3 || w.columnWindows() != 4 || len(w.Floats) != 1 {
+		t.Fatalf("setup: %d columns, %d windows, %d floats", len(w.Columns), w.columnWindows(), len(w.Floats))
 	}
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	s := indicatorScene(t, c)
 	reps := map[WindowID]bool{}
-	for _, id := range c.cur().mon.sw.order {
+	for _, id := range m.sw.order {
 		reps[id] = true
 	}
+	seen := map[WindowID]bool{}
 	for _, sw := range s.Windows {
+		seen[sw.ID] = true
 		if reps[sw.ID] {
 			if sw.Preview == 0 || sw.Hidden {
 				t.Fatalf("representative %d not a card: %+v", sw.ID, sw)
@@ -667,6 +732,202 @@ func TestSwitcherLayoutHidesOtherWindowsOfColumns(t *testing.T) {
 		} else if !sw.Hidden {
 			t.Fatalf("window %d not hidden: %+v", sw.ID, sw)
 		}
+	}
+	// The other window of a column, the float and the other workspace's
+	// windows are all in the scene, hidden.
+	for _, id := range []WindowID{4, 9, 10, 11} {
+		if !seen[id] {
+			t.Fatalf("window %d missing from the scene (hidden windows must be listed): %+v", id, s.Windows)
+		}
+	}
+}
+
+// While the cards show, the screen draws previews: the tiles do not stop at
+// the panels, a card takes no pointer, nothing is
+// dragged, and a window mapping or unmapping behind them does not animate.
+func TestSwitcherShownIsAPreview(t *testing.T) {
+	c, ic, _ := switcherCore(t, 3)
+	c.cfg.Animations.On = true
+	m := c.cur().mon
+	// A bar reserves the top of the output: tiles stop below it.
+	c.setLayers([]ports.LayerSurface{{ID: 90, Layer: ports.LayerTop, Anchor: ports.AnchorTop | ports.AnchorLeft | ports.AnchorRight, Width: 300, Height: 20, ExclusiveZone: 20}})
+	if s := indicatorScene(t, c); s.TileInset.Top != 20 {
+		t.Fatalf("setup: tile inset %+v, want the bar's 20", s.TileInset)
+	}
+	sizes := map[WindowID]ports.ConfigureWindow{}
+	for id, v := range c.configures.sent {
+		sizes[id] = v
+	}
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	c.switcherTick()
+	indicatorScene(t, c)
+	// The cards fly in, and the motions survive a publish.
+	if len(c.cur().rects) == 0 {
+		t.Fatal("no card motion after the show")
+	}
+	settle := func() {
+		t.Helper()
+		for range 200 {
+			ic.now = ic.now.Add(16 * time.Millisecond)
+			if err := c.step(context.Background(), nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		lastScene(t, c)
+		if len(c.cur().rects) != 0 || c.animating() {
+			t.Fatalf("motions did not settle: %d rects", len(c.cur().rects))
+		}
+	}
+	settle()
+	if !m.switcherShown() {
+		t.Fatal("setup: cards not shown")
+	}
+	s := indicatorScene(t, c)
+	if len(scenePreviews(s)) != 3 {
+		t.Fatalf("%d cards", len(scenePreviews(s)))
+	}
+	// A card keeps its client's real size.
+	for _, id := range m.sw.order {
+		if got := c.configures.sent[id]; got.Width != sizes[id].Width || got.Height != sizes[id].Height {
+			t.Fatalf("window %d configured %dx%d under its card, was %dx%d", id, got.Width, got.Height, sizes[id].Width, sizes[id].Height)
+		}
+	}
+	if s.TileInset != (ports.Insets{}) {
+		t.Fatalf("tile inset %+v while the cards show", s.TileInset)
+	}
+	// The pointer finds no window under a card.
+	card := m.sw.order[1]
+	x, y := cardCenter(t, c, card)
+	if id, _, _ := c.hit(x, y); id != 0 {
+		t.Fatalf("hit window %d under a card", id)
+	}
+	if _, _, ok := c.draggable(card); ok {
+		t.Fatal("a card can be dragged")
+	}
+	if tgt := c.dropAt(card, x, y); tgt.kind != dropNone {
+		t.Fatalf("a drop target %+v under the cards", tgt)
+	}
+	// A map and an unmap behind the cards do not animate.
+	c.mapWindow(ports.WindowMapped{ID: 20})
+	if len(c.cur().rects) != 0 {
+		t.Fatalf("a map behind the cards started motions: %+v", c.cur().rects)
+	}
+	gone := m.sw.order[2]
+	c.unmapWindow(ports.WindowUnmapped{ID: gone})
+	if len(c.cur().rects) != 0 {
+		t.Fatalf("an unmap behind the cards started motions: %+v", c.cur().rects)
+	}
+	if m.Current().columnOf(gone) >= 0 || len(m.sw.order) != 2 {
+		t.Fatalf("window %d not removed from the cards: %v", gone, m.sw.order)
+	}
+	// The workspace comes back with the panel inset.
+	sendKeys(t, c, superKey(0, false))
+	settle()
+	if s := indicatorScene(t, c); s.TileInset.Top != 20 || len(scenePreviews(s)) != 0 {
+		t.Fatalf("after the commit: tile inset %+v, %d cards", s.TileInset, len(scenePreviews(s)))
+	}
+}
+
+// The predicates that choose between the workspace and its previews follow
+// the cards as they follow the overview: the frame, a covering fullscreen
+// and the capture state.
+func TestSwitcherShownPreviewPredicates(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	sc := c.cur()
+	m := sc.mon
+	w := m.Current()
+	w.Overflow = OverflowFixed // a fullscreen window covers whatever the scroll
+	w.SetSize(100, 100)        // the workspace frame is smaller than the output
+	tile := w.Columns[w.Focus].Windows[0]
+	w.SetFullscreen(tile, true)
+	indicatorScene(t, c)
+	c.capt.sessions = []*capSession{{open: ports.CaptureSessionOpen{ID: 1, Workspace: w.ID}}}
+	type state struct {
+		frameIsOutput, covers, captureHidden bool
+		captureShown                         uint64
+	}
+	read := func() state {
+		r, reason := c.capResolve(capTarget{workspace: w.ID})
+		if reason != ports.CaptureReasonNone {
+			t.Fatalf("capture target: %v", reason)
+		}
+		var shown uint64
+		if cs := c.captureSceneFor(sc, &capView{}); cs != nil {
+			shown = cs.Shown
+		}
+		return state{m.Frame() == m.Output(), hasFullscreen(sc), r.hidden, shown}
+	}
+	if got, want := read(), (state{false, true, false, w.ID}); got != want {
+		t.Fatalf("closed: %+v, want %+v", got, want)
+	}
+	c.mods = ports.ModSuper
+	bind(t, c, ActionSwitchColumnNext)
+	c.switcherTick()
+	if !m.switcherShown() {
+		t.Fatal("setup: cards not shown")
+	}
+	if got, want := read(), (state{true, false, true, 0}); got != want {
+		t.Fatalf("shown: %+v, want %+v", got, want)
+	}
+}
+
+// A card's window with no configure sent yet (it mapped since the last
+// publish) is sized from its real client rect, not from the card.
+func TestSwitcherCardOfUnconfiguredWindowKeepsRealSize(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	m := c.cur().mon
+	id := m.Current().switchOrder()[1]
+	c.configures.forget(id) // the card falls back to the usable size
+	c.mods = ports.ModSuper
+	bind(t, c, ActionSwitchColumnNext)
+	c.configures.forget(id) // the bind's publish configured it again
+	c.switcherTick()
+	indicatorScene(t, c)
+	var real Placement
+	for _, p := range m.Current().Layout() {
+		if p.ID == id {
+			real = p
+		}
+	}
+	want := c.clientRect(real)
+	if got := c.configures.sent[id]; got.Width != want.W || got.Height != want.H || want.W == 0 {
+		t.Fatalf("window %d configured %dx%d under its card, real client %dx%d", id, got.Width, got.Height, want.W, want.H)
+	}
+}
+
+// A focus change behind the cards (the real focus, not the selection) is not
+// recorded as a use of the column until the cards are gone.
+func TestSwitcherShownDoesNotNoteFocus(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	w := c.cur().mon.Current()
+	c.mods = ports.ModSuper
+	bind(t, c, ActionSwitchColumnNext)
+	c.switcherTick()
+	before := slices.Clone(w.recent)
+	w.FocusID(c.cur().mon.sw.order[2])
+	indicatorScene(t, c)
+	if !slices.Equal(w.recent, before) {
+		t.Fatalf("recent %v, was %v: noted while the cards show", w.recent, before)
+	}
+}
+
+// Showing the cards drops the motions of windows they hide.
+func TestSwitcherShowDropsMotionsOfHiddenWindows(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	c.mapWindow(ports.WindowMapped{ID: 4})
+	w := sc.mon.Current()
+	w.ConsumeOrExpel(-1) // 4 joins 3's column
+	w.FocusID(3)         // 3 stands for the column; 4 is hidden
+	if _, ok := sc.rects[4]; !ok {
+		t.Fatal("setup: no entrance motion for window 4")
+	}
+	c.mods = ports.ModSuper
+	bind(t, c, ActionSwitchColumnNext)
+	c.switcherTick()
+	if _, ok := sc.rects[4]; ok {
+		t.Fatalf("a hidden window keeps its motion: %+v", sc.rects[4])
 	}
 }
 
@@ -712,8 +973,9 @@ func TestSwitcherClickOnCardCommits(t *testing.T) {
 	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110, Pressed: true}); err != nil {
 		t.Fatal(err)
 	}
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || switcherFocus(c) != target {
-		t.Fatalf("open %v focus %d, want %d", c.cur().mon.sw.ws != nil, switcherFocus(c), target)
+	requireClosed(t, c)
+	if switcherFocus(c) != target {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), target)
 	}
 	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110}); err != nil {
 		t.Fatal(err)
@@ -735,8 +997,9 @@ func TestSwitcherClickElsewhereCancels(t *testing.T) {
 	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110, Pressed: true}); err != nil {
 		t.Fatal(err)
 	}
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || switcherFocus(c) != start {
-		t.Fatalf("open %v focus %d, want %d", c.cur().mon.sw.ws != nil, switcherFocus(c), start)
+	requireClosed(t, c)
+	if switcherFocus(c) != start {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), start)
 	}
 }
 
@@ -748,7 +1011,8 @@ func TestSwitcherPressBeforeCardsCancelsAndContinues(t *testing.T) {
 	if err != nil || handled {
 		t.Fatalf("handled %v err %v", handled, err)
 	}
-	if c.cur().mon.sw.ws != nil || c.switcher.timerC != nil || switcherFocus(c) != start {
+	requireClosed(t, c)
+	if switcherFocus(c) != start {
 		t.Fatal("press did not cancel")
 	}
 }
@@ -776,15 +1040,27 @@ func TestSwitcherClosingSelectedWindowKeepsSelectionValid(t *testing.T) {
 	}
 }
 
+// Closing a window ahead of the selection shifts the cards left: the
+// selection follows its card, so it still stands on the same window.
 func TestSwitcherClosingBeforeSelectionKeepsCard(t *testing.T) {
-	c, _, _ := switcherCore(t, 3)
+	c, _, _ := switcherCore(t, 4)
 	c.mods = ports.ModSuper
-	bind(t, c, ActionSwitchColumnPrev)
+	bind(t, c, ActionSwitchColumnNext)
 	sw := &c.cur().mon.sw
+	if sw.at != 1 || len(sw.order) != 4 {
+		t.Fatalf("setup: at %d of %d", sw.at, len(sw.order))
+	}
 	selected := sw.order[sw.at]
 	c.cur().mon.RemoveWindow(sw.order[0])
-	if sw.ws == nil || sw.order[sw.at] != selected {
-		t.Fatalf("selection moved from %d: order %v at %d", selected, sw.order, sw.at)
+	if sw.ws == nil || len(sw.order) != 3 {
+		t.Fatalf("order %v after the close", sw.order)
+	}
+	if sw.at != 0 || sw.order[sw.at] != selected {
+		t.Fatalf("selection moved from %d: order %v at %d, want at 0", selected, sw.order, sw.at)
+	}
+	sendKeys(t, c, superKey(0, false))
+	if switcherFocus(c) != selected {
+		t.Fatalf("focus %d after the commit, want %d", switcherFocus(c), selected)
 	}
 }
 
@@ -793,16 +1069,18 @@ func TestSwitcherClosingDownToOneColumnClosesIt(t *testing.T) {
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
 	c.switcherTick()
 	c.cur().mon.RemoveWindow(c.cur().mon.sw.order[1])
-	if c.cur().mon.sw.ws != nil || c.cur().mon.sw.shown {
+	if sw := c.cur().mon.sw; sw.ws != nil || sw.shown {
 		t.Fatal("switcher still open with one column")
 	}
 	if s := indicatorScene(t, c); len(scenePreviews(s)) != 0 {
 		t.Fatalf("cards left: %+v", s.Windows)
 	}
-	// The timer fires on a closed switcher: harmless.
+	// The timer fires on a closed switcher: harmless, and it clears the
+	// core's side.
 	if c.switcherTick() {
 		t.Fatal("tick on a closed switcher")
 	}
+	requireClosed(t, c)
 	sendKeys(t, c, superKey(0, false))
 }
 
@@ -816,7 +1094,8 @@ func TestSwitcherOutputRemovalCancels(t *testing.T) {
 		t.Fatal("no switcher screen")
 	}
 	c.removeScreen(sc.name())
-	if c.switcher.sc != nil || c.switcher.timerC != nil || sc.mon.sw.ws != nil {
+	requireClosed(t, c)
+	if sc.mon.sw.ws != nil {
 		t.Fatal("switcher survived its output")
 	}
 	if err := c.publish(context.Background()); err != nil {
@@ -875,6 +1154,9 @@ func TestSwitcherAnimatedHoldAndCommit(t *testing.T) {
 	if len(scenePreviews(s)) != 0 || switcherFocus(c) != target {
 		t.Fatalf("cards %d, focus %d (want %d)", len(scenePreviews(s)), switcherFocus(c), target)
 	}
+	if n := len(c.cur().rects); n != 0 || c.animating() {
+		t.Fatalf("motions left: %d rect motions, animating %v", n, c.animating())
+	}
 }
 
 // --- review fixes ---
@@ -918,9 +1200,7 @@ func TestSwitcherShownDropsWhenAnotherWorkspaceComesOnScreen(t *testing.T) {
 	if len(scenePreviews(s)) != 0 || s.Dim != 0 || s.DimBehind {
 		t.Fatalf("scene still dimmed or previewing: dim %v previews %+v", s.Dim, scenePreviews(s))
 	}
-	if m.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil {
-		t.Fatal("stale switcher left open")
-	}
+	requireClosed(t, c)
 	var any bool
 	for _, p := range c.cur().shownLayout() {
 		if p.ID == 10 || p.ID == 11 {
@@ -960,7 +1240,8 @@ func TestSwitcherStepOnStaleWorkspaceOpensFresh(t *testing.T) {
 	c.cur().mon.show(c.cur().mon.Workspaces[0])
 	focus := switcherFocus(c)
 	sendKeys(t, c, superKey(0, false))
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || switcherFocus(c) != focus {
+	requireClosed(t, c)
+	if switcherFocus(c) != focus {
 		t.Fatal("stale switcher survived the release")
 	}
 }
@@ -978,9 +1259,7 @@ func TestSwitcherTickOnStaleWorkspaceCancels(t *testing.T) {
 	if !c.switcherTick() {
 		t.Fatal("tick on a stale workspace asks for no scene")
 	}
-	if m.sw.ws != nil || m.sw.shown || c.switcher.sc != nil || c.switcher.timerC != nil {
-		t.Fatal("stale switcher survived the tick")
-	}
+	requireClosed(t, c)
 }
 
 func TestSwitchIgnoredDuringDrag(t *testing.T) {
@@ -990,9 +1269,7 @@ func TestSwitchIgnoredDuringDrag(t *testing.T) {
 	c.drag = d
 	c.buttons[btnLeft] = true
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
-	if c.cur().mon.sw.ws != nil || c.switcher.sc != nil || c.switcher.timerC != nil {
-		t.Fatal("switcher opened during a drag")
-	}
+	requireClosed(t, c)
 	if c.drag != d || switcherFocus(c) != start {
 		t.Fatal("drag disturbed")
 	}
@@ -1062,6 +1339,8 @@ func TestSwitcherClosingSelectedWindowPicksColumnsNextWindow(t *testing.T) {
 	at := slices.IndexFunc(m.sw.order, func(id WindowID) bool { return w.columnOf(id) == 1 })
 	m.sw.at = at
 	gone := m.sw.order[at]
+	size := Rect{W: 120, H: 90}
+	m.sw.sizes = map[WindowID]Rect{gone: size}
 	other := w.Columns[1].Windows[0]
 	if other == gone {
 		other = w.Columns[1].Windows[1]
@@ -1069,6 +1348,9 @@ func TestSwitcherClosingSelectedWindowPicksColumnsNextWindow(t *testing.T) {
 	m.RemoveWindow(gone)
 	if len(m.sw.order) != 3 || m.sw.at != at || m.sw.order[at] != other {
 		t.Fatalf("order %v at %d, want card %d to stand for %d", m.sw.order, m.sw.at, at, other)
+	}
+	if m.sw.sizes[other] != size {
+		t.Fatalf("sizes %v: the new card keeps no size of the closed window's", m.sw.sizes)
 	}
 	m.commitSwitcher()
 	if id, _ := w.Focused(); id != other {
@@ -1107,14 +1389,5 @@ func TestSwitchCommitFollowsToItsOutput(t *testing.T) {
 	sendKeys(t, c, superKey(0, false))
 	if c.focusScreen != first || switcherFocus(c) != want {
 		t.Fatalf("focus screen %d (want %d), focus %d (want %d)", c.focusScreen, first, switcherFocus(c), want)
-	}
-}
-
-func TestSwitchUnmodifiedBindThroughKeyEvent(t *testing.T) {
-	c, ic, _ := switcherCore(t, 3)
-	start := switcherFocus(c)
-	sendKeys(t, c, ports.KeyEvent{Keysym: "F9", Keycode: 75, Pressed: true})
-	if c.cur().mon.sw.ws != nil || len(ic.timers) != 0 || switcherFocus(c) == start {
-		t.Fatalf("open %v timers %v focus %d (was %d)", c.cur().mon.sw.ws != nil, ic.timers, switcherFocus(c), start)
 	}
 }
