@@ -149,8 +149,8 @@ type Core struct {
 	pulse focusPulse
 }
 
-// sentCache is what core last sent on its latest-only channels; an
-// unchanged value is not sent again.
+// sentCache is what core last sent to wayland and on its latest-only
+// channels; an unchanged value is not sent again.
 type sentCache struct {
 	outputs    ports.SetOutputs
 	state      ports.State

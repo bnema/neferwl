@@ -323,10 +323,7 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 			return err
 		}
 	}
-	if err := c.publish(ctx); err != nil {
-		return err
-	}
-	return nil
+	return c.publish(ctx)
 }
 
 // scaleBind steps the focused output's scale and asks for it to be saved.
@@ -346,8 +343,5 @@ func (c *Core) scaleBind(ctx context.Context, action Action) error {
 		default:
 		}
 	}
-	if err := c.publish(ctx); err != nil {
-		return err
-	}
-	return nil
+	return c.publish(ctx)
 }
