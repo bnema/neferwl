@@ -51,7 +51,7 @@ type viewShot struct {
 	list []*Workspace
 	pos  float64
 	ok   bool
-	// rects are the windows the screen drew (cards in the overview),
+	// rects are the windows the screen drew (the cards in a preview),
 	// hidden windows left out. The slice is reused like list.
 	rects []rectShot
 	// stash holds the settled placements of the stash windows the screen
@@ -71,7 +71,7 @@ type rectShot struct {
 	rect     Rect
 	off, vel rectOffsets
 	// fade and fadeV are the fade offset of a running fade motion and its
-	// speed, so an overview toggle carries it over (transitionOverview).
+	// speed, so a preview toggle carries it over (transitionOverview).
 	fade, fadeV float64
 	// dim and dimV are the dim offset of a running dim motion and its
 	// speed; veil is the veil the window's settled placement drew
@@ -92,7 +92,7 @@ type rectShot struct {
 // The walk shrinks content toward the content rect's top-left, so this
 // suits aspect-preserving changes: the zoom follows the smaller of the width
 // and height ratios, so content never exceeds its frame when the aspect
-// differs a little (rounding) or a lot (the frame is then letterboxed). An overview card's settled zoom is
+// differs a little (rounding) or a lot (the frame is then letterboxed). A card's settled zoom is
 // its Preview: a window that opens into a card goes from 1 to Preview with
 // its width, and back.
 //
@@ -228,7 +228,7 @@ func (c *Core) retargetWith(m *motion, cur *float64, s spring, now time.Time) {
 // refreshShown builds the layouts of every screen once per publish: the
 // settled one (what configures are sized from) and the shown one (the same
 // with the rect motions applied: what is drawn and hit-tested). Rect motions
-// belong to the workspace they began on, or to the open overview (rectsOwner):
+// belong to the workspace they began on, or to the open preview (the overview or the switcher's cards, rectsOwner):
 // any other change drops them.
 //
 // Leaving motions add an entry for a window the layout no longer shows:
@@ -623,7 +623,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		w := m.Current()
 		s.ws, s.preview = w, m.previewing()
 		if !m.previewing() {
-			// The overview does not scroll or slide: no camera.
+			// A preview (the overview or the switcher's cards) does not scroll or slide: no camera.
 			s.settledView, s.view = w.View, float64(w.View)+w.view.off
 			s.switchAxis = w.policy().workspace
 			if m.switchView.busy() {
@@ -642,7 +642,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 		}
 		// settledLayout and shown are index-aligned and differ only by
 		// the offsets of sc.rects: the shot keeps both unrounded. The
-		// overview's cards are recorded like windows.
+		// cards of a preview are recorded like windows.
 		for _, p := range sc.settledLayout {
 			if p.Hidden {
 				continue
@@ -687,7 +687,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 // transition starts the springs that take each screen from what before
 // showed to what the action left, at now. It does nothing with animations
 // off, or while a swipe follows the fingers on that screen. Per-window rect
-// motions join the camera here; with the overview open before or after
+// motions join the camera here; with a preview open before or after
 // there is no camera, only the cards' (transitionOverview).
 //
 // A workspace moved to another monitor (move-workspace-to-monitor-*, or a

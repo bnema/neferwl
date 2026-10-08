@@ -247,11 +247,10 @@ func TestPublishOverviewAllocations(t *testing.T) {
 			})
 		}
 	}
-	// The column switcher's settled cards are previews too: a held switch
-	// shows them, and a publish while they stay costs a plain frame.
+	// The column switcher's cards are previews too: a held switch shows
+	// them, and a publish while their motions run costs a plain frame.
 	t.Run("switcher", func(t *testing.T) {
 		c := publishRig(t, 1)
-		c.cfg.Animations.Slowdown = 1 // settle fast: only the settled frame is measured
 		c.cmdMod = ports.ModSuper
 		c.mods = ports.ModSuper
 		sc := c.cur()
@@ -266,14 +265,10 @@ func TestPublishOverviewAllocations(t *testing.T) {
 		if !c.switching() || !c.switcherTick() || !m.switcherShown() {
 			t.Fatalf("setup: switching %v, shown %v", c.switching(), m.switcherShown())
 		}
-		// Let the card motions settle (the rig slows every spring).
+		// The rig slows every spring: the card motions run for the whole measure.
 		step := publishStep(t, c, nil)
 		step()
-		for start := time.Now(); c.animating() && time.Since(start) < 30*time.Second; {
-			time.Sleep(50 * time.Millisecond)
-			step()
-		}
-		if c.animating() || len(sc.rects) != 0 || len(c.overviewReal) == 0 {
+		if len(sc.rects) == 0 || !c.animating() || len(c.overviewReal) == 0 {
 			t.Fatalf("setup: %d rect motions, animating %v, real layouts %d", len(sc.rects), c.animating(), len(c.overviewReal))
 		}
 		publish := func() {
@@ -288,6 +283,9 @@ func TestPublishOverviewAllocations(t *testing.T) {
 		}
 		n := testing.AllocsPerRun(50, publish)
 		t.Logf("switcher allocs per publish = %v", n)
+		if len(sc.rects) == 0 {
+			t.Fatal("card motions settled during the measure")
+		}
 		if n > publishAllocBudget {
 			t.Errorf("switcher publish allocs per frame = %v, budget %d", n, publishAllocBudget)
 		}

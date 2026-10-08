@@ -144,12 +144,12 @@ func TestMRUNoteFocusDoesNotAllocateWhenSettled(t *testing.T) {
 	}
 	n := len(w.recent)
 	col := w.Columns[w.Focus]
+	if len(col.Windows) < 2 {
+		t.Fatalf("setup: column %v has one window", col.Windows)
+	}
 	other := col.Windows[0]
 	if other == 2 {
 		other = col.Windows[1]
-	}
-	if len(col.Windows) < 2 {
-		t.Fatalf("setup: column %v has one window", col.Windows)
 	}
 	w.FocusID(other)
 	if got := testing.AllocsPerRun(100, w.noteFocus); got != 0 {
@@ -925,6 +925,9 @@ func TestSwitcherShowDropsMotionsOfHiddenWindows(t *testing.T) {
 	}
 	c.mods = ports.ModSuper
 	bind(t, c, ActionSwitchColumnNext)
+	if _, ok := sc.rects[4]; !ok {
+		t.Fatal("setup: motion dropped by the bind")
+	}
 	c.switcherTick()
 	if _, ok := sc.rects[4]; ok {
 		t.Fatalf("a hidden window keeps its motion: %+v", sc.rects[4])
@@ -985,6 +988,61 @@ func TestSwitcherClickOnCardCommits(t *testing.T) {
 			t.Fatalf("click reached a client: %+v", v)
 		}
 	}
+}
+
+// A click lands on a card where it is drawn, while its motion still runs.
+func TestSwitcherClickOnMovingCardCommits(t *testing.T) {
+	c, ic, _ := switcherCore(t, 3)
+	c.cfg.Animations.On = true
+	sc := c.cur()
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	c.switcherTick()
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(16 * time.Millisecond)
+	if err := c.step(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	lastScene(t, c)
+	target := sc.mon.sw.order[2]
+	if len(sc.rects) == 0 || !c.animating() {
+		t.Fatalf("setup: %d card motions, animating %v", len(sc.rects), c.animating())
+	}
+	var settled, shown Rect
+	for _, p := range sc.settledLayout {
+		if p.ID == target {
+			settled = p.Rect
+		}
+	}
+	for _, p := range sc.shownLayout() {
+		if p.ID == target {
+			shown = p.Rect
+		}
+	}
+	if settled == shown {
+		t.Fatalf("setup: card %d shown at its settled rect %+v", target, shown)
+	}
+	c.cursorX, c.cursorY = cardCenter(t, c, target)
+	if err := c.pointerButton(context.Background(), ports.PointerButton{Button: 0x110, Pressed: true}); err != nil {
+		t.Fatal(err)
+	}
+	requireClosed(t, c)
+	if switcherFocus(c) != target {
+		t.Fatalf("focus %d, want %d", switcherFocus(c), target)
+	}
+}
+
+// Cancelling while the switch is held leaves nothing for the delayed show.
+func TestSwitcherTickAfterCancelDoesNothing(t *testing.T) {
+	c, _, _ := switcherCore(t, 3)
+	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))
+	if !c.switching() {
+		t.Fatal("setup: no switcher open")
+	}
+	c.cancelSwitcher()
+	if c.switcherTick() {
+		t.Fatal("switcherTick reports a switcher after the cancel")
+	}
+	requireClosed(t, c)
 }
 
 func TestSwitcherClickElsewhereCancels(t *testing.T) {

@@ -64,8 +64,8 @@ func (s *screen) settled() bool { return s.mon.settled() && len(s.rects) == 0 }
 func (s *screen) stopRects() { clear(s.rects); s.rectsWS = nil }
 
 // rectsOwner is what the screen's rect motions belong to: its workspace on
-// screen, or nil in a preview (the overview or the column switcher), where
-// the cards change under the windows.
+// screen, or nil in a preview (the overview or the column switcher), where the
+// workspace changes under the cards.
 func (s *screen) rectsOwner() *Workspace {
 	if s.mon.previewing() {
 		return nil
