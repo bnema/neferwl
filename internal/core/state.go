@@ -14,10 +14,10 @@ func (c *Core) publishState() {
 		return
 	}
 	st := c.state()
-	if reflect.DeepEqual(st, c.sentState) {
+	if reflect.DeepEqual(st, c.sent.state) {
 		return
 	}
-	c.sentState = st
+	c.sent.state = st
 	latest(c.ch.State, st)
 }
 

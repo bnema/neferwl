@@ -62,7 +62,7 @@ func TestProtectedDropsPrivateOffscreenCaptureAndDesktopEffects(t *testing.T) {
 	c.pointer, c.grab = 10, 10
 	c.keyboard = keyboard{sent: 10}
 	state = ports.SecurityState{Generation: 2}
-	if !c.syncSecurity() || len(c.inputKeys) != 0 || c.grab != 0 || c.keyboard.sent != 0 || len(c.lockSurfaces) != 0 {
+	if !c.syncSecurity() || len(c.inputKeys) != 0 || c.grab != 0 || c.keyboard.sent != 0 || len(c.lock.surfaces) != 0 {
 		t.Fatal("release did not reset input ownership")
 	}
 	for _, ev := range []ports.InputEvent{ports.KeyEvent{Keycode: 30}, ports.PointerButton{Button: 0x110}} {

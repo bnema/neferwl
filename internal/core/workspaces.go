@@ -32,9 +32,9 @@ func (c *Core) publishWorkspaces() {
 		}
 		snapshot.Outputs = append(snapshot.Outputs, out)
 	}
-	if reflect.DeepEqual(snapshot, c.sentWorkspaces) {
+	if reflect.DeepEqual(snapshot, c.sent.workspaces) {
 		return
 	}
-	c.sentWorkspaces = snapshot
+	c.sent.workspaces = snapshot
 	latest(c.ch.Workspaces, snapshot)
 }

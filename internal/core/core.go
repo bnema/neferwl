@@ -76,9 +76,7 @@ type Core struct {
 	// workspace while overviewReal is filled) and by state(); never retained.
 	realBuf         []Placement
 	security        ports.SecurityState
-	lockSurfaces    []ports.LockSurfacePlacement
-	lockFocus       WindowID
-	lockPinned      bool // lockFocus was clicked or typed into: it keeps focus
+	lock            lockState
 	inputKeys       map[string]bool
 	inputActive     bool
 	startup         [][]string
@@ -115,18 +113,15 @@ type Core struct {
 	seq         uint64
 	// layerChanged is set once layer state arrives from wayland.
 	layerChanged bool
-	sentOutputs  ports.SetOutputs
+	sent         sentCache
 	specs        []NamedWorkspace
 	presets      []Width
 	slots        map[slotKey]*slotState
 	placement    spawnPlacement
 	// toSpawn holds slots to start; Run sends them (apply has no context).
 	toSpawn               []slotKey
-	sentPending           bool
 	firstTerminalResolved bool
 	windows               windowRegistry
-	sentState             ports.State
-	sentWorkspaces        ports.Workspaces
 	// popups are the placed xdg_popups; popupOrder stacks them, oldest first.
 	popups     map[WindowID]*popupState
 	popupOrder []WindowID
@@ -152,6 +147,15 @@ type Core struct {
 	capt captureState
 	// pulse marks a window that just got the focus (pulse.go).
 	pulse focusPulse
+}
+
+// sentCache is what core last sent on its latest-only channels; an
+// unchanged value is not sent again.
+type sentCache struct {
+	outputs    ports.SetOutputs
+	state      ports.State
+	workspaces ports.Workspaces
+	pending    bool // spawn placement pending
 }
 
 func keyName(s string) string {
@@ -314,11 +318,11 @@ func (c *Core) apply(cfg ports.Config) error {
 // publishPending tells wayland at once when slots start waiting, before
 // their windows can map.
 func (c *Core) publishPending(ctx context.Context) error {
-	if p := c.placement.anyPending(); p != c.sentPending {
+	if p := c.placement.anyPending(); p != c.sent.pending {
 		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
 			return err
 		}
-		c.sentPending = p
+		c.sent.pending = p
 	}
 	return nil
 }
@@ -835,16 +839,16 @@ func (c *Core) warpPointer(ctx context.Context, v ports.PointerWarp) error {
 // geometry only when the outputs themselves moved.
 func (c *Core) syncOutputs(ctx context.Context) error {
 	v := ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
-	if sameOutputs(v, c.sentOutputs) {
+	if sameOutputs(v, c.sent.outputs) {
 		return nil
 	}
 	if err := c.command(ctx, v); err != nil {
 		return err
 	}
-	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sentOutputs.Outputs) {
+	if c.ch.Layouts != nil && !slices.Equal(v.Outputs, c.sent.outputs.Outputs) {
 		latest(c.ch.Layouts, v.Outputs)
 	}
-	c.sentOutputs = v
+	c.sent.outputs = v
 	return nil
 }
 

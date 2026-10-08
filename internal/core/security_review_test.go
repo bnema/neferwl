@@ -39,7 +39,7 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 		return v
 	})
 	c.opts.Security = gate
-	c.sentOutputs = ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
+	c.sent.outputs = ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
 	commands := make(chan ports.ClientCommand)
 	c.ch.Commands = commands
 	done := make(chan error, 1)
