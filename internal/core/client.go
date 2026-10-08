@@ -66,6 +66,10 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if _, w := c.screenOf(v.ID); w != nil {
 			w.SetDialogParent(v.ID, v.Parent)
 		}
+	case ports.WindowModal:
+		if _, w := c.screenOf(v.ID); w != nil {
+			w.SetModal(v.ID, v.Modal)
+		}
 	case ports.WindowUnmapped:
 		if c.unmapClient(ctx, v) != nil {
 			return false, true

@@ -23,6 +23,9 @@ type WindowMapped struct {
 	// Remap is set when the toplevel mapped before and was unmapped (a tray
 	// app restored): window rules only place its first map.
 	Remap bool
+	// Modal is set for a dialog that blocks its parent (xdg_dialog_v1):
+	// focusing the parent focuses the dialog.
+	Modal bool
 }
 
 // SlotEnv is the environment variable neferwl sets on processes it spawns
@@ -128,6 +131,14 @@ type WindowParent struct {
 }
 
 func (WindowParent) clientEvent() {}
+
+// WindowModal carries a mapped dialog's new modal state (xdg_dialog_v1).
+type WindowModal struct {
+	ID    WindowID
+	Modal bool
+}
+
+func (WindowModal) clientEvent() {}
 
 // WindowResized carries wayland → core the new size of a floating window.
 type WindowResized struct {
