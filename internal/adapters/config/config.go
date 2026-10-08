@@ -531,7 +531,8 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			if err := setRule(&e.rule, field, value); err != nil {
 				warn("%s: %v", key, err)
-				if !errors.Is(err, errUnknownRuleField) {
+				// Like any key, an invalid duplicate keeps the earlier value.
+				if _, dup := seen[key]; !dup && !errors.Is(err, errUnknownRuleField) {
 					e.dropped = true
 				}
 				continue
@@ -1016,7 +1017,8 @@ var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 type ruleEntry struct {
 	rule ports.WindowRule
 	line int // of its first key
-	// dropped is set by an invalid value: the whole rule is ignored.
+	// dropped is set by an invalid value with no valid one before it: the
+	// whole rule is ignored.
 	dropped bool
 }
 

@@ -66,6 +66,9 @@ func TestRuleWarnings(t *testing.T) {
 		{"missing app-id", "rule.a.floating = on\n", "rule.a: no app-id, rule ignored", 1, 0},
 		{"unknown field", "rule.a.app-id = foo\nrule.a.title = x\n", "rule.a.title: unknown key", 2, 1},
 		{"bad floating", "rule.a.app-id = foo\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 2, 0},
+		// An invalid duplicate keeps the earlier value and the rule.
+		{"bad duplicate floating", "rule.a.app-id = foo\nrule.a.floating = on\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 3, 1},
+		{"bad duplicate app-id", "rule.a.app-id = foo\nrule.a.app-id = (\n", "rule.a.app-id: invalid regular expression", 2, 1},
 		{"bad width", "rule.a.app-id = foo\nrule.a.width = wide\n", "rule.a.width: must be a width", 2, 0},
 		{"bad workspace number", "rule.a.app-id = foo\nrule.a.workspace = 0\n", "rule.a.workspace: workspace number", 2, 0},
 		{"bad workspace name", "rule.a.app-id = foo\nrule.a.workspace = a b\n", "rule.a.workspace: must be", 2, 0},

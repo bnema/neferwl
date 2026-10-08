@@ -100,7 +100,7 @@ rule.calc.floating = on
 - A named workspace stays on its own monitor: `monitor` is ignored next to a named `workspace`. A name nobody declared warns and the window opens as usual.
 - A window started for a slot (`workspace.<name>.column.N`) goes to its slot, and a dialog stays over its parent: rules do not apply to them.
 - `width` is ignored under `fixed` and `cascade` overflow, where columns share the width.
-- An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored.
+- An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored. An invalid value that repeats a key already set keeps the earlier value, like any other key.
 
 To find an app ID, look at `app_id` in `neferwl state | jq '.windows[] | {id, app_id}'`, or at the `window mapped` line in the log. X11 apps run through xwayland-satellite get their app ID from `WM_CLASS`; it may be empty, and an app that sets it after opening is not matched.
 
