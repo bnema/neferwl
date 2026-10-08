@@ -3,6 +3,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -326,6 +327,8 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	relKeys := map[string]string{}  // output -> key of its relation
 	offsetLines := map[string]int{} // output -> line of its offset
 	workspaces := map[string]int{}
+	rules := map[string]*ruleEntry{}
+	var ruleOrder []*ruleEntry
 	scanner := bufio.NewScanner(r)
 	for n := 1; scanner.Scan(); n++ {
 		line := strings.TrimSpace(scanner.Text())
@@ -510,6 +513,28 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			}
 			continue
 		}
+		if rest, ok := strings.CutPrefix(key, "rule."); ok {
+			name, field, _ := strings.Cut(rest, ".")
+			if !workspaceName.MatchString(name) {
+				warn("%s: rule name must be letters, digits, - or _", key)
+				continue
+			}
+			e := rules[name]
+			if e == nil {
+				e = &ruleEntry{rule: ports.WindowRule{Name: name}, line: n}
+				rules[name] = e
+				ruleOrder = append(ruleOrder, e)
+			}
+			if err := setRule(&e.rule, field, value); err != nil {
+				warn("%s: %v", key, err)
+				if !errors.Is(err, errUnknownRuleField) {
+					e.dropped = true
+				}
+				continue
+			}
+			override()
+			continue
+		}
 		if err := set(&c, key, value); err != nil {
 			warn("%s: %v", key, err)
 			continue
@@ -526,6 +551,17 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
+	var ruleWarnings []Warning
+	c.Rules, ruleWarnings = finishRules(ruleOrder, c.Workspaces, seen)
+	warnings = append(warnings, ruleWarnings...)
+	if len(c.Rules) > 0 {
+		// Rules merge in file order: moving one is a change.
+		names := make([]string, len(c.Rules))
+		for i, r := range c.Rules {
+			names[i] = r.Name
+		}
+		raw["rules"] = strings.Join(names, ",")
+	}
 	sort.SliceStable(warnings, func(i, j int) bool { return warnings[i].Line < warnings[j].Line })
 	// A user bind on a digit (cmd+1, even "none") replaces the default bound
 	// to the same physical key (cmd+code:2), so older configs keep working.
@@ -971,6 +1007,89 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 }
 
 var workspaceName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// ruleEntry is a rule.<name>.* group while the file is read.
+type ruleEntry struct {
+	rule ports.WindowRule
+	line int // of its first key
+	// dropped is set by an invalid value: the whole rule is ignored.
+	dropped bool
+}
+
+var errUnknownRuleField = errors.New("unknown key (app-id, floating, workspace, monitor, width)")
+
+// setRule applies one rule.<name>.<field> key.
+func setRule(r *ports.WindowRule, field, v string) error {
+	switch field {
+	case "app-id":
+		if v == "" {
+			return fmt.Errorf("needs a regular expression")
+		}
+		// Compiled alone first, so a value cannot close the anchoring
+		// group ("a)|(b").
+		if _, err := regexp.Compile(v); err != nil {
+			return fmt.Errorf("invalid regular expression: %v", err)
+		}
+		// The whole app ID must match: "steam" does not match "steam_app_1".
+		r.AppID = regexp.MustCompile("^(?:" + v + ")$")
+	case "floating":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		r.Floating = &b
+	case "workspace":
+		if n, err := strconv.Atoi(v); err == nil {
+			if n < 1 || n > maxRuleWorkspace {
+				return fmt.Errorf("workspace number must be between 1 and %d", maxRuleWorkspace)
+			}
+		} else if !workspaceName.MatchString(v) {
+			return fmt.Errorf("must be a workspace number or the name of a declared workspace")
+		}
+		r.Workspace = v
+	case "monitor":
+		if v == "" {
+			return fmt.Errorf("needs a connector (DP-2) or a monitor key")
+		}
+		r.Monitor = v
+	case "width":
+		if !width(v) {
+			return fmt.Errorf("must be a width like 50%%, 1/3 or 800px")
+		}
+		r.Width = v
+	default:
+		return errUnknownRuleField
+	}
+	return nil
+}
+
+// maxRuleWorkspace bounds rule.<name>.workspace; core clamps it to the
+// workspaces that exist.
+const maxRuleWorkspace = 1000
+
+// finishRules keeps the valid rules in file order, warning about those
+// without an app-id (dropped) and about named workspaces nobody declared
+// (kept: core falls back to the default place).
+func finishRules(entries []*ruleEntry, workspaces []ports.WorkspaceConfig, seen map[string]int) ([]ports.WindowRule, []Warning) {
+	var rules []ports.WindowRule
+	var warnings []Warning
+	for _, e := range entries {
+		if e.dropped {
+			continue
+		}
+		if e.rule.AppID == nil {
+			warnings = append(warnings, Warning{Line: e.line, Msg: fmt.Sprintf("rule.%s: no app-id, rule ignored", e.rule.Name)})
+			continue
+		}
+		if w := e.rule.Workspace; w != "" {
+			if _, err := strconv.Atoi(w); err != nil && !slices.ContainsFunc(workspaces, func(c ports.WorkspaceConfig) bool { return c.Name == w }) {
+				warnings = append(warnings, Warning{Line: seen["rule."+e.rule.Name+".workspace"], Msg: fmt.Sprintf("rule.%s.workspace: no workspace.%s.* declared", e.rule.Name, w)})
+			}
+		}
+		rules = append(rules, e.rule)
+	}
+	return rules, warnings
+}
 
 // setWorkspace applies one workspace.<name>.<field> key.
 func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
