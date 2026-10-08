@@ -22,9 +22,11 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// windows are going, and alone sizes the configures.
 	layout, settled := sc.shown, sc.settledLayout
 	scene = ports.Scene{Security: c.security, Output: sc.name(), OutputWidth: o.W, OutputHeight: o.H, WorkspaceClip: clip, Scale: sc.scale, Transform: sc.transform, Off: sc.off, Background: c.cfg.Background.Color, Border: ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive}, Windows: make([]ports.SceneWindow, 0, len(layout)+len(c.popupOrder)), Layers: shownLayers(sc)}
+	// Tiles stop at the panels; the overview lays out previews over the
+	// whole output. Panels leaving no room at all hide the tiles: a zero
+	// TileClip would not clip.
+	noTiles := !sc.mon.ov.open && view.usable.W*view.usable.H <= 0
 	if !sc.mon.ov.open && view.usable != view.frame {
-		// Tiles stop at the panels; the overview lays out previews over
-		// the whole output.
 		scene.TileClip = view.usable
 	}
 	var real map[WindowID]Placement
@@ -66,6 +68,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
 		sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
+		if noTiles && sw.Tile() {
+			sw.Hidden = true
+		}
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A
 			// card in flight drawn at its size still needs Zoom 1:
@@ -77,7 +82,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		if p.Leaving {
 			// A window fading out after it closed or hid: drawn, but
 			// hidden to everything else, its configures included.
-			sw.Hidden = false
+			sw.Hidden = noTiles && sw.Tile()
 			scene.Windows = append(scene.Windows, sw)
 			// A window the workspace still holds (a hidden stash
 			// window) keeps its last configure: prune would forget it,

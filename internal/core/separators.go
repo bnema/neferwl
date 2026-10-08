@@ -31,9 +31,9 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 		// A line cannot belong to a scrolled-off window, bleed onto
 		// another output or, for a tile, over a panel, even when a
 		// neighboring tile remains visible.
-		o := v.area(*p)
-		x0, y0 := max(r.X, o.X), max(r.Y, o.Y)
-		x1, y1 := min(r.X+r.W, o.X+o.W), min(r.Y+r.H, o.Y+o.H)
+		a := v.area(*p)
+		x0, y0 := max(r.X, a.X), max(r.Y, a.Y)
+		x1, y1 := min(r.X+r.W, a.X+a.W), min(r.Y+r.H, a.Y+a.H)
 		if x0 >= x1 || y0 >= y1 {
 			return
 		}

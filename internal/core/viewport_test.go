@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -122,6 +123,61 @@ func TestConfigureVisibleCascadeUnderPanel(t *testing.T) {
 	w.FocusID(3)
 	w.ToggleFullscreen()
 	check(map[WindowID]bool{3: true})
+}
+
+// A tile half under a bottom panel: its lines, its pointer bounds (warp,
+// constraints) and its draw all stop at the panel, and the renderer's tile
+// rule matches core's.
+func TestTileStopsAtPanel(t *testing.T) {
+	c, check := viewportCore(t, func(cfg *ports.Config) {
+		cfg.Layout.MaxColumns = 2
+		cfg.Border.Width = 2
+	}, Rect{W: 100, H: 60})
+	m := c.cur().mon
+	m.AddWindow(1)
+	m.AddWindow(3)
+	m.Current().ToggleWindowStash() // 3 floats
+	m.AddWindow(2)
+	m.Current().FocusID(1)
+	scene := check(map[WindowID]bool{1: true, 2: true, 3: true})
+	// Move tile 1 across the panel line, as a slide would.
+	sc := c.cur()
+	sc.shown = slices.Clone(sc.shownLayout())
+	for i := range sc.shown {
+		if sc.shown[i].ID == 1 {
+			sc.shown[i].Rect.Y = 30
+		}
+	}
+	if r, ok := c.shownClientRect(1); !ok || r.Y+r.H > 60 {
+		t.Fatalf("pointer bounds %+v %v reach over the panel", r, ok)
+	}
+	for _, s := range separators(sc.shown, 2, 0, m.viewport(), true) {
+		if s.Window == 0 && s.Rect.Y+s.Rect.H > 60 {
+			t.Fatalf("tile line over the panel: %+v", s)
+		}
+	}
+	view := m.viewport()
+	for k, sw := range scene.Windows {
+		if sw.Popup {
+			continue
+		}
+		if p := sc.settledLayout[k]; sw.Tile() != (view.area(p) == view.usable) {
+			t.Fatalf("window %d: renderer tile %v, core area %+v", sw.ID, sw.Tile(), view.area(p))
+		}
+	}
+}
+
+// Panels that leave no room hide every tile: a zero TileClip would not
+// clip them.
+func TestNoUsableAreaHidesTiles(t *testing.T) {
+	c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{})
+	c.cur().mon.AddWindow(1)
+	scene := check(map[WindowID]bool{1: false})
+	for _, sw := range scene.Windows {
+		if sw.ID == 1 && !sw.Hidden {
+			t.Fatalf("tile drawn with no usable area: %+v", sw)
+		}
+	}
 }
 
 // A column scrolled under a left panel is not seen.
