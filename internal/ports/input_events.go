@@ -98,10 +98,13 @@ type SwipeBegin struct {
 }
 
 // SwipeUpdate moves the fingers by the unaccelerated deltas DX, DY
-// (touchpad units, as libinput reports them, not natural-scroll inverted).
+// (touchpad units, as libinput reports them, not natural-scroll inverted),
+// which the compositor's own swipes follow. AccelDX, AccelDY are the same
+// move with pointer acceleration, what a client gets.
 type SwipeUpdate struct {
-	DX, DY float64
-	Time   time.Duration
+	DX, DY           float64
+	AccelDX, AccelDY float64
+	Time             time.Duration
 }
 
 // SwipeEnd lifts the fingers. Cancelled is set when libinput cancelled
@@ -123,8 +126,8 @@ type PinchBegin struct {
 	Time    time.Duration
 }
 
-// PinchUpdate moves a pinch: the fingers' centre by the unaccelerated
-// deltas DX, DY (touchpad units), Scale is the spread of the fingers
+// PinchUpdate moves a pinch: the fingers' centre by the deltas DX, DY with
+// pointer acceleration, as clients get them, Scale is the spread of the fingers
 // relative to the begin (1.0 there) and Rotation the angle turned since the
 // previous event, in degrees clockwise.
 type PinchUpdate struct {

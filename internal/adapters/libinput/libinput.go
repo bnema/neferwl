@@ -80,6 +80,8 @@ var (
 	gestureCanceled     func(gev uintptr) int32
 	gestureDX           func(gev uintptr) float64
 	gestureDY           func(gev uintptr) float64
+	gestureAccelDX      func(gev uintptr) float64
+	gestureAccelDY      func(gev uintptr) float64
 	gestureUsec         func(gev uintptr) uint64
 	gestureScale        func(gev uintptr) float64
 	gestureAngle        func(gev uintptr) float64
@@ -155,6 +157,8 @@ func load() error {
 		reg(&gestureCanceled, "event_gesture_get_cancelled")
 		reg(&gestureDX, "event_gesture_get_dx_unaccelerated")
 		reg(&gestureDY, "event_gesture_get_dy_unaccelerated")
+		reg(&gestureAccelDX, "event_gesture_get_dx")
+		reg(&gestureAccelDY, "event_gesture_get_dy")
 		reg(&gestureUsec, "event_gesture_get_time_usec")
 		reg(&gestureScale, "event_gesture_get_scale")
 		reg(&gestureAngle, "event_gesture_get_angle_delta")
@@ -517,11 +521,11 @@ func (g *gestures) running(dev uintptr, kind ports.GestureKind) bool {
 	return dev != 0 && g.owner == dev && g.kind == kind
 }
 
-func (g *gestures) swipeUpdate(dev uintptr, dx, dy float64, at time.Duration) ports.InputEvent {
+func (g *gestures) swipeUpdate(dev uintptr, dx, dy, accelDX, accelDY float64, at time.Duration) ports.InputEvent {
 	if !g.running(dev, ports.GestureSwipe) {
 		return nil
 	}
-	return ports.SwipeUpdate{DX: dx, DY: dy, Time: at}
+	return ports.SwipeUpdate{DX: dx, DY: dy, AccelDX: accelDX, AccelDY: accelDY, Time: at}
 }
 
 func (g *gestures) pinchUpdate(dev uintptr, dx, dy, scale, rotation float64, at time.Duration) ports.InputEvent {
@@ -615,10 +619,10 @@ func translateEvent(ev uintptr, opts Options, p *pointer, in *inputState, state 
 		return in.gestures.begin(eventDevice(ev), kind, int(gestureFingers(ge)), usec(gestureUsec(ge))), nil
 	case evSwipeUpdate:
 		ge := gestureEvent(ev)
-		return in.gestures.swipeUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), usec(gestureUsec(ge))), nil
+		return in.gestures.swipeUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), gestureAccelDX(ge), gestureAccelDY(ge), usec(gestureUsec(ge))), nil
 	case evPinchUpdate:
 		ge := gestureEvent(ev)
-		return in.gestures.pinchUpdate(eventDevice(ev), gestureDX(ge), gestureDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), nil
+		return in.gestures.pinchUpdate(eventDevice(ev), gestureAccelDX(ge), gestureAccelDY(ge), gestureScale(ge), gestureAngle(ge), usec(gestureUsec(ge))), nil
 	case evSwipeEnd:
 		ge := gestureEvent(ev)
 		return in.gestures.end(eventDevice(ev), ports.GestureSwipe, gestureCanceled(ge) != 0, usec(gestureUsec(ge))), nil

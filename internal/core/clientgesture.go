@@ -73,6 +73,11 @@ func (c *Core) gestureEnd(ctx context.Context, kind ports.GestureKind, cancelled
 	if g.id == 0 {
 		return nil
 	}
+	if at == 0 {
+		// A removed device's end has no time: the client's clock must
+		// not run backwards.
+		at = g.at
+	}
 	return c.command(ctx, ports.GestureEndTo{ID: g.id, Kind: kind, Cancelled: cancelled || g.id != c.pointer, Time: at})
 }
 

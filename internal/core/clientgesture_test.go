@@ -75,6 +75,20 @@ func TestPinchGoesToPointerFocus(t *testing.T) {
 	}
 }
 
+// A removed touchpad ends its gesture with no time: the client gets the
+// last one, so its clock never runs backwards.
+func TestGestureEndWithoutTime(t *testing.T) {
+	r := gestureRig(t)
+	r.input <- ports.PinchBegin{Fingers: 2, Time: time.Second}
+	r.input <- ports.PinchUpdate{Scale: 1, Time: 2 * time.Second}
+	r.input <- ports.PinchEnd{Cancelled: true}
+	pointerCommand(t, r.commands)
+	pointerCommand(t, r.commands)
+	if v := pointerCommand(t, r.commands); v != (ports.GestureEndTo{ID: 1, Kind: ports.GesturePinch, Cancelled: true, Time: 2 * time.Second}) {
+		t.Fatal(v)
+	}
+}
+
 func TestHoldGoesToPointerFocus(t *testing.T) {
 	r := gestureRig(t)
 	r.input <- ports.HoldBegin{Fingers: 3, Time: time.Second}
@@ -93,11 +107,12 @@ func TestSwipeFingerCounts(t *testing.T) {
 	for _, fingers := range []int{2, 5} {
 		r := gestureRig(t)
 		r.input <- ports.SwipeBegin{Fingers: fingers, Time: time.Second}
-		r.input <- ports.SwipeUpdate{DX: 3, DY: 4, Time: 2 * time.Second}
+		// The client gets the accelerated deltas.
+		r.input <- ports.SwipeUpdate{DX: 3, DY: 4, AccelDX: 6, AccelDY: 8, Time: 2 * time.Second}
 		r.input <- ports.SwipeEnd{Time: 3 * time.Second}
 		for _, want := range []ports.ClientCommand{
 			ports.GestureBeginTo{ID: 1, Kind: ports.GestureSwipe, Fingers: fingers, Time: time.Second},
-			ports.GestureUpdateTo{ID: 1, Kind: ports.GestureSwipe, DX: 3, DY: 4, Time: 2 * time.Second},
+			ports.GestureUpdateTo{ID: 1, Kind: ports.GestureSwipe, DX: 6, DY: 8, Time: 2 * time.Second},
 			ports.GestureEndTo{ID: 1, Kind: ports.GestureSwipe, Time: 3 * time.Second},
 		} {
 			if v := pointerCommand(t, r.commands); v != want {

@@ -38,7 +38,7 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		return nil
 	case ports.SwipeUpdate:
 		if c.gesture.on {
-			return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GestureSwipe, DX: v.DX, DY: v.DY, Time: v.Time})
+			return c.gestureUpdate(ctx, ports.GestureUpdateTo{Kind: ports.GestureSwipe, DX: v.AccelDX, DY: v.AccelDY, Time: v.Time})
 		}
 		before := c.cur().mon.Current()
 		if c.swipeUpdate(v) {

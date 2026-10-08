@@ -49,13 +49,13 @@ func TestGesturesIgnoreSecondTouchpad(t *testing.T) {
 	if ev := g.begin(other, ports.GestureSwipe, 3, time.Second); ev != nil {
 		t.Fatalf("second touchpad began: %v", ev)
 	}
-	if ev := g.swipeUpdate(other, 1, 1, time.Second); ev != nil {
+	if ev := g.swipeUpdate(other, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("second touchpad moved: %v", ev)
 	}
 	if ev := g.end(other, ports.GestureSwipe, false, time.Second); ev != nil {
 		t.Fatalf("second touchpad ended the swipe: %v", ev)
 	}
-	if ev := g.swipeUpdate(pad, 1, 1, 2*time.Second); ev == nil {
+	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, 2*time.Second); ev == nil {
 		t.Fatal("first touchpad lost its swipe")
 	}
 	g.end(pad, ports.GestureSwipe, false, 3*time.Second)
@@ -70,13 +70,13 @@ func TestGesturesStreamSwipe(t *testing.T) {
 	if ev := g.begin(pad, ports.GestureSwipe, 0, time.Second); ev != nil {
 		t.Fatalf("no fingers: %v", ev)
 	}
-	if ev := g.swipeUpdate(pad, 1, 1, time.Second); ev != nil {
+	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("update without a swipe: %v", ev)
 	}
 	if ev := g.begin(pad, ports.GestureSwipe, 3, time.Second); ev != (ports.SwipeBegin{Fingers: 3, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
-	if ev := g.swipeUpdate(pad, -3, 2, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, Time: 2 * time.Second}) {
+	if ev := g.swipeUpdate(pad, -3, 2, -6, 4, 2*time.Second); ev != (ports.SwipeUpdate{DX: -3, DY: 2, AccelDX: -6, AccelDY: 4, Time: 2 * time.Second}) {
 		t.Fatalf("update: %v", ev)
 	}
 	if ev := g.end(other, ports.GestureSwipe, false, 0); ev != nil {
@@ -109,7 +109,7 @@ func TestGesturesStreamPinch(t *testing.T) {
 	if ev := g.begin(pad, ports.GesturePinch, 2, time.Second); ev != (ports.PinchBegin{Fingers: 2, Time: time.Second}) {
 		t.Fatalf("begin: %v", ev)
 	}
-	if ev := g.swipeUpdate(pad, 1, 1, time.Second); ev != nil {
+	if ev := g.swipeUpdate(pad, 1, 1, 1, 1, time.Second); ev != nil {
 		t.Fatalf("swipe update during a pinch: %v", ev)
 	}
 	if ev := g.end(pad, ports.GestureHold, false, time.Second); ev != nil {
