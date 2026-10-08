@@ -61,7 +61,7 @@ arch: adapter-imports
 # Adapters stay independent: production code may import only the shared
 # adapter libraries below. outputkit holds what both output backends (drm,
 # headless) run; the others are leaf helpers.
-ADAPTER_LIBS := outputkit/capture|outputkit/presented|outputkit/surfaces|captureallow|clock|logging|sessionsecurity|syncfile|workspaceid|xkb
+ADAPTER_LIBS := busretry|outputkit/capture|outputkit/presented|outputkit/surfaces|captureallow|clock|logging|sessionsecurity|syncfile|workspaceid|xkb
 adapter-imports:
 	@edges=$$(CGO_ENABLED=0 go list -f '{{$$p := .ImportPath}}{{range .Imports}}{{$$p}} {{.}}{{"\n"}}{{end}}' ./internal/adapters/...) || exit 1; \
 	bad=$$(echo "$$edges" | grep -E ' \S+/internal/adapters/' | grep -vE '/internal/adapters/($(ADAPTER_LIBS))$$' \
