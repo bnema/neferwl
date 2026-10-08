@@ -99,9 +99,9 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 		w.maximize(tc.max)
 		tiles, _, sel := w.previewTiles()
 		g, h, s := w.gap(), w.Usable.H-2*w.gap(), w.bandCardStep()
-		in := 0
+		off := 0
 		if slices.ContainsFunc(tc.cards, func(k int) bool { return k != 0 }) {
-			in = 2 * s
+			off = 2 * s
 		}
 		var order []int
 		for _, p := range tiles {
@@ -110,14 +110,15 @@ func TestOverviewCascadeMaximizedColumnCards(t *testing.T) {
 				order = append(order, i)
 			}
 			band := i / 3
-			want := Rect{X: w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(i), H: h}
+			want := Rect{X: off + w.cellX(i), Y: g + band*w.Usable.H, W: w.cellWidth(i), H: h}
 			switch k := tc.cards[i]; {
 			case i == tc.max:
-				want.X, want.W = g+in, w.Usable.W-2*g-2*in
+				// Full size, as on screen: the workspace's ratio.
+				want.X, want.W = off+g, w.Usable.W-2*g
 			case k < 0:
 				want.X = g + (2+k)*s
 			case k > 0:
-				want.X = w.Usable.W - g - (2-k)*s - want.W
+				want.X = w.Usable.W - g + (2+k)*s - want.W
 			}
 			if p.Hidden || p.Peek != (tc.cards[i] != 0) || p.Focused != (i == tc.max) || p.Rect != want {
 				t.Fatalf("n=%d max=%d column %d: %+v, want rect %+v card %v", tc.n, tc.max, i, p, want, tc.cards[i] != 0)
@@ -206,10 +207,11 @@ func TestOverviewCascadeUnfocusedMaximizedNotInset(t *testing.T) {
 	w.maximize(4)
 	w.Columns[0].FullWidth = true
 	tiles, _, _ := w.previewTiles()
-	g := w.gap()
+	// The row keeps room for the focused column's cards on its left.
+	g, off := w.gap(), 2*w.bandCardStep()
 	p := previewOf(t, tiles, 1)
-	if p.Hidden || p.Rect.X != g || p.Rect.W != w.Usable.W-2*g {
-		t.Fatalf("unfocused maximized column %+v, want X %d W %d", p, g, w.Usable.W-2*g)
+	if p.Hidden || p.Rect.X != off+g || p.Rect.W != w.Usable.W-2*g {
+		t.Fatalf("unfocused maximized column %+v, want X %d W %d", p, off+g, w.Usable.W-2*g)
 	}
 }
 

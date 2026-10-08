@@ -978,7 +978,11 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
+	// off is the room, left of the band, for the cards a maximized
+	// cascade column hides (the same room is kept on its right).
+	off := 0
 	if w.hasBandCards() {
+		off = 2 * w.bandCardStep()
 		// The columns the maximized one hides are cards behind it,
 		// farthest first so the nearest paint over them.
 		first, last := w.laneBounds(w.laneOf(w.Focus))
@@ -998,18 +1002,13 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 				continue // A card, above.
 			}
 			// The band is the lane: it is encoded in Y, one screen apart.
-			// A maximized column fills its band as on screen, inset for
-			// the cards it hides.
-			r.X = w.cellX(i)
+			// A maximized column fills its band as on screen; the cards
+			// it hides peek out on either side, past the band.
+			r.X = off + w.cellX(i)
 			r.Y = g + w.band(i)*w.Usable.H
 			r.W = w.cellWidth(i)
 			if c.FullWidth {
-				in := 0
-				if i == w.Focus && w.hasBandCards() {
-					// Only the focused column has cards behind it.
-					in = 2 * w.bandCardStep()
-				}
-				r.X, r.W = g+in, max(w.Usable.W-2*g-2*in, 0)
+				r.X, r.W = off+g, max(w.Usable.W-2*g, 0)
 			}
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
@@ -1042,7 +1041,7 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		}
 	}
 	if w.policy().wraps && len(w.Columns) > 0 {
-		span = w.Usable.W
+		span = w.Usable.W + 2*off
 	}
 	return tiles, span, sel
 }
@@ -1055,8 +1054,7 @@ func (w *Workspace) bandCardStep() int {
 
 // hasBandCards reports whether the focused column of a cascade is
 // maximized and hides other columns of its band: the overview shows them
-// as cards behind it, the maximized column inset by two card steps on
-// each side.
+// as cards behind it, peeking out up to two card steps on each side.
 func (w *Workspace) hasBandCards() bool {
 	if !w.policy().wraps || w.Focus < 0 || w.Focus >= len(w.Columns) || !w.Columns[w.Focus].FullWidth {
 		return false
@@ -1067,8 +1065,9 @@ func (w *Workspace) hasBandCards() bool {
 
 // appendBandCard appends hidden column i of a cascade band as a dimmed card
 // at its cell size behind the maximized column, on its side: the nearest
-// column one step out from the maximized one, the next ones two steps out
-// (on the band's edge), like the cards of a stack.
+// column one step out from the maximized one, the next ones two steps out,
+// like the cards of a stack. The maximized column keeps its full size two
+// steps right of the row's start (see previewTilesInto).
 func (w *Workspace) appendBandCard(tiles []Placement, i int) []Placement {
 	g, s, c := w.gap(), w.bandCardStep(), w.Columns[i]
 	r := Rect{Y: g + w.band(i)*w.Usable.H, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
@@ -1076,7 +1075,7 @@ func (w *Workspace) appendBandCard(tiles []Placement, i int) []Placement {
 	if i < w.Focus {
 		r.X = g + (2-k)*s
 	} else {
-		r.X = w.Usable.W - g - (2-k)*s - r.W
+		r.X = w.Usable.W - g + (2+k)*s - r.W
 	}
 	w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
 	for j, t := range w.rowBuf {
