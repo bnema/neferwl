@@ -250,6 +250,8 @@ Cascade supports dropping onto tiles, but not gap insertion or edge scrolling du
 | `toggle-floating` | Make the focused tile a [free floating window](#free-floating-windows) at its current size, centred; on a floating window, send it back to its former place in the columns (a native dialog becomes a new column). Does nothing on a stashed or fullscreen window |
 | `toggle-stash-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Over a fullscreen window, shows the stash on top with the focus; the window stays fullscreen behind (composed, so no direct scanout while the stash shows) and is back when the stash hides or the focus leaves it. `toggle-window-stash` or `toggle-fullscreen` on a stashed window there leaves that fullscreen for it. New windows never join or show over it; the fullscreen window's own dialogs show above it |
 | `toggle-overview` | Open the [overview](#overview), or close it on the selected window |
+| `switch-column-next` | Switch to the column used before this one on the workspace. Hold Cmd and press again to go further back; after a short hold a strip of cards shows the columns, most recent first, and releasing Cmd focuses the selected one. Escape cancels; clicking a card picks it. A maximized column hands its maximization to the target. A workspace capture session pauses while the strip shows, as in the overview |
+| `switch-column-prev` | The same, in the opposite direction |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
 | `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In fixed overflow, the neighbor on screen. From a fullscreen window, the neighbor column comes first and fullscreen ends; at the edge it stays |
@@ -348,6 +350,8 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+shift+s` | `toggle-window-stash` |
 | `cmd+shift+space` | `toggle-floating` |
 | `cmd+o` | `toggle-overview` |
+| `cmd+tab` | `switch-column-next` |
+| `cmd+shift+tab` | `switch-column-prev` |
 | `cmd+q` | `close-window` |
 | `ctrl+alt+backspace` | `quit` |
 | `ctrl+cmd+space` | `spawn fuzzel` |
