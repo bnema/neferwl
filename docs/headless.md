@@ -8,6 +8,7 @@ WAYLAND_DISPLAY=<name from the log> foot
 ```
 
 - `/tmp/neferwl-shots/latest.png` shows the current frame, cursor included. A frame that cannot be read back is skipped, never written black.
+- Every frame is also saved as `frame-NNNNNN.png`, so the directory keeps growing. With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
 - `--timeout 5s` stops NeferWL after 5 seconds.
 - While the session is locked, the PNG stops updating and keeps the last unlocked frame. See [Session locking](session-lock.md).
 - The cursor is not drawn on screen. After a layout change, pointer focus updates on the next move.

@@ -9,6 +9,8 @@ NeferWL supports `ext-session-lock-v1` with an external locker such as swaylock 
 - Every running capture session stops and the capture indicator clears. Clients start new sessions after unlock.
 - Keys held during lock or unlock do not reach the desktop afterwards.
 - `Ctrl+Alt+Backspace` and the `--debug=input-keys` log are disabled. VT switching still works.
+- A second locker is refused while the first is alive. Activity can wake outputs but never unlocks.
+- A locker that uses a screenshot as background (hyprlock `screenshot`, swaylock-effects `--screenshots`) must be in the [capture allowlist](capture.md#the-allowlist), and capture is refused once locked.
 
 The locker gets `locked` only once every output really shows a protected frame (or is off), DRM leases are revoked and captures started before the lock have finished. If that cannot be confirmed, `locked` is withheld.
 

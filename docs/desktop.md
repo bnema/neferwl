@@ -80,7 +80,7 @@ External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and c
 
 ## Screen capture
 
-nefercap, `grim`, recorders and screen sharing work out of the box. Every capture shows a red border, and only allowed executables may capture. See [Screen capture](capture.md).
+nefercap, `grim` and screen sharing through `xdg-desktop-portal-wlr` work out of the box. Other recorders must be added to `/etc/neferwl/capture-allow`. Every capture shows a red border. See [Screen capture](capture.md).
 
 ## Idle and screen off
 
@@ -131,7 +131,7 @@ Each workspace has an `id`, the same as `workspace_id` in the [state file](#stat
 
 Only store settings keyed on named workspace IDs.
 
-Taskbars can list, focus, close and fullscreen windows through `zwlr_foreign_toplevel_manager_v1`, and notification daemons such as Dunst can detect fullscreen windows. `ext_foreign_toplevel_list_v1` lists the same windows with an `identifier` (`neferwl-<n>`) that is never reused in a session; portals use it to share single windows. While the session is locked, bars and taskbars get no updates.
+Taskbars can list, focus, close and fullscreen windows through `zwlr_foreign_toplevel_manager_v1`, and notification daemons such as Dunst can detect fullscreen windows. `ext_foreign_toplevel_list_v1` lists the same windows with an `identifier` (`neferwl-<window>-<mapping>`) that is never reused in a session (a window that maps again gets a new one); portals use it to share single windows. While the session is locked, bars and taskbars get no updates.
 
 ## State for scripts
 

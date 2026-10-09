@@ -67,7 +67,7 @@ A full build takes seconds, and tests, race detection, profiling and formatting 
 - **Explicit sync:** client fences go to the GPU and KMS. Enabled by default, with no flag to set.
 - **HDR:** HDR10 on capable displays, with configurable brightness for SDR content.
 - **Multi-monitor:** separate workspaces and fractional scale per output. Workspaces move when a monitor is unplugged and return when it reconnects.
-- **Hidden apps rest:** a window you cannot see, on another workspace or in a hidden stash, is told it is suspended and may draw once per second. Browsers and games stop burning CPU and GPU on frames nobody sees. A window being captured keeps its full rate.
+- **Hidden apps rest:** a window you cannot see (another workspace, a hidden stash, scrolled off screen, under a fullscreen window) gets frame callbacks once per second and the suspended state. Browsers and games stop drawing frames nobody sees. A window being captured keeps its output's refresh rate.
 - **X11 apps:** Steam and other X11 clients run through xwayland-satellite. Wine can run natively on Wayland.
 
 ### Windows and workspaces
