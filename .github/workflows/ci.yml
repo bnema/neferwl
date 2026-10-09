@@ -33,8 +33,7 @@ jobs:
           install -d -m 700 "$XDG_RUNTIME_DIR"
       - run: |
           go install github.com/bnema/hexcheck/cmd/hexcheck@v0.3.1
-          go install github.com/vektra/mockery/v3@v3.8.0
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          cd tools && GOBIN=$HOME/go/bin go install tool
       - run: make check
       - run: make race
       - run: make mocks-check
