@@ -7,45 +7,45 @@ neferwl --backend=headless --screenshot /tmp/neferwl-shots
 WAYLAND_DISPLAY=<name from the log> foot
 ```
 
-Screenshots through `grim` use `zwlr_screencopy_v1` or `ext_image_copy_capture_v1`. Both deliver opaque 8-bit sRGB, including GPU tone mapping of HDR content. Protocol capture requires Vulkan sync-file export; unsupported devices fail the request rather than wait for GPU completion on the output goroutine. The cursor is not included in captures: `overlay_cursor` and `paint_cursors` are ignored. Headless screenshot files include the cursor. If readback is temporarily unavailable, that screenshot frame is skipped without stopping the output or writing a black PNG.
+- `/tmp/neferwl-shots/latest.png` shows the current frame, cursor included. A frame that cannot be read back is skipped, never written black.
+- `--timeout 5s` stops NeferWL after 5 seconds.
+- While the session is locked, the PNG stops updating and keeps the last unlocked frame. See [Session locking](session-lock.md).
+- The cursor is not drawn on screen. After a layout change, pointer focus updates on the next move.
 
-Recording goes through `ext_image_copy_capture_v1`, with optional additions from `neferwl_image_capture_source_manager_v1` (XML in `internal/adapters/wayland/imagecapture/`): `create_workspace_source` (a workspace handle of `ext_workspace_manager_v1`, whether or not the workspace is on screen) and `create_output_region_source` (a rectangle of an output, in logical pixels, clipped). Both give an ordinary `ext_image_capture_source_v1`. A workspace source is the workspace's real layout without bars, not an overview preview; its buffer size follows the workspace frame (new constraints when it changes) and its sessions stop when the workspace is removed. The standard `ext_foreign_toplevel_image_capture_source_manager_v1` turns an `ext_foreign_toplevel_list_v1` handle into a source of that window: its client area and popups, at its own size, rendered off screen wherever the window is (one off-screen target, a window or a hidden workspace, at a time: a session that finds it taken gets no frames until it is free); its buffer size follows the window, and its sessions stop when the window unmaps or closes. A remapped window is a new toplevel with a new identifier; sources made from the old handle are dead. The indicator of a window is the pill on its output, plus its outline while it is on screen. `get_workspace_frame` gives a `neferwl_workspace_frame_v1` that sends the workspace frame (`frame`: x, y, width, height in output-local logical pixels) when created and whenever it changes, since ext-workspace carries no geometry. A region source stops when the output goes away or nothing of the rectangle is left. A workspace that is not on screen uses a separate, demand-driven child renderer and capture pipeline, with its own worker and two staging slots (up to 128 MiB host-visible memory) plus render targets (each image up to 256 MiB, 16384 pixels per side), for one workspace at a time; frames of other sessions on a different hidden workspace are retried while it lasts, then fail (see below). Hidden capture can leave the displayed workspace in direct scanout. Offscreen capture currently requires whole-frame requests matching its exact physical dimensions.
+`grim` and recorders also work here; see [Screen capture](capture.md).
 
-`neferwl_capture_exclusion_manager_v1` leaves a recorder's own HUD out of its frames. The recorder calls `get_exclusion` on its capture session and gets a random token (or `failed`: `busy` when another exclusion is live anywhere in the compositor, `session_stopped`). A HUD, usually on another connection of the same user, attaches up to 4 layer surfaces (top or overlay, not yet mapped, no exclusive keyboard) with the token. They stay visible over fullscreen without keyboard focus; frames of that session omit them and their popups, every other capture (wlr-screencopy included) keeps them. HUD authorization requires the token, a matching socket peer UID, and that the HUD's executable is also allowed to capture (see [Screen capture](capture.md)), never a layer namespace or app-id. The exclusion ends with its session, or when its object is destroyed; its HUD layers that are still listed then stay out of the session's frames (and no longer stay over a fullscreen window) until they are gone, so the HUD never shows in the recorder's frames after the exclusion ended. Output removal and workspace removal stop sessions. An ext-image-copy-capture frame whose target is briefly unavailable (not active yet, its exclusion or indicator not confirmed, the renderer busy) is tried again for up to one second before it fails, so a short hiccup does not end a screencast; a refused client, a stopped session or an error a retry cannot clear (a bad buffer) fails at once. One function of the Wayland adapter (`mayCapture`) decides whether a client may capture, for wlr-screencopy and every ext-image-copy-capture source, and for the attach of a HUD layer to an exclusion; see [Screen capture](capture.md).
+## Input scripts
 
-Every capture is visible on screen, and no client can turn that off. The compositor draws a red border (2 logical pixels, `#ff3b30`, inside the target's edge, above every window and layer) around the target of a capture: an ext-image-copy-capture session that has produced a frame keeps it for as long as the session lives, and every captured frame, from ext-image-copy-capture or wlr-screencopy, keeps it for one second after that frame, so a one-shot screenshot flashes for a second and periodic captures stay lit. The target is the output, the output region, or the workspace frame while the workspace is on screen. A workspace that is not on screen has no place to outline: the output that owns it shows a small red rounded square (12 logical pixels, inset 8 from the top-right corner) while it is captured. Several live captures show together. The indicator is in no captured image: every capture, excluded or not, of the displayed frame or of a workspace rendered off screen, is drawn without it. Core owns the indicator state and its one-second timer; the renderer only draws the marks of the physical output's scene. The indicator is on screen no later than the frame it captures: every capture request is held by its output until the scene it renders shows the mark the request needs (a border covering its region, or the pill for a workspace rendered off screen), and is then served from that very scene, so the indicator is composed in the same frame or an earlier one. A request whose mark does not come (its target vanished, so nothing is left to mark) fails after 250 ms instead of being served without it (an ext-image-copy-capture frame then asks again, until its one-second deadline). While an indicator is shown the output is composed (no direct scanout or overlay plane), and a capture of the displayed frame costs a second composition (the frame without the indicator, drawn first); with no capture live there is no cost.
+`--input <path>`, or `--input -` for stdin, plays one command per line:
 
-Offscreen frame callbacks keep clients running, but no physical presentation feedback is invented for hidden windows. The child renderer and its readback storage retire when unused and idle, are recreated for session or frame-size changes, and close with the output. A capture that leaves out an exclusion's HUD, and any capture while the indicator is shown, can require two compositions to preserve the displayed z-order.
+| Command | Effect |
+|---|---|
+| `type <text>` | Type text |
+| `key Super+Return` | Press a key, with optional Shift, Ctrl, Alt or Super |
+| `sleep 1s` | Wait |
+| `move <x> <y>` | Move the pointer, in output coordinates |
+| `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |
+| `swipe up\|down\|left\|right` | Quick three-finger touchpad flick |
+| `swipe4 up\|down` | Four-finger flick |
 
-`/tmp/neferwl-shots/latest.png` shows the current unlocked frame, including any HUD. During session protection, protocol captures are refused and debug PNG files stop updating; an existing file still contains an earlier unlocked frame. See [Session locking](session-lock.md). `--timeout 5s` stops NeferWL after 5 seconds.
+## Testing input methods
 
-`--input <path>`, or `--input -` for stdin, plays an input script. One command per line:
-
-- `type <text>`
-- `key Super+Return` (Shift, Ctrl and Alt also work, as does a bare key)
-- `sleep 1s`
-- `move <x> <y>` (output coordinates)
-- `click [left|right|middle]`, `down <button>`, `up <button>`
-- `swipe up|down|left|right` (a quick three-finger touchpad flick); `swipe4 up|down` is a four-finger one
-
-`examples/testime` is a minimal input method for testing text input. Each time an app enables a text input, it sends a preedit string, then commits the final text:
+`examples/testime` is a minimal input method. Each time an app enables text input, it sends a preedit string, then commits the final text:
 
 ```sh
 neferwl --backend=headless
 WAYLAND_DISPLAY=<name from the log> go run ./examples/testime -preedit nihon -commit 日本
 ```
 
-`-count <n>` exits after n commits, and `-delay` sets the time between preedit and commit.
-
-The headless backend does not draw the cursor on screen. After a layout change, pointer focus updates on the next move.
+`-count <n>` exits after n commits; `-delay` sets the time between preedit and commit.
 
 ## Colour check
 
-`make color-check` checks that known colours come out right. It needs a GPU and `/dev/udmabuf`, and is not part of `make check` or CI (build tag `colorcheck`, test in `internal/app/colorcheck_test.go`). It runs a headless NeferWL with one 640×360 output, starts `examples/testpattern -fullscreen` as a real client, and compares 5×5 boxes at the centre of each patch of the pattern:
+`make color-check` checks that known colours come out right. It needs a GPU and `/dev/udmabuf`, and is not part of `make check` or CI (build tag `colorcheck`, test in `internal/app/colorcheck_test.go`). It runs a headless 640×360 output with `examples/testpattern -fullscreen` and compares 5×5 boxes at the centre of each patch:
 
-- `TestColorCheckSDR`: an sRGB `wl_shm` client on an SDR output; the bytes of `latest.png` must equal the sRGB values (±1 per channel).
-- `TestColorCheckHDR`: a virtual HDR output (`--headless-hdr`) read back through the raw PQ codes in `latest-pq.png`. An sRGB client must give `PQ(BT.709→BT.2020 · linear · 203 nits)`, and a PQ client (`-mode hdr`: BT.2020, `st2084_pq`, XR30 dmabuf) its own PQ codes. A channel passes within ±0.012 PQ, or, for a channel expected below 0.05 nit, within 0.03 nit of luminance, which absorbs the fp16 residue near black where PQ is very steep (about 0.02 nit measured on a zero channel of a BT.2020 primary on an RX 9070 XT). If the output does not report PQ (virtual HDR fell back to SDR), the test fails.
+- `TestColorCheckSDR`: an sRGB `wl_shm` client on an SDR output. `latest.png` must match the sRGB values within ±1 per channel.
+- `TestColorCheckHDR`: a virtual HDR output (`--headless-hdr`), read back as raw PQ codes in `latest-pq.png`. An sRGB client must give `PQ(BT.709→BT.2020 · linear · 203 nits)`; a PQ client (`-mode hdr`) its own codes. Tolerance is ±0.012 PQ, or 0.03 nit for channels below 0.05 nit, where PQ is very steep. The test fails if the output falls back to SDR.
 
-`--screenshot-raw` is the flag behind it: with `--screenshot` and `--headless-hdr` it also writes `latest-pq.png` next to `latest.png`, a 16-bit PNG holding the 10-bit PQ codes of the exported HDR target (each code scaled to 16 bits, no cursor, no tone mapping). It is a test flag and follows the same session-protection rules as the other screenshot files. It needs an HDR modifier that supports transfer-src (test-only; the DRM path never asks for it).
+`--screenshot-raw`, with `--screenshot` and `--headless-hdr`, also writes `latest-pq.png`: a 16-bit PNG of the 10-bit PQ codes, without cursor or tone mapping. It is a test-only flag.
 
-The check cannot see hardware scanout or the KMS plane colour pipeline. On a real HDR screen, run `WAYLAND_DISPLAY=<name> go run ./examples/testpattern -mode hdr -fullscreen` (or `-mode sdr`) and compare the patches by eye. The client asks for fullscreen 1.2 s after its first commit, because the compositor ignores earlier requests.
+The check cannot see hardware scanout or the KMS colour pipeline. On a real HDR screen, run `WAYLAND_DISPLAY=<name> go run ./examples/testpattern -mode hdr -fullscreen` (or `-mode sdr`) and compare by eye. The client asks for fullscreen 1.2 s after its first commit, because earlier requests are ignored.
