@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -222,7 +221,7 @@ func TestGesturesRefusedWhileLocked(t *testing.T) {
 		output: make(chan ports.OutputEvent, 4), reload: make(chan ports.ConfigChanged, 4),
 		commands: make(chan ports.ClientCommand, 256), scenes: make(chan []ports.Scene, 1),
 	}
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	c, err := core.New(cfg, core.Channels{Client: r.client, Input: r.input, Output: r.output, Config: r.reload, Commands: r.commands, Scenes: r.scenes, Constraints: make(chan ports.PointerConstraint, 1)}, core.Options{Security: gate})
 	if err != nil {
 		t.Fatal(err)

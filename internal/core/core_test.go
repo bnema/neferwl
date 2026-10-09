@@ -9,7 +9,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -187,7 +186,7 @@ func owner(t *testing.T, animated bool) {
 	}
 }
 func TestCancelAndSceneCapacity(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	if _, err := core.New(cfg, core.Channels{Scenes: make(chan []ports.Scene, 2)}, core.Options{}); err == nil {
 		t.Fatal("capacity")
 	}
@@ -205,7 +204,7 @@ func TestCancelAndSceneCapacity(t *testing.T) {
 }
 
 func TestKeyPressState(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	commands := make(chan ports.ClientCommand, 16)
@@ -245,7 +244,7 @@ func TestKeyPressState(t *testing.T) {
 }
 
 func TestBoundReleaseSwallowed(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 2)
 	commands := make(chan ports.ClientCommand, 8)
@@ -272,7 +271,7 @@ func TestBoundReleaseSwallowed(t *testing.T) {
 }
 
 func TestPointerFocusAndGrab(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 8
 	client := make(chan ports.ClientEvent, 8)
@@ -337,7 +336,7 @@ func TestPointerFocusAndGrab(t *testing.T) {
 func TestBorderInset(t *testing.T) { both(t, borderInset) }
 
 func borderInset(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 2
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -387,7 +386,7 @@ func borderInset(t *testing.T, animated bool) {
 }
 
 func TestLayerKeyboardFocus(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -464,7 +463,7 @@ func settledScene(t *testing.T, sc *stepClock, frames chan ports.OutputFrame, sc
 }
 
 func workspaceSwitch(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Animations.On = animated
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -529,7 +528,7 @@ func TestClickAfterWorkspaceSwitchAnimated(t *testing.T) {
 }
 
 func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Animations.On = animated
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -594,7 +593,7 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 }
 
 func TestShiftReleasedFirst(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	input := make(chan ports.InputEvent, 8)
 	client := make(chan ports.ClientEvent, 2)
 	commands := make(chan ports.ClientCommand, 16)
@@ -625,7 +624,7 @@ func TestShiftReleasedFirst(t *testing.T) {
 func TestOutputScale(t *testing.T) { both(t, outputScale) }
 
 func outputScale(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Outputs = []ports.OutputConfig{{Name: "DP-2", Scale: 2}}
 	cfg.Binds["Cmd+equal"] = "scale-up"
@@ -707,7 +706,7 @@ func outputScale(t *testing.T, animated bool) {
 // A pointer warp moves the cursor on the window under it: input takes the
 // position and the window gets the motion. Other windows cannot warp.
 func TestPointerWarp(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 0
 	client := make(chan ports.ClientEvent, 8)
@@ -759,7 +758,7 @@ func TestPointerWarp(t *testing.T) {
 func TestPointerConstraint(t *testing.T) { both(t, pointerConstraint) }
 
 func pointerConstraint(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 0
 	client := make(chan ports.ClientEvent, 8)
@@ -834,7 +833,7 @@ func pointerConstraint(t *testing.T, animated bool) {
 
 // A click outside a grabbing menu chain closes it, the topmost popup first.
 func TestPopupChainDismissOrder(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -883,7 +882,7 @@ func TestPopupChainDismissOrder(t *testing.T) {
 // A dialog opened under a fullscreen window stays hidden and out of reach
 // of the pointer until the window leaves fullscreen.
 func TestFloatOverFullscreenHit(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -926,7 +925,7 @@ func TestFloatOverFullscreenHit(t *testing.T) {
 // A dialog of the fullscreen window (a portal dialog parented through
 // xdg-foreign) shows over it and takes the pointer at once.
 func TestDialogOverFullscreenHit(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -972,7 +971,7 @@ func TestDialogOverFullscreenHit(t *testing.T) {
 func TestFullscreenAtMapIgnored(t *testing.T) { both(t, fullscreenAtMapIgnored) }
 
 func fullscreenAtMapIgnored(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Layout.Overflow = "fixed"
 	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
@@ -1063,7 +1062,7 @@ func TestFixedFullscreenArrivalWaits(t *testing.T) {
 func TestExternalFullscreenAtMapApplies(t *testing.T) { both(t, externalFullscreenAtMapApplies) }
 
 func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -1204,7 +1203,7 @@ func TestRefusedFullscreenConfigured(t *testing.T) {
 
 // An activated window on another workspace comes on screen with focus.
 func TestWindowActivateShowsAndFocuses(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)

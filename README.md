@@ -72,7 +72,8 @@ A full build takes seconds, and tests, race detection, profiling and formatting 
 
 ### Windows and workspaces
 
-- **Column tiling:** scroll horizontally, as in PaperWM and niri, or keep columns on screen in a fixed layout. Choose per output or workspace.
+- **Cascade tiling (default):** an original layout. Columns fill the screen side by side, then continue in a new band below; scroll bands vertically and switch workspaces sideways. See [Cascade](docs/config.md#cascade).
+- **Other layouts:** scroll horizontally, as in PaperWM and niri, or keep columns on screen in a fixed spiral. Choose per output or workspace.
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse.
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace. `cmd+shift+s` moves a window into or out of it.
 - **Workspaces:** numbered workspaces appear as needed. Named workspaces can start commands and place their windows in predefined columns.
@@ -202,7 +203,7 @@ border.inactive = #111111
 floating.dim = 0.3
 layout.gaps = 0
 layout.max-columns = 2
-layout.overflow = scroll
+layout.overflow = cascade
 layout.presets = 1/3, 1/2, 2/3, 1
 stash.width = 80
 stash.gap = 2

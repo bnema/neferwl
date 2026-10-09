@@ -1,9 +1,10 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
 	"math"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 func sizedMonitor(overflow Overflow) *Monitor {

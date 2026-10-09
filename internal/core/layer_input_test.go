@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -23,7 +22,7 @@ func anyOf[T any](T) bool { return true }
 
 // Bars and launchers get the pointer, popups and, on click, the keyboard.
 func TestLayerPointerPopupAndFocus(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -142,7 +141,7 @@ func TestLayerPointerPopupAndFocus(t *testing.T) {
 
 // A window's menu stays with the windows: an overlay layer covers it.
 func TestWindowPopupUnderOverlay(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -179,7 +178,7 @@ func TestWindowPopupUnderOverlay(t *testing.T) {
 // A fullscreen window hides top and bottom layers from the pointer, not
 // overlay; background and bottom layers get it only where no window is.
 func TestLayerHitOrder(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -225,7 +224,7 @@ func TestLayerHitOrder(t *testing.T) {
 // The pointer moving to another output does not take the keyboard from a
 // clicked on-demand layer: keys still reach it.
 func TestLayerFocusAcrossOutputs(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
@@ -273,7 +272,7 @@ func TestLayerFocusAcrossOutputs(t *testing.T) {
 
 // A layer's transparent margin passes pointer focus through to the window.
 func TestLayerInputRegionPassThrough(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 16)
@@ -318,7 +317,7 @@ func TestLayerInputRegionPassThrough(t *testing.T) {
 }
 
 func TestRemovedLayerInputRegionCleared(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 16)
@@ -360,7 +359,7 @@ func TestRemovedLayerInputRegionCleared(t *testing.T) {
 }
 
 func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 16)
@@ -398,7 +397,7 @@ func TestPopupInputRegionPassesThroughToWindow(t *testing.T) {
 // A grabbing popup hidden with its parent under a fullscreen window is
 // closed, and the keyboard goes to the fullscreen window.
 func TestHiddenGrabPopupLosesKeyboard(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -13,7 +12,7 @@ import (
 // altCmdDefaults is the default config with keyboard.cmd = alt. The loader
 // drops binds that use both cmd and alt then; so does this helper.
 func altCmdDefaults() ports.Config {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Keyboard.CmdKey = "alt"
 	for combo := range cfg.Binds {
 		parts := strings.Split(combo, "+")
@@ -27,7 +26,7 @@ func altCmdDefaults() ports.Config {
 
 func TestDefaultBindsAccepted(t *testing.T) {
 	for _, cmd := range []string{"super", "alt"} {
-		cfg := config.Defaults()
+		cfg := scrollDefaults()
 		if cmd == "alt" {
 			cfg = altCmdDefaults()
 		}

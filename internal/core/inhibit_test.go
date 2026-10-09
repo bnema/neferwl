@@ -6,7 +6,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -34,7 +33,7 @@ func commandOf[T ports.ClientCommand](t *testing.T, commands <-chan ports.Client
 func TestShortcutsInhibit(t *testing.T) { synctest.Test(t, shortcutsInhibit) }
 
 func shortcutsInhibit(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 4)
 	commands := make(chan ports.ClientCommand, 64)
@@ -96,7 +95,7 @@ func shortcutsInhibit(t *testing.T) {
 // A key whose press ran a bind before inhibiting began is not released to
 // the window: it never saw the press.
 func TestShortcutsInhibitDropsBoundRelease(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	input := make(chan ports.InputEvent, 4)
 	client := make(chan ports.ClientEvent, 4)
 	commands := make(chan ports.ClientCommand, 64)

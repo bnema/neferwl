@@ -508,18 +508,20 @@ layout.DP-2.color = red
 }
 
 func TestFixedOutputWarnsSlotWidths(t *testing.T) {
-	_, w := parseString(t, `layout.DP-2.overflow = fixed
+	_, w := parseString(t, `layout.overflow = scroll
+layout.DP-2.overflow = fixed
 workspace.dev.monitor = DP-2
 workspace.dev.column.1 = 50%, foot
 workspace.web.column.1 = 50%, foot
 `)
-	if len(w) != 3 || w[1].Line != 3 {
+	if len(w) != 3 || w[1].Line != 4 {
 		t.Fatal(w)
 	}
 }
 
 func TestWorkspaceSlots(t *testing.T) {
-	c, w := parseString(t, `workspace.dev.monitor = DP-2
+	c, w := parseString(t, `layout.overflow = scroll
+workspace.dev.monitor = DP-2
 workspace.dev.column.2 = 33%, foot --title x
 workspace.dev.column.1 = 67%, code --new-window
 workspace.dev.column.2 = 1/3, kitty
@@ -539,7 +541,7 @@ bind.cmd+d = workspace dev
 	for _, x := range w {
 		lines = append(lines, x.Line)
 	}
-	if !reflect.DeepEqual(lines, []int{4, 5, 6, 7}) {
+	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8}) {
 		t.Fatal(w)
 	}
 }

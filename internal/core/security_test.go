@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -24,7 +23,7 @@ func TestSecurityOwnerAdversarialQueues(t *testing.T) {
 	scenes := make(chan []ports.Scene, 1)
 	spawn := make(chan ports.SpawnRequest, 8)
 	constraints := make(chan ports.PointerConstraint, 1)
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Terminal.Command = []string{"terminal"}
 	cfg.Terminal.AutoOpen = "off"
 	cfg.Binds = map[string]string{"Super+q": "quit"}

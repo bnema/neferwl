@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -53,7 +52,7 @@ func startAnimatedDragRig(t *testing.T, edit func(*ports.Config), outs ...ports.
 
 func newDragRig(t *testing.T, animated bool, edit func(*ports.Config), outs ...ports.OutputInfo) *dragRig {
 	t.Helper()
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 10
 	cfg.Terminal.AutoOpen = "off"

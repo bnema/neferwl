@@ -4,20 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 func TestWorkspaceChannelCapacity(t *testing.T) {
-	_, err := core.New(config.Defaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
+	_, err := core.New(scrollDefaults(), core.Channels{Scenes: make(chan []ports.Scene, 1), Workspaces: make(chan ports.Workspaces, 2)}, core.Options{})
 	if err == nil {
 		t.Fatal("expected capacity-1 validation")
 	}
 }
 
 func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Workspaces = append(cfg.Workspaces, ports.WorkspaceConfig{Name: "dev"})
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 8)
@@ -106,7 +105,7 @@ func TestWorkspaceSnapshotsAndActivation(t *testing.T) {
 }
 
 func TestMoveWorkspaceReordersSnapshot(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 16)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)

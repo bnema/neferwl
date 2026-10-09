@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -24,7 +23,7 @@ type captureRig struct {
 // captureCore runs a core with one 100x80 output OUT-1.
 func captureCore(t *testing.T) *captureRig {
 	t.Helper()
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	r := &captureRig{
 		client:     make(chan ports.ClientEvent, 16),
@@ -501,7 +500,7 @@ func TestCaptureExclusionUnmapThenDetach(t *testing.T) {
 // A captured frame shows the indicator for one second on the clock core
 // reads, then the scene goes back without it, whoever asked for the frame.
 func TestCaptureFrameFlashRunsOnTheCoreClock(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Border.Width = 0
 	fire := make(chan time.Time)
 	timer := portsmocks.NewMockTimer(t)
