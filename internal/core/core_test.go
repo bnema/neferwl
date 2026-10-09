@@ -578,6 +578,9 @@ func clickAfterWorkspaceSwitch(t *testing.T, animated bool) {
 	// A click without moving does not reach window 1 nor switch back.
 	input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	input <- ports.PointerButton{Button: 0x110}
+	// Input and client are separate channels: let core handle the click
+	// before window 2 maps under the pointer.
+	synctest.Wait()
 	client <- ports.WindowMapped{ID: 2}
 	s := settledScene(t, sc, frames, scenes, scene(t, scenes), false)
 	if s.Windows[0].ID != 1 || !s.Windows[0].Hidden || s.Windows[1].Hidden {
