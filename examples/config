@@ -37,13 +37,13 @@ border.inactive = #111111
 floating.dim = 0.3
 
 layout.gaps = 0
-# Columns sharing the screen equally before new ones scroll off to the right.
+# Columns sharing the screen equally before the overflow applies.
 # A lone column fills the screen without separators.
 layout.max-columns = 2
-# Past max-columns: scroll opens columns to the right; fixed keeps everything
-# on screen, each new window splitting the newest one (spiral); cascade starts
-# a new band of columns below, scrolling vertically.
-layout.overflow = scroll
+# Past max-columns: cascade starts a new band of columns below, scrolling
+# vertically; scroll opens columns to the right; fixed keeps everything on
+# screen, each new window splitting the newest one (spiral).
+layout.overflow = cascade
 # cycle-column-width steps through these, then back to the equal share.
 layout.presets = 1/3, 1/2, 2/3, 1
 

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
@@ -91,7 +90,7 @@ func TestPersistScalesReportsFailure(t *testing.T) {
 // Scale binds report the new scale of the focused output; a bind at the end
 // of the range changes nothing and reports nothing.
 func TestScaleBindReportsScale(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	scales := make(chan ports.ScaleChanged, 8)

@@ -7,7 +7,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -24,7 +23,7 @@ func powerCoreWith(t *testing.T, opts core.Options) (chan ports.InputEvent, chan
 	output := make(chan ports.OutputEvent, 2)
 	commands := make(chan ports.ClientCommand, 64)
 	scenes := make(chan []ports.Scene, 1)
-	c, err := core.New(config.Defaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)}, opts)
+	c, err := core.New(scrollDefaults(), core.Channels{Input: input, Client: client, Output: output, Commands: commands, Scenes: scenes, Spawn: make(chan ports.SpawnRequest, 4)}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -12,7 +11,7 @@ import (
 // A launcher holding the keyboard over the overview gets its keys; the
 // overview takes them back once it closes.
 func TestOverviewLauncherKeepsKeys(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -65,7 +64,7 @@ func TestOverviewLauncherKeepsKeys(t *testing.T) {
 // a covering float: cmd+k/j round-trips through the columns card, then
 // cmd+up brings it forward, cmd+left selects a column and cmd+down returns.
 func TestOverviewFocusBindsNavigate(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -116,7 +115,7 @@ func TestOverviewFocusBindsNavigate(t *testing.T) {
 
 // Closing through a real bind follows the preview, not the covering float.
 func TestOverviewCloseBindTargetsPreview(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
@@ -188,7 +187,7 @@ func TestFloatOnlyMonitorDirectionalExit(t *testing.T) {
 
 // Three-finger navigation changes selection during movement and resets on lift.
 func TestOverviewThreeFingerNavigation(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	client := make(chan ports.ClientEvent, 8)
 	input := make(chan ports.InputEvent, 8)
 	output := make(chan ports.OutputEvent, 8)

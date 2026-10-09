@@ -168,7 +168,7 @@ func Defaults() ports.Config {
 	c.Border.Inactive = "#111111"
 	c.Layout.MaxColumns = 2
 	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
-	c.Layout.Overflow = "scroll"
+	c.Layout.Overflow = "cascade"
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
 	c.Touchpad.ScrollFactor = 1

@@ -1,8 +1,9 @@
 package core
 
 import (
-	"github.com/bnema/neferwl/internal/ports"
 	"testing"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // A full launcher must not copy the pending command on every unrelated event.

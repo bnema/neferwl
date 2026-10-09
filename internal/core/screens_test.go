@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -620,7 +619,7 @@ func TestPointerFocusesOutput(t *testing.T) {
 
 // The first terminal cannot launch before wayland receives its output layout.
 func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	commands := make(chan ports.ClientCommand)
 	// The launcher handoff is deliberately nonblocking. A ready buffered
 	// queue tests ordering without requiring core to wait for this reader.

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/core"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -421,7 +420,7 @@ func pendingSlotRespawnedOnSecondShow(t *testing.T, r *slotRig) {
 // workspace again refills it.
 // Startup commands are spawned once, before the slots.
 func TestStartupCommands(t *testing.T) {
-	cfg := config.Defaults()
+	cfg := scrollDefaults()
 	cfg.Startup = [][]string{{"wl-paste", "--watch", "cliphist", "store"}, {"waybar"}}
 	spawn := make(chan ports.SpawnRequest, 4)
 	c, err := core.New(cfg, core.Channels{Client: make(chan ports.ClientEvent), Input: make(chan ports.InputEvent), Output: make(chan ports.OutputEvent), Config: make(chan ports.ConfigChanged), Commands: make(chan ports.ClientCommand, 16), Spawn: spawn, Scenes: make(chan []ports.Scene, 1), ConfigErrors: make(chan error, 1)}, core.Options{})
