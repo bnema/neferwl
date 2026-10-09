@@ -1,35 +1,34 @@
 # Session locking
 
-NeferWL supports `ext-session-lock-v1` with an external Wayland locker. The locker owns authentication and requests unlock after it succeeds; NeferWL owns input isolation and output protection. A fullscreen window, layer-shell cover or fade is not a session lock.
+NeferWL supports `ext-session-lock-v1` with an external locker such as swaylock or hyprlock. The locker checks the password; NeferWL blocks input and hides the desktop. A fullscreen window or a layer-shell cover is not a lock.
 
-## Protection
+## While locked
 
-NeferWL accepts one live lock owner. From acceptance, it refuses desktop input, binds, activation, virtual-keyboard injection, input-method grabs, clipboard requests and capture admission. Queued desktop input from an earlier transition is discarded rather than relabelled. Protected scenes contain only an opaque compositor-owned black background and the owner's validated lock surfaces. Direct scanout, overlays, tearing and hardware cursors are disabled while protected.
+- Only the locker gets input. Binds, activation, virtual keyboards, input-method grabs, clipboard requests and new captures are refused.
+- Outputs show only black and the locker's surfaces. Direct scanout, overlays, tearing and hardware cursors are off.
+- Every running capture session stops and the capture indicator clears. Clients start new sessions after unlock.
+- Keys held during lock or unlock do not reach the desktop afterwards.
+- `Ctrl+Alt+Backspace` and the `--debug=input-keys` log are disabled. VT switching still works.
+- A second locker is refused while the first is alive. Activity can wake outputs but never unlocks.
+- A locker that uses a screenshot as background (hyprlock `screenshot`, swaylock-effects `--screenshots`) must be in the [capture allowlist](capture.md#the-allowlist), and capture is refused once locked.
 
-The locker receives `locked` only after every registered output lifetime has affirmative evidence of a protected frame or actual inactivity, the backend has revoked outstanding DRM leases, and admitted prelock captures have finished writing their destination buffers. Queued rendering, a timeout, renderer failure and loss of DRM master are not protection evidence. A lease that cannot be revoked keeps `locked` withheld.
+The locker gets `locked` only once every output really shows a protected frame (or is off), DRM leases are revoked and captures started before the lock have finished. If that cannot be confirmed, `locked` is withheld.
 
-Lock surfaces receive exact logical dimensions through configure/acknowledge. Outputs without a mapped lock surface remain black. An output added during protection starts safe-first; stale frames or proofs from an earlier lock or connector lifetime cannot authorize it. Resume and recovery require fresh output protection rather than replaying a desktop framebuffer.
+## If the locker dies
 
-## Owner failure and unlock
+The session stays locked and outputs stay black. Start a new locker to take over. There is no emergency unlock key and no unlock timeout.
 
-Destroying a lock surface, disconnecting the locker or encountering its protocol error does not unlock. NeferWL keeps protection and falls back to black. A new ordinary locker can take over after the previous owner disappears; a second live owner is refused.
+Only the current locker, after `locked`, can unlock. A locker that exits right after unlocking must do a Wayland roundtrip first; otherwise its exit may count as a crash and keep the session locked.
 
-Only the current owner, after `locked`, may send `unlock_and_destroy`. A locker exiting afterward must perform a Wayland roundtrip before closing its connection. Closing before the server processes unlock can be treated as owner death, which keeps the session protected. Input held across a transition is cleared or quarantined until released, so password-held keys do not enter the desktop after unlock.
+## Limits
 
-Returning activity may wake powered-off outputs but never unlocks. There is no emergency unlock key or timeout-to-unlock. VT switching remains available; `Ctrl+Alt+Backspace` and the `--debug=input-keys` key log are suppressed while protected.
+- NeferWL does not authenticate anything: no PAM, no stored credentials.
+- A process running as your user can start its own locker and unlock. Root, the kernel and other VTs are outside the compositor's control.
+- Clipboard data and window contents a client received before the lock stay with that client.
+- The state file for scripts is not cleared while locked.
+- A stalled GPU or KMS call delays `locked`; lock latency is not guaranteed.
+- If KMS refuses a protected frame, the output stays registered and retries every 50 ms to 2 s. If the driver refuses to turn an output off, its old content can stay lit, and `locked` is withheld.
 
-## Boundaries and limits
+## Testing
 
-- Password/PIN verification belongs to the locker. NeferWL does not implement PAM, store credentials, or authenticate the protocol's owner.
-- A same-user process that controls the session or a legitimate lock owner is outside this isolation boundary. Root, hostile kernel/driver code and another active VT are not isolated by the compositor.
-- Clipboard pipes already handed to clients before acquisition cannot be recalled. Later receive/set requests are denied, including requests on old offer objects. Information a client received before locking cannot be erased from that client.
-- Captures admitted before acquisition may complete; `locked` waits for their copy/FD-write completion even if the requesting protocol object has been destroyed. New captures are denied for every protocol and source: wlr-screencopy, and ext-image-copy-capture of an output, an output region or a workspace, hidden workspaces included. Engaging the lock stops every open ext-image-copy-capture session and its exclusion, and clears the capture indicator; a client asks for a new session after the unlock.
-- The script state file is not a security API and is not scrubbed by locking. Its existing file permissions and same-user access boundary remain unchanged.
-- Native KMS calls and compositor GPU work can stall. Stalls never produce a successful protection acknowledgement; bounded lock latency is not guaranteed. Protected shutdown never restores saved desktop pixels, but disabling an output is best effort if KMS authority is lost.
-- Refused or transient protected KMS commits keep the output registered and dark, and retry with a 50 ms to 2 s backoff. An output stops, and the locker loses it, only when the renderer fails to clear it or no image format at all is accepted. If the driver keeps refusing to disable an output, its previous content can stay lit; `locked` is still withheld.
-
-## Verification
-
-Headless integration tests exercise two outputs, bufferless acquisition, locker input isolation, capture refusal, owner death/takeover and synchronized unlock. Headless inactivity means the software output is off; there is no physical display. Protected headless runs do not update debug PNG files or read back protected content; an existing PNG remains an earlier unlocked image, not a live protected screenshot.
-
-KMS tests use generated mocks to verify detachment, black clearing, fence ordering, failure handling and shutdown. They do not prove physical behavior on every GPU. Multi-monitor hotplug, DPMS, VT/resume and suspend require separately authorized isolated hardware testing before making hardware-specific guarantees.
+Headless tests cover two outputs, input isolation, capture refusal, locker death and takeover, and unlock. KMS behaviour is tested with mocks only; hotplug, DPMS, VT switching and suspend still need testing on real hardware.

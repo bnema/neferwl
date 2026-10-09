@@ -80,7 +80,7 @@ External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and c
 
 ## Screen capture
 
-nefercap, `grim`, recorders and screen sharing use `zwlr_screencopy_v1` and `ext_image_copy_capture_v1`. Every capture shows a red border, only the executables on the built-in list (`grim`, `nefercap`, `xdg-desktop-portal-wlr`) or in `/etc/neferwl/capture-allow`, which replaces it, may capture, and sandboxed clients use the portal. See [Screen capture](capture.md).
+nefercap, `grim` and screen sharing through `xdg-desktop-portal-wlr` work out of the box. Other recorders must be added to `/etc/neferwl/capture-allow`. Every capture shows a red border. See [Screen capture](capture.md).
 
 ## Idle and screen off
 
@@ -120,9 +120,18 @@ The lid switch is not covered: logind still handles it. The locks last as long a
 
 ## Bars
 
-NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars receive workspace updates and can switch workspaces without polling. Every workspace sends an `id`, the same string as its `workspace_id` in the state file. A configured (named) workspace has `name:<configured name>`, stable across launches; renaming it in the config removes its handle and sends a new one. A numbered or dynamic workspace has `<prefix>-<n>`: the prefix is 8 lowercase hex characters drawn once per compositor launch, so the `id` is unique per launch, stable while the workspace exists (across reordering and moves between outputs), and never repeats in the next launch. Numbered workspaces carry an `id` too, so a bar or script can target them during the session, but it is unique for the current launch only: do not store preferences keyed on it across launches. Only named workspaces have an `id` that is stable across launches.
+NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars get workspace updates and can switch workspaces without polling.
 
-NeferWL also supports `zwlr_foreign_toplevel_manager_v1`. Taskbars can list, focus, close and fullscreen windows, and notification daemons such as Dunst can detect fullscreen windows. The read-only `ext_foreign_toplevel_list_v1` lists the same windows with a stable `identifier` (`neferwl-<n>`, never reused in a session); screen-sharing portals use it to offer single windows. While unlocked, clients can see window titles and app IDs. Workspace and window inventory updates are withheld during session protection.
+Each workspace has an `id`, the same as `workspace_id` in the [state file](#state-for-scripts):
+
+| Workspace | `id` | Stable |
+|---|---|---|
+| Named | `name:<configured name>` | Across launches |
+| Numbered | `<prefix>-<n>`, with a random prefix per launch | For the current launch only |
+
+Only store settings keyed on named workspace IDs.
+
+Taskbars can list, focus, close and fullscreen windows through `zwlr_foreign_toplevel_manager_v1`, and notification daemons such as Dunst can detect fullscreen windows. `ext_foreign_toplevel_list_v1` lists the same windows with an `identifier` (`neferwl-<window>-<mapping>`) that is never reused in a session (a window that maps again gets a new one); portals use it to share single windows. While the session is locked, bars and taskbars get no updates.
 
 ## State for scripts
 
