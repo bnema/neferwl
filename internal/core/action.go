@@ -222,6 +222,12 @@ func (c *Core) applyAction(a Action) Effect {
 		// with none (the workspace or stash edge), the move goes to the
 		// neighbor monitor and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
+			// A cascade fullscreen tile at its band edge leaves for the
+			// neighbor monitor, like any tile there, and stays fullscreen.
+			if i := c.neighbor(d); i >= 0 && !w.onFloat() && w.policy().wraps && w.leavesBand(w.Focus+dir) {
+				c.focusScreen = i
+				return Effect{}
+			}
 			if !w.FocusColumn(dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i
@@ -232,7 +238,7 @@ func (c *Core) applyAction(a Action) Effect {
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
-		edge := w.columnToward(dir) < 0 && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
+		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
 		if i := c.neighbor(d); edge && i >= 0 {
 			c.focusScreen = i
 			return Effect{}
@@ -263,15 +269,15 @@ func (c *Core) applyAction(a Action) Effect {
 		c.cur().mon.normalize()
 		return Effect{}
 	case ActionMoveColumnLeft, ActionMoveColumnRight:
-		// Past the edge the column moves to the neighbor screen, on the
-		// side facing this one, and focus follows it.
+		// Past the edge of the workspace or cascade band the column moves to
+		// the neighbor screen, on the side facing this one, and focus
+		// follows it. With no screen there, a cascade column crosses bands.
 		w := c.cur().mon.Current()
-		d := dirRight
+		dir, d := 1, dirRight
 		if a == ActionMoveColumnLeft {
-			d = dirLeft
+			dir, d = -1, dirLeft
 		}
-		edge := (d == dirLeft && w.Focus == 0) || (d == dirRight && w.Focus == len(w.Columns)-1)
-		if i := c.neighbor(d); edge && i >= 0 {
+		if i := c.neighbor(d); w.leavesBand(w.Focus+dir) && i >= 0 {
 			col, ok := w.takeColumn()
 			if !ok {
 				return Effect{}

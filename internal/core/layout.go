@@ -917,6 +917,7 @@ func (w *Workspace) MoveColumn(dir int) {
 
 // MoveWindow moves the focused tile up or down (dir -1/1) inside its
 // column; focus follows it. A slot window leaving row 0 releases the slot.
+// Past the column, a cascade column moves to the adjacent band.
 func (w *Workspace) MoveWindow(dir int) {
 	if w.onFloat() || len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.fullscreenHides() {
 		return
@@ -924,6 +925,7 @@ func (w *Workspace) MoveWindow(dir int) {
 	c := &w.Columns[w.Focus]
 	to := c.Focus + dir
 	if to < 0 || to >= len(c.Windows) {
+		w.moveBand(dir)
 		return
 	}
 	if c.Focus == 0 || to == 0 {
