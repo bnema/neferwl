@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	runtimedebug "runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -89,6 +90,12 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 		return nil, nil, err
 	}
 	pruneRuns(dir)
+	// Queued entries are lost on a fatal crash: the runtime's own report
+	// (panic and every stack) goes to its own file, besides stderr.
+	if crash, err := os.OpenFile(filepath.Join(dir, strings.TrimSuffix(name, ".log")+".crash"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+		_ = runtimedebug.SetCrashOutput(crash, runtimedebug.CrashOptions{})
+		_ = crash.Close() // SetCrashOutput keeps its own duplicate
+	}
 	// Hide Close from the diode: asyncWriter closes the file once.
 	var sink io.Writer = struct{ io.Writer }{file}
 	if term.IsTerminal(int(os.Stderr.Fd())) {
@@ -127,11 +134,14 @@ func (a asyncWriter) Close() error {
 }
 
 func pruneRuns(dir string) {
-	runs, _ := filepath.Glob(filepath.Join(dir, "2*.log"))
-	sort.Strings(runs)
-	for len(runs) > keepRuns {
-		_ = os.Remove(runs[0])
-		runs = runs[1:]
+	// Watchdog stall dumps (stall-<time>-<loop>.txt) rotate like runs.
+	for _, pattern := range []string{"2*.log", "2*.crash", "stall-*.txt"} {
+		runs, _ := filepath.Glob(filepath.Join(dir, pattern))
+		sort.Strings(runs)
+		for len(runs) > keepRuns {
+			_ = os.Remove(runs[0])
+			runs = runs[1:]
+		}
 	}
 }
 
