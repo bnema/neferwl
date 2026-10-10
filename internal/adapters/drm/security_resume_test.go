@@ -58,19 +58,9 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 				waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) == 1 })
 				state.Store(3)
 				wake <- ports.SecurityState{}
-				select {
-				case ev := <-events:
-					if _, ok := ev.(ports.SecurityOutputProof); ok {
-						t.Fatal("master loss forged proof")
-					}
-				case <-time.After(20 * time.Millisecond):
-				}
-				select {
-				case err := <-done:
-					t.Fatalf("resume stopped owner: %v", err)
-				default:
-				}
-				active <- true // only real seat reacquisition permits preparation
+				// The seat reported active before master came back: the owner
+				// retries the protected modeset itself, with no second seat
+				// event. The proof below must follow that successful retry.
 			}
 			for {
 				select {
@@ -78,6 +68,14 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 					if p, ok := ev.(ports.SecurityOutputProof); ok {
 						if p.Proof.Generation != 1 || p.Proof.Instance != 77 {
 							t.Fatalf("proof %+v", p)
+						}
+						if stage == "master-loss" {
+							mu.Lock()
+							n := len(*commits)
+							mu.Unlock()
+							if n < 2 {
+								t.Fatal("master loss forged proof: no successful retry")
+							}
 						}
 						cancel()
 						if err := <-done; err != nil {
