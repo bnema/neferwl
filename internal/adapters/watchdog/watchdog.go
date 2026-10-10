@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"sync"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -31,8 +32,11 @@ type Options struct {
 
 // Run probes each loop probes returns until ctx ends; the set may change
 // between ticks (outputs come and go). On a stall it writes one dump per
-// stall: a loop must answer again before it is dumped again.
+// stall: a loop must answer again before it is dumped again. Every Ping
+// must return once ctx ends: Run waits for the probes in flight.
 func Run(ctx context.Context, probes func() []Probe, o Options) {
+	var inflight sync.WaitGroup
+	defer inflight.Wait()
 	type state struct {
 		answer  chan struct{} // the probe in flight, nil when none
 		since   time.Time
@@ -75,7 +79,7 @@ func Run(ctx context.Context, probes func() []Probe, o Options) {
 				}
 				answer := make(chan struct{})
 				s.answer, s.since = answer, now
-				go func() { p.Ping(); close(answer) }()
+				inflight.Go(func() { p.Ping(); close(answer) })
 			}
 			// A loop that left (an unplugged output) is forgotten; its
 			// probe goroutine ends with the loop's context.

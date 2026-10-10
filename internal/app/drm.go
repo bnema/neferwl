@@ -122,14 +122,14 @@ type drmBackend struct {
 	preparers map[seatDisablePreparer]struct{}
 	// probes are the running output loops the watchdog pings, by
 	// connector, guarded by mu.
-	probes map[string]func(context.Context)
+	probes map[string]func()
 }
 
-func (b *drmBackend) addProbe(name string, ping func(context.Context)) {
+func (b *drmBackend) addProbe(name string, ping func()) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.probes == nil {
-		b.probes = map[string]func(context.Context){}
+		b.probes = map[string]func(){}
 	}
 	b.probes[name] = ping
 }
@@ -141,12 +141,12 @@ func (b *drmBackend) removeProbe(name string) {
 }
 
 // watchdogProbes lists the running output loops for the watchdog.
-func (b *drmBackend) watchdogProbes(ctx context.Context) []watchdog.Probe {
+func (b *drmBackend) watchdogProbes() []watchdog.Probe {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := make([]watchdog.Probe, 0, len(b.probes))
 	for name, ping := range b.probes {
-		out = append(out, watchdog.Probe{Name: "output-" + name, Ping: func() { ping(ctx) }})
+		out = append(out, watchdog.Probe{Name: "output-" + name, Ping: ping})
 	}
 	return out
 }
@@ -520,12 +520,9 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 						defer o.Close()
 						b.addPreparer(o)
 						defer b.removePreparer(o) // before Close: it handles no request any more
-						b.addProbe(name, func(pctx context.Context) {
-							pctx, stop := context.WithCancel(pctx)
-							defer stop()
-							context.AfterFunc(octx, stop) // the probe ends with this output
-							o.Ping(pctx)
-						})
+						// octx derives from the session: the probe ends with this
+						// output or the session.
+						b.addProbe(name, func() { o.Ping(octx) })
 						defer b.removeProbe(name)
 						if realtime {
 							runtime.LockOSThread()

@@ -309,14 +309,14 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			defer workers.Done()
 			watchdog.Run(ctx, func() []watchdog.Probe {
 				probes := []watchdog.Probe{
-					{Name: "wayland", Ping: server.Ping},
+					{Name: "wayland", Ping: func() { server.Ping(ctx) }},
 					{Name: "core", Ping: func() { c.Ping(ctx) }},
 				}
 				if hw != nil {
-					probes = append(probes, hw.watchdogProbes(ctx)...)
+					probes = append(probes, hw.watchdogProbes()...)
 				}
 				return probes
-			}, watchdog.Options{Dir: dir, Every: 500 * time.Millisecond, Timeout: 2 * time.Second, Log: logging.For(ctx, "app")})
+			}, watchdog.Options{Dir: dir, Every: time.Second, Timeout: 3 * time.Second, Log: logging.For(ctx, "app")})
 		}()
 	}
 	go func() {
