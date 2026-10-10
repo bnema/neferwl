@@ -193,8 +193,8 @@ func TestCascadeFullscreenBandEdgeFocusesMonitor(t *testing.T) {
 	if got := c.cur().name(); got != "R" {
 		t.Fatalf("focused screen %q, want R", got)
 	}
-	if w.fullscreen != 3 {
-		t.Fatalf("fullscreen %d, want 3", w.fullscreen)
+	if id, _ := w.Focused(); w.fullscreen != 3 || id != 3 {
+		t.Fatalf("fullscreen %d, focused %d on M, want 3 and 3", w.fullscreen, id)
 	}
 }
 
