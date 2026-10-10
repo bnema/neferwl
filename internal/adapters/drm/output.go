@@ -1119,6 +1119,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	reacquireTimer.Stop()
 	defer reacquireTimer.Stop()
 	var reacquire masterRetry
+	// refuse records an enable refused for lack of DRM master.
+	refuse := func(err error) {
+		if reacquire.refused(err, enabled, time.Now()) {
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Int("attempts", masterRetryLimit).Msg("DRM master not back; output stays off until the next seat change")
+		}
+	}
 	// setActive applies a seat change. skip reports that the loop must
 	// go on without touching the frame state (refused or protected).
 	setActive := func(on bool) (skip bool, err error) {
@@ -1131,11 +1137,12 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					if !o.commitFailed(err, &enabled) {
 						return true, err
 					}
-					reacquire.refused(err, &enabled)
+					refuse(err)
 					return true, nil
 				}
 			}
-			reacquire.done()
+			// With images, the protected modeset runs at the top of the
+			// loop (prepareSecurity): it ends or reschedules the retry.
 			return true, nil
 		}
 		// Modeset on every enable: a fast disable+enable can coalesce to one true.
@@ -1151,7 +1158,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				if !o.commitFailed(err, &enabled) {
 					return true, err
 				}
-				reacquire.refused(err, &enabled)
+				refuse(err)
 				return true, nil // epoch retry or wait disabled for master reacquisition
 			}
 			reacquire.done()
@@ -1186,6 +1193,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				if !o.commitFailed(err, &enabled) {
 					return err
 				}
+				// A lock screen refused for lack of DRM master after a VT
+				// switch is retried like an ordinary enable.
+				refuse(err)
+			} else {
+				reacquire.done()
 			}
 			// Recheck immediately: a takeover during the clear needs its own
 			// transaction, not another scene or wake to make progress.
@@ -1273,7 +1285,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		// An enable refused for lack of DRM master is retried on time.
 		var reacquireDue <-chan time.Time
-		if d, ok := reacquire.next(); ok {
+		if d, ok := reacquire.next(time.Now()); ok {
 			reacquireTimer.Reset(d)
 			reacquireDue = reacquireTimer.C
 		} else {
@@ -1342,7 +1354,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case ack := <-o.seatDisable:
 			o.bypassForSeatDisable()
 			// The seat is about to be disabled: no frame may select the
-			// pipeline again before the next enable (a modeset).
+			// pipeline again before the next enable (a modeset), not even a
+			// retried one.
+			reacquire.done()
 			enabled = false
 			ack <- struct{}{}
 			continue
@@ -1359,7 +1373,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case <-reacquireDue:
 			// The seat reported active before the kernel gave DRM master
 			// back: the enable modeset was refused. Try it again.
-			reacquire.attempts++
+			reacquire.fire()
 			skip, err := setActive(true)
 			if err != nil {
 				return err
