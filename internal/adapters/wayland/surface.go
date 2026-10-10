@@ -371,8 +371,29 @@ func (s *surface) Commit(*wayland.Surface) {
 	s.takeSyncPoints()
 	// Each request creates an ordered content update. A synchronized update
 	// can only be reached through a parent's committed dependency graph.
+	s.queueAndTick()
+}
+
+// queueAndTick queues the commit and applies what is ready. The pacer is
+// woken at most once, after the work, and by a tick on this goroutine
+// rather than by a wake that makes the pacer call Do back.
+func (s *surface) queueAndTick() {
+	srv := s.server
+	srv.paceDepth++
 	s.queueUpdate()
-	s.server.tickFifo(time.Now(), nil)
+	srv.tickFifo(time.Now(), nil)
+	if len(s.queue) > 0 {
+		// The commit waits for a barrier, a fence or a refresh: the pacer
+		// must time it. A commit applied at once needs no tick of its own;
+		// its callbacks, barrier and held buffers wake the pacer where
+		// they are queued.
+		srv.wakePacer()
+	}
+	srv.paceDepth--
+	if srv.paceDepth == 0 && srv.paceDirty {
+		srv.paceDirty = false
+		srv.paceNow()
+	}
 }
 
 // applyCommit makes only the captured update current. Live pending requests

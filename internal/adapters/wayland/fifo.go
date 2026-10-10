@@ -377,7 +377,6 @@ func (s *surface) queueUpdate() {
 	}
 	s.queue = append(s.queue, u)
 	s.server.fifoSurfaces[s] = struct{}{}
-	s.server.wakePacer()
 }
 
 // applyUpdate applies only the captured commit; later requests remain pending.
@@ -745,8 +744,20 @@ func sameBuffer(a, b *wayland.Buffer) bool {
 	return a != nil && b != nil && a.Resource == b.Resource
 }
 
-// wakePacer makes the pacer look at its queues now.
+// wakePacer makes the pacer look at its queues. Display goroutine only.
+// While a commit or a tick runs (paceDepth) it only records the request: the
+// outermost caller then ticks inline (paceNow), saving the round trip of
+// waking the pacer goroutine just so that it calls Do back.
 func (s *Server) wakePacer() {
+	if s.paceDepth > 0 {
+		s.paceDirty = true
+		return
+	}
+	s.signalPacer()
+}
+
+// signalPacer wakes the pacer goroutine; safe from any goroutine.
+func (s *Server) signalPacer() {
 	select {
 	case s.frameReady <- struct{}{}:
 	default:

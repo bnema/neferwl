@@ -151,6 +151,12 @@ type Server struct {
 	frameOwners map[*wayland.Callback]*surface
 	frameDue    map[string]time.Time
 	frameReady  chan struct{}
+	// paceTimer is the pacer's deadline, armed by ticks on the display
+	// goroutine; paceDepth/paceDirty defer wakePacer inside a commit or
+	// tick (display goroutine only).
+	paceTimer *time.Timer
+	paceDepth int
+	paceDirty bool
 	// Pacer scratch: periods is used on the display goroutine, while
 	// flipped and frameReports belong to pace and its synchronous Do call.
 	framePeriods map[string]time.Duration
@@ -369,7 +375,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	var node *renderNode
 	if opts.syncDev != nil {
 		s.syncDev = opts.syncDev
-		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			cleanup()
 			d.Close()
 			return nil, err
@@ -378,7 +384,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		if node, err = openSyncobj(opts.SyncobjNode); err != nil {
 			log.Info().Err(err).Msg("explicit sync off")
 			node = nil
-		} else if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		} else if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			node.close()
 			node = nil
 		} else {
@@ -387,7 +393,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	// Implicit dma-buf fences also need this waiter when explicit sync is off.
 	if s.syncWait == nil {
-		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			cleanup()
 			d.Close()
 			return nil, err
@@ -453,6 +459,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
 	s.started = time.Now()
 	s.ctx = ctx
+	s.paceTimer = time.NewTimer(defaultFramePeriod)
 	var wg sync.WaitGroup
 	wg.Add(15)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()

@@ -52,10 +52,7 @@ func (s *Server) releaseBuffer(surf *surface, b *wayland.Buffer, sync syncHold) 
 	s.contentMu.Unlock()
 	s.held = append(s.held, h)
 	// Wake the pacer: it releases the buffer on the next output report.
-	select {
-	case s.frameReady <- struct{}{}:
-	default:
-	}
+	s.wakePacer()
 }
 
 // release gives a buffer back: its release point is signalled when it

@@ -24,14 +24,26 @@ const defaultFramePeriod = time.Second / 60
 const suspendedFramePeriod = time.Second
 const suspendedFrameQueue = "\x00suspended" // never a wl_output name
 
-// pace fires the due frame callbacks on page flips and deadlines.
+// maxPacePasses bounds the passes one tick repeats while a pass queues
+// more work; the rest goes back to the pacer goroutine.
+const maxPacePasses = 3
+
+// pace sleeps until a flip, a wake or the deadline armed by the last tick,
+// then runs a tick on the display goroutine. The timer is only armed from
+// ticks, which all run there, so a commit that ticks inline (paceNow) never
+// races the pacer for it.
 func (s *Server) pace(ctx context.Context) {
-	timer := time.NewTimer(defaultFramePeriod)
+	if s.paceTimer == nil {
+		s.paceTimer = time.NewTimer(defaultFramePeriod)
+	}
+	timer := s.paceTimer
 	defer timer.Stop()
 	presented := s.channels.Presented
 	if s.flipped == nil {
 		s.flipped = make(map[string]bool)
 	}
+	// One method value for the whole loop: no closure per wake.
+	tick := s.paceFromPacer
 	for {
 		clear(s.flipped)
 		flipped := s.flipped
@@ -61,52 +73,95 @@ func (s *Server) pace(ctx context.Context) {
 			}
 		}
 		s.frameReports = reports
-		wait, idle := defaultFramePeriod, false
-		if !s.display.Do(func() {
-			if ctx.Err() == nil {
-				// Each flip answers its own presentation feedbacks, in
-				// order: flips are never merged here.
-				for _, p := range reports {
-					if p.Flip != nil {
-						s.flips[p.Output] = *p.Flip
-						s.presentFlip(p.Output, p.Flip)
-					}
-				}
-				s.dropFeedbacks(time.Now())
-				if len(s.feedbacks) > 0 {
-					wait = feedbackTimeout
-				}
-				var due []string
-				var dueWait time.Duration
-				due, dueWait, idle = s.dueFrames(time.Now(), flipped)
-				if len(s.feedbacks) > 0 {
-					// Unanswered feedbacks time out: keep ticking.
-					dueWait, idle = min(dueWait, feedbackTimeout), false
-				}
-				wait = dueWait
-				for _, name := range due {
-					s.sendFrames(name, flipped[name])
-				}
-				if s.releaseHeld(time.Now(), reports) && idle {
-					// Held buffers wait for a flip or heldTimeout.
-					wait, idle = heldTimeout, false
-				}
-				// Fifo barriers and queued commits wait for a refresh.
-				if fw, waiting := s.tickFifo(time.Now(), flipped); waiting {
-					wait, idle = min(wait, fw), false
-				}
-			}
-		}) {
+		if !s.display.Do(tick) {
 			return
 		}
-		if idle {
-			// Nothing waits: sleep until a commit queues a callback
-			// (frameReady) or a flip.
-			timer.Stop()
-			continue
-		}
-		timer.Reset(wait)
 	}
+}
+
+// paceFromPacer runs the pacer's collected flips (flipped, frameReports)
+// on the display goroutine.
+func (s *Server) paceFromPacer() { s.paceTick(s.flipped, s.frameReports) }
+
+// paceNow runs a tick from code already on the display goroutine (a client
+// commit): the pacer goroutine would only call Do to get back here. Without
+// a running pacer (no timer) it falls back to waking it.
+func (s *Server) paceNow() {
+	if s.paceTimer == nil {
+		s.signalPacer()
+		return
+	}
+	s.paceTick(nil, nil)
+}
+
+// paceTick answers the flips in reports, fires the due frame callbacks,
+// releases buffers and applies the ready FIFO commits, then arms the timer
+// for the next deadline (stopped when nothing waits). Display goroutine only.
+func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresented) {
+	if s.ctx != nil && s.ctx.Err() != nil {
+		return
+	}
+	wait, idle := defaultFramePeriod, false
+	for pass := 0; ; pass++ {
+		s.paceDirty = false
+		s.paceDepth++
+		wait, idle = s.pacePass(flipped, reports)
+		s.paceDepth--
+		if !s.paceDirty {
+			break
+		}
+		// The pass queued work behind its own checks (applied commits
+		// queue callbacks, released buffers): look again, as a flip-less
+		// tick, instead of waking the pacer for it.
+		flipped, reports = nil, nil
+		if pass+1 == maxPacePasses {
+			s.paceDirty = false
+			s.signalPacer()
+			break
+		}
+	}
+	if s.paceTimer == nil {
+		return
+	}
+	if idle {
+		// Nothing waits: sleep until a commit queues a callback
+		// (wakePacer) or a flip.
+		s.paceTimer.Stop()
+		return
+	}
+	s.paceTimer.Reset(wait)
+}
+
+// pacePass is one pass of paceTick; it returns the time to the next
+// deadline and whether nothing waits.
+func (s *Server) pacePass(flipped map[string]bool, reports []ports.OutputPresented) (wait time.Duration, idle bool) {
+	// Each flip answers its own presentation feedbacks, in order: flips
+	// are never merged here.
+	for _, p := range reports {
+		if p.Flip != nil {
+			s.flips[p.Output] = *p.Flip
+			s.presentFlip(p.Output, p.Flip)
+		}
+	}
+	s.dropFeedbacks(time.Now())
+	var due []string
+	due, wait, idle = s.dueFrames(time.Now(), flipped)
+	if len(s.feedbacks) > 0 {
+		// Unanswered feedbacks time out: keep ticking.
+		wait, idle = min(wait, feedbackTimeout), false
+	}
+	for _, name := range due {
+		s.sendFrames(name, flipped[name])
+	}
+	if s.releaseHeld(time.Now(), reports) && idle {
+		// Held buffers wait for a flip or heldTimeout.
+		wait, idle = heldTimeout, false
+	}
+	// Fifo barriers and queued commits wait for a refresh.
+	if fw, waiting := s.tickFifo(time.Now(), flipped); waiting {
+		wait, idle = min(wait, fw), false
+	}
+	return wait, idle
 }
 
 // toplevelRoot resolves subsurfaces and popups to their parent toplevel.

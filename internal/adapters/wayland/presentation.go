@@ -108,6 +108,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 	for _, fb := range pending {
 		srv.feedbacks = append(srv.feedbacks, feedbackWait{fb: fb, surf: s, win: win, seq: seq, at: time.Now()})
 	}
+	srv.wakePacer() // an unanswered feedback times out: the pacer must keep ticking
 }
 
 func discard(fb *presentationtime.WpPresentationFeedback) {
