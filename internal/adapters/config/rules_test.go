@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"github.com/bnema/kvconf"
 )
 
 func TestRulesInFileOrder(t *testing.T) {
@@ -101,20 +103,20 @@ func TestRuleReloadDiff(t *testing.T) {
 	_, a, _ := parseRaw(t, "rule.a.app-id = foo\nrule.b.app-id = bar\n")
 	_, b, _ := parseRaw(t, "rule.b.app-id = bar\nrule.a.app-id = foo\n")
 	_, c, _ := parseRaw(t, "rule.a.app-id = foo\nrule.b.app-id = bar\nrule.b.floating = on\n")
-	if d := diff(a, b); len(d) == 0 {
+	if d := kvconf.Changed(a, b); len(d) == 0 {
 		t.Fatal("reordering rules is not a change")
 	}
-	if d := diff(a, c); len(d) != 1 || d[0] != "rule.b.floating" {
+	if d := kvconf.Changed(a, c); len(d) != 1 || d[0] != "rule.b.floating" {
 		t.Fatal(d)
 	}
-	if d := diff(a, a); len(d) != 0 {
+	if d := kvconf.Changed(a, a); len(d) != 0 {
 		t.Fatal(d)
 	}
 }
 
 func parseRaw(t *testing.T, s string) (cfg any, raw map[string]string, w []Warning) {
 	t.Helper()
-	c, raw, w, err := parse(strings.NewReader(s))
+	c, raw, w, err := parseBytes([]byte(s))
 	if err != nil {
 		t.Fatal(err)
 	}

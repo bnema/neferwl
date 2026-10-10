@@ -2,10 +2,11 @@
 package config
 
 import (
-	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,7 +17,9 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
+	"github.com/bnema/kvconf"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -222,7 +225,7 @@ func Defaults() ports.Config {
 // LoadDefault loads DefaultPath; a missing file means defaults.
 func LoadDefault() (ports.Config, []Warning, error) {
 	c, w, err := Load(DefaultPath())
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return Defaults(), nil, nil
 	}
 	return c, w, err
@@ -230,12 +233,20 @@ func LoadDefault() (ports.Config, []Warning, error) {
 
 // Load reads a config file. The error is only for I/O; bad lines become warnings.
 func Load(path string) (ports.Config, []Warning, error) {
-	f, err := os.Open(path)
+	c, _, w, err := loadFile(path)
 	if err != nil {
 		return Defaults(), nil, err
 	}
-	defer f.Close()
-	return Parse(f)
+	return c, w, nil
+}
+
+// loadFile reads path without blocking on a FIFO or device, then parses it.
+func loadFile(path string) (ports.Config, map[string]string, []Warning, error) {
+	data, err := kvconf.ReadFile(path, kvconf.Options{MaxBytes: -1})
+	if err != nil {
+		return ports.Config{}, nil, nil, err
+	}
+	return parseBytes(data)
 }
 
 // maxOutputOffset bounds output.<name>.offset (logical px), far beyond any
@@ -317,12 +328,17 @@ func checkOutputAnchors(outputs []ports.OutputConfig, relKeys map[string]string,
 
 // Parse reads `key = value` lines on top of the defaults.
 func Parse(r io.Reader) (ports.Config, []Warning, error) {
-	c, _, w, err := parse(r)
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return Defaults(), nil, err
+	}
+	c, _, w, err := parseBytes(data)
 	return c, w, err
 }
 
-// parse also returns the effective key/value pairs, used to log what changed on reload.
-func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
+// parseBytes also returns the effective key/value pairs, used to log what
+// changed on reload.
+func parseBytes(data []byte) (ports.Config, map[string]string, []Warning, error) {
 	c := Defaults()
 	var warnings []Warning
 	raw := map[string]string{}
@@ -333,20 +349,32 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	workspaces := map[string]int{}
 	rules := map[string]*ruleEntry{}
 	var ruleOrder []*ruleEntry
-	scanner := bufio.NewScanner(r)
-	for n := 1; scanner.Scan(); n++ {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	// An invalid byte (a Latin-1 comment, say) costs a warning, not the
+	// whole file: the rest still applies, like any other bad line.
+	if !utf8.Valid(data) {
+		line := 1
+		for _, l := range bytes.Split(data, []byte("\n")) {
+			if !utf8.Valid(l) {
+				break
+			}
+			line++
 		}
+		data = bytes.ToValidUTF8(data, []byte("\uFFFD"))
+		warnings = append(warnings, Warning{Line: line, Msg: "not valid UTF-8; invalid bytes replaced"})
+	}
+	// kvconf owns the line syntax; the values stay raw (neferwl has no
+	// quoting) and repeated keys are reported below with their own wording.
+	entries, lineWarnings, err := kvconf.ParseBytes(data, kvconf.Options{AllowDuplicates: true, RawValues: true, MaxBytes: -1, MaxLine: -1})
+	if err != nil {
+		return c, raw, nil, err
+	}
+	for _, w := range lineWarnings {
+		warnings = append(warnings, Warning{Line: w.Line, Msg: w.Msg})
+	}
+	for _, e := range entries {
+		n, key, value := e.Line, e.Key, e.Value
 		warn := func(format string, a ...any) {
 			warnings = append(warnings, Warning{Line: n, Msg: fmt.Sprintf(format, a...)})
-		}
-		key, value, ok := strings.Cut(line, "=")
-		key, value = strings.TrimSpace(key), stripComment(strings.TrimSpace(value))
-		if !ok || key == "" {
-			warn("expected key = value")
-			continue
 		}
 		if combo, ok := strings.CutPrefix(key, "bind."); ok {
 			if strings.HasSuffix(combo, "+") && strings.HasPrefix(value, "=") {
@@ -550,9 +578,6 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			continue
 		}
 		override()
-	}
-	if err := scanner.Err(); err != nil {
-		return c, raw, warnings, err
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
@@ -1183,17 +1208,6 @@ func splitList(v string) []string {
 		}
 	}
 	return list
-}
-
-// stripComment drops a trailing ` # comment` from a value. A # that starts the
-// value is kept, so colors like #1e1e2e need no quotes.
-func stripComment(value string) string {
-	for i := 1; i < len(value); i++ {
-		if value[i] == '#' && (value[i-1] == ' ' || value[i-1] == '\t') {
-			return strings.TrimSpace(value[:i])
-		}
-	}
-	return value
 }
 
 func checkAction(v string) error {

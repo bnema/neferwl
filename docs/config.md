@@ -4,7 +4,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 
 ## Format
 
-- One `key = value` per line; `#` starts a comment.
+- One `key = value` per line. A line starting with `#` is a comment, and so is a `#` after a space, unless it is inside a quoted word (`"a # b"`).
 - Lists are comma-separated; booleans are `on` / `off`.
 - A missing file or key means the default. An invalid line logs a warning and keeps that key's default; the rest of the file still applies. A duplicate key warns and the last one wins.
 - Every key applies live when the file is saved; windows stay open. `startup` and `xwayland` take effect at the next start.
