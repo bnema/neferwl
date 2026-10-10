@@ -10,6 +10,7 @@ import (
 	runtimedebug "runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bnema/zerowrap"
@@ -60,8 +61,9 @@ const keepRuns = 20
 // directory at it, prunes old runs of that backend and attaches the logger
 // to ctx. Each backend keeps its own runs: headless test runs never rotate
 // a DRM session's log away.
-// The caller must invoke close after all logging is complete.
-func Open(ctx context.Context, backend, level, debug string) (context.Context, func() error, error) {
+// The caller must invoke close after all logging is complete; crashed
+// keeps the crash file for a panic about to be re-raised.
+func Open(ctx context.Context, backend, level, debug string) (context.Context, func(crashed bool) error, error) {
 	selected, err := ParseDebug(debug)
 	if err != nil {
 		return nil, nil, err
@@ -111,7 +113,12 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
 	ctx = context.WithValue(ctx, dirKey{}, dir)
-	return ctx, w.Close, nil
+	return ctx, func(crashed bool) error {
+		if !crashed {
+			w.Clean()
+		}
+		return w.Close()
+	}, nil
 }
 
 // logQueue is how many entries may wait for the disk. Past it, entries are
@@ -121,28 +128,40 @@ const logQueue = 8192
 
 // newAsyncWriter writes entries to w from its own goroutine. Close drains
 // what is queued, then closes c.
-func newAsyncWriter(w io.Writer, c io.Closer, crashPath string) io.WriteCloser {
+func newAsyncWriter(w io.Writer, c io.Closer, crashPath string) *asyncWriter {
 	d := diode.NewWriter(w, logQueue, 0, func(missed int) {
 		fmt.Fprintf(os.Stderr, "neferwl: %d log entries dropped: disk too slow\n", missed)
 	})
-	return asyncWriter{Writer: d, closer: c, crashPath: crashPath}
+	return &asyncWriter{Writer: d, closer: c, crashPath: crashPath}
 }
 
 type asyncWriter struct {
 	diode.Writer
 	closer    io.Closer
 	crashPath string
+	once      sync.Once
+	err       error
 }
 
-func (a asyncWriter) Close() error {
-	_ = a.Writer.Close() // drains the queue
-	if a.crashPath != "" {
-		_ = runtimedebug.SetCrashOutput(nil, runtimedebug.CrashOptions{})
-		if fi, err := os.Stat(a.crashPath); err == nil && fi.Size() == 0 {
-			_ = os.Remove(a.crashPath)
-		}
+// Close drains the queue and closes the file once.
+func (a *asyncWriter) Close() error {
+	a.once.Do(func() {
+		_ = a.Writer.Close() // drains the queue
+		a.err = a.closer.Close()
+	})
+	return a.err
+}
+
+// Clean ends a run that did not crash: the crash output is released and
+// the crash file removed while still empty.
+func (a *asyncWriter) Clean() {
+	if a.crashPath == "" {
+		return
 	}
-	return a.closer.Close()
+	_ = runtimedebug.SetCrashOutput(nil, runtimedebug.CrashOptions{})
+	if fi, err := os.Stat(a.crashPath); err == nil && fi.Size() == 0 {
+		_ = os.Remove(a.crashPath)
+	}
 }
 
 func pruneRuns(dir string) {

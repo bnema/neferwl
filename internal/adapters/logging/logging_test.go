@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,7 +48,7 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 		core.Debug().Msg("visible")
 		app.Debug().Msg("hidden")
 		app.Info().Msg("startup")
-		if err := closeLog(); err != nil {
+		if err := closeLog(false); err != nil {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(path)
@@ -98,7 +99,7 @@ func TestBackendsRotateSeparately(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := closeLog(); err != nil {
+		if err := closeLog(false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -127,7 +128,7 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	input, core := For(ctx, "input"), For(ctx, "core")
 	input.Debug().Msg("motion")
 	core.Debug().Msg("hidden")
-	if err := closeLog(); err != nil {
+	if err := closeLog(false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "drm", "latest.log"))
@@ -147,7 +148,7 @@ func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	w := newAsyncWriter(pw, pw, "")
+	w := newAsyncWriter(struct{ io.Writer }{pw}, pw, "")
 	line := bytes.Repeat([]byte{'x'}, 1024)
 	done := make(chan struct{})
 	go func() {
