@@ -47,6 +47,7 @@ const (
 	colorTypeCurve      = "1D Curve"
 	colorTypeMultiplier = "Multiplier"
 	colorTypeMatrix     = "3x4 Matrix"
+	colorTypeLUT3D      = "3D LUT"
 	curveSRGBEOTF       = "sRGB EOTF"
 	curvePQInverseEOTF  = "PQ 125 Inverse EOTF"
 )
@@ -58,6 +59,8 @@ type colorop struct {
 	typ                                 string
 	bypass, curveProp, multiplier, data uint32
 	curves                              map[string]uint64
+	// size is the SIZE property's value: the dimension of a LUT.
+	size uint32
 }
 
 // colorStage is an operation the output drives: its object, BYPASS and the
@@ -76,6 +79,12 @@ type colorPipeline struct {
 	// are every other operation, which must stay bypassed.
 	srgb, mult, ctm, pq colorStage
 	others              []colorStage
+	// lut3d is the 3D LUT that follows the PQ curve, when the pipeline has
+	// one (op 0: none), and lut3dSize its dimension. On amdgpu the PQ curve
+	// is the shaper of the MCM shaper + 3D LUT block: the hardware only
+	// applies it with the 3D LUT on, so the LUT is loaded with identity.
+	lut3d     colorStage
+	lut3dSize uint32
 }
 
 // is reports whether the operation is the wanted type, with the wanted curve.
@@ -126,6 +135,10 @@ func matchColorPipeline(first uint64, ops []colorop) (*colorPipeline, string) {
 		if op.bypass == 0 {
 			return nil, fmt.Sprintf("colorop %d (%s) cannot be bypassed", op.id, op.typ)
 		}
+		if n == len(want) && cp.lut3d.op == 0 && op.typ == colorTypeLUT3D && op.data != 0 && op.size > 1 {
+			cp.lut3d, cp.lut3dSize = colorStage{op: op.id, bypass: op.bypass, prop: op.data}, op.size
+			continue
+		}
 		cp.others = append(cp.others, colorStage{op: op.id, bypass: op.bypass})
 	}
 	if n < len(want) {
@@ -148,7 +161,7 @@ func walkColorops(k kms, first uint32) ([]colorop, error) {
 		if err != nil {
 			return nil, fmt.Errorf("colorop %d: %w", id, err)
 		}
-		op := colorop{id: id, bypass: uint32(props["BYPASS"][0]), curveProp: uint32(props["CURVE_1D_TYPE"][0]), multiplier: uint32(props["MULTIPLIER"][0]), data: uint32(props["DATA"][0])}
+		op := colorop{id: id, bypass: uint32(props["BYPASS"][0]), curveProp: uint32(props["CURVE_1D_TYPE"][0]), multiplier: uint32(props["MULTIPLIER"][0]), data: uint32(props["DATA"][0]), size: uint32(props["SIZE"][1])}
 		if t := props["TYPE"]; t[0] != 0 {
 			types, err := k.propEnums(uint32(t[0]))
 			if err != nil {
@@ -240,6 +253,26 @@ func ctmBytes(m [3][3]float64) []byte {
 			b = binary.LittleEndian.AppendUint64(b, s3132(v))
 		}
 		b = binary.LittleEndian.AppendUint64(b, 0)
+	}
+	return b
+}
+
+// lut3dIdentityBytes is the DATA blob of a 3D LUT colorop of dimension n
+// that leaves pixels as they are: n³ drm_color_lut32 entries (u32 red,
+// green, blue, reserved), red varying fastest, each equal to its own
+// coordinate on the full 32-bit scale.
+func lut3dIdentityBytes(n uint32) []byte {
+	b := make([]byte, 0, int(n*n*n)*16)
+	step := func(i uint32) uint32 { return uint32(uint64(i) * math.MaxUint32 / uint64(n-1)) }
+	for bl := range n {
+		for g := range n {
+			for r := range n {
+				b = binary.LittleEndian.AppendUint32(b, step(r))
+				b = binary.LittleEndian.AppendUint32(b, step(g))
+				b = binary.LittleEndian.AppendUint32(b, step(bl))
+				b = binary.LittleEndian.AppendUint32(b, 0)
+			}
+		}
 	}
 	return b
 }

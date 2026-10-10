@@ -494,7 +494,7 @@ func TestColorPipelineSequenceAcceptedByAmdgpuRules(t *testing.T) {
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
 	enableTestHDR(o)
 	o.hdr.blob = 55
-	m.live[55], m.live[61] = true, true
+	m.live[55], m.live[61], m.live[lut3dBlob] = true, true, true
 	o.modeBlob = 99
 	if err := o.modeset(); err != nil {
 		t.Fatalf("modeset: %v", err)

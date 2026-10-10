@@ -23,9 +23,10 @@ func (p *plane) colorStale(mode colorMode) bool {
 
 // colorProps puts mode on p: Bypass selects the plane's Bypass pipeline;
 // colorSDRToPQ selects the matched one with its four operations enabled and
-// every other one bypassed. mult is the S31.32 multiplier and ctm the matrix
-// blob.
-func (p *plane) colorProps(req *atomicReq, mode colorMode, mult uint64, ctm uint32) {
+// every other one bypassed. mult is the S31.32 multiplier, ctm the matrix
+// blob and lut3d the identity 3D LUT blob (0: none), enabled with the PQ
+// curve when the pipeline has a 3D LUT.
+func (p *plane) colorProps(req *atomicReq, mode colorMode, mult uint64, ctm, lut3d uint32) {
 	if !p.hasColor() {
 		return
 	}
@@ -38,6 +39,14 @@ func (p *plane) colorProps(req *atomicReq, mode colorMode, mult uint64, ctm uint
 	req.set(p.id, prop, cp.id)
 	for _, s := range cp.others {
 		req.set(s.op, s.bypass, 1)
+	}
+	if cp.lut3d.op != 0 {
+		if lut3d != 0 {
+			req.set(cp.lut3d.op, cp.lut3d.bypass, 0)
+			req.set(cp.lut3d.op, cp.lut3d.prop, uint64(lut3d))
+		} else {
+			req.set(cp.lut3d.op, cp.lut3d.bypass, 1)
+		}
 	}
 	for _, s := range [...]struct {
 		stage colorStage
@@ -83,7 +92,7 @@ func (o *Output) cursorShown() bool { return o.cursor != nil && !o.protected && 
 // primaryColorProps puts mode on the primary plane if it applies another one.
 func (o *Output) primaryColorProps(req *atomicReq, mode colorMode) {
 	if o.primary.colorStale(mode) {
-		o.primary.colorProps(req, mode, o.colorMult, o.ctmBlob)
+		o.primary.colorProps(req, mode, o.colorMult, o.ctmBlob, o.lut3dBlob)
 	}
 }
 
@@ -94,8 +103,8 @@ func (o *Output) primaryColorProps(req *atomicReq, mode colorMode) {
 // compositor never sets them, and a ramp left by another DRM master would
 // apply on top of the PQ output.
 func (o *Output) forceBypass(req *atomicReq) {
-	o.primary.colorProps(req, colorBypass, 0, 0)
-	o.overlay.colorProps(req, colorBypass, 0, 0)
+	o.primary.colorProps(req, colorBypass, 0, 0, 0)
+	o.overlay.colorProps(req, colorBypass, 0, 0, 0)
 	for _, name := range [...]string{"DEGAMMA_LUT", "CTM", "GAMMA_LUT"} {
 		req.set(o.crtc, o.crtcProps[name], 0)
 	}
@@ -104,7 +113,7 @@ func (o *Output) forceBypass(req *atomicReq) {
 // overlayColorProps puts mode on the overlay plane if it applies another one.
 func (o *Output) overlayColorProps(req *atomicReq, mode colorMode) {
 	if o.overlay.colorStale(mode) {
-		o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob)
+		o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob, o.lut3dBlob)
 	}
 }
 
@@ -220,7 +229,7 @@ func (o *Output) colorAllowed(p *plane, format uint32, test func(req *atomicReq)
 	req := &o.probeReq
 	req.reset()
 	test(req)
-	p.colorProps(req, colorSDRToPQ, o.colorMult, o.ctmBlob)
+	p.colorProps(req, colorSDRToPQ, o.colorMult, o.ctmBlob, o.lut3dBlob)
 	if cursor {
 		o.cursor.props(req, o.crtc, o.cursor.desired())
 	}
@@ -236,9 +245,10 @@ func (o *Output) colorAllowed(p *plane, format uint32, test func(req *atomicReq)
 	return err == nil
 }
 
-// setupColor makes the output's colour objects: the CTM blob and the
-// multiplier, when HDR can be on and a plane has a matched pipeline. A
-// failure drops the pipelines: SDR content is composed as before.
+// setupColor makes the output's colour objects: the CTM blob, the
+// multiplier and the identity 3D LUT blob of a pipeline that has a 3D LUT,
+// when HDR can be on and a plane has a matched pipeline. A failure drops the
+// pipelines: SDR content is composed as before.
 func (o *Output) setupColor() {
 	if !o.hdr.wanted() {
 		// The pipelines serve HDR outputs only: SDR stays on Bypass.
@@ -256,6 +266,25 @@ func (o *Output) setupColor() {
 	}
 	o.ctmBlob = blob
 	o.colorMult = s3132(float64(o.hdr.settings.SDRBrightness) / 80)
+	if n := o.lut3dSize(); n != 0 {
+		if blob, err = o.k.createBlob(lut3dIdentityBytes(n)); err != nil {
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Uint32("size", n).Msg("identity 3D LUT blob; plane colour pipelines off")
+			o.dropPipelines()
+			return
+		}
+		o.lut3dBlob = blob
+	}
+}
+
+// lut3dSize is the dimension of the 3D LUT the planes' pipelines have (both
+// planes of an output share the same hardware block), 0 without one.
+func (o *Output) lut3dSize() uint32 {
+	for _, p := range [...]*plane{o.primary, o.overlay} {
+		if p != nil && p.pipeline != nil && p.pipeline.lut3d.op != 0 {
+			return p.pipeline.lut3dSize
+		}
+	}
+	return 0
 }
 
 // dropPipelines leaves the output's planes without a pipeline: SDR content
