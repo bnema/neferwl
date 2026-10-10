@@ -110,18 +110,17 @@ func (w *Workspace) leavesBand(i int) bool {
 }
 
 // moveBand swaps the focused cascade column with the column in the band dir
-// away where focus-window-up/down goes; focus follows it. It reports
-// whether the column moved.
-func (w *Workspace) moveBand(dir int) bool {
+// away where focus-window-up/down goes; focus follows it. Past the first
+// or last band nothing moves.
+func (w *Workspace) moveBand(dir int) {
 	i := w.laneNeighbor(dir)
-	if !w.policy().wraps || i < 0 {
-		return false
+	if i < 0 {
+		return
 	}
 	w.unmaximize()
 	w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
 	w.Focus = i
 	w.scroll()
-	return true
 }
 
 // laneNeighbor is the closest column to the focus in the lane d lanes away,

@@ -163,9 +163,54 @@ func TestCascadeMoveWindowStopsAtOuterBands(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	w.FocusID(1)
 	c.applyAction(ActionMoveWindowUp)
+	wantFocus(t, c, "M", 1)
 	w.FocusID(4)
 	c.applyAction(ActionMoveWindowDown)
 	wantColumns(t, w, 1, 2, 3, 4, 5)
+	wantFocus(t, c, "M", 4)
+}
+
+// A maximized column leaving its band gives up maximization: the band it
+// joins shows all its columns.
+func TestCascadeMoveWindowEndsMaximization(t *testing.T) {
+	c, w := cascadeMovesCore(t, 5, 3, false)
+	w.FocusID(5)
+	w.ToggleFullWidth()
+	c.applyAction(ActionMoveWindowUp)
+	wantColumns(t, w, 1, 5, 3, 4, 2)
+	if w.Columns[1].FullWidth || len(w.maximized) != 0 {
+		t.Fatalf("still maximized: full width %t, MRU %v", w.Columns[1].FullWidth, w.maximized)
+	}
+}
+
+// A fullscreen tile at its band edge leaves for the neighbor monitor and
+// stays fullscreen, as a tile there does.
+func TestCascadeFullscreenBandEdgeFocusesMonitor(t *testing.T) {
+	c, w := cascadeMovesCore(t, 5, 3, true)
+	w.FocusID(3)
+	w.ToggleFullscreen()
+	c.applyAction(ActionFocusColumnRight)
+	if got := c.cur().name(); got != "R" {
+		t.Fatalf("focused screen %q, want R", got)
+	}
+	if w.fullscreen != 3 {
+		t.Fatalf("fullscreen %d, want 3", w.fullscreen)
+	}
+}
+
+// From a native float over the columns, the first move leaves the float
+// on this monitor, even with the focused column at its band edge.
+func TestCascadeFloatAtBandEdgeStaysOnMonitor(t *testing.T) {
+	c, w := cascadeMovesCore(t, 5, 3, true)
+	w.FocusID(3)
+	w.AddFloating(9, 100, 100)
+	c.applyAction(ActionFocusColumnRight)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	if w.floatFocus {
+		t.Fatal("focus still on the float")
+	}
 }
 
 // A stacked window moves inside its column first, then the column changes

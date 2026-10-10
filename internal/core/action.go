@@ -222,6 +222,12 @@ func (c *Core) applyAction(a Action) Effect {
 		// with none (the workspace or stash edge), the move goes to the
 		// neighbor monitor and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
+			// A cascade fullscreen tile at its band edge leaves for the
+			// neighbor monitor, like any tile there, and stays fullscreen.
+			if i := c.neighbor(d); i >= 0 && !w.onFloat() && w.policy().wraps && w.leavesBand(w.Focus+dir) {
+				c.focusScreen = i
+				return Effect{}
+			}
 			if !w.FocusColumn(dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i

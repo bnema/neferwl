@@ -925,7 +925,6 @@ func (w *Workspace) MoveWindow(dir int) {
 	c := &w.Columns[w.Focus]
 	to := c.Focus + dir
 	if to < 0 || to >= len(c.Windows) {
-		// Past the column, a cascade column changes band.
 		w.moveBand(dir)
 		return
 	}
