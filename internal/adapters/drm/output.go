@@ -1098,6 +1098,57 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		cursorWake = o.cursor.wake
 	}
 	securityChanges := o.SecurityChanges
+	reacquireTimer := time.NewTimer(time.Hour)
+	reacquireTimer.Stop()
+	defer reacquireTimer.Stop()
+	var reacquire masterRetry
+	// setActive applies a seat change. skip reports that the loop must
+	// go on without touching the frame state (refused or protected).
+	setActive := func(on bool) (skip bool, err error) {
+		o.observeSecurity()
+		if o.protected {
+			o.invalidateSecurity()
+			enabled = on
+			if on && o.fbs[0] == 0 {
+				if err := o.showImages(r, imagesDriver, nil); err != nil {
+					if !o.commitFailed(err, &enabled) {
+						return true, err
+					}
+					reacquire.refused(err, &enabled)
+					return true, nil
+				}
+			}
+			reacquire.done()
+			return true, nil
+		}
+		// Modeset on every enable: a fast disable+enable can coalesce to one true.
+		if on {
+			enabled = true // this enable may supersede a previous master loss
+			var err error
+			if o.fbs[0] == 0 {
+				err = o.showImages(r, imagesDriver, nil)
+			} else {
+				err = o.modeset()
+			}
+			if err != nil {
+				if !o.commitFailed(err, &enabled) {
+					return true, err
+				}
+				reacquire.refused(err, &enabled)
+				return true, nil // epoch retry or wait disabled for master reacquisition
+			}
+			reacquire.done()
+			o.observeSecurity()
+			if o.protected {
+				return true, nil
+			}
+			o.probeAsync(r)
+			dirty = haveScene
+		}
+		enabled = on
+		o.log.Info().Bool("enabled", on).Msg("output")
+		return false, nil
+	}
 	for {
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
 			scene, haveScene, dirty = ports.Scene{}, false, false
@@ -1203,6 +1254,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			protectTimer.Stop()
 		}
+		// An enable refused for lack of DRM master is retried on time.
+		var reacquireDue <-chan time.Time
+		if d, ok := reacquire.next(); ok {
+			reacquireTimer.Reset(d)
+			reacquireDue = reacquireTimer.C
+		} else {
+			reacquireTimer.Stop()
+		}
 		// A commit whose event never comes must not stop the output.
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
@@ -1268,44 +1327,27 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			ack <- struct{}{}
 			continue
 		case on := <-active:
-			o.observeSecurity()
-			if o.protected {
-				o.invalidateSecurity()
-				enabled = on
-				if on && o.fbs[0] == 0 {
-					if err := o.showImages(r, imagesDriver, nil); err != nil {
-						if !o.commitFailed(err, &enabled) {
-							return err
-						}
-					}
-				}
+			reacquire.done()
+			skip, err := setActive(on)
+			if err != nil {
+				return err
+			}
+			if skip {
 				continue
 			}
-			// Modeset on every enable: a fast disable+enable can coalesce to one true.
-			if on {
-				enabled = true // this enable may supersede a previous master loss
-				var err error
-				if o.fbs[0] == 0 {
-					err = o.showImages(r, imagesDriver, nil)
-				} else {
-					err = o.modeset()
-				}
-				if err != nil {
-					if !o.commitFailed(err, &enabled) {
-						return err
-					}
-					continue // epoch retry or wait disabled for master reacquisition
-				}
-				o.observeSecurity()
-				if o.protected {
-					continue
-				}
-				o.probeAsync(r)
-				dirty = haveScene
-				stateDirty = true
+			stateDirty = on
+		case <-reacquireDue:
+			// The seat reported active before the kernel gave DRM master
+			// back: the enable modeset was refused. Try it again.
+			reacquire.attempts++
+			skip, err := setActive(true)
+			if err != nil {
+				return err
 			}
-			enabled = on
-			o.log.Info().Bool("enabled", on).Msg("output")
+			if skip {
+				continue
+			}
+			stateDirty = true
 		case ev := <-o.flipped:
 			o.observeSecurity()
 			if !o.completed(ev, seen) {
