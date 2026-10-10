@@ -27,6 +27,8 @@ type damageRegion struct {
 	drawn map[ports.WindowID]heldWindow
 	// rects is scratch for a content's damage rects (reused across frames).
 	rects []ports.Rect
+	// why counts the reasons of full redraws (the renderer's; nil: none).
+	why *fullRedraws
 }
 
 // heldWindow is a window a target holds: its content Seq and rect.
@@ -46,6 +48,7 @@ func newDamage(tg *target, s ports.Scene, bounds image.Rectangle) *damageRegion 
 // one keeps all but what sceneDelta finds changed.
 func (d *damageRegion) hold(tg *target, s ports.Scene) {
 	if !tg.valid || s.Seq == 0 {
+		d.why.count(fullTarget)
 		return
 	}
 	if tg.sceneSeq == s.Seq {
@@ -64,6 +67,8 @@ func (d *damageRegion) hold(tg *target, s ports.Scene) {
 	limit := d.bound.Dx() * d.bound.Dy() * 9 / 10
 	if area, ok := sceneDelta(tg.scene, s, phys, limit); ok {
 		d.held, d.area = tg, area
+	} else {
+		d.why.count(fullScene)
 	}
 }
 
@@ -78,7 +83,7 @@ func (r *Renderer) frameDamage(tg *target, s ports.Scene, bounds image.Rectangle
 		r.damageDrawn = make(map[ports.WindowID]heldWindow)
 	}
 	clear(r.damageDrawn)
-	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0]}
+	r.damage = damageRegion{seen: r.damageSeen, drawn: r.damageDrawn, bound: bounds, rects: r.damage.rects[:0], why: &r.fullRedraws}
 	r.damage.hold(tg, s)
 	return &r.damage
 }
@@ -108,16 +113,51 @@ func (d *damageRegion) window(id ports.WindowID, c ports.SurfaceContent, rect im
 	if ok && held == c.Seq {
 		return
 	}
-	if !ok || c.Empty() || len(c.Children) > 0 {
-		d.add(rect)
-		return
+	switch {
+	case !ok:
+		d.why.count(fullNewWindow)
+	case c.Empty():
+		d.why.count(fullEmpty)
+	case len(c.Children) > 0:
+		d.why.count(fullChildren)
+	default:
+		var known bool
+		d.rects, known = c.AppendDamageSince(d.rects[:0], held)
+		if known {
+			return // mapped by content, called next
+		}
+		d.why.count(fullHistory)
 	}
-	var known bool
-	d.rects, known = c.AppendDamageSince(d.rects[:0], held)
-	if !known {
-		d.add(rect)
+	d.add(rect)
+}
+
+// fullReason is why a whole target or window rect is redrawn.
+type fullReason int
+
+const (
+	fullTarget    fullReason = iota // target never drawn, or an unnumbered scene
+	fullScene                       // the scene changed past sceneDelta
+	fullNewWindow                   // the target never held the window
+	fullEmpty                       // the window has no content
+	fullChildren                    // the window has subsurfaces
+	fullHistory                     // the damage history does not reach the held content
+	fullReasons
+)
+
+// fullRedraws counts full redraws by reason since the last take.
+type fullRedraws [fullReasons]int
+
+func (f *fullRedraws) count(r fullReason) {
+	if f != nil {
+		f[r]++
 	}
-	// Otherwise mapped by content, called next: nothing more here.
+}
+
+// take returns the counts and resets them.
+func (f *fullRedraws) take() fullRedraws {
+	n := *f
+	*f = fullRedraws{}
+	return n
 }
 
 // content maps a root surface's buffer damage onto full (where its w×h
