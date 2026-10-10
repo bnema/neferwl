@@ -88,13 +88,16 @@ func TestCommitWaitingOnBarrierArmsTimer(t *testing.T) {
 	waitArmed(t, s, "timer not armed for the barrier deadline")
 }
 
-// waitArmed asserts the timer was armed: it fires within the test timeout.
-// A receive works even when the deadline passed before the check.
+// waitArmed asserts the timer was armed: it is pending, or it already
+// fired and holds its value.
 func waitArmed(t *testing.T, s *Server, msg string) {
 	t.Helper()
+	if s.paceTimer.Stop() {
+		return
+	}
 	select {
 	case <-s.paceTimer.C:
-	case <-time.After(2 * time.Second):
+	default:
 		t.Fatal(msg)
 	}
 }

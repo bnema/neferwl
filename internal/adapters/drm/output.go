@@ -1120,7 +1120,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	defer reacquireTimer.Stop()
 	var reacquire masterRetry
 	// refuse records an enable refused for lack of DRM master.
-	refuse := func(err error) {
+	refuseMaster := func(err error) {
 		if reacquire.refused(err, enabled, time.Now()) {
 			o.log.Warn().Err(err).Str("connector", o.conn.name).Int("attempts", masterRetryLimit).Msg("DRM master not back; output stays off until the next seat change")
 		}
@@ -1137,7 +1137,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					if !o.commitFailed(err, &enabled) {
 						return true, err
 					}
-					refuse(err)
+					refuseMaster(err)
 					return true, nil
 				}
 			}
@@ -1158,7 +1158,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				if !o.commitFailed(err, &enabled) {
 					return true, err
 				}
-				refuse(err)
+				refuseMaster(err)
 				return true, nil // epoch retry or wait disabled for master reacquisition
 			}
 			reacquire.done()
@@ -1195,7 +1195,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				}
 				// A lock screen refused for lack of DRM master after a VT
 				// switch is retried like an ordinary enable.
-				refuse(err)
+				refuseMaster(err)
 			} else {
 				reacquire.done()
 			}

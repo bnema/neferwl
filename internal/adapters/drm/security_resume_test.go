@@ -16,13 +16,23 @@ import (
 func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 	for _, stage := range []string{"engage-during-request", "master-loss"} {
 		t.Run(stage, func(t *testing.T) {
-			var failures []error
-			if stage == "master-loss" {
-				failures = []error{unix.EACCES}
-			}
-			o, k, commits, mu := testOutputMu(t, failures...)
-			o.cursor, o.tearing = nil, false
 			var state atomic.Uint64
+			var rule func(*atomicReq, uint32) error
+			if stage == "master-loss" {
+				// The lock engages as the kernel refuses the first enable for
+				// lack of master: the retry must be a protected modeset.
+				refused := false
+				rule = func(*atomicReq, uint32) error {
+					if refused {
+						return nil
+					}
+					refused = true
+					state.Store(3)
+					return unix.EACCES
+				}
+			}
+			o, k, commits, mu := testOutputRules(t, rule)
+			o.cursor, o.tearing = nil, false
 			securityGate(t, o, &state)
 			events := make(chan ports.SecurityBackendEvent, 4)
 			o.SecurityEvents = events
@@ -55,8 +65,7 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 			}()
 			active <- true
 			if stage == "master-loss" {
-				waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) == 1 })
-				state.Store(3)
+				waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) >= 1 })
 				wake <- ports.SecurityState{}
 				// The seat reported active before master came back: the owner
 				// retries the protected modeset itself, with no second seat
