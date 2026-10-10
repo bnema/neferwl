@@ -209,6 +209,7 @@ type update struct {
 	deps            []*update
 	owner           *surface
 	implicit        [4]*syncWait
+	syncStore       commitSync // storage of sync when the commit had explicit-sync points
 	prev            *update
 	synced, bound   bool
 	xdg             *xdgSurface
@@ -237,8 +238,8 @@ var updatePool sync.Pool
 func (u *update) releaseRef() {
 	u.refs--
 	if u.refs == 0 && u.retired {
-		deps := u.deps[:0]
-		*u = update{deps: deps}
+		deps, dmg, bufDmg := u.deps[:0], u.damage[:0], u.bufDamage[:0]
+		*u = update{deps: deps, damage: dmg, bufDamage: bufDmg}
 		updatePool.Put(u)
 	}
 }
@@ -257,7 +258,7 @@ func (u *update) retireUpdate() {
 		dep.releaseRef()
 	}
 	if u.refs == 0 {
-		*u = update{deps: u.deps}
+		*u = update{deps: u.deps, damage: u.damage[:0], bufDamage: u.bufDamage[:0]}
 		updatePool.Put(u)
 	}
 }
@@ -346,9 +347,19 @@ func (s *surface) queueUpdate() {
 	if u == nil {
 		u = new(update)
 	}
-	deps := u.deps[:0]
+	deps, dmg, bufDmg := u.deps[:0], u.damage[:0], u.bufDamage[:0]
 	*u = s.takePending()
 	u.deps = deps
+	// The pooled update brings the capacity a retired commit's damage had;
+	// the surface collects the next commit's rects in it. The update keeps
+	// the rects of this commit until it retires.
+	s.next.damage, s.next.bufDamage = dmg, bufDmg
+	if u.sync != nil && u.sync == &s.syncScratch {
+		// The update owns its points from here: the surface's scratch is
+		// free for the next commit while this one waits in the queue.
+		u.syncStore, s.syncScratch = s.syncScratch, commitSync{}
+		u.sync = &u.syncStore
+	}
 	u.owner, u.synced = s, s.effectivelySynced()
 	if s.server.syncWait != nil && u.attached && u.buffer != nil && u.sync == nil {
 		if b, ok := s.server.buffers[u.buffer.Resource].(*dmabufBuffer); ok {
@@ -377,7 +388,6 @@ func (s *surface) queueUpdate() {
 	}
 	s.queue = append(s.queue, u)
 	s.server.fifoSurfaces[s] = struct{}{}
-	s.server.wakePacer()
 }
 
 // applyUpdate applies only the captured commit; later requests remain pending.
@@ -745,8 +755,20 @@ func sameBuffer(a, b *wayland.Buffer) bool {
 	return a != nil && b != nil && a.Resource == b.Resource
 }
 
-// wakePacer makes the pacer look at its queues now.
+// wakePacer makes the pacer look at its queues. Display goroutine only.
+// While a commit or a tick runs (paceDepth) it only records the request: the
+// outermost caller then ticks inline (paceNow), saving the round trip of
+// waking the pacer goroutine just so that it calls Do back.
 func (s *Server) wakePacer() {
+	if s.paceDepth > 0 {
+		s.paceDirty = true
+		return
+	}
+	s.signalPacer()
+}
+
+// signalPacer wakes the pacer goroutine; safe from any goroutine.
+func (s *Server) signalPacer() {
 	select {
 	case s.frameReady <- struct{}{}:
 	default:

@@ -4,14 +4,18 @@ package logging
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	runtimedebug "runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bnema/zerowrap"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/diode"
 	"golang.org/x/term"
 )
 
@@ -29,6 +33,7 @@ var categories = map[string]string{"input-motion": "input", "input-keys": "input
 
 type debugKey struct{}
 type levelKey struct{}
+type dirKey struct{}
 type debugSet map[string]bool
 
 func ParseDebug(value string) (map[string]bool, error) {
@@ -56,8 +61,9 @@ const keepRuns = 20
 // directory at it, prunes old runs of that backend and attaches the logger
 // to ctx. Each backend keeps its own runs: headless test runs never rotate
 // a DRM session's log away.
-// The caller must invoke close after all logging is complete.
-func Open(ctx context.Context, backend, level, debug string) (context.Context, func() error, error) {
+// The caller must invoke close after all logging is complete; crashed
+// keeps the crash file for a panic about to be re-raised.
+func Open(ctx context.Context, backend, level, debug string) (context.Context, func(crashed bool) error, error) {
 	selected, err := ParseDebug(debug)
 	if err != nil {
 		return nil, nil, err
@@ -85,23 +91,88 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 		_ = file.Close()
 		return nil, nil, err
 	}
-	pruneRuns(dir)
-	var output = zerowrap.Config{Level: level, Format: "json", Output: file}
-	if term.IsTerminal(int(os.Stderr.Fd())) {
-		output.Output = &consoleAndFile{file: file}
+	// Queued entries are lost on a fatal crash: the runtime's own report
+	// (panic and every stack) goes to its own file, besides stderr. A clean
+	// Close removes it while still empty. Created before pruneRuns so
+	// crash files rotate like logs.
+	crashPath := filepath.Join(dir, strings.TrimSuffix(name, ".log")+".crash")
+	if crash, err := os.OpenFile(crashPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+		_ = runtimedebug.SetCrashOutput(crash, runtimedebug.CrashOptions{})
+		_ = crash.Close() // SetCrashOutput keeps its own duplicate
+	} else {
+		crashPath = ""
 	}
-	ctx = zerowrap.WithCtx(ctx, zerowrap.New(output))
+	pruneRuns(dir)
+	// Hide Close from the diode: asyncWriter closes the file once.
+	var sink io.Writer = struct{ io.Writer }{file}
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		sink = &consoleAndFile{file: file}
+	}
+	w := newAsyncWriter(sink, file, crashPath)
+	ctx = zerowrap.WithCtx(ctx, zerowrap.New(zerowrap.Config{Level: level, Format: "json", Output: w}))
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
-	return ctx, file.Close, nil
+	ctx = context.WithValue(ctx, dirKey{}, dir)
+	return ctx, func(crashed bool) error {
+		if !crashed {
+			w.Clean()
+		}
+		return w.Close()
+	}, nil
+}
+
+// logQueue is how many entries may wait for the disk. Past it, entries are
+// dropped (and counted on stderr) rather than blocking the logging
+// goroutine: input, outputs and the display must never wait on a slow disk.
+const logQueue = 8192
+
+// newAsyncWriter writes entries to w from its own goroutine. Close drains
+// what is queued, then closes c.
+func newAsyncWriter(w io.Writer, c io.Closer, crashPath string) *asyncWriter {
+	d := diode.NewWriter(w, logQueue, 0, func(missed int) {
+		fmt.Fprintf(os.Stderr, "neferwl: %d log entries dropped: disk too slow\n", missed)
+	})
+	return &asyncWriter{Writer: d, closer: c, crashPath: crashPath}
+}
+
+type asyncWriter struct {
+	diode.Writer
+	closer    io.Closer
+	crashPath string
+	once      sync.Once
+	err       error
+}
+
+// Close drains the queue and closes the file once.
+func (a *asyncWriter) Close() error {
+	a.once.Do(func() {
+		_ = a.Writer.Close() // drains the queue
+		a.err = a.closer.Close()
+	})
+	return a.err
+}
+
+// Clean ends a run that did not crash: the crash output is released and
+// the crash file removed while still empty.
+func (a *asyncWriter) Clean() {
+	if a.crashPath == "" {
+		return
+	}
+	_ = runtimedebug.SetCrashOutput(nil, runtimedebug.CrashOptions{})
+	if fi, err := os.Stat(a.crashPath); err == nil && fi.Size() == 0 {
+		_ = os.Remove(a.crashPath)
+	}
 }
 
 func pruneRuns(dir string) {
-	runs, _ := filepath.Glob(filepath.Join(dir, "2*.log"))
-	sort.Strings(runs)
-	for len(runs) > keepRuns {
-		_ = os.Remove(runs[0])
-		runs = runs[1:]
+	// Watchdog stall dumps (stall-<time>-<loop>.txt) rotate like runs.
+	for _, pattern := range []string{"2*.log", "2*.crash", "stall-*.txt"} {
+		runs, _ := filepath.Glob(filepath.Join(dir, pattern))
+		sort.Strings(runs)
+		for len(runs) > keepRuns {
+			_ = os.Remove(runs[0])
+			runs = runs[1:]
+		}
 	}
 }
 
@@ -111,6 +182,12 @@ func (w *consoleAndFile) Write(p []byte) (int, error) {
 	// JSON remains the canonical output; terminal users also see each entry.
 	_, _ = os.Stderr.Write(p)
 	return w.file.Write(p)
+}
+
+// Dir is the directory of the run log Open created, or "" without one.
+func Dir(ctx context.Context) string {
+	dir, _ := ctx.Value(dirKey{}).(string)
+	return dir
 }
 
 // Enabled reports whether a debug category was named in --debug.

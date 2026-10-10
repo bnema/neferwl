@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,7 +48,7 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 		core.Debug().Msg("visible")
 		app.Debug().Msg("hidden")
 		app.Info().Msg("startup")
-		if err := closeLog(); err != nil {
+		if err := closeLog(false); err != nil {
 			t.Fatal(err)
 		}
 		data, err := os.ReadFile(path)
@@ -72,6 +73,10 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 	if len(runs) != keepRuns {
 		t.Fatalf("kept %d runs, want %d", len(runs), keepRuns)
 	}
+	// A clean run leaves no empty crash file behind.
+	if crashes, _ := filepath.Glob(filepath.Join(dir, "2*.crash")); len(crashes) != 0 {
+		t.Fatalf("empty crash files kept: %v", crashes)
+	}
 }
 
 func splitLines(data []byte) [][]byte {
@@ -94,7 +99,7 @@ func TestBackendsRotateSeparately(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := closeLog(); err != nil {
+		if err := closeLog(false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -123,7 +128,7 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	input, core := For(ctx, "input"), For(ctx, "core")
 	input.Debug().Msg("motion")
 	core.Debug().Msg("hidden")
-	if err := closeLog(); err != nil {
+	if err := closeLog(false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_STATE_HOME"), "neferwl", "runs", "drm", "latest.log"))
@@ -133,6 +138,32 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	if lines := splitLines(data); len(lines) != 1 || !bytes.Contains(lines[0], []byte(`"motion"`)) {
 		t.Fatalf("got %q", data)
 	}
+}
+
+// A disk that stops answering must not block the goroutine that logs:
+// input and outputs log from their own loops.
+func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
+	r, pw, err := os.Pipe() // nobody reads: writes block once the pipe is full
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	w := newAsyncWriter(struct{ io.Writer }{pw}, pw, "")
+	line := bytes.Repeat([]byte{'x'}, 1024)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 4 * logQueue { // far past the pipe buffer and the queue
+			_, _ = w.Write(line)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("log write blocked on a stuck disk")
+	}
+	r.Close() // unblock the writer so Close can drain and return
+	_ = w.Close()
 }
 
 // Narrow categories are on only when named, never through "all".

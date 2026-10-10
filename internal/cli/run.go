@@ -123,12 +123,12 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 	if err != nil {
 		return err
 	}
-	defer closeLog()
+	defer closeLog(false) // no-op after the panic path closed it
 	log := logging.For(ctx, "app")
 	defer func() {
 		if p := recover(); p != nil {
 			log.Error().Interface("panic", p).Str("stack", string(debug.Stack())).Msg("exit")
-			_ = closeLog()
+			_ = closeLog(true) // keep the crash file for the re-panic
 			panic(p)
 		}
 	}()

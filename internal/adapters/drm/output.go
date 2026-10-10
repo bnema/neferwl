@@ -78,6 +78,8 @@ type Output struct {
 	// seatDisable carries a request to leave the planes on Bypass before
 	// the seat is disabled (PrepareSeatDisable); Run answers it.
 	seatDisable chan chan struct{}
+	// ping carries watchdog probes (Ping); Run answers each one.
+	ping chan chan struct{}
 	// fbs are the two renderer images frames alternate between, back the
 	// one the next frame draws into (ADR 014: zero copy).
 	fbs   [2]uint32
@@ -206,7 +208,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -318,6 +320,21 @@ func cursorSize(fd int) int {
 
 // Cursor is the hardware cursor, or nil when the CRTC has no cursor plane.
 func (o *Output) Cursor() *Cursor { return o.cursor }
+
+// Ping returns once Run handled a probe, or once ctx ends: the watchdog
+// uses it to detect a stuck output loop.
+func (o *Output) Ping(ctx context.Context) {
+	ack := make(chan struct{})
+	select {
+	case o.ping <- ack:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-ack:
+	case <-ctx.Done():
+	}
+}
 
 // Info describes the output for core and clients. Unknown EDID fields are empty.
 func (o *Output) Info() ports.OutputInfo {
@@ -1098,6 +1115,64 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		cursorWake = o.cursor.wake
 	}
 	securityChanges := o.SecurityChanges
+	reacquireTimer := time.NewTimer(time.Hour)
+	reacquireTimer.Stop()
+	defer reacquireTimer.Stop()
+	var reacquire masterRetry
+	// refuse records an enable refused for lack of DRM master.
+	refuseMaster := func(err error) {
+		if reacquire.refused(err, enabled, time.Now()) {
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Int("attempts", masterRetryLimit).Msg("DRM master not back; output stays off until the next seat change")
+		}
+	}
+	// setActive applies a seat change. skip reports that the loop must
+	// go on without touching the frame state (refused or protected).
+	setActive := func(on bool) (skip bool, err error) {
+		o.observeSecurity()
+		if o.protected {
+			o.invalidateSecurity()
+			enabled = on
+			if on && o.fbs[0] == 0 {
+				if err := o.showImages(r, imagesDriver, nil); err != nil {
+					if !o.commitFailed(err, &enabled) {
+						return true, err
+					}
+					refuseMaster(err)
+					return true, nil
+				}
+			}
+			// With images, the protected modeset runs at the top of the
+			// loop (prepareSecurity): it ends or reschedules the retry.
+			return true, nil
+		}
+		// Modeset on every enable: a fast disable+enable can coalesce to one true.
+		if on {
+			enabled = true // this enable may supersede a previous master loss
+			var err error
+			if o.fbs[0] == 0 {
+				err = o.showImages(r, imagesDriver, nil)
+			} else {
+				err = o.modeset()
+			}
+			if err != nil {
+				if !o.commitFailed(err, &enabled) {
+					return true, err
+				}
+				refuseMaster(err)
+				return true, nil // epoch retry or wait disabled for master reacquisition
+			}
+			reacquire.done()
+			o.observeSecurity()
+			if o.protected {
+				return true, nil
+			}
+			o.probeAsync(r)
+			dirty = haveScene
+		}
+		enabled = on
+		o.log.Info().Bool("enabled", on).Msg("output")
+		return false, nil
+	}
 	for {
 		if o.observeSecurity() || haveScene && !o.sceneCurrent(scene) {
 			scene, haveScene, dirty = ports.Scene{}, false, false
@@ -1118,6 +1193,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				if !o.commitFailed(err, &enabled) {
 					return err
 				}
+				// A lock screen refused for lack of DRM master after a VT
+				// switch is retried like an ordinary enable.
+				refuseMaster(err)
+			} else {
+				reacquire.done()
 			}
 			// Recheck immediately: a takeover during the clear needs its own
 			// transaction, not another scene or wake to make progress.
@@ -1203,6 +1283,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			protectTimer.Stop()
 		}
+		// An enable refused for lack of DRM master is retried on time.
+		var reacquireDue <-chan time.Time
+		if d, ok := reacquire.next(time.Now()); ok {
+			reacquireTimer.Reset(d)
+			reacquireDue = reacquireTimer.C
+		} else {
+			reacquireTimer.Stop()
+		}
 		// A commit whose event never comes must not stop the output.
 		stuck := o.frame.wait(enabled)
 		stateDirty := false
@@ -1260,52 +1348,40 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				refuse = capture.ErrOutputOff
 			}
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
+		case ack := <-o.ping:
+			close(ack)
+			continue
 		case ack := <-o.seatDisable:
 			o.bypassForSeatDisable()
 			// The seat is about to be disabled: no frame may select the
-			// pipeline again before the next enable (a modeset).
+			// pipeline again before the next enable (a modeset), not even a
+			// retried one.
+			reacquire.done()
 			enabled = false
 			ack <- struct{}{}
 			continue
 		case on := <-active:
-			o.observeSecurity()
-			if o.protected {
-				o.invalidateSecurity()
-				enabled = on
-				if on && o.fbs[0] == 0 {
-					if err := o.showImages(r, imagesDriver, nil); err != nil {
-						if !o.commitFailed(err, &enabled) {
-							return err
-						}
-					}
-				}
+			reacquire.done()
+			skip, err := setActive(on)
+			if err != nil {
+				return err
+			}
+			if skip {
 				continue
 			}
-			// Modeset on every enable: a fast disable+enable can coalesce to one true.
-			if on {
-				enabled = true // this enable may supersede a previous master loss
-				var err error
-				if o.fbs[0] == 0 {
-					err = o.showImages(r, imagesDriver, nil)
-				} else {
-					err = o.modeset()
-				}
-				if err != nil {
-					if !o.commitFailed(err, &enabled) {
-						return err
-					}
-					continue // epoch retry or wait disabled for master reacquisition
-				}
-				o.observeSecurity()
-				if o.protected {
-					continue
-				}
-				o.probeAsync(r)
-				dirty = haveScene
-				stateDirty = true
+			stateDirty = on
+		case <-reacquireDue:
+			// The seat reported active before the kernel gave DRM master
+			// back: the enable modeset was refused. Try it again.
+			reacquire.fire()
+			skip, err := setActive(true)
+			if err != nil {
+				return err
 			}
-			enabled = on
-			o.log.Info().Bool("enabled", on).Msg("output")
+			if skip {
+				continue
+			}
+			stateDirty = true
 		case ev := <-o.flipped:
 			o.observeSecurity()
 			if !o.completed(ev, seen) {

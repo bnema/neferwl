@@ -89,6 +89,9 @@ type Renderer struct {
 	marks []trimMark
 	// redrawn counts the target pixels drawn (TakeRedrawn).
 	redrawn int
+	// fullRedraws counts why whole targets or windows were redrawn; each
+	// TakeRedrawn logs and resets it.
+	fullRedraws fullRedraws
 	// cursors are the exported cursor images (CursorBuffers).
 	cursors [2]*cursorImage
 	// compose draws every frame (compose.go); maxRange bounds one
@@ -345,6 +348,10 @@ func (r *Renderer) CopiedBytes() int { return r.copied }
 func (r *Renderer) TakeRedrawn() int {
 	n := r.redrawn
 	r.redrawn = 0
+	if f := r.fullRedraws.take(); f != (fullRedraws{}) {
+		r.log.Debug().Int("target", f[fullTarget]).Int("scene", f[fullScene]).Int("new_window", f[fullNewWindow]).
+			Int("empty", f[fullEmpty]).Int("children", f[fullChildren]).Int("history", f[fullHistory]).Msg("full redraws")
+	}
 	return n
 }
 

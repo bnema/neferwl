@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/sched"
 	"github.com/bnema/neferwl/internal/adapters/seat"
+	"github.com/bnema/neferwl/internal/adapters/watchdog"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 )
@@ -119,6 +120,35 @@ type drmBackend struct {
 	// reads them while the output loop adds and removes them.
 	mu        sync.Mutex
 	preparers map[seatDisablePreparer]struct{}
+	// probes are the running output loops the watchdog pings, by
+	// connector, guarded by mu.
+	probes map[string]func()
+}
+
+func (b *drmBackend) addProbe(name string, ping func()) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.probes == nil {
+		b.probes = map[string]func(){}
+	}
+	b.probes[name] = ping
+}
+
+func (b *drmBackend) removeProbe(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.probes, name)
+}
+
+// watchdogProbes lists the running output loops for the watchdog.
+func (b *drmBackend) watchdogProbes() []watchdog.Probe {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]watchdog.Probe, 0, len(b.probes))
+	for name, ping := range b.probes {
+		out = append(out, watchdog.Probe{Name: "output-" + name, Ping: ping})
+	}
+	return out
 }
 
 // seatDisablePreparer is an output that can reset its planes before the
@@ -490,6 +520,10 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 						defer o.Close()
 						b.addPreparer(o)
 						defer b.removePreparer(o) // before Close: it handles no request any more
+						// octx derives from the session: the probe ends with this
+						// output or the session.
+						b.addProbe(name, func() { o.Ping(octx) })
+						defer b.removeProbe(name)
 						if realtime {
 							runtime.LockOSThread()
 							// Keep the thread locked until this goroutine exits: an RT

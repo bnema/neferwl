@@ -33,6 +33,9 @@ type surface struct {
 	committedViewport viewportState // value snapshot; no allocation on viewport commits
 	// next is the state requested since the last commit (see pendingCommit).
 	next pendingCommit
+	// syncScratch holds next.sync between takeSyncPoints and queueUpdate,
+	// which moves it into the update.
+	syncScratch commitSync
 	// bufferScale, transform and opaque are committed state. formatOpaque is
 	// the current buffer's own opacity (x formats).
 	bufferScale  int
@@ -371,8 +374,30 @@ func (s *surface) Commit(*wayland.Surface) {
 	s.takeSyncPoints()
 	// Each request creates an ordered content update. A synchronized update
 	// can only be reached through a parent's committed dependency graph.
+	s.queueAndTick()
+}
+
+// queueAndTick queues the commit and applies what is ready. The pacer is
+// woken at most once, after the work, and by a tick on this goroutine
+// rather than by a wake that makes the pacer call Do back.
+func (s *surface) queueAndTick() {
+	srv := s.server
+	srv.paceDepth++
 	s.queueUpdate()
-	s.server.tickFifo(time.Now(), nil)
+	srv.tickFifo(time.Now(), nil)
+	if n := len(s.queue); n > 0 && !s.queue[n-1].synced {
+		// The commit waits for a barrier, a fence or a refresh: the pacer
+		// must time it. A commit applied at once needs no tick of its own;
+		// its callbacks, barrier and held buffers wake the pacer where
+		// they are queued. A synchronized commit waits for its parent's
+		// commit, which ticks for it.
+		srv.wakePacer()
+	}
+	srv.paceDepth--
+	if srv.paceDepth == 0 && srv.paceDirty {
+		srv.paceDirty = false
+		srv.paceNow()
+	}
 }
 
 // applyCommit makes only the captured update current. Live pending requests

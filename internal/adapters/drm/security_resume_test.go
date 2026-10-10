@@ -16,13 +16,23 @@ import (
 func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 	for _, stage := range []string{"engage-during-request", "master-loss"} {
 		t.Run(stage, func(t *testing.T) {
-			var failures []error
-			if stage == "master-loss" {
-				failures = []error{unix.EACCES}
-			}
-			o, k, commits, mu := testOutputMu(t, failures...)
-			o.cursor, o.tearing = nil, false
 			var state atomic.Uint64
+			var rule func(*atomicReq, uint32) error
+			if stage == "master-loss" {
+				// The lock engages as the kernel refuses the first enable for
+				// lack of master: the retry must be a protected modeset.
+				refused := false
+				rule = func(*atomicReq, uint32) error {
+					if refused {
+						return nil
+					}
+					refused = true
+					state.Store(3)
+					return unix.EACCES
+				}
+			}
+			o, k, commits, mu := testOutputRules(t, rule)
+			o.cursor, o.tearing = nil, false
 			securityGate(t, o, &state)
 			events := make(chan ports.SecurityBackendEvent, 4)
 			o.SecurityEvents = events
@@ -55,22 +65,11 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 			}()
 			active <- true
 			if stage == "master-loss" {
-				waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) == 1 })
-				state.Store(3)
+				waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(*commits) >= 1 })
 				wake <- ports.SecurityState{}
-				select {
-				case ev := <-events:
-					if _, ok := ev.(ports.SecurityOutputProof); ok {
-						t.Fatal("master loss forged proof")
-					}
-				case <-time.After(20 * time.Millisecond):
-				}
-				select {
-				case err := <-done:
-					t.Fatalf("resume stopped owner: %v", err)
-				default:
-				}
-				active <- true // only real seat reacquisition permits preparation
+				// The seat reported active before master came back: the owner
+				// retries the protected modeset itself, with no second seat
+				// event. The proof below must follow that successful retry.
 			}
 			for {
 				select {
@@ -78,6 +77,14 @@ func TestSecurityUnlockedResumeUsesOwnerRetry(t *testing.T) {
 					if p, ok := ev.(ports.SecurityOutputProof); ok {
 						if p.Proof.Generation != 1 || p.Proof.Instance != 77 {
 							t.Fatalf("proof %+v", p)
+						}
+						if stage == "master-loss" {
+							mu.Lock()
+							n := len(*commits)
+							mu.Unlock()
+							if n < 2 {
+								t.Fatal("master loss forged proof: no successful retry")
+							}
 						}
 						cancel()
 						if err := <-done; err != nil {

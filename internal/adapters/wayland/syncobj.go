@@ -487,7 +487,10 @@ func (s *surface) takeSyncPoints() {
 	if st == nil || !st.acquire.set() {
 		return
 	}
-	cs := &commitSync{acquire: st.acquire, release: st.release}
+	// The commit's points wait in the surface until queueUpdate moves them
+	// into the update: no allocation per commit.
+	cs := &s.syncScratch
+	*cs = commitSync{acquire: st.acquire, release: st.release}
 	st.acquire, st.release = syncPoint{}, syncPoint{}
 	cs.acquire.tl.uses++
 	cs.release.tl.uses++

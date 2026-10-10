@@ -151,6 +151,12 @@ type Server struct {
 	frameOwners map[*wayland.Callback]*surface
 	frameDue    map[string]time.Time
 	frameReady  chan struct{}
+	// paceTimer is the pacer's deadline, armed by ticks on the display
+	// goroutine; paceDepth/paceDirty defer wakePacer inside a commit or
+	// tick (display goroutine only).
+	paceTimer *time.Timer
+	paceDepth int
+	paceDirty bool
 	// Pacer scratch: periods is used on the display goroutine, while
 	// flipped and frameReports belong to pace and its synchronous Do call.
 	framePeriods map[string]time.Duration
@@ -158,10 +164,12 @@ type Server struct {
 	frameReports []ports.OutputPresented
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
-	held    []heldBuffer
-	reports map[string]ports.OutputPresented
-	frames  uint64
-	started time.Time
+	held []heldBuffer
+	// heldLive is releaseHeld's scratch (display goroutine only).
+	heldLive []ports.OutputPresented
+	reports  map[string]ports.OutputPresented
+	frames   uint64
+	started  time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
 	fifoSurfaces        map[*surface]struct{}
@@ -227,7 +235,6 @@ type Server struct {
 	clock             ports.Clock
 	powers            []*outputPower
 	outputsOff        map[string]bool
-	contentNotify     chan struct{}
 	contentReady      chan struct{}
 	outputs           []*output
 	outputManagers    []*outputManager
@@ -329,7 +336,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
 		controlSources:     map[*server.Resource]*clipSource{},
-		contentNotify:      make(chan struct{}),
 		regions:            map[*server.Resource]*region{},
 		relatives:          map[server.Client][]*relativepointer.ZwpRelativePointerV1{},
 		gestures:           map[server.Client][]*gestureObject{},
@@ -369,7 +375,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	var node *renderNode
 	if opts.syncDev != nil {
 		s.syncDev = opts.syncDev
-		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			cleanup()
 			d.Close()
 			return nil, err
@@ -378,7 +384,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		if node, err = openSyncobj(opts.SyncobjNode); err != nil {
 			log.Info().Err(err).Msg("explicit sync off")
 			node = nil
-		} else if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		} else if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			node.close()
 			node = nil
 		} else {
@@ -387,7 +393,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	// Implicit dma-buf fences also need this waiter when explicit sync is off.
 	if s.syncWait == nil {
-		if s.syncWait, err = newSyncWaiter(s.wakePacer); err != nil {
+		if s.syncWait, err = newSyncWaiter(s.signalPacer); err != nil {
 			cleanup()
 			d.Close()
 			return nil, err
@@ -453,6 +459,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
 	s.started = time.Now()
 	s.ctx = ctx
+	s.paceTimer = time.NewTimer(defaultFramePeriod)
 	var wg sync.WaitGroup
 	wg.Add(15)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
@@ -563,6 +570,10 @@ func (s *Server) forwardOutputApplied(ctx context.Context) {
 // enough for a renderer target a few frames old.
 const damageHistory = 4
 
+// damageHistoryCap is the capacity of a history's backing array: one
+// allocation serves damageHistoryCap-damageHistory+1 publications.
+const damageHistoryCap = 8 * damageHistory
+
 // forwardOutputFormats applies the outputs' scanout formats on the
 // display goroutine.
 func (s *Server) forwardOutputFormats(ctx context.Context) {
@@ -632,23 +643,28 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
-	// Copy-on-write: previous publications can still be in an output's hands.
+	// Published histories are immutable: an output may hold one for as long
+	// as it likes. The history grows inside one backing array, appended past
+	// the end of every published slice (never over an element a reader can
+	// see), and moves to a fresh array only when that one is full. Readers
+	// get a capacity-clipped slice, so they cannot append into the spare.
 	old := s.damage[c.ID]
 	if len(old) >= damageHistory {
 		old = old[len(old)-damageHistory+1:]
 	}
-	h := make([]ports.SeqDamage, len(old)+1)
-	copy(h, old)
-	h[len(old)] = ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects}
+	if len(old) == cap(old) {
+		grown := make([]ports.SeqDamage, len(old), damageHistoryCap)
+		copy(grown, old)
+		old = grown
+	}
+	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
 	if c.Empty() {
 		delete(s.damage, c.ID)
 	} else {
 		s.damage[c.ID] = h
 	}
-	c.DamageHistory = h
+	c.DamageHistory = h[:len(h):len(h)]
 	s.contents[c.ID] = c
-	close(s.contentNotify)
-	s.contentNotify = make(chan struct{})
 	s.contentMu.Unlock()
 	select {
 	case s.contentReady <- struct{}{}:
@@ -663,13 +679,11 @@ func (s *Server) forwardContents(ctx context.Context) {
 		var c ports.SurfaceContent
 		found := false
 		var seq uint64
-		var notify <-chan struct{}
 		for id, c = range s.contents {
 			found = true
 			seq = s.contentSeq[id]
 			break
 		}
-		notify = s.contentNotify
 		s.contentMu.Unlock()
 		if !found {
 			select {
@@ -679,11 +693,13 @@ func (s *Server) forwardContents(ctx context.Context) {
 				continue
 			}
 		}
-		// Do not hold a stale frame while the receiver is busy: wake on newer data.
+		// Do not hold a stale frame while the receiver is busy: wake on newer
+		// data. contentReady is signalled after every publication; a stale
+		// signal only costs one more loop.
 		select {
 		case <-ctx.Done():
 			return
-		case <-notify:
+		case <-s.contentReady:
 			continue
 		case s.channels.Contents <- c:
 			s.contentMu.Lock()

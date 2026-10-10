@@ -23,6 +23,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
 	"github.com/bnema/neferwl/internal/adapters/vulkan"
+	"github.com/bnema/neferwl/internal/adapters/watchdog"
 	"github.com/bnema/neferwl/internal/adapters/wayland"
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
@@ -302,6 +303,22 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		close(script)
 	}
 	go func() { defer workers.Done(); done <- server.Run(ctx) }()
+	if dir := logging.Dir(ctx); dir != "" {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			watchdog.Run(ctx, func() []watchdog.Probe {
+				probes := []watchdog.Probe{
+					{Name: "wayland", Ping: func() { server.Ping(ctx) }},
+					{Name: "core", Ping: func() { c.Ping(ctx) }},
+				}
+				if hw != nil {
+					probes = append(probes, hw.watchdogProbes()...)
+				}
+				return probes
+			}, watchdog.Options{Dir: dir, Every: time.Second, Timeout: 3 * time.Second, Log: logging.For(ctx, "app")})
+		}()
+	}
 	go func() {
 		defer workers.Done()
 		// Without a watch the allowlist stays as loaded: restart to apply.
