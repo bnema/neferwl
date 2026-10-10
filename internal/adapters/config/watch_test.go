@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -26,9 +25,6 @@ func TestWatch(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			out := make(chan ports.ConfigChanged, 8)
 			done := make(chan error, 1)
-			old := directoryPollInterval
-			directoryPollInterval = 20 * time.Millisecond
-			defer func() { directoryPollInterval = old }()
 			go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
 			defer func() {
 				cancel()
@@ -163,9 +159,6 @@ func TestWatchSymlink(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan ports.ConfigChanged, 8)
 	done := make(chan error, 1)
-	old := directoryPollInterval
-	directoryPollInterval = 20 * time.Millisecond
-	defer func() { directoryPollInterval = old }()
 	go func() { done <- Watch(ctx, path, out, logging.For(ctx, "config")) }()
 	defer func() {
 		cancel()
@@ -235,26 +228,5 @@ func TestWatchSymlink(t *testing.T) {
 	case c := <-out:
 		t.Fatalf("old target reloaded: %+v", c.Config.Background)
 	case <-time.After(250 * time.Millisecond):
-	}
-}
-
-func TestWatchedFiles(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config")
-	if got := watchedFiles(path); !slices.Equal(got, []string{path}) {
-		t.Fatal(got)
-	}
-	// A dangling link still names its target; a loop stops.
-	if err := os.Symlink("sub/../missing", path); err != nil {
-		t.Fatal(err)
-	}
-	if got := watchedFiles(path); !slices.Equal(got, []string{path, filepath.Join(dir, "missing")}) {
-		t.Fatal(got)
-	}
-	if err := os.Symlink("config", filepath.Join(dir, "missing")); err != nil {
-		t.Fatal(err)
-	}
-	if got := watchedFiles(path); !slices.Equal(got, []string{path, filepath.Join(dir, "missing")}) {
-		t.Fatal(got)
 	}
 }

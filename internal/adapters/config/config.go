@@ -2,7 +2,6 @@
 package config
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/bnema/kvconf"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -333,20 +333,23 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 	workspaces := map[string]int{}
 	rules := map[string]*ruleEntry{}
 	var ruleOrder []*ruleEntry
-	scanner := bufio.NewScanner(r)
-	for n := 1; scanner.Scan(); n++ {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
+	// kvconf owns the line syntax; the values stay raw (neferwl has no
+	// quoting) and repeated keys are reported below with their own wording.
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return c, raw, nil, err
+	}
+	entries, lineWarnings, err := kvconf.ParseBytes(data, kvconf.Options{AllowDuplicates: true, RawValues: true, MaxBytes: -1, MaxLine: -1})
+	if err != nil {
+		return c, raw, nil, err
+	}
+	for _, w := range lineWarnings {
+		warnings = append(warnings, Warning{Line: w.Line, Msg: w.Msg})
+	}
+	for _, e := range entries {
+		n, key, value := e.Line, e.Key, e.Value
 		warn := func(format string, a ...any) {
 			warnings = append(warnings, Warning{Line: n, Msg: fmt.Sprintf(format, a...)})
-		}
-		key, value, ok := strings.Cut(line, "=")
-		key, value = strings.TrimSpace(key), stripComment(strings.TrimSpace(value))
-		if !ok || key == "" {
-			warn("expected key = value")
-			continue
 		}
 		if combo, ok := strings.CutPrefix(key, "bind."); ok {
 			if strings.HasSuffix(combo, "+") && strings.HasPrefix(value, "=") {
@@ -550,9 +553,6 @@ func parse(r io.Reader) (ports.Config, map[string]string, []Warning, error) {
 			continue
 		}
 		override()
-	}
-	if err := scanner.Err(); err != nil {
-		return c, raw, warnings, err
 	}
 	warnings = append(warnings, checkOutputAnchors(c.Outputs, relKeys, offsetLines, seen)...)
 	warnings = append(warnings, checkWorkspaceBinds(c, seen)...)
@@ -1183,17 +1183,6 @@ func splitList(v string) []string {
 		}
 	}
 	return list
-}
-
-// stripComment drops a trailing ` # comment` from a value. A # that starts the
-// value is kept, so colors like #1e1e2e need no quotes.
-func stripComment(value string) string {
-	for i := 1; i < len(value); i++ {
-		if value[i] == '#' && (value[i-1] == ' ' || value[i-1] == '\t') {
-			return strings.TrimSpace(value[:i])
-		}
-	}
-	return value
 }
 
 func checkAction(v string) error {
