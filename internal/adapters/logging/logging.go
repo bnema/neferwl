@@ -4,6 +4,7 @@ package logging
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/bnema/zerowrap"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/diode"
 	"golang.org/x/term"
 )
 
@@ -86,14 +88,40 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 		return nil, nil, err
 	}
 	pruneRuns(dir)
-	var output = zerowrap.Config{Level: level, Format: "json", Output: file}
+	// Hide Close from the diode: asyncWriter closes the file once.
+	var sink io.Writer = struct{ io.Writer }{file}
 	if term.IsTerminal(int(os.Stderr.Fd())) {
-		output.Output = &consoleAndFile{file: file}
+		sink = &consoleAndFile{file: file}
 	}
-	ctx = zerowrap.WithCtx(ctx, zerowrap.New(output))
+	w := newAsyncWriter(sink, file)
+	ctx = zerowrap.WithCtx(ctx, zerowrap.New(zerowrap.Config{Level: level, Format: "json", Output: w}))
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
-	return ctx, file.Close, nil
+	return ctx, w.Close, nil
+}
+
+// logQueue is how many entries may wait for the disk. Past it, entries are
+// dropped (and counted on stderr) rather than blocking the logging
+// goroutine: input, outputs and the display must never wait on a slow disk.
+const logQueue = 8192
+
+// newAsyncWriter writes entries to w from its own goroutine. Close drains
+// what is queued, then closes c.
+func newAsyncWriter(w io.Writer, c io.Closer) io.WriteCloser {
+	d := diode.NewWriter(w, logQueue, 0, func(missed int) {
+		fmt.Fprintf(os.Stderr, "neferwl: %d log entries dropped: disk too slow\n", missed)
+	})
+	return asyncWriter{Writer: d, closer: c}
+}
+
+type asyncWriter struct {
+	diode.Writer
+	closer io.Closer
+}
+
+func (a asyncWriter) Close() error {
+	_ = a.Writer.Close() // drains the queue
+	return a.closer.Close()
 }
 
 func pruneRuns(dir string) {

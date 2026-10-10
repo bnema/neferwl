@@ -135,6 +135,32 @@ func TestCategoryEnablesComponentDebug(t *testing.T) {
 	}
 }
 
+// A disk that stops answering must not block the goroutine that logs:
+// input and outputs log from their own loops.
+func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
+	r, pw, err := os.Pipe() // nobody reads: writes block once the pipe is full
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	w := newAsyncWriter(pw, pw)
+	line := bytes.Repeat([]byte{'x'}, 1024)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 4 * logQueue { // far past the pipe buffer and the queue
+			_, _ = w.Write(line)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("log write blocked on a stuck disk")
+	}
+	r.Close() // unblock the writer so Close can drain and return
+	_ = w.Close()
+}
+
 // Narrow categories are on only when named, never through "all".
 func TestEnabledCategories(t *testing.T) {
 	for _, category := range []string{"input-motion", "input-keys", "drm-flip"} {
