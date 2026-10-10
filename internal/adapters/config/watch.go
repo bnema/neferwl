@@ -2,7 +2,8 @@ package config
 
 import (
 	"context"
-	"os"
+	"errors"
+	"io/fs"
 	"time"
 
 	"github.com/bnema/kvconf"
@@ -13,15 +14,6 @@ import (
 // reloadDebounce is the quiet time after a change before the file is read:
 // every write restarts it, so the file is never read half written.
 const reloadDebounce = 100 * time.Millisecond
-
-func loadFile(path string) (ports.Config, map[string]string, []Warning, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return ports.Config{}, nil, nil, err
-	}
-	defer f.Close()
-	return parse(f)
-}
 
 // loadRaw returns the effective keys of the file at startup; missing means none.
 func loadRaw(path string) map[string]string {
@@ -49,7 +41,6 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 	for {
 		select {
 		case <-ctx.Done():
-			cancel()
 			return <-watchErr
 		case err := <-watchErr:
 			return err
@@ -57,7 +48,7 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 		}
 		cfg, raw, warnings, err := loadFile(path)
 		switch {
-		case os.IsNotExist(err):
+		case errors.Is(err, fs.ErrNotExist):
 			log.Warn().Msg("config file removed; keeping current config")
 			continue
 		case err != nil:
@@ -75,7 +66,6 @@ func Watch(ctx context.Context, path string, out chan<- ports.ConfigChanged, log
 		}
 		select {
 		case <-ctx.Done():
-			cancel()
 			return <-watchErr
 		case out <- ports.ConfigChanged{Config: cfg}:
 		}

@@ -117,3 +117,17 @@ func TestFormatScaleRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// Output names may hold spaces (EDID model names).
+func TestSaveOutputScaleSpacedName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte("output.LG Electronics 27GR95UM.scale = 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (ScaleStore{Path: path}).SaveOutputScale("LG Electronics 27GR95UM", 1.5); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "output.LG Electronics 27GR95UM.scale = 1.5\n" {
+		t.Fatalf("%q", got)
+	}
+}

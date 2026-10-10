@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -829,5 +830,73 @@ func TestOutputModeLineKeepsAnchor(t *testing.T) {
 	o := c.Outputs[0]
 	if o.Mode != "1920x1080" || o.Anchor != (ports.OutputAnchor{Relation: ports.RelationRightOf, To: "DP-1", Offset: 50}) {
 		t.Fatalf("%+v", o)
+	}
+}
+
+func TestFileSyntax(t *testing.T) {
+	for _, tc := range []struct {
+		name, in string
+		check    func(t *testing.T, c ports.Config)
+		warnings []string
+	}{
+		{
+			name: "invalid UTF-8 costs a warning, not the file",
+			in:   "# caf\xe9\nborder.width = 5\n",
+			check: func(t *testing.T, c ports.Config) {
+				if c.Border.Width != 5 {
+					t.Fatalf("border.width = %d", c.Border.Width)
+				}
+			},
+			warnings: []string{"line 1: not valid UTF-8; invalid bytes replaced"},
+		},
+		{
+			name: "output name with spaces",
+			in:   "output.LG Electronics 27GR95UM.scale = 1.5\n",
+			check: func(t *testing.T, c ports.Config) {
+				if len(c.Outputs) != 1 || c.Outputs[0].Name != "LG Electronics 27GR95UM" || c.Outputs[0].Scale != 1.5 {
+					t.Fatalf("%+v", c.Outputs)
+				}
+			},
+		},
+		{
+			// A '#' inside a quoted word is kept, as a shell would.
+			name: "comment after a quoted word",
+			in:   "startup = notify-send \"a # b\" # note\n",
+			check: func(t *testing.T, c ports.Config) {
+				if !reflect.DeepEqual(c.Startup, [][]string{{"notify-send", `"a`, "#", `b"`}}) {
+					t.Fatalf("startup: %q", c.Startup)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, w := parseString(t, tc.in)
+			got := make([]string, 0, len(w))
+			for _, x := range w {
+				got = append(got, x.String())
+			}
+			if len(got) != len(tc.warnings) || (len(got) > 0 && !reflect.DeepEqual(got, tc.warnings)) {
+				t.Fatalf("warnings %q, want %q", got, tc.warnings)
+			}
+			tc.check(t, c)
+		})
+	}
+}
+
+// A FIFO in place of the config fails at once instead of blocking startup.
+func TestLoadRejectsFIFO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Skip(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, _, err := Load(path); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("FIFO loaded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Load blocked on a FIFO")
 	}
 }

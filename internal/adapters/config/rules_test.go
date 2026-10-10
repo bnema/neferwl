@@ -116,7 +116,7 @@ func TestRuleReloadDiff(t *testing.T) {
 
 func parseRaw(t *testing.T, s string) (cfg any, raw map[string]string, w []Warning) {
 	t.Helper()
-	c, raw, w, err := parse(strings.NewReader(s))
+	c, raw, w, err := parseBytes([]byte(s))
 	if err != nil {
 		t.Fatal(err)
 	}

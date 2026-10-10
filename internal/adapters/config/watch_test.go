@@ -220,7 +220,7 @@ func TestWatchSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(moved, "background = #000001\n")
-	time.Sleep(100 * time.Millisecond) // past the 20 ms retry
+	time.Sleep(100 * time.Millisecond) // let the watch move back into the recreated directory
 	until("#abcdef", func(body string) { write(moved, body) })
 	// The old target no longer matters.
 	write(target, "background = #123456\n")
