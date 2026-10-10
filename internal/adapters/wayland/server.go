@@ -164,10 +164,12 @@ type Server struct {
 	frameReports []ports.OutputPresented
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
-	held    []heldBuffer
-	reports map[string]ports.OutputPresented
-	frames  uint64
-	started time.Time
+	held []heldBuffer
+	// heldLive is releaseHeld's scratch (display goroutine only).
+	heldLive []ports.OutputPresented
+	reports  map[string]ports.OutputPresented
+	frames   uint64
+	started  time.Time
 	// fifoSurfaces have a fifo barrier or queued commits (fifo.go);
 	// lastFlip is each output's latest page flip.
 	fifoSurfaces        map[*surface]struct{}
@@ -335,7 +337,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
 		controlSources:     map[*server.Resource]*clipSource{},
-		contentNotify:      make(chan struct{}),
 		regions:            map[*server.Resource]*region{},
 		relatives:          map[server.Client][]*relativepointer.ZwpRelativePointerV1{},
 		gestures:           map[server.Client][]*gestureObject{},
@@ -570,6 +571,10 @@ func (s *Server) forwardOutputApplied(ctx context.Context) {
 // enough for a renderer target a few frames old.
 const damageHistory = 4
 
+// damageHistoryCap is the capacity of a history's backing array: one
+// allocation serves damageHistoryCap-damageHistory+1 publications.
+const damageHistoryCap = 8 * damageHistory
+
 // forwardOutputFormats applies the outputs' scanout formats on the
 // display goroutine.
 func (s *Server) forwardOutputFormats(ctx context.Context) {
@@ -639,23 +644,34 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
-	// Copy-on-write: previous publications can still be in an output's hands.
+	// Published histories are immutable: an output may hold one for as long
+	// as it likes. The history grows inside one backing array, appended past
+	// the end of every published slice (never over an element a reader can
+	// see), and moves to a fresh array only when that one is full. Readers
+	// get a capacity-clipped slice, so they cannot append into the spare.
 	old := s.damage[c.ID]
 	if len(old) >= damageHistory {
 		old = old[len(old)-damageHistory+1:]
 	}
-	h := make([]ports.SeqDamage, len(old)+1)
-	copy(h, old)
-	h[len(old)] = ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects}
+	if len(old) == cap(old) {
+		grown := make([]ports.SeqDamage, len(old), damageHistoryCap)
+		copy(grown, old)
+		old = grown
+	}
+	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
 	if c.Empty() {
 		delete(s.damage, c.ID)
 	} else {
 		s.damage[c.ID] = h
 	}
-	c.DamageHistory = h
+	c.DamageHistory = h[:len(h):len(h)]
 	s.contents[c.ID] = c
-	close(s.contentNotify)
-	s.contentNotify = make(chan struct{})
+	if s.contentNotify != nil {
+		// Only forwardContents waits on it, and it creates the channel when
+		// it does: no channel is allocated per commit.
+		close(s.contentNotify)
+		s.contentNotify = nil
+	}
 	s.contentMu.Unlock()
 	select {
 	case s.contentReady <- struct{}{}:
@@ -675,6 +691,9 @@ func (s *Server) forwardContents(ctx context.Context) {
 			found = true
 			seq = s.contentSeq[id]
 			break
+		}
+		if s.contentNotify == nil {
+			s.contentNotify = make(chan struct{})
 		}
 		notify = s.contentNotify
 		s.contentMu.Unlock()

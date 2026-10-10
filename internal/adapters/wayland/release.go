@@ -95,7 +95,7 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	for _, r := range reports {
 		s.reports[r.Output] = r
 	}
-	live := make([]ports.OutputPresented, 0, len(s.outputs))
+	live := s.heldLive[:0]
 	for name := range s.reports {
 		if s.outputByNameExact(name) == nil {
 			delete(s.reports, name)
@@ -104,6 +104,8 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	for _, r := range s.reports {
 		live = append(live, r)
 	}
+	// keepHeld only reads live: the scratch holds nothing across calls.
+	s.heldLive = live
 	kept := s.held[:0]
 	for _, h := range s.held {
 		if s.bufferReferenced(h.res) || keepHeld(h, live, now) {
@@ -114,6 +116,7 @@ func (s *Server) releaseHeld(now time.Time, reports []ports.OutputPresented) boo
 	}
 	clear(s.held[len(kept):])
 	s.held = kept
+	clear(live) // the reports carry maps: do not retain them
 	return len(s.held) > 0
 }
 

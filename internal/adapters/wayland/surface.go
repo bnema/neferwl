@@ -33,6 +33,9 @@ type surface struct {
 	committedViewport viewportState // value snapshot; no allocation on viewport commits
 	// next is the state requested since the last commit (see pendingCommit).
 	next pendingCommit
+	// syncScratch holds next.sync between takeSyncPoints and queueUpdate,
+	// which moves it into the update.
+	syncScratch commitSync
 	// bufferScale, transform and opaque are committed state. formatOpaque is
 	// the current buffer's own opacity (x formats).
 	bufferScale  int
