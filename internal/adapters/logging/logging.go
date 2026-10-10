@@ -31,6 +31,7 @@ var categories = map[string]string{"input-motion": "input", "input-keys": "input
 
 type debugKey struct{}
 type levelKey struct{}
+type dirKey struct{}
 type debugSet map[string]bool
 
 func ParseDebug(value string) (map[string]bool, error) {
@@ -97,6 +98,7 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 	ctx = zerowrap.WithCtx(ctx, zerowrap.New(zerowrap.Config{Level: level, Format: "json", Output: w}))
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
+	ctx = context.WithValue(ctx, dirKey{}, dir)
 	return ctx, w.Close, nil
 }
 
@@ -139,6 +141,12 @@ func (w *consoleAndFile) Write(p []byte) (int, error) {
 	// JSON remains the canonical output; terminal users also see each entry.
 	_, _ = os.Stderr.Write(p)
 	return w.file.Write(p)
+}
+
+// Dir is the directory of the run log Open created, or "" without one.
+func Dir(ctx context.Context) string {
+	dir, _ := ctx.Value(dirKey{}).(string)
+	return dir
 }
 
 // Enabled reports whether a debug category was named in --debug.

@@ -78,6 +78,8 @@ type Output struct {
 	// seatDisable carries a request to leave the planes on Bypass before
 	// the seat is disabled (PrepareSeatDisable); Run answers it.
 	seatDisable chan chan struct{}
+	// ping carries watchdog probes (Ping); Run answers each one.
+	ping chan chan struct{}
 	// fbs are the two renderer images frames alternate between, back the
 	// one the next frame draws into (ADR 014: zero copy).
 	fbs   [2]uint32
@@ -206,7 +208,7 @@ type CursorLoader func(c ports.CursorChange, scale float64, t ports.BufferTransf
 func newOutput(card *Card, c connector, mode modeInfo, crtc uint32) (*Output, error) {
 	log := card.log
 	pipe := slices.Index(card.crtcs, crtc)
-	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
+	o := &Output{k: card.k, flipped: card.flips[crtc], frame: frameLifecycle{serials: &card.serials}, formats: card.formats, sampled: card.want.Sampled, device: card.want.Device, crtc: crtc, conn: c, mode: mode, log: log, renderLog: card.renderLog, monitor: readMonitor(card.path, c.name), scanout: !card.want.NoScanout, clientFBs: map[uint64]*clientFB{}, reason: "start", ready: make(chan error, 1), seatDisable: make(chan chan struct{}), ping: make(chan chan struct{}), traceFlips: card.want.TraceFlips, vrrFlipGap: card.want.VRRFlipGap}
 	var err error
 	if o.saved, err = getCrtc(card.fd, crtc); err != nil {
 		log.Warn().Err(err).Uint32("crtc", crtc).Msg("save crtc; it will not be restored on exit")
@@ -318,6 +320,21 @@ func cursorSize(fd int) int {
 
 // Cursor is the hardware cursor, or nil when the CRTC has no cursor plane.
 func (o *Output) Cursor() *Cursor { return o.cursor }
+
+// Ping returns once Run handled a probe, or once ctx ends: the watchdog
+// uses it to detect a stuck output loop.
+func (o *Output) Ping(ctx context.Context) {
+	ack := make(chan struct{})
+	select {
+	case o.ping <- ack:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-ack:
+	case <-ctx.Done():
+	}
+}
 
 // Info describes the output for core and clients. Unknown EDID fields are empty.
 func (o *Output) Info() ports.OutputInfo {
@@ -1319,6 +1336,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				refuse = capture.ErrOutputOff
 			}
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
+		case ack := <-o.ping:
+			close(ack)
+			continue
 		case ack := <-o.seatDisable:
 			o.bypassForSeatDisable()
 			// The seat is about to be disabled: no frame may select the

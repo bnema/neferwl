@@ -138,7 +138,9 @@ type Core struct {
 	swipe *swipeGesture
 	// gesture is the touchpad gesture forwarded to a client
 	// (clientgesture.go).
-	gesture    clientGesture
+	gesture clientGesture
+	// ping carries watchdog probes (Ping); Run answers each one.
+	ping       chan chan struct{}
 	frameC     <-chan time.Time
 	frameTimer ports.Timer
 	// shots is the snapshot of what the screens show before an action
@@ -401,7 +403,7 @@ func New(cfg ports.Config, ch Channels, opts Options) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures()}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{})}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -1023,6 +1025,21 @@ func (c *Core) hit(x, y float64) (WindowID, float64, float64) {
 	return id, sx, sy
 }
 
+// Ping returns once Run handled a probe, or once ctx ends: the watchdog
+// uses it to detect a stuck owner loop.
+func (c *Core) Ping(ctx context.Context) {
+	ack := make(chan struct{})
+	select {
+	case c.ping <- ack:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-ack:
+	case <-ctx.Done():
+	}
+}
+
 func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
@@ -1083,6 +1100,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if i := c.screenIndex(f.Output); i >= 0 && c.sliding(f.Output) && c.step(ctx, c.screens[i]) != nil {
 				return nil
 			}
+			continue
+		case ack := <-c.ping:
+			close(ack)
 			continue
 		case <-c.frameC:
 			if c.securityCheckpoint(ctx) != nil {
