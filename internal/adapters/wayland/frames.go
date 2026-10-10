@@ -33,10 +33,7 @@ const maxPacePasses = 3
 // ticks, which all run there, so a commit that ticks inline (paceNow) never
 // races the pacer for it.
 func (s *Server) pace(ctx context.Context) {
-	if s.paceTimer == nil {
-		s.paceTimer = time.NewTimer(defaultFramePeriod)
-	}
-	timer := s.paceTimer
+	timer := s.paceTimer // created by Run before the pacer starts
 	defer timer.Stop()
 	presented := s.channels.Presented
 	if s.flipped == nil {

@@ -385,11 +385,12 @@ func (s *surface) queueAndTick() {
 	srv.paceDepth++
 	s.queueUpdate()
 	srv.tickFifo(time.Now(), nil)
-	if len(s.queue) > 0 {
+	if n := len(s.queue); n > 0 && !s.queue[n-1].synced {
 		// The commit waits for a barrier, a fence or a refresh: the pacer
 		// must time it. A commit applied at once needs no tick of its own;
 		// its callbacks, barrier and held buffers wake the pacer where
-		// they are queued.
+		// they are queued. A synchronized commit waits for its parent's
+		// commit, which ticks for it.
 		srv.wakePacer()
 	}
 	srv.paceDepth--

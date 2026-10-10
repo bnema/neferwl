@@ -44,9 +44,7 @@ func TestCommitTicksPacerInline(t *testing.T) {
 	if len(s.frameReady) != 0 {
 		t.Fatal("commit woke the pacer goroutine")
 	}
-	if !s.paceTimer.Stop() {
-		t.Fatal("inline tick did not arm the pacer timer for the next deadline")
-	}
+	waitArmed(t, s, "inline tick did not arm the pacer timer for the next deadline")
 	if s.paceDepth != 0 || s.paceDirty {
 		t.Fatalf("pace state leaked: depth %d dirty %v", s.paceDepth, s.paceDirty)
 	}
@@ -87,7 +85,31 @@ func TestCommitWaitingOnBarrierArmsTimer(t *testing.T) {
 	if len(surf.queue) != 1 || len(s.frameReady) != 0 {
 		t.Fatalf("queued %d, pacer wakes %d", len(surf.queue), len(s.frameReady))
 	}
-	if !s.paceTimer.Stop() {
-		t.Fatal("timer not armed for the barrier deadline")
+	waitArmed(t, s, "timer not armed for the barrier deadline")
+}
+
+// waitArmed asserts the timer was armed: it fires within the test timeout.
+// A receive works even when the deadline passed before the check.
+func waitArmed(t *testing.T, s *Server, msg string) {
+	t.Helper()
+	select {
+	case <-s.paceTimer.C:
+	case <-time.After(2 * time.Second):
+		t.Fatal(msg)
+	}
+}
+
+// A synchronized subsurface commit waits for its parent's commit: it does
+// not tick the pacer, so a burst of child commits costs no ticks.
+func TestSyncedCommitDoesNotTick(t *testing.T) {
+	s, surf := paceFixture(true)
+	surf.sub.parent = &surface{server: s}
+	surf.sub.synced = true
+	surf.queueAndTick()
+	if len(surf.queue) != 1 || !surf.queue[0].synced {
+		t.Fatalf("synced commit not queued: %d", len(surf.queue))
+	}
+	if len(s.frameReady) != 0 || s.paceTimer.Stop() {
+		t.Fatal("synced commit ticked the pacer")
 	}
 }

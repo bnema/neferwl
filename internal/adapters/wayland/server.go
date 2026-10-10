@@ -235,7 +235,6 @@ type Server struct {
 	clock             ports.Clock
 	powers            []*outputPower
 	outputsOff        map[string]bool
-	contentNotify     chan struct{}
 	contentReady      chan struct{}
 	outputs           []*output
 	outputManagers    []*outputManager
@@ -666,12 +665,6 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	}
 	c.DamageHistory = h[:len(h):len(h)]
 	s.contents[c.ID] = c
-	if s.contentNotify != nil {
-		// Only forwardContents waits on it, and it creates the channel when
-		// it does: no channel is allocated per commit.
-		close(s.contentNotify)
-		s.contentNotify = nil
-	}
 	s.contentMu.Unlock()
 	select {
 	case s.contentReady <- struct{}{}:
@@ -686,16 +679,11 @@ func (s *Server) forwardContents(ctx context.Context) {
 		var c ports.SurfaceContent
 		found := false
 		var seq uint64
-		var notify <-chan struct{}
 		for id, c = range s.contents {
 			found = true
 			seq = s.contentSeq[id]
 			break
 		}
-		if s.contentNotify == nil {
-			s.contentNotify = make(chan struct{})
-		}
-		notify = s.contentNotify
 		s.contentMu.Unlock()
 		if !found {
 			select {
@@ -705,11 +693,13 @@ func (s *Server) forwardContents(ctx context.Context) {
 				continue
 			}
 		}
-		// Do not hold a stale frame while the receiver is busy: wake on newer data.
+		// Do not hold a stale frame while the receiver is busy: wake on newer
+		// data. contentReady is signalled after every publication; a stale
+		// signal only costs one more loop.
 		select {
 		case <-ctx.Done():
 			return
-		case <-notify:
+		case <-s.contentReady:
 			continue
 		case s.channels.Contents <- c:
 			s.contentMu.Lock()

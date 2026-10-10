@@ -132,13 +132,9 @@ func TestEmitContentWakesWaiter(t *testing.T) {
 		damage:       map[ports.WindowID][]ports.SeqDamage{},
 		contentReady: make(chan struct{}, 1),
 	}
-	s.contentMu.Lock()
-	s.contentNotify = make(chan struct{})
-	notify := s.contentNotify
-	s.contentMu.Unlock()
 	s.emitContent(ports.SurfaceContent{ID: 1, Solid: &ports.SolidColor{}}, damage{full: true})
 	select {
-	case <-notify:
+	case <-s.contentReady:
 	default:
 		t.Fatal("waiter not woken")
 	}
