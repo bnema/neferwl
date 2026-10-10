@@ -102,6 +102,28 @@ func (w *Workspace) laneBounds(lane int) (first, last int) {
 	return first, min(first+k, len(w.Columns)) - 1
 }
 
+// leavesBand reports whether column i, where a left/right move from the
+// focused column goes, is past the workspace or in another cascade band:
+// the move then goes to the neighbor monitor first.
+func (w *Workspace) leavesBand(i int) bool {
+	return i < 0 || i >= len(w.Columns) || !w.sameBand(i, w.Focus)
+}
+
+// moveBand swaps the focused cascade column with the column in the band dir
+// away where focus-window-up/down goes; focus follows it. It reports
+// whether the column moved.
+func (w *Workspace) moveBand(dir int) bool {
+	i := w.laneNeighbor(dir)
+	if !w.policy().wraps || i < 0 {
+		return false
+	}
+	w.unmaximize()
+	w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
+	w.Focus = i
+	w.scroll()
+	return true
+}
+
 // laneNeighbor is the closest column to the focus in the lane d lanes away,
 // the focus's offset in its lane kept; -1 past the first or last lane.
 func (w *Workspace) laneNeighbor(d int) int {
