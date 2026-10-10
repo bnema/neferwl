@@ -72,6 +72,10 @@ func TestComponentLevelsAndRotation(t *testing.T) {
 	if len(runs) != keepRuns {
 		t.Fatalf("kept %d runs, want %d", len(runs), keepRuns)
 	}
+	// A clean run leaves no empty crash file behind.
+	if crashes, _ := filepath.Glob(filepath.Join(dir, "2*.crash")); len(crashes) != 0 {
+		t.Fatalf("empty crash files kept: %v", crashes)
+	}
 }
 
 func splitLines(data []byte) [][]byte {
@@ -143,7 +147,7 @@ func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	w := newAsyncWriter(pw, pw)
+	w := newAsyncWriter(pw, pw, "")
 	line := bytes.Repeat([]byte{'x'}, 1024)
 	done := make(chan struct{})
 	go func() {

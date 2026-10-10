@@ -89,19 +89,24 @@ func Open(ctx context.Context, backend, level, debug string) (context.Context, f
 		_ = file.Close()
 		return nil, nil, err
 	}
-	pruneRuns(dir)
 	// Queued entries are lost on a fatal crash: the runtime's own report
-	// (panic and every stack) goes to its own file, besides stderr.
-	if crash, err := os.OpenFile(filepath.Join(dir, strings.TrimSuffix(name, ".log")+".crash"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+	// (panic and every stack) goes to its own file, besides stderr. A clean
+	// Close removes it while still empty. Created before pruneRuns so
+	// crash files rotate like logs.
+	crashPath := filepath.Join(dir, strings.TrimSuffix(name, ".log")+".crash")
+	if crash, err := os.OpenFile(crashPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
 		_ = runtimedebug.SetCrashOutput(crash, runtimedebug.CrashOptions{})
 		_ = crash.Close() // SetCrashOutput keeps its own duplicate
+	} else {
+		crashPath = ""
 	}
+	pruneRuns(dir)
 	// Hide Close from the diode: asyncWriter closes the file once.
 	var sink io.Writer = struct{ io.Writer }{file}
 	if term.IsTerminal(int(os.Stderr.Fd())) {
 		sink = &consoleAndFile{file: file}
 	}
-	w := newAsyncWriter(sink, file)
+	w := newAsyncWriter(sink, file, crashPath)
 	ctx = zerowrap.WithCtx(ctx, zerowrap.New(zerowrap.Config{Level: level, Format: "json", Output: w}))
 	ctx = context.WithValue(ctx, debugKey{}, debugSet(selected))
 	ctx = context.WithValue(ctx, levelKey{}, level)
@@ -116,20 +121,27 @@ const logQueue = 8192
 
 // newAsyncWriter writes entries to w from its own goroutine. Close drains
 // what is queued, then closes c.
-func newAsyncWriter(w io.Writer, c io.Closer) io.WriteCloser {
+func newAsyncWriter(w io.Writer, c io.Closer, crashPath string) io.WriteCloser {
 	d := diode.NewWriter(w, logQueue, 0, func(missed int) {
 		fmt.Fprintf(os.Stderr, "neferwl: %d log entries dropped: disk too slow\n", missed)
 	})
-	return asyncWriter{Writer: d, closer: c}
+	return asyncWriter{Writer: d, closer: c, crashPath: crashPath}
 }
 
 type asyncWriter struct {
 	diode.Writer
-	closer io.Closer
+	closer    io.Closer
+	crashPath string
 }
 
 func (a asyncWriter) Close() error {
 	_ = a.Writer.Close() // drains the queue
+	if a.crashPath != "" {
+		_ = runtimedebug.SetCrashOutput(nil, runtimedebug.CrashOptions{})
+		if fi, err := os.Stat(a.crashPath); err == nil && fi.Size() == 0 {
+			_ = os.Remove(a.crashPath)
+		}
+	}
 	return a.closer.Close()
 }
 
