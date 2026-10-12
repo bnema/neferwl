@@ -11,7 +11,7 @@ import (
 )
 
 // layoutVariants builds monitors covering the layout paths that use scratch:
-// scroll and fixed overflow, an expanded column, row shares, floats, a stash,
+// scroll and fixed overflow, a column set in cells, row shares, floats, a stash,
 // a fullscreen window, a hidden neighbor workspace, the overview and a slide
 // toward a neighbor workspace.
 func layoutVariants(t *testing.T) map[string]*Monitor {
@@ -32,9 +32,9 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	v["fixed"] = base(OverflowFixed, 5)
 	v["fixed-spiral"] = base(OverflowFixed, 7)
 
-	m := base(OverflowFixed, 4)
-	m.Current().Columns[1].Expanded = true
-	v["fixed-expanded"] = m
+	m := base(OverflowFixed, 3)
+	m.Current().Columns[1].Cells = 2
+	v["fixed-cells"] = m
 
 	m = base(OverflowScroll, 4)
 	w := m.Current()
@@ -78,12 +78,12 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	// The variants must hold what they are named for, on the workspace on
 	// screen (the one whose scratch the tests exercise).
 	for name, has := range map[string]func(*Workspace) bool{
-		"stash":          func(w *Workspace) bool { return len(w.Stash) > 0 && len(w.Columns) > 0 },
-		"floats":         func(w *Workspace) bool { return len(w.Floats) == 2 && len(w.Columns) > 0 },
-		"shares":         func(w *Workspace) bool { return validShares(w.Columns[0]) },
-		"fixed-expanded": func(w *Workspace) bool { return w.Columns[1].Expanded },
-		"fullscreen":     func(w *Workspace) bool { return w.fullscreen == 2 },
-		"scroll":         func(w *Workspace) bool { return len(w.Columns) == 5 },
+		"stash":       func(w *Workspace) bool { return len(w.Stash) > 0 && len(w.Columns) > 0 },
+		"floats":      func(w *Workspace) bool { return len(w.Floats) == 2 && len(w.Columns) > 0 },
+		"shares":      func(w *Workspace) bool { return validShares(w.Columns[0]) },
+		"fixed-cells": func(w *Workspace) bool { return w.Columns[1].Cells == 2 },
+		"fullscreen":  func(w *Workspace) bool { return w.fullscreen == 2 },
+		"scroll":      func(w *Workspace) bool { return len(w.Columns) == 5 },
 	} {
 		if w := v[name].Current(); len(w.Columns) == 0 || !has(w) {
 			t.Fatalf("variant %s: the workspace on screen lacks its feature: %+v", name, w.Columns)

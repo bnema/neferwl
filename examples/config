@@ -37,15 +37,14 @@ border.inactive = #111111
 floating.dim = 0.3
 
 layout.gaps = 0
-# Columns sharing the screen equally before the overflow applies.
-# A lone column fills the screen without separators.
+# Columns sharing the screen equally before the overflow applies: one cell is
+# a max-columns-th of the width, and columns, rules and slots are sized in
+# cells. A lone column fills the screen without separators.
 layout.max-columns = 2
 # Past max-columns: cascade starts a new band of columns below, scrolling
 # vertically; scroll opens columns to the right; fixed keeps everything on
 # screen, each new window splitting the newest one (spiral).
 layout.overflow = cascade
-# cycle-column-width steps through these, then back to the equal share.
-layout.presets = 1/3, 1/2, 2/3, 1
 
 # Touchpad. A three-finger swipe up or down slides between workspaces, left
 # or right scrolls the columns (cascade swaps the two axes). natural-scroll
@@ -96,21 +95,20 @@ focus.strength = 0.04
 # workspace.web.max-columns = 3
 # workspace.web.overflow = fixed
 #
-# Slots: column.N = <width>, <command>. neferwl starts each command in the
+# Slots: column.N = <cells>, <command> (1-16). neferwl starts each command in the
 # background and puts its first window in column N, without taking focus.
 # A closed slot stays empty until the workspace is shown again. Apps that
-# reuse a running instance need a new-instance flag. Widths need
-# overflow = scroll.
+# reuse a running instance need a new-instance flag.
 # workspace.dev.monitor = DP-2
-# workspace.dev.column.1 = 67%, code --new-window
-# workspace.dev.column.2 = 33%, foot
+# workspace.dev.column.1 = 2, code --new-window
+# workspace.dev.column.2 = 1, foot
 # bind.cmd+d = workspace dev
 
 # Window rules place an app's windows when they first open, without moving
 # the focus or the view. app-id is a regular expression matching the whole
 # app ID (see `neferwl state`); matching rules merge, a later one winning.
 # floating = on|off, workspace = N or a declared name, monitor = DP-2 or a
-# monitor key, width = like a column width.
+# monitor key, width = cells (1-16).
 # rule.games.app-id = steam_app_.*
 # rule.games.workspace = 3
 # rule.games.monitor = DP-2
@@ -172,17 +170,19 @@ bind.cmd+shift+up = move-window-up
 bind.cmd+shift+down = move-window-down
 bind.cmd+shift+k = move-window-up
 bind.cmd+shift+j = move-window-down
-# Resize by a step of the usable width or height: +N% or -N% (1-100).
-bind.cmd+alt+left = set-column-width -10%
-bind.cmd+alt+right = set-column-width +10%
+# Resize a column by N cells (+N or -N, 1-16), a window by a step of the
+# usable height (+N% or -N%, 1-100).
+bind.cmd+alt+left = set-column-width -1
+bind.cmd+alt+right = set-column-width +1
 bind.cmd+alt+up = set-window-height -10%
 bind.cmd+alt+down = set-window-height +10%
-bind.cmd+alt+h = set-column-width -10%
-bind.cmd+alt+l = set-column-width +10%
+bind.cmd+alt+h = set-column-width -1
+bind.cmd+alt+l = set-column-width +1
 bind.cmd+alt+k = set-window-height -10%
 bind.cmd+alt+j = set-window-height +10%
 # A tile becomes a free floating window, or returns to its column.
 bind.cmd+shift+space = toggle-floating
+# Grow the focused column by one cell, then back to equal shares.
 bind.cmd+r = cycle-column-width
 bind.cmd+f = maximize-column
 bind.cmd+shift+f = toggle-fullscreen

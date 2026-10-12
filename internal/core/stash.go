@@ -51,7 +51,7 @@ func (w *Workspace) stashWindow(id WindowID) {
 func (w *Workspace) tilePlace(id WindowID) *origPlace {
 	c := w.Columns[w.Focus]
 	lone := len(c.Windows) == 1
-	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, width: c.Width, fullWidth: c.FullWidth && lone, expanded: c.Expanded && lone}
+	back := &origPlace{col: w.Focus, row: c.Focus, slot: c.Slot, cells: c.Cells, fullWidth: c.FullWidth && lone}
 	for _, v := range c.Windows {
 		if v != id {
 			back.stacked = append(back.stacked, v)
@@ -139,10 +139,8 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 		w.scroll()
 		return
 	}
-	// Its column is gone: it comes back expanded, unless another column
-	// was expanded meanwhile.
-	expanded := back.expanded && !slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Expanded })
-	w.insertColumn(at, Column{Windows: []WindowID{id}, Width: back.width, Slot: back.slot, Expanded: expanded})
+	// Its column is gone: it comes back at its width.
+	w.insertColumn(at, Column{Windows: []WindowID{id}, Cells: back.cells, Slot: back.slot})
 	if back.fullWidth {
 		w.maximize(w.Focus)
 	}
@@ -153,7 +151,7 @@ func (w *Workspace) restore(id WindowID, back *origPlace) {
 func (f Float) rehome() Float {
 	back := &origPlace{col: math.MaxInt}
 	if f.back != nil {
-		back.width = f.back.width
+		back.cells = f.back.cells
 	}
 	f.back = back
 	return f

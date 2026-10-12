@@ -482,7 +482,10 @@ func TestMoveColumnThatScrollsKeepsCameraFrame(t *testing.T) {
 // A width change animates the frame while the client gets one configure to
 // the final size.
 func TestSetColumnWidthRectTransition(t *testing.T) {
-	r := startSwipe(t, func(c *ports.Config) { c.Binds["Cmd+Ctrl+Right"] = "set-column-width +10%" })
+	r := startSwipe(t, func(c *ports.Config) {
+		c.Layout.MaxColumns = 4
+		c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
+	})
 	twoColumns(t, r)
 	r.key(t, "Left", ports.ModAlt) // focus window 1: both columns fit, no scroll
 	for len(r.commands) > 0 {
@@ -497,18 +500,18 @@ func TestSetColumnWidthRectTransition(t *testing.T) {
 		t.Fatalf("window 2 at %d right after the key, want the old 400", got.X)
 	}
 	s = r.frame(t, 16*time.Millisecond)
-	if got := rectNow(t, s, 1).W; got <= 400 || got >= 480 {
-		t.Fatalf("window 1 is %d wide on the first frame, want between 400 and 480", got)
+	if got := rectNow(t, s, 1).W; got <= 400 || got >= 600 {
+		t.Fatalf("window 1 is %d wide on the first frame, want between 400 and 600", got)
 	}
-	if got := rectNow(t, s, 2).X; got <= 400 || got >= 480 {
-		t.Fatalf("window 2 at %d on the first frame, want between 400 and 480", got)
+	if got := rectNow(t, s, 2).X; got <= 400 || got >= 600 {
+		t.Fatalf("window 2 at %d on the first frame, want between 400 and 600", got)
 	}
 	s = r.settle(t)
-	if got := rectNow(t, s, 1).W; got != 480 {
-		t.Fatalf("window 1 is %d wide settled, want 480", got)
+	if got := rectNow(t, s, 1).W; got != 600 {
+		t.Fatalf("window 1 is %d wide settled, want 600", got)
 	}
-	if got := rectNow(t, s, 2).X; got != 480 {
-		t.Fatalf("window 2 at %d settled, want 480", got)
+	if got := rectNow(t, s, 2).X; got != 600 {
+		t.Fatalf("window 2 at %d settled, want 600", got)
 	}
 	var widths []int
 	for len(r.commands) > 0 {
@@ -516,8 +519,8 @@ func TestSetColumnWidthRectTransition(t *testing.T) {
 			widths = append(widths, v.Width)
 		}
 	}
-	if len(widths) != 1 || widths[0] != 480 {
-		t.Fatalf("configures of window 1 carried widths %v, want exactly [480]", widths)
+	if len(widths) != 1 || widths[0] != 600 {
+		t.Fatalf("configures of window 1 carried widths %v, want exactly [600]", widths)
 	}
 }
 
@@ -594,12 +597,16 @@ func TestChainedMovesStartFromShownRects(t *testing.T) {
 // after the click still shows the old view, a frame an intermediate one and
 // the settled scene the new one.
 func TestClickFocusTransition(t *testing.T) {
-	r := startSwipe(t, func(c *ports.Config) { c.Binds["Cmd+Ctrl+Right"] = "set-column-width +10%" })
+	r := startSwipe(t, func(c *ports.Config) {
+		c.Layout.MaxColumns = 4
+		c.Binds["Cmd+Ctrl+Right"] = "set-column-width +2"
+	})
 	threeColumns(t, r)
-	// Column 3 grows to 480: column 2 sticks out 80 px on the left.
+	// Column 3 grows from 1 to 3 cells of 200 px: column 2 sticks out 66 px
+	// on the left.
 	r.key(t, "Right", ports.ModAlt|ports.ModCtrl)
-	if got := xOf(t, r.settle(t), 2); got != -80 {
-		t.Fatalf("column 2 at %d, want -80", got)
+	if got := xOf(t, r.settle(t), 2); got != -66 {
+		t.Fatalf("column 2 at %d, want -66", got)
 	}
 	// The release of the modifiers: a plain click, not a window drag.
 	r.input <- ports.KeyEvent{Keysym: "Alt_L"}
@@ -607,12 +614,12 @@ func TestClickFocusTransition(t *testing.T) {
 	r.drain()
 	r.input <- ports.PointerButton{Button: 0x110, Pressed: true}
 	s := scene(t, r.scenes)
-	if got := xOf(t, s, 2); got != -80 {
-		t.Fatalf("column 2 at %d right after the click, want the old -80", got)
+	if got := xOf(t, s, 2); got != -66 {
+		t.Fatalf("column 2 at %d right after the click, want the old -66", got)
 	}
 	got := xOf(t, r.frame(t, 16*time.Millisecond), 2)
-	if got <= -80 || got >= 0 {
-		t.Fatalf("column 2 at %d on the first frame, want between -80 and 0", got)
+	if got <= -66 || got >= 0 {
+		t.Fatalf("column 2 at %d on the first frame, want between -66 and 0", got)
 	}
 	if got := xOf(t, r.settle(t), 2); got != 0 {
 		t.Fatalf("column 2 at %d settled, want 0", got)

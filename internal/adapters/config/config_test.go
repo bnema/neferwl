@@ -32,7 +32,7 @@ func TestDefaultsAndLoad(t *testing.T) {
 	if d.Binds["Cmd+s"] != "toggle-stash-visible" || d.Binds["Cmd+Shift+s"] != "toggle-window-stash" || d.Binds["Cmd+o"] != "toggle-overview" || d.Binds["Cmd+f"] != "maximize-column" || d.Binds["Cmd+Shift+f"] != "toggle-fullscreen" || d.Binds["Cmd+Shift+h"] != "move-column-left" || d.Binds["Cmd+j"] != "focus-window-down" || d.Binds["Cmd+Shift+code:2"] != "move-column-to-workspace 1" || d.Focus.FollowMove {
 		t.Fatal(d.Binds)
 	}
-	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -10%" || d.Binds["Alt+Cmd+l"] != "set-column-width +10%" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-next" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-prev" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
+	if d.Binds["Cmd+Shift+Up"] != "move-window-up" || d.Binds["Cmd+Shift+j"] != "move-window-down" || d.Binds["Alt+Cmd+Left"] != "set-column-width -1" || d.Binds["Alt+Cmd+l"] != "set-column-width +1" || d.Binds["Alt+Cmd+k"] != "set-window-height -10%" || d.Binds["Cmd+Ctrl+Shift+Down"] != "move-workspace-next" || d.Binds["Cmd+Ctrl+Shift+k"] != "move-workspace-prev" || d.Binds["Cmd+Shift+space"] != "toggle-floating" {
 		t.Fatal(d.Binds)
 	}
 	if d.Binds["Cmd+Ctrl+space"] != "spawn fuzzel" || d.Binds["Alt+Ctrl+BackSpace"] != "quit" {
@@ -224,7 +224,6 @@ keyboard.repeat-rate = 40   # inline comment
 terminal = foot --server
 background = #000000
 border.inactive =
-layout.presets = 1/3, 1/2 ,1
 log.debug = core, input
 output.DP-2.scale = 4/3
 output.DP-2 = 5120x2160@165.058
@@ -248,7 +247,7 @@ startup = wl-paste --primary --watch cliphist store; waybar ;mako;
 	if c.Keyboard.Layout != "fr" || c.Keyboard.RepeatRate != 40 || !reflect.DeepEqual(c.Terminal.Command, []string{"foot", "--server"}) || c.Background.Color != "#000000" || c.Render.DirectScanout || c.Render.Tearing || c.Render.VRR {
 		t.Fatalf("%+v", c)
 	}
-	if !reflect.DeepEqual(c.Layout.Presets, []string{"1/3", "1/2", "1"}) || !reflect.DeepEqual(c.Log.Debug, []string{"core", "input"}) {
+	if !reflect.DeepEqual(c.Log.Debug, []string{"core", "input"}) {
 		t.Fatalf("%+v", c)
 	}
 	// Scale and mode lines combine in either order.
@@ -270,7 +269,7 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"layout.gaps = 201", "layout.gaps"},
 		{"layout.max-columns = 0", "layout.max-columns"},
 		{"bind.cmd+x = focus-workspace 0", "focus-workspace"},
-		{"layout.presets = 0px", "layout.presets"},
+		{"layout.presets = 1/2, 1", "layout.presets: unknown key"},
 		{"log.level = trace", "log.level"},
 		{"log.debug = nope", "log.debug"},
 		{"output.DP-2 = big", "output.DP-2"},
@@ -287,8 +286,12 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = focus-workspace-up", `renamed to "focus-workspace-prev"`},
 		{"bind.cmd+x = move-workspace-down", `renamed to "move-workspace-next"`},
 		{"bind.cmd+x = move-column-to-workspace-up", `renamed to "move-column-to-workspace-prev"`},
-		{"bind.cmd+x = set-column-width 10%", "set-column-width needs"},
-		{"bind.cmd+x = set-column-width +0%", "set-column-width needs"},
+		{"bind.cmd+x = set-column-width 1", "set-column-width needs"},
+		{"bind.cmd+x = set-column-width +0", "set-column-width needs"},
+		{"bind.cmd+x = set-column-width +17", "set-column-width needs"},
+		{"bind.cmd+x = set-column-width +10%", "set-column-width needs"},
+		{"bind.cmd+x = set-column-width +-1", "set-column-width needs"},
+		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
 		{"bind.cmd+x = set-window-height -101%", "set-window-height needs"},
 		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
 		{"bind.cmd+x = spawn   ", "unknown action"},
@@ -523,17 +526,22 @@ workspace.web.column.1 = 50%, foot
 func TestWorkspaceSlots(t *testing.T) {
 	c, w := parseString(t, `layout.overflow = scroll
 workspace.dev.monitor = DP-2
-workspace.dev.column.2 = 33%, foot --title x
-workspace.dev.column.1 = 67%, code --new-window
-workspace.dev.column.2 = 1/3, kitty
-workspace.dev.column.0 = 50%, foot
-workspace.dev.column.3 = 50%
+workspace.dev.column.2 = 1, foot --title x
+workspace.dev.column.1 = 3, code --new-window
+workspace.dev.column.2 = 16, kitty
+workspace.dev.column.0 = 2, foot
+workspace.dev.column.3 = 2
 workspace.dev.column.4 = huge, foot
+workspace.dev.column.5 = 67%, foot
+workspace.dev.column.6 = 1/3, foot
+workspace.dev.column.7 = 800px, foot
+workspace.dev.column.8 = 0, foot
+workspace.dev.column.9 = 17, foot
 bind.cmd+d = workspace dev
 `)
 	want := []ports.SlotConfig{
-		{Index: 1, Width: "67%", Argv: []string{"code", "--new-window"}},
-		{Index: 2, Width: "1/3", Argv: []string{"kitty"}},
+		{Index: 1, Cells: 3, Argv: []string{"code", "--new-window"}},
+		{Index: 2, Cells: 16, Argv: []string{"kitty"}},
 	}
 	if len(c.Workspaces) != 1 || !reflect.DeepEqual(c.Workspaces[0].Slots, want) {
 		t.Fatalf("%+v", c.Workspaces)
@@ -542,17 +550,19 @@ bind.cmd+d = workspace dev
 	for _, x := range w {
 		lines = append(lines, x.Line)
 	}
-	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8}) {
+	if !reflect.DeepEqual(lines, []int{5, 6, 7, 8, 9, 10, 11, 12, 13}) {
 		t.Fatal(w)
 	}
 }
 
-func TestSlotWidthsIgnoredWithFixedOverflow(t *testing.T) {
-	_, w := parseString(t, `workspace.dev.overflow = fixed
-workspace.dev.column.1 = 67%, foot
+// Slot widths are cells in every overflow: nothing is ignored.
+func TestSlotWidthsKeptWithFixedOverflow(t *testing.T) {
+	c, w := parseString(t, `workspace.dev.overflow = fixed
+workspace.dev.column.1 = 2, foot
+bind.cmd+d = workspace dev
 `)
-	if len(w) != 2 || w[1].Line != 2 || !strings.Contains(w[1].Msg, "ignored") {
-		t.Fatal(w)
+	if len(w) != 0 || len(c.Workspaces) != 1 || len(c.Workspaces[0].Slots) != 1 || c.Workspaces[0].Slots[0].Cells != 2 {
+		t.Fatal(w, c.Workspaces)
 	}
 }
 

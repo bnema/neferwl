@@ -199,10 +199,10 @@ func TestEqualSharesAndBorderless(t *testing.T) {
 	if w := m.Current(); w.columnWidth(3) != 33 || w.View == 0 {
 		t.Fatal(w.View)
 	}
-	// A preset on one column is kept; auto columns keep their share.
-	m.SetPresets([]Width{{Num: 1, Den: 2}})
+	// Growing one column gives it 2 of the 3 cells; auto columns keep
+	// their share.
 	m.Apply(ActionCycleColumnWidth)
-	if w := m.Current(); w.columnWidth(w.Focus) != 50 || w.columnWidth(0) != 33 {
+	if w := m.Current(); w.columnWidth(w.Focus) != 66 || w.columnWidth(0) != 33 {
 		t.Fatal(w.columnWidth(w.Focus), w.columnWidth(0))
 	}
 }
@@ -294,11 +294,11 @@ func TestWorkspaceArg(t *testing.T) {
 	}
 }
 
-func TestLonePresetColumnKeepsWidth(t *testing.T) {
+func TestLoneCellColumnKeepsWidth(t *testing.T) {
 	m := monitor()
-	m.SetPresets([]Width{{Num: 1, Den: 2}})
 	m.AddWindow(1)
-	m.Apply(ActionCycleColumnWidth)
+	// One cell of the two: half the width, still no neighbor.
+	m.Apply("set-column-width -1")
 	if p := m.Layout()[0]; p.Rect.W != 50 || p.Neighbors != 0 {
 		t.Fatal(p)
 	}
@@ -475,13 +475,14 @@ func TestMonitorAllAllocations(t *testing.T) {
 // exit restores the tiles with the user's focus where it was.
 func TestFixedFullscreenStaysInPlace(t *testing.T) {
 	m := monitor()
+	m.SetMaxColumns(4)
 	m.SetOverflow(OverflowFixed)
 	for id := WindowID(1); id <= 3; id++ {
 		m.AddWindow(id)
 	}
 	w := m.Current()
 	w.FocusID(2)
-	m.Apply(ActionCycleColumnWidth) // expanded: kept through fullscreen
+	m.Apply(ActionCycleColumnWidth) // wider: kept through fullscreen
 	m.ToggleFullscreen()
 	m.AddWindow(4)
 	if got := windows(m); !reflect.DeepEqual(got, [][]WindowID{{1, 2, 3, 4}, {}}) || m.Current() != w || w.cover() != 2 {
@@ -491,7 +492,7 @@ func TestFixedFullscreenStaysInPlace(t *testing.T) {
 		t.Fatal("focus", id)
 	}
 	m.ToggleFullscreen()
-	if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 || !w.Columns[1].Expanded {
+	if id, _ := m.Focused(); id != 2 || w.fullscreen != 0 || w.Columns[1].Cells != 2 {
 		t.Fatal("after bind", id, w.Columns)
 	}
 }

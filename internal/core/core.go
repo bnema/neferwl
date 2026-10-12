@@ -116,7 +116,6 @@ type Core struct {
 	layerChanged bool
 	sent         sentCache
 	specs        []NamedWorkspace
-	presets      []Width
 	slots        map[slotKey]*slotState
 	rules        []rule
 	placement    spawnPlacement
@@ -227,14 +226,6 @@ func (c *Core) apply(cfg ports.Config) error {
 	if cfg.Layout.MaxColumns < 1 {
 		return fmt.Errorf("invalid max columns")
 	}
-	presets := make([]Width, 0, len(cfg.Layout.Presets))
-	for _, s := range cfg.Layout.Presets {
-		v, e := ParseWidth(s)
-		if e != nil {
-			return e
-		}
-		presets = append(presets, v)
-	}
 	if cfg.Layout.Gaps < 0 {
 		return fmt.Errorf("invalid gaps")
 	}
@@ -328,7 +319,7 @@ func (c *Core) apply(cfg ports.Config) error {
 	c.cfg = cfg
 	c.binds = binds
 	c.cmdMod = map[string]ports.Mods{"super": ports.ModSuper, "alt": ports.ModAlt, "ctrl": ports.ModCtrl}[cfg.Keyboard.CmdKey]
-	c.specs, c.presets, c.rules = named, presets, rules
+	c.specs, c.rules = named, rules
 	c.toSpawn = append(c.toSpawn, c.updateSlots(specs)...)
 	c.named()
 	for _, s := range c.screens {

@@ -66,101 +66,108 @@ func TestMoveWindowOnFloat(t *testing.T) {
 	}
 }
 
-func TestResizeColumn(t *testing.T) {
+// set-column-width +N/-N moves cells with no cycle, and a column never
+// goes below one cell.
+func TestSetColumnWidth(t *testing.T) {
 	w := workspace()
 	w.SetOutput(1000, 800)
 	w.SetGaps(10)
+	w.SetMaxColumns(4)
+	w.Overflow = OverflowFixed
 	w.AddWindow(1)
 	w.AddWindow(2)
 	before := w.columnWidth(w.Focus)
-	w.Apply("set-column-width +10%")
-	if w.Columns[w.Focus].Width.Den != 100 || w.columnWidth(w.Focus) <= before {
-		t.Fatal(w.Columns[w.Focus].Width, w.columnWidth(w.Focus), before)
+	w.Apply("set-column-width +1")
+	if w.Columns[w.Focus].Cells != 3 || w.columnWidth(w.Focus) <= before {
+		t.Fatal(w.Columns, w.columnWidth(w.Focus), before)
 	}
-	w.Apply("set-column-width -10%")
-	if d := w.columnWidth(w.Focus) - before; d < -1 || d > 1 {
-		t.Fatal(w.columnWidth(w.Focus), before)
+	// No donor is left: the width stays, it does not cycle back.
+	w.Apply("set-column-width +1")
+	if w.Columns[0].Cells != 1 || w.Columns[1].Cells != 3 {
+		t.Fatal(w.Columns)
 	}
-	for range 20 {
-		w.Apply("set-column-width +10%")
+	w.Apply("set-column-width -1")
+	if w.Columns[0].Cells != 2 || w.Columns[1].Cells != 2 || w.columnWidth(w.Focus) != before {
+		t.Fatal(w.Columns, w.columnWidth(w.Focus), before)
 	}
-	if w.Columns[w.Focus].Width != (Width{Num: 100, Den: 100}) {
-		t.Fatal(w.Columns[w.Focus].Width)
+	for range 5 {
+		w.Apply("set-column-width -1")
 	}
-	for range 20 {
-		w.Apply("set-column-width -10%")
+	if w.Columns[1].Cells != 1 || w.Columns[0].Cells != 3 {
+		t.Fatal(w.Columns)
 	}
-	if w.Columns[w.Focus].Width != (Width{Num: 10, Den: 100}) {
-		t.Fatal(w.Columns[w.Focus].Width)
-	}
-	// A preset snaps to the nearest whole percent once; steps then
-	// round-trip exactly.
-	for _, p := range []Width{{Num: 1, Den: 3}, {Num: 1, Den: 2}, {Num: 2, Den: 3}} {
-		w.Columns[w.Focus].Width = p
-		px := w.columnWidth(w.Focus)
-		w.Apply("set-column-width +7%")
-		w.Apply("set-column-width -7%")
-		snapped := w.columnWidth(w.Focus)
-		if d := snapped - px; d < -w.Usable.W/100 || d > w.Usable.W/100 {
-			t.Fatal(p, snapped, px)
-		}
-		w.Apply("set-column-width +7%")
-		w.Apply("set-column-width -7%")
-		if w.columnWidth(w.Focus) != snapped {
-			t.Fatal(p, w.columnWidth(w.Focus), snapped)
-		}
+	w.Apply("set-column-width +2")
+	if w.Columns[1].Cells != 3 || w.Columns[0].Cells != 1 {
+		t.Fatal(w.Columns)
 	}
 }
 
-func TestResizeColumnUnmaximizesAndCycles(t *testing.T) {
+func TestSetColumnWidthScroll(t *testing.T) {
 	w := workspace()
 	w.SetOutput(1000, 800)
-	w.SetPresets([]Width{{Num: 1, Den: 2}, {Num: 1, Den: 1}})
+	w.SetMaxColumns(4)
+	w.Overflow = OverflowScroll
 	w.AddWindow(1)
-	w.ToggleFullWidth()
-	w.Apply("set-column-width -10%")
-	if w.Columns[0].FullWidth {
-		t.Fatal("still maximized")
+	w.AddWindow(2)
+	w.Apply("set-column-width +1")
+	if w.Columns[w.Focus].Cells != 3 {
+		t.Fatal(w.Columns)
 	}
-	// A width outside the presets restarts the cycle at the first preset.
-	w.CycleWidth()
-	if w.Columns[0].Width != (Width{Num: 1, Den: 2}) {
-		t.Fatal(w.Columns[0].Width)
+	for range 5 {
+		w.Apply("set-column-width +1")
+	}
+	if w.Columns[w.Focus].Cells != 4 {
+		t.Fatal("grows up to max-columns", w.Columns)
+	}
+	for range 9 {
+		w.Apply("set-column-width -1")
+	}
+	if w.Columns[w.Focus].Cells != 1 {
+		t.Fatal("never below one cell", w.Columns)
 	}
 }
 
-func TestResizeColumnSameValueAsPreset(t *testing.T) {
-	w := workspace()
-	w.SetOutput(1000, 800)
-	w.SetPresets([]Width{{Num: 1, Den: 3}, {Num: 1, Den: 2}, {Num: 1, Den: 1}})
-	w.AddWindow(1)
-	w.Columns[0].Width = Width{Num: 50, Den: 100}
-	w.CycleWidth()
-	if w.Columns[0].Width != (Width{Num: 1, Den: 1}) {
-		t.Fatal(w.Columns[0].Width)
+func TestSetColumnWidthUnmaximizes(t *testing.T) {
+	for _, a := range []Action{"set-column-width +1", "set-column-width -1", ActionCycleColumnWidth} {
+		w := workspace()
+		w.SetOutput(1000, 800)
+		w.SetMaxColumns(4)
+		w.AddWindow(1)
+		w.ToggleFullWidth()
+		w.Apply(a)
+		if w.Columns[0].FullWidth {
+			t.Fatalf("%s: still maximized", a)
+		}
 	}
 }
 
 func TestColumnEditsUnderFullscreen(t *testing.T) {
 	w := workspace()
 	w.SetOutput(1000, 800)
-	w.Columns = []Column{{Windows: []WindowID{1, 2}, Width: Width{Num: 1, Den: 2}}}
+	w.Columns = []Column{{Windows: []WindowID{1, 2}, Cells: 1}}
 	w.SetFullscreen(1, true)
-	w.Apply("set-column-width -10%")
+	w.Apply("set-column-width -1")
+	w.Apply(ActionCycleColumnWidth)
 	w.Apply(ActionMoveWindowDown)
 	c := w.Columns[0]
-	if c.Width != (Width{Num: 1, Den: 2}) || !slices.Equal(c.Windows, []WindowID{1, 2}) {
+	if c.Cells != 1 || !slices.Equal(c.Windows, []WindowID{1, 2}) {
 		t.Fatal(c)
 	}
 }
 
-func TestResizeColumnFixedNoop(t *testing.T) {
+func TestSetColumnWidthFixedPastMax(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
-	w.AddWindow(1)
-	w.Apply("set-column-width +10%")
-	if w.Columns[0].Width != (Width{}) {
-		t.Fatal(w.Columns[0].Width)
+	for id := WindowID(1); id <= 3; id++ {
+		w.AddWindow(id)
+	}
+	w.Apply("set-column-width +1")
+	w.Apply("set-column-width -1")
+	w.Apply(ActionCycleColumnWidth)
+	for _, c := range w.Columns {
+		if c.Cells != 0 {
+			t.Fatal(w.Columns)
+		}
 	}
 }
 

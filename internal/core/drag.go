@@ -463,14 +463,14 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
 		w.FocusID(id)
 	} else {
-		width := Width{}
+		cells := 0
 		if lone {
-			width = src.Columns[ci].Width
+			cells = src.Columns[ci].Cells
 		}
 		srcIndex := ci
 		src.dropSlotOf(id)
 		src.RemoveWindow(id)
-		col := Column{Windows: []WindowID{id}, Width: width}
+		col := Column{Windows: []WindowID{id}, Cells: cells}
 		switch t.kind {
 		case dropAbove, dropBelow:
 			ai := w.columnOf(t.anchor)

@@ -21,9 +21,14 @@ func TestCascadeOverflowInherited(t *testing.T) {
 	}
 }
 
-func TestCascadeIgnoresColumnWidths(t *testing.T) {
-	_, w := parseString(t, "workspace.work.overflow = cascade\nworkspace.work.column.1 = 50%, foot\nbind.cmd+w = workspace work\n")
-	if len(w) != 1 || !strings.Contains(w[0].Msg, "ignored with overflow = cascade") {
+// Column widths are cells in every overflow, cascade included.
+func TestCascadeColumnWidthsInCells(t *testing.T) {
+	c, w := parseString(t, "workspace.work.overflow = cascade\nworkspace.work.column.1 = 2, foot\nbind.cmd+w = workspace work\n")
+	if len(w) != 0 || c.Workspaces[0].Slots[0].Cells != 2 {
+		t.Fatalf("warnings=%v %+v", w, c.Workspaces)
+	}
+	_, w = parseString(t, "workspace.work.overflow = cascade\nworkspace.work.column.1 = 50%, foot\nbind.cmd+w = workspace work\n")
+	if len(w) != 1 || !strings.Contains(w[0].Msg, "cells") {
 		t.Fatalf("warnings=%v", w)
 	}
 }

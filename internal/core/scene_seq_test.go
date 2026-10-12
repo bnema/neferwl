@@ -40,7 +40,10 @@ func TestAnimatingKeyGetsFreshSeq(t *testing.T) {
 		// same: the key's scene draws what the previous one did.
 		same bool
 	}{
-		{"width change", func(c *ports.Config) { c.Binds["Cmd+Ctrl+Right"] = "set-column-width +10%" },
+		{"width change", func(c *ports.Config) {
+			c.Layout.MaxColumns = 4
+			c.Binds["Cmd+Ctrl+Right"] = "set-column-width +1"
+		},
 			func(t *testing.T, r *swipeRig) ports.Scene {
 				twoColumns(t, r)
 				return r.key(t, "Left", ports.ModAlt)[0]

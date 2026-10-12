@@ -91,30 +91,40 @@ var resizePrefixes = [...]string{
 	ResizeHeight: "set-window-height ",
 }
 
-// ResizeArg parses "set-column-width +N%" (axis ResizeWidth) and
-// "set-window-height -N%" (axis ResizeHeight); N is 1 to 100 and the sign
-// is required.
-func ResizeArg(a Action) (axis, pct int, ok bool) {
+// ResizeArg parses "set-column-width +N" (axis ResizeWidth) and
+// "set-window-height -N%" (axis ResizeHeight). The sign is required and the
+// unit depends on the axis: step is in cells for a width (N from 1 to 16,
+// no %), in percent for a height (N from 1 to 100, with %).
+func ResizeArg(a Action) (axis, step int, ok bool) {
 	for i, prefix := range resizePrefixes {
 		rest, found := strings.CutPrefix(string(a), prefix)
 		if !found {
 			continue
 		}
-		if p, ok := parseResizeStep(strings.TrimSpace(rest)); ok {
-			return i, p, true
+		rest = strings.TrimSpace(rest)
+		if i == ResizeWidth {
+			if p, ok := parseResizeStep(rest, maxCells); ok {
+				return i, p, true
+			}
+			return 0, 0, false
+		}
+		if num, found := strings.CutSuffix(rest, "%"); found {
+			if p, ok := parseResizeStep(num, 100); ok {
+				return i, p, true
+			}
 		}
 		return 0, 0, false
 	}
 	return 0, 0, false
 }
 
-// parseResizeStep parses "+N%" or "-N%" with N from 1 to 100.
-func parseResizeStep(s string) (int, bool) {
-	if len(s) < 3 || (s[0] != '+' && s[0] != '-') || s[len(s)-1] != '%' {
+// parseResizeStep parses "+N" or "-N" with N from 1 to limit.
+func parseResizeStep(s string, limit int) (int, bool) {
+	if len(s) < 2 || (s[0] != '+' && s[0] != '-') {
 		return 0, false
 	}
-	n, err := strconv.Atoi(s[1 : len(s)-1])
-	if err != nil || n < 1 || n > 100 || s[1] == '+' || s[1] == '-' {
+	n, err := strconv.Atoi(s[1:])
+	if err != nil || n < 1 || n > limit || s[1] == '+' || s[1] == '-' {
 		return 0, false
 	}
 	if s[0] == '-' {
@@ -418,11 +428,17 @@ func (w *Workspace) Apply(a Action) Effect {
 	if w.freeAction(a) {
 		return Effect{}
 	}
-	if axis, pct, ok := ResizeArg(a); ok {
+	if axis, step, ok := ResizeArg(a); ok {
 		if axis == ResizeWidth {
-			w.ResizeColumn(pct)
+			for range max(step, -step) {
+				if step > 0 {
+					w.GrowColumn(false)
+				} else {
+					w.ShrinkColumn()
+				}
+			}
 		} else {
-			w.ResizeRow(pct)
+			w.ResizeRow(step)
 		}
 		return Effect{}
 	}
@@ -446,7 +462,7 @@ func (w *Workspace) Apply(a Action) Effect {
 	case ActionMoveWindowDown:
 		w.MoveWindow(1)
 	case ActionCycleColumnWidth:
-		w.CycleWidth()
+		w.GrowColumn(true)
 	case ActionMaximizeColumn:
 		w.ToggleFullWidth()
 	case ActionToggleFullscreen:

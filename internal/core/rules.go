@@ -29,7 +29,7 @@ type rule struct {
 	number    int
 	workspace string
 	monitor   string
-	width     Width // zero: automatic
+	cells     int // zero: automatic
 }
 
 // ruleEffect is the merge of every rule matching a window: per field, the
@@ -39,7 +39,7 @@ type ruleEffect struct {
 	number    int
 	workspace string
 	monitor   string
-	width     Width // zero: automatic
+	cells     int // zero: automatic
 }
 
 func parseRules(rs []ports.WindowRule) ([]rule, error) {
@@ -59,13 +59,10 @@ func parseRules(rs []ports.WindowRule) ([]rule, error) {
 				p.workspace = r.Workspace
 			}
 		}
-		if r.Width != "" {
-			width, err := ParseWidth(r.Width)
-			if err != nil {
-				return nil, fmt.Errorf("rule %s: %w", r.Name, err)
-			}
-			p.width = width
+		if r.Cells < 0 || r.Cells > maxCells {
+			return nil, fmt.Errorf("rule %s: invalid width %d", r.Name, r.Cells)
 		}
+		p.cells = r.Cells
 		out = append(out, p)
 	}
 	return out, nil
@@ -93,8 +90,8 @@ func (c *Core) ruleFor(v ports.WindowMapped) (eff ruleEffect, ok bool) {
 		if r.monitor != "" {
 			eff.monitor = r.monitor
 		}
-		if r.width != (Width{}) {
-			eff.width = r.width
+		if r.cells != 0 {
+			eff.cells = r.cells
 		}
 	}
 	return eff, ok
@@ -140,9 +137,9 @@ func (c *Core) placeByRule(v ports.WindowMapped, eff ruleEffect) {
 		// floated by a rule becomes a free float, core sizing it.
 		w.addFloat(w.ruleFloat(v), quiet)
 	case quiet:
-		w.addColumnQuiet(Column{Windows: []WindowID{v.ID}, Width: eff.width})
+		w.addColumnQuiet(Column{Windows: []WindowID{v.ID}, Cells: eff.cells})
 	default:
-		sc.mon.addWindow(v.ID, eff.width)
+		sc.mon.addWindow(v.ID, eff.cells)
 		return
 	}
 	sc.mon.normalize()

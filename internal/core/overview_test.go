@@ -467,8 +467,8 @@ func TestOverviewPileOnly(t *testing.T) {
 // Fixed overflow previews use the actual buffer geometry, including the
 // spiral and window stacks, rather than laying full-height columns in a row.
 func TestOverviewFixedOverflowGeometry(t *testing.T) {
-	for _, expanded := range []bool{false, true} {
-		t.Run(map[bool]string{false: "spiral", true: "expanded"}[expanded], func(t *testing.T) {
+	for _, cells := range []bool{false, true} {
+		t.Run(map[bool]string{false: "spiral", true: "cells ignored"}[cells], func(t *testing.T) {
 			m := newMonitor("", "")
 			m.SetOutput(600, 400)
 			m.SetOverflow(OverflowFixed)
@@ -477,8 +477,9 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 				m.AddWindow(id)
 			}
 			w := m.Current()
-			if expanded {
-				w.Columns[2].Expanded = true
+			if cells {
+				// The spiral ignores cells: the preview must still match.
+				w.Columns[0].Cells, w.Columns[2].Cells = 1, 3
 			}
 			w.Columns[3].Windows = append(w.Columns[3].Windows, 6)
 			w.Columns[3].Focus = 1

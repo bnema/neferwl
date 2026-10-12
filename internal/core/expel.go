@@ -40,13 +40,13 @@ func (w *Workspace) ConsumeOrExpel(dir int) bool {
 		// The column goes away, and a slot with it.
 		w.stackWindow(id, w.Columns[next].Windows[0])
 	case !w.full():
-		c := Column{Windows: []WindowID{id}, Width: col.Width}
+		c := Column{Windows: []WindowID{id}, Cells: col.Cells}
 		if col.Focus == 0 && col.Slot != 0 {
 			// The slot and its width follow the slot window.
 			c.Slot = col.Slot
-			w.Columns[src].Slot, w.Columns[src].Width = 0, Width{}
+			w.Columns[src].Slot, w.Columns[src].Cells = 0, 0
 		} else if col.Slot != 0 {
-			c.Width = Width{}
+			c.Cells = 0
 		}
 		w.RemoveWindow(id)
 		w.insertColumn(src+max(dir, 0), c)

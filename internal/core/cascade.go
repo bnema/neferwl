@@ -4,8 +4,16 @@ import "slices"
 
 func (w *Workspace) band(i int) int         { return i / max(w.MaxColumns, 1) }
 func (w *Workspace) sameBand(a, b int) bool { return !w.policy().wraps || w.band(a) == w.band(b) }
+
+// cellX is the x of column i in its lane, from the usable area's left edge.
 func (w *Workspace) cellX(i int) int {
-	return w.gap() + (i%max(w.MaxColumns, 1))*(w.cellWidth(i)+w.gap())
+	first, last := w.laneBounds(w.laneOf(i))
+	S, u, sum := w.laneStats(first, last)
+	x := w.gap()
+	for j := first; j < i; j++ {
+		x += w.laneWidth(j, first, last, S, u, sum) + w.gap()
+	}
+	return x
 }
 func (w *Workspace) cascadeBands() (n, spacing int) {
 	if len(w.Columns) == 0 || w.Usable.H <= 0 {
@@ -14,12 +22,64 @@ func (w *Workspace) cascadeBands() (n, spacing int) {
 	return w.band(len(w.Columns)-1) + 1, w.Usable.H
 }
 
-// cellWidth is the width of the cell of column i: the columns of its band
-// share the usable width equally, as in fixed overflow, so a lone column
-// fills it.
+// cellWidth is the width of column i in its lane: the columns of a band
+// (the whole row in fixed overflow) share the usable width by their cells,
+// auto columns sharing what the others leave, so a lone column fills it.
 func (w *Workspace) cellWidth(i int) int {
-	first, last := w.laneBounds(w.band(i))
-	return w.equalShare(last - first + 1)
+	first, last := w.laneBounds(w.laneOf(i))
+	S, u, sum := w.laneStats(first, last)
+	return w.laneWidth(i, first, last, S, u, sum)
+}
+
+// laneStats measures the lane first..last: S is the sum of the cells of
+// its set columns, u the count of its auto columns and sum the total of
+// their weights (laneWeight).
+func (w *Workspace) laneStats(first, last int) (S, u, sum int) {
+	for i := first; i <= last; i++ {
+		if c := w.Columns[i].Cells; c > 0 {
+			S += c
+		} else {
+			u++
+		}
+	}
+	for i := first; i <= last; i++ {
+		sum += w.laneWeight(i, S, u)
+	}
+	return S, u, sum
+}
+
+// laneWeight is the share of column i in its lane, given its stats. With
+// room left for every auto column, they share the cells the set ones leave
+// and the set ones keep their cells; otherwise an auto column weighs one
+// cell.
+func (w *Workspace) laneWeight(i, S, u int) int {
+	k := max(w.MaxColumns, 1)
+	c := w.Columns[i].Cells
+	switch {
+	case u == 0:
+		return c
+	case k-S >= u:
+		if c > 0 {
+			return c * u
+		}
+		return k - S
+	case c > 0:
+		return c
+	}
+	return 1
+}
+
+// laneWidth is the width of column i of the lane first..last with the
+// stats of laneStats: the usable width after gaps, split by weight. The
+// remainder under one pixel per weight stays empty, as in equalShare.
+func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
+	if sum <= 0 {
+		return 0
+	}
+	avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
+	// floor(avail*weight/sum) without overflowing on a huge area.
+	weight := w.laneWeight(i, S, u)
+	return avail/sum*weight + avail%sum*weight/sum
 }
 
 // equalShare is the width of each of k columns sharing the usable width
@@ -51,13 +111,23 @@ func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 	g := w.gap()
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.View + w.shiftPixels()
-	for i := range w.Columns {
-		r := Rect{X: w.Usable.X + w.cellX(i), Y: w.Usable.Y + g + w.band(i)*w.Usable.H - view, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
-		if w.Columns[i].FullWidth && !ignoreFullWidth {
-			r.X = w.Usable.X + g
-			r.W = max(w.Usable.W-2*g, 0)
+	for lane := 0; ; lane++ {
+		first, last := w.laneBounds(lane)
+		if first > last {
+			break
 		}
-		rects[i] = r
+		S, u, sum := w.laneStats(first, last)
+		x := g
+		for i := first; i <= last; i++ {
+			cw := w.laneWidth(i, first, last, S, u, sum)
+			r := Rect{X: w.Usable.X + x, Y: w.Usable.Y + g + w.band(i)*w.Usable.H - view, W: cw, H: max(w.Usable.H-2*g, 0)}
+			if w.Columns[i].FullWidth && !ignoreFullWidth {
+				r.X = w.Usable.X + g
+				r.W = max(w.Usable.W-2*g, 0)
+			}
+			rects[i] = r
+			x += cw + g
+		}
 	}
 	return rects
 }

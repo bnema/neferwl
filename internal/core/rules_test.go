@@ -225,8 +225,8 @@ func TestRulesMerge(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
 		c.Layout.MaxColumns = 4
 		c.Rules = []ports.WindowRule{
-			winRule("all", ".*", func(r *ports.WindowRule) { r.Monitor = "DP-2"; r.Width = "1/4" }),
-			winRule("chat", "chat", func(r *ports.WindowRule) { r.Width = "1/2" }),
+			winRule("all", ".*", func(r *ports.WindowRule) { r.Monitor = "DP-2"; r.Cells = 1 }),
+			winRule("chat", "chat", func(r *ports.WindowRule) { r.Cells = 2 }),
 		}
 	}, left, right)
 	r.key(t, "Left", ports.ModAlt|ports.ModCtrl)
@@ -260,7 +260,7 @@ func sceneMatch2(t *testing.T, r *multiRig, ok func(ports.Scene) bool) ports.Sce
 func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
 		c.Layout.MaxColumns = 4
-		c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Width = "50%" })}
+		c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Cells = 2 })}
 	}, left)
 	r.client <- ports.WindowMapped{ID: 1, AppID: "wide"}
 	s := sceneMatch2(t, r, func(s ports.Scene) bool { return len(s.Windows) == 1 })
@@ -271,7 +271,7 @@ func TestRuleWidthOnCurrentWorkspace(t *testing.T) {
 
 func TestSlotWinsOverRule(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
-		c.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{{Index: 1, Width: "50%", Argv: []string{"code"}}}}}
+		c.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{{Index: 1, Cells: 2, Argv: []string{"code"}}}}}
 		c.Binds["Alt+d"] = "workspace dev"
 		c.Rules = []ports.WindowRule{winRule("x", "code", func(r *ports.WindowRule) { r.Workspace = "1"; r.Floating = ruleOn() })}
 	}, left)
@@ -396,16 +396,18 @@ func TestRuleQuietPlacementWithAnimations(t *testing.T) {
 	}
 }
 
-func TestRuleWidthIgnoredWithFixedOverflow(t *testing.T) {
+// A fixed row shares its width by cells: the auto column takes the cell
+// the wide one leaves.
+func TestRuleWidthWithFixedOverflow(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
-		c.Layout.MaxColumns = 2
+		c.Layout.MaxColumns = 4
 		c.Layout.Overflow = "fixed"
-		c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Width = "10%" })}
+		c.Rules = []ports.WindowRule{winRule("w", "wide", func(r *ports.WindowRule) { r.Cells = 3 })}
 	}, left)
 	r.client <- ports.WindowMapped{ID: 1, AppID: "term"}
 	r.client <- ports.WindowMapped{ID: 2, AppID: "wide"}
 	s := sceneMatch2(t, r, func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	if s.Windows[0].Rect.W != 100 || s.Windows[1].Rect.W != 100 {
+	if s.Windows[0].Rect.W != 50 || s.Windows[1].Rect.W != 150 {
 		t.Fatalf("%+v", s.Windows)
 	}
 }

@@ -45,9 +45,11 @@ func startSlotsMode(t *testing.T, animated *bool, numbered ...bool) *slotRig {
 		cfg.Animations.On = *animated
 	}
 	cfg.Border.Width = 0
+	// A cell is a tenth of the width: the slots take 7 and 3 cells.
+	cfg.Layout.MaxColumns = 10
 	cfg.Workspaces = []ports.WorkspaceConfig{{Name: "dev", Slots: []ports.SlotConfig{
-		{Index: 1, Width: "70%", Argv: []string{"code"}},
-		{Index: 2, Width: "30%", Argv: []string{"foot"}},
+		{Index: 1, Cells: 7, Argv: []string{"code"}},
+		{Index: 2, Cells: 3, Argv: []string{"foot"}},
 	}}}
 	cfg.Binds["Alt+d"] = "workspace dev"
 	if len(numbered) > 1 {
@@ -285,9 +287,9 @@ func TestSlotReload(t *testing.T) {
 	cfg := r.cfg
 	ws := cfg.Workspaces[0]
 	ws.Slots = []ports.SlotConfig{
-		{Index: 1, Width: "50%", Argv: []string{"code"}},  // width change only
-		{Index: 2, Width: "30%", Argv: []string{"kitty"}}, // empty slot, new command
-		{Index: 3, Width: "20%", Argv: []string{"btop"}},  // new slot
+		{Index: 1, Cells: 5, Argv: []string{"code"}},  // width change only
+		{Index: 2, Cells: 3, Argv: []string{"kitty"}}, // empty slot, new command
+		{Index: 3, Cells: 2, Argv: []string{"btop"}},  // new slot
 	}
 	cfg.Workspaces = []ports.WorkspaceConfig{ws}
 	r.reload <- ports.ConfigChanged{Config: cfg}
@@ -329,7 +331,7 @@ func TestInvalidSlotWidthRejected(t *testing.T) {
 	receive(t, r.spawn)
 	cfg := r.cfg
 	ws := cfg.Workspaces[0]
-	ws.Slots = []ports.SlotConfig{{Index: 1, Width: "wide", Argv: []string{"x"}}}
+	ws.Slots = []ports.SlotConfig{{Index: 1, Cells: 17, Argv: []string{"x"}}}
 	cfg.Workspaces = []ports.WorkspaceConfig{ws}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if err := receive(t, r.errs); err == nil {
@@ -346,7 +348,7 @@ func TestSlotReloadWhileShownSpawnsOnce(t *testing.T) {
 	r.press(t, "d")
 	cfg := r.cfg
 	ws := cfg.Workspaces[0]
-	ws.Slots = append(ws.Slots, ports.SlotConfig{Index: 3, Width: "20%", Argv: []string{"btop"}})
+	ws.Slots = append(ws.Slots, ports.SlotConfig{Index: 3, Cells: 2, Argv: []string{"btop"}})
 	cfg.Workspaces = []ports.WorkspaceConfig{ws}
 	r.reload <- ports.ConfigChanged{Config: cfg}
 	if v := receive(t, r.spawn); v.Argv[0] != "btop" {

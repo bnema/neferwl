@@ -74,15 +74,16 @@ func (w *Workspace) freeAction(a Action) bool {
 	}
 	f := &w.Floats[i]
 	u := w.Usable
-	if axis, pct, ok := ResizeArg(a); ok {
+	if axis, step, ok := ResizeArg(a); ok {
 		if u.W <= 0 || u.H <= 0 {
 			return true
 		}
-		// The size is the client's: the border must fit too.
+		// The size is the client's: the border must fit too. A width
+		// step is in cells, a cell being Usable.W/MaxColumns.
 		if axis == ResizeWidth {
-			f.W = max(min(f.W+u.W*pct/100, u.W-2*w.border), freeMinSize)
+			f.W = max(min(f.W+step*u.W/max(w.MaxColumns, 1), u.W-2*w.border), freeMinSize)
 		} else {
-			f.H = max(min(f.H+u.H*pct/100, u.H-2*w.border), freeMinSize)
+			f.H = max(min(f.H+u.H*step/100, u.H-2*w.border), freeMinSize)
 		}
 		w.clampFree(f)
 		return true

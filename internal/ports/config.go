@@ -134,8 +134,7 @@ type Config struct {
 		Inactive string
 	}
 	Layout struct {
-		Gaps    int
-		Presets []string
+		Gaps int
 		// LayoutRules are the defaults; Outputs override them per screen and
 		// named workspaces override them again.
 		LayoutRules
@@ -254,10 +253,11 @@ func SplitCommands(v string) [][]string {
 
 // SlotConfig reserves column N of a workspace for the window of one command.
 // neferwl spawns the command at startup; the window it opens goes to the
-// slot. Width is a layout width (fraction, percentage or pixels).
+// slot. Cells is its width in cells, a cell being one max-columns-th of
+// the usable width (1 to 16; 0 shares the width with the other columns).
 type SlotConfig struct {
 	Index int
-	Width string
+	Cells int
 	Argv  []string
 }
 
@@ -274,6 +274,7 @@ type WindowRule struct {
 	Workspace string
 	// Monitor is a connector (DP-2) or a monitor key ("make model serial").
 	Monitor string
-	// Width is the layout width of the new column of a tiled window.
-	Width string
+	// Cells is the width in cells of the new column of a tiled window
+	// (1 to 16; 0 leaves it automatic).
+	Cells int
 }

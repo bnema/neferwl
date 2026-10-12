@@ -15,7 +15,7 @@ func TestToggleWindowStash(t *testing.T) {
 			w.border = 2
 			w.AddWindow(1)
 			w.AddWindow(2)
-			w.Columns[1].Width = Width{Pixels: 35}
+			w.Columns[1].Cells = 3
 			if stacked {
 				w.Columns[1].Windows = []WindowID{3, 2}
 				w.Columns[1].Focus = 1
@@ -34,7 +34,7 @@ func TestToggleWindowStash(t *testing.T) {
 			}
 			w.Apply(ActionToggleWindowStash)
 			id, _ := w.Focused()
-			if id != 2 || len(w.Stash) != 0 || w.Focus != 1 || w.Columns[1].Width != (Width{Pixels: 35}) || !slices.Contains(w.Columns[1].Windows, 2) {
+			if id != 2 || len(w.Stash) != 0 || w.Focus != 1 || w.Columns[1].Cells != 3 || !slices.Contains(w.Columns[1].Windows, 2) {
 				t.Fatalf("round trip: %+v", w)
 			}
 		})
@@ -103,7 +103,7 @@ func TestStashStrip(t *testing.T) {
 	// Column actions do nothing while the stash has the focus.
 	w.Apply(ActionMoveColumnLeft)
 	w.Apply(ActionCycleColumnWidth)
-	if w.Columns[0].Windows[0] != 1 || w.Columns[0].Width != (Width{}) {
+	if w.Columns[0].Windows[0] != 1 || w.Columns[0].Cells != 0 {
 		t.Fatalf("column changed: %+v", w.Columns)
 	}
 	// A gap as wide as the margin leaves nothing to show: neighbors wait
@@ -263,7 +263,7 @@ func TestFullscreenPinsFocus(t *testing.T) {
 	w.focusCover()
 	w.Apply(ActionMoveColumnLeft)
 	w.Apply(ActionCycleColumnWidth)
-	if id, _ := w.Focused(); id != 3 || w.fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Width != (Width{}) {
+	if id, _ := w.Focused(); id != 3 || w.fullscreen != 3 || w.Columns[0].Windows[0] != 1 || w.Columns[1].Cells != 0 {
 		t.Fatalf("focused %d fullscreen %d columns %+v", id, w.fullscreen, w.Columns)
 	}
 	if e := w.Apply(ActionCloseWindow); e.Close != 3 {
@@ -353,20 +353,20 @@ func TestToggleWindowStashKeepsFullWidth(t *testing.T) {
 	}
 }
 
-// A lone expanded column (fixed overflow) comes back expanded.
-func TestToggleWindowStashKeepsExpanded(t *testing.T) {
+// A lone wide column (fixed overflow) comes back at its width in cells.
+func TestToggleWindowStashKeepsCells(t *testing.T) {
 	w := workspace()
 	w.Overflow = OverflowFixed
 	w.SetMaxColumns(3)
 	w.AddWindow(1)
 	w.AddWindow(2)
-	w.CycleWidth()
-	if !w.Columns[w.Focus].Expanded {
-		t.Fatal("column not expanded")
+	w.Apply(ActionCycleColumnWidth)
+	if w.Columns[w.Focus].Cells != 2 {
+		t.Fatal("column not wider", w.Columns)
 	}
 	w.Apply(ActionToggleWindowStash)
 	w.Apply(ActionToggleWindowStash)
-	if id, _ := w.Focused(); id != 2 || !w.Columns[w.Focus].Expanded {
+	if id, _ := w.Focused(); id != 2 || w.Columns[w.Focus].Cells != 2 {
 		t.Fatalf("focused %d, column %+v", id, w.Columns[w.Focus])
 	}
 }

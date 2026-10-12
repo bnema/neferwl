@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,8 +18,8 @@ rule.games.workspace = 3
 rule.chat.app-id = org\.telegram\..*|discord
 rule.chat.workspace = chat
 rule.chat.monitor = DP-2
-rule.chat.width = 1/3
-rule.games.width = 50%
+rule.chat.width = 1
+rule.games.width = 4
 `)
 	if len(w) != 0 {
 		t.Fatal(w)
@@ -27,10 +28,10 @@ rule.games.width = 50%
 		t.Fatalf("%+v", c.Rules)
 	}
 	g, ch := c.Rules[0], c.Rules[1]
-	if g.Floating == nil || !*g.Floating || g.Workspace != "3" || g.Width != "50%" || g.Monitor != "" {
+	if g.Floating == nil || !*g.Floating || g.Workspace != "3" || g.Cells != 4 || g.Monitor != "" {
 		t.Fatalf("%+v", g)
 	}
-	if ch.Floating != nil || ch.Workspace != "chat" || ch.Monitor != "DP-2" || ch.Width != "1/3" {
+	if ch.Floating != nil || ch.Workspace != "chat" || ch.Monitor != "DP-2" || ch.Cells != 1 {
 		t.Fatalf("%+v", ch)
 	}
 	if !g.AppID.MatchString("steam_app_1245620") || !ch.AppID.MatchString("discord") || !ch.AppID.MatchString("org.telegram.desktop") {
@@ -71,7 +72,12 @@ func TestRuleWarnings(t *testing.T) {
 		// An invalid duplicate keeps the earlier value and the rule.
 		{"bad duplicate floating", "rule.a.app-id = foo\nrule.a.floating = on\nrule.a.floating = maybe\n", "rule.a.floating: must be on or off", 3, 1},
 		{"bad duplicate app-id", "rule.a.app-id = foo\nrule.a.app-id = (\n", "rule.a.app-id: invalid regular expression", 2, 1},
-		{"bad width", "rule.a.app-id = foo\nrule.a.width = wide\n", "rule.a.width: must be a width", 2, 0},
+		{"bad width", "rule.a.app-id = foo\nrule.a.width = wide\n", "rule.a.width: must be a cell count from 1 to 16", 2, 0},
+		{"percent width", "rule.a.app-id = foo\nrule.a.width = 50%\n", "rule.a.width: must be a cell count", 2, 0},
+		{"fraction width", "rule.a.app-id = foo\nrule.a.width = 1/3\n", "rule.a.width: must be a cell count", 2, 0},
+		{"pixel width", "rule.a.app-id = foo\nrule.a.width = 800px\n", "rule.a.width: must be a cell count", 2, 0},
+		{"zero width", "rule.a.app-id = foo\nrule.a.width = 0\n", "rule.a.width: must be a cell count", 2, 0},
+		{"too wide", "rule.a.app-id = foo\nrule.a.width = 17\n", "rule.a.width: must be a cell count", 2, 0},
 		{"bad workspace number", "rule.a.app-id = foo\nrule.a.workspace = 0\n", "rule.a.workspace: workspace number", 2, 0},
 		{"bad workspace name", "rule.a.app-id = foo\nrule.a.workspace = a b\n", "rule.a.workspace: must be", 2, 0},
 		{"empty monitor", "rule.a.app-id = foo\nrule.a.monitor =\n", "rule.a.monitor: needs", 2, 0},
@@ -90,11 +96,11 @@ func TestRuleWarnings(t *testing.T) {
 	}
 }
 
-func TestRuleWidthReusesColumnWidth(t *testing.T) {
-	for _, v := range []string{"1", "33%", "1/3", "640px"} {
-		c, w := parseString(t, "rule.a.app-id = foo\nrule.a.width = "+v+"\n")
-		if len(w) != 0 || len(c.Rules) != 1 || c.Rules[0].Width != v {
-			t.Fatalf("%s: %v %+v", v, w, c.Rules)
+func TestRuleWidthIsACellCount(t *testing.T) {
+	for _, v := range []int{1, 2, 16} {
+		c, w := parseString(t, "rule.a.app-id = foo\nrule.a.width = "+strconv.Itoa(v)+"\n")
+		if len(w) != 0 || len(c.Rules) != 1 || c.Rules[0].Cells != v {
+			t.Fatalf("%d: %v %+v", v, w, c.Rules)
 		}
 	}
 }
