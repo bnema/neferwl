@@ -2,6 +2,7 @@ package drm
 
 import (
 	"encoding/binary"
+	"maps"
 	"math"
 	"os"
 	"regexp"
@@ -522,6 +523,54 @@ func TestColorBypassOnComposedProtectedOffCloseAndModeset(t *testing.T) {
 		c := (*commits)[0]
 		if v, ok := c.req.value(tPrimary, pColorPipe); !ok || v != 0 {
 			t.Fatalf("protected frame: COLOR_PIPELINE %d %v", v, ok)
+		}
+	})
+}
+
+// A modeset and Close clear the CRTC's DEGAMMA_LUT, CTM and GAMMA_LUT,
+// which another DRM master may have left: a ramp kept there distorts every
+// frame, the PQ ones included.
+func TestCRTCColorClearedOnModesetAndClose(t *testing.T) {
+	const pCTM, pGamma = 63, 64
+	cleared := func(t *testing.T, c commitRec) {
+		t.Helper()
+		for _, p := range []uint32{pDegamma, pCTM, pGamma} {
+			if v, ok := c.req.value(tCrtc, p); !ok || v != 0 {
+				t.Errorf("CRTC property %d = %d %v, want 0", p, v, ok)
+			}
+		}
+	}
+	setup := func(t *testing.T) (*Output, *mockkms, *[]commitRec) {
+		o, k, commits := colorOutput(t, false, nil)
+		o.crtcProps = maps.Clone(o.crtcProps)
+		o.crtcProps["DEGAMMA_LUT"], o.crtcProps["CTM"], o.crtcProps["GAMMA_LUT"] = pDegamma, pCTM, pGamma
+		return o, k, commits
+	}
+	t.Run("modeset", func(t *testing.T) {
+		o, k, commits := setup(t)
+		k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
+		if err := o.modeset(); err != nil {
+			t.Fatal(err)
+		}
+		cleared(t, (*commits)[0])
+	})
+	t.Run("close", func(t *testing.T) {
+		o, k, commits := setup(t)
+		k.EXPECT().rmFB(mock.Anything).Return(nil)
+		k.EXPECT().destroyBlob(uint32(61)).Return(nil).Once()
+		o.Close()
+		cleared(t, (*commits)[0])
+	})
+	t.Run("frame", func(t *testing.T) {
+		// A frame commit leaves them alone: they stay as the modeset left them.
+		o, _, commits := setup(t)
+		if ok, err := o.commitScanoutRect(80, sdrContent(o), pendingFrame{}, fullPlaneRect(200, 100), colorSDRToPQ); !ok || err != nil {
+			t.Fatalf("ok=%v err=%v", ok, err)
+		}
+		for _, p := range []uint32{pDegamma, pCTM, pGamma} {
+			if _, ok := (*commits)[0].req.value(tCrtc, p); ok {
+				t.Errorf("frame commit writes CRTC property %d", p)
+			}
 		}
 	})
 }

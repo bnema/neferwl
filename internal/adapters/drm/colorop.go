@@ -90,9 +90,15 @@ func (o *Output) primaryColorProps(req *atomicReq, mode colorMode) {
 // forceBypass sets Bypass on the primary and overlay planes whether or not
 // the applied state is known to differ: for requests that must leave a
 // known state (modeset, close).
+// The CRTC's DEGAMMA_LUT, CTM and GAMMA_LUT are cleared with them: this
+// compositor never sets them, and a ramp left by another DRM master would
+// apply on top of the PQ output.
 func (o *Output) forceBypass(req *atomicReq) {
 	o.primary.colorProps(req, colorBypass, 0, 0)
 	o.overlay.colorProps(req, colorBypass, 0, 0)
+	for _, name := range [...]string{"DEGAMMA_LUT", "CTM", "GAMMA_LUT"} {
+		req.set(o.crtc, o.crtcProps[name], 0)
+	}
 }
 
 // overlayColorProps puts mode on the overlay plane if it applies another one.
