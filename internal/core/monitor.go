@@ -205,6 +205,18 @@ func (m *Monitor) Focus(i int) {
 	m.normalize()
 }
 
+// stepWorkspace switches to the previous or next workspace (dir -1/1) when
+// axis is the current layout's workspace axis, and reports whether it did. A
+// hidden named workspace is outside the numbered list: it never steps.
+func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
+	step := m.Current().policy().workspaceStep(axis, dir)
+	if m.shown != nil || step == 0 {
+		return false
+	}
+	m.Focus(m.Active + step)
+	return true
+}
+
 // MoveWorkspace swaps the active numbered workspace with its neighbor up
 // (dir -1) or down (dir 1); the view follows it. It never passes the
 // trailing empty workspace.

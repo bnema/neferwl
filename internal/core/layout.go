@@ -717,7 +717,7 @@ func (w *Workspace) focusColumn(dir int) {
 // columnToward returns the column focus-column-left/right (dir -1/1) goes
 // to, or -1 at the edge. Scroll overflow follows the column order; fixed
 // overflow stacks columns (spiral), so it follows the screen: the column
-// on that side.
+// on that side. Cascade stays in its band: past the band edge is the edge.
 func (w *Workspace) columnToward(dir int) int {
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
 		return -1
@@ -725,7 +725,7 @@ func (w *Workspace) columnToward(dir int) int {
 	if w.onScreenFocus() {
 		return w.screenNeighbor(dir, 0)
 	}
-	if i := w.Focus + dir; i >= 0 && i < len(w.Columns) {
+	if i := w.Focus + dir; !w.leavesBand(i) {
 		return i
 	}
 	return -1

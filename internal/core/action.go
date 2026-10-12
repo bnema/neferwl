@@ -197,8 +197,9 @@ type Effect struct {
 }
 
 // applyAction runs a bind action. Monitor actions change the focused
-// screen; column focus past the edge column moves to the neighbor screen;
-// everything else applies to the focused screen's monitor.
+// screen; column focus past the edge column moves to the neighbor screen,
+// else along the layout's workspace axis; everything else applies to the
+// focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
 	if e, ok := c.cur().mon.overviewAction(a); ok {
 		return e
@@ -229,29 +230,32 @@ func (c *Core) applyAction(a Action) Effect {
 			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
-		// with none (the workspace or stash edge), the move goes to the
-		// neighbor monitor and fullscreen stays.
+		// with none (the workspace, band or stash edge), the move goes to the
+		// neighbor monitor, else along the workspace axis, and fullscreen
+		// stays.
 		if w.pinned() && !w.stashOverCover() {
-			// A cascade fullscreen tile at its band edge leaves for the
-			// neighbor monitor, like any tile there, and stays fullscreen.
-			if i := c.neighbor(d); i >= 0 && !w.onFloat() && w.policy().wraps && w.leavesBand(w.Focus+dir) {
-				c.focusScreen = i
-				return Effect{}
-			}
 			if !w.FocusColumn(dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i
+				} else {
+					c.cur().mon.stepWorkspace(horizontalAxis, dir)
 				}
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends.
+		// keeps the focus at its ends. At the edge the move goes to the
+		// neighbor monitor, else along the workspace axis if it is horizontal.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if i := c.neighbor(d); edge && i >= 0 {
-			c.focusScreen = i
-			return Effect{}
+		if edge {
+			if i := c.neighbor(d); i >= 0 {
+				c.focusScreen = i
+				return Effect{}
+			}
+			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
+				return Effect{}
+			}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
@@ -338,16 +342,15 @@ func (m *Monitor) Apply(a Action) Effect {
 	switch a {
 	case ActionFocusWindowUp, ActionFocusWindowDown:
 		// Past the column and any on-screen neighbor or demoted float,
-		// move to the next workspace. Cascade workspaces sit side by side:
-		// up/down stop at the first and last band.
+		// move to the next workspace if the layout's workspace axis is
+		// vertical. Cascade workspaces sit side by side: up/down stop at the
+		// first and last band.
 		dir := 1
 		if a == ActionFocusWindowUp {
 			dir = -1
 		}
-		// A hidden workspace is outside the vertical list.
-		w := m.Current()
-		if !w.FocusWindow(dir) && m.shown == nil && !w.policy().wraps {
-			m.Focus(m.Active + dir)
+		if !m.Current().FocusWindow(dir) {
+			m.stepWorkspace(verticalAxis, dir)
 		}
 		return Effect{}
 	case ActionToggleFullscreen:
