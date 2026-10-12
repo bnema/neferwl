@@ -1,12 +1,8 @@
 package core
 
 import (
-	"fmt"
 	"math"
-	"math/bits"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -16,87 +12,17 @@ type WindowID = ports.WindowID
 
 type Rect = ports.Rect
 
-type Width struct{ Num, Den, Pixels int }
+// maxCells is the largest width a rule or a slot may declare, in cells.
+const maxCells = 16
 
-func ParseWidth(s string) (Width, error) {
-	if s == "1" {
-		return Width{Num: 1, Den: 1}, nil
-	}
-	if strings.HasSuffix(s, "px") {
-		n, e := strconv.Atoi(strings.TrimSuffix(s, "px"))
-		if e == nil && n > 0 {
-			return Width{Pixels: n}, nil
-		}
-	} else if strings.HasSuffix(s, "%") {
-		n, e := strconv.Atoi(strings.TrimSuffix(s, "%"))
-		if e == nil && n > 0 && n <= 100 {
-			return Width{Num: n, Den: 100}, nil
-		}
-	} else {
-		p := strings.Split(s, "/")
-		if len(p) == 2 {
-			a, e1 := strconv.Atoi(p[0])
-			b, e2 := strconv.Atoi(p[1])
-			if e1 == nil && e2 == nil && a > 0 && a <= b {
-				return Width{Num: a, Den: b}, nil
-			}
-		}
-	}
-	return Width{}, fmt.Errorf("invalid width %q", s)
-}
-
-// same reports whether v and o are the same width: 1/2 and 50/100 are.
-func (v Width) same(o Width) bool {
-	if v.Pixels > 0 || o.Pixels > 0 || v.Den == 0 || o.Den == 0 {
-		return v == o
-	}
-	return v.Num*o.Den == o.Num*v.Den
-}
-
-// Resolve returns column pixels: round(frac * (usableW - gaps)) - gaps.
-// Widths are clamped to the available area (zero if no space remains).
-func (v Width) Resolve(usableW, gaps int) int {
-	if usableW <= 0 {
-		return 0
-	}
-	gaps = min(max(gaps, 0), usableW/2)
-	limit := max(usableW-2*gaps, 0)
-	if limit == 0 {
-		return 0
-	}
-	if v.Pixels > 0 {
-		return min(v.Pixels, limit)
-	}
-	if v.Den <= 0 || v.Num <= 0 {
-		return 1
-	}
-	// Cap invalid fractions above one before multiplying; the result would
-	// be clamped to the available width anyway.
-	num, den := uint64(min(v.Num, v.Den)), uint64(v.Den)
-	avail := uint64(usableW - gaps)
-	q, r := avail/den, avail%den
-	hi, lo := bits.Mul64(r, num)
-	lo, carry := bits.Add64(lo, den/2, 0)
-	hi += carry
-	// hi < den: r and num are both smaller than den.
-	fraction, _ := bits.Div64(hi, lo, den)
-	rounded := q*num + fraction // no larger than avail (plus rounding)
-	if rounded <= uint64(gaps) {
-		return 1
-	}
-	return int(min(rounded-uint64(gaps), uint64(limit)))
-}
-
-// Column.Width is zero (auto) until the user picks a preset: auto columns share
-// the usable width equally, up to MaxColumns visible at once.
+// Column.Cells is the width of the column in cells, a cell being one
+// max-columns-th of the usable width. Zero (auto) shares the width equally
+// with the other auto columns, up to MaxColumns visible at once.
 type Column struct {
 	Windows   []WindowID
-	Width     Width
+	Cells     int
 	FullWidth bool
-	// Expanded is the fixed-overflow wide column: max-columns - 1 cells,
-	// the others share the last one. One column at most has it.
-	Expanded bool
-	Focus    int
+	Focus     int
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
@@ -192,7 +118,6 @@ type Workspace struct {
 	MaxColumns        int
 	// border is drawn around floating windows, inside their rect.
 	border     int
-	presets    []Width
 	fullscreen WindowID
 	// left is the window whose fullscreen the user left for another
 	// window: its client requests are refused until it is focused again,
@@ -242,14 +167,13 @@ type Workspace struct {
 }
 
 // origPlace remembers where a stashed window was: its column, its row in a
-// stacked column, the column's width and slot.
+// stacked column, the column's width in cells and slot.
 type origPlace struct {
 	col, row, slot int
 	// stacked holds the windows left in the column: the window returns to
 	// its row in the column that still holds one of them.
-	stacked  []WindowID
-	width    Width
-	expanded bool
+	stacked []WindowID
+	cells   int
 	// fullWidth is the column's maximize-column state.
 	fullWidth bool
 }
@@ -552,10 +476,11 @@ func (w *Workspace) Focused() (WindowID, bool) {
 	}
 	return c.Windows[c.Focus], true
 }
-func (w *Workspace) AddWindow(id WindowID) { w.addWindow(id, Width{}) }
+func (w *Workspace) AddWindow(id WindowID) { w.addWindow(id, 0) }
 
-// addWindow is AddWindow with the width of the new column (zero: automatic).
-func (w *Workspace) addWindow(id WindowID, width Width) {
+// addWindow is AddWindow with the width of the new column in cells (zero:
+// automatic).
+func (w *Workspace) addWindow(id WindowID, cells int) {
 	if id == 0 || w.has(id) {
 		return
 	}
@@ -567,10 +492,10 @@ func (w *Workspace) addWindow(id WindowID, width Width) {
 			// A covering float or stashed window may have no column under it.
 			at = min(w.Focus+1, len(w.Columns))
 		}
-		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Width: width})
+		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells})
 		return
 	}
-	w.addColumn(Column{Windows: []WindowID{id}, Width: width})
+	w.addColumn(Column{Windows: []WindowID{id}, Cells: cells})
 }
 
 // addColumn places a new column like a new window and focuses it.
@@ -595,7 +520,7 @@ func (w *Workspace) addColumn(col Column) {
 // AddSlotWindow places a slot window in its own column, ordered by slot
 // number before the other columns. Focus stays on the focused window: slot
 // windows are automatic events (ADR 011 golden rule).
-func (w *Workspace) AddSlotWindow(id WindowID, slot int, width Width) {
+func (w *Workspace) AddSlotWindow(id WindowID, slot int, cells int) {
 	if id == 0 || w.has(id) {
 		return
 	}
@@ -606,18 +531,18 @@ func (w *Workspace) AddSlotWindow(id WindowID, slot int, width Width) {
 			at = i + 1
 		}
 	}
-	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Width: width, Slot: slot})
+	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells, Slot: slot})
 	if len(w.Columns) > 1 && at <= w.Focus {
 		w.Focus++
 	}
 	w.scroll()
 }
 
-// setSlotWidth updates the width of slot column n, if present.
-func (w *Workspace) setSlotWidth(n int, width Width) {
+// setSlotCells updates the width in cells of slot column n, if present.
+func (w *Workspace) setSlotCells(n int, cells int) {
 	for i := range w.Columns {
 		if w.Columns[i].Slot == n {
-			w.Columns[i].Width = width
+			w.Columns[i].Cells = cells
 		}
 	}
 	w.scroll()
@@ -791,8 +716,8 @@ func (w *Workspace) focusColumn(dir int) {
 
 // columnToward returns the column focus-column-left/right (dir -1/1) goes
 // to, or -1 at the edge. Scroll overflow follows the column order; fixed
-// overflow stacks columns (spiral, expanded strips), so it follows the
-// screen: the column on that side.
+// overflow stacks columns (spiral), so it follows the screen: the column
+// on that side.
 func (w *Workspace) columnToward(dir int) int {
 	if len(w.Columns) == 0 || (dir != -1 && dir != 1) || w.pinned() {
 		return -1
@@ -939,25 +864,6 @@ func (w *Workspace) MoveWindow(dir int) {
 	w.scroll()
 }
 
-// ResizeColumn changes the focused column's width by pct percent of the
-// usable width, clamped to 10-100%. An auto column becomes explicit. Fixed
-// overflow shares the width equally: nothing changes there.
-func (w *Workspace) ResizeColumn(pct int) {
-	if w.onFloat() || len(w.Columns) == 0 || w.policy().equalCells || w.fullscreenHides() {
-		return
-	}
-	w.unmaximize()
-	g := w.gap()
-	avail := w.Usable.W - g
-	if avail <= 0 {
-		return
-	}
-	// Inverse of Width.Resolve: width = round(p/100 * avail) - g.
-	cur := (200*(w.columnWidth(w.Focus)+g) + avail) / (2 * avail)
-	w.Columns[w.Focus].Width = Width{Num: min(max(cur+pct, 10), 100), Den: 100}
-	w.scroll()
-}
-
 // minShare is the smallest row height set-window-height leaves, percent.
 const minShare = 10
 
@@ -1038,7 +944,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 		return Column{}, false
 	}
 	col := w.Columns[w.Focus]
-	col.Slot, col.Expanded = 0, false
+	col.Slot = 0
 	if slices.Contains(col.Windows, w.fullscreen) {
 		w.fullscreen = 0
 	}
@@ -1071,50 +977,168 @@ func (w *Workspace) insertColumn(at int, col Column) {
 	w.scroll()
 }
 
-// CycleWidth steps the focused column through the presets. Fixed overflow
-// ignores presets: it toggles the expanded column instead; cascade does
-// nothing.
-func (w *Workspace) CycleWidth() {
-	if w.policy().wraps {
+// GrowColumn widens the focused column by one cell, taking it from another
+// column of its lane, or from the empty space in scroll overflow. A lane
+// that cannot grow further goes back to equal shares when cycle is set
+// (cycle-column-width); otherwise nothing changes (set-column-width +N).
+// A lane is the band of a cascade, or the whole row in fixed overflow while
+// it holds MaxColumns columns at most; past that the spiral ignores cells.
+func (w *Workspace) GrowColumn(cycle bool) {
+	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
 		return
 	}
-	if w.Overflow == OverflowFixed {
-		w.toggleExpanded()
-		return
-	}
-	if len(w.Columns) == 0 || len(w.presets) == 0 || w.onFloat() {
-		return
-	}
-	// auto → presets in order → auto; a width set by set-column-width
-	// restarts at the first preset.
-	c := &w.Columns[w.Focus]
-	next := Width{}
-	if c.Width == next || !slices.ContainsFunc(w.presets, c.Width.same) {
-		next = w.presets[0]
-	}
-	for i, v := range w.presets {
-		if v.same(c.Width) && i+1 < len(w.presets) {
-			next = w.presets[i+1]
-			break
-		}
-	}
-	c.Width = next
 	w.unmaximize()
-	w.scroll()
+	defer w.scroll()
+	k := max(w.MaxColumns, 1)
+	if w.policy().equalCells {
+		if !w.policy().wraps && !w.laneRow() {
+			return
+		}
+		first, last := w.laneBounds(w.laneOf(w.Focus))
+		n := last - first + 1
+		if n == 1 || n >= k {
+			// Nothing to grow, but a lane left uneven (a column joined
+			// it, or max-columns shrank) still cycles back to equal.
+			if cycle && slices.ContainsFunc(w.Columns[first:last+1], func(c Column) bool { return c.Cells != 0 }) {
+				w.setLaneCells(first, make([]int, n))
+			}
+			return
+		}
+		cells, ok := w.laneCells(first, last, w.Focus)
+		if !ok {
+			w.setLaneCells(first, cells)
+			if k%n > 0 {
+				return // The remainder to the focused column was the step.
+			}
+		}
+		if d := w.donor(first, last, cells); d >= 0 {
+			w.moveCell(first, cells, d, w.Focus)
+		} else if cycle {
+			w.setLaneCells(first, make([]int, n))
+		}
+		return
+	}
+	c := &w.Columns[w.Focus]
+	cur := w.scrollCells(w.Focus)
+	switch {
+	case cur < k:
+		c.Cells = cur + 1
+	case cycle:
+		c.Cells = 0
+	}
 }
 
-// toggleExpanded makes the focused column the expanded one, or shrinks it
-// back when it already is. One column at most is expanded.
-func (w *Workspace) toggleExpanded() {
-	if len(w.Columns) < 2 || max(w.MaxColumns, 1) < 2 || w.onFloat() {
+// ShrinkColumn narrows the focused column by one cell, giving it to its
+// right neighbor in the lane (the left one at the lane's end). A column
+// never goes below one cell.
+func (w *Workspace) ShrinkColumn() {
+	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
 		return
 	}
-	on := !w.Columns[w.Focus].Expanded
-	for i := range w.Columns {
-		w.Columns[i].Expanded = false
-	}
-	w.Columns[w.Focus].Expanded = on
 	w.unmaximize()
+	defer w.scroll()
+	k := max(w.MaxColumns, 1)
+	if w.policy().equalCells {
+		if !w.policy().wraps && !w.laneRow() {
+			return
+		}
+		first, last := w.laneBounds(w.laneOf(w.Focus))
+		n := last - first + 1
+		if n == 1 || n >= k {
+			return
+		}
+		cells, _ := w.laneCells(first, last, -1)
+		if cells[w.Focus-first] <= 1 {
+			return
+		}
+		to := w.Focus + 1
+		if to > last {
+			to = w.Focus - 1
+		}
+		w.moveCell(first, cells, w.Focus, to)
+		return
+	}
+	w.Columns[w.Focus].Cells = max(w.scrollCells(w.Focus)-1, 1)
+}
+
+// scrollCells is the width in cells of column i in scroll overflow: its
+// cells, at most the ones in view for an auto column.
+func (w *Workspace) scrollCells(i int) int {
+	if c := w.Columns[i].Cells; c > 0 {
+		return c
+	}
+	k := max(w.MaxColumns, 1)
+	return k / min(len(w.Columns), k)
+}
+
+// laneCells is the cells of the lane first..last, summing to MaxColumns.
+// The stored cells are used when every column is set and they sum to it
+// (ok); otherwise each column gets an equal share and the remainder goes
+// to column remAt, or one cell each to the leftmost columns when remAt is
+// negative.
+func (w *Workspace) laneCells(first, last, remAt int) (cells []int, ok bool) {
+	k := max(w.MaxColumns, 1)
+	n := last - first + 1
+	cells = make([]int, n)
+	sum := 0
+	for i := range cells {
+		cells[i] = w.Columns[first+i].Cells
+		sum += cells[i]
+		if cells[i] == 0 {
+			sum = -1 << 30
+		}
+	}
+	if sum == k {
+		return cells, true
+	}
+	for i := range cells {
+		cells[i] = k / n
+	}
+	if remAt >= 0 {
+		cells[remAt-first] += k % n
+	} else {
+		for i := range k % n {
+			cells[i]++
+		}
+	}
+	return cells, false
+}
+
+// setLaneCells stores cells on the lane's columns, from column first.
+func (w *Workspace) setLaneCells(first int, cells []int) {
+	for i, c := range cells {
+		w.Columns[first+i].Cells = c
+	}
+}
+
+// donor is the lane column that gives a cell to the focused one: among the
+// others with more than one cell, the largest; on a tie the nearest to the
+// focus, the right side first. -1 when there is none.
+func (w *Workspace) donor(first, last int, cells []int) int {
+	best := -1
+	for i := first; i <= last; i++ {
+		c := cells[i-first]
+		if i == w.Focus || c <= 1 {
+			continue
+		}
+		if best < 0 {
+			best = i
+			continue
+		}
+		bc, bd, d := cells[best-first], abs(best-w.Focus), abs(i-w.Focus)
+		if c > bc || c == bc && (d < bd || d == bd && i > w.Focus) {
+			best = i
+		}
+	}
+	return best
+}
+
+// moveCell moves one cell from column from to column to of the lane that
+// starts at first, and stores the lane.
+func (w *Workspace) moveCell(first int, cells []int, from, to int) {
+	cells[from-first]--
+	cells[to-first]++
+	w.setLaneCells(first, cells)
 }
 
 // maximize sets FullWidth on column i; unlike ToggleFullWidth it never toggles.
@@ -1320,7 +1344,6 @@ func (w *Workspace) SetGaps(g int) {
 	w.Gaps = g
 	w.scroll()
 }
-func (w *Workspace) SetPresets(v []Width) { w.presets = append([]Width(nil), v...) }
 func (w *Workspace) SetMaxColumns(n int) {
 	w.MaxColumns = n
 	w.scroll()
@@ -1457,21 +1480,48 @@ func (w *Workspace) columnWidth(i int) int {
 }
 
 func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
-	if w.Columns[i].FullWidth && !ignoreFullWidth {
-		return max(w.Usable.W-2*w.gap(), 0)
+	if width, ok := w.specialWidth(i, ignoreFullWidth); ok {
+		return width
 	}
-	if w.fullscreenColumn(i) {
-		return w.Output.W
-	}
-	g := w.gap()
-	// Fixed overflow never scrolls, so presets would push columns off screen.
-	if w.policy().wraps {
+	if w.policy().wraps || w.laneRow() {
 		return w.cellWidth(i)
 	}
-	if w.Columns[i].Width == (Width{}) || w.policy().equalCells {
-		return w.equalShare(min(len(w.Columns), max(w.MaxColumns, 1)))
+	return w.scrollWidth(i)
+}
+
+// specialWidth is the width of a maximized or fullscreen column.
+func (w *Workspace) specialWidth(i int, ignoreFullWidth bool) (int, bool) {
+	if w.Columns[i].FullWidth && !ignoreFullWidth {
+		return max(w.Usable.W-2*w.gap(), 0), true
 	}
-	return w.Columns[i].Width.Resolve(w.Usable.W, g)
+	if w.fullscreenColumn(i) {
+		return w.Output.W, true
+	}
+	return 0, false
+}
+
+// laneRow reports whether the columns share one row of cells: fixed
+// overflow up to MaxColumns of them. Past that the spiral applies and
+// cells are ignored.
+func (w *Workspace) laneRow() bool {
+	return w.Overflow == OverflowFixed && len(w.Columns) <= max(w.MaxColumns, 1)
+}
+
+// scrollWidth is the width of column i when it is sized on its own: auto
+// columns share the usable width as the visible ones would, the others take
+// their cells (at most MaxColumns) and the gaps between them.
+func (w *Workspace) scrollWidth(i int) int {
+	k := max(w.MaxColumns, 1)
+	if w.policy().equalCells {
+		// Fixed overflow past MaxColumns: the spiral's slots.
+		return w.equalShare(k)
+	}
+	c := w.Columns[i].Cells
+	if c <= 0 {
+		return w.equalShare(min(len(w.Columns), k))
+	}
+	c = min(c, k)
+	return max(c*w.equalShare(k)+(c-1)*w.gap(), 0)
 }
 func (w *Workspace) columnX(i int) int {
 	x := w.Usable.X + w.gap()
@@ -1542,10 +1592,6 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 		return rects
 	}
 	k := max(w.MaxColumns, 1)
-	if e := slices.IndexFunc(w.Columns, func(c Column) bool { return c.Expanded }); w.Overflow == OverflowFixed && e >= 0 && k > 1 && len(w.Columns) > 1 {
-		// rects is dead here: the expanded rects reuse its storage.
-		return w.expandedRects(rects[:0], e, k, y, h)
-	}
 	if w.Overflow != OverflowFixed || len(w.Columns) <= k {
 		return rects
 	}
@@ -1555,38 +1601,6 @@ func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 		rects[i], area = split(area, g, (i-k+1)%2 == 0)
 	}
 	rects[len(rects)-1] = area
-	return rects
-}
-
-// expandedRects places expanded column e over k-1 cells in its place. The
-// columns before it stack in a strip on its left, those after it on its
-// right; the two strips share the last cell.
-func (w *Workspace) expandedRects(rects []Rect, e, k, y, h int) []Rect {
-	g := w.gap()
-	cell := w.equalShare(k)
-	wide := (k-1)*cell + (k-2)*g
-	rest := max(w.Usable.W-2*g-wide-g, 0)
-	before, after := w.Columns[:e], w.Columns[e+1:]
-	leftW, rightW := rest, rest
-	if len(before) > 0 && len(after) > 0 {
-		leftW = max((rest-g)/2, 0)
-		rightW = max(rest-g-leftW, 0)
-	}
-	x := w.Usable.X + g
-	if len(before) > 0 {
-		rects = stackRectsInto(rects, Rect{X: x, Y: y, W: leftW, H: h}, len(before), g)
-		x += leftW + g
-	}
-	rects = append(rects, Rect{X: x, Y: y, W: wide, H: h})
-	if len(after) > 0 {
-		rects = stackRectsInto(rects, Rect{X: x + wide + g, Y: y, W: rightW, H: h}, len(after), g)
-	}
-	// Gaps wider than a narrow output would push columns past its edge.
-	right := w.Usable.X + w.Usable.W
-	for i := range rects {
-		rects[i].X = min(rects[i].X, right)
-		rects[i].W = min(rects[i].W, right-rects[i].X)
-	}
 	return rects
 }
 

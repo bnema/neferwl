@@ -64,8 +64,8 @@ var defaultBinds = []struct{ combo, action string }{
 	{"cmd+ctrl+shift+right", "move-workspace-to-monitor-right"},
 	{"cmd+shift+up", "move-window-up"},
 	{"cmd+shift+down", "move-window-down"},
-	{"cmd+alt+left", "set-column-width -10%"},
-	{"cmd+alt+right", "set-column-width +10%"},
+	{"cmd+alt+left", "set-column-width -1"},
+	{"cmd+alt+right", "set-column-width +1"},
 	{"cmd+alt+up", "set-window-height -10%"},
 	{"cmd+alt+down", "set-window-height +10%"},
 	{"cmd+ctrl+shift+up", "move-workspace-prev"},
@@ -118,9 +118,13 @@ var actions = map[string]bool{
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
-// resizeStep is the +N% or -N% step of set-column-width and
-// set-window-height, N from 1 to 100.
-var resizeStep = regexp.MustCompile(`^[+-]([1-9][0-9]?|100)%$`)
+// columnStep is the +N or -N step of set-column-width, in cells, N from 1
+// to 16; heightStep is the +N% or -N% step of set-window-height, N from 1
+// to 100.
+var (
+	columnStep = regexp.MustCompile(`^[+-]([1-9]|1[0-6])$`)
+	heightStep = regexp.MustCompile(`^[+-]([1-9][0-9]?|100)%$`)
+)
 
 // namedKeys maps lowercase names to xkb keysym names so binds are case-insensitive.
 var namedKeys = map[string]string{
@@ -170,7 +174,6 @@ func Defaults() ports.Config {
 	c.Border.Active = "#808080"
 	c.Border.Inactive = "#111111"
 	c.Layout.MaxColumns = 2
-	c.Layout.Presets = []string{"1/3", "1/2", "2/3", "1"}
 	c.Layout.Overflow = "cascade"
 	c.Touchpad.Tap = true
 	c.Touchpad.AccelProfile = ports.AccelAdaptive
@@ -780,22 +783,11 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Layout.Gaps = n
 	case "layout.default-width":
-		return fmt.Errorf("replaced by layout.max-columns (columns share the width equally)")
+		return fmt.Errorf("replaced by layout.max-columns (column widths are cells of 1/max-columns)")
 	case "layout.max-columns":
 		return setLayoutRule(&c.Layout.LayoutRules, "max-columns", v)
 	case "layout.overflow":
 		return setLayoutRule(&c.Layout.LayoutRules, "overflow", v)
-	case "layout.presets":
-		list := splitList(v)
-		if len(list) == 0 {
-			return fmt.Errorf("must not be empty")
-		}
-		for _, s := range list {
-			if !width(s) {
-				return fmt.Errorf("%q: must be a fraction like 1/2, a percentage like 50%%, 1, or pixels like 800px", s)
-			}
-		}
-		c.Layout.Presets = list
 	case "touchpad.tap":
 		b, err := onOff(v)
 		if err != nil {
@@ -1018,10 +1010,6 @@ func checkWorkspaceBinds(c ports.Config, seen map[string]int) []Warning {
 				rules = o.Over(rules)
 			}
 		}
-		if overflow := w.Over(rules).Overflow; (overflow == "fixed" || overflow == "cascade") && len(w.Slots) > 0 {
-			line := seen["workspace."+w.Name+".column."+strconv.Itoa(w.Slots[0].Index)]
-			warnings = append(warnings, Warning{Line: line, Msg: fmt.Sprintf("workspace.%s: column widths are ignored with overflow = %s (columns share the width)", w.Name, overflow)})
-		}
 		if !bound[w.Name] {
 			line := 0
 			for key, n := range seen {
@@ -1089,10 +1077,11 @@ func setRule(r *ports.WindowRule, field, v string) error {
 		}
 		r.Monitor = v
 	case "width":
-		if !width(v) {
-			return fmt.Errorf("must be a width like 50%%, 1/3 or 800px")
+		n, ok := cells(v)
+		if !ok {
+			return errCells
 		}
-		r.Width = v
+		r.Cells = n
 	default:
 		return errUnknownRuleField
 	}
@@ -1159,10 +1148,11 @@ func setWorkspace(w *ports.WorkspaceConfig, field, v string) error {
 		size, cmd, _ := strings.Cut(v, ",")
 		size = strings.TrimSpace(size)
 		argv := strings.Fields(cmd)
-		if !width(size) || len(argv) == 0 {
-			return fmt.Errorf("must be <width>, <command> like 67%%, foot")
+		count, ok := cells(size)
+		if !ok || len(argv) == 0 {
+			return fmt.Errorf("must be <cells>, <command> like 2, foot (cells from 1 to 16)")
 		}
-		slot := ports.SlotConfig{Index: index, Width: size, Argv: argv}
+		slot := ports.SlotConfig{Index: index, Cells: count, Argv: argv}
 		i := sort.Search(len(w.Slots), func(i int) bool { return w.Slots[i].Index >= index })
 		if i < len(w.Slots) && w.Slots[i].Index == index {
 			w.Slots[i] = slot
@@ -1231,13 +1221,17 @@ func checkAction(v string) error {
 			return nil
 		}
 	}
-	for _, prefix := range []string{"set-column-width ", "set-window-height "} {
-		if rest, ok := strings.CutPrefix(v, prefix); ok {
-			if !resizeStep.MatchString(strings.TrimSpace(rest)) {
-				return fmt.Errorf("%sneeds +N%% or -N%% (1-100)", prefix)
-			}
-			return nil
+	if rest, ok := strings.CutPrefix(v, "set-column-width "); ok {
+		if !columnStep.MatchString(strings.TrimSpace(rest)) {
+			return fmt.Errorf("set-column-width needs +N or -N cells (1-16)")
 		}
+		return nil
+	}
+	if rest, ok := strings.CutPrefix(v, "set-window-height "); ok {
+		if !heightStep.MatchString(strings.TrimSpace(rest)) {
+			return fmt.Errorf("set-window-height needs +N%% or -N%% (1-100)")
+		}
+		return nil
 	}
 	for old, repl := range map[string]string{"-workspace-up": "-workspace-prev", "-workspace-down": "-workspace-next"} {
 		if base, ok := strings.CutSuffix(v, old); ok && actions[base+repl] {
@@ -1395,23 +1389,14 @@ func ParseMode(s string) (w, h int, hz float64, err error) {
 	return w, h, hz, nil
 }
 
-func width(s string) bool {
-	if s == "1" {
-		return true
+// errCells is the error of a width that is not a cell count.
+var errCells = fmt.Errorf("must be a cell count from 1 to 16")
+
+// cells parses a column width in cells: an integer from 1 to 16.
+func cells(s string) (int, bool) {
+	if s == "" || strings.Trim(s, "0123456789") != "" {
+		return 0, false
 	}
-	if n, ok := strings.CutSuffix(s, "%"); ok {
-		v, e := strconv.Atoi(n)
-		return e == nil && v > 0 && v <= 100
-	}
-	if strings.HasSuffix(s, "px") {
-		n, e := strconv.Atoi(strings.TrimSuffix(s, "px"))
-		return e == nil && n > 0
-	}
-	p := strings.Split(s, "/")
-	if len(p) != 2 {
-		return false
-	}
-	a, e1 := strconv.Atoi(p[0])
-	b, e2 := strconv.Atoi(p[1])
-	return e1 == nil && e2 == nil && a > 0 && a <= b
+	n, err := strconv.Atoi(s)
+	return n, err == nil && n >= 1 && n <= 16
 }

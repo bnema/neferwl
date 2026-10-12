@@ -637,7 +637,7 @@ func TestSwitcherLayoutCards(t *testing.T) {
 	c, _, _ := switcherCore(t, 3)
 	c.cfg.Floating.Dim = 0.4
 	// A wider focused column: the cards have different aspect ratios.
-	c.cur().mon.Current().ResizeColumn(30)
+	c.cur().mon.Current().GrowColumn(false)
 	indicatorScene(t, c)
 	area := c.cur().mon.Current().overviewArea()
 	sendKeys(t, c, superKey(ports.ModSuper, true), tab(ports.ModSuper, true))

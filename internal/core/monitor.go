@@ -126,7 +126,6 @@ func (m *Monitor) take(w *Workspace) {
 // (clamped above the trailing empty workspace). It takes this monitor's
 // output-wide settings and does not change what is on screen.
 func (m *Monitor) adopt(w *Workspace, hidden bool, pos int) {
-	w.presets = append([]Width(nil), m.template.presets...)
 	w.Gaps = m.template.Gaps
 	w.border = m.template.border
 	w.stashWidth, w.stashGap = m.template.stashWidth, m.template.stashGap
@@ -164,7 +163,6 @@ func (m *Monitor) Current() *Workspace {
 func (m *Monitor) newWorkspace() *Workspace {
 	w := m.template
 	w.colBuf, w.rowBuf, w.tileBuf, w.zoomBuf = nil, nil, nil, nil
-	w.presets = append([]Width(nil), m.template.presets...)
 	w.Columns, w.Floats, w.maximized, w.floatFocus, w.home = nil, nil, nil, false, ""
 	w.overviewAfter = nil
 	w.Stash, w.stashAt, w.stashFocus, w.stashHidden, w.hiddenFullscreen = nil, 0, false, false, 0
@@ -304,15 +302,16 @@ func (m *Monitor) find(id WindowID) (*Workspace, int) {
 
 // AddWindow places a new window on the workspace on screen; with
 // stash.capture, in its stash when shown.
-func (m *Monitor) AddWindow(id WindowID) { m.addWindow(id, Width{}) }
+func (m *Monitor) AddWindow(id WindowID) { m.addWindow(id, 0) }
 
-// addWindow is AddWindow with the width of the new column (zero: automatic).
-func (m *Monitor) addWindow(id WindowID, width Width) {
+// addWindow is AddWindow with the width in cells of the new column (zero:
+// automatic).
+func (m *Monitor) addWindow(id WindowID, cells int) {
 	if w, _ := m.find(id); w != nil {
 		return
 	}
 	if w := m.Current(); !m.stashCapture || !w.captureStash(id) {
-		w.addWindow(id, width)
+		w.addWindow(id, cells)
 	}
 	m.normalize()
 }
@@ -501,8 +500,6 @@ func (m *Monitor) SetStash(width, gap int) {
 
 // SetStashCapture makes new windows join the shown stash (stash.capture).
 func (m *Monitor) SetStashCapture(on bool) { m.stashCapture = on }
-
-func (m *Monitor) SetPresets(v []Width) { m.each(func(w *Workspace) { w.SetPresets(v) }) }
 
 // SetFollowMove makes moves to another workspace show it (focus.follow-move).
 func (m *Monitor) SetFollowMove(on bool) { m.followMove = on }

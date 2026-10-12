@@ -108,7 +108,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 				if sc, w := c.byName(target.slot.workspace); w != nil {
 					p.dropSlot(target.slot)
 					st.window = v.ID
-					w.AddSlotWindow(v.ID, target.slot.index, st.width)
+					w.AddSlotWindow(v.ID, target.slot.index, st.cells)
 					sc.mon.normalize()
 					return
 				}

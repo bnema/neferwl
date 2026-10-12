@@ -38,26 +38,30 @@ func TestDefaultBindsAccepted(t *testing.T) {
 
 func TestResizeArg(t *testing.T) {
 	for _, tc := range []struct {
-		a         core.Action
-		axis, pct int
-		ok        bool
+		a          core.Action
+		axis, step int
+		ok         bool
 	}{
-		{"set-column-width +10%", core.ResizeWidth, 10, true},
-		{"set-column-width -5%", core.ResizeWidth, -5, true},
+		{"set-column-width +1", core.ResizeWidth, 1, true},
+		{"set-column-width -5", core.ResizeWidth, -5, true},
+		{"set-column-width +16", core.ResizeWidth, 16, true},
 		{"set-window-height +100%", core.ResizeHeight, 100, true},
 		{"set-window-height -1%", core.ResizeHeight, -1, true},
-		{"set-column-width 10%", 0, 0, false},
-		{"set-column-width +0%", 0, 0, false},
-		{"set-column-width +101%", 0, 0, false},
-		{"set-column-width +10", 0, 0, false},
-		{"set-column-width +-1%", 0, 0, false},
-		{"set-column-width ++1%", 0, 0, false},
+		{"set-column-width 1", 0, 0, false},
+		{"set-column-width +0", 0, 0, false},
+		{"set-column-width +17", 0, 0, false},
+		{"set-column-width +10%", 0, 0, false},
+		{"set-column-width +-1", 0, 0, false},
+		{"set-column-width ++1", 0, 0, false},
+		{"set-window-height +10", 0, 0, false},
+		{"set-window-height +101%", 0, 0, false},
+		{"set-window-height +0%", 0, 0, false},
 		{"set-window-height", 0, 0, false},
 		{"cycle-column-width", 0, 0, false},
 	} {
-		axis, pct, ok := core.ResizeArg(tc.a)
-		if axis != tc.axis || pct != tc.pct || ok != tc.ok {
-			t.Errorf("%q: %d %d %v", tc.a, axis, pct, ok)
+		axis, step, ok := core.ResizeArg(tc.a)
+		if axis != tc.axis || step != tc.step || ok != tc.ok {
+			t.Errorf("%q: %d %d %v", tc.a, axis, step, ok)
 		}
 	}
 }

@@ -100,10 +100,10 @@ func TestConsumeOrExpelSlots(t *testing.T) {
 	}
 	t.Run("the slot follows its window", func(t *testing.T) {
 		w := cols(OverflowScroll, 1, 0, []WindowID{1, 2})
-		w.Columns[0].Slot, w.Columns[0].Width = 1, Width{Num: 2, Den: 3}
+		w.Columns[0].Slot, w.Columns[0].Cells = 1, 2
 		w.Columns[0].Focus = 0
 		w.ConsumeOrExpel(1)
-		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}}) || !reflect.DeepEqual(slots(w), []int{0, 1}) || w.Columns[1].Width != (Width{Num: 2, Den: 3}) || w.Columns[0].Width != (Width{}) {
+		if got := ids(w); !reflect.DeepEqual(got, [][]WindowID{{2}, {1}}) || !reflect.DeepEqual(slots(w), []int{0, 1}) || w.Columns[1].Cells != 2 || w.Columns[0].Cells != 0 {
 			t.Fatal(got, slots(w), w.Columns)
 		}
 	})

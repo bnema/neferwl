@@ -33,7 +33,7 @@ func TestFreeFloatRect(t *testing.T) {
 
 func TestToggleFloatingRoundTrip(t *testing.T) {
 	w := freeWorkspace()
-	w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3}, Focus: 1, Width: Width{Num: 1, Den: 2}}}
+	w.Columns = []Column{{Windows: []WindowID{1}}, {Windows: []WindowID{2, 3}, Focus: 1, Cells: 1}}
 	w.Focus = 1
 	r, _ := w.placed(3)
 	w.Apply(ActionToggleFloating)
@@ -58,11 +58,11 @@ func TestToggleFloatingRoundTrip(t *testing.T) {
 	}
 	// A lone column comes back at its width and index.
 	w.Focus = 1
-	w.Columns[1] = Column{Windows: []WindowID{2}, Width: Width{Num: 1, Den: 2}}
+	w.Columns[1] = Column{Windows: []WindowID{2}, Cells: 1}
 	w.Columns = append(w.Columns, Column{Windows: []WindowID{3}})
 	w.Apply(ActionToggleFloating)
 	w.Apply(ActionToggleFloating)
-	if len(w.Columns) != 3 || w.Columns[1].Windows[0] != 2 || w.Columns[1].Width != (Width{Num: 1, Den: 2}) || w.Focus != 1 {
+	if len(w.Columns) != 3 || w.Columns[1].Windows[0] != 2 || w.Columns[1].Cells != 1 || w.Focus != 1 {
 		t.Fatal(w.Columns, w.Focus)
 	}
 }
@@ -188,7 +188,7 @@ func TestFreeFloatNoUsableArea(t *testing.T) {
 		t.Fatal(fx)
 	}
 	w.Apply(ActionMoveColumnLeft)
-	w.Apply("set-column-width +10%")
+	w.Apply("set-column-width +1")
 	if w.floatIndex(1) < 0 {
 		t.Fatal(w.Floats)
 	}
@@ -213,13 +213,13 @@ func TestFreeFloatKeyboard(t *testing.T) {
 	if got := w.floatRect(w.Floats[i]); got.X != w.Usable.X {
 		t.Fatal(got)
 	}
-	w.Apply("set-column-width +10%")
+	w.Apply("set-column-width +1")
 	w.Apply("set-window-height -10%")
-	if w.Floats[i].W != 200+w.Usable.W/10 || w.Floats[i].H != freeMinSize {
+	if w.Floats[i].W != 200+w.Usable.W/w.MaxColumns || w.Floats[i].H != freeMinSize {
 		t.Fatal(w.Floats[i])
 	}
 	// The columns did not change.
-	if len(w.Columns) != 1 || w.Columns[0].Width != (Width{}) {
+	if len(w.Columns) != 1 || w.Columns[0].Cells != 0 {
 		t.Fatal(w.Columns)
 	}
 }

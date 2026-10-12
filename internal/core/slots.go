@@ -26,7 +26,7 @@ type slotKey struct {
 
 type slotState struct {
 	argv   []string
-	width  Width
+	cells  int
 	window WindowID // 0 while empty
 	// stale is set when the workspace is shown while the spawn is pending.
 	// Shown again still pending, the command is deemed failed and respawned;
@@ -38,21 +38,20 @@ type slotState struct {
 type slotSpec struct {
 	key   slotKey
 	argv  []string
-	width Width
+	cells int
 }
 
 func parseSlots(ws []ports.WorkspaceConfig) ([]slotSpec, error) {
 	var specs []slotSpec
 	for _, w := range ws {
 		for _, s := range w.Slots {
-			width, err := ParseWidth(s.Width)
-			if err != nil {
-				return nil, fmt.Errorf("workspace %s column %d: %w", w.Name, s.Index, err)
+			if s.Cells < 0 || s.Cells > maxCells {
+				return nil, fmt.Errorf("workspace %s column %d: invalid width %d", w.Name, s.Index, s.Cells)
 			}
 			if len(s.Argv) == 0 || s.Index < 1 {
 				return nil, fmt.Errorf("workspace %s column %d: invalid slot", w.Name, s.Index)
 			}
-			specs = append(specs, slotSpec{key: slotKey{w.Name, s.Index}, argv: slices.Clone(s.Argv), width: width})
+			specs = append(specs, slotSpec{key: slotKey{w.Name, s.Index}, argv: slices.Clone(s.Argv), cells: s.Cells})
 		}
 	}
 	return specs, nil
@@ -81,14 +80,14 @@ func (c *Core) updateSlots(specs []slotSpec) []slotKey {
 	for _, s := range specs {
 		st, ok := c.slots[s.key]
 		if !ok {
-			c.slots[s.key] = &slotState{argv: s.argv, width: s.width}
+			c.slots[s.key] = &slotState{argv: s.argv, cells: s.cells}
 			spawn = append(spawn, s.key)
 			continue
 		}
-		if st.width != s.width {
-			st.width = s.width
+		if st.cells != s.cells {
+			st.cells = s.cells
 			if _, w := c.byName(s.key.workspace); w != nil {
-				w.setSlotWidth(s.key.index, s.width)
+				w.setSlotCells(s.key.index, s.cells)
 			}
 		}
 		if !slices.Equal(st.argv, s.argv) {

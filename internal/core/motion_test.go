@@ -156,9 +156,10 @@ func TestSnapPointsMergeClose(t *testing.T) {
 		// Columns narrower than the view: one point.
 		{[]int{300, 300}, []float64{0}},
 	} {
-		w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}}
+		// 100 cells of 10 px, no gaps: a width in px is px/10 cells.
+		w := &Workspace{Output: Rect{W: 1000, H: 600}, Usable: Rect{W: 1000, H: 600}, MaxColumns: 100}
 		for _, px := range tc.widths {
-			w.Columns = append(w.Columns, Column{Width: Width{Pixels: px}, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
+			w.Columns = append(w.Columns, Column{Cells: px / 10, Windows: []WindowID{WindowID(len(w.Columns) + 1)}})
 		}
 		if got := w.snapPoints(); !slices.Equal(got, tc.want) {
 			t.Errorf("widths %v: snap points %v, want %v", tc.widths, got, tc.want)
