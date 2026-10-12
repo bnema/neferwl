@@ -29,6 +29,15 @@ type layoutPolicy struct {
 	equalCells, wraps  bool
 }
 
+// workspaceStep is the workspace step a directional focus past the content
+// edge takes along axis: dir when axis is the workspace axis, else 0.
+func (p layoutPolicy) workspaceStep(axis layoutAxis, dir int) int {
+	if axis == p.workspace {
+		return dir
+	}
+	return 0
+}
+
 func (w *Workspace) policy() layoutPolicy {
 	if w.Overflow == OverflowCascade {
 		return layoutPolicy{content: verticalAxis, workspace: horizontalAxis, equalCells: true, wraps: true}
