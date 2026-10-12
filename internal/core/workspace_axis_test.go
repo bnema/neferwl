@@ -50,18 +50,70 @@ func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	}
 }
 
-// AC2: a monitor on that side wins over the workspace step.
-func TestCascadeFocusColumnPrefersNeighborMonitor(t *testing.T) {
+// An occupied workspace wins over a monitor on that side, so the opposite
+// key brings focus back; the monitor wins over the trailing empty
+// workspace, so it stays reachable.
+func TestCascadeFocusColumnStepsWorkspaceBeforeMonitor(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	m.Current().FocusID(23)
 	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "R", 0)
+	wantActive(t, m, 2)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	// Back with the opposite key, from the first column of workspace 3.
+	m.Current().FocusID(31)
+	c.applyAction(ActionFocusColumnLeft)
 	wantActive(t, m, 1)
-	c.focusScreen = 1
-	m.Current().FocusID(24)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	// Past the first workspace: the monitor on the left.
+	m.Focus(0)
+	m.Current().FocusID(11)
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "L", 0)
+	wantActive(t, m, 0)
+	// From the last occupied workspace: the monitor on the right, not the
+	// trailing empty workspace.
+	c.focusScreen = 1
+	m.Focus(2)
+	m.Current().FocusID(35)
+	c.applyAction(ActionFocusColumnRight)
+	wantFocus(t, c, "R", 0)
+	wantActive(t, m, 2)
+}
+
+// With no monitor on that side, the trailing empty workspace is the last
+// stop, and left comes back from it.
+func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) {
+	c, m := axisCore(t, false, OverflowCascade, 3)
+	m.Focus(2)
+	m.Current().FocusID(35)
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 3)
+	if !m.Current().empty() {
+		t.Fatal("want the trailing empty workspace")
+	}
+	c.applyAction(ActionFocusColumnLeft)
+	wantActive(t, m, 2)
+}
+
+// The live regression: one monitor on the left only. Right steps to the
+// next workspace, and left from its empty band comes back to the previous
+// workspace instead of leaving for that monitor.
+func TestCascadeStepRightThenLeftComesBack(t *testing.T) {
+	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"M", 900, 0, 900, 600})
+	m := c.cur().mon
+	m.SetOverflow(OverflowCascade)
+	m.SetMaxColumns(3)
+	m.AddWindow(1)
+	m.AddWindow(5)
+	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 1)
+	c.applyAction(ActionFocusColumnLeft)
+	wantFocus(t, c, "M", 5)
+	wantActive(t, m, 0)
 }
 
 // AC3: up/down cross bands and stop at the last, with no workspace change.
@@ -141,6 +193,45 @@ func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 	wantActive(t, m, 2)
 	if w.fullscreen != 23 {
 		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
+	}
+}
+
+// A covering fullscreen tile follows the same order: the occupied workspace
+// before the monitor on that side, which comes back only past the last one.
+func TestCascadeFullscreenStepsWorkspaceBeforeMonitor(t *testing.T) {
+	c, m := axisCore(t, true, OverflowCascade, 3)
+	w := m.Current()
+	w.FocusID(23)
+	w.ToggleFullscreen()
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 2)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	if w.fullscreen != 23 {
+		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
+	}
+	last := m.Current()
+	last.FocusID(35)
+	last.ToggleFullscreen()
+	c.applyAction(ActionFocusColumnRight)
+	wantFocus(t, c, "R", 0)
+	if last.fullscreen != 35 {
+		t.Fatalf("fullscreen %d, want 35", last.fullscreen)
+	}
+}
+
+// A workspace holding only a float is occupied: it comes before the monitor.
+func TestCascadeFloatOnlyWorkspaceIsOccupied(t *testing.T) {
+	c, m := axisCore(t, true, OverflowCascade, 3)
+	m.Focus(3)
+	m.AddFloating(9, 100, 100)
+	m.Focus(2)
+	m.Current().FocusID(35)
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 3)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
 	}
 }
 

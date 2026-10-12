@@ -230,32 +230,20 @@ func (c *Core) applyAction(a Action) Effect {
 			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
-		// with none (the workspace, band or stash edge), the move goes to the
-		// neighbor monitor, else along the workspace axis, and fullscreen
-		// stays.
+		// with none (the workspace, band or stash edge), the move goes past
+		// the edge (see edgeFocus) and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
 			if !w.FocusColumn(dir) {
-				if i := c.neighbor(d); i >= 0 {
-					c.focusScreen = i
-				} else {
-					c.cur().mon.stepWorkspace(horizontalAxis, dir)
-				}
+				c.edgeFocus(dir, d)
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends. At the edge the move goes to the
-		// neighbor monitor, else along the workspace axis if it is horizontal.
+		// keeps the focus at its ends.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge {
-			if i := c.neighbor(d); i >= 0 {
-				c.focusScreen = i
-				return Effect{}
-			}
-			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
-				return Effect{}
-			}
+		if edge && c.edgeFocus(dir, d) {
+			return Effect{}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
@@ -310,6 +298,23 @@ func (c *Core) applyAction(a Action) Effect {
 		}
 	}
 	return c.cur().mon.Apply(a)
+}
+
+// edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
+// content edge, in order: to the occupied workspace on that side when the
+// workspace axis is horizontal; else to the neighbor monitor; else to the
+// trailing empty workspace. It reports whether focus moved.
+func (c *Core) edgeFocus(dir int, d direction) bool {
+	m := c.cur().mon
+	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
+		m.Focus(to)
+		return true
+	}
+	if i := c.neighbor(d); i >= 0 {
+		c.focusScreen = i
+		return true
+	}
+	return m.stepWorkspace(horizontalAxis, dir)
 }
 
 // Apply runs a bind action on the monitor.

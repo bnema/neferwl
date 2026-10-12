@@ -23,6 +23,7 @@ func cascadeMovesCore(t *testing.T, n, maxCols int, sides bool) (*Core, *Workspa
 	for id := WindowID(1); id <= WindowID(n); id++ {
 		w.AddWindow(id)
 	}
+	c.cur().mon.normalize() // the trailing empty workspace, as in a session
 	return c, w
 }
 
