@@ -100,16 +100,29 @@ func TestCascadeInsideBandStaysOnMonitor(t *testing.T) {
 	wantFocus(t, c, "M", 4)
 }
 
-// With no monitor on that side, left/right cross into the neighbor band in
-// column order.
+// With no monitor on that side, left/right never cross into the neighbor
+// band: at the band edge they step the workspace (the first has none before
+// it; the last is the trailing empty one). up/down cross bands, and
+// move-column still crosses in column order.
 func TestCascadeBandEdgeWithoutMonitorCrossesBands(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
+	m := c.cur().mon
 	w.FocusID(4)
 	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "M", 3)
-	c.applyAction(ActionMoveColumnRight)
+	wantFocus(t, c, "M", 4)
+	if m.Active != 0 {
+		t.Fatalf("active %d, want 0", m.Active)
+	}
+	w.FocusID(3)
+	c.applyAction(ActionFocusColumnRight)
+	if m.Active != 1 || m.Current() == w {
+		t.Fatalf("active %d, want the trailing empty workspace", m.Active)
+	}
+	m.Focus(0)
+	w.FocusID(4)
+	c.applyAction(ActionMoveColumnLeft)
 	wantColumns(t, w, 1, 2, 4, 3, 5)
-	wantFocus(t, c, "M", 3)
+	wantFocus(t, c, "M", 4)
 }
 
 // With one column per band, every column is at both edges of its band.

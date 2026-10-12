@@ -229,29 +229,32 @@ func (c *Core) applyAction(a Action) Effect {
 			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
-		// with none (the workspace or stash edge), the move goes to the
-		// neighbor monitor and fullscreen stays.
+		// with none (the workspace, band or stash edge), the move goes to the
+		// neighbor monitor, else along the workspace axis, and fullscreen
+		// stays.
 		if w.pinned() && !w.stashOverCover() {
-			// A cascade fullscreen tile at its band edge leaves for the
-			// neighbor monitor, like any tile there, and stays fullscreen.
-			if i := c.neighbor(d); i >= 0 && !w.onFloat() && w.policy().wraps && w.leavesBand(w.Focus+dir) {
-				c.focusScreen = i
-				return Effect{}
-			}
 			if !w.FocusColumn(dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i
+				} else {
+					c.cur().mon.stepWorkspace(horizontalAxis, dir)
 				}
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends.
+		// keeps the focus at its ends. At the edge the move goes to the
+		// neighbor monitor, else along the workspace axis if it is horizontal.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if i := c.neighbor(d); edge && i >= 0 {
-			c.focusScreen = i
-			return Effect{}
+		if edge {
+			if i := c.neighbor(d); i >= 0 {
+				c.focusScreen = i
+				return Effect{}
+			}
+			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
+				return Effect{}
+			}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
