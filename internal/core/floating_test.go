@@ -542,3 +542,21 @@ func TestActivateStashKeepsFullscreenFloat(t *testing.T) {
 		t.Fatalf("back: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
 	}
 }
+
+// With the stash already over the cover and a dialog of the cover
+// focused, activating a stashed window focuses it.
+func TestActivateStashOverCoverFromCoverDialog(t *testing.T) {
+	w := workspace()
+	w.AddWindow(14)
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
+	w.AddWindow(1)
+	w.SetFullscreen(1, true)
+	w.ToggleStashVisible()
+	w.AddDialog(9, 1, 20, 10)
+	w.FocusID(9)
+	w.Activate(14)
+	if id, _ := w.Focused(); id != 14 || !w.stashOverCover() || w.fullscreen != 1 {
+		t.Fatalf("focused %d over %v fullscreen %d", id, w.stashOverCover(), w.fullscreen)
+	}
+}

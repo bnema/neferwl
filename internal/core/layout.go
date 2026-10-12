@@ -1240,9 +1240,9 @@ func (w *Workspace) leaveFullscreen() {
 func (w *Workspace) Activate(id WindowID) {
 	if i := w.stashIndex(id); i >= 0 && w.coverStays(id) {
 		if !w.stashOverCover() {
-			w.stashOver, w.stashHidden, w.floatFocus = w.cover(), false, false
+			w.stashOver, w.stashHidden = w.cover(), false
 		}
-		w.stashAt, w.stashFocus = i, true
+		w.stashAt, w.stashFocus, w.floatFocus = i, true, false
 		w.focusModal(0)
 		return
 	}
