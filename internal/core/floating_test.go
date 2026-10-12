@@ -490,8 +490,9 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	check(0.3)
 }
 
-// Activating a hidden stashed window shows the stash and focuses it; the
-// fullscreen window it hid behind leaves fullscreen.
+// Activating a hidden stashed window shows the stash over the covering
+// window and focuses it; the cover stays fullscreen behind and returns
+// when the stash hides.
 func TestActivateHiddenFloat(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
@@ -501,9 +502,15 @@ func TestActivateHiddenFloat(t *testing.T) {
 	w.FocusID(1)
 	w.SetFullscreen(1, true)
 	w.Activate(2)
-	if id, _ := w.Focused(); id != 2 || w.stashHidden || w.fullscreen != 0 {
-		t.Fatalf("focused %d hidden %v fullscreen %d", id, w.stashHidden, w.fullscreen)
+	if id, _ := w.Focused(); id != 2 || !w.stashShown() || w.fullscreen != 1 {
+		t.Fatalf("focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
 	}
+	w.ToggleStashVisible()
+	if id, _ := w.Focused(); id != 1 || w.stashShown() || w.fullscreen != 1 {
+		t.Fatalf("stash hidden: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+	}
+	w.SetFullscreen(1, false)
+	w.ToggleStashVisible()
 	// The float's own fullscreen, asked while hidden, comes back with it.
 	w.FocusID(2)
 	w.ToggleStashVisible()
@@ -512,5 +519,26 @@ func TestActivateHiddenFloat(t *testing.T) {
 	w.Activate(2)
 	if id, _ := w.Focused(); id != 2 || w.stashHidden || w.fullscreen != 2 {
 		t.Fatalf("own fullscreen: focused %d hidden %v fullscreen %d", id, w.stashHidden, w.fullscreen)
+	}
+}
+
+// A fullscreen game float stays fullscreen when a hidden stashed window is
+// activated (xdg-activation, taskbar): the stash shows over it. Ending its
+// fullscreen sent the game a 0x0 configure and it quit.
+func TestActivateStashKeepsFullscreenFloat(t *testing.T) {
+	w := workspace()
+	w.AddWindow(14)
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
+	w.AddFloating(72, 50, 40)
+	w.SetFullscreen(72, true)
+	w.Activate(14)
+	if id, _ := w.Focused(); id != 14 || !w.stashOverCover() || w.fullscreen != 72 || w.left != 0 {
+		t.Fatalf("focused %d over %v fullscreen %d left %d", id, w.stashOverCover(), w.fullscreen, w.left)
+	}
+	// The game gets the focus back fullscreen.
+	w.Activate(72)
+	if id, _ := w.Focused(); id != 72 || w.stashShown() || w.fullscreen != 72 {
+		t.Fatalf("back: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
 	}
 }

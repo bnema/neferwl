@@ -267,6 +267,7 @@ func (*toplevelRequests) Destroy(*wlr.ZwlrForeignToplevelHandleV1)        {}
 
 func (t *toplevelRequests) Activate(*wlr.ZwlrForeignToplevelHandleV1, *wayland.Seat) {
 	if w := t.window(); w != nil {
+		t.s.log.Info().Uint64("id", uint64(w.id)).Msg("foreign toplevel activation")
 		t.s.emit(ports.WindowActivate{ID: w.id})
 	}
 }

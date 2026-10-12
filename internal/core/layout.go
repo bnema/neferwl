@@ -1234,8 +1234,18 @@ func (w *Workspace) leaveFullscreen() {
 }
 
 // Activate focuses a window and makes it visible: it leaves another
-// window's fullscreen, which hides everything else.
+// window's fullscreen, which hides everything else. A stashed window
+// shows over a covering window instead, as ToggleStashVisible does: the
+// cover stays fullscreen behind, so a game never sees its fullscreen end.
 func (w *Workspace) Activate(id WindowID) {
+	if i := w.stashIndex(id); i >= 0 && w.coverStays(id) {
+		if !w.stashOverCover() {
+			w.stashOver, w.stashHidden, w.floatFocus = w.cover(), false, false
+		}
+		w.stashAt, w.stashFocus = i, true
+		w.focusModal(0)
+		return
+	}
 	if i := w.stashIndex(id); i >= 0 && w.stashHidden {
 		// A hidden stashed window must be seen: show the stash with it,
 		// selected. Another window's fullscreen leaves first, so its own
@@ -1249,6 +1259,14 @@ func (w *Workspace) Activate(id WindowID) {
 	}
 	w.FocusID(id)
 	w.focusModal(0)
+}
+
+// coverStays reports whether activating stashed window id keeps the
+// covering window fullscreen under the stash: a cover outside the stash,
+// and no pending fullscreen of id's own that would replace it.
+func (w *Workspace) coverStays(id WindowID) bool {
+	c := w.cover()
+	return c != 0 && w.stashIndex(c) < 0 && !(w.stashHidden && w.hiddenFullscreen == id)
 }
 
 // SetFullscreen applies a client request. It never moves focus: client
