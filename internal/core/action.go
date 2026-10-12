@@ -230,30 +230,29 @@ func (c *Core) applyAction(a Action) Effect {
 			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
-		// with none (the workspace, band or stash edge), the move goes to the
-		// neighbor monitor, else along the workspace axis, and fullscreen
+		// with none (the workspace, band or stash edge), the move goes along
+		// the workspace axis, else to the neighbor monitor, and fullscreen
 		// stays.
 		if w.pinned() && !w.stashOverCover() {
-			if !w.FocusColumn(dir) {
+			if !w.FocusColumn(dir) && !c.cur().mon.stepWorkspace(horizontalAxis, dir) {
 				if i := c.neighbor(d); i >= 0 {
 					c.focusScreen = i
-				} else {
-					c.cur().mon.stepWorkspace(horizontalAxis, dir)
 				}
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends. At the edge the move goes to the
-		// neighbor monitor, else along the workspace axis if it is horizontal.
+		// keeps the focus at its ends. At the edge the move goes along the
+		// workspace axis if it is horizontal, so the way back is the same
+		// key; past the first or trailing workspace, to the neighbor monitor.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
 		if edge {
-			if i := c.neighbor(d); i >= 0 {
-				c.focusScreen = i
+			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
 				return Effect{}
 			}
-			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
+			if i := c.neighbor(d); i >= 0 {
+				c.focusScreen = i
 				return Effect{}
 			}
 		}

@@ -107,6 +107,7 @@ func TestCascadeInsideBandStaysOnMonitor(t *testing.T) {
 func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveCrosses(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	m := c.cur().mon
+	m.normalize() // the trailing empty workspace, as in a running session
 	w.FocusID(4)
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "M", 4)

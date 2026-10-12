@@ -50,18 +50,52 @@ func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	}
 }
 
-// AC2: a monitor on that side wins over the workspace step.
-func TestCascadeFocusColumnPrefersNeighborMonitor(t *testing.T) {
+// The workspace step wins over a monitor on that side, so the same key
+// brings focus back: a neighbor monitor is reached only past the first or
+// the trailing workspace.
+func TestCascadeFocusColumnStepsWorkspaceBeforeMonitor(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	m.Current().FocusID(23)
 	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "R", 0)
+	wantActive(t, m, 2)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	// Back with the opposite key, from the first column of workspace 3.
+	m.Current().FocusID(31)
+	c.applyAction(ActionFocusColumnLeft)
 	wantActive(t, m, 1)
-	c.focusScreen = 1
-	m.Current().FocusID(24)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	// Past the first workspace: the monitor on the left.
+	m.Focus(0)
+	m.Current().FocusID(11)
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "L", 0)
+	wantActive(t, m, 0)
+	// Past the trailing empty workspace: the monitor on the right.
+	c.focusScreen = 1
+	m.Focus(len(m.Workspaces) - 1)
+	c.applyAction(ActionFocusColumnRight)
+	wantFocus(t, c, "R", 0)
+}
+
+// The live regression: one monitor on the left only. Right steps to the
+// next workspace, and left from its empty band comes back to the previous
+// workspace instead of leaving for that monitor.
+func TestCascadeStepRightThenLeftComesBack(t *testing.T) {
+	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"M", 900, 0, 900, 600})
+	m := c.cur().mon
+	m.SetOverflow(OverflowCascade)
+	m.SetMaxColumns(3)
+	m.AddWindow(1)
+	m.AddWindow(5)
+	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 1)
+	c.applyAction(ActionFocusColumnLeft)
+	wantFocus(t, c, "M", 5)
+	wantActive(t, m, 0)
 }
 
 // AC3: up/down cross bands and stop at the last, with no workspace change.

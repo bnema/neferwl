@@ -206,14 +206,16 @@ func (m *Monitor) Focus(i int) {
 }
 
 // stepWorkspace switches to the previous or next workspace (dir -1/1) when
-// axis is the current layout's workspace axis, and reports whether it did. A
+// axis is the current layout's workspace axis, and reports whether it did.
+// Past the first or the trailing workspace there is none to step to. A
 // hidden named workspace is outside the numbered list: it never steps.
 func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
 	step := m.Current().policy().workspaceStep(axis, dir)
-	if m.shown != nil || step == 0 {
+	to := m.Active + step
+	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
 		return false
 	}
-	m.Focus(m.Active + step)
+	m.Focus(to)
 	return true
 }
 
