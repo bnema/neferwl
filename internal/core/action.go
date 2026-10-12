@@ -301,19 +301,20 @@ func (c *Core) applyAction(a Action) Effect {
 }
 
 // edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
-// content edge: to the occupied workspace on that side when the workspace
-// axis is horizontal, so the opposite key comes back; else to the neighbor
-// monitor; else to the trailing empty workspace. It reports whether focus
-// moved.
+// content edge, in order: to the occupied workspace on that side when the
+// workspace axis is horizontal; else to the neighbor monitor; else to the
+// trailing empty workspace. It reports whether focus moved.
 func (c *Core) edgeFocus(dir int, d direction) bool {
-	if c.cur().mon.stepWorkspace(horizontalAxis, dir, false) {
+	m := c.cur().mon
+	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
+		m.Focus(to)
 		return true
 	}
 	if i := c.neighbor(d); i >= 0 {
 		c.focusScreen = i
 		return true
 	}
-	return c.cur().mon.stepWorkspace(horizontalAxis, dir, true)
+	return m.stepWorkspace(horizontalAxis, dir)
 }
 
 // Apply runs a bind action on the monitor.
@@ -354,7 +355,7 @@ func (m *Monitor) Apply(a Action) Effect {
 			dir = -1
 		}
 		if !m.Current().FocusWindow(dir) {
-			m.stepWorkspace(verticalAxis, dir, true)
+			m.stepWorkspace(verticalAxis, dir)
 		}
 		return Effect{}
 	case ActionToggleFullscreen:

@@ -23,6 +23,7 @@ func cascadeMovesCore(t *testing.T, n, maxCols int, sides bool) (*Core, *Workspa
 	for id := WindowID(1); id <= WindowID(n); id++ {
 		w.AddWindow(id)
 	}
+	c.cur().mon.normalize() // the trailing empty workspace, as in a session
 	return c, w
 }
 
@@ -107,7 +108,6 @@ func TestCascadeInsideBandStaysOnMonitor(t *testing.T) {
 func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveCrosses(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	m := c.cur().mon
-	m.normalize() // the trailing empty workspace, as in a running session
 	w.FocusID(4)
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "M", 4)

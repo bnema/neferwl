@@ -196,6 +196,45 @@ func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 	}
 }
 
+// A covering fullscreen tile follows the same order: the occupied workspace
+// before the monitor on that side, which comes back only past the last one.
+func TestCascadeFullscreenStepsWorkspaceBeforeMonitor(t *testing.T) {
+	c, m := axisCore(t, true, OverflowCascade, 3)
+	w := m.Current()
+	w.FocusID(23)
+	w.ToggleFullscreen()
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 2)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+	if w.fullscreen != 23 {
+		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
+	}
+	last := m.Current()
+	last.FocusID(35)
+	last.ToggleFullscreen()
+	c.applyAction(ActionFocusColumnRight)
+	wantFocus(t, c, "R", 0)
+	if last.fullscreen != 35 {
+		t.Fatalf("fullscreen %d, want 35", last.fullscreen)
+	}
+}
+
+// A workspace holding only a float is occupied: it comes before the monitor.
+func TestCascadeFloatOnlyWorkspaceIsOccupied(t *testing.T) {
+	c, m := axisCore(t, true, OverflowCascade, 3)
+	m.Focus(3)
+	m.AddFloating(9, 100, 100)
+	m.Focus(2)
+	m.Current().FocusID(35)
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 3)
+	if got := c.cur().name(); got != "M" {
+		t.Fatalf("focused screen %q, want M", got)
+	}
+}
+
 // AC7: a lone native float, or an empty cascade workspace, is at the edge on
 // both sides.
 func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {

@@ -206,21 +206,31 @@ func (m *Monitor) Focus(i int) {
 }
 
 // stepWorkspace switches to the previous or next workspace (dir -1/1) when
-// axis is the current layout's workspace axis, and reports whether it did.
-// Past the first or the trailing workspace there is none to step to; the
-// trailing empty workspace counts only with empty set. A hidden named
+// axis is the current layout's workspace axis, and reports whether it did;
+// Focus clamps past the first or the trailing workspace. A hidden named
 // workspace is outside the numbered list: it never steps.
-func (m *Monitor) stepWorkspace(axis layoutAxis, dir int, empty bool) bool {
+func (m *Monitor) stepWorkspace(axis layoutAxis, dir int) bool {
+	step := m.Current().policy().workspaceStep(axis, dir)
+	if m.shown != nil || step == 0 {
+		return false
+	}
+	m.Focus(m.Active + step)
+	return true
+}
+
+// occupiedStep is the numbered workspace dir (-1/1) away along axis when
+// it is the layout's workspace axis and that workspace is not the trailing
+// empty one, or -1.
+func (m *Monitor) occupiedStep(axis layoutAxis, dir int) int {
 	step := m.Current().policy().workspaceStep(axis, dir)
 	to := m.Active + step
 	if m.shown != nil || step == 0 || to < 0 || to >= len(m.Workspaces) {
-		return false
+		return -1
 	}
-	if w := m.Workspaces[to]; !empty && w.empty() && w.Name == "" {
-		return false
+	if w := m.Workspaces[to]; w.empty() && w.Name == "" {
+		return -1
 	}
-	m.Focus(to)
-	return true
+	return to
 }
 
 // MoveWorkspace swaps the active numbered workspace with its neighbor up
