@@ -197,8 +197,9 @@ type Effect struct {
 }
 
 // applyAction runs a bind action. Monitor actions change the focused
-// screen; column focus past the edge column moves to the neighbor screen;
-// everything else applies to the focused screen's monitor.
+// screen; column focus past the edge column moves to the neighbor screen,
+// else along the layout's workspace axis; everything else applies to the
+// focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
 	if e, ok := c.cur().mon.overviewAction(a); ok {
 		return e

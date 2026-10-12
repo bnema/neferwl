@@ -155,17 +155,17 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 	c.applyAction(ActionFocusColumnLeft)
 	wantActive(t, m, 2)
 
-	c, m = axisCore(t, false, OverflowCascade, 3)
-	m.Focus(0)
-	m.Current().AddFloating(9, 100, 100)
+	// A lone native float on its own workspace, past the trailing one.
 	for _, tc := range []struct {
 		a    Action
 		want int
-	}{{ActionFocusColumnLeft, 0}, {ActionFocusColumnRight, 1}} {
-		m.Focus(0)
-		w := m.Current()
-		w.Columns = nil // a lone float: no columns under it
-		w.floatFocus = true
+	}{{ActionFocusColumnLeft, 2}, {ActionFocusColumnRight, 4}} {
+		c, m = axisCore(t, false, OverflowCascade, 3)
+		m.Focus(3)
+		m.AddFloating(9, 100, 100)
+		if w := m.Current(); len(w.Columns) != 0 || !w.floatFocus {
+			t.Fatalf("columns %d floatFocus %v, want a lone focused float", len(w.Columns), w.floatFocus)
+		}
 		c.applyAction(tc.a)
 		wantActive(t, m, tc.want)
 	}
