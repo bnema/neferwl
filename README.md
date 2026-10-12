@@ -204,7 +204,6 @@ floating.dim = 0.3
 layout.gaps = 0
 layout.max-columns = 2
 layout.overflow = cascade
-layout.presets = 1/3, 1/2, 2/3, 1
 stash.width = 80
 stash.gap = 2
 stash.dim = 0.5
@@ -267,12 +266,12 @@ bind.cmd+bracketleft = consume-or-expel-window-left
 bind.cmd+bracketright = consume-or-expel-window-right
 
 # Resize and window modes
-bind.cmd+alt+left = set-column-width -10%
-bind.cmd+alt+right = set-column-width +10%
+bind.cmd+alt+left = set-column-width -1
+bind.cmd+alt+right = set-column-width +1
 bind.cmd+alt+up = set-window-height -10%
 bind.cmd+alt+down = set-window-height +10%
-bind.cmd+alt+h = set-column-width -10%
-bind.cmd+alt+l = set-column-width +10%
+bind.cmd+alt+h = set-column-width -1
+bind.cmd+alt+l = set-column-width +1
 bind.cmd+alt+k = set-window-height -10%
 bind.cmd+alt+j = set-window-height +10%
 bind.cmd+shift+space = toggle-floating

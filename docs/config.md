@@ -29,10 +29,9 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `stash.capture` | `on` | `on`: a window opened while the stash is shown joins its end, selected; `toggle-window-stash` tiles it as a new column. `off`: new windows always tile |
 | `border.active` / `border.inactive` | `#808080` / `#111111` | Colors for focused / other window lines; only the focused output lights up |
 | `layout.gaps` | `0` | Space between windows |
-| `layout.max-columns` | `2` | Columns that share the screen before scrolling |
+| `layout.max-columns` | `2` | Columns that share the screen before the overflow applies. It also sets the cell: a column is `N` cells wide, a cell being `1/max-columns` of the usable width (see [Column widths](#column-widths)) |
 | `layout.overflow` | `cascade` | Past the max: `cascade` into vertically scrolling bands, `scroll` right, or `fixed` spiral split |
 | `layout.<output>.max-columns`, `.overflow` | layout values | Per-screen layout: connector (`DP-2`) or monitor key |
-| `layout.presets` | `1/3, 1/2, 2/3, 1` | Widths for `cycle-column-width` (scroll overflow) |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers, for two-finger scroll and three-finger swipes (see [Touchpad](#touchpad)) |
 | `touchpad.tap` | `on` | Tap to click: one finger left, two right, three middle |
 | `touchpad.accel-speed` | `0` | Touchpad pointer speed, from `-1` (slowest) to `1` (fastest) |
@@ -54,7 +53,7 @@ NeferWL reads `$XDG_CONFIG_HOME/neferwl/config` (or `~/.config/neferwl/config`).
 | `workspace.<name>.monitor` | focused output | Home monitor: connector (`DP-2`) or monitor key. A `workspace <name>` bind focuses it there. Unset, or while home is absent, the workspace comes to the focused output; it returns home when it reconnects |
 | `workspace.<name>.size` | `inherit` | Logical `WxH` viewport, centered on the monitor; inherits monitor size by default and always keeps its scale |
 | `workspace.<name>.max-columns`, `.overflow` | screen values | Per-workspace layout |
-| `workspace.<name>.column.<N>` | none | Slot: `<width>, <command>` |
+| `workspace.<name>.column.<N>` | none | Slot: `<cells>, <command>`; cells is a whole number from 1 to 16 |
 | `rule.<name>.*` | none | Window rules: place an app's windows by app ID when they first open; see [Window rules](#window-rules) |
 | `output.<name>` | preferred | `WxH`, `WxH@Hz`, `preferred` or `off` |
 | `output.<name>.scale` | `1` | 1 to 4, e.g. `1.5` or `4/3` |
@@ -81,7 +80,7 @@ A window rule places the windows of an app when they first open. Rules are flat 
 | `rule.<name>.floating` | `on` floats the window (centred, free floating, sized by NeferWL); `off` tiles a fixed-size window that would float |
 | `rule.<name>.workspace` | A workspace number (1-based, past the last one means the last) or the name of a declared `workspace.<name>.*` workspace |
 | `rule.<name>.monitor` | A connector (`DP-2`) or a monitor key (`make model serial`); the focused output when it is not connected |
-| `rule.<name>.width` | Width of the window's new column, like a column width in `workspace.<name>.column.N`: `50%`, `1/3`, `800px` or `1`; tiled windows only |
+| `rule.<name>.width` | Width of the window's new column in cells, a whole number from 1 to 16 (see [Column widths](#column-widths)); tiled windows only |
 
 ```ini
 rule.games.app-id = steam_app_.*
@@ -89,7 +88,7 @@ rule.games.workspace = 3
 rule.games.monitor = DP-2
 rule.chat.app-id = discord|org\.telegram\..*
 rule.chat.workspace = chat
-rule.chat.width = 1/3
+rule.chat.width = 1
 rule.calc.app-id = org\.gnome\.Calculator
 rule.calc.floating = on
 ```
@@ -99,7 +98,6 @@ rule.calc.floating = on
 - A rule never moves you. The window opens on its target workspace without taking the focus or switching the workspace or monitor you are on. When the target is the workspace on screen of the focused output, the window opens as any new window does.
 - A named workspace stays on its own monitor: `monitor` is ignored next to a named `workspace`. A name nobody declared warns and the window opens as usual.
 - A window started for a slot (`workspace.<name>.column.N`) goes to its slot, and a dialog stays over its parent: rules do not apply to them.
-- `width` is ignored under `fixed` and `cascade` overflow, where columns share the width.
 - An invalid value, a bad regular expression or a missing `app-id` logs a warning with the line, and the rule is ignored. An invalid value that repeats a key already set keeps the earlier value, like any other key.
 
 To find an app ID, look at `app_id` in `neferwl state | jq '.windows[] | {id, app_id}'`, or at the `window mapped` line in the log. X11 apps run through xwayland-satellite get their app ID from `WM_CLASS`; it may be empty, and an app that sets it after opening is not matched.
@@ -228,7 +226,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 Cascade is the default layout (`layout.overflow = cascade`); it can also be set per output or on a named workspace. Columns fill bands of up to `max-columns`, then continue in a fresh band below. The columns of a band share its width equally, as in `fixed` overflow: a lone column takes the full width until another joins its band. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
 
-Left/right focus and moves stay in the band; at its edge they go to the neighbor monitor on that side, or, with none, follow column order into the adjacent band. Up/down visits stacked windows first, then the closest column in the adjacent band, and stops at the first and last band; `move-window-up/down` takes the same path, moving the whole column to the adjacent band by swapping it with that column. In a partial last band that column is the closest one, so a column moved down and back up may land at another place in its band. Column width presets and resizing do nothing; window height shares still apply. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
+Left/right focus and moves stay in the band; at its edge they go to the neighbor monitor on that side, or, with none, follow column order into the adjacent band. Up/down visits stacked windows first, then the closest column in the adjacent band, and stops at the first and last band; `move-window-up/down` takes the same path, moving the whole column to the adjacent band by swapping it with that column. In a partial last band that column is the closest one, so a column moved down and back up may land at another place in its band. Column widths are cells within the band (see [Column widths](#column-widths)); window height shares apply too. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
 
 Three-finger vertical swipes scroll bands; horizontal swipes switch workspaces. Scroll and fixed workspaces retain their existing gesture axes. A switch keeps the source workspace's axis throughout its transition; the destination's axes apply to the next gesture. The `focus-workspace-prev/next` commands switch to the previous or next workspace, whether the transition is vertical or horizontal. Four-finger and stash gestures keep their existing behaviour.
 
@@ -238,6 +236,18 @@ In the overview, up/down move to the previous or next band and stop at the first
 
 Cascade supports dropping onto tiles, but not gap insertion or edge scrolling during a drag.
 
+### Column widths
+
+A cell is `1/max-columns` of the usable width. A column is `Cells` wide, from 1 to 16; an auto column (no cells set) shares the width equally. The same model serves every overflow:
+
+- `cascade`: the columns of a band share its row of cells.
+- `fixed`: the columns share the row while there are at most `max-columns` of them. Past that, the spiral applies and cells are ignored.
+- `scroll`: each column is sized on its own, up to `max-columns` cells; an auto column is the equal share of the columns in view.
+
+In a row, the auto columns share the cells the set ones leave; when no cell is left, an auto column counts for one. Columns with more cells than the row holds (after a smaller `max-columns`, or moved to another workspace) share the width in proportion. All-auto rows are laid out as equal shares.
+
+`cycle-column-width` gives the focused column one more cell, taking it from the widest other column of its row (the nearest, right side first, on a tie). A row that does not add up to `max-columns` cells is first spread evenly, the focused column taking the remainder, and that counts as the step. With no cell left to take, the row returns to equal shares. `set-column-width +N` repeats the grow without cycling; `-N` gives a cell to the right neighbor (the left one at the row's end), down to one cell.
+
 ### Actions
 
 | Action | Effect |
@@ -246,19 +256,19 @@ Cascade supports dropping onto tiles, but not gap insertion or edge scrolling du
 | `spawn-terminal` | Run `terminal` |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. An app that asks for fullscreen in its first second (e.g. a Wine launcher that remembered a monitor-sized window) opens in a column instead; later requests are honoured. Fullscreen is exclusive, whether from this bind or the app: nothing is drawn above it but a surface taking the keyboard (a locker). Bars, notifications and other windows wait hidden until it leaves; a window opening meanwhile waits hidden too. The window's own dialogs are the exception: a dialog it opens (a file chooser, a screen-sharing or permission request from the desktop portal) shows over it with the focus, and a focus move goes back to the fullscreen window without leaving fullscreen. Fullscreen stays in place: the window keeps its column. Focusing another window of the workspace (`focus-column-left/right`, `focus-window-up/down`, an activation or the overview) leaves fullscreen; the app's own fullscreen requests are then refused until it is focused again. In fixed overflow, an app's own request applies only while it has the focus. A taskbar request brings the window on screen with the focus first |
-| `toggle-window-stash` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized or expanded state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
+| `toggle-window-stash` | Move the focused tile to the end of the workspace's [stash](#stash), shown and selected; on a stashed window, send it back to its former column, width and maximized state when possible. A native dialog becomes a new tiled column. A fullscreen window must leave fullscreen first |
 | `toggle-floating` | Make the focused tile a [free floating window](#free-floating-windows) at its current size, centred; on a floating window, send it back to its former place in the columns (a native dialog becomes a new column). Does nothing on a stashed or fullscreen window |
 | `toggle-stash-visible` | Hide the stash and give the focus back to the tiles, or show it again with the focus on its selected window. Native dialogs stay as they are. Over a fullscreen window, shows the stash on top with the focus; the window stays fullscreen behind (composed, so no direct scanout while the stash shows) and is back when the stash hides or the focus leaves it. `toggle-window-stash` or `toggle-fullscreen` on a stashed window there leaves that fullscreen for it. New windows never join or show over it; the fullscreen window's own dialogs show above it |
 | `toggle-overview` | Open the [overview](#overview), or close it on the selected window |
 | `switch-column-next` | Switch to the column used before this one on the workspace. Hold Cmd and press again to go further back; after a short hold a strip of cards shows the columns, most recent first, and releasing Cmd focuses the selected one. Escape cancels; clicking a card picks it, and a click elsewhere cancels and is not passed to windows. A click before the cards show cancels and acts as usual. A maximized column hands its maximization to the target. A workspace capture session pauses while the strip shows, as in the overview |
 | `switch-column-prev` | The same, in the opposite direction |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
-| `cycle-column-width` | Step through `layout.presets`. In fixed overflow, toggle the focused column to `max-columns - 1` cells in place; the other columns stack on each side in the last cell. One column is expanded at a time |
+| `cycle-column-width` | Grow the focused column by one cell, taking it from the widest other column of its row (see [Column widths](#column-widths)). When no column has a cell to give, every column of the row goes back to equal shares. In scroll overflow, the column grows to `max-columns` cells, then back to auto. Does nothing for a lone column, a full row or a spiral |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In cascade overflow the edge is the band's. In fixed overflow, the neighbor on screen. From a fullscreen window, the neighbor column comes first and fullscreen ends; at the edge it stays |
 | `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first. Up at the top brings back a covering float put behind the columns. From a fullscreen window, a window above or below comes first and fullscreen ends |
 | `move-column-left/right` | Move the focused column; at the edge, to the neighbor monitor, focus following. In cascade overflow the edge is the band's; with no monitor there, the column crosses into the adjacent band. Fixed overflow follows column order, not the screen |
 | `move-window-up/down` | Move the focused window up or down in its column; focus follows it. In cascade overflow, past the column, the column moves to the adjacent band, where `focus-window-up/down` goes |
-| `set-column-width <+N%\|-N%>` | Widen or narrow the focused column by N% of the usable width (1-100), between 10% and 100%. The new width stays until changed; `cycle-column-width` then restarts at the first preset. Does nothing in fixed overflow |
+| `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells (1-16), never below one cell and without cycling back to equal shares. The cells come from, or go to, the other columns of the row |
 | `set-window-height <+N%\|-N%>` | Give the focused window N% more or less of its column's height; the other rows give or take it in proportion. Each row keeps at least 10%. A window joining or leaving the column resets equal rows. Does nothing past 9 rows |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-prev/next` | Show a numbered or neighbor workspace |
@@ -283,7 +293,7 @@ Native floating windows are not in the stash: they stay centred in the usable ou
 
 `toggle-floating` lifts the focused tile out of its column into a free floating window. NeferWL sets its size, and it stays where you put it, kept inside the usable area. Its place is relative to the screen, so it keeps it on another workspace or monitor of any size.
 
-On a free floating window, `move-column-left/right` and `move-window-up/down` move it by 50 logical pixels, and `set-column-width`/`set-window-height` resize it by a share of the usable width or height. `toggle-window-stash` stashes it and brings it back floating at the same place. `toggle-floating` returns it to its column.
+On a free floating window, `move-column-left/right` and `move-window-up/down` move it by 50 logical pixels, and `set-column-width`/`set-window-height` resize it: a width step moves it by N cells (`Usable.W / max-columns` each), a height step by N% of the usable height. `toggle-window-stash` stashes it and brings it back floating at the same place. `toggle-floating` returns it to its column.
 
 ### Moving windows with the pointer
 
@@ -339,8 +349,8 @@ With `keyboard.cmd = alt`, the `cmd+alt+â€¦` binds have the same keys as `cmd+â€
 | `cmd+bracketright` | `consume-or-expel-window-right` |
 | `cmd+shift+up` / `cmd+shift+k` | `move-window-up` |
 | `cmd+shift+down` / `cmd+shift+j` | `move-window-down` |
-| `cmd+alt+left` / `cmd+alt+h` | `set-column-width -10%` |
-| `cmd+alt+right` / `cmd+alt+l` | `set-column-width +10%` |
+| `cmd+alt+left` / `cmd+alt+h` | `set-column-width -1` |
+| `cmd+alt+right` / `cmd+alt+l` | `set-column-width +1` |
 | `cmd+alt+up` / `cmd+alt+k` | `set-window-height -10%` |
 | `cmd+alt+down` / `cmd+alt+j` | `set-window-height +10%` |
 | `cmd+r` | `cycle-column-width` |
