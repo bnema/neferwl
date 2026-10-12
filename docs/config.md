@@ -224,7 +224,7 @@ HDR requires DRM HDR connector properties, suitable KMS planes, and Vulkan fp16 
 
 ### Cascade
 
-Cascade is the default layout (`layout.overflow = cascade`); it can also be set per output or on a named workspace. Columns fill bands of up to `max-columns`, then continue in a fresh band below. The columns of a band share its width equally, as in `fixed` overflow: a lone column takes the full width until another joins its band. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
+Cascade is the default layout (`layout.overflow = cascade`); it can also be set per output or on a named workspace. Columns fill bands of up to `max-columns`, then continue in a fresh band below. The columns of a band share its row of cells (see [Column widths](#column-widths)); auto columns share it equally, so a lone column takes the full width until another joins its band. New columns append last; closing a column compacts the following bands. Each band fills the usable height after panel reservations.
 
 Left/right focus and moves stay in the band; at its edge they go to the neighbor monitor on that side, or, with none, follow column order into the adjacent band. Up/down visits stacked windows first, then the closest column in the adjacent band, and stops at the first and last band; `move-window-up/down` takes the same path, moving the whole column to the adjacent band by swapping it with that column. In a partial last band that column is the closest one, so a column moved down and back up may land at another place in its band. Column widths are cells within the band (see [Column widths](#column-widths)); window height shares apply too. Maximizing a column hides its same-band siblings until focus moves or maximization ends.
 
@@ -238,7 +238,7 @@ Cascade supports dropping onto tiles, but not gap insertion or edge scrolling du
 
 ### Column widths
 
-A cell is `1/max-columns` of the usable width. A column is `Cells` wide, from 1 to 16; an auto column (no cells set) shares the width equally. The same model serves every overflow:
+A cell is `1/max-columns` of the usable width. A column is N cells wide, from 1 to 16; an auto column (no cells set) shares the width equally. The same model serves every overflow:
 
 - `cascade`: the columns of a band share its row of cells.
 - `fixed`: the columns share the row while there are at most `max-columns` of them. Past that, the spiral applies and cells are ignored.
@@ -263,12 +263,12 @@ In a row, the auto columns share the cells the set ones leave; when no cell is l
 | `switch-column-next` | Switch to the column used before this one on the workspace. Hold Cmd and press again to go further back; after a short hold a strip of cards shows the columns, most recent first, and releasing Cmd focuses the selected one. Escape cancels; clicking a card picks it, and a click elsewhere cancels and is not passed to windows. A click before the cards show cancels and acts as usual. A maximized column hands its maximization to the target. A workspace capture session pauses while the strip shows, as in the overview |
 | `switch-column-prev` | The same, in the opposite direction |
 | `maximize-column` | Toggle full usable width for the focused column, preserving gaps and its saved width; in fixed overflow, other columns are hidden until focus moves or it is toggled off. On a window that made itself fullscreen (e.g. a Wine app at monitor size), it first returns the window to its column |
-| `cycle-column-width` | Grow the focused column by one cell, taking it from the widest other column of its row (see [Column widths](#column-widths)). When no column has a cell to give, every column of the row goes back to equal shares. In scroll overflow, the column grows to `max-columns` cells, then back to auto. Does nothing for a lone column, a full row or a spiral |
+| `cycle-column-width` | Grow the focused column by one cell, taking it from the widest other column of its row (see [Column widths](#column-widths)). When no column has a cell to give, every column of the row goes back to equal shares. In scroll overflow, the column grows to `max-columns` cells, then back to auto. A lone column or a full row cannot grow: it goes back to equal shares if its cells were set, and otherwise nothing changes. A spiral never changes |
 | `focus-column-left/right` | Focus the neighbor column; at the edge, the neighbor monitor. In cascade overflow the edge is the band's. In fixed overflow, the neighbor on screen. From a fullscreen window, the neighbor column comes first and fullscreen ends; at the edge it stays |
 | `focus-window-up/down` | Focus in the column; past the edge, the next workspace. In fixed overflow, the column on screen above or below comes first. Up at the top brings back a covering float put behind the columns. From a fullscreen window, a window above or below comes first and fullscreen ends |
 | `move-column-left/right` | Move the focused column; at the edge, to the neighbor monitor, focus following. In cascade overflow the edge is the band's; with no monitor there, the column crosses into the adjacent band. Fixed overflow follows column order, not the screen |
 | `move-window-up/down` | Move the focused window up or down in its column; focus follows it. In cascade overflow, past the column, the column moves to the adjacent band, where `focus-window-up/down` goes |
-| `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells (1-16), never below one cell and without cycling back to equal shares. The cells come from, or go to, the other columns of the row |
+| `set-column-width <+N\|-N>` | Widen or narrow the focused column by N cells (1-16), never below one cell and without cycling back to equal shares. In `cascade` and `fixed` overflow the cells come from, or go to, the other columns of the row; in `scroll` overflow the column grows on its own, up to `max-columns` cells |
 | `set-window-height <+N%\|-N%>` | Give the focused window N% more or less of its column's height; the other rows give or take it in proportion. Each row keeps at least 10%. A window joining or leaving the column resets equal rows. Does nothing past 9 rows |
 | `consume-or-expel-window-left/right` | A lone window joins the neighbor column; a stacked one leaves for a new column |
 | `focus-workspace <N>` / `focus-workspace-prev/next` | Show a numbered or neighbor workspace |

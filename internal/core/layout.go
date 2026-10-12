@@ -997,6 +997,11 @@ func (w *Workspace) GrowColumn(cycle bool) {
 		first, last := w.laneBounds(w.laneOf(w.Focus))
 		n := last - first + 1
 		if n == 1 || n >= k {
+			// Nothing to grow, but a lane left uneven (a column joined
+			// it, or max-columns shrank) still cycles back to equal.
+			if cycle && slices.ContainsFunc(w.Columns[first:last+1], func(c Column) bool { return c.Cells != 0 }) {
+				w.setLaneCells(first, make([]int, n))
+			}
 			return
 		}
 		cells, ok := w.laneCells(first, last, w.Focus)

@@ -314,6 +314,31 @@ func TestCellsAboveMaxColumns(t *testing.T) {
 			}
 		}
 	})
+	t.Run("a full uneven lane cycles back to equal", func(t *testing.T) {
+		for _, o := range []Overflow{OverflowCascade, OverflowFixed} {
+			w := cellsWorkspace(o, 4, 4)
+			w.Columns[1].Cells = 2
+			w.Columns[0].Cells, w.Columns[2].Cells = 1, 1
+			w.Apply("set-column-width +1")
+			if got := cellsOf(w); !reflect.DeepEqual(got, []int{1, 2, 1, 0}) {
+				t.Fatalf("%s: set-column-width cycled: %v", o, got)
+			}
+			w.Apply(ActionCycleColumnWidth)
+			if got := cellsOf(w); !reflect.DeepEqual(got, []int{0, 0, 0, 0}) {
+				t.Fatalf("%s: cells %v", o, got)
+			}
+		}
+	})
+	t.Run("a lone column with cells cycles back to auto", func(t *testing.T) {
+		for _, o := range []Overflow{OverflowCascade, OverflowFixed} {
+			w := cellsWorkspace(o, 4, 1)
+			w.Columns[0].Cells = 2
+			w.Apply(ActionCycleColumnWidth)
+			if got := cellsOf(w); !reflect.DeepEqual(got, []int{0}) {
+				t.Fatalf("%s: cells %v", o, got)
+			}
+		}
+	})
 	t.Run("scroll", func(t *testing.T) {
 		w := cellsWorkspace(OverflowScroll, 2, 2)
 		w.Columns[0].Cells = 3
@@ -335,7 +360,7 @@ func TestCellsAboveMaxColumns(t *testing.T) {
 			t.Fatal("no column")
 		}
 		dst.receive(col, 1)
-		if got := cellsOf(dst); got[len(got)-1] != 3 && got[0] != 3 {
+		if got := cellsOf(dst); !reflect.DeepEqual(got, []int{0, 3}) {
 			t.Fatalf("cells %v", got)
 		}
 	})

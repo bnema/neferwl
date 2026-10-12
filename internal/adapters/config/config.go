@@ -783,7 +783,7 @@ func set(c *ports.Config, key, v string) error {
 		}
 		c.Layout.Gaps = n
 	case "layout.default-width":
-		return fmt.Errorf("replaced by layout.max-columns (columns share the width equally)")
+		return fmt.Errorf("replaced by layout.max-columns (column widths are cells of 1/max-columns)")
 	case "layout.max-columns":
 		return setLayoutRule(&c.Layout.LayoutRules, "max-columns", v)
 	case "layout.overflow":
