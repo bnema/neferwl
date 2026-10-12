@@ -50,9 +50,9 @@ func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	}
 }
 
-// The workspace step wins over a monitor on that side, so the same key
-// brings focus back: a neighbor monitor is reached only past the first or
-// the trailing workspace.
+// An occupied workspace wins over a monitor on that side, so the opposite
+// key brings focus back; the monitor wins over the trailing empty
+// workspace, so it stays reachable.
 func TestCascadeFocusColumnStepsWorkspaceBeforeMonitor(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	m.Current().FocusID(23)
@@ -74,11 +74,29 @@ func TestCascadeFocusColumnStepsWorkspaceBeforeMonitor(t *testing.T) {
 	c.applyAction(ActionFocusColumnLeft)
 	wantFocus(t, c, "L", 0)
 	wantActive(t, m, 0)
-	// Past the trailing empty workspace: the monitor on the right.
+	// From the last occupied workspace: the monitor on the right, not the
+	// trailing empty workspace.
 	c.focusScreen = 1
-	m.Focus(len(m.Workspaces) - 1)
+	m.Focus(2)
+	m.Current().FocusID(35)
 	c.applyAction(ActionFocusColumnRight)
 	wantFocus(t, c, "R", 0)
+	wantActive(t, m, 2)
+}
+
+// With no monitor on that side, the trailing empty workspace is the last
+// stop, and left comes back from it.
+func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) {
+	c, m := axisCore(t, false, OverflowCascade, 3)
+	m.Focus(2)
+	m.Current().FocusID(35)
+	c.applyAction(ActionFocusColumnRight)
+	wantActive(t, m, 3)
+	if !m.Current().empty() {
+		t.Fatal("want the trailing empty workspace")
+	}
+	c.applyAction(ActionFocusColumnLeft)
+	wantActive(t, m, 2)
 }
 
 // The live regression: one monitor on the left only. Right steps to the

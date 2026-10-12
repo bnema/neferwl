@@ -230,31 +230,20 @@ func (c *Core) applyAction(a Action) Effect {
 			dir, d = -1, dirLeft
 		}
 		// A covering fullscreen window is left for the window on that side;
-		// with none (the workspace, band or stash edge), the move goes along
-		// the workspace axis, else to the neighbor monitor, and fullscreen
-		// stays.
+		// with none (the workspace, band or stash edge), the move goes past
+		// the edge (see edgeFocus) and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
-			if !w.FocusColumn(dir) && !c.cur().mon.stepWorkspace(horizontalAxis, dir) {
-				if i := c.neighbor(d); i >= 0 {
-					c.focusScreen = i
-				}
+			if !w.FocusColumn(dir) {
+				c.edgeFocus(dir, d)
 			}
 			return Effect{}
 		}
 		// The first move from a float stays here unless nothing is under it:
 		// a native float leaves for the stash or the columns, and the stash
-		// keeps the focus at its ends. At the edge the move goes along the
-		// workspace axis if it is horizontal, so the way back is the same
-		// key; past the first or trailing workspace, to the neighbor monitor.
+		// keeps the focus at its ends.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge {
-			if c.cur().mon.stepWorkspace(horizontalAxis, dir) {
-				return Effect{}
-			}
-			if i := c.neighbor(d); i >= 0 {
-				c.focusScreen = i
-				return Effect{}
-			}
+		if edge && c.edgeFocus(dir, d) {
+			return Effect{}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
 		dir, d := 1, dirRight
@@ -311,6 +300,22 @@ func (c *Core) applyAction(a Action) Effect {
 	return c.cur().mon.Apply(a)
 }
 
+// edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
+// content edge: to the occupied workspace on that side when the workspace
+// axis is horizontal, so the opposite key comes back; else to the neighbor
+// monitor; else to the trailing empty workspace. It reports whether focus
+// moved.
+func (c *Core) edgeFocus(dir int, d direction) bool {
+	if c.cur().mon.stepWorkspace(horizontalAxis, dir, false) {
+		return true
+	}
+	if i := c.neighbor(d); i >= 0 {
+		c.focusScreen = i
+		return true
+	}
+	return c.cur().mon.stepWorkspace(horizontalAxis, dir, true)
+}
+
 // Apply runs a bind action on the monitor.
 func (m *Monitor) Apply(a Action) Effect {
 	if e, ok := m.overviewAction(a); ok {
@@ -349,7 +354,7 @@ func (m *Monitor) Apply(a Action) Effect {
 			dir = -1
 		}
 		if !m.Current().FocusWindow(dir) {
-			m.stepWorkspace(verticalAxis, dir)
+			m.stepWorkspace(verticalAxis, dir, true)
 		}
 		return Effect{}
 	case ActionToggleFullscreen:
