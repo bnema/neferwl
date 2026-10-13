@@ -58,20 +58,20 @@ pids+=("$!")
 sleep 8
 
 cs() { cat /proc/"$nwl"/task/*/status | awk '/^voluntary_ctxt/{v+=$2} END{print v}'; }
-ticks() { awk '{print $14+$15}' /proc/"$nwl"/stat; }
+# CPU time in ns summed over threads (schedstat is finer than stat's ticks).
+ticks() { cat /proc/"$nwl"/task/*/schedstat | awk '{v+=$1} END{printf "%d\n", v}'; }
 frames() { grep -c '"message":"frame"' "$log" || true; }
 
 t0=$(ticks); f0=$(frames); c0=$(cs)
 sleep "$secs"
 t1=$(ticks); f1=$(frames); c1=$(cs)
 
-hz=$(getconf CLK_TCK)
-python3 - "$((t1 - t0))" "$((f1 - f0))" "$((c1 - c0))" "$secs" "$hz" "$page" <<'EOF'
+python3 - "$((t1 - t0))" "$((f1 - f0))" "$((c1 - c0))" "$secs" "$page" <<'EOF'
 import sys
-t, f, c, s, hz, page = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4]), int(sys.argv[5]), sys.argv[6]
-cpu = t / hz / s * 100
+t, f, c, s, page = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4]), sys.argv[5]
+cpu = t / 1e9 / s * 100
 fr = max(f, 1)
-print(f"{page} cpu%={cpu:.2f} fps={f / s:.1f} ms/frame={t / hz * 1000 / fr:.3f} cs/frame={c / fr:.0f}")
+print(f"{page} cpu%={cpu:.2f} fps={f / s:.1f} ms/frame={t / 1e6 / fr:.3f} cs/frame={c / fr:.0f}")
 EOF
 
 if [ -n "${BENCH_KEEP:-}" ]; then
