@@ -42,7 +42,7 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 			}
 			frame()
 			if allocs := testing.AllocsPerRun(20, frame); allocs > 3 {
-				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=3", allocs)
+				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=3 (syncFD path: %v)", allocs, r.syncFD)
 			} else {
 				t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
 			}
@@ -138,8 +138,10 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 }
 
 // A steady frame that draws a client dmabuf also records the ownership
-// barriers (acquire and release) of its image: no allocation per frame beyond
-// the SHM scene's. Skipped without a GPU or /dev/udmabuf.
+// barriers (acquire and release) of its image, which allocate nothing. The
+// frame still allocates more than the SHM scene: importing the client's
+// read fence and its retire closure (about 4 per frame). Skipped without a
+// GPU or /dev/udmabuf.
 func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	r, err := New(80, 32)
 	if err != nil {
@@ -181,7 +183,7 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	allocs := testing.AllocsPerRun(20, moved)
 	t.Logf("dmabuf Render: %.1f allocs/frame", allocs)
 	if allocs > 7 {
-		t.Errorf("dmabuf steady-state Render: %.1f allocs/frame, want <=7", allocs)
+		t.Errorf("dmabuf steady-state Render: %.1f allocs/frame, want <=7 (syncFD path: %v; a driver without sync-file export takes another path)", allocs, r.syncFD)
 	}
 }
 
