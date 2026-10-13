@@ -39,6 +39,11 @@ nwl=$!
 pids+=("$nwl")
 log=$tmp/state/neferwl/runs/headless/latest.log
 for _ in $(seq 50); do [ -S "$tmp/rt/wayland-1" ] && break; sleep 0.1; done
+if [ ! -S "$tmp/rt/wayland-1" ]; then
+	echo "neferwl did not start: no wayland-1 socket; its output:" >&2
+	cat "$tmp/nwl.out" >&2
+	exit 1
+fi
 
 if [ -n "${BENCH_X11:-}" ]; then
 	disp=
@@ -59,12 +64,18 @@ sleep 8
 
 cs() { cat /proc/"$nwl"/task/*/status | awk '/^voluntary_ctxt/{v+=$2} END{print v}'; }
 # CPU time in ns summed over threads (schedstat is finer than stat's ticks).
-ticks() { cat /proc/"$nwl"/task/*/schedstat | awk '{v+=$1} END{printf "%d\n", v}'; }
+cpu_ns() { cat /proc/"$nwl"/task/*/schedstat | awk '{v+=$1} END{printf "%d\n", v}'; }
 frames() { grep -c '"message":"frame"' "$log" || true; }
 
-t0=$(ticks); f0=$(frames); c0=$(cs)
+t0=$(cpu_ns); f0=$(frames); c0=$(cs)
 sleep "$secs"
-t1=$(ticks); f1=$(frames); c1=$(cs)
+t1=$(cpu_ns); f1=$(frames); c1=$(cs)
+
+if [ "$((f1 - f0))" -le 0 ]; then
+	echo "no frame presented in ${secs}s: the page did not animate or neferwl stalled" >&2
+	tail -n 20 "$tmp/nwl.out" >&2
+	exit 1
+fi
 
 python3 - "$((t1 - t0))" "$((f1 - f0))" "$((c1 - c0))" "$secs" "$page" <<'EOF'
 import sys
