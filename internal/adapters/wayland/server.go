@@ -154,9 +154,13 @@ type Server struct {
 	// goroutine (paceReady: registered with the display loop);
 	// paceDepth/paceDirty defer wakePacer inside a commit or tick (display
 	// goroutine only). paceSignal coalesces posted ticks (paceSignalFn).
-	paceFD       int
-	paceReady    bool
-	paceWarned   bool // a pace timer failure was logged (once)
+	paceFD     int
+	paceReady  bool
+	paceWarned bool // a pace timer failure was logged (once)
+	// paceArmed: the timerfd is armed for paceDeadline (display goroutine
+	// only); armPace and stopPace skip a syscall that would change nothing.
+	paceArmed    bool
+	paceDeadline time.Time
 	paceSignal   atomic.Bool
 	paceSignalFn func()
 	paceDepth    int

@@ -128,3 +128,60 @@ func TestSyncedCommitDoesNotTick(t *testing.T) {
 		t.Fatal("synced commit ticked the pacer")
 	}
 }
+
+// An arm for the deadline already armed (within paceTolerance) keeps the
+// timer; another deadline re-arms it; an expiry consumed by onPaceTimer, or a
+// stop, leaves it disarmed, and a stop of a disarmed timer does nothing.
+func TestArmPaceSkipsUnchangedDeadline(t *testing.T) {
+	s, _ := paceFixture(t, true)
+	remaining := func() time.Duration {
+		var cur unix.ItimerSpec
+		if err := unix.TimerfdGettime(s.paceFD, &cur); err != nil {
+			t.Fatal(err)
+		}
+		return time.Duration(cur.Value.Nano())
+	}
+	s.stopPace()
+	if s.paceArmed {
+		t.Fatal("stop of a never armed timer armed it")
+	}
+	start := time.Now()
+	s.armPace(time.Hour)
+	first := s.paceDeadline
+	if !s.paceArmed || remaining() <= 59*time.Minute {
+		t.Fatalf("not armed: %v", remaining())
+	}
+	// Later, with a wait that ends at the same moment (within tolerance): the
+	// timer is kept.
+	s.armPace(time.Hour - time.Since(start))
+	if !s.paceDeadline.Equal(first) {
+		t.Fatalf("an unchanged deadline re-armed the timer: %v -> %v", first, s.paceDeadline)
+	}
+	s.armPace(time.Hour - time.Minute)
+	if s.paceDeadline.Equal(first) || remaining() > 59*time.Minute {
+		t.Fatalf("a new deadline kept the old timer: remaining %v", remaining())
+	}
+	s.stopPace()
+	if s.paceArmed || remaining() != 0 {
+		t.Fatalf("stop left the timer armed: %v", remaining())
+	}
+	// One-shot expiry: the fired timer is disarmed, so a stop is a no-op and
+	// the next arm sets the timer again even for the same deadline.
+	s.armPace(time.Nanosecond)
+	fds := []unix.PollFd{{Fd: int32(s.paceFD), Events: unix.POLLIN}}
+	if n, err := unix.Poll(fds, 5000); n != 1 {
+		t.Fatalf("the timer did not fire: %d, %v", n, err)
+	}
+	s.onPaceTimer()
+	if s.paceArmed {
+		t.Fatal("expiry did not disarm")
+	}
+	s.stopPace() // no syscall to observe: it must not re-arm anything
+	if remaining() != 0 {
+		t.Fatalf("stop after the expiry: %v", remaining())
+	}
+	s.armPace(time.Hour)
+	if !s.paceArmed || remaining() <= 59*time.Minute {
+		t.Fatalf("not re-armed after the expiry: %v", remaining())
+	}
+}

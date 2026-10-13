@@ -41,20 +41,41 @@ func (s *Server) paceNow() {
 	s.paceTick(nil, nil)
 }
 
+// paceTolerance is how far a new deadline may differ from the armed one
+// and still reuse it: the ticks of one frame compute the same deadline from
+// clock reads a few microseconds apart.
+const paceTolerance = 50 * time.Microsecond
+
 // armPace schedules the next flip-less tick d from now on the pace timerfd
-// (nanosecond precision, one-shot). Display goroutine only.
+// (nanosecond precision, one-shot). A deadline equal to the armed one (within paceTolerance) keeps the timer as
+// it is: a frame's commit, flip and timer ticks mostly end on the same
+// deadline. The tolerance is measured against the armed deadline, so it never
+// accumulates. Display goroutine only.
 func (s *Server) armPace(d time.Duration) {
-	if d <= 0 {
-		d = time.Nanosecond
+	deadline := time.Now().Add(max(d, 0))
+	if s.paceArmed {
+		if diff := deadline.Sub(s.paceDeadline); diff >= -paceTolerance && diff <= paceTolerance {
+			return
+		}
 	}
-	spec := unix.ItimerSpec{Value: unix.NsecToTimespec(int64(d))}
-	s.warnPace("arm", unix.TimerfdSettime(s.paceFD, 0, &spec, nil))
+	spec := unix.ItimerSpec{Value: unix.NsecToTimespec(int64(max(d, time.Nanosecond)))}
+	err := unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("arm", err)
+	// A failed arm leaves the old state unknown: arm again next time.
+	s.paceArmed, s.paceDeadline = err == nil, deadline
 }
 
-// stopPace disarms the pace timerfd. Display goroutine only.
+// stopPace disarms the pace timerfd, unless it is not armed (never armed, or
+// its one-shot expiry was consumed by onPaceTimer). Display goroutine only.
 func (s *Server) stopPace() {
+	if !s.paceArmed {
+		return
+	}
 	var spec unix.ItimerSpec
-	s.warnPace("stop", unix.TimerfdSettime(s.paceFD, 0, &spec, nil))
+	err := unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("stop", err)
+	// A failed stop keeps the state: the next stop tries again.
+	s.paceArmed = err != nil
 }
 
 // warnPace logs the first failure of a pace timerfd operation (later ones
@@ -74,7 +95,12 @@ func (s *Server) onPaceTimer() {
 	var buf [8]byte
 	// Level-triggered: consume the expiry. EAGAIN: the timer was disarmed
 	// after the loop saw it readable.
-	if _, err := unix.Read(s.paceFD, buf[:]); err != nil && !errors.Is(err, unix.EAGAIN) {
+	n, err := unix.Read(s.paceFD, buf[:])
+	switch {
+	case err == nil && n == len(buf):
+		// The one-shot expired: the timer is disarmed until the next arm.
+		s.paceArmed = false
+	case err != nil && !errors.Is(err, unix.EAGAIN):
 		s.warnPace("read", err)
 	}
 	s.paceTick(nil, nil)
