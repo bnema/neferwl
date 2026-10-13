@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image"
 	"image/color"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -40,8 +41,8 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 				}
 			}
 			frame()
-			if allocs := testing.AllocsPerRun(20, frame); allocs > 13 {
-				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=13", allocs)
+			if allocs := testing.AllocsPerRun(20, frame); allocs > 3 {
+				t.Errorf("small steady-state Render: %.1f allocs/frame, want <=3", allocs)
 			} else {
 				t.Logf("small steady-state Render: %.1f allocs/frame", allocs)
 			}
@@ -133,6 +134,54 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 				t.Errorf("sceneDelta-seeded partial redraw draws: %.1f allocs/frame, want 0", allocs)
 			}
 		})
+	}
+}
+
+// A steady frame that draws a client dmabuf also records the ownership
+// barriers (acquire and release) of its image: no allocation per frame beyond
+// the SHM scene's. Skipped without a GPU or /dev/udmabuf.
+func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
+	r, err := New(80, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	linear := ports.DMABufFormat{Format: fourcc('A', 'R', '2', '4'), Modifier: 0}
+	if !slices.Contains(r.DMABuf().Formats, linear) {
+		t.Skipf("linear ARGB8888 not importable")
+	}
+	f := udmabuf(t, 64, 16, func(int, int) [4]byte { return [4]byte{0, 0, 255, 255} })
+	buf := &ports.DMABuf{ID: 7, Width: 64, Height: 16, Format: linear.Format, Planes: []ports.DMABufPlane{{File: f, Stride: 256}}}
+	scene := ports.Scene{Seq: 1, Background: "#000000", Scale: 1, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4, Y: 4, W: 64, H: 16}}}}
+	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Surface: 1, Seq: 1, Version: 1, Width: 64, Height: 16, DMABuf: buf}}
+	frame := func() {
+		if err := render(r, scene, contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frame()
+	if len(r.imports) != 1 {
+		t.Fatalf("imports %d: the frame does not take the dmabuf path", len(r.imports))
+	}
+	// Each new scene Seq draws the dmabuf again, with its barriers.
+	var moving [4]ports.Scene
+	for i := range moving {
+		moving[i] = scene
+		moving[i].Seq = uint64(10 + i)
+		moving[i].Windows = []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 4 + i, Y: 4, W: 64, H: 16}}}
+	}
+	n := 0
+	moved := func() {
+		n++
+		if err := render(r, moving[n%len(moving)], contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	moved()
+	allocs := testing.AllocsPerRun(20, moved)
+	t.Logf("dmabuf Render: %.1f allocs/frame", allocs)
+	if allocs > 7 {
+		t.Errorf("dmabuf steady-state Render: %.1f allocs/frame, want <=7", allocs)
 	}
 }
 

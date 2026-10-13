@@ -413,12 +413,13 @@ func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]ui
 			clear[i] = math.Float32bits(float32(srgbToLinear(float64(bg[i]) / 255)))
 		}
 	}
-	attachment := vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpClear, StoreOp: vk.AttachmentStoreOpStore, ClearValue: clear}
+	attachment, info := &r.call.attach, &r.call.render
+	*attachment = vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpClear, StoreOp: vk.AttachmentStoreOpStore, ClearValue: clear}
 	if keep {
 		attachment.LoadOp = vk.AttachmentLoadOpLoad
 	}
-	info := vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &attachment}
-	d.CmdBeginRendering(cmd, &info)
+	*info = vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: attachment}
+	d.CmdBeginRendering(cmd, info)
 	pipeline := c.pipeline
 	if r.hdrNits > 0 {
 		pipeline = c.hdrPipeline
