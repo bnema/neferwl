@@ -74,3 +74,50 @@ func TestSceneAnimatingIsPerOutput(t *testing.T) {
 		t.Fatalf("animating A=%v B=%v, want B only", got["A"].Animating, got["B"].Animating)
 	}
 }
+
+// A spring that settles on the very scene its last running step drew (the
+// tail rounds to the final pixel) must still publish a scene with Animating
+// off, with a fresh Seq: SameAs ignores the flag, and the outputs would
+// otherwise keep the animating scene they show and wake core on every later
+// flip.
+func TestSettledSceneSameAsPreviousClearsAnimating(t *testing.T) {
+	// Commands (rehit) are not read: room for every step.
+	c, ic := indicatorCoreWith(t, make(chan ports.ClientCommand, 4096))
+	c.cfg.Animations.On = true
+	a := c.cur()
+	a.mon.AddWindow(1)
+	a.mon.AddWindow(2)
+	indicatorScene(t, c)
+
+	w := a.mon.Current()
+	w.view.off = 100
+	w.view.motion = newMotion(viewSpring(w.view.off, 0), ic.now, 1)
+	// Step in 1 ms until the spring settles: the snap settles it once it is
+	// within half a pixel of its target, where the last running scene can
+	// draw the same pixels as the settled one.
+	start := ic.now
+	var running, settled ports.Scene
+	for ms := 1; ; ms++ {
+		if ms > 2000 {
+			t.Fatal("the spring never settles")
+		}
+		ic.now = start.Add(time.Duration(ms) * time.Millisecond)
+		settled = stepScenes(t, c, a)["A"]
+		if !a.springing() {
+			break
+		}
+		running = settled
+	}
+	if !running.Animating {
+		t.Fatalf("bad setup: last running scene animating=%v", running.Animating)
+	}
+	if !settled.SameAs(running) {
+		t.Fatal("bad setup: the settled scene differs from the last running one")
+	}
+	if settled.Animating {
+		t.Fatal("the settled scene is animating")
+	}
+	if settled.Seq == running.Seq {
+		t.Fatalf("settled scene kept the animating scene's Seq %d", running.Seq)
+	}
+}

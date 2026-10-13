@@ -43,8 +43,9 @@ type Channels struct {
 	// Scales, when set, receives each scale a scale bind sets, to persist it.
 	// Core does not wait: a full channel drops the change.
 	Scales chan<- ports.ScaleChanged
-	// Frames, when set, reports outputs' page flips: a running slide moves
-	// one step per flip. Without flips it moves on a timer.
+	// Frames, when set, carries the outputs' reports of each flip of an
+	// animating scene (Scene.Animating): a running slide moves one step per
+	// report. Without them it moves on a timer.
 	Frames <-chan ports.OutputFrame
 }
 
