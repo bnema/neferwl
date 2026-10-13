@@ -202,6 +202,47 @@ func TestCascadeMoveWindowKeepsMaximization(t *testing.T) {
 	}
 }
 
+// A column moving to or from a maximized column's band passes the whole
+// adjacent band. Bands follow column order, so a maximized column leaving
+// lets the bands around it pack together: {1} and {3 4} join.
+// Repeating the move never leaves the column stuck.
+func TestCascadeMoveWindowAcrossMaximizedBand(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		max, focus WindowID
+		action     Action
+		want       []WindowID
+		band       int
+	}{
+		// Bands {1} {2*} {3 4}.
+		{"maximized down", 2, 2, ActionMoveWindowDown, []WindowID{1, 3, 4, 2}, 1},
+		{"maximized up", 2, 2, ActionMoveWindowUp, []WindowID{2, 1, 3, 4}, 0},
+		// Bands {1 2 3} {4*} {5}.
+		{"into maximized below", 4, 3, ActionMoveWindowDown, []WindowID{1, 2, 4, 3, 5}, 2},
+		{"into maximized above", 4, 5, ActionMoveWindowUp, []WindowID{1, 2, 3, 5, 4}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n := 5
+			if tc.max == 2 {
+				n = 4
+			}
+			c, w := cascadeMovesCore(t, n, 3, false)
+			w.FocusID(tc.max)
+			w.ToggleFullWidth()
+			w.FocusID(tc.focus)
+			c.applyAction(tc.action)
+			wantColumns(t, w, tc.want...)
+			wantFocus(t, c, "M", tc.focus)
+			if got := w.band(w.Focus); got != tc.band {
+				t.Fatalf("band %d, want %d", got, tc.band)
+			}
+			if !w.Columns[w.columnOf(tc.max)].FullWidth {
+				t.Fatal("maximization lost")
+			}
+		})
+	}
+}
+
 // A fullscreen tile at its band edge leaves for the neighbor monitor and
 // stays fullscreen, as a tile there does.
 func TestCascadeFullscreenBandEdgeFocusesMonitor(t *testing.T) {

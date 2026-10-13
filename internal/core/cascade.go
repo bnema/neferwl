@@ -59,8 +59,6 @@ func (w *Workspace) bandBounds(b int) (first, last int) {
 	return first, last
 }
 
-func (w *Workspace) sameBand(a, b int) bool { return !w.policy().wraps || w.band(a) == w.band(b) }
-
 // cellX is the x of column i in its lane, from the usable area's left edge.
 func (w *Workspace) cellX(i int) int {
 	first, last := w.laneBounds(w.laneOf(i))
@@ -145,14 +143,6 @@ func (w *Workspace) equalShare(k int) int {
 	return max((w.Usable.W-w.gap()*(k+1))/k, 0)
 }
 
-// cellInBand is the column of band b at the focus's offset in its band,
-// clamped to the band.
-func (w *Workspace) cellInBand(b int) int {
-	first, _ := w.bandBounds(w.band(w.Focus))
-	nfirst, nlast := w.bandBounds(b)
-	return min(nfirst+w.Focus-first, nlast)
-}
-
 // focusBand focuses the column in the band dir away; a maximized column
 // keeps its own band, so it stays maximized.
 func (w *Workspace) focusBand(dir int) bool {
@@ -173,11 +163,7 @@ func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 	g := w.gap()
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.View + w.shiftPixels()
-	for lane := 0; ; lane++ {
-		first, last := w.laneBounds(lane)
-		if first > last {
-			break
-		}
+	w.walkBands(func(lane, first, last int) bool {
 		S, u, sum := w.laneStats(first, last)
 		x := g
 		for i := first; i <= last; i++ {
@@ -190,7 +176,8 @@ func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 			rects[i] = r
 			x += cw + g
 		}
-	}
+		return true
+	})
 	return rects
 }
 
@@ -208,7 +195,7 @@ func (w *Workspace) cascadeFocus(view int) int {
 		return 0
 	}
 	b := min(max(view/max(w.Usable.H, 1), 0), w.band(len(w.Columns)-1))
-	return w.cellInBand(b)
+	return w.laneNeighbor(b - w.band(w.Focus))
 }
 
 // laneOf is the lane of column i in the overview: its band, or the only
@@ -236,20 +223,34 @@ func (w *Workspace) laneBounds(lane int) (first, last int) {
 // focused column goes, is past the workspace or in another cascade band:
 // the move then goes to the neighbor monitor first.
 func (w *Workspace) leavesBand(i int) bool {
-	return i < 0 || i >= len(w.Columns) || !w.sameBand(i, w.Focus)
+	return i < 0 || i >= len(w.Columns) || w.policy().wraps && w.band(i) != w.band(w.Focus)
 }
 
 // moveBand swaps the focused cascade column with the column in the band dir
 // away where focus-window-up/down goes; focus follows it. Past the first
-// or last band nothing moves. Columns keep their maximization: bands pack
-// again around them.
+// or last band nothing moves. Columns keep their maximization: when the two
+// take a different number of slots, a swap would repack the bands around
+// them, so the focused column passes the whole adjacent band instead.
 func (w *Workspace) moveBand(dir int) {
 	i := w.laneNeighbor(dir)
 	if i < 0 {
 		return
 	}
-	w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
-	w.Focus = i
+	if w.bandSlots(w.Focus) == w.bandSlots(i) {
+		w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
+		w.Focus = i
+		w.scroll()
+		return
+	}
+	first, last := w.bandBounds(w.band(i))
+	col := w.Columns[w.Focus]
+	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
+	at := first // dir < 0: before the band above.
+	if dir > 0 {
+		at = last // After the band below, one index lower once removed.
+	}
+	w.Columns = slices.Insert(w.Columns, at, col)
+	w.Focus = at
 	w.scroll()
 }
 

@@ -468,7 +468,7 @@ func TestOverviewCascadeThreeFinger(t *testing.T) {
 }
 
 // Right from a stash card lands on the maximized column, which keeps its
-// maximization, not on the first card of its band.
+// maximization: it is alone in its band.
 func TestOverviewCascadeStashToMaximized(t *testing.T) {
 	m := cascadeOverview()
 	withStash(m, 1)

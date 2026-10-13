@@ -860,8 +860,7 @@ func (w *Workspace) overviewZoom() float64 {
 }
 
 // zoomSpan is overviewZoom with the unscaled span of the tiles it fits. A
-// cascade workspace spans one screen whatever its band count, plus the room
-// of the cards a maximized column hides.
+// cascade workspace spans one screen whatever its band count.
 func (w *Workspace) zoomSpan() (float64, int) {
 	// Only the span is read: the tiles go in the zoom scratch, dead on return.
 	var span int
