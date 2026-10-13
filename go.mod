@@ -6,7 +6,7 @@ require (
 	github.com/bnema/go-wayland-bindings v0.1.0
 	github.com/bnema/kvconf v0.1.2
 	github.com/bnema/purego v0.13.0-bnema.1
-	github.com/bnema/purego-libwayland v0.10.0
+	github.com/bnema/purego-libwayland v0.11.0
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.5.0
 	github.com/bnema/zerowrap v1.4.1
@@ -24,6 +24,3 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
-
-// Prototype requires the unreleased netpoller display loop.
-replace github.com/bnema/purego-libwayland => ../../../purego-libwayland/.worktrees/proto-netpoll
