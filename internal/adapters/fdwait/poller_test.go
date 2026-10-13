@@ -52,8 +52,13 @@ func TestPollReadinessTimeoutAndReplacement(t *testing.T) {
 	if n, err := p.Poll(fds, 1000); n != 1 || err != nil {
 		t.Fatalf("replacement: %d %v", n, err)
 	}
-	if _, ok := p.registered[fd]; ok {
-		t.Fatal("old registration retained")
+	if err := p.raw.Control(func(ep uintptr) {
+		var events [1]unix.EpollEvent
+		if n, err := unix.EpollWait(int(ep), events[:], 0); n != 0 || err != nil {
+			t.Errorf("registration retained after Poll returned: %d %v", n, err)
+		}
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

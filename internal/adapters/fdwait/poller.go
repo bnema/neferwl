@@ -13,9 +13,8 @@ import (
 // Poller owns an epoll descriptor and is used by one goroutine.
 // Watched descriptors remain owned by the caller.
 type Poller struct {
-	file       *os.File
-	raw        syscall.RawConn
-	registered map[int]struct{}
+	file *os.File
+	raw  syscall.RawConn
 }
 
 func New() (*Poller, error) {
@@ -33,52 +32,36 @@ func New() (*Poller, error) {
 		f.Close()
 		return nil, err
 	}
-	return &Poller{file: f, raw: raw, registered: make(map[int]struct{})}, nil
+	return &Poller{file: f, raw: raw}, nil
 }
-
 func (p *Poller) Close() error { return p.file.Close() }
 
-// Poll has the readable/error semantics of unix.Poll. A negative timeout
-// waits indefinitely. Timeout expiration returns zero, not an error.
+// Poll waits for readable/error events. It never consumes caller events.
+// Each call explicitly removes its epoll registrations before the caller can
+// close or recycle watched fds. Relying on close to remove them is unsafe:
+// another fd or a kernel fence may retain the open file description.
 func (p *Poller) Poll(fds []unix.PollFd, timeout int) (int, error) {
-	// Remove registrations no longer requested. Closing a watched fd already
-	// removes it from epoll, so ENOENT and EBADF are harmless here.
-	err := p.raw.Control(func(ep uintptr) {
-		for fd := range p.registered {
-			found := false
-			for _, f := range fds {
-				if int(f.Fd) == fd {
-					found = true
-					break
-				}
-			}
-			if !found {
-				unix.EpollCtl(int(ep), unix.EPOLL_CTL_DEL, fd, nil)
-				delete(p.registered, fd)
-			}
-		}
-	})
-	if err != nil {
-		return 0, err
-	}
 	var ctlErr error
-	err = p.raw.Control(func(ep uintptr) {
+	added := 0
+	err := p.raw.Control(func(ep uintptr) {
 		for _, f := range fds {
-			fd := int(f.Fd)
-			if fd < 0 {
+			if f.Fd < 0 {
+				added++
 				continue
 			}
-			// MOD detects a descriptor number recycled after its old file closed.
-			ev := unix.EpollEvent{Events: unix.EPOLLIN, Fd: int32(fd)}
-			e := unix.EpollCtl(int(ep), unix.EPOLL_CTL_MOD, fd, &ev)
-			if errors.Is(e, unix.ENOENT) {
-				e = unix.EpollCtl(int(ep), unix.EPOLL_CTL_ADD, fd, &ev)
-			}
-			if e != nil {
+			ev := unix.EpollEvent{Events: unix.EPOLLIN, Fd: f.Fd}
+			if e := unix.EpollCtl(int(ep), unix.EPOLL_CTL_ADD, int(f.Fd), &ev); e != nil {
 				ctlErr = e
 				return
 			}
-			p.registered[fd] = struct{}{}
+			added++
+		}
+	})
+	defer p.raw.Control(func(ep uintptr) {
+		for _, f := range fds[:added] {
+			if f.Fd >= 0 {
+				unix.EpollCtl(int(ep), unix.EPOLL_CTL_DEL, int(f.Fd), nil)
+			}
 		}
 	})
 	if err != nil {
