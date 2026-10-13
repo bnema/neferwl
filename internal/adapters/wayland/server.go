@@ -156,6 +156,7 @@ type Server struct {
 	// goroutine only). paceSignal coalesces posted ticks (paceSignalFn).
 	paceFD       int
 	paceReady    bool
+	paceWarned   bool // a pace timer failure was logged (once)
 	paceSignal   atomic.Bool
 	paceSignalFn func()
 	paceDepth    int
@@ -348,7 +349,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		positioners:        map[*server.Resource]*positioner{},
 		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), keyStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), pointerStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
 	}
+	// Bound once, before anything can post them (the sync waiter calls
+	// signalPacer from its own goroutine as soon as it exists).
+	s.paceSignalFn = s.paceSignalled
 	s.flushLinksFn = s.flushLinks
+	s.sink = newPresentSink(s)
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
@@ -421,8 +426,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, opts.Keymap
 	}
 	s.syncWait.log = log
-	s.sink = newPresentSink(s)
-	s.paceSignalFn = s.paceSignalled
 	s.cleanup = func() {
 		if s.paceReady {
 			unix.Close(s.paceFD)

@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"errors"
 	"slices"
 	"time"
 
@@ -47,20 +48,35 @@ func (s *Server) armPace(d time.Duration) {
 		d = time.Nanosecond
 	}
 	spec := unix.ItimerSpec{Value: unix.NsecToTimespec(int64(d))}
-	_ = unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("arm", unix.TimerfdSettime(s.paceFD, 0, &spec, nil))
 }
 
 // stopPace disarms the pace timerfd. Display goroutine only.
 func (s *Server) stopPace() {
 	var spec unix.ItimerSpec
-	_ = unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("stop", unix.TimerfdSettime(s.paceFD, 0, &spec, nil))
+}
+
+// warnPace logs the first failure of a pace timerfd operation (later ones
+// would repeat at frame rate). A failed arm leaves frame callbacks waiting
+// for the next commit or flip. Display goroutine only.
+func (s *Server) warnPace(op string, err error) {
+	if err == nil || s.paceWarned {
+		return
+	}
+	s.paceWarned = true
+	s.log.Warn().Err(err).Str("op", op).Msg("pace timer")
 }
 
 // onPaceTimer is the display loop's callback for the pace timerfd: the
 // deadline armed by the last tick passed.
 func (s *Server) onPaceTimer() {
 	var buf [8]byte
-	_, _ = unix.Read(s.paceFD, buf[:]) // level-triggered: consume the expiry
+	// Level-triggered: consume the expiry. EAGAIN: the timer was disarmed
+	// after the loop saw it readable.
+	if _, err := unix.Read(s.paceFD, buf[:]); err != nil && !errors.Is(err, unix.EAGAIN) {
+		s.warnPace("read", err)
+	}
 	s.paceTick(nil, nil)
 }
 
