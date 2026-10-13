@@ -3,29 +3,36 @@ package wayland
 import (
 	"slices"
 	"sync"
-	"sync/atomic"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// maxPresentRing bounds the reports waiting for the display goroutine. Each
-// output already bounds its own queue (presented.MaxUnsent), so the ring only
-// fills when the display loop is stalled.
+// maxPresentRing bounds the reports waiting for the display goroutine. Output
+// queues are flushed every loop turn and hold no backlog, so the ring only
+// fills when the display loop is stalled; this sink alone then merges flips.
 const maxPresentRing = 64
+
+// mergeWarnEvery spaces the warnings about merged flips.
+const mergeWarnEvery = 10 * time.Second
 
 // presentSink is the ports.PresentationSink wayland offers to the outputs:
 // output owner goroutines Push reports, the display goroutine drains them and
 // paces frames. The ring is a transport queue between those goroutines, not
-// window state: the mutex guards only the two slices and the pending flag.
+// window state: the mutex guards only the slices, the pending flag and the
+// merge counters.
 type presentSink struct {
 	s *Server
 
-	mu           sync.Mutex
-	ring, spare  []ports.OutputPresented
-	pending      bool // a drain is posted and has not taken the ring yet
+	mu          sync.Mutex
+	ring, spare []ports.OutputPresented
+	pending     bool // a drain is posted and has not taken the ring yet
+	// merged counts flips merged since the last warning;
+	// lastWarn is when that warning was logged.
+	merged       int
+	lastWarn     time.Time
 	drainFn      func()
-	drains       atomic.Uint64 // finished drains
 	scratchFlips map[string]bool
 }
 
@@ -44,46 +51,83 @@ func newPresentSink(s *Server) *presentSink {
 func (s *Server) Presentation() ports.PresentationSink { return s.sink }
 
 // Push queues a report for the display goroutine and wakes it; one wake
-// serves every report pushed before the drain runs.
+// serves every report pushed before the drain runs. When the ring is full the
+// flip of the oldest report is carried or merged forward; merges are counted
+// and warned about at most every mergeWarnEvery.
 func (p *presentSink) Push(r ports.OutputPresented) {
 	p.mu.Lock()
-	if len(p.ring) >= maxPresentRing {
-		p.dropOldestLocked()
-	}
-	p.ring = append(p.ring, r)
+	warn, merged := p.enqueueLocked(r)
 	post := !p.pending
 	p.pending = true
 	p.mu.Unlock()
+	if warn {
+		p.s.log.Warn().Int("merged", merged).Msg("outputs report faster than the display loop drains; flips merged")
+	}
 	if post {
 		p.s.display.Post(p.drainFn)
 	}
 }
 
-// dropOldestLocked makes room: the oldest report that a later report of the
-// same output follows is folded into it (flips merge as in presented.Queue).
-func (p *presentSink) dropOldestLocked() {
-	victim := 0
-	for i := range p.ring {
-		if next := p.nextOfOutputLocked(i); next > 0 {
-			if old, nf := p.ring[i].Flip, p.ring[next].Flip; old != nil && nf != nil {
-				presented.Merge(old, nf)
-			}
-			victim = i
-			break
+// enqueueLocked appends r, making room first when the ring is full. It
+// reports whether to warn now and how many flips were merged since the last
+// warning.
+func (p *presentSink) enqueueLocked(r ports.OutputPresented) (warn bool, merged int) {
+	if len(p.ring) >= maxPresentRing {
+		if p.makeRoomLocked(&r) {
+			p.merged++
+		}
+		if now := p.s.clock.Now(); p.merged > 0 && now.Sub(p.lastWarn) >= mergeWarnEvery {
+			warn, merged = true, p.merged
+			p.merged, p.lastWarn = 0, now
 		}
 	}
-	p.ring = slices.Delete(p.ring, victim, victim+1)
+	p.ring = append(p.ring, r)
+	return warn, merged
 }
 
-// nextOfOutputLocked returns the index of the next report of i's output, 0
-// when none follows.
-func (p *presentSink) nextOfOutputLocked(i int) int {
+// makeRoomLocked frees a ring slot for incoming without losing a flip: the
+// oldest report that a later report of the same output follows (in the ring,
+// or incoming itself) is removed and its flip carried into that report. A
+// flip-less successor takes the flip over; a successor with a flip merges it
+// (presented.Merge: the older feedback is discarded), which is what the
+// result counts.
+//
+// When no report has a successor, every ring entry and incoming belong to
+// distinct outputs: only possible with more than maxPresentRing outputs.
+// Nothing is dropped then; the ring grows by one, bounded by the number of
+// outputs, because the next report of any of them finds a successor.
+func (p *presentSink) makeRoomLocked(incoming *ports.OutputPresented) (merged bool) {
+	for i := range p.ring {
+		next := p.successorLocked(i, incoming)
+		if next == nil {
+			continue
+		}
+		switch old := p.ring[i].Flip; {
+		case old == nil:
+		case next.Flip == nil:
+			next.Flip = old
+		default:
+			presented.Merge(old, next.Flip)
+			merged = true
+		}
+		p.ring = slices.Delete(p.ring, i, i+1)
+		return merged
+	}
+	return false
+}
+
+// successorLocked returns the next report of ring[i]'s output: a later ring
+// entry, else incoming; nil when none follows.
+func (p *presentSink) successorLocked(i int, incoming *ports.OutputPresented) *ports.OutputPresented {
 	for j := i + 1; j < len(p.ring); j++ {
 		if p.ring[j].Output == p.ring[i].Output {
-			return j
+			return &p.ring[j]
 		}
 	}
-	return 0
+	if incoming.Output == p.ring[i].Output {
+		return incoming
+	}
+	return nil
 }
 
 // drain runs on the display goroutine: it paces frames for every report that
@@ -108,5 +152,4 @@ func (p *presentSink) drain() {
 	p.mu.Lock()
 	p.spare = batch[:0]
 	p.mu.Unlock()
-	p.drains.Add(1)
 }

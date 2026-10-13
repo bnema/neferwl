@@ -63,7 +63,10 @@ func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	opts.RuntimeDir, opts.Outputs = dir, testOutputs
+	opts.RuntimeDir = dir
+	if opts.Outputs == nil {
+		opts.Outputs = testOutputs
+	}
 	s, err := New(opts, Channels{Events: events, Commands: commands}, log)
 	if err != nil {
 		t.Fatal(err)
