@@ -228,6 +228,12 @@ func TestActivateOverCover(t *testing.T) {
 			t.Run(cv.name+"/"+tc.name, func(t *testing.T) {
 				_, w, cover := stashCoverCore(t, cv.overflow, cv.float)
 				id := tc.setup(w, cover)
+				// A dialog of the hidden stash waits hidden under the cover.
+				if i := slices.IndexFunc(w.Floats, func(f Float) bool { return f.over == 2 }); i >= 0 && !w.stashOverCover() {
+					if p := previewOf(t, w.Layout(), w.Floats[i].ID); !p.Hidden {
+						t.Fatalf("dialog of the hidden stash shown before activation: %+v", p)
+					}
+				}
 				view := w.View
 				w.Activate(id)
 				if got, _ := w.Focused(); got != tc.focused || w.cover() != cover || w.left != 0 || w.stashOverCover() != tc.over {
@@ -237,8 +243,12 @@ func TestActivateOverCover(t *testing.T) {
 				if p := previewOf(t, ps, cover); p.Hidden || !p.Fullscreen {
 					t.Fatalf("cover %+v", p)
 				}
-				if f, c := slices.IndexFunc(ps, isID(tc.focused)), slices.IndexFunc(ps, isID(cover)); f < c || ps[f].Hidden {
+				f := slices.IndexFunc(ps, isID(tc.focused))
+				if f < slices.IndexFunc(ps, isID(cover)) || ps[f].Hidden {
 					t.Fatalf("focused window not over the cover: %+v", ps)
+				}
+				if tc.over && f < slices.IndexFunc(ps, isID(2)) {
+					t.Fatalf("focused window under the stash: %+v", ps)
 				}
 				if !cv.float && w.View != view {
 					t.Fatalf("view %d, was %d", w.View, view)
@@ -249,38 +259,97 @@ func TestActivateOverCover(t *testing.T) {
 }
 
 // After an activation shows the stash over the cover, hiding the stash
-// or activating the cover returns to it, and a dialog of a stashed
-// window mapping meanwhile shows with the focus.
+// or activating the cover returns to it; a dialog of a stashed window,
+// modal or mapping meanwhile, shows with the focus and closing it
+// returns to the stash over the cover.
 func TestActivateOverCoverReturns(t *testing.T) {
-	_, w, cover := stashCoverCore(t, OverflowFixed, true)
-	w.Activate(2)
-	w.ToggleStashVisible()
-	if id, _ := w.Focused(); id != cover || w.stashShown() {
-		t.Fatalf("hide: focused %d shown %v", id, w.stashShown())
+	for _, cv := range []struct {
+		name     string
+		overflow Overflow
+		float    bool
+	}{
+		{"fixed tile", OverflowFixed, false},
+		{"scroll tile", OverflowScroll, false},
+		{"fixed float", OverflowFixed, true},
+		{"scroll float", OverflowScroll, true},
+	} {
+		t.Run(cv.name, func(t *testing.T) {
+			_, w, cover := stashCoverCore(t, cv.overflow, cv.float)
+			w.Activate(2)
+			w.ToggleStashVisible()
+			if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
+				t.Fatalf("hide: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+			}
+			w.Activate(2)
+			w.Activate(cover)
+			if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
+				t.Fatalf("activate cover: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+			}
+			w.AddDialog(7, 2, 20, 10)
+			w.SetModal(7, true)
+			w.FocusID(cover)
+			w.Activate(2)
+			w.RemoveWindow(7)
+			if id, _ := w.Focused(); id != 2 || !w.stashOverCover() {
+				t.Fatalf("modal closed: focused %d over %v", id, w.stashOverCover())
+			}
+			w.AddDialog(9, 2, 20, 10)
+			w.AddDialog(8, 9, 10, 5)
+			if id, _ := w.Focused(); id != 8 || previewOf(t, w.Layout(), 8).Hidden {
+				t.Fatalf("mapped chain: focused %d", id)
+			}
+			w.RemoveWindow(8)
+			w.RemoveWindow(9)
+			if id, _ := w.Focused(); id != 2 || !w.stashOverCover() {
+				t.Fatalf("closed: focused %d over %v", id, w.stashOverCover())
+			}
+			// The cover closes: the stash stays shown and focused, the
+			// override ends with it.
+			w.RemoveWindow(cover)
+			if id, _ := w.Focused(); id != 2 || w.stashOver != 0 || !w.stashShown() {
+				t.Fatalf("cover closed: focused %d over %d shown %v", id, w.stashOver, w.stashShown())
+			}
+		})
 	}
-	w.Activate(2)
-	w.Activate(cover)
-	if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
-		t.Fatalf("activate cover: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
-	}
-	w.Activate(2)
-	w.AddDialog(9, 2, 20, 10)
-	w.AddDialog(8, 9, 10, 5)
-	if id, _ := w.Focused(); id != 8 || previewOf(t, w.Layout(), 8).Hidden {
-		t.Fatalf("mapped chain: focused %d", id)
-	}
-	// Closing the dialogs returns to the stash over the cover.
-	w.RemoveWindow(8)
-	w.RemoveWindow(9)
-	if id, _ := w.Focused(); id != 2 || !w.stashOverCover() {
-		t.Fatalf("closed: focused %d over %v", id, w.stashOverCover())
-	}
-	// The cover closes: the stash stays shown and focused, the override
-	// ends with it.
-	w.RemoveWindow(cover)
-	if id, _ := w.Focused(); id != 2 || w.stashOver != 0 || !w.stashShown() {
-		t.Fatalf("cover closed: focused %d over %d shown %v", id, w.stashOver, w.stashShown())
-	}
+}
+
+// Activating a dialog that cannot show over the cover leaves fullscreen
+// as any other window does; a dialog of a stashed window whose own
+// fullscreen waited while hidden brings that window fullscreen, as
+// activating the window itself does.
+func TestActivateDialogLeavesCover(t *testing.T) {
+	t.Run("dialog of a plain float", func(t *testing.T) {
+		_, w, cover := stashCoverCore(t, OverflowFixed, false)
+		w.AddFloating(5, 20, 10)
+		w.AddDialog(9, 5, 10, 5)
+		w.FocusID(cover)
+		w.Activate(9)
+		if id, _ := w.Focused(); id != 9 || w.fullscreen != 0 || w.left != cover {
+			t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+		}
+	})
+	t.Run("dialog of another tile", func(t *testing.T) {
+		_, w, cover := stashCoverCore(t, OverflowFixed, true)
+		w.AddDialog(9, 1, 10, 5)
+		w.FocusID(cover)
+		w.Activate(9)
+		if id, _ := w.Focused(); id != 9 || w.fullscreen != 0 || w.left != cover {
+			t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+		}
+	})
+	t.Run("dialog of a stashed window with a pending fullscreen", func(t *testing.T) {
+		_, w, cover := stashCoverCore(t, OverflowFixed, true)
+		w.SetFullscreen(2, true)
+		w.AddDialog(9, 2, 10, 5)
+		w.FocusID(cover)
+		w.Activate(9)
+		if id, _ := w.Focused(); id != 9 || w.fullscreen != 2 || w.stashHidden || w.left != cover {
+			t.Fatalf("focused %d fullscreen %d hidden %v left %d", id, w.fullscreen, w.stashHidden, w.left)
+		}
+		if p := previewOf(t, w.Layout(), 9); p.Hidden {
+			t.Fatalf("dialog hidden: %+v", p)
+		}
+	})
 }
 
 // A dialog parent loop under a cover ends: neither dialog shows over it.

@@ -393,7 +393,8 @@ func (w *Workspace) focusModal(from WindowID) {
 	if c := w.cover(); c != 0 && c != d {
 		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) {
 			// Hidden under another window's fullscreen: leave it, as
-			// Activate does for a tile, so the dialog shows.
+			// Activate does for a window not shown over the cover, so
+			// the dialog shows.
 			w.leaveFullscreen()
 		}
 	}
@@ -1266,12 +1267,21 @@ func (w *Workspace) leaveFullscreen() {
 // window's fullscreen, which hides everything else. Over a covering
 // window, a dialog drawn over it, a stashed window or a dialog of one
 // shows over it instead, as ToggleStashVisible does: the cover stays
-// fullscreen behind, so a game never sees its fullscreen end.
+// fullscreen behind, so a game never sees its fullscreen end. A stashed
+// window whose own fullscreen waited while hidden replaces the cover
+// (coverStays); a dialog of a stashed window activates that window
+// first.
 func (w *Workspace) Activate(id WindowID) {
 	if c := w.cover(); c != 0 && id != c {
 		owner := id
 		if f := w.floatIndex(id); f >= 0 {
 			owner = w.dialogOwner(w.Floats[f], c)
+		}
+		if owner != id && owner != c && w.stashIndex(owner) >= 0 && !w.coverStays(owner) {
+			w.Activate(owner)
+			w.FocusID(id)
+			w.focusModal(0)
+			return
 		}
 		if i := w.stashIndex(owner); i >= 0 && w.coverStays(owner) {
 			if !w.stashOverCover() {
