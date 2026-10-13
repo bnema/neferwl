@@ -558,7 +558,7 @@ func (m *Monitor) applyNamed() {
 			w.Overflow = s.Overflow
 		}
 		if before != w.Overflow && w.policy().equalCells {
-			w.unmaximize()
+			w.clearMaximized()
 		}
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.

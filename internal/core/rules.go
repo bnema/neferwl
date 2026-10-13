@@ -190,7 +190,7 @@ func (w *Workspace) addColumnQuiet(col Column) {
 		return
 	}
 	if w.policy().equalCells {
-		if at > 0 {
+		if at > 0 && w.policy().maximizeHides() {
 			w.unmaximize()
 		}
 	} else if at > 0 {

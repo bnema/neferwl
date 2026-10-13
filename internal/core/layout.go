@@ -536,7 +536,7 @@ func (w *Workspace) addColumn(col Column) {
 	} else if len(w.Columns) > 0 {
 		at = w.Focus + 1
 	}
-	if w.policy().equalCells && len(w.Columns) > 0 {
+	if w.policy().maximizeHides() && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
 	w.Columns = append(w.Columns, Column{})
@@ -688,7 +688,7 @@ func (w *Workspace) FocusID(id WindowID) bool {
 				w.dropStashOver()
 				w.floatFocus, w.stashFocus = false, false
 				w.raiseColumns()
-				if w.policy().equalCells && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
+				if w.policy().maximizeHides() && w.Focus != i && w.Focus < len(w.Columns) && !w.Columns[i].FullWidth {
 					w.unmaximize()
 				}
 				w.Focus = i
@@ -736,7 +736,7 @@ func (w *Workspace) focusColumn(dir int) {
 	}
 	if i := w.columnToward(dir); i >= 0 {
 		w.raiseColumns()
-		if w.policy().equalCells {
+		if w.policy().maximizeHides() {
 			w.unmaximize()
 		}
 		w.Focus = i
@@ -999,7 +999,7 @@ func (w *Workspace) takeColumn() (Column, bool) {
 // insertColumn adds a column at index at (clamped) and focuses it.
 func (w *Workspace) insertColumn(at int, col Column) {
 	at = min(max(at, 0), len(w.Columns))
-	if w.policy().equalCells && len(w.Columns) > 0 {
+	if w.policy().maximizeHides() && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)
@@ -1182,23 +1182,28 @@ func (w *Workspace) maximize(i int) {
 }
 
 // hiddenByMaximized reports whether the maximized focused column hides
-// column i on screen: in equal-cell layouts it hides the other columns of
-// its band (the whole row in fixed overflow).
+// column i on screen: in fixed overflow it hides the rest of the row. A
+// maximized cascade column has its band to itself, so it hides nothing.
 func (w *Workspace) hiddenByMaximized(i int) bool {
-	return w.policy().equalCells && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus && w.sameBand(i, w.Focus)
+	return w.policy().maximizeHides() && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth && i != w.Focus
 }
 
-// unmaximize clears the focused column in scroll mode, or all maximized
-// columns in fixed mode (including after Escape changed focus).
+// unmaximize clears the focused column in scroll and cascade, or all
+// maximized columns in fixed overflow (including after Escape changed focus).
 func (w *Workspace) unmaximize() {
+	if w.policy().maximizeHides() {
+		w.clearMaximized()
+	} else if w.Focus < len(w.Columns) {
+		w.Columns[w.Focus].FullWidth = false
+	}
+}
+
+// clearMaximized unmaximizes every column and forgets the history.
+func (w *Workspace) clearMaximized() {
 	for i := range w.Columns {
-		if w.policy().equalCells || i == w.Focus {
-			w.Columns[i].FullWidth = false
-		}
+		w.Columns[i].FullWidth = false
 	}
-	if w.policy().equalCells {
-		w.maximized = nil
-	}
+	w.maximized = nil
 }
 
 // transferMaximization changes the maximized column without forgetting MRU.

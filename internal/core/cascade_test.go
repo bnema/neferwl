@@ -142,20 +142,48 @@ func TestCascadeCompactionAndNavigation(t *testing.T) {
 	}
 }
 
+// A maximized column takes a band of its own: the columns after it pack
+// into the next bands, and unmaximizing packs them back.
+func TestCascadeMaximizedColumnOwnsBand(t *testing.T) {
+	w := cascadeWorkspace(4) // Bands {1 2 3} {4}.
+	w.FocusID(2)
+	w.ToggleFullWidth()
+	bands := func() []int {
+		var b []int
+		for i := range w.Columns {
+			b = append(b, w.band(i))
+		}
+		return b
+	}
+	if got := bands(); !slices.Equal(got, []int{0, 1, 2, 2}) {
+		t.Fatalf("bands %v, want [0 1 2 2]", got)
+	}
+	if w.View != 600 {
+		t.Fatalf("view %d, want the maximized band", w.View)
+	}
+	for _, p := range w.Layout() {
+		if p.ID == 2 && (p.Rect.W != 900 || p.Rect.Y != 0) {
+			t.Fatalf("full width=%v", p.Rect)
+		}
+		if p.ID != 2 && p.Rect.Y == 0 && !p.Hidden {
+			t.Fatalf("column %d shares the maximized band: %v", p.ID, p.Rect)
+		}
+	}
+	// Focus moves between bands without unmaximizing.
+	w.FocusID(1)
+	if !w.Columns[1].FullWidth || w.View != 0 {
+		t.Fatalf("focus left the band: maximized %t view %d", w.Columns[1].FullWidth, w.View)
+	}
+	w.FocusID(2)
+	w.ToggleFullWidth()
+	if got := bands(); !slices.Equal(got, []int{0, 0, 0, 1}) {
+		t.Fatalf("bands after unmaximize %v", got)
+	}
+}
+
 func TestCascadeCovers(t *testing.T) {
 	w := cascadeWorkspace(4)
 	w.FocusID(2)
-	w.ToggleFullWidth()
-	ps := w.Layout()
-	for _, p := range ps {
-		if p.ID == 2 && p.Rect.W != 900 {
-			t.Fatalf("full width=%v", p.Rect)
-		}
-		if (p.ID == 1 || p.ID == 3) && !p.Hidden {
-			t.Fatalf("sibling %d visible", p.ID)
-		}
-	}
-	w.ToggleFullWidth()
 	w.ToggleFullscreen()
 	for _, p := range w.Layout() {
 		if p.ID == 2 && p.Rect != w.Output {
@@ -172,7 +200,8 @@ func TestCascadeCovers(t *testing.T) {
 	}
 }
 
-func TestCascadeClearsMaximizationOnBandChanges(t *testing.T) {
+// Band changes keep a maximized column maximized: it has its own band.
+func TestCascadeKeepsMaximizationOnBandChanges(t *testing.T) {
 	for _, move := range []struct {
 		name string
 		run  func(*Workspace)
@@ -186,24 +215,20 @@ func TestCascadeClearsMaximizationOnBandChanges(t *testing.T) {
 			w.FocusID(1)
 			w.ToggleFullWidth()
 			move.run(w)
-			for _, col := range w.Columns {
-				if col.FullWidth {
-					t.Fatal("stale maximization")
-				}
+			if i := w.columnOf(1); !w.Columns[i].FullWidth || slices.ContainsFunc(w.Columns, func(c Column) bool { return c.FullWidth && c.Windows[0] != 1 }) {
+				t.Fatalf("maximization lost or moved: %+v", w.Columns)
 			}
 		})
 	}
 }
 
-func TestCascadeReloadAndStashRestoreClearMaximization(t *testing.T) {
+func TestCascadeStashRestoreKeepsReloadClearsMaximization(t *testing.T) {
 	w := cascadeWorkspace(3)
 	w.FocusID(1)
 	w.ToggleFullWidth()
 	w.restore(4, &origPlace{stacked: []WindowID{2}, col: 1})
-	for _, c := range w.Columns {
-		if c.FullWidth {
-			t.Fatal("restore retained maximization")
-		}
+	if !w.Columns[0].FullWidth {
+		t.Fatal("restore into another band dropped the maximization")
 	}
 	m := NewMonitor()
 	m.SetOutput(900, 600)

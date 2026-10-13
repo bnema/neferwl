@@ -302,7 +302,7 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 	// Fixed overflow maximizes at most one column: only the one holding
 	// the anchor window, wherever active binds moved it. Scroll overflow
 	// keeps each column's own width.
-	if w.policy().equalCells {
+	if w.policy().maximizeHides() {
 		w.unmaximize()
 		for i := range w.Columns {
 			if s.fullWidth != 0 && slices.Contains(w.Columns[i].Windows, s.fullWidth) {
@@ -460,11 +460,8 @@ func (m *Monitor) overviewAcross(dx int) {
 		m.clearCard()
 		m.ov.selected = 0
 		if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
-			// The front column: a maximized one keeps its cards behind.
-			i := w.Focus
-			if !w.hasBandCards() {
-				i, _ = w.laneBounds(w.laneOf(w.Focus))
-			}
+			// The first column of the focused lane.
+			i, _ := w.laneBounds(w.laneOf(w.Focus))
 			m.selectLaneColumn(w, i)
 		}
 		return
@@ -863,8 +860,7 @@ func (w *Workspace) overviewZoom() float64 {
 }
 
 // zoomSpan is overviewZoom with the unscaled span of the tiles it fits. A
-// cascade workspace spans one screen whatever its band count, plus the room
-// of the cards a maximized column hides.
+// cascade workspace spans one screen whatever its band count.
 func (w *Workspace) zoomSpan() (float64, int) {
 	// Only the span is read: the tiles go in the zoom scratch, dead on return.
 	var span int
@@ -979,37 +975,16 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		rects = w.colBuf
 		span = w.Usable.W // Fixed overflow never scrolls, even with a stash pile.
 	}
-	// off is the room, left of the band, for the cards a maximized
-	// cascade column hides (the same room is kept on its right).
-	off := 0
-	if w.hasBandCards() {
-		off = 2 * w.bandCardStep()
-		// The columns the maximized one hides are cards behind it,
-		// farthest first so the nearest paint over them.
-		first, last := w.laneBounds(w.laneOf(w.Focus))
-		for d := last - first; d > 0; d-- {
-			if i := w.Focus - d; i >= first {
-				tiles = w.appendBandCard(tiles, i)
-			}
-			if i := w.Focus + d; i <= last {
-				tiles = w.appendBandCard(tiles, i)
-			}
-		}
-	}
 	for i, c := range w.Columns {
 		r := Rect{Y: g, H: h}
 		if w.policy().wraps {
-			if w.hiddenByMaximized(i) {
-				continue // A card, above.
-			}
 			// The band is the lane: it is encoded in Y, one screen apart.
-			// A maximized column fills its band as on screen; the cards
-			// it hides peek out on either side, past the band.
-			r.X = off + w.cellX(i)
+			// A maximized column fills its band, alone, as on screen.
+			r.X = w.cellX(i)
 			r.Y = g + w.band(i)*w.Usable.H
 			r.W = w.cellWidth(i)
 			if c.FullWidth {
-				r.X, r.W = off+g, max(w.Usable.W-2*g, 0)
+				r.X, r.W = g, max(w.Usable.W-2*g, 0)
 			}
 		} else if w.Overflow == OverflowFixed {
 			r = rects[i]
@@ -1042,49 +1017,9 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 		}
 	}
 	if w.policy().wraps && len(w.Columns) > 0 {
-		span = w.Usable.W + 2*off
+		span = w.Usable.W
 	}
 	return tiles, span, sel
-}
-
-// bandCardStep is the unscaled step between the cards of a cascade band
-// whose maximized column hides the others: the stack peek step.
-func (w *Workspace) bandCardStep() int {
-	return max(1, int(math.Round(float64(w.Usable.H)*overviewPeekStep)))
-}
-
-// hasBandCards reports whether the focused column of a cascade is
-// maximized and hides other columns of its band: the overview shows them
-// as cards behind it, peeking out up to two card steps on each side.
-func (w *Workspace) hasBandCards() bool {
-	if !w.policy().wraps || w.Focus < 0 || w.Focus >= len(w.Columns) || !w.Columns[w.Focus].FullWidth {
-		return false
-	}
-	first, last := w.laneBounds(w.laneOf(w.Focus))
-	return first < last
-}
-
-// appendBandCard appends hidden column i of a cascade band as a dimmed card
-// at its cell size behind the maximized column, on its side: the nearest
-// column one step out from the maximized one, the next ones two steps out,
-// like the cards of a stack. The maximized column keeps its full size two
-// steps right of the row's start (see previewTilesInto).
-func (w *Workspace) appendBandCard(tiles []Placement, i int) []Placement {
-	g, s, c := w.gap(), w.bandCardStep(), w.Columns[i]
-	r := Rect{Y: g + w.band(i)*w.Usable.H, W: w.cellWidth(i), H: max(w.Usable.H-2*g, 0)}
-	k := min(max(i-w.Focus, w.Focus-i), 2)
-	if i < w.Focus {
-		r.X = g + (2-k)*s
-	} else {
-		r.X = w.Usable.W - g + (2+k)*s - r.W
-	}
-	w.rowBuf = rowRectsInto(w.rowBuf[:0], r, c, g)
-	for j, t := range w.rowBuf {
-		p := Placement{ID: c.Windows[j], Rect: t}
-		p.peeking(1)
-		tiles = append(tiles, p)
-	}
-	return tiles
 }
 
 // previewRow scales the tiles of w into a row placed in slot, centred
@@ -1365,14 +1300,9 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			d := sign(m.ov.scrollX)
 			if cascade && finger {
 				before = m.overviewSelection()
-				// One step per gesture: a card behind a maximized
-				// column first, like the arrows, else one workspace,
-				// even over a stash card.
-				if m.bandCardsAt(m.Current()) {
-					m.OverviewMove(d, 0)
-				} else {
-					m.overviewStep(d)
-				}
+				// One step per gesture: one workspace, even over a
+				// stash card.
+				m.overviewStep(d)
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 				return m.overviewSelection() != before
 			}
@@ -1390,12 +1320,6 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 		}
 		changed = true
 	}
-}
-
-// bandCardsAt reports whether the selection of w is a maximized cascade
-// column hiding cards of its band: not a stash card nor a covering float.
-func (m *Monitor) bandCardsAt(w *Workspace) bool {
-	return m.cardAt(w) < 0 && w.hasBandCards() && m.stackFront(w).kind == stackColumns
 }
 
 // overviewSelection is what an overview step can move: the workspace, its

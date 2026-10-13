@@ -188,16 +188,58 @@ func TestCascadeMoveWindowStopsAtOuterBands(t *testing.T) {
 	wantFocus(t, c, "M", 4)
 }
 
-// A maximized column leaving its band gives up maximization: the band it
-// joins shows all its columns.
-func TestCascadeMoveWindowEndsMaximization(t *testing.T) {
+// A maximized column keeps its band to itself when it moves: it swaps
+// with the column of the band above and stays maximized.
+func TestCascadeMoveWindowKeepsMaximization(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	w.FocusID(5)
-	w.ToggleFullWidth()
+	w.ToggleFullWidth() // Bands {1 2 3} {4} {5}.
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 5, 3, 4, 2)
-	if w.Columns[1].FullWidth || len(w.maximized) != 0 {
-		t.Fatalf("still maximized: full width %t, MRU %v", w.Columns[1].FullWidth, w.maximized)
+	wantColumns(t, w, 1, 2, 3, 5, 4)
+	wantFocus(t, c, "M", 5)
+	if !w.Columns[3].FullWidth || w.band(3) != 1 || w.band(4) != 2 {
+		t.Fatalf("maximized %t, bands %d %d", w.Columns[3].FullWidth, w.band(3), w.band(4))
+	}
+}
+
+// A column moving to or from a maximized column's band passes the whole
+// adjacent band. Bands follow column order, so a maximized column leaving
+// lets the bands around it pack together: {1} and {3 4} join.
+// Repeating the move never leaves the column stuck.
+func TestCascadeMoveWindowAcrossMaximizedBand(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		max, focus WindowID
+		action     Action
+		want       []WindowID
+		band       int
+	}{
+		// Bands {1} {2*} {3 4}.
+		{"maximized down", 2, 2, ActionMoveWindowDown, []WindowID{1, 3, 4, 2}, 1},
+		{"maximized up", 2, 2, ActionMoveWindowUp, []WindowID{2, 1, 3, 4}, 0},
+		// Bands {1 2 3} {4*} {5}.
+		{"into maximized below", 4, 3, ActionMoveWindowDown, []WindowID{1, 2, 4, 3, 5}, 2},
+		{"into maximized above", 4, 5, ActionMoveWindowUp, []WindowID{1, 2, 3, 5, 4}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			n := 5
+			if tc.max == 2 {
+				n = 4
+			}
+			c, w := cascadeMovesCore(t, n, 3, false)
+			w.FocusID(tc.max)
+			w.ToggleFullWidth()
+			w.FocusID(tc.focus)
+			c.applyAction(tc.action)
+			wantColumns(t, w, tc.want...)
+			wantFocus(t, c, "M", tc.focus)
+			if got := w.band(w.Focus); got != tc.band {
+				t.Fatalf("band %d, want %d", got, tc.band)
+			}
+			if !w.Columns[w.columnOf(tc.max)].FullWidth {
+				t.Fatal("maximization lost")
+			}
+		})
 	}
 }
 
