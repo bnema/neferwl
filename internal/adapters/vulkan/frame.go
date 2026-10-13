@@ -186,7 +186,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	dmg.finish()
 	r.dropPools()
 	partial := !dmg.all()
+	redrawn := sw * sh
 	if partial {
+		redrawn = dmg.area.Dx() * dmg.area.Dy()
 		// The pass keeps the image: repaint the background under the
 		// region, then everything clipped to it.
 		// Keep the background first without allocating a second draw slice.
@@ -195,15 +197,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		ds[0] = r.fillDraw(dmg.area, parseColor(s.Background))
 		ds = dmg.clip(ds)
 		r.scratchDraws = ds
-		r.redrawn += dmg.area.Dx() * dmg.area.Dy()
-	} else {
-		r.redrawn += sw * sh
 	}
+	r.redrawn += redrawn
 	if r.traceDamage {
-		redrawn := sw * sh
-		if partial {
-			redrawn = dmg.area.Dx() * dmg.area.Dy()
-		}
 		r.log.Debug().Int("redrawn", redrawn).Int("draws", len(ds)).Bool("partial", partial).Msg("frame damage")
 	}
 	r.orient(ds, s.Transform)
