@@ -45,12 +45,12 @@ func (_m *mockcontentAttacher) EXPECT() *mockcontentAttacher_Expecter {
 	return &mockcontentAttacher_Expecter{mock: &_m.Mock}
 }
 
-// Attach provides a mock function for the type mockcontentAttacher
-func (_mock *mockcontentAttacher) Attach(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+// AttachOutput provides a mock function for the type mockcontentAttacher
+func (_mock *mockcontentAttacher) AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
 	ret := _mock.Called(name)
 
 	if len(ret) == 0 {
-		panic("no return value specified for Attach")
+		panic("no return value specified for AttachOutput")
 	}
 
 	var r0 <-chan *ports.ContentBatch
@@ -75,18 +75,18 @@ func (_mock *mockcontentAttacher) Attach(name string) (<-chan *ports.ContentBatc
 	return r0, r1
 }
 
-// mockcontentAttacher_Attach_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Attach'
-type mockcontentAttacher_Attach_Call struct {
+// mockcontentAttacher_AttachOutput_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AttachOutput'
+type mockcontentAttacher_AttachOutput_Call struct {
 	*mock.Call
 }
 
-// Attach is a helper method to define mock.On call
+// AttachOutput is a helper method to define mock.On call
 //   - name string
-func (_e *mockcontentAttacher_Expecter) Attach(name any) *mockcontentAttacher_Attach_Call {
-	return &mockcontentAttacher_Attach_Call{Call: _e.mock.On("Attach", name)}
+func (_e *mockcontentAttacher_Expecter) AttachOutput(name any) *mockcontentAttacher_AttachOutput_Call {
+	return &mockcontentAttacher_AttachOutput_Call{Call: _e.mock.On("AttachOutput", name)}
 }
 
-func (_c *mockcontentAttacher_Attach_Call) Run(run func(name string)) *mockcontentAttacher_Attach_Call {
+func (_c *mockcontentAttacher_AttachOutput_Call) Run(run func(name string)) *mockcontentAttacher_AttachOutput_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 string
 		if args[0] != nil {
@@ -99,34 +99,34 @@ func (_c *mockcontentAttacher_Attach_Call) Run(run func(name string)) *mockconte
 	return _c
 }
 
-func (_c *mockcontentAttacher_Attach_Call) Return(contentBatchCh <-chan *ports.ContentBatch, contentReturn ports.ContentReturn) *mockcontentAttacher_Attach_Call {
+func (_c *mockcontentAttacher_AttachOutput_Call) Return(contentBatchCh <-chan *ports.ContentBatch, contentReturn ports.ContentReturn) *mockcontentAttacher_AttachOutput_Call {
 	_c.Call.Return(contentBatchCh, contentReturn)
 	return _c
 }
 
-func (_c *mockcontentAttacher_Attach_Call) RunAndReturn(run func(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)) *mockcontentAttacher_Attach_Call {
+func (_c *mockcontentAttacher_AttachOutput_Call) RunAndReturn(run func(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)) *mockcontentAttacher_AttachOutput_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// Detach provides a mock function for the type mockcontentAttacher
-func (_mock *mockcontentAttacher) Detach(name string) {
+// DetachOutput provides a mock function for the type mockcontentAttacher
+func (_mock *mockcontentAttacher) DetachOutput(name string) {
 	_mock.Called(name)
 	return
 }
 
-// mockcontentAttacher_Detach_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Detach'
-type mockcontentAttacher_Detach_Call struct {
+// mockcontentAttacher_DetachOutput_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DetachOutput'
+type mockcontentAttacher_DetachOutput_Call struct {
 	*mock.Call
 }
 
-// Detach is a helper method to define mock.On call
+// DetachOutput is a helper method to define mock.On call
 //   - name string
-func (_e *mockcontentAttacher_Expecter) Detach(name any) *mockcontentAttacher_Detach_Call {
-	return &mockcontentAttacher_Detach_Call{Call: _e.mock.On("Detach", name)}
+func (_e *mockcontentAttacher_Expecter) DetachOutput(name any) *mockcontentAttacher_DetachOutput_Call {
+	return &mockcontentAttacher_DetachOutput_Call{Call: _e.mock.On("DetachOutput", name)}
 }
 
-func (_c *mockcontentAttacher_Detach_Call) Run(run func(name string)) *mockcontentAttacher_Detach_Call {
+func (_c *mockcontentAttacher_DetachOutput_Call) Run(run func(name string)) *mockcontentAttacher_DetachOutput_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 string
 		if args[0] != nil {
@@ -139,12 +139,12 @@ func (_c *mockcontentAttacher_Detach_Call) Run(run func(name string)) *mockconte
 	return _c
 }
 
-func (_c *mockcontentAttacher_Detach_Call) Return() *mockcontentAttacher_Detach_Call {
+func (_c *mockcontentAttacher_DetachOutput_Call) Return() *mockcontentAttacher_DetachOutput_Call {
 	_c.Call.Return()
 	return _c
 }
 
-func (_c *mockcontentAttacher_Detach_Call) RunAndReturn(run func(name string)) *mockcontentAttacher_Detach_Call {
+func (_c *mockcontentAttacher_DetachOutput_Call) RunAndReturn(run func(name string)) *mockcontentAttacher_DetachOutput_Call {
 	_c.Run(run)
 	return _c
 }

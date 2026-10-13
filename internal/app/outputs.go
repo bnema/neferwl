@@ -18,11 +18,11 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // contentAttacher connects an output to the surface contents: wayland feeds
 // every attached output batches of window contents, starting with the latest
 // content of each window, and takes the batches back through the returned
-// ports.ContentReturn. Attach may block on the display goroutine: call it
+// ports.ContentReturn. AttachOutput may block on the display goroutine: call it
 // from outside that goroutine. It returns a nil channel when wayland is gone.
 type contentAttacher interface {
-	Attach(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
-	Detach(name string)
+	AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
+	DetachOutput(name string)
 }
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
@@ -101,7 +101,7 @@ func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire 
 	var contents <-chan *ports.ContentBatch
 	var returns ports.ContentReturn
 	if s.attach != nil {
-		contents, returns = s.attach.Attach(name)
+		contents, returns = s.attach.AttachOutput(name)
 	}
 	s.outs[name] = r
 	go func() {
@@ -254,7 +254,7 @@ func (s *outputSet) finish(name string) error {
 // detach stops the content feed of an output that has stopped.
 func (s *outputSet) detach(name string) {
 	if s.attach != nil {
-		s.attach.Detach(name)
+		s.attach.DetachOutput(name)
 	}
 }
 

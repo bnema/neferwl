@@ -34,7 +34,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	}
-	attacher.EXPECT().Attach("DP-1").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
+	attacher.EXPECT().AttachOutput("DP-1").RunAndReturn(func(string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
 		order = append(order, "attach")
 		// The output is registered with the security backend first.
 		if len(events) != 1 {
@@ -42,7 +42,7 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		}
 		return feed, ret
 	}).Times(2)
-	attacher.EXPECT().Detach("DP-1").Run(func(string) { order = append(order, "detach") }).Times(2)
+	attacher.EXPECT().DetachOutput("DP-1").Run(func(string) { order = append(order, "detach") }).Times(2)
 	for round := range 2 {
 		if !set.start(ctx, "DP-1", run) {
 			t.Fatal("start failed")
@@ -75,8 +75,8 @@ func TestOutputSetWaitDetachesContents(t *testing.T) {
 	set := newOutputSet(ctx, nil)
 	attacher := newMockcontentAttacher(t)
 	set.attach = attacher
-	attacher.EXPECT().Attach("A").Return(nil, nil).Once()
-	attacher.EXPECT().Detach("A").Return().Once()
+	attacher.EXPECT().AttachOutput("A").Return(nil, nil).Once()
+	attacher.EXPECT().DetachOutput("A").Return().Once()
 	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil

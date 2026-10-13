@@ -41,8 +41,9 @@ type pipes struct {
 	// config file.
 	scales chan ports.ScaleChanged
 
-	// Outputs report to wayland through its presentation sink and tell core
-	// about each flip (frames) to move running slides.
+	// Outputs report to wayland through its presentation sink and, for each
+	// flip of an animating scene (Scene.Animating), tell core (frames) to
+	// move running slides.
 	frames chan ports.OutputFrame
 
 	captures chan ports.CaptureRequest
