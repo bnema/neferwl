@@ -24,3 +24,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
+
+// Prototype requires the unreleased netpoller display loop.
+replace github.com/bnema/purego-libwayland => ../../../purego-libwayland/.worktrees/proto-netpoll
