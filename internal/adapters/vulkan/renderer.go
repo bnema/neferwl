@@ -41,6 +41,8 @@ type Renderer struct {
 	modPlanes map[uint64]uint32
 	// log reports the chosen target modifier; the zero value discards.
 	log zerowrap.Logger
+	// traceDamage logs every frame's redrawn area (--debug=render-damage).
+	traceDamage bool
 	// hdrReadback makes exported HDR targets transfer sources, for GPU tests
 	// and headless --screenshot-raw (SetHDRReadback); never DRM.
 	hdrReadback bool
@@ -358,6 +360,10 @@ func (r *Renderer) TakeRedrawn() int {
 // SetLogger sets the logger (with its component field) for render target
 // events. Not on the port; the zero logger discards.
 func (r *Renderer) SetLogger(l zerowrap.Logger) { r.log = l }
+
+// SetTraceDamage logs the redrawn pixels, draw count and partial flag of
+// every frame at debug level (--debug=render-damage). Off by default.
+func (r *Renderer) SetTraceDamage(on bool) { r.traceDamage = on }
 
 // QueuePriority is the global priority the queue got: realtime, high or
 // default.

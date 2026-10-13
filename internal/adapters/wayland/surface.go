@@ -13,6 +13,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wlrlayershell"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/rs/zerolog"
 )
 
 type roleKind uint8
@@ -588,6 +589,37 @@ func (s *surface) DamageBuffer(_ *wayland.Surface, x, y, w, h int32) {
 // A new size, too many rects or none at all with a new buffer (clients
 // that do not report damage) is a full change.
 func (s *surface) commitDamage(u *update, fresh, resized bool, bw, bh int) {
+	s.mapDamage(u, fresh, resized, bw, bh)
+	if fresh && s.server.logDamage {
+		s.traceDamage(bw, bh)
+	}
+}
+
+// traceDamage logs the damage commitDamage just computed
+// (--debug=wayland-damage): full_buffer is set when the commit is a full
+// change or one rect covers the whole buffer. Rects are already clipped to
+// the buffer, so covering means equal to it.
+func (s *surface) traceDamage(bw, bh int) {
+	d := s.committed
+	full := d.full
+	for _, r := range d.rects {
+		if r.X <= 0 && r.Y <= 0 && r.X+r.W >= bw && r.Y+r.H >= bh {
+			full = true
+		}
+	}
+	arr := zerolog.Arr()
+	for _, r := range d.rects[:min(len(d.rects), maxLoggedDamageRects)] {
+		arr.Dict(zerolog.Dict().Int("x", r.X).Int("y", r.Y).Int("w", r.W).Int("h", r.H))
+	}
+	s.server.log.Debug().Uint64("window", uint64(s.root().windowID())).Int("bw", bw).Int("bh", bh).
+		Int("rects", len(d.rects)).Bool("full_buffer", full).Array("first_rects", arr).Msg("client damage")
+}
+
+// maxLoggedDamageRects bounds the rects one "client damage" entry lists.
+const maxLoggedDamageRects = 4
+
+// mapDamage sets s.committed from the commit's requested damage.
+func (s *surface) mapDamage(u *update, fresh, resized bool, bw, bh int) {
 	surf, buf := u.damage, u.bufDamage
 	if !fresh {
 		s.committed = damage{}

@@ -39,7 +39,7 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&f.headlessHDR, "headless-hdr", false, "test-only: report HDR on virtual outputs; fall back if Vulkan HDR unavailable")
 	fs.BoolVar(&f.screenshotRaw, "screenshot-raw", false, "test-only: also write latest-pq.png, the raw PQ codes of an HDR output")
 	fs.DurationVar(&f.timeout, "timeout", 0, "duration before exit (0 disables timeout)")
-	fs.StringVar(&f.debug, "debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion and input-keys, which log every flip, pointer motion or key)")
+	fs.StringVar(&f.debug, "debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion, input-keys, wayland-damage and render-damage, which log every flip, pointer motion, key, client commit or frame)")
 	fs.StringVar(&f.config, "config", "", "config path (empty uses XDG default)")
 	fs.BoolVar(&f.session, "session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services; notify systemd when ready")
 	fs.StringVar(&f.pprof, "pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")

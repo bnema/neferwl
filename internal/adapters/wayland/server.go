@@ -48,6 +48,9 @@ type Options struct {
 	// nil lets every client capture, unless the session is protected. The
 	// caller keeps it current (captureallow.Store.Run).
 	CaptureAllow *captureallow.Store
+	// LogDamage logs the damage of every fresh client commit at debug level
+	// (--debug=wayland-damage).
+	LogDamage bool
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
 	// peer replaces the peer executable lookup (tests).
@@ -144,6 +147,7 @@ type Server struct {
 	name         string
 	cleanup      func()
 	log          zerowrap.Logger
+	logDamage    bool
 	channels     Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
@@ -321,6 +325,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		name:               name,
 		cleanup:            cleanup,
 		log:                log,
+		logDamage:          opts.LogDamage,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
 		buffers:            make(map[*server.Resource]clientBuffer),

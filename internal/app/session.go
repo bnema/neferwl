@@ -123,6 +123,7 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		Keymap:       s.km.String(),
 		RepeatRate:   opts.Config.Keyboard.RepeatRate,
 		RepeatDelay:  opts.Config.Keyboard.RepeatDelay,
+		LogDamage:    logging.Enabled(ctx, "wayland-damage"),
 	}, s.p.wayland(), logging.For(ctx, "wayland")); err != nil {
 		return s, err
 	}
@@ -145,10 +146,11 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		s.path = config.DefaultPath()
 	}
 	renderLog := logging.For(ctx, "render")
+	traceDamage := logging.Enabled(ctx, "render-damage")
 	if s.hw != nil {
-		s.newRenderer = newVulkanRenderer(renderLog, false, false)
+		s.newRenderer = newVulkanRenderer(renderLog, false, false, traceDamage)
 	} else {
-		s.newRenderer = newVulkanRenderer(renderLog, true, opts.ScreenshotRaw)
+		s.newRenderer = newVulkanRenderer(renderLog, true, opts.ScreenshotRaw, traceDamage)
 	}
 	return s, nil
 }
@@ -182,14 +184,16 @@ func (s *session) close() {
 // outputs have no display to list modifiers, so a headless renderer is told
 // it drives one: without it a real GPU refuses the HDR targets and the
 // output falls back to SDR. readback makes the HDR targets readable
-// (HDRPixels). These settings are Vulkan-only and not on ports.Renderer.
-func newVulkanRenderer(log zerowrap.Logger, virtual, readback bool) func(w, h int) (ports.Renderer, error) {
+// (HDRPixels). traceDamage logs every frame's redrawn area. These settings
+// are Vulkan-only and not on ports.Renderer.
+func newVulkanRenderer(log zerowrap.Logger, virtual, readback, traceDamage bool) func(w, h int) (ports.Renderer, error) {
 	return func(w, h int) (ports.Renderer, error) {
 		r, err := vulkan.New(w, h)
 		if err != nil {
 			return nil, err
 		}
 		r.SetLogger(log)
+		r.SetTraceDamage(traceDamage)
 		log.Info().Str("queue_priority", r.QueuePriority()).Msg("vulkan queue")
 		r.SetVirtualOutput(virtual)
 		if readback {

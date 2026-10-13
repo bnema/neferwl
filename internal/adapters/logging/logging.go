@@ -28,8 +28,13 @@ var components = map[string]bool{
 // categories are debug switches narrower than a component, only on when
 // named: "all" leaves them off. input-motion logs every pointer motion,
 // input-keys every key (typed text), drm-flip every frame and commit
-// completion with its timing. Naming one turns on debug for its component.
-var categories = map[string]string{"input-motion": "input", "input-keys": "input", "drm-flip": "drm"}
+// completion with its timing, wayland-damage every fresh client commit with
+// its damage rects, render-damage every rendered frame with its redrawn
+// area. Naming one turns on debug for its component.
+var categories = map[string]string{
+	"input-motion": "input", "input-keys": "input", "drm-flip": "drm",
+	"wayland-damage": "wayland", "render-damage": "render",
+}
 
 type debugKey struct{}
 type levelKey struct{}

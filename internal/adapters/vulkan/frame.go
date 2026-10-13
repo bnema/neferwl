@@ -199,6 +199,13 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	} else {
 		r.redrawn += sw * sh
 	}
+	if r.traceDamage {
+		redrawn := sw * sh
+		if partial {
+			redrawn = dmg.area.Dx() * dmg.area.Dy()
+		}
+		r.log.Debug().Int("redrawn", redrawn).Int("draws", len(ds)).Bool("partial", partial).Msg("frame damage")
+	}
 	r.orient(ds, s.Transform)
 	d := r.dd
 	cmd := slot.cmd
