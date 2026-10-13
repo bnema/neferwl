@@ -1009,7 +1009,7 @@ func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
 // enable/disable. What the output shows and read is pushed to reports.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1435,14 +1435,19 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				o.setCursor(r, loadCursor, want, cursorScale, cursorTransform)
 				stateDirty = true
 			}
-		case c := <-contents:
-			table.Update(c, scene)
-			if c.Seq > seen[c.ID] {
-				seen[c.ID] = c.Seq
-				reportDirty = true
+		case b := <-contents:
+			for i := range b.Items {
+				c := b.Items[i]
+				table.Update(c, scene)
+				if c.Seq > seen[c.ID] {
+					seen[c.ID] = c.Seq
+					reportDirty = true
+				}
+				// Windows on other outputs or workspaces do not need a frame.
+				dirty = dirty || capture.Shows(scene, c.ID)
 			}
-			// Windows on other outputs or workspaces do not need a frame.
-			dirty = dirty || capture.Shows(scene, c.ID)
+			b.Reset()
+			returns.Return(b)
 		case <-stats.C():
 			now := clk.Now()
 			pipeline.Retire(scene) // an idle child of an ended session goes

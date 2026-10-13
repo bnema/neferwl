@@ -15,15 +15,15 @@ import (
 
 var linearARGB = ports.DMABufFormat{Format: 'A' | 'R'<<8 | '2'<<16 | '4'<<24}
 
-func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.ClientEvent, chan ports.SurfaceContent, string) {
+func dmabufServer(t *testing.T, sup ports.DMABufSupport) (*Server, chan ports.ClientEvent, <-chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	contents := make(chan ports.SurfaceContent, 16)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events, Contents: contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup}, Channels{Events: events}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

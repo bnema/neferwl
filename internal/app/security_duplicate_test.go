@@ -27,7 +27,7 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 			events := make(chan ports.SecurityBackendEvent, 4)
 			set := newOutputSet(context.Background(), nil)
 			set.wireSecurity(outputChannels{security: gate, securityEvents: events})
-			run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+			run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 				<-ctx.Done()
 				return nil
 			}

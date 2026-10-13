@@ -71,17 +71,17 @@ func waitFrames(t *testing.T, f *frames, n int) {
 func TestRun(t *testing.T) {
 	dir := t.TempDir()
 	scenes := make(chan ports.Scene, 8)
-	contents := make(chan ports.SurfaceContent, 8)
+	contents := newContentFeed(t, 8)
 	r, f := recordingRenderer(t, nil)
-	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
+	contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
 	shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
 	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
 	scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2, Windows: shown}
-	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
+	contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 	}()
 	waitFrames(t, f, 1)
 	if s, c := f.snapshot(); len(s) != 1 || s[0].Seq != 2 || len(c[0]) != 2 {
@@ -89,7 +89,7 @@ func TestRun(t *testing.T) {
 	}
 	// An empty content of a window the scene still draws (it unmapped
 	// and fades out) keeps the last one; a scene without it drops it.
-	contents <- ports.SurfaceContent{ID: 1}
+	contents.send(ports.SurfaceContent{ID: 1})
 	waitFrames(t, f, 2)
 	if _, c := f.snapshot(); len(c) < 2 {
 		t.Fatal("no second frame")
@@ -123,20 +123,20 @@ func TestRun(t *testing.T) {
 // A scene whose Seq the output already holds is not drawn again.
 func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 	scenes := make(chan ports.Scene)
-	contents := make(chan ports.SurfaceContent)
+	contents := newContentFeed(t, 0)
 	r, f := recordingRenderer(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 	}()
 	scene := ports.Scene{Seq: 5, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}}}
 	scenes <- scene
 	waitFrames(t, f, 1)
 	scenes <- scene
 	// Unshown content sends Run round its loop: the held scene is handled.
-	contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
-	contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
+	contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
+	contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
 	if s, _ := f.snapshot(); len(s) != 1 {
 		t.Fatalf("%d frames for a scene with the held Seq", len(s))
 	}
@@ -155,22 +155,22 @@ func TestHeadlessSameSeqRendersOnce(t *testing.T) {
 // Content of a window the output does not show draws no frame.
 func TestRunSkipsContentNotShown(t *testing.T) {
 	scenes := make(chan ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 2)
+	contents := newContentFeed(t, 2)
 	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 3, Hidden: true}}}
 	r, f := recordingRenderer(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 	}()
 	waitFrames(t, f, 1)
-	contents <- ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}}
-	contents <- ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}}
+	contents.send(ports.SurfaceContent{ID: 2, SHM: &ports.SHMBuffer{Pool: 2}})
+	contents.send(ports.SurfaceContent{ID: 3, SHM: &ports.SHMBuffer{Pool: 3}})
 	time.Sleep(50 * time.Millisecond)
 	if s, _ := f.snapshot(); len(s) != 1 {
 		t.Fatalf("%d frames for content not shown", len(s))
 	}
-	contents <- ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}}
+	contents.send(ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{Pool: 1}})
 	waitFrames(t, f, 2)
 	if _, c := f.snapshot(); c[1][2].SHM == nil {
 		t.Error("content not shown was dropped")
@@ -185,11 +185,11 @@ func TestErrors(t *testing.T) {
 	expected := errors.New("failure")
 	scenes := make(chan ports.Scene, 1)
 	scenes <- ports.Scene{}
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil, nil); !errors.Is(err, expected) {
+	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return nil, expected }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 	r, _ := recordingRenderer(t, expected)
-	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil); !errors.Is(err, expected) {
+	if err := Run(context.Background(), Options{NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
 }
@@ -220,7 +220,7 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 	var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
 	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 	go func() {
-		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
+		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 	}()
 	ticks <- now
 	if got := <-trimmed; !got.Equal(now) {
@@ -272,15 +272,15 @@ func TestWritePNGAtomic(t *testing.T) {
 
 func TestRunPassesLayerContent(t *testing.T) {
 	scenes := make(chan ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 1)
+	contents := newContentFeed(t, 1)
 	layer := ports.SceneLayer{ID: 42, Layer: ports.LayerTop, Rect: ports.Rect{W: 2, H: 2}}
 	scenes <- ports.Scene{Layers: []ports.SceneLayer{layer}}
-	contents <- ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}}
+	contents.send(ports.SurfaceContent{ID: 42, Width: 1, Height: 1, SHM: &ports.SHMBuffer{Pool: 42, Stride: 4}})
 	r, f := recordingRenderer(t, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, nil)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
 	}()
 	deadline := time.After(3 * time.Second)
 	for {
@@ -316,7 +316,7 @@ func TestCaptureForcesFreshHeadlessFrame(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, requests)
+		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, requests)
 	}()
 	scenes <- ports.Scene{Background: "#000000"}
 	waitFrames(t, frames, 1)
@@ -377,7 +377,7 @@ func TestHeadlessRawHDRScreenshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
+		done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, RawHDR: true, ScreenshotDir: dir, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
 	}()
 	select {
 	case <-rendered:
@@ -452,7 +452,7 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
 			go func() {
-				done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
+				done <- Run(ctx, Options{Width: 2, Height: 2, HDR: true, Name: "HEADLESS-1", Formats: formats, Log: logging.For(ctx, "render"), NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil, nil)
 			}()
 			select {
 			case f := <-formats:
@@ -470,5 +470,41 @@ func TestHeadlessHDRFormatsConfirmed(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// One batch with two windows applies both before the frame they show in, and
+// goes back to wayland reset and exactly once.
+func TestRunAppliesWholeBatch(t *testing.T) {
+	scenes := make(chan ports.Scene, 1)
+	contents := newContentFeed(t, 1)
+	shown := []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 2, H: 2}}, {ID: 2, Rect: ports.Rect{W: 2, H: 2}}}
+	scenes <- ports.Scene{Seq: 1, OutputWidth: 2, OutputHeight: 2, Windows: shown}
+	r, f := recordingRenderer(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents.in(), contents.ret, nil, nil)
+	}()
+	waitFrames(t, f, 1)
+	contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{Pool: 1}}, ports.SurfaceContent{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}})
+	waitFrames(t, f, 2)
+	if _, c := f.snapshot(); len(c[1]) != 2 || c[1][1].SHM == nil || c[1][2].SHM == nil {
+		t.Errorf("batch not applied whole: %+v", c[1])
+	}
+	select {
+	case b := <-contents.returned:
+		if len(b.Items) != 0 {
+			t.Errorf("batch returned with %d items", len(b.Items))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("batch not returned")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if len(contents.returned) != 0 {
+		t.Error("batch returned more than once")
 	}
 }

@@ -74,7 +74,7 @@ func runSession(t *testing.T, scene ports.Scene, reqs []ports.CaptureRequest, wa
 	replies := make(chan ports.CaptureDone, 8)
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, incoming)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 	}()
 	// Requests wait for a scene: all of them belong to its first frame.
 	for _, q := range reqs {
@@ -168,7 +168,7 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, Presented: sink,
 			NewRenderer:        func(int, int) (ports.Renderer, error) { return display, nil },
 			NewCaptureRenderer: func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil },
-		}, scenes, nil, nil, incoming)
+		}, scenes, nil, nil, nil, incoming)
 	}()
 	q := ports.CaptureRequest{ID: 1, Workspace: 9, OffScreen: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	incoming <- q
@@ -241,7 +241,7 @@ func TestRenderErrorDoesNotAnswerHandedRequestsAgain(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies,
-			NewRenderer: func(int, int) (ports.Renderer, error) { return display, nil }}, scenes, nil, nil, incoming)
+			NewRenderer: func(int, int) (ports.Renderer, error) { return display, nil }}, scenes, nil, nil, nil, incoming)
 	}()
 	incoming <- ports.CaptureRequest{ID: 1, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 	scenes <- sessionScene()
@@ -312,7 +312,7 @@ func TestCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, incoming)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 	}()
 	bare := ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}}}
 	scenes <- bare
@@ -356,7 +356,7 @@ func TestCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 4)
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, incoming)
+		done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 	}()
 	scenes <- ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2}
 	start := time.Now()
@@ -406,7 +406,7 @@ func TestCaptureDeliveredOnlyWhenTheIndicatedFramePresents(t *testing.T) {
 			replies := make(chan ports.CaptureDone, 4)
 			done := make(chan error, 1)
 			go func() {
-				done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, incoming)
+				done <- Run(ctx, Options{Width: 2, Height: 2, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }, Captured: replies}, scenes, nil, nil, nil, incoming)
 			}()
 			incoming <- ports.CaptureRequest{ID: 1, Indicate: true, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: sessionCaptureFile(t)}
 			scenes <- ports.Scene{Seq: 2, Scale: 1, OutputWidth: 2, OutputHeight: 2, Windows: []ports.SceneWindow{{ID: 1}},

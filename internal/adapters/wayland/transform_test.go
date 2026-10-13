@@ -17,7 +17,7 @@ import (
 type transformClient struct {
 	c                  *wlturbo.Display
 	comp, surf, vp, bf uint32
-	contents           chan ports.SurfaceContent
+	contents           <-chan ports.SurfaceContent
 }
 
 func newTransformClient(t *testing.T) transformClient {

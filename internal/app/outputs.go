@@ -13,16 +13,27 @@ import (
 
 // outputRun drives one output until ctx ends: it renders the scenes and
 // surface contents it receives, with the cursor the client asks for.
-type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, captures <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error
+type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, captures <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error
+
+// contentAttacher connects an output to the surface contents: wayland feeds
+// every attached output batches of window contents, starting with the latest
+// content of each window, and takes the batches back through the returned
+// ports.ContentReturn. Attach may block on the display goroutine: call it
+// from outside that goroutine. It returns a nil channel when wayland is gone.
+type contentAttacher interface {
+	Attach(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
+	Detach(name string)
+}
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
-// per output; each goes to its output, latest first. Surface contents go to
-// every output, since windows move between outputs; the latest content of
-// each window is kept so a new output starts with every window drawn.
+// per output; each goes to its output, latest first. Surface contents reach
+// every output (windows move between outputs) straight from wayland through
+// attach, which also replays the current windows to a new output.
 // Only the goroutine running loop touches the set.
 type outputSet struct {
-	outs   map[string]*runningOutput
-	latest map[ports.WindowID]ports.SurfaceContent
+	outs map[string]*runningOutput
+	// attach is nil when no wayland server feeds contents (tests).
+	attach contentAttacher
 	// off is the latest Scene.Off per output name, kept after the output
 	// goes: it reconnects off until core's first scene (Output.StartOff).
 	off            map[string]bool
@@ -50,9 +61,7 @@ type runningOutput struct {
 	instance       ports.OutputInstance
 	security       chan ports.SecurityState
 	securityEvents chan ports.SecurityBackendEvent
-	pending        []ports.SurfaceContent
 	scenes         chan ports.Scene
-	contents       chan ports.SurfaceContent
 	cursor         chan ports.CursorChange
 	captures       chan ports.CaptureRequest
 	ctx            context.Context
@@ -62,10 +71,10 @@ type runningOutput struct {
 }
 
 func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
-	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, latest: map[ports.WindowID]ports.SurfaceContent{}, off: map[string]bool{}, stopped: make(chan outputStopped), quit: make(chan struct{})}
+	return &outputSet{captured: captured, ctx: ctx, outs: map[string]*runningOutput{}, off: map[string]bool{}, stopped: make(chan outputStopped), quit: make(chan struct{})}
 }
 
-// start runs an output in its own goroutine and replays the window contents.
+// start runs an output in its own goroutine, fed the window contents.
 func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire ...*chan<- ports.SecurityBackendEvent) bool {
 	// Exhaustion is permanent: never wrap to zero or reuse a lifetime.
 	if s.nextInstance == ^ports.OutputInstance(0) {
@@ -82,22 +91,21 @@ func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire 
 		s.setSecurity(s.security.Snapshot())
 	}
 	octx, stop := context.WithCancel(ctx)
-	r := &runningOutput{instance: instance, security: make(chan ports.SecurityState, 1), scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 64), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: octx, stop: stop, done: make(chan struct{})}
-	r.security <- s.state // available before any old scene/content replay
+	r := &runningOutput{instance: instance, security: make(chan ports.SecurityState, 1), scenes: make(chan ports.Scene, 1), cursor: make(chan ports.CursorChange, 1), captures: make(chan ports.CaptureRequest, 16), ctx: octx, stop: stop, done: make(chan struct{})}
+	r.security <- s.state // available before any content replay
 	r.securityEvents = s.forwardSecurity()
 	for _, destination := range wire {
 		*destination = r.securityEvents
 	}
-	for _, c := range s.latest {
-		select {
-		case r.contents <- c:
-		default:
-			r.pending = append(r.pending, c)
-		}
+	// After the security state above: the replay of the windows starts here.
+	var contents <-chan *ports.ContentBatch
+	var returns ports.ContentReturn
+	if s.attach != nil {
+		contents, returns = s.attach.Attach(name)
 	}
 	s.outs[name] = r
 	go func() {
-		r.err = run(octx, r.scenes, r.contents, r.cursor, r.captures, r.security, r.instance)
+		r.err = run(octx, r.scenes, contents, returns, r.cursor, r.captures, r.security, r.instance)
 		if r.securityEvents != nil {
 			close(r.securityEvents)
 		}
@@ -229,51 +237,6 @@ func (s *outputSet) scenes(set []ports.Scene) {
 	}
 }
 
-func (s *outputSet) content(c ports.SurfaceContent) {
-	if c.Empty() {
-		delete(s.latest, c.ID)
-	} else {
-		s.latest[c.ID] = c
-	}
-	for _, r := range s.outs {
-		if r.ctx.Err() != nil {
-			continue
-		}
-		if len(r.pending) == 0 {
-			select {
-			case r.contents <- c:
-				continue
-			default:
-			}
-		}
-		// The backend disabled intake until the preceding broadcast drained.
-		if cap(r.pending) == 0 {
-			r.pending = make([]ports.SurfaceContent, 0, 1)
-		}
-		r.pending = append(r.pending, c)
-	}
-}
-
-// At most one admitted broadcast waits behind each owner's finite replay.
-// Disable new content intake until all copies have been delivered.
-func (s *outputSet) contentOut(incoming <-chan ports.SurfaceContent) (<-chan ports.SurfaceContent, chan<- ports.SurfaceContent, ports.SurfaceContent, *runningOutput) {
-	for _, r := range s.outs {
-		if len(r.pending) != 0 && r.ctx.Err() == nil {
-			return nil, r.contents, r.pending[0], r
-		}
-	}
-	return incoming, nil, ports.SurfaceContent{}, nil
-}
-
-func (r *runningOutput) contentSent() {
-	r.pending[0] = ports.SurfaceContent{}
-	if len(r.pending) == 1 {
-		r.pending = r.pending[:0] // retain the one-slot broadcast buffer
-	} else {
-		r.pending = r.pending[1:]
-	}
-}
-
 // finish forgets a stopped output and returns its error.
 func (s *outputSet) finish(name string) error {
 	r := s.outs[name]
@@ -283,8 +246,16 @@ func (s *outputSet) finish(name string) error {
 	<-r.done
 	r.stop()
 	s.failQueued(r)
+	s.detach(name)
 	delete(s.outs, name)
 	return r.err
+}
+
+// detach stops the content feed of an output that has stopped.
+func (s *outputSet) detach(name string) {
+	if s.attach != nil {
+		s.attach.Detach(name)
+	}
 }
 
 // wait stops every output and returns the first error.
@@ -301,6 +272,7 @@ func (s *outputSet) wait() error {
 		r.stop()
 		<-r.done
 		s.failQueued(r)
+		s.detach(name)
 		if first == nil && r.err != nil {
 			first = r.err
 		}

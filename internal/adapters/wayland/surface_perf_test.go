@@ -48,7 +48,7 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 	})
 	for _, count := range []int{16, 64} {
 		t.Run(fmt.Sprintf("%d", count), func(t *testing.T) {
-			channels := Channels{Contents: make(chan ports.SurfaceContent, 1)}
+			channels := Channels{}
 			srv, err := New(Options{RuntimeDir: t.TempDir(), Outputs: testOutputs}, channels, logging.For(context.Background(), "wayland"))
 			if err != nil {
 				t.Fatal(err)
@@ -64,7 +64,7 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			publish := func() { root.redraw() }
 			root.treeDirty = true
 			publish()
-			first := srv.contents[1]
+			first := srv.latest[1]
 			publish()
 			if first.Seq != 1 || len(first.Children) != count || len(first.DamageHistory) != 1 {
 				t.Fatalf("previous publication changed: %+v", first)
@@ -99,10 +99,10 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 			root.sub.children[count-1].version++
 			root.treeDirty = true
 			publish()
-			if first.Children[count-1].Version != 0 || srv.contents[1].Children[count-1].Version != 1 {
+			if first.Children[count-1].Version != 0 || srv.latest[1].Children[count-1].Version != 1 {
 				t.Fatal("child version leaked into an earlier publication")
 			}
-			if &first.Children[0] == &srv.contents[1].Children[0] {
+			if &first.Children[0] == &srv.latest[1].Children[0] {
 				t.Fatal("rebuild reused previously published children storage")
 			}
 			// Rebuilding a changed child's immutable snapshot must have a

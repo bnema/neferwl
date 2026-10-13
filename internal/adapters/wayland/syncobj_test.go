@@ -48,7 +48,7 @@ type syncHarness struct {
 	s         *Server
 	c         *wlturbo.Display
 	dev       *mocksyncobjDevice
-	contents  chan ports.SurfaceContent
+	contents  <-chan ports.SurfaceContent
 	presented ports.PresentationSink
 	surf      uint32
 	syncSurf  uint32
@@ -99,12 +99,12 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	h.contents = make(chan ports.SurfaceContent, 64)
 	sup := ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}}
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup, syncDev: h.dev}, Channels{Events: events, Commands: commands, Contents: h.contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup, syncDev: h.dev}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.contents = relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

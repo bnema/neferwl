@@ -60,7 +60,7 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -192,10 +192,15 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// A closed window's last content goes once no scene draws it.
 		table.Prune(scene)
 	}
-	update := func(c ports.SurfaceContent) {
-		seen[c.ID] = max(seen[c.ID], c.Seq)
-		dirty = dirty || capture.Shows(scene, c.ID)
-		table.Update(c, scene)
+	update := func(b *ports.ContentBatch) {
+		for i := range b.Items {
+			c := b.Items[i]
+			seen[c.ID] = max(seen[c.ID], c.Seq)
+			dirty = dirty || capture.Shows(scene, c.ID)
+			table.Update(c, scene)
+		}
+		b.Reset()
+		returns.Return(b)
 	}
 	clk := opts.Clock
 	if clk == nil {
@@ -320,7 +325,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return err
 			}
 			acceptScene(s)
-		case c, ok := <-contents:
+		case b, ok := <-contents:
 			if !ok {
 				contents = nil
 				continue
@@ -331,7 +336,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 				return err
 			}
-			update(c)
+			update(b)
 		case c, ok := <-cursor:
 			if !ok {
 				cursor = nil
@@ -362,7 +367,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 					}
 					acceptScene(s)
 				}
-			case c, ok := <-contents:
+			case b, ok := <-contents:
 				if !ok {
 					contents = nil
 				} else {
@@ -372,7 +377,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 						}
 						return err
 					}
-					update(c)
+					update(b)
 				}
 			default:
 				break drain

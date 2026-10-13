@@ -264,7 +264,7 @@ func (s *surface) appendTree(out *[]ports.Subsurface, x, y int, below bool) {
 // for later) are not drawn, so they do not make it full.
 func (s *surface) redraw() {
 	r := s.root()
-	if id := r.windowID(); id != 0 && s.server.channels.Contents != nil {
+	if id := r.windowID(); id != 0 {
 		c := r.tree(id)
 		d := damage{full: true}
 		if s == r && len(c.Children) == 0 && !r.drewChildren {

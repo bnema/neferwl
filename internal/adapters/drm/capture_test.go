@@ -363,14 +363,14 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 	o.NewCaptureRenderer = func(int, int) (ports.Renderer, error) { return child, nil }
 
 	scenes := make(chan ports.Scene)
-	contents := make(chan ports.SurfaceContent) // unbuffered: taken before the scene
+	contents := newContentFeed(t, 0)            // unbuffered: taken before the scene
 	captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
 	captured := make(chan ports.CaptureDone, 4)
 	sink, presented := presentedSink(t, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents, nil, sink, captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()
@@ -379,7 +379,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 	}
 	waitFor(t, func() bool { return count() == 2 })
 
-	contents <- ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}}
+	contents.send(ports.SurfaceContent{ID: 5, Seq: 2, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
 	// The request waits for the scene; once a display frame is pending no
 	// request is served, so it must be queued before the scene arrives.
 	req := sessionRequest(t, 1, false)
@@ -411,7 +411,7 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 
 	// A newer buffer of a display window arrives while the display commit is
 	// pending: the GPU may still read the older one, so it is not reported.
-	contents <- ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}}
+	contents.send(ports.SurfaceContent{ID: 1, Seq: 9, Width: 1, Height: 1, SHM: &ports.SHMBuffer{}})
 	_, err = writeEnd.Write([]byte{1}) // the child's GPU work finished
 	require.NoError(t, err)
 	lifted := next(func(r ports.OutputPresented) bool { return len(r.ChildReads) == 0 })
@@ -487,7 +487,7 @@ func runCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, discardSink(t), captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()
@@ -563,7 +563,7 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, discardSink(t), captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()

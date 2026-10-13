@@ -52,23 +52,23 @@ func (p *surfaceTransformProxy) Dispatch(e *wlturbo.Event) {
 	}
 }
 
-func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, string) {
+func contentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, string) {
 	t.Helper()
 	return contentServerWith(t, Options{}, logging.For(context.Background(), "wayland"))
 }
 
 // contentServerWith is contentServer with extra options and a logger.
-func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, string) {
+func contentServerWith(t *testing.T, opts Options, log zerowrap.Logger) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	contents := make(chan ports.SurfaceContent, 16)
 	opts.RuntimeDir, opts.Outputs = dir, testOutputs
-	s, err := New(opts, Channels{Events: events, Commands: commands, Contents: contents}, log)
+	s, err := New(opts, Channels{Events: events, Commands: commands}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
+	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

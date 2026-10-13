@@ -46,16 +46,16 @@ func (p *feedbackEvents) Dispatch(e *wlturbo.Event) {
 }
 
 // presentServer is a server whose flips the test sends.
-func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, ports.PresentationSink, string) {
+func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, <-chan ports.SurfaceContent, ports.PresentationSink, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
-	contents := make(chan ports.SurfaceContent, 64)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands, Contents: contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

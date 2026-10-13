@@ -333,6 +333,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	defer b.seat.Unsubscribe(active)
 	seatActive := true // openDRM waits for the first seat enable
 	set := newOutputSet(ctx, ch.captured)
+	set.attach = ch.content
 	set.wireSecurity(ch)
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
 	leases := newLeasePublisher(ctx, ch.leaseEvents, func() bool { return seatActive }, protected, log)
@@ -513,7 +514,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 				}
 				active := b.seat.Subscribe()
 				realtime := currentConfig.Performance.Realtime
-				started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
+				started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan *ports.ContentBatch, rc ports.ContentReturn, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
 					defer b.seat.Unsubscribe(active)
 					o.Security, o.SecurityChanges, o.Instance = ch.security, secure, instance
 					return safe("output "+name, func() error {
@@ -533,7 +534,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
-						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, cu, ch.presented, cap, ch.captured)
+						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, rc, cu, ch.presented, cap, ch.captured)
 					})
 				}, &o.SecurityEvents)
 				if !started {
@@ -595,7 +596,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 		configs, configNext := apply.configOut(ch.configured), apply.config
 		replies, replyNext := apply.replyOut(ch.replies)
 		heads, headsNext := apply.headsOut(ch.heads)
-		contents, contentOut, contentNext, contentOwner := set.contentOut(ch.contents)
 		select {
 		case <-ctx.Done():
 			return set.wait()
@@ -700,10 +700,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			complete(progress.timeout(op))
 		case s := <-ch.scenes:
 			set.scenes(s)
-		case c := <-contents:
-			set.content(c)
-		case contentOut <- contentNext:
-			contentOwner.contentSent()
 		case q := <-ch.captures:
 			set.routeCapture(q)
 		case c := <-ch.cursorChanges:

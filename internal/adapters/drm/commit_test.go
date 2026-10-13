@@ -400,7 +400,7 @@ func enableAfterStartAwayModesetsOnce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, discardSink(t), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	count := func(flags uint32) int {
 		commitMu.Lock()
@@ -516,12 +516,12 @@ func runReportsSeenAfterCursorCommit(t *testing.T) {
 		return commitRec{}, false
 	}
 	scenes := make(chan ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 1)
+	contents := newContentFeed(t, 1)
 	sink, presented := presentedSink(t, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents, nil, sink, nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, load, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	var frame commitRec
@@ -532,7 +532,7 @@ func runReportsSeenAfterCursorCommit(t *testing.T) {
 	var cur commitRec
 	waitFor(t, func() bool { var ok bool; cur, ok = last(userState); return ok })
 	// A window this output does not show commits while the cursor flies.
-	contents <- ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}}
+	contents.send(ports.SurfaceContent{ID: 7, Seq: 2, SHM: &ports.SHMBuffer{}})
 	synctest.Wait()
 	flips <- eventOf(cur)
 	select {
@@ -605,7 +605,7 @@ func TestRunClosesFrameFences(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, sink, nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, nil, sink, nil, nil)
 	}()
 	count := func() int {
 		commitMu.Lock()

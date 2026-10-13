@@ -41,7 +41,6 @@ type pipes struct {
 	// config file.
 	scales chan ports.ScaleChanged
 
-	contents chan ports.SurfaceContent
 	// Outputs report to wayland through its presentation sink and tell core
 	// about each flip (frames) to move running slides.
 	frames chan ports.OutputFrame
@@ -91,8 +90,7 @@ func newPipes(realSession bool) *pipes {
 		configured:   make(chan ports.ConfigChanged, 8),
 		configErrors: make(chan error, 8),
 
-		contents: make(chan ports.SurfaceContent, 64),
-		frames:   make(chan ports.OutputFrame, 8),
+		frames: make(chan ports.OutputFrame, 8),
 
 		captures: make(chan ports.CaptureRequest, ports.MaxCaptureInflight),
 		captured: make(chan ports.CaptureDone, ports.MaxCaptureInflight),
@@ -142,7 +140,6 @@ func (p *pipes) wayland() wayland.Channels {
 		Events:          p.client,
 		Commands:        p.commands,
 		Workspaces:      p.workspaces,
-		Contents:        p.contents,
 		Cursors:         p.cursorChanges,
 		Captures:        p.captures,
 		Captured:        p.captured,
@@ -158,16 +155,16 @@ func (p *pipes) wayland() wayland.Channels {
 }
 
 // outputs is the outputs' side (DRM or headless).
-func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink) outputChannels {
+func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content contentAttacher) outputChannels {
 	return outputChannels{
 		security:        security,
 		securityChanges: p.securityChanges,
 		securityEvents:  p.securityEvents,
 		events:          p.output,
 		scenes:          p.renderScenes,
-		contents:        p.contents,
 		cursorChanges:   p.cursorChanges,
 		presented:       presented,
+		content:         content,
 		frames:          p.frames,
 		captures:        p.captures,
 		captured:        p.captured,

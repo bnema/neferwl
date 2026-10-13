@@ -66,7 +66,6 @@ type Channels struct {
 	LeaseRequests   chan<- ports.LeaseMessage
 	LeaseEvents     <-chan ports.LeaseMessage
 	Events          chan<- ports.ClientEvent
-	Contents        chan<- ports.SurfaceContent
 	Commands        <-chan ports.ClientCommand
 	Workspaces      <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
@@ -212,11 +211,16 @@ type Server struct {
 	eventMu    sync.Mutex
 	events     []ports.ClientEvent
 	eventReady chan struct{}
-	contentMu  sync.Mutex
-	contents   map[ports.WindowID]ports.SurfaceContent
+	// contentSeq counts each window's contents and damage is its recent
+	// damage; latest is its current content. All three belong to the display
+	// goroutine, as do the outputs' content links (contentlink.go).
 	contentSeq map[ports.WindowID]uint64
-	// damage is each window's recent damage (contentMu).
-	damage map[ports.WindowID][]ports.SeqDamage
+	damage     map[ports.WindowID][]ports.SeqDamage
+	latest     map[ports.WindowID]ports.SurfaceContent
+	links      []*contentLink
+	// flushPosted: a flushLinks is posted and has not started (Return).
+	flushPosted  atomic.Bool
+	flushLinksFn func()
 	// feedbacks wait for the flip that shows their content (presentation.go).
 	feedbacks []feedbackWait
 	// Explicit sync (syncobj.go): the render node, imported timelines by
@@ -238,7 +242,6 @@ type Server struct {
 	clock             ports.Clock
 	powers            []*outputPower
 	outputsOff        map[string]bool
-	contentReady      chan struct{}
 	outputs           []*output
 	outputManagers    []*outputManager
 	workspaceManagers []*workspaceManager
@@ -331,10 +334,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		layers:             make(map[ports.WindowID]*layerSurface),
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
-		contents:           make(map[ports.WindowID]ports.SurfaceContent),
 		contentSeq:         make(map[ports.WindowID]uint64),
 		damage:             map[ports.WindowID][]ports.SeqDamage{},
-		contentReady:       make(chan struct{}, 1),
+		latest:             make(map[ports.WindowID]ports.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
@@ -346,6 +348,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		positioners:        map[*server.Resource]*positioner{},
 		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), keyStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), pointerStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
 	}
+	s.flushLinksFn = s.flushLinks
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
@@ -491,7 +494,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(14)
+	wg.Add(13)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -499,7 +502,6 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
-	go func() { defer wg.Done(); s.forwardContents(ctx) }()
 	go func() {
 		defer wg.Done()
 		for {
@@ -665,11 +667,10 @@ func (s *Server) forward(ctx context.Context) {
 	}
 }
 
+// emitContent publishes a window's content on the display goroutine: it
+// becomes the window's latest content and joins the batch of every attached
+// output (contentlink.go).
 func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
-	if s.channels.Contents == nil {
-		return
-	}
-	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
 	// Published histories are immutable: an output may hold one for as long
@@ -689,54 +690,17 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
 	if c.Empty() {
 		delete(s.damage, c.ID)
+		delete(s.latest, c.ID)
 	} else {
 		s.damage[c.ID] = h
 	}
 	c.DamageHistory = h[:len(h):len(h)]
-	s.contents[c.ID] = c
-	s.contentMu.Unlock()
-	select {
-	case s.contentReady <- struct{}{}:
-	default:
+	if !c.Empty() {
+		s.latest[c.ID] = c
 	}
-}
-
-func (s *Server) forwardContents(ctx context.Context) {
-	for {
-		s.contentMu.Lock()
-		var id ports.WindowID
-		var c ports.SurfaceContent
-		found := false
-		var seq uint64
-		for id, c = range s.contents {
-			found = true
-			seq = s.contentSeq[id]
-			break
-		}
-		s.contentMu.Unlock()
-		if !found {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.contentReady:
-				continue
-			}
-		}
-		// Do not hold a stale frame while the receiver is busy: wake on newer
-		// data. contentReady is signalled after every publication; a stale
-		// signal only costs one more loop.
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.contentReady:
-			continue
-		case s.channels.Contents <- c:
-			s.contentMu.Lock()
-			if s.contentSeq[id] == seq {
-				delete(s.contents, id)
-			}
-			s.contentMu.Unlock()
-		}
+	for _, l := range s.links {
+		l.add(c)
+		s.flushLink(l)
 	}
 }
 
