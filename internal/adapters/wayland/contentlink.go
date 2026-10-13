@@ -1,6 +1,7 @@
 package wayland
 
 import (
+	"slices"
 	"sync/atomic"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -134,8 +135,7 @@ func (s *Server) attachOutput(name string) (<-chan *ports.ContentBatch, ports.Co
 func (s *Server) detachOutput(name string) {
 	for i, l := range s.links {
 		if l.name == name {
-			s.links[i] = nil
-			s.links = append(s.links[:i], s.links[i+1:]...)
+			s.links = slices.Delete(s.links, i, i+1)
 			return
 		}
 	}
