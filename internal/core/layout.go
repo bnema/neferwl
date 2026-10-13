@@ -401,13 +401,29 @@ func (w *Workspace) focusModal(from WindowID) {
 
 // overCover reports whether float f is drawn over the covering fullscreen
 // window: a dialog of the cover, or of a stashed window while the stash
-// shows over the cover (a "Save as…" of the app the user picked there).
+// shows over the cover (a "Save as…" of the app the user picked there),
+// or a dialog of such a dialog (an "Overwrite?" over the "Save as…").
 func (w *Workspace) overCover(f Float) bool {
 	c := w.cover()
-	if c == 0 || f.ID == c || f.over == 0 {
+	if c == 0 || f.ID == c {
 		return false
 	}
-	return f.over == c || w.stashOverCover() && w.stashIndex(f.over) >= 0
+	over := w.stashOverCover()
+	// Each hop goes to another float: at most len(w.Floats) hops.
+	for range len(w.Floats) {
+		if f.over == 0 || f.over == f.ID {
+			return false
+		}
+		if f.over == c || over && w.stashIndex(f.over) >= 0 {
+			return true
+		}
+		i := w.floatIndex(f.over)
+		if i < 0 {
+			return false
+		}
+		f = w.Floats[i]
+	}
+	return false
 }
 
 // coverDialog is the topmost dialog shown over the covering fullscreen
@@ -683,7 +699,8 @@ func (w *Workspace) FocusColumn(dir int) bool {
 	from, _ := w.Focused()
 	defer w.focusModal(from)
 	if w.coverDialogFocused() {
-		// The first move goes back to the fullscreen window under it.
+		// The first move goes back to the window under it: the stash
+		// over the cover, or the cover.
 		w.floatFocus = false
 		return true
 	}

@@ -578,6 +578,62 @@ func TestActivateStashModalKeepsFullscreen(t *testing.T) {
 	}
 }
 
+// A dialog of a dialog (an "Overwrite?" over a "Save as…") shows over
+// the cover like its parent: modal chains of a stashed window or of the
+// cover keep the game fullscreen, and a new one takes the focus.
+func TestDialogChainOverCover(t *testing.T) {
+	t.Run("stashed modal chain", func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(14)
+		w.ToggleWindowStash()
+		w.ToggleStashVisible()
+		w.AddDialog(9, 14, 20, 10)
+		w.SetModal(9, true)
+		w.AddDialog(8, 9, 10, 5)
+		w.SetModal(8, true)
+		w.AddFloating(72, 50, 40)
+		w.SetFullscreen(72, true)
+		w.Activate(14)
+		if id, _ := w.Focused(); id != 8 || w.fullscreen != 72 || w.left != 0 {
+			t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+		}
+		if p := placementOf(w.Layout(), 8); p.Hidden {
+			t.Fatalf("confirm hidden: %+v", p)
+		}
+	})
+	t.Run("stashed dialog maps a dialog", func(t *testing.T) {
+		w := workspace()
+		w.AddWindow(14)
+		w.ToggleWindowStash()
+		w.ToggleStashVisible()
+		w.AddFloating(72, 50, 40)
+		w.SetFullscreen(72, true)
+		w.Activate(14)
+		w.AddDialog(9, 14, 20, 10)
+		w.AddDialog(8, 9, 10, 5)
+		if id, _ := w.Focused(); id != 8 || w.fullscreen != 72 {
+			t.Fatalf("focused %d fullscreen %d", id, w.fullscreen)
+		}
+		if p := placementOf(w.Layout(), 8); p.Hidden {
+			t.Fatalf("confirm hidden: %+v", p)
+		}
+	})
+	t.Run("cover modal chain", func(t *testing.T) {
+		w := workspace()
+		w.AddFloating(72, 50, 40)
+		w.AddDialog(9, 72, 20, 10)
+		w.SetModal(9, true)
+		w.AddDialog(8, 9, 10, 5)
+		w.SetModal(8, true)
+		w.SetFullscreen(72, true)
+		w.AddWindow(1)
+		w.Activate(72)
+		if id, _ := w.Focused(); id != 8 || w.fullscreen != 72 || w.left != 0 {
+			t.Fatalf("focused %d fullscreen %d left %d", id, w.fullscreen, w.left)
+		}
+	})
+}
+
 func placementOf(ps []Placement, id WindowID) Placement {
 	if i := placementIndex(ps, id); i >= 0 {
 		return ps[i]
