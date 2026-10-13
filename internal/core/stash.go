@@ -174,9 +174,7 @@ func (w *Workspace) ToggleStashVisible() {
 			w.dropStashOver()
 			return
 		}
-		// Not showStash: a pending stashed fullscreen must not replace
-		// the covering window.
-		w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = c, false, true, false
+		w.showStashOver()
 		return
 	}
 	if w.stashHidden {
@@ -186,8 +184,15 @@ func (w *Workspace) ToggleStashVisible() {
 	w.stashHidden, w.stashFocus = true, false
 }
 
+// showStashOver shows the stash over the covering fullscreen window,
+// focused. Not showStash: a pending stashed fullscreen must not replace
+// the covering window.
+func (w *Workspace) showStashOver() {
+	w.stashOver, w.stashHidden, w.stashFocus, w.floatFocus = w.cover(), false, true, false
+}
+
 // stashOverCover reports whether the stash shows over the covering
-// fullscreen window (ToggleStashVisible).
+// fullscreen window (ToggleStashVisible, Activate).
 func (w *Workspace) stashOverCover() bool {
 	return w.stashOver != 0 && w.stashOver == w.cover() && !w.stashHidden && len(w.Stash) > 0
 }

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"slices"
 	"testing"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -157,4 +159,180 @@ func TestStashOverCoverLeaves(t *testing.T) {
 	if w.cover() != 3 || w.left != 1 {
 		t.Fatalf("fullscreen: cover %d left %d", w.cover(), w.left)
 	}
+}
+
+// Activating a window over a covering fullscreen window (xdg-activation,
+// taskbar) never ends that fullscreen when the window can show over it:
+// a stashed window shows the stash over the cover, and dialogs of the
+// cover or of stashed windows, and their dialogs, show above. A game
+// told it left fullscreen (configure 0x0) quits.
+func TestActivateOverCover(t *testing.T) {
+	covers := []struct {
+		name     string
+		overflow Overflow
+		float    bool
+	}{
+		{"fixed tile", OverflowFixed, false},
+		{"scroll tile", OverflowScroll, false},
+		{"fixed float", OverflowFixed, true},
+		{"scroll float", OverflowScroll, true},
+	}
+	cases := []struct {
+		name string
+		// setup prepares windows and returns the window to activate.
+		setup func(w *Workspace, cover WindowID) WindowID
+		// focused is the window focused after the activation.
+		focused WindowID
+		// over reports whether the stash shows over the cover then.
+		over bool
+	}{
+		{"stashed", func(*Workspace, WindowID) WindowID { return 2 }, 2, true},
+		{"modal of stashed", func(w *Workspace, _ WindowID) WindowID {
+			w.AddDialog(9, 2, 20, 10)
+			w.SetModal(9, true)
+			return 2
+		}, 9, true},
+		{"modal chain of stashed", func(w *Workspace, _ WindowID) WindowID {
+			w.AddDialog(9, 2, 20, 10)
+			w.SetModal(9, true)
+			w.AddDialog(8, 9, 10, 5)
+			w.SetModal(8, true)
+			return 2
+		}, 8, true},
+		{"dialog of stashed", func(w *Workspace, _ WindowID) WindowID {
+			w.AddDialog(9, 2, 20, 10)
+			return 9
+		}, 9, true},
+		{"dialog of cover", func(w *Workspace, cover WindowID) WindowID {
+			w.AddDialog(9, cover, 20, 10)
+			w.FocusID(cover)
+			return 9
+		}, 9, false},
+		{"modal chain of cover", func(w *Workspace, cover WindowID) WindowID {
+			w.AddDialog(9, cover, 20, 10)
+			w.SetModal(9, true)
+			w.AddDialog(8, 9, 10, 5)
+			w.SetModal(8, true)
+			w.FocusID(cover)
+			return cover
+		}, 8, false},
+		{"stashed from a focused cover dialog", func(w *Workspace, cover WindowID) WindowID {
+			w.ToggleStashVisible()
+			w.AddDialog(9, cover, 20, 10)
+			w.FocusID(9)
+			return 2
+		}, 2, true},
+	}
+	for _, cv := range covers {
+		for _, tc := range cases {
+			t.Run(cv.name+"/"+tc.name, func(t *testing.T) {
+				_, w, cover := stashCoverCore(t, cv.overflow, cv.float)
+				id := tc.setup(w, cover)
+				view := w.View
+				w.Activate(id)
+				if got, _ := w.Focused(); got != tc.focused || w.cover() != cover || w.left != 0 || w.stashOverCover() != tc.over {
+					t.Fatalf("focused %d (want %d) cover %d left %d over %v", got, tc.focused, w.cover(), w.left, w.stashOverCover())
+				}
+				ps := w.Layout()
+				if p := previewOf(t, ps, cover); p.Hidden || !p.Fullscreen {
+					t.Fatalf("cover %+v", p)
+				}
+				if f, c := slices.IndexFunc(ps, isID(tc.focused)), slices.IndexFunc(ps, isID(cover)); f < c || ps[f].Hidden {
+					t.Fatalf("focused window not over the cover: %+v", ps)
+				}
+				if !cv.float && w.View != view {
+					t.Fatalf("view %d, was %d", w.View, view)
+				}
+			})
+		}
+	}
+}
+
+// After an activation shows the stash over the cover, hiding the stash
+// or activating the cover returns to it, and a dialog of a stashed
+// window mapping meanwhile shows with the focus.
+func TestActivateOverCoverReturns(t *testing.T) {
+	_, w, cover := stashCoverCore(t, OverflowFixed, true)
+	w.Activate(2)
+	w.ToggleStashVisible()
+	if id, _ := w.Focused(); id != cover || w.stashShown() {
+		t.Fatalf("hide: focused %d shown %v", id, w.stashShown())
+	}
+	w.Activate(2)
+	w.Activate(cover)
+	if id, _ := w.Focused(); id != cover || w.stashShown() || w.fullscreen != cover {
+		t.Fatalf("activate cover: focused %d shown %v fullscreen %d", id, w.stashShown(), w.fullscreen)
+	}
+	w.Activate(2)
+	w.AddDialog(9, 2, 20, 10)
+	w.AddDialog(8, 9, 10, 5)
+	if id, _ := w.Focused(); id != 8 || previewOf(t, w.Layout(), 8).Hidden {
+		t.Fatalf("mapped chain: focused %d", id)
+	}
+	// Closing the dialogs returns to the stash over the cover.
+	w.RemoveWindow(8)
+	w.RemoveWindow(9)
+	if id, _ := w.Focused(); id != 2 || !w.stashOverCover() {
+		t.Fatalf("closed: focused %d over %v", id, w.stashOverCover())
+	}
+	// The cover closes: the stash stays shown and focused, the override
+	// ends with it.
+	w.RemoveWindow(cover)
+	if id, _ := w.Focused(); id != 2 || w.stashOver != 0 || !w.stashShown() {
+		t.Fatalf("cover closed: focused %d over %d shown %v", id, w.stashOver, w.stashShown())
+	}
+}
+
+// A dialog parent loop under a cover ends: neither dialog shows over it.
+func TestOverCoverDialogLoop(t *testing.T) {
+	_, w, _ := stashCoverCore(t, OverflowFixed, true)
+	w.AddFloating(8, 10, 5)
+	w.AddFloating(9, 10, 5)
+	w.SetDialogParent(8, 9)
+	w.SetDialogParent(9, 8)
+	ps := w.Layout()
+	if !previewOf(t, ps, 8).Hidden || !previewOf(t, ps, 9).Hidden {
+		t.Fatalf("looped dialogs shown: %+v", ps)
+	}
+}
+
+// Through core: activating a stashed window keeps a fullscreen game's
+// configure fullscreen at the output size.
+func TestCoreActivateStashKeepsGameConfigure(t *testing.T) {
+	cfg := ports.Config{}
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Layout.MaxColumns = 2
+	commands := make(chan ports.ClientCommand, 256)
+	c, err := New(cfg, Channels{Commands: commands, Scenes: make(chan []ports.Scene, 1)}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 100, Height: 80})
+	m := c.screens[0].mon
+	m.AddWindow(2)
+	w := m.Current()
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
+	m.AddFloating(4, 100, 80)
+	m.SetFullscreen(4, true)
+	ctx := context.Background()
+	if err := c.activate(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.publish(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var last *ports.ConfigureWindow
+	for len(commands) > 0 {
+		if v, ok := (<-commands).(ports.ConfigureWindow); ok && v.ID == 4 {
+			last = &v
+		}
+	}
+	if last == nil || !last.Fullscreen || last.Width != 100 || last.Height != 80 {
+		t.Fatalf("game configure %+v", last)
+	}
+}
+
+func isID(id WindowID) func(Placement) bool {
+	return func(p Placement) bool { return p.ID == id }
 }

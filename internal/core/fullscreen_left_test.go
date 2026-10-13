@@ -111,23 +111,3 @@ func TestLeftFullscreenRemoved(t *testing.T) {
 		t.Fatalf("left %d", w.left)
 	}
 }
-
-// Activating a hidden stashed window over a fixed fullscreen tile shows
-// the stash over it: the tile stays fullscreen and nothing is latched.
-func TestActivateHiddenStashOverFixedCover(t *testing.T) {
-	m := newMonitor("", "")
-	m.SetOutput(300, 200)
-	m.SetOverflow(OverflowFixed)
-	w := m.Current()
-	w.AddWindow(1)
-	w.AddWindow(5)
-	w.FocusID(5)
-	w.ToggleWindowStash()
-	w.ToggleStashVisible()
-	w.FocusID(1)
-	m.ToggleFullscreen()
-	w.Activate(5)
-	if f, _ := w.Focused(); f != 5 || w.fullscreen != 1 || w.left != 0 || !w.stashOverCover() {
-		t.Fatalf("focused %d, fullscreen %d, left %d", f, w.fullscreen, w.left)
-	}
-}

@@ -146,7 +146,8 @@ type Workspace struct {
 	// is hidden, restored when shown.
 	hiddenFullscreen WindowID
 	// stashOver is the covering fullscreen window the stash shows over, a
-	// user override (ToggleStashVisible); 0 without. Bound to that window,
+	// user override (ToggleStashVisible) or a stashed window's activation
+	// (Activate); 0 without. Bound to that window,
 	// it ends with its cover. Focusing another window ends it too.
 	stashOver WindowID
 	// home is the monitor (key or connector) the workspace belongs to; ""
@@ -392,7 +393,7 @@ func (w *Workspace) focusModal(from WindowID) {
 	if c := w.cover(); c != 0 && c != d {
 		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) {
 			// Hidden under another window's fullscreen: leave it, as
-			// Activate does, so the dialog shows.
+			// Activate does for a tile, so the dialog shows.
 			w.leaveFullscreen()
 		}
 	}
@@ -408,22 +409,29 @@ func (w *Workspace) overCover(f Float) bool {
 	if c == 0 || f.ID == c {
 		return false
 	}
-	over := w.stashOverCover()
+	owner := w.dialogOwner(f, c)
+	return owner == c || owner != 0 && w.stashOverCover() && w.stashIndex(owner) >= 0
+}
+
+// dialogOwner is the window float f is a dialog of, through dialogs of
+// dialogs: the first parent that is no float, or stop. 0 when f is no
+// dialog, its chain ends on a plain float, or it loops.
+func (w *Workspace) dialogOwner(f Float, stop WindowID) WindowID {
 	// Each hop goes to another float: at most len(w.Floats) hops.
 	for range len(w.Floats) {
 		if f.over == 0 || f.over == f.ID {
-			return false
+			return 0
 		}
-		if f.over == c || over && w.stashIndex(f.over) >= 0 {
-			return true
+		if f.over == stop {
+			return stop
 		}
 		i := w.floatIndex(f.over)
 		if i < 0 {
-			return false
+			return f.over
 		}
 		f = w.Floats[i]
 	}
-	return false
+	return 0
 }
 
 // coverDialog is the topmost dialog shown over the covering fullscreen
@@ -1255,17 +1263,29 @@ func (w *Workspace) leaveFullscreen() {
 }
 
 // Activate focuses a window and makes it visible: it leaves another
-// window's fullscreen, which hides everything else. A stashed window
-// shows over a covering window instead, as ToggleStashVisible does: the
-// cover stays fullscreen behind, so a game never sees its fullscreen end.
+// window's fullscreen, which hides everything else. Over a covering
+// window, a dialog drawn over it, a stashed window or a dialog of one
+// shows over it instead, as ToggleStashVisible does: the cover stays
+// fullscreen behind, so a game never sees its fullscreen end.
 func (w *Workspace) Activate(id WindowID) {
-	if i := w.stashIndex(id); i >= 0 && w.coverStays(id) {
-		if !w.stashOverCover() {
-			w.stashOver, w.stashHidden = w.cover(), false
+	if c := w.cover(); c != 0 && id != c {
+		owner := id
+		if f := w.floatIndex(id); f >= 0 {
+			owner = w.dialogOwner(w.Floats[f], c)
 		}
-		w.stashAt, w.stashFocus, w.floatFocus = i, true, false
-		w.focusModal(0)
-		return
+		if i := w.stashIndex(owner); i >= 0 && w.coverStays(owner) {
+			if !w.stashOverCover() {
+				w.showStashOver()
+			}
+			w.stashAt, w.stashFocus, w.floatFocus = i, true, false
+		}
+		if owner == c || w.stashOverCover() && w.stashIndex(owner) >= 0 {
+			if owner != id {
+				w.FocusID(id)
+			}
+			w.focusModal(0)
+			return
+		}
 	}
 	if i := w.stashIndex(id); i >= 0 && w.stashHidden {
 		// A hidden stashed window must be seen: show the stash with it,
