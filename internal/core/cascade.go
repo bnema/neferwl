@@ -2,7 +2,63 @@ package core
 
 import "slices"
 
-func (w *Workspace) band(i int) int         { return i / max(w.MaxColumns, 1) }
+// Cascade bands pack columns in order: a band ends when the next column
+// would take it past MaxColumns slots. A column takes one slot and a
+// maximized one all of them, so it sits alone in its band. Cells only
+// share a band's width (laneWidth); they never move a column to a band.
+
+// bandSlots is the number of slots column i takes in its band.
+func (w *Workspace) bandSlots(i int) int {
+	if w.Columns[i].FullWidth {
+		return max(w.MaxColumns, 1)
+	}
+	return 1
+}
+
+// walkBands calls f with each band and its column range, in order, until f
+// returns false.
+func (w *Workspace) walkBands(f func(b, first, last int) bool) {
+	k := max(w.MaxColumns, 1)
+	b, first, sum := 0, 0, 0
+	for i := range w.Columns {
+		c := w.bandSlots(i)
+		if i > first && sum+c > k {
+			if !f(b, first, i-1) {
+				return
+			}
+			b, first, sum = b+1, i, 0
+		}
+		sum += c
+	}
+	if len(w.Columns) > 0 {
+		f(b, first, len(w.Columns)-1)
+	}
+}
+
+// band is the cascade band of column i.
+func (w *Workspace) band(i int) (band int) {
+	w.walkBands(func(b, _, last int) bool {
+		band = b
+		return last < i
+	})
+	return band
+}
+
+// bandBounds is the column range of band b, first > last past the bands.
+func (w *Workspace) bandBounds(b int) (first, last int) {
+	first, last = 0, -1
+	if b < 0 {
+		return first, last
+	}
+	w.walkBands(func(n, f, l int) bool {
+		if n == b {
+			first, last = f, l
+		}
+		return n < b
+	})
+	return first, last
+}
+
 func (w *Workspace) sameBand(a, b int) bool { return !w.policy().wraps || w.band(a) == w.band(b) }
 
 // cellX is the x of column i in its lane, from the usable area's left edge.
@@ -88,16 +144,22 @@ func (w *Workspace) equalShare(k int) int {
 	k = max(k, 1)
 	return max((w.Usable.W-w.gap()*(k+1))/k, 0)
 }
+
+// cellInBand is the column of band b at the focus's offset in its band,
+// clamped to the band.
 func (w *Workspace) cellInBand(b int) int {
-	k := max(w.MaxColumns, 1)
-	return min(b*k+w.Focus%k, len(w.Columns)-1)
+	first, _ := w.bandBounds(w.band(w.Focus))
+	nfirst, nlast := w.bandBounds(b)
+	return min(nfirst+w.Focus-first, nlast)
 }
+
+// focusBand focuses the column in the band dir away; a maximized column
+// keeps its own band, so it stays maximized.
 func (w *Workspace) focusBand(dir int) bool {
 	i := w.laneNeighbor(dir)
 	if i < 0 {
 		return false
 	}
-	w.unmaximize()
 	w.Focus = i
 	w.Columns[i].Focus = 0
 	if dir < 0 {
@@ -120,7 +182,7 @@ func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
 		x := g
 		for i := first; i <= last; i++ {
 			cw := w.laneWidth(i, first, last, S, u, sum)
-			r := Rect{X: w.Usable.X + x, Y: w.Usable.Y + g + w.band(i)*w.Usable.H - view, W: cw, H: max(w.Usable.H-2*g, 0)}
+			r := Rect{X: w.Usable.X + x, Y: w.Usable.Y + g + lane*w.Usable.H - view, W: cw, H: max(w.Usable.H-2*g, 0)}
 			if w.Columns[i].FullWidth && !ignoreFullWidth {
 				r.X = w.Usable.X + g
 				r.W = max(w.Usable.W-2*g, 0)
@@ -161,15 +223,13 @@ func (w *Workspace) laneOf(i int) int {
 // laneBounds is the range of columns of a lane, first > last when the lane
 // does not exist. A layout that does not wrap has the whole row as lane 0.
 func (w *Workspace) laneBounds(lane int) (first, last int) {
-	k := len(w.Columns)
 	if w.policy().wraps {
-		k = max(w.MaxColumns, 1)
+		return w.bandBounds(lane)
 	}
-	first = lane * k
-	if lane < 0 || first >= len(w.Columns) {
+	if lane != 0 || len(w.Columns) == 0 {
 		return 0, -1
 	}
-	return first, min(first+k, len(w.Columns)) - 1
+	return 0, len(w.Columns) - 1
 }
 
 // leavesBand reports whether column i, where a left/right move from the
@@ -181,13 +241,13 @@ func (w *Workspace) leavesBand(i int) bool {
 
 // moveBand swaps the focused cascade column with the column in the band dir
 // away where focus-window-up/down goes; focus follows it. Past the first
-// or last band nothing moves.
+// or last band nothing moves. Columns keep their maximization: bands pack
+// again around them.
 func (w *Workspace) moveBand(dir int) {
 	i := w.laneNeighbor(dir)
 	if i < 0 {
 		return
 	}
-	w.unmaximize()
 	w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
 	w.Focus = i
 	w.scroll()

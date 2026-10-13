@@ -29,6 +29,12 @@ type layoutPolicy struct {
 	equalCells, wraps  bool
 }
 
+// maximizeHides reports whether a maximized column hides the others, so
+// it is a transient state that focus changes undo: fixed overflow. In
+// scroll overflow and cascade it is a lasting state of its column (a
+// cascade band packs a maximized column alone).
+func (p layoutPolicy) maximizeHides() bool { return p.equalCells && !p.wraps }
+
 // workspaceStep is the workspace step a directional focus past the content
 // edge takes along axis: dir when axis is the workspace axis, else 0.
 func (p layoutPolicy) workspaceStep(axis layoutAxis, dir int) int {

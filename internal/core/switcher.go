@@ -165,7 +165,7 @@ func (m *Monitor) commitSwitcher() bool {
 	if i == w.Focus && !w.floatFocus && !w.stashFocused() {
 		return true
 	}
-	if i != w.Focus && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
+	if i != w.Focus && !w.policy().wraps && w.Focus >= 0 && w.Focus < len(w.Columns) && w.Columns[w.Focus].FullWidth {
 		w.transferMaximization(i)
 	}
 	// Activate leaves another window's fullscreen and handles dialogs.

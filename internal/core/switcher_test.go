@@ -363,6 +363,13 @@ func TestSwitchCommitTransfersMaximization(t *testing.T) {
 			}
 			openSwitcher(m, 1)
 			m.commitSwitcher()
+			if overflow == OverflowCascade {
+				// The maximized column has its own band: it stays.
+				if id, _ := w.Focused(); w.Columns[w.columnOf(id)].FullWidth || !w.Columns[a].FullWidth {
+					t.Fatalf("cascade: maximization moved: %+v", w.Columns)
+				}
+				return
+			}
 			if w.Focus != b || !w.Columns[b].FullWidth || w.Columns[a].FullWidth {
 				t.Fatalf("focus %d, FullWidth source %v target %v", w.Focus, w.Columns[a].FullWidth, w.Columns[b].FullWidth)
 			}

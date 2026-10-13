@@ -311,7 +311,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		if !e.Cancelled {
 			view := int(math.Round(target))
 			focus := w.snapFocus(view, target >= shown)
-			if focus != w.Focus && w.policy().equalCells {
+			if focus != w.Focus && w.policy().maximizeHides() {
 				w.unmaximize()
 			}
 			w.Focus = focus

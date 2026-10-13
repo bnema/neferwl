@@ -188,16 +188,17 @@ func TestCascadeMoveWindowStopsAtOuterBands(t *testing.T) {
 	wantFocus(t, c, "M", 4)
 }
 
-// A maximized column leaving its band gives up maximization: the band it
-// joins shows all its columns.
-func TestCascadeMoveWindowEndsMaximization(t *testing.T) {
+// A maximized column keeps its band to itself when it moves: it swaps
+// with the column of the band above and stays maximized.
+func TestCascadeMoveWindowKeepsMaximization(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	w.FocusID(5)
-	w.ToggleFullWidth()
+	w.ToggleFullWidth() // Bands {1 2 3} {4} {5}.
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 5, 3, 4, 2)
-	if w.Columns[1].FullWidth || len(w.maximized) != 0 {
-		t.Fatalf("still maximized: full width %t, MRU %v", w.Columns[1].FullWidth, w.maximized)
+	wantColumns(t, w, 1, 2, 3, 5, 4)
+	wantFocus(t, c, "M", 5)
+	if !w.Columns[3].FullWidth || w.band(3) != 1 || w.band(4) != 2 {
+		t.Fatalf("maximized %t, bands %d %d", w.Columns[3].FullWidth, w.band(3), w.band(4))
 	}
 }
 
