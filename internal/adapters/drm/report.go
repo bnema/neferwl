@@ -18,6 +18,7 @@ func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 		seen, reads, o.capped = o.capHidden(seen)
 	}
 	if o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads}) {
+		o.mergedFlips++
 		o.log.Warn().Str("connector", o.conn.name).Msg("wayland is not reading output reports; flips merged")
 	}
 }

@@ -113,6 +113,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	seen := map[ports.WindowID]uint64{}
 	// reports holds what the channel could not take yet, retried soon.
 	var reports presented.Queue
+	// mergedFlips counts flips merged since the last stats line.
+	mergedFlips := 0
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason error) {
@@ -312,6 +314,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := r.Trim(clk.Now()); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
+			opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Int("merged_flips", mergedFlips).Msg("stats")
+			mergedFlips = 0
 			continue
 		case s, ok := <-scenes:
 			if !ok {
@@ -398,7 +402,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
-			opts.report(&reports, nil, seen)
+			if opts.report(&reports, nil, seen) {
+				mergedFlips++
+			}
 			continue
 		}
 		dirty = false
@@ -447,7 +453,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
+					if reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads}) {
+						mergedFlips++
+					}
 					if reports.Drain(ctx, opts.Presented) != nil {
 						return nil
 					}
@@ -546,7 +554,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
+		if opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen) {
+			mergedFlips++
+		}
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
@@ -618,14 +628,16 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 
 // report queues what the output read, with flip for a drawn frame, and
 // sends what the channel takes now; the rest is retried soon.
-func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
+// It reports whether a flip was merged because wayland was not reading.
+func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) (merged bool) {
 	if opts.Presented == nil {
-		return
+		return false
 	}
-	if q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}) {
+	if merged = q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}); merged {
 		opts.Log.Warn().Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
 	}
 	q.Flush(opts.Presented)
+	return merged
 }
 
 // flush retries reports the channel could not take.

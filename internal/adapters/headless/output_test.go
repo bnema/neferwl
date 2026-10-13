@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image"
@@ -9,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -214,8 +217,10 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 		return nil
 	}).Twice()
 	done := make(chan error, 1)
+	var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 	go func() {
-		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
+		done <- Run(context.Background(), Options{Width: 2, Height: 2, Clock: clk, Log: log, Name: "HEADLESS-1", NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, nil, nil, nil, nil)
 	}()
 	ticks <- now
 	if got := <-trimmed; !got.Equal(now) {
@@ -227,6 +232,15 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 	}
 	if s, _ := f.snapshot(); len(s) != 0 {
 		t.Fatalf("%d frames for a trim", len(s))
+	}
+	// A trim tick that succeeded logs the periodic stats once.
+	if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 1 {
+		t.Fatalf("%d stats entries: %s", got, statsLog.String())
+	}
+	for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`, `"merged_flips":0`} {
+		if !strings.Contains(statsLog.String(), want) {
+			t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
+		}
 	}
 }
 
