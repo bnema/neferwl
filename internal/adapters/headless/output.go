@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -117,6 +118,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	// reports queues what the output read; every report is pushed to the
 	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
+	var shows flipShows
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason error) {
@@ -541,7 +543,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
+		opts.report(&reports, shows.flipInfo(scene, drawn, table.Kept), seen)
 		if scene.Animating && opts.Frames != nil {
 			select {
 			case opts.Frames <- ports.OutputFrame{Output: opts.Name}:
@@ -627,19 +629,40 @@ func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[po
 	q.Flush(opts.Presented)
 }
 
-// flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
-// time (software clock, refresh unknown), so presentation feedback and
-// frame callbacks follow headless frames.
-func flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
-	var ts unix.Timespec
-	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
-	shows := map[ports.WindowID]uint64{}
+// flipShows builds the Shows of successive flips. Its owner goroutine is the
+// only user. A flip's Shows map is an immutable snapshot: wayland may still
+// read the one of an earlier flip on another goroutine, so the scratch map is
+// never sent and a snapshot is replaced by a clone only when it changed.
+type flipShows struct {
+	scratch, snapshot map[ports.WindowID]uint64
+}
+
+// of returns the content Seq of the windows scene showed to their client. The
+// result is shared with earlier flips of the same content: never modify it.
+func (f *flipShows) of(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+	if f.scratch == nil {
+		f.scratch = make(map[ports.WindowID]uint64)
+	}
+	clear(f.scratch)
 	for id, c := range contents {
 		// A closed window drawn from its kept content is not shown to
 		// its client.
 		if surfaces.Shown(scene, id, kept) {
-			shows[id] = c.Seq
+			f.scratch[id] = c.Seq
 		}
 	}
-	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows}
+	if f.snapshot == nil || !maps.Equal(f.snapshot, f.scratch) {
+		f.snapshot = maps.Clone(f.scratch)
+	}
+	return f.snapshot
+}
+
+// flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
+// time (software clock, refresh unknown), so presentation feedback and
+// frame callbacks follow headless frames. The FlipInfo itself is new per
+// flip (the sink counts merges on it); only its Shows is shared.
+func (f *flipShows) flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
+	var ts unix.Timespec
+	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
+	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
 }
