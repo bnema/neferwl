@@ -47,7 +47,7 @@ type Options struct {
 	// Name and Presented report what the output has read after each
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
-	Presented chan<- ports.OutputPresented
+	Presented ports.PresentationSink
 	Captured  chan<- ports.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
@@ -111,7 +111,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform ports.BufferTransform
 	seen := map[ports.WindowID]uint64{}
-	// reports holds what the channel could not take yet, retried soon.
+	// reports queues what the output read; every report is pushed to the
+	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
 	// mergedFlips counts flips merged since the last stats line.
 	mergedFlips := 0
@@ -217,10 +218,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			}
 			return err
 		}
-		var retry <-chan time.Time
-		if reports.Len() > 0 {
-			retry = time.After(time.Millisecond)
-		}
 		// Requests wait for a scene that shows their indicator, at most
 		// capture.HoldFor (see capture.Hold).
 		var holdDue <-chan time.Time
@@ -292,15 +289,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				refuse = capture.ErrOutputOff
 			}
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
-		case <-retry:
-			if err := checkSecurity(); err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				return err
-			}
-			opts.flush(&reports)
-			continue
 		case <-trim.C():
 			if err := checkSecurity(); err != nil {
 				if ctx.Err() != nil {
@@ -456,9 +444,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 					if reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads}) {
 						mergedFlips++
 					}
-					if reports.Drain(ctx, opts.Presented) != nil {
-						return nil
-					}
+					reports.Flush(opts.Presented)
 				}
 			}
 			if err := pipeline.WaitHidden(ctx); err != nil {
@@ -627,8 +613,7 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 }
 
 // report queues what the output read, with flip for a drawn frame, and
-// sends what the channel takes now; the rest is retried soon.
-// It reports whether a flip was merged because wayland was not reading.
+// pushes it to the sink. It reports whether a flip was merged.
 func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) (merged bool) {
 	if opts.Presented == nil {
 		return false
@@ -638,13 +623,6 @@ func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[po
 	}
 	q.Flush(opts.Presented)
 	return merged
-}
-
-// flush retries reports the channel could not take.
-func (opts Options) flush(q *presented.Queue) {
-	if opts.Presented != nil {
-		q.Flush(opts.Presented)
-	}
 }
 
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC

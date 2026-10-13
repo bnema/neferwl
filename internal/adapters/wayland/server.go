@@ -71,9 +71,6 @@ type Channels struct {
 	Workspaces      <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
 	Cursors chan<- ports.CursorChange
-	// Presented paces frame callbacks on the outputs' page flips; outputs
-	// that do not flip (idle, headless) are paced at their refresh rate.
-	Presented <-chan ports.OutputPresented
 	// Captures carries accepted capture requests, never blocking. Each
 	// accepted request holds one of ports.MaxCaptureInflight credits until its
 	// CaptureDone arrives on Captured, whether or not the client is still
@@ -154,18 +151,20 @@ type Server struct {
 	awaiting    map[string][]*wayland.Callback
 	frameOwners map[*wayland.Callback]*surface
 	frameDue    map[string]time.Time
-	frameReady  chan struct{}
-	// paceTimer is the pacer's deadline, armed by ticks on the display
-	// goroutine; paceDepth/paceDirty defer wakePacer inside a commit or
-	// tick (display goroutine only).
-	paceTimer *time.Timer
-	paceDepth int
-	paceDirty bool
-	// Pacer scratch: periods is used on the display goroutine, while
-	// flipped and frameReports belong to pace and its synchronous Do call.
+	// paceFD is the pace deadline timerfd, armed by ticks on the display
+	// goroutine (paceReady: registered with the display loop);
+	// paceDepth/paceDirty defer wakePacer inside a commit or tick (display
+	// goroutine only). paceSignal coalesces posted ticks (paceSignalFn).
+	paceFD       int
+	paceReady    bool
+	paceSignal   atomic.Bool
+	paceSignalFn func()
+	paceDepth    int
+	paceDirty    bool
+	// sink receives the outputs' reports (presented.go).
+	sink *presentSink
+	// framePeriods is the tick's scratch (display goroutine only).
 	framePeriods map[string]time.Duration
-	flipped      map[string]bool
-	frameReports []ports.OutputPresented
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
 	held []heldBuffer
@@ -319,7 +318,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		display:            d,
 		awaiting:           map[string][]*wayland.Callback{},
 		frameDue:           map[string]time.Time{},
-		frameReady:         make(chan struct{}, 1),
 		reports:            map[string]ports.OutputPresented{},
 		env:                linuxProcEnv{},
 		name:               name,
@@ -420,7 +418,12 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, opts.Keymap
 	}
 	s.syncWait.log = log
+	s.sink = newPresentSink(s)
+	s.paceSignalFn = s.paceSignalled
 	s.cleanup = func() {
+		if s.paceReady {
+			unix.Close(s.paceFD)
+		}
 		if s.securityStop >= 0 {
 			unix.Close(s.securityStop)
 		}
@@ -441,6 +444,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
+	if err = s.openPaceTimer(); err != nil {
+		s.cleanup()
+		d.Close()
+		return nil, err
+	}
 	if err = registerGlobals(d, opts, s); err != nil {
 		s.cleanup()
 		d.Close()
@@ -451,6 +459,24 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	return s, nil
 }
+
+// openPaceTimer creates the pace timerfd and registers it with the display
+// loop (before Run, as AddFD requires).
+func (s *Server) openPaceTimer() error {
+	fd, err := unix.TimerfdCreate(unix.CLOCK_MONOTONIC, unix.TFD_NONBLOCK|unix.TFD_CLOEXEC)
+	if err != nil {
+		return err
+	}
+	// libwayland duplicates fd: ours stays open for TimerfdSettime and is
+	// closed by cleanup; the source goes with the display.
+	if _, err = s.display.AddFD(fd, s.onPaceTimer); err != nil {
+		unix.Close(fd)
+		return err
+	}
+	s.paceFD, s.paceReady = fd, true
+	return nil
+}
+
 func (s *Server) SocketName() string { return s.name }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.cleanup()
@@ -464,9 +490,8 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
 	s.started = time.Now()
 	s.ctx = ctx
-	s.paceTimer = time.NewTimer(defaultFramePeriod)
 	var wg sync.WaitGroup
-	wg.Add(15)
+	wg.Add(14)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -507,7 +532,6 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	go func() { defer wg.Done(); s.pace(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()

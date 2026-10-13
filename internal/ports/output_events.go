@@ -94,6 +94,10 @@ type OutputPresented struct {
 	ChildReads map[WindowID]uint64
 }
 
+// PresentationSink receives output → wayland reports. Push never blocks;
+// it wakes the consumer. Owner goroutines of outputs call it.
+type PresentationSink interface{ Push(OutputPresented) }
+
 // OutputFormats carries output → wayland the dmabuf formats an output can
 // scan out directly (its primary plane's, that the renderer also samples,
 // so a refused buffer can still be composed). Device is the KMS device

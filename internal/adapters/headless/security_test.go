@@ -146,11 +146,11 @@ func TestSecurityChangesWakeIdleAndRejectQueuedDesktop(t *testing.T) {
 	scenes <- ports.Scene{Seq: 1, Windows: []ports.SceneWindow{{ID: 1}}}
 	changes := make(chan ports.SecurityState, 1)
 	proofs := make(chan ports.SecurityBackendEvent, 2)
-	presented := make(chan ports.OutputPresented, 4)
+	sink, presented := presentedSink(t, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 3, SecurityEvents: proofs, Presented: presented, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
+		done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, Instance: 3, SecurityEvents: proofs, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -378,13 +378,13 @@ func TestSecurityOffOutputProofDoesNotRender(t *testing.T) {
 	r.EXPECT().Close().Return().Once()
 	scenes := make(chan ports.Scene, 1)
 	scenes <- ports.Scene{Off: true}
-	presented := make(chan ports.OutputPresented, 1)
+	sink, presented := presentedSink(t, 1)
 	changes := make(chan ports.SecurityState, 1)
 	proofs := make(chan ports.SecurityBackendEvent, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 12, Presented: presented, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
+		done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 12, Presented: sink, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil)
 	}()
 	securityReceive(t, presented) // Off has actually been applied by the owner.
 	locked := ports.SecurityState{Generation: 4, Protected: true}

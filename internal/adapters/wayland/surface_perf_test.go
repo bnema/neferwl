@@ -35,7 +35,7 @@ func TestTiledCommitPublishAllocations(t *testing.T) {
 	// The top-level test is listed in Makefile perf-check; this subtest guards
 	// the per-commit update storage after its first retirement.
 	t.Run("queueUpdateSteadyState", func(t *testing.T) {
-		srv := &Server{fifoSurfaces: make(map[*surface]struct{}), frameReady: make(chan struct{}, 1)}
+		srv := &Server{fifoSurfaces: make(map[*surface]struct{})}
 		surf := &surface{server: srv}
 		commit := func() {
 			surf.queueUpdate()

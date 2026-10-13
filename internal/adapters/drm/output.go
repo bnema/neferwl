@@ -1005,8 +1005,8 @@ func (o *Output) Close() {
 func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
-// enable/disable. What the output shows and read is reported on reportsCh.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, reportsCh chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+// enable/disable. What the output shows and read is pushed to reports.
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1232,11 +1232,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				readWait = readWait || o.capped
 			}
 		}
-		o.reports.Flush(reportsCh)
-		// An unsent report is retried soon, not only on the next event;
-		// so is one that waits for an uncommitted frame's fence.
+		o.reports.Flush(reports)
+		// A report that waits for an uncommitted frame's fence is retried
+		// soon, not only on the next event.
 		var retry <-chan time.Time
-		if o.reports.Len() > 0 || readWait {
+		if readWait {
 			retryTimer.Reset(time.Millisecond)
 			retry = retryTimer.C
 		} else {

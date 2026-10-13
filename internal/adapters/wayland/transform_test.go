@@ -234,7 +234,7 @@ func TestOpaqueRect(t *testing.T) {
 // Transform and opaque region requested after a queued commit belong to
 // the next commit.
 func TestCapturedTransformAndOpaqueKeepLaterRequests(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1), constraints: map[*surface]*constraint{}}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, constraints: map[*surface]*constraint{}}
 	surf := &surface{server: srv}
 	surf.next.transform = 1
 	surf.next.opaque, surf.next.opaqueSet = []ports.Rect{{W: 4, H: 4}}, true

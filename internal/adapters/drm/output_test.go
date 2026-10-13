@@ -598,11 +598,11 @@ func runReportsSeenAfterFlip(t *testing.T) {
 	}
 	scenes := make(chan ports.Scene, 1)
 	contents := make(chan ports.SurfaceContent, 1)
-	presented := make(chan ports.OutputPresented, 8)
+	sink, presented := presentedSink(t, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, presented, nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, sink, nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
 	waitFor(t, func() bool { return frameCommits() == 1 })
@@ -679,7 +679,7 @@ func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, discardSink(t), nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
 		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
@@ -761,7 +761,7 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 	active <- false
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
+		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	ticks <- now
 	<-trimmed
@@ -881,7 +881,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, make(chan ports.OutputPresented, 8), requests, replies)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, discardSink(t), requests, replies)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
 	select {
@@ -1001,7 +1001,7 @@ func startStampRun(t *testing.T) *stampRun {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), sr.scenes, sr.contents, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), sr.scenes, sr.contents, nil, discardSink(t), nil, nil)
 	}()
 	// stop ends Run: its state is ours to read afterwards.
 	sr.stop = func() {
@@ -1133,7 +1133,7 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, make(chan ports.OutputPresented, 64), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, discardSink(t), nil, nil)
 	}()
 	acq, acqW, _ := os.Pipe()
 	defer acq.Close()

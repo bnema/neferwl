@@ -163,9 +163,9 @@ func TestHiddenWorkspaceCaptureUsesChildRenderer(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 2)
 	done := make(chan error, 1)
 	var made [2]int
-	presented := make(chan ports.OutputPresented, 4)
+	sink, presented := presentedSink(t, 4)
 	go func() {
-		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, Presented: presented,
+		done <- Run(ctx, Options{Width: 2, Height: 2, Captured: replies, Presented: sink,
 			NewRenderer:        func(int, int) (ports.Renderer, error) { return display, nil },
 			NewCaptureRenderer: func(w, h int) (ports.Renderer, error) { made = [2]int{w, h}; return child, nil },
 		}, scenes, nil, nil, incoming)

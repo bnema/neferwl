@@ -48,7 +48,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			scenes := make(chan ports.Scene, 2)
 			contents := make(chan ports.SurfaceContent, 1)
 			incoming := make(chan ports.CaptureRequest)
-			presented := make(chan ports.OutputPresented, 8)
+			sink, presented := presentedSink(t, 8)
 			proofs := make(chan ports.SecurityBackendEvent, 2)
 			replies := make(chan ports.CaptureDone, 2)
 			changes := make(chan ports.SecurityState, 1)
@@ -56,7 +56,7 @@ func TestExcludeFenceRetainsReadsAcrossEngageAndOff(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: presented, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, incoming)
+				done <- Run(ctx, Options{Security: gate, SecurityChanges: changes, SecurityEvents: proofs, Instance: 7, Width: 2, Height: 2, Presented: sink, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, contents, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
 			incoming <- ports.CaptureRequest{ID: 99, Exclude: true, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}

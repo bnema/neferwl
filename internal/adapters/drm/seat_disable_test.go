@@ -85,7 +85,7 @@ func TestRunPreparesSeatDisable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	if !o.PrepareSeatDisable(5 * time.Second) {
 		t.Fatal("no ack")

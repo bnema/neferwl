@@ -46,14 +46,13 @@ func (p *feedbackEvents) Dispatch(e *wlturbo.Event) {
 }
 
 // presentServer is a server whose flips the test sends.
-func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, chan ports.OutputPresented, string) {
+func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.ClientCommand, chan ports.SurfaceContent, ports.PresentationSink, string) {
 	t.Helper()
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
 	contents := make(chan ports.SurfaceContent, 64)
-	presented := make(chan ports.OutputPresented, 16)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands, Contents: contents, Presented: presented}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Commands: commands, Contents: contents}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +60,7 @@ func presentServer(t *testing.T) (*Server, chan ports.ClientEvent, chan ports.Cl
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	t.Cleanup(func() { cancel(); <-done })
-	return s, events, commands, contents, presented, dir
+	return s, events, commands, contents, s.Presentation(), dir
 }
 
 func TestPresentationFeedback(t *testing.T) {
@@ -156,7 +155,7 @@ func TestPresentationFeedback(t *testing.T) {
 		}
 	}
 	flip := func(when time.Duration, seq uint64, shows uint64, zero ports.WindowID) {
-		presented <- ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[ports.WindowID]uint64{w.ID: shows}}}
+		presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Flip: &ports.FlipInfo{When: when, Seq: seq, Refresh: time.Second / 60, ZeroCopy: zero, HardwareClock: true, Shows: map[ports.WindowID]uint64{w.ID: shows}}})
 	}
 	// With no flip, hiding must discard a waiting feedback immediately.
 	hidden := feedback()

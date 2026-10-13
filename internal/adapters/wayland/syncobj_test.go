@@ -49,7 +49,7 @@ type syncHarness struct {
 	c         *wlturbo.Display
 	dev       *mocksyncobjDevice
 	contents  chan ports.SurfaceContent
-	presented chan ports.OutputPresented
+	presented ports.PresentationSink
 	surf      uint32
 	syncSurf  uint32
 	timeline  uint32
@@ -100,9 +100,8 @@ func newSyncHarness(t *testing.T) *syncHarness {
 	events := make(chan ports.ClientEvent, 16)
 	commands := make(chan ports.ClientCommand, 16)
 	h.contents = make(chan ports.SurfaceContent, 64)
-	h.presented = make(chan ports.OutputPresented, 16)
 	sup := ports.DMABufSupport{Formats: []ports.DMABufFormat{linearARGB}}
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup, syncDev: h.dev}, Channels{Events: events, Commands: commands, Contents: h.contents, Presented: h.presented}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs, DMABuf: sup, syncDev: h.dev}, Channels{Events: events, Commands: commands, Contents: h.contents}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +117,7 @@ func newSyncHarness(t *testing.T) *syncHarness {
 		}
 		h.mu.Unlock()
 	})
-	h.s = s
+	h.s, h.presented = s, s.Presentation()
 	h.c = protocolClient(t, s, dir)
 	w, surf, xdg := surfaceMapper(t, h.c, events)()
 	registerProtocol(t, h.c, xdg)
@@ -275,7 +274,7 @@ func TestSyncobjAcquireAndRelease(t *testing.T) {
 		t.Fatal("acquire fence closed before release")
 	}
 	// The output read the second content: the first buffer is released.
-	h.presented <- ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{h.win: second.Seq}}
+	h.presented.Push(ports.OutputPresented{Output: "HEADLESS-1", Seen: map[ports.WindowID]uint64{h.win: second.Seq}})
 	deadline := time.Now().Add(2 * time.Second)
 	for len(h.signalled()) == 0 && time.Now().Before(deadline) {
 		if err := h.c.Roundtrip(); err != nil {

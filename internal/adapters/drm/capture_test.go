@@ -366,11 +366,11 @@ func TestRunChildHoldLiftedWhileDisplayCommitStalls(t *testing.T) {
 	contents := make(chan ports.SurfaceContent) // unbuffered: taken before the scene
 	captures := make(chan ports.CaptureRequest) // unbuffered: a send returns once Run took it
 	captured := make(chan ports.CaptureDone, 4)
-	presented := make(chan ports.OutputPresented, 64)
+	sink, presented := presentedSink(t, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents, nil, presented, captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return display, nil }, nil, make(chan bool), scenes, contents, nil, sink, captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()
@@ -487,7 +487,7 @@ func runCaptureWaitsForItsIndicatorScene(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 16), captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, discardSink(t), captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()
@@ -563,7 +563,7 @@ func TestRunCaptureWithoutIndicatorFailsAfterTheBoundedWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 16), captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, discardSink(t), captures, captured)
 	}()
 	count := func() int {
 		commitMu.Lock()

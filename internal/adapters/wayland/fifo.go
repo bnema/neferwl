@@ -757,8 +757,7 @@ func sameBuffer(a, b *wayland.Buffer) bool {
 
 // wakePacer makes the pacer look at its queues. Display goroutine only.
 // While a commit or a tick runs (paceDepth) it only records the request: the
-// outermost caller then ticks inline (paceNow), saving the round trip of
-// waking the pacer goroutine just so that it calls Do back.
+// outermost caller then ticks inline (paceNow), saving a posted tick.
 func (s *Server) wakePacer() {
 	if s.paceDepth > 0 {
 		s.paceDirty = true
@@ -767,10 +766,14 @@ func (s *Server) wakePacer() {
 	s.signalPacer()
 }
 
-// signalPacer wakes the pacer goroutine; safe from any goroutine.
+// signalPacer posts a tick to the display loop; safe from any goroutine.
+// Signals coalesce until the tick runs.
 func (s *Server) signalPacer() {
-	select {
-	case s.frameReady <- struct{}{}:
-	default:
+	if !s.paceSignal.CompareAndSwap(false, true) {
+		return
 	}
+	if s.display == nil { // unit tests that build a Server without a display
+		return
+	}
+	s.display.Post(s.paceSignalFn)
 }

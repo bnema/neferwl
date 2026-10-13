@@ -50,7 +50,7 @@ func runOutputPower(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, vt, scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, vt, scenes, make(chan ports.SurfaceContent), nil, discardSink(t), nil, nil)
 	}()
 	on := ports.Scene{OutputWidth: 200, OutputHeight: 100, Scale: 1}
 	scenes <- on
@@ -174,7 +174,7 @@ func runOutputStartOff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, make(chan ports.SurfaceContent), nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, make(chan ports.SurfaceContent), nil, discardSink(t), nil, nil)
 	}()
 	if err := <-ready; err != nil {
 		t.Fatal(err)

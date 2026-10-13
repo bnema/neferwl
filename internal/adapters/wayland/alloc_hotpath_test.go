@@ -24,7 +24,7 @@ func TestReleaseHeldAllocations(t *testing.T) {
 }
 
 func TestCommitDamageAllocations(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	surf := &surface{server: srv}
 	commit := func() {
 		surf.Damage(nil, 0, 0, 4, 4)
@@ -55,7 +55,7 @@ func TestCommitDamageAllocations(t *testing.T) {
 func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 	dev := newMocksyncobjDevice(t)
 	dev.EXPECT().signalled(mock.Anything, mock.Anything).Return(true, nil)
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	sw, err := newSyncWaiter(func() {})
 	if err != nil {
 		t.Fatal(err)

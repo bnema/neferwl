@@ -24,3 +24,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 )
+
+// TODO(release): drop replace, bump to tagged version
+replace github.com/bnema/purego-libwayland => ../../../purego-libwayland/.worktrees/display-post

@@ -18,7 +18,7 @@ import (
 // Applying an older captured commit must never transiently own newer requests.
 // The next commit captures those requests without losing its one-shot state.
 func TestCapturedCommitKeepsLaterRequests(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1), constraints: map[*surface]*constraint{}}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, constraints: map[*surface]*constraint{}}
 	surf := &surface{server: srv, xdg: &xdgSurface{}}
 	cons := &constraint{surface: surf}
 	srv.constraints[surf] = cons
@@ -313,7 +313,7 @@ func TestQueuedDestructionDropsUpdates(t *testing.T) {
 
 // A dropped update must be cleared before a different surface reuses it.
 func TestDroppedUpdateRecycledWithoutState(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	old := &surface{server: srv, next: pendingCommit{scale: 2, barrier: true, damage: []ports.Rect{{W: 2}}}}
 	old.queueUpdate()
 	old.destroyed = true
@@ -329,7 +329,7 @@ func TestDroppedUpdateRecycledWithoutState(t *testing.T) {
 // BenchmarkEmptySurfaceQueueApply measures an empty, roleless surface's
 // in-process queue/apply loop. It excludes protocol dispatch and real buffers.
 func BenchmarkEmptySurfaceQueueApply(b *testing.B) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	surf := &surface{server: srv}
 	surf.queueUpdate()
 	surf.queue[0].applyGraph()
@@ -381,7 +381,7 @@ func TestCapturedViewportApplyAllocations(t *testing.T) {
 }
 
 func TestCapturedCommitApplyAllocations(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	surf := &surface{server: srv}
 	apply := func() {
 		surf.queueUpdate()

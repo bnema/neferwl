@@ -351,12 +351,10 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 		defer workers.Done()
 		consumeScenes(ctx, p.scenes, p.configErrors, opts.testScenes, p.renderScenes)
 	}()
-	workers.Add(1)
-	go func() { defer workers.Done(); relayPresented(ctx, p.flips, p.presented, p.frames) }()
 
 	go func() {
 		defer workers.Done()
-		outputIO := p.outputs(security)
+		outputIO := p.outputs(security, framesTap{sink: server.Presentation(), frames: p.frames})
 		apply := newOutputApply(core.NewOutputOverrides(opts.Config, hw == nil), logging.For(ctx, "app"))
 		if hw != nil {
 			done <- safe("output", func() error {

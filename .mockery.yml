@@ -17,6 +17,7 @@ packages:
       Clock:
       Notifier:
       OutputScaleStore:
+      PresentationSink:
       Renderer:
       Seat:
       SessionSecurity:

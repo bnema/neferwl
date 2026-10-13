@@ -1,11 +1,12 @@
 package presented
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,24 +76,22 @@ func TestQueueMergesOldestFlipPastBound(t *testing.T) {
 	require.Equal(t, map[ports.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")
 }
 
-func TestQueueFlushStopsWhenFull(t *testing.T) {
+func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {
 	var q Queue
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1}})
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2}})
-	ch := make(chan ports.OutputPresented, 1)
-	q.Flush(ch)
-	require.Equal(t, 1, q.Len())
-	require.Equal(t, uint64(1), (<-ch).Flip.Seq)
-	require.NoError(t, q.Drain(context.Background(), ch))
+	var got []ports.OutputPresented
+	sink := portsmocks.NewMockPresentationSink(t)
+	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { got = append(got, r) })
+	q.Flush(sink)
 	require.Zero(t, q.Len())
-	require.Equal(t, uint64(2), (<-ch).Flip.Seq)
+	require.Len(t, got, 2)
+	require.Equal(t, uint64(1), got[0].Flip.Seq)
+	require.Equal(t, uint64(2), got[1].Flip.Seq)
+	q.Flush(sink) // empty: nothing more is pushed
+	require.Len(t, got, 2)
 
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 3}})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 4}})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	ch <- ports.OutputPresented{}
-	require.ErrorIs(t, q.Drain(ctx, ch), context.Canceled)
 	q.Reset()
 	require.Zero(t, q.Len())
 }

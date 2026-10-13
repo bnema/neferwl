@@ -88,7 +88,7 @@ func TestDueFrames(t *testing.T) {
 
 func TestInvisibleFramePacingAndMigration(t *testing.T) {
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	root := &surface{xdg: &xdgSurface{window: w}}
 	child := &surface{sub: subState{parent: root}}
@@ -128,7 +128,7 @@ func TestInvisibleFramePacingAndMigration(t *testing.T) {
 // output's queue and move when Captured changes.
 func TestCapturedWindowKeepsOutputFramePacing(t *testing.T) {
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	root := &surface{xdg: &xdgSurface{window: w}}
 	a := new(wayland.Callback)

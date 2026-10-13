@@ -57,7 +57,7 @@ func securityRunWakePendingResumeAndOff(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, scenes, nil, nil, discardSink(t), nil, nil)
 	}()
 	scenes <- ports.Scene{Seq: 99, Scale: 1}
 	select {

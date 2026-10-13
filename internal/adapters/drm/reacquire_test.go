@@ -96,7 +96,7 @@ func newRetryHarness(t *testing.T) retryHarness {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	synctest.Wait()
 	return retryHarness{
