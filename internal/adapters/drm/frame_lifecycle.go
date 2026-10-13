@@ -31,7 +31,9 @@ type pendingFrame struct {
 	queued   uint64
 	zeroCopy ports.WindowID // window shown without composition
 	async    bool
-	shows    map[ports.WindowID]uint64
+	// animating: the scene shows a running animation; its flip wakes core.
+	animating bool
+	shows     map[ports.WindowID]uint64
 	// fences are duplicates of the fences the commit waits on, owned until
 	// the commit ends. composed is set when the frame was rendered.
 	fences   []*os.File

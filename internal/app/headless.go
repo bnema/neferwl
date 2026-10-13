@@ -43,7 +43,7 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 		}
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
-		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Captured: ch.captured}
+		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Frames: ch.frames, Captured: ch.captured}
 		started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan ports.SurfaceContent, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, secure, instance
 			return headless.Run(octx, opts, sc, cc, cu, cap)

@@ -123,6 +123,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Capture = c.captureSceneFor(sc, capture)
+	// The springs of this frame are advanced: a scene shown while one still
+	// runs wakes core when it flips; the one a spring settles on does not.
+	scene.Animating = c.sliding(sc.name())
 	// A scene carrying a capture image always gets a fresh Seq, and so
 	// does one of an animating screen (the one being stepped, or any
 	// when none is): the outputs drop a scene they already show, and a

@@ -168,6 +168,7 @@ func (p *pipes) outputs(security ports.SessionSecurity, presented ports.Presenta
 		contents:        p.contents,
 		cursorChanges:   p.cursorChanges,
 		presented:       presented,
+		frames:          p.frames,
 		captures:        p.captures,
 		captured:        p.captured,
 		formats:         p.outputFormats,

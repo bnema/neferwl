@@ -17,10 +17,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
-	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestHeadlessConfigReload(t *testing.T) {
@@ -425,25 +422,4 @@ func TestHeadlessTwoOutputs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-}
-
-// framesTap passes every report to wayland and tells core about a flip only,
-// without ever blocking on a full frames channel.
-func TestFramesTapForwardsReportsAndFlipFrames(t *testing.T) {
-	var got []ports.OutputPresented
-	sink := portsmocks.NewMockPresentationSink(t)
-	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { got = append(got, r) })
-	frames := make(chan ports.OutputFrame, 1)
-	tap := framesTap{sink: sink, frames: frames}
-
-	tap.Push(ports.OutputPresented{Output: "DP-2"})
-	require.Empty(t, frames, "a report without a flip is not a frame")
-	tap.Push(ports.OutputPresented{Output: "DP-2", Flip: &ports.FlipInfo{Seq: 1}})
-	require.Equal(t, ports.OutputFrame{Output: "DP-2"}, <-frames)
-
-	tap.Push(ports.OutputPresented{Output: "DP-2", Flip: &ports.FlipInfo{Seq: 2}})
-	tap.Push(ports.OutputPresented{Output: "DP-2", Flip: &ports.FlipInfo{Seq: 3}}) // frames full: must not block
-	require.Len(t, frames, 1)
-	require.Len(t, got, 4, "wayland receives every report")
-	require.Equal(t, uint64(3), got[3].Flip.Seq)
 }

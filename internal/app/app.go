@@ -138,25 +138,6 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 	}
 }
 
-// framesTap is the sink outputs report to: it passes every report to wayland
-// and tells core about each flip (a frame for running animations). A frame
-// core has not read yet is enough, so frames never wait.
-type framesTap struct {
-	sink   ports.PresentationSink
-	frames chan<- ports.OutputFrame
-}
-
-// Push implements ports.PresentationSink; it never blocks.
-func (t framesTap) Push(p ports.OutputPresented) {
-	if p.Flip != nil {
-		select {
-		case t.frames <- ports.OutputFrame{Output: p.Output}:
-		default:
-		}
-	}
-	t.sink.Push(p)
-}
-
 func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configErrors <-chan error, tap chan<- []ports.Scene, renderScenes chan []ports.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")

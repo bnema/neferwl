@@ -48,7 +48,10 @@ type Options struct {
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
 	Presented ports.PresentationSink
-	Captured  chan<- ports.CaptureDone
+	// Frames tells core a presented scene is animating: its next frame is
+	// due. Sends never block (nil: nobody is told).
+	Frames   chan<- ports.OutputFrame
+	Captured chan<- ports.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
 }
@@ -542,6 +545,12 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		frame++
 		if opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen) {
 			mergedFlips++
+		}
+		if scene.Animating && opts.Frames != nil {
+			select {
+			case opts.Frames <- ports.OutputFrame{Output: opts.Name}:
+			default:
+			}
 		}
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()

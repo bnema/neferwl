@@ -17,6 +17,7 @@ type outputChannels struct {
 	contents        <-chan ports.SurfaceContent
 	cursorChanges   <-chan ports.CursorChange
 	presented       ports.PresentationSink
+	frames          chan<- ports.OutputFrame
 	captures        <-chan ports.CaptureRequest
 	captured        chan<- ports.CaptureDone
 	formats         chan<- ports.OutputFormats

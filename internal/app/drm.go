@@ -458,7 +458,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			for _, o := range added {
 				// Every physical lifetime gets the gate before any early exit:
 				// Close must not restore saved desktop, even on a name collision.
-				o.Security = ch.security
+				o.Security, o.Frames = ch.security, ch.frames
 				name := o.Info().Name
 				if other := cards[name]; other != nil && other != c {
 					// Core and clients know outputs by connector name.

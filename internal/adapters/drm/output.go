@@ -27,10 +27,13 @@ import (
 // bounded (stuckTimeout, then a modeset).
 type Output struct {
 	// Set before Run. The backend owns instance registration and wake routing.
-	Security         ports.SessionSecurity
-	SecurityChanges  <-chan ports.SecurityState
-	Instance         ports.OutputInstance
-	SecurityEvents   chan<- ports.SecurityBackendEvent
+	Security        ports.SessionSecurity
+	SecurityChanges <-chan ports.SecurityState
+	Instance        ports.OutputInstance
+	SecurityEvents  chan<- ports.SecurityBackendEvent
+	// Frames, set before Run, tells core a flip of an animating scene
+	// completed (nil: nobody is told). Sends never block.
+	Frames           chan<- ports.OutputFrame
 	securityState    ports.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
@@ -1651,7 +1654,22 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		o.queued = 0
 	}
 	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, HardwareClock: true, Shows: f.shows}, seen)
+	if f.animating {
+		o.wakeCore()
+	}
 	return true
+}
+
+// wakeCore tells core the next frame of a running animation is due. A frame
+// core has not read yet is enough, so the owner never waits.
+func (o *Output) wakeCore() {
+	if o.Frames == nil {
+		return
+	}
+	select {
+	case o.Frames <- ports.OutputFrame{Output: o.conn.name}:
+	default:
+	}
 }
 
 // setCursor loads a cursor for scale and output transform t into the cursor

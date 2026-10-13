@@ -265,6 +265,8 @@ var (
 // separator present in only one scene adds its own. A new Scene field
 // belongs here too (see Scene.SameAs, TestSceneSameAsCoversEveryField); a
 // new SceneWindow field is checked by TestSceneWindowFieldCount.
+// Scene.Animating is not compared: it schedules the next frame, it draws
+// nothing.
 func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, limit int) (image.Rectangle, bool) {
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
