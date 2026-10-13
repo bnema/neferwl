@@ -237,7 +237,7 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 	if got := strings.Count(statsLog.String(), `"message":"stats"`); got != 1 {
 		t.Fatalf("%d stats entries: %s", got, statsLog.String())
 	}
-	for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`, `"merged_flips":0`} {
+	for _, want := range []string{`"output":"HEADLESS-1"`, `"frames":0`} {
 		if !strings.Contains(statsLog.String(), want) {
 			t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
 		}

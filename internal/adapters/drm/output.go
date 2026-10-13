@@ -159,10 +159,7 @@ type Output struct {
 	traceFlips bool
 	lastFlipAt time.Duration
 	flipStats  flipStats
-	// mergedFlips counts flips merged because wayland was not reading
-	// reports, reported and reset with the periodic stats.
-	mergedFlips int
-	wantedAt    time.Duration
+	wantedAt   time.Duration
 	// vrrFlipGap is the minimum time between a game frame's flip event
 	// and the next frame commit under VRR (render.vrr-flip-gap, 0: off);
 	// flipGapUntil is when the next frame may commit: the gap from the
@@ -1465,8 +1462,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			fs := o.takeFlipStats()
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
 			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
-			ev = ev.Int("redrawn_pixels", r.TakeRedrawn()).Int("merged_flips", o.mergedFlips)
-			o.mergedFlips = 0
+			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)
 			}

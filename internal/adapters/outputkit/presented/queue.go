@@ -4,17 +4,14 @@ package presented
 
 import (
 	"maps"
-	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
 
-// MaxUnsent bounds reports waiting for wayland; past it the oldest flip is
-// merged into the next one.
-const MaxUnsent = 16
-
-// Queue holds reports wayland has not read yet. Its owner goroutine is the
-// only user. The Seen and ChildReads maps of a queued report are immutable
+// Queue holds the reports an output has not pushed to wayland yet. The owner
+// goroutine flushes it every loop turn, so it holds the few reports of one
+// turn; the sink alone bounds what waits for the display loop (and merges
+// flips when that stalls). Its owner goroutine is the only user. The Seen and ChildReads maps of a queued report are immutable
 // snapshots: wayland may still read an earlier report on another goroutine,
 // so a snapshot is replaced by a clone when its content changes and an
 // unchanged report allocates nothing.
@@ -25,9 +22,8 @@ type Queue struct {
 
 // Push queues r. Its Seen and ChildReads may be the caller's scratch maps:
 // the queue keeps snapshots. A flip-less report replaces the newest queued
-// one when that one has no flip, or keeps its flip; flips are merged only
-// past MaxUnsent. Push reports whether a flip was merged that way.
-func (q *Queue) Push(r ports.OutputPresented) (merged bool) {
+// one when that one has no flip, or keeps its flip; every flip is queued.
+func (q *Queue) Push(r ports.OutputPresented) {
 	if !maps.Equal(q.seen, r.Seen) {
 		q.seen = maps.Clone(r.Seen)
 	}
@@ -40,21 +36,14 @@ func (q *Queue) Push(r ports.OutputPresented) (merged bool) {
 			r.Flip = q.unsent[n-1].Flip
 		}
 		q.unsent[n-1] = r
-		return false
+		return
 	}
 	q.unsent = append(q.unsent, r)
-	if len(q.unsent) <= MaxUnsent {
-		return false
-	}
-	if old, next := q.unsent[0].Flip, q.unsent[1].Flip; next != nil && old != nil {
-		Merge(old, next)
-	}
-	q.unsent = slices.Delete(q.unsent, 0, 1)
-	return true
 }
 
 // Merge folds old into next: next counts it as merged and shows what
 // old showed, so feedbacks waiting on old are answered (as discarded).
+// Wayland's presentation sink uses it when its ring overflows.
 func Merge(old, next *ports.FlipInfo) {
 	next.Merged += 1 + old.Merged
 	// A snapshot can be shared with previously sent flips. Clone only when

@@ -56,24 +56,28 @@ func TestQueueKeepsEveryFlip(t *testing.T) {
 	require.Equal(t, uint64(3), u[1].Seen[1])
 }
 
-// Past MaxUnsent the oldest flip folds into the next: counted as merged and
-// its shown windows carried, without mutating a shared Shows snapshot.
-func TestQueueMergesOldestFlipPastBound(t *testing.T) {
-	var q Queue
+// Merge folds a flip into the next: counted as merged and its shown windows
+// carried, without mutating a shared Shows snapshot.
+func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
 	shared := map[ports.WindowID]uint64{2: 5}
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1, Shows: map[ports.WindowID]uint64{1: 4}}})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2, Shows: shared}})
-	merged := false
-	for i := range MaxUnsent - 1 {
-		merged = q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: uint64(10 + i)}}) || merged
-	}
-	require.True(t, merged)
-	u := q.Unsent()
-	require.Len(t, u, MaxUnsent)
-	require.Equal(t, uint64(2), u[0].Flip.Seq)
-	require.Equal(t, 1, u[0].Flip.Merged)
-	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, u[0].Flip.Shows)
+	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[ports.WindowID]uint64{1: 4}}
+	next := &ports.FlipInfo{Seq: 2, Shows: shared}
+	Merge(old, next)
+	require.Equal(t, 3, next.Merged)
+	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, next.Shows)
 	require.Equal(t, map[ports.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")
+}
+
+// The queue never merges flips: every flip of a turn is pushed to the sink.
+func TestQueueDoesNotBoundFlips(t *testing.T) {
+	var q Queue
+	for i := range 40 {
+		q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: uint64(i + 1)}})
+	}
+	u := q.Unsent()
+	require.Len(t, u, 40)
+	require.Zero(t, u[0].Flip.Merged)
+	require.Equal(t, uint64(1), u[0].Flip.Seq)
 }
 
 func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {

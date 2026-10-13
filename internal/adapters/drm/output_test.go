@@ -14,7 +14,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -356,11 +355,12 @@ func TestReportsKeepEveryFlip(t *testing.T) {
 	if o.reports.Len() != 2 || o.reports.Unsent()[0].Flip.Seq != 1 || o.reports.Unsent()[1].Flip.Seq != 2 || o.reports.Unsent()[1].Seen[1] != 3 {
 		t.Fatalf("unsent %+v", o.reports.Unsent())
 	}
-	for i := range presented.MaxUnsent + 3 {
+	for i := range 20 {
 		o.report(&ports.FlipInfo{Seq: uint64(10 + i), Shows: map[ports.WindowID]uint64{}}, seen)
 	}
-	if o.reports.Len() != presented.MaxUnsent || o.reports.Unsent()[0].Flip.Merged == 0 {
-		t.Fatalf("cap: %d reports, first merged %d", o.reports.Len(), o.reports.Unsent()[0].Flip.Merged)
+	// The wayland sink alone merges flips: the output queue keeps them all.
+	if o.reports.Len() != 22 || o.reports.Unsent()[2].Flip.Merged != 0 {
+		t.Fatalf("%d reports, merged %d", o.reports.Len(), o.reports.Unsent()[2].Flip.Merged)
 	}
 }
 
@@ -750,7 +750,6 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 	var statsLog bytes.Buffer // written by Run's goroutine, read after it ends
 	o.log = zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &statsLog})
 	o.flipStats = flipStats{missedVblanks: 3, maxInterval: 50 * time.Millisecond, maxFlipToRead: 25 * time.Millisecond, lateFences: 2}
-	o.mergedFlips = 4
 	trimmed := make(chan struct{}, 2)
 	failure := os.ErrInvalid
 	calls := 0 // Run's goroutine only
@@ -777,12 +776,12 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 	// Reported once, then reset. late_fences needs flip tracing.
-	for _, want := range []string{`"message":"stats"`, `"missed_vblanks":3`, `"max_flip_interval_ms":50`, `"max_flip_to_read_ms":25`, `"redrawn_pixels":1234`, `"merged_flips":4`} {
+	for _, want := range []string{`"message":"stats"`, `"missed_vblanks":3`, `"max_flip_interval_ms":50`, `"max_flip_to_read_ms":25`, `"redrawn_pixels":1234`} {
 		if !strings.Contains(statsLog.String(), want) {
 			t.Fatalf("stats entry lacks %s: %s", want, statsLog.String())
 		}
 	}
-	if strings.Contains(statsLog.String(), "late_fences") || o.flipStats != (flipStats{}) || o.mergedFlips != 0 {
+	if strings.Contains(statsLog.String(), "late_fences") || o.flipStats != (flipStats{}) {
 		t.Fatalf("late fences untraced or stats not reset: %s %+v", statsLog.String(), o.flipStats)
 	}
 }

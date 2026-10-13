@@ -117,8 +117,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	// reports queues what the output read; every report is pushed to the
 	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
-	// mergedFlips counts flips merged since the last stats line.
-	mergedFlips := 0
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason error) {
@@ -310,8 +308,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := r.Trim(clk.Now()); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
-			opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Int("merged_flips", mergedFlips).Msg("stats")
-			mergedFlips = 0
+			opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Msg("stats")
 			continue
 		case s, ok := <-scenes:
 			if !ok {
@@ -398,9 +395,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if !haveScene || !dirty || scene.Off {
 			// Contents not drawn are still read: report them. An output
 			// turned off draws nothing.
-			if opts.report(&reports, nil, seen) {
-				mergedFlips++
-			}
+			opts.report(&reports, nil, seen)
 			continue
 		}
 		dirty = false
@@ -449,9 +444,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if opts.Presented != nil {
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
-					if reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads}) {
-						mergedFlips++
-					}
+					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
 					reports.Flush(opts.Presented)
 				}
 			}
@@ -548,9 +541,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
-		if opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen) {
-			mergedFlips++
-		}
+		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
 		if scene.Animating && opts.Frames != nil {
 			select {
 			case opts.Frames <- ports.OutputFrame{Output: opts.Name}:
@@ -627,16 +618,13 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 }
 
 // report queues what the output read, with flip for a drawn frame, and
-// pushes it to the sink. It reports whether a flip was merged.
-func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) (merged bool) {
+// pushes it to the sink.
+func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	if opts.Presented == nil {
-		return false
+		return
 	}
-	if merged = q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}); merged {
-		opts.Log.Warn().Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
-	}
+	q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
 	q.Flush(opts.Presented)
-	return merged
 }
 
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
