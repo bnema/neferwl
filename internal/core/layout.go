@@ -390,7 +390,7 @@ func (w *Workspace) focusModal(from WindowID) {
 		return
 	}
 	if c := w.cover(); c != 0 && c != d {
-		if i := w.floatIndex(d); i >= 0 && !w.Floats[i].coverDialog(c) {
+		if i := w.floatIndex(d); i >= 0 && !w.overCover(w.Floats[i]) {
 			// Hidden under another window's fullscreen: leave it, as
 			// Activate does, so the dialog shows.
 			w.leaveFullscreen()
@@ -399,22 +399,26 @@ func (w *Workspace) focusModal(from WindowID) {
 	w.FocusID(d)
 }
 
-// coverDialog reports whether f is a dialog of the covering fullscreen
-// window cover: the one float drawn over it.
-func (f Float) coverDialog(cover WindowID) bool {
-	return cover != 0 && f.over == cover && f.ID != cover
+// overCover reports whether float f is drawn over the covering fullscreen
+// window: a dialog of the cover, or of a stashed window while the stash
+// shows over the cover (a "Save as…" of the app the user picked there).
+func (w *Workspace) overCover(f Float) bool {
+	c := w.cover()
+	if c == 0 || f.ID == c || f.over == 0 {
+		return false
+	}
+	return f.over == c || w.stashOverCover() && w.stashIndex(f.over) >= 0
 }
 
 // coverDialog is the topmost dialog shown over the covering fullscreen
-// window when the floats have the focus, else 0. The floats it hides cannot
-// take the focus.
+// window (overCover) when the floats have the focus, else 0. The floats it
+// hides cannot take the focus.
 func (w *Workspace) coverDialog() WindowID {
 	if !w.floatFocus {
 		return 0
 	}
-	cover := w.cover()
 	for i := len(w.Floats) - 1; i >= 0; i-- {
-		if f := w.Floats[i]; !f.below && f.coverDialog(cover) {
+		if f := w.Floats[i]; !f.below && w.overCover(f) {
 			return f.ID
 		}
 	}
@@ -638,9 +642,9 @@ func (w *Workspace) FocusID(id WindowID) bool {
 		f := w.Floats[i]
 		f.below = false
 		w.Floats = append(slices.Delete(w.Floats, i, i+1), f)
-		if !f.coverDialog(w.cover()) {
-			// A dialog of the cover shows over the stash; leaving it
-			// returns there.
+		if !w.overCover(f) {
+			// A dialog shown over the cover keeps the stash over it;
+			// leaving it returns there.
 			w.dropStashOver()
 		}
 		w.floatFocus = true
@@ -1788,9 +1792,10 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			if order != group {
 				continue
 			}
-			// A covering fullscreen window hides every float but its own
-			// dialogs: the others show again when it leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !f.coverDialog(cover)}
+			// A covering fullscreen window hides every float but the
+			// dialogs over it (overCover): the others show again when it
+			// leaves fullscreen.
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !w.overCover(f)}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)

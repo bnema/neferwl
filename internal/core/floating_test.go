@@ -543,6 +543,52 @@ func TestActivateStashKeepsFullscreenFloat(t *testing.T) {
 	}
 }
 
+// A modal dialog of the activated stashed window shows over the cover,
+// focused, and the game stays fullscreen; closing it returns to the stash
+// over the cover.
+func TestActivateStashModalKeepsFullscreen(t *testing.T) {
+	w := workspace()
+	w.AddWindow(14)
+	w.ToggleWindowStash()
+	w.ToggleStashVisible()
+	w.AddDialog(9, 14, 20, 10)
+	w.SetModal(9, true)
+	w.AddFloating(72, 50, 40)
+	w.SetFullscreen(72, true)
+	if p := placementOf(w.Layout(), 9); !p.Hidden {
+		t.Fatalf("modal shown over the game before activation: %+v", p)
+	}
+	w.Activate(14)
+	if id, _ := w.Focused(); id != 9 || w.fullscreen != 72 || w.left != 0 || !w.stashOverCover() {
+		t.Fatalf("focused %d fullscreen %d left %d over %v", id, w.fullscreen, w.left, w.stashOverCover())
+	}
+	layout := w.Layout()
+	if p := placementOf(layout, 9); p.Hidden || p.Rect.W == 0 {
+		t.Fatalf("modal hidden: %+v", p)
+	}
+	if p := placementOf(layout, 72); !p.Fullscreen {
+		t.Fatalf("game left fullscreen: %+v", p)
+	}
+	if placementIndex(layout, 9) < placementIndex(layout, 14) || placementIndex(layout, 14) < placementIndex(layout, 72) {
+		t.Fatalf("order: game %d stash %d modal %d", placementIndex(layout, 72), placementIndex(layout, 14), placementIndex(layout, 9))
+	}
+	w.RemoveWindow(9)
+	if id, _ := w.Focused(); id != 14 || w.fullscreen != 72 || !w.stashOverCover() {
+		t.Fatalf("closed: focused %d fullscreen %d over %v", id, w.fullscreen, w.stashOverCover())
+	}
+}
+
+func placementOf(ps []Placement, id WindowID) Placement {
+	if i := placementIndex(ps, id); i >= 0 {
+		return ps[i]
+	}
+	return Placement{}
+}
+
+func placementIndex(ps []Placement, id WindowID) int {
+	return slices.IndexFunc(ps, func(p Placement) bool { return p.ID == id })
+}
+
 // With the stash already over the cover and a dialog of the cover
 // focused, activating a stashed window focuses it.
 func TestActivateStashOverCoverFromCoverDialog(t *testing.T) {
