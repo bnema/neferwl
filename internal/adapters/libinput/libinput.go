@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego"
@@ -267,6 +268,11 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 	p.moved(opts.MoveCursor, false)
 	in := &inputState{cfg: opts.DeviceConfig, dev: libinputDevices{}, devices: map[uintptr]bool{}}
 	defer in.release()
+	waiter, err := fdwait.New()
+	if err != nil {
+		return fmt.Errorf("libinput waiter: %w", err)
+	}
+	defer waiter.Close()
 	fd := getFD(li)
 	fwd := newForwarder(opts.Log)
 	fwdCtx, stopFwd := context.WithCancel(ctx)
@@ -313,7 +319,7 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		default:
 		}
 		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, 100)
+		n, err := waiter.Poll(fds, 100)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("libinput poll: %w", err)
 		}

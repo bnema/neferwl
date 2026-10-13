@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -247,11 +248,16 @@ func (c *Card) open(conn connector, mode modeInfo) (*Output, error) {
 // output of their CRTC. Run it once per card. An event is never dropped:
 // the output owes it a pending commit.
 func (c *Card) ReadEvents(ctx context.Context) error {
+	waiter, err := fdwait.New()
+	if err != nil {
+		return fmt.Errorf("drm event waiter: %w", err)
+	}
+	defer waiter.Close()
 	buf := make([]byte, 1024)
 	var events []flipEvent // reused by every read
 	for ctx.Err() == nil {
 		fds := []unix.PollFd{{Fd: int32(c.fd), Events: unix.POLLIN}}
-		n, err := unix.Poll(fds, 100)
+		n, err := waiter.Poll(fds, 100)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("drm poll: %w", err)
 		}

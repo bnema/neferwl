@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/purego"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -190,9 +191,14 @@ func (s *Seat) dispatchLocked(ctx context.Context, timeoutMs int) error {
 // Run dispatches seat events until ctx ends. The owner calls Close afterwards,
 // once outputs have restored their CRTC state.
 func (s *Seat) Run(ctx context.Context) error {
+	waiter, err := fdwait.New()
+	if err != nil {
+		return fmt.Errorf("seat waiter: %w", err)
+	}
+	defer waiter.Close()
 	for ctx.Err() == nil {
 		fds := []unix.PollFd{{Fd: getFD(s.handle), Events: unix.POLLIN}}
-		if _, err := unix.Poll(fds, 100); err != nil && !errors.Is(err, unix.EINTR) {
+		if _, err := waiter.Poll(fds, 100); err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("seat poll: %w", err)
 		}
 		// Dispatch every tick: libseat may queue events without the fd becoming readable.

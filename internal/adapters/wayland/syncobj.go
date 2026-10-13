@@ -9,6 +9,7 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/linuxdrmsyncobj"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
 	"github.com/bnema/zerowrap"
@@ -197,14 +198,16 @@ type acquirePoller interface {
 	poll([]unix.PollFd, int) (int, error)
 }
 
-type unixAcquirePoller struct{}
+type unixAcquirePoller struct{ waiter *fdwait.Poller }
 
-func (unixAcquirePoller) poll(fds []unix.PollFd, timeout int) (int, error) {
-	return unix.Poll(fds, timeout)
+func (p unixAcquirePoller) poll(fds []unix.PollFd, timeout int) (int, error) {
+	return p.waiter.Poll(fds, timeout)
 }
 
 type syncWaiter struct {
 	poller    acquirePoller
+	waiter    *fdwait.Poller
+	pipeFD    int
 	terminal  bool // polling ended in failure; protected by mu
 	mu        sync.Mutex
 	ready     map[*syncWait]bool
@@ -229,7 +232,13 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &syncWaiter{poller: unixAcquirePoller{}, ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
+	p, err := fdwait.New()
+	if err != nil {
+		r.Close()
+		w.Close()
+		return nil, err
+	}
+	return &syncWaiter{poller: unixAcquirePoller{p}, waiter: p, pipeFD: int(r.Fd()), ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
 
 // watch registers an eventfd for p; the wait is ready once it fires.
@@ -375,6 +384,13 @@ func (sw *syncWaiter) fail(waits []*syncWait) {
 // run polls every watched eventfd; it owns and closes them.
 func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
+	if sw.waiter != nil {
+		defer sw.waiter.Close()
+	}
+	pipeFD := sw.pipeFD
+	if sw.waiter == nil { // bare test fixtures own their pipe
+		pipeFD = int(sw.pipeR.Fd())
+	}
 	var waits []*syncWait
 	defer func() {
 		sw.mu.Lock()
@@ -395,7 +411,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 			live = append(live, w)
 		}
 		waits = live
-		fds := []unix.PollFd{{Fd: int32(sw.pipeR.Fd()), Events: unix.POLLIN}}
+		fds := []unix.PollFd{{Fd: int32(pipeFD), Events: unix.POLLIN}}
 		for _, w := range waits {
 			fds = append(fds, unix.PollFd{Fd: int32(w.efd), Events: unix.POLLIN})
 		}

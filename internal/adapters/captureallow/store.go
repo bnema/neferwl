@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
 )
@@ -186,6 +187,11 @@ func (s *Store) Run(ctx context.Context) error {
 		return err
 	}
 	defer unix.Close(fd)
+	waiter, err := fdwait.New()
+	if err != nil {
+		return err
+	}
+	defer waiter.Close()
 	dir, name := filepath.Dir(s.path), filepath.Base(s.path)
 	wd := -1
 	var retry, pending time.Time
@@ -224,7 +230,7 @@ func (s *Store) Run(ctx context.Context) error {
 			timeout = min(timeout, int(remaining.Milliseconds())+1)
 		}
 		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
-		if _, err := unix.Poll(fds, timeout); err != nil {
+		if _, err := waiter.Poll(fds, timeout); err != nil {
 			if err == unix.EINTR {
 				continue
 			}
