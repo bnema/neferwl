@@ -46,7 +46,11 @@ func TestAnimatingSceneSendsFrame(t *testing.T) {
 	// The scene an animation settles on: drawn, nobody woken.
 	scenes <- ports.Scene{Seq: 2, OutputWidth: 2, OutputHeight: 2}
 	waitFrames(t, rec, 2)
-	time.Sleep(50 * time.Millisecond)
+	// A third scene is drawn after the settled one (the owner handles scenes
+	// in order): had the settled frame woken core, its frame precedes the
+	// third's in the channel.
+	scenes <- ports.Scene{Seq: 3, OutputWidth: 2, OutputHeight: 2}
+	waitFrames(t, rec, 3)
 	require.Empty(t, frames)
 }
 
