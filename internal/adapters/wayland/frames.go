@@ -41,20 +41,22 @@ func (s *Server) paceNow() {
 	s.paceTick(nil, nil)
 }
 
-// paceTolerance is how far a new deadline may differ from the armed one
+// paceTolerance is how much earlier than the armed deadline a new one may be
 // and still reuse it: the ticks of one frame compute the same deadline from
 // clock reads a few microseconds apart.
 const paceTolerance = 50 * time.Microsecond
 
 // armPace schedules the next flip-less tick d from now on the pace timerfd
-// (nanosecond precision, one-shot). A deadline equal to the armed one (within paceTolerance) keeps the timer as
-// it is: a frame's commit, flip and timer ticks mostly end on the same
-// deadline. The tolerance is measured against the armed deadline, so it never
-// accumulates. Display goroutine only.
+// (nanosecond precision, one-shot). A deadline at most paceTolerance before
+// the armed one keeps the timer as it is: a frame's commit, flip and timer
+// ticks mostly end on the same deadline. The timer never fires before the
+// requested deadline, since the tick's checks are strict and an early tick
+// would push due work back by their minimum re-arm. The tolerance is measured
+// against the armed deadline, so it never accumulates. Display goroutine only.
 func (s *Server) armPace(d time.Duration) {
 	deadline := time.Now().Add(max(d, 0))
 	if s.paceArmed {
-		if diff := deadline.Sub(s.paceDeadline); diff >= -paceTolerance && diff <= paceTolerance {
+		if diff := deadline.Sub(s.paceDeadline); diff >= -paceTolerance && diff <= 0 {
 			return
 		}
 	}
