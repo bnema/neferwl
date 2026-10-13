@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -50,12 +51,16 @@ func nextBatch(t *testing.T, in <-chan *ports.ContentBatch) *ports.ContentBatch 
 	}
 }
 
-func noBatch(t *testing.T, in <-chan *ports.ContentBatch) {
+// noBatch asserts that no batch is on the channel once the display goroutine
+// went through everything posted so far (a Return's flush included): sends
+// happen only there, so there is nothing left to wait for.
+func noBatch(t *testing.T, s *Server, in <-chan *ports.ContentBatch) {
 	t.Helper()
+	s.display.Do(func() {})
 	select {
 	case b := <-in:
 		t.Fatalf("unexpected batch %+v", b.Items)
-	case <-time.After(30 * time.Millisecond):
+	default:
 	}
 }
 
@@ -73,7 +78,7 @@ func TestContentBatchKeepsLatestPerWindow(t *testing.T) {
 	if len(first.Items) != 1 || first.Items[0].ID != 1 || first.Items[0].Seq != 1 {
 		t.Fatalf("first batch %+v", first.Items)
 	}
-	noBatch(t, in) // nothing moves before the output returns a batch...
+	noBatch(t, s, in) // nothing moves before the output returns a batch...
 	first.Reset()
 	ret.Return(first) // ...which sends the waiting contents
 	second := nextBatch(t, in)
@@ -113,7 +118,7 @@ func TestContentBatchAttachSeedsLiveWindows(t *testing.T) {
 	// An attach with nothing to show sends nothing.
 	s.display.Do(func() { clear(s.latest) })
 	in2, _ := s.AttachOutput("B")
-	noBatch(t, in2)
+	noBatch(t, s, in2)
 }
 
 // An empty content reaches the attached outputs (it releases the window's
@@ -165,7 +170,7 @@ func TestContentBatchDetach(t *testing.T) {
 	a.Reset()
 	retA.Return(a)
 	s.publish(t, solid(1))
-	noBatch(t, inA)
+	noBatch(t, s, inA)
 	if got := nextBatch(t, inB); len(got.Items) != 1 {
 		t.Fatalf("B batch %+v", got.Items)
 	}
@@ -214,4 +219,118 @@ func TestContentBatchCycleAllocations(t *testing.T) {
 	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
 		t.Errorf("content batch cycle: %.2f allocs, want 0", allocs)
 	}
+}
+
+// A late-attached output gets all the live windows in one batch, however
+// many there are, and AttachOutput returns without the output reading.
+func TestContentBatchAttachReplaysLargeSet(t *testing.T) {
+	s := linkServer(t)
+	const windows = 100
+	all := make([]ports.SurfaceContent, 0, windows)
+	for id := 1; id <= windows; id++ {
+		all = append(all, solid(ports.WindowID(id)))
+	}
+	s.publish(t, all...)
+	attached := make(chan (<-chan *ports.ContentBatch), 1)
+	go func() { in, _ := s.AttachOutput("A"); attached <- in }()
+	var in <-chan *ports.ContentBatch
+	select {
+	case in = <-attached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AttachOutput waits for the output to read")
+	}
+	b := nextBatch(t, in)
+	ids := map[ports.WindowID]struct{}{}
+	for _, c := range b.Items {
+		ids[c.ID] = struct{}{}
+	}
+	if len(b.Items) != windows || len(ids) != windows {
+		t.Fatalf("replay batch holds %d items, %d distinct windows, want %d", len(b.Items), len(ids), windows)
+	}
+}
+
+// The output returns batches in bursts and holds some while content keeps
+// coming, so the channel is full and no batch is free when emitContent runs;
+// Returns race with it from another goroutine. Whatever the interleaving, the
+// output ends up with the newest Seq of every window (the pending/flushPosted
+// handshake never strands content). Run with -race -count=20.
+func TestContentBatchHandshakeNeverStrandsContent(t *testing.T) {
+	s := linkServer(t)
+	in, ret := s.AttachOutput("A")
+	const windows, rounds = 4, 3000
+	var last [windows + 1]atomic.Uint64
+	stop, ended := make(chan struct{}), make(chan struct{})
+	t.Cleanup(func() { close(stop); <-ended })
+	go func() {
+		defer close(ended)
+		var held []*ports.ContentBatch
+		giveBack := func(n int) {
+			for ; n > 0 && len(held) > 0; n-- {
+				b := held[0]
+				held = held[1:]
+				b.Reset()
+				ret.Return(b)
+			}
+		}
+		for n := 0; ; n++ {
+			var b *ports.ContentBatch
+			select {
+			case b = <-in:
+			default:
+				// Nothing waiting: hand everything back, as an idle
+				// output does, then block.
+				giveBack(len(held))
+				select {
+				case b = <-in:
+				case <-stop:
+					return
+				}
+			}
+			for _, c := range b.Items {
+				if c.Seq > last[c.ID].Load() {
+					last[c.ID].Store(c.Seq)
+				}
+			}
+			held = append(held, b)
+			if len(held) >= 2 {
+				giveBack(1 + n%2) // a burst of one or two
+			}
+		}
+	}()
+	for range rounds {
+		s.publishRound(windows)
+	}
+	var want [windows + 1]uint64
+	s.display.Do(func() {
+		for id := 1; id <= windows; id++ {
+			want[id] = s.contentSeq[ports.WindowID(id)]
+		}
+	})
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		missing := 0
+		for id := 1; id <= windows; id++ {
+			if last[id].Load() != want[id] {
+				missing++
+			}
+		}
+		if missing == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			for id := 1; id <= windows; id++ {
+				t.Errorf("window %d: output saw seq %d, newest is %d", id, last[id].Load(), want[id])
+			}
+			t.Fatal("content stranded")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// publishRound publishes one content per window in one display turn.
+func (s *Server) publishRound(windows int) {
+	s.display.Do(func() {
+		for id := 1; id <= windows; id++ {
+			s.emitContent(solid(ports.WindowID(id)), damage{full: true})
+		}
+	})
 }
