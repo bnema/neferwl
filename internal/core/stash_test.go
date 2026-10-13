@@ -319,9 +319,9 @@ func TestFullscreenStashEdgeGoesToMonitor(t *testing.T) {
 	}
 }
 
-// Activating a hidden stashed window over a scroll fullscreen tile ends
-// the fullscreen like any exit: the view leaves the fullscreen alignment.
-func TestActivateHiddenStashEndsScrollFullscreen(t *testing.T) {
+// Activating a hidden stashed window over a scroll fullscreen tile shows
+// the stash over it: the tile stays fullscreen and the view stays aligned.
+func TestActivateHiddenStashOverScrollFullscreen(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
 	w.AddWindow(2)
@@ -331,8 +331,8 @@ func TestActivateHiddenStashEndsScrollFullscreen(t *testing.T) {
 	w.FocusID(2)
 	w.SetFullscreen(2, true)
 	w.Activate(3)
-	if id, _ := w.Focused(); id != 3 || w.fullscreen != 0 {
-		t.Fatalf("focused %d fullscreen %d", id, w.fullscreen)
+	if id, _ := w.Focused(); id != 3 || w.fullscreen != 2 || !w.stashOverCover() {
+		t.Fatalf("focused %d fullscreen %d over %v", id, w.fullscreen, w.stashOverCover())
 	}
 	view := w.View
 	w.scroll()

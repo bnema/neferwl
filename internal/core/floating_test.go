@@ -490,8 +490,8 @@ func TestFloatingSceneDimAndConfigure(t *testing.T) {
 	check(0.3)
 }
 
-// Activating a hidden stashed window shows the stash and focuses it; the
-// fullscreen window it hid behind leaves fullscreen.
+// A stashed float's own fullscreen, asked while the stash was hidden,
+// comes back with it when it is activated: it replaces the cover.
 func TestActivateHiddenFloat(t *testing.T) {
 	w := workspace()
 	w.AddWindow(1)
@@ -499,14 +499,6 @@ func TestActivateHiddenFloat(t *testing.T) {
 	w.ToggleWindowStash()
 	w.ToggleStashVisible()
 	w.FocusID(1)
-	w.SetFullscreen(1, true)
-	w.Activate(2)
-	if id, _ := w.Focused(); id != 2 || w.stashHidden || w.fullscreen != 0 {
-		t.Fatalf("focused %d hidden %v fullscreen %d", id, w.stashHidden, w.fullscreen)
-	}
-	// The float's own fullscreen, asked while hidden, comes back with it.
-	w.FocusID(2)
-	w.ToggleStashVisible()
 	w.SetFullscreen(2, true)
 	w.SetFullscreen(1, true)
 	w.Activate(2)
