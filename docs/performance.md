@@ -53,6 +53,7 @@ Every 10 s, each output logs a `stats` entry:
 | `max_commit_delay_ms` | Longest wait from "frame due" to commit |
 | `late_fences` | Missed vblanks where the GPU finished too late (needs `--debug=drm-flip`) |
 | `redrawn_pixels` | Pixels drawn |
-| `merged_flips` | Flips merged because wayland was not reading output reports |
+
+If outputs report flips faster than the display loop reads them, wayland merges them and logs a warning with `merged` at most every 10 s.
 
 Missed vblanks with `late_fences` mean the GPU was late. Without `late_fences` but with a large `max_commit_delay_ms`, the CPU was late.
