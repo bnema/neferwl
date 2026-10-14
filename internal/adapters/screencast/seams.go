@@ -116,6 +116,9 @@ func (r execRunner) Run(ctx context.Context, args []string) error {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// A cancelled run is joined by the owner: never wait long for pipes
+	// that a grandchild keeps open.
+	cmd.WaitDelay = 2 * time.Second
 	if len(r.env) > 0 {
 		cmd.Env = r.env
 	}

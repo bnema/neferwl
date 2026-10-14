@@ -54,6 +54,10 @@ const (
 
 	// shutdownWait bounds the wait for frames still in flight at shutdown.
 	shutdownWait = 2 * time.Second
+
+	// shutdownPoll is how often shutdown looks again for the events that
+	// settle a frame in flight.
+	shutdownPoll = 5 * time.Millisecond
 )
 
 var _ ports.CastSink = (*Service)(nil)
@@ -87,22 +91,27 @@ type Service struct {
 	shotRes shotResult
 
 	// Owner state.
-	ctx      context.Context
-	conn     bus
-	pwc      videoCore
-	owns     [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
-	inv      ports.CastInventory
-	haveInv  bool
-	callers  [maxCallers]caller
-	pending  [maxPending]pending
-	sessions [maxSessions]session
+	ctx     context.Context // the attempt's: it ends with the attempt
+	conn    bus
+	pwc     videoCore
+	owns    [4]bool // nameScreenCast, nameDisplayConfig, nameIntrospect, nameScreenshot
+	inv     ports.CastInventory
+	haveInv bool
+	callers [maxCallers]caller
+	pending [maxPending]pending
+	// sessions is a pointer so that a shutdown that had to leave a PipeWire
+	// source behind can abandon the table: the source's handler still
+	// points into it, so it is never reset or reused.
+	sessions *[maxSessions]session
 	nextSess uint32
 	nextStrm uint32
 	nextCast uint64
 	waitFor  time.Duration // time to the next paced frame, 0 when none
 	shot     shotState
+	shotSeq  uint64 // ID of the last screenshot job; never reset
 	fatal    error
 	jobs     sync.WaitGroup
+	drain    time.Duration // how long shutdown waits for frames in flight
 }
 
 // New creates the service. policy returns the capture allowlist in force;
@@ -118,6 +127,9 @@ func New(policy func() *captureallow.Policy, cmds chan<- ports.CastCommand, log 
 		peers:  pidfdPeers{},
 		queue:  make([]ports.CastEvent, 0, sinkCap),
 		spare:  make([]ports.CastEvent, 0, sinkCap),
+
+		sessions: new([maxSessions]session),
+		drain:    shutdownWait,
 	}
 	s.poller, s.initErr = fdwait.New()
 	return s
@@ -204,6 +216,9 @@ func (s *Service) attempt(ctx context.Context) (err error) {
 		return err
 	}
 	defer func() { _ = conn.Close() }()
+	// The screenshot job of this attempt ends with it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	s.reset(ctx, conn)
 	if s.pwc, err = s.pw.Open(); err != nil {
 		s.pwc = nil
@@ -223,7 +238,7 @@ func (s *Service) reset(ctx context.Context, conn bus) {
 	s.haveInv = false
 	s.callers = [maxCallers]caller{}
 	s.pending = [maxPending]pending{}
-	s.sessions = [maxSessions]session{}
+	*s.sessions = [maxSessions]session{}
 	s.shot = shotState{}
 }
 
@@ -326,24 +341,38 @@ func (s *Service) service() {
 	s.reap()
 }
 
-// shutdown ends every session and releases PipeWire. A frame still in
-// flight is waited for: its buffer is lent to the wayland server.
+// shutdown ends the attempt: the screenshot job is stopped and joined, every
+// session is closed, and every stream is pumped until it released its
+// resources: CastClose goes to the wayland server, a frame still in flight
+// is waited for (its buffer is lent to the wayland server), then the source
+// is destroyed and its buffers released. Only then is PipeWire closed.
+//
+// When a frame does not come back in time, the source cannot be destroyed
+// safely. It is left as it is, with its loop: the sessions table that its
+// handler points into is abandoned (never reset or reused) and a new one
+// takes its place, so later attempts neither touch that storage nor run out
+// of slots.
 func (s *Service) shutdown() {
+	s.stopShot()
 	s.forEachSession(func(sess *session) { s.closeSession(sess, true) })
-	deadline := time.Now().Add(shutdownWait)
-	for s.streamsLive() && time.Now().Before(deadline) {
+	deadline := time.Now().Add(s.drain)
+	for {
 		evs, _, _, _ := s.take()
 		for i := range evs {
 			s.onCastEvent(&evs[i])
 		}
+		s.pumpAll(s.clock.Now())
 		s.reap()
-		if s.streamsLive() {
-			time.Sleep(5 * time.Millisecond)
+		if !s.streamsLive() {
+			break
 		}
-	}
-	if s.streamsLive() {
-		s.log.Warn().Msg("frames still in flight at shutdown; PipeWire resources are left to the process exit")
-		s.pwc = nil
+		if !time.Now().Before(deadline) {
+			s.log.Warn().Int("streams", s.streamCount()).Msg("frames still in flight at shutdown; PipeWire resources are left to the process exit")
+			s.sessions = new([maxSessions]session)
+			s.pwc = nil
+			return
+		}
+		time.Sleep(shutdownPoll)
 	}
 	if s.pwc != nil {
 		s.pwc.Close()

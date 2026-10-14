@@ -67,7 +67,7 @@ NeferWL serves the GNOME ScreenCast, DisplayConfig, Introspect and Screenshot D-
 
 - **Screen sharing** in browsers and apps: install `xdg-desktop-portal-gnome` and run PipeWire. The portal dialog lists monitors and windows with their titles; the stream is a PipeWire video node. Without PipeWire, the ScreenCast interface is not offered.
 - **Screenshots** through the portal, interactive or not: install [nefercap](https://github.com/bnema/nefercap), which writes the PNG.
-- A cast keeps the indicator on until it ends. It ends when the session locks, the output or window goes away, or the client disconnects.
+- A cast keeps the indicator on until it ends. It ends when the session locks, the output or window goes away, the client stops it or disconnects, or NeferWL loses the D-Bus connection. When the receiving program stops reading, the stream pauses (no frames are rendered) and the cast stays open for the next reader, as in GNOME.
 - Unsupported: area and virtual casts, and the "Select area" and "Window" choices of the screenshot dialog.
 
 The packaged `neferwl-portals.conf` routes `ScreenCast` and `Screenshot` to the gnome portal.

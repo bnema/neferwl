@@ -12,6 +12,19 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+// writeShot is what nefercap does: it writes the PNG named by -file.
+func writeShot(t *testing.T, args []string) {
+	t.Helper()
+	i := slices.Index(args, "-file")
+	if i < 0 || i+1 >= len(args) {
+		t.Errorf("no -file in %v", args)
+		return
+	}
+	if err := os.WriteFile(args[i+1], []byte("\x89PNG"), 0o600); err != nil {
+		t.Error(err)
+	}
+}
+
 // Screenshot: nefercap on the focused output; the reply carries the file.
 func TestScreenshotRunsNefercapOnFocusedOutput(t *testing.T) {
 	rt := t.TempDir()
@@ -20,6 +33,7 @@ func TestScreenshotRunsNefercapOnFocusedOutput(t *testing.T) {
 	got := make(chan []string, 1)
 	h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
 		got <- slices.Clone(args)
+		writeShot(t, args)
 		return nil
 	}).Once()
 	name, m := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, "Screenshot", "bbs", func(e *zerobus.Encoder) {
@@ -53,6 +67,7 @@ func TestScreenshotAreaMapsToRegion(t *testing.T) {
 	got := make(chan []string, 1)
 	h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
 		got <- slices.Clone(args)
+		writeShot(t, args)
 		return nil
 	}).Once()
 	area := func(x, y, w, hh int32) func(*zerobus.Encoder) {
@@ -91,7 +106,11 @@ func TestInteractiveScreenshotBusyAndFailure(t *testing.T) {
 	got := make(chan []string, 2)
 	h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
 		got <- slices.Clone(args)
-		return <-release
+		err := <-release
+		if err == nil {
+			writeShot(t, args)
+		}
+		return err
 	}).Twice()
 
 	c.NewCall(nameScreenshot, pathScreenshot, ifaceScreenshot, "InteractiveScreenshot", "")
@@ -138,5 +157,99 @@ func TestScreenshotUnsupportedMethods(t *testing.T) {
 		if name, _ := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, "", nil); name != errNotSupported && name != errInvalidArgs {
 			t.Errorf("%s: %q", member, name)
 		}
+	}
+}
+
+// nefercap that exits cleanly without leaving a regular, non-empty file is
+// not a success: the file is missing, empty, or a symlink.
+func TestScreenshotWithoutUsableFileIsNotSuccess(t *testing.T) {
+	rt := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", rt)
+	target := filepath.Join(rt, "real.png")
+	if err := os.WriteFile(target, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, mk := range map[string]func(path string){
+		"missing": func(string) {},
+		"empty":   func(path string) { _ = os.WriteFile(path, nil, 0o600) },
+		"symlink": func(path string) { _ = os.Symlink(target, path) },
+		"dir":     func(path string) { _ = os.Mkdir(path, 0o700) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, c := ready(t, harnessOpts{})
+			h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
+				mk(args[slices.Index(args, "-file")+1])
+				return nil
+			}).Once()
+			for _, member := range []string{"Screenshot", "InteractiveScreenshot"} {
+				if member == "InteractiveScreenshot" {
+					h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
+						mk(args[slices.Index(args, "-file")+1])
+						return nil
+					}).Once()
+				}
+				sig := ""
+				body := func(*zerobus.Encoder) {}
+				if member == "Screenshot" {
+					sig = "bbs"
+					body = func(e *zerobus.Encoder) { e.Bool(false); e.Bool(false); e.Str("x") }
+				}
+				errName, m := callErr(c, nameScreenshot, pathScreenshot, ifaceScreenshot, member, sig, body)
+				if errName != "" {
+					t.Fatalf("%s: %s", member, errName)
+				}
+				r := m.Body()
+				if ok, file := r.Bool(), r.Str(); ok || file != "" {
+					t.Fatalf("%s: success %v %q without a file", member, ok, file)
+				}
+			}
+		})
+	}
+}
+
+// A result that belongs to another job completes nothing, and a job that
+// the attempt's end cancels is joined before its state is reset.
+func TestStaleScreenshotResultIsDropped(t *testing.T) {
+	p := newProducer(t)
+	run := newMockrunner(t)
+	p.s.runner = run
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.s.ctx = ctx
+	started := make(chan struct{})
+	var seen error
+	run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(c context.Context, _ []string) error {
+		close(started)
+		<-c.Done()
+		seen = c.Err()
+		return c.Err()
+	}).Once()
+	p.bus.EXPECT().NewError(mock.Anything, errFailed, "s").RunAndReturn(
+		func(*zerobus.Message, string, string) *zerobus.Encoder { return &zerobus.Encoder{} }).Once()
+
+	p.s.shotSeq++
+	p.s.shot = shotState{busy: true, id: p.s.shotSeq, path: filepath.Join(t.TempDir(), "x.png")}
+	p.s.runShot([]string{"shot"})
+	<-started
+	// A result of some earlier job is in the transport: it is not this job's.
+	p.s.onShotDone(&shotResult{ready: true, id: p.s.shotSeq - 1, made: true})
+	if !p.s.shot.busy {
+		t.Fatal("a stale result completed the job in flight")
+	}
+	// The attempt ends: the job is cancelled and joined before the reset.
+	p.s.stopShot()
+	if seen == nil {
+		t.Fatal("stopShot returned before the job saw its cancellation")
+	}
+	if p.s.shot.busy || p.s.shotRes.ready {
+		t.Fatal("job state survives the attempt")
+	}
+	// Its own late result (not possible after the join, but harmless) and a
+	// new job with a new ID: the first job's ID completes nothing.
+	p.s.shotSeq++
+	p.s.shot = shotState{busy: true, id: p.s.shotSeq}
+	p.s.onShotDone(&shotResult{ready: true, id: p.s.shotSeq - 1, made: true})
+	if !p.s.shot.busy {
+		t.Fatal("a result of the cancelled job completed the next request")
 	}
 }

@@ -19,10 +19,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// privateBus starts a dbus-daemon of its own, so tests never touch the
-// desktop's session bus. CI must run these tests: there, a missing daemon
-// fails.
-func privateBus(t *testing.T) string {
+// startBus starts a dbus-daemon of its own, so tests never touch the
+// desktop's session bus, and returns its address and a function killing it,
+// which is how a test loses the bus. CI must run these tests: there, a
+// missing daemon fails.
+func startBus(t *testing.T) (string, func()) {
 	t.Helper()
 	bin, err := exec.LookPath("dbus-daemon")
 	if err != nil {
@@ -39,12 +40,13 @@ func privateBus(t *testing.T) string {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	kill := func() { _ = cmd.Process.Kill() }
+	t.Cleanup(func() { kill(); _ = cmd.Wait() })
 	line, err := bufio.NewReader(out).ReadString('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.TrimSpace(line)
+	return strings.TrimSpace(line), kill
 }
 
 // logBuf is a locked bytes.Buffer, a real io.Writer.
@@ -78,6 +80,23 @@ type peers struct {
 	pid     atomic.Int64
 	openErr error
 	exePid  func(open int) int // pid Exe reports; the opened one when nil
+
+	// exeFile, when set, tells the executable of one pidfd: the pidfds are
+	// numbered in the order Open handed them out (0 is the first peer).
+	exeFile func(n int) string
+	mu      sync.Mutex
+	opened  []*os.File
+}
+
+func (p *peers) number(f *os.File) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i, o := range p.opened {
+		if o == f {
+			return i
+		}
+	}
+	return -1
 }
 
 // svcHarness runs a Service on a private bus with mocked executables and
@@ -92,17 +111,23 @@ type svcHarness struct {
 	run   *mockrunner
 	log   *logBuf
 	done  chan struct{}
+
+	killBus func()        // loses the bus: the daemon dies
+	closed  chan struct{} // a PipeWire connection was closed
 }
 
 type harnessOpts struct {
 	allow  *captureallow.Policy
 	noPW   bool
 	holdOp bool
+	// iterate runs inside every PipeWire loop iteration, on the owner.
+	iterate func()
 }
 
 func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	t.Helper()
-	h := &svcHarness{t: t, addr: privateBus(t), cmds: make(chan ports.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{})}
+	h := &svcHarness{t: t, cmds: make(chan ports.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{}), closed: make(chan struct{}, 8)}
+	h.addr, h.killBus = startBus(t)
 	h.peers.exe.Store("/usr/bin/grim")
 	if o.holdOp {
 		h.peers.openGo = make(chan struct{})
@@ -123,13 +148,22 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 			return nil, h.peers.openErr
 		}
 		h.peers.pid.Store(int64(pid))
-		return os.Open(os.DevNull)
+		f, err := os.Open(os.DevNull)
+		if err == nil {
+			h.peers.mu.Lock()
+			h.peers.opened = append(h.peers.opened, f)
+			h.peers.mu.Unlock()
+		}
+		return f, err
 	}).Maybe()
-	res.EXPECT().Exe(mock.Anything).RunAndReturn(func(*os.File) (string, int, error) {
+	res.EXPECT().Exe(mock.Anything).RunAndReturn(func(f *os.File) (string, int, error) {
 		open := int(h.peers.pid.Load())
 		pid := open
 		if h.peers.exePid != nil {
 			pid = h.peers.exePid(open)
+		}
+		if h.peers.exeFile != nil {
+			return h.peers.exeFile(h.peers.number(f)), pid, nil
 		}
 		if h.peers.exeNow != nil {
 			return h.peers.exeNow(), pid, nil
@@ -151,8 +185,17 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 		t.Cleanup(func() { r.Close(); w.Close() })
 		h.core = newMockvideoCore(t)
 		h.core.EXPECT().Fd().Return(int(r.Fd()))
-		h.core.EXPECT().Iterate().Maybe()
-		h.core.EXPECT().Close().Return().Maybe()
+		h.core.EXPECT().Iterate().Run(func() {
+			if o.iterate != nil {
+				o.iterate()
+			}
+		}).Maybe()
+		h.core.EXPECT().Close().Run(func() {
+			select {
+			case h.closed <- struct{}{}:
+			default:
+			}
+		}).Maybe()
 		pwOpen.EXPECT().Open().Return(h.core, nil)
 	}
 	h.svc.pw = pwOpen

@@ -19,6 +19,15 @@ import (
 // The buffer's mapping is lent to the wayland server until the CastFrameDone
 // of that buffer, so the source is never resized or destroyed while a frame
 // is in flight.
+//
+// A cast ends (the session signals Closed) on Stop, when the owner leaves
+// the bus (NameOwnerChanged), when wayland stops the cast (output or window
+// gone, lock), when the PipeWire stream goes to ERROR or back to
+// UNCONNECTED, and when the service shuts down. It does not end when the
+// consumer leaves: as in Mutter, the node then goes to PAUSED, no frame is
+// requested while it is not STREAMING (a frame already in flight is
+// released instead of queued), and the first frame after it is STREAMING
+// again is forced. The D-Bus session stays up for the next consumer.
 
 // wl_shm formats of the supported video formats.
 const (
@@ -104,10 +113,19 @@ func (s *Service) giveBack(st *stream) {
 // frameDone settles the frame in flight: a complete image is queued and
 // triggered, anything else gives the buffer back.
 func (s *Service) frameDone(st *stream, ev *ports.CastEvent) {
-	if b := s.settleFrame(st, ev); b != nil {
-		st.src.Queue(b, st.seq, st.pts, false)
-		st.src.Trigger()
+	b := s.settleFrame(st, ev)
+	if b == nil {
+		return
 	}
+	if st.pwState != pipewire.StreamStateStreaming {
+		// The consumer left while the frame was drawn: nobody wants it.
+		// The picture is kept for the consumer that comes next.
+		st.src.Release(b)
+		st.dirty = true
+		return
+	}
+	st.src.Queue(b, st.seq, st.pts, false)
+	st.src.Trigger()
 }
 
 // settleFrame updates the stream for the CastFrameDone of its frame and
@@ -299,14 +317,16 @@ func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time)
 }
 
 // pumpClosing finishes a stream of an ended session: CastClose, then the
-// PipeWire node once no frame is in flight.
+// PipeWire node once no frame is in flight. Destroying the node does not
+// wait for CastClose to be sent (only a frame in flight lends its buffer),
+// but the slot is kept until it is.
 func (s *Service) pumpClosing(st *stream) {
 	if st.needClose {
-		if !s.sendCmd(ports.CastCommand{Kind: ports.CastClose, ID: st.cast}) {
+		if s.sendCmd(ports.CastCommand{Kind: ports.CastClose, ID: st.cast}) {
+			st.needClose = false
+		} else {
 			s.wait(retryOpen)
-			return
 		}
-		st.needClose = false
 	}
 	if st.inflight {
 		return
@@ -316,7 +336,9 @@ func (s *Service) pumpClosing(st *stream) {
 		st.src.Destroy()
 		st.src = nil
 	}
-	*st = stream{}
+	if !st.needClose {
+		*st = stream{}
+	}
 }
 
 // reap frees the dying sessions once every stream released its resources.
@@ -336,10 +358,13 @@ func (s *Service) reap() {
 	}
 }
 
-// streamsLive reports whether a stream still holds PipeWire resources or a
-// lent buffer.
-func (s *Service) streamsLive() bool {
-	live := false
-	s.forEachStream(func(st *stream) { live = live || st.src != nil || st.inflight })
-	return live
+// streamCount is the number of streams that still hold something: a
+// PipeWire source, a lent buffer or an unsent CastClose.
+func (s *Service) streamCount() int {
+	n := 0
+	s.forEachStream(func(*stream) { n++ })
+	return n
 }
+
+// streamsLive reports whether a stream still holds something to release.
+func (s *Service) streamsLive() bool { return s.streamCount() > 0 }

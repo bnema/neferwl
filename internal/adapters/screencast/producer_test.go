@@ -322,3 +322,143 @@ func TestCastProducerAllocations(t *testing.T) {
 		t.Fatalf("%v allocations per frame, want 0", n)
 	}
 }
+
+// The consumer leaves: the node goes to PAUSED and no frame is requested,
+// whatever damage and time bring, while the session stays open. A frame
+// already in flight is released, not queued. When the node streams again the
+// first frame is forced.
+func TestPausedNodeGetsNoFramesAndSessionStays(t *testing.T) {
+	p := newProducer(t)
+	p.streaming()
+	p.src.EXPECT().Dequeue().Return(p.buf).Twice()
+	p.s.pump(p.st, p.now)
+	if c := p.cmd(); c.Kind != ports.CastFrame {
+		t.Fatalf("%+v", c)
+	}
+	// Paused with the frame in flight: it is given back, not queued (no
+	// Queue or Trigger expectation).
+	p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
+	p.src.EXPECT().Release(p.buf).Return().Once()
+	p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3, Time: time.Unix(5, 0)})
+	for range 5 {
+		p.s.onCastEvent(&ports.CastEvent{Kind: ports.CastDamage, ID: 1})
+		p.now = p.now.Add(time.Second)
+		p.s.pumpAll(p.now) // Dequeue is not expected a second time while paused
+		p.none()
+	}
+	if p.s.sessions[0].dying || p.st.closing {
+		t.Fatal("the session ended with the consumer")
+	}
+	if got := p.s.timeout(); got != -1 {
+		t.Fatalf("paused stream asks for a timeout of %d ms", got)
+	}
+	// A consumer is back: the picture goes out at once, damage or not.
+	p.st.h2.StateChanged(pipewire.StreamStateStreaming, 42, "")
+	p.s.pumpAll(p.now)
+	if c := p.cmd(); c.Kind != ports.CastFrame {
+		t.Fatalf("no frame after the node streams again: %+v", c)
+	}
+}
+
+// Shutdown pumps every stream: CastClose goes out, the node is destroyed and
+// PipeWire closed, with no frame in flight.
+func TestShutdownClosesStreams(t *testing.T) {
+	p := newProducer(t)
+	p.streaming()
+	var order []string
+	p.src.EXPECT().Destroy().Run(func() { order = append(order, "destroy") }).Once()
+	p.core.EXPECT().Close().Run(func() { order = append(order, "close") }).Once()
+	p.s.shutdown()
+	if c := p.cmd(); c.Kind != ports.CastClose || c.ID != 1 {
+		t.Fatalf("%+v", c)
+	}
+	if len(order) != 2 || order[0] != "destroy" || order[1] != "close" || p.s.pwc != nil {
+		t.Fatalf("order %v", order)
+	}
+	if p.st.used || p.s.sessions[0].used {
+		t.Fatal("slots not freed")
+	}
+}
+
+// A stream opened on the wayland side that has no node yet is closed too.
+func TestShutdownClosesStreamWithoutSource(t *testing.T) {
+	p := newProducer(t)
+	p.s.pump(p.st, p.now)
+	if c := p.cmd(); c.Kind != ports.CastOpen {
+		t.Fatalf("%+v", c)
+	}
+	p.core.EXPECT().Close().Return().Once()
+	p.s.shutdown()
+	if c := p.cmd(); c.Kind != ports.CastClose || c.ID != 1 {
+		t.Fatalf("%+v", c)
+	}
+	if p.st.used {
+		t.Fatal("stream not freed")
+	}
+}
+
+// A frame in flight at shutdown is waited for: nothing is destroyed before
+// its CastFrameDone, then the buffer is released and the node destroyed.
+func TestShutdownWaitsForFrameInFlight(t *testing.T) {
+	p := newProducer(t)
+	p.streaming()
+	p.src.EXPECT().Dequeue().Return(p.buf).Once()
+	p.s.pump(p.st, p.now)
+	p.cmd()
+	var order []string
+	p.src.EXPECT().Release(p.buf).Run(func(*pipewire.VideoBuffer) { order = append(order, "release") }).Once()
+	p.src.EXPECT().Destroy().Run(func() { order = append(order, "destroy") }).Once()
+	p.core.EXPECT().Close().Run(func() { order = append(order, "close") }).Once()
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		p.s.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 3})
+	}()
+	start := time.Now()
+	p.s.shutdown()
+	if time.Since(start) < 30*time.Millisecond {
+		t.Fatal("shutdown did not wait for the frame")
+	}
+	if c := p.cmd(); c.Kind != ports.CastClose {
+		t.Fatalf("%+v", c)
+	}
+	if len(order) != 3 || order[0] != "release" || order[1] != "destroy" || order[2] != "close" {
+		t.Fatalf("order %v", order)
+	}
+}
+
+// When the frame never comes back, nothing is destroyed or closed (the
+// source's handler and its buffer are still in use), the storage the
+// handler points into is left untouched and abandoned, and the service has
+// a fresh table: repeated reconnects do not exhaust it.
+func TestShutdownTimeoutKeepsHandlerStateAndFreesTable(t *testing.T) {
+	p := newProducer(t)
+	p.s.drain = 20 * time.Millisecond
+	p.streaming()
+	p.src.EXPECT().Dequeue().Return(p.buf).Once()
+	p.s.pump(p.st, p.now)
+	p.cmd()
+	old := p.s.sessions
+	p.s.shutdown() // no Destroy, Release or Close is expected
+	if c := p.cmd(); c.Kind != ports.CastClose {
+		t.Fatalf("%+v", c)
+	}
+	if p.s.sessions == old {
+		t.Fatal("the table the leaked handler points into is still in use")
+	}
+	if !p.st.used || p.st.src == nil || !p.st.inflight || p.st.h2.st != p.st {
+		t.Fatal("the leaked stream's state was reset")
+	}
+	if p.s.streamsLive() || p.s.pwc != nil {
+		t.Fatal("new table not empty or PipeWire kept")
+	}
+	// The handler of the leaked source still works on its own storage.
+	p.st.h2.StateChanged(pipewire.StreamStatePaused, 42, "")
+	if p.st.pwState != pipewire.StreamStatePaused {
+		t.Fatal("handler lost its stream")
+	}
+	// A new attempt starts clean and can fill its table again.
+	p.s.reset(p.s.ctx, p.bus)
+	for i := range maxSessions {
+		p.s.sessions[i] = session{used: true, id: uint32(i + 1)}
+	}
+}

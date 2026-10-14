@@ -15,24 +15,34 @@ import (
 //	InteractiveScreenshot nefercap shot -file F
 //
 // F is $XDG_RUNTIME_DIR/neferwl/screenshot-<unixnano>.png. One run at most
-// is in flight. The run is a goroutine; its result goes back through the
-// service's transport and the owner sends the reply, so the bus is still
-// used by the owner only. SelectArea and ScreenshotWindow (the "Select
+// is in flight. The run is a goroutine; its result, tagged with the ID of
+// the job, goes back through the service's transport and the owner sends
+// the reply, so the bus is still used by the owner only. A result whose ID
+// is not the job in flight is dropped. A job belongs to one bus attempt:
+// when the attempt ends, the job is cancelled and joined before the state is
+// reset (stopShot). A run that exits cleanly is a success only if it left a
+// non-empty regular file at F; otherwise the reply is (false, ""), which is
+// also how a cancelled interactive screenshot is answered. SelectArea and ScreenshotWindow (the "Select
 // area" and "Window" choices of the GNOME dialog) are not supported;
 // include_cursor and flash are ignored.
 
 // shotState is the screenshot in flight; one at most.
 type shotState struct {
-	busy bool
-	req  request
-	uri  bool // reply with a file:// URI
-	path string
+	busy   bool
+	id     uint64 // names the job; results of other jobs are stale
+	req    request
+	uri    bool // reply with a file:// URI
+	path   string
+	cancel context.CancelFunc // stops the run
+	done   chan struct{}      // closed when the job goroutine is past its result
 }
 
 // shotResult is what a finished nefercap run leaves for the owner.
 type shotResult struct {
 	ready bool
-	err   error
+	id    uint64 // the job it belongs to
+	err   error  // nefercap failed
+	made  bool   // the output file exists: a regular, non-empty file
 }
 
 // screenshot answers Screenshot, ScreenshotArea and InteractiveScreenshot.
@@ -74,8 +84,9 @@ func (s *Service) screenshot(req *request) {
 		s.replyErr(req, errFailed, "screenshot directory not created")
 		return
 	}
-	s.shot = shotState{busy: true, req: *req, uri: req.method == mShotInteractive, path: path}
-	s.runShot(s.ctx, args)
+	s.shotSeq++
+	s.shot = shotState{busy: true, id: s.shotSeq, req: *req, uri: req.method == mShotInteractive, path: path}
+	s.runShot(args)
 }
 
 // shotDir is $XDG_RUNTIME_DIR/neferwl.
@@ -105,44 +116,89 @@ func (s *Service) areaTarget(x, y, w, h int32) (string, string, bool) {
 	return "", "", false
 }
 
-// runShot runs nefercap in a goroutine and leaves the result for the owner.
-func (s *Service) runShot(parent context.Context, args []string) {
+// runShot runs nefercap in a goroutine for the job in s.shot and leaves the
+// tagged result for the owner. The run ends with the attempt's context.
+func (s *Service) runShot(args []string) {
+	ctx, cancel := context.WithTimeout(s.ctx, shotTimeout)
+	done := make(chan struct{})
+	s.shot.cancel, s.shot.done = cancel, done
+	id, path := s.shot.id, s.shot.path
+	run := s.runner
 	s.jobs.Add(1)
 	go func() {
 		defer s.jobs.Done()
-		ctx, cancel := context.WithTimeout(parent, shotTimeout)
+		defer close(done)
 		defer cancel()
-		err := s.runner.Run(ctx, args)
+		err := run.Run(ctx, args)
+		res := shotResult{ready: true, id: id, err: err}
+		if err == nil {
+			res.made = isOutputFile(path)
+		}
 		s.mu.Lock()
-		s.shotRes = shotResult{ready: true, err: err}
+		s.shotRes = res
 		s.woken = true
 		s.mu.Unlock()
 		s.wake()
 	}()
 }
 
-// onShotDone sends the reply of the screenshot that finished.
-func (s *Service) onShotDone(r *shotResult) {
+// isOutputFile reports whether path is a regular, non-empty file. A symlink
+// is not followed: it is not a regular file.
+func isOutputFile(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
+}
+
+// stopShot cancels the screenshot in flight, waits for its goroutine and
+// forgets its result, so no job outlives the attempt that started it. The
+// requester is told it failed when the bus still carries the answer.
+func (s *Service) stopShot() {
 	st := s.shot
-	s.shot = shotState{}
 	if !st.busy {
 		return
 	}
-	if r.err != nil {
+	st.cancel()
+	<-st.done
+	s.mu.Lock()
+	s.shotRes = shotResult{}
+	s.mu.Unlock()
+	s.shot = shotState{}
+	_ = os.Remove(st.path)
+	s.replyErr(&st.req, errFailed, "screenshot cancelled")
+}
+
+// onShotDone sends the reply of the screenshot that finished. A result of
+// another job than the one in flight is stale and completes nothing.
+func (s *Service) onShotDone(r *shotResult) {
+	st := s.shot
+	if !st.busy || r.id != st.id {
+		return
+	}
+	s.shot = shotState{}
+	switch {
+	case r.err != nil:
 		s.log.Warn().Err(r.err).Msg("screenshot failed")
 		_ = os.Remove(st.path)
 		s.replyErr(&st.req, errFailed, "screenshot failed")
-		return
+	case !r.made:
+		// nefercap exited cleanly and left nothing usable (an interactive
+		// screenshot that was cancelled, for one).
+		s.log.Info().Msg("screenshot produced no file")
+		_ = os.Remove(st.path)
+		if e := s.replyTo(&st.req, "bs"); e != nil {
+			e.Bool(false)
+			e.Str("")
+			s.send()
+		}
+	default:
+		out := st.path
+		if st.uri {
+			out = "file://" + out
+		}
+		if e := s.replyTo(&st.req, "bs"); e != nil {
+			e.Bool(true)
+			e.Str(out)
+			s.send()
+		}
 	}
-	out := st.path
-	if st.uri {
-		out = "file://" + out
-	}
-	e := s.replyTo(&st.req, "bs")
-	if e == nil {
-		return
-	}
-	e.Bool(true)
-	e.Str(out)
-	s.send()
 }
