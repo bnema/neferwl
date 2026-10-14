@@ -120,6 +120,44 @@ func TestImplicitAcquireWatchFailureDiscardsCommit(t *testing.T) {
 	}
 }
 
+// An idle waiter sleeps in one poll with no timeout; cancelling ctx ends it.
+func TestSyncWaiterIdleNeverTicks(t *testing.T) {
+	sw, err := newSyncWaiter(func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sw.close()
+	poller := newMockacquirePoller(t)
+	real := sw.poller
+	sw.poller = poller
+	polls := make(chan int, 16)
+	poller.EXPECT().poll(mock.Anything, mock.Anything).RunAndReturn(func(fds []unix.PollFd, timeout int) (int, error) {
+		polls <- timeout
+		return real.poll(fds, timeout)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { sw.run(ctx); close(done) }()
+	select {
+	case timeout := <-polls:
+		if timeout != -1 {
+			t.Fatalf("idle poll timeout %d, want -1", timeout)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter never polled")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel did not stop the waiter")
+	}
+	if n := len(polls); n != 0 {
+		t.Fatalf("%d extra polls while idle", n)
+	}
+}
+
 func TestAcquirePollTerminalFailureRetiresActiveAndAdded(t *testing.T) {
 	poller := newMockacquirePoller(t)
 	wake := make(chan struct{}, 1)
@@ -135,8 +173,8 @@ func TestAcquirePollTerminalFailureRetiresActiveAndAdded(t *testing.T) {
 	}
 	active := sw.add(fd)
 	var added *syncWait
-	poller.EXPECT().poll(mock.Anything, 100).RunAndReturn(func(fds []unix.PollFd, _ int) (int, error) { fds[0].Revents = unix.POLLIN; return 1, nil }).Once()
-	poller.EXPECT().poll(mock.Anything, 100).RunAndReturn(func([]unix.PollFd, int) (int, error) {
+	poller.EXPECT().poll(mock.Anything, -1).RunAndReturn(func(fds []unix.PollFd, _ int) (int, error) { fds[0].Revents = unix.POLLIN; return 1, nil }).Once()
+	poller.EXPECT().poll(mock.Anything, -1).RunAndReturn(func([]unix.PollFd, int) (int, error) {
 		fd, err := unix.Eventfd(0, unix.EFD_CLOEXEC)
 		if err != nil {
 			t.Error(err)

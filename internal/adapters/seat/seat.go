@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/fdwait"
 	"github.com/bnema/purego"
 	"github.com/bnema/zerowrap"
 	"golang.org/x/sys/unix"
@@ -75,6 +76,9 @@ type Seat struct {
 	// manager: the last moment this process is still DRM master.
 	beforeDisable func()
 	disabler      disabler
+	// waiter is Run's poller: calls that make libseat queue events wake it
+	// to dispatch them.
+	waiter *fdwait.Poller
 }
 
 // disabler acks a seat disable to the seat manager (libseat_disable_seat),
@@ -189,21 +193,49 @@ func (s *Seat) dispatchLocked(ctx context.Context, timeoutMs int) error {
 
 // Run dispatches seat events until ctx ends. The owner calls Close afterwards,
 // once outputs have restored their CRTC state.
+// It sleeps until the seat fd is readable or a seat call wakes it.
 func (s *Seat) Run(ctx context.Context) error {
+	waiter, err := fdwait.New()
+	if err != nil {
+		return fmt.Errorf("seat waiter: %w", err)
+	}
+	defer waiter.Close()
+	waiter.StopOn(ctx)
+	s.mu.Lock()
+	fd := getFD(s.handle)
+	s.waiter = waiter
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.waiter = nil
+		s.mu.Unlock()
+	}()
+	if err := waiter.Pin(fd); err != nil {
+		return fmt.Errorf("seat waiter: %w", err)
+	}
+	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
 	for ctx.Err() == nil {
-		fds := []unix.PollFd{{Fd: getFD(s.handle), Events: unix.POLLIN}}
-		if _, err := unix.Poll(fds, 100); err != nil && !errors.Is(err, unix.EINTR) {
-			return fmt.Errorf("seat poll: %w", err)
-		}
-		// Dispatch every tick: libseat may queue events without the fd becoming readable.
+		// Dispatch on every return, a wake included: libseat may queue
+		// events while answering a request, without the fd becoming
+		// readable (its backends ping themselves, the wake covers it too).
 		s.mu.Lock()
 		r := dispatch(s.handle, 0)
 		s.mu.Unlock()
 		if r < 0 {
 			return errors.New("libseat_dispatch failed")
 		}
+		if _, err := waiter.Poll(fds, -1); err != nil && !errors.Is(err, unix.EINTR) {
+			return fmt.Errorf("seat poll: %w", err)
+		}
 	}
 	return nil
+}
+
+// wakeLocked has Run dispatch the events a seat request may have queued.
+func (s *Seat) wakeLocked() {
+	if s.waiter != nil {
+		s.waiter.Wake()
+	}
 }
 
 // OpenDevice opens path through the seat manager and returns its fd.
@@ -212,6 +244,7 @@ func (s *Seat) OpenDevice(path string) (int, error) {
 	defer s.mu.Unlock()
 	var fd int32 = -1
 	id := openDevice(s.handle, path, &fd)
+	s.wakeLocked()
 	if id < 0 {
 		s.log.Warn().Str("path", path).Msg("open device failed")
 		return -1, fmt.Errorf("libseat_open_device %s failed", path)
@@ -231,6 +264,7 @@ func (s *Seat) CloseDevice(fd int) {
 	}
 	delete(s.devices, int32(fd))
 	closeDevice(s.handle, id)
+	s.wakeLocked()
 	_ = unix.Close(fd)
 	s.log.Info().Int("fd", fd).Msg("device closed")
 }
@@ -243,6 +277,7 @@ func (s *Seat) SwitchVT(vt int) {
 	if switchSession(s.handle, int32(vt)) < 0 {
 		s.log.Warn().Int("vt", vt).Msg("switch vt failed")
 	}
+	s.wakeLocked()
 }
 
 // Close releases all devices and the seat; the VT returns to text mode. Safe to call twice.
