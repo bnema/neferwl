@@ -558,7 +558,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 			}
 			dr.pc.buf[3] = uint32(coeff) | uint32(ran)<<8 | uint32(content.Color.Chroma)<<16
 		}
-		dr.set, dr.im = im.set, im
+		dr.im = im
 		dr.acquire = content.Acquire
 		w.draws = append(w.draws, dr)
 		return
@@ -591,7 +591,7 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	r.setContentColor(&dr, content)
 	dr.pc.color[3] *= w.alpha
 	dr.pc.mapy[2] = w.pulse
-	dr.set = c.set
+	dr.shm = c
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)
 }

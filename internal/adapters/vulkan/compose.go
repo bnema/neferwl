@@ -12,16 +12,16 @@ import (
 	vk "github.com/bnema/purego-vulkan/vulkan"
 )
 
-// Composition is one graphics pipeline drawing every piece of a frame as
-// a quad, in paint order, inside one dynamic rendering pass: solid fills,
-// client dmabufs sampled as images, and client wl_shm pixels read from a
-// GPU buffer (shm.go). Push constants carry each draw; the descriptor set
-// holds its image and buffer. Client pixels are premultiplied, hence the
-// blend ONE, ONE_MINUS_SRC_ALPHA; opaque draws force alpha to 1.
+// Composition draws quads in paint order inside one dynamic rendering
+// pass. Each batch binds a frame-slot-owned draw buffer and resource table,
+// then draws all its quads as instances. Client pixels are premultiplied,
+// hence the blend ONE, ONE_MINUS_SRC_ALPHA; opaque draws force alpha to 1.
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.vert -o shaders/compose.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose.frag -o shaders/compose.frag.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/compose_hdr.frag -o shaders/compose_hdr.frag.spv
+//go:generate glslc -O --target-env=vulkan1.3 -DSINGLE_RESOURCE shaders/compose.frag -o shaders/compose_single.frag.spv
+//go:generate glslc -O --target-env=vulkan1.3 -DSINGLE_RESOURCE shaders/compose_hdr.frag -o shaders/compose_hdr_single.frag.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.vert -o shaders/hdr.vert.spv
 //go:generate glslc -O --target-env=vulkan1.3 shaders/hdr.frag -o shaders/hdr.frag.spv
 
@@ -32,6 +32,10 @@ var (
 	composeFrag []byte
 	//go:embed shaders/compose_hdr.frag.spv
 	composeHDRFrag []byte
+	//go:embed shaders/compose_single.frag.spv
+	composeSingleFrag []byte
+	//go:embed shaders/compose_hdr_single.frag.spv
+	composeHDRSingleFrag []byte
 )
 
 // Draw modes and flags (shaders: modeSolid, modeImage, flag*).
@@ -51,8 +55,8 @@ const (
 	flagSmooth = 64
 )
 
-// pushConstants is struct Draw of the shaders (std430 push constant block).
-type pushConstants struct {
+// drawParameters is the parameter portion of the shaders' std430 Draw.
+type drawParameters struct {
 	rect  [4]int32
 	mapv  [4]float32
 	mapy  [4]float32
@@ -64,8 +68,8 @@ type pushConstants struct {
 
 // draw is one quad of a frame.
 type draw struct {
-	pc  pushConstants
-	set vk.DescriptorSet
+	pc  drawParameters
+	shm *shmCopy
 	im  *imported // sampled client dmabuf, for ownership barriers
 	// acquire is the content's explicit-sync fence (nil: implicit).
 	acquire *os.File
@@ -84,23 +88,25 @@ type composer struct {
 	dummyMemory vk.DeviceMemory
 	dummyView   vk.ImageView
 	dummyBuffer gpuBuffer
-	dummyPool   vk.DescriptorPool
-	dummySet    vk.DescriptorSet
+	// resources is the number of resource slots per batch (one without
+	// nonuniform descriptor indexing); indexing selects the shader variant.
+	resources uint32
+	indexing  bool
 }
 
 func (r *Renderer) createComposer() error {
 	d, c := r.dd, &r.compose
 	bindings := []vk.DescriptorSetLayoutBinding{
-		{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
-		{Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
-		{Binding: 2, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 1, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 0, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: c.resources, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: c.resources, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 2, DescriptorType: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: c.resources, StageFlags: vk.ShaderStageFragmentBit},
+		{Binding: 3, DescriptorType: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1, StageFlags: vk.ShaderStageVertexBit},
 	}
 	sli := vk.DescriptorSetLayoutCreateInfo{SType: vk.StructureTypeDescriptorSetLayoutCreateInfo, BindingCount: uint32(len(bindings)), Bindings: &bindings[0]}
 	if err := checked("vkCreateDescriptorSetLayout", d.CreateDescriptorSetLayout(r.device, &sli, nil, &c.setLayout)); err != nil {
 		return err
 	}
-	pcr := vk.PushConstantRange{StageFlags: vk.ShaderStageVertexBit | vk.ShaderStageFragmentBit, Size: uint32(unsafe.Sizeof(pushConstants{}))}
-	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &c.setLayout, PushConstantRangeCount: 1, PushConstantRanges: &pcr}
+	pli := vk.PipelineLayoutCreateInfo{SType: vk.StructureTypePipelineLayoutCreateInfo, SetLayoutCount: 1, SetLayouts: &c.setLayout}
 	if err := checked("vkCreatePipelineLayout", d.CreatePipelineLayout(r.device, &pli, nil, &c.layout)); err != nil {
 		return err
 	}
@@ -115,13 +121,24 @@ func (r *Renderer) createComposer() error {
 }
 
 func (r *Renderer) createPipeline() error {
-	if err := r.createGraphicsPipeline(composeVert, composeFrag, vk.FormatB8g8r8a8Unorm, r.compose.layout, true, &r.compose.pipeline); err != nil {
+	fragment := composeFrag
+	if !r.compose.indexing {
+		fragment = composeSingleFrag
+	}
+	if err := r.createComposePipeline(fragment, vk.FormatB8g8r8a8Unorm, &r.compose.pipeline); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, pipeline *vk.Pipeline) error {
+func (r *Renderer) createComposePipeline(fragment []byte, format vk.Format, pipeline *vk.Pipeline) error {
+	resourceCount := r.compose.resources
+	entry := vk.SpecializationMapEntry{ConstantID: 0, Size: 4}
+	specialization := vk.SpecializationInfo{MapEntryCount: 1, MapEntries: &entry, DataSize: 4, Data: unsafe.Pointer(&resourceCount)}
+	return r.createGraphicsPipeline(composeVert, fragment, format, r.compose.layout, true, &specialization, pipeline)
+}
+
+func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.Format, layout vk.PipelineLayout, blend bool, specialization *vk.SpecializationInfo, pipeline *vk.Pipeline) error {
 	d := r.dd
 	vert, err := r.shaderModule(vertex)
 	if err != nil {
@@ -136,7 +153,7 @@ func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.For
 	main := []byte("main\x00")
 	stages := []vk.PipelineShaderStageCreateInfo{
 		{SType: vk.StructureTypePipelineShaderStageCreateInfo, Stage: vk.ShaderStageVertexBit, Module: vert, Name: &main[0]},
-		{SType: vk.StructureTypePipelineShaderStageCreateInfo, Stage: vk.ShaderStageFragmentBit, Module: frag, Name: &main[0]},
+		{SType: vk.StructureTypePipelineShaderStageCreateInfo, Stage: vk.ShaderStageFragmentBit, Module: frag, Name: &main[0], SpecializationInfo: specialization},
 	}
 	vertexInput := vk.PipelineVertexInputStateCreateInfo{SType: vk.StructureTypePipelineVertexInputStateCreateInfo}
 	assembly := vk.PipelineInputAssemblyStateCreateInfo{SType: vk.StructureTypePipelineInputAssemblyStateCreateInfo, Topology: vk.PrimitiveTopologyTriangleList}
@@ -167,7 +184,7 @@ func (r *Renderer) createGraphicsPipeline(vertex, fragment []byte, format vk.For
 }
 
 // createDummies makes the placeholder image (1×1, shader-read layout) and
-// buffer, and the set fills bind.
+// buffer used by resource-table entries a draw does not sample.
 func (r *Renderer) createDummies() error {
 	d, c := r.dd, &r.compose
 	ii := vk.ImageCreateInfo{SType: vk.StructureTypeImageCreateInfo, ImageType: vk.ImageType2d, Format: vk.FormatB8g8r8a8Unorm, Extent: vk.Extent3D{Width: 1, Height: 1, Depth: 1}, MipLevels: 1, ArrayLayers: 1, Samples: vk.SampleCount1Bit, Tiling: vk.ImageTilingOptimal, Usage: vk.ImageUsageSampledBit, SharingMode: vk.SharingModeExclusive, InitialLayout: vk.ImageLayoutUndefined}
@@ -193,9 +210,6 @@ func (r *Renderer) createDummies() error {
 	if err := r.newGPUBuffer(&c.dummyBuffer, 16); err != nil {
 		return err
 	}
-	if c.dummyPool, c.dummySet, err = r.newSet(c.dummyView, c.dummyBuffer.buffer); err != nil {
-		return err
-	}
 	// Move the placeholder image to the layout every draw declares.
 	return r.oneShot(func(cmd vk.CommandBuffer) {
 		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutShaderReadOnlyOptimal, DstAccessMask: vk.AccessShaderReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: c.dummyImage, SubresourceRange: colorRange}
@@ -203,42 +217,8 @@ func (r *Renderer) createDummies() error {
 	})
 }
 
-// newSet allocates a descriptor set from its own pool (the bindings lack
-// vkFreeDescriptorSets: the pool is destroyed with the object).
-func (r *Renderer) newSet(view vk.ImageView, buffer vk.Buffer, chroma ...vk.ImageView) (vk.DescriptorPool, vk.DescriptorSet, error) {
-	d := r.dd
-	sizes := []vk.DescriptorPoolSize{{Type: vk.DescriptorTypeCombinedImageSampler, DescriptorCount: 2}, {Type: vk.DescriptorTypeStorageBuffer, DescriptorCount: 1}}
-	dpi := vk.DescriptorPoolCreateInfo{SType: vk.StructureTypeDescriptorPoolCreateInfo, MaxSets: 1, PoolSizeCount: 2, PoolSizes: &sizes[0]}
-	var pool vk.DescriptorPool
-	if err := checked("vkCreateDescriptorPool", d.CreateDescriptorPool(r.device, &dpi, nil, &pool)); err != nil {
-		return 0, 0, err
-	}
-	var set vk.DescriptorSet
-	dai := vk.DescriptorSetAllocateInfo{SType: vk.StructureTypeDescriptorSetAllocateInfo, DescriptorPool: pool, DescriptorSetCount: 1, SetLayouts: &r.compose.setLayout}
-	if err := checked("vkAllocateDescriptorSets", d.AllocateDescriptorSets(r.device, &dai, &set)); err != nil {
-		d.DestroyDescriptorPool(r.device, pool, nil)
-		return 0, 0, err
-	}
-	img := vk.DescriptorImageInfo{Sampler: r.compose.sampler, ImageView: view, ImageLayout: vk.ImageLayoutShaderReadOnlyOptimal}
-	uv := img
-	if len(chroma) > 0 {
-		uv.ImageView = chroma[0]
-	}
-	buf := vk.DescriptorBufferInfo{Buffer: buffer, Range: wholeSize}
-	writes := []vk.WriteDescriptorSet{
-		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img},
-		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 1, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeStorageBuffer, BufferInfo: &buf},
-		{SType: vk.StructureTypeWriteDescriptorSet, DstSet: set, DstBinding: 2, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &uv},
-	}
-	d.UpdateDescriptorSets(r.device, uint32(len(writes)), &writes[0], 0, nil)
-	return pool, set, nil
-}
-
 func (r *Renderer) destroyComposer() {
 	d, c := r.dd, &r.compose
-	if c.dummyPool != 0 {
-		d.DestroyDescriptorPool(r.device, c.dummyPool, nil)
-	}
 	r.freeGPUBuffer(&c.dummyBuffer)
 	if c.dummyView != 0 {
 		d.DestroyImageView(r.device, c.dummyView, nil)
@@ -295,7 +275,7 @@ func (r *Renderer) createView(t *target) (err error) {
 
 // fillDraw is a solid rect of c.
 func (r *Renderer) fillDraw(rect image.Rectangle, c [3]uint8) draw {
-	dr := draw{set: r.compose.dummySet}
+	dr := draw{}
 	dr.pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
 	dr.pc.color = [4]float32{float32(c[0]) / 255, float32(c[1]) / 255, float32(c[2]) / 255, 1}
 	dr.pc.misc = [4]uint32{modeSolid, 0, uint32(r.width), uint32(r.height)}
@@ -403,9 +383,9 @@ func (r *Renderer) contentDraw(rect, full image.Rectangle, w, h int, source [4]f
 	return dr
 }
 
-// recordDraws draws ds in one rendering pass that clears view to bg, or
+// recordDraws draws batches in one rendering pass that clears view to bg, or
 // keeps its contents (keep).
-func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, ds []draw, keep bool) {
+func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]uint8, batches []*composeBatch, keep bool) {
 	d, c := r.dd, &r.compose
 	clear := vk.ClearValue{math.Float32bits(float32(bg[0]) / 255), math.Float32bits(float32(bg[1]) / 255), math.Float32bits(float32(bg[2]) / 255), math.Float32bits(1)}
 	if r.hdrNits > 0 {
@@ -425,15 +405,10 @@ func (r *Renderer) recordDraws(cmd vk.CommandBuffer, view vk.ImageView, bg [3]ui
 		pipeline = c.hdrPipeline
 	}
 	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, pipeline)
-	var bound vk.DescriptorSet
-	for i := range ds {
-		dr := &ds[i]
-		if dr.set != bound {
-			d.CmdBindDescriptorSets(cmd, vk.PipelineBindPointGraphics, c.layout, 0, 1, &dr.set, 0, nil)
-			bound = dr.set
-		}
-		d.CmdPushConstants(cmd, c.layout, vk.ShaderStageVertexBit|vk.ShaderStageFragmentBit, 0, uint32(unsafe.Sizeof(dr.pc)), unsafe.Pointer(&dr.pc))
-		d.CmdDraw(cmd, 6, 1, 0, 0)
+	for i := range batches {
+		batch := batches[i]
+		d.CmdBindDescriptorSets(cmd, vk.PipelineBindPointGraphics, c.layout, 0, 1, &batch.set, 0, nil)
+		d.CmdDraw(cmd, 6, batch.count, 0, 0)
 	}
 	d.CmdEndRendering(cmd)
 }

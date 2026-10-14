@@ -152,9 +152,6 @@ func (r *Renderer) importYUV(b *ports.DMABuf, format vk.Format) (*imported, erro
 	if im.chromaView, err = view(aspectPlane1, uvFormat); err != nil {
 		return nil, err
 	}
-	if im.pool, im.set, err = r.newSet(im.view, r.compose.dummyBuffer.buffer, im.chromaView); err != nil {
-		return nil, err
-	}
 	ok = true
 	r.imports[b.ID] = im
 	return im, nil

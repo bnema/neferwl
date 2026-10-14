@@ -59,7 +59,11 @@ func (r *Renderer) SetHDR(nits float64) {
 		}
 	}
 	if r.compose.hdrPipeline == 0 {
-		r.hdrError = r.createGraphicsPipeline(composeVert, composeHDRFrag, vk.FormatR16g16b16a16Sfloat, r.compose.layout, true, &r.compose.hdrPipeline)
+		fragment := composeHDRFrag
+		if !r.compose.indexing {
+			fragment = composeHDRSingleFrag
+		}
+		r.hdrError = r.createComposePipeline(fragment, vk.FormatR16g16b16a16Sfloat, &r.compose.hdrPipeline)
 		if r.hdrError != nil {
 			r.dropHDROwn()
 			return
@@ -124,7 +128,7 @@ func (r *Renderer) createHDR() error {
 	if err := checked("vkCreatePipelineLayout(HDR)", d.CreatePipelineLayout(r.device, &pli, nil, &h.layout)); err != nil {
 		return err
 	}
-	if err := r.createGraphicsPipeline(hdrVert, hdrFrag, vk.FormatA2r10g10b10UnormPack32, h.layout, false, &h.pipeline); err != nil {
+	if err := r.createGraphicsPipeline(hdrVert, hdrFrag, vk.FormatA2r10g10b10UnormPack32, h.layout, false, nil, &h.pipeline); err != nil {
 		return err
 	}
 	si := vk.SamplerCreateInfo{SType: vk.StructureTypeSamplerCreateInfo, MagFilter: vk.FilterNearest, MinFilter: vk.FilterNearest, AddressModeU: vk.SamplerAddressModeClampToEdge, AddressModeV: vk.SamplerAddressModeClampToEdge, AddressModeW: vk.SamplerAddressModeClampToEdge}

@@ -27,9 +27,10 @@ type frameSlot struct {
 	cmd   vk.CommandBuffer
 	fence vk.Fence
 	// done is signalled with the frame and exported as its sync file.
-	done  vk.Semaphore
-	frame uint64 // the frame recorded last, 0 before any
-	busy  bool   // submitted, fence not yet seen signalled
+	done    vk.Semaphore
+	frame   uint64 // the frame recorded last, 0 before any
+	busy    bool   // submitted, fence not yet seen signalled
+	batches []*composeBatch
 }
 
 // callScratch holds the structs Render and its record helpers pass to Vulkan
@@ -102,6 +103,9 @@ func (r *Renderer) destroySlots() {
 	d := r.dd
 	for i := range r.slots {
 		s := &r.slots[i]
+		for j := range s.batches {
+			r.freeComposeBatch(s.batches[j])
+		}
 		if s.fence != 0 {
 			d.DestroyFence(r.device, s.fence, nil)
 		}
@@ -224,6 +228,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		r.log.Debug().Int("redrawn", redrawn).Int("draws", len(ds)).Bool("partial", partial).Msg("frame damage")
 	}
 	r.orient(ds, s.Transform)
+	batches, err := r.prepareCompose(slot, ds)
+	if err != nil {
+		return nil, err
+	}
 	d := r.dd
 	sc := &r.call
 	cmd := slot.cmd
@@ -267,7 +275,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	}
 	r.frameDMAs = dmas
 	r.ownership(cmd, dmas, true)
-	r.recordDraws(cmd, tg.view, parseColor(s.Background), ds, partial)
+	r.recordDraws(cmd, tg.view, parseColor(s.Background), batches, partial)
 	r.ownership(cmd, dmas, false)
 	if hdr {
 		r.recordHDR(cmd, r.targets[r.current])

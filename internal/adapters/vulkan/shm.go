@@ -164,11 +164,9 @@ type shmState struct {
 	windowSeq uint64 // root damage history uses window publications
 }
 
-// shmCopy is one of a surface's two GPU buffers and the set binding it.
+// shmCopy is one of a surface's two GPU buffers.
 type shmCopy struct {
 	gpu   gpuBuffer
-	pool  vk.DescriptorPool
-	set   vk.DescriptorSet
 	holds shmState
 	valid bool
 }
@@ -228,11 +226,6 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 		if err := r.newGPUBuffer(&c.gpu, size); err != nil {
 			return nil, err
 		}
-		var err error
-		if c.pool, c.set, err = r.newSet(r.compose.dummyView, c.gpu.buffer); err != nil {
-			r.freeGPUBuffer(&c.gpu)
-			return nil, err
-		}
 		s.bufs[i] = c
 	}
 	if err := r.waitFrame(c.gpu.last); err != nil {
@@ -267,10 +260,7 @@ func (r *Renderer) shmCopyFor(key shmKey, st shmState, pixels []byte, offset, st
 }
 
 func (r *Renderer) freeShmCopy(c *shmCopy) {
-	if c.pool != 0 {
-		r.dd.DestroyDescriptorPool(r.device, c.pool, nil)
-		c.pool = 0
-	}
+	r.invalidateCompose(resourceKey{shm: c})
 	r.freeGPUBuffer(&c.gpu)
 }
 
