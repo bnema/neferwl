@@ -89,6 +89,7 @@ type svcHarness struct {
 	cmds  chan ports.CastCommand
 	peers *peers
 	core  *mockvideoCore
+	run   *mockrunner
 	log   *logBuf
 	done  chan struct{}
 }
@@ -136,6 +137,8 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 		return h.peers.exe.Load().(string), pid, nil
 	}).Maybe()
 	h.svc.peers = res
+	h.run = newMockrunner(t)
+	h.svc.runner = h.run
 
 	pwOpen := newMockpipewireOpener(t)
 	if o.noPW {
