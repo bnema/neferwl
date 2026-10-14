@@ -165,7 +165,7 @@ func TestContentBatchDetach(t *testing.T) {
 	if len(a.Items) != 1 || len(b.Items) != 1 || a == b {
 		t.Fatalf("batches %+v %+v", a.Items, b.Items)
 	}
-	s.DetachOutput("A")
+	s.DetachOutput(retA)
 	// Waiting contents of a detached link are never sent; Return is safe.
 	a.Reset()
 	retA.Return(a)
@@ -183,6 +183,25 @@ func TestContentBatchDetach(t *testing.T) {
 	s.display.Do(func() { links = len(s.links) })
 	if links != 2 {
 		t.Fatalf("%d links, want 2", links)
+	}
+}
+
+// Detaching a feed by its handle never removes a newer feed of the same
+// name: A attached again replaced the first link, and detaching the old
+// handle leaves the new one fed.
+func TestDetachOldHandleKeepsReplacedLink(t *testing.T) {
+	s := linkServer(t)
+	_, oldRet := s.AttachOutput("A")
+	in, _ := s.AttachOutput("A")
+	s.DetachOutput(oldRet)
+	var links int
+	s.display.Do(func() { links = len(s.links) })
+	if links != 1 {
+		t.Fatalf("%d links, want the new one only", links)
+	}
+	s.publish(t, solid(1))
+	if b := nextBatch(t, in); len(b.Items) != 1 {
+		t.Fatalf("new link batch %+v", b.Items)
 	}
 }
 

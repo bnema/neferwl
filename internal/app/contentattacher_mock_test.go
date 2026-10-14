@@ -110,8 +110,8 @@ func (_c *mockcontentAttacher_AttachOutput_Call) RunAndReturn(run func(name stri
 }
 
 // DetachOutput provides a mock function for the type mockcontentAttacher
-func (_mock *mockcontentAttacher) DetachOutput(name string) {
-	_mock.Called(name)
+func (_mock *mockcontentAttacher) DetachOutput(feed ports.ContentReturn) {
+	_mock.Called(feed)
 	return
 }
 
@@ -121,16 +121,16 @@ type mockcontentAttacher_DetachOutput_Call struct {
 }
 
 // DetachOutput is a helper method to define mock.On call
-//   - name string
-func (_e *mockcontentAttacher_Expecter) DetachOutput(name any) *mockcontentAttacher_DetachOutput_Call {
-	return &mockcontentAttacher_DetachOutput_Call{Call: _e.mock.On("DetachOutput", name)}
+//   - feed ports.ContentReturn
+func (_e *mockcontentAttacher_Expecter) DetachOutput(feed any) *mockcontentAttacher_DetachOutput_Call {
+	return &mockcontentAttacher_DetachOutput_Call{Call: _e.mock.On("DetachOutput", feed)}
 }
 
-func (_c *mockcontentAttacher_DetachOutput_Call) Run(run func(name string)) *mockcontentAttacher_DetachOutput_Call {
+func (_c *mockcontentAttacher_DetachOutput_Call) Run(run func(feed ports.ContentReturn)) *mockcontentAttacher_DetachOutput_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 ports.ContentReturn
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(ports.ContentReturn)
 		}
 		run(
 			arg0,
@@ -144,7 +144,7 @@ func (_c *mockcontentAttacher_DetachOutput_Call) Return() *mockcontentAttacher_D
 	return _c
 }
 
-func (_c *mockcontentAttacher_DetachOutput_Call) RunAndReturn(run func(name string)) *mockcontentAttacher_DetachOutput_Call {
+func (_c *mockcontentAttacher_DetachOutput_Call) RunAndReturn(run func(feed ports.ContentReturn)) *mockcontentAttacher_DetachOutput_Call {
 	_c.Run(run)
 	return _c
 }

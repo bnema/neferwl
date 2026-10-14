@@ -19,7 +19,12 @@ const batchItems = 8
 // goroutine owns cur and the sending side of in; the output owns the batch it
 // received until it returns it. free holds the batches nobody uses: it has
 // room for all of them, so Return never blocks.
+//
+// The link is also the ports.ContentReturn handed to the output, and the
+// handle DetachOutput takes: a detach removes this link and no other, even
+// when a later attach of the same name replaced it.
 type contentLink struct {
+	s    *Server
 	name string
 	in   chan *ports.ContentBatch
 	free chan *ports.ContentBatch
@@ -28,24 +33,17 @@ type contentLink struct {
 	// full, or every batch is out). Return only wakes the display when it is
 	// set, so a steady stream of frames costs the display no extra wake.
 	pending atomic.Bool
-	ret     *contentReturn
-}
-
-// contentReturn is the ports.ContentReturn of one link.
-type contentReturn struct {
-	s *Server
-	l *contentLink
 }
 
 // Return gives a consumed (reset) batch back and, when contents wait for one,
 // has the display goroutine send them. Safe from any goroutine, also after
 // the link was detached: the batch only goes back to its own link.
-func (r *contentReturn) Return(b *ports.ContentBatch) {
-	r.l.free <- b // never full: the link owns batchesPerLink batches
+func (l *contentLink) Return(b *ports.ContentBatch) {
+	l.free <- b // never full: the link owns batchesPerLink batches
 	// The display stores pending before it looks at free once more, so
 	// either it sees this batch or this load sees pending.
-	if r.l.pending.Load() && r.s.flushPosted.CompareAndSwap(false, true) {
-		r.s.display.Post(r.s.flushLinksFn)
+	if l.pending.Load() && l.s.flushPosted.CompareAndSwap(false, true) {
+		l.s.display.Post(l.s.flushLinksFn)
 	}
 }
 
@@ -107,17 +105,24 @@ func (s *Server) flushLinks() {
 }
 
 // attachOutput starts feeding the output called name; a link of the same name
-// is replaced. The first batch holds the latest content of every live window,
+// is replaced (dropped from the feed: its handle then detaches nothing). The
+// returned ContentReturn is the link, and the handle for detachOutput. The
+// first batch holds the latest content of every live window,
 // so the output starts with all of them drawn. Display goroutine, or before
 // Run.
 func (s *Server) attachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
-	s.detachOutput(name)
+	for i, old := range s.links {
+		if old.name == name {
+			s.links = slices.Delete(s.links, i, i+1)
+			break
+		}
+	}
 	l := &contentLink{
+		s:    s,
 		name: name,
 		in:   make(chan *ports.ContentBatch, 1),
 		free: make(chan *ports.ContentBatch, batchesPerLink),
 	}
-	l.ret = &contentReturn{s: s, l: l}
 	for range batchesPerLink - 1 {
 		l.free <- &ports.ContentBatch{Items: make([]ports.SurfaceContent, 0, batchItems)}
 	}
@@ -127,25 +132,30 @@ func (s *Server) attachOutput(name string) (<-chan *ports.ContentBatch, ports.Co
 	}
 	s.links = append(s.links, l)
 	s.flushLink(l)
-	return l.in, l.ret
+	return l.in, l
 }
 
-// detachOutput stops feeding the output called name. Display goroutine, or
-// before Run. The output may still Return its last batch.
-func (s *Server) detachOutput(name string) {
-	for i, l := range s.links {
-		if l.name == name {
-			s.links = slices.Delete(s.links, i, i+1)
-			return
-		}
+// detachOutput stops feeding the link ret, the handle attachOutput returned.
+// A handle whose link was replaced by a later attach of its name, or that is
+// not a link, detaches nothing: a newer link is never removed. Display
+// goroutine, or before Run. The output may still Return its last batch.
+func (s *Server) detachOutput(ret ports.ContentReturn) {
+	l, ok := ret.(*contentLink)
+	if !ok {
+		return
+	}
+	if i := slices.Index(s.links, l); i >= 0 {
+		s.links = slices.Delete(s.links, i, i+1)
 	}
 }
 
 // AttachOutput starts feeding the output called name with the contents of
 // the windows, as batches on the returned channel, starting with the current
 // content of every window. The output hands each batch back, reset, to the
-// returned ContentReturn. Call it from outside the display goroutine. It
-// returns a nil channel when the server is stopped.
+// returned ContentReturn, which is also the handle for DetachOutput.
+// Attaching a name that already has a feed replaces that feed. Call it from
+// outside the display goroutine. It returns a nil channel and handle when
+// the server is stopped.
 func (s *Server) AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn) {
 	var in <-chan *ports.ContentBatch
 	var ret ports.ContentReturn
@@ -155,8 +165,13 @@ func (s *Server) AttachOutput(name string) (<-chan *ports.ContentBatch, ports.Co
 	return in, ret
 }
 
-// DetachOutput stops the feed of the output called name. Call it from outside
-// the display goroutine, once the output no longer reads its channel.
-func (s *Server) DetachOutput(name string) {
-	s.display.Do(func() { s.detachOutput(name) })
+// DetachOutput stops the feed ret, returned by AttachOutput. Only that feed
+// stops: if a later AttachOutput of the same name replaced it, the newer
+// feed keeps running. Call it from outside the display goroutine, once the
+// output no longer reads its channel. A nil ret does nothing.
+func (s *Server) DetachOutput(ret ports.ContentReturn) {
+	if ret == nil {
+		return
+	}
+	s.display.Do(func() { s.detachOutput(ret) })
 }

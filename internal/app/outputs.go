@@ -20,12 +20,13 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // content of each window, and takes the batches back through the returned
 // ports.ContentReturn. AttachOutput may block on the display goroutine: call it
 // from outside that goroutine. It returns a nil channel when wayland is gone.
-// Feeds are keyed by output name: attaching a name replaces its feed, and
-// DetachOutput stops whichever feed holds the name. Detach an output only once
-// it stopped, and before an output of the same name attaches again.
+// The returned ports.ContentReturn is also the handle of the feed: attaching
+// a name that already has a feed replaces it, and DetachOutput(handle) stops
+// that feed only, so a stale handle never stops a newer feed of the same
+// name. Detach an output once it stopped.
 type contentAttacher interface {
 	AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
-	DetachOutput(name string)
+	DetachOutput(feed ports.ContentReturn)
 }
 
 // outputSet owns the running outputs and feeds them. Core sends one scene
@@ -71,6 +72,9 @@ type runningOutput struct {
 	stop           context.CancelFunc
 	err            error
 	done           chan struct{}
+	// feed is the content feed AttachOutput returned (nil: none), the handle
+	// to detach once the output stopped.
+	feed ports.ContentReturn
 }
 
 func newOutputSet(ctx context.Context, captured chan<- ports.CaptureDone) *outputSet {
@@ -106,6 +110,7 @@ func (s *outputSet) start(ctx context.Context, name string, run outputRun, wire 
 	if s.attach != nil {
 		contents, returns = s.attach.AttachOutput(name)
 	}
+	r.feed = returns
 	s.outs[name] = r
 	go func() {
 		r.err = run(octx, r.scenes, contents, returns, r.cursor, r.captures, r.security, r.instance)
@@ -249,15 +254,15 @@ func (s *outputSet) finish(name string) error {
 	<-r.done
 	r.stop()
 	s.failQueued(r)
-	s.detach(name)
+	s.detach(r)
 	delete(s.outs, name)
 	return r.err
 }
 
 // detach stops the content feed of an output that has stopped.
-func (s *outputSet) detach(name string) {
-	if s.attach != nil {
-		s.attach.DetachOutput(name)
+func (s *outputSet) detach(r *runningOutput) {
+	if s.attach != nil && r.feed != nil {
+		s.attach.DetachOutput(r.feed)
 	}
 }
 
@@ -275,7 +280,7 @@ func (s *outputSet) wait() error {
 		r.stop()
 		<-r.done
 		s.failQueued(r)
-		s.detach(name)
+		s.detach(r)
 		if first == nil && r.err != nil {
 			first = r.err
 		}
