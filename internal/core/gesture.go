@@ -452,10 +452,10 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 // swipeStash runs toggle-stash-visible for a four-finger swipe down, or up
 // while the stash is shown, with the overview closed, on the swipe's screen
 // unless the pointer took the focus to another output meanwhile. It reports
-// whether the swipe acted: the stash showed or hid, or an empty stash asked
-// for its terminal (stash.spawn-terminal), which spawn names for the caller
-// to start, as a bind does.
-func (c *Core) swipeStash(g *swipeGesture, now time.Time) (acted bool, spawn *Workspace) {
+// whether the stash showed or hid. An empty stash asking for its terminal
+// (stash.spawn-terminal) shows no workspace, as with the bind: spawn names the
+// workspace for the caller to start it in.
+func (c *Core) swipeStash(g *swipeGesture, now time.Time) (shown bool, spawn *Workspace) {
 	if c.cur() != g.screen {
 		return false, nil
 	}
@@ -466,7 +466,7 @@ func (c *Core) swipeStash(g *swipeGesture, now time.Time) (acted bool, spawn *Wo
 	effect := c.applyAction(ActionToggleStashVisible)
 	c.transition(shots, now)
 	if effect.Spawn {
-		return true, w
+		return false, w
 	}
 	return w.stashHidden != hidden || w.stashOver != over, nil
 }

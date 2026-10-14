@@ -3,6 +3,7 @@ package core_test
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -200,4 +201,28 @@ func TestFourFingerSwipeEmptyStashRespectsOption(t *testing.T) {
 	if len(r.spawn) != 0 {
 		t.Fatal("spawned with stash.spawn-terminal off")
 	}
+}
+
+// The terminal of a four-finger swipe shows no workspace: the empty slots of
+// the workspace on screen are not refilled, as with the bind.
+func TestFourFingerSwipeEmptyStashDoesNotRefillSlots(t *testing.T) {
+	r := startSlots(t)
+	r.fill(t)
+	r.press(t, "d") // dev on screen, its slots filled
+	r.client <- ports.WindowUnmapped{ID: 2}
+	sceneMatch(t, r.scenes, func(s ports.Scene) bool { return len(s.Windows) == 1 })
+	noSpawn(t, r.spawn) // nothing relaunches on its own
+	var at time.Duration
+	r.input <- ports.SwipeBegin{Fingers: 4, Time: at}
+	for range 10 {
+		at += 8 * time.Millisecond
+		r.input <- ports.SwipeUpdate{DY: 40, Time: at}
+	}
+	r.input <- ports.SwipeEnd{Time: at}
+	req := receive(t, r.spawn)
+	if len(req.Argv) != 1 || req.Argv[0] != "foot" {
+		t.Fatalf("argv %v, want the stash terminal", req.Argv)
+	}
+	r.sync(t)
+	noSpawn(t, r.spawn) // the empty slot of dev stays empty
 }
