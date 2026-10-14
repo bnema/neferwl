@@ -385,6 +385,15 @@ func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
 	defer sw.waiter.Close()
 	pipeFD := int(sw.pipeR.Fd())
+	// The pipe lives as long as the poller; the eventfds come and go. The
+	// poll sleeps until a fence, a new or cancelled wait (the pipe), or the
+	// end of ctx.
+	sw.waiter.StopOn(ctx)
+	if err := sw.waiter.Pin(int32(pipeFD)); err != nil {
+		sw.log.Warn().Err(err).Msg("sync waiter")
+		sw.fail(nil)
+		return
+	}
 	var waits []*syncWait
 	defer func() {
 		sw.mu.Lock()
@@ -409,7 +418,7 @@ func (sw *syncWaiter) run(ctx context.Context) {
 		for _, w := range waits {
 			fds = append(fds, unix.PollFd{Fd: int32(w.efd), Events: unix.POLLIN})
 		}
-		n, err := sw.poller.poll(fds, 100)
+		n, err := sw.poller.poll(fds, -1)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			sw.fail(waits)
 			return

@@ -192,6 +192,11 @@ func (s *Store) Run(ctx context.Context) error {
 		return err
 	}
 	defer waiter.Close()
+	waiter.StopOn(ctx)
+	if err := waiter.Pin(int32(fd)); err != nil {
+		return err
+	}
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
 	dir, name := filepath.Dir(s.path), filepath.Base(s.path)
 	wd := -1
 	var retry, pending time.Time
@@ -215,9 +220,10 @@ func (s *Store) Run(ctx context.Context) error {
 				return err
 			}
 		}
-		timeout := 200
+		// Sleep until an event, the shutdown, or the next deadline.
+		timeout := -1
 		if !retry.IsZero() {
-			timeout = min(timeout, int(time.Until(retry).Milliseconds())+1)
+			timeout = max(0, int(time.Until(retry).Milliseconds())+1)
 		}
 		if !pending.IsZero() {
 			remaining := time.Until(pending)
@@ -227,9 +233,11 @@ func (s *Store) Run(ctx context.Context) error {
 				quiet = false
 				continue
 			}
-			timeout = min(timeout, int(remaining.Milliseconds())+1)
+			if ms := int(remaining.Milliseconds()) + 1; timeout < 0 || ms < timeout {
+				timeout = ms
+			}
 		}
-		fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		fds[0].Revents = 0
 		if _, err := waiter.Poll(fds, timeout); err != nil {
 			if err == unix.EINTR {
 				continue

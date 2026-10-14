@@ -83,9 +83,13 @@ func WatchHotplug(ctx context.Context, changed chan<- struct{}) error {
 		return fmt.Errorf("udev waiter: %w", err)
 	}
 	defer waiter.Close()
+	waiter.StopOn(ctx)
+	if err := waiter.Pin(fd); err != nil {
+		return fmt.Errorf("udev waiter: %w", err)
+	}
+	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
 	for ctx.Err() == nil {
-		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
-		n, err := waiter.Poll(fds, 100)
+		n, err := waiter.Poll(fds, -1)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("udev poll: %w", err)
 		}

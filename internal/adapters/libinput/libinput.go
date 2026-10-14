@@ -237,6 +237,64 @@ type Options struct {
 	LogKeys bool
 }
 
+// relayControls hands the control messages of opts to Run as closures on
+// controls, waking its poll for each, until ctx ends. It only reads the
+// channels of opts; the closures run on Run's goroutine, the only one to
+// touch p, in, li and opts.Keymap.
+func relayControls(ctx context.Context, opts *Options, p *pointer, in *inputState, li uintptr, controls chan<- func(), wake func()) {
+	for {
+		var f func()
+		select {
+		case <-ctx.Done():
+			return
+		case on := <-opts.Active:
+			f = func() {
+				if on {
+					resume(li)
+				} else {
+					suspend(li)
+				}
+				opts.Log.Info().Bool("active", on).Msg("input")
+			}
+		case km := <-opts.Keymaps:
+			f = func() {
+				if opts.Security != nil {
+					km.QuarantineFrom(opts.Keymap)
+				}
+				opts.Keymap.Close()
+				opts.Keymap = km
+				opts.Log.Info().Msg("keymap replaced")
+			}
+		case l := <-opts.Layouts:
+			f = func() {
+				p.setLayout(l)
+				p.moved(opts.MoveCursor, false)
+			}
+		case c := <-opts.Constraints:
+			f = func() {
+				p.constrain(c)
+				p.moved(opts.MoveCursor, false)
+			}
+		case c := <-opts.DeviceConfigs:
+			f = func() {
+				in.cfg = c
+				for dev := range in.devices {
+					in.configure(dev, opts.Log)
+				}
+				t, m := c.Touchpad, c.Mouse
+				opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Bool("left_handed", t.LeftHanded).Float64("scroll_factor", t.ScrollFactor).
+					Bool("mouse_natural_scroll", m.NaturalScroll).Float64("mouse_accel_speed", m.AccelSpeed).Str("mouse_accel_profile", m.AccelProfile).Bool("mouse_left_handed", m.LeftHanded).Msg("input devices reloaded")
+			}
+		}
+		select {
+		case controls <- f:
+			wake()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // statsEvery is how often Run logs input throughput.
 const statsEvery = 10 * time.Second
 
@@ -273,53 +331,39 @@ func Run(ctx context.Context, opts Options, input chan<- ports.InputEvent) error
 		return fmt.Errorf("libinput waiter: %w", err)
 	}
 	defer waiter.Close()
+	waiter.StopOn(ctx)
 	fd := getFD(li)
+	if err := waiter.Pin(fd); err != nil {
+		return fmt.Errorf("libinput waiter: %w", err)
+	}
 	fwd := newForwarder(opts.Log)
 	fwdCtx, stopFwd := context.WithCancel(ctx)
 	var fwdDone sync.WaitGroup
 	fwdDone.Go(func() { fwd.run(fwdCtx, input) })
+	// Control messages wake the poll instead of a polling timeout; they are
+	// applied on this goroutine, which owns libinput.
+	controls := make(chan func(), 8)
+	fwdDone.Go(func() { relayControls(fwdCtx, &opts, p, in, li, controls, waiter.Wake) })
 	defer func() { stopFwd(); fwdDone.Wait() }()
-	lastStats := time.Now()
+	fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
+	nextStats := time.Now().Add(statsEvery)
 	for ctx.Err() == nil {
-		if time.Since(lastStats) >= statsEvery {
-			lastStats = time.Now()
+		if !time.Now().Before(nextStats) {
+			nextStats = time.Now().Add(statsEvery)
 			if s := fwd.take(); s.Motions > 0 || s.Sent > 0 {
 				opts.Log.Info().Int("motions", s.Motions).Int("coalesced", s.Coalesced).Int("sent", s.Sent).Dur("max_block_ms", s.MaxBlock).Msg("input stats")
 			}
 		}
-		select {
-		case on := <-opts.Active:
-			if on {
-				resume(li)
-			} else {
-				suspend(li)
+	apply:
+		for {
+			select {
+			case f := <-controls:
+				f()
+			default:
+				break apply
 			}
-			opts.Log.Info().Bool("active", on).Msg("input")
-		case km := <-opts.Keymaps:
-			if opts.Security != nil {
-				km.QuarantineFrom(opts.Keymap)
-			}
-			opts.Keymap.Close()
-			opts.Keymap = km
-			opts.Log.Info().Msg("keymap replaced")
-		case l := <-opts.Layouts:
-			p.setLayout(l)
-			p.moved(opts.MoveCursor, false)
-		case c := <-opts.Constraints:
-			p.constrain(c)
-			p.moved(opts.MoveCursor, false)
-		case c := <-opts.DeviceConfigs:
-			in.cfg = c
-			for dev := range in.devices {
-				in.configure(dev, opts.Log)
-			}
-			t, m := c.Touchpad, c.Mouse
-			opts.Log.Info().Bool("natural_scroll", t.NaturalScroll).Bool("tap", t.Tap).Float64("accel_speed", t.AccelSpeed).Str("accel_profile", t.AccelProfile).Bool("left_handed", t.LeftHanded).Float64("scroll_factor", t.ScrollFactor).
-				Bool("mouse_natural_scroll", m.NaturalScroll).Float64("mouse_accel_speed", m.AccelSpeed).Str("mouse_accel_profile", m.AccelProfile).Bool("mouse_left_handed", m.LeftHanded).Msg("input devices reloaded")
-		default:
 		}
-		fds := []unix.PollFd{{Fd: fd, Events: unix.POLLIN}}
-		n, err := waiter.Poll(fds, 100)
+		n, err := waiter.Poll(fds, int(time.Until(nextStats).Milliseconds())+1)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("libinput poll: %w", err)
 		}

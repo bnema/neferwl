@@ -253,11 +253,15 @@ func (c *Card) ReadEvents(ctx context.Context) error {
 		return fmt.Errorf("drm event waiter: %w", err)
 	}
 	defer waiter.Close()
+	waiter.StopOn(ctx)
+	if err := waiter.Pin(int32(c.fd)); err != nil {
+		return fmt.Errorf("drm event waiter: %w", err)
+	}
 	buf := make([]byte, 1024)
 	var events []flipEvent // reused by every read
+	fds := []unix.PollFd{{Fd: int32(c.fd), Events: unix.POLLIN}}
 	for ctx.Err() == nil {
-		fds := []unix.PollFd{{Fd: int32(c.fd), Events: unix.POLLIN}}
-		n, err := waiter.Poll(fds, 100)
+		n, err := waiter.Poll(fds, -1)
 		if err != nil && !errors.Is(err, unix.EINTR) {
 			return fmt.Errorf("drm poll: %w", err)
 		}
