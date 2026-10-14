@@ -160,10 +160,14 @@ func (s *Server) addOutput(p ports.OutputPlacement) {
 // changed ones resent.
 func (s *Server) setOutputs(c ports.SetOutputs) {
 	changed := !slices.Equal(s.outputPlaces, c.Outputs)
+	focusChanged := s.focusedOutput != c.Focused
 	s.outputPlaces = append(ports.Layout(nil), c.Outputs...)
 	defer func() {
 		if changed {
 			s.refreshOutputManagers()
+		}
+		if changed || focusChanged {
+			s.castInventoryChanged()
 		}
 	}()
 	s.focusedOutput = c.Focused

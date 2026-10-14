@@ -13,7 +13,8 @@ const (
 	CastOpen CastCommandKind = iota + 1
 	// CastFrame asks for one frame into buffer Buf.
 	CastFrame
-	// CastClose ends cast ID; wayland answers with CastStopped.
+	// CastClose ends cast ID. Wayland sends no CastStopped for it; a frame
+	// still in flight is answered with its CastFrameDone as usual.
 	CastClose
 )
 

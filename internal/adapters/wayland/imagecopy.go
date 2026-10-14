@@ -113,6 +113,12 @@ func (s *Server) windowCaptureGone(id ports.WindowID) {
 			c.end(true, true)
 		}
 	}
+	for _, c := range s.castSessions {
+		if c.src.kind == srcWindow && c.src.window == id {
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonWindowGone)).Msg("cast end")
+			c.end(ports.CaptureReasonWindowGone, nil, true, true)
+		}
+	}
 }
 
 type extraSources struct{ s *Server }
@@ -447,6 +453,9 @@ func (s *Server) refreshSessions() {
 	for c := range s.captureSessions {
 		c.refresh()
 	}
+	for _, c := range s.castSessions {
+		c.refresh()
+	}
 }
 
 // endCaptureSessions stops every session, and its exclusion with it, when
@@ -459,6 +468,11 @@ func (s *Server) endCaptureSessions() {
 		}
 		c.end(true, true)
 	}
+	for _, c := range s.castSessions {
+		s.log.Info().Uint64("cast", c.cast).Str("reason", "session-protected").Msg("cast end")
+		c.end(ports.CaptureReasonNone, errCastProtected, true, true)
+	}
+	s.castInventoryChanged()
 }
 
 // outputGone ends the sessions of an unplugged output without waiting for
@@ -470,10 +484,20 @@ func (s *Server) outputGone(o *output) {
 			c.end(true, true)
 		}
 	}
+	for _, c := range s.castSessions {
+		if c.src.kind == srcOutput && c.src.output == o {
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonOutputGone)).Msg("cast end")
+			c.end(ports.CaptureReasonOutputGone, nil, true, true)
+		}
+	}
 }
 
 // captureState applies what core decided about a session.
 func (s *Server) captureState(st ports.CaptureSessionState) {
+	if c := s.castByCore[st.ID]; c != nil {
+		c.state(st)
+		return
+	}
 	c := s.sessionsByID[st.ID]
 	if c == nil {
 		return

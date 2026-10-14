@@ -48,6 +48,9 @@ type Options struct {
 	// nil lets every client capture, unless the session is protected. The
 	// caller keeps it current (captureallow.Store.Run).
 	CaptureAllow *captureallow.Store
+	// Casts receives the screencast events and inventory (screencast.go);
+	// nil serves no casts (Channels.CastCommands is not read).
+	Casts ports.CastSink
 	// LogDamage logs the damage of every fresh client commit at debug level
 	// (--debug=wayland-damage).
 	LogDamage bool
@@ -78,6 +81,9 @@ type Channels struct {
 	// never block the backend; standalone tests may use smaller channels.
 	Captures chan<- ports.CaptureRequest
 	Captured <-chan ports.CaptureDone
+	// CastCommands carries the screencast adapter's commands (ports.CastCommand);
+	// they are applied in order on the display goroutine. Nil serves no casts.
+	CastCommands <-chan ports.CastCommand
 	// OutputFormats are the outputs' direct scanout formats, offered in
 	// dmabuf feedback to fullscreen surfaces.
 	OutputFormats <-chan ports.OutputFormats
@@ -122,9 +128,20 @@ type Server struct {
 	// sessionsByID are the sessions registered with core (imagecopy.go);
 	// excl is the one live exclusion (exclusion.go); ownUID the compositor's.
 	sessionsByID map[uint64]*captureSession
-	nextSession  uint64
-	excl         *exclusion
-	ownUID       uint32
+	// Screencast (screencast.go): casts by the adapter's ID and by the ID
+	// core knows them by; castRing carries the adapter's commands to the
+	// display goroutine; the castInv fields coalesce inventory publication.
+	casts         ports.CastSink
+	castSessions  map[uint64]*castSession
+	castByCore    map[uint64]*castSession
+	castRing      *postRing[ports.CastCommand]
+	castInvFn     func()
+	castInvPosted bool
+	castInvSent   bool
+	castInvLast   ports.CastInventory
+	nextSession   uint64
+	excl          *exclusion
+	ownUID        uint32
 	// captureAllow, peer and peers decide mayCapture (captureauth.go):
 	// peers keeps each client's pidfd until it is destroyed.
 	captureAllow *captureallow.Store
@@ -362,6 +379,10 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.flushLinksFn = s.flushLinks
 	s.sink = newPresentSink(s)
 	s.capturedRing = newPostRing(d, capturedRingSize, s.applyCaptured)
+	s.casts = opts.Casts
+	s.castSessions, s.castByCore = map[uint64]*castSession{}, map[uint64]*castSession{}
+	s.castRing = newPostRing(d, castRingSize, s.applyCast)
+	s.castInvFn = s.publishCastInventory
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
@@ -553,6 +574,11 @@ func (s *Server) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() { defer wg.Done(); s.syncWait.run(ctx) }()
 	}
+	if s.casts != nil && s.channels.CastCommands != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); s.forwardCasts(ctx.Done()) }()
+	}
+	s.castInventoryChanged()
 	err := s.display.Run(ctx)
 	s.stopSecurityContexts()
 	wg.Wait()
@@ -710,6 +736,7 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 		l.add(c)
 		s.flushLink(l)
 	}
+	s.castCommitted(c.ID)
 }
 
 // maxCommandBatch bounds how many queued commands one display round trip applies.

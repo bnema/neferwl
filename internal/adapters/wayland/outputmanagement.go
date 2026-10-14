@@ -189,6 +189,7 @@ func (s *Server) setOutputHeads(h ports.OutputHeads) {
 		return
 	}
 	s.outputHeads = h
+	s.castInventoryChanged()
 	s.refreshOutputManagers()
 }
 func (s *Server) refreshOutputManagers() {
