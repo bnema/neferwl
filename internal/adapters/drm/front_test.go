@@ -339,6 +339,36 @@ func TestSubmitFrameOverlayOnlyRefused(t *testing.T) {
 	}
 }
 
+// A commit result with the overlay on: refusals the overlay causes ask for a
+// frame without it and leave the queue; a commit queues the buffer.
+func TestFinishOverlayCommit(t *testing.T) {
+	boom := errors.New("boom")
+	for _, tc := range []struct {
+		name       string
+		err        error
+		want       error
+		wantQueued uint64
+		reason     string
+	}{
+		{"committed", nil, nil, 9, ""},
+		{"colour refused", errColorRefused, errOverlayDropped, 1, "color_refused"},
+		{"overlay conflict", unix.EINVAL, errOverlayDropped, 1, "cursor_conflict"},
+		{"other", boom, boom, 1, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, _, _ := testOutput(t)
+			o.queued = 1
+			o.clientFBs[9] = &clientFB{}
+			if err := o.finishOverlayCommit(tc.err, 9); err != tc.want {
+				t.Fatalf("err %v, want %v", err, tc.want)
+			}
+			if o.queued != tc.wantQueued || o.overlayReason != tc.reason {
+				t.Fatalf("queued %d reason %q", o.queued, o.overlayReason)
+			}
+		})
+	}
+}
+
 // A frame whose buffer KMS took before is not probed again.
 func TestOverlayProbeCached(t *testing.T) {
 	o, k, commits := overlayOutput(t)
@@ -369,6 +399,19 @@ func TestOverlayProbeCached(t *testing.T) {
 	// The probe tested the cursor where the cache remembers it.
 	if v, _ := (*commits)[3].req.value(tCursor, 14); v != 20-uint64(o.cursor.hotX) {
 		t.Fatalf("probe cursor x %d", v)
+	}
+	// New colour state (HDR brightness) is probed again.
+	o.colorMult++
+	o.testOverlay(70, ov)
+	if len(*commits) != 5 {
+		t.Fatalf("%d probes after a colour change, want 5", len(*commits))
+	}
+	// A removed client framebuffer may give its id to another buffer.
+	k.EXPECT().rmFB(uint32(88)).Return(nil).Once()
+	o.dropClientFBs(time.Now(), true)
+	o.testOverlay(70, ov)
+	if len(*commits) != 6 {
+		t.Fatal("probe cached across a framebuffer removal")
 	}
 	// A modeset (VT resume) forgets them.
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
