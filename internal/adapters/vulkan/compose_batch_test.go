@@ -206,15 +206,69 @@ func TestComposePreparedReuseAndGrowth(t *testing.T) {
 	if batches, err := r.prepareCompose(slot, ds); err != nil || len(batches) != 1 || len(slot.batches) != 1 {
 		t.Fatal("unused batches retained beyond frame TTL")
 	}
-	key := resourceKey{shm: &shmCopy{}}
-	slot.batches[0].cached[0] = key
-	r.invalidateCompose(key)
-	if slot.batches[0].valid || slot.batches[0].cached[0] != (resourceKey{}) {
-		t.Fatal("released resource kept a valid descriptor cache")
+}
+
+// Zero handles: release, freeShmCopy and trimCompose make no Vulkan call.
+func TestComposeReleaseInvalidatesCachedDescriptors(t *testing.T) {
+	im, shm := &imported{fd: -1}, &shmCopy{}
+	other := resourceKey{shm: &shmCopy{}}
+	for _, tc := range []struct {
+		name    string
+		key     resourceKey
+		release func(*Renderer)
+	}{
+		{"dmabuf", resourceKey{im: im}, func(r *Renderer) { r.release(im) }},
+		{"shm", resourceKey{shm: shm}, func(r *Renderer) { r.freeShmCopy(shm) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Renderer{}
+			for i := range r.slots {
+				hit := &composeBatch{valid: true}
+				hit.keys[0], hit.cached[0], hit.cached[1] = tc.key, tc.key, other
+				miss := &composeBatch{valid: true}
+				miss.cached[0] = other
+				r.slots[i].batches = []*composeBatch{hit, miss}
+			}
+			tc.release(r)
+			for i := range r.slots {
+				hit, miss := r.slots[i].batches[0], r.slots[i].batches[1]
+				if hit.valid || hit.cached[0] != (resourceKey{}) || hit.keys[0] != (resourceKey{}) || hit.cached[1] != other {
+					t.Fatalf("slot %d: released resource kept its descriptor cache", i)
+				}
+				if !miss.valid || miss.cached[0] != other {
+					t.Fatalf("slot %d: unrelated batch invalidated", i)
+				}
+			}
+		})
 	}
-	r.frame++
-	r.trimCompose(r.frame - 1)
-	if len(slot.batches) != 0 {
-		t.Fatal("idle batches retained beyond wall-clock cutoff")
+}
+
+func TestTrimComposeKeepsInFlightAndRecentBatches(t *testing.T) {
+	const frame = 100
+	for _, tc := range []struct {
+		name   string
+		busy   bool
+		cutoff uint64
+		last   []uint64 // per batch, in slot order
+		want   int
+	}{
+		{"idle stale", false, 50, []uint64{10, 20}, 0},
+		{"busy stale", true, 50, []uint64{10, 20}, 2},
+		{"newer than cutoff", false, 50, []uint64{10, 60}, 2},
+		{"current frame", false, frame, []uint64{10, frame}, 2},
+		{"only trailing stale", false, 50, []uint64{60, 10}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Renderer{frame: frame}
+			s := &r.slots[0]
+			s.busy = tc.busy
+			for _, last := range tc.last {
+				s.batches = append(s.batches, &composeBatch{last: last})
+			}
+			r.trimCompose(tc.cutoff)
+			if len(s.batches) != tc.want {
+				t.Fatalf("kept %d batches, want %d", len(s.batches), tc.want)
+			}
+		})
 	}
 }
