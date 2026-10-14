@@ -388,12 +388,6 @@ func (sw *syncWaiter) run(ctx context.Context) {
 	// The pipe lives as long as the poller; the eventfds come and go. The
 	// poll sleeps until a fence, a new or cancelled wait (the pipe), or the
 	// end of ctx.
-	sw.waiter.StopOn(ctx)
-	if err := sw.waiter.Pin(int32(pipeFD)); err != nil {
-		sw.log.Warn().Err(err).Msg("sync waiter")
-		sw.fail(nil)
-		return
-	}
 	var waits []*syncWait
 	defer func() {
 		sw.mu.Lock()
@@ -404,6 +398,12 @@ func (sw *syncWaiter) run(ctx context.Context) {
 			unix.Close(w.efd)
 		}
 	}()
+	sw.waiter.StopOn(ctx)
+	if err := sw.waiter.Pin(int32(pipeFD)); err != nil {
+		sw.log.Warn().Err(err).Msg("sync waiter")
+		sw.fail(nil)
+		return
+	}
 	for ctx.Err() == nil {
 		live := waits[:0]
 		for _, w := range waits {
@@ -467,6 +467,13 @@ func (sw *syncWaiter) run(ctx context.Context) {
 
 // close stops the waiter's input side.
 func (sw *syncWaiter) close() { sw.pipeW.Close() }
+
+// discard releases what run would have closed, for a waiter whose run
+// never starts.
+func (sw *syncWaiter) discard() {
+	sw.pipeR.Close()
+	sw.waiter.Close()
+}
 
 // syncHold is a buffer's explicit-sync state while it is on screen: the
 // acquire fence handed to readers and the release point to signal.

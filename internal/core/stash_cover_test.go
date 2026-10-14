@@ -203,6 +203,12 @@ func TestActivateOverCover(t *testing.T) {
 			w.AddDialog(9, 2, 20, 10)
 			return 9
 		}, 9, true},
+		// A dialog filling the usable area is a covering float: it stays
+		// over the stash all the same.
+		{"full-size dialog of stashed", func(w *Workspace, _ WindowID) WindowID {
+			w.AddDialog(9, 2, 100, 80)
+			return 9
+		}, 9, true},
 		{"dialog of cover", func(w *Workspace, cover WindowID) WindowID {
 			w.AddDialog(9, cover, 20, 10)
 			w.FocusID(cover)

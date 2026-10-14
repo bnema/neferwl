@@ -19,8 +19,7 @@ func TestSyncWaitAlreadySignalled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sw.pipeR.Close()
-	defer sw.waiter.Close()
+	defer sw.discard()
 	defer sw.close()
 	w, err := sw.watch(syncPoint{tl: &timeline{dev: dev, handle: 7}, point: 4})
 	if err != nil || !sw.fired(w) {
@@ -34,8 +33,7 @@ func TestImplicitPollErrorRejectedAndWarnOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sw.pipeR.Close()
-	defer sw.waiter.Close()
+	defer sw.discard()
 	defer sw.close()
 	var output bytes.Buffer
 	sw.log = zerowrap.New(zerowrap.Config{Output: &output})

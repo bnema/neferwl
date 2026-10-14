@@ -207,6 +207,35 @@ func TestAcquirePollTerminalFailureRetiresActiveAndAdded(t *testing.T) {
 	}
 }
 
+// A waiter whose pipe cannot be pinned fails its waits and still closes
+// their descriptors.
+func TestSyncWaiterPinFailureClosesWaits(t *testing.T) {
+	sw, err := newSyncWaiter(func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sw.close()
+	// Pinned already: run's own Pin fails with EEXIST.
+	if err := sw.waiter.Pin(int32(sw.pipeR.Fd())); err != nil {
+		t.Fatal(err)
+	}
+	// A pipe stands in for the eventfd: once run closes the read end, a
+	// write fails with EPIPE, whatever reuses the descriptor number.
+	var p [2]int
+	if err := unix.Pipe2(p[:], unix.O_CLOEXEC|unix.O_NONBLOCK); err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(p[1])
+	w := sw.add(p[0])
+	sw.run(context.Background())
+	if !sw.fired(w) || !w.failed {
+		t.Fatal("wait not failed after pin failure")
+	}
+	if _, err := unix.Write(p[1], []byte{0}); err != unix.EPIPE {
+		t.Fatalf("wait descriptor still open: write %v", err)
+	}
+}
+
 func TestFailedRootRetiresEveryChildPredecessorGraph(t *testing.T) {
 	h := newSyncHarness(t)
 	sw := h.s.syncWait

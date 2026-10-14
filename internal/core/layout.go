@@ -1832,13 +1832,16 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 	)
 	appendFloats := func(group int) {
 		for _, f := range w.Floats {
-			below := f.below && w.coversFloat(f)
+			// A dialog shown over the cover stays a dialog whatever its
+			// size, so a full-size one is not drawn under the stash.
+			dialog := cover != 0 && w.overCover(f)
+			below := f.below && w.coversFloat(f) && !dialog
 			// Dialogs stay over covering floats even when the latter is
 			// selected. Fullscreen floats remain in the upper group.
 			order := dialogs
 			if below {
 				order = belowTiles
-			} else if w.coversFloat(f) || w.fullscreen == f.ID {
+			} else if !dialog && (w.coversFloat(f) || w.fullscreen == f.ID) {
 				order = coveringFloats
 			}
 			if order != group {
@@ -1847,7 +1850,7 @@ func (w *Workspace) appendLayout(dst []Placement) []Placement {
 			// A covering fullscreen window hides every float but the
 			// dialogs over it (overCover): the others show again when it
 			// leaves fullscreen.
-			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !w.overCover(f)}
+			p := Placement{ID: f.ID, Rect: w.floatRect(f), Floating: true, Below: below, Focused: f.ID == focusedID, Inset: ports.SideAll, Hidden: cover != 0 && f.ID != cover && !dialog}
 			if p.Hidden {
 				p.Rect = Rect{}
 				result = append(result, p)
