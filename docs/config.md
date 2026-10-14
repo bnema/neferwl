@@ -259,7 +259,7 @@ Each workspace has a stash: a strip of windows set aside with `toggle-window-sta
 bind.cmd+shift+f = stash firefox
 ```
 
-Apps that hand a launch to an already running instance (single-instance browsers, `footclient`) open their window normally.
+The window must appear within 5 seconds, otherwise it opens normally. Apps that hand a launch to an already running instance (single-instance browsers, `footclient`) open their window normally.
 
 ### Free floating windows
 
