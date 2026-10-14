@@ -2,6 +2,7 @@ package drm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -10,11 +11,12 @@ import (
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/sys/unix"
 )
 
 // overlayFrames submits the overlay scene once (composed), then with the
 // overlay window's next buffers: the frames after the first only flip the
-// overlay buffer. It returns the windows each render drew.
+// overlay buffer.
 func overlayFrames(t *testing.T, o *Output, r *portsmocks.MockRenderer, s ports.Scene, c map[ports.WindowID]ports.SurfaceContent, frames int) {
 	t.Helper()
 	for i := range frames {
@@ -120,7 +122,10 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 	o.flipped = flips
 	r := portsmocks.NewMockRenderer(t)
 	pipeBuf := func() ports.DMABuf {
-		f, w, _ := os.Pipe()
+		f, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
 		w.Close()
 		return ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
@@ -260,10 +265,85 @@ func TestRunVideoOnOverlayDoesNotRender(t *testing.T) {
 	}
 }
 
+// Refusals on the overlay-only path: a refused probe composes the whole
+// scene at once; a refused commit drops the overlay and asks for a new frame,
+// leaving the images and the queue as they were.
+func TestSubmitFrameOverlayOnlyRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		refuse  func(r *atomicReq, flags uint32) bool
+		wantErr error
+		renders int
+	}{
+		{"probe", func(_ *atomicReq, flags uint32) bool { return flags&atomicTestOnly != 0 }, nil, 1},
+		{"commit", func(_ *atomicReq, flags uint32) bool { return flags&atomicTestOnly == 0 }, errOverlayDropped, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			refusing := false
+			o, k, _, _ := testOutputRules(t, func(r *atomicReq, flags uint32) error {
+				if refusing && tc.refuse(r, flags) {
+					return unix.EINVAL
+				}
+				return nil
+			})
+			props := map[string]uint32{"zpos": pZpos}
+			for n, v := range planeProps {
+				props[n] = v
+			}
+			o.primary.props, o.primary.formats = props, nil
+			o.stray = []*plane{{id: tOverlay, typ: planeOverlay, props: props, zposValue: 2, formats: []ports.DMABufFormat{{Format: fourccXRGB}}}}
+			o.pickOverlay()
+			o.cursor, o.vrrProp = nil, 0
+			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).RunAndReturn(func(b *ports.DMABuf, _ uint32) (uint32, error) {
+				return uint32(80 + b.ID), nil
+			})
+			s, c := overlayScene()
+			r := portsmocks.NewMockRenderer(t)
+			r.EXPECT().UseTarget(mock.Anything).Return()
+			var drawn []int
+			r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+				drawn = append(drawn, len(s.Windows))
+				return nil, nil
+			})
+			overlayFrames(t, o, r, s, c, 1) // composed, front image held
+			back, queued := o.back, o.queued
+			refusing = true
+			win := c[2]
+			buf := *win.DMABuf
+			buf.ID, win.DMABuf, win.Seq = 20, &buf, 2
+			c[2] = win
+			_, err := o.submitFrame(context.Background(), r, s, c, map[ports.WindowID]uint64{}, nil, nil)
+			if !errors.Is(err, tc.wantErr) && err != tc.wantErr {
+				t.Fatalf("err %v, want %v", err, tc.wantErr)
+			}
+			if got := len(drawn) - 1; got != tc.renders {
+				t.Fatalf("%d renders, want %d", got, tc.renders)
+			}
+			if tc.renders == 1 && drawn[1] != 2 {
+				t.Fatalf("composed %d windows, want the whole scene", drawn[1])
+			}
+			if tc.wantErr != nil {
+				if o.back != back || o.queued != queued || o.clientFBs[20].overlayFailed != "cursor_conflict" {
+					t.Fatalf("back %d queued %d reason %q", o.back, o.queued, o.clientFBs[20].overlayFailed)
+				}
+				// The retry composes the window.
+				refusing = false
+				if _, err := o.submitFrame(context.Background(), r, s, c, map[ports.WindowID]uint64{}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+				if drawn[len(drawn)-1] != 2 {
+					t.Fatalf("retry composed %d windows", drawn[len(drawn)-1])
+				}
+			}
+		})
+	}
+}
+
 // A frame whose buffer KMS took before is not probed again.
 func TestOverlayProbeCached(t *testing.T) {
 	o, k, commits := overlayOutput(t)
-	o.cursor = nil
+	o.cursor.image = true
+	o.cursor.Move(10, 10)
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Once()
 	o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 	s, c := overlayScene()
@@ -281,8 +361,14 @@ func TestOverlayProbeCached(t *testing.T) {
 	moved.rect.X++
 	o.testOverlay(70, moved)
 	o.testOverlay(71, ov)
-	if len(*commits) != 3 {
-		t.Fatalf("%d probes, want 3", len(*commits))
+	o.cursor.Move(20, 10)
+	o.testOverlay(70, ov)
+	if len(*commits) != 4 {
+		t.Fatalf("%d probes, want 4", len(*commits))
+	}
+	// The probe tested the cursor where the cache remembers it.
+	if v, _ := (*commits)[3].req.value(tCursor, 14); v != 20-uint64(o.cursor.hotX) {
+		t.Fatalf("probe cursor x %d", v)
 	}
 	// A modeset (VT resume) forgets them.
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil).Once()
@@ -312,6 +398,16 @@ func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
 		"image forgotten": func(o *Output, _ *ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) {
 			o.front.forget()
 		},
+		"layer content": func(_ *Output, _ *ports.Scene, c map[ports.WindowID]ports.SurfaceContent) {
+			l := c[5]
+			l.Seq++
+			c[5] = l
+		},
+		// The scene's slices rewritten in place by their owner: what the
+		// image holds is a copy.
+		"scene slice rewritten": func(_ *Output, s *ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) {
+			s.Windows[0].Rect.W = 90
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			o, k, _ := overlayOutput(t)
@@ -319,7 +415,9 @@ func TestSubmitFrameOverlayOnlyNeedsSameImage(t *testing.T) {
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(88, nil).Maybe()
 			o.overlay.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
 			s, c := overlayScene()
+			s.Layers = []ports.SceneLayer{{ID: 5, Layer: ports.LayerBottom, Rect: ports.Rect{W: 10, H: 10}}}
 			c[1] = ports.SurfaceContent{ID: 1, Seq: 1, Width: 100, Height: 100, Opaque: true, Solid: &ports.SolidColor{A: 1}}
+			c[5] = ports.SurfaceContent{ID: 5, Seq: 1, Width: 10, Height: 10, Opaque: true, Solid: &ports.SolidColor{A: 1}}
 			r := portsmocks.NewMockRenderer(t)
 			r.EXPECT().UseTarget(mock.Anything).Return().Twice()
 			var drawn []int

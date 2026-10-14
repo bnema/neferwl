@@ -219,16 +219,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		done.Close()
 	}
 	ov.close()
-	if errors.Is(err, errColorRefused) {
-		// Cached for the overlay's buffer format: the next frame composes it.
-		o.setOverlayReason("color_refused")
-		return false, errOverlayDropped
-	}
-	if err != nil && o.overlayConflict(err, ov.buf) {
-		return false, errOverlayDropped
-	}
-	if err == nil {
-		o.queued = ov.buf
+	if err = o.finishOverlayCommit(err, ov.buf); err == nil {
 		// The image now holds what was drawn last: composed, or the whole
 		// scene after an overlay refusal.
 		if ov.fb != 0 {
@@ -250,16 +241,23 @@ func (o *Output) commitOverlayOnly(front uint32, scene ports.Scene, f pendingFra
 	}
 	f.queued, f.zeroCopy = ov.buf, ov.id
 	game := o.vrrProp != 0 && fullscreenShown(&scene)
-	err := o.commitWith(front, nil, false, o.wantVRR(game), f, ov)
+	return o.finishOverlayCommit(o.commitWith(front, nil, false, o.wantVRR(game), f, ov), ov.buf)
+}
+
+// finishOverlayCommit applies the result of a frame commit with buf on the
+// overlay (0: none): a refusal the overlay causes asks for a frame without
+// it (errOverlayDropped); a commit marks buf queued.
+func (o *Output) finishOverlayCommit(err error, buf uint64) error {
 	if errors.Is(err, errColorRefused) {
+		// Cached for the overlay's buffer format: the next frame composes it.
 		o.setOverlayReason("color_refused")
 		return errOverlayDropped
 	}
-	if err != nil && o.overlayConflict(err, ov.buf) {
+	if err != nil && o.overlayConflict(err, buf) {
 		return errOverlayDropped
 	}
 	if err == nil {
-		o.queued = ov.buf
+		o.queued = buf
 	}
 	return err
 }
