@@ -1,29 +1,19 @@
 # Desktop integration
 
-How NeferWL runs programs and works with bars, clipboard managers, X11 apps, idle tools and scripts.
-
 ## Running commands
 
-`spawn <command>` binds, `startup = <command>` lines and `terminal = <command>` run one program directly, without a shell. NeferWL splits the line on spaces: the first word is the program, found in `PATH` or given as a path such as `/opt/tool/run`, and the other words are its arguments.
+`spawn` binds, `startup` and `terminal` run a program directly, **without a shell**. The line is split on spaces: the first word is the program (from `PATH` or a full path), the rest are its arguments. `;` separates several commands, which all start at once.
 
 ```text
 bind.ctrl+cmd+space = spawn fuzzel
-startup = waybar
-startup = wl-paste --watch cliphist store
-```
-
-`spawn` binds and `startup` lines can hold several commands separated by `;`. They all start right away, in order; one does not wait for the previous one to finish. Empty commands are ignored. A `;` always separates commands, so put an argument containing `;` in a script. `terminal` and workspace slot commands (`column.N`) take a single command.
-
-```text
 startup = waybar; mako; wl-paste --watch cliphist store
-bind.cmd+shift+s = spawn grim; notify-send Screenshot saved
 ```
 
-Apart from `;`, pipes (`|`), `&&`, redirections, variables (`$HOME`), `~` and quotes have no special meaning: they reach the program as plain arguments. For those, write a script and run it:
+Pipes, `&&`, redirections, `$VARIABLES`, `~` and quotes are passed as plain text. For those, write a script in your `PATH` and run it:
 
 ```sh
 #!/bin/sh
-# ~/.local/bin/screenshot-main: save the main monitor with a dated name.
+# ~/.local/bin/screenshot-main
 nefercap screenshot -output DP-1 -file "$HOME/Pictures/$(date +%F-%T).png"
 ```
 
@@ -31,23 +21,20 @@ nefercap screenshot -output DP-1 -file "$HOME/Pictures/$(date +%F-%T).png"
 bind.cmd+shift+p = spawn screenshot-main
 ```
 
-Make the script executable (`chmod +x`) and put it in a directory of your `PATH`, such as `~/.local/bin`. It can use any shell, including fish (`#!/usr/bin/env fish`).
-
-Programs started by NeferWL get `WAYLAND_DISPLAY`, `DISPLAY` (see [X11 apps](#x11-apps)) and `NEFERWL_STATE` (see below). `startup` commands run once when the session starts, so editing them takes effect at the next start.
+Programs started by NeferWL get `WAYLAND_DISPLAY`, `DISPLAY` and `NEFERWL_STATE`. `startup` changes apply at the next session.
 
 ## Clipboard
 
-NeferWL supports the clipboard (`wl_data_device`), the primary selection (middle-click paste) and `ext_data_control_v1` for clipboard managers. To keep a history with [cliphist](https://github.com/sentriz/cliphist), store every copy at startup and bind a picker script:
+The clipboard, primary selection (middle-click paste) and clipboard managers work. A [cliphist](https://github.com/sentriz/cliphist) history:
 
 ```text
 startup = wl-paste --watch cliphist store
 bind.cmd+v = spawn cliphist-pick
 ```
 
-`~/.local/bin/cliphist-pick`:
-
 ```sh
 #!/bin/sh
+# ~/.local/bin/cliphist-pick
 cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
 ```
 
@@ -55,44 +42,37 @@ Drag and drop is not supported yet.
 
 ## Input methods
 
-NeferWL supports `zwp_text_input_v3` for apps and `zwp_input_method_v2` for one input method, such as [fcitx5](https://fcitx-im.org) or IBus. Start the input method at session start:
+[fcitx5](https://fcitx-im.org) and IBus work through `zwp_input_method_v2`. Start one at session start:
 
 ```text
 startup = fcitx5 -d
 ```
 
-Text input follows keyboard focus. The input method can grab the keyboard to compose text from keys (CJK, dead keys); the focused app then receives the composed text. A second input method gets `unavailable` until the first one exits. Candidate popups (`zwp_input_popup_surface_v2`) receive the text cursor position but are not drawn yet.
+Candidate popups are not drawn yet.
 
 ## X11 apps
 
-X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, found in `PATH`. NeferWL opens an X11 display, sets `DISPLAY` for the programs it starts, and starts xwayland-satellite when the first X11 app connects. If xwayland-satellite exits, the next X11 app starts it again.
+X11 apps such as Steam run through [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7+, found in `PATH`. NeferWL starts it when the first X11 app connects; do not start it yourself.
 
 ```text
-xwayland = xwayland-satellite   # the default; a path also works
-xwayland = off                  # no X11 display
+xwayland = off   # no X11 support
 ```
-
-Do not start xwayland-satellite yourself with `startup`. Changing `xwayland` takes effect at the next start.
 
 ## Session locking
 
-External lockers use `ext-session-lock-v1`. NeferWL isolates desktop input and captures, covers every output, and stays protected if the locker dies. Authentication belongs to the locker; screen-off and a visual cover do not replace locking. See [Session locking](session-lock.md) for confirmation, recovery and security limits.
+Use an external locker such as swaylock or hyprlock. See [Session locking](session-lock.md).
 
 ## Screen capture
 
-nefercap, `grim` and screen sharing through `xdg-desktop-portal-wlr` work out of the box. Other recorders must be added to `/etc/neferwl/capture-allow`. Every capture shows a red border. See [Screen capture](capture.md).
+nefercap, `grim` and screen sharing through `xdg-desktop-portal-wlr` work out of the box. Other tools must be added to the allowlist. See [Screen capture](capture.md).
 
 ## Idle and screen off
 
-NeferWL supports `ext_idle_notifier_v1` and `zwlr_output_power_management_v1`, so [swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay. A window that inhibits idle, such as a video player or a game, keeps them on. A display that disconnects in deep sleep comes back off when it reconnects, unless there was keyboard, pointer or touch input in the meantime.
-
-Programs that inhibit idle over D-Bus instead (browsers, Electron apps, VLC) are covered too: NeferWL serves `org.freedesktop.ScreenSaver` on the session bus. The desktop portal's `Inhibit` reaches it only through a portal backend that forwards to that name, such as `xdg-desktop-portal-gtk`; `xdg-desktop-portal-wlr` does not implement `Inhibit`. An inhibition ends when the program releases it or leaves the bus, and `SimulateUserActivity` counts as input. If another program owns the name, or the session bus is missing, NeferWL logs a warning and tries again later, so it takes over once the name is free or the bus is back.
+[swayidle](https://github.com/swaywm/swayidle) and [wlopm](https://git.sr.ht/~leon_plickat/wlopm) turn the screens off after a delay:
 
 ```text
 startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 ```
-
-`swayidle` runs its commands through a shell; NeferWL does not, so the quoted form `timeout 300 'wlopm --off "*"'` does not fit on a `startup` line. Put each command in a script (see [Running commands](#running-commands)):
 
 ```sh
 #!/bin/sh
@@ -100,57 +80,38 @@ startup = swayidle -w timeout 300 wlopm-off resume wlopm-on
 exec wlopm --off '*'
 ```
 
+Video players, games and browsers keep the screens on while they ask to, through Wayland or D-Bus (`org.freedesktop.ScreenSaver`).
+
 ## Power keys
 
-NeferWL takes logind's `handle-power-key`, `handle-suspend-key`, `handle-hibernate-key` and `handle-reboot-key` inhibitor locks. logind then no longer powers off, suspends, hibernates or reboots when one of those keys is pressed: the key reaches NeferWL, and nothing happens unless a bind uses it. Binds are off while the session is locked, so these keys do nothing on the lock screen.
-
-| logind key | Kernel key | Bind |
-|---|---|---|
-| power | `KEY_POWER` | `XF86PowerOff` |
-| suspend | `KEY_SLEEP` | `XF86Sleep` |
-| hibernate | `KEY_SUSPEND` | `XF86Suspend` |
-| reboot | `KEY_RESTART` | `code:408` (no keysym) |
+NeferWL stops logind from acting on the power, suspend, hibernate and reboot keys. They do nothing unless you bind them:
 
 ```text
 bind.XF86PowerOff = spawn systemctl suspend
 bind.XF86Suspend = spawn systemctl hibernate
 ```
 
-The lid switch is not covered: logind still handles it. The locks last as long as NeferWL runs; if it crashes, logind handles the keys again. When logind restarts, NeferWL keeps the old locks until it has taken new ones. If the system bus or logind is missing, NeferWL logs a warning and tries again later, and the keys keep logind's behaviour until it succeeds.
+| Key | Bind name |
+|---|---|
+| Power | `XF86PowerOff` |
+| Sleep | `XF86Sleep` |
+| Suspend | `XF86Suspend` |
+| Reboot | `code:408` |
+
+The lid switch is still handled by logind.
 
 ## Bars
 
-NeferWL supports `ext_workspace_manager_v1` for bars such as Waybar 0.13+ (`ext/workspaces`) and ironbar. Bars get workspace updates and can switch workspaces without polling.
+Waybar 0.13+ (`ext/workspaces`) and ironbar show and switch workspaces. Taskbars can list, focus and close windows.
 
-Each workspace has an `id`, the same as `workspace_id` in the [state file](#state-for-scripts):
-
-| Workspace | `id` | Stable |
-|---|---|---|
-| Named | `name:<configured name>` | Across launches |
-| Numbered | `<prefix>-<n>`, with a random prefix per launch | For the current launch only |
-
-Only store settings keyed on named workspace IDs.
-
-Taskbars can list, focus, close and fullscreen windows through `zwlr_foreign_toplevel_manager_v1`, and notification daemons such as Dunst can detect fullscreen windows. `ext_foreign_toplevel_list_v1` lists the same windows with an `identifier` (`neferwl-<window>-<mapping>`) that is never reused in a session (a window that maps again gets a new one); portals use it to share single windows. While the session is locked, bars and taskbars get no updates.
+Workspace IDs are `name:<name>` for named workspaces, stable across launches. Numbered workspaces get a random prefix per launch, so do not save settings keyed on them.
 
 ## State for scripts
 
-While it runs, NeferWL writes its state to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json` and passes that path to the programs it starts as `NEFERWL_STATE`. The file lists:
-
-- every output, with its active numbered workspace, workspace count, and the name (`workspace`) and ID string (`workspace_id`) of the workspace on screen;
-- the focused output and window;
-- every window, with its app ID, PID, output, workspace, `workspace_id` (the ID string of its workspace, numbered or hidden) and whether it is on screen (`visible`);
-- `floating: true` for floating windows. Stashed windows also have their 1-based place in their workspace's stash (`stash_index` of `stash_count`, both `0` outside it) and `hidden: true` while the stash is hidden.
-- for tiled windows, their 1-based `column` (layout order, left to right with `overflow = "scroll"`; with `overflow = "fixed"`, the spiral breaks that, so a later column can sit below or beside an earlier one) and `row` (top to bottom in the column); both are `0` when `floating` is true. Sort by `column`, `row` for layout order.
+NeferWL writes its state as JSON to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json`, also given to started programs as `$NEFERWL_STATE`. It lists outputs, workspaces, the focused window, and every window with its app ID, PID, workspace, column and row.
 
 ```sh
-neferwl state                        # the whole state as JSON
-neferwl state output-of "$PID"       # the output of that process's window, or its nearest parent's
-```
-
-`output-of` finds application windows only, because a bar has no single output.
-
-```sh
-# Windows waiting in hidden stashes
-neferwl state | jq '[.windows[] | select(.hidden)] | length'
+neferwl state                        # the whole state
+neferwl state output-of "$PID"       # the output showing that process's window
+neferwl state | jq '[.windows[] | select(.hidden)] | length'   # windows in hidden stashes
 ```
