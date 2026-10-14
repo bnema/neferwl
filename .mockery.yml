@@ -111,3 +111,40 @@ packages:
           dir: internal/adapters/statefile
           pkgname: statefile
           filename: proc_tree_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/screencast:
+    interfaces:
+      bus:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: bus_mock_test.go
+      videoSource:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: video_source_mock_test.go
+      videoCore:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: video_core_mock_test.go
+      peerResolver:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: peer_resolver_mock_test.go
+      runner:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: runner_mock_test.go
+      dialer:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: dialer_mock_test.go
+      pipewireOpener:
+        config:
+          dir: internal/adapters/screencast
+          pkgname: screencast
+          filename: pipewire_opener_mock_test.go
