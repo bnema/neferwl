@@ -29,11 +29,27 @@ func (s *Service) applyInventory(inv ports.CastInventory) {
 		return
 	}
 	if s.owns[1] && !reflect.DeepEqual(old.Outputs, inv.Outputs) {
-		s.conn.NewSignal(pathDisplayConfig, ifaceDisplayConfig, "MonitorsChanged", "")
-		s.send()
+		s.notifyAllowed(pathDisplayConfig, ifaceDisplayConfig, "MonitorsChanged")
 	}
 	if s.owns[2] && !reflect.DeepEqual(old.Windows, inv.Windows) {
-		s.conn.NewSignal(pathIntrospect, ifaceIntrospect, "WindowsChanged", "")
+		s.notifyAllowed(pathIntrospect, ifaceIntrospect, "WindowsChanged")
+	}
+}
+
+// notifyAllowed sends a body-less signal to each peer that passed the caller
+// check and whose executable the allowlist admits now. The signals are
+// directed: the inventory (output names, window titles) is never broadcast,
+// so a peer that was refused, or has not been checked, learns nothing. At
+// most maxCallers peers are served, from the cache, without allocation. The
+// executable is read again through the pidfd, as at the privileged entry
+// points. Peers that left the bus are gone from the cache (onGone).
+func (s *Service) notifyAllowed(path, iface, member string) {
+	for i := range s.callers {
+		c := &s.callers[i]
+		if c.state != callerKnown || !s.allowed(c.exe) || !s.recheck(c) {
+			continue
+		}
+		s.conn.NewSignalTo(c.name, path, iface, member, "")
 		s.send()
 	}
 }

@@ -594,3 +594,93 @@ func TestDisplayConfigAndWindows(t *testing.T) {
 		t.Fatalf("windows %v", got)
 	}
 }
+
+// MonitorsChanged and WindowsChanged are directed: a peer that was refused
+// gets nothing, even with a match rule for them; an allowed one gets them,
+// and a peer that left the bus is forgotten.
+func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
+	h := newSvcHarness(t, harnessOpts{})
+	h.peers.exeFile = func(n int) string {
+		if n == 0 || n == 2 {
+			return "/usr/bin/grim"
+		}
+		return "/usr/bin/evil"
+	}
+	allowed, denied, gone := h.client(), h.client(), h.client()
+	for _, n := range []string{nameDisplayConfig, nameIntrospect} {
+		h.waitName(allowed, n)
+	}
+	rule := "type='signal',path='" + pathIntrospect + "'"
+	rule2 := "type='signal',path='" + pathDisplayConfig + "'"
+	for _, x := range []*zerobus.Conn{allowed, denied, gone} {
+		for _, r := range []string{rule, rule2} {
+			if err := x.AddMatch(r); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// Check in order: allowed (pidfd 0), denied (1), gone (2).
+	for i, x := range []*zerobus.Conn{allowed, denied, gone} {
+		want := ""
+		if i == 1 {
+			want = errAccessDenied
+		}
+		if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != want {
+			t.Fatalf("peer %d: %q, want %q", i, name, want)
+		}
+	}
+	_ = gone.Close()
+	// The first inventory is not a change. Wait until the owner applied it
+	// (a published inventory replaces an unread one), then publish a change.
+	h.svc.Inventory(testInventory())
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, m := callErr(allowed, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil)
+		if m != nil && m.Signature == "a{ta{sv}}" {
+			r := m.Body()
+			if end := r.Array('{'); r.More(end) {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("inventory not applied")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	changed := testInventory()
+	changed.Windows = append(changed.Windows, ports.CastWindow{ID: 9, AppID: "x", Title: "new"})
+	changed.Outputs[0].X = 100
+	h.svc.Inventory(changed)
+	got := make(chan string, 8)
+	go func() {
+		for {
+			m, err := allowed.ReadMessage()
+			if err != nil {
+				return
+			}
+			if m.Type == zerobus.TypeSignal && (m.Member == "WindowsChanged" || m.Member == "MonitorsChanged") {
+				got <- m.Member
+			}
+		}
+	}()
+	seen := map[string]bool{}
+	for len(seen) < 2 {
+		select {
+		case m := <-got:
+			seen[m] = true
+		case <-time.After(5 * time.Second):
+			t.Fatalf("allowed peer heard %v", seen)
+		}
+	}
+	// A round trip through the service orders the signals before its answer:
+	// the denied peer would have heard them by now.
+	denied.Handle = func(m *zerobus.Message) {
+		if m.Member == "WindowsChanged" || m.Member == "MonitorsChanged" {
+			t.Errorf("refused peer got %s", m.Member)
+		}
+	}
+	denied.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetId", "")
+	if _, err := denied.Call(); err != nil {
+		t.Fatal(err)
+	}
+}
