@@ -362,7 +362,7 @@ The command comes from `terminal`, then `$TERMINAL`, then `foot`.
 - [Session locking](docs/session-lock.md): external lockers, recovery and security limits.
 - [Screen capture](docs/capture.md): protocols, indicator, executable allowlist and portals.
 - [Headless mode](docs/headless.md): screenshots, input scripts and input-method testing without a screen.
-- [Performance](docs/performance.md): rendering, frame pacing, profiling and reference measurements.
+- [Performance](docs/performance.md): VRR, real-time priority, profiling and frame stats.
 
 ## Contributing
 
