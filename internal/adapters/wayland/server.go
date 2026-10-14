@@ -420,15 +420,6 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.colorFeedbacks = map[*colorFeedback]struct{}{}
 	s.tokens = map[string]activationToken{}
 	s.foreignExports = map[string]*foreignExport{}
-	if opts.Keymap != "" {
-		fd, size, e := keymapFile(opts.Keymap)
-		if e != nil {
-			cleanup()
-			d.Close()
-			return nil, e
-		}
-		s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, opts.Keymap
-	}
 	s.syncWait.log = log
 	s.cleanup = func() {
 		if s.paceReady {
@@ -449,20 +440,28 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		}
 		cleanup()
 	}
-	if s.securityStop, err = unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK); err != nil {
+	// Run never starts after a failure here: release what it would close.
+	abort := func(err error) (*Server, error) {
 		s.cleanup()
+		s.syncWait.discard()
 		d.Close()
 		return nil, err
+	}
+	if opts.Keymap != "" {
+		fd, size, e := keymapFile(opts.Keymap)
+		if e != nil {
+			return abort(e)
+		}
+		s.seat.keymapFD, s.seat.keymapSize, s.seat.keymapText = fd, size, opts.Keymap
+	}
+	if s.securityStop, err = unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK); err != nil {
+		return abort(err)
 	}
 	if err = s.openPaceTimer(); err != nil {
-		s.cleanup()
-		d.Close()
-		return nil, err
+		return abort(err)
 	}
 	if err = registerGlobals(d, opts, s); err != nil {
-		s.cleanup()
-		d.Close()
-		return nil, err
+		return abort(err)
 	}
 	for _, p := range opts.Outputs {
 		s.addOutput(p)
