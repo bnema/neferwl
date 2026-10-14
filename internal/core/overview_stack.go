@@ -354,7 +354,7 @@ func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bo
 		at = slices.Index(items, m.stackFront(w))
 	}
 	cards := make([][]Placement, len(items))
-	step := w.peekStep()
+	step := w.peekStep(axis)
 	// along is the offset of d steps on the overview axis.
 	along := func(d int) (int, int) {
 		var r Rect

@@ -50,12 +50,13 @@ func TestOverviewPeekEnvelopeAndSingleCardHorizontal(t *testing.T) {
 	front := previewOf(t, m.Layout(), 7)
 	back := previewOf(t, m.Layout(), 8)
 	step := float64(front.Rect.Y - back.Rect.Y)
-	if step < float64(w.Usable.H)*w.overviewZoom()*0.06 {
+	if step < float64(w.Usable.H)*w.overviewZoom(verticalAxis)*0.06 {
 		t.Fatalf("peek step %.1f", step)
 	}
-	y := w.Usable.Y + (w.Usable.H-w.rowHeight())/2
-	if back.Rect.Y < y || front.Rect.Y+front.Rect.H > y+w.rowHeight() {
-		t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+w.rowHeight())
+	h := w.rowHeight(verticalAxis)
+	y := w.Usable.Y + (w.Usable.H-h)/2
+	if back.Rect.Y < y || front.Rect.Y+front.Rect.H > y+h {
+		t.Fatalf("outside row front %+v back %+v row %d..%d", front, back, y, y+h)
 	}
 	m.OverviewMove(1, 0)
 	if m.stackFront(w) != (stackItem{stackFloat, 7}) {

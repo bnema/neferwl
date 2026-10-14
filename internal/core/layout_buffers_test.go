@@ -146,7 +146,7 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 			buf = m.layoutInto(buf)
 			buf = m.Current().layoutInto(buf)
 			m.Current().previewTiles()
-			m.Current().overviewZoom()
+			m.Current().overviewZoom(m.overviewAxis())
 		}
 		// layoutInto builds in the caller's buffer, never in a scratch of
 		// the workspace: with the capacity there it returns that storage.
@@ -164,8 +164,8 @@ func TestLayoutResultsDoNotAlias(t *testing.T) {
 		// unchanged.
 		mine := w.layoutInto(make([]Placement, 0, len(res)))
 		mineKept := slices.Clone(mine)
-		w.overviewZoom()
-		w.peekStep()
+		w.overviewZoom(m.overviewAxis())
+		w.peekStep(m.overviewAxis())
 		w.previewTiles()
 		w.columnRects()
 		_ = w.Layout()

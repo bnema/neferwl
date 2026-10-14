@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"testing"
 
@@ -70,7 +71,7 @@ func hiddenOff(p Placement) bool { return p.Hidden && p.Preview == 0 && !p.Focus
 
 // The zoom does not depend on the number of bands.
 func TestOverviewCascadeZoomIgnoresBandCount(t *testing.T) {
-	if one, three := cascadeWorkspace(3).overviewZoom(), cascadeWorkspace(7).overviewZoom(); one != three || one != overviewMaxZoom {
+	if one, three := cascadeWorkspace(3).overviewZoom(horizontalAxis), cascadeWorkspace(7).overviewZoom(horizontalAxis); one != three || one != overviewMaxZoom {
 		t.Fatalf("zoom with one band %v, with three %v", one, three)
 	}
 }
@@ -216,42 +217,46 @@ func TestOverviewCascadeNeighborBelowScrollShowsOneBand(t *testing.T) {
 	}
 }
 
-// The stash pile is inside the current slot, left of the band; the
-// previous workspace stays clear of it.
+// The stash pile is centred on the current row, straddling the bottom edge
+// of the selected lane, over the tiles; it takes no room in the slot.
 func TestOverviewCascadeStashInSlot(t *testing.T) {
 	m := cascadeOverview()
+	m.ToggleOverview()
+	bare, _ := m.overviewRows()
+	m.CancelOverview()
 	withStash(m, 2)
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
-	cur, prev := rows[m.Current()], rows[m.Workspaces[0]]
-	ps := m.Layout()
-	left := cur.X + cur.W
-	for _, id := range []WindowID{7, 8, 9} {
-		left = min(left, previewOf(t, ps, id).Rect.X)
+	w := m.Current()
+	cur, prev := rows[w], rows[m.Workspaces[0]]
+	if cur != bare[w] {
+		t.Fatalf("the pile changed the slot: %v, without it %v", cur, bare[w])
 	}
-	for _, id := range []WindowID{40, 41} {
-		p := previewOf(t, ps, id)
-		if p.Hidden || p.Preview != overviewCardZoom {
-			t.Fatalf("pile card %d: %+v", id, p)
-		}
-		if p.Rect.X < cur.X || p.Rect.X+p.Rect.W > left {
-			t.Fatalf("pile card %d not inside the slot, left of the band (%d..%d): %+v", id, cur.X, left, p.Rect)
-		}
-		// 41 is the front card of the pile.
-		if id == 41 && !within1(centreY(p.Rect), centreY(previewOf(t, ps, 8).Rect)) {
-			t.Fatalf("pile not level with the selected lane: %+v", p.Rect)
-		}
+	ps := m.Layout()
+	lane := previewOf(t, ps, 8).Rect
+	// 41 is the front card of the pile, 40 behind it.
+	front := previewOf(t, ps, 41)
+	if front.Hidden || front.Peek || front.Preview != overviewCardZoom {
+		t.Fatalf("front card: %+v", front)
+	}
+	if back := previewOf(t, ps, 40); back.Hidden || !back.Peek {
+		t.Fatalf("card behind: %+v", back)
+	}
+	if !within1(front.Rect.X+front.Rect.W/2, cur.X+cur.W/2) {
+		t.Fatalf("pile not centred on the row %v: %+v", cur, front.Rect)
+	}
+	// The lane is centred in the slot; its tiles stop a gap short of its
+	// bottom edge.
+	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom(horizontalAxis)))
+	bottom := cur.Y + (cur.H-rowH)/2 + rowH
+	if !within1(centreY(front.Rect), bottom) || front.Rect.Y >= lane.Y+lane.H {
+		t.Fatalf("pile not across the lane's bottom edge %d (lane %v): %+v", bottom, lane, front.Rect)
 	}
 	// The pile does not shift the band: its row stays centred on the area.
 	u := m.Current().overviewArea()
 	lo, hi := previewOf(t, ps, 7).Rect, previewOf(t, ps, 9).Rect
 	if mid := (lo.X + hi.X + hi.W) / 2; !within1(mid, u.X+u.W/2) {
 		t.Fatalf("band centre %d with a stash, area centre %d", mid, u.X+u.W/2)
-	}
-	for _, id := range []WindowID{1, 2, 3} {
-		if p := previewOf(t, ps, id); !p.Hidden && p.Rect.X+p.Rect.W > cur.X {
-			t.Fatalf("previous workspace overlaps the slot with the pile: %+v", p.Rect)
-		}
 	}
 	if prev.X+prev.W > cur.X {
 		t.Fatalf("slots overlap: %v %v", prev, cur)
@@ -334,21 +339,32 @@ func TestOverviewCascadeKeys(t *testing.T) {
 			}
 			m.CancelOverview()
 
-			// With a stash: left from the first column enters it, right
-			// comes back to the band's first column, left twice goes to
-			// the previous workspace.
+			// With a stash: left from the first column still goes to the
+			// previous workspace. Down past the last band enters the
+			// stash, right comes back to the band's first column, and
+			// left from the stash goes to the previous workspace.
 			withStash(m, 2)
 			w.FocusID(7)
 			m.ToggleOverview()
 			d.move(m, -1, 0)
+			if m.Current() != prev {
+				t.Fatal("left from the first column with a stash did not reach the previous workspace")
+			}
+			m.CancelOverview()
+			m.ToggleOverview()
+			d.move(m, 0, 1)
+			if m.cardAt(w) >= 0 || sel() != 10 {
+				t.Fatalf("down to the last band: card %d, column %d", m.cardAt(w), sel())
+			}
+			d.move(m, 0, 1)
 			if m.cardAt(w) < 0 {
-				t.Fatal("left from the first column did not select the stash")
+				t.Fatal("down past the last band did not select the stash")
 			}
 			d.move(m, 1, 0)
-			if m.cardAt(w) >= 0 || sel() != 7 {
+			if m.cardAt(w) >= 0 || sel() != 10 {
 				t.Fatalf("right from the stash: card %d, column %d", m.cardAt(w), sel())
 			}
-			d.move(m, -1, 0)
+			d.move(m, 0, 1)
 			d.move(m, -1, 0)
 			if m.Current() != prev {
 				t.Fatal("left from the stash did not reach the previous workspace")
@@ -369,9 +385,9 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 			m := cascadeOverview()
 			withStash(m, 3)
 			w := m.Current()
-			w.FocusID(7)
+			w.FocusID(10)
 			m.ToggleOverview()
-			d.move(m, -1, 0)
+			d.move(m, 0, 1)
 			if m.cardAt(w) != w.stashAt {
 				t.Fatalf("entered at %d", m.cardAt(w))
 			}
@@ -467,6 +483,23 @@ func TestOverviewCascadeThreeFinger(t *testing.T) {
 	}
 }
 
+// Three fingers down past the last band enter the stash below it.
+func TestOverviewCascadeThreeFingerDownEntersStash(t *testing.T) {
+	c, m := cascadeCore(t)
+	withStash(m, 2)
+	w := m.Current()
+	w.FocusID(6)
+	m.ToggleOverview()
+	c.swipeBegin(ports.SwipeBegin{Fingers: 3})
+	for range 4 {
+		c.swipeUpdate(ports.SwipeUpdate{DY: 40})
+	}
+	c.swipeEnd(ports.SwipeEnd{})
+	if m.Current() != w || m.cardAt(w) != w.stashAt {
+		t.Fatalf("swipe down from the last band: card %d, want %d", m.cardAt(w), w.stashAt)
+	}
+}
+
 // Right from a stash card lands on the maximized column, which keeps its
 // maximization: it is alone in its band.
 func TestOverviewCascadeStashToMaximized(t *testing.T) {
@@ -502,6 +535,102 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	}
 	if d.X < cur.X+cur.W || d.X+d.W > dev.X {
 		t.Fatalf("divider %v not between %v and %v", d, cur, dev)
+	}
+}
+
+// A card behind the front one of the pile is clicked where it shows,
+// over the selected lane's tiles.
+func TestOverviewCascadeStashPeekClick(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 2)
+	m.ToggleOverview()
+	ps := m.Layout()
+	front, back := previewOf(t, ps, 41).Rect, previewOf(t, ps, 40).Rect
+	// The strip of 40 above the front card, inside the lane's tiles.
+	x, y := float64(back.X+back.W-1), float64(back.Y)
+	if back.Y >= front.Y || back.Y < previewOf(t, ps, 8).Rect.Y {
+		t.Fatalf("setup: back %v front %v", back, front)
+	}
+	if id := overviewIn(ps, x, y); id == 40 {
+		t.Fatal("setup: the tiles do not cover the strip")
+	}
+	if id := m.overviewHit(ps, x, y); id != 40 {
+		t.Fatalf("clicked %d, want 40", id)
+	}
+	if id := m.overviewHit(ps, float64(front.X+front.W/2), float64(front.Y+front.H/2)); id != 41 {
+		t.Fatalf("front card clicked %d, want 41", id)
+	}
+}
+
+// The pile stays inside the area, down to a tiny output.
+func TestOverviewCascadeStashInsideArea(t *testing.T) {
+	for _, size := range [][2]int{{300, 200}, {1920, 1080}, {1080, 1920}, {3440, 1440}, {60, 40}} {
+		m := cascadeOverview()
+		m.SetOutput(size[0], size[1])
+		withStash(m, 4)
+		m.ToggleOverview()
+		u := m.Current().overviewArea()
+		for _, id := range []WindowID{40, 41, 42, 43} {
+			p := previewOf(t, m.Layout(), id)
+			if !p.Hidden && (p.Rect.Y < u.Y || p.Rect.Y+p.Rect.H > u.Y+u.H || p.Rect.X < u.X || p.Rect.X+p.Rect.W > u.X+u.W) {
+				t.Fatalf("%v: card %d %v outside %v", size, id, p.Rect, u)
+			}
+		}
+	}
+}
+
+// A stash takes no room in a cascade overview, on a neighbor either: a
+// wide scroll workspace beside it keeps its zoom and slot.
+func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
+	m := cascadeOverview()
+	prev := m.Workspaces[0]
+	m.Focus(0)
+	for id := WindowID(60); id < 64; id++ {
+		m.AddWindow(id)
+	}
+	m.Focus(1)
+	m.ToggleOverview()
+	bare, _ := m.overviewRows()
+	zoom := prev.overviewZoom(horizontalAxis)
+	m.CancelOverview()
+	if zoom <= overviewMinZoom || zoom >= overviewMaxZoom {
+		t.Fatalf("setup: neighbor zoom %v is at a bound", zoom)
+	}
+	// The same columns, with one more window stashed.
+	m.Focus(0)
+	m.AddWindow(64)
+	prev.FocusID(64)
+	prev.ToggleWindowStash()
+	m.Focus(1)
+	m.ToggleOverview()
+	rows, _ := m.overviewRows()
+	if rows[prev] != bare[prev] || prev.overviewZoom(horizontalAxis) != zoom {
+		t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows[prev], prev.overviewZoom(horizontalAxis), bare[prev], zoom)
+	}
+	if p := previewOf(t, m.Layout(), 64); p.Hidden || !p.Peek {
+		t.Fatalf("neighbor pile card: %+v", p)
+	}
+}
+
+// Down from a covering float enters the stash; right brings the columns
+// back to the front.
+func TestOverviewCascadeFloatStashRight(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 1)
+	w := m.Current()
+	w.AddFloating(90, 300, 200)
+	w.FocusID(90)
+	m.ToggleOverview()
+	if f := m.stackFront(w); f.kind != stackFloat {
+		t.Fatalf("setup: front %+v", f)
+	}
+	m.OverviewMove(0, 1)
+	if m.cardAt(w) < 0 {
+		t.Fatal("down from the float did not select the stash")
+	}
+	m.OverviewMove(1, 0)
+	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns || m.overviewTarget() == 0 {
+		t.Fatalf("right from the stash: card %d, front %+v, target %d", m.cardAt(w), m.stackFront(w), m.overviewTarget())
 	}
 }
 
@@ -553,8 +682,8 @@ func TestOverviewCascadeCoveringFloat(t *testing.T) {
 			// The cards behind fan to the left: coming to the front, the
 			// columns move right by one peek step.
 			front := previewOf(t, m.Layout(), 10)
-			if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep() {
-				t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep())
+			if front.Peek || front.Rect.X-behind.Rect.X != w.peekStep(horizontalAxis) {
+				t.Fatalf("columns behind %v, in front %v, peek step %d", behind.Rect, front.Rect, w.peekStep(horizontalAxis))
 			}
 			d.move(m, 1, 0)
 			if f := m.stackFront(w); f.kind != stackFloat || f.id != 90 {
@@ -617,9 +746,9 @@ func TestOverviewCascadeFocusBinds(t *testing.T) {
 
 	// A selected stash card keeps the pile cycle.
 	withStash(m, 3)
-	w.FocusID(7)
+	w.FocusID(10)
 	m.ToggleOverview()
-	m.OverviewMove(-1, 0)
+	m.OverviewMove(0, 1)
 	at := m.cardAt(w)
 	m.overviewFocus(ActionFocusWorkspacePrev)
 	if m.Current() != w || m.cardAt(w) != at-1 {
