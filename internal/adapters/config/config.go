@@ -170,6 +170,7 @@ func Defaults() ports.Config {
 	c.Stash.Gap = 2
 	c.Stash.Dim = 0.5
 	c.Stash.Capture = true
+	c.Stash.SpawnTerminal = true
 	c.Border.Width = 2
 	c.Border.Active = "#808080"
 	c.Border.Inactive = "#111111"
@@ -760,6 +761,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Stash.Capture = b
+	case "stash.spawn-terminal":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Stash.SpawnTerminal = b
 	case "border.width":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 32 {
@@ -1207,6 +1214,12 @@ func checkAction(v string) error {
 		}
 		return nil
 	}
+	if rest, ok := strings.CutPrefix(v, "stash "); ok {
+		if len(ports.SplitCommands(rest)) == 0 {
+			return fmt.Errorf("stash needs a command")
+		}
+		return nil
+	}
 	if rest, ok := strings.CutPrefix(v, "workspace "); ok {
 		if !workspaceName.MatchString(strings.TrimSpace(rest)) {
 			return fmt.Errorf("workspace needs a name (letters, digits, - or _)")
@@ -1239,7 +1252,7 @@ func checkAction(v string) error {
 		}
 	}
 	if !actions[v] {
-		return fmt.Errorf(`unknown action %q (or "spawn <command>", "workspace <name>")`, v)
+		return fmt.Errorf(`unknown action %q (or "spawn <command>", "stash <command>", "workspace <name>")`, v)
 	}
 	return nil
 }

@@ -60,13 +60,13 @@ func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
 		t.Fatal("focus did not move to another workspace")
 	}
 	t0 := time.Unix(123, 0)
-	req := c.placement.request([]string{"foot"}, spawnTarget{terminal: target, at: t0})
+	req := c.placement.request([]string{"foot"}, spawnTarget{kind: spawnTerminal, ws: target, at: t0})
 	token := strings.TrimPrefix(req.Env[0], ports.SlotEnv+"=")
-	c.placement.expireTerminals(t0.Add(termRetry))
+	c.placement.expireWorkspaceClaims(t0.Add(termRetry))
 	if _, ok := c.placement.pending[token]; !ok {
 		t.Fatal("claim expired at retry boundary")
 	}
-	c.placement.expireTerminals(t0.Add(termRetry + time.Nanosecond))
+	c.placement.expireWorkspaceClaims(t0.Add(termRetry + time.Nanosecond))
 	if _, ok := c.placement.pending[token]; ok {
 		t.Fatal("claim survived past retry boundary")
 	}

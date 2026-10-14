@@ -49,7 +49,14 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 		if c.gesture.on && c.gesture.kind == ports.GestureSwipe {
 			return c.gestureEnd(ctx, ports.GestureSwipe, v.Cancelled, v.Time)
 		}
-		return c.slid(ctx, c.swipeEnd(v))
+		shown, spawn := c.swipeEnd(v)
+		if spawn != nil {
+			// As a bind: the terminal starts before the new state is published.
+			if err := c.runSpawn(ctx, spawn, Effect{Spawn: true, Stash: true}); err != nil {
+				return err
+			}
+		}
+		return c.slid(ctx, shown)
 	case ports.PinchBegin:
 		return c.gestureBegin(ctx, ports.GesturePinch, v.Fingers, v.Time)
 	case ports.PinchUpdate:
@@ -342,19 +349,8 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 		return ErrQuit
 	}
 	if effect.Spawn {
-		commands := effect.Commands
-		if commands == nil {
-			commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
-		}
-		// Explicit actions are suppressed on a full launcher queue;
-		// never keep the input owner waiting across an epoch change.
-		for _, argv := range commands {
-			if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
-				break
-			}
-		}
-		if c.inputEpochChanged() {
-			return errSecurityChanged
+		if err := c.runSpawn(ctx, before, effect); err != nil {
+			return err
 		}
 	}
 	if c.swipedWorkspace() != swiped {
@@ -370,6 +366,57 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 		}
 	}
 	return c.publish(ctx)
+}
+
+// runSpawn starts the programs of a spawn effect of an action applied to w:
+// the given commands, else the configured terminal. A stash effect opens the
+// windows in the stash of w. It reports errSecurityChanged when the input
+// epoch changed meanwhile.
+func (c *Core) runSpawn(ctx context.Context, w *Workspace, effect Effect) error {
+	commands := effect.Commands
+	if commands == nil {
+		commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
+	}
+	if effect.Stash {
+		if err := c.spawnStash(ctx, w, commands, effect.Commands == nil); err != nil {
+			return err
+		}
+	} else {
+		// Explicit actions are suppressed on a full launcher queue;
+		// never keep the input owner waiting across an epoch change.
+		for _, argv := range commands {
+			if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
+				break
+			}
+		}
+	}
+	if c.inputEpochChanged() {
+		return errSecurityChanged
+	}
+	return nil
+}
+
+// spawnStash runs commands whose windows open in the stash of w, the
+// workspace the bind acted on. Wayland reads the claim tokens only while it
+// knows slots are pending, so that is published before the spawn, as
+// spawnEmpty does. A send the gate suppresses leaves no claim behind. With
+// terminal set (the terminal of an empty stash), nothing starts while the
+// previous one is still awaited.
+func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool) error {
+	if c.protectionRequested() {
+		return nil
+	}
+	now := c.now()
+	c.placement.expireWorkspaceClaims(now)
+	if terminal && c.placement.workspacePending(w, spawnStash) {
+		return nil
+	}
+	reqs := make([]ports.SpawnRequest, len(commands))
+	for i, argv := range commands {
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
+	}
+	_, err := c.dispatch(ctx, reqs)
+	return err
 }
 
 // scaleBind steps the focused output's scale and asks for it to be saved.

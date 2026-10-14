@@ -206,6 +206,7 @@ stash.width = 80
 stash.gap = 2
 stash.dim = 0.5
 stash.capture = on
+stash.spawn-terminal = on
 
 # Input
 touchpad.natural-scroll = off

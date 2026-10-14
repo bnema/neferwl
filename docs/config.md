@@ -38,6 +38,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `stash.gap` | `2` | Gap around the selected stashed window, in % (0–10) |
 | `stash.dim` | `0.5` | Darkening of the stash neighbors, 0 to 1 |
 | `stash.capture` | `on` | A window opened while the stash shows joins the stash |
+| `stash.spawn-terminal` | `on` | `toggle-stash-visible` on an empty stash opens `terminal` in it |
 | `touchpad.natural-scroll` | `off` | Content follows the fingers |
 | `touchpad.tap` | `on` | Tap to click |
 | `touchpad.accel-speed` | `0` | Pointer speed, `-1` to `1` |
@@ -173,6 +174,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 |---|---|
 | `spawn <command>` | Run a program |
 | `spawn-terminal` | Run `terminal` |
+| `stash <command>` | Run a program and open its window in the [stash](#stash) |
 | `close-window` | Close the focused window |
 | `toggle-fullscreen` | Fullscreen the focused window. Nothing shows above it except its own dialogs |
 | `toggle-floating` | Make the focused window [float](#free-floating-windows), or put it back in its column |
@@ -250,6 +252,14 @@ A cell is `1/max-columns` of the screen width. A column is 1 to 16 cells wide. C
 ### Stash
 
 Each workspace has a stash: a strip of windows set aside with `toggle-window-stash`. The selected one shows centered over your columns, with its neighbors dimmed on the sides. `focus-column-left/right` or a three-finger swipe browse it. `toggle-stash-visible` or a four-finger swipe hides it.
+
+`stash <command>` runs a program and opens its window straight in the stash of the workspace you were on, selected and focused, even if you switch workspace before it appears. With `stash.spawn-terminal`, `toggle-stash-visible` or the four-finger swipe down on an empty stash does the same with `terminal`.
+
+```ini
+bind.cmd+shift+f = stash firefox
+```
+
+The window must appear within 5 seconds, otherwise it opens normally. Apps that hand a launch to an already running instance (single-instance browsers, `footclient`) open their window normally.
 
 ### Free floating windows
 

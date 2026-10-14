@@ -34,6 +34,9 @@ type Monitor struct {
 	followMove bool
 	// stashCapture puts new windows in the shown stash (stash.capture).
 	stashCapture bool
+	// stashTerminal makes toggle-stash-visible on an empty stash open the
+	// terminal in it (stash.spawn-terminal, with a terminal command).
+	stashTerminal bool
 	// switchView slides the view between numbered workspaces: the view is
 	// at Active+switchView.off, in workspaces.
 	switchView slide
@@ -528,6 +531,10 @@ func (m *Monitor) SetStash(width, gap int) {
 
 // SetStashCapture makes new windows join the shown stash (stash.capture).
 func (m *Monitor) SetStashCapture(on bool) { m.stashCapture = on }
+
+// SetStashTerminal makes toggle-stash-visible on an empty stash ask for a
+// terminal in it (stash.spawn-terminal).
+func (m *Monitor) SetStashTerminal(on bool) { m.stashTerminal = on }
 
 // SetFollowMove makes moves to another workspace show it (focus.follow-move).
 func (m *Monitor) SetFollowMove(on bool) { m.followMove = on }

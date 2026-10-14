@@ -36,6 +36,9 @@ border.inactive = #111111
 # Black veil over tiles and lower layers when a float is visible (0 to 1).
 floating.dim = 0.3
 
+# on: toggle-stash-visible on an empty stash opens the terminal in it.
+stash.spawn-terminal = on
+
 layout.gaps = 0
 # Columns sharing the screen equally before the overflow applies: one cell is
 # a max-columns-th of the width, and columns, rules and slots are sized in

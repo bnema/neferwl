@@ -246,6 +246,10 @@ func (c *Core) apply(cfg ports.Config) error {
 			binds[b] = Action(a)
 			continue
 		}
+		if _, ok := StashCommands(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		if Action(a) == ActionScaleUp || Action(a) == ActionScaleDown {
 			binds[b] = Action(a)
 			continue
@@ -1243,19 +1247,29 @@ func (c *Core) spawnEmpty(ctx context.Context) error {
 	}
 	first := c.firstTerminalResolved
 	terms := c.fillEmpty()
-	err := c.publishPending(ctx)
-	for i, req := range terms {
-		if err != nil || !c.trySpawn(ctx, req) {
-			for _, suppressed := range terms[i:] {
-				c.cancelTerminal(suppressed)
-			}
-			if i == 0 {
-				c.firstTerminalResolved = first
-			}
-			return err
-		}
+	issued, err := c.dispatch(ctx, terms)
+	if len(terms) > 0 && issued == 0 {
+		c.firstTerminalResolved = first
 	}
 	return err
+}
+
+// dispatch sends reqs to the launcher and reports how many it issued.
+// Wayland reads claim tokens only while it knows spawns are pending, so the
+// flag is published before the first send. From the first request that is
+// not issued (publication failed, or the gate suppressed the send), the
+// rest are not sent and their claims are cancelled.
+func (c *Core) dispatch(ctx context.Context, reqs []ports.SpawnRequest) (issued int, err error) {
+	err = c.publishPending(ctx)
+	for i, req := range reqs {
+		if err != nil || !c.trySpawn(ctx, req) {
+			for _, suppressed := range reqs[i:] {
+				c.cancelClaim(suppressed)
+			}
+			return i, err
+		}
+	}
+	return len(reqs), err
 }
 
 // activate brings a window forward for a valid xdg-activation token. The
