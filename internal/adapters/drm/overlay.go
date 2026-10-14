@@ -244,7 +244,7 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	err := o.probeOverlay(fb, ov, ov.color.mode)
 	if err == nil {
 		o.overlayPassed[o.overlayNext] = key
-		o.overlayNext = 1 - o.overlayNext
+		o.overlayNext = (o.overlayNext + 1) % len(o.overlayPassed)
 		return true
 	}
 	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
@@ -260,6 +260,9 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	o.renderLog.Info().Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
 }
+
+// forgetOverlayProbes drops the remembered probes: KMS is asked again.
+func (o *Output) forgetOverlayProbes() { clear(o.overlayPassed[:]) }
 
 // overlayProbe is what an overlay probe depends on, fences aside.
 type overlayProbe struct {

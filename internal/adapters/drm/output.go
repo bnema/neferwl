@@ -149,8 +149,9 @@ type Output struct {
 	restWindows []ports.SceneWindow
 	// front is what the output image on screen holds (front.go).
 	front frontImage
-	// overlayPassed are the last overlay probes KMS took (testOverlay).
-	overlayPassed [2]overlayProbe
+	// overlayPassed are the last overlay probes KMS took (testOverlay):
+	// enough for a client cycling through four buffers.
+	overlayPassed [4]overlayProbe
 	overlayNext   int
 	// lastFrame is when the last frame was committed. cursorHeld: a cursor
 	// move waits for the next frame (see cursorWaits).
@@ -443,7 +444,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 		fb.scaleTestedOK, fb.scaleRefused = false, false
 	}
 	o.front.forget()
-	o.overlayPassed = [2]overlayProbe{}
+	o.forgetOverlayProbes()
 	o.forgetColor()
 	o.forgetColorVerdicts()
 	o.shown, o.queued = 0, 0

@@ -238,7 +238,7 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 // freeImages removes the output images' framebuffers.
 func (o *Output) freeImages() {
 	o.front.forget()
-	o.overlayPassed = [2]overlayProbe{}
+	o.forgetOverlayProbes()
 	for i, fb := range o.fbs {
 		if fb != 0 {
 			_ = o.k.rmFB(fb)
