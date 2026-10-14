@@ -253,7 +253,7 @@ A cell is `1/max-columns` of the screen width. A column is 1 to 16 cells wide. C
 
 Each workspace has a stash: a strip of windows set aside with `toggle-window-stash`. The selected one shows centered over your columns, with its neighbors dimmed on the sides. `focus-column-left/right` or a three-finger swipe browse it. `toggle-stash-visible` or a four-finger swipe hides it.
 
-`stash <command>` runs a program and opens its window straight in the stash of the workspace you were on, selected and focused, even if you switch workspace before it appears. With `stash.spawn-terminal`, `toggle-stash-visible` on an empty stash does the same with `terminal`.
+`stash <command>` runs a program and opens its window straight in the stash of the workspace you were on, selected and focused, even if you switch workspace before it appears. With `stash.spawn-terminal`, `toggle-stash-visible` or the four-finger swipe down on an empty stash does the same with `terminal`.
 
 ```ini
 bind.cmd+shift+f = stash firefox

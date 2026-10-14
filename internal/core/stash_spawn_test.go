@@ -169,3 +169,35 @@ func TestToggleEmptyStashInOverviewDoesNotSpawn(t *testing.T) {
 		t.Fatal("spawned from the overview")
 	}
 }
+
+// A four-finger swipe down on an empty stash is toggle-stash-visible: with
+// stash.spawn-terminal it opens the terminal in the stash, once while that
+// one is awaited, and the window that maps lands in the stash.
+func TestFourFingerSwipeEmptyStashOpensTerminal(t *testing.T) {
+	r := startSwipe(t, func(c *ports.Config) { c.Stash.SpawnTerminal = true })
+	r.four(t, 0, 40, 10)
+	req := receive(t, r.spawn)
+	if len(req.Argv) != 1 || req.Argv[0] != "foot" {
+		t.Fatalf("argv %v", req.Argv)
+	}
+	token := slotToken(t, req)
+	if pending, sent := pendingSent(r.multiRig); !sent || !pending {
+		t.Fatal("SlotsPending{true} was not sent")
+	}
+	r.four(t, 0, 40, 10)
+	if len(r.spawn) != 0 {
+		t.Fatal("second terminal while the first is awaited")
+	}
+	r.client <- ports.WindowMapped{ID: 2, Slot: token}
+	if w, ok := sceneWindow(receive(t, r.scenes), 2); !ok || w.Hidden || !w.Floating || !w.Focused {
+		t.Fatalf("terminal %+v", w)
+	}
+}
+
+func TestFourFingerSwipeEmptyStashRespectsOption(t *testing.T) {
+	r := startSwipe(t, func(c *ports.Config) { c.Stash.SpawnTerminal = false })
+	r.four(t, 0, 40, 10)
+	if len(r.spawn) != 0 {
+		t.Fatal("spawned with stash.spawn-terminal off")
+	}
+}

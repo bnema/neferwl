@@ -210,7 +210,7 @@ func TestStashSwipeLandingShowsNoWorkspace(t *testing.T) {
 	for range 10 {
 		s.move(-80)
 	}
-	if shown := s.c.swipeEnd(ports.SwipeEnd{Time: s.at}); shown {
+	if shown, _ := s.c.swipeEnd(ports.SwipeEnd{Time: s.at}); shown {
 		t.Fatal("a stash landing reported a workspace shown")
 	}
 	if w.stashAt != 1 {

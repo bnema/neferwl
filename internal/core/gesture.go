@@ -284,27 +284,28 @@ func (c *Core) decide(g *swipeGesture) {
 }
 
 // swipeEnd lands the swipe. shown reports that another workspace came on
-// screen.
-func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
+// screen. spawn is the workspace whose empty stash asked for its terminal
+// (see swipeStash): the caller starts it.
+func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 	g := c.swipe
 	if g != nil && !c.hasScreen(g.screen) {
 		c.dropSwipe()
 	}
 	c.swipe = nil
 	if g == nil || !c.hasScreen(g.screen) {
-		return false
+		return false, nil
 	}
 	now := c.now()
 	m := g.screen.mon
 	switch g.mode {
 	case swipeNavigation:
 		c.scrollStop(ports.PointerAxis{Horizontal: ports.ScrollAxis{Stop: true}})
-		return false
+		return false, nil
 	case swipeColumns:
 		w := g.ws
 		if g.columnsChanged(m) {
 			w.view.stop()
-			return false
+			return false, nil
 		}
 		shown := float64(w.View) + w.view.off
 		target, velocity := g.snap.end(e.Cancelled, e.Time)
@@ -330,7 +331,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 	case swipeWorkspaces:
 		if g.listChanged(m) {
 			m.stopSwitch()
-			return false
+			return false, nil
 		}
 		cur := float64(m.Active) + m.switchView.off
 		target, velocity := g.snap.end(e.Cancelled, e.Time)
@@ -359,7 +360,7 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		w := g.ws
 		if g.stashChanged(m) {
 			w.stashView.stop()
-			return false
+			return false, nil
 		}
 		drawn := float64(w.stashAt) + w.stashView.off
 		target, velocity := g.snap.end(e.Cancelled, e.Time)
@@ -384,17 +385,17 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			w.stashView.stop()
 		}
 		// The stash never brings another workspace on screen.
-		return false
+		return false, nil
 	case swipeOverview:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 {
-			return false
+			return false, nil
 		}
 		if !m.ov.open && (step > 0 || m.Current().stashShown()) {
 			return c.swipeStash(g, now)
 		}
 		if (step < 0) == m.ov.open {
-			return false
+			return false, nil
 		}
 		before := m.Current()
 		shots := c.snapshot(now)
@@ -402,11 +403,11 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		c.focusScreen = c.screenIndex(g.screen.name())
 		c.keyboard.takeBack()
 		c.transition(shots, now)
-		return m.Current() != before
+		return m.Current() != before, nil
 	case swipeDiscrete:
 		step := g.snap.step(e.Cancelled, e.Time)
 		if step == 0 {
-			return false
+			return false, nil
 		}
 		w := g.screen.mon.Current()
 		p := w.policy()
@@ -423,16 +424,16 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 		} else if p.wraps {
 			// A content swipe cannot escape the last band to another workspace.
 			if w.onFloat() || w.fullscreen != 0 || w.laneNeighbor(step) < 0 {
-				return false
+				return false, nil
 			}
 		}
 		// Focus actions act on the focused screen: the swipe's, unless the
 		// pointer took the focus to another output meanwhile.
 		if c.cur() != g.screen {
-			return false
+			return false, nil
 		}
 		if c.cur().mon.ov.open {
-			return false
+			return false, nil
 		}
 		before := c.cur().mon.Current()
 		shots := c.snapshot(now)
@@ -443,26 +444,31 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool) {
 			c.applyAction(a)
 		}
 		c.transition(shots, now)
-		return c.cur().mon.Current() != before
+		return c.cur().mon.Current() != before, nil
 	}
-	return shown
+	return shown, nil
 }
 
 // swipeStash runs toggle-stash-visible for a four-finger swipe down, or up
 // while the stash is shown, with the overview closed, on the swipe's screen
 // unless the pointer took the focus to another output meanwhile. It reports
-// whether the stash showed or hid: an empty stash stays as it is.
-func (c *Core) swipeStash(g *swipeGesture, now time.Time) bool {
+// whether the swipe acted: the stash showed or hid, or an empty stash asked
+// for its terminal (stash.spawn-terminal), which spawn names for the caller
+// to start, as a bind does.
+func (c *Core) swipeStash(g *swipeGesture, now time.Time) (acted bool, spawn *Workspace) {
 	if c.cur() != g.screen {
-		return false
+		return false, nil
 	}
 	w := g.screen.mon.Current()
 	hidden, over := w.stashHidden, w.stashOver
 	shots := c.snapshot(now)
 	c.keyboard.takeBack()
-	c.applyAction(ActionToggleStashVisible)
+	effect := c.applyAction(ActionToggleStashVisible)
 	c.transition(shots, now)
-	return w.stashHidden != hidden || w.stashOver != over
+	if effect.Spawn {
+		return true, w
+	}
+	return w.stashHidden != hidden || w.stashOver != over, nil
 }
 
 // swipedWorkspace is the workspace on the swipe's screen, or nil without
