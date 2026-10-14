@@ -23,6 +23,11 @@ func TestReleaseHeldAllocations(t *testing.T) {
 }
 
 func TestCommitDamageAllocations(t *testing.T) {
+	if raceEnabled {
+		// AllocsPerRun counts every goroutine, and the race runtime
+		// allocates on its own now and then. perf-check runs it without.
+		t.Skip("the race detector allocates in the background")
+	}
 	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	surf := &surface{server: srv}
 	commit := func() {

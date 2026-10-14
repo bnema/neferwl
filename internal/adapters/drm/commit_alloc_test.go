@@ -53,6 +53,12 @@ func TestCommitFrameAllocations(t *testing.T) {
 		}
 	})
 	t.Run("success path", func(t *testing.T) {
+		if raceEnabled {
+			// The race runtime moves testify's count by a few
+			// allocations per call, as much as the margin below.
+			// perf-check runs it without; the subtest above stays exact.
+			t.Skip("testify allocates unevenly under the race detector")
+		}
 		o, c := scanoutAllocsOutput(t)
 		k := newMockkms(t)
 		k.EXPECT().commit(mock.Anything, mock.Anything, mock.Anything).Return(nil)
