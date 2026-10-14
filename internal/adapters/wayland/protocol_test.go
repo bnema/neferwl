@@ -627,7 +627,14 @@ func toplevelMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.Client
 // xdg_surface IDs.
 func surfaceMapper(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent) func() (ports.WindowMapped, uint32, uint32) {
 	t.Helper()
-	comp := bindProtocol(t, c, "wl_compositor")
+	return surfaceMapperAt(t, c, events, 1)
+}
+
+// surfaceMapperAt is surfaceMapper with wl_compositor bound at compositorVersion
+// (damage_buffer needs 4).
+func surfaceMapperAt(t *testing.T, c *wlturbo.Display, events <-chan ports.ClientEvent, compositorVersion uint32) func() (ports.WindowMapped, uint32, uint32) {
+	t.Helper()
+	comp := bindVersion(t, c, "wl_compositor", compositorVersion)
 	wm := bindProtocol(t, c, "xdg_wm_base")
 	shm := bindProtocol(t, c, "wl_shm")
 	registerProtocol(t, c, shm)

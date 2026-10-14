@@ -29,7 +29,10 @@ func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.Wi
 }
 
 // shmBuffer creates a 1x1 wl_shm buffer.
-func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 {
+func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 { return shmBufferSized(t, c, 1, 1) }
+
+// shmBufferSized is a w×h ARGB8888 wl_shm buffer.
+func shmBufferSized(t *testing.T, c *wlturbo.Display, w, h int32) uint32 {
 	t.Helper()
 	shm := bindProtocol(t, c, "wl_shm")
 	registerProtocol(t, c, shm)
@@ -38,16 +41,17 @@ func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 {
 		t.Fatal(err)
 	}
 	defer unix.Close(fd)
-	if err := unix.Ftruncate(fd, 4); err != nil {
+	size := w * h * 4
+	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)
 	}
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
 		t.Fatal(err)
 	}
-	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), w, h, w*4, uint32(0))
 	return buffer
 }
 
