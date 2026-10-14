@@ -28,9 +28,11 @@ By default, these executables may capture:
 ```text
 /usr/bin/grim
 /usr/bin/nefercap
-/usr/lib/xdg-desktop-portal-wlr
-/usr/libexec/xdg-desktop-portal-wlr
+/usr/lib/xdg-desktop-portal-gnome
+/usr/libexec/xdg-desktop-portal-gnome
 ```
+
+The list also gates the D-Bus callers of the screen-sharing service (see Portals): a caller whose executable is not listed gets `AccessDenied`.
 
 To change it, create `/etc/neferwl/capture-allow`. It **replaces** the built-in list, so keep the entries you still need:
 
@@ -43,7 +45,7 @@ sudoedit /etc/neferwl/capture-allow
 # one absolute executable path per line
 /usr/bin/grim
 /usr/bin/nefercap
-/usr/lib/xdg-desktop-portal-wlr
+/usr/lib/xdg-desktop-portal-gnome
 /opt/tools/bin/recorder
 ```
 
@@ -61,9 +63,15 @@ The allowlist stops unknown programs, not a program running as you that drives a
 
 ## Portals
 
-- **Screen sharing** in browsers and apps: install `xdg-desktop-portal-wlr`.
-- **Screenshots and recordings:** install [nefercap](https://github.com/bnema/nefercap).
+NeferWL serves the GNOME ScreenCast, DisplayConfig, Introspect and Screenshot D-Bus interfaces, so `xdg-desktop-portal-gnome` provides screen sharing and screenshots.
 
-The packaged `neferwl-portals.conf` routes `ScreenCast` and `Screenshot` to the wlr portal. NeferWL has no window picker: set `chooser_type` and `chooser_cmd` in the wlr portal config to use slurp, wofi or bemenu (see `man xdg-desktop-portal-wlr`).
+- **Screen sharing** in browsers and apps: install `xdg-desktop-portal-gnome` and run PipeWire. The portal dialog lists monitors and windows with their titles; the stream is a PipeWire video node. Without PipeWire, the ScreenCast interface is not offered.
+- **Screenshots** through the portal, interactive or not: install [nefercap](https://github.com/bnema/nefercap), which writes the PNG.
+- A cast keeps the indicator on until it ends. It ends when the session locks, the output or window goes away, or the client disconnects.
+- Unsupported: area and virtual casts, and the "Select area" and "Window" choices of the screenshot dialog.
 
-The wlr portal takes screenshots without asking, for any program running as you. The indicator still flashes.
+The packaged `neferwl-portals.conf` routes `ScreenCast` and `Screenshot` to the gnome portal.
+
+The D-Bus interfaces are served on the session bus when NeferWL runs on a hardware session. With `--backend=headless`, pass `-dbus` to serve them. Names already owned (by a GNOME session) are skipped.
+
+Screenshots through the portal are taken without asking, for any program running as you whose executable is on the allowlist. The indicator still flashes.
