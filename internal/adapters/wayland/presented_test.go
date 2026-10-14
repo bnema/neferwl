@@ -174,84 +174,124 @@ func flipOf(seq uint64, shows ...ports.WindowID) *ports.FlipInfo {
 	return f
 }
 
-// A full ring merges the oldest flip of an output into its next flip.
-func TestPresentationRingMergesPastBound(t *testing.T) {
-	p := ringOf()
-	for i := range maxPresentRing {
-		p.ring = append(p.ring, ports.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
+// makeRoomLocked on a full ring: which report it merges or moves, and what it
+// reports.
+func TestPresentationRingMakeRoom(t *testing.T) {
+	tests := []struct {
+		name       string
+		ring       func() *presentSink
+		in         ports.OutputPresented
+		wantMerged bool
+		check      func(t *testing.T, p *presentSink, in *ports.OutputPresented)
+	}{
+		{
+			// A full ring merges the oldest flip of an output into its next flip.
+			name: "merges past the bound",
+			ring: func() *presentSink {
+				p := ringOf()
+				for i := range maxPresentRing {
+					p.ring = append(p.ring, ports.OutputPresented{Output: "A", Flip: flipOf(uint64(i + 1))})
+				}
+				return p
+			},
+			in:         ports.OutputPresented{Output: "A", Flip: flipOf(maxPresentRing + 1)},
+			wantMerged: true,
+			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+				if len(p.ring) != maxPresentRing-1 || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 1 {
+					t.Fatalf("ring %d, first seq %d merged %d", len(p.ring), p.ring[0].Flip.Seq, p.ring[0].Flip.Merged)
+				}
+			},
+		},
+		{
+			// A flip followed by a flip-less report of the same output is not
+			// lost: the later report carries it.
+			name: "keeps a flip before a flip-less report",
+			ring: func() *presentSink {
+				p := ringOf("A", "A")
+				p.ring[0].Flip = flipOf(7, 3)
+				p.fill()
+				p.ring = p.ring[:maxPresentRing]
+				return p
+			},
+			in: ports.OutputPresented{Output: "B", Flip: flipOf(9)},
+			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+				if len(p.ring) != maxPresentRing-1 || p.ring[0].Output != "A" || p.ring[0].Flip == nil || p.ring[0].Flip.Seq != 7 || p.ring[0].Flip.Merged != 0 {
+					t.Fatalf("flip lost: ring %d, first %+v", len(p.ring), p.ring[0])
+				}
+			},
+		},
+		{
+			// With several outputs interleaved, the victim is the oldest report
+			// that has a successor of its own output; other outputs' reports are
+			// untouched.
+			name: "interleaved outputs",
+			ring: func() *presentSink {
+				p := ringOf("A", "B", "A", "B")
+				p.ring[0].Flip, p.ring[1].Flip = flipOf(1, 10), flipOf(2, 20)
+				p.ring[2].Flip, p.ring[3].Flip = flipOf(3, 11), nil
+				p.fill()
+				return p
+			},
+			in:         ports.OutputPresented{Output: "C"},
+			wantMerged: true,
+			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+				if p.ring[0].Output != "B" || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 0 {
+					t.Fatalf("B's flip touched: %+v", p.ring[0])
+				}
+				a := p.ring[1]
+				if a.Output != "A" || a.Flip.Seq != 3 || a.Flip.Merged != 1 || a.Flip.Shows[10] != 1 || a.Flip.Shows[11] != 3 {
+					t.Fatalf("A's flips not merged: %+v", a.Flip)
+				}
+				if p.ring[2].Output != "B" || p.ring[2].Flip != nil {
+					t.Fatalf("B's flip-less report moved: %+v", p.ring[2])
+				}
+			},
+		},
+		{
+			// The incoming report counts as the successor of a ring report.
+			name: "incoming takes over a flip",
+			ring: func() *presentSink {
+				p := ringOf("A")
+				p.ring[0].Flip = flipOf(4)
+				p.fill()
+				return p
+			},
+			in: ports.OutputPresented{Output: "A"},
+			check: func(t *testing.T, p *presentSink, in *ports.OutputPresented) {
+				if in.Flip == nil || in.Flip.Seq != 4 || len(p.ring) != maxPresentRing-1 {
+					t.Fatalf("incoming %+v, ring %d", in.Flip, len(p.ring))
+				}
+			},
+		},
+		{
+			// With no successor for any report (more outputs than ring slots)
+			// nothing is dropped: the ring grows by one and every flip is still
+			// delivered.
+			name: "without a successor keeps everything",
+			ring: func() *presentSink {
+				p := ringOf()
+				for i := range maxPresentRing {
+					p.ring = append(p.ring, ports.OutputPresented{Output: "o" + string(rune('A'+i/26)) + string(rune('a'+i%26)), Flip: flipOf(uint64(i + 1))})
+				}
+				return p
+			},
+			in: ports.OutputPresented{Output: "other", Flip: flipOf(99)},
+			check: func(t *testing.T, p *presentSink, _ *ports.OutputPresented) {
+				if len(p.ring) != maxPresentRing {
+					t.Fatalf("merged or dropped: ring %d", len(p.ring))
+				}
+			},
+		},
 	}
-	in := ports.OutputPresented{Output: "A", Flip: flipOf(maxPresentRing + 1)}
-	if !p.makeRoomLocked(&in) {
-		t.Fatal("two flips merged but not reported")
-	}
-	if len(p.ring) != maxPresentRing-1 || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 1 {
-		t.Fatalf("ring %d, first seq %d merged %d", len(p.ring), p.ring[0].Flip.Seq, p.ring[0].Flip.Merged)
-	}
-}
-
-// A flip followed by a flip-less report of the same output is not lost: the
-// later report carries it.
-func TestPresentationRingKeepsFlipBeforeFliplessReport(t *testing.T) {
-	p := ringOf("A", "A")
-	p.ring[0].Flip = flipOf(7, 3)
-	p.fill()
-	p.ring = p.ring[:maxPresentRing]
-	in := ports.OutputPresented{Output: "B", Flip: flipOf(9)}
-	if p.makeRoomLocked(&in) {
-		t.Fatal("no flips merged, yet reported")
-	}
-	if len(p.ring) != maxPresentRing-1 || p.ring[0].Output != "A" || p.ring[0].Flip == nil || p.ring[0].Flip.Seq != 7 || p.ring[0].Flip.Merged != 0 {
-		t.Fatalf("flip lost: ring %d, first %+v", len(p.ring), p.ring[0])
-	}
-}
-
-// With several outputs interleaved, the victim is the oldest report that has
-// a successor of its own output; other outputs' reports are untouched.
-func TestPresentationRingInterleavedOutputs(t *testing.T) {
-	p := ringOf("A", "B", "A", "B")
-	p.ring[0].Flip, p.ring[1].Flip = flipOf(1, 10), flipOf(2, 20)
-	p.ring[2].Flip, p.ring[3].Flip = flipOf(3, 11), nil
-	p.fill()
-	in := ports.OutputPresented{Output: "C"}
-	if !p.makeRoomLocked(&in) {
-		t.Fatal("merge not reported")
-	}
-	if p.ring[0].Output != "B" || p.ring[0].Flip.Seq != 2 || p.ring[0].Flip.Merged != 0 {
-		t.Fatalf("B's flip touched: %+v", p.ring[0])
-	}
-	a := p.ring[1]
-	if a.Output != "A" || a.Flip.Seq != 3 || a.Flip.Merged != 1 || a.Flip.Shows[10] != 1 || a.Flip.Shows[11] != 3 {
-		t.Fatalf("A's flips not merged: %+v", a.Flip)
-	}
-	if p.ring[2].Output != "B" || p.ring[2].Flip != nil {
-		t.Fatalf("B's flip-less report moved: %+v", p.ring[2])
-	}
-}
-
-// The incoming report counts as the successor of a ring report.
-func TestPresentationRingIncomingTakesOverFlip(t *testing.T) {
-	p := ringOf("A")
-	p.ring[0].Flip = flipOf(4)
-	p.fill()
-	in := ports.OutputPresented{Output: "A"}
-	if p.makeRoomLocked(&in) {
-		t.Fatal("no merge expected")
-	}
-	if in.Flip == nil || in.Flip.Seq != 4 || len(p.ring) != maxPresentRing-1 {
-		t.Fatalf("incoming %+v, ring %d", in.Flip, len(p.ring))
-	}
-}
-
-// With no successor for any report (more outputs than ring slots) nothing is
-// dropped: the ring grows by one and every flip is still delivered.
-func TestPresentationRingWithoutSuccessorKeepsEverything(t *testing.T) {
-	p := ringOf()
-	for i := range maxPresentRing {
-		p.ring = append(p.ring, ports.OutputPresented{Output: "o" + string(rune('A'+i/26)) + string(rune('a'+i%26)), Flip: flipOf(uint64(i + 1))})
-	}
-	in := ports.OutputPresented{Output: "other", Flip: flipOf(99)}
-	if p.makeRoomLocked(&in) || len(p.ring) != maxPresentRing {
-		t.Fatalf("merged or dropped: ring %d", len(p.ring))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tt.ring()
+			in := tt.in
+			if merged := p.makeRoomLocked(&in); merged != tt.wantMerged {
+				t.Fatalf("merged %v, want %v", merged, tt.wantMerged)
+			}
+			tt.check(t, p, &in)
+		})
 	}
 }
 
