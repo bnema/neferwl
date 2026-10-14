@@ -244,8 +244,11 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 	// Steady state: 5 seconds after the stream warmed up. Every allocation is
 	// recorded (MemProfileRate 1) and attributed by its stack: the cast path
 	// (screencast, wayland casts, purego-pipewire, zerobus) must allocate
-	// less than once per frame. The renderer's capture path is shared with
-	// ext-image-copy-capture and is reported, not asserted.
+	// less than once per frame, and so must the renderer capture path it
+	// shares with ext-image-copy-capture (BeginCapture, EndCapture and the
+	// pipeline worker). The headless output's own display frame (Render's
+	// sync file, the flip report, injected input) allocates whether or not
+	// a cast runs: it is reported in the whole-process figure, not asserted.
 	time.Sleep(2 * time.Second)
 	runtime.MemProfileRate = 1
 	f0 := frames.Load()
@@ -354,6 +357,13 @@ var castPath = []string{
 	"wayland.(*Server).forwardCaptured",
 	"wayland.postRing",
 	"outputkit/capture.writeFrame",
+	// The renderer capture path, shared with ext-image-copy-capture and
+	// screencopy: lease, copy, read, return.
+	"vulkan.(*Renderer).BeginCapture",
+	"vulkan.(*Renderer).EndCapture",
+	"outputkit/capture.(*Pipeline).SubmitScoped",
+	"outputkit/capture.(*Pipeline).process",
+	"outputkit/capture.(*Pipeline).Recycle",
 }
 
 // allocs counts profiled allocation objects by stack, for the cast path and
