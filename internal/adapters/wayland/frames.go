@@ -31,15 +31,8 @@ const suspendedFrameQueue = "\x00suspended" // never a wl_output name
 const maxPacePasses = 3
 
 // paceNow runs a tick from code already on the display goroutine (a client
-// commit). Without a registered pace timer (unit tests that build a Server
-// without a display) it falls back to signalling a tick.
-func (s *Server) paceNow() {
-	if !s.paceReady {
-		s.signalPacer()
-		return
-	}
-	s.paceTick(nil, nil)
-}
+// commit).
+func (s *Server) paceNow() { s.paceTick(nil, nil) }
 
 // paceTolerance is how much earlier than the armed deadline a new one may be
 // and still reuse it: the ticks of one frame compute the same deadline from
@@ -143,9 +136,6 @@ func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresent
 			s.signalPacer()
 			break
 		}
-	}
-	if !s.paceReady {
-		return
 	}
 	if idle {
 		// Nothing waits: sleep until a commit queues a callback

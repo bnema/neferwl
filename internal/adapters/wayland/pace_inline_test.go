@@ -6,15 +6,24 @@ import (
 
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/purego-libwayland/server"
 	"golang.org/x/sys/unix"
 )
 
 // paceFixture is a server whose surface waits on an output whose next
-// frame is an hour away: a commit queues its callback and nothing fires.
-func paceFixture(t *testing.T, timer bool) (*Server, *surface) {
+// frame is an hour away: a commit queues its callback and nothing fires. It
+// has what New gives a server for pacing: a display (never run, so posted
+// ticks stay queued) and the registered pace timer.
+func paceFixture(t *testing.T) (*Server, *surface) {
 	t.Helper()
+	display, err := server.NewDisplay()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(display.Close)
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
 	s := &Server{
+		display:      display,
 		outputs:      []*output{out},
 		awaiting:     map[string][]*wayland.Callback{},
 		frameDue:     map[string]time.Time{"DP-2": time.Now().Add(time.Hour)},
@@ -23,14 +32,11 @@ func paceFixture(t *testing.T, timer bool) (*Server, *surface) {
 		flips:        map[string]ports.FlipInfo{},
 		reports:      map[string]ports.OutputPresented{},
 	}
-	if timer {
-		fd, err := unix.TimerfdCreate(unix.CLOCK_MONOTONIC, unix.TFD_NONBLOCK|unix.TFD_CLOEXEC)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { unix.Close(fd) })
-		s.paceFD, s.paceReady = fd, true
+	s.paceSignalFn = s.paceSignalled
+	if err := s.openPaceTimer(); err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(func() { unix.Close(s.paceFD) })
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: w}}
 	surf.next.callbacks = []*wayland.Callback{new(wayland.Callback)}
@@ -41,7 +47,7 @@ func paceFixture(t *testing.T, timer bool) (*Server, *surface) {
 // pace timer itself and posts no tick, which would only run later on the
 // display goroutine it is already on.
 func TestCommitTicksPacerInline(t *testing.T) {
-	s, surf := paceFixture(t, true)
+	s, surf := paceFixture(t)
 	surf.queueAndTick()
 	if len(s.awaiting["DP-2"]) != 1 {
 		t.Fatalf("callback not queued: %+v", s.awaiting)
@@ -55,18 +61,9 @@ func TestCommitTicksPacerInline(t *testing.T) {
 	}
 }
 
-// Without a registered pace timer the wake falls back to a posted tick.
-func TestCommitWakesPacerWithoutTimer(t *testing.T) {
-	s, surf := paceFixture(t, false)
-	surf.queueAndTick()
-	if !s.paceSignal.Load() {
-		t.Fatal("tick not signalled")
-	}
-}
-
 // Wakes inside a tick coalesce into one more pass, not one posted tick each.
 func TestWakePacerDefersInsideTick(t *testing.T) {
-	s, _ := paceFixture(t, true)
+	s, _ := paceFixture(t)
 	s.paceDepth = 1
 	s.wakePacer()
 	s.wakePacer()
@@ -82,7 +79,7 @@ func TestWakePacerDefersInsideTick(t *testing.T) {
 
 // A commit that waits (a fifo barrier) is timed by the inline tick.
 func TestCommitWaitingOnBarrierArmsTimer(t *testing.T) {
-	s, surf := paceFixture(t, true)
+	s, surf := paceFixture(t)
 	surf.next.callbacks = nil
 	surf.barrier, surf.barrierAt = true, time.Now()
 	surf.next.wait = true
@@ -113,7 +110,7 @@ func waitArmed(t *testing.T, s *Server, msg string) {
 // A synchronized subsurface commit waits for its parent's commit: it does
 // not tick the pacer, so a burst of child commits costs no ticks.
 func TestSyncedCommitDoesNotTick(t *testing.T) {
-	s, surf := paceFixture(t, true)
+	s, surf := paceFixture(t)
 	surf.sub.parent = &surface{server: s}
 	surf.sub.synced = true
 	surf.queueAndTick()
@@ -133,7 +130,7 @@ func TestSyncedCommitDoesNotTick(t *testing.T) {
 // timer; another deadline re-arms it; an expiry consumed by onPaceTimer, or a
 // stop, leaves it disarmed, and a stop of a disarmed timer does nothing.
 func TestArmPaceSkipsUnchangedDeadline(t *testing.T) {
-	s, _ := paceFixture(t, true)
+	s, _ := paceFixture(t)
 	remaining := func() time.Duration {
 		var cur unix.ItimerSpec
 		if err := unix.TimerfdGettime(s.paceFD, &cur); err != nil {

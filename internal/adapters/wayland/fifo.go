@@ -772,8 +772,5 @@ func (s *Server) signalPacer() {
 	if !s.paceSignal.CompareAndSwap(false, true) {
 		return
 	}
-	if s.display == nil { // unit tests that build a Server without a display
-		return
-	}
 	s.display.Post(s.paceSignalFn)
 }
