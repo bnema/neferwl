@@ -10,7 +10,7 @@ import (
 )
 
 // ext-foreign-toplevel-list lists mapped toplevels, read-only: title, app_id
-// and a stable identifier. xdg-desktop-portal-wlr lists the windows it can
+// and a stable identifier. Screen-sharing portals list the windows they can
 // share with it, and ext_foreign_toplevel_image_capture_source_manager_v1
 // takes its handles (window capture, imagecopy.go). It follows the same
 // window state and session-protection rules as wlr-foreign-toplevel.

@@ -16,8 +16,8 @@ func TestParse(t *testing.T) {
 		errLine  int
 		wantFail bool
 	}{
-		{name: "paths comments blanks", in: "# header\n\n/usr/bin/grim\n  /usr/lib/xdg-desktop-portal-wlr  \n\t# indented comment\n/opt/a#b\n",
-			mode: ModeList, allowed: []string{"/usr/bin/grim", "/usr/lib/xdg-desktop-portal-wlr", "/opt/a#b"}, refused: []string{"/usr/bin/grim2", "/usr/bin", "grim", ""}},
+		{name: "paths comments blanks", in: "# header\n\n/usr/bin/grim\n  /usr/lib/xdg-desktop-portal-gnome  \n\t# indented comment\n/opt/a#b\n",
+			mode: ModeList, allowed: []string{"/usr/bin/grim", "/usr/lib/xdg-desktop-portal-gnome", "/opt/a#b"}, refused: []string{"/usr/bin/grim2", "/usr/bin", "grim", ""}},
 		{name: "cleaned", in: "/usr//bin/../bin/grim\n", mode: ModeList, allowed: []string{"/usr/bin/grim"}},
 		{name: "no trailing newline", in: "/a/b", mode: ModeList, allowed: []string{"/a/b"}},
 		{name: "empty file allows nothing", in: "", mode: ModeList, refused: []string{"/usr/bin/grim"}},
@@ -75,7 +75,7 @@ func TestParseTooLarge(t *testing.T) {
 
 func TestBuiltin(t *testing.T) {
 	p := Builtin()
-	want := []string{"/usr/bin/grim", "/usr/bin/nefercap", "/usr/lib/xdg-desktop-portal-wlr", "/usr/libexec/xdg-desktop-portal-wlr"}
+	want := []string{"/usr/bin/grim", "/usr/bin/nefercap", "/usr/lib/xdg-desktop-portal-gnome", "/usr/libexec/xdg-desktop-portal-gnome"}
 	if p.Mode() != ModeList || p.Len() != len(want) {
 		t.Fatalf("mode %v, len %d", p.Mode(), p.Len())
 	}

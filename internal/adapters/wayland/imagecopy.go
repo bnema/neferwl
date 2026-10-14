@@ -587,7 +587,7 @@ type captureExtFrame struct {
 // A frame whose target is briefly unavailable (not active yet, rendered off
 // screen by another session, its indicator or exclusion not on screen yet,
 // a renderer slot busy) is tried again rather than failed: failed(unknown)
-// ends the whole screencast in clients such as xdg-desktop-portal-wlr. Only
+// ends the whole screencast in screen-sharing clients. Only
 // a stopped session, a refused client or a wrong buffer fail at once.
 const (
 	captureRetryEvery = 16 * time.Millisecond

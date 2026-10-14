@@ -14,7 +14,9 @@ import (
 // capture sessions and frames, whatever their source (output, output region
 // or workspace), and the attach of a layer surface to a capture exclusion. A
 // refused client gets the failure its protocol defines (failed, or stopped
-// for a session) and nothing is captured or flashed. In order:
+// for a session) and nothing is captured or flashed. The same executable
+// allowlist also gates the D-Bus screencast callers (adapters/screencast). In
+// order:
 //
 //  1. While the session is protected (ext-session-lock) no client may
 //     capture, so nothing of the locked session reaches a buffer.
