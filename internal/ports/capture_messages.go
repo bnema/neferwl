@@ -14,6 +14,11 @@ type CaptureRequest struct {
 	Dst                   SHMBuffer
 	Width, Height, Stride int
 	Format                uint32
+	// Mapped, when set, is the destination instead of Dst.File (nil then):
+	// the image is written at Mapped[Dst.Offset:] with Stride. The sender
+	// keeps the mapping alive until CaptureDone; the output never maps,
+	// unmaps or closes it.
+	Mapped []byte
 	// Session is the registered capture session (CaptureSessionOpen) the
 	// request belongs to, 0 for wlr-screencopy. It is informational, except
 	// with Exclude.

@@ -68,24 +68,22 @@ func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.Captu
 		if p := recover(); p != nil {
 			err = fmt.Errorf("capture read panic: %v\n%s", p, debug.Stack())
 		}
+		// data is only ever a mapping made here, never req.Mapped.
 		if data != nil {
 			err = errors.Join(err, unix.Munmap(data))
 		}
 		replyAt(ctx, req, err, at, replies)
 	}()
-	if req.Dst.File == nil || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888) {
-		err = fmt.Errorf("invalid capture destination")
+	size, err := destSize(req)
+	if err != nil {
 		return
 	}
-	rowBytes := int64(req.Width) * 4
-	// Validate the bound before multiplication: padding must not wrap size.
-	if int64(req.Dst.Offset) > maxMappedBytes-rowBytes || (req.Height > 1 && int64(req.Stride) > (maxMappedBytes-int64(req.Dst.Offset)-rowBytes)/int64(req.Height-1)) {
-		err = fmt.Errorf("capture too large")
-		return
-	}
-	size := int64(req.Dst.Offset) + int64(req.Height-1)*int64(req.Stride) + rowBytes
-	if size <= 0 || size > int64(^uint(0)>>1) || size > maxMappedBytes {
-		err = fmt.Errorf("capture too large")
+	if req.Mapped != nil {
+		var dst []byte
+		if dst, err = mappedDst(req, size); err != nil {
+			return
+		}
+		err = frame.Read(req.Region, dst, req.Stride)
 		return
 	}
 	var st unix.Stat_t
@@ -94,7 +92,7 @@ func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.Captu
 		return
 	}
 	if st.Size < size {
-		err = fmt.Errorf("capture buffer truncated")
+		err = errTruncated
 		return
 	}
 	// Map only for the duration of this capture; the renderer copies BGRA rows
@@ -105,3 +103,36 @@ func writeFrame(ctx context.Context, req ports.CaptureRequest, frame ports.Captu
 	}
 	err = frame.Read(req.Region, data[req.Dst.Offset:], req.Stride)
 }
+
+// destSize validates the destination of req, a file or a borrowed mapping, and
+// returns the bytes it must hold from offset 0 through the last pixel.
+func destSize(req ports.CaptureRequest) (int64, error) {
+	if (req.Dst.File == nil) == (req.Mapped == nil) || req.Width <= 0 || req.Width > maxMappedBytes/4 || req.Height <= 0 || req.Stride < req.Width*4 || req.Region.Dx() != req.Width || req.Region.Dy() != req.Height || req.Dst.Offset < 0 || (req.Format != shmARGB8888 && req.Format != shmXRGB8888) {
+		return 0, errInvalidDest
+	}
+	rowBytes := int64(req.Width) * 4
+	// Validate the bound before multiplication: padding must not wrap size.
+	if int64(req.Dst.Offset) > maxMappedBytes-rowBytes || (req.Height > 1 && int64(req.Stride) > (maxMappedBytes-int64(req.Dst.Offset)-rowBytes)/int64(req.Height-1)) {
+		return 0, errTooLarge
+	}
+	size := int64(req.Dst.Offset) + int64(req.Height-1)*int64(req.Stride) + rowBytes
+	if size <= 0 || size > int64(^uint(0)>>1) || size > maxMappedBytes {
+		return 0, errTooLarge
+	}
+	return size, nil
+}
+
+// mappedDst returns the borrowed mapping of req from the destination offset.
+// The output never maps, unmaps or closes it.
+func mappedDst(req ports.CaptureRequest, size int64) ([]byte, error) {
+	if int64(len(req.Mapped)) < size {
+		return nil, errTruncated
+	}
+	return req.Mapped[req.Dst.Offset:], nil
+}
+
+var (
+	errInvalidDest = errors.New("invalid capture destination")
+	errTooLarge    = errors.New("capture too large")
+	errTruncated   = errors.New("capture buffer truncated")
+)
