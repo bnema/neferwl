@@ -55,6 +55,35 @@ func TestSceneAnimatingFollowsSprings(t *testing.T) {
 	}
 }
 
+// A pulse cancelled because nothing can show it (fullscreen) publishes the
+// focused scene settled, with a fresh Seq: otherwise outputs keep the
+// animating scene and wake core on every flip.
+func TestCancelledPulseClearsAnimating(t *testing.T) {
+	c, ic := pulseCore(t)
+	c.cur().mon.Current().FocusID(1)
+	indicatorScene(t, c)
+	ic.now = ic.now.Add(pulseSettle)
+	if !c.pulseTick() {
+		t.Fatal("bad setup: no pulse")
+	}
+	running := indicatorScene(t, c)
+	if !running.Animating {
+		t.Fatal("bad setup: the pulsing scene is not animating")
+	}
+	c.cur().mon.ToggleFullscreen()
+	cancelled := indicatorScene(t, c)
+	if cancelled.Animating || c.animating() {
+		t.Fatalf("cancelled pulse: scene animating=%v core animating=%v", cancelled.Animating, c.animating())
+	}
+	if cancelled.Seq == running.Seq {
+		t.Fatalf("cancelled pulse kept the animating scene's Seq %d", running.Seq)
+	}
+	idle := indicatorScene(t, c)
+	if idle.Animating || idle.Seq != cancelled.Seq {
+		t.Fatalf("idle publish after cancel: animating=%v Seq %d (was %d)", idle.Animating, idle.Seq, cancelled.Seq)
+	}
+}
+
 // Animating is per output: a spring on one does not mark the other.
 func TestSceneAnimatingIsPerOutput(t *testing.T) {
 	c, ic := indicatorCore(t)

@@ -651,13 +651,25 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			return err
 		}
 		drawable = drawable || shown
-		sc.last = scene
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
 	// A pulse nothing shows (fullscreen, overview) asks for no frames.
-	if c.pulse.drawable = drawable; !drawable {
+	if c.pulse.drawable = drawable; !drawable && c.pulse.id != 0 {
 		c.pulse.id = 0
+		// The focused scene was built as animating: publish it settled,
+		// or its flips would keep waking core. A scene that kept its Seq
+		// needs a fresh one, or outputs keep the animating one they show.
+		if i := slices.Index(c.screens, c.cur()); i >= 0 && scenes[i].Animating && !c.cur().springing() {
+			scenes[i].Animating = false
+			if scenes[i].Seq == c.cur().last.Seq {
+				c.seq++
+				scenes[i].Seq = c.seq
+			}
+		}
+	}
+	for i, sc := range c.screens {
+		sc.last = scenes[i]
 	}
 	// A workspace switch can hide the window under the pointer; it must not get
 	// clicks. The next motion re-runs hit-testing.
