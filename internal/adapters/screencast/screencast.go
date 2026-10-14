@@ -16,7 +16,6 @@ package screencast
 import (
 	"context"
 	"errors"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -211,7 +210,7 @@ func (s *Service) attempt(ctx context.Context) (err error) {
 		s.log.Warn().Err(err).Msg("PipeWire unavailable: screen casting is not offered")
 	}
 	defer s.shutdown()
-	if err = s.start(); err != nil {
+	if err = s.acquire(); err != nil {
 		return err
 	}
 	return s.loop(ctx)
@@ -228,8 +227,8 @@ func (s *Service) reset(ctx context.Context, conn bus) {
 	s.shot = shotState{}
 }
 
-// start watches departures and takes the names.
-func (s *Service) start() error {
+// acquire watches departures and takes the names.
+func (s *Service) acquire() error {
 	rule := "type='signal',sender='" + busDaemon + "',interface='" + busDaemon + "',member='NameOwnerChanged',arg2=''"
 	if err := s.conn.AddMatch(rule); err != nil {
 		return err
@@ -362,6 +361,3 @@ func (s *Service) timeout() int {
 	}
 	return int((wait + time.Millisecond - 1) / time.Millisecond)
 }
-
-// runtimeDir is where screenshots are written.
-func runtimeDir() string { return os.Getenv("XDG_RUNTIME_DIR") }
