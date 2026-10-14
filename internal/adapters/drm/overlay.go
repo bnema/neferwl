@@ -3,6 +3,7 @@ package drm
 import (
 	"errors"
 	"os"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -231,9 +232,19 @@ func (ov overlayWin) close() {
 // buffer; one that the plane's colour pipeline causes (the same frame passes
 // with Bypass) is cached on the plane for the buffer format and the cursor
 // state instead.
+//
+// A frame identical to one KMS took (same images, place, colour mode and
+// cursor; the fence does not count) is not probed again: a refusal of the
+// commit itself still drops the overlay (overlayConflict).
 func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
+	key := o.overlayProbeOf(fb, ov)
+	if slices.Contains(o.overlayPassed[:], key) {
+		return true
+	}
 	err := o.probeOverlay(fb, ov, ov.color.mode)
 	if err == nil {
+		o.overlayPassed[o.overlayNext] = key
+		o.overlayNext = 1 - o.overlayNext
 		return true
 	}
 	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
@@ -248,6 +259,25 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	o.setOverlayReason("overlay_refused")
 	o.renderLog.Info().Err(err).Str("connector", o.conn.name).Msg("overlay refused")
 	return false
+}
+
+// overlayProbe is what an overlay probe depends on, fences aside.
+type overlayProbe struct {
+	primary, overlay uint32
+	rect             ports.Rect
+	w, h             int
+	color            colorUse
+	cursor           cursorState
+	mult             uint64
+	ctm              uint32
+}
+
+func (o *Output) overlayProbeOf(fb uint32, ov overlayWin) overlayProbe {
+	p := overlayProbe{primary: fb, overlay: ov.fb, rect: ov.rect, w: ov.w, h: ov.h, color: ov.color, mult: o.colorMult, ctm: o.ctmBlob}
+	if o.cursor != nil {
+		p.cursor = o.cursor.desired()
+	}
+	return p
 }
 
 // probeOverlay is a TEST_ONLY of the frame: the composed image on the

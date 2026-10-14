@@ -89,6 +89,22 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		decision = o.composeFrame(scene, surfaces)
 	}
 	ov, composed := decision.overlay, decision.composed
+	// A render that was not committed may still read client buffers: only a
+	// new render's fence orders this flip after it, so the frame composes.
+	if ov.fb != 0 && len(normal) == 0 && len(excluded) == 0 && o.readDone() {
+		if front := o.fbs[1-o.back]; o.front.holds(front, composed, surfaces) {
+			// Only the overlay window changed: the image on screen already
+			// holds the rest.
+			if o.testOverlay(front, ov) {
+				err = o.commitOverlayOnly(front, scene, f, ov)
+				presented = err == nil
+				return false, err
+			}
+			// Refused: compose the window too (cached per buffer).
+			ov.close()
+			ov, composed = overlayWin{}, scene
+		}
+	}
 	r.UseTarget(o.back)
 	// Captures never show the capture indicator: their frame goes first.
 	took, pdone, perr := pipeline.SubmitPlain(r, composed, surfaces, normal)
@@ -213,7 +229,37 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	if err == nil {
 		o.queued = ov.buf
+		// The image now holds what was drawn last: composed, or the whole
+		// scene after an overlay refusal.
+		if ov.fb != 0 {
+			o.front.hold(o.fbs[o.back], composed, surfaces)
+		} else {
+			o.front.hold(o.fbs[o.back], scene, surfaces)
+		}
 		o.back = 1 - o.back
 	}
 	return false, err
+}
+
+// commitOverlayOnly commits front, the image on screen, again with ov on
+// the overlay plane: no render, no GPU fence. It closes ov's fence.
+func (o *Output) commitOverlayOnly(front uint32, scene ports.Scene, f pendingFrame, ov overlayWin) error {
+	defer ov.close()
+	if !o.sceneCurrent(scene) || o.protected {
+		return errSecurityScene
+	}
+	f.queued, f.zeroCopy = ov.buf, ov.id
+	game := o.vrrProp != 0 && fullscreenShown(&scene)
+	err := o.commitWith(front, nil, false, o.wantVRR(game), f, ov)
+	if errors.Is(err, errColorRefused) {
+		o.setOverlayReason("color_refused")
+		return errOverlayDropped
+	}
+	if err != nil && o.overlayConflict(err, ov.buf) {
+		return errOverlayDropped
+	}
+	if err == nil {
+		o.queued = ov.buf
+	}
+	return err
 }

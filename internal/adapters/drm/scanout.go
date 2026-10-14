@@ -587,6 +587,8 @@ func (o *Output) dropClientFBs(now time.Time, all bool) {
 		}
 		if fb.fbID != 0 {
 			_ = o.k.rmFB(fb.fbID)
+			// KMS may give the id to another buffer.
+			o.overlayPassed = [2]overlayProbe{}
 		}
 		delete(o.clientFBs, id)
 	}
