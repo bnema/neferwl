@@ -112,14 +112,17 @@ type svcHarness struct {
 	log   *logBuf
 	done  chan struct{}
 
-	killBus func()        // loses the bus: the daemon dies
-	closed  chan struct{} // a PipeWire connection was closed
+	killBus func()             // loses the bus: the daemon dies
+	cancel  context.CancelFunc // stops the service, as the process exit does
+	closed  chan struct{}      // a PipeWire connection was closed
 }
 
 type harnessOpts struct {
 	allow  *captureallow.Policy
 	noPW   bool
 	holdOp bool
+	// drain overrides how long the stopping service waits for frames.
+	drain time.Duration
 	// iterate runs inside every PipeWire loop iteration, on the owner.
 	iterate func()
 }
@@ -138,6 +141,9 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	}
 	h.svc = New(func() *captureallow.Policy { return allow }, h.cmds, testLog(h.log))
 	h.svc.address = h.addr
+	if o.drain > 0 {
+		h.svc.drain = o.drain
+	}
 
 	res := newMockpeerResolver(t)
 	res.EXPECT().Open(mock.Anything).RunAndReturn(func(pid int) (*os.File, error) {
@@ -201,6 +207,7 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	h.svc.pw = pwOpen
 
 	ctx, cancel := context.WithCancel(context.Background())
+	h.cancel = cancel
 	go func() { defer close(h.done); h.svc.Run(ctx, 10*time.Millisecond) }()
 	t.Cleanup(func() {
 		cancel()

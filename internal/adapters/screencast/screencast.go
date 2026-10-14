@@ -52,7 +52,8 @@ const (
 	// shotTimeout bounds a nefercap run.
 	shotTimeout = 60 * time.Second
 
-	// shutdownWait bounds the wait for frames still in flight at shutdown.
+	// shutdownWait bounds the wait for frames still in flight at shutdown,
+	// once the service itself is stopping.
 	shutdownWait = 2 * time.Second
 
 	// shutdownPoll is how often shutdown looks again for the events that
@@ -99,9 +100,9 @@ type Service struct {
 	haveInv bool
 	callers [maxCallers]caller
 	pending [maxPending]pending
-	// sessions is a pointer so that a shutdown that had to leave a PipeWire
-	// source behind can abandon the table: the source's handler still
-	// points into it, so it is never reset or reused.
+	// sessions is a pointer so that a shutdown at process exit that had to
+	// leave a PipeWire source behind can abandon the table: the source's
+	// handler still points into it, so it is never reset or reused.
 	sessions *[maxSessions]session
 	nextSess uint32
 	nextStrm uint32
@@ -111,7 +112,7 @@ type Service struct {
 	shotSeq  uint64 // ID of the last screenshot job; never reset
 	fatal    error
 	jobs     sync.WaitGroup
-	drain    time.Duration // how long shutdown waits for frames in flight
+	drain    time.Duration // how long shutdown waits for frames once the service stops
 }
 
 // New creates the service. policy returns the capture allowlist in force;
@@ -207,7 +208,7 @@ func (s *Service) Run(ctx context.Context, retry time.Duration) {
 }
 
 // attempt is one connection of the service to the buses.
-func (s *Service) attempt(ctx context.Context) (err error) {
+func (s *Service) attempt(parent context.Context) (err error) {
 	// The PipeWire loop belongs to this OS thread for its whole life.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -217,14 +218,14 @@ func (s *Service) attempt(ctx context.Context) (err error) {
 	}
 	defer func() { _ = conn.Close() }()
 	// The screenshot job of this attempt ends with it.
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	s.reset(ctx, conn)
 	if s.pwc, err = s.pw.Open(); err != nil {
 		s.pwc = nil
 		s.log.Warn().Err(err).Msg("PipeWire unavailable: screen casting is not offered")
 	}
-	defer s.shutdown()
+	defer s.shutdown(parent)
 	if err = s.acquire(); err != nil {
 		return err
 	}
@@ -346,16 +347,25 @@ func (s *Service) service() {
 // resources: CastClose goes to the wayland server, a frame still in flight
 // is waited for (its buffer is lent to the wayland server), then the source
 // is destroyed and its buffers released. Only then is PipeWire closed.
+// parent is the context the service runs under; the attempt's own context
+// may have ended for another reason.
 //
-// When a frame does not come back in time, the source cannot be destroyed
-// safely. It is left as it is, with its loop: the sessions table that its
-// handler points into is abandoned (never reset or reused) and a new one
-// takes its place, so later attempts neither touch that storage nor run out
-// of slots.
-func (s *Service) shutdown() {
+// While parent is alive the attempt ended by itself (the bus was lost) and a
+// new one follows. The wayland server is alive and answers every CastFrame
+// with a CastFrameDone, so the wait for the frames in flight has no
+// deadline: a source left behind would keep its slot in the process-wide
+// table of PipeWire video sources for good, and repeated reconnects would
+// exhaust it. If parent ends meanwhile, the wait is bounded as below.
+//
+// Once parent has ended, the process is going away and the wait for the
+// frames in flight is bounded by s.drain. When a frame does not come back in
+// time, the source cannot be destroyed safely. It is left as it is, with its
+// loop, to the process exit. The sessions table that its handler points into
+// is abandoned (never reset or reused) and a new one takes its place.
+func (s *Service) shutdown(parent context.Context) {
 	s.stopShot()
 	s.forEachSession(func(sess *session) { s.closeSession(sess, true) })
-	deadline := time.Now().Add(s.drain)
+	var deadline time.Time // set once parent ended
 	for {
 		evs, _, _, _ := s.take()
 		for i := range evs {
@@ -366,7 +376,10 @@ func (s *Service) shutdown() {
 		if !s.streamsLive() {
 			break
 		}
-		if !time.Now().Before(deadline) {
+		if deadline.IsZero() && parent.Err() != nil {
+			deadline = time.Now().Add(s.drain)
+		}
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
 			s.log.Warn().Int("streams", s.streamCount()).Msg("frames still in flight at shutdown; PipeWire resources are left to the process exit")
 			s.sessions = new([maxSessions]session)
 			s.pwc = nil

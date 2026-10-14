@@ -1,6 +1,7 @@
 package screencast
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,10 +27,10 @@ func (l *liveCast) loop(f func()) {
 	l.h.svc.Push(ports.CastEvent{Kind: ports.CastDamage, ID: 1 << 40}) // wakes the owner
 }
 
-func startLiveCast(t *testing.T, withFrame bool) *liveCast {
+func startLiveCast(t *testing.T, withFrame bool, drain time.Duration) *liveCast {
 	t.Helper()
 	l := &liveCast{onLoop: make(chan func(), 8), hdl: make(chan pipewire.VideoHandler, 1)}
-	l.h, _ = ready(t, harnessOpts{iterate: func() {
+	l.h, _ = ready(t, harnessOpts{drain: drain, iterate: func() {
 		select {
 		case f := <-l.onLoop:
 			f()
@@ -104,7 +105,7 @@ func waitClosed(t *testing.T, h *svcHarness) {
 // Losing the bus with a live stream and no frame in flight: the cast is
 // closed on the wayland side, the source destroyed, PipeWire closed.
 func TestBusLossTearsDownStream(t *testing.T) {
-	l := startLiveCast(t, false)
+	l := startLiveCast(t, false, 0)
 	l.src.EXPECT().Destroy().Return().Once()
 	l.h.killBus()
 	if cmd := recvCmd(t, l.h); cmd.Kind != ports.CastClose || cmd.ID != 1 {
@@ -114,25 +115,50 @@ func TestBusLossTearsDownStream(t *testing.T) {
 }
 
 // With a frame in flight: CastClose goes out at once, but the source is
-// destroyed only after the frame's CastFrameDone, and its buffer released.
+// destroyed only after the frame's CastFrameDone, even when that comes later
+// than drain: the service runs on, so nothing is left behind. The order is
+// synchronized by channels: the buffer must be released before the node is
+// destroyed, and PipeWire closed after both.
 func TestBusLossWaitsForFrameInFlight(t *testing.T) {
-	l := startLiveCast(t, true)
-	if cmd := func() ports.CastCommand { l.h.killBus(); return recvCmd(t, l.h) }(); cmd.Kind != ports.CastClose || cmd.ID != 1 {
+	l := startLiveCast(t, true, time.Nanosecond)
+	l.h.killBus()
+	if cmd := recvCmd(t, l.h); cmd.Kind != ports.CastClose || cmd.ID != 1 {
+		t.Fatalf("%+v", cmd)
+	}
+	var delivered atomic.Bool
+	steps := make(chan string, 3)
+	step := func(name string) {
+		if !delivered.Load() {
+			t.Errorf("%s before the CastFrameDone", name)
+		}
+		steps <- name
+	}
+	l.src.EXPECT().Release(l.buf).Run(func(*pipewire.VideoBuffer) { step("release") }).Once()
+	l.src.EXPECT().Destroy().Run(func() { step("destroy") }).Once()
+	delivered.Store(true)
+	l.h.svc.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 2})
+	waitClosed(t, l.h)
+	if len(steps) != 2 || <-steps != "release" || <-steps != "destroy" {
+		t.Fatal("release and destroy did not run in order before PipeWire closed")
+	}
+}
+
+// The service itself stopping with a frame that is never answered returns
+// within the bounded wait, and leaves the source and PipeWire alone.
+func TestStopWithUnansweredFrameIsBounded(t *testing.T) {
+	l := startLiveCast(t, true, 20*time.Millisecond)
+	l.h.cancel()
+	if cmd := recvCmd(t, l.h); cmd.Kind != ports.CastClose || cmd.ID != 1 {
 		t.Fatalf("%+v", cmd)
 	}
 	select {
-	case <-l.h.closed:
-		t.Fatal("PipeWire closed with a frame in flight")
-	case <-time.After(200 * time.Millisecond):
+	case <-l.h.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return")
 	}
-	released := make(chan struct{})
-	l.src.EXPECT().Release(l.buf).Run(func(*pipewire.VideoBuffer) { close(released) }).Once()
-	l.src.EXPECT().Destroy().Return().Once()
-	l.h.svc.Push(ports.CastEvent{Kind: ports.CastFrameDone, ID: 1, Buf: 2})
-	waitClosed(t, l.h)
 	select {
-	case <-released:
+	case <-l.h.closed:
+		t.Fatal("PipeWire closed under a source with a frame in flight")
 	default:
-		t.Fatal("buffer not released")
 	}
 }
