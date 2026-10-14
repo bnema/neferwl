@@ -14,6 +14,7 @@ packages:
       filename: '{{.InterfaceFile | base | trimSuffix ".go"}}_mock.go'
     interfaces:
       CaptureFrame:
+      CastSink:
       Clock:
       ContentReturn:
       Notifier:
