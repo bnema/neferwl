@@ -112,20 +112,15 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		p.expireWorkspaceClaims(c.now())
 		if target, ok := p.pending[v.Slot]; ok {
 			switch target.kind {
-			case spawnTerminal:
+			case spawnTerminal, spawnStash:
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
 					if s.mon.has(target.ws) {
-						target.ws.AddWindow(v.ID)
-						s.mon.normalize()
-						return
-					}
-				}
-			case spawnStash:
-				delete(p.pending, v.Slot)
-				for _, s := range c.screens {
-					if s.mon.has(target.ws) {
-						target.ws.stashSpawned(v.ID)
+						if target.kind == spawnStash {
+							target.ws.stashSpawned(v.ID)
+						} else {
+							target.ws.AddWindow(v.ID)
+						}
 						s.mon.normalize()
 						return
 					}

@@ -398,15 +398,7 @@ func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string
 	for i, argv := range commands {
 		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
 	}
-	err := c.publishPending(ctx)
-	for i, req := range reqs {
-		if err != nil || !c.trySpawn(ctx, req) {
-			for _, suppressed := range reqs[i:] {
-				c.cancelClaim(suppressed)
-			}
-			break
-		}
-	}
+	_, err := c.dispatch(ctx, reqs)
 	return err
 }
 
