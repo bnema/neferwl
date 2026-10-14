@@ -63,6 +63,10 @@ type pipes struct {
 	// coalesces them.
 	idleInhibited chan bool
 	idleActivity  chan struct{}
+
+	// Screencast commands to wayland (the screencast adapter's side is the
+	// sender); the events come back through wayland.Options.Casts.
+	castCommands chan ports.CastCommand
 }
 
 func newPipes(realSession bool) *pipes {
@@ -105,6 +109,8 @@ func newPipes(realSession bool) *pipes {
 
 		idleInhibited: make(chan bool, 1),
 		idleActivity:  make(chan struct{}, 1),
+
+		castCommands: make(chan ports.CastCommand, 64),
 	}
 	if realSession {
 		p.scales = make(chan ports.ScaleChanged, 8)
@@ -152,6 +158,7 @@ func (p *pipes) wayland() wayland.Channels {
 		OutputApplied:   p.appliedOutput,
 		IdleInhibited:   p.idleInhibited,
 		IdleActivity:    p.idleActivity,
+		CastCommands:    p.castCommands,
 	}
 }
 

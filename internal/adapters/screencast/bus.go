@@ -112,8 +112,8 @@ func capStr(s string) string {
 	return strings.Clone(s)
 }
 
-// resolve finds the object of a path. A served object needs its bus name.
-func (s *Service) resolve(path string) (objKind, uint32) {
+// objectOf finds the object of a path. A served object needs its bus name.
+func (s *Service) objectOf(path string) (objKind, uint32) {
 	switch path {
 	case pathScreenCast:
 		return objScreenCast, 0
@@ -161,7 +161,7 @@ func (s *Service) served(k objKind) bool {
 // decode reads a call completely: nothing of m is used after it returns.
 func (s *Service) decode(m *zerobus.Message) request {
 	req := request{sender: strings.Clone(m.Sender), serial: m.Serial, noReply: m.Flags&zerobus.FlagNoReplyExpected != 0}
-	req.obj, req.id = s.resolve(m.Path)
+	req.obj, req.id = s.objectOf(m.Path)
 	if !s.served(req.obj) {
 		req.method = mUnknownObject
 		return req

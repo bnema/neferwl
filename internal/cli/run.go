@@ -24,9 +24,9 @@ import (
 
 // runFlags are the root command flags.
 type runFlags struct {
-	backend, screenshot, size, input, debug, config, pprof      string
-	noTerminal, noXwayland, headlessHDR, screenshotRaw, session bool
-	timeout                                                     time.Duration
+	backend, screenshot, size, input, debug, config, pprof            string
+	noTerminal, noXwayland, headlessHDR, screenshotRaw, session, dbus bool
+	timeout                                                           time.Duration
 }
 
 func (f *runFlags) register(fs *flag.FlagSet) {
@@ -42,6 +42,7 @@ func (f *runFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.debug, "debug", "", "debug components (comma-separated or all; all leaves out drm-flip, input-motion, input-keys, wayland-damage and render-damage, which log every flip, pointer motion, key, client commit or frame)")
 	fs.StringVar(&f.config, "config", "", "config path (empty uses XDG default)")
 	fs.BoolVar(&f.session, "session", false, "run as the login session: share WAYLAND_DISPLAY and DISPLAY with systemd and D-Bus user services; notify systemd when ready")
+	fs.BoolVar(&f.dbus, "dbus", false, "headless: serve the session D-Bus services; for tests under dbus-run-session")
 	fs.StringVar(&f.pprof, "pprof", "", "serve Go runtime profiles (heap, CPU, trace) on this address, e.g. localhost:6060")
 }
 
@@ -51,6 +52,8 @@ func (f *runFlags) validate(args []string) ([][2]int, error) {
 	switch {
 	case f.backend != "drm" && !headless:
 		return nil, usagef("invalid backend %q", f.backend)
+	case f.dbus && !headless:
+		return nil, usagef("--dbus requires --backend=headless")
 	case f.headlessHDR && !headless:
 		return nil, usagef("--headless-hdr requires --backend=headless")
 	case f.screenshot != "" && !headless:
@@ -154,6 +157,7 @@ func (f *runFlags) run(ctx context.Context, sizes [][2]int) error {
 		NoXwayland:    f.noXwayland,
 		HeadlessHDR:   f.headlessHDR,
 		Session:       f.session,
+		DBus:          f.dbus,
 		ScreenshotDir: f.screenshot,
 		ScreenshotRaw: f.screenshotRaw,
 		Sizes:         sizes,

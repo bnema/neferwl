@@ -27,7 +27,11 @@ type Options struct {
 	HeadlessHDR bool
 	// Session exports the displays to D-Bus and systemd user services
 	// before any client starts, and withdraws them on exit.
-	Session       bool
+	Session bool
+	// DBus serves the session D-Bus services (idle inhibition, screen
+	// casting and screenshots) of a headless run, which otherwise leaves the
+	// session bus alone. For tests under dbus-run-session.
+	DBus          bool
 	ScreenshotDir string
 	// ScreenshotRaw also writes latest-pq.png, the raw PQ codes of a
 	// virtual HDR output (test-only; needs ScreenshotDir and HeadlessHDR).
