@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
@@ -125,14 +126,72 @@ func TestKeptChildrenFencesDroppedOnACopy(t *testing.T) {
 
 // Both backends report a window shown only when the scene draws it and its
 // content is not kept.
-func TestFillShown(t *testing.T) {
+func TestShowsSnapshotSkipsKept(t *testing.T) {
 	kept := func(id ports.WindowID) bool { return id == 2 }
-	dst := map[ports.WindowID]uint64{9: 9}
-	FillShown(dst, map[ports.WindowID]uint64{1: 3, 2: 4, 3: 5}, shows(1, 2), kept)
-	if len(dst) != 1 || dst[1] != 3 {
-		t.Fatalf("shown %v", dst)
+	var snap ShowsSnapshot
+	got := snap.FromSeen(shows(1, 2), map[ports.WindowID]uint64{1: 3, 2: 4, 3: 5}, kept)
+	if len(got) != 1 || got[1] != 3 {
+		t.Fatalf("shown from seen %v", got)
+	}
+	var fromContents ShowsSnapshot
+	contents := map[ports.WindowID]ports.SurfaceContent{1: {ID: 1, Seq: 3}, 2: {ID: 2, Seq: 4}, 3: {ID: 3, Seq: 5}}
+	got = fromContents.FromContents(shows(1, 2), contents, kept)
+	if len(got) != 1 || got[1] != 3 {
+		t.Fatalf("shown from contents %v", got)
 	}
 	if !Shown(shows(2), 2, nil) {
 		t.Fatal("nil kept counts nothing as kept")
+	}
+}
+
+// An unchanged snapshot is reused without allocating; a changed one never
+// mutates a map already handed out.
+func TestShowsSnapshotImmutable(t *testing.T) {
+	var snap ShowsSnapshot
+	scene := shows(1)
+	seen := map[ports.WindowID]uint64{1: 1, 2: 2}
+	first := snap.FromSeen(scene, seen, nil)
+	if allocs := testing.AllocsPerRun(100, func() { snap.FromSeen(scene, seen, nil) }); allocs != 0 {
+		t.Errorf("unchanged shows: %.1f allocs, want 0", allocs)
+	}
+	seen[1] = 3
+	second := snap.FromSeen(scene, seen, nil)
+	if first[1] != 1 || second[1] != 3 {
+		t.Fatalf("snapshot mutated: old %v new %v", first, second)
+	}
+}
+
+// Apply takes the batch into the table, advances seen, reports what needs a
+// frame or a report, then resets the batch before giving it back.
+func TestApply(t *testing.T) {
+	tb := New()
+	seen := map[ports.WindowID]uint64{1: 5}
+	b := &ports.ContentBatch{Items: []ports.SurfaceContent{
+		{ID: 1, Seq: 4, SHM: &ports.SHMBuffer{Pool: 1}}, // older than seen
+		{ID: 2, Seq: 1, SHM: &ports.SHMBuffer{Pool: 2}},
+	}}
+	ret := portsmocks.NewMockContentReturn(t)
+	ret.EXPECT().Return(b).Run(func(got *ports.ContentBatch) {
+		if len(got.Items) != 0 {
+			t.Errorf("batch returned before its reset: %d items", len(got.Items))
+		}
+	}).Once()
+	dirty, changed := tb.Apply(b, shows(2), seen, ret)
+	if !dirty || !changed {
+		t.Fatalf("dirty %v changed %v, want both", dirty, changed)
+	}
+	if seen[1] != 5 || seen[2] != 1 {
+		t.Fatalf("seen %v", seen)
+	}
+	if len(tb.Map()) != 2 {
+		t.Fatalf("table %v", tb.Map())
+	}
+
+	// A window no scene draws and no newer Seq: nothing to do.
+	b = &ports.ContentBatch{Items: []ports.SurfaceContent{{ID: 1, Seq: 5, SHM: &ports.SHMBuffer{Pool: 1}}}}
+	ret.EXPECT().Return(b).Once()
+	dirty, changed = tb.Apply(b, shows(2), seen, ret)
+	if dirty || changed {
+		t.Fatalf("dirty %v changed %v, want neither", dirty, changed)
 	}
 }

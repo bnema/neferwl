@@ -32,6 +32,27 @@ type frameSlot struct {
 	busy  bool   // submitted, fence not yet seen signalled
 }
 
+// callScratch holds the structs Render and its record helpers pass to Vulkan
+// by pointer. The purego call makes a pointer to a local escape, so a local
+// would be a heap allocation per frame; these live in the Renderer instead
+// (owned by one goroutine, and Vulkan reads each only during its call). Every
+// field is set in full before use; two uses that overlap in time never share a
+// field.
+type callScratch struct {
+	cmd     vk.CommandBuffer
+	begin   vk.CommandBufferBeginInfo
+	submit  vk.SubmitInfo
+	target  vk.ImageMemoryBarrier // the render target's, kept to the frame's end
+	client  vk.ImageMemoryBarrier // a client image's (ownership)
+	attach  vk.RenderingAttachmentInfo
+	render  vk.RenderingInfo
+	getFD   vk.SemaphoreGetFdInfoKHR
+	fd      int32
+	hdrIn   vk.ImageMemoryBarrier // recordHDR
+	hdrOut  vk.ImageMemoryBarrier
+	hdrNits float32
+}
+
 // deferredFree runs once frame completed.
 type deferredFree struct {
 	frame uint64
@@ -186,7 +207,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	dmg.finish()
 	r.dropPools()
 	partial := !dmg.all()
+	redrawn := sw * sh
 	if partial {
+		redrawn = dmg.area.Dx() * dmg.area.Dy()
 		// The pass keeps the image: repaint the background under the
 		// region, then everything clipped to it.
 		// Keep the background first without allocating a second draw slice.
@@ -195,23 +218,27 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		ds[0] = r.fillDraw(dmg.area, parseColor(s.Background))
 		ds = dmg.clip(ds)
 		r.scratchDraws = ds
-		r.redrawn += dmg.area.Dx() * dmg.area.Dy()
-	} else {
-		r.redrawn += sw * sh
+	}
+	r.redrawn += redrawn
+	if r.traceDamage {
+		r.log.Debug().Int("redrawn", redrawn).Int("draws", len(ds)).Bool("partial", partial).Msg("frame damage")
 	}
 	r.orient(ds, s.Transform)
 	d := r.dd
+	sc := &r.call
 	cmd := slot.cmd
+	sc.cmd = cmd
 	if err := checked("vkResetCommandBuffer", d.ResetCommandBuffer(cmd, 0)); err != nil {
 		return nil, err
 	}
-	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &begin)); err != nil {
+	sc.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
+	if err := checked("vkBeginCommandBuffer", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
 		return nil, err
 	}
 	// A full redraw clears the target: its old contents never matter
 	// (UNDEFINED). A partial one keeps them.
-	b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: tg.image, SubresourceRange: colorRange}
+	b := &sc.target
+	*b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: tg.image, SubresourceRange: colorRange}
 	if partial {
 		b.OldLayout = tg.layout
 		b.DstAccessMask |= vk.AccessColorAttachmentReadBit
@@ -220,7 +247,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		// Acquire from the display (foreign queue family).
 		b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = vk.QueueFamilyForeignEXT, r.family
 	}
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit|vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, &b)
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit|vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, b)
 	// Client buffers come from the foreign queue family (their driver)
 	// and go back to it after the frame, so the next frame acquires them.
 	dmas := r.frameDMAs[:0]
@@ -252,10 +279,10 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 			// Release to the display: KMS scans it out after the fence.
 			b.NewLayout, b.DstAccessMask = vk.ImageLayoutGeneral, 0
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
-			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, b)
 		} else {
 			b.NewLayout, b.DstAccessMask = vk.ImageLayoutTransferSrcOptimal, vk.AccessTransferReadBit
-			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+			d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, b)
 		}
 	}
 	if err := checked("vkEndCommandBuffer", d.EndCommandBuffer(cmd)); err != nil {
@@ -279,7 +306,8 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		sem := sem
 		r.retire(frame, func() { d.DestroySemaphore(r.device, sem, nil) })
 	}
-	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd}
+	sc.submit = vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &sc.cmd}
+	submit := &sc.submit
 	if cap(r.frameStages) < len(waits) {
 		r.frameStages = make([]vk.PipelineStageFlags, len(waits))
 	}
@@ -293,7 +321,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if r.syncFD {
 		submit.SignalSemaphoreCount, submit.SignalSemaphores = 1, &slot.done
 	}
-	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, &submit, slot.fence)); err != nil {
+	if err := checked("vkQueueSubmit", d.QueueSubmit(r.queue, 1, submit, slot.fence)); err != nil {
 		return nil, err
 	}
 	runtime.KeepAlive(stages)
@@ -318,9 +346,9 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	if !r.syncFD {
 		return nil, r.waitFrame(frame)
 	}
-	var fd int32
-	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	if d.GetSemaphoreFdKHR(r.device, &get, &fd) != vk.Success {
+	sc.fd = 0
+	sc.getFD = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: slot.done, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	if d.GetSemaphoreFdKHR(r.device, &sc.getFD, &sc.fd) != vk.Success {
 		// The frame is drawn: finish it on the CPU. The semaphore stays
 		// signalled: replace it, so the slot's next submit signals a
 		// fresh one.
@@ -331,6 +359,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 		slot.done = 0
 		return nil, r.newDone(slot)
 	}
+	fd := sc.fd
 	if fd < 0 {
 		// Already signalled: the driver may return -1.
 		return nil, r.waitFrame(frame)
@@ -346,7 +375,8 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 // family, GENERAL: their contents survive) and the fragment shader.
 func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire bool) {
 	for _, im := range dmas {
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: colorRange}
+		b := &r.call.client
+		*b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, Image: im.image, SubresourceRange: colorRange}
 		if im.yuv {
 			b.SubresourceRange.AspectMask = aspectPlane0 | aspectPlane1
 		}
@@ -356,12 +386,12 @@ func (r *Renderer) ownership(cmd vk.CommandBuffer, dmas []*imported, acquire boo
 			b.DstAccessMask = vk.AccessShaderReadBit
 			// The frame waits on the client's fence at the fragment
 			// stage: the transfer must come after that wait.
-			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, &b)
+			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, b)
 		} else {
 			b.OldLayout, b.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutGeneral
 			b.SrcQueueFamilyIndex, b.DstQueueFamilyIndex = r.family, vk.QueueFamilyForeignEXT
 			b.SrcAccessMask = vk.AccessShaderReadBit
-			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+			r.dd.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, b)
 		}
 	}
 }

@@ -6,7 +6,7 @@ require (
 	github.com/bnema/go-wayland-bindings v0.1.0
 	github.com/bnema/kvconf v0.1.2
 	github.com/bnema/purego v0.13.0-bnema.1
-	github.com/bnema/purego-libwayland v0.9.0
+	github.com/bnema/purego-libwayland v0.10.0
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.5.0
 	github.com/bnema/zerowrap v1.4.1

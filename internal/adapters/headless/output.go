@@ -13,6 +13,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
@@ -47,8 +48,11 @@ type Options struct {
 	// Name and Presented report what the output has read after each
 	// frame, so wayland can release client buffers (nil: no reports).
 	Name      string
-	Presented chan<- ports.OutputPresented
-	Captured  chan<- ports.CaptureDone
+	Presented ports.PresentationSink
+	// Frames tells core a presented scene is animating: its next frame is
+	// due. Sends never block (nil: nobody is told).
+	Frames   chan<- ports.OutputFrame
+	Captured chan<- ports.CaptureDone
 	// Clock paces the renderer trim (nil: system clock).
 	Clock ports.Clock
 }
@@ -57,7 +61,7 @@ type Options struct {
 // windows it no longer draws.
 const trimEvery = 10 * time.Second
 
-func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
+func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, incoming <-chan ports.CaptureRequest) error {
 	r, err := opts.NewRenderer(opts.Width, opts.Height)
 	if err != nil {
 		return fmt.Errorf("create renderer: %w", err)
@@ -111,8 +115,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	cursorScale := -1.0 // not loaded yet
 	var cursorTransform ports.BufferTransform
 	seen := map[ports.WindowID]uint64{}
-	// reports holds what the channel could not take yet, retried soon.
+	// reports queues what the output read; every report is pushed to the
+	// sink at once (Push never blocks), so it holds one at most.
 	var reports presented.Queue
+	var shows flipShows
 	var security ports.SecurityState
 	securityKnown := false
 	failRequests := func(reason error) {
@@ -186,10 +192,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		// A closed window's last content goes once no scene draws it.
 		table.Prune(scene)
 	}
-	update := func(c ports.SurfaceContent) {
-		seen[c.ID] = max(seen[c.ID], c.Seq)
-		dirty = dirty || capture.Shows(scene, c.ID)
-		table.Update(c, scene)
+	update := func(b *ports.ContentBatch) {
+		batchDirty, _ := table.Apply(b, scene, seen, returns)
+		dirty = dirty || batchDirty
 	}
 	clk := opts.Clock
 	if clk == nil {
@@ -214,10 +219,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return nil
 			}
 			return err
-		}
-		var retry <-chan time.Time
-		if reports.Len() > 0 {
-			retry = time.After(time.Millisecond)
 		}
 		// Requests wait for a scene that shows their indicator, at most
 		// capture.HoldFor (see capture.Hold).
@@ -290,15 +291,6 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				refuse = capture.ErrOutputOff
 			}
 			dirty = requests.Admit(q, refuse, scene, haveScene) || dirty
-		case <-retry:
-			if err := checkSecurity(); err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				return err
-			}
-			opts.flush(&reports)
-			continue
 		case <-trim.C():
 			if err := checkSecurity(); err != nil {
 				if ctx.Err() != nil {
@@ -312,6 +304,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := r.Trim(clk.Now()); err != nil {
 				return fmt.Errorf("trim renderer: %w", err)
 			}
+			opts.Log.Info().Str("output", opts.Name).Int("frames", frame).Msg("stats")
 			continue
 		case s, ok := <-scenes:
 			if !ok {
@@ -325,7 +318,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return err
 			}
 			acceptScene(s)
-		case c, ok := <-contents:
+		case b, ok := <-contents:
 			if !ok {
 				contents = nil
 				continue
@@ -336,7 +329,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				}
 				return err
 			}
-			update(c)
+			update(b)
 		case c, ok := <-cursor:
 			if !ok {
 				cursor = nil
@@ -367,7 +360,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 					}
 					acceptScene(s)
 				}
-			case c, ok := <-contents:
+			case b, ok := <-contents:
 				if !ok {
 					contents = nil
 				} else {
@@ -377,7 +370,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 						}
 						return err
 					}
-					update(c)
+					update(b)
 				}
 			default:
 				break drain
@@ -448,9 +441,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				_, reads, _ := pipeline.CapHiddenSeen(seen)
 				if len(reads) > 0 {
 					reports.Push(ports.OutputPresented{Output: opts.Name, Seen: seen, ChildReads: reads})
-					if reports.Drain(ctx, opts.Presented) != nil {
-						return nil
-					}
+					reports.Flush(opts.Presented)
 				}
 			}
 			if err := pipeline.WaitHidden(ctx); err != nil {
@@ -546,7 +537,10 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		pipeline.EndGate(nil)
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
-		opts.report(&reports, flipInfo(scene, drawn, table.Kept), seen)
+		opts.report(&reports, shows.flipInfo(scene, drawn, table.Kept), seen)
+		if scene.Animating {
+			corewake.Send(opts.Frames, opts.Name)
+		}
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
@@ -617,37 +611,35 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 }
 
 // report queues what the output read, with flip for a drawn frame, and
-// sends what the channel takes now; the rest is retried soon.
+// pushes it to the sink.
 func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	if opts.Presented == nil {
 		return
 	}
-	if q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen}) {
-		opts.Log.Warn().Str("output", opts.Name).Msg("wayland is not reading output reports; flips merged")
-	}
+	q.Push(ports.OutputPresented{Output: opts.Name, Flip: flip, Seen: seen})
 	q.Flush(opts.Presented)
 }
 
-// flush retries reports the channel could not take.
-func (opts Options) flush(q *presented.Queue) {
-	if opts.Presented != nil {
-		q.Flush(opts.Presented)
-	}
+// flipShows builds the Shows of successive flips. Its owner goroutine is the
+// only user. The Shows snapshot is shared with earlier flips of the same
+// content (see surfaces.ShowsSnapshot): never modify it.
+type flipShows struct {
+	snapshot surfaces.ShowsSnapshot
+}
+
+// of returns the content Seq of the windows scene showed to their client.
+func (f *flipShows) of(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+	// A closed window drawn from its kept content is not shown to its
+	// client.
+	return f.snapshot.FromContents(scene, contents, kept)
 }
 
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC
 // time (software clock, refresh unknown), so presentation feedback and
-// frame callbacks follow headless frames.
-func flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
+// frame callbacks follow headless frames. The FlipInfo itself is new per
+// flip (the sink counts merges on it); only its Shows is shared.
+func (f *flipShows) flipInfo(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) *ports.FlipInfo {
 	var ts unix.Timespec
 	_ = unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts)
-	shows := map[ports.WindowID]uint64{}
-	for id, c := range contents {
-		// A closed window drawn from its kept content is not shown to
-		// its client.
-		if surfaces.Shown(scene, id, kept) {
-			shows[id] = c.Seq
-		}
-	}
-	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: shows}
+	return &ports.FlipInfo{When: time.Duration(ts.Nano()), Shows: f.of(scene, contents, kept)}
 }

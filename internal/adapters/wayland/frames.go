@@ -1,7 +1,7 @@
 package wayland
 
 import (
-	"context"
+	"errors"
 	"slices"
 	"time"
 
@@ -16,8 +16,10 @@ import (
 // frame. They are paced per output: on its page flip when it flips, else
 // at its refresh rate, so a 165 Hz output lets clients draw 165 frames a
 // second and a V-Sync game follows the screen. Cursors and unplaced
-// surfaces are paced at 60 Hz; invisible toplevel trees at 1 Hz. The
-// pacer sleeps while no callback waits.
+// surfaces are paced at 60 Hz; invisible toplevel trees at 1 Hz. Pacing runs
+// on the display loop: output reports arrive through the presentation sink
+// (presented.go) and deadlines through a timerfd; the timer sleeps while no
+// callback waits.
 
 // defaultFramePeriod paces surfaces without an output (60 Hz).
 const defaultFramePeriod = time.Second / 60
@@ -25,69 +27,87 @@ const suspendedFramePeriod = time.Second
 const suspendedFrameQueue = "\x00suspended" // never a wl_output name
 
 // maxPacePasses bounds the passes one tick repeats while a pass queues
-// more work; the rest goes back to the pacer goroutine.
+// more work; the rest is posted to the display loop.
 const maxPacePasses = 3
 
-// pace sleeps until a flip, a wake or the deadline armed by the last tick,
-// then runs a tick on the display goroutine. The timer is only armed from
-// ticks, which all run there, so a commit that ticks inline (paceNow) never
-// races the pacer for it.
-func (s *Server) pace(ctx context.Context) {
-	timer := s.paceTimer // created by Run before the pacer starts
-	defer timer.Stop()
-	presented := s.channels.Presented
-	if s.flipped == nil {
-		s.flipped = make(map[string]bool)
-	}
-	// One method value for the whole loop: no closure per wake.
-	tick := s.paceFromPacer
-	for {
-		clear(s.flipped)
-		flipped := s.flipped
-		s.frameReports = s.frameReports[:0]
-		reports := s.frameReports
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.display.Stopped():
-			return
-		case p := <-presented:
-			flipped[p.Output] = flipped[p.Output] || paces(p)
-			reports = append(reports, p)
-		case <-s.frameReady:
-		case <-timer.C:
-		}
-		// Coalesce flips queued while the display was busy: one burst of
-		// callbacks per output, not one per stale flip.
-	drain:
-		for {
-			select {
-			case p := <-presented:
-				flipped[p.Output] = flipped[p.Output] || paces(p)
-				reports = append(reports, p)
-			default:
-				break drain
-			}
-		}
-		s.frameReports = reports
-		if !s.display.Do(tick) {
+// paceNow runs a tick from code already on the display goroutine (a client
+// commit).
+func (s *Server) paceNow() { s.paceTick(nil, nil) }
+
+// paceTolerance is how much earlier than the armed deadline a new one may be
+// and still reuse it: the ticks of one frame compute the same deadline from
+// clock reads a few microseconds apart.
+const paceTolerance = 50 * time.Microsecond
+
+// armPace schedules the next flip-less tick d from now on the pace timerfd
+// (nanosecond precision, one-shot). A deadline at most paceTolerance before
+// the armed one keeps the timer as it is: a frame's commit, flip and timer
+// ticks mostly end on the same deadline. The timer never fires before the
+// requested deadline, since the tick's checks are strict and an early tick
+// would push due work back by their minimum re-arm. The tolerance is measured
+// against the armed deadline, so it never accumulates. Display goroutine only.
+func (s *Server) armPace(d time.Duration) { s.armPaceFrom(time.Now(), d) }
+
+// armPaceFrom is armPace with the clock read at now.
+func (s *Server) armPaceFrom(now time.Time, d time.Duration) {
+	deadline := now.Add(max(d, 0))
+	if s.paceArmed {
+		if diff := deadline.Sub(s.paceDeadline); diff >= -paceTolerance && diff <= 0 {
 			return
 		}
 	}
+	spec := unix.ItimerSpec{Value: unix.NsecToTimespec(int64(max(d, time.Nanosecond)))}
+	err := unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("arm", err)
+	// A failed arm leaves the old state unknown: arm again next time.
+	s.paceArmed, s.paceDeadline = err == nil, deadline
 }
 
-// paceFromPacer runs the pacer's collected flips (flipped, frameReports)
-// on the display goroutine.
-func (s *Server) paceFromPacer() { s.paceTick(s.flipped, s.frameReports) }
-
-// paceNow runs a tick from code already on the display goroutine (a client
-// commit): the pacer goroutine would only call Do to get back here. Without
-// a running pacer (no timer) it falls back to waking it.
-func (s *Server) paceNow() {
-	if s.paceTimer == nil {
-		s.signalPacer()
+// stopPace disarms the pace timerfd, unless it is not armed (never armed, or
+// its one-shot expiry was consumed by onPaceTimer). Display goroutine only.
+func (s *Server) stopPace() {
+	if !s.paceArmed {
 		return
 	}
+	var spec unix.ItimerSpec
+	err := unix.TimerfdSettime(s.paceFD, 0, &spec, nil)
+	s.warnPace("stop", err)
+	// A failed stop keeps the state: the next stop tries again.
+	s.paceArmed = err != nil
+}
+
+// warnPace logs the first failure of a pace timerfd operation (later ones
+// would repeat at frame rate). A failed arm leaves frame callbacks waiting
+// for the next commit or flip. Display goroutine only.
+func (s *Server) warnPace(op string, err error) {
+	if err == nil || s.paceWarned {
+		return
+	}
+	s.paceWarned = true
+	s.log.Warn().Err(err).Str("op", op).Msg("pace timer")
+}
+
+// onPaceTimer is the display loop's callback for the pace timerfd: the
+// deadline armed by the last tick passed.
+func (s *Server) onPaceTimer() {
+	var buf [8]byte
+	// Level-triggered: consume the expiry. EAGAIN: the timer was disarmed
+	// after the loop saw it readable.
+	n, err := unix.Read(s.paceFD, buf[:])
+	switch {
+	case err == nil && n == len(buf):
+		// The one-shot expired: the timer is disarmed until the next arm.
+		s.paceArmed = false
+	case err != nil && !errors.Is(err, unix.EAGAIN):
+		s.warnPace("read", err)
+	}
+	s.paceTick(nil, nil)
+}
+
+// paceSignalled is the posted tick: a wake (fence, overflow) made while the
+// display goroutine was elsewhere.
+func (s *Server) paceSignalled() {
+	s.paceSignal.Store(false)
 	s.paceTick(nil, nil)
 }
 
@@ -109,7 +129,7 @@ func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresent
 		}
 		// The pass queued work behind its own checks (applied commits
 		// queue callbacks, released buffers): look again, as a flip-less
-		// tick, instead of waking the pacer for it.
+		// tick, instead of posting one.
 		flipped, reports = nil, nil
 		if pass+1 == maxPacePasses {
 			s.paceDirty = false
@@ -117,16 +137,13 @@ func (s *Server) paceTick(flipped map[string]bool, reports []ports.OutputPresent
 			break
 		}
 	}
-	if s.paceTimer == nil {
-		return
-	}
 	if idle {
 		// Nothing waits: sleep until a commit queues a callback
 		// (wakePacer) or a flip.
-		s.paceTimer.Stop()
+		s.stopPace()
 		return
 	}
-	s.paceTimer.Reset(wait)
+	s.armPace(wait)
 }
 
 // pacePass is one pass of paceTick; it returns the time to the next

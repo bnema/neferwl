@@ -15,8 +15,10 @@ packages:
     interfaces:
       CaptureFrame:
       Clock:
+      ContentReturn:
       Notifier:
       OutputScaleStore:
+      PresentationSink:
       Renderer:
       Seat:
       SessionSecurity:
@@ -96,6 +98,11 @@ packages:
           dir: internal/app
           pkgname: app
           filename: leaseinventory_mock_test.go
+      contentAttacher:
+        config:
+          dir: internal/app
+          pkgname: app
+          filename: contentattacher_mock_test.go
   github.com/bnema/neferwl/internal/adapters/statefile:
     interfaces:
       procTree:

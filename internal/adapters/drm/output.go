@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 
@@ -27,10 +28,13 @@ import (
 // bounded (stuckTimeout, then a modeset).
 type Output struct {
 	// Set before Run. The backend owns instance registration and wake routing.
-	Security         ports.SessionSecurity
-	SecurityChanges  <-chan ports.SecurityState
-	Instance         ports.OutputInstance
-	SecurityEvents   chan<- ports.SecurityBackendEvent
+	Security        ports.SessionSecurity
+	SecurityChanges <-chan ports.SecurityState
+	Instance        ports.OutputInstance
+	SecurityEvents  chan<- ports.SecurityBackendEvent
+	// Frames, set before Run, tells core a flip of an animating scene
+	// completed (nil: nobody is told). Sends never block.
+	Frames           chan<- ports.OutputFrame
 	securityState    ports.SecurityState
 	securityPrepared bool
 	securityInvalid  bool
@@ -113,9 +117,8 @@ type Output struct {
 	reports       presented.Queue
 	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
 	// may still be reading a prior report on another goroutine.
-	showsSnapshot       map[ports.WindowID]uint64
+	shows               surfaces.ShowsSnapshot
 	directShowsSnapshot map[ports.WindowID]uint64
-	showsScratch        map[ports.WindowID]uint64
 	// Tearing (ADR 006): async commits of scanned-out buffers that ask for
 	// them, when the card has DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP. asyncFence
 	// is set when an async commit may carry IN_FENCE_FD (probed once).
@@ -1002,8 +1005,8 @@ func (o *Output) Close() {
 func (o *Output) InactiveOnClose() bool { return o.inactiveOnClose }
 
 // Run renders scenes and commits them until ctx ends. active reports seat
-// enable/disable. What the output shows and read is reported on reportsCh.
-func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan ports.SurfaceContent, cursor <-chan ports.CursorChange, reportsCh chan<- ports.OutputPresented, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
+// enable/disable. What the output shows and read is pushed to reports.
+func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Renderer, error), loadCursor CursorLoader, active <-chan bool, scenes <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, cursor <-chan ports.CursorChange, reports ports.PresentationSink, captures <-chan ports.CaptureRequest, captured chan<- ports.CaptureDone) (runErr error) {
 	defer func() {
 		p := recover()
 		if p != nil {
@@ -1229,11 +1232,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				readWait = readWait || o.capped
 			}
 		}
-		o.reports.Flush(reportsCh)
-		// An unsent report is retried soon, not only on the next event;
-		// so is one that waits for an uncommitted frame's fence.
+		o.reports.Flush(reports)
+		// A report that waits for an uncommitted frame's fence is retried
+		// soon, not only on the next event.
 		var retry <-chan time.Time
-		if o.reports.Len() > 0 || readWait {
+		if readWait {
 			retryTimer.Reset(time.Millisecond)
 			retry = retryTimer.C
 		} else {
@@ -1429,14 +1432,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				o.setCursor(r, loadCursor, want, cursorScale, cursorTransform)
 				stateDirty = true
 			}
-		case c := <-contents:
-			table.Update(c, scene)
-			if c.Seq > seen[c.ID] {
-				seen[c.ID] = c.Seq
-				reportDirty = true
-			}
+		case b := <-contents:
 			// Windows on other outputs or workspaces do not need a frame.
-			dirty = dirty || capture.Shows(scene, c.ID)
+			batchDirty, batchSeen := table.Apply(b, scene, seen, returns)
+			dirty = dirty || batchDirty
+			reportDirty = reportDirty || batchSeen
 		case <-stats.C():
 			now := clk.Now()
 			pipeline.Retire(scene) // an idle child of an ended session goes
@@ -1647,8 +1647,15 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		o.queued = 0
 	}
 	o.report(&ports.FlipInfo{When: ev.when, Seq: uint64(ev.seq), Refresh: o.refreshPeriod(), ZeroCopy: f.zeroCopy, Async: f.async, HardwareClock: true, Shows: f.shows}, seen)
+	if f.animating {
+		o.wakeCore()
+	}
 	return true
 }
+
+// wakeCore tells core the next frame of a running animation is due. A frame
+// core has not read yet is enough, so the owner never waits.
+func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.

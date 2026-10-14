@@ -61,7 +61,7 @@ func TestScopedCaptureClosesPostRenderAdmissionGap(t *testing.T) {
 			incoming := make(chan ports.CaptureRequest)
 			replies := make(chan ports.CaptureDone, 2)
 			go func() {
-				done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, incoming)
+				done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Width: 2, Height: 2, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
 			}()
 			dst := sessionCaptureFile(t)
 			incoming <- ports.CaptureRequest{ID: 91, Exclude: excluded, Session: 7, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Dst: dst}
@@ -124,7 +124,7 @@ func TestTransitionDuringHeadlessRenderWaitRetainsFenceAndRejectsCapture(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, incoming)
+		done <- Run(ctx, Options{Security: gate, SecurityEvents: proof, Instance: 8, Captured: replies, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, incoming)
 	}()
 	dst := sessionCaptureFile(t)
 	incoming <- ports.CaptureRequest{ID: 92, Dst: dst}

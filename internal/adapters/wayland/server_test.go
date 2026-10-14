@@ -374,11 +374,11 @@ func TestWestonContents(t *testing.T) {
 	}
 	dir := t.TempDir()
 	events := make(chan ports.ClientEvent, 16)
-	contents := make(chan ports.SurfaceContent, 16)
-	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events, Contents: contents}, logging.For(context.Background(), "wayland"))
+	s, err := New(Options{RuntimeDir: dir, Outputs: testOutputs}, Channels{Events: events}, logging.For(context.Background(), "wayland"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	contents := relayContents(t, s)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()

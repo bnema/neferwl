@@ -29,7 +29,10 @@ func nextContent(t *testing.T, contents <-chan ports.SurfaceContent, id ports.Wi
 }
 
 // shmBuffer creates a 1x1 wl_shm buffer.
-func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 {
+func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 { return shmBufferSized(t, c, 1, 1) }
+
+// shmBufferSized is a w×h ARGB8888 wl_shm buffer.
+func shmBufferSized(t *testing.T, c *wlturbo.Display, w, h int32) uint32 {
 	t.Helper()
 	shm := bindProtocol(t, c, "wl_shm")
 	registerProtocol(t, c, shm)
@@ -38,16 +41,17 @@ func shmBuffer(t *testing.T, c *wlturbo.Display) uint32 {
 		t.Fatal(err)
 	}
 	defer unix.Close(fd)
-	if err := unix.Ftruncate(fd, 4); err != nil {
+	size := w * h * 4
+	if err := unix.Ftruncate(fd, int64(size)); err != nil {
 		t.Fatal(err)
 	}
 	pool, buffer := c.AllocateID(), c.AllocateID()
 	registerProtocol(t, c, pool)
 	registerProtocol(t, c, buffer)
-	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, int32(4)); err != nil {
+	if err := wireRequest(c, shm, uint16(wayland.ShmRequestCreatePool), []int{fd}, pool, size); err != nil {
 		t.Fatal(err)
 	}
-	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), int32(1), int32(1), int32(4), uint32(0))
+	requestProtocol(t, c, pool, wayland.ShmPoolRequestCreateBuffer, buffer, int32(0), w, h, w*4, uint32(0))
 	return buffer
 }
 
@@ -154,7 +158,7 @@ func TestMonotonicTimeClamps(t *testing.T) {
 // A barrier on an output that flips clears on its next flip.
 func TestTickFifoClearsBarrierOnFlip(t *testing.T) {
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: &window{last: ports.ConfigureWindow{Output: "DP-2"}}}}
 	now := time.Unix(100, 0)
 	s.lastFlip["DP-2"] = now.Add(-time.Millisecond)
@@ -217,7 +221,7 @@ func TestQueuedParentRetainsRetiredChild(t *testing.T) {
 			name = "dropped"
 		}
 		t.Run(name, func(t *testing.T) {
-			srv := &Server{fifoSurfaces: make(map[*surface]struct{}), frameReady: make(chan struct{}, 1)}
+			srv := &Server{fifoSurfaces: make(map[*surface]struct{})}
 			parent := &surface{server: srv}
 			child := &surface{server: srv}
 			child.sub.parent, child.sub.synced = parent, true
@@ -277,7 +281,7 @@ func TestGraphReadyMemoizesPredecessors(t *testing.T) {
 
 func TestInvisibleFifoPeriod(t *testing.T) {
 	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
-	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}, frameReady: make(chan struct{}, 1)}
+	s := &Server{outputs: []*output{out}, fifoSurfaces: map[*surface]struct{}{}, lastFlip: map[string]time.Time{}}
 	w := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2"}}
 	surf := &surface{server: s, xdg: &xdgSurface{window: w}}
 	now := time.Unix(100, 0)

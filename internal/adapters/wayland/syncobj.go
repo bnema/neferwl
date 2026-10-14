@@ -219,7 +219,7 @@ type syncWaiter struct {
 // syncWait is one acquire point a queued commit waits for.
 type syncWait struct {
 	efd       int
-	done      bool        // the eventfd fired or the wait was cancelled (pacer, under Do)
+	done      bool        // the eventfd fired or the wait was cancelled (display goroutine)
 	failed    bool        // observation failed; done must not authorize publication
 	cancelled atomic.Bool // run stops polling it and closes efd
 }

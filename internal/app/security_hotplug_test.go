@@ -66,7 +66,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		commands := make(chan []ports.SecurityBackendEvent, 1)
 		closed := make(chan bool, 1)
 		var ownerEvents chan<- ports.SecurityBackendEvent
-		if !set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		if !set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			defer func() { closed <- closeSuccess }()
 			state := <-security
 			proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
@@ -205,7 +205,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			for i := range 40 {
 				var event ports.SecurityBackendEvent = ports.SecurityOutputInvalidated{Generation: generation, Instance: instance}
 				if i%2 == 0 {
@@ -295,7 +295,7 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			for i := range 16 {
 				event := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: instance}
 				select {
@@ -350,7 +350,7 @@ func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			defer close(ownerDone)
 			for i := range 40 {
 				select {

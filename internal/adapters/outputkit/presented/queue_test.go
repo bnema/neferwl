@@ -1,11 +1,12 @@
 package presented
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
+	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,44 +56,46 @@ func TestQueueKeepsEveryFlip(t *testing.T) {
 	require.Equal(t, uint64(3), u[1].Seen[1])
 }
 
-// Past MaxUnsent the oldest flip folds into the next: counted as merged and
-// its shown windows carried, without mutating a shared Shows snapshot.
-func TestQueueMergesOldestFlipPastBound(t *testing.T) {
-	var q Queue
+// Merge folds a flip into the next: counted as merged and its shown windows
+// carried, without mutating a shared Shows snapshot.
+func TestMergeCarriesShowsWithoutMutatingSharedSnapshot(t *testing.T) {
 	shared := map[ports.WindowID]uint64{2: 5}
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1, Shows: map[ports.WindowID]uint64{1: 4}}})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2, Shows: shared}})
-	merged := false
-	for i := range MaxUnsent - 1 {
-		merged = q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: uint64(10 + i)}}) || merged
-	}
-	require.True(t, merged)
-	u := q.Unsent()
-	require.Len(t, u, MaxUnsent)
-	require.Equal(t, uint64(2), u[0].Flip.Seq)
-	require.Equal(t, 1, u[0].Flip.Merged)
-	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, u[0].Flip.Shows)
+	old := &ports.FlipInfo{Seq: 1, Merged: 2, Shows: map[ports.WindowID]uint64{1: 4}}
+	next := &ports.FlipInfo{Seq: 2, Shows: shared}
+	Merge(old, next)
+	require.Equal(t, 3, next.Merged)
+	require.Equal(t, map[ports.WindowID]uint64{1: 4, 2: 5}, next.Shows)
 	require.Equal(t, map[ports.WindowID]uint64{2: 5}, shared, "shared snapshot untouched")
 }
 
-func TestQueueFlushStopsWhenFull(t *testing.T) {
+// The queue never merges flips: every flip of a turn is pushed to the sink.
+func TestQueueDoesNotBoundFlips(t *testing.T) {
+	var q Queue
+	for i := range 40 {
+		q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: uint64(i + 1)}})
+	}
+	u := q.Unsent()
+	require.Len(t, u, 40)
+	require.Zero(t, u[0].Flip.Merged)
+	require.Equal(t, uint64(1), u[0].Flip.Seq)
+}
+
+func TestQueueFlushPushesInOrderAndEmpties(t *testing.T) {
 	var q Queue
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 1}})
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 2}})
-	ch := make(chan ports.OutputPresented, 1)
-	q.Flush(ch)
-	require.Equal(t, 1, q.Len())
-	require.Equal(t, uint64(1), (<-ch).Flip.Seq)
-	require.NoError(t, q.Drain(context.Background(), ch))
+	var got []ports.OutputPresented
+	sink := portsmocks.NewMockPresentationSink(t)
+	sink.EXPECT().Push(mock.Anything).RunAndReturn(func(r ports.OutputPresented) { got = append(got, r) })
+	q.Flush(sink)
 	require.Zero(t, q.Len())
-	require.Equal(t, uint64(2), (<-ch).Flip.Seq)
+	require.Len(t, got, 2)
+	require.Equal(t, uint64(1), got[0].Flip.Seq)
+	require.Equal(t, uint64(2), got[1].Flip.Seq)
+	q.Flush(sink) // empty: nothing more is pushed
+	require.Len(t, got, 2)
 
 	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 3}})
-	q.Push(ports.OutputPresented{Flip: &ports.FlipInfo{Seq: 4}})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	ch <- ports.OutputPresented{}
-	require.ErrorIs(t, q.Drain(ctx, ch), context.Canceled)
 	q.Reset()
 	require.Zero(t, q.Len())
 }

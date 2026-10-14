@@ -15,7 +15,7 @@ import (
 // and a headless output falls back to SDR. Skips without Vulkan or without a
 // device that exports dmabufs (lavapipe in CI).
 func TestVirtualRendererExportsHDRTargets(t *testing.T) {
-	r, err := newVulkanRenderer(logging.For(t.Context(), "render"), true, false)(64, 16)
+	r, err := newVulkanRenderer(logging.For(t.Context(), "render"), true, false, false)(64, 16)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
 	}

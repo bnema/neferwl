@@ -94,6 +94,13 @@ type OutputPresented struct {
 	ChildReads map[WindowID]uint64
 }
 
+// PresentationSink receives output → wayland reports. Push never blocks;
+// it wakes the consumer. Owner goroutines of outputs call it. After Push the
+// report belongs to the sink: its maps are read-only snapshots, and Flip must
+// be fresh for every push, since the sink may update Merged and replace Shows
+// when it merges flips.
+type PresentationSink interface{ Push(OutputPresented) }
+
 // OutputFormats carries output → wayland the dmabuf formats an output can
 // scan out directly (its primary plane's, that the renderer also samples,
 // so a refused buffer can still be composed). Device is the KMS device
@@ -133,8 +140,9 @@ type FlipInfo struct {
 	Shows         map[WindowID]uint64
 }
 
-// OutputFrame carries output → core a completed page flip: the next frame
-// of a running animation is due.
+// OutputFrame carries output → core a completed flip of an animating scene
+// (Scene.Animating): the next frame is due. Sends never block; a full
+// channel drops it.
 type OutputFrame struct{ Output string }
 
 // OutputRemoved carries output → core an unplugged display.

@@ -1,41 +1,27 @@
 package drm
 
 import (
-	"maps"
-
-	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Reports to wayland: what the output shows and has read.
 
 // report queues what the output shows and has read, so replaced client
-// buffers can be released (see presented.Queue for merging).
+// buffers can be released (see presented.Queue for coalescing).
 func (o *Output) report(flip *ports.FlipInfo, seen map[ports.WindowID]uint64) {
 	o.capped = false
 	var reads map[ports.WindowID]uint64
 	if o.capHidden != nil {
 		seen, reads, o.capped = o.capHidden(seen)
 	}
-	if o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads}) {
-		o.log.Warn().Str("connector", o.conn.name).Msg("wayland is not reading output reports; flips merged")
-	}
+	o.reports.Push(ports.OutputPresented{Output: o.conn.name, Flip: flip, Shown: o.shown, Queued: o.queued, Seen: seen, ChildReads: reads})
 }
 
-// shownBy returns an immutable snapshot of the content Seq of drawn windows.
-// The scratch map is private to the output; a snapshot may still be read by
-// wayland after a subsequent flip, so never refill a previously sent map.
+// shownBy returns an immutable snapshot of the content Seq of drawn windows
+// (see surfaces.ShowsSnapshot). A closed window drawn from its kept content is
+// not shown to its client: the empty content has no frame to present.
 func (o *Output) shownBy(s ports.Scene, seen map[ports.WindowID]uint64) map[ports.WindowID]uint64 {
-	if o.showsScratch == nil {
-		o.showsScratch = make(map[ports.WindowID]uint64)
-	}
-	// A closed window drawn from its kept content is not shown to its
-	// client: the empty content has no frame to present.
-	surfaces.FillShown(o.showsScratch, seen, s, o.kept)
-	if !maps.Equal(o.showsSnapshot, o.showsScratch) {
-		o.showsSnapshot = maps.Clone(o.showsScratch)
-	}
-	return o.showsSnapshot
+	return o.shows.FromSeen(s, seen, o.kept)
 }
 
 func (o *Output) directShownBy(id ports.WindowID, seq uint64) map[ports.WindowID]uint64 {

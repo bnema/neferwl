@@ -81,9 +81,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 	root := s.root()
 	win := root.windowID()
 	if win != 0 && fresh {
-		srv.contentMu.Lock()
 		seq := srv.contentSeq[win]
-		srv.contentMu.Unlock()
 		for i := range srv.feedbacks {
 			if w := &srv.feedbacks[i]; w.surf == s && w.replaced == 0 && seq > w.seq {
 				w.replaced = seq
@@ -102,9 +100,7 @@ func (s *surface) commitFeedback(pending []*presentationtime.WpPresentationFeedb
 		}
 		return
 	}
-	srv.contentMu.Lock()
 	seq := srv.contentSeq[win]
-	srv.contentMu.Unlock()
 	for _, fb := range pending {
 		srv.feedbacks = append(srv.feedbacks, feedbackWait{fb: fb, surf: s, win: win, seq: seq, at: time.Now()})
 	}

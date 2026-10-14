@@ -1,7 +1,6 @@
 package wayland
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -24,7 +23,12 @@ func TestReleaseHeldAllocations(t *testing.T) {
 }
 
 func TestCommitDamageAllocations(t *testing.T) {
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	if raceEnabled {
+		// AllocsPerRun counts every goroutine, and the race runtime
+		// allocates on its own now and then. perf-check runs it without.
+		t.Skip("the race detector allocates in the background")
+	}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	surf := &surface{server: srv}
 	commit := func() {
 		surf.Damage(nil, 0, 0, 4, 4)
@@ -55,7 +59,7 @@ func TestCommitDamageAllocations(t *testing.T) {
 func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 	dev := newMocksyncobjDevice(t)
 	dev.EXPECT().signalled(mock.Anything, mock.Anything).Return(true, nil)
-	srv := &Server{fifoSurfaces: map[*surface]struct{}{}, frameReady: make(chan struct{}, 1)}
+	srv := &Server{fifoSurfaces: map[*surface]struct{}{}}
 	sw, err := newSyncWaiter(func() {})
 	if err != nil {
 		t.Fatal(err)
@@ -88,18 +92,16 @@ func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 
 func TestEmitContentAllocations(t *testing.T) {
 	s := &Server{
-		channels:     Channels{Contents: make(chan ports.SurfaceContent)},
-		contents:     map[ports.WindowID]ports.SurfaceContent{},
-		contentSeq:   map[ports.WindowID]uint64{},
-		damage:       map[ports.WindowID][]ports.SeqDamage{},
-		contentReady: make(chan struct{}, 1),
+		contentSeq: map[ports.WindowID]uint64{},
+		damage:     map[ports.WindowID][]ports.SeqDamage{},
+		latest:     map[ports.WindowID]ports.SurfaceContent{},
 	}
 	c := ports.SurfaceContent{ID: 1, Solid: &ports.SolidColor{}}
 	var held []ports.SurfaceContent // readers retaining published histories
 	var snapshots [][]ports.SeqDamage
 	for range 3 * damageHistoryCap {
 		s.emitContent(c, damage{full: true})
-		got := s.contents[1]
+		got := s.latest[1]
 		held = append(held, got)
 		snapshots = append(snapshots, append([]ports.SeqDamage(nil), got.DamageHistory...))
 	}
@@ -122,32 +124,4 @@ func TestEmitContentAllocations(t *testing.T) {
 		t.Errorf("emitContent: %.2f allocs, want 0 (amortized)", allocs)
 	}
 	t.Logf("emitContent: %.2f allocs", allocs)
-}
-
-// A forwarder blocked on a stale frame is woken by the next publication
-// and sends the newer frame instead.
-func TestForwardContentsSendsNewerFrame(t *testing.T) {
-	contents := make(chan ports.SurfaceContent)
-	s := &Server{
-		channels:     Channels{Contents: contents},
-		contents:     map[ports.WindowID]ports.SurfaceContent{},
-		contentSeq:   map[ports.WindowID]uint64{},
-		damage:       map[ports.WindowID][]ports.SeqDamage{},
-		contentReady: make(chan struct{}, 1),
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { defer close(done); s.forwardContents(ctx) }()
-	defer func() { cancel(); <-done }()
-	s.emitContent(ports.SurfaceContent{ID: 1, Seq: 1, Solid: &ports.SolidColor{}}, damage{full: true})
-	time.Sleep(10 * time.Millisecond) // let the forwarder block on seq 1
-	s.emitContent(ports.SurfaceContent{ID: 1, Seq: 2, Solid: &ports.SolidColor{}}, damage{full: true})
-	select {
-	case c := <-contents:
-		if c.Seq != 2 {
-			t.Fatalf("stale frame %d forwarded, want 2", c.Seq)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no frame forwarded")
-	}
 }

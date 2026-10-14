@@ -41,12 +41,9 @@ type pipes struct {
 	// config file.
 	scales chan ports.ScaleChanged
 
-	contents  chan ports.SurfaceContent
-	presented chan ports.OutputPresented
-	// Outputs report on flips; relayPresented passes them to wayland
-	// (presented) and tells core about each flip (frames) to move running
-	// slides.
-	flips  chan ports.OutputPresented
+	// Outputs report to wayland through its presentation sink and, for each
+	// flip of an animating scene (Scene.Animating), tell core (frames) to
+	// move running slides.
 	frames chan ports.OutputFrame
 
 	captures chan ports.CaptureRequest
@@ -94,10 +91,7 @@ func newPipes(realSession bool) *pipes {
 		configured:   make(chan ports.ConfigChanged, 8),
 		configErrors: make(chan error, 8),
 
-		contents:  make(chan ports.SurfaceContent, 64),
-		presented: make(chan ports.OutputPresented, 64),
-		flips:     make(chan ports.OutputPresented, 64),
-		frames:    make(chan ports.OutputFrame, 8),
+		frames: make(chan ports.OutputFrame, 8),
 
 		captures: make(chan ports.CaptureRequest, ports.MaxCaptureInflight),
 		captured: make(chan ports.CaptureDone, ports.MaxCaptureInflight),
@@ -147,9 +141,7 @@ func (p *pipes) wayland() wayland.Channels {
 		Events:          p.client,
 		Commands:        p.commands,
 		Workspaces:      p.workspaces,
-		Contents:        p.contents,
 		Cursors:         p.cursorChanges,
-		Presented:       p.presented,
 		Captures:        p.captures,
 		Captured:        p.captured,
 		OutputFormats:   p.outputFormats,
@@ -164,16 +156,17 @@ func (p *pipes) wayland() wayland.Channels {
 }
 
 // outputs is the outputs' side (DRM or headless).
-func (p *pipes) outputs(security ports.SessionSecurity) outputChannels {
+func (p *pipes) outputs(security ports.SessionSecurity, presented ports.PresentationSink, content contentAttacher) outputChannels {
 	return outputChannels{
 		security:        security,
 		securityChanges: p.securityChanges,
 		securityEvents:  p.securityEvents,
 		events:          p.output,
 		scenes:          p.renderScenes,
-		contents:        p.contents,
 		cursorChanges:   p.cursorChanges,
-		presented:       p.flips,
+		presented:       presented,
+		content:         content,
+		frames:          p.frames,
 		captures:        p.captures,
 		captured:        p.captured,
 		formats:         p.outputFormats,

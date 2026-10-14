@@ -40,7 +40,7 @@ GODEBUG=gctrace=1 neferwl --backend=drm
 
 `make tty` serves pprof on `localhost:6060` by default (`make tty PPROF=` turns it off).
 
-Logs are in `~/.local/state/neferwl/runs/<backend>/`, with `latest.log` pointing at the newest run. `--debug=all` enables every category except the noisy `drm-flip`, `input-motion` and `input-keys`; name them to turn them on.
+Logs are in `~/.local/state/neferwl/runs/<backend>/`, with `latest.log` pointing at the newest run. `--debug=all` enables every category except the noisy `drm-flip`, `input-motion`, `input-keys`, `wayland-damage` (one `client damage` entry per client commit) and `render-damage` (one `frame damage` entry per rendered frame); name them to turn them on.
 
 ## Frame stats
 
@@ -53,5 +53,7 @@ Every 10 s, each output logs a `stats` entry:
 | `max_commit_delay_ms` | Longest wait from "frame due" to commit |
 | `late_fences` | Missed vblanks where the GPU finished too late (needs `--debug=drm-flip`) |
 | `redrawn_pixels` | Pixels drawn |
+
+If outputs report flips faster than the display loop reads them, wayland merges them and logs a warning with `merged` at most every 10 s.
 
 Missed vblanks with `late_fences` mean the GPU was late. Without `late_fences` but with a large `max_commit_delay_ms`, the CPU was late.

@@ -113,6 +113,8 @@ func (o *Output) prepareSecurity(ctx context.Context, r ports.Renderer) error {
 
 // Protected frames never enter client-fence KMS paths or capture pipelines.
 // Locker content is composed only after black preparation for this epoch.
+// They never wake core: the pendingFrame has no animating flag, so core falls
+// back to its frame timer while a lock is up. This is intentional.
 func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, scene ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, seen map[ports.WindowID]uint64) error {
 	if !o.securityPrepared || !o.sceneCurrent(scene) {
 		return errSecurityScene

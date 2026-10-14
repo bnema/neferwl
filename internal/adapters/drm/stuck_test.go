@@ -30,9 +30,10 @@ func runStuck(t *testing.T, n int, errs ...error) []commitRec {
 type stuckRun struct {
 	t         *testing.T
 	scenes    chan ports.Scene
-	contents  chan ports.SurfaceContent
+	contents  *contentFeed
 	active    chan bool
 	presented chan ports.OutputPresented
+	sink      ports.PresentationSink
 	count     func() int
 	stop      func() []commitRec
 }
@@ -67,11 +68,12 @@ func startStuck(t *testing.T, render func() *os.File, errs ...error) *stuckRun {
 	k.EXPECT().createBlob(mock.Anything).Return(99, nil)
 	k.EXPECT().destroyBlob(mock.Anything).Return(nil)
 	k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
-	h := &stuckRun{t: t, scenes: make(chan ports.Scene, 1), contents: make(chan ports.SurfaceContent, 1), active: make(chan bool, 1), presented: make(chan ports.OutputPresented, 64)}
+	h := &stuckRun{t: t, scenes: make(chan ports.Scene, 1), contents: newContentFeed(t, 1), active: make(chan bool, 1), presented: nil}
+	h.sink, h.presented = presentedSink(t, 64)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents, nil, h.presented, nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, h.active, h.scenes, h.contents.in(), h.contents.ret, nil, h.sink, nil, nil)
 	}()
 	h.count = func() int {
 		commitMu.Lock()
@@ -194,7 +196,7 @@ func TestSeenWaitsForRefusedFrameFence(t *testing.T) {
 	h.scenes <- ports.Scene{Seq: 1}
 	// EBUSY, then the retry loses DRM master: nothing is pending.
 	waitFor(t, func() bool { return h.count() == 4 })
-	h.contents <- ports.SurfaceContent{ID: 1, Seq: 7}
+	h.contents.send(ports.SurfaceContent{ID: 1, Seq: 7})
 	select {
 	case p := <-h.presented:
 		t.Fatalf("seen reported while refused frames may be read: %+v", p)

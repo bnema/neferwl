@@ -14,7 +14,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -356,11 +355,12 @@ func TestReportsKeepEveryFlip(t *testing.T) {
 	if o.reports.Len() != 2 || o.reports.Unsent()[0].Flip.Seq != 1 || o.reports.Unsent()[1].Flip.Seq != 2 || o.reports.Unsent()[1].Seen[1] != 3 {
 		t.Fatalf("unsent %+v", o.reports.Unsent())
 	}
-	for i := range presented.MaxUnsent + 3 {
+	for i := range 20 {
 		o.report(&ports.FlipInfo{Seq: uint64(10 + i), Shows: map[ports.WindowID]uint64{}}, seen)
 	}
-	if o.reports.Len() != presented.MaxUnsent || o.reports.Unsent()[0].Flip.Merged == 0 {
-		t.Fatalf("cap: %d reports, first merged %d", o.reports.Len(), o.reports.Unsent()[0].Flip.Merged)
+	// The wayland sink alone merges flips: the output queue keeps them all.
+	if o.reports.Len() != 22 || o.reports.Unsent()[2].Flip.Merged != 0 {
+		t.Fatalf("%d reports, merged %d", o.reports.Len(), o.reports.Unsent()[2].Flip.Merged)
 	}
 }
 
@@ -597,18 +597,25 @@ func runReportsSeenAfterFlip(t *testing.T) {
 		return n
 	}
 	scenes := make(chan ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 1)
-	presented := make(chan ports.OutputPresented, 8)
+	contents := newContentFeed(t, 1)
+	sink, presented := presentedSink(t, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, presented, nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, sink, nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 10, H: 10}}}}
 	waitFor(t, func() bool { return frameCommits() == 1 })
 	// Frame 1 is in flight: content 3 replaces what it may be reading.
-	contents <- ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{}}
+	// One batch carries two windows: both are applied and the batch goes
+	// back to wayland (reset) at once, whatever the frame in flight reads.
+	contents.send(ports.SurfaceContent{ID: 1, Seq: 3, SHM: &ports.SHMBuffer{}}, ports.SurfaceContent{ID: 2, Seq: 4, SHM: &ports.SHMBuffer{}})
 	synctest.Wait()
+	select {
+	case <-contents.returned:
+	default:
+		t.Fatal("batch not returned")
+	}
 	select {
 	case p := <-presented:
 		t.Fatalf("report while a frame is in flight: %+v", p)
@@ -620,7 +627,7 @@ func runReportsSeenAfterFlip(t *testing.T) {
 	flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
 	select {
 	case p := <-presented:
-		if p.Flip == nil || p.Flip.When != time.Second || p.Seen[1] != 3 {
+		if p.Flip == nil || p.Flip.When != time.Second || p.Seen[1] != 3 || p.Seen[2] != 4 {
 			t.Fatalf("report %+v", p)
 		}
 	case <-time.After(2 * time.Second):
@@ -679,7 +686,7 @@ func TestRunComposedFullscreenKeepsVRR(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100,
 		Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}},
@@ -760,7 +767,7 @@ func TestRunTrimsRendererOnStatsTick(t *testing.T) {
 	active <- false
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, make(chan ports.OutputPresented, 1), nil, nil)
+		done <- o.Run(context.Background(), func(int, int) (ports.Renderer, error) { return r, nil }, nil, active, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	ticks <- now
 	<-trimmed
@@ -814,7 +821,7 @@ func TestCaptureRenderFailureClosesPendingRequest(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, requests, replies)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, nil, requests, replies)
 	}()
 	// The unbuffered handoff proves Run owns the request before any scene.
 	select {
@@ -880,7 +887,7 @@ func TestCaptureForcesDRMComposition(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, make(chan ports.OutputPresented, 8), requests, replies)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, discardSink(t), requests, replies)
 	}()
 	scenes <- ports.Scene{OutputWidth: 200, OutputHeight: 100, Background: "#000000"}
 	select {
@@ -940,7 +947,7 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 			t.Fatal("missing readiness")
 		}
 	}()
-	o.Run(context.Background(), func(int, int) (ports.Renderer, error) { panic("renderer panic") }, nil, nil, nil, nil, nil, nil, nil, nil)
+	o.Run(context.Background(), func(int, int) (ports.Renderer, error) { panic("renderer panic") }, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 // stampRun starts Run on an output with unbuffered scene and content
@@ -950,7 +957,7 @@ func TestRunPanicReportsReadinessError(t *testing.T) {
 type stampRun struct {
 	o           *Output
 	scenes      chan ports.Scene
-	contents    chan ports.SurfaceContent
+	contents    *contentFeed
 	flips       chan flipEvent
 	wake        chan ports.SecurityState
 	state       *atomic.Uint64
@@ -962,7 +969,7 @@ type stampRun struct {
 func startStampRun(t *testing.T) *stampRun {
 	o, k, commits, commitMu := testOutputMu(t)
 	o.cursor, o.tearing = nil, false
-	sr := &stampRun{o: o, scenes: make(chan ports.Scene), contents: make(chan ports.SurfaceContent), flips: make(chan flipEvent, 1), wake: make(chan ports.SecurityState, 1), state: &atomic.Uint64{}}
+	sr := &stampRun{o: o, scenes: make(chan ports.Scene), contents: newContentFeed(t, 0), flips: make(chan flipEvent, 1), wake: make(chan ports.SecurityState, 1), state: &atomic.Uint64{}}
 	o.flipped = sr.flips
 	securityGate(t, o, sr.state)
 	o.SecurityChanges = sr.wake
@@ -1000,7 +1007,7 @@ func startStampRun(t *testing.T) *stampRun {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), sr.scenes, sr.contents, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), sr.scenes, sr.contents.in(), sr.contents.ret, nil, discardSink(t), nil, nil)
 	}()
 	// stop ends Run: its state is ours to read afterwards.
 	sr.stop = func() {
@@ -1024,7 +1031,7 @@ func TestRunStampsWhenFrameWasWanted(t *testing.T) {
 	scene.Seq = 2
 	before := monotonic()
 	sr.scenes <- scene
-	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}} // Run went round its loop
+	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // Run went round its loop
 	flipSent := monotonic()
 	sr.flips <- flipEvent{crtc: tCrtc, user: last.user, when: time.Second, seq: 1}
 	waitFor(t, func() bool { return sr.frameCommit() == 2 })
@@ -1047,11 +1054,11 @@ func TestRunSecurityResetClearsWantedAt(t *testing.T) {
 	waitFor(t, func() bool { return sr.frameCommit() == 1 })
 	scene.Seq = 2
 	sr.scenes <- scene
-	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}} // stamped by now
+	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 1, SHM: &ports.SHMBuffer{}}) // stamped by now
 	// A new security generation, not protected.
 	sr.state.Store(2)
 	sr.wake <- ports.SecurityState{}
-	sr.contents <- ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}} // Run went round and reset
+	sr.contents.send(ports.SurfaceContent{ID: 1, Seq: 2, SHM: &ports.SHMBuffer{}}) // Run went round and reset
 	sr.stop()
 	if sr.o.wantedAt != 0 {
 		t.Fatalf("stamp kept across the security reset: %s", sr.o.wantedAt)
@@ -1069,8 +1076,8 @@ func TestOutputSameSeqRendersOnce(t *testing.T) {
 	sr.scenes <- scene
 	// Unshown content only sends Run round its loop: the flip and the held
 	// scene are handled by the time the second one is taken.
-	sr.contents <- ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}}
-	sr.contents <- ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}}
+	sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 1, SHM: &ports.SHMBuffer{}})
+	sr.contents.send(ports.SurfaceContent{ID: 99, Seq: 2, SHM: &ports.SHMBuffer{}})
 	if n := sr.frameCommit(); n != 1 {
 		t.Fatalf("%d frames after a scene with the held Seq", n)
 	}
@@ -1128,11 +1135,11 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 		return c, ok
 	}
 	scenes := make(chan ports.Scene, 1)
-	contents := make(chan ports.SurfaceContent, 1)
+	contents := newContentFeed(t, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents, nil, make(chan ports.OutputPresented, 64), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, make(chan bool), scenes, contents.in(), contents.ret, nil, discardSink(t), nil, nil)
 	}()
 	acq, acqW, _ := os.Pipe()
 	defer acq.Close()
@@ -1140,11 +1147,11 @@ func TestRunKeepsLastContentOfLeavingWindow(t *testing.T) {
 	win := ports.SceneWindow{ID: 1, Rect: ports.Rect{W: 10, H: 10}}
 	scenes <- ports.Scene{Seq: 1, OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{win}}
 	full := ports.SurfaceContent{ID: 1, Seq: 1, Width: 10, Height: 10, DMABuf: &ports.DMABuf{ID: 5, Planes: []ports.DMABufPlane{{}}}, Acquire: acq}
-	contents <- full
+	contents.send(full)
 	drawn(1, func(c ports.SurfaceContent, ok bool) bool { return ok && c.Acquire == acq })
 	// The window unmaps: its empty content arrives before the scene that
 	// draws it leaving (fading). The last content stays, fence dropped.
-	contents <- ports.SurfaceContent{ID: 1, Seq: 2}
+	contents.send(ports.SurfaceContent{ID: 1, Seq: 2})
 	kept, _ := drawn(1, func(c ports.SurfaceContent, ok bool) bool { return !ok || c.Acquire == nil })
 	if kept.DMABuf != full.DMABuf || kept.Seq != 1 {
 		t.Fatalf("frame after the empty content drew %+v, want the last content", kept)

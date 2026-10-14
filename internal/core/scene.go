@@ -123,16 +123,21 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Capture = c.captureSceneFor(sc, capture)
+	// The springs of this frame are advanced: a scene shown while one still
+	// runs wakes core when it flips; the one a spring settles on does not.
+	scene.Animating = c.sliding(sc.name())
 	// A scene carrying a capture image always gets a fresh Seq, and so
 	// does one of an animating screen (the one being stepped, or any
 	// when none is): the outputs drop a scene they already show, and a
 	// spring that starts at the previous scene, or rounds to it in its
-	// tail, would get no flip and wait for the fallback timer. Any other
-	// keeps its output's Seq while it draws the same, so an idle output
-	// is not recomposed.
+	// tail, would get no flip and wait for the fallback timer. So does the
+	// scene that flips Animating off: SameAs ignores the flag, and keeping
+	// the Seq of the animating scene would leave outputs showing it, and
+	// waking core on every later flip. Any other keeps its output's Seq
+	// while it draws the same, so an idle output is not recomposed.
 	withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
-	animating := (sc.springing() || c.pulsing(sc)) && (only == nil || only == sc)
-	if !withCapture && !animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
+	animating := scene.Animating && (only == nil || only == sc)
+	if !withCapture && !animating && sc.last.Animating == scene.Animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
 		scene.Seq = sc.last.Seq
 	} else {
 		c.seq++

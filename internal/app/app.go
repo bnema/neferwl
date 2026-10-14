@@ -138,31 +138,6 @@ func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigCh
 	}
 }
 
-// relayPresented passes output reports to wayland in order. Each flip is
-// also a frame for core; a frame core has not read yet is enough, so
-// frames never wait.
-func relayPresented(ctx context.Context, in <-chan ports.OutputPresented, out chan<- ports.OutputPresented, frames chan<- ports.OutputFrame) {
-	for {
-		var p ports.OutputPresented
-		select {
-		case <-ctx.Done():
-			return
-		case p = <-in:
-		}
-		if p.Flip != nil {
-			select {
-			case frames <- ports.OutputFrame{Output: p.Output}:
-			default:
-			}
-		}
-		select {
-		case out <- p:
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
 func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configErrors <-chan error, tap chan<- []ports.Scene, renderScenes chan []ports.Scene) {
 	log := logging.For(ctx, "core")
 	configLog := logging.For(ctx, "config")

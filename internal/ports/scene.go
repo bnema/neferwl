@@ -69,13 +69,20 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
+	// Animating is set by core when a spring or the focus pulse runs on
+	// this output after this frame was computed: the output reports the
+	// flip of the scene to core (OutputFrame), which moves the animation to
+	// the next frame. A scene of a settled output carries false, so a flip
+	// of it wakes nobody. It describes scheduling, not drawing: SameAs and
+	// the renderer ignore it.
+	Animating bool
 }
 
 // SameAs reports whether o draws exactly what s draws: every field other
-// than Seq is equal. A scene carrying a CaptureScene is never the same
-// (conservative: the capture image is not compared). Add every new Scene
-// field here; TestSceneSameAsCoversEveryField fails until the field count
-// is updated.
+// than Seq and Animating (scheduling only, not drawn) is equal. A scene
+// carrying a CaptureScene is never the same (conservative: the capture image
+// is not compared). Add every new Scene field here;
+// TestSceneSameAsCoversEveryField fails until the field count is updated.
 func (s Scene) SameAs(o Scene) bool {
 	if s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||

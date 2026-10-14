@@ -17,7 +17,9 @@ import (
 // TestSceneFieldCount fails when Scene gains or loses a field: sceneDelta
 // lists the fields that force a full redraw.
 func TestSceneFieldCount(t *testing.T) {
-	const fields = 21
+	// 22 with Animating, which sceneDelta intentionally ignores: it only
+	// schedules the next frame, it draws nothing.
+	const fields = 22
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }

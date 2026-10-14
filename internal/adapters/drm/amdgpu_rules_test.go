@@ -431,7 +431,7 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, make(chan ports.OutputPresented, 8), nil, nil)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, nil, discardSink(t), nil, nil)
 	}()
 	for {
 		select {

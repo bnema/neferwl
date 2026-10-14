@@ -168,8 +168,13 @@ func TestLogWriteNeverBlocksOnSlowDisk(t *testing.T) {
 
 // Narrow categories are on only when named, never through "all".
 func TestEnabledCategories(t *testing.T) {
-	for _, category := range []string{"input-motion", "input-keys", "drm-flip"} {
+	// The component each narrow category logs under; "" is not asserted.
+	owners := map[string]string{"input-motion": "", "input-keys": "", "drm-flip": "", "wayland-damage": "wayland", "render-damage": "render"}
+	for category, owner := range owners {
 		component := categories[category]
+		if owner != "" && component != owner {
+			t.Errorf("%s belongs to %q, want %q", category, component, owner)
+		}
 		for _, tc := range []struct {
 			debug string
 			want  bool

@@ -14,7 +14,7 @@ func TestOutputRouting(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 2)
 	set := newOutputSet(ctx, replies)
 	for _, name := range []string{"A", "B"} {
-		set.start(ctx, name, func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+		set.start(ctx, name, func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 			<-ctx.Done()
 			return nil
 		})
@@ -27,13 +27,6 @@ func TestOutputRouting(t *testing.T) {
 	}
 	if got := <-set.outs["B"].scenes; got.Seq != 2 {
 		t.Fatalf("B scene: %+v", got)
-	}
-	content := ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{}}
-	set.content(content)
-	for _, name := range []string{"A", "B"} {
-		if got := <-set.outs[name].contents; got.ID != content.ID {
-			t.Fatalf("%s content: %+v", name, got)
-		}
 	}
 	set.setCursor(ports.CursorChange{Shape: "text"})
 	set.setCursor(ports.CursorChange{Shape: "pointer"})
@@ -86,13 +79,9 @@ func TestOutputSetRemembersOff(t *testing.T) {
 
 func TestOutputRoutingAllocations(t *testing.T) {
 	set := newOutputSet(context.Background(), nil)
-	// Populate the existing content slot before measuring, so the guard
-	// measures routing rather than first-use map growth.
-	content := ports.SurfaceContent{ID: 1, SHM: &ports.SHMBuffer{}}
-	set.content(content)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	})
@@ -101,8 +90,6 @@ func TestOutputRoutingAllocations(t *testing.T) {
 	capture := ports.CaptureRequest{Output: "A"}
 	if got := testing.AllocsPerRun(100, func() {
 		set.scenes(scenes)
-		<-set.outs["A"].contents
-		set.content(content)
 		set.setCursor(cursor)
 		set.routeCapture(capture)
 		<-set.outs["A"].captures

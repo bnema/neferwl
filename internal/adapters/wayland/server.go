@@ -48,6 +48,9 @@ type Options struct {
 	// nil lets every client capture, unless the session is protected. The
 	// caller keeps it current (captureallow.Store.Run).
 	CaptureAllow *captureallow.Store
+	// LogDamage logs the damage of every fresh client commit at debug level
+	// (--debug=wayland-damage).
+	LogDamage bool
 	// syncDev replaces the render node's syncobj interface (tests).
 	syncDev syncobjDevice
 	// peer replaces the peer executable lookup (tests).
@@ -63,14 +66,10 @@ type Channels struct {
 	LeaseRequests   chan<- ports.LeaseMessage
 	LeaseEvents     <-chan ports.LeaseMessage
 	Events          chan<- ports.ClientEvent
-	Contents        chan<- ports.SurfaceContent
 	Commands        <-chan ports.ClientCommand
 	Workspaces      <-chan ports.Workspaces
 	// Cursors receives the cursor the client under the pointer asks for.
 	Cursors chan<- ports.CursorChange
-	// Presented paces frame callbacks on the outputs' page flips; outputs
-	// that do not flip (idle, headless) are paced at their refresh rate.
-	Presented <-chan ports.OutputPresented
 	// Captures carries accepted capture requests, never blocking. Each
 	// accepted request holds one of ports.MaxCaptureInflight credits until its
 	// CaptureDone arrives on Captured, whether or not the client is still
@@ -144,24 +143,32 @@ type Server struct {
 	name         string
 	cleanup      func()
 	log          zerowrap.Logger
+	logDamage    bool
 	channels     Channels
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
 	frameOwners map[*wayland.Callback]*surface
 	frameDue    map[string]time.Time
-	frameReady  chan struct{}
-	// paceTimer is the pacer's deadline, armed by ticks on the display
-	// goroutine; paceDepth/paceDirty defer wakePacer inside a commit or
-	// tick (display goroutine only).
-	paceTimer *time.Timer
-	paceDepth int
-	paceDirty bool
-	// Pacer scratch: periods is used on the display goroutine, while
-	// flipped and frameReports belong to pace and its synchronous Do call.
+	// paceFD is the pace deadline timerfd, armed by ticks on the display
+	// goroutine (paceReady: registered with the display loop);
+	// paceDepth/paceDirty defer wakePacer inside a commit or tick (display
+	// goroutine only). paceSignal coalesces posted ticks (paceSignalFn).
+	paceFD     int
+	paceReady  bool
+	paceWarned bool // a pace timer failure was logged (once)
+	// paceArmed: the timerfd is armed for paceDeadline (display goroutine
+	// only); armPace and stopPace skip a syscall that would change nothing.
+	paceArmed    bool
+	paceDeadline time.Time
+	paceSignal   atomic.Bool
+	paceSignalFn func()
+	paceDepth    int
+	paceDirty    bool
+	// sink receives the outputs' reports (presented.go).
+	sink *presentSink
+	// framePeriods is the tick's scratch (display goroutine only).
 	framePeriods map[string]time.Duration
-	flipped      map[string]bool
-	frameReports []ports.OutputPresented
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
 	held []heldBuffer
@@ -209,11 +216,16 @@ type Server struct {
 	eventMu    sync.Mutex
 	events     []ports.ClientEvent
 	eventReady chan struct{}
-	contentMu  sync.Mutex
-	contents   map[ports.WindowID]ports.SurfaceContent
+	// contentSeq counts each window's contents and damage is its recent
+	// damage; latest is its current content. All three belong to the display
+	// goroutine, as do the outputs' content links (contentlink.go).
 	contentSeq map[ports.WindowID]uint64
-	// damage is each window's recent damage (contentMu).
-	damage map[ports.WindowID][]ports.SeqDamage
+	damage     map[ports.WindowID][]ports.SeqDamage
+	latest     map[ports.WindowID]ports.SurfaceContent
+	links      []*contentLink
+	// flushPosted: a flushLinks is posted and has not started (Return).
+	flushPosted  atomic.Bool
+	flushLinksFn func()
 	// feedbacks wait for the flip that shows their content (presentation.go).
 	feedbacks []feedbackWait
 	// Explicit sync (syncobj.go): the render node, imported timelines by
@@ -221,7 +233,7 @@ type Server struct {
 	syncDev   syncobjDevice
 	timelines map[*server.Resource]*timeline
 	syncWait  *syncWaiter
-	// flips is each output's latest flip (pacer, under Do).
+	// flips is each output's latest flip (display goroutine).
 	flips map[string]ports.FlipInfo
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
@@ -235,7 +247,6 @@ type Server struct {
 	clock             ports.Clock
 	powers            []*outputPower
 	outputsOff        map[string]bool
-	contentReady      chan struct{}
 	outputs           []*output
 	outputManagers    []*outputManager
 	workspaceManagers []*workspaceManager
@@ -315,12 +326,12 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		display:            d,
 		awaiting:           map[string][]*wayland.Callback{},
 		frameDue:           map[string]time.Time{},
-		frameReady:         make(chan struct{}, 1),
 		reports:            map[string]ports.OutputPresented{},
 		env:                linuxProcEnv{},
 		name:               name,
 		cleanup:            cleanup,
 		log:                log,
+		logDamage:          opts.LogDamage,
 		channels:           ch,
 		surfaces:           make(map[*server.Resource]*surface),
 		buffers:            make(map[*server.Resource]clientBuffer),
@@ -328,10 +339,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		layers:             make(map[ports.WindowID]*layerSurface),
 		nextWindow:         1,
 		eventReady:         make(chan struct{}, 1),
-		contents:           make(map[ports.WindowID]ports.SurfaceContent),
 		contentSeq:         make(map[ports.WindowID]uint64),
 		damage:             map[ports.WindowID][]ports.SeqDamage{},
-		contentReady:       make(chan struct{}, 1),
+		latest:             make(map[ports.WindowID]ports.SurfaceContent),
 		cursorReady:        make(chan struct{}, 1),
 		dataSources:        map[*server.Resource]*clipSource{},
 		primarySources:     map[*server.Resource]*clipSource{},
@@ -343,6 +353,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		positioners:        map[*server.Resource]*positioner{},
 		seat:               seatState{keymapFD: -1, keyboards: make(map[server.Client][]*wayland.Keyboard), pointers: make(map[server.Client][]*wayland.Pointer), keyStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), pointerStamps: make(map[*server.Resource][]*inputtimestamps.ZwpInputTimestampsV1), enters: make(map[*server.Resource]uint32), repeatRate: opts.RepeatRate, repeatDelay: opts.RepeatDelay},
 	}
+	// Bound once, before anything can post them (the sync waiter calls
+	// signalPacer from its own goroutine as soon as it exists).
+	s.paceSignalFn = s.paceSignalled
+	s.flushLinksFn = s.flushLinks
+	s.sink = newPresentSink(s)
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
@@ -416,6 +431,9 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	s.syncWait.log = log
 	s.cleanup = func() {
+		if s.paceReady {
+			unix.Close(s.paceFD)
+		}
 		if s.securityStop >= 0 {
 			unix.Close(s.securityStop)
 		}
@@ -436,6 +454,11 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 		d.Close()
 		return nil, err
 	}
+	if err = s.openPaceTimer(); err != nil {
+		s.cleanup()
+		d.Close()
+		return nil, err
+	}
 	if err = registerGlobals(d, opts, s); err != nil {
 		s.cleanup()
 		d.Close()
@@ -446,6 +469,24 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	}
 	return s, nil
 }
+
+// openPaceTimer creates the pace timerfd and registers it with the display
+// loop (before Run, as AddFD requires).
+func (s *Server) openPaceTimer() error {
+	fd, err := unix.TimerfdCreate(unix.CLOCK_MONOTONIC, unix.TFD_NONBLOCK|unix.TFD_CLOEXEC)
+	if err != nil {
+		return err
+	}
+	// libwayland duplicates fd: ours stays open for TimerfdSettime and is
+	// closed by cleanup; the source goes with the display.
+	if _, err = s.display.AddFD(fd, s.onPaceTimer); err != nil {
+		unix.Close(fd)
+		return err
+	}
+	s.paceFD, s.paceReady = fd, true
+	return nil
+}
+
 func (s *Server) SocketName() string { return s.name }
 func (s *Server) Run(ctx context.Context) error {
 	defer s.cleanup()
@@ -459,9 +500,8 @@ func (s *Server) Run(ctx context.Context) error {
 	s.log.Info().Str("socket", s.name).Msg("starting wayland")
 	s.started = time.Now()
 	s.ctx = ctx
-	s.paceTimer = time.NewTimer(defaultFramePeriod)
 	var wg sync.WaitGroup
-	wg.Add(15)
+	wg.Add(13)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -469,7 +509,6 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() { defer wg.Done(); s.forwardWorkspaces(ctx) }()
 	go func() { defer wg.Done(); s.forward(ctx) }()
 	go func() { defer wg.Done(); s.forwardCursors(ctx) }()
-	go func() { defer wg.Done(); s.forwardContents(ctx) }()
 	go func() {
 		defer wg.Done()
 		for {
@@ -502,7 +541,6 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	go func() { defer wg.Done(); s.pace(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()
@@ -636,11 +674,10 @@ func (s *Server) forward(ctx context.Context) {
 	}
 }
 
+// emitContent publishes a window's content on the display goroutine: it
+// becomes the window's latest content and joins the batch of every attached
+// output (contentlink.go).
 func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
-	if s.channels.Contents == nil {
-		return
-	}
-	s.contentMu.Lock()
 	s.contentSeq[c.ID]++
 	c.Seq = s.contentSeq[c.ID]
 	// Published histories are immutable: an output may hold one for as long
@@ -658,56 +695,17 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 		old = grown
 	}
 	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
+	c.DamageHistory = h[:len(h):len(h)]
 	if c.Empty() {
 		delete(s.damage, c.ID)
+		delete(s.latest, c.ID)
 	} else {
 		s.damage[c.ID] = h
+		s.latest[c.ID] = c
 	}
-	c.DamageHistory = h[:len(h):len(h)]
-	s.contents[c.ID] = c
-	s.contentMu.Unlock()
-	select {
-	case s.contentReady <- struct{}{}:
-	default:
-	}
-}
-
-func (s *Server) forwardContents(ctx context.Context) {
-	for {
-		s.contentMu.Lock()
-		var id ports.WindowID
-		var c ports.SurfaceContent
-		found := false
-		var seq uint64
-		for id, c = range s.contents {
-			found = true
-			seq = s.contentSeq[id]
-			break
-		}
-		s.contentMu.Unlock()
-		if !found {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.contentReady:
-				continue
-			}
-		}
-		// Do not hold a stale frame while the receiver is busy: wake on newer
-		// data. contentReady is signalled after every publication; a stale
-		// signal only costs one more loop.
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.contentReady:
-			continue
-		case s.channels.Contents <- c:
-			s.contentMu.Lock()
-			if s.contentSeq[id] == seq {
-				delete(s.contents, id)
-			}
-			s.contentMu.Unlock()
-		}
+	for _, l := range s.links {
+		l.add(c)
+		s.flushLink(l)
 	}
 }
 

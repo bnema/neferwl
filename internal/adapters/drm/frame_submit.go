@@ -34,7 +34,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	// shows is what the frame puts on screen: presentation feedback of
 	// windows it does not draw is discarded, not presented.
-	f := pendingFrame{security: scene.Security, shows: o.shownBy(scene, seen)}
+	f := pendingFrame{security: scene.Security, animating: scene.Animating, shows: o.shownBy(scene, seen)}
 	o.wantContent(scene, surfaces)
 	// Requests that cannot be served (exclusion of another session, a
 	// workspace that moved) are failed here, never answered from the
@@ -82,7 +82,7 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 	}
 	if decision.fb != 0 {
 		c := decision.content
-		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect, decision.color); direct {
+		if direct, err = o.commitScanoutRect(decision.fb, c, pendingFrame{security: scene.Security, animating: scene.Animating, shows: o.directShownBy(c.ID, seen[c.ID])}, decision.rect, decision.color); direct {
 			presented = err == nil
 			return true, err
 		}

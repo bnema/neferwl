@@ -21,7 +21,7 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 	started := make(chan ports.OutputInstance, 1)
 	result := make(chan bool, 1)
 	go func() {
-		result <- set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		result <- set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
 			state := <-security
 			if state != (ports.SecurityState{Generation: 7, Protected: true}) {
 				return errors.New("missing startup protection")
@@ -67,7 +67,7 @@ func TestSecurityReplacementAndStaleState(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 4)
 	set := newOutputSet(ctx, nil)
 	set.wireSecurity(outputChannels{securityEvents: events})
-	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -167,7 +167,7 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 2)
 	set.wireSecurity(outputChannels{securityEvents: events})
 	set.nextInstance = ^ports.OutputInstance(0) - 1
-	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -195,26 +195,22 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 	}
 }
 
-// The shared display event channel and an output content queue can both be
-// saturated. Routing must retain the next content without pinning the backend
-// outside its select; a lease barrier can then finish before either is drained.
-func TestSecurityFullEventsAndContentsAllowLeaseBarrier(t *testing.T) {
+// A saturated shared display event channel must not pin the backend outside
+// its select: a lease barrier can finish before the channel is drained.
+func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	set := newOutputSet(ctx, nil)
 	events := make(chan ports.SecurityBackendEvent, 1)
 	set.wireSecurity(outputChannels{securityEvents: events})
 	var ownerEvents chan<- ports.SecurityBackendEvent
-	set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
 		<-ctx.Done()
 		return nil
 	}, &ownerEvents)
 	<-events                                               // ordered registration
 	events <- ports.SecurityBackendBarrier{Generation: 99} // blocked display
 	r := set.outs["DP-1"]
-	for i := range cap(r.contents) {
-		r.contents <- ports.SurfaceContent{ID: ports.WindowID(i + 1)}
-	}
 	first := ports.SecurityOutputInvalidated{Generation: 1, Instance: r.instance}
 	second := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: 1, Instance: r.instance, Kind: ports.ProtectionProtectedFrame}}
 	ownerEvents <- first
@@ -225,7 +221,6 @@ func TestSecurityFullEventsAndContentsAllowLeaseBarrier(t *testing.T) {
 	card.EXPECT().Revoke(uint32(9)).Return(nil).Once()
 	progressed := make(chan error, 1)
 	go func() {
-		set.content(ports.SurfaceContent{ID: 70})
 		set.setSecurity(ports.SecurityState{Generation: 1, Protected: true})
 		err := revokeSecurityLeases(card, func(uint32) {})
 		set.securityEvent(ports.SecurityBackendBarrier{Generation: 1, Err: err})
@@ -237,23 +232,7 @@ func TestSecurityFullEventsAndContentsAllowLeaseBarrier(t *testing.T) {
 			t.Fatal(err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("content/event backpressure blocked lease transition")
-	}
-	incoming := make(chan ports.SurfaceContent)
-	contentIn, output, next, owner := set.contentOut(incoming)
-	if contentIn != nil || output != r.contents || owner != r || next.ID != 70 || len(r.pending) != 1 {
-		t.Fatal("pending content not bounded/preserved")
-	}
-	for range cap(r.contents) {
-		<-r.contents
-	}
-	output <- next
-	owner.contentSent()
-	if got := <-r.contents; got.ID != 70 {
-		t.Fatal("lost pending content")
-	}
-	if contentIn, _, _, _ := set.contentOut(incoming); contentIn != incoming {
-		t.Fatal("content intake stayed disabled")
+		t.Fatal("event backpressure blocked lease transition")
 	}
 	<-events // unblock display
 	var ownerSequence []ports.SecurityBackendEvent
@@ -270,46 +249,6 @@ func TestSecurityFullEventsAndContentsAllowLeaseBarrier(t *testing.T) {
 	}
 	if len(ownerSequence) != 2 || ownerSequence[0] != first || ownerSequence[1] != second {
 		t.Fatalf("owner order lost: %+v", ownerSequence)
-	}
-	if err := set.wait(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSecurityLargeReplayDoesNotBlockStart(t *testing.T) {
-	set := newOutputSet(context.Background(), nil)
-	for i := range 100 {
-		set.content(ports.SurfaceContent{ID: ports.WindowID(i + 1), SHM: &ports.SHMBuffer{}})
-	}
-	if !set.start(context.Background(), "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan ports.SurfaceContent, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
-		<-ctx.Done()
-		return nil
-	}) {
-		t.Fatal("start failed")
-	}
-	r := set.outs["A"]
-	if len(r.contents) != cap(r.contents) || len(r.pending) != 100-cap(r.contents) {
-		t.Fatal("replay not preserved")
-	}
-	seen := map[ports.WindowID]bool{}
-	for len(seen) != 100 {
-		select {
-		case c := <-r.contents:
-			if seen[c.ID] {
-				t.Fatal("duplicate replay")
-			}
-			seen[c.ID] = true
-		default:
-			_, out, c, owner := set.contentOut(nil)
-			if out == nil {
-				t.Fatal("replay lost")
-			}
-			out <- c
-			owner.contentSent()
-		}
-	}
-	if len(r.pending) != 0 {
-		t.Fatal("replay remains")
 	}
 	if err := set.wait(); err != nil {
 		t.Fatal(err)

@@ -108,6 +108,30 @@ type SurfaceContent struct {
 	DamageHistory []SeqDamage
 }
 
+// ContentBatch is the window contents wayland hands to one output: at most
+// one per window, the latest published. A content superseded before the
+// output took the batch is overwritten in place; contents carry the window's
+// Seq, so the release accounting needs only the newest one.
+//
+// Ownership moves with the batch: the sender must not touch it after the
+// send, and the receiver resets it and gives it back through ContentReturn.
+// Items is a slice, not a map: SurfaceContent is large, and a map would
+// allocate its elements again after every clear.
+type ContentBatch struct {
+	Items []SurfaceContent
+}
+
+// Reset empties the batch, dropping its references to buffers, and keeps its
+// capacity for reuse.
+func (b *ContentBatch) Reset() {
+	clear(b.Items)
+	b.Items = b.Items[:0]
+}
+
+// ContentReturn gives a consumed batch back to wayland. Return never blocks
+// and is safe after the output was detached.
+type ContentReturn interface{ Return(*ContentBatch) }
+
 // BufferTransform is a wl_output.transform value: bit 0 rotates 90°
 // counter-clockwise, bit 1 rotates 180°, bit 2 flips around the vertical
 // axis first.

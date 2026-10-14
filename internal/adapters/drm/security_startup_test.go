@@ -43,7 +43,7 @@ func TestSecurityProtectedStartupBlackProofAndCaptureRejection(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, captures, captured)
+		done <- o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, scenes, nil, nil, nil, nil, captures, captured)
 	}()
 	select {
 	case ev := <-events:
@@ -107,7 +107,7 @@ func TestSecurityStartupClearWaitUsesRunContext(t *testing.T) {
 	r.EXPECT().Close().Return().Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil)
 	k.EXPECT().rmFB(mock.Anything).Return(nil)
-	err := o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, nil, nil, nil)
+	err := o.Run(ctx, func(int, int) (ports.Renderer, error) { return r, nil }, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("startup cancellation: %v", err)
 	}
