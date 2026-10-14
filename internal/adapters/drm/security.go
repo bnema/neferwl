@@ -145,6 +145,7 @@ func (o *Output) submitProtectedFrame(ctx context.Context, r ports.Renderer, sce
 		done.Close()
 	}
 	if err == nil {
+		o.front.forget()
 		o.back = 1 - o.back
 	}
 	return err

@@ -3,6 +3,7 @@ package drm
 import (
 	"errors"
 	"os"
+	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"golang.org/x/sys/unix"
@@ -231,13 +232,25 @@ func (ov overlayWin) close() {
 // buffer; one that the plane's colour pipeline causes (the same frame passes
 // with Bypass) is cached on the plane for the buffer format and the cursor
 // state instead.
+//
+// A frame identical to one KMS took (same images, place, colour mode and
+// cursor; the fence does not count) is not probed again: a refusal of the
+// commit itself still drops the overlay (overlayConflict).
 func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
-	err := o.probeOverlay(fb, ov, ov.color.mode)
-	if err == nil {
+	// One cursor snapshot: the input goroutine may move it meanwhile, and
+	// what is remembered must be what KMS was asked.
+	key := o.overlayProbeOf(fb, ov)
+	if slices.Contains(o.overlayPassed[:], key) {
 		return true
 	}
-	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass) == nil {
-		o.overlay.setVerdict(ov.color.format, o.cursorShown(), false)
+	err := o.probeOverlay(fb, ov, ov.color.mode, key.cursor)
+	if err == nil {
+		o.overlayPassed[o.overlayNext] = key
+		o.overlayNext = (o.overlayNext + 1) % len(o.overlayPassed)
+		return true
+	}
+	if ov.color.mode != colorBypass && refused(err) && o.probeOverlay(fb, ov, colorBypass, key.cursor) == nil {
+		o.overlay.setVerdict(ov.color.format, key.cursor.on, false)
 		o.setOverlayReason("color_refused")
 		o.renderLog.Info().Err(err).Uint32("format", ov.color.format).Str("connector", o.conn.name).Msg("overlay colour pipeline refused")
 		return false
@@ -250,11 +263,33 @@ func (o *Output) testOverlay(fb uint32, ov overlayWin) bool {
 	return false
 }
 
+// forgetOverlayProbes drops the remembered probes: KMS is asked again.
+func (o *Output) forgetOverlayProbes() { clear(o.overlayPassed[:]) }
+
+// overlayProbe is what an overlay probe depends on, fences aside.
+type overlayProbe struct {
+	primary, overlay uint32
+	rect             ports.Rect
+	w, h             int
+	color            colorUse
+	cursor           cursorState
+	mult             uint64
+	ctm              uint32
+}
+
+func (o *Output) overlayProbeOf(fb uint32, ov overlayWin) overlayProbe {
+	p := overlayProbe{primary: fb, overlay: ov.fb, rect: ov.rect, w: ov.w, h: ov.h, color: ov.color, mult: o.colorMult, ctm: o.ctmBlob}
+	if o.cursor != nil && !o.protected {
+		p.cursor = o.cursor.desired()
+	}
+	return p
+}
+
 // probeOverlay is a TEST_ONLY of the frame: the composed image on the
-// primary plane (Bypass), ov on the overlay with colour mode, the cursor.
-// Both planes' colour state is written whatever they applied: the test must
-// not rely on the state of the last commit.
-func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode) error {
+// primary plane (Bypass), ov on the overlay with colour mode, the cursor in
+// state cur. Both planes' colour state is written whatever they applied:
+// the test must not rely on the state of the last commit.
+func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode, cur cursorState) error {
 	req := &o.probeReq // no frame request is alive: the frame commit follows
 	req.reset()
 	o.primaryProps(req, fb)
@@ -262,7 +297,7 @@ func (o *Output) probeOverlay(fb uint32, ov overlayWin, mode colorMode) error {
 	o.overlayProps(req, ov)
 	o.overlay.colorProps(req, mode, o.colorMult, o.ctmBlob)
 	if o.cursor != nil {
-		o.cursor.props(req, o.crtc, o.cursor.desired())
+		o.cursor.props(req, o.crtc, cur)
 	}
 	return o.k.commit(req, atomicTestOnly, 0)
 }

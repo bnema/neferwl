@@ -147,6 +147,12 @@ type Output struct {
 	frameReq, stateReq, withoutReq, probeReq atomicReq
 	// restWindows is overlayFrame's scene windows, valid until its next call.
 	restWindows []ports.SceneWindow
+	// front is what the output image on screen holds (front.go).
+	front frontImage
+	// overlayPassed are the last overlay probes KMS took (testOverlay):
+	// enough for a client cycling through four buffers.
+	overlayPassed [4]overlayProbe
+	overlayNext   int
 	// lastFrame is when the last frame was committed. cursorHeld: a cursor
 	// move waits for the next frame (see cursorWaits).
 	lastFrame  time.Time
@@ -437,6 +443,8 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	for _, fb := range o.clientFBs {
 		fb.scaleTestedOK, fb.scaleRefused = false, false
 	}
+	o.front.forget()
+	o.forgetOverlayProbes()
 	o.forgetColor()
 	o.forgetColorVerdicts()
 	o.shown, o.queued = 0, 0

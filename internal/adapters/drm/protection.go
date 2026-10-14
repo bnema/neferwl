@@ -203,6 +203,7 @@ func (o *Output) protectedModeset(ctx context.Context, r ports.Renderer) error {
 	if err := o.modesetImage(o.fbs[o.back], true); err != nil {
 		return err
 	}
+	o.front.forget()
 	o.back = 1 - o.back
 	o.protectSucceeded()
 	return nil
