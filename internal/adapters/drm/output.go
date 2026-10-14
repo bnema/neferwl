@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 
@@ -116,9 +117,8 @@ type Output struct {
 	reports       presented.Queue
 	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
 	// may still be reading a prior report on another goroutine.
-	showsSnapshot       map[ports.WindowID]uint64
+	shows               surfaces.ShowsSnapshot
 	directShowsSnapshot map[ports.WindowID]uint64
-	showsScratch        map[ports.WindowID]uint64
 	// Tearing (ADR 006): async commits of scanned-out buffers that ask for
 	// them, when the card has DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP. asyncFence
 	// is set when an async commit may carry IN_FENCE_FD (probed once).
@@ -1433,18 +1433,10 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 				stateDirty = true
 			}
 		case b := <-contents:
-			for i := range b.Items {
-				c := b.Items[i]
-				table.Update(c, scene)
-				if c.Seq > seen[c.ID] {
-					seen[c.ID] = c.Seq
-					reportDirty = true
-				}
-				// Windows on other outputs or workspaces do not need a frame.
-				dirty = dirty || capture.Shows(scene, c.ID)
-			}
-			b.Reset()
-			returns.Return(b)
+			// Windows on other outputs or workspaces do not need a frame.
+			batchDirty, batchSeen := table.Apply(b, scene, seen, returns)
+			dirty = dirty || batchDirty
+			reportDirty = reportDirty || batchSeen
 		case <-stats.C():
 			now := clk.Now()
 			pipeline.Retire(scene) // an idle child of an ended session goes
@@ -1663,15 +1655,7 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 
 // wakeCore tells core the next frame of a running animation is due. A frame
 // core has not read yet is enough, so the owner never waits.
-func (o *Output) wakeCore() {
-	if o.Frames == nil {
-		return
-	}
-	select {
-	case o.Frames <- ports.OutputFrame{Output: o.conn.name}:
-	default:
-	}
-}
+func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.

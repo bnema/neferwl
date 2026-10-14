@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/clock"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
+	"github.com/bnema/neferwl/internal/adapters/outputkit/corewake"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/presented"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/surfaces"
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
@@ -193,14 +193,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		table.Prune(scene)
 	}
 	update := func(b *ports.ContentBatch) {
-		for i := range b.Items {
-			c := b.Items[i]
-			seen[c.ID] = max(seen[c.ID], c.Seq)
-			dirty = dirty || capture.Shows(scene, c.ID)
-			table.Update(c, scene)
-		}
-		b.Reset()
-		returns.Return(b)
+		batchDirty, _ := table.Apply(b, scene, seen, returns)
+		dirty = dirty || batchDirty
 	}
 	clk := opts.Clock
 	if clk == nil {
@@ -544,11 +538,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		requests.List = capture.Waiting(requests.List, scene)
 		frame++
 		opts.report(&reports, shows.flipInfo(scene, drawn, table.Kept), seen)
-		if scene.Animating && opts.Frames != nil {
-			select {
-			case opts.Frames <- ports.OutputFrame{Output: opts.Name}:
-			default:
-			}
+		if scene.Animating {
+			corewake.Send(opts.Frames, opts.Name)
 		}
 		if opts.ScreenshotDir != "" && !opts.protected() {
 			shot := r.Pixels()
@@ -630,31 +621,17 @@ func (opts Options) report(q *presented.Queue, flip *ports.FlipInfo, seen map[po
 }
 
 // flipShows builds the Shows of successive flips. Its owner goroutine is the
-// only user. A flip's Shows map is an immutable snapshot: wayland may still
-// read the one of an earlier flip on another goroutine, so the scratch map is
-// never sent and a snapshot is replaced by a clone only when it changed.
+// only user. The Shows snapshot is shared with earlier flips of the same
+// content (see surfaces.ShowsSnapshot): never modify it.
 type flipShows struct {
-	scratch, snapshot map[ports.WindowID]uint64
+	snapshot surfaces.ShowsSnapshot
 }
 
-// of returns the content Seq of the windows scene showed to their client. The
-// result is shared with earlier flips of the same content: never modify it.
+// of returns the content Seq of the windows scene showed to their client.
 func (f *flipShows) of(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
-	if f.scratch == nil {
-		f.scratch = make(map[ports.WindowID]uint64)
-	}
-	clear(f.scratch)
-	for id, c := range contents {
-		// A closed window drawn from its kept content is not shown to
-		// its client.
-		if surfaces.Shown(scene, id, kept) {
-			f.scratch[id] = c.Seq
-		}
-	}
-	if f.snapshot == nil || !maps.Equal(f.snapshot, f.scratch) {
-		f.snapshot = maps.Clone(f.scratch)
-	}
-	return f.snapshot
+	// A closed window drawn from its kept content is not shown to its
+	// client.
+	return f.snapshot.FromContents(scene, contents, kept)
 }
 
 // flipInfo describes a drawn frame as a flip at the current CLOCK_MONOTONIC

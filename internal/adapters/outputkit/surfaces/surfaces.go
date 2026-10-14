@@ -4,6 +4,8 @@
 package surfaces
 
 import (
+	"maps"
+
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -106,13 +108,75 @@ func Shown(scene ports.Scene, id ports.WindowID, kept func(ports.WindowID) bool)
 	return scene.Shows(id) && (kept == nil || !kept(id))
 }
 
-// FillShown clears dst and fills it with the windows of seen that scene
-// showed to their client (Shown), at their seen Seq.
-func FillShown(dst, seen map[ports.WindowID]uint64, scene ports.Scene, kept func(ports.WindowID) bool) {
-	clear(dst)
+// Apply takes every content of b into the table, as the output's owner does
+// when it receives a batch: Update per item against scene, seen advanced to
+// the highest Seq per window, then the batch reset and handed back through
+// ret. Reset-then-return is the ownership rule of ports.ContentBatch; b is
+// not the caller's after Apply.
+//
+// dirty reports a content of a window scene draws (windows on other outputs
+// or workspaces need no frame). seenChanged reports a window whose seen Seq
+// moved forward: a new report is due.
+func (t *Table) Apply(b *ports.ContentBatch, scene ports.Scene, seen map[ports.WindowID]uint64, ret ports.ContentReturn) (dirty, seenChanged bool) {
+	for i := range b.Items {
+		c := b.Items[i]
+		t.Update(c, scene)
+		if c.Seq > seen[c.ID] {
+			seen[c.ID] = c.Seq
+			seenChanged = true
+		}
+		dirty = dirty || capture.Shows(scene, c.ID)
+	}
+	b.Reset()
+	ret.Return(b)
+	return dirty, seenChanged
+}
+
+// ShowsSnapshot builds the Shows of successive flips. Its owner goroutine is
+// the only user. A flip's Shows map is an immutable snapshot: wayland may
+// still read the one of an earlier flip on another goroutine, so the scratch
+// map is never sent and a snapshot is replaced by a clone only when it
+// changed. The zero value is ready; an unchanged result allocates nothing.
+type ShowsSnapshot struct {
+	scratch, snapshot map[ports.WindowID]uint64
+}
+
+// FromSeen returns the windows of seen that scene showed to their client
+// (Shown), at their seen Seq. The result is shared with earlier flips of the
+// same content: never modify it.
+func (s *ShowsSnapshot) FromSeen(scene ports.Scene, seen map[ports.WindowID]uint64, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+	s.begin()
 	for id, seq := range seen {
 		if Shown(scene, id, kept) {
-			dst[id] = seq
+			s.scratch[id] = seq
 		}
 	}
+	return s.settle()
+}
+
+// FromContents returns the windows of contents that scene showed to their
+// client (Shown), at their content Seq. The result is shared with earlier
+// flips of the same content: never modify it.
+func (s *ShowsSnapshot) FromContents(scene ports.Scene, contents map[ports.WindowID]ports.SurfaceContent, kept func(ports.WindowID) bool) map[ports.WindowID]uint64 {
+	s.begin()
+	for id, c := range contents {
+		if Shown(scene, id, kept) {
+			s.scratch[id] = c.Seq
+		}
+	}
+	return s.settle()
+}
+
+func (s *ShowsSnapshot) begin() {
+	if s.scratch == nil {
+		s.scratch = make(map[ports.WindowID]uint64)
+	}
+	clear(s.scratch)
+}
+
+func (s *ShowsSnapshot) settle() map[ports.WindowID]uint64 {
+	if s.snapshot == nil || !maps.Equal(s.snapshot, s.scratch) {
+		s.snapshot = maps.Clone(s.scratch)
+	}
+	return s.snapshot
 }
