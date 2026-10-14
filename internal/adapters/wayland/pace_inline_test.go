@@ -145,20 +145,20 @@ func TestArmPaceSkipsUnchangedDeadline(t *testing.T) {
 	if s.paceArmed {
 		t.Fatal("stop of a never armed timer armed it")
 	}
-	s.armPace(time.Hour)
+	now := time.Now()
+	s.armPaceFrom(now, time.Hour)
 	first := s.paceDeadline
 	if !s.paceArmed || remaining() <= 59*time.Minute {
 		t.Fatalf("not armed: %v", remaining())
 	}
-	// A deadline a little before the armed one keeps the timer. A full
-	// tolerance of margin absorbs the clock advancing between the calls.
-	s.armPace(time.Until(first) - paceTolerance/2)
+	// A deadline a little before the armed one keeps the timer.
+	s.armPaceFrom(now, time.Hour-paceTolerance/2)
 	if !s.paceDeadline.Equal(first) {
 		t.Fatalf("an earlier deadline within tolerance re-armed the timer: %v -> %v", first, s.paceDeadline)
 	}
 	// A later deadline, however close, re-arms: the timer must never fire
 	// before the requested deadline.
-	s.armPace(time.Until(first) + time.Microsecond)
+	s.armPaceFrom(now, time.Hour+time.Nanosecond)
 	if !s.paceDeadline.After(first) {
 		t.Fatalf("a later deadline kept the earlier timer: %v -> %v", first, s.paceDeadline)
 	}

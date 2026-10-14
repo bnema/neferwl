@@ -53,8 +53,11 @@ const paceTolerance = 50 * time.Microsecond
 // requested deadline, since the tick's checks are strict and an early tick
 // would push due work back by their minimum re-arm. The tolerance is measured
 // against the armed deadline, so it never accumulates. Display goroutine only.
-func (s *Server) armPace(d time.Duration) {
-	deadline := time.Now().Add(max(d, 0))
+func (s *Server) armPace(d time.Duration) { s.armPaceFrom(time.Now(), d) }
+
+// armPaceFrom is armPace with the clock read at now.
+func (s *Server) armPaceFrom(now time.Time, d time.Duration) {
+	deadline := now.Add(max(d, 0))
 	if s.paceArmed {
 		if diff := deadline.Sub(s.paceDeadline); diff >= -paceTolerance && diff <= 0 {
 			return

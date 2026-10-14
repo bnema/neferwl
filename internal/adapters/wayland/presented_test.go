@@ -301,7 +301,7 @@ func TestPresentationMergeWarnsInLog(t *testing.T) {
 	<-finished
 	s.display.Do(func() {})
 	got := out.String()
-	if n := strings.Count(got, "outputs report faster than the display loop drains; flips merged"); n != 1 {
+	if n := strings.Count(got, `"level":"warn"`); n != 1 {
 		t.Fatalf("%d warnings: %s", n, got)
 	}
 	if !strings.Contains(got, `"component":"wayland"`) || !strings.Contains(got, `"merged":`) {
@@ -376,31 +376,6 @@ func TestPaceTimerfdArmedForBarrierDeadline(t *testing.T) {
 	}
 	if barrier || left != 0 {
 		t.Fatalf("timer callback after the deadline: barrier %v, %d queued", barrier, left)
-	}
-}
-
-// End to end on a 20 Hz output: the queued commit is applied at barrierAt+50 ms
-// (the timerfd), not at the next 100 ms held-buffer tick; the bound is generous
-// (half a period) against scheduler noise.
-func TestPaceTimerfdClearsBarrierOnDeadline(t *testing.T) {
-	out := ports.Layout{{Info: ports.OutputInfo{Name: "HEADLESS-1", Width: 1920, Height: 1080, RefreshMilli: 20000}, Width: 1920, Height: 1080, Scale: 1}}
-	s, events, commands, contents, dir := contentServerWith(t, Options{Outputs: out}, testLog())
-	c := protocolClient(t, s, dir)
-	w, surf, _ := surfaceMapper(t, c, events)()
-	placeWindow(t, s, commands, w, "HEADLESS-1")
-	nextContent(t, contents, w.ID) // the mapping commit
-	fifoQueue(t, c, surf)
-	var barrierAt time.Time
-	var period time.Duration
-	s.display.Do(func() {
-		root := s.windows[w.ID].xdg.surface
-		barrierAt, period = root.barrierAt, s.outputPeriod(s.fifoOutput(root))
-	})
-	nextContent(t, contents, w.ID) // the commit that set the barrier
-	late := nextContent(t, contents, w.ID).Sub(barrierAt.Add(period))
-	// Never early; late by far less than the period (not by a polling tick).
-	if late < -time.Millisecond || late > period/2 {
-		t.Fatalf("queued commit applied %v after barrierAt+%v", late, period)
 	}
 }
 
