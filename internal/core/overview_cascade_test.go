@@ -538,6 +538,23 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	}
 }
 
+// The pile stays inside the area, down to a tiny output.
+func TestOverviewCascadeStashInsideArea(t *testing.T) {
+	for _, size := range [][2]int{{300, 200}, {1920, 1080}, {1080, 1920}, {3440, 1440}, {60, 40}} {
+		m := cascadeOverview()
+		m.SetOutput(size[0], size[1])
+		withStash(m, 4)
+		m.ToggleOverview()
+		u := m.Current().overviewArea()
+		for _, id := range []WindowID{40, 41, 42, 43} {
+			p := previewOf(t, m.Layout(), id)
+			if !p.Hidden && (p.Rect.Y < u.Y || p.Rect.Y+p.Rect.H > u.Y+u.H || p.Rect.X < u.X || p.Rect.X+p.Rect.W > u.X+u.W) {
+				t.Fatalf("%v: card %d %v outside %v", size, id, p.Rect, u)
+			}
+		}
+	}
+}
+
 // A stash takes no room in a cascade overview, on a neighbor either: a
 // wide scroll workspace beside it keeps its zoom and slot.
 func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {

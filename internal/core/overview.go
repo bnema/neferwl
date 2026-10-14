@@ -847,7 +847,9 @@ func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, front int) []Plac
 	var x0, y0 int
 	if axis == horizontalAxis {
 		// Centred on the row, across the bottom edge of the selected
-		// lane, which is centred in the slot.
+		// lane, which is centred in the slot. Both scale with the area
+		// (the lane at most overviewMaxZoom of it), so the pile stays
+		// inside whatever its size.
 		x0 = slot.X + (slot.W-cw)/2
 		y0 = slot.Y + (slot.H-rowH)/2 + rowH - ch/2
 	} else {
