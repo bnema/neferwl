@@ -136,13 +136,23 @@ func TestSyncWaiterIdleNeverTicks(t *testing.T) {
 		return real.poll(fds, timeout)
 	})
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	go func() { sw.run(ctx); close(done) }()
-	if timeout := <-polls; timeout != -1 {
-		t.Fatalf("idle poll timeout %d, want -1", timeout)
+	select {
+	case timeout := <-polls:
+		if timeout != -1 {
+			t.Fatalf("idle poll timeout %d, want -1", timeout)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiter never polled")
 	}
 	cancel()
-	<-done
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancel did not stop the waiter")
+	}
 	if n := len(polls); n != 0 {
 		t.Fatalf("%d extra polls while idle", n)
 	}
