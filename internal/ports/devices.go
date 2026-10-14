@@ -26,7 +26,8 @@ var ErrCaptureBusy = fmt.Errorf("%w: no free slot", ErrCaptureTransient)
 // goroutine waits on Done, then reads. EndCapture returns the lease.
 type CaptureFrame interface {
 	// Done is the sync file signalled when the copy finished; nil means it
-	// had finished when BeginCapture returned. The frame owns it.
+	// had finished when BeginCapture returned. The frame owns it: it stays
+	// valid until EndCapture, and the reader must not close it.
 	Done() *os.File
 	// Read copies region (output pixels) as opaque sRGB8 BGRA rows into
 	// dst, stride bytes per row. Valid after Done signalled and before
