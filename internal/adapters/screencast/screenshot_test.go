@@ -169,22 +169,26 @@ func TestScreenshotWithoutUsableFileIsNotSuccess(t *testing.T) {
 	if err := os.WriteFile(target, []byte("png"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for name, mk := range map[string]func(path string){
-		"missing": func(string) {},
-		"empty":   func(path string) { _ = os.WriteFile(path, nil, 0o600) },
-		"symlink": func(path string) { _ = os.Symlink(target, path) },
-		"dir":     func(path string) { _ = os.Mkdir(path, 0o700) },
+	for name, mk := range map[string]func(path string) error{
+		"missing": func(string) error { return nil },
+		"empty":   func(path string) error { return os.WriteFile(path, nil, 0o600) },
+		"symlink": func(path string) error { return os.Symlink(target, path) },
+		"dir":     func(path string) error { return os.Mkdir(path, 0o700) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, c := ready(t, harnessOpts{})
 			h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
-				mk(args[slices.Index(args, "-file")+1])
+				if err := mk(args[slices.Index(args, "-file")+1]); err != nil {
+					t.Error(err)
+				}
 				return nil
 			}).Once()
 			for _, member := range []string{"Screenshot", "InteractiveScreenshot"} {
 				if member == "InteractiveScreenshot" {
 					h.run.EXPECT().Run(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, args []string) error {
-						mk(args[slices.Index(args, "-file")+1])
+						if err := mk(args[slices.Index(args, "-file")+1]); err != nil {
+							t.Error(err)
+						}
 						return nil
 					}).Once()
 				}

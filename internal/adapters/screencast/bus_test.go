@@ -672,15 +672,15 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 			t.Fatalf("allowed peer heard %v", seen)
 		}
 	}
-	// A round trip through the service orders the signals before its answer:
-	// the denied peer would have heard them by now.
+	// The service's owner goroutine answers in order: a call that it
+	// answers (AccessDenied) comes after any signal it had wrongly directed
+	// to this connection. The handler is active during the call.
 	denied.Handle = func(m *zerobus.Message) {
 		if m.Member == "WindowsChanged" || m.Member == "MonitorsChanged" {
 			t.Errorf("refused peer got %s", m.Member)
 		}
 	}
-	denied.NewCall("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "GetId", "")
-	if _, err := denied.Call(); err != nil {
-		t.Fatal(err)
+	if name, _ := callErr(denied, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+		t.Fatalf("refused peer: %q", name)
 	}
 }
