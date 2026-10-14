@@ -10,7 +10,7 @@
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
 > [!WARNING]
-> **Early alpha, but I use it every day.** Developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested. Expect bugs and breaking config changes.
+> **Early alpha, but stable enough for daily use.** Developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested (contribs welcome). Expect bugs and breaking config changes.
 
 ## Why NeferWL
 
@@ -48,9 +48,7 @@ About 35 channels connect them, all created in one place, so the full data flow 
 - **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
 - **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.
 
-### A pleasure to work on
-
-A full build takes seconds, and tests, race detection, profiling and formatting come with the language. I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
+I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
 
 - [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.
 - [purego-vulkan](https://github.com/bnema/purego-vulkan): Vulkan without cgo, generated from `vk.xml`.
@@ -80,7 +78,7 @@ A full build takes seconds, and tests, race detection, profiling and formatting 
 
 ### Desktop integration
 
-Bring your own desktop UI: any layer-shell client, such as Noctalia or Waybar, works. No built-in bar, launcher or notifications; input methods like fcitx5 work through their standard protocols. For capture and idle management, see [nefercap](https://github.com/bnema/nefercap) and [neferafk](https://github.com/bnema/neferafk).
+Bring your own desktop UI: any layer-shell client, such as Noctalia or Waybar, works. For capture and idle management, see [nefercap](https://github.com/bnema/nefercap) and [neferafk](https://github.com/bnema/neferafk).
 
 Configuration is a flat `key = value` file that reloads on save. A JSON state file exposes outputs, workspaces and windows to scripts. See [Desktop integration](docs/desktop.md).
 
