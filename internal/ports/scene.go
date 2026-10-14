@@ -79,10 +79,10 @@ type Scene struct {
 }
 
 // SameAs reports whether o draws exactly what s draws: every field other
-// than Seq and Animating (scheduling only, not drawn) is equal. A scene carrying a CaptureScene is never the same
-// (conservative: the capture image is not compared). Add every new Scene
-// field here; TestSceneSameAsCoversEveryField fails until the field count
-// is updated.
+// than Seq and Animating (scheduling only, not drawn) is equal. A scene
+// carrying a CaptureScene is never the same (conservative: the capture image
+// is not compared). Add every new Scene field here;
+// TestSceneSameAsCoversEveryField fails until the field count is updated.
 func (s Scene) SameAs(o Scene) bool {
 	if s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||

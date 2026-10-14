@@ -233,7 +233,7 @@ type Server struct {
 	syncDev   syncobjDevice
 	timelines map[*server.Resource]*timeline
 	syncWait  *syncWaiter
-	// flips is each output's latest flip (pacer, under Do).
+	// flips is each output's latest flip (display goroutine).
 	flips map[string]ports.FlipInfo
 	// inhibitors are the live inhibitor objects (inhibit.go);
 	// shortcutWindows and idleWindows what core was told.
@@ -695,14 +695,12 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 		old = grown
 	}
 	h := append(old, ports.SeqDamage{Seq: c.Seq, Full: d.full, Rects: d.rects})
+	c.DamageHistory = h[:len(h):len(h)]
 	if c.Empty() {
 		delete(s.damage, c.ID)
 		delete(s.latest, c.ID)
 	} else {
 		s.damage[c.ID] = h
-	}
-	c.DamageHistory = h[:len(h):len(h)]
-	if !c.Empty() {
 		s.latest[c.ID] = c
 	}
 	for _, l := range s.links {

@@ -2,6 +2,8 @@
 
 `bench.sh` measures NeferWL's CPU time and voluntary context switches per presented frame on a 5120x2160 headless output while chromium animates a small part of a page.
 
+Requires `go`, `chromium` and `python3`. Frames are counted from the renderer's `frame` debug entries, which the script turns on.
+
     tools/bench/bench.sh spin60.html 15   # CSS spinner, 60 fps
     tools/bench/bench.sh gif.html 15      # 32x32 GIF, 20 fps
 

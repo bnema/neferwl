@@ -20,6 +20,9 @@ type outputRun func(ctx context.Context, scenes <-chan ports.Scene, contents <-c
 // content of each window, and takes the batches back through the returned
 // ports.ContentReturn. AttachOutput may block on the display goroutine: call it
 // from outside that goroutine. It returns a nil channel when wayland is gone.
+// Feeds are keyed by output name: attaching a name replaces its feed, and
+// DetachOutput stops whichever feed holds the name. Detach an output only once
+// it stopped, and before an output of the same name attaches again.
 type contentAttacher interface {
 	AttachOutput(name string) (<-chan *ports.ContentBatch, ports.ContentReturn)
 	DetachOutput(name string)

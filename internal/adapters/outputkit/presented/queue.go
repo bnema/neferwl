@@ -11,10 +11,11 @@ import (
 // Queue holds the reports an output has not pushed to wayland yet. The owner
 // goroutine flushes it every loop turn, so it holds the few reports of one
 // turn; the sink alone bounds what waits for the display loop (and merges
-// flips when that stalls). Its owner goroutine is the only user. The Seen and ChildReads maps of a queued report are immutable
-// snapshots: wayland may still read an earlier report on another goroutine,
-// so a snapshot is replaced by a clone when its content changes and an
-// unchanged report allocates nothing.
+// flips when that stalls). Its owner goroutine is the only user. The Seen and
+// ChildReads maps of a queued report are immutable snapshots: wayland may
+// still read an earlier report on another goroutine, so a snapshot is
+// replaced by a clone when its content changes and an unchanged report
+// allocates nothing.
 type Queue struct {
 	unsent      []ports.OutputPresented
 	seen, reads map[ports.WindowID]uint64
