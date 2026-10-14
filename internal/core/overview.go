@@ -1026,7 +1026,7 @@ func (w *Workspace) previewTilesInto(tiles []Placement) ([]Placement, int, Rect)
 
 // previewRow scales the tiles of w into a row placed in slot, centred
 // in the slot's width, or scrolled so the focused column shows when the
-// row is wider, right of the stash pile. Dimmed rows (neighbor
+// row is wider (right of the stash pile in a vertical overview). Dimmed rows (neighbor
 // workspaces) have no focus; neither has a row whose pile has it (lit
 // false).
 func (w *Workspace) previewRow(axis layoutAxis, slot Rect, dim, lit bool) []Placement {
@@ -1148,6 +1148,22 @@ func overviewIn(layout []Placement, x, y float64) WindowID {
 	return 0
 }
 
+// overviewHit is overviewIn with the stash piles first: a pile is drawn
+// over its row (a horizontal overview), the cards behind its front one
+// included.
+func (m *Monitor) overviewHit(layout []Placement, x, y float64) WindowID {
+	var piles []Placement
+	for _, p := range layout {
+		if w, _ := m.find(p.ID); w != nil && w.stashIndex(p.ID) >= 0 {
+			piles = append(piles, p)
+		}
+	}
+	if id := overviewIn(piles, x, y); id != 0 {
+		return id
+	}
+	return overviewIn(layout, x, y)
+}
+
 // overviewClick closes the overview on the preview under the pointer, on
 // the output it shows on. picked is false when no preview is there.
 func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
@@ -1161,7 +1177,7 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	}
 	// The cards are hit where they are drawn: a click during the open or a
 	// navigation animation picks what moves under the pointer.
-	id := overviewIn(sc.shownLayout(), c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
+	id := sc.mon.overviewHit(sc.shownLayout(), c.cursorX-float64(sc.x), c.cursorY-float64(sc.y))
 	if id == 0 {
 		return false, nil
 	}

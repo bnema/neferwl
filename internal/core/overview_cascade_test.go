@@ -538,6 +538,30 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	}
 }
 
+// A card behind the front one of the pile is clicked where it shows,
+// over the selected lane's tiles.
+func TestOverviewCascadeStashPeekClick(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 2)
+	m.ToggleOverview()
+	ps := m.Layout()
+	front, back := previewOf(t, ps, 41).Rect, previewOf(t, ps, 40).Rect
+	// The strip of 40 above the front card, inside the lane's tiles.
+	x, y := float64(back.X+back.W-1), float64(back.Y)
+	if back.Y >= front.Y || back.Y < previewOf(t, ps, 8).Rect.Y {
+		t.Fatalf("setup: back %v front %v", back, front)
+	}
+	if id := overviewIn(ps, x, y); id == 40 {
+		t.Fatal("setup: the tiles do not cover the strip")
+	}
+	if id := m.overviewHit(ps, x, y); id != 40 {
+		t.Fatalf("clicked %d, want 40", id)
+	}
+	if id := m.overviewHit(ps, float64(front.X+front.W/2), float64(front.Y+front.H/2)); id != 41 {
+		t.Fatalf("front card clicked %d, want 41", id)
+	}
+}
+
 // The pile stays inside the area, down to a tiny output.
 func TestOverviewCascadeStashInsideArea(t *testing.T) {
 	for _, size := range [][2]int{{300, 200}, {1920, 1080}, {1080, 1920}, {3440, 1440}, {60, 40}} {
