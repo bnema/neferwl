@@ -207,7 +207,6 @@ func (p unixAcquirePoller) poll(fds []unix.PollFd, timeout int) (int, error) {
 type syncWaiter struct {
 	poller    acquirePoller
 	waiter    *fdwait.Poller
-	pipeFD    int
 	terminal  bool // polling ended in failure; protected by mu
 	mu        sync.Mutex
 	ready     map[*syncWait]bool
@@ -238,7 +237,7 @@ func newSyncWaiter(wake func()) (*syncWaiter, error) {
 		w.Close()
 		return nil, err
 	}
-	return &syncWaiter{poller: unixAcquirePoller{p}, waiter: p, pipeFD: int(r.Fd()), ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
+	return &syncWaiter{poller: unixAcquirePoller{p}, waiter: p, ready: map[*syncWait]bool{}, wake: wake, pipeR: r, pipeW: w, log: zerowrap.Default()}, nil
 }
 
 // watch registers an eventfd for p; the wait is ready once it fires.
@@ -384,13 +383,8 @@ func (sw *syncWaiter) fail(waits []*syncWait) {
 // run polls every watched eventfd; it owns and closes them.
 func (sw *syncWaiter) run(ctx context.Context) {
 	defer sw.pipeR.Close()
-	if sw.waiter != nil {
-		defer sw.waiter.Close()
-	}
-	pipeFD := sw.pipeFD
-	if sw.waiter == nil { // bare test fixtures own their pipe
-		pipeFD = int(sw.pipeR.Fd())
-	}
+	defer sw.waiter.Close()
+	pipeFD := int(sw.pipeR.Fd())
 	var waits []*syncWait
 	defer func() {
 		sw.mu.Lock()

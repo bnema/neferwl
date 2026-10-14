@@ -65,6 +65,7 @@ func TestCommitSyncStorageIsPerUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sw.pipeR.Close()
+	defer sw.waiter.Close()
 	defer sw.close()
 	srv.syncWait = sw
 	tl := &timeline{dev: dev, handle: 7, alive: true}
