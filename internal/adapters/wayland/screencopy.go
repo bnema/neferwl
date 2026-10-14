@@ -239,6 +239,24 @@ func (s *Server) requestCapture(o *output, rect image.Rectangle, cursor bool, b 
 		return 0, false
 	}
 }
+
+// capturedRingSize bounds the replies waiting for the display goroutine: one
+// per admitted capture, and the cast frames in flight (8).
+const capturedRingSize = ports.MaxCaptureInflight + 8
+
+// applyCaptured settles one capture reply on the display goroutine.
+func (s *Server) applyCaptured(done ports.CaptureDone) {
+	delete(s.captureInflight, done.ID)
+	if fn := s.captureReplies[done.ID]; fn != nil {
+		delete(s.captureReplies, done.ID)
+		fn(done)
+	}
+	s.maybeLocked()
+}
+
+// forwardCaptured moves backend replies to the display goroutine through
+// capturedRing. Each reply releases an admission credit, so none is merged or
+// dropped; a full ring blocks this goroutine, never the display.
 func (s *Server) forwardCaptured(ctxDone <-chan struct{}) {
 	for {
 		select {
@@ -250,14 +268,7 @@ func (s *Server) forwardCaptured(ctxDone <-chan struct{}) {
 			if !ok {
 				return
 			}
-			if !s.display.Do(func() {
-				delete(s.captureInflight, done.ID)
-				if fn := s.captureReplies[done.ID]; fn != nil {
-					delete(s.captureReplies, done.ID)
-					fn(done)
-				}
-				s.maybeLocked()
-			}) {
+			if !s.capturedRing.Push(done) {
 				return
 			}
 		}

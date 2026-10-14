@@ -111,6 +111,9 @@ type Server struct {
 	nextLeaseID        uint64
 	nextCapture        uint64
 	captureReplies     map[uint64]func(ports.CaptureDone)
+	// capturedRing hands backend replies to the display goroutine
+	// (forwardCaptured); the display goroutine applies them in order.
+	capturedRing *postRing[ports.CaptureDone]
 	// captureInflight counts accepted captures until the backend completes
 	// them, independent of client resources; only the display loop touches it.
 	captureInflight map[uint64]struct{}
@@ -358,6 +361,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.paceSignalFn = s.paceSignalled
 	s.flushLinksFn = s.flushLinks
 	s.sink = newPresentSink(s)
+	s.capturedRing = newPostRing(d, capturedRingSize, s.applyCaptured)
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
 	s.pendingLeaseCards = map[uint64]string{}
