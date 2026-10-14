@@ -53,6 +53,7 @@ type stream struct {
 	buf      *pipewire.VideoBuffer
 	lastReq  time.Time
 	seq      uint64
+	pts      time.Duration
 	errs     int // consecutive failed frames
 }
 

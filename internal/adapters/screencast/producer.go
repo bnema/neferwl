@@ -104,15 +104,25 @@ func (s *Service) giveBack(st *stream) {
 // frameDone settles the frame in flight: a complete image is queued and
 // triggered, anything else gives the buffer back.
 func (s *Service) frameDone(st *stream, ev *ports.CastEvent) {
+	if b := s.settleFrame(st, ev); b != nil {
+		st.src.Queue(b, st.seq, st.pts, false)
+		st.src.Trigger()
+	}
+}
+
+// settleFrame updates the stream for the CastFrameDone of its frame and
+// returns the buffer to queue, nil when there is none. It touches no
+// PipeWire object but Release on the failure path.
+func (s *Service) settleFrame(st *stream, ev *ports.CastEvent) *pipewire.VideoBuffer {
 	if !st.inflight || st.buf == nil || st.buf.Index != ev.Buf {
 		s.log.Warn().Str("stream", st.path).Int("buf", ev.Buf).Msg("frame done for no frame in flight")
-		return
+		return nil
 	}
 	st.inflight = false
 	if ev.Err != nil || st.closing {
 		s.giveBack(st)
 		if ev.Err == nil {
-			return
+			return nil
 		}
 		st.errs++
 		st.dirty = true
@@ -122,18 +132,17 @@ func (s *Service) frameDone(st *stream, ev *ports.CastEvent) {
 				s.closeSession(st.sess, true)
 			}
 		}
-		return
+		return nil
 	}
 	st.errs = 0
 	st.seq++
-	var pts time.Duration
+	st.pts = 0
 	if !ev.Time.IsZero() {
-		pts = time.Duration(ev.Time.UnixNano())
+		st.pts = time.Duration(ev.Time.UnixNano())
 	}
 	b := st.buf
 	st.buf = nil
-	st.src.Queue(b, st.seq, pts, false)
-	st.src.Trigger()
+	return b
 }
 
 // pumpAll runs every stream: commands, negotiation and frames.
@@ -234,37 +243,59 @@ func (s *Service) openSource(st *stream) {
 
 // pumpFrame requests the next frame when one is due.
 func (s *Service) pumpFrame(st *stream, now time.Time) {
-	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize ||
-		st.fw != st.w || st.fh != st.h || st.fw == 0 {
-		return
-	}
-	if !st.dirty && !st.forced {
-		return
-	}
-	interval := time.Second / time.Duration(max(st.maxFPS, 1))
-	if since := now.Sub(st.lastReq); !st.lastReq.IsZero() && since < interval {
-		s.wait(interval - since)
+	if !s.frameDue(st, now) {
 		return
 	}
 	b := st.src.Dequeue()
 	if b == nil {
 		// Every buffer is with the consumer: look again shortly.
-		s.wait(interval)
+		s.wait(st.interval())
 		return
 	}
-	if b.Width != st.w || b.Height != st.h || len(b.Data) < b.Stride*b.Height {
+	if !s.issueFrame(st, b, now) {
 		st.src.Release(b)
-		s.wait(interval)
-		return
+	}
+}
+
+// interval is the shortest time between two frames.
+func (st *stream) interval() time.Duration {
+	return time.Second / time.Duration(max(st.maxFPS, 1))
+}
+
+// frameDue reports whether a frame may be requested now: streaming, the
+// negotiated size is the target's, something changed (or it is the first
+// frame), none in flight and the interval has passed. When only the interval
+// is missing, it asks for a poll timeout.
+func (s *Service) frameDue(st *stream, now time.Time) bool {
+	if st.inflight || st.pwState != pipewire.StreamStateStreaming || st.needResize ||
+		st.fw != st.w || st.fh != st.h || st.fw == 0 {
+		return false
+	}
+	if !st.dirty && !st.forced {
+		return false
+	}
+	if since := now.Sub(st.lastReq); !st.lastReq.IsZero() && since < st.interval() {
+		s.wait(st.interval() - since)
+		return false
+	}
+	return true
+}
+
+// issueFrame lends buffer b to the wayland server. False: the buffer is not
+// taken and stays the caller's.
+func (s *Service) issueFrame(st *stream, b *pipewire.VideoBuffer, now time.Time) bool {
+	if b.Width != st.w || b.Height != st.h || len(b.Data) < b.Stride*b.Height {
+		s.wait(st.interval())
+		return false
 	}
 	cmd := ports.CastCommand{Kind: ports.CastFrame, ID: st.cast, Buf: b.Index, Data: b.Data, Stride: b.Stride, Width: b.Width, Height: b.Height, Format: shmFormat(b.Format)}
 	if !s.sendCmd(cmd) {
-		st.src.Release(b)
-		s.wait(interval)
-		return
+		s.wait(st.interval())
+		return false
 	}
 	st.inflight, st.buf = true, b
 	st.lastReq, st.dirty, st.forced = now, false, false
+	return true
 }
 
 // pumpClosing finishes a stream of an ended session: CastClose, then the
