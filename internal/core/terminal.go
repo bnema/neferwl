@@ -23,7 +23,7 @@ func (c *Core) keepsTerminal() bool {
 // Workspaces with slots are left to them.
 func (c *Core) fillEmpty() []ports.SpawnRequest {
 	now := c.now()
-	c.placement.expireTerminals(now)
+	c.placement.expireWorkspaceClaims(now)
 	if !c.keepsTerminal() {
 		return nil
 	}
@@ -39,12 +39,12 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 				continue
 			}
 		}
-		if s.name() == "" || !w.empty() || c.hasSlots(w) || c.placement.terminalPending(w) || now.Sub(w.termAt) < termRetry {
+		if s.name() == "" || !w.empty() || c.hasSlots(w) || c.placement.workspacePending(w, spawnTerminal) || now.Sub(w.termAt) < termRetry {
 			continue
 		}
 		c.firstTerminalResolved = true
 		w.termAt = now
-		reqs = append(reqs, c.placement.request(c.cfg.Terminal.Command, spawnTarget{terminal: w, at: now}))
+		reqs = append(reqs, c.placement.request(c.cfg.Terminal.Command, spawnTarget{kind: spawnTerminal, ws: w, at: now}))
 	}
 	return reqs
 }
@@ -53,8 +53,8 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 func (c *Core) cancelTerminal(req ports.SpawnRequest) {
 	for _, env := range req.Env {
 		if token, ok := strings.CutPrefix(env, ports.SlotEnv+"="); ok {
-			if target, ok := c.placement.pending[token]; ok && target.terminal != nil {
-				target.terminal.termAt = time.Time{}
+			if target, ok := c.placement.pending[token]; ok && target.kind == spawnTerminal {
+				target.ws.termAt = time.Time{}
 				delete(c.placement.pending, token)
 			}
 		}

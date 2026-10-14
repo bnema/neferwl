@@ -15,11 +15,23 @@ type spawnPlacement struct {
 	slots   map[slotKey]string
 }
 
-// spawnTarget identifies the destination of one pending spawn.
+// spawnKind tells what a pending spawn is destined for.
+type spawnKind uint8
+
+const (
+	// spawnSlot fills a slot; the zero value.
+	spawnSlot spawnKind = iota
+	// spawnTerminal is an automatic terminal for an empty workspace.
+	spawnTerminal
+)
+
+// spawnTarget identifies the destination of one pending spawn. slot is set
+// for spawnSlot; ws and at for the workspace-bound kinds.
 type spawnTarget struct {
-	slot     slotKey
-	terminal *Workspace
-	at       time.Time
+	kind spawnKind
+	slot slotKey
+	ws   *Workspace
+	at   time.Time
 }
 
 func newSpawnPlacement() spawnPlacement {
@@ -30,7 +42,7 @@ func newSpawnPlacement() spawnPlacement {
 func (p *spawnPlacement) request(argv []string, target spawnTarget) ports.SpawnRequest {
 	token := rand.Text()
 	p.pending[token] = target
-	if target.terminal == nil {
+	if target.kind == spawnSlot {
 		p.slots[target.slot] = token
 	}
 	return ports.SpawnRequest{Argv: slices.Clone(argv), Env: []string{ports.SlotEnv + "=" + token}}
@@ -50,20 +62,20 @@ func (p *spawnPlacement) slotPending(key slotKey) bool { return p.slots[key] != 
 // anyPending reports whether any spawn still awaits a window.
 func (p *spawnPlacement) anyPending() bool { return len(p.pending) != 0 }
 
-// terminalPending reports whether a workspace awaits an automatic terminal.
-func (p *spawnPlacement) terminalPending(w *Workspace) bool {
+// workspacePending reports whether a workspace awaits a spawn of the given kind.
+func (p *spawnPlacement) workspacePending(w *Workspace, kind spawnKind) bool {
 	for _, target := range p.pending {
-		if target.terminal == w {
+		if target.kind == kind && target.ws == w {
 			return true
 		}
 	}
 	return false
 }
 
-// expireTerminals drops terminal claims older than the retry interval.
-func (p *spawnPlacement) expireTerminals(now time.Time) {
+// expireWorkspaceClaims drops workspace-bound claims older than the retry interval.
+func (p *spawnPlacement) expireWorkspaceClaims(now time.Time) {
 	for token, target := range p.pending {
-		if target.terminal != nil && now.Sub(target.at) > termRetry {
+		if target.kind != spawnSlot && now.Sub(target.at) > termRetry {
 			delete(p.pending, token)
 		}
 	}
@@ -95,22 +107,25 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 	}
 	if v.Slot != "" {
 		if target, ok := p.pending[v.Slot]; ok {
-			if target.terminal != nil {
+			switch target.kind {
+			case spawnTerminal:
 				delete(p.pending, v.Slot)
 				for _, s := range c.screens {
-					if s.mon.has(target.terminal) {
-						target.terminal.AddWindow(v.ID)
+					if s.mon.has(target.ws) {
+						target.ws.AddWindow(v.ID)
 						s.mon.normalize()
 						return
 					}
 				}
-			} else if st := c.slots[target.slot]; st != nil && st.window == 0 {
-				if sc, w := c.byName(target.slot.workspace); w != nil {
-					p.dropSlot(target.slot)
-					st.window = v.ID
-					w.AddSlotWindow(v.ID, target.slot.index, st.cells)
-					sc.mon.normalize()
-					return
+			case spawnSlot:
+				if st := c.slots[target.slot]; st != nil && st.window == 0 {
+					if sc, w := c.byName(target.slot.workspace); w != nil {
+						p.dropSlot(target.slot)
+						st.window = v.ID
+						w.AddSlotWindow(v.ID, target.slot.index, st.cells)
+						sc.mon.normalize()
+						return
+					}
 				}
 			}
 		}
