@@ -49,12 +49,15 @@ func (c *Core) fillEmpty() []ports.SpawnRequest {
 	return reqs
 }
 
-// cancelTerminal removes a claim minted for a send suppressed by the gate.
-func (c *Core) cancelTerminal(req ports.SpawnRequest) {
+// cancelClaim removes a workspace claim minted for a send suppressed by the
+// gate. A terminal may be requested again at once.
+func (c *Core) cancelClaim(req ports.SpawnRequest) {
 	for _, env := range req.Env {
 		if token, ok := strings.CutPrefix(env, ports.SlotEnv+"="); ok {
-			if target, ok := c.placement.pending[token]; ok && target.kind == spawnTerminal {
-				target.ws.termAt = time.Time{}
+			if target, ok := c.placement.pending[token]; ok && target.kind != spawnSlot {
+				if target.kind == spawnTerminal {
+					target.ws.termAt = time.Time{}
+				}
 				delete(c.placement.pending, token)
 			}
 		}

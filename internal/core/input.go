@@ -346,11 +346,18 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 		if commands == nil {
 			commands = [][]string{append([]string(nil), c.cfg.Terminal.Command...)}
 		}
-		// Explicit actions are suppressed on a full launcher queue;
-		// never keep the input owner waiting across an epoch change.
-		for _, argv := range commands {
-			if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
-				break
+		switch {
+		case effect.Stash:
+			if err := c.spawnStash(ctx, before, commands, effect.Commands == nil); err != nil {
+				return err
+			}
+		default:
+			// Explicit actions are suppressed on a full launcher queue;
+			// never keep the input owner waiting across an epoch change.
+			for _, argv := range commands {
+				if !c.trySpawn(ctx, ports.SpawnRequest{Argv: argv}) {
+					break
+				}
 			}
 		}
 		if c.inputEpochChanged() {
@@ -370,6 +377,37 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 		}
 	}
 	return c.publish(ctx)
+}
+
+// spawnStash runs commands whose windows open in the stash of w, the
+// workspace the bind acted on. Wayland reads the claim tokens only while it
+// knows slots are pending, so that is published before the spawn, as
+// spawnEmpty does. A send the gate suppresses leaves no claim behind. With
+// terminal set (the terminal of an empty stash), nothing starts while the
+// previous one is still awaited.
+func (c *Core) spawnStash(ctx context.Context, w *Workspace, commands [][]string, terminal bool) error {
+	if c.protectionRequested() {
+		return nil
+	}
+	now := c.now()
+	c.placement.expireWorkspaceClaims(now)
+	if terminal && c.placement.workspacePending(w, spawnStash) {
+		return nil
+	}
+	reqs := make([]ports.SpawnRequest, len(commands))
+	for i, argv := range commands {
+		reqs[i] = c.placement.request(argv, spawnTarget{kind: spawnStash, ws: w, at: now})
+	}
+	err := c.publishPending(ctx)
+	for i, req := range reqs {
+		if err != nil || !c.trySpawn(ctx, req) {
+			for _, suppressed := range reqs[i:] {
+				c.cancelClaim(suppressed)
+			}
+			break
+		}
+	}
+	return err
 }
 
 // scaleBind steps the focused output's scale and asks for it to be saved.

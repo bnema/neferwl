@@ -81,6 +81,16 @@ func (w *Workspace) captureStash(id WindowID) bool {
 	return true
 }
 
+// stashSpawned puts a window opened by a stash spawn in the stash, selected
+// and focused, with no former column: toggle-window-stash tiles it as a new
+// column. Under a covering fullscreen window the stash shows over it.
+func (w *Workspace) stashSpawned(id WindowID) {
+	w.addStash(Float{ID: id})
+	if w.cover() != 0 && w.stashIndex(w.cover()) < 0 {
+		w.showStashOver()
+	}
+}
+
 // showStash shows the stash and gives it the focus; a member whose
 // fullscreen waited while hidden is fullscreen again, selected, as if it
 // asked now.

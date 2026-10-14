@@ -23,6 +23,8 @@ const (
 	spawnSlot spawnKind = iota
 	// spawnTerminal is an automatic terminal for an empty workspace.
 	spawnTerminal
+	// spawnStash is a window opened straight into the stash of ws.
+	spawnStash
 )
 
 // spawnTarget identifies the destination of one pending spawn. slot is set
@@ -106,6 +108,8 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		return
 	}
 	if v.Slot != "" {
+		// A claim no window answered in time no longer places one.
+		p.expireWorkspaceClaims(c.now())
 		if target, ok := p.pending[v.Slot]; ok {
 			switch target.kind {
 			case spawnTerminal:
@@ -113,6 +117,15 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 				for _, s := range c.screens {
 					if s.mon.has(target.ws) {
 						target.ws.AddWindow(v.ID)
+						s.mon.normalize()
+						return
+					}
+				}
+			case spawnStash:
+				delete(p.pending, v.Slot)
+				for _, s := range c.screens {
+					if s.mon.has(target.ws) {
+						target.ws.stashSpawned(v.ID)
 						s.mon.normalize()
 						return
 					}

@@ -528,6 +528,7 @@ func (c *Core) settings(m *Monitor) {
 	m.SetBorder(c.cfg.Border.Width)
 	m.SetStash(c.cfg.Stash.Width, c.cfg.Stash.Gap)
 	m.SetStashCapture(c.cfg.Stash.Capture)
+	m.SetStashTerminal(c.cfg.Stash.SpawnTerminal && len(c.cfg.Terminal.Command) > 0)
 	m.SetFollowMove(c.cfg.Focus.FollowMove)
 }
 

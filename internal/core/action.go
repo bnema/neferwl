@@ -180,8 +180,17 @@ func NamedArg(a Action) (string, bool) {
 const spawnPrefix = "spawn "
 
 // SpawnCommands returns the commands of a "spawn <cmd>[; <cmd>...]" action.
-func SpawnCommands(a Action) ([][]string, bool) {
-	rest, ok := strings.CutPrefix(string(a), spawnPrefix)
+func SpawnCommands(a Action) ([][]string, bool) { return prefixedCommands(a, spawnPrefix) }
+
+// stashPrefix starts a bind action that runs commands and opens their
+// windows in the stash: "stash firefox".
+const stashPrefix = "stash "
+
+// StashCommands returns the commands of a "stash <cmd>[; <cmd>...]" action.
+func StashCommands(a Action) ([][]string, bool) { return prefixedCommands(a, stashPrefix) }
+
+func prefixedCommands(a Action, prefix string) ([][]string, bool) {
+	rest, ok := strings.CutPrefix(string(a), prefix)
 	if !ok {
 		return nil, false
 	}
@@ -192,8 +201,11 @@ func SpawnCommands(a Action) ([][]string, bool) {
 type Effect struct {
 	Spawn    bool
 	Commands [][]string // commands to run; nil means the configured terminal
-	Close    WindowID
-	Quit     bool
+	// Stash sends the spawned windows to the stash of the workspace the
+	// action applied to.
+	Stash bool
+	Close WindowID
+	Quit  bool
 }
 
 // applyAction runs a bind action. Monitor actions change the focused
@@ -365,7 +377,12 @@ func (m *Monitor) Apply(a Action) Effect {
 		m.Current().ToggleWindowStash()
 		return Effect{}
 	case ActionToggleStashVisible:
-		m.Current().ToggleStashVisible()
+		w := m.Current()
+		// An empty stash has nothing to show: open the terminal in it.
+		if len(w.Stash) == 0 && m.stashTerminal {
+			return Effect{Spawn: true, Stash: true}
+		}
+		w.ToggleStashVisible()
 		return Effect{}
 	case ActionToggleOverview:
 		m.ToggleOverview()
@@ -432,6 +449,9 @@ func (m *Monitor) moveDest(a Action) (i int, column, ok bool) {
 func (w *Workspace) Apply(a Action) Effect {
 	if commands, ok := SpawnCommands(a); ok {
 		return Effect{Spawn: true, Commands: commands}
+	}
+	if commands, ok := StashCommands(a); ok {
+		return Effect{Spawn: true, Stash: true, Commands: commands}
 	}
 	if w.freeAction(a) {
 		return Effect{}

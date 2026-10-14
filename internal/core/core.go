@@ -246,6 +246,10 @@ func (c *Core) apply(cfg ports.Config) error {
 			binds[b] = Action(a)
 			continue
 		}
+		if _, ok := StashCommands(Action(a)); ok {
+			binds[b] = Action(a)
+			continue
+		}
 		if Action(a) == ActionScaleUp || Action(a) == ActionScaleDown {
 			binds[b] = Action(a)
 			continue
@@ -1247,7 +1251,7 @@ func (c *Core) spawnEmpty(ctx context.Context) error {
 	for i, req := range terms {
 		if err != nil || !c.trySpawn(ctx, req) {
 			for _, suppressed := range terms[i:] {
-				c.cancelTerminal(suppressed)
+				c.cancelClaim(suppressed)
 			}
 			if i == 0 {
 				c.firstTerminalResolved = first

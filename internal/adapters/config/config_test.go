@@ -296,6 +296,8 @@ func TestWarningsKeepDefaults(t *testing.T) {
 		{"bind.cmd+x = set-window-height +5", "set-window-height needs"},
 		{"bind.cmd+x = spawn   ", "unknown action"},
 		{"bind.cmd+x = spawn ; ;", "spawn needs a command"},
+		{"bind.cmd+x = stash ", "unknown action"},
+		{"bind.cmd+x = stash ; ;", "stash needs a command"},
 		{"startup = ;", "must not be empty"},
 	}
 	for _, tc := range cases {
@@ -621,6 +623,28 @@ func TestStashCapture(t *testing.T) {
 	}
 	if c, w := parseString(t, "stash.capture = yes"); !c.Stash.Capture || len(w) == 0 {
 		t.Fatalf("invalid: %v %v", c.Stash.Capture, w)
+	}
+}
+
+func TestStashSpawnTerminal(t *testing.T) {
+	if c, _ := parseString(t, ""); !c.Stash.SpawnTerminal {
+		t.Fatal("stash.spawn-terminal is on by default")
+	}
+	if c, w := parseString(t, "stash.spawn-terminal = off"); c.Stash.SpawnTerminal || len(w) != 0 {
+		t.Fatalf("off: %v %v", c.Stash.SpawnTerminal, w)
+	}
+	if c, w := parseString(t, "stash.spawn-terminal = on"); !c.Stash.SpawnTerminal || len(w) != 0 {
+		t.Fatalf("on: %v %v", c.Stash.SpawnTerminal, w)
+	}
+	if c, w := parseString(t, "stash.spawn-terminal = yes"); !c.Stash.SpawnTerminal || len(w) == 0 {
+		t.Fatalf("invalid: %v %v", c.Stash.SpawnTerminal, w)
+	}
+}
+
+func TestStashBind(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+shift+f = stash firefox --private-window")
+	if len(w) != 0 || c.Binds["Cmd+Shift+f"] != "stash firefox --private-window" {
+		t.Fatalf("stash bind: %v %v", c.Binds, w)
 	}
 }
 
