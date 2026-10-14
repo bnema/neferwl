@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
+	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -136,7 +137,7 @@ func (s *Server) peerIdentity(c server.Client) *peerID {
 		id.pidfd, err = s.peer.Pidfd(fd)
 		if err != nil {
 			id.pidfd, id.err = nil, err
-			if errors.Is(err, errNoPidfd) && !s.noPidfdWarned {
+			if errors.Is(err, peerexe.ErrNoPidfd) && !s.noPidfdWarned {
 				s.noPidfdWarned = true
 				s.log.Warn().Msg("kernel has no SO_PEERPIDFD (Linux 6.5+): the capture allowlist cannot identify clients, so none may capture; list `*` in the allowlist to disable the check")
 			}

@@ -13,6 +13,7 @@ import (
 	source "github.com/bnema/go-wayland-bindings/server/extimagecapturesource"
 	ext "github.com/bnema/go-wayland-bindings/server/extimagecopycapture"
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
+	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/neferwl/internal/adapters/wayland/imagecapture"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -275,7 +276,7 @@ func TestCaptureAllowlistNoPidfdFailsClosed(t *testing.T) {
 }
 
 func TestCaptureAllowlistUnresolvedExecutableRefused(t *testing.T) {
-	for name, err := range map[string]error{"deleted": errExeDeleted, "unknown": errors.New("no such process")} {
+	for name, err := range map[string]error{"deleted": peerexe.ErrExeDeleted, "unknown": errors.New("no such process")} {
 		t.Run(name, func(t *testing.T) {
 			peer := newMockpeerExe(t)
 			pidfd := devNull(t)
@@ -350,7 +351,7 @@ func TestLinuxPeerExeSelf(t *testing.T) {
 	defer unix.Close(fds[1])
 	var l linuxPeerExe
 	pidfd, err := l.Pidfd(fds[0])
-	if errors.Is(err, errNoPidfd) {
+	if errors.Is(err, peerexe.ErrNoPidfd) {
 		t.Skip("kernel without SO_PEERPIDFD")
 	}
 	if err != nil {
@@ -364,52 +365,8 @@ func TestLinuxPeerExeSelf(t *testing.T) {
 	if exe != self || pid != os.Getpid() {
 		t.Fatalf("Exe = %q, %d; want %q, %d", exe, pid, self, os.Getpid())
 	}
-	if _, err := (linuxPeerExe{noPidfd: true}).Pidfd(fds[0]); !errors.Is(err, errNoPidfd) {
+	if _, err := (linuxPeerExe{noPidfd: true}).Pidfd(fds[0]); !errors.Is(err, peerexe.ErrNoPidfd) {
 		t.Fatalf("noPidfd: %v", err)
-	}
-}
-
-// A process whose binary was removed is refused, and a peer that already
-// exited is never resolved from its (possibly recycled) pid.
-func TestLinuxPeerExeDeletedAndExited(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "child")
-	src, err := os.ReadFile("/bin/sleep")
-	if err != nil {
-		t.Skip("no /bin/sleep")
-	}
-	if err := os.WriteFile(path, src, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	proc, err := os.StartProcess(path, []string{path, "30"}, &os.ProcAttr{})
-	if err != nil {
-		t.Skip("cannot run a copy of sleep: ", err)
-	}
-	defer func() { _ = proc.Kill(); _, _ = proc.Wait() }()
-	_ = os.Remove(path)
-	// Wait until exec has completed so /proc/<pid>/exe is the copy.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if _, err := readExe(proc.Pid); errors.Is(err, errExeDeleted) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("deleted executable not refused")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	pidfd, err := unix.PidfdOpen(proc.Pid, 0)
-	if err != nil {
-		t.Skip("pidfd_open: ", err)
-	}
-	defer unix.Close(pidfd)
-	if _, _, err := exeOfPidfd(pidfd); !errors.Is(err, errExeDeleted) {
-		t.Fatalf("deleted: %v", err)
-	}
-	_ = proc.Kill()
-	_, _ = proc.Wait()
-	if exe, _, err := exeOfPidfd(pidfd); err == nil {
-		t.Fatalf("exited peer resolved to %q", exe)
 	}
 }
 
