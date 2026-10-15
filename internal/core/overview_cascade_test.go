@@ -377,8 +377,9 @@ func TestOverviewCascadeKeys(t *testing.T) {
 	}
 }
 
-// T7b: with a stash card selected, up/down and the three-finger vertical
-// swipe cycle the pile as in a vertical overview; confirming shows the picked window.
+// T7b: with a stash card selected in a cascade overview, down walks the pile
+// (stopping at its last card) and up leaves it for the last band, at the
+// column it was entered from; confirming shows the picked window.
 func TestOverviewCascadeStashPile(t *testing.T) {
 	for _, d := range cascadeDrivers {
 		t.Run(d.name, func(t *testing.T) {
@@ -392,21 +393,41 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 				t.Fatalf("entered at %d", m.cardAt(w))
 			}
 			at := m.cardAt(w)
-			d.move(m, 0, -1)
-			if m.Current() != w || m.cardAt(w) != at-1 {
-				t.Fatalf("up: card %d, was %d", m.cardAt(w), at)
+			for i := range len(w.Stash) {
+				d.move(m, 0, 1)
+				if want := min(at+i+1, len(w.Stash)-1); m.Current() != w || m.cardAt(w) != want {
+					t.Fatalf("down %d: card %d, want %d", i, m.cardAt(w), want)
+				}
 			}
-			d.move(m, 0, 1)
-			d.move(m, 0, 1)
-			d.move(m, 0, 1)
-			if m.Current() != w || m.cardAt(w) != len(w.Stash)-1 {
-				t.Fatalf("down: card %d", m.cardAt(w))
-			}
-			d.move(m, 0, -1)
 			picked := w.Stash[m.cardAt(w)].ID
 			m.ToggleOverview()
 			if focusedID(m) != picked || w.stashHidden {
 				t.Fatalf("confirm on %d, want %d (hidden %v)", focusedID(m), picked, w.stashHidden)
+			}
+		})
+	}
+
+	// Up from any card, whichever it was cycled to, leaves the pile at once.
+	for _, d := range cascadeDrivers {
+		t.Run(d.name+"/up", func(t *testing.T) {
+			m := cascadeOverview()
+			withStash(m, 3)
+			w := m.Current()
+			w.FocusID(10)
+			m.ToggleOverview()
+			d.move(m, 0, 1)
+			d.move(m, 0, 1)
+			if m.cardAt(w) < 0 {
+				t.Fatal("setup: no card selected")
+			}
+			d.move(m, 0, -1)
+			if m.Current() != w || m.cardAt(w) >= 0 || focusedID(m) != 10 || m.ov.selected != 10 {
+				t.Fatalf("up: card %d, focus %d, selected %d", m.cardAt(w), focusedID(m), m.ov.selected)
+			}
+			// The pile is entered again from there.
+			d.move(m, 0, 1)
+			if m.cardAt(w) < 0 {
+				t.Fatal("down after leaving did not enter the stash")
 			}
 		})
 	}
@@ -423,13 +444,25 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 		t.Fatal("setup: no card selected")
 	}
 	at, before := m.cardAt(w), stashIDs(w)
-	c.swipeBegin(ports.SwipeBegin{Fingers: 3})
-	for range 3 {
-		c.swipeUpdate(ports.SwipeUpdate{DY: -40})
+	swipeY := func(dy float64) {
+		c.swipeBegin(ports.SwipeBegin{Fingers: 3})
+		for range 3 {
+			c.swipeUpdate(ports.SwipeUpdate{DY: dy})
+		}
+		c.swipeEnd(ports.SwipeEnd{})
 	}
-	c.swipeEnd(ports.SwipeEnd{})
-	if m.Current() != w || m.cardAt(w) != at-1 {
-		t.Fatalf("swipe up: card %d, was %d", m.cardAt(w), at)
+	// Fingers down walk the pile; fingers up leave it for the columns.
+	swipeY(40)
+	if want := min(at+1, len(w.Stash)-1); m.Current() != w || m.cardAt(w) != want {
+		t.Fatalf("swipe down: card %d, want %d", m.cardAt(w), want)
+	}
+	swipeY(-40)
+	if m.Current() != w || m.cardAt(w) >= 0 || m.ov.selected == 0 {
+		t.Fatalf("swipe up: card %d, selected %d", m.cardAt(w), m.ov.selected)
+	}
+	swipeY(40)
+	if m.cardAt(w) < 0 {
+		t.Fatal("swipe down after leaving did not enter the stash")
 	}
 	c.swipeBegin(ports.SwipeBegin{Fingers: 3})
 	for range 3 {

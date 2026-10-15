@@ -423,14 +423,21 @@ func (m *Monitor) cycleCard(w *Workspace, d int) bool {
 }
 
 // overviewLane is the vertical move of an overview whose workspaces sit side
-// by side (cascade): a selected stash card cycles the pile; else the
-// selection goes to the previous or next lane (band), at the closest column,
-// stopping at the first. Down past the last lane, or from a card that is not
-// the columns, enters the stash, which sits below. Covering floats stack
-// along the horizontal axis, not this one.
+// by side (cascade). From a selected stash card, down brings the next card
+// of the pile to the front (stopping at the last) and up leaves the pile for
+// the last lane (leavePile); focus-workspace-prev/next cycle it both ways.
+// Else the selection goes to the previous or next lane (band), at the
+// closest column, stopping at the first. Down past the last lane, or from a
+// card that is not the columns, enters the stash, which sits below. Covering
+// floats stack along the horizontal axis, not this one.
 func (m *Monitor) overviewLane(dy int) {
 	w := m.Current()
-	if m.cycleCard(w, dy) {
+	if m.cardAt(w) >= 0 {
+		if dy > 0 {
+			m.cycleCard(w, dy)
+		} else {
+			m.leavePile(w)
+		}
 		return
 	}
 	if m.stackFront(w).kind == stackColumns && len(w.Columns) > 0 {
@@ -442,6 +449,26 @@ func (m *Monitor) overviewLane(dy int) {
 	if dy > 0 && len(w.Stash) > 0 {
 		m.selectCard(w, w.stashAt)
 	}
+}
+
+// leavePile moves the selection from a stash card back up to where the pile
+// sits below: the last lane, at the column the pile was entered from (the
+// focused column's offset in its lane, or the lane's last column when it is
+// shorter). With a covering float in front it only deselects the card; a
+// stash-only workspace has nothing above the pile, so the card stays.
+func (m *Monitor) leavePile(w *Workspace) {
+	if len(w.stack()) == 0 {
+		return
+	}
+	front := m.stackFront(w)
+	m.clearCard()
+	m.ov.selected = 0
+	if front.kind != stackColumns || len(w.Columns) == 0 {
+		return
+	}
+	first, _ := w.laneBounds(w.laneOf(w.Focus))
+	nfirst, nlast := w.laneBounds(w.laneOf(len(w.Columns) - 1))
+	m.selectLaneColumn(w, min(nfirst+w.Focus-first, nlast))
 }
 
 // selectLaneColumn selects column i of w.
