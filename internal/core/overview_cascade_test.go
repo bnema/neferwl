@@ -1050,3 +1050,204 @@ func TestOverviewCascadeScroll(t *testing.T) {
 		})
 	}
 }
+
+// outlineHits reports whether any outline line of ps covers a point of r.
+func outlineHits(ps []Placement, r Rect) bool {
+	for _, s := range overviewOutline(ps, 2) {
+		if s.Rect.Overlaps(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// The pile shows whenever the workspace has a stash, whatever is selected
+// and however many windows it holds: the front cards are drawn and no
+// lane tile is painted over them.
+func TestOverviewCascadePileVisible(t *testing.T) {
+	for _, n := range []int{1, 2, 4, 6} {
+		for _, hidden := range []bool{false, true} {
+			for _, down := range []int{0, 1, 2} {
+				m := cascadeOverview()
+				withStash(m, n)
+				w := m.Current()
+				w.stashHidden = hidden
+				m.ToggleOverview()
+				for range down {
+					m.OverviewMove(0, 1)
+				}
+				ps := m.Layout()
+				shown := 0
+				for i, p := range ps {
+					if w.stashIndex(p.ID) < 0 || p.Hidden {
+						continue
+					}
+					shown++
+					for _, q := range ps[i+1:] {
+						if w.stashIndex(q.ID) < 0 && !q.Hidden && q.Preview > 0 && q.Rect.Overlaps(p.Rect) {
+							t.Fatalf("n=%d hidden=%v down=%d: card %d painted under tile %d", n, hidden, down, p.ID, q.ID)
+						}
+					}
+				}
+				if want := min(n, overviewCards); shown != want {
+					t.Fatalf("n=%d hidden=%v down=%d: %d cards shown, want %d", n, hidden, down, shown, want)
+				}
+			}
+		}
+	}
+}
+
+// The selection outline of a lane tile stops at the pile; a selected card
+// is framed whole, and the lane keeps no frame then. Exactly one preview is
+// framed at any time.
+func TestOverviewCascadeOutlineAndPile(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 3)
+	w := m.Current()
+	w.FocusID(8)
+	m.ToggleOverview()
+	framed := func(ps []Placement) (n int) {
+		for _, p := range ps {
+			if p.Preview > 0 && p.Focused && !p.Hidden {
+				n++
+			}
+		}
+		return n
+	}
+
+	// A tile selected: the frame goes round the tile but not across any card.
+	ps := m.Layout()
+	if framed(ps) != 1 || !previewOf(t, ps, 8).Focused {
+		t.Fatalf("lane selected: %d framed", framed(ps))
+	}
+	if len(overviewOutline(ps, 2)) == 0 {
+		t.Fatal("lane selected: no frame")
+	}
+	for _, id := range []WindowID{40, 41, 42} {
+		if outlineHits(ps, previewOf(t, ps, id).Rect) {
+			t.Fatalf("the lane's frame crosses card %d", id)
+		}
+	}
+	// The cut is the pile's: the tile still has frame lines beside it.
+	if !outlineHits(ps, Rect{X: previewOf(t, ps, 8).Rect.X - 2, Y: previewOf(t, ps, 8).Rect.Y, W: 2, H: 10}) {
+		t.Fatal("the lane lost its left edge")
+	}
+
+	// The pile selected: the card has all four sides, the lane none.
+	m.OverviewMove(0, 1)
+	m.OverviewMove(0, 1)
+	m.OverviewMove(0, 1)
+	at := m.cardAt(w)
+	if at < 0 {
+		t.Fatal("setup: no card selected")
+	}
+	ps = m.Layout()
+	if framed(ps) != 1 {
+		t.Fatalf("card selected: %d framed", framed(ps))
+	}
+	card := previewOf(t, ps, w.Stash[at].ID)
+	if !card.Focused || !card.Card {
+		t.Fatalf("selected card not framed: %+v", card)
+	}
+	out := overviewOutline(ps, 2)
+	if len(out) != 4 {
+		t.Fatalf("card frame is %d lines, want 4: %+v", len(out), out)
+	}
+	for _, s := range out {
+		if !s.Rect.Overlaps(Rect{X: card.Rect.X - 2, Y: card.Rect.Y - 2, W: card.Rect.W + 4, H: card.Rect.H + 4}) {
+			t.Fatalf("line %+v is away from the card %+v", s.Rect, card.Rect)
+		}
+	}
+	for _, p := range ps {
+		if w.stashIndex(p.ID) < 0 && p.Focused && !p.Hidden && p.Preview > 0 {
+			t.Fatalf("lane tile %d still framed with a card selected", p.ID)
+		}
+	}
+
+	// Back to a lane: the frame follows, the card has none.
+	m.OverviewMove(0, -1)
+	ps = m.Layout()
+	if m.cardAt(w) >= 0 || framed(ps) != 1 {
+		t.Fatalf("lane reselected: card %d, %d framed", m.cardAt(w), framed(ps))
+	}
+	for _, p := range ps {
+		if w.stashIndex(p.ID) >= 0 && p.Focused {
+			t.Fatalf("card %d still framed on the lane", p.ID)
+		}
+	}
+}
+
+// If two previews claim the selection, the stash card is the one framed.
+func TestOverviewOutlinePrefersCard(t *testing.T) {
+	ps := []Placement{
+		{ID: 1, Rect: Rect{X: 0, Y: 0, W: 100, H: 100}, Preview: 0.5, Focused: true},
+		{ID: 2, Rect: Rect{X: 40, Y: 80, W: 30, H: 30}, Preview: 0.2, Focused: true, Card: true},
+	}
+	out := overviewOutline(ps, 2)
+	if len(out) != 4 || out[0].Rect != (Rect{X: 38, Y: 78, W: 34, H: 2}) {
+		t.Fatalf("outline: %+v", out)
+	}
+}
+
+// The outline is rebuilt every overview frame: cutting it around the pile
+// costs only the returned slice.
+func TestOverviewOutlinePileAllocations(t *testing.T) {
+	m := cascadeOverview()
+	withStash(m, 4)
+	m.Current().FocusID(8)
+	m.ToggleOverview()
+	ps := m.Layout()
+	card := false
+	for _, p := range ps {
+		card = card || p.Card && p.Preview > 0 && !p.Hidden
+	}
+	if !card || len(overviewOutline(ps, 2)) == 0 {
+		t.Fatal("setup: no pile under a framed lane tile")
+	}
+	if n := testing.AllocsPerRun(50, func() { _ = overviewOutline(ps, 2) }); n > 2 {
+		t.Fatalf("overviewOutline allocs = %v, want <= 2", n)
+	}
+}
+
+func TestSubtractRects(t *testing.T) {
+	h := Rect{X: 0, Y: 10, W: 100, H: 2}
+	v := Rect{X: 10, Y: 0, W: 2, H: 100}
+	for name, tc := range map[string]struct {
+		r    Rect
+		cuts []Rect
+		area int
+	}{
+		"none":       {h, nil, 200},
+		"apart":      {h, []Rect{{X: 0, Y: 50, W: 10, H: 10}}, 200},
+		"middle":     {h, []Rect{{X: 40, Y: 0, W: 20, H: 30}}, 160},
+		"edge":       {h, []Rect{{X: 90, Y: 0, W: 50, H: 30}}, 180},
+		"covered":    {h, []Rect{{X: -5, Y: 0, W: 200, H: 30}}, 0},
+		"across":     {h, []Rect{{X: 40, Y: 11, W: 20, H: 30}}, 180},
+		"two":        {h, []Rect{{X: 10, Y: 0, W: 10, H: 30}, {X: 50, Y: 0, W: 10, H: 30}}, 160},
+		"overlapped": {h, []Rect{{X: 10, Y: 0, W: 20, H: 30}, {X: 20, Y: 0, W: 20, H: 30}}, 140},
+		"vertical":   {v, []Rect{{X: 0, Y: 40, W: 30, H: 20}}, 160},
+		"stacked":    {v, []Rect{{X: 0, Y: 10, W: 30, H: 10}, {X: 0, Y: 15, W: 30, H: 10}, {X: 0, Y: 90, W: 30, H: 30}}, 150},
+	} {
+		area := 0
+		pieces := subtractRects(nil, tc.r, tc.cuts)
+		for i, p := range pieces {
+			area += p.W * p.H
+			if p.W <= 0 || p.H <= 0 || p.X < tc.r.X || p.Y < tc.r.Y || p.X+p.W > tc.r.X+tc.r.W || p.Y+p.H > tc.r.Y+tc.r.H {
+				t.Fatalf("%s: piece %v outside %v", name, p, tc.r)
+			}
+			for _, c := range tc.cuts {
+				if p.Overlaps(c) {
+					t.Fatalf("%s: piece %v overlaps cut %v", name, p, c)
+				}
+			}
+			for _, q := range pieces[i+1:] {
+				if p.Overlaps(q) {
+					t.Fatalf("%s: pieces %v and %v overlap", name, p, q)
+				}
+			}
+		}
+		if area != tc.area {
+			t.Fatalf("%s: area %d, want %d", name, area, tc.area)
+		}
+	}
+}

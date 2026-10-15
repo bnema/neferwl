@@ -887,7 +887,7 @@ func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, front int) []Plac
 	}
 	cards := make([][]Placement, n)
 	for i := range w.Stash {
-		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected}}
+		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected, Card: true}}
 	}
 	step := w.cardStep()
 	return fan(cards, front, min(n, overviewCards)-1, 0, true,
@@ -1133,20 +1133,95 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 }
 
 // overviewOutline frames the selected preview with active lines of width
-// b, just outside it.
+// b, just outside it. The selection is one preview: a selected stash card
+// wins over any other focused one, which must then not be framed. A tile's
+// frame is cut where the cards of the pile sit over it, so it never runs
+// across the pile; a selected card keeps its complete frame.
 func overviewOutline(layout []Placement, b int) []ports.Separator {
-	for _, p := range layout {
-		if p.Preview > 0 && p.Focused && !p.Hidden {
-			r := p.Rect
-			return []ports.Separator{
-				{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: b}, Active: true},
-				{Rect: Rect{X: r.X - b, Y: r.Y + r.H, W: r.W + 2*b, H: b}, Active: true},
-				{Rect: Rect{X: r.X - b, Y: r.Y, W: b, H: r.H}, Active: true},
-				{Rect: Rect{X: r.X + r.W, Y: r.Y, W: b, H: r.H}, Active: true},
+	sel := -1
+	for i, p := range layout {
+		if p.Preview > 0 && p.Focused && !p.Hidden && (sel < 0 || p.Card && !layout[sel].Card) {
+			sel = i
+		}
+	}
+	if sel < 0 {
+		return nil
+	}
+	r := layout[sel].Rect
+	edges := [4]Rect{
+		{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: b},
+		{X: r.X - b, Y: r.Y + r.H, W: r.W + 2*b, H: b},
+		{X: r.X - b, Y: r.Y, W: b, H: r.H},
+		{X: r.X + r.W, Y: r.Y, W: b, H: r.H},
+	}
+	out := make([]ports.Separator, 0, len(edges))
+	cut := false
+	if !layout[sel].Card {
+		for _, p := range layout {
+			if p.Card && p.Preview > 0 && !p.Hidden {
+				cut = true
+				break
 			}
 		}
 	}
-	return nil
+	if !cut {
+		for _, e := range edges {
+			out = append(out, ports.Separator{Rect: e, Active: true})
+		}
+		return out
+	}
+	// Stack buffers: the outline is rebuilt every overview frame.
+	var cardBuf [overviewCards]Rect
+	var pieceBuf [8]Rect
+	cards := cardBuf[:0]
+	for _, p := range layout {
+		if p.Card && p.Preview > 0 && !p.Hidden {
+			cards = append(cards, p.Rect)
+		}
+	}
+	for _, e := range edges {
+		for _, piece := range subtractRects(pieceBuf[:0], e, cards) {
+			out = append(out, ports.Separator{Rect: piece, Active: true})
+		}
+	}
+	return out
+}
+
+// subtractRects is what of r no rect of cuts covers, as rects. The edges of
+// an outline are thin, so a cut splits one into at most two along its length
+// (or drops it, or cuts across its thickness): the pieces are cut one rect
+// at a time. The pieces are appended to dst; cuts that miss r allocate
+// nothing.
+func subtractRects(dst []Rect, r Rect, cuts []Rect) []Rect {
+	var bufA, bufB [8]Rect
+	pieces, spare := append(bufA[:0], r), bufB[:0]
+	for _, c := range cuts {
+		next := spare[:0]
+		for _, p := range pieces {
+			if !p.Overlaps(c) {
+				next = append(next, p)
+				continue
+			}
+			// The four bands of p around c: above, below, left, right.
+			if c.Y > p.Y {
+				next = append(next, Rect{X: p.X, Y: p.Y, W: p.W, H: c.Y - p.Y})
+			}
+			if c.Y+c.H < p.Y+p.H {
+				next = append(next, Rect{X: p.X, Y: c.Y + c.H, W: p.W, H: p.Y + p.H - c.Y - c.H})
+			}
+			top, bottom := max(p.Y, c.Y), min(p.Y+p.H, c.Y+c.H)
+			if c.X > p.X {
+				next = append(next, Rect{X: p.X, Y: top, W: c.X - p.X, H: bottom - top})
+			}
+			if c.X+c.W < p.X+p.W {
+				next = append(next, Rect{X: c.X + c.W, Y: top, W: p.X + p.W - c.X - c.W, H: bottom - top})
+			}
+		}
+		// Swap the buffers: next becomes the pieces, the old pieces'
+		// storage the next round's.
+		pieces, spare = next, pieces
+	}
+	return append(dst, pieces...)
 }
 
 // overviewClickFade is the fade from which a card takes no click.
