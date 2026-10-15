@@ -30,7 +30,8 @@ const (
 	// callerConfirm: a pidfd was opened; waiting for the bus to name the same
 	// pid again.
 	callerConfirm
-	// callerKnown: exe is the executable of the peer.
+	// callerKnown: exe is the executable of the peer, and the allowlist
+	// admitted it when it was proven. Only such peers are cached.
 	callerKnown
 )
 
@@ -74,6 +75,12 @@ func (s *Service) callerOf(name string) *caller {
 func (s *Service) admit(req *request) {
 	c := s.callerOf(req.sender)
 	if c != nil && c.state == callerKnown {
+		if !s.allowed(c.exe) {
+			// The policy closed on a cached peer: refuse and forget it.
+			s.deny(req)
+			c.release()
+			return
+		}
 		s.dispatch(c, req)
 		return
 	}
@@ -166,6 +173,15 @@ func (s *Service) onBusReply(m *zerobus.Message) {
 		exe, got, err := s.peers.Exe(c.pidfd)
 		if err != nil || got != c.pid {
 			s.log.Info().Err(err).Str("sender", c.name).Msg("caller refused: executable not proven")
+			s.failCaller(c, "")
+			return
+		}
+		if !s.allowed(exe) {
+			// A refused peer is not cached: it would hold one of the
+			// maxCallers entries until it leaves the bus, and enough of
+			// them would lock the real portal out. It is checked again,
+			// from a free entry, if it calls again.
+			s.log.Info().Str("sender", c.name).Str("exe", exe).Msg("caller refused: executable not allowed")
 			s.failCaller(c, "")
 			return
 		}

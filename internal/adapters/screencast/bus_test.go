@@ -2,6 +2,8 @@ package screencast
 
 import (
 	"errors"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -682,5 +684,79 @@ func TestInventorySignalsGoToAllowedPeersOnly(t *testing.T) {
 	}
 	if name, _ := callErr(denied, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
 		t.Fatalf("refused peer: %q", name)
+	}
+}
+
+// pidfdClosed reports whether the file was closed.
+func pidfdClosed(f *os.File) bool {
+	_, err := f.Stat()
+	return errors.Is(err, os.ErrClosed)
+}
+
+// Refused callers are not cached: more of them than the cache holds still
+// leave room for the allowed peer, and their pidfds are closed at once.
+func TestDeniedCallersDoNotExhaustTheCache(t *testing.T) {
+	const denied = maxCallers + 8
+	// One pidfd per check: the first peer is checked twice.
+	const deniedChecks = denied + 1
+	h := newSvcHarness(t, harnessOpts{})
+	h.peers.exeFile = func(n int) string {
+		if n < deniedChecks {
+			return "/usr/bin/evil"
+		}
+		return "/usr/bin/grim"
+	}
+	c0 := h.client()
+	h.waitName(c0, nameIntrospect)
+	for i := range denied {
+		x := h.client()
+		if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+			t.Fatalf("denied peer %d: %q", i, name)
+		}
+		// The same peer asking again is checked again, never LimitsExceeded.
+		if i == 0 {
+			if name, _ := callErr(x, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != errAccessDenied {
+				t.Fatalf("denied peer again: %q", name)
+			}
+		}
+	}
+	good := h.client()
+	if name, _ := callErr(good, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
+		t.Fatalf("allowed peer after %d denied: %q", denied, name)
+	}
+	h.peers.mu.Lock()
+	opened := slices.Clone(h.peers.opened)
+	h.peers.mu.Unlock()
+	for i, f := range opened[:deniedChecks] {
+		if !pidfdClosed(f) {
+			t.Fatalf("pidfd of denied peer %d still open", i)
+		}
+	}
+	if pidfdClosed(opened[len(opened)-1]) {
+		t.Fatal("pidfd of the allowed peer closed while it is cached")
+	}
+}
+
+// The pidfds of the cached callers are closed when the bus is lost.
+func TestBusLossClosesCallerPidfds(t *testing.T) {
+	h := newSvcHarness(t, harnessOpts{})
+	c := h.client()
+	h.waitName(c, nameIntrospect)
+	if name, _ := callErr(c, nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "", nil); name != "" {
+		t.Fatal(name)
+	}
+	h.peers.mu.Lock()
+	opened := slices.Clone(h.peers.opened)
+	h.peers.mu.Unlock()
+	if len(opened) != 1 || pidfdClosed(opened[0]) {
+		t.Fatalf("%d pidfds, want one open", len(opened))
+	}
+	h.killBus()
+	deadline := time.Now().Add(5 * time.Second)
+	for !pidfdClosed(opened[0]) {
+		if time.Now().After(deadline) {
+			t.Fatal("pidfd of a cached caller survives the bus loss")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

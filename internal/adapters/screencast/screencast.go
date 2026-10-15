@@ -347,7 +347,8 @@ func (s *Service) service() {
 // resources: CastClose goes to the wayland server, a frame still in flight
 // is waited for (its buffer is lent to the wayland server), then the source
 // is destroyed and its buffers released. Only then is PipeWire closed.
-// parent is the context the service runs under; the attempt's own context
+// The pidfds of the cached callers are closed first. parent is the context
+// the service runs under; the attempt's own context
 // may have ended for another reason.
 //
 // While parent is alive the attempt ended by itself (the bus was lost) and a
@@ -364,6 +365,10 @@ func (s *Service) service() {
 // is abandoned (never reset or reused) and a new one takes its place.
 func (s *Service) shutdown(parent context.Context) {
 	s.stopShot()
+	// The cached pidfds belong to this attempt's bus connection.
+	for i := range s.callers {
+		s.callers[i].release()
+	}
 	s.forEachSession(func(sess *session) { s.closeSession(sess, true) })
 	var deadline time.Time // set once parent ended
 	for {
