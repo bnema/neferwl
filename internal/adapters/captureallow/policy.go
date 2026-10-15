@@ -45,8 +45,8 @@ func Builtin() *Policy {
 	builtin := [...]string{
 		"/usr/bin/grim",
 		"/usr/bin/nefercap",
-		"/usr/lib/xdg-desktop-portal-wlr",
-		"/usr/libexec/xdg-desktop-portal-wlr",
+		"/usr/lib/xdg-desktop-portal-gnome",
+		"/usr/libexec/xdg-desktop-portal-gnome",
 	}
 	p := &Policy{mode: ModeList, exes: make(map[string]struct{}, len(builtin))}
 	for _, e := range builtin {

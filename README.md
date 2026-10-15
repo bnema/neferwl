@@ -113,7 +113,7 @@ sudo apt install ./neferwl_<version>_amd64.deb
 Optional tools:
 
 ```sh
-sudo apt install foot fuzzel xdg-desktop-portal-gtk xdg-desktop-portal-wlr
+sudo apt install foot fuzzel xdg-desktop-portal-gtk xdg-desktop-portal-gnome
 ```
 
 X11 apps need [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) 0.7 or later, which you may have to build. The package is tested on Ubuntu 24.04 and 26.04; Debian with the same library packages should work but is untested.

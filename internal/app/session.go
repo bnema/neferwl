@@ -19,6 +19,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/powerkey"
 	"github.com/bnema/neferwl/internal/adapters/sched"
+	"github.com/bnema/neferwl/internal/adapters/screencast"
 	"github.com/bnema/neferwl/internal/adapters/screensaver"
 	"github.com/bnema/neferwl/internal/adapters/sessionsecurity"
 	"github.com/bnema/neferwl/internal/adapters/statefile"
@@ -52,6 +53,7 @@ type session struct {
 	dmabuf       ports.DMABufSupport
 	wsIDs        *workspaceid.IDs
 	captureAllow *captureallow.Store
+	cast         *screencast.Service // nil without the D-Bus services
 	server       *wayland.Server
 	childEnv     []string
 	statePath    string
@@ -113,8 +115,16 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 	} else {
 		s.captureAllow = captureallow.NewStore(captureallow.DefaultPath, captureAllowLog)
 	}
+	// Only a real session (or a test that asks) serves the session bus:
+	// headless runs would take the names from the desktop they run in.
+	var casts ports.CastSink
+	if s.hw != nil || opts.DBus {
+		s.cast = screencast.New(s.captureAllow.Policy, s.p.castCommands, logging.For(ctx, "screencast"))
+		casts = s.cast
+	}
 	if s.server, err = wayland.New(wayland.Options{
 		CaptureAllow: s.captureAllow,
+		Casts:        casts,
 		WorkspaceIDs: s.wsIDs,
 		Security:     s.security,
 		RuntimeDir:   runtimeDir,
@@ -374,14 +384,24 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	if hw != nil {
 		workers.Add(1)
 		go func() { defer workers.Done(); done <- safe("seat", func() error { return hw.seat.Run(ctx) }) }()
-		// Only a real session serves the session bus: headless runs would take
-		// the name from the desktop they run in.
-		workers.Add(1)
+	}
+	// Only a real session serves the session bus: headless runs would take
+	// the names from the desktop they run in, unless a test asks (DBus).
+	if hw != nil || opts.DBus {
+		workers.Add(2)
 		go func() {
 			defer workers.Done()
 			reports := screensaver.Reports{Held: p.idleInhibited, Activity: p.idleActivity}
 			screensaver.Serve(ctx, "", reports, busRetry, logging.For(ctx, "screensaver"))
 		}()
+		go func() {
+			defer workers.Done()
+			// nefercap finds this compositor through the session environment.
+			s.cast.SetEnv(childEnv)
+			s.cast.Run(ctx, busRetry)
+		}()
+	}
+	if hw != nil {
 		// The same goes for the system bus: logind's locks keep the power
 		// keys from acting before a bind sees them.
 		workers.Add(1)

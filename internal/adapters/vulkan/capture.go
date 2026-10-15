@@ -11,6 +11,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
+	"golang.org/x/sys/unix"
 )
 
 //go:generate glslc -O --target-env=vulkan1.3 shaders/capture_sdr.frag -o shaders/capture_sdr.frag.spv
@@ -107,6 +108,27 @@ func encodeSRGB8(f float32) byte {
 	return byte(math.Round(v * 255))
 }
 
+// captureScratch holds the structs a capture passes to Vulkan by pointer.
+// The purego call makes a pointer to a local escape, so a local would be a
+// heap allocation per capture; these live in the Renderer instead (the
+// owner goroutine uses them, and Vulkan reads each only during its call).
+// Every field is set in full before use. Sequential uses may share a field;
+// the sync export uses Renderer.call.getFD and .fd.
+type captureScratch struct {
+	cmd    vk.CommandBuffer
+	fence  vk.Fence
+	begin  vk.CommandBufferBeginInfo
+	submit vk.SubmitInfo
+	// The copy (recordCaptureCopy).
+	region vk.BufferImageCopy
+	hb     vk.BufferMemoryBarrier
+	b      vk.ImageMemoryBarrier
+	// The HDR conversion pass (recordCaptureHDR).
+	hdrIn, hdrB vk.ImageMemoryBarrier
+	attachment  vk.RenderingAttachmentInfo
+	info        vk.RenderingInfo
+}
+
 // captureSync is the fence and semaphore surface of a capture slot: the
 // non-blocking poll, the sync file export and the semaphore replacement
 // (a seam for tests; the device implements it).
@@ -128,18 +150,21 @@ type deviceSync struct{ r *Renderer }
 func (d deviceSync) fenceStatus(f vk.Fence) vk.Result {
 	// A zero timeout only reports the fence state (the bindings lack
 	// vkGetFenceStatus): Timeout while the copy runs.
-	return d.r.dd.WaitForFences(d.r.device, 1, &f, 1, 0)
+	d.r.capCall.fence = f
+	return d.r.dd.WaitForFences(d.r.device, 1, &d.r.capCall.fence, 1, 0)
 }
 
 func (d deviceSync) resetFence(f vk.Fence) vk.Result {
-	return d.r.dd.ResetFences(d.r.device, 1, &f)
+	d.r.capCall.fence = f
+	return d.r.dd.ResetFences(d.r.device, 1, &d.r.capCall.fence)
 }
 
 func (d deviceSync) exportSyncFD(s vk.Semaphore) (int32, vk.Result) {
-	var fd int32
-	get := vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: s, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
-	res := d.r.dd.GetSemaphoreFdKHR(d.r.device, &get, &fd)
-	return fd, res
+	sc := &d.r.call
+	sc.fd = -1
+	sc.getFD = vk.SemaphoreGetFdInfoKHR{SType: vk.StructureTypeSemaphoreGetFDInfoKHR, Semaphore: s, HandleType: vk.ExternalSemaphoreHandleTypeSyncFDBit}
+	res := d.r.dd.GetSemaphoreFdKHR(d.r.device, &sc.getFD, &sc.fd)
+	return sc.fd, res
 }
 
 func (d deviceSync) newSemaphore() (vk.Semaphore, error) {
@@ -170,14 +195,43 @@ type captureSlot struct {
 	// handle kept after EndCapture is invalid by contract (its next
 	// state belongs to another lease).
 	frame captureFrame
+	// file wraps syncFD, the slot's sync file descriptor, which the slot
+	// owns from the first export to freeCaptureSlot. Every later export
+	// is moved onto the same descriptor number (dup3), so a capture
+	// makes no os.File and the descriptor is closed exactly once. Nil
+	// until the first export.
+	file   *os.File
+	syncFD int
+}
+
+// adoptSync makes fd, a sync file the caller owns, the slot's. It always
+// takes ownership of fd: fd is closed on failure and after the move. The
+// slot's previous sync file is replaced, so a lease must have ended first.
+func (s *captureSlot) adoptSync(fd int) error {
+	if s.file == nil {
+		f := os.NewFile(uintptr(fd), "neferwl-capture")
+		if f == nil {
+			return fmt.Errorf("invalid capture sync file %d", fd)
+		}
+		s.file, s.syncFD = f, fd
+		return nil
+	}
+	err := unix.Dup3(fd, s.syncFD, unix.O_CLOEXEC)
+	_ = unix.Close(fd)
+	if err != nil {
+		return fmt.Errorf("move capture sync file: %w", err)
+	}
+	return nil
 }
 
 // captureFrame is the lease handed to the worker (ports.CaptureFrame).
 // Its fields are written by the owner before the handoff and read by the
 // worker; the owner touches them again only after EndCapture.
 type captureFrame struct {
-	r      *Renderer
-	slot   *captureSlot
+	r    *Renderer
+	slot *captureSlot
+	// done is the slot's sync file (nil: nothing to wait for). The slot
+	// owns it: valid until EndCapture, never closed by the reader.
 	done   *os.File
 	pixels []byte // the slot's mapping, width*height*4
 	w, h   int
@@ -301,9 +355,9 @@ func (r *Renderer) captureSync() captureSync {
 func (r *Renderer) freeCaptureSlot(s *captureSlot) {
 	d := r.dd
 	s.frame.valid = false
-	if s.frame.done != nil {
-		s.frame.done.Close()
-		s.frame.done = nil
+	s.frame.done = nil
+	if s.file != nil {
+		_ = s.file.Close()
 	}
 	if s.done != 0 {
 		r.captureSync().destroySemaphore(s.done)
@@ -425,13 +479,14 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	if s == nil {
 		return nil, ports.ErrCaptureBusy
 	}
-	d := r.dd
-	cmd := s.cmd
+	d, sc := r.dd, &r.capCall
+	sc.cmd = s.cmd
+	cmd := sc.cmd
 	if err := checked("vkResetCommandBuffer(capture)", d.ResetCommandBuffer(cmd, 0)); err != nil {
 		return nil, err
 	}
-	begin := vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
-	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &begin)); err != nil {
+	sc.begin = vk.CommandBufferBeginInfo{SType: vk.StructureTypeCommandBufferBeginInfo, Flags: vk.CommandBufferUsageOneTimeSubmitBit}
+	if err := checked("vkBeginCommandBuffer(capture)", d.BeginCommandBuffer(cmd, &sc.begin)); err != nil {
 		return nil, err
 	}
 	if hdr {
@@ -445,14 +500,14 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 	// After the frame on the same queue: the copy reads what it drew, and
 	// the next frame's first barrier (transfer source stage) orders its
 	// writes after this read.
-	submit := vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &cmd}
+	sc.submit = vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &sc.cmd}
 	if !debug {
 		// The export below takes the signal; a debug capture waits on
 		// the fence only, so the semaphore must not be signalled (a
 		// binary semaphore is signalled once, then waited or exported).
-		submit.SignalSemaphoreCount, submit.SignalSemaphores = 1, &s.done
+		sc.submit.SignalSemaphoreCount, sc.submit.SignalSemaphores = 1, &s.done
 	}
-	if err := checked("vkQueueSubmit(capture)", d.QueueSubmit(r.queue, 1, &submit, s.fence)); err != nil {
+	if err := checked("vkQueueSubmit(capture)", d.QueueSubmit(r.queue, 1, &sc.submit, s.fence)); err != nil {
 		return nil, err
 	}
 	s.pending = true
@@ -469,10 +524,10 @@ func (r *Renderer) beginCapture(debug bool) (*captureFrame, error) {
 		}
 		if fd >= 0 {
 			// -1: already signalled at export, nothing to wait for.
-			f.done = os.NewFile(uintptr(fd), "neferwl-capture")
-			if f.done == nil {
-				return nil, fmt.Errorf("invalid capture sync file %d", fd)
+			if err := s.adoptSync(int(fd)); err != nil {
+				return nil, err
 			}
+			f.done = s.file
 		}
 	}
 	s.leased, f.valid = true, true
@@ -487,10 +542,7 @@ func (r *Renderer) EndCapture(cf ports.CaptureFrame) {
 		return
 	}
 	f.valid = false
-	if f.done != nil {
-		f.done.Close()
-		f.done = nil
-	}
+	f.done = nil // the slot keeps the descriptor for its next lease
 	f.slot.leased = false
 }
 
@@ -566,20 +618,20 @@ func (r *Renderer) readHDRTarget(read func(words []uint32)) error {
 // Exported targets are borrowed from the display without a layout
 // change: the display may be reading them at the same time.
 func (r *Renderer) recordCaptureCopy(cmd vk.CommandBuffer, t *target, layout vk.ImageLayout, s *captureSlot) {
-	d := r.dd
+	d, sc := r.dd, &r.capCall
 	if t.exported {
 		// Acquire from the display. The frame released the image at
 		// its color attachment stage: this acquire waits for that.
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: layout, NewLayout: layout, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: t.image, SubresourceRange: colorRange}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageAllCommandsBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+		sc.b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, DstAccessMask: vk.AccessTransferReadBit, OldLayout: layout, NewLayout: layout, SrcQueueFamilyIndex: vk.QueueFamilyForeignEXT, DstQueueFamilyIndex: r.family, Image: t.image, SubresourceRange: colorRange}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageAllCommandsBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &sc.b)
 	}
-	region := vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
-	d.CmdCopyImageToBuffer(cmd, t.image, layout, s.buffer, 1, &region)
-	hb := vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: s.buffer, Size: wholeSize}
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &hb, 0, nil)
+	sc.region = vk.BufferImageCopy{ImageSubresource: vk.ImageSubresourceLayers{AspectMask: vk.ImageAspectColorBit, LayerCount: 1}, ImageExtent: vk.Extent3D{Width: uint32(r.width), Height: uint32(r.height), Depth: 1}}
+	d.CmdCopyImageToBuffer(cmd, t.image, layout, s.buffer, 1, &sc.region)
+	sc.hb = vk.BufferMemoryBarrier{SType: vk.StructureTypeBufferMemoryBarrier, SrcAccessMask: vk.AccessTransferWriteBit, DstAccessMask: vk.AccessHostReadBit, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Buffer: s.buffer, Size: wholeSize}
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageHostBit, 0, 0, nil, 1, &sc.hb, 0, nil)
 	if t.exported {
-		b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, OldLayout: layout, NewLayout: layout, SrcQueueFamilyIndex: r.family, DstQueueFamilyIndex: vk.QueueFamilyForeignEXT, Image: t.image, SubresourceRange: colorRange}
-		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &b)
+		sc.b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, OldLayout: layout, NewLayout: layout, SrcQueueFamilyIndex: r.family, DstQueueFamilyIndex: vk.QueueFamilyForeignEXT, Image: t.image, SubresourceRange: colorRange}
+		d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageBottomOfPipeBit, 0, 0, nil, 0, nil, 1, &sc.b)
 	}
 }
 
@@ -587,25 +639,26 @@ func (r *Renderer) recordCaptureCopy(cmd vk.CommandBuffer, t *target, layout vk.
 // the sRGB8 capture image with the capture pass, then copies that. hdrOwn
 // is put back in TRANSFER_SRC, as the next frame expects.
 func (r *Renderer) recordCaptureHDR(cmd vk.CommandBuffer, s *captureSlot) {
-	d, p, out := r.dd, &r.capturePass, &r.captureSDR
-	in := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, DstAccessMask: vk.AccessShaderReadBit, OldLayout: vk.ImageLayoutTransferSrcOptimal, NewLayout: vk.ImageLayoutShaderReadOnlyOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: r.hdrOwn.image, SubresourceRange: colorRange}
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, &in)
+	d, p, out, sc := r.dd, &r.capturePass, &r.captureSDR, &r.capCall
+	in, b := &sc.hdrIn, &sc.hdrB
+	*in = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, DstAccessMask: vk.AccessShaderReadBit, OldLayout: vk.ImageLayoutTransferSrcOptimal, NewLayout: vk.ImageLayoutShaderReadOnlyOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: r.hdrOwn.image, SubresourceRange: colorRange}
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageFragmentShaderBit, 0, 0, nil, 0, nil, 1, in)
 	// The previous capture read the image as a transfer source.
-	b := vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: out.image, SubresourceRange: colorRange}
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, &b)
-	attachment := vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: out.view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpDontCare, StoreOp: vk.AttachmentStoreOpStore}
-	info := vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &attachment}
-	d.CmdBeginRendering(cmd, &info)
+	*b = vk.ImageMemoryBarrier{SType: vk.StructureTypeImageMemoryBarrier, SrcAccessMask: vk.AccessTransferReadBit, DstAccessMask: vk.AccessColorAttachmentWriteBit, OldLayout: vk.ImageLayoutUndefined, NewLayout: vk.ImageLayoutColorAttachmentOptimal, SrcQueueFamilyIndex: queueFamilyIgnored, DstQueueFamilyIndex: queueFamilyIgnored, Image: out.image, SubresourceRange: colorRange}
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageTransferBit, vk.PipelineStageColorAttachmentOutputBit, 0, 0, nil, 0, nil, 1, b)
+	sc.attachment = vk.RenderingAttachmentInfo{SType: vk.StructureTypeRenderingAttachmentInfo, ImageView: out.view, ImageLayout: vk.ImageLayoutColorAttachmentOptimal, LoadOp: vk.AttachmentLoadOpDontCare, StoreOp: vk.AttachmentStoreOpStore}
+	sc.info = vk.RenderingInfo{SType: vk.StructureTypeRenderingInfo, RenderArea: vk.Rect2D{Extent: vk.Extent2D{Width: uint32(r.width), Height: uint32(r.height)}}, LayerCount: 1, ColorAttachmentCount: 1, ColorAttachments: &sc.attachment}
+	d.CmdBeginRendering(cmd, &sc.info)
 	d.CmdBindPipeline(cmd, vk.PipelineBindPointGraphics, p.pipeline)
 	d.CmdBindDescriptorSets(cmd, vk.PipelineBindPointGraphics, p.layout, 0, 1, &p.set, 0, nil)
 	d.CmdDraw(cmd, 3, 1, 0, 0)
 	d.CmdEndRendering(cmd)
 	in.SrcAccessMask, in.DstAccessMask = vk.AccessShaderReadBit, vk.AccessTransferReadBit
 	in.OldLayout, in.NewLayout = vk.ImageLayoutShaderReadOnlyOptimal, vk.ImageLayoutTransferSrcOptimal
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &in)
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageFragmentShaderBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, in)
 	b.SrcAccessMask, b.DstAccessMask = vk.AccessColorAttachmentWriteBit, vk.AccessTransferReadBit
 	b.OldLayout, b.NewLayout = vk.ImageLayoutColorAttachmentOptimal, vk.ImageLayoutTransferSrcOptimal
-	d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, &b)
+	d.CmdPipelineBarrier(cmd, vk.PipelineStageColorAttachmentOutputBit, vk.PipelineStageTransferBit, 0, 0, nil, 0, nil, 1, b)
 	r.recordCaptureCopy(cmd, out, vk.ImageLayoutTransferSrcOptimal, s)
 }
 

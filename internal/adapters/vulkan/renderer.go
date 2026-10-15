@@ -112,6 +112,8 @@ type Renderer struct {
 	frameStages   []vk.PipelineStageFlags
 	// call holds the structs a per-frame Vulkan call is handed by pointer.
 	call callScratch
+	// capCall holds the structs a capture hands Vulkan by pointer.
+	capCall captureScratch
 }
 
 // priorityAttempts falls back to an ordinary queue when elevated priority is unavailable.

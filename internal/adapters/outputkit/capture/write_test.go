@@ -12,6 +12,7 @@ import (
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/sys/unix"
 )
 
 // writeRequest is a valid 2x2 request over a 16-byte file.
@@ -176,4 +177,122 @@ func TestWriteFrameRecoversFromTruncationFault(t *testing.T) {
 	}
 	frame.Calls = nil
 	ok.Calls = nil
+}
+
+// mappedRequest is a valid 2x2 request that writes into a borrowed mapping of
+// size bytes.
+func mappedRequest(size int) ports.CaptureRequest {
+	return ports.CaptureRequest{ID: 9, Region: image.Rect(0, 0, 2, 2), Width: 2, Height: 2, Stride: 8, Format: 1, Mapped: make([]byte, size)}
+}
+
+func TestWriteFrameMappedWritesAtOffset(t *testing.T) {
+	req := mappedRequest(32)
+	req.Dst.Offset = 8
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Read(req.Region, mock.Anything, req.Stride).RunAndReturn(func(_ image.Rectangle, dst []byte, _ int) error {
+		if len(dst) != 24 {
+			t.Errorf("dst holds %d bytes, want 24 (mapping from offset 8)", len(dst))
+			return nil
+		}
+		copy(dst, []byte{1, 2, 3, 255})
+		return nil
+	}).Once()
+	done := runWriteFrame(t, req, frame)
+	if done.Err != nil {
+		t.Fatal(done.Err)
+	}
+	if got := req.Mapped[8:12]; got[0] != 1 || got[3] != 255 {
+		t.Fatalf("mapping not written at the offset: %v", req.Mapped[:16])
+	}
+	frame.Calls = nil
+}
+
+func TestWriteFrameMappedExactFit(t *testing.T) {
+	req := mappedRequest(8 + 2*4) // (h-1)*stride + w*4
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Read(req.Region, mock.Anything, req.Stride).Return(nil).Once()
+	if done := runWriteFrame(t, req, frame); done.Err != nil {
+		t.Fatal(done.Err)
+	}
+	frame.Calls = nil
+}
+
+func TestWriteFrameMappedRejectsShortOrAmbiguous(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(q *ports.CaptureRequest)
+	}{
+		{"one byte short", func(q *ports.CaptureRequest) { q.Mapped = q.Mapped[:15] }},
+		{"offset past mapping", func(q *ports.CaptureRequest) { q.Dst.Offset = 4 }},
+		{"stride bound", func(q *ports.CaptureRequest) { q.Stride = math.MaxInt }},
+		{"negative offset", func(q *ports.CaptureRequest) { q.Dst.Offset = -4 }},
+		{"invalid format", func(q *ports.CaptureRequest) { q.Format = 7 }},
+		{"file and mapping", func(q *ports.CaptureRequest) { q.Dst.File = os.Stdin }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := mappedRequest(16)
+			tc.mutate(&req)
+			frame := portsmocks.NewMockCaptureFrame(t) // any Read call fails
+			if done := runWriteFrame(t, req, frame); done.Err == nil {
+				t.Fatal("invalid request succeeded")
+			}
+		})
+	}
+}
+
+// A borrowed mapping is never closed or unmapped by the output: it stays
+// writable after the reply.
+func TestWriteFrameMappedStaysMapped(t *testing.T) {
+	m, err := unix.Mmap(-1, 0, 4096, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Munmap(m) }()
+	req := mappedRequest(0)
+	req.Mapped = m
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Read(req.Region, mock.Anything, req.Stride).Return(nil).Once()
+	if done := runWriteFrame(t, req, frame); done.Err != nil {
+		t.Fatal(done.Err)
+	}
+	m[0], m[4095] = 1, 2 // would fault if unmapped
+	frame.Calls = nil
+}
+
+func TestHandedKeepsMappedRequests(t *testing.T) {
+	if Handed(ports.CaptureRequest{Mapped: make([]byte, 4)}) {
+		t.Fatal("a mapped request with ID 0 is not handed")
+	}
+	if !Handed(ports.CaptureRequest{}) {
+		t.Fatal("a zero request is handed")
+	}
+}
+
+// The measured closure holds the production steps of a mapped write without
+// the renderer's Read (a testify mock would record each call): destination
+// validation, the borrowed slice and the reply.
+func TestWriteMappedAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector allocates")
+	}
+	req := mappedRequest(16)
+	replies := make(chan ports.CaptureDone, 1)
+	ctx := context.Background()
+	at := time.Unix(1, 2)
+	var sink []byte
+	allocs := testing.AllocsPerRun(200, func() {
+		size, err := destSize(req)
+		if err != nil {
+			panic(err)
+		}
+		sink, err = mappedDst(req, size)
+		if err != nil {
+			panic(err)
+		}
+		replyAt(ctx, req, nil, at, replies)
+		<-replies
+	})
+	if allocs != 0 || len(sink) != 16 {
+		t.Fatalf("%v allocs per mapped write step, dst %d bytes", allocs, len(sink))
+	}
 }

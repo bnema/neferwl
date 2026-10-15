@@ -91,6 +91,7 @@ func (l *sessionLock) UnlockAndDestroy(r *extsessionlock.ExtSessionLockV1) {
 	s.lockReadiness.End(l.state.Generation)
 	s.sessionLock = nil
 	s.refreshToplevels()
+	s.castInventoryChanged() // the windows are listed again
 	s.updateWorkspaceManagers(s.workspaceSnapshot)
 	for _, surface := range l.surfaces {
 		surface.unmap()

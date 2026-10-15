@@ -291,8 +291,7 @@ func TestCaptureCurve(t *testing.T) {
 	}
 }
 
-// The lease object of a slot is reused: a steady state of captures
-// allocates only the sync file, and a stale handle reports invalid.
+// The lease object of a slot is reused, and a stale handle reports invalid.
 func TestCaptureLeaseReused(t *testing.T) {
 	r, err := New(8, 8)
 	if err != nil {
@@ -309,24 +308,215 @@ func TestCaptureLeaseReused(t *testing.T) {
 		t.Fatal("lease object not reused")
 	}
 	r.EndCapture(second)
-	cycle := func() {
-		cf, err := r.BeginCapture()
-		if err != nil {
-			t.Fatal(err)
+	dst := make([]byte, 4)
+	if err := second.Read(image.Rect(0, 0, 1, 1), dst, 4); err == nil {
+		t.Fatal("stale lease read accepted")
+	}
+}
+
+// pollSyncFile waits for a sync file without allocating (syncfile.Wait
+// builds its poll set per call).
+func pollSyncFile(f *os.File, fds []unix.PollFd) error {
+	fds[0] = unix.PollFd{Fd: int32(f.Fd()), Events: unix.POLLIN}
+	for {
+		n, err := unix.Poll(fds, 1000)
+		switch {
+		case errors.Is(err, unix.EINTR):
+		case err != nil:
+			return err
+		case n > 0 && fds[0].Revents&unix.POLLIN != 0:
+			return nil
+		case n > 0:
+			return errors.New("sync file poll error")
+		default:
+			return errors.New("sync file poll timeout")
 		}
-		if done := cf.Done(); done != nil {
-			if err := syncfile.Wait(context.Background(), done); err != nil {
+	}
+}
+
+// openFDs counts the process's open descriptors.
+func openFDs(t *testing.T) int {
+	t.Helper()
+	ents, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Skipf("no /proc/self/fd: %v", err)
+	}
+	return len(ents)
+}
+
+// The renderer capture cycle (lease, wait for the copy, read the rows,
+// return the lease) allocates nothing once the slots exist, on the SDR and
+// the HDR conversion path, and holds a constant number of descriptors: the
+// slot keeps its sync file for every lease. No mock stands in the measured
+// closure.
+func TestCaptureCycleAllocations(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		new  func(*testing.T) *Renderer
+	}{
+		{"sdr", func(t *testing.T) *Renderer {
+			r, err := New(16, 8)
+			if err != nil {
+				t.Skipf("Vulkan unavailable: %v", err)
+			}
+			t.Cleanup(r.Close)
+			return r
+		}},
+		{"hdr", hdrTestRenderer},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.new(t)
+			requireCaptureSync(t, r)
+			if err := render(r, ports.Scene{Seq: 1, Background: "#3060c0"}, nil); err != nil {
 				t.Fatal(err)
 			}
-		}
-		r.EndCapture(cf)
+			dst := make([]byte, 16*8*4)
+			fds := make([]unix.PollFd, 1)
+			region := image.Rect(0, 0, 16, 8)
+			var cycleErr error
+			cycle := func() {
+				cf, err := r.BeginCapture()
+				if err != nil {
+					cycleErr = err
+					return
+				}
+				if done := cf.Done(); done != nil {
+					if err := pollSyncFile(done, fds); err != nil {
+						cycleErr = err
+					}
+				}
+				if err := cf.Read(region, dst, 16*4); err != nil {
+					cycleErr = err
+				}
+				r.EndCapture(cf)
+			}
+			cycle() // creates the slots, the capture pass and the sync files
+			cycle()
+			if cycleErr != nil {
+				t.Fatal(cycleErr)
+			}
+			fdsBefore := openFDs(t)
+			if allocs := testing.AllocsPerRun(50, cycle); allocs != 0 {
+				t.Errorf("%.1f allocations per capture cycle, want 0", allocs)
+			}
+			if cycleErr != nil {
+				t.Fatal(cycleErr)
+			}
+			if after := openFDs(t); after != fdsBefore {
+				t.Errorf("%d descriptors open after the cycles, %d before: a sync file leaked", after, fdsBefore)
+			}
+			if dst[0] == 0 && dst[1] == 0 && dst[2] == 0 {
+				t.Error("capture read back black")
+			}
+		})
 	}
-	cycle()
-	// No lease wrapper: the allocations left are the Vulkan structs the
-	// FFI boundary keeps on the heap (as in Render, budget 16) plus the
-	// sync file (os.NewFile and its finalizer).
-	if allocs := testing.AllocsPerRun(10, cycle); allocs > 16 {
-		t.Errorf("%.1f allocations per capture, want <= 16", allocs)
+}
+
+// adoptSync takes ownership of the descriptor it is given: the first one is
+// wrapped, a later one is moved onto the same descriptor number and its
+// source is closed, so nothing leaks and nothing is closed twice.
+func TestCaptureAdoptSync(t *testing.T) {
+	pipe := func() (r, w int) {
+		var p [2]int
+		if err := unix.Pipe2(p[:], unix.O_CLOEXEC); err != nil {
+			t.Fatal(err)
+		}
+		return p[0], p[1]
+	}
+	r1, w1 := pipe()
+	r2, w2 := pipe()
+	t.Cleanup(func() { _ = unix.Close(w1); _ = unix.Close(w2) })
+	var s captureSlot
+	if err := s.adoptSync(r1); err != nil {
+		t.Fatal(err)
+	}
+	if s.syncFD != r1 || s.file == nil {
+		t.Fatalf("first adoption: fd %d file %v, want %d", s.syncFD, s.file, r1)
+	}
+	file := s.file
+	if err := s.adoptSync(r2); err != nil {
+		t.Fatal(err)
+	}
+	if s.file != file || s.syncFD != r1 {
+		t.Fatalf("second adoption replaced the file: %p fd %d", s.file, s.syncFD)
+	}
+	if _, err := unix.FcntlInt(uintptr(r2), unix.F_GETFD, 0); err != unix.EBADF {
+		t.Errorf("source descriptor still open after the move: %v", err)
+	}
+	if _, err := unix.Write(w2, []byte{7}); err != nil {
+		t.Fatal(err)
+	}
+	var b [1]byte
+	if n, err := s.file.Read(b[:]); err != nil || n != 1 || b[0] != 7 {
+		t.Fatalf("slot file does not read the second pipe: %d %v %v", n, b[0], err)
+	}
+	// A failed move still closes the source.
+	r3, w3 := pipe()
+	t.Cleanup(func() { _ = unix.Close(w3) })
+	bad := captureSlot{file: file, syncFD: -1}
+	if err := bad.adoptSync(r3); err == nil {
+		t.Error("move onto an invalid descriptor accepted")
+	}
+	if _, err := unix.FcntlInt(uintptr(r3), unix.F_GETFD, 0); err != unix.EBADF {
+		t.Errorf("source descriptor leaked by a failed move: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Errorf("slot file close: %v", err)
+	}
+}
+
+// A slot keeps one descriptor for its sync files: it is the same number and
+// the same file for every lease, closed once by Close, and a lease the
+// device finished at export (no sync file) hands out none.
+func TestCaptureSyncFileOwnership(t *testing.T) {
+	r, err := New(8, 8)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	requireCaptureSync(t, r)
+	closed := false
+	defer func() {
+		if !closed {
+			r.Close()
+		}
+	}()
+	if err := render(r, ports.Scene{Background: "#00ff00"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	before := openFDs(t)
+	cf := captureWait(t, r).(*captureFrame)
+	s := cf.slot
+	file, fd := cf.Done(), s.syncFD
+	if file == nil || s.file != file {
+		t.Fatalf("first lease: done %v, slot file %v", file, s.file)
+	}
+	r.EndCapture(cf)
+	if cf.Done() != nil {
+		t.Error("ended lease still exposes the sync file")
+	}
+	if _, err := file.Stat(); err != nil {
+		t.Errorf("EndCapture closed the slot's sync file: %v", err)
+	}
+	for range 4 {
+		next := captureWait(t, r).(*captureFrame)
+		if next.slot == s {
+			if next.Done() != file || s.syncFD != fd {
+				t.Fatalf("slot sync file changed: %p fd %d, was %p fd %d", next.Done(), s.syncFD, file, fd)
+			}
+		}
+		r.EndCapture(next)
+	}
+	// Two slots, each holding one sync file.
+	if held := openFDs(t) - before; held > captureSlots {
+		t.Errorf("%d descriptors held by %d slots", held, captureSlots)
+	}
+	r.Close()
+	closed = true
+	if _, err := file.Stat(); err == nil {
+		t.Error("Close left the slot's sync file open")
+	}
+	if got := openFDs(t); got > before {
+		t.Errorf("%d descriptors open after Close, %d before the captures", got, before)
 	}
 }
 

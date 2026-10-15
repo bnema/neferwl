@@ -206,6 +206,7 @@ func (s *Server) toplevelClosed(id ports.WindowID) {
 		l.closed(id)
 	}
 	s.windowCaptureGone(id)
+	s.castInventoryChanged()
 }
 
 // refreshToplevels reconciles inventory after output changes or unlock:

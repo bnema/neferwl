@@ -64,7 +64,7 @@ Use an external locker such as swaylock or hyprlock. See [Session locking](sessi
 
 ## Screen capture
 
-nefercap, `grim` and screen sharing through `xdg-desktop-portal-wlr` work out of the box. Other tools must be added to the allowlist. See [Screen capture](capture.md).
+nefercap, `grim` and screen sharing through `xdg-desktop-portal-gnome` work out of the box. Other tools must be added to the allowlist. See [Screen capture](capture.md).
 
 ## Idle and screen off
 

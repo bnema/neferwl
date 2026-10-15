@@ -5,8 +5,8 @@
 #
 #   /usr/bin/grim
 #   /usr/bin/nefercap
-#   /usr/lib/xdg-desktop-portal-wlr
-#   /usr/libexec/xdg-desktop-portal-wlr
+#   /usr/lib/xdg-desktop-portal-gnome
+#   /usr/libexec/xdg-desktop-portal-gnome
 #
 # To allow a tool installed elsewhere, copy this file to
 # /etc/neferwl/capture-allow as root and add its path. The file REPLACES the
@@ -27,5 +27,5 @@
 # would then be allowed to capture.
 /usr/bin/grim
 /usr/bin/nefercap
-/usr/lib/xdg-desktop-portal-wlr
-/usr/libexec/xdg-desktop-portal-wlr
+/usr/lib/xdg-desktop-portal-gnome
+/usr/libexec/xdg-desktop-portal-gnome

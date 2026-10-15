@@ -249,6 +249,7 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 			x.server.emit(ports.WindowMapped{ID: w.id, AppID: w.appID, Slot: slot, PID: r.Client().PID(), Floating: w.floating, Width: w.floatW, Height: w.floatH, Parent: parent, Modal: w.modal, Remap: w.gen > 1})
 			x.server.syncInhibitors()
 			x.server.toplevelChanged(w)
+			x.server.castInventoryChanged()
 			x.server.log.Info().Uint64("id", uint64(w.id)).Str("app_id", w.appID).Str("slot", slot).Bool("floating", w.floating).Msg("window mapped")
 		} else if !buffer && w.mapped {
 			w.unmap()
@@ -339,6 +340,9 @@ func (t top) SetTitle(_ *xdgshell.Toplevel, title string) {
 	}
 	t.w.title = title
 	t.w.xdg.server.toplevelChanged(t.w)
+	if t.w.mapped {
+		t.w.xdg.server.castInventoryChanged()
+	}
 }
 func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	if appID == t.w.appID {
@@ -348,6 +352,7 @@ func (t top) SetAppId(_ *xdgshell.Toplevel, appID string) {
 	if t.w.mapped {
 		t.w.xdg.server.emit(ports.WindowAppID{ID: t.w.id, AppID: appID})
 		t.w.xdg.server.toplevelChanged(t.w)
+		t.w.xdg.server.castInventoryChanged()
 	}
 }
 func (top) ShowWindowMenu(*xdgshell.Toplevel, *wayland.Seat, uint32, int32, int32) {}

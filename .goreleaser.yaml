@@ -71,7 +71,8 @@ nfpms:
       - foot
       - fuzzel
       - xdg-desktop-portal-gtk
-      - xdg-desktop-portal-wlr
+      - xdg-desktop-portal-gnome
+      - pipewire
     scripts:
       postinstall: packaging/deb/postinst
     contents:
@@ -208,7 +209,8 @@ aurs:
       - "foot: default terminal"
       - "fuzzel: launcher"
       - "xdg-desktop-portal-gtk: file pickers and settings for apps"
-      - "xdg-desktop-portal-wlr: screen sharing and screenshots through the portal"
+      - "xdg-desktop-portal-gnome: screen sharing and screenshots through the portal"
+      - "pipewire: screen sharing streams"
       - "nefercap: screenshots and screen recording"
     package: |-
       install -Dm755 ./neferwl "${pkgdir}/usr/bin/neferwl"

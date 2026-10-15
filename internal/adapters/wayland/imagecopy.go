@@ -113,6 +113,12 @@ func (s *Server) windowCaptureGone(id ports.WindowID) {
 			c.end(true, true)
 		}
 	}
+	for _, c := range s.castSessions {
+		if c.src.kind == srcWindow && c.src.window == id {
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonWindowGone)).Msg("cast end")
+			c.end(ports.CaptureReasonWindowGone, nil, true, true)
+		}
+	}
 }
 
 type extraSources struct{ s *Server }
@@ -180,7 +186,7 @@ func (m copyCaptureManager) CreateSession(r *ext.ExtImageCopyCaptureManagerV1, i
 	if src != nil {
 		cs = s.captureSources[src.Resource]
 	}
-	state := &captureSession{s: s, src: cs, cursor: options&1 != 0}
+	state := &captureSession{captureTarget: captureTarget{s: s, src: cs}, cursor: options&1 != 0}
 	res, err := ext.NewExtImageCopyCaptureSessionV1(r.Client(), 1, id, state)
 	if err != nil {
 		return
@@ -243,19 +249,26 @@ func (c *cursorCaptureSession) GetCaptureSession(_ *ext.ExtImageCopyCaptureCurso
 	}
 }
 
-// captureSession is one ext_image_copy_capture_session_v1.
-type captureSession struct {
-	s               *Server
-	res             *ext.ExtImageCopyCaptureSessionV1
-	src             *captureSource
-	id              uint64 // registered with core; 0 when never
-	cursor, stopped bool
-	frame           *captureExtFrame
-	sent            image.Point // buffer size of the last constraints
+// captureTarget is what every registered capture follows, whatever consumes
+// its frames (an ext_image_copy_capture_session_v1 or a screencast cast): the
+// source, the id core knows it by and core's last decision about it.
+type captureTarget struct {
+	s   *Server
+	src *captureSource
+	id  uint64 // registered with core; 0 when never
 	// st is the last decision of core; haveState tells there is one.
 	st        ports.CaptureSessionState
 	haveState bool
-	excl      *exclusion // the live exclusion object of this session
+}
+
+// captureSession is one ext_image_copy_capture_session_v1.
+type captureSession struct {
+	captureTarget
+	res             *ext.ExtImageCopyCaptureSessionV1
+	cursor, stopped bool
+	frame           *captureExtFrame
+	sent            image.Point // buffer size of the last constraints
+	excl            *exclusion  // the live exclusion object of this session
 	// exclSeen: the last state of core knew an exclusion. Frames of an
 	// excluded session leave the HUD out while it is (see tag).
 	exclSeen bool
@@ -290,7 +303,7 @@ func (c *captureSession) end(send, notify bool) {
 // image of its off-screen render, from the origin) and whether the workspace
 // is off screen. Core's last state decides where a workspace is; before it,
 // the last workspace snapshot does.
-func (c *captureSession) geometry() (o *output, rect image.Rectangle, hidden, ok bool) {
+func (c *captureTarget) geometry() (o *output, rect image.Rectangle, hidden, ok bool) {
 	src := c.src
 	if src == nil {
 		return nil, image.Rectangle{}, false, false
@@ -377,24 +390,57 @@ func (c *captureSession) sendConstraints() {
 	c.res.SendDone()
 }
 
+// targetFate says what became of a followed target.
+type targetFate uint8
+
+const (
+	targetLive          targetFate = iota
+	targetWorkspaceGone            // the workspace left the snapshot
+	targetEmpty                    // an output or region with nothing left
+)
+
+// follow looks at the target now: its fate and, while it lives, its geometry
+// (rect, ok as geometry gives them). A window or workspace that is not
+// locatable for the moment stays live: core's next state decides.
+func (c *captureTarget) follow() (fate targetFate, rect image.Rectangle, ok bool) {
+	if c.src.kind == srcWorkspace {
+		// The workspace left the snapshot: its handle is removed, stop at once
+		// without waiting for core's state.
+		if _, _, found := c.s.workspaceInfo(c.src.workspace); !found {
+			return targetWorkspaceGone, image.Rectangle{}, false
+		}
+	}
+	_, rect, _, ok = c.geometry()
+	if !ok && c.src.kind != srcWorkspace && c.src.kind != srcWindow {
+		return targetEmpty, rect, false
+	}
+	return targetLive, rect, ok
+}
+
+// applyState takes what core decided; it reports a decision that ends the
+// target (a terminal reason).
+func (c *captureTarget) applyState(st ports.CaptureSessionState) (ended bool) {
+	if st.Reason.Terminal() {
+		c.s.log.Info().Uint64("session", c.id).Str("reason", string(st.Reason)).Msg("capture session end")
+		return true
+	}
+	c.st, c.haveState = st, true
+	c.s.log.Debug().Uint64("session", c.id).Bool("active", st.Active).Bool("hidden", st.Hidden).Uint64("revision", st.Revision).Msg("capture session state")
+	return false
+}
+
 // refresh follows the target: new constraints when the buffer size changed,
 // the end when nothing is left of it.
 func (c *captureSession) refresh() {
 	if c.stopped || c.id == 0 {
 		return
 	}
-	if c.src.kind == srcWorkspace {
-		// The workspace left the snapshot: its handle is removed, stop at once
-		// without waiting for core's state.
-		if _, _, found := c.s.workspaceInfo(c.src.workspace); !found {
-			c.s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonWorkspaceGone)).Msg("capture session end")
-			c.end(true, true)
-			return
-		}
-	}
-	_, rect, _, ok := c.geometry()
+	fate, rect, ok := c.follow()
 	switch {
-	case !ok && c.src.kind != srcWorkspace && c.src.kind != srcWindow:
+	case fate == targetWorkspaceGone:
+		c.s.log.Info().Uint64("session", c.id).Str("reason", string(ports.CaptureReasonWorkspaceGone)).Msg("capture session end")
+		c.end(true, true)
+	case fate == targetEmpty:
 		c.s.log.Info().Uint64("session", c.id).Msg("capture session end: target empty")
 		c.end(true, true)
 	case ok && image.Pt(rect.Dx(), rect.Dy()) != c.sent:
@@ -405,6 +451,9 @@ func (c *captureSession) refresh() {
 // refreshSessions runs when outputs, scales or workspaces changed.
 func (s *Server) refreshSessions() {
 	for c := range s.captureSessions {
+		c.refresh()
+	}
+	for _, c := range s.castSessions {
 		c.refresh()
 	}
 }
@@ -419,6 +468,11 @@ func (s *Server) endCaptureSessions() {
 		}
 		c.end(true, true)
 	}
+	for _, c := range s.castSessions {
+		s.log.Info().Uint64("cast", c.cast).Str("reason", "session-protected").Msg("cast end")
+		c.end(ports.CaptureReasonNone, errCastProtected, true, true)
+	}
+	s.castInventoryChanged()
 }
 
 // outputGone ends the sessions of an unplugged output without waiting for
@@ -430,21 +484,29 @@ func (s *Server) outputGone(o *output) {
 			c.end(true, true)
 		}
 	}
+	for _, c := range s.castSessions {
+		if c.src.kind == srcOutput && c.src.output == o {
+			s.log.Info().Uint64("cast", c.cast).Str("reason", string(ports.CaptureReasonOutputGone)).Msg("cast end")
+			c.end(ports.CaptureReasonOutputGone, nil, true, true)
+		}
+	}
 }
 
 // captureState applies what core decided about a session.
 func (s *Server) captureState(st ports.CaptureSessionState) {
+	if c := s.castByCore[st.ID]; c != nil {
+		c.state(st)
+		return
+	}
 	c := s.sessionsByID[st.ID]
 	if c == nil {
 		return
 	}
-	if st.Reason.Terminal() {
-		s.log.Info().Uint64("session", c.id).Str("reason", string(st.Reason)).Msg("capture session end")
+	if c.applyState(st) {
 		c.end(true, false)
 		return
 	}
-	c.st, c.haveState, c.exclSeen = st, true, st.Exclusion
-	s.log.Debug().Uint64("session", c.id).Bool("active", st.Active).Bool("hidden", st.Hidden).Uint64("revision", st.Revision).Msg("capture session state")
+	c.exclSeen = st.Exclusion
 	if ex := c.excl; ex != nil {
 		ex.confirm(st.Layers)
 	}
@@ -457,6 +519,19 @@ func (s *Server) captureState(st ports.CaptureSessionState) {
 // still in the last state, a frame is not served rather than shown with the
 // HUD in it (ok false).
 func (c *captureSession) tag(hidden bool) (t captureTag, ok bool) {
+	t = c.targetTag(hidden)
+	if c.excl != nil && !c.exclSeen {
+		return t, false
+	}
+	if c.exclSeen {
+		t.exclude, t.revision = true, c.st.Revision
+	}
+	return t, true
+}
+
+// targetTag is the part of a frame's tag the target decides: the session,
+// what is captured and what core is told of it.
+func (c *captureTarget) targetTag(hidden bool) (t captureTag) {
 	t = captureTag{session: c.id}
 	switch c.src.kind {
 	case srcWorkspace:
@@ -475,13 +550,7 @@ func (c *captureSession) tag(hidden bool) (t captureTag, ok bool) {
 	case srcWindow:
 		t.taken = ports.CaptureFrameTaken{Window: c.src.window}
 	}
-	if c.excl != nil && !c.exclSeen {
-		return t, false
-	}
-	if c.exclSeen {
-		t.exclude, t.revision = true, c.st.Revision
-	}
-	return t, true
+	return t
 }
 
 func (c *captureSession) CreateFrame(r *ext.ExtImageCopyCaptureSessionV1, id uint32) {
@@ -518,7 +587,7 @@ type captureExtFrame struct {
 // A frame whose target is briefly unavailable (not active yet, rendered off
 // screen by another session, its indicator or exclusion not on screen yet,
 // a renderer slot busy) is tried again rather than failed: failed(unknown)
-// ends the whole screencast in clients such as xdg-desktop-portal-wlr. Only
+// ends the whole screencast in screen-sharing clients. Only
 // a stopped session, a refused client or a wrong buffer fail at once.
 const (
 	captureRetryEvery = 16 * time.Millisecond

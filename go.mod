@@ -7,8 +7,10 @@ require (
 	github.com/bnema/kvconf v0.1.2
 	github.com/bnema/purego v0.13.0-bnema.1
 	github.com/bnema/purego-libwayland v0.11.0
+	github.com/bnema/purego-pipewire v0.2.0
 	github.com/bnema/purego-vulkan v0.6.0
 	github.com/bnema/wlturbo v0.5.0
+	github.com/bnema/zerobus v0.2.0
 	github.com/bnema/zerowrap v1.4.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/rs/zerolog v1.35.1

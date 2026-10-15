@@ -66,6 +66,7 @@ func (s *Server) newPopup(x *xdgSurface, r *xdgshell.Surface, id uint32, parentX
 			}
 		case buffer && !w.mapped && x.acked && !pp.done:
 			w.mapped = true
+			s.castCommitted(w.id)
 			s.emit(ports.PopupMapped{ID: w.id})
 			s.log.Debug().Uint64("id", uint64(w.id)).Uint64("parent", uint64(pp.parentID())).Msg("popup mapped")
 		case !buffer && w.mapped:
@@ -146,6 +147,10 @@ func (p *popup) configure(c ports.ConfigurePopup) {
 	}
 	p.resource.SendConfigure(int32(c.Rect.X), int32(c.Rect.Y), int32(c.Rect.W), int32(c.Rect.H))
 	s := p.w.xdg.server
+	if p.w.mapped {
+		// A moved popup changes the toplevel's cast picture.
+		s.castCommitted(p.w.id)
+	}
 	s.serial++
 	p.w.xdg.resource.SendConfigure(s.serial)
 	p.w.xdg.serials = append(p.w.xdg.serials, s.serial)

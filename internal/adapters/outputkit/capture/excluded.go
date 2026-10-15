@@ -193,4 +193,4 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 
 // Handed reports a zeroed request: one Split failed, or one already given to
 // the worker. The owner never answers it again.
-func Handed(q ports.CaptureRequest) bool { return q.ID == 0 && q.Dst.File == nil }
+func Handed(q ports.CaptureRequest) bool { return q.ID == 0 && q.Dst.File == nil && q.Mapped == nil }

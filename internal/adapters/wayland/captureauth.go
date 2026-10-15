@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/bnema/neferwl/internal/adapters/captureallow"
+	"github.com/bnema/neferwl/internal/adapters/peerexe"
 	"github.com/bnema/purego-libwayland/server"
 )
 
@@ -13,7 +14,9 @@ import (
 // capture sessions and frames, whatever their source (output, output region
 // or workspace), and the attach of a layer surface to a capture exclusion. A
 // refused client gets the failure its protocol defines (failed, or stopped
-// for a session) and nothing is captured or flashed. In order:
+// for a session) and nothing is captured or flashed. The same executable
+// allowlist also gates the D-Bus screencast callers (adapters/screencast). In
+// order:
 //
 //  1. While the session is protected (ext-session-lock) no client may
 //     capture, so nothing of the locked session reaches a buffer.
@@ -136,7 +139,7 @@ func (s *Server) peerIdentity(c server.Client) *peerID {
 		id.pidfd, err = s.peer.Pidfd(fd)
 		if err != nil {
 			id.pidfd, id.err = nil, err
-			if errors.Is(err, errNoPidfd) && !s.noPidfdWarned {
+			if errors.Is(err, peerexe.ErrNoPidfd) && !s.noPidfdWarned {
 				s.noPidfdWarned = true
 				s.log.Warn().Msg("kernel has no SO_PEERPIDFD (Linux 6.5+): the capture allowlist cannot identify clients, so none may capture; list `*` in the allowlist to disable the check")
 			}
