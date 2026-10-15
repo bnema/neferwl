@@ -159,6 +159,30 @@ func TestOverviewStashUnfoldScrolls(t *testing.T) {
 	}
 }
 
+// The stash pile, folded or unfolded, is laid out straight into the
+// overview layout every frame: it adds no allocation to the same layout
+// without a stash.
+func TestOverviewStashLayoutAllocations(t *testing.T) {
+	allocs := func(m *Monitor) float64 {
+		buf := m.layoutInto(nil)
+		return testing.AllocsPerRun(50, func() { buf = m.layoutInto(buf) })
+	}
+	bare := cascadeOverview()
+	bare.ToggleOverview()
+	want := allocs(bare)
+	for _, unfolded := range []bool{false, true} {
+		m := cascadeOverview()
+		withStash(m, 6)
+		m.ToggleOverview()
+		if unfolded {
+			m.selectCard(m.Current(), 0)
+		}
+		if got := allocs(m); got > want {
+			t.Errorf("unfolded %v: %v allocs per layout, %v without a stash", unfolded, got, want)
+		}
+	}
+}
+
 // A scroll overview unfolds its pile into a column on the left of the row;
 // up and down walk it, right goes back to the columns.
 func TestOverviewScrollStashUnfolds(t *testing.T) {

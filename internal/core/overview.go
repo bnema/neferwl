@@ -60,8 +60,9 @@ type rowSnapshot struct {
 // unfolds along the overview axis into a strip of every card (unfold), the
 // selection framed, and the moves along that axis walk it. A vertical
 // overview pins the pile to the left edge of its row, which takes the width
-// the pile leaves. A horizontal one centres it on its row, straddling the
-// bottom edge of the selected lane, over the tiles.
+// the pile leaves. A horizontal one centres it on its row, in a band
+// reserved under the selected lane (pileBand): the lane and the band are
+// centred together.
 const (
 	overviewCardZoom = 0.2
 	overviewCards    = 4
@@ -650,7 +651,7 @@ func (m *Monitor) overviewAxis() layoutAxis { return m.Current().policy().worksp
 //
 // Vertical axis: full-width slots, the current one centred; the rule is
 // horizontal. Horizontal axis: full-height slots as wide as their content,
-// stack peeks included (the stash pile sits over the row), the current one
+// stack peeks included (the stash pile takes a band of the slot), the current one
 // centred; the rule is vertical, in the spacing between two slots.
 func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 	cur := m.Current()
@@ -733,7 +734,8 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	axis := m.overviewAxis()
 	// The unfolded stash goes last: its strip may run over the neighbor
 	// rows, which must not cover it.
-	var unfolded []Placement
+	var unfolded *Workspace
+	var unfoldedSlot Rect
 	for w := range m.all() {
 		slot, shown := rows[w]
 		if shown {
@@ -742,12 +744,10 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 			slot.H -= w.pileBand(axis)
 			at := m.cardAt(w)
 			result = append(result, m.stackRow(w, axis, slot, w != cur, at < 0)...)
-			if len(w.Stash) > 0 {
-				if cards := w.pile(axis, slot, w != cur, at); at >= 0 {
-					unfolded = cards
-				} else {
-					result = append(result, cards...)
-				}
+			if at >= 0 {
+				unfolded, unfoldedSlot = w, slot
+			} else {
+				result = w.pile(result, axis, slot, w != cur, -1)
 			}
 		}
 		for _, f := range w.Floats {
@@ -760,13 +760,16 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 			result = w.appendHidden(result, false)
 		}
 	}
-	return append(result, unfolded...)
+	if unfolded != nil {
+		result = unfolded.pile(result, axis, unfoldedSlot, false, m.cardAt(unfolded))
+	}
+	return result
 }
 
 // fan places front and neighboring cards, farthest visible first and front
 // last. A card may contain several tiles; omitted cards stay in the layout
 // hidden so their clients are not left showing on screen.
-func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
+func fan(cards [][]Placement, front, maxBehind, maxBefore int,
 	behind, before func(int) (int, int), dim, lit bool) []Placement {
 	n := len(cards)
 	if n == 0 {
@@ -792,9 +795,6 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
 	// Behind and before are in nearest-first order; paint farthest first.
 	for d := min(maxBehind, n-1); d >= 1; d-- {
 		i := front + d
-		if circular {
-			i = (front + d) % n
-		}
 		if i >= n {
 			continue
 		}
@@ -803,13 +803,7 @@ func fan(cards [][]Placement, front, maxBehind, maxBefore int, circular bool,
 	}
 	for d := min(maxBefore, n-1); d >= 1; d-- {
 		i := front - d
-		if circular {
-			i = (front - d + n) % n
-		}
-		if i < 0 {
-			continue
-		}
-		if shown[i] {
+		if i < 0 || shown[i] {
 			continue
 		}
 		add(i, d, before, true)
@@ -837,7 +831,7 @@ func (w *Workspace) pileWidth() int {
 	if len(w.Stash) == 0 {
 		return 0
 	}
-	card := int(math.Round(float64(w.stashRect().W) * overviewCardZoom))
+	card, _ := w.cardSize()
 	// Never more than a third of the width: the columns keep the rest.
 	a := w.overviewArea()
 	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
@@ -867,14 +861,15 @@ func (w *Workspace) cardStep() int {
 	return min(overviewCardStep, a.W/100, a.H/50)
 }
 
-// pile places the stash of w as cards in its slot along axis (see the
-// overview's stash comment). With entry at selected (at >= 0, on the
-// current row: dim false) the pile unfolds; else it is folded, the stash
-// selection in front, the next ones behind it, dimmed, the rest hidden.
-func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, at int) []Placement {
+// pile appends the stash of w to dst as cards in its slot along axis (see
+// the overview's stash comment). With entry at selected (at >= 0, on the
+// current row: dim false) the pile unfolds; else it is folded: the stash
+// selection in front, painted last, up to overviewCards-1 next ones
+// (wrapping round) behind it, farthest first, dimmed; the rest hidden.
+func (w *Workspace) pile(dst []Placement, axis layoutAxis, slot Rect, dim bool, at int) []Placement {
 	n := len(w.Stash)
 	if n == 0 {
-		return nil
+		return dst
 	}
 	u := w.overviewArea()
 	cw, ch := w.cardSize()
@@ -897,16 +892,28 @@ func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, at int) []Placeme
 	}
 	folded := Rect{X: x0, Y: y0, W: cw, H: ch}
 	if at >= 0 && !dim {
-		return w.unfold(axis, folded, min(at, n-1))
+		return w.unfold(dst, axis, folded, min(at, n-1))
 	}
-	cards := make([][]Placement, n)
+	front, behind, step := min(max(w.stashAt, 0), n-1), min(n, overviewCards)-1, w.cardStep()
+	card := func(i, d int) Placement {
+		p := Placement{ID: w.Stash[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}
+		p.Rect.X, p.Rect.Y = p.Rect.X+d*step, p.Rect.Y-d*step
+		if d > 0 || dim {
+			p.peeking(1)
+		}
+		return p
+	}
+	for d := behind; d >= 0; d-- {
+		dst = append(dst, card((front+d)%n, d))
+	}
 	for i := range w.Stash {
-		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}}
+		// The cards neither in front nor behind it: hidden, so their
+		// clients are not left showing.
+		if (i-front+n)%n > behind {
+			dst = append(dst, Placement{ID: w.Stash[i].ID, Rect: folded, Card: true, Hidden: true})
+		}
 	}
-	step := w.cardStep()
-	return fan(cards, min(max(w.stashAt, 0), n-1), min(n, overviewCards)-1, 0, true,
-		func(d int) (int, int) { return d * step, -d * step },
-		func(int) (int, int) { return 0, 0 }, dim, false)
+	return dst
 }
 
 // unfold lays the stash of w out as a strip of every card along axis, from
@@ -914,8 +921,9 @@ func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, at int) []Placeme
 // a vertical one. The strip is centred on the pile and kept in the overview
 // area. Longer than the area, it scrolls like a wide row: the selected card
 // at is centred, the strip stopping at the area's edges. The other cards
-// are dimmed; those out of the area are hidden.
-func (w *Workspace) unfold(axis layoutAxis, folded Rect, at int) []Placement {
+// are dimmed; those out of the area are hidden. The cards are appended to
+// dst.
+func (w *Workspace) unfold(dst []Placement, axis layoutAxis, folded Rect, at int) []Placement {
 	n := len(w.Stash)
 	u := w.overviewArea()
 	size, origin, lo, hi := folded.W, folded.X, u.X, u.X+u.W
@@ -931,7 +939,6 @@ func (w *Workspace) unfold(axis layoutAxis, folded Rect, at int) []Placement {
 	} else {
 		start = min(max(start, lo), hi-total)
 	}
-	out := make([]Placement, n)
 	for i := range w.Stash {
 		r := folded
 		if axis == verticalAxis {
@@ -946,9 +953,9 @@ func (w *Workspace) unfold(axis layoutAxis, folded Rect, at int) []Placement {
 		if !r.Overlaps(u) {
 			p.Hidden, p.Preview, p.Focused = true, 0, false
 		}
-		out[i] = p
+		dst = append(dst, p)
 	}
-	return out
+	return dst
 }
 
 // overviewZoom is the scale that fits every column of w in the usable
@@ -1138,7 +1145,8 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 	}
 	// Rows stay centred on the output like rows without a stash; in a
 	// vertical overview the pile only pushes a row right when they would
-	// overlap. A horizontal one draws the pile over the row.
+	// overlap. A horizontal one gives the pile a band under the selected
+	// lane (pileBand).
 	left := 0
 	if axis == verticalAxis {
 		left = w.pileWidth()
@@ -1312,9 +1320,8 @@ func overviewIn(layout []Placement, x, y float64) WindowID {
 	return 0
 }
 
-// overviewHit is overviewIn with the stash piles first: a pile is drawn
-// over its row (a horizontal overview), the cards behind its front one
-// included.
+// overviewHit is overviewIn with the stash piles first: the cards behind a
+// folded pile's front one peek out where tiles may be drawn over them.
 func (m *Monitor) overviewHit(layout []Placement, x, y float64) WindowID {
 	var piles []Placement
 	for _, p := range layout {
