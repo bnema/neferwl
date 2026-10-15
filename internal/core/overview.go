@@ -53,12 +53,15 @@ type rowSnapshot struct {
 // workspace. A pinned fullscreen window is the front card of its row, the
 // windows it hides behind it; choosing one of them leaves fullscreen.
 
-// A workspace's stash shows as a pile of cards: the selected stashed window
-// in front at overviewCardZoom, up to overviewCards-1 others behind it, each
-// overviewCardStep further up and right, dimmed. A vertical overview pins
-// the pile to the left edge of its row, which takes the width the pile
-// leaves. A horizontal one centres it on its row, straddling the bottom edge
-// of the selected lane, over the tiles.
+// A workspace's stash shows as a pile of cards, folded or unfolded. Folded
+// (not selected), the stash's own selection is in front at
+// overviewCardZoom, up to overviewCards-1 others behind it, each
+// overviewCardStep further up and right, dimmed. Selected, the pile
+// unfolds along the overview axis into a strip of every card (unfold), the
+// selection framed, and the moves along that axis walk it. A vertical
+// overview pins the pile to the left edge of its row, which takes the width
+// the pile leaves. A horizontal one centres it on its row, straddling the
+// bottom edge of the selected lane, over the tiles.
 const (
 	overviewCardZoom = 0.2
 	overviewCards    = 4
@@ -398,21 +401,20 @@ func (m *Monitor) OverviewMove(dx, dy int) {
 }
 
 // overviewWorkspaceStep is a focus-workspace bind. A vertical overview
-// walks the stack cards before changing workspace (overviewVertical). A
-// side-by-side one always changes workspace, since its stack fans left and
-// right. A selected stash card cycles the pile first, in every layout.
+// walks the unfolded stash and the stack cards before changing workspace
+// (overviewVertical). A side-by-side one always changes workspace, since
+// its stack and unfolded stash run left and right.
 func (m *Monitor) overviewWorkspaceStep(d int) {
 	if m.overviewAxis() == verticalAxis {
 		m.overviewVertical(d)
 		return
 	}
-	if !m.cycleCard(m.Current(), d) {
-		m.overviewStep(d)
-	}
+	m.overviewStep(d)
 }
 
-// cycleCard brings the stash card d entries from the selected one of w to
-// the front, stopping at either end. It reports whether a card was selected.
+// cycleCard selects the stash card d entries from the selected one of w in
+// the unfolded pile, stopping at either end. It reports whether a card was
+// selected.
 func (m *Monitor) cycleCard(w *Workspace, d int) bool {
 	at := m.cardAt(w)
 	if at < 0 {
@@ -423,19 +425,16 @@ func (m *Monitor) cycleCard(w *Workspace, d int) bool {
 }
 
 // overviewLane is the vertical move of an overview whose workspaces sit side
-// by side (cascade). From a selected stash card, down brings the next card
-// of the pile to the front (stopping at the last) and up leaves the pile for
-// the last lane (leavePile); focus-workspace-prev/next cycle it both ways.
-// Else the selection goes to the previous or next lane (band), at the
-// closest column, stopping at the first. Down past the last lane, or from a
-// card that is not the columns, enters the stash, which sits below. Covering
-// floats stack along the horizontal axis, not this one.
+// by side (cascade). From the unfolded stash, up leaves it for the last lane
+// (leavePile) and down stays: the stash is the bottom. Else the selection
+// goes to the previous or next lane (band), at the closest column, stopping
+// at the first. Down past the last lane, or from a card that is not the
+// columns, enters the stash, which sits below. Covering floats stack along
+// the horizontal axis, not this one.
 func (m *Monitor) overviewLane(dy int) {
 	w := m.Current()
 	if m.cardAt(w) >= 0 {
-		if dy > 0 {
-			m.cycleCard(w, dy)
-		} else {
+		if dy < 0 {
 			m.leavePile(w)
 		}
 		return
@@ -479,31 +478,19 @@ func (m *Monitor) selectLaneColumn(w *Workspace, i int) {
 }
 
 // overviewAcross is the horizontal move of an overview whose workspaces sit
-// side by side (cascade): a column inside the selected lane. Past the
-// lane's first column it goes to the previous workspace; past the last
-// column, to the next workspace. From a stash card, left goes to the
-// previous workspace and right back to the columns. Covering floats fan
+// side by side (cascade): a column inside the selected lane, or a card of
+// the unfolded stash. Past the first column or card it goes to the previous
+// workspace; past the last, to the next workspace. Covering floats fan
 // along this axis and are traversed before a workspace: the card on the
 // left is the one behind.
 func (m *Monitor) overviewAcross(dx int) {
 	w := m.Current()
-	if m.cardAt(w) >= 0 {
-		if dx < 0 || len(w.stack()) == 0 {
-			// Left leaves the pile; a stash-only workspace has nothing
-			// to its right to select.
-			m.overviewStep(dx)
+	if at := m.cardAt(w); at >= 0 {
+		if next := at + dx; next >= 0 && next < len(w.Stash) {
+			m.selectCard(w, next)
 			return
 		}
-		m.clearCard()
-		m.ov.selected = 0
-		if len(w.Columns) > 0 {
-			// The columns come to the front, even when down entered the
-			// stash from a covering float: at the first column of the
-			// focused lane.
-			m.setFront(w, stackItem{kind: stackColumns})
-			i, _ := w.laneBounds(w.laneOf(w.Focus))
-			m.selectLaneColumn(w, i)
-		}
+		m.overviewStep(dx)
 		return
 	}
 	if m.stackFront(w).kind != stackColumns || len(w.Columns) == 0 {
@@ -744,13 +731,23 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	cur := m.Current()
 	rows, _ := m.overviewRows()
 	axis := m.overviewAxis()
+	// The unfolded stash goes last: its strip may run over the neighbor
+	// rows, which must not cover it.
+	var unfolded []Placement
 	for w := range m.all() {
 		slot, shown := rows[w]
 		if shown {
+			// The pile band goes under the row: the row is centred
+			// with it.
+			slot.H -= w.pileBand(axis)
 			at := m.cardAt(w)
 			result = append(result, m.stackRow(w, axis, slot, w != cur, at < 0)...)
 			if len(w.Stash) > 0 {
-				result = append(result, w.pile(axis, slot, w != cur, at)...)
+				if cards := w.pile(axis, slot, w != cur, at); at >= 0 {
+					unfolded = cards
+				} else {
+					result = append(result, cards...)
+				}
 			}
 		}
 		for _, f := range w.Floats {
@@ -763,7 +760,7 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 			result = w.appendHidden(result, false)
 		}
 	}
-	return result
+	return append(result, unfolded...)
 }
 
 // fan places front and neighboring cards, farthest visible first and front
@@ -846,6 +843,24 @@ func (w *Workspace) pileWidth() int {
 	return min(card+(min(len(w.Stash), overviewCards)-1)*w.cardStep()+a.W*2/100, a.W/3)
 }
 
+// cardSize is the size of a stash card in the overview.
+func (w *Workspace) cardSize() (int, int) {
+	r := w.stashRect()
+	return int(math.Round(float64(r.W) * overviewCardZoom)), int(math.Round(float64(r.H) * overviewCardZoom))
+}
+
+// pileBand is the height a horizontal overview gives the stash of w under
+// its selected lane: the spacing, then the folded pile with its cards
+// behind. 0 without a stash, or in a vertical overview, where the pile
+// sits left of the row. The lane and the band are centred together.
+func (w *Workspace) pileBand(axis layoutAxis) int {
+	if axis != horizontalAxis || len(w.Stash) == 0 {
+		return 0
+	}
+	_, ch := w.cardSize()
+	return max(1, w.overviewArea().H*3/100) + ch + (min(len(w.Stash), overviewCards)-1)*w.cardStep()
+}
+
 // cardStep is the offset between stacked cards, smaller on tiny outputs.
 func (w *Workspace) cardStep() int {
 	a := w.overviewArea()
@@ -853,46 +868,87 @@ func (w *Workspace) cardStep() int {
 }
 
 // pile places the stash of w as cards in its slot along axis (see the
-// overview's stash comment): entry front (the stash selection when -1) in
-// front, the next ones behind it, dimmed, the rest hidden. Only a front card
-// of the current row (dim false) with front set is selected.
-func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, front int) []Placement {
+// overview's stash comment). With entry at selected (at >= 0, on the
+// current row: dim false) the pile unfolds; else it is folded, the stash
+// selection in front, the next ones behind it, dimmed, the rest hidden.
+func (w *Workspace) pile(axis layoutAxis, slot Rect, dim bool, at int) []Placement {
 	n := len(w.Stash)
 	if n == 0 {
 		return nil
 	}
-	selected := front >= 0 && !dim
-	if front < 0 {
-		front = w.stashAt
-	}
-	front = min(max(front, 0), n-1)
-	r := w.stashRect()
 	u := w.overviewArea()
-	cw := int(math.Round(float64(r.W) * overviewCardZoom))
-	ch := int(math.Round(float64(r.H) * overviewCardZoom))
+	cw, ch := w.cardSize()
 	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom(axis)))
 	var x0, y0 int
 	if axis == horizontalAxis {
-		// Centred on the row, across the bottom edge of the selected
-		// lane, which is centred in the slot. Both scale with the area
-		// (the lane at most overviewMaxZoom of it), so the pile stays
-		// inside whatever its size.
+		// Centred on the row, under the selected lane: slot is the
+		// lane's, the pile band (pileBand) taken off its height, so the
+		// band starts below the lane. The cards behind rise from the
+		// front one, which goes at the bottom of the band. Both scale
+		// with the area (the lane at most overviewMaxZoom of it), so
+		// the pile stays inside whatever its size.
 		x0 = slot.X + (slot.W-cw)/2
-		y0 = slot.Y + (slot.H-rowH)/2 + rowH - ch/2
+		y0 = slot.Y + (slot.H-rowH)/2 + rowH + w.pileBand(axis) - ch
 	} else {
 		// Stack rows reserve two peek steps above the front card. Align
 		// the stash with that front band, not with the top of its envelope.
 		band := w.frontSlot(axis, slot)
 		x0, y0 = band.X+u.W/100, band.Y+(rowH-ch)/2
 	}
+	folded := Rect{X: x0, Y: y0, W: cw, H: ch}
+	if at >= 0 && !dim {
+		return w.unfold(axis, folded, min(at, n-1))
+	}
 	cards := make([][]Placement, n)
 	for i := range w.Stash {
-		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: Rect{X: x0, Y: y0, W: cw, H: ch}, Preview: overviewCardZoom, Focused: selected, Card: true}}
+		cards[i] = []Placement{{ID: w.Stash[i].ID, Rect: folded, Preview: overviewCardZoom, Card: true}}
 	}
 	step := w.cardStep()
-	return fan(cards, front, min(n, overviewCards)-1, 0, true,
+	return fan(cards, min(max(w.stashAt, 0), n-1), min(n, overviewCards)-1, 0, true,
 		func(d int) (int, int) { return d * step, -d * step },
-		func(int) (int, int) { return 0, 0 }, dim, selected)
+		func(int) (int, int) { return 0, 0 }, dim, false)
+}
+
+// unfold lays the stash of w out as a strip of every card along axis, from
+// the folded pile's card rect: a row in a horizontal overview, a column in
+// a vertical one. The strip is centred on the pile and kept in the overview
+// area. Longer than the area, it scrolls like a wide row: the selected card
+// at is centred, the strip stopping at the area's edges. The other cards
+// are dimmed; those out of the area are hidden.
+func (w *Workspace) unfold(axis layoutAxis, folded Rect, at int) []Placement {
+	n := len(w.Stash)
+	u := w.overviewArea()
+	size, origin, lo, hi := folded.W, folded.X, u.X, u.X+u.W
+	if axis == verticalAxis {
+		size, origin, lo, hi = folded.H, folded.Y, u.Y, u.Y+u.H
+	}
+	stride := size + 2*w.cardStep()
+	total := n*stride - (stride - size)
+	start := origin + size/2 - total/2
+	if total > hi-lo {
+		start = origin + size/2 - at*stride - size/2
+		start = min(max(start, hi-total), lo)
+	} else {
+		start = min(max(start, lo), hi-total)
+	}
+	out := make([]Placement, n)
+	for i := range w.Stash {
+		r := folded
+		if axis == verticalAxis {
+			r.Y = start + i*stride
+		} else {
+			r.X = start + i*stride
+		}
+		p := Placement{ID: w.Stash[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
+		if i != at {
+			p.peeking(1)
+		}
+		if !r.Overlaps(u) {
+			p.Hidden, p.Preview, p.Focused = true, 0, false
+		}
+		out[i] = p
+	}
+	return out
 }
 
 // overviewZoom is the scale that fits every column of w in the usable
@@ -1098,6 +1154,8 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 	// Lanes along the overview axis would overlap the neighbor workspaces.
 	otherLanes := w.policy().content != axis
 	laneStep := scale(stride) + max(1, u.H*3/100)
+	// The lanes below the selected one leave room for the stash pile.
+	below := w.pileBand(axis)
 	selLane := 0
 	if lanes {
 		selLane = max(sel.Y, 0) / stride
@@ -1113,7 +1171,11 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 			lane, ly = l-selLane, r.Y-l*stride
 		}
 		x0, y0 := scale(r.X), scale(ly)
-		tiles[i].Rect = Rect{X: x + x0, Y: top + y0 + lane*laneStep, W: scale(r.X+r.W) - x0, H: scale(ly+r.H) - y0}
+		y := top + y0 + lane*laneStep
+		if lanes && lane > 0 {
+			y += below
+		}
+		tiles[i].Rect = Rect{X: x + x0, Y: y, W: scale(r.X+r.W) - x0, H: scale(ly+r.H) - y0}
 		tiles[i].Preview = z
 		if dim || lane != 0 {
 			tiles[i].peeking(1)
@@ -1408,9 +1470,13 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			if finger {
 				before = m.overviewSelection()
 			}
-			if cascade && !finger && m.cardAt(m.Current()) < 0 {
+			switch {
+			case cascade && !finger && m.cardAt(m.Current()) >= 0:
+				// A wheel walks the unfolded stash, a row.
+				m.OverviewMove(d, 0)
+			case cascade && !finger:
 				m.overviewStep(d)
-			} else {
+			default:
 				m.OverviewMove(0, d)
 			}
 			if m.overviewTurned(axis, finger) {
@@ -1424,9 +1490,13 @@ func (m *Monitor) overviewScroll(a ports.PointerAxis) (changed bool) {
 			d := sign(m.ov.scrollX)
 			if cascade && finger {
 				before = m.overviewSelection()
-				// One step per gesture: one workspace, even over a
-				// stash card.
-				m.overviewStep(d)
+				// One step per gesture: one card of the unfolded
+				// stash, else one workspace.
+				if m.cardAt(m.Current()) >= 0 {
+					m.OverviewMove(d, 0)
+				} else {
+					m.overviewStep(d)
+				}
 				m.ov.scrollX, m.ov.scrollY, m.ov.scrolled = 0, 0, true
 				return m.overviewSelection() != before
 			}
