@@ -366,6 +366,6 @@ func (m *Monitor) stackRow(w *Workspace, axis layoutAxis, slot Rect, dim, lit bo
 	}
 
 	// fan's behind side advances through the linear stack.
-	return fan(cards, at, 2, 2, false,
+	return fan(cards, at, 2, 2,
 		func(d int) (int, int) { return along(-d) }, along, dim, lit)
 }

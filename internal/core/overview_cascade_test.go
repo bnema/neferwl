@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"testing"
 
@@ -245,12 +244,15 @@ func TestOverviewCascadeStashInSlot(t *testing.T) {
 	if !within1(front.Rect.X+front.Rect.W/2, cur.X+cur.W/2) {
 		t.Fatalf("pile not centred on the row %v: %+v", cur, front.Rect)
 	}
-	// The lane is centred in the slot; its tiles stop a gap short of its
-	// bottom edge.
-	rowH := int(math.Round(float64(w.Usable.H) * w.overviewZoom(horizontalAxis)))
-	bottom := cur.Y + (cur.H-rowH)/2 + rowH
-	if !within1(centreY(front.Rect), bottom) || front.Rect.Y >= lane.Y+lane.H {
-		t.Fatalf("pile not across the lane's bottom edge %d (lane %v): %+v", bottom, lane, front.Rect)
+	// The pile sits under the lane, every card of it: the lane and the
+	// pile are centred together in the slot.
+	for _, id := range []WindowID{40, 41} {
+		if c := previewOf(t, ps, id).Rect; c.Y <= lane.Y+lane.H {
+			t.Fatalf("card %d %v not under the lane %v", id, c, lane)
+		}
+	}
+	if top, bottom := lane.Y-cur.Y, cur.Y+cur.H-(front.Rect.Y+front.Rect.H); !within1(top, bottom) && abs(top-bottom) > lane.H/10 {
+		t.Fatalf("lane and pile not centred together: %d above, %d below", top, bottom)
 	}
 	// The pile does not shift the band: its row stays centred on the area.
 	u := m.Current().overviewArea()
@@ -341,8 +343,8 @@ func TestOverviewCascadeKeys(t *testing.T) {
 
 			// With a stash: left from the first column still goes to the
 			// previous workspace. Down past the last band enters the
-			// stash, right comes back to the band's first column, and
-			// left from the stash goes to the previous workspace.
+			// stash, up comes back to the band, and left past the first
+			// card goes to the previous workspace.
 			withStash(m, 2)
 			w.FocusID(7)
 			m.ToggleOverview()
@@ -360,14 +362,16 @@ func TestOverviewCascadeKeys(t *testing.T) {
 			if m.cardAt(w) < 0 {
 				t.Fatal("down past the last band did not select the stash")
 			}
-			d.move(m, 1, 0)
+			d.move(m, 0, -1)
 			if m.cardAt(w) >= 0 || sel() != 10 {
-				t.Fatalf("right from the stash: card %d, column %d", m.cardAt(w), sel())
+				t.Fatalf("up from the stash: card %d, column %d", m.cardAt(w), sel())
 			}
 			d.move(m, 0, 1)
-			d.move(m, -1, 0)
+			for range len(w.Stash) {
+				d.move(m, -1, 0)
+			}
 			if m.Current() != prev {
-				t.Fatal("left from the stash did not reach the previous workspace")
+				t.Fatal("left past the first card did not reach the previous workspace")
 			}
 			m.CancelOverview()
 			if m.Current() != w || focusedID(m) != 7 {
@@ -533,22 +537,22 @@ func TestOverviewCascadeThreeFingerDownEntersStash(t *testing.T) {
 	}
 }
 
-// Right from a stash card lands on the maximized column, which keeps its
-// maximization: it is alone in its band.
+// Up from a stash card lands on the maximized column of the last band,
+// which keeps its maximization: it is alone in its band.
 func TestOverviewCascadeStashToMaximized(t *testing.T) {
 	m := cascadeOverview()
 	withStash(m, 1)
 	w := m.Current()
-	w.FocusID(9)
+	w.FocusID(10)
 	w.ToggleFullWidth()
 	m.ToggleOverview()
 	m.selectCard(w, w.stashAt) // As a click on the pile does.
 	if m.cardAt(w) < 0 {
 		t.Fatalf("setup: no stash card, target %d", m.overviewTarget())
 	}
-	m.OverviewMove(1, 0)
-	if m.overviewTarget() != 9 || !w.Columns[w.Focus].FullWidth || len(w.maximized) == 0 || w.maximized[0] != 9 {
-		t.Fatalf("target %d, maximized %v; want 9", m.overviewTarget(), w.maximized)
+	m.OverviewMove(0, -1)
+	if m.overviewTarget() != 10 || !w.Columns[w.Focus].FullWidth || len(w.maximized) == 0 || w.maximized[0] != 10 {
+		t.Fatalf("target %d, maximized %v; want 10", m.overviewTarget(), w.maximized)
 	}
 }
 
@@ -571,21 +575,18 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	}
 }
 
-// A card behind the front one of the pile is clicked where it shows,
-// over the selected lane's tiles.
+// A card behind the front one of the folded pile is clicked where it
+// shows, above the front card.
 func TestOverviewCascadeStashPeekClick(t *testing.T) {
 	m := cascadeOverview()
 	withStash(m, 2)
 	m.ToggleOverview()
 	ps := m.Layout()
 	front, back := previewOf(t, ps, 41).Rect, previewOf(t, ps, 40).Rect
-	// The strip of 40 above the front card, inside the lane's tiles.
+	// The strip of 40 above the front card.
 	x, y := float64(back.X+back.W-1), float64(back.Y)
-	if back.Y >= front.Y || back.Y < previewOf(t, ps, 8).Rect.Y {
+	if back.Y >= front.Y {
 		t.Fatalf("setup: back %v front %v", back, front)
-	}
-	if id := overviewIn(ps, x, y); id == 40 {
-		t.Fatal("setup: the tiles do not cover the strip")
 	}
 	if id := m.overviewHit(ps, x, y); id != 40 {
 		t.Fatalf("clicked %d, want 40", id)
@@ -645,8 +646,8 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 	}
 }
 
-// Down from a covering float enters the stash; right brings the columns
-// back to the front.
+// Down from a covering float enters the stash; up comes back to the
+// float.
 func TestOverviewCascadeFloatStashRight(t *testing.T) {
 	m := cascadeOverview()
 	withStash(m, 1)
@@ -661,9 +662,9 @@ func TestOverviewCascadeFloatStashRight(t *testing.T) {
 	if m.cardAt(w) < 0 {
 		t.Fatal("down from the float did not select the stash")
 	}
-	m.OverviewMove(1, 0)
-	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackColumns || m.overviewTarget() == 0 {
-		t.Fatalf("right from the stash: card %d, front %+v, target %d", m.cardAt(w), m.stackFront(w), m.overviewTarget())
+	m.OverviewMove(0, -1)
+	if m.cardAt(w) >= 0 || m.stackFront(w).kind != stackFloat || m.overviewTarget() != 90 {
+		t.Fatalf("up from the stash: card %d, front %+v, target %d", m.cardAt(w), m.stackFront(w), m.overviewTarget())
 	}
 }
 
@@ -777,19 +778,18 @@ func TestOverviewCascadeFocusBinds(t *testing.T) {
 	}
 	m.CancelOverview()
 
-	// A selected stash card keeps the pile cycle.
+	// Over the unfolded stash they still change workspace: left and
+	// right walk the cards.
 	withStash(m, 3)
 	w.FocusID(10)
 	m.ToggleOverview()
 	m.OverviewMove(0, 1)
-	at := m.cardAt(w)
-	m.overviewFocus(ActionFocusWorkspacePrev)
-	if m.Current() != w || m.cardAt(w) != at-1 {
-		t.Fatalf("focus-workspace-prev over a card: card %d, was %d", m.cardAt(w), at)
+	if m.cardAt(w) < 0 {
+		t.Fatal("setup: no card selected")
 	}
-	m.overviewFocus(ActionFocusWorkspaceNext)
-	if m.Current() != w || m.cardAt(w) != at {
-		t.Fatalf("focus-workspace-next over a card: card %d", m.cardAt(w))
+	m.overviewFocus(ActionFocusWorkspacePrev)
+	if m.Current() != m.Workspaces[0] {
+		t.Fatal("focus-workspace-prev over a card did not change workspace")
 	}
 }
 
@@ -1089,7 +1089,12 @@ func TestOverviewCascadePileVisible(t *testing.T) {
 						}
 					}
 				}
-				if want := min(n, overviewCards); shown != want {
+				want := min(n, overviewCards)
+				if m.cardAt(w) >= 0 {
+					// Unfolded: every card.
+					want = n
+				}
+				if shown != want {
 					t.Fatalf("n=%d hidden=%v down=%d: %d cards shown, want %d", n, hidden, down, shown, want)
 				}
 			}
