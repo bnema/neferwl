@@ -274,3 +274,5 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 ### Overview
 
 `toggle-overview` (or a four-finger swipe up) shows previews of your workspaces. Arrows, `h/j/k/l` or three-finger swipes move the selection; `Return` or a click opens it; `Escape` goes back. `close-window` and the move-to-workspace binds work on the selected preview.
+
+With `layout.overflow = cascade`, workspaces sit side by side and each band of columns is a lane. Down (or fingers down on the touchpad, with natural scroll off) moves to the lane below; past the last lane it selects the stash pile under it, and down again brings the next stash card to the front. Up from a stash card leaves the pile for the last lane, at the column you came from. `focus-workspace-prev/next` also walk the pile in both directions, and left/right leave it.

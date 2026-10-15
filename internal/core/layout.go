@@ -41,6 +41,10 @@ type Placement struct {
 	// Peek is a stashed window peeking in beside the selected one, or an
 	// overview preview of a neighbor workspace: dimmed.
 	Peek bool
+	// Card marks a stash card of the overview's pile (as opposed to a tile
+	// or a covering float): the selection outline goes around a selected
+	// one and stays off the ones it would cross.
+	Card bool
 	// Veil is the share (0..1) of the peek veil (Stash.Dim) the window
 	// draws: 1 for a settled peek, less while a stash slide brings it to
 	// the centre. Set wherever Peek is, and on a sliding stash selection.
