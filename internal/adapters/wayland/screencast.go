@@ -396,8 +396,22 @@ func flipTime(f *ports.FlipInfo) time.Time {
 	return time.Unix(ts.Sec, ts.Nsec)
 }
 
-// castCommitted marks the casts of a window that committed content.
+// castCommitted marks the casts of a window that committed content. A popup
+// is drawn with its toplevel (captureWindowScene), so its commits, map,
+// unmap and reposition mark the casts of the toplevel it hangs from, found
+// through the same parent chain as toplevelRoot.
 func (s *Server) castCommitted(id ports.WindowID) {
+	if len(s.castSessions) == 0 {
+		return
+	}
+	// A popup chain is as deep as menus nest; the bound only guards a cycle.
+	for range 64 {
+		w := s.windows[id]
+		if w == nil || w.popup == nil || w.popup.parent == nil {
+			break
+		}
+		id = w.popup.parent.id
+	}
 	for _, c := range s.castSessions {
 		if c.src.kind == srcWindow && c.src.window == id {
 			c.dirty = true

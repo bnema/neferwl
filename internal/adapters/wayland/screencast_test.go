@@ -493,6 +493,66 @@ func TestCastFlipDamagesWindowCastAfterCommit(t *testing.T) {
 	h.none() // two commits, one damage
 }
 
+// A popup is drawn with its toplevel: a static toplevel whose popup (or a
+// popup of that popup) keeps committing, mapping, unmapping or moving still
+// damages the window cast. The popups are windows of the server, as an
+// xdg_popup makes them.
+func TestCastWindowDamagedByPopupChanges(t *testing.T) {
+	h := newCastHarness(t, true)
+	c := protocolClient(t, h.s, h.dir)
+	w, _, _ := surfaceMapper(t, c, h.events)()
+	placeWindow(t, h.s, h.commands, w, "HEADLESS-1")
+	h.casts <- ports.CastCommand{Kind: ports.CastOpen, ID: 1, Window: w.ID}
+	h.next(ports.CastSize)
+
+	var menu, sub ports.WindowID
+	if !h.s.display.Do(func() {
+		top := h.s.windows[w.ID]
+		m := &window{id: h.s.nextWindow, xdg: top.xdg, mapped: true}
+		m.popup = &popup{w: m, parent: top}
+		h.s.windows[m.id] = m
+		s2 := &window{id: m.id + 1, xdg: top.xdg, mapped: true}
+		s2.popup = &popup{w: s2, parent: m}
+		h.s.windows[s2.id] = s2
+		h.s.nextWindow += 2
+		menu, sub = m.id, s2.id
+	}) {
+		t.Fatal("display stopped")
+	}
+	t.Cleanup(func() {
+		h.s.display.Do(func() { delete(h.s.windows, menu); delete(h.s.windows, sub) })
+	})
+	h.flip("HEADLESS-1")
+	h.none() // nothing changed yet
+	change := func(name string, f func()) {
+		t.Helper()
+		if !h.s.display.Do(f) {
+			t.Fatal("display stopped")
+		}
+		h.flip("HEADLESS-1")
+		if ev := h.next(ports.CastDamage); ev.ID != 1 {
+			t.Fatalf("%s: damage %+v", name, ev)
+		}
+		h.flip("HEADLESS-1")
+		h.none() // the damage consumed the change
+	}
+	content := func(id ports.WindowID) func() {
+		return func() { h.s.emitContent(ports.SurfaceContent{ID: id}, damage{full: true}) }
+	}
+	change("popup commit", content(menu))
+	change("popup commit again", content(menu))
+	change("nested popup commit", content(sub))
+	change("popup unmap", func() { h.s.windows[menu].mapped = false; content(menu)() })
+	change("popup map", func() { h.s.windows[menu].mapped = true; h.s.castCommitted(menu) })
+	change("popup reposition", func() { h.s.castCommitted(menu) })
+	// A window nobody casts leaves the cast alone.
+	if !h.s.display.Do(func() { h.s.emitContent(ports.SurfaceContent{ID: w.ID + 1000}, damage{full: true}) }) {
+		t.Fatal("display stopped")
+	}
+	h.flip("HEADLESS-1")
+	h.none()
+}
+
 // The inventory is published once per change, not once per frame or flip, and
 // changes of one display loop turn share one publication.
 func TestCastInventoryPublishedOncePerChange(t *testing.T) {
