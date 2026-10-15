@@ -1146,6 +1146,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
+			if !c.repeatLive() {
+				continue
+			}
 			// A held key is activity, as its press was: idle timers
 			// must not fire while it repeats.
 			if err := c.userActivity(ctx); err != nil {

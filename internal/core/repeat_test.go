@@ -156,11 +156,19 @@ func TestOverviewHeldKeyRepeats(t *testing.T) {
 	}
 	sendKeys(t, c, key("Left", keyLeft, ports.ModSuper, false))
 
-	// The overview closing ends a repeat.
-	sendKeys(t, c, key("Left", keyLeft, 0, true))
-	m.CancelOverview()
-	tick(t, c)
-	if c.repeatC != nil {
-		t.Fatal("the repeat outlived the overview")
+	// The overview closing ends a repeat, of an overview key or a bind:
+	// Cmd+Left would go on in the layout.
+	for _, mods := range []ports.Mods{0, ports.ModSuper} {
+		if !m.ov.open {
+			m.ToggleOverview()
+		}
+		sendKeys(t, c, key("Left", keyLeft, mods, true))
+		m.CancelOverview()
+		focus := focusedID(m)
+		tick(t, c)
+		if c.repeatC != nil || focusedID(m) != focus {
+			t.Fatalf("mods %v: the repeat outlived the overview", mods)
+		}
+		sendKeys(t, c, key("Left", keyLeft, mods, false))
 	}
 }

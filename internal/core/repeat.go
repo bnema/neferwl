@@ -28,7 +28,10 @@ type keyRepeat struct {
 	// empty.
 	action Action
 	key    ports.KeyEvent
-	timer  ports.Timer
+	// overview is whether the overview was open at the press: opening or
+	// closing it stops the repeat.
+	overview bool
+	timer    ports.Timer
 }
 
 // repeats reports whether a held key repeats bind a: moves only, never an
@@ -68,6 +71,7 @@ func (c *Core) startRepeat(key ports.KeyEvent, action Action) {
 	c.stopRepeat()
 	r := &c.repeat
 	r.held, r.mods, r.action, r.key = heldKey(key), key.Mods, action, key
+	r.overview = c.cur().mon.ov.open
 	r.timer = newPortTimer(c.opts.Clock, repeatDelay)
 	c.repeatC = r.timer.C()
 }
@@ -92,22 +96,33 @@ func (c *Core) repeatKey(key ports.KeyEvent) {
 	}
 }
 
-// repeatTick runs one repeat of the held key and arms the next. It stops
-// when the key can no longer run what it ran: the overview closed or a
-// launcher took the keyboard, or a window inhibits the shortcuts.
-func (c *Core) repeatTick(ctx context.Context) error {
+// repeatLive reports whether the held key still runs what it ran, and stops
+// the repeat when not: the overview opened or closed, or a launcher or a
+// menu took the keyboard. A bind also stops when a window inhibits the
+// shortcuts; overview keys run before inhibitors, as on a press.
+func (c *Core) repeatLive() bool {
 	r := c.repeat
 	if r.timer == nil {
+		return false
+	}
+	if c.cur().mon.ov.open != r.overview || c.overviewKeyboardTaken() ||
+		r.action != "" && c.keyboard.inhibited(c.keyboardFocus()) {
+		c.stopRepeat()
+		return false
+	}
+	return true
+}
+
+// repeatTick runs one repeat of the held key, if still live, and arms the
+// next.
+func (c *Core) repeatTick(ctx context.Context) error {
+	if !c.repeatLive() {
 		return nil
 	}
+	r, mon := c.repeat, c.cur().mon
 	c.inputActive = true
 	defer func() { c.inputActive = false }()
 	if r.action == "" {
-		mon := c.cur().mon
-		if !mon.ov.open || c.overviewKeyboardTaken() {
-			c.stopRepeat()
-			return nil
-		}
 		now := c.now()
 		shots := c.snapshot(now)
 		mon.overviewKey(r.key)
@@ -117,10 +132,6 @@ func (c *Core) repeatTick(ctx context.Context) error {
 		}
 		c.repeat.timer.Reset(repeatInterval)
 		return c.publish(ctx)
-	}
-	if c.keyboard.inhibited(c.keyboardFocus()) {
-		c.stopRepeat()
-		return nil
 	}
 	c.repeat.timer.Reset(repeatInterval)
 	return c.runBind(ctx, r.action)
