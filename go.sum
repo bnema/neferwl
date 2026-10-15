@@ -6,10 +6,14 @@ github.com/bnema/purego v0.13.0-bnema.1 h1:fKRdztnvTmRqAjANMoN+utEIH73dvPqVPJh2i
 github.com/bnema/purego v0.13.0-bnema.1/go.mod h1:xS1iX3noypxnbOUEUAqOvkfnUzgHuu19VtL4+dfUMJM=
 github.com/bnema/purego-libwayland v0.11.0 h1:9DHAgg1M9+blG5rAC9EWlJt2GFRnA/pxuXE0S0S2Cl8=
 github.com/bnema/purego-libwayland v0.11.0/go.mod h1:ZGc8Hz68KwJEHztCBU68o0pRFmDZgGFe3dJ+U1MHgwA=
+github.com/bnema/purego-pipewire v0.2.0 h1:drIE0NjxynoCn9gCHTQFKkQVYEh/qsBNt2L2qZFYwro=
+github.com/bnema/purego-pipewire v0.2.0/go.mod h1:FxEYkYIWIP2g8Zo25jlnQSoP9yjsmb5vIuZwnqPg9uQ=
 github.com/bnema/purego-vulkan v0.6.0 h1:SJgu0smuDC2vtBv0dJ6dmRKewJW5EUXQwTXyb/p9JSE=
 github.com/bnema/purego-vulkan v0.6.0/go.mod h1:7kFoR1p01JbknuZlfA20oeImryBe8Fx+Zd9hm2uSUM4=
 github.com/bnema/wlturbo v0.5.0 h1:AUP3IAd4ZXM3ZrJ8zu65lAejKtYMwSoSDE2TS6k3mn4=
 github.com/bnema/wlturbo v0.5.0/go.mod h1:4i1k1wyw7FDWOkh2hg1ZwPfrPRn3+E6WrYg9Qrt74CA=
+github.com/bnema/zerobus v0.2.0 h1:BqQ3587nARwtsJdPwcB2WI5fV2ykoF0d/HEBUYZqWn8=
+github.com/bnema/zerobus v0.2.0/go.mod h1:QWo6NcbIyic3+gcqwB3IzZh8dIEdXFfw7WdhjNPITYM=
 github.com/bnema/zerowrap v1.4.1 h1:v70w8LDU2+FU+EX/etY9DjVwOAWN0fUKShwZyZHnyLU=
 github.com/bnema/zerowrap v1.4.1/go.mod h1:8M8Qz3uRpbszYkXqi0Dnr1TZ4lDrQY8/orGm30zwKKg=
 github.com/godbus/dbus/v5 v5.2.2 h1:TUR3TgtSVDmjiXOgAAyaZbYmIeP3DPkld3jgKGV8mXQ=
