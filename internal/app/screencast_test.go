@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -200,23 +201,36 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 
 	// Pointer motion damages the output while the consumer runs. The events
 	// are boxed once: sending them allocates nothing.
-	var moving atomic.Bool
-	moving.Store(true)
+	stopMoving := make(chan struct{})
+	var stopOnce sync.Once
+	stopMotion := func() { stopOnce.Do(func() { close(stopMoving) }) }
 	a := ports.InputEvent(ports.SecurityInput{Event: ports.PointerMotion{X: 40, Y: 40}})
 	b := ports.InputEvent(ports.SecurityInput{Event: ports.PointerMotion{X: 200, Y: 160}})
 	moved := make(chan struct{})
 	go func() {
 		defer close(moved)
-		for i := 0; moving.Load(); i++ {
+		tick := time.NewTicker(16 * time.Millisecond)
+		defer tick.Stop()
+		for i := 0; ; i++ {
 			ev := a
 			if i%2 == 1 {
 				ev = b
 			}
-			app.input <- ev
-			time.Sleep(16 * time.Millisecond)
+			// Neither the send nor the wait may outlive the test: the app
+			// may have stopped reading.
+			select {
+			case app.input <- ev:
+			case <-stopMoving:
+				return
+			}
+			select {
+			case <-tick.C:
+			case <-stopMoving:
+				return
+			}
 		}
 	}()
-	defer func() { moving.Store(false); <-moved }()
+	defer func() { stopMotion(); <-moved }()
 
 	gst := exec.Command("gst-launch-1.0", "-v", "pipewiresrc", "path="+itoa(node), "stream-properties=props,media.type=Video", "num-buffers=300", "!", "fakesink", "silent=false")
 	out, err := gst.StdoutPipe()
@@ -283,7 +297,7 @@ func TestScreencastStreamsMonitor(t *testing.T) {
 		_ = gst.Process.Kill()
 		t.Fatal("gst-launch-1.0 did not finish")
 	}
-	moving.Store(false)
+	stopMotion()
 
 	// A second client is another unique name: it is allowed (the list is
 	// off) but the session is not its own.
