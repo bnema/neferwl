@@ -1146,6 +1146,14 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
+			// A held key is activity, as its press was: idle timers
+			// must not fire while it repeats.
+			if err := c.userActivity(ctx); err != nil {
+				return nil
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
 			if err := c.repeatTick(ctx); err != nil {
 				if errors.Is(err, errSecurityChanged) {
 					continue
@@ -1197,6 +1205,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
+			// A new keymap quarantines held keys: their release never
+			// comes, so no repeat may outlive a reload.
+			c.stopRepeat()
 			if err := c.apply(ev.Config); err != nil {
 				select {
 				case c.ch.ConfigErrors <- err:
