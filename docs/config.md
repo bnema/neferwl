@@ -159,6 +159,7 @@ A swipe moves one step at most. Other gestures (pinch, hold, two-finger scroll) 
 - Other keys use their xkb name (`wev` shows it).
 - `none` removes a default bind.
 - `spawn <command>` runs a program without a shell. See [Running commands](desktop.md#running-commands).
+- Holding a move bind repeats it: focus, move, resize and workspace steps, first after 250 ms, then 8 times a second. Toggles, spawns and closes run once. The overview's arrows and `h/j/k/l` repeat the same way.
 
 ```ini
 bind.XF86AudioRaiseVolume = spawn wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+

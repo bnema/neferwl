@@ -236,6 +236,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 
 func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	c.mods = key.Mods
+	c.repeatKey(key)
 	// Releasing the command key commits the switcher; the release still
 	// goes on to the bind lookup and the clients.
 	if c.switching() && c.mods&c.cmdMod == 0 {
@@ -268,6 +269,9 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		}
 		if key.Pressed && mon.overviewKey(key) {
 			c.pressed[heldKey(key)] = true
+			if mon.ov.open && overviewRepeats(key) {
+				c.startRepeat(key, "")
+			}
 			c.transition(shots, now)
 			if err := c.workspaceVisible(ctx, true); err != nil {
 				return err
@@ -315,6 +319,9 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	if key.Pressed {
 		if bound {
 			c.pressed[held] = true
+			if repeats(action) {
+				c.startRepeat(key, action)
+			}
 			return c.runBind(ctx, action)
 		}
 		c.pressed[held] = false

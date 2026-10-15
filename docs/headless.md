@@ -20,6 +20,7 @@ WAYLAND_DISPLAY=<name from the log> foot
 |---|---|
 | `type <text>` | Type text |
 | `key Super+Return` | Press a key, with optional Shift, Ctrl, Alt or Super |
+| `hold Super+h 1s` | Press a key like `key`, hold it, then release it |
 | `sleep 1s` | Wait |
 | `move <x> <y>` | Move the pointer, in output coordinates |
 | `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |

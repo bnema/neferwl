@@ -161,6 +161,10 @@ type Core struct {
 		timerC    <-chan time.Time
 		timerStop func() bool
 	}
+	// repeat is the held key that repeats a move (repeat.go); repeatC its
+	// timer's channel, nil when no key repeats.
+	repeat  keyRepeat
+	repeatC <-chan time.Time
 }
 
 // publishScratch is where publishState and publishWorkspaces build their
@@ -1054,6 +1058,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopCaptureTimer()
 	defer c.stopPulseTimer()
 	defer c.cancelSwitcher()
+	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -1137,6 +1142,28 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			continue
+		case <-c.repeatC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if !c.repeatLive() {
+				continue
+			}
+			// A held key is activity, as its press was: idle timers
+			// must not fire while it repeats.
+			if err := c.userActivity(ctx); err != nil {
+				return nil
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if err := c.repeatTick(ctx); err != nil {
+				if errors.Is(err, errSecurityChanged) {
+					continue
+				}
+				return err
+			}
+			continue
 		case <-c.capt.timerC:
 			c.capt.timerC, c.capt.timerStop = nil, nil
 			if c.captureFlashTick() && c.publish(ctx) != nil {
@@ -1181,6 +1208,9 @@ func (c *Core) Run(ctx context.Context) error {
 			if c.securityCheckpoint(ctx) != nil {
 				return nil
 			}
+			// A new keymap quarantines held keys: their release never
+			// comes, so no repeat may outlive a reload.
+			c.stopRepeat()
 			if err := c.apply(ev.Config); err != nil {
 				select {
 				case c.ch.ConfigErrors <- err:

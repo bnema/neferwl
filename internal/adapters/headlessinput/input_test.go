@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/xkb"
@@ -19,6 +21,8 @@ func TestScript(t *testing.T) {
 		{"type Hi!", []string{"Shift_L", "H", "H", "Shift_L", "i", "i", "Shift_L", "exclam", "exclam", "Shift_L"}, nil},
 		{"key Shift+A", []string{"Shift_L", "A", "A", "Shift_L"}, []uint32{42, 30, 30, 42}},
 		{"key Super+Return", []string{"Super_L", "Return", "Return", "Super_L"}, []uint32{125, 28, 28, 125}},
+		{"hold Super+h 20ms", []string{"Super_L", "h", "h", "Super_L"}, []uint32{125, 35, 35, 125}},
+		{"hold h", nil, nil},
 	} {
 		t.Run(tt.line, func(t *testing.T) {
 			km, err := xkb.New(xkb.RMLVO{Layout: "us"})
@@ -55,6 +59,48 @@ func TestScript(t *testing.T) {
 			}
 		})
 	}
+}
+
+// hold keeps the key and its modifiers down for the given duration, then
+// releases the key before the modifier.
+func TestHoldKeepsKeyDown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+		if err != nil {
+			t.Skip(err)
+		}
+		script := make(chan string, 1)
+		script <- "hold Super+h 1s"
+		close(script)
+		input := make(chan ports.InputEvent, 8)
+		done := make(chan error, 1)
+		go func() {
+			done <- Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input"))
+		}()
+		time.Sleep(900 * time.Millisecond)
+		synctest.Wait()
+		if len(input) != 2 {
+			t.Fatalf("before the hold ends: %d events, want the 2 presses", len(input))
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		for i, want := range []struct {
+			name    string
+			pressed bool
+			super   bool
+		}{
+			{"Super_L", true, true},
+			{"h", true, true},
+			{"h", false, true},
+			{"Super_L", false, false},
+		} {
+			ev := (<-input).(ports.KeyEvent)
+			if ev.Keysym != want.name || ev.Pressed != want.pressed || (ev.Mods&ports.ModSuper != 0) != want.super {
+				t.Errorf("event %d: %s pressed=%v mods=%v, want %s pressed=%v super=%v", i, ev.Keysym, ev.Pressed, ev.Mods, want.name, want.pressed, want.super)
+			}
+		}
+	})
 }
 
 func TestPointerScript(t *testing.T) {
