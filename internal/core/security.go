@@ -47,6 +47,7 @@ func (c *Core) syncSecurity() bool {
 	c.stopAnimations()
 	c.stopPulse()
 	c.cancelSwitcher()
+	c.stopRepeat()
 	if state.Protected {
 		c.dropCaptureSessions()
 	}

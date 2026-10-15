@@ -161,6 +161,10 @@ type Core struct {
 		timerC    <-chan time.Time
 		timerStop func() bool
 	}
+	// repeat is the held key that repeats a move (repeat.go); repeatC its
+	// timer's channel, nil when no key repeats.
+	repeat  keyRepeat
+	repeatC <-chan time.Time
 }
 
 // publishScratch is where publishState and publishWorkspaces build their
@@ -1054,6 +1058,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopCaptureTimer()
 	defer c.stopPulseTimer()
 	defer c.cancelSwitcher()
+	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
 	// bounded remainder, selectable alongside owner events without polling.
 	c.startup = make([][]string, len(c.cfg.Startup))
@@ -1135,6 +1140,17 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			if c.switcherTick() && (c.publish(ctx) != nil || c.rehit(ctx) != nil) {
 				return nil
+			}
+			continue
+		case <-c.repeatC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if err := c.repeatTick(ctx); err != nil {
+				if errors.Is(err, errSecurityChanged) {
+					continue
+				}
+				return err
 			}
 			continue
 		case <-c.capt.timerC:

@@ -81,7 +81,9 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 			return nil
 		}
 	}
-	stroke := func(name string, mods []uint32) error {
+	// stroke presses mods then name, holds name for hold, and releases
+	// them in reverse order.
+	stroke := func(name string, mods []uint32, hold time.Duration) error {
 		code, shift, ok := km.KeycodeFor(name)
 		if !ok {
 			warnInput("key", name, "unknown key")
@@ -105,6 +107,15 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 		}
 		if err := emit(code, true); err != nil {
 			return err
+		}
+		if hold > 0 {
+			timer := time.NewTimer(hold)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
 		}
 		if err := emit(code, false); err != nil {
 			return err
@@ -227,12 +238,25 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 						warnInput("rune", string(r), "unknown rune")
 						continue
 					}
-					if err := stroke(name, nil); err != nil {
+					if err := stroke(name, nil, 0); err != nil {
 						return err
 					}
 				}
-			case strings.HasPrefix(line, "key "):
-				parts := strings.Split(strings.TrimPrefix(line, "key "), "+")
+			case strings.HasPrefix(line, "key "), strings.HasPrefix(line, "hold "):
+				combo, hold := strings.TrimPrefix(line, "key "), time.Duration(0)
+				if rest, ok := strings.CutPrefix(line, "hold "); ok {
+					f := strings.Fields(rest)
+					var err error
+					if len(f) == 2 {
+						hold, err = time.ParseDuration(f[1])
+					}
+					if len(f) != 2 || err != nil || hold <= 0 {
+						warnInput("line", line, "invalid hold")
+						continue
+					}
+					combo = f[0]
+				}
+				parts := strings.Split(combo, "+")
 				var mods []uint32
 				valid := true
 				for _, part := range parts[:len(parts)-1] {
@@ -253,7 +277,7 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 					warnInput("combo", line, "unknown modifier")
 					continue
 				}
-				if err := stroke(parts[len(parts)-1], mods); err != nil {
+				if err := stroke(parts[len(parts)-1], mods, hold); err != nil {
 					return err
 				}
 			case strings.HasPrefix(line, "sleep "):

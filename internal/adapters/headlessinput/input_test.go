@@ -19,6 +19,8 @@ func TestScript(t *testing.T) {
 		{"type Hi!", []string{"Shift_L", "H", "H", "Shift_L", "i", "i", "Shift_L", "exclam", "exclam", "Shift_L"}, nil},
 		{"key Shift+A", []string{"Shift_L", "A", "A", "Shift_L"}, []uint32{42, 30, 30, 42}},
 		{"key Super+Return", []string{"Super_L", "Return", "Return", "Super_L"}, []uint32{125, 28, 28, 125}},
+		{"hold Super+h 20ms", []string{"Super_L", "h", "h", "Super_L"}, []uint32{125, 35, 35, 125}},
+		{"hold h", nil, nil},
 	} {
 		t.Run(tt.line, func(t *testing.T) {
 			km, err := xkb.New(xkb.RMLVO{Layout: "us"})
