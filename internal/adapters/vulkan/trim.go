@@ -60,7 +60,13 @@ func (r *Renderer) Trim(now time.Time) error {
 			}
 		}
 	}
-	return r.poll()
+	if err := r.poll(); err != nil {
+		return err
+	}
+	if i >= 0 {
+		r.trimCompose(r.marks[0].frame)
+	}
+	return nil
 }
 
 // poll records the frames the GPU finished, without waiting, and frees

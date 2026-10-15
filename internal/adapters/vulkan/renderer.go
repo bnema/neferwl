@@ -214,7 +214,23 @@ func New(width, height int) (r *Renderer, err error) {
 	priority := float32(1)
 	qi := vk.DeviceQueueCreateInfo{SType: vk.StructureTypeDeviceQueueCreateInfo, QueueFamilyIndex: family, QueueCount: 1, QueuePriorities: &priority}
 	dynamicRendering := vk.PhysicalDeviceDynamicRenderingFeatures{SType: vk.StructureTypePhysicalDeviceDynamicRenderingFeatures, DynamicRendering: 1}
-	di := vk.DeviceCreateInfo{SType: vk.StructureTypeDeviceCreateInfo, Next: unsafe.Pointer(&dynamicRendering), QueueCreateInfoCount: 1, QueueCreateInfos: &qi}
+	indexing := descriptorIndexingFeatures{SType: descriptorIndexingFeaturesType}
+	features := vk.PhysicalDeviceFeatures2{SType: vk.StructureTypePhysicalDeviceFeatures2, Next: unsafe.Pointer(&indexing)}
+	r.id.GetPhysicalDeviceFeatures2(physical, &features)
+	r.compose.resources = 1
+	coreFeatures := vk.PhysicalDeviceFeatures{}
+	if features.Features.ShaderSampledImageArrayDynamicIndexing != 0 && features.Features.ShaderStorageBufferArrayDynamicIndexing != 0 && indexing.ShaderSampledImageArrayNonUniformIndexing != 0 && indexing.ShaderStorageBufferArrayNonUniformIndexing != 0 {
+		limit := composeResourceLimit(properties.Limits)
+		if limit > 1 {
+			r.compose.resources, r.compose.indexing = limit, true
+			coreFeatures.ShaderSampledImageArrayDynamicIndexing = 1
+			coreFeatures.ShaderStorageBufferArrayDynamicIndexing = 1
+			// Enable only the array indexing features used by these shaders.
+			indexing = descriptorIndexingFeatures{SType: descriptorIndexingFeaturesType, ShaderSampledImageArrayNonUniformIndexing: 1, ShaderStorageBufferArrayNonUniformIndexing: 1}
+			dynamicRendering.Next = unsafe.Pointer(&indexing)
+		}
+	}
+	di := vk.DeviceCreateInfo{SType: vk.StructureTypeDeviceCreateInfo, Next: unsafe.Pointer(&dynamicRendering), QueueCreateInfoCount: 1, QueueCreateInfos: &qi, EnabledFeatures: &coreFeatures}
 	// dmabuf import needs every extension; without them clients use wl_shm.
 	var extNames [][]byte
 	var extPtrs []*byte
@@ -264,6 +280,9 @@ func New(width, height int) (r *Renderer, err error) {
 		}
 		result := r.id.CreateDevice(physical, &di, nil, &r.device)
 		runtime.KeepAlive(global)
+		runtime.KeepAlive(coreFeatures)
+		runtime.KeepAlive(indexing)
+		runtime.KeepAlive(dynamicRendering)
 		runtime.KeepAlive(qi)
 		runtime.KeepAlive(extNames)
 		runtime.KeepAlive(extPtrs)

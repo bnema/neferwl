@@ -673,7 +673,7 @@ func (r *Renderer) createCapturePass() (err error) {
 	write := vk.WriteDescriptorSet{SType: vk.StructureTypeWriteDescriptorSet, DstSet: p.set, DstBinding: 0, DescriptorCount: 1, DescriptorType: vk.DescriptorTypeCombinedImageSampler, ImageInfo: &img}
 	d.UpdateDescriptorSets(r.device, 1, &write, 0, nil)
 	// The pipeline is last: it marks the pass complete.
-	return r.createGraphicsPipeline(hdrVert, captureFrag, vk.FormatB8g8r8a8Unorm, p.layout, false, &p.pipeline)
+	return r.createGraphicsPipeline(hdrVert, captureFrag, vk.FormatB8g8r8a8Unorm, p.layout, false, nil, &p.pipeline)
 }
 
 // destroyCapturePass frees the conversion pipeline (device idle).

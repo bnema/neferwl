@@ -1,23 +1,37 @@
 #version 450
+#ifndef SINGLE_RESOURCE
+#extension GL_EXT_nonuniform_qualifier : require
+#endif
 // Draws a solid fill, a client dmabuf (sampled image) or a client wl_shm
 // buffer (B8G8R8A8 words in a storage buffer). Client pixels are
 // premultiplied, as Wayland buffers are: the pipeline blends ONE,
 // ONE_MINUS_SRC_ALPHA. Scaled draws filter linearly; 1:1 draws read the
 // texel under the fragment, pixel exact.
 
-layout(push_constant) uniform Draw {
-    ivec4 rect;
-    vec4 map;
-    vec4 mapy;
-    vec4 color;
-    vec4 crop;
-    uvec4 buf;
-    uvec4 misc;
+layout(location = 0) in Parameters {
+    flat vec4 map;
+    flat vec4 mapy;
+    flat vec4 color;
+    flat vec4 crop;
+    flat uvec4 buf;
+    flat uvec4 misc;
+    flat uint resourceIndex;
 } d;
 
+#ifdef SINGLE_RESOURCE
 layout(set = 0, binding = 0) uniform sampler2D tex;
 layout(std430, set = 0, binding = 1) readonly buffer Pixels { uint pixels[]; };
 layout(set = 0, binding = 2) uniform sampler2D chromaTex;
+#define PIXEL(i) pixels[i]
+#else
+layout(constant_id = 0) const int resourceCount = 1;
+layout(set = 0, binding = 0) uniform sampler2D textures[resourceCount];
+layout(std430, set = 0, binding = 1) readonly buffer Pixels { uint pixels[]; } pixelBuffers[resourceCount];
+layout(set = 0, binding = 2) uniform sampler2D chromaTextures[resourceCount];
+#define tex textures[nonuniformEXT(d.resourceIndex)]
+#define chromaTex chromaTextures[nonuniformEXT(d.resourceIndex)]
+#define PIXEL(i) pixelBuffers[nonuniformEXT(d.resourceIndex)].pixels[i]
+#endif
 
 layout(location = 0) out vec4 color;
 
@@ -83,7 +97,7 @@ vec4 sampleYUV(vec2 src) {
 vec4 texel(ivec2 p) {
     p = clamp(p, ivec2(floor(d.crop.xy)), min(ivec2(d.buf.yz) - 1, ivec2(ceil(d.crop.zw)) - 1));
     // Little-endian B,G,R,A bytes: unpack yields (B, G, R, A).
-    return unpackUnorm4x8(pixels[d.buf.x + uint(p.y) * d.buf.y + uint(p.x)]).zyxw;
+    return unpackUnorm4x8(PIXEL(d.buf.x + uint(p.y) * d.buf.y + uint(p.x))).zyxw;
 }
 
 // sampleBuffer reads the client buffer at src (buffer pixels).

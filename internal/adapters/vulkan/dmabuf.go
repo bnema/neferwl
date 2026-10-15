@@ -186,8 +186,7 @@ func (r *Renderer) importable(physical vk.PhysicalDevice, format vk.Format, modi
 // DMABuf reports the formats this renderer imports.
 func (r *Renderer) DMABuf() ports.DMABufSupport { return r.dmabuf }
 
-// imported is a client dmabuf bound to a VkImage, with the view and set
-// the compose shader samples it through.
+// imported is a client dmabuf bound to a VkImage and its sampled views.
 type imported struct {
 	image      vk.Image
 	memory     vk.DeviceMemory
@@ -199,8 +198,6 @@ type imported struct {
 	// disjoint is available for this format/modifier; required only when
 	// the two planes refer to different underlying DMA-BUF objects.
 	disjoint bool
-	pool     vk.DescriptorPool
-	set      vk.DescriptorSet
 	fd       int // our duplicate of plane 0, for implicit sync
 	// last is the frame that drew it, for eviction.
 	last uint64
@@ -279,9 +276,6 @@ func (r *Renderer) importDMABuf(b *ports.DMABuf) (*imported, error) {
 	if im.view, err = r.imageView(im.image, format); err != nil {
 		return nil, err
 	}
-	if im.pool, im.set, err = r.newSet(im.view, r.compose.dummyBuffer.buffer); err != nil {
-		return nil, err
-	}
 	ok = true
 	r.imports[b.ID] = im
 	return im, nil
@@ -305,9 +299,7 @@ func dupFile(f *os.File) (int, error) {
 }
 
 func (r *Renderer) release(im *imported) {
-	if im.pool != 0 {
-		r.dd.DestroyDescriptorPool(r.device, im.pool, nil)
-	}
+	r.invalidateCompose(resourceKey{im: im})
 	if im.view != 0 {
 		r.dd.DestroyImageView(r.device, im.view, nil)
 	}
