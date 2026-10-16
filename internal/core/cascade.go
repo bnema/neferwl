@@ -350,9 +350,11 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 	return true
 }
 
-// columnIDs lists the windows of each column, its identity for
-// restoreBand: a column whose first window is one of them is that column,
-// even after its first window closed or the stack changed order.
+// columnIDs lists the windows of each column, in order: its identity for
+// restoreBand. The column is the one headed by the first of them still
+// heading a column, so it is found after its first window closed or its
+// stack changed order, and a window that left it for a column of its own
+// comes after the one that stayed first.
 func columnIDs(cols []Column) [][]WindowID {
 	ids := make([][]WindowID, len(cols))
 	for i, c := range cols {
@@ -443,7 +445,12 @@ func (w *Workspace) restoreBand() bool {
 			if rev {
 				e = ids[len(ids)-1-k]
 			}
-			i := slices.IndexFunc(bands[nb], func(c Column) bool { return slices.Contains(e, c.Windows[0]) })
+			i := -1
+			for _, v := range e {
+				if i = slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == v }); i >= 0 {
+					break
+				}
+			}
 			if i < 0 {
 				continue
 			}

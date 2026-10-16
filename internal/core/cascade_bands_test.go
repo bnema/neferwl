@@ -224,6 +224,18 @@ func TestCascadeRestoreBandMemory(t *testing.T) {
 		w.ToggleFullWidth()
 		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{5})
 	})
+	t.Run("a window expelled from the pushed column stays", func(t *testing.T) {
+		_, w := cascadeMovesCore(t, 5, 4, false) // {1 2 3 4} {5}
+		w.FocusID(4)
+		w.ConsumeOrExpel(-1) // {1 2 3/4} {5}
+		w.FocusID(2)
+		w.ToggleFullWidth() // {1} {2*} {3/4 5}
+		w.FocusID(4)
+		w.ConsumeOrExpel(-1) // {1} {2*} {4 3 5}
+		w.FocusID(2)
+		w.ToggleFullWidth()
+		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5})
+	})
 	t.Run("first window of a pushed column closed", func(t *testing.T) {
 		_, w := cascadeMovesCore(t, 4, 3, false) // {1 2 3} {4}
 		w.FocusID(4)
