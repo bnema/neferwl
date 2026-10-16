@@ -201,6 +201,29 @@ func TestCascadeRestoreBandMemory(t *testing.T) {
 		w.ToggleFullWidth()             // {1 2 3}
 		wantBands(t, w, []WindowID{1, 2, 3})
 	})
+	t.Run("cycle then maximize from either end keeps the order", func(t *testing.T) {
+		for _, focus := range []WindowID{1, 3} {
+			_, w := cascadeMovesCore(t, 3, 3, false)
+			w.FocusID(focus)
+			w.Apply(ActionCycleColumnWidth)
+			w.ToggleFullWidth()
+			w.ToggleFullWidth()
+			wantBands(t, w, []WindowID{1, 2, 3})
+		}
+	})
+	t.Run("a window that left the pushed column does not bring its new column", func(t *testing.T) {
+		_, w := cascadeMovesCore(t, 5, 4, false) // {1 2 3 4} {5}
+		w.FocusID(4)
+		w.ConsumeOrExpel(-1) // {1 2 3/4} {5}
+		w.FocusID(2)
+		w.ToggleFullWidth() // {1} {2*} {3/4 5}
+		w.stackWindow(4, 5) // {1} {2*} {3 5/4}
+		w.FocusID(5)
+		w.MoveColumn(-1) // {1} {2*} {5/4 3}
+		w.FocusID(2)
+		w.ToggleFullWidth()
+		wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{5})
+	})
 	t.Run("first window of a pushed column closed", func(t *testing.T) {
 		_, w := cascadeMovesCore(t, 4, 3, false) // {1 2 3} {4}
 		w.FocusID(4)

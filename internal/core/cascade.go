@@ -351,7 +351,8 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 }
 
 // columnIDs lists the windows of each column, its identity for
-// restoreBand: any of them still together finds the column.
+// restoreBand: a column whose first window is one of them is that column,
+// even after its first window closed or the stack changed order.
 func columnIDs(cols []Column) [][]WindowID {
 	ids := make([][]WindowID, len(cols))
 	for i, c := range cols {
@@ -375,10 +376,11 @@ func (w *Workspace) isolateBand() {
 	left := slices.Clone(bands[b][:p])
 	right := slices.Clone(bands[b][p+1:])
 	c := bands[b][p]
-	// Earlier pushes (cycle-column-width) stay remembered, farther out:
-	// pushedUp ends nearest, pushedDown starts nearest.
-	c.pushedUp = append(c.pushedUp, columnIDs(left)...)
-	c.pushedDown = append(columnIDs(right), c.pushedDown...)
+	// Earlier pushes (cycle-column-width) stay remembered and were nearer
+	// at first, so the new ones go past them: pushedUp ends nearest,
+	// pushedDown starts nearest.
+	c.pushedUp = append(columnIDs(left), c.pushedUp...)
+	c.pushedDown = append(c.pushedDown, columnIDs(right)...)
 	bands[b] = []Column{c}
 	if len(right) > 0 {
 		bands = w.sendBand(bands, b, 1, 0, right)
@@ -400,10 +402,10 @@ func (w *Workspace) pushNeighbor() {
 	id, _ := w.Focused()
 	c := &w.Columns[w.Focus]
 	if w.Focus < last {
-		c.pushedDown = append(columnIDs(w.Columns[w.Focus+1:w.Focus+2]), c.pushedDown...)
+		c.pushedDown = append(c.pushedDown, columnIDs(w.Columns[w.Focus+1:w.Focus+2])...)
 		w.shiftBand(w.Focus+1, w.Focus+1, 1, 0)
 	} else {
-		c.pushedUp = append(c.pushedUp, columnIDs(w.Columns[w.Focus-1:w.Focus])...)
+		c.pushedUp = append(columnIDs(w.Columns[w.Focus-1:w.Focus]), c.pushedUp...)
 		w.shiftBand(w.Focus-1, w.Focus-1, -1, max(w.MaxColumns, 1))
 	}
 	w.Focus = w.columnOf(id)
@@ -441,9 +443,7 @@ func (w *Workspace) restoreBand() bool {
 			if rev {
 				e = ids[len(ids)-1-k]
 			}
-			i := slices.IndexFunc(bands[nb], func(c Column) bool {
-				return slices.ContainsFunc(c.Windows, func(v WindowID) bool { return slices.Contains(e, v) })
-			})
+			i := slices.IndexFunc(bands[nb], func(c Column) bool { return slices.Contains(e, c.Windows[0]) })
 			if i < 0 {
 				continue
 			}
