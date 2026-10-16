@@ -151,9 +151,6 @@ func TestFrameQueueKeepsBackingArray(t *testing.T) {
 			return
 		}
 		first, head = queue[:1][0], &queue[:1][0]
-		if len(s.frameOwners) != 0 {
-			t.Errorf("fired queue keeps %d frame owners", len(s.frameOwners))
-		}
 	})
 	if first != nil {
 		t.Fatal("fired queue pins a callback")

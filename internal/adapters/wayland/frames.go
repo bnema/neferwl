@@ -350,12 +350,6 @@ func (s *Server) sendFrames(name string, flipped bool) {
 	if len(callbacks) == 0 {
 		return
 	}
-	// The queue keeps its backing array for the next frame (an empty queue
-	// reads like an absent one). Nothing below queues a callback.
-	defer func() {
-		clear(callbacks)
-		s.awaiting[name] = callbacks[:0]
-	}()
 	// done carries the flip's time when the output flips (the frame the
 	// client drew for is on screen), else now.
 	ms := uint32(time.Since(s.started).Milliseconds())
@@ -371,6 +365,10 @@ func (s *Server) sendFrames(name string, flipped bool) {
 		cb.Destroy()
 		s.frames++
 	}
+	// The queue keeps its backing array for the next frame (an empty queue
+	// reads like an absent one). Nothing above queues a callback.
+	clear(callbacks)
+	s.awaiting[name] = callbacks[:0]
 }
 
 // framePeriod is one refresh at refreshMilli mHz, 60 Hz when unknown.
