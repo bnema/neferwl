@@ -144,3 +144,27 @@ func TestCapturedWindowKeepsOutputFramePacing(t *testing.T) {
 		t.Fatalf("released: queues %+v", s.awaiting)
 	}
 }
+
+// Relocation filters a queue in place: the callbacks that move away leave
+// no pointer in the kept queue's backing array.
+func TestRelocateCallbacksClearsFilteredTail(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, awaiting: map[string][]*wayland.Callback{}, frameDue: map[string]time.Time{}}
+	hidden := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
+	shown := &window{hasLast: true, last: ports.ConfigureWindow{Output: "DP-2", Visible: true}}
+	root := &surface{xdg: &xdgSurface{window: hidden}}
+	other := &surface{xdg: &xdgSurface{window: shown}}
+	moving, staying := new(wayland.Callback), new(wayland.Callback)
+	s.queueFrames(root, []*wayland.Callback{moving})
+	s.queueFrames(other, []*wayland.Callback{staying})
+	before := s.awaiting["DP-2"]
+	hidden.last.Visible = false
+	s.relocateCallbacks(root)
+	kept := s.awaiting["DP-2"]
+	if len(kept) != 1 || kept[0] != staying || len(s.awaiting[suspendedFrameQueue]) != 1 {
+		t.Fatalf("relocation: queues %+v", s.awaiting)
+	}
+	if tail := before[:2][1]; tail != nil {
+		t.Error("the filtered tail still pins the moved callback")
+	}
+}

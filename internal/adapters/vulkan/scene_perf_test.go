@@ -213,6 +213,38 @@ func TestRetireSemaphoreAllocatesNothing(t *testing.T) {
 	}
 }
 
+// Semaphore and closure entries share the deferred list: each is freed once
+// its frame completes, in order, and a semaphore whose frame already
+// completed is destroyed at once instead of queued.
+func TestRetireMixedDeferredEntries(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	r.runDeferred()
+	r.completed = 5
+	// A null handle is a valid vkDestroySemaphore argument.
+	r.retireSemaphore(5, 0)
+	if len(r.deferred) != 0 {
+		t.Fatalf("completed frame's semaphore queued: %d entries", len(r.deferred))
+	}
+	var freed []string
+	r.retire(7, func() { freed = append(freed, "late") })
+	r.retireSemaphore(6, 0)
+	r.retire(6, func() { freed = append(freed, "early") })
+	r.completed = 6
+	r.runDeferred()
+	if !slices.Equal(freed, []string{"early"}) || len(r.deferred) != 1 || r.deferred[0].frame != 7 {
+		t.Fatalf("frame 6: freed %v, %d entries left", freed, len(r.deferred))
+	}
+	r.completed = 7
+	r.runDeferred()
+	if !slices.Equal(freed, []string{"early", "late"}) || len(r.deferred) != 0 {
+		t.Fatalf("frame 7: freed %v, %d entries left", freed, len(r.deferred))
+	}
+}
+
 // TestSceneWalkUnchangedTiledSHM guards the GPU copy budget of an unchanged
 // subsurface tree. Each child has its own real wl_shm pool.
 func TestSceneWalkUnchangedTiledSHM(t *testing.T) {
