@@ -30,6 +30,13 @@ type Column struct {
 	// Windows order. They apply only while there is one per window and
 	// they sum to 100; otherwise the rows share the height equally.
 	Shares []int
+	// BandStart marks the first column of a cascade band. It belongs to the
+	// position, not the column: swaps leave it in place. See cascade.go.
+	BandStart bool
+	// pushedUp and pushedDown are the columns, each by its windows, that
+	// maximize-column or cycle-column-width sent to the band above or
+	// below; they come back when the column is restored.
+	pushedUp, pushedDown [][]WindowID
 }
 type Placement struct {
 	ID                          WindowID
@@ -534,7 +541,12 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 // addColumn places a new column like a new window and focuses it.
 func (w *Workspace) addColumn(col Column) {
 	at := 0
-	if w.policy().equalCells {
+	col.BandStart = false
+	if w.policy().wraps {
+		// After the focused band: it joins it when it has room, else it
+		// starts a band of its own below it.
+		at, col.BandStart = w.spawnIndex()
+	} else if w.policy().equalCells {
 		// Ordered overflow depends only on window order: new windows go last.
 		at = len(w.Columns)
 	} else if len(w.Columns) > 0 {
@@ -564,7 +576,7 @@ func (w *Workspace) AddSlotWindow(id WindowID, slot int, cells int) {
 			at = i + 1
 		}
 	}
-	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells, Slot: slot})
+	w.insertAt(at, Column{Windows: []WindowID{id}, Cells: cells, Slot: slot})
 	if len(w.Columns) > 1 && at <= w.Focus {
 		w.Focus++
 	}
@@ -642,7 +654,7 @@ func (w *Workspace) RemoveWindow(id WindowID) {
 			c.Windows = append(c.Windows[:j], c.Windows[j+1:]...)
 			c.Shares = nil
 			if len(c.Windows) == 0 {
-				w.Columns = append(w.Columns[:i], w.Columns[i+1:]...)
+				w.deleteColumn(i)
 				if len(w.Columns) == 0 {
 					w.Focus = 0
 					w.View = 0
@@ -867,8 +879,13 @@ func (w *Workspace) MoveColumn(dir int) {
 		return
 	}
 	if (dir == -1 || dir == 1) && w.Focus+dir >= 0 && w.Focus+dir < len(w.Columns) {
+		if w.policy().wraps && w.leavesBand(w.Focus+dir) {
+			return // a cascade column never crosses into the adjacent band
+		}
 		i := w.Focus
 		w.Columns[i], w.Columns[i+dir] = w.Columns[i+dir], w.Columns[i]
+		// Band starts are positional: the flag stays at its index.
+		w.Columns[i].BandStart, w.Columns[i+dir].BandStart = w.Columns[i+dir].BandStart, w.Columns[i].BandStart
 		w.Focus += dir
 		w.scroll()
 	}
@@ -990,7 +1007,8 @@ func (w *Workspace) takeColumn() (Column, bool) {
 	}
 	// Its windows leave this workspace's recent use with it.
 	w.recent = slices.DeleteFunc(w.recent, func(v WindowID) bool { return slices.Contains(col.Windows, v) })
-	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
+	col.BandStart = false
+	w.deleteColumn(w.Focus)
 	w.Focus = min(w.Focus, max(len(w.Columns)-1, 0))
 	if len(w.Columns) == 0 {
 		w.View = 0
@@ -1006,9 +1024,19 @@ func (w *Workspace) insertColumn(at int, col Column) {
 	if w.policy().maximizeHides() && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
-	w.Columns = slices.Insert(w.Columns, at, col)
+	w.insertAt(at, col)
 	w.Focus = at
 	w.scroll()
+}
+
+// insertAt inserts col at index at; in a cascade it joins the band of the
+// column it goes before.
+func (w *Workspace) insertAt(at int, col Column) {
+	col.BandStart = false
+	if w.policy().wraps && at < len(w.Columns) && w.Columns[at].BandStart {
+		col.BandStart, w.Columns[at].BandStart = true, false
+	}
+	w.Columns = slices.Insert(w.Columns, at, col)
 }
 
 // GrowColumn widens the focused column by one cell, taking it from another
@@ -1021,8 +1049,11 @@ func (w *Workspace) GrowColumn(cycle bool) {
 	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
 		return
 	}
-	w.unmaximize()
 	defer w.scroll()
+	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
+		w.unmaximizeBand()
+	}
+	w.unmaximize()
 	k := max(w.MaxColumns, 1)
 	if w.policy().equalCells {
 		if !w.policy().wraps && !w.laneRow() {
@@ -1030,7 +1061,20 @@ func (w *Workspace) GrowColumn(cycle bool) {
 		}
 		first, last := w.laneBounds(w.laneOf(w.Focus))
 		n := last - first + 1
+		pushed := false
+		if w.policy().wraps && cycle && n > 1 && n >= k && !w.unevenLane(first, last) {
+			// A full band makes room: a neighbor goes to the adjacent band.
+			w.pushNeighbor()
+			first, last = w.laneBounds(w.laneOf(w.Focus))
+			n, pushed = last-first+1, true
+		}
 		if n == 1 || n >= k {
+			if w.policy().wraps && cycle && !pushed && w.restoreBand() {
+				// End of the cycle: the pushed columns came back.
+				first, last = w.laneBounds(w.laneOf(w.Focus))
+				w.setLaneCells(first, make([]int, last-first+1))
+				return
+			}
 			// Nothing to grow, but a lane left uneven (a column joined
 			// it, or max-columns shrank) still cycles back to equal.
 			if cycle && slices.ContainsFunc(w.Columns[first:last+1], func(c Column) bool { return c.Cells != 0 }) {
@@ -1048,6 +1092,11 @@ func (w *Workspace) GrowColumn(cycle bool) {
 		if d := w.donor(first, last, cells); d >= 0 {
 			w.moveCell(first, cells, d, w.Focus)
 		} else if cycle {
+			if w.policy().wraps && w.restoreBand() {
+				// End of the cycle: the pushed columns came back.
+				first, last = w.laneBounds(w.laneOf(w.Focus))
+				n = last - first + 1
+			}
 			w.setLaneCells(first, make([]int, n))
 		}
 		return
@@ -1069,8 +1118,11 @@ func (w *Workspace) ShrinkColumn() {
 	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
 		return
 	}
-	w.unmaximize()
 	defer w.scroll()
+	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
+		w.unmaximizeBand()
+	}
+	w.unmaximize()
 	k := max(w.MaxColumns, 1)
 	if w.policy().equalCells {
 		if !w.policy().wraps && !w.laneRow() {
@@ -1136,6 +1188,12 @@ func (w *Workspace) laneCells(first, last, remAt int) (cells []int, ok bool) {
 		}
 	}
 	return cells, false
+}
+
+// unevenLane reports whether a column of the lane first..last has its
+// own width.
+func (w *Workspace) unevenLane(first, last int) bool {
+	return slices.ContainsFunc(w.Columns[first:last+1], func(c Column) bool { return c.Cells != 0 })
 }
 
 // setLaneCells stores cells on the lane's columns, from column first.
@@ -1224,12 +1282,26 @@ func (w *Workspace) ToggleFullWidth() {
 	if len(w.Columns) == 0 || w.onFloat() {
 		return
 	}
-	if w.Columns[w.Focus].FullWidth {
+	switch {
+	case w.policy().wraps && w.Columns[w.Focus].FullWidth:
+		w.unmaximizeBand()
+	case w.policy().wraps:
+		// A cascade column takes a band of its own; the others stay seen.
+		w.isolateBand()
+		w.maximize(w.Focus)
+	case w.Columns[w.Focus].FullWidth:
 		w.unmaximize()
-	} else {
+	default:
 		w.maximize(w.Focus)
 	}
 	w.scroll()
+}
+
+// unmaximizeBand unmaximizes the focused cascade column and brings back
+// the columns its maximization sent to the adjacent bands.
+func (w *Workspace) unmaximizeBand() {
+	w.Columns[w.Focus].FullWidth = false
+	w.restoreBand()
 }
 
 func (w *Workspace) ToggleFullscreen() {
@@ -1612,6 +1684,7 @@ func (w *Workspace) scroll() {
 	before := w.View
 	defer func() { w.retarget(before) }()
 	if w.policy().wraps {
+		w.markBands()
 		w.View = w.band(w.Focus) * w.Usable.H
 		return
 	}

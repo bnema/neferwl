@@ -128,10 +128,10 @@ func TestCascadeCompactionAndNavigation(t *testing.T) {
 	if w.View != 600 {
 		t.Fatalf("changed max view=%d", w.View)
 	}
-	w.FocusID(2)
+	w.FocusID(7)
 	w.AddWindow(8)
 	if w.Columns[len(w.Columns)-1].Windows[0] != 8 {
-		t.Fatal("new column did not append")
+		t.Fatal("new column did not join the focused last band")
 	}
 	w.SetUsable(Rect{X: 0, Y: 20, W: 900, H: 580})
 	if w.View != w.band(w.Focus)*580 {

@@ -121,6 +121,7 @@ func TestOverviewCascadeOtherLanes(t *testing.T) {
 	// Five bands (13 columns): the ones two lanes away are off the area.
 	m = cascadeOverview()
 	w := m.Current()
+	w.FocusID(10) // New windows join the focused band, the last one.
 	for id := WindowID(11); id <= 16; id++ {
 		w.AddWindow(id)
 	}

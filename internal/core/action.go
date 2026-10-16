@@ -285,7 +285,8 @@ func (c *Core) applyAction(a Action) Effect {
 	case ActionMoveColumnLeft, ActionMoveColumnRight:
 		// Past the edge of the workspace or cascade band the column moves to
 		// the neighbor screen, on the side facing this one, and focus
-		// follows it. With no screen there, a cascade column crosses bands.
+		// follows it. With no screen there, a cascade column stays in its
+		// band.
 		w := c.cur().mon.Current()
 		dir, d := 1, dirRight
 		if a == ActionMoveColumnLeft {
@@ -313,17 +314,17 @@ func (c *Core) applyAction(a Action) Effect {
 }
 
 // edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
-// content edge, in order: to the occupied workspace on that side when the
-// workspace axis is horizontal; else to the neighbor monitor; else to the
-// trailing empty workspace. It reports whether focus moved.
+// content edge, in order: to the neighbor monitor on that side; else to the
+// occupied workspace on that side when the workspace axis is horizontal;
+// else to the trailing empty workspace. It reports whether focus moved.
 func (c *Core) edgeFocus(dir int, d direction) bool {
 	m := c.cur().mon
-	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
-		m.Focus(to)
-		return true
-	}
 	if i := c.neighbor(d); i >= 0 {
 		c.focusScreen = i
+		return true
+	}
+	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
+		m.Focus(to)
 		return true
 	}
 	return m.stepWorkspace(horizontalAxis, dir)

@@ -575,16 +575,23 @@ func (m *Monitor) applyNamed() {
 		if before != w.Overflow && w.policy().equalCells {
 			w.clearMaximized()
 		}
+		if before != w.Overflow {
+			// Cascade bands start over from the column order.
+			w.forgetBands()
+		}
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
 		if w.policy().content != axis {
 			w.view.stop()
 			w.View = 0
 		}
-		w.SetMaxColumns(m.template.MaxColumns)
+		// One call with the effective value: a passing smaller one would
+		// split cascade bands for good.
+		n := m.template.MaxColumns
 		if s.MaxColumns > 0 {
-			w.SetMaxColumns(s.MaxColumns)
+			n = s.MaxColumns
 		}
+		w.SetMaxColumns(n)
 		// Named workspaces take their configured size; any other keeps its own.
 		if w.Name != "" {
 			w.SetSize(s.Size[0], s.Size[1])

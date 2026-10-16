@@ -2,36 +2,52 @@ package core
 
 import "slices"
 
-// Cascade bands pack columns in order: a band ends when the next column
-// would take it past MaxColumns slots. A column takes one slot and a
-// maximized one all of them, so it sits alone in its band. Cells only
-// share a band's width (laneWidth); they never move a column to a band.
+// Cascade bands are explicit: Column.BandStart marks the first column of
+// each band, and moves keep the other bands as they are. A band also ends
+// where it would pass MaxColumns columns (max-columns shrank, or a column
+// was inserted into a full band), and a maximized column sits alone in its
+// band. scroll freezes those ends into BandStart, so the bands stay when
+// max-columns grows again or the column is unmaximized. Cells only share
+// a band's width (laneWidth); they never move a column to a band.
 
-// bandSlots is the number of slots column i takes in its band.
-func (w *Workspace) bandSlots(i int) int {
-	if w.Columns[i].FullWidth {
-		return max(w.MaxColumns, 1)
+// startsBand reports whether column i starts a band, n being the count of
+// columns in the band before it.
+func (w *Workspace) startsBand(i, n int) bool {
+	if i == 0 {
+		return true
 	}
-	return 1
+	c := w.Columns
+	return c[i].BandStart || n >= max(w.MaxColumns, 1) || c[i].FullWidth || c[i-1].FullWidth
 }
 
 // walkBands calls f with each band and its column range, in order, until f
 // returns false.
 func (w *Workspace) walkBands(f func(b, first, last int) bool) {
-	k := max(w.MaxColumns, 1)
-	b, first, sum := 0, 0, 0
+	b, first, n := 0, 0, 0
 	for i := range w.Columns {
-		c := w.bandSlots(i)
-		if i > first && sum+c > k {
+		if i > first && w.startsBand(i, n) {
 			if !f(b, first, i-1) {
 				return
 			}
-			b, first, sum = b+1, i, 0
+			b, first, n = b+1, i, 0
 		}
-		sum += c
+		n++
 	}
 	if len(w.Columns) > 0 {
 		f(b, first, len(w.Columns)-1)
+	}
+}
+
+// markBands freezes the band starts into BandStart.
+func (w *Workspace) markBands() {
+	n := 0
+	for i := range w.Columns {
+		s := w.startsBand(i, n)
+		w.Columns[i].BandStart = s
+		if s {
+			n = 0
+		}
+		n++
 	}
 }
 
@@ -226,32 +242,17 @@ func (w *Workspace) leavesBand(i int) bool {
 	return i < 0 || i >= len(w.Columns) || w.policy().wraps && w.band(i) != w.band(w.Focus)
 }
 
-// moveBand swaps the focused cascade column with the column in the band dir
-// away where focus-window-up/down goes; focus follows it. Past the first
-// or last band nothing moves. Columns keep their maximization: when the two
-// take a different number of slots, a swap would repack the bands around
-// them, so the focused column passes the whole adjacent band instead.
+// moveBand moves the focused cascade column to the band dir away
+// (move-window-up/down past its column), keeping its offset in the band;
+// focus follows it. See shiftBand.
 func (w *Workspace) moveBand(dir int) {
-	i := w.laneNeighbor(dir)
-	if i < 0 {
+	if !w.policy().wraps || len(w.Columns) == 0 {
 		return
 	}
-	if w.bandSlots(w.Focus) == w.bandSlots(i) {
-		w.Columns[w.Focus], w.Columns[i] = w.Columns[i], w.Columns[w.Focus]
-		w.Focus = i
+	first, _ := w.bandBounds(w.band(w.Focus))
+	if w.shiftBand(w.Focus, w.Focus, dir, w.Focus-first) {
 		w.scroll()
-		return
 	}
-	first, last := w.bandBounds(w.band(i))
-	col := w.Columns[w.Focus]
-	w.Columns = slices.Delete(w.Columns, w.Focus, w.Focus+1)
-	at := first // dir < 0: before the band above.
-	if dir > 0 {
-		at = last // After the band below, one index lower once removed.
-	}
-	w.Columns = slices.Insert(w.Columns, at, col)
-	w.Focus = at
-	w.scroll()
 }
 
 // laneNeighbor is the closest column to the focus in the lane d lanes away,
@@ -264,4 +265,242 @@ func (w *Workspace) laneNeighbor(d int) int {
 		return -1
 	}
 	return min(nfirst+w.Focus-first, nlast)
+}
+
+// bandList copies the cascade columns into their bands.
+func (w *Workspace) bandList() [][]Column {
+	var bands [][]Column
+	w.walkBands(func(_, first, last int) bool {
+		bands = append(bands, slices.Clone(w.Columns[first:last+1]))
+		return true
+	})
+	return bands
+}
+
+// setBands stores bands as the columns, empty bands dropped, and focuses
+// the column holding window focus.
+func (w *Workspace) setBands(bands [][]Column, focus WindowID) {
+	cols := w.Columns[:0]
+	for _, b := range bands {
+		for i, c := range b {
+			c.BandStart = i == 0
+			cols = append(cols, c)
+		}
+	}
+	w.Columns = cols
+	if i := w.columnOf(focus); i >= 0 {
+		w.Focus = i
+	}
+}
+
+// fits reports whether cols can join band b: it has room for them and
+// neither side holds a maximized column, which keeps a band to itself.
+func (w *Workspace) fits(bands [][]Column, b int, cols []Column) bool {
+	if b < 0 || b >= len(bands) || len(bands[b])+len(cols) > max(w.MaxColumns, 1) {
+		return false
+	}
+	full := func(c Column) bool { return c.FullWidth }
+	return !slices.ContainsFunc(bands[b], full) && !slices.ContainsFunc(cols, full)
+}
+
+// sendBand moves cols, already taken out of band b, to the band dir away:
+// they join it at index at (clamped) when they fit, else they make a new
+// band between the two, or past the outer band. When cols were alone in
+// band b, it goes away and a band that cannot take them is passed: the
+// new band goes on its far side, so repeated moves always progress.
+func (w *Workspace) sendBand(bands [][]Column, b, dir, at int, cols []Column) [][]Column {
+	t, nb := b+dir, b // A new band between b and t, before b going up.
+	if dir > 0 {
+		nb = b + 1
+	}
+	if len(bands[b]) == 0 {
+		bands = slices.Delete(bands, b, b+1)
+		t, nb = b-1, b-1 // Going up: before band t.
+		if dir > 0 {
+			t, nb = b, b+1 // Going down: after band t.
+		}
+	}
+	if w.fits(bands, t, cols) {
+		at = min(max(at, 0), len(bands[t]))
+		bands[t] = slices.Insert(bands[t], at, cols...)
+		return bands
+	}
+	return slices.Insert(bands, min(max(nb, 0), len(bands)), slices.Clone(cols))
+}
+
+// shiftBand moves the columns lo..hi of one cascade band to the band dir
+// away (see sendBand), at offset at in it. It reports whether they moved.
+func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
+	if len(w.Columns) == 0 || lo < 0 || hi >= len(w.Columns) || lo > hi {
+		return false
+	}
+	b := w.band(lo)
+	if w.band(hi) != b {
+		return false
+	}
+	first, last := w.bandBounds(b)
+	if lo == first && hi == last && (b+dir < 0 || b+dir > w.band(len(w.Columns)-1)) {
+		return false // Alone at the outer band: nothing to cross.
+	}
+	id, _ := w.Focused()
+	bands := w.bandList()
+	cols := slices.Clone(bands[b][lo-first : hi-first+1])
+	bands[b] = slices.Delete(bands[b], lo-first, hi-first+1)
+	w.setBands(w.sendBand(bands, b, dir, at, cols), id)
+	return true
+}
+
+// columnIDs lists the windows of each column, in order: its identity for
+// restoreBand. The column is the one headed by the first of them still
+// heading a column, so it is found after its first window closed or its
+// stack changed order, and a window that left it for a column of its own
+// comes after the one that stayed first.
+func columnIDs(cols []Column) [][]WindowID {
+	ids := make([][]WindowID, len(cols))
+	for i, c := range cols {
+		ids[i] = slices.Clone(c.Windows)
+	}
+	return ids
+}
+
+// isolateBand gives the focused cascade column a band of its own: the
+// columns on its left go to the band above, the ones on its right to the
+// band below (sendBand), and the column remembers them for restoreBand.
+func (w *Workspace) isolateBand() {
+	b := w.band(w.Focus)
+	first, last := w.bandBounds(b)
+	if first == last {
+		return
+	}
+	id, _ := w.Focused()
+	bands := w.bandList()
+	p := w.Focus - first
+	left := slices.Clone(bands[b][:p])
+	right := slices.Clone(bands[b][p+1:])
+	c := bands[b][p]
+	// Both lists keep the band's left-to-right order. Earlier pushes
+	// (cycle-column-width) took the far ends of the band, so the new ones
+	// were nearer the column.
+	c.pushedUp = append(c.pushedUp, columnIDs(left)...)
+	c.pushedDown = append(columnIDs(right), c.pushedDown...)
+	bands[b] = []Column{c}
+	if len(right) > 0 {
+		bands = w.sendBand(bands, b, 1, 0, right)
+	}
+	if len(left) > 0 {
+		bands = w.sendBand(bands, b, -1, max(w.MaxColumns, 1), left)
+	}
+	w.setBands(bands, id)
+}
+
+// pushNeighbor makes room in the focused column's full cascade band for a
+// wider column: the column at the far end of the band leaves it. The
+// rightmost goes to the band below; from the last column, the leftmost
+// goes to the band above, at its right end. The column remembers it.
+func (w *Workspace) pushNeighbor() {
+	first, last := w.bandBounds(w.band(w.Focus))
+	if first == last {
+		return
+	}
+	id, _ := w.Focused()
+	c := &w.Columns[w.Focus]
+	if w.Focus < last {
+		c.pushedDown = append(c.pushedDown, columnIDs(w.Columns[last:last+1])...)
+		w.shiftBand(last, last, 1, 0)
+	} else {
+		c.pushedUp = append(columnIDs(w.Columns[first:first+1]), c.pushedUp...)
+		w.shiftBand(first, first, -1, max(w.MaxColumns, 1))
+	}
+	w.Focus = w.columnOf(id)
+}
+
+// restoreBand brings back the columns isolateBand or pushNeighbor sent
+// away, those still in the adjacent band, as many as the band has room
+// for, nearest to the focused column first: the ones sent up at the start
+// of the band, the ones sent down at its end, in their former order. The
+// others stay where they are. It reports whether the column remembered
+// any.
+func (w *Workspace) restoreBand() bool {
+	c := &w.Columns[w.Focus]
+	up, down := c.pushedUp, c.pushedDown
+	c.pushedUp, c.pushedDown = nil, nil
+	if len(up) == 0 && len(down) == 0 {
+		return false
+	}
+	id, _ := w.Focused()
+	bands := w.bandList()
+	b := w.band(w.Focus)
+	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
+	// take removes from band nb the remembered columns found there, at
+	// most room of them, in the order of ids walked from the focused
+	// column outward (rev: ids end nearest).
+	take := func(nb int, ids [][]WindowID, rev bool) []Column {
+		if nb < 0 || nb >= len(bands) {
+			return nil
+		}
+		var got []Column
+		for k := range ids {
+			if room == 0 {
+				break
+			}
+			e := ids[k]
+			if rev {
+				e = ids[len(ids)-1-k]
+			}
+			// The column is named across the workspace first: one that
+			// moved farther away stays there, with no stand-in.
+			head := slices.IndexFunc(e, func(v WindowID) bool {
+				return slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Windows[0] == v })
+			})
+			if head < 0 {
+				continue
+			}
+			i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
+			if i < 0 {
+				continue
+			}
+			got = append(got, bands[nb][i])
+			bands[nb] = slices.Delete(bands[nb], i, i+1)
+			room--
+		}
+		if rev {
+			slices.Reverse(got)
+		}
+		return got
+	}
+	above := take(b-1, up, true)
+	below := take(b+1, down, false)
+	bands[b] = slices.Concat(above, bands[b], below)
+	w.setBands(bands, id)
+	return true
+}
+
+// spawnIndex is where a new cascade column goes: after the focused band,
+// which it joins when it has room; otherwise it starts a band of its own
+// between it and the next (newBand).
+func (w *Workspace) spawnIndex() (at int, newBand bool) {
+	if len(w.Columns) == 0 {
+		return 0, true
+	}
+	b := w.band(w.Focus)
+	first, last := w.bandBounds(b)
+	bands := [][]Column{w.Columns[first : last+1]}
+	return last + 1, !w.fits(bands, 0, []Column{{}})
+}
+
+// deleteColumn removes column i; a band it started keeps its start.
+func (w *Workspace) deleteColumn(i int) {
+	if w.policy().wraps && w.Columns[i].BandStart && i+1 < len(w.Columns) {
+		w.Columns[i+1].BandStart = true
+	}
+	w.Columns = slices.Delete(w.Columns, i, i+1)
+}
+
+// forgetBands drops the cascade band starts and pushed columns: the bands
+// pack again in column order.
+func (w *Workspace) forgetBands() {
+	for i := range w.Columns {
+		c := &w.Columns[i]
+		c.BandStart, c.pushedUp, c.pushedDown = false, nil, nil
+	}
 }

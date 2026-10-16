@@ -461,6 +461,8 @@ func (c *Core) drop(id WindowID, t dropTarget) {
 		to := w.columnOf(t.anchor)
 		// Their fields move with them, as MoveColumn.
 		w.Columns[ci], w.Columns[to] = w.Columns[to], w.Columns[ci]
+		// Band starts are positional: the flag stays at its index.
+		w.Columns[ci].BandStart, w.Columns[to].BandStart = w.Columns[to].BandStart, w.Columns[ci].BandStart
 		w.FocusID(id)
 	} else {
 		cells := 0
