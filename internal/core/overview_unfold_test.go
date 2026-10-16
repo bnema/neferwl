@@ -359,3 +359,45 @@ func TestOverviewStashOnlyCarouselScrolls(t *testing.T) {
 		t.Fatalf("last card ends at %d, area at %d", r.X+r.W, u.X+u.W)
 	}
 }
+
+// Stepping to a workspace whose stash has the focus selects its stack when
+// the carousel wraps round, so the next step goes on to the next workspace;
+// a carousel that does not wrap is still selected.
+func TestOverviewStepSkipsWrappingCarousel(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowCascade, OverflowScroll} {
+		for _, n := range []int{2, 3} {
+			m := overviewMonitor()
+			m.Focus(2)
+			m.AddWindow(30)
+			m.Focus(1)
+			w := m.Current()
+			for id := WindowID(40); id < WindowID(40+n); id++ {
+				w.AddWindow(id)
+				w.FocusID(id)
+				w.ToggleWindowStash()
+			}
+			for _, ws := range m.Workspaces[:3] {
+				ws.Overflow = overflow
+			}
+			m.Focus(0)
+			if !w.stashFocused() {
+				t.Fatal("setup: the stash does not have the focus")
+			}
+			m.ToggleOverview()
+			m.overviewFocus(ActionFocusWorkspaceNext)
+			if m.Current() != w {
+				t.Fatalf("%s, %d cards: on workspace %d", overflow, n, indexOf(m.Workspaces, m.Current()))
+			}
+			if got, want := m.cardAt(w) >= 0, n < 3; got != want {
+				t.Fatalf("%s, %d cards: card selected %v, want %v", overflow, n, got, want)
+			}
+			if n < 3 {
+				continue
+			}
+			m.overviewFocus(ActionFocusWorkspaceNext)
+			if m.Current() != m.Workspaces[2] {
+				t.Fatalf("%s: the next step stayed on workspace %d", overflow, indexOf(m.Workspaces, m.Current()))
+			}
+		}
+	}
+}

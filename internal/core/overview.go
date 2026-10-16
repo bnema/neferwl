@@ -554,12 +554,17 @@ func (m *Monitor) overviewVertical(dy int) {
 }
 
 // overviewStep shows the workspace d rows from the current one; it stays
-// on the first or last row.
+// on the first or last row. The row selects its stack even when its stash
+// has the focus, if the stash wraps round (wrapsCards): the moves that
+// stepped there would only walk the carousel, never reaching the next row.
 func (m *Monitor) overviewStep(d int) {
 	rows := m.overviewWorkspaces()
 	i := indexOf(rows, m.Current()) + d
 	if i >= 0 && i < len(rows) {
 		m.showOverview(rows[i])
+		if w := m.Current(); m.cardAt(w) >= 0 && w.wrapsCards() {
+			m.clearCard()
+		}
 	}
 }
 
