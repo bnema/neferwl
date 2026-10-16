@@ -189,11 +189,21 @@ func (w *Workspace) addColumnQuiet(col Column) {
 		w.Columns = slices.Insert(w.Columns, at, col)
 		return
 	}
-	if w.policy().equalCells {
+	switch {
+	case w.policy().wraps:
+		// As addColumn: after the focused band, in it when it has room.
+		at, col.BandStart = w.spawnIndex()
+		w.Columns = slices.Insert(w.Columns, at, col)
+		if len(w.Columns) > 1 && at <= w.Focus {
+			w.Focus++
+		}
+		w.scroll()
+		return
+	case w.policy().equalCells:
 		if at > 0 && w.policy().maximizeHides() {
 			w.unmaximize()
 		}
-	} else if at > 0 {
+	case at > 0:
 		at = w.Focus + 1
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)

@@ -585,10 +585,13 @@ func (m *Monitor) applyNamed() {
 			w.view.stop()
 			w.View = 0
 		}
-		w.SetMaxColumns(m.template.MaxColumns)
+		// One call with the effective value: a passing smaller one would
+		// split cascade bands for good.
+		n := m.template.MaxColumns
 		if s.MaxColumns > 0 {
-			w.SetMaxColumns(s.MaxColumns)
+			n = s.MaxColumns
 		}
+		w.SetMaxColumns(n)
 		// Named workspaces take their configured size; any other keeps its own.
 		if w.Name != "" {
 			w.SetSize(s.Size[0], s.Size[1])

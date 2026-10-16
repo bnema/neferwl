@@ -102,17 +102,25 @@ func TestCascadeMaximizeLeftJoinsBandAbove(t *testing.T) {
 	wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2, 5})
 }
 
-// No column is hidden by a maximized cascade column.
+// No column is hidden by a maximized cascade column: focusing each band
+// shows its windows.
 func TestCascadeMaximizeHidesNothing(t *testing.T) {
 	_, w := cascadeMovesCore(t, 3, 3, false)
 	w.FocusID(2)
-	w.ToggleFullWidth()
-	for _, p := range w.Layout() {
-		if p.Hidden && p.ID != 0 {
-			// Off-screen bands are laid out, not hidden by maximize.
-			if w.hiddenByMaximized(w.columnOf(p.ID)) {
-				t.Fatalf("window %d hidden by maximize", p.ID)
+	w.ToggleFullWidth() // {1} {2*} {3}
+	for id := WindowID(1); id <= 3; id++ {
+		w.FocusID(id)
+		var found bool
+		for _, p := range w.Layout() {
+			if p.ID == id {
+				found = true
+				if p.Hidden || p.Rect.W <= 0 || p.Rect.H <= 0 {
+					t.Fatalf("window %d not shown: %+v", id, p)
+				}
 			}
+		}
+		if !found {
+			t.Fatalf("no placement for window %d", id)
 		}
 	}
 }
@@ -179,6 +187,88 @@ func TestCascadeMoveColumnKeepsBandStarts(t *testing.T) {
 	w.FocusID(4)
 	c.applyAction(ActionMoveColumnRight)
 	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{5, 4})
+}
+
+// Review regressions: push memory survives a maximize in between, finds a
+// column whose first window closed, and leaves columns without room in
+// place.
+func TestCascadeRestoreBandMemory(t *testing.T) {
+	t.Run("cycle then maximize", func(t *testing.T) {
+		_, w := cascadeMovesCore(t, 3, 3, false)
+		w.FocusID(2)
+		w.Apply(ActionCycleColumnWidth) // {1 2} {3}
+		w.ToggleFullWidth()             // {1} {2*} {3}
+		w.ToggleFullWidth()             // {1 2 3}
+		wantBands(t, w, []WindowID{1, 2, 3})
+	})
+	t.Run("first window of a pushed column closed", func(t *testing.T) {
+		_, w := cascadeMovesCore(t, 4, 3, false) // {1 2 3} {4}
+		w.FocusID(4)
+		w.ConsumeOrExpel(-1) // {1 2 3/4}
+		w.FocusID(2)
+		w.ToggleFullWidth() // {1} {2*} {3/4}
+		w.RemoveWindow(3)
+		w.FocusID(2)
+		w.ToggleFullWidth()
+		wantBands(t, w, []WindowID{1, 2, 4})
+	})
+	t.Run("no room keeps the other band as it is", func(t *testing.T) {
+		c, w := cascadeMovesCore(t, 3, 3, false)
+		w.FocusID(2)
+		w.Apply(ActionCycleColumnWidth) // {1 2} {3}
+		w.AddWindow(6)                  // {1 2 6} {3}
+		w.FocusID(3)
+		w.AddWindow(5) // {1 2 6} {3 5}
+		w.AddWindow(4) // {1 2 6} {3 5 4}
+		c.applyAction(ActionMoveColumnLeft)
+		c.applyAction(ActionMoveColumnLeft) // {1 2 6} {4 3 5}
+		w.FocusID(2)
+		w.Apply(ActionCycleColumnWidth) // End of the cycle: 3 has no room.
+		wantBands(t, w, []WindowID{1, 2, 6}, []WindowID{4, 3, 5})
+		if got := cellsOf(w)[:3]; !slices.Equal(got, []int{0, 0, 0}) {
+			t.Fatalf("cells %v, want equal", got)
+		}
+	})
+}
+
+// Quiet placement (window rules) and slot windows join the focused band
+// like a new window, keeping the focus.
+func TestCascadeQuietAndSlotPlacement(t *testing.T) {
+	_, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
+	w.FocusID(4)
+	w.addColumnQuiet(Column{Windows: []WindowID{6}})
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5, 6})
+	w.FocusID(2)
+	w.addColumnQuiet(Column{Windows: []WindowID{7}})
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{7}, []WindowID{4, 5, 6})
+	if id, _ := w.Focused(); id != 2 {
+		t.Fatalf("focus %d, want 2", id)
+	}
+
+	_, w = cascadeMovesCore(t, 2, 3, false) // {1 2}
+	w.AddSlotWindow(9, 1, 0)
+	wantBands(t, w, []WindowID{9, 1, 2})
+	if id, _ := w.Focused(); id != 2 {
+		t.Fatalf("focus %d, want 2", id)
+	}
+}
+
+// Reapplying the config with a named max-columns above the default keeps
+// the named workspace's bands.
+func TestCascadeNamedMaxColumnsKeepsBands(t *testing.T) {
+	m := newMonitor("", "")
+	m.SetOutput(900, 600)
+	m.SetOverflow(OverflowCascade)
+	m.SetMaxColumns(3)
+	m.SetNamed([]NamedWorkspace{{Name: "wide", MaxColumns: 5}})
+	m.ToggleNamed("wide")
+	w := m.Current()
+	for id := WindowID(1); id <= 5; id++ {
+		w.AddWindow(id)
+	}
+	wantBands(t, w, []WindowID{1, 2, 3, 4, 5})
+	m.SetMaxColumns(3)
+	wantBands(t, w, []WindowID{1, 2, 3, 4, 5})
 }
 
 func bandIDs(w *Workspace) [][]WindowID {

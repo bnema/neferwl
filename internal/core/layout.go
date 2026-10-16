@@ -33,10 +33,10 @@ type Column struct {
 	// BandStart marks the first column of a cascade band. It belongs to the
 	// position, not the column: swaps leave it in place. See cascade.go.
 	BandStart bool
-	// pushedUp and pushedDown are the columns (by first window) that
+	// pushedUp and pushedDown are the columns, each by its windows, that
 	// maximize-column or cycle-column-width sent to the band above or
 	// below; they come back when the column is restored.
-	pushedUp, pushedDown []WindowID
+	pushedUp, pushedDown [][]WindowID
 }
 type Placement struct {
 	ID                          WindowID
@@ -576,7 +576,7 @@ func (w *Workspace) AddSlotWindow(id WindowID, slot int, cells int) {
 			at = i + 1
 		}
 	}
-	w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells, Slot: slot})
+	w.insertAt(at, Column{Windows: []WindowID{id}, Cells: cells, Slot: slot})
 	if len(w.Columns) > 1 && at <= w.Focus {
 		w.Focus++
 	}
@@ -1024,14 +1024,19 @@ func (w *Workspace) insertColumn(at int, col Column) {
 	if w.policy().maximizeHides() && len(w.Columns) > 0 {
 		w.unmaximize()
 	}
-	// In a cascade the column goes before column at, in its band.
+	w.insertAt(at, col)
+	w.Focus = at
+	w.scroll()
+}
+
+// insertAt inserts col at index at; in a cascade it joins the band of the
+// column it goes before.
+func (w *Workspace) insertAt(at int, col Column) {
 	col.BandStart = false
 	if w.policy().wraps && at < len(w.Columns) && w.Columns[at].BandStart {
 		col.BandStart, w.Columns[at].BandStart = true, false
 	}
 	w.Columns = slices.Insert(w.Columns, at, col)
-	w.Focus = at
-	w.scroll()
 }
 
 // GrowColumn widens the focused column by one cell, taking it from another

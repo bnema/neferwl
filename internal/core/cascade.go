@@ -350,11 +350,12 @@ func (w *Workspace) shiftBand(lo, hi, dir, at int) bool {
 	return true
 }
 
-// firstWindows lists the first window of each column.
-func firstWindows(cols []Column) []WindowID {
-	ids := make([]WindowID, len(cols))
+// columnIDs lists the windows of each column, its identity for
+// restoreBand: any of them still together finds the column.
+func columnIDs(cols []Column) [][]WindowID {
+	ids := make([][]WindowID, len(cols))
 	for i, c := range cols {
-		ids[i] = c.Windows[0]
+		ids[i] = slices.Clone(c.Windows)
 	}
 	return ids
 }
@@ -374,7 +375,10 @@ func (w *Workspace) isolateBand() {
 	left := slices.Clone(bands[b][:p])
 	right := slices.Clone(bands[b][p+1:])
 	c := bands[b][p]
-	c.pushedUp, c.pushedDown = firstWindows(left), firstWindows(right)
+	// Earlier pushes (cycle-column-width) stay remembered, farther out:
+	// pushedUp ends nearest, pushedDown starts nearest.
+	c.pushedUp = append(c.pushedUp, columnIDs(left)...)
+	c.pushedDown = append(columnIDs(right), c.pushedDown...)
 	bands[b] = []Column{c}
 	if len(right) > 0 {
 		bands = w.sendBand(bands, b, 1, 0, right)
@@ -396,19 +400,20 @@ func (w *Workspace) pushNeighbor() {
 	id, _ := w.Focused()
 	c := &w.Columns[w.Focus]
 	if w.Focus < last {
-		c.pushedDown = append(c.pushedDown, w.Columns[w.Focus+1].Windows[0])
+		c.pushedDown = append(columnIDs(w.Columns[w.Focus+1:w.Focus+2]), c.pushedDown...)
 		w.shiftBand(w.Focus+1, w.Focus+1, 1, 0)
 	} else {
-		c.pushedUp = append(c.pushedUp, w.Columns[w.Focus-1].Windows[0])
+		c.pushedUp = append(c.pushedUp, columnIDs(w.Columns[w.Focus-1:w.Focus])...)
 		w.shiftBand(w.Focus-1, w.Focus-1, -1, max(w.MaxColumns, 1))
 	}
 	w.Focus = w.columnOf(id)
 }
 
 // restoreBand brings back the columns isolateBand or pushNeighbor sent
-// away, those still in the adjacent band: the ones sent up before the
-// focused column, the ones sent down after it. It reports whether the
-// column remembered any.
+// away, those still in the adjacent band, as many as the band has room
+// for, nearest to the focused column first: the ones sent up before it,
+// the ones sent down after it. The others stay where they are. It reports
+// whether the column remembered any.
 func (w *Workspace) restoreBand() bool {
 	c := &w.Columns[w.Focus]
 	up, down := c.pushedUp, c.pushedDown
@@ -419,34 +424,42 @@ func (w *Workspace) restoreBand() bool {
 	id, _ := w.Focused()
 	bands := w.bandList()
 	b := w.band(w.Focus)
-	take := func(nb int, ids []WindowID) []Column {
-		var got []Column
+	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
+	// take removes from band nb the remembered columns found there, at
+	// most room of them, in the order of ids walked from the focused
+	// column outward (rev: ids end nearest).
+	take := func(nb int, ids [][]WindowID, rev bool) []Column {
 		if nb < 0 || nb >= len(bands) {
 			return nil
 		}
-		for _, v := range ids {
-			if i := slices.IndexFunc(bands[nb], func(c Column) bool { return len(c.Windows) > 0 && c.Windows[0] == v }); i >= 0 {
-				got = append(got, bands[nb][i])
-				bands[nb] = slices.Delete(bands[nb], i, i+1)
+		var got []Column
+		for k := range ids {
+			if room == 0 {
+				break
 			}
+			e := ids[k]
+			if rev {
+				e = ids[len(ids)-1-k]
+			}
+			i := slices.IndexFunc(bands[nb], func(c Column) bool {
+				return slices.ContainsFunc(c.Windows, func(v WindowID) bool { return slices.Contains(e, v) })
+			})
+			if i < 0 {
+				continue
+			}
+			got = append(got, bands[nb][i])
+			bands[nb] = slices.Delete(bands[nb], i, i+1)
+			room--
+		}
+		if rev {
+			slices.Reverse(got)
 		}
 		return got
 	}
-	above, below := take(b-1, up), take(b+1, down)
+	above := take(b-1, up, true)
+	below := take(b+1, down, false)
 	p := slices.IndexFunc(bands[b], func(c Column) bool { return slices.Contains(c.Windows, id) })
-	room := max(max(w.MaxColumns, 1)-len(bands[b]), 0)
-	// Columns that no longer fit stay where they are.
-	if len(above) > room {
-		bands[b-1] = append(bands[b-1], above[:len(above)-room]...)
-		above = above[len(above)-room:]
-	}
-	room -= len(above)
-	if len(below) > room {
-		bands[b+1] = slices.Insert(bands[b+1], 0, below[room:]...)
-		below = below[:room]
-	}
-	row := slices.Concat(bands[b][:p], above, bands[b][p:p+1], below, bands[b][p+1:])
-	bands[b] = row
+	bands[b] = slices.Concat(bands[b][:p], above, bands[b][p:p+1], below, bands[b][p+1:])
 	w.setBands(bands, id)
 	return true
 }
