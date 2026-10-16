@@ -7,6 +7,7 @@ import (
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/purego-libwayland/server"
+	"golang.org/x/sys/unix"
 )
 
 func registerGlobals(d *server.Display, o Options, s *Server) error {
@@ -389,6 +390,12 @@ type buffer struct {
 	pool                          *pool
 	offset, width, height, stride int
 	format                        uint32
+	// shm and fd are built on the first content call. The pool, offset and
+	// stride never change, so every commit sends the same read-only
+	// SHMBuffer. The pool keeps the file open while the buffer lives, which
+	// keeps fd valid.
+	shm *ports.SHMBuffer
+	fd  int
 }
 
 func (*buffer) Destroy(*wayland.Buffer) {}
@@ -417,13 +424,18 @@ func (s *Server) addBuffer(r *wayland.Buffer, b clientBuffer) {
 }
 
 // content points the renderer at the pool; a file shrunk below the buffer
-// is refused.
+// is refused. The size is checked on every call: a client may truncate the
+// file at any time, so it is never cached.
 func (b *buffer) content(id ports.WindowID) (ports.SurfaceContent, bool) {
-	if !fileHolds(b.pool.file, int64(b.offset+(b.height-1)*b.stride+b.width*4)) {
+	if b.shm == nil {
+		b.shm = &ports.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
+		b.fd = int(b.pool.file.Fd())
+	}
+	var st unix.Stat_t
+	if unix.Fstat(b.fd, &st) != nil || st.Size < int64(b.offset+(b.height-1)*b.stride+b.width*4) {
 		return ports.SurfaceContent{}, false
 	}
-	shm := &ports.SHMBuffer{Pool: b.pool.id, File: b.pool.file, Offset: b.offset, Stride: b.stride}
-	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), SHM: shm}, true
+	return ports.SurfaceContent{ID: id, Width: b.width, Height: b.height, Opaque: b.format == uint32(wayland.ShmFormatXrgb8888), SHM: b.shm}, true
 }
 
 type seat struct{ server *Server }

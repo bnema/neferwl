@@ -1,11 +1,15 @@
 package wayland
 
 import (
+	"os"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/sys/unix"
 )
 
 // The steady-state hot paths that run for every frame or commit allocate
@@ -124,4 +128,86 @@ func TestEmitContentAllocations(t *testing.T) {
 		t.Errorf("emitContent: %.2f allocs, want 0 (amortized)", allocs)
 	}
 	t.Logf("emitContent: %.2f allocs", allocs)
+}
+
+// Firing an output's callbacks keeps its queue's backing array, so the next
+// commit's queueFrames appends in place (before: the queue was deleted by
+// every fire and each commit grew a fresh slice). An emptied queue reads
+// like an absent one, and pins no fired callback.
+func TestFrameQueueKeepsBackingArray(t *testing.T) {
+	s, events, commands, _, _, dir := presentServerOn(t, testOutputs)
+	c := protocolClient(t, s, dir)
+	w, surf, _ := surfaceMapper(t, c, events)()
+	placeWindow(t, s, commands, w, "HEADLESS-1")
+	awaitFrame(t, c, requestFrame(t, c, surf))
+	awaitFrame(t, c, requestFrame(t, c, surf))
+	var first *wayland.Callback
+	var head **wayland.Callback
+	s.display.Do(func() {
+		// The pacer fired the queue during the awaitFrame calls above.
+		queue := s.awaiting["HEADLESS-1"]
+		if len(queue) != 0 || cap(queue) == 0 {
+			t.Errorf("fired queue: len %d cap %d", len(queue), cap(queue))
+			return
+		}
+		first, head = queue[:1][0], &queue[:1][0]
+		if len(s.frameOwners) != 0 {
+			t.Errorf("fired queue keeps %d frame owners", len(s.frameOwners))
+		}
+	})
+	if first != nil {
+		t.Fatal("fired queue pins a callback")
+	}
+	awaitFrame(t, c, requestFrame(t, c, surf))
+	s.display.Do(func() {
+		if again := s.awaiting["HEADLESS-1"]; cap(again) == 0 || &again[:1][0] != head {
+			t.Error("queue reallocated between frames")
+		}
+	})
+}
+
+// dueFrames hands out one scratch slice for every tick.
+func TestDueFramesFireScratch(t *testing.T) {
+	out := &output{place: ports.OutputPlacement{Info: ports.OutputInfo{Name: "DP-2", RefreshMilli: 60000}}}
+	s := &Server{outputs: []*output{out}, frameDue: map[string]time.Time{}, awaiting: map[string][]*wayland.Callback{"DP-2": {nil}}}
+	now := time.Unix(100, 0)
+	flipped := map[string]bool{"DP-2": true}
+	fire, _, _ := s.dueFrames(now, flipped)
+	if !slices.Equal(fire, []string{"DP-2"}) {
+		t.Fatalf("fire %v", fire)
+	}
+	if allocs := testing.AllocsPerRun(100, func() { s.dueFrames(now, flipped) }); allocs != 0 {
+		t.Errorf("firing dueFrames: %.1f allocs, want 0", allocs)
+	}
+}
+
+// A buffer sends the same SHMBuffer on every commit and still checks the
+// file's size each time: a client may truncate it.
+func TestBufferContentAllocations(t *testing.T) {
+	fd, err := unix.MemfdCreate("content-allocs", unix.MFD_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := os.NewFile(uintptr(fd), "content-allocs")
+	defer f.Close()
+	if err := f.Truncate(28); err != nil {
+		t.Fatal(err)
+	}
+	b := &buffer{pool: &pool{id: 3, file: f, size: 28}, offset: 4, width: 2, height: 2, stride: 16}
+	first, ok := b.content(1)
+	if !ok {
+		t.Fatal("no content")
+	}
+	if allocs := testing.AllocsPerRun(100, func() { b.content(1) }); allocs != 0 {
+		t.Errorf("buffer.content: %.1f allocs, want 0", allocs)
+	}
+	if again, _ := b.content(2); again.SHM != first.SHM {
+		t.Fatal("SHMBuffer rebuilt per commit")
+	}
+	if err := f.Truncate(27); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.content(1); ok {
+		t.Fatal("content from a truncated pool")
+	}
 }
