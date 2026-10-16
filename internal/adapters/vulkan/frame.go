@@ -54,10 +54,22 @@ type callScratch struct {
 	hdrNits float32
 }
 
-// deferredFree runs once frame completed.
+// deferredFree runs once frame completed. The hot path, a wait semaphore
+// of the frame, is typed (sem, with free nil) so it costs no closure; cold
+// paths set free.
 type deferredFree struct {
 	frame uint64
+	sem   vk.Semaphore
 	free  func()
+}
+
+// free frees what f holds.
+func (r *Renderer) free(f deferredFree) {
+	if f.free != nil {
+		f.free()
+		return
+	}
+	r.dd.DestroySemaphore(r.device, f.sem, nil)
 }
 
 func (r *Renderer) createSlots() error {
@@ -154,10 +166,19 @@ func (r *Renderer) retire(frame uint64, free func()) {
 	r.deferred = append(r.deferred, deferredFree{frame: frame, free: free})
 }
 
+// retireSemaphore destroys sem once the frame that last used it completed.
+func (r *Renderer) retireSemaphore(frame uint64, sem vk.Semaphore) {
+	if frame <= r.completed {
+		r.dd.DestroySemaphore(r.device, sem, nil)
+		return
+	}
+	r.deferred = append(r.deferred, deferredFree{frame: frame, sem: sem})
+}
+
 func (r *Renderer) runDeferred() {
 	r.deferred = slices.DeleteFunc(r.deferred, func(f deferredFree) bool {
 		if f.frame <= r.completed {
-			f.free()
+			r.free(f)
 			return true
 		}
 		return false
@@ -311,8 +332,7 @@ func (r *Renderer) Render(s ports.Scene, contents map[ports.WindowID]ports.Surfa
 	r.frameWaits = waits
 	frame := r.frame
 	for _, sem := range waits {
-		sem := sem
-		r.retire(frame, func() { d.DestroySemaphore(r.device, sem, nil) })
+		r.retireSemaphore(frame, sem)
 	}
 	sc.submit = vk.SubmitInfo{SType: vk.StructureTypeSubmitInfo, CommandBufferCount: 1, CommandBuffers: &sc.cmd}
 	submit := &sc.submit
