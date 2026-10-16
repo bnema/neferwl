@@ -355,7 +355,7 @@ func TestOverviewPileKeepsRowCentred(t *testing.T) {
 	}
 }
 
-// Left enters the stash pile, up/down browse it without changing rows,
+// Left enters the stash pile, up/down browse it round without changing rows,
 // and right leaves it immediately. Confirm shows the chosen stash window.
 func TestOverviewPileNavigation(t *testing.T) {
 	m := pileMonitor()
@@ -375,17 +375,15 @@ func TestOverviewPileNavigation(t *testing.T) {
 	if at := m.cardAt(w); at != 2 {
 		t.Fatalf("left changed stash selection to %d", at)
 	}
-	m.OverviewMove(0, 1) // stops at the last entry, not the next workspace
-	if m.Current() != w || m.cardAt(w) != 2 {
-		t.Fatal("down escaped the stash pile")
+	m.OverviewMove(0, 1) // wraps round to the first entry, not the next workspace
+	if m.Current() != w || m.cardAt(w) != 0 {
+		t.Fatalf("down past the last entry: card %d, workspace changed %v", m.cardAt(w), m.Current() != w)
+	}
+	m.OverviewMove(0, -1) // and back round to the last
+	if at := m.cardAt(w); at != 2 || m.Current() != w {
+		t.Fatalf("up past the first entry: card %d, workspace changed %v", at, m.Current() != w)
 	}
 	m.OverviewMove(0, -1)
-	m.OverviewMove(0, -1)
-	m.OverviewMove(0, -1) // stops at the first entry
-	if at := m.cardAt(w); at != 0 || m.Current() != w {
-		t.Fatalf("up end %d, workspace changed %v", at, m.Current() != w)
-	}
-	m.OverviewMove(0, 1)
 	m.ToggleOverview()
 	if f, _ := m.Focused(); f != 6 || w.stashHidden || m.ov.open {
 		t.Fatalf("confirm on %d, hidden %v", f, w.stashHidden)

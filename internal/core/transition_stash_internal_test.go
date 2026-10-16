@@ -473,3 +473,58 @@ func TestWithLeavingOrderIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// Walking the stash carousel slides its cards; a card that goes round to
+// the other end fades in there instead of crossing the row, whatever the
+// direction, the count or the size of the step (a fast wheel). A carousel
+// that does not wrap round slides every card.
+func TestCarouselWrapFadesIn(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		n, from, to int
+		wrapped     []int
+	}{
+		{"right", 3, 0, 1, []int{2}},
+		{"left", 3, 0, 2, []int{1}},
+		{"even", 4, 3, 0, []int{1}},
+		{"jump", 5, 0, 2, []int{3, 4}},
+		{"two cards", 2, 0, 1, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, ic, _ := fadeCore(t)
+			c.cfg.Animations.On = true
+			sc := c.cur()
+			m := sc.mon
+			w := m.Current()
+			w.Overflow = OverflowCascade
+			m.AddWindow(1)
+			for id := WindowID(2); id < WindowID(2+tc.n); id++ {
+				m.AddWindow(id)
+				w.FocusID(id)
+				c.applyAction(ActionToggleWindowStash)
+			}
+			w.FocusID(1)
+			c.applyAction(ActionToggleOverview)
+			m.selectCard(w, tc.from)
+			settleShown(t, c)
+			shots := c.snapshot(ic.now)
+			m.selectCard(w, tc.to)
+			c.transition(shots, ic.now)
+			for i, e := range w.Stash {
+				if previewOf(t, m.Layout(), e.ID).Hidden {
+					continue
+				}
+				rm := sc.rects[e.ID]
+				if slices.Contains(tc.wrapped, i) {
+					if rm.dx != 0 || !rm.fade.on {
+						t.Fatalf("wrapped card %d: dx %v, fade %v", i, rm.dx, rm.fade.on)
+					}
+					continue
+				}
+				if rm.dx == 0 || rm.fade.on {
+					t.Fatalf("card %d: dx %v, fade %v", i, rm.dx, rm.fade.on)
+				}
+			}
+		})
+	}
+}

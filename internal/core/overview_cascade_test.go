@@ -344,7 +344,8 @@ func TestOverviewCascadeKeys(t *testing.T) {
 			// With a stash: left from the first column still goes to the
 			// previous workspace. Down past the last band enters the
 			// stash, up comes back to the band, and left past the first
-			// card goes to the previous workspace.
+			// card goes to the previous workspace: two cards do not
+			// wrap round.
 			withStash(m, 2)
 			w.FocusID(7)
 			m.ToggleOverview()
@@ -473,10 +474,9 @@ func TestOverviewCascadeStashPile(t *testing.T) {
 		c.swipeUpdate(ports.SwipeUpdate{DX: 40})
 	}
 	c.swipeEnd(ports.SwipeEnd{})
-	// A horizontal three-finger swipe is a workspace step, even over a
-	// stash card.
-	if m.Current() != m.Workspaces[1] {
-		t.Fatalf("horizontal swipe over a stash card: workspace %d", indexOf(m.Workspaces, m.Current()))
+	// A horizontal three-finger swipe walks the carousel, wrapping round.
+	if want := (at + 1) % len(w.Stash); m.Current() != w || m.cardAt(w) != want {
+		t.Fatalf("horizontal swipe over a stash card: workspace %d, card %d, want %d", indexOf(m.Workspaces, m.Current()), m.cardAt(w), want)
 	}
 	if got := stashIDs(w); !slices.Equal(got, before) {
 		t.Fatal("stash reordered")
@@ -930,8 +930,8 @@ func TestOverviewFingerLatchSurvivesAxisChange(t *testing.T) {
 	}
 }
 
-// A stash-only cascade workspace has no columns to select: right from its
-// pile goes straight to the next workspace.
+// A stash-only cascade workspace has nothing above its pile: right from its
+// pile goes straight to the next workspace, left to the previous one.
 func TestOverviewCascadeStashOnlyRight(t *testing.T) {
 	m := overviewMonitor()
 	m.Focus(1)
