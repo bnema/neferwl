@@ -45,6 +45,9 @@ type viewShot struct {
 	stashShown        bool
 	stashAt, stashLen int
 	stashPos, stashV  float64
+	// card is the selected card of an unfolded stash carousel in the
+	// preview (Workspace.carousel), -1 without one.
+	card int
 	// list and pos are the numbered workspaces and the monitor's fractional
 	// position in them (index of the current one plus switchView.off); ok is
 	// false when there is none (a shown stash workspace).
@@ -637,6 +640,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 			_, s.switchV = m.switchView.motion.sampleAt(now)
 		}
 		s.stashShown, s.stashAt, s.stashLen, s.stashPos = w.stashShown(), w.stashAt, len(w.Stash), float64(w.stashAt)+w.stashView.off
+		s.card = m.carouselCard(w)
 		if w.stashView.motion.on {
 			_, s.stashV = w.stashView.motion.sampleAt(now)
 		}
@@ -903,12 +907,22 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 	if changed {
 		sc.stopRects()
 	}
+	at := -1
+	if !changed {
+		at = carouselStep(b)
+	}
+	w := sc.mon.Current()
 	for _, p := range sc.mon.Layout() {
 		if p.Hidden {
 			continue
 		}
 		rm := sc.rects[p.ID]
 		i := slices.IndexFunc(b.rects, func(r rectShot) bool { return r.id == p.ID })
+		if i >= 0 && at >= 0 && wrapped(w.stashIndex(p.ID), b.card, at, len(w.Stash)) {
+			// The card went round the carousel to its other end: it
+			// fades in there instead of crossing the row.
+			rm, i = rectMotion{}, -1
+		}
 		if i >= 0 && changed {
 			c.retargetLevel(&rm.fade, &rm.df, b.rects[i].fade, b.rects[i].fadeV, now)
 		}
@@ -932,6 +946,25 @@ func (c *Core) transitionOverview(b *viewShot, now time.Time) {
 		}
 		sc.rects[p.ID], sc.rectsWS = rm, sc.rectsOwner()
 	}
+}
+
+// carouselStep is the selected card of the stash carousel b's screen shows
+// now, when it showed the same carousel in b too (the same workspace and
+// stash size); else -1.
+func carouselStep(b *viewShot) int {
+	m := b.sc.mon
+	w := m.Current()
+	if b.card < 0 || w != b.ws || len(w.Stash) != b.stashLen {
+		return -1
+	}
+	return m.carouselCard(w)
+}
+
+// wrapped reports whether stash card i of a carousel of n cards went round
+// it, from one end to the other: it moved more than one place
+// (carouselSlot) when the selection went from card from to card to.
+func wrapped(i, from, to, n int) bool {
+	return i >= 0 && abs(carouselSlot(i, to, n)-carouselSlot(i, from, n)) > 1
 }
 
 // movedFrom is the shot of the other screen that showed the workspace b's

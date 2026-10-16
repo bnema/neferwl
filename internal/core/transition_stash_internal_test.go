@@ -473,3 +473,36 @@ func TestWithLeavingOrderIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// Walking the stash carousel slides its cards one place; the card that goes
+// round to the other end fades in there instead of crossing the row.
+func TestCarouselWrapFadesIn(t *testing.T) {
+	c, ic, sc, _ := stashRig(t, true)
+	m := sc.mon
+	w := m.Current()
+	w.Overflow = OverflowCascade
+	c.applyAction(ActionToggleOverview)
+	settleShown(t, c)
+	m.selectCard(w, 0)
+	settleShown(t, c)
+	shots := c.snapshot(ic.now)
+	m.OverviewMove(1, 0)
+	c.transition(shots, ic.now)
+	if m.cardAt(w) != 1 {
+		t.Fatalf("setup: card %d", m.cardAt(w))
+	}
+	// Three cards: the selection moved from 0 to 1, card 2 went round
+	// from the right end to the left one.
+	for i, e := range w.Stash {
+		rm := sc.rects[e.ID]
+		if i == 2 {
+			if rm.dx != 0 || !rm.fade.on {
+				t.Fatalf("wrapped card: dx %v, fade %v", rm.dx, rm.fade.on)
+			}
+			continue
+		}
+		if rm.dx == 0 || rm.fade.on {
+			t.Fatalf("card %d: dx %v, fade %v", i, rm.dx, rm.fade.on)
+		}
+	}
+}

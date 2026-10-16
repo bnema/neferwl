@@ -57,8 +57,9 @@ type rowSnapshot struct {
 // (not selected), the stash's own selection is in front at
 // overviewCardZoom, up to overviewCards-1 others behind it, each
 // overviewCardStep further up and right, dimmed. Selected, the pile
-// unfolds along the overview axis into a strip of every card (unfold), the
-// selection framed, and the moves along that axis walk it. A vertical
+// unfolds along the overview axis (unfold), the selection framed, and the
+// moves along that axis walk it: a column of every card in a vertical
+// overview, a carousel centred on the selection in a horizontal one. A vertical
 // overview pins the pile to the left edge of its row, which takes the width
 // the pile leaves. A horizontal one centres it on its row, in a band
 // reserved under the selected lane (pileBand): the lane and the band are
@@ -156,6 +157,15 @@ func (m *Monitor) cardAt(w *Workspace) int {
 		return w.stashIndex(id)
 	}
 	return -1
+}
+
+// carouselCard is the selected card of w's stash when it unfolds as a
+// carousel (a horizontal overview), -1 otherwise.
+func (m *Monitor) carouselCard(w *Workspace) int {
+	if !m.previewing() || m.overviewAxis() != horizontalAxis {
+		return -1
+	}
+	return m.cardAt(w)
 }
 
 // overviewTarget resolves the active preview to one window for validation
@@ -480,18 +490,29 @@ func (m *Monitor) selectLaneColumn(w *Workspace, i int) {
 
 // overviewAcross is the horizontal move of an overview whose workspaces sit
 // side by side (cascade): a column inside the selected lane, or a card of
-// the unfolded stash. Past the first column or card it goes to the previous
-// workspace; past the last, to the next workspace. Covering floats fan
+// the unfolded stash, which wraps round (carousel). Past the first column
+// it goes to the previous workspace; past the last, to the next workspace.
+// A carousel of fewer than three cards does not wrap, nor does the one of a
+// stash-only workspace, which has nothing above its pile: there the ends
+// change workspace like a lane's.
+// Covering floats fan
 // along this axis and are traversed before a workspace: the card on the
 // left is the one behind.
 func (m *Monitor) overviewAcross(dx int) {
 	w := m.Current()
 	if at := m.cardAt(w); at >= 0 {
-		if next := at + dx; next >= 0 && next < len(w.Stash) {
+		n, next := len(w.Stash), at+dx
+		if next >= 0 && next < n {
 			m.selectCard(w, next)
 			return
 		}
-		m.overviewStep(dx)
+		if _, k := w.stackHead(); k == 0 || n < 3 {
+			// Nothing above the pile to leave it for, or too few
+			// cards to wrap round: the ends are the way out.
+			m.overviewStep(dx)
+			return
+		}
+		m.selectCard(w, (next+n)%n)
 		return
 	}
 	if m.stackFront(w).kind != stackColumns || len(w.Columns) == 0 {
@@ -916,46 +937,106 @@ func (w *Workspace) pile(dst []Placement, axis layoutAxis, slot Rect, dim bool, 
 	return dst
 }
 
-// unfold lays the stash of w out as a strip of every card along axis, from
-// the folded pile's card rect: a row in a horizontal overview, a column in
-// a vertical one. The strip is centred on the pile and kept in the overview
-// area. Longer than the area, it scrolls like a wide row: the selected card
-// at is centred, the strip stopping at the area's edges. The other cards
-// are dimmed; those out of the area are hidden. The cards are appended to
-// dst.
+// unfold lays the stash of w out from the folded pile's card rect. A
+// vertical overview lines every card up in a column (strip). A horizontal
+// one spreads them as a carousel (carousel). Cards other than the selected
+// one at are dimmed; those out of the overview area are hidden. The cards
+// are appended to dst.
 func (w *Workspace) unfold(dst []Placement, axis layoutAxis, folded Rect, at int) []Placement {
+	if axis == horizontalAxis {
+		return w.carousel(dst, folded, at)
+	}
+	return w.strip(dst, folded, at)
+}
+
+// strip lays the stash out as a column of every card, in stash order,
+// centred on the pile and kept in the overview area. Longer than the area,
+// it scrolls like a wide row: the selected card at is centred, the strip
+// stopping at the area's edges.
+func (w *Workspace) strip(dst []Placement, folded Rect, at int) []Placement {
 	n := len(w.Stash)
 	u := w.overviewArea()
-	size, origin, lo, hi := folded.W, folded.X, u.X, u.X+u.W
-	if axis == verticalAxis {
-		size, origin, lo, hi = folded.H, folded.Y, u.Y, u.Y+u.H
-	}
+	size, lo, hi := folded.H, u.Y, u.Y+u.H
 	stride := size + 2*w.cardStep()
 	total := n*stride - (stride - size)
-	start := origin + size/2 - total/2
+	start := folded.Y + size/2 - total/2
 	if total > hi-lo {
-		start = origin + size/2 - at*stride - size/2
+		start = folded.Y - at*stride
 		start = min(max(start, hi-total), lo)
 	} else {
 		start = min(max(start, lo), hi-total)
 	}
 	for i := range w.Stash {
 		r := folded
-		if axis == verticalAxis {
-			r.Y = start + i*stride
-		} else {
-			r.X = start + i*stride
-		}
-		p := Placement{ID: w.Stash[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
-		if i != at {
-			p.peeking(1)
-		}
-		if !r.Overlaps(u) {
-			p.Hidden, p.Preview, p.Focused = true, 0, false
-		}
-		dst = append(dst, p)
+		r.Y = start + i*stride
+		dst = w.unfoldedCard(dst, i, r, at, u)
 	}
 	return dst
+}
+
+// carousel lays the stash out as a row centred on the selected card at,
+// under the pile, in stash order wrapping round: the cards before it on
+// the left, the ones after it on the right, the oldest following the
+// newest (carouselSlot). A wider gap marks that seam. When the row fits
+// the overview area it is shifted into it; else the cards past the area
+// are hidden.
+func (w *Workspace) carousel(dst []Placement, folded Rect, at int) []Placement {
+	n := len(w.Stash)
+	u := w.overviewArea()
+	stride := folded.W + 2*w.cardStep()
+	// The extra room at the seam, on top of the stride.
+	gap := folded.W / 4
+	x := func(i int) int {
+		s := carouselSlot(i, at, n)
+		x := folded.X + s*stride
+		switch {
+		case s > 0 && at+s >= n:
+			x += gap
+		case s < 0 && at+s < 0:
+			x -= gap
+		}
+		return x
+	}
+	first, last := x((at+n-n/2)%n), x((at+(n-1)/2)%n)
+	shift := 0
+	if total := last + folded.W - first; total <= u.W {
+		shift = min(max(first, u.X), u.X+u.W-total) - first
+	}
+	for i := range w.Stash {
+		r := folded
+		r.X = x(i) + shift
+		dst = w.unfoldedCard(dst, i, r, at, u)
+	}
+	return dst
+}
+
+// carouselSlot is the place of stash card i in a carousel of n cards
+// centred on card at: 0 for at, negative on the left, positive on the
+// right. The left side takes the extra card of an even count. Fewer than
+// three cards keep the stash order without wrapping round, so that each
+// side has the card its move selects.
+func carouselSlot(i, at, n int) int {
+	if n < 3 {
+		return i - at
+	}
+	s := (i - at + n) % n
+	if s > (n-1)/2 {
+		s -= n
+	}
+	return s
+}
+
+// unfoldedCard appends stash card i of an unfolded pile at r to dst: framed
+// when it is the selected one at, dimmed otherwise, hidden out of the area u.
+func (w *Workspace) unfoldedCard(dst []Placement, i int, r Rect, at int, u Rect) []Placement {
+	p := Placement{ID: w.Stash[i].ID, Rect: r, Preview: overviewCardZoom, Card: true, Focused: i == at}
+	if i != at {
+		p.peeking(1)
+	}
+	if !r.Overlaps(u) {
+		p.Hidden, p.Preview, p.Focused = true, 0, false
+	}
+	return append(dst, p)
 }
 
 // overviewZoom is the scale that fits every column of w in the usable
