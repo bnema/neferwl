@@ -445,12 +445,15 @@ func (w *Workspace) restoreBand() bool {
 			if rev {
 				e = ids[len(ids)-1-k]
 			}
-			i := -1
-			for _, v := range e {
-				if i = slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == v }); i >= 0 {
-					break
-				}
+			// The column is named across the workspace first: one that
+			// moved farther away stays there, with no stand-in.
+			head := slices.IndexFunc(e, func(v WindowID) bool {
+				return slices.ContainsFunc(w.Columns, func(c Column) bool { return c.Windows[0] == v })
+			})
+			if head < 0 {
+				continue
 			}
+			i := slices.IndexFunc(bands[nb], func(c Column) bool { return c.Windows[0] == e[head] })
 			if i < 0 {
 				continue
 			}
