@@ -140,8 +140,10 @@ func TestRenderSteadyStateAllocations(t *testing.T) {
 // A steady frame that draws a client dmabuf also records the ownership
 // barriers (acquire and release) of its image, which allocate nothing. The
 // frame still allocates more than the SHM scene: importing the client's
-// read fence and its retire closure (about 4 per frame). Skipped without a
-// GPU or /dev/udmabuf.
+// read fence (measured 5.0 on radv; the semaphore retire is typed and costs
+// no closure, locked by TestRetireSemaphoreAllocatesNothing). The budget
+// keeps one alloc of headroom for drivers whose import path differs.
+// Skipped without a GPU or /dev/udmabuf.
 func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	r, err := New(80, 32)
 	if err != nil {
@@ -182,8 +184,64 @@ func TestRenderSteadyStateDMABufAllocations(t *testing.T) {
 	moved()
 	allocs := testing.AllocsPerRun(20, moved)
 	t.Logf("dmabuf Render: %.1f allocs/frame", allocs)
-	if allocs > 7 {
-		t.Errorf("dmabuf steady-state Render: %.1f allocs/frame, want <=7 (syncFD path: %v; a driver without sync-file export takes another path)", allocs, r.syncFD)
+	if allocs > 6 {
+		t.Errorf("dmabuf steady-state Render: %.1f allocs/frame, want <=6 (syncFD path: %v; a driver without sync-file export takes another path)", allocs, r.syncFD)
+	}
+}
+
+// Retiring a frame's wait semaphore appends a typed entry to the reused
+// deferred list: no closure, no allocation once the list has its capacity.
+func TestRetireSemaphoreAllocatesNothing(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	r.completed = 0
+	retire := func() {
+		// A null handle is a valid vkDestroySemaphore argument.
+		r.retireSemaphore(r.completed+1, 0)
+		r.completed++
+		r.runDeferred()
+	}
+	retire()
+	if allocs := testing.AllocsPerRun(50, retire); allocs != 0 {
+		t.Errorf("retireSemaphore: %.1f allocs, want 0", allocs)
+	}
+	if len(r.deferred) != 0 {
+		t.Errorf("%d deferred entries left after their frame completed", len(r.deferred))
+	}
+}
+
+// Semaphore and closure entries share the deferred list: each is freed once
+// its frame completes, in order, and a semaphore whose frame already
+// completed is destroyed at once instead of queued.
+func TestRetireMixedDeferredEntries(t *testing.T) {
+	r, err := New(32, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	r.runDeferred()
+	r.completed = 5
+	// A null handle is a valid vkDestroySemaphore argument.
+	r.retireSemaphore(5, 0)
+	if len(r.deferred) != 0 {
+		t.Fatalf("completed frame's semaphore queued: %d entries", len(r.deferred))
+	}
+	var freed []string
+	r.retire(7, func() { freed = append(freed, "late") })
+	r.retireSemaphore(6, 0)
+	r.retire(6, func() { freed = append(freed, "early") })
+	r.completed = 6
+	r.runDeferred()
+	if !slices.Equal(freed, []string{"early"}) || len(r.deferred) != 1 || r.deferred[0].frame != 7 {
+		t.Fatalf("frame 6: freed %v, %d entries left", freed, len(r.deferred))
+	}
+	r.completed = 7
+	r.runDeferred()
+	if !slices.Equal(freed, []string{"early", "late"}) || len(r.deferred) != 0 {
+		t.Fatalf("frame 7: freed %v, %d entries left", freed, len(r.deferred))
 	}
 }
 

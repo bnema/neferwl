@@ -22,6 +22,24 @@ func namedOverviewMonitor() *Monitor {
 	return m
 }
 
+// The overview rebuilds its row order and slots every frame: with named
+// workspaces to group and sort, from the monitor's scratch, it costs nothing.
+func TestOverviewNamedRowsAllocations(t *testing.T) {
+	m := namedOverviewMonitor()
+	m.Focus(0)
+	m.ToggleNamed("dev")
+	m.ToggleOverview()
+	if len(m.overviewWorkspaces()) < 4 {
+		t.Fatal("setup: named rows missing")
+	}
+	if n := testing.AllocsPerRun(50, func() { m.overviewWorkspaces() }); n != 0 {
+		t.Errorf("overviewWorkspaces allocs = %v, want 0", n)
+	}
+	if n := testing.AllocsPerRun(50, func() { m.overviewRows() }); n != 0 {
+		t.Errorf("overviewRows allocs = %v, want 0", n)
+	}
+}
+
 func TestOverviewNamedFollowsInvocationWorkspace(t *testing.T) {
 	m := namedOverviewMonitor()
 	numbered := slices.Clone(m.Workspaces)

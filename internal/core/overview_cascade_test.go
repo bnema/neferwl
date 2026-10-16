@@ -147,7 +147,7 @@ func TestOverviewCascadeNeighbors(t *testing.T) {
 	m := cascadeOverview()
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
-	cur, left, right := rows[m.Workspaces[1]], rows[m.Workspaces[0]], rows[m.Workspaces[2]]
+	cur, left, right := rows.at(m.Workspaces[1]), rows.at(m.Workspaces[0]), rows.at(m.Workspaces[2])
 	if left.X+left.W > cur.X || right.X < cur.X+cur.W {
 		t.Fatalf("slots overlap: %v %v %v", left, cur, right)
 	}
@@ -227,9 +227,9 @@ func TestOverviewCascadeStashInSlot(t *testing.T) {
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
 	w := m.Current()
-	cur, prev := rows[w], rows[m.Workspaces[0]]
-	if cur != bare[w] {
-		t.Fatalf("the pile changed the slot: %v, without it %v", cur, bare[w])
+	cur, prev := rows.at(w), rows.at(m.Workspaces[0])
+	if cur != bare.at(w) {
+		t.Fatalf("the pile changed the slot: %v, without it %v", cur, bare.at(w))
 	}
 	ps := m.Layout()
 	lane := previewOf(t, ps, 8).Rect
@@ -566,7 +566,7 @@ func TestOverviewCascadeNamedDivider(t *testing.T) {
 	if len(dividers) != 1 {
 		t.Fatalf("dividers: %+v", dividers)
 	}
-	d, cur, dev := dividers[0].Rect, rows[m.Workspaces[1]], rows[m.byName("dev")]
+	d, cur, dev := dividers[0].Rect, rows.at(m.Workspaces[1]), rows.at(m.byName("dev"))
 	if d.W != 1 || d.H <= 1 || dividers[0].Active {
 		t.Fatalf("divider is not an inactive vertical rule: %+v", dividers[0])
 	}
@@ -638,8 +638,8 @@ func TestOverviewCascadeNeighborStashKeepsSlot(t *testing.T) {
 	m.Focus(1)
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
-	if rows[prev] != bare[prev] || prev.overviewZoom(horizontalAxis) != zoom {
-		t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows[prev], prev.overviewZoom(horizontalAxis), bare[prev], zoom)
+	if rows.at(prev) != bare.at(prev) || prev.overviewZoom(horizontalAxis) != zoom {
+		t.Fatalf("neighbor slot %v zoom %v with a stash, %v %v without", rows.at(prev), prev.overviewZoom(horizontalAxis), bare.at(prev), zoom)
 	}
 	if p := previewOf(t, m.Layout(), 64); p.Hidden || !p.Peek {
 		t.Fatalf("neighbor pile card: %+v", p)
@@ -813,7 +813,7 @@ func TestOverviewMixedLayoutGestureAndCancel(t *testing.T) {
 	from := m.Current()
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
-	if rows[m.Workspaces[1]].X <= rows[from].X {
+	if rows.at(m.Workspaces[1]).X <= rows.at(from).X {
 		t.Fatal("cascade neighbor not horizontal")
 	}
 	m.overviewScroll(ports.PointerAxis{Source: ports.AxisFinger, Horizontal: ports.ScrollAxis{Set: true, Value: overviewScrollStep}})
@@ -994,7 +994,7 @@ func TestOverviewCascadeWideScrollNeighborIsClipped(t *testing.T) {
 	}
 	m.ToggleOverview()
 	rows, _ := m.overviewRows()
-	cur, slot := rows[m.Current()], rows[prev]
+	cur, slot := rows.at(m.Current()), rows.at(prev)
 	hidden, shown := 0, 0
 	for _, p := range m.Layout() {
 		if !prev.has(p.ID) {
@@ -1053,7 +1053,7 @@ func TestOverviewCascadeScroll(t *testing.T) {
 
 // outlineHits reports whether any outline line of ps covers a point of r.
 func outlineHits(ps []Placement, r Rect) bool {
-	for _, s := range overviewOutline(ps, 2) {
+	for _, s := range overviewOutline(nil, ps, 2) {
 		if s.Rect.Overlaps(r) {
 			return true
 		}
@@ -1125,7 +1125,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 	if framed(ps) != 1 || !previewOf(t, ps, 8).Focused {
 		t.Fatalf("lane selected: %d framed", framed(ps))
 	}
-	if len(overviewOutline(ps, 2)) == 0 {
+	if len(overviewOutline(nil, ps, 2)) == 0 {
 		t.Fatal("lane selected: no frame")
 	}
 	for _, id := range []WindowID{40, 41, 42} {
@@ -1154,7 +1154,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 	if !card.Focused || !card.Card {
 		t.Fatalf("selected card not framed: %+v", card)
 	}
-	out := overviewOutline(ps, 2)
+	out := overviewOutline(nil, ps, 2)
 	if len(out) != 4 {
 		t.Fatalf("card frame is %d lines, want 4: %+v", len(out), out)
 	}
@@ -1188,7 +1188,7 @@ func TestOverviewOutlinePrefersCard(t *testing.T) {
 		{ID: 1, Rect: Rect{X: 0, Y: 0, W: 100, H: 100}, Preview: 0.5, Focused: true},
 		{ID: 2, Rect: Rect{X: 40, Y: 80, W: 30, H: 30}, Preview: 0.2, Focused: true, Card: true},
 	}
-	out := overviewOutline(ps, 2)
+	out := overviewOutline(nil, ps, 2)
 	if len(out) != 4 || out[0].Rect != (Rect{X: 38, Y: 78, W: 34, H: 2}) {
 		t.Fatalf("outline: %+v", out)
 	}
@@ -1206,10 +1206,10 @@ func TestOverviewOutlinePileAllocations(t *testing.T) {
 	for _, p := range ps {
 		card = card || p.Card && p.Preview > 0 && !p.Hidden
 	}
-	if !card || len(overviewOutline(ps, 2)) == 0 {
+	if !card || len(overviewOutline(nil, ps, 2)) == 0 {
 		t.Fatal("setup: no pile under a framed lane tile")
 	}
-	if n := testing.AllocsPerRun(50, func() { _ = overviewOutline(ps, 2) }); n > 2 {
+	if n := testing.AllocsPerRun(50, func() { _ = overviewOutline(nil, ps, 2) }); n > 2 {
 		t.Fatalf("overviewOutline allocs = %v, want <= 2", n)
 	}
 }

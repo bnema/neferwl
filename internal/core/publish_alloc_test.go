@@ -24,13 +24,17 @@ import (
 // (copied only when it changed). What is left is the scenes themselves
 // (windows, separators, the scene set). Leaving entries (a closed window
 // still fading) add none: 3, less than a frame with six moving windows
-// (fewer configure targets). The opening overview costs 18 (the stack
-// items, the row map and the neighbor list it rebuilds every frame; its
-// layouts reuse the buffers too).
+// (fewer configure targets). The opening overview costs 4 alone and 6 with
+// neighbors (5 and 7 under -race); it was 11 and 13 when it rebuilt the row
+// map, the neighbor list, the workspace order (groups map, hidden clone) and
+// the outline slice (appended onto the dividers) every frame. The rows are
+// now a fixed array, the order and dividers monitor scratch, and the scene's
+// separators one slice. What is left is the scene, the stack items and the
+// preview rows.
 const (
 	publishAllocBudget         = 5
 	publishLeavingAllocBudget  = 3
-	publishOverviewAllocBudget = 18
+	publishOverviewAllocBudget = 7
 )
 
 // publishRig is a Core on the real clock (a mock clock would count its own
@@ -230,11 +234,15 @@ func TestPublishOverviewAllocations(t *testing.T) {
 				if neighbors {
 					want, slots = 18, 3
 				}
-				if rows, _ := m.overviewRows(); len(rows) != slots {
-					t.Fatalf("setup: %d overview slots, want %d", len(rows), slots)
+				if rows, _ := m.overviewRows(); rows.n != slots {
+					t.Fatalf("setup: %d overview slots, want %d", rows.n, slots)
 				}
 				if !m.ov.open || m.overviewAxis() != m.Current().policy().workspace || len(c.overviewReal) != want || len(sc.rects) == 0 || !c.animating() {
 					t.Fatalf("setup: overview %v, real layouts %d (want %d), rects %d, animating %v", m.ov.open, len(c.overviewReal), want, len(sc.rects), c.animating())
+				}
+				// The rows themselves cost nothing: array slots, scratch order.
+				if n := testing.AllocsPerRun(50, func() { m.overviewRows() }); n != 0 {
+					t.Errorf("overviewRows allocs = %v, want 0", n)
 				}
 				n := testing.AllocsPerRun(50, step)
 				t.Logf("%s overview allocs per step = %v", name, n)
@@ -247,6 +255,36 @@ func TestPublishOverviewAllocations(t *testing.T) {
 			})
 		}
 	}
+	// A named row below its anchor adds the boundary divider: the scene
+	// copies it into its own separators, one slice like the outline alone.
+	t.Run("named", func(t *testing.T) {
+		c := publishRig(t, 1)
+		sc := c.cur()
+		m := sc.mon
+		m.SetNamed([]NamedWorkspace{{Name: "dev"}})
+		m.ToggleNamed("dev")
+		m.AddWindow(30)
+		m.ToggleNamed("dev")
+		sc.arrange()
+		c.refreshShown()
+		now := time.Now()
+		shots := c.snapshot(now)
+		m.ToggleOverview()
+		c.transition(shots, now)
+		step := publishStep(t, c, nil)
+		step()
+		if _, dividers := m.overviewRows(); len(dividers) != 1 || !m.ov.open || len(sc.rects) == 0 {
+			t.Fatalf("setup: %d dividers, overview %v, rects %d", len(dividers), m.ov.open, len(sc.rects))
+		}
+		n := testing.AllocsPerRun(50, step)
+		t.Logf("named overview allocs per step = %v", n)
+		if len(sc.rects) == 0 {
+			t.Fatal("card motions settled during the measure")
+		}
+		if n > publishOverviewAllocBudget {
+			t.Errorf("named overview publish allocs per frame = %v, budget %d", n, publishOverviewAllocBudget)
+		}
+	})
 	// The column switcher's cards are previews too: a held switch shows
 	// them, and a publish while their motions run costs a plain frame.
 	t.Run("switcher", func(t *testing.T) {

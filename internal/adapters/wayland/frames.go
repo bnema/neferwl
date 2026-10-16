@@ -253,6 +253,7 @@ func (s *Server) relocateCallbacks(root *surface) {
 			dest := s.frameOutput(owner)
 			moved[dest] = append(moved[dest], cb)
 		}
+		clear(callbacks[len(kept):]) // the filtered tail must not pin callbacks
 		if len(kept) == 0 {
 			delete(s.awaiting, name)
 		} else {
@@ -270,8 +271,10 @@ func (s *Server) relocateCallbacks(root *surface) {
 
 // dueFrames returns the queues to fire now: flipped outputs and those past
 // their deadline. wait is the time to the next deadline; idle is set when
-// no callback waits after firing.
+// no callback waits after firing. fire is the tick's scratch, valid until
+// the next call (display goroutine only).
 func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []string, wait time.Duration, idle bool) {
+	fire = s.frameFire[:0]
 	if s.framePeriods == nil {
 		s.framePeriods = make(map[string]time.Duration, len(s.outputs)+1)
 	}
@@ -284,7 +287,9 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 	for name, callbacks := range s.awaiting {
 		if _, ok := periods[name]; !ok && name != "" && name != suspendedFrameQueue {
 			delete(s.awaiting, name)
-			s.awaiting[""] = append(s.awaiting[""], callbacks...)
+			if len(callbacks) > 0 {
+				s.awaiting[""] = append(s.awaiting[""], callbacks...)
+			}
 		}
 	}
 	periods[""] = defaultFramePeriod
@@ -330,6 +335,7 @@ func (s *Server) dueFrames(now time.Time, flipped map[string]bool) (fire []strin
 			wait = 0
 		}
 	}
+	s.frameFire = fire
 	return fire, max(wait, time.Millisecond), !waiting
 }
 
@@ -341,7 +347,6 @@ func paces(p ports.OutputPresented) bool { return p.Flip != nil && p.Flip.Hardwa
 // sendFrames fires an output's callbacks; flipped: a flip of it fired them.
 func (s *Server) sendFrames(name string, flipped bool) {
 	callbacks := s.awaiting[name]
-	delete(s.awaiting, name)
 	if len(callbacks) == 0 {
 		return
 	}
@@ -360,6 +365,10 @@ func (s *Server) sendFrames(name string, flipped bool) {
 		cb.Destroy()
 		s.frames++
 	}
+	// The queue keeps its backing array for the next frame (an empty queue
+	// reads like an absent one). Nothing above queues a callback.
+	clear(callbacks)
+	s.awaiting[name] = callbacks[:0]
 }
 
 // framePeriod is one refresh at refreshMilli mHz, 60 Hz when unknown.

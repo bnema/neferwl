@@ -508,7 +508,7 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 					t.Fatalf("%d not hit at %+v", id, p.Rect)
 				}
 			}
-			if len(overviewOutline(ps, 2)) != 4 {
+			if len(overviewOutline(nil, ps, 2)) != 4 {
 				t.Fatal("missing selection outline")
 			}
 			m.OverviewMove(-1, 0)
@@ -762,4 +762,10 @@ func TestOverviewFingerScroll(t *testing.T) {
 	if !sm.overviewScroll(cont) {
 		t.Fatal("continuous scroll held by the finger scroll")
 	}
+}
+
+// at is the slot of w, the zero Rect if it has none.
+func (s *overviewSlots) at(w *Workspace) Rect {
+	r, _ := s.lookup(w)
+	return r
 }

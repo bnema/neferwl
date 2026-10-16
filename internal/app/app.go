@@ -157,21 +157,31 @@ func consumeScenes(ctx context.Context, scenes <-chan []ports.Scene, configError
 				}
 			}
 			latest(renderScenes, set) // this goroutine is the only sender
-			for _, s := range set {
-				ev := log.Debug().Str("output", s.Output).Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
-				rects := make([]string, 0, len(s.Windows))
-				for _, w := range s.Windows {
-					rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
-					if w.FocusEffect > 0 {
-						// The focus indicator frame by frame: window and effect.
-						ev = ev.Uint64("focus_effect_window", uint64(w.ID)).Float64("focus_effect", w.FocusEffect)
-					}
-				}
-				ev.Strs("windows", rects).Msg("scene")
-			}
+			logScenes(log, set)
 		case err := <-configErrors:
 			configLog.Warn().Err(err).Msg("config rejected")
 		}
+	}
+}
+
+// logScenes logs each scene at debug level. The rect strings are built only
+// when debug is on: at the default level a frame costs no allocation here.
+func logScenes(log zerowrap.Logger, set []ports.Scene) {
+	for _, s := range set {
+		ev := log.Debug()
+		if !ev.Enabled() {
+			continue
+		}
+		ev = ev.Str("output", s.Output).Uint64("seq", s.Seq).Int("out_w", s.OutputWidth).Int("out_h", s.OutputHeight).Float64("scale", s.Scale)
+		rects := make([]string, 0, len(s.Windows))
+		for _, w := range s.Windows {
+			rects = append(rects, fmt.Sprintf("%d:%d,%d %dx%d", w.ID, w.Rect.X, w.Rect.Y, w.Rect.W, w.Rect.H))
+			if w.FocusEffect > 0 {
+				// The focus indicator frame by frame: window and effect.
+				ev = ev.Uint64("focus_effect_window", uint64(w.ID)).Float64("focus_effect", w.FocusEffect)
+			}
+		}
+		ev.Strs("windows", rects).Msg("scene")
 	}
 }
 

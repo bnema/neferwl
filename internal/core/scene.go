@@ -54,11 +54,16 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	}
 	if sc.mon.ov.open {
 		// Frame the selection and separate numbered and named row groups.
-		_, scene.Separators = sc.mon.overviewRows()
-		scene.Separators = append(scene.Separators, overviewOutline(layout, max(c.cfg.Border.Width, 2))...)
+		// The scene's own slice (immutable once sent), sized for both.
+		_, dividers := sc.mon.overviewRows()
+		var seps []ports.Separator
+		if len(dividers) > 0 {
+			seps = append(make([]ports.Separator, 0, len(dividers)+outlineLines), dividers...)
+		}
+		scene.Separators = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2))
 	} else if sc.mon.switcherShown() {
 		// The switcher's cards: only the selection is framed.
-		scene.Separators = overviewOutline(layout, max(c.cfg.Border.Width, 2))
+		scene.Separators = overviewOutline(nil, layout, max(c.cfg.Border.Width, 2))
 	} else {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)

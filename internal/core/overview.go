@@ -326,6 +326,10 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 // in configured order within each group. Unattached rows follow the last
 // occupied numbered row (or the first). Empty invocation anchors stay visible;
 // other empty rows are skipped unless current.
+//
+// The result is the monitor's scratch, rebuilt by the next call: callers
+// read it and drop it before calling again (Clone it to keep it). It keeps
+// the last result's workspaces reachable until then.
 func (m *Monitor) overviewWorkspaces() []*Workspace {
 	fallback := m.Workspaces[0]
 	for _, w := range m.Workspaces {
@@ -333,8 +337,6 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 			fallback = w
 		}
 	}
-	groups := make(map[*Workspace][]*Workspace)
-	named := slices.Clone(m.hidden)
 	rank := func(w *Workspace) int {
 		for i, spec := range m.named {
 			if spec.Name == w.Name {
@@ -343,24 +345,35 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 		}
 		return len(m.named)
 	}
+	cur := m.Current()
+	named := append(m.ovNamed[:0], m.hidden...)
+	named = slices.DeleteFunc(named, func(n *Workspace) bool { return n.empty() && n != cur })
+	m.ovNamed = named
 	slices.SortStableFunc(named, func(a, b *Workspace) int { return rank(a) - rank(b) })
-	for _, w := range named {
-		if w.empty() && w != m.Current() {
-			continue
-		}
-		anchor := w.overviewAfter
-		if indexOf(m.Workspaces, anchor) < 0 {
-			anchor = fallback
-		}
-		groups[anchor] = append(groups[anchor], w)
-	}
-	var rows []*Workspace
+	rows := m.ovList[:0]
 	for _, w := range m.Workspaces {
-		if !w.empty() || w == m.Current() || len(groups[w]) > 0 {
-			rows = append(rows, w)
-			rows = append(rows, groups[w]...)
+		// The row is kept when occupied, current or anchoring a named
+		// row: placed first, dropped again if none of those holds.
+		at := len(rows)
+		rows = append(rows, w)
+		for _, n := range named {
+			anchor := n.overviewAfter
+			if indexOf(m.Workspaces, anchor) < 0 {
+				anchor = fallback
+			}
+			if anchor == w {
+				rows = append(rows, n)
+			}
+		}
+		if len(rows) == at+1 && w.empty() && w != cur {
+			rows = rows[:at]
 		}
 	}
+	// named is only needed here; the rows' tail is cleared so the scratch
+	// holds no more than the last result.
+	clear(named[:cap(named)])
+	clear(rows[len(rows):cap(rows)])
+	m.ovList = rows
 	return rows
 }
 
@@ -674,16 +687,40 @@ func (m *Monitor) OverviewPick(id WindowID) {
 // workspace's layout.
 func (m *Monitor) overviewAxis() layoutAxis { return m.Current().policy().workspace }
 
+// overviewSlots are the slots of the overview rows: the current workspace
+// and at most one neighbor on each side, in a fixed array (no allocation).
+type overviewSlots struct {
+	n int
+	w [3]*Workspace
+	r [3]Rect
+}
+
+func (s *overviewSlots) add(w *Workspace, r Rect) {
+	s.w[s.n], s.r[s.n] = w, r
+	s.n++
+}
+
+// lookup is the slot of w, if it has one.
+func (s *overviewSlots) lookup(w *Workspace) (Rect, bool) {
+	for i := range s.n {
+		if s.w[i] == w {
+			return s.r[i], true
+		}
+	}
+	return Rect{}, false
+}
+
 // overviewRows places the current workspace and its overview neighbors in
 // slots, in output-local pixels, along the overview axis; each workspace
 // places its previews in its slot. The numbered/named boundary gets extra
-// spacing and an inactive rule across the axis.
+// spacing and an inactive rule across the axis. The dividers are the
+// monitor's scratch, rewritten by the next call: callers copy them.
 //
 // Vertical axis: full-width slots, the current one centred; the rule is
 // horizontal. Horizontal axis: full-height slots as wide as their content,
 // stack peeks included (the stash pile takes a band of the slot), the current one
 // centred; the rule is vertical, in the spacing between two slots.
-func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
+func (m *Monitor) overviewRows() (overviewSlots, []ports.Separator) {
 	cur := m.Current()
 	u := cur.overviewArea()
 	gap := max(1, u.H*3/100)
@@ -696,11 +733,12 @@ func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 		hc := cur.rowHeight(axis)
 		cs = Rect{X: u.X, Y: u.Y + (u.H-hc)/2, W: u.W, H: hc}
 	}
-	rows := map[*Workspace]Rect{cur: cs}
-	var dividers []ports.Separator
+	var rows overviewSlots
+	rows.add(cur, cs)
+	dividers := 0
 	list := m.overviewWorkspaces()
 	i := indexOf(list, cur)
-	for _, next := range []int{i - 1, i + 1} {
+	for _, next := range [2]int{i - 1, i + 1} {
 		if next < 0 || next >= len(list) {
 			continue
 		}
@@ -711,12 +749,16 @@ func (m *Monitor) overviewRows() (map[*Workspace]Rect, []ports.Separator) {
 			spacing *= 2
 		}
 		slot, gapAt := neighborSlot(axis, u, cs, w, next < i, spacing)
-		rows[w] = slot
+		rows.add(w, slot)
 		if boundary {
-			dividers = append(dividers, overviewDivider(axis, u, gapAt+spacing/2))
+			m.ovDividers[dividers] = overviewDivider(axis, u, gapAt+spacing/2)
+			dividers++
 		}
 	}
-	return rows, dividers
+	if dividers == 0 {
+		return rows, nil
+	}
+	return rows, m.ovDividers[:dividers]
 }
 
 // neighborSlot is the slot of w, the neighbor before or after the current
@@ -767,7 +809,7 @@ func (m *Monitor) overviewLayout(result []Placement) []Placement {
 	var unfolded *Workspace
 	var unfoldedSlot Rect
 	for w := range m.all() {
-		slot, shown := rows[w]
+		slot, shown := rows.lookup(w)
 		if shown {
 			// The pile band goes under the row: the row is centred
 			// with it.
@@ -1274,12 +1316,17 @@ func (w *Workspace) previewRowTiles(axis layoutAxis, slot Rect, dim, lit, lanes 
 	return tiles
 }
 
+// outlineLines is the lines of an uncut outline: one per edge.
+const outlineLines = 4
+
 // overviewOutline frames the selected preview with active lines of width
 // b, just outside it. The selection is one preview: a selected stash card
 // wins over any other focused one, which must then not be framed. A tile's
 // frame is cut where the cards of the pile sit over it, so it never runs
-// across the pile; a selected card keeps its complete frame.
-func overviewOutline(layout []Placement, b int) []ports.Separator {
+// across the pile; a selected card keeps its complete frame. The lines are
+// appended to dst, which the caller sizes for them (room for outlineLines
+// past its length) so the scene's separators are allocated once.
+func overviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.Separator {
 	sel := -1
 	for i, p := range layout {
 		if p.Preview > 0 && p.Focused && !p.Hidden && (sel < 0 || p.Card && !layout[sel].Card) {
@@ -1287,8 +1334,9 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 		}
 	}
 	if sel < 0 {
-		return nil
+		return dst
 	}
+	dst = slices.Grow(dst, outlineLines)
 	r := layout[sel].Rect
 	edges := [4]Rect{
 		{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: b},
@@ -1296,7 +1344,6 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 		{X: r.X - b, Y: r.Y, W: b, H: r.H},
 		{X: r.X + r.W, Y: r.Y, W: b, H: r.H},
 	}
-	out := make([]ports.Separator, 0, len(edges))
 	cut := false
 	if !layout[sel].Card {
 		for _, p := range layout {
@@ -1308,9 +1355,9 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 	}
 	if !cut {
 		for _, e := range edges {
-			out = append(out, ports.Separator{Rect: e, Active: true})
+			dst = append(dst, ports.Separator{Rect: e, Active: true})
 		}
-		return out
+		return dst
 	}
 	// Stack buffers: the outline is rebuilt every overview frame.
 	var cardBuf [overviewCards]Rect
@@ -1323,10 +1370,10 @@ func overviewOutline(layout []Placement, b int) []ports.Separator {
 	}
 	for _, e := range edges {
 		for _, piece := range subtractRects(pieceBuf[:0], e, cards) {
-			out = append(out, ports.Separator{Rect: piece, Active: true})
+			dst = append(dst, ports.Separator{Rect: piece, Active: true})
 		}
 	}
-	return out
+	return dst
 }
 
 // subtractRects is what of r no rect of cuts covers, as rects. The edges of

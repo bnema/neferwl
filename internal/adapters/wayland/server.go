@@ -189,6 +189,8 @@ type Server struct {
 	sink *presentSink
 	// framePeriods is the tick's scratch (display goroutine only).
 	framePeriods map[string]time.Duration
+	// frameFire is dueFrames' result slice, reused across ticks.
+	frameFire []string
 	// held buffers wait until no output reads them (release.go); reports
 	// are the outputs' latest ports.OutputPresented.
 	held []heldBuffer

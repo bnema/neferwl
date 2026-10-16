@@ -3,6 +3,8 @@ package core
 import (
 	"iter"
 	"slices"
+
+	"github.com/bnema/neferwl/internal/ports"
 )
 
 // Monitor owns an ordered list of workspaces for one output (ADR 011). Numbers
@@ -46,6 +48,12 @@ type Monitor struct {
 	// one its swipe began on); switchView.off is then from the current
 	// workspace's place in it.
 	switchList []*Workspace
+	// ovNamed, ovList and ovDividers are overviewWorkspaces' and
+	// overviewRows' scratch (the ordered named rows, the rows and the
+	// dividers), reused and never handed out past the call.
+	ovNamed    []*Workspace
+	ovList     []*Workspace
+	ovDividers [2]ports.Separator
 	// ov holds the overview selection and its Escape snapshot.
 	ov overviewState
 	// sw is the column switcher (switcher.go).
