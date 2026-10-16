@@ -763,3 +763,9 @@ func TestOverviewFingerScroll(t *testing.T) {
 		t.Fatal("continuous scroll held by the finger scroll")
 	}
 }
+
+// at is the slot of w, the zero Rect if it has none.
+func (s *overviewSlots) at(w *Workspace) Rect {
+	r, _ := s.lookup(w)
+	return r
+}

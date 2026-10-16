@@ -328,7 +328,8 @@ func restoreRow(w *Workspace, s rowSnapshot) {
 // other empty rows are skipped unless current.
 //
 // The result is the monitor's scratch, rebuilt by the next call: callers
-// read it and drop it before calling again (Clone it to keep it).
+// read it and drop it before calling again (Clone it to keep it). It keeps
+// the last result's workspaces reachable until then.
 func (m *Monitor) overviewWorkspaces() []*Workspace {
 	fallback := m.Workspaces[0]
 	for _, w := range m.Workspaces {
@@ -344,10 +345,11 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 		}
 		return len(m.named)
 	}
+	cur := m.Current()
 	named := append(m.ovNamed[:0], m.hidden...)
+	named = slices.DeleteFunc(named, func(n *Workspace) bool { return n.empty() && n != cur })
 	m.ovNamed = named
 	slices.SortStableFunc(named, func(a, b *Workspace) int { return rank(a) - rank(b) })
-	cur := m.Current()
 	rows := m.ovList[:0]
 	for _, w := range m.Workspaces {
 		// The row is kept when occupied, current or anchoring a named
@@ -355,9 +357,6 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 		at := len(rows)
 		rows = append(rows, w)
 		for _, n := range named {
-			if n.empty() && n != cur {
-				continue
-			}
 			anchor := n.overviewAfter
 			if indexOf(m.Workspaces, anchor) < 0 {
 				anchor = fallback
@@ -370,9 +369,9 @@ func (m *Monitor) overviewWorkspaces() []*Workspace {
 			rows = rows[:at]
 		}
 	}
-	// Clear the unused tails so a workspace gone from this monitor is not
-	// kept reachable by the scratch.
-	clear(named[len(named):cap(named)])
+	// named is only needed here; the rows' tail is cleared so the scratch
+	// holds no more than the last result.
+	clear(named[:cap(named)])
 	clear(rows[len(rows):cap(rows)])
 	m.ovList = rows
 	return rows
@@ -699,12 +698,6 @@ type overviewSlots struct {
 func (s *overviewSlots) add(w *Workspace, r Rect) {
 	s.w[s.n], s.r[s.n] = w, r
 	s.n++
-}
-
-// at is the slot of w, the zero Rect if it has none.
-func (s *overviewSlots) at(w *Workspace) Rect {
-	r, _ := s.lookup(w)
-	return r
 }
 
 // lookup is the slot of w, if it has one.
