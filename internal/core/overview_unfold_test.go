@@ -144,86 +144,58 @@ func TestOverviewCascadeStashFolds(t *testing.T) {
 	}
 }
 
-// A vertical overview's stash longer than the area scrolls like a wide
-// row: every card is reached in order, the selection stays inside the area
-// and is centred unless the strip stops at an edge of it, and cards past
-// the area are hidden.
-func TestOverviewStashUnfoldScrolls(t *testing.T) {
-	m := cascadeOverview()
-	w := m.Current()
-	w.Overflow = OverflowScroll
-	withStash(m, 12)
-	m.ToggleOverview()
-	if m.overviewAxis() != verticalAxis {
-		t.Fatal("setup: wrong overview axis")
-	}
-	m.selectCard(w, 0)
-	u := w.overviewArea()
-	lo, hi := u.Y, u.Y+u.H
-	centred, hidden := false, false
-	for i := range len(w.Stash) {
-		if m.cardAt(w) != i {
-			t.Fatalf("step %d: card %d", i, m.cardAt(w))
-		}
-		ps := m.Layout()
-		sel := previewOf(t, ps, w.Stash[i].ID)
-		at, size := sel.Rect.Y, sel.Rect.H
-		if sel.Hidden || !sel.Focused || at < lo || at+size > hi {
-			t.Fatalf("card %d off the area: %+v in %v", i, sel, u)
-		}
-		first := previewOf(t, ps, w.Stash[0].ID).Rect.Y
-		last := previewOf(t, ps, w.Stash[len(w.Stash)-1].ID).Rect.Y
-		if first > lo || last+size < hi {
-			t.Fatalf("card %d: strip %d..%d does not fill the area %d..%d", i, first, last+size, lo, hi)
-		}
-		if mid := at + size/2; abs(mid-(lo+hi)/2) <= 1 {
-			centred = true
-		} else if first != lo && last+size != hi {
-			t.Fatalf("card %d at %d, neither centred on %d nor clamped", i, mid, (lo+hi)/2)
-		}
-		for _, e := range w.Stash {
-			hidden = hidden || previewOf(t, ps, e.ID).Hidden
-		}
-		m.OverviewMove(0, 1)
-	}
-	if !hidden || !centred {
-		t.Fatalf("12 cards: hidden %v, centred %v; the test does not scroll", hidden, centred)
-	}
-}
-
-// A carousel wider than the area keeps every selection centred in it, with
-// cards on both sides; the cards past the area are hidden.
-func TestOverviewCascadeCarouselScrolls(t *testing.T) {
-	m := cascadeOverview()
-	w := m.Current()
-	withStash(m, 12)
-	m.ToggleOverview()
-	if m.overviewAxis() != horizontalAxis {
-		t.Fatal("setup: wrong overview axis")
-	}
-	m.selectCard(w, 11)
-	u := w.overviewArea()
-	for step := range len(w.Stash) + 1 {
-		i := m.cardAt(w)
-		ps := m.Layout()
-		sel := previewOf(t, ps, w.Stash[i].ID)
-		if sel.Hidden || !sel.Focused || abs(sel.Rect.X+sel.Rect.W/2-(u.X+u.W/2)) > 1 {
-			t.Fatalf("step %d: card %d not centred: %+v in %v", step, i, sel, u)
-		}
-		left, right, hidden := false, false, false
-		for _, e := range w.Stash {
-			p := previewOf(t, ps, e.ID)
-			if p.Hidden {
-				hidden = true
-				continue
+// A carousel longer than the area keeps every selection centred in it,
+// with cards on both sides, on either axis; the cards past the area are
+// hidden.
+func TestOverviewCarouselScrolls(t *testing.T) {
+	for _, axis := range []layoutAxis{horizontalAxis, verticalAxis} {
+		t.Run(map[layoutAxis]string{horizontalAxis: "cascade", verticalAxis: "scroll"}[axis], func(t *testing.T) {
+			m := cascadeOverview()
+			w := m.Current()
+			if axis == verticalAxis {
+				w.Overflow = OverflowScroll
 			}
-			left = left || p.Rect.X < sel.Rect.X
-			right = right || p.Rect.X > sel.Rect.X
-		}
-		if !left || !right || !hidden {
-			t.Fatalf("step %d: cards left %v, right %v, hidden %v", step, left, right, hidden)
-		}
-		m.OverviewMove(1, 0)
+			withStash(m, 12)
+			m.ToggleOverview()
+			if m.overviewAxis() != axis {
+				t.Fatal("setup: wrong overview axis")
+			}
+			m.selectCard(w, 11)
+			u := w.overviewArea()
+			pos := func(r Rect) (int, int) {
+				if axis == verticalAxis {
+					return r.Y, r.Y + r.H/2 - (u.Y + u.H/2)
+				}
+				return r.X, r.X + r.W/2 - (u.X + u.W/2)
+			}
+			for step := range len(w.Stash) + 1 {
+				i := m.cardAt(w)
+				ps := m.Layout()
+				sel := previewOf(t, ps, w.Stash[i].ID)
+				at, off := pos(sel.Rect)
+				if sel.Hidden || !sel.Focused || abs(off) > 1 {
+					t.Fatalf("step %d: card %d not centred: %+v in %v", step, i, sel, u)
+				}
+				before, after, hidden := false, false, false
+				for _, e := range w.Stash {
+					p := previewOf(t, ps, e.ID)
+					if p.Hidden {
+						hidden = true
+						continue
+					}
+					q, _ := pos(p.Rect)
+					before, after = before || q < at, after || q > at
+				}
+				if !before || !after || !hidden {
+					t.Fatalf("step %d: cards before %v, after %v, hidden %v", step, before, after, hidden)
+				}
+				if axis == verticalAxis {
+					m.OverviewMove(0, 1)
+				} else {
+					m.OverviewMove(1, 0)
+				}
+			}
+		})
 	}
 }
 
@@ -251,8 +223,10 @@ func TestOverviewStashLayoutAllocations(t *testing.T) {
 	}
 }
 
-// A scroll overview unfolds its pile into a column on the left of the row;
-// up and down walk it, right goes back to the columns.
+// A scroll overview unfolds its pile into a carousel on the left of the
+// row: a column centred on the selection, the card before it above and the
+// one after it below, wrapping round. Up and down walk it round, right goes
+// back to the columns.
 func TestOverviewScrollStashUnfolds(t *testing.T) {
 	m := overviewMonitor()
 	w := m.Current()
@@ -267,29 +241,90 @@ func TestOverviewScrollStashUnfolds(t *testing.T) {
 		t.Fatal("setup: not a vertical overview")
 	}
 	m.OverviewMove(-1, 0)
-	if m.cardAt(w) < 0 {
+	at := m.cardAt(w)
+	if at < 0 {
 		t.Fatal("left from the first column did not select the stash")
 	}
 	cards := shownCards(t, w, m.Layout())
 	if len(cards) != 3 {
 		t.Fatalf("%d cards shown, want 3", len(cards))
 	}
-	for i := 1; i < len(cards); i++ {
-		if cards[i].Rect.X != cards[0].Rect.X || cards[i].Rect.Y < cards[i-1].Rect.Y+cards[i-1].Rect.H {
-			t.Fatalf("cards not stacked down: %v then %v", cards[i-1].Rect, cards[i].Rect)
+	col := []Placement{cards[(at+2)%3], cards[at], cards[(at+1)%3]}
+	for i := 1; i < len(col); i++ {
+		if col[i].Rect.X != col[0].Rect.X || col[i].Rect.Y < col[i-1].Rect.Y+col[i-1].Rect.H {
+			t.Fatalf("cards not stacked down: %v then %v", col[i-1].Rect, col[i].Rect)
 		}
 	}
-	m.OverviewMove(0, -1)
-	m.OverviewMove(0, -1)
-	if m.cardAt(w) != 0 {
-		t.Fatalf("up: card %d, want 0", m.cardAt(w))
+	if !col[1].Focused {
+		t.Fatal("the selection is not in the middle")
 	}
 	m.OverviewMove(0, 1)
-	if m.cardAt(w) != 1 {
-		t.Fatalf("down: card %d, want 1", m.cardAt(w))
+	if want := (at + 1) % 3; m.cardAt(w) != want {
+		t.Fatalf("down: card %d, want %d", m.cardAt(w), want)
+	}
+	m.OverviewMove(0, -1)
+	m.OverviewMove(0, -1)
+	if want := (at + 2) % 3; m.cardAt(w) != want {
+		t.Fatalf("up twice: card %d, want %d", m.cardAt(w), want)
 	}
 	m.OverviewMove(1, 0)
 	if m.cardAt(w) >= 0 || m.overviewTarget() == 0 {
 		t.Fatalf("right: card %d, target %d", m.cardAt(w), m.overviewTarget())
+	}
+}
+
+// A stash-only workspace's carousel does not wrap round, drawn or walked:
+// the selection stays in the middle, the cards in stash order on either
+// side of it. Past the ends a vertical overview stops; a cascade one
+// changes workspace.
+func TestOverviewStashOnlyCarousel(t *testing.T) {
+	for _, axis := range []layoutAxis{horizontalAxis, verticalAxis} {
+		t.Run(map[layoutAxis]string{horizontalAxis: "cascade", verticalAxis: "scroll"}[axis], func(t *testing.T) {
+			m := overviewMonitor()
+			m.Focus(2)
+			m.AddWindow(30)
+			m.Focus(1)
+			w := m.Current()
+			w.Overflow = OverflowCascade
+			if axis == verticalAxis {
+				w.Overflow = OverflowScroll
+			}
+			w.ToggleWindowStash() // its own window
+			for id := WindowID(40); id < 44; id++ {
+				w.AddWindow(id)
+				w.FocusID(id)
+				w.ToggleWindowStash()
+			}
+			m.ToggleOverview()
+			if m.overviewAxis() != axis || len(w.Columns) != 0 || m.cardAt(w) < 0 {
+				t.Fatalf("setup: axis %d, %d columns, card %d", m.overviewAxis(), len(w.Columns), m.cardAt(w))
+			}
+			last := len(w.Stash) - 1
+			m.selectCard(w, last)
+			ps := m.Layout()
+			pos := func(i int) int {
+				if r := previewOf(t, ps, w.Stash[i].ID).Rect; axis == verticalAxis {
+					return r.Y
+				} else {
+					return r.X
+				}
+			}
+			for i := 1; i <= last; i++ {
+				if pos(i) <= pos(i-1) {
+					t.Fatalf("card %d at %d, not after card %d at %d", i, pos(i), i-1, pos(i-1))
+				}
+			}
+			if axis == verticalAxis {
+				m.OverviewMove(0, 1)
+				if m.Current() != w || m.cardAt(w) != last {
+					t.Fatalf("down past the last card: card %d", m.cardAt(w))
+				}
+				return
+			}
+			m.OverviewMove(1, 0)
+			if m.Current() == w {
+				t.Fatal("right past the last card stayed on the workspace")
+			}
+		})
 	}
 }

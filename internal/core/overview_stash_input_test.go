@@ -43,9 +43,9 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 					var a Action
 					switch {
 					case dx == 0 && dy < 0:
-						a = ActionFocusWorkspacePrev
+						a = ActionFocusWindowUp
 					case dx == 0 && dy > 0:
-						a = ActionFocusWorkspaceNext
+						a = ActionFocusWindowDown
 					case dx > 0 && dy == 0:
 						a = ActionFocusColumnRight
 					case dx < 0 && dy == 0:
@@ -62,13 +62,33 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 			}
 			move(0, 1)
 			move(0, 1)
-			if m.Current() != w || m.cardAt(w) != 2 || !slices.Equal(stashIDs(w), before) {
-				t.Fatal("down escaped or reordered the stash")
+			if m.Current() != w || m.cardAt(w) != 0 || !slices.Equal(stashIDs(w), before) {
+				t.Fatalf("down past the last card: card %d, want it to wrap round to 0 in order", m.cardAt(w))
 			}
 			move(1, 0)
 			if m.cardAt(w) >= 0 {
 				t.Fatal("right did not leave the stash")
 			}
 		})
+	}
+}
+
+// In a vertical overview, a focus-workspace bind over the unfolded stash
+// changes workspace: the carousel wraps round, so walking it would never
+// get there.
+func TestOverviewWorkspaceBindLeavesCarousel(t *testing.T) {
+	m := pileMonitor()
+	w := m.Current()
+	m.Focus(1)
+	m.AddWindow(30)
+	m.Focus(0)
+	m.ToggleOverview()
+	m.OverviewMove(-1, 0)
+	if m.overviewAxis() != verticalAxis || m.cardAt(w) < 0 {
+		t.Fatal("setup: no card selected in a vertical overview")
+	}
+	m.overviewFocus(ActionFocusWorkspaceNext)
+	if m.Current() == w {
+		t.Fatal("focus-workspace-next over a card stayed on the workspace")
 	}
 }
