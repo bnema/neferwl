@@ -240,11 +240,16 @@ With `keyboard.cmd = alt` or `ctrl`, the defaults that would combine `cmd` with 
 
 ### Cascade
 
-The default layout. Columns fill the screen side by side up to `max-columns`, then continue in a new band below. Each band fills the screen height.
+The default layout. Columns sit side by side in bands of up to `max-columns`, stacked one below the other. Each band fills the screen height and keeps its columns until you move them.
 
-- Left/right focus moves within a band, then to the neighbor workspace.
+- Left/right focus moves within a band, then to the neighbor monitor, then to the neighbor workspace.
+- `move-column-left/right` stays in the band; at its edge the column goes to the neighbor monitor, if any.
 - Up/down moves through the windows of a column, then to the band above or below.
-- A maximized column gets a band of its own.
+- `move-window-up/down` past the column's top or bottom sends the whole column to the band above or below. It joins that band when it has room, else it gets a new band between the two.
+- A new window joins the focused band when it has room, else it gets a new band right below.
+- `cycle-column-width` in a full band makes room: the right neighbor goes to the band below (the left one to the band above from the last column). The end of the cycle brings it back.
+- `maximize-column` gives the column a band of its own: the columns on its left go to the band above, the ones on its right to the band below. Maximizing again forms the band back.
+- A band left empty goes away. A smaller `max-columns` moves the extra columns of a band to a new band below it.
 
 ### Column widths
 

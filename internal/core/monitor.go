@@ -575,6 +575,10 @@ func (m *Monitor) applyNamed() {
 		if before != w.Overflow && w.policy().equalCells {
 			w.clearMaximized()
 		}
+		if before != w.Overflow {
+			// Cascade bands start over from the column order.
+			w.forgetBands()
+		}
 		// The view offset belongs to the old content axis: SetMaxColumns
 		// scrolls back to the focus along the new one.
 		if w.policy().content != axis {

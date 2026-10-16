@@ -52,6 +52,20 @@ func wantColumns(t *testing.T, w *Workspace, want ...WindowID) {
 	}
 }
 
+// wantBands checks the cascade bands, each by the first window of its
+// columns.
+func wantBands(t *testing.T, w *Workspace, want ...[]WindowID) {
+	t.Helper()
+	var got [][]WindowID
+	w.walkBands(func(_, first, last int) bool {
+		got = append(got, columnOrder(&Workspace{Columns: w.Columns[first : last+1]}))
+		return true
+	})
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Fatalf("bands %v, want %v", got, want)
+	}
+}
+
 func wantFocus(t *testing.T, c *Core, screen string, id WindowID) {
 	t.Helper()
 	if got := c.cur().name(); got != screen {
@@ -102,10 +116,10 @@ func TestCascadeInsideBandStaysOnMonitor(t *testing.T) {
 }
 
 // With no monitor on that side, left/right never cross into the neighbor
-// band: at the band edge they step the workspace (the first has none before
-// it; the last is the trailing empty one). up/down cross bands, and
-// move-column still crosses in column order.
-func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveCrosses(t *testing.T) {
+// band: at the band edge focus steps the workspace (the first has none
+// before it; the last is the trailing empty one) and move-column does
+// nothing. up/down cross bands.
+func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveStays(t *testing.T) {
 	c, w := cascadeMovesCore(t, 5, 3, false)
 	m := c.cur().mon
 	w.FocusID(4)
@@ -122,12 +136,12 @@ func TestCascadeBandEdgeWithoutMonitorFocusStepsMoveCrosses(t *testing.T) {
 	m.Focus(0)
 	w.FocusID(4)
 	c.applyAction(ActionMoveColumnLeft)
-	wantColumns(t, w, 1, 2, 4, 3, 5)
-	wantFocus(t, c, "M", 4)
-	w.FocusID(4)
-	c.applyAction(ActionMoveColumnRight)
 	wantColumns(t, w, 1, 2, 3, 4, 5)
 	wantFocus(t, c, "M", 4)
+	w.FocusID(3)
+	c.applyAction(ActionMoveColumnRight)
+	wantColumns(t, w, 1, 2, 3, 4, 5)
+	wantFocus(t, c, "M", 3)
 }
 
 // With one column per band, every column is at both edges of its band.
@@ -150,92 +164,85 @@ func TestFixedMoveColumnKeepsLinearEdge(t *testing.T) {
 	wantFocus(t, c, "M", 2)
 }
 
-// At the top or bottom of its column, move-window-up/down moves a cascade
-// column to the adjacent band, where focus-window-up/down goes; bands
-// {1 2 3} {4 5}.
+// At the top or bottom of its column, move-window-up/down sends a cascade
+// column to the adjacent band: it joins it when it has room, at its offset
+// in the band, else it makes a new band between the two.
 func TestCascadeMoveWindowCrossesBands(t *testing.T) {
-	c, w := cascadeMovesCore(t, 5, 3, false)
+	c, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
+	w.FocusID(2)
+	c.applyAction(ActionMoveWindowDown)
+	wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2, 5})
+	wantFocus(t, c, "M", 2)
+	c.applyAction(ActionMoveWindowUp)
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4, 5})
+	wantFocus(t, c, "M", 2)
+}
+
+// A full band cannot take the column: a new band goes between the two,
+// and the one it left keeps the others.
+func TestCascadeMoveWindowIntoFullBandMakesBand(t *testing.T) {
+	c, w := cascadeMovesCore(t, 6, 3, false) // {1 2 3} {4 5 6}
 	w.FocusID(5)
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 5, 3, 4, 2)
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{5}, []WindowID{4, 6})
 	wantFocus(t, c, "M", 5)
-	c.applyAction(ActionMoveWindowDown)
-	wantColumns(t, w, 1, 2, 3, 4, 5)
-	wantFocus(t, c, "M", 5)
-}
-
-// The last band is partial: the move clamps to its last column, and going
-// back up keeps the new offset, as focus does.
-func TestCascadeMoveWindowPartialBand(t *testing.T) {
-	c, w := cascadeMovesCore(t, 5, 3, false)
-	w.FocusID(3)
-	c.applyAction(ActionMoveWindowDown)
-	wantColumns(t, w, 1, 2, 5, 4, 3)
+	// Alone in its band, it passes the full band above.
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 3, 5, 4, 2)
-	wantFocus(t, c, "M", 3)
+	wantBands(t, w, []WindowID{5}, []WindowID{1, 2, 3}, []WindowID{4, 6})
+	wantFocus(t, c, "M", 5)
 }
 
-// No band past the first or last: nothing moves.
-func TestCascadeMoveWindowStopsAtOuterBands(t *testing.T) {
-	c, w := cascadeMovesCore(t, 5, 3, false)
+// Past the outer bands a column sharing its band starts a new one; a
+// column alone there does not move.
+func TestCascadeMoveWindowOuterBands(t *testing.T) {
+	c, w := cascadeMovesCore(t, 5, 3, false) // {1 2 3} {4 5}
+	w.FocusID(5)
+	c.applyAction(ActionMoveWindowDown)
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4}, []WindowID{5})
+	c.applyAction(ActionMoveWindowDown)
+	wantBands(t, w, []WindowID{1, 2, 3}, []WindowID{4}, []WindowID{5})
 	w.FocusID(1)
 	c.applyAction(ActionMoveWindowUp)
+	wantBands(t, w, []WindowID{1}, []WindowID{2, 3}, []WindowID{4}, []WindowID{5})
 	wantFocus(t, c, "M", 1)
-	w.FocusID(4)
+}
+
+// A band left empty goes away.
+func TestCascadeMoveWindowDropsEmptyBand(t *testing.T) {
+	c, w := cascadeMovesCore(t, 4, 3, false) // {1 2 3} {4}
+	w.FocusID(2)
 	c.applyAction(ActionMoveWindowDown)
-	wantColumns(t, w, 1, 2, 3, 4, 5)
-	wantFocus(t, c, "M", 4)
+	wantBands(t, w, []WindowID{1, 3}, []WindowID{4, 2})
+	w.FocusID(4)
+	c.applyAction(ActionMoveWindowUp) // At its offset in the band: first.
+	wantBands(t, w, []WindowID{4, 1, 3}, []WindowID{2})
 }
 
-// A maximized column keeps its band to itself when it moves: it swaps
-// with the column of the band above and stays maximized.
-func TestCascadeMoveWindowKeepsMaximization(t *testing.T) {
-	c, w := cascadeMovesCore(t, 5, 3, false)
-	w.FocusID(5)
-	w.ToggleFullWidth() // Bands {1 2 3} {4} {5}.
-	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 1, 2, 3, 5, 4)
-	wantFocus(t, c, "M", 5)
-	if !w.Columns[3].FullWidth || w.band(3) != 1 || w.band(4) != 2 {
-		t.Fatalf("maximized %t, bands %d %d", w.Columns[3].FullWidth, w.band(3), w.band(4))
-	}
-}
-
-// A column moving to or from a maximized column's band passes the whole
-// adjacent band. Bands follow column order, so a maximized column leaving
-// lets the bands around it pack together: {1} and {3 4} join.
-// Repeating the move never leaves the column stuck.
-func TestCascadeMoveWindowAcrossMaximizedBand(t *testing.T) {
+// A maximized column keeps its band to itself: moving it, or moving a
+// column toward it, makes a new band; repeating the move passes it.
+func TestCascadeMoveWindowAndMaximizedBand(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
+		n          int
 		max, focus WindowID
 		action     Action
-		want       []WindowID
-		band       int
+		want       [][]WindowID
 	}{
-		// Bands {1} {2*} {3 4}.
-		{"maximized down", 2, 2, ActionMoveWindowDown, []WindowID{1, 3, 4, 2}, 1},
-		{"maximized up", 2, 2, ActionMoveWindowUp, []WindowID{2, 1, 3, 4}, 0},
-		// Bands {1 2 3} {4*} {5}.
-		{"into maximized below", 4, 3, ActionMoveWindowDown, []WindowID{1, 2, 4, 3, 5}, 2},
-		{"into maximized above", 4, 5, ActionMoveWindowUp, []WindowID{1, 2, 3, 5, 4}, 1},
+		// After maximizing 2: {1} {2*} {3 4}.
+		{"maximized down", 4, 2, 2, ActionMoveWindowDown, [][]WindowID{{1}, {3, 4}, {2}}},
+		{"maximized up", 4, 2, 2, ActionMoveWindowUp, [][]WindowID{{2}, {1}, {3, 4}}},
+		// After maximizing 4: {1 2 3} {4*} {5}.
+		{"into maximized below", 5, 4, 3, ActionMoveWindowDown, [][]WindowID{{1, 2}, {3}, {4}, {5}}},
+		{"into maximized above", 5, 4, 5, ActionMoveWindowUp, [][]WindowID{{1, 2, 3}, {5}, {4}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			n := 5
-			if tc.max == 2 {
-				n = 4
-			}
-			c, w := cascadeMovesCore(t, n, 3, false)
+			c, w := cascadeMovesCore(t, tc.n, 3, false)
 			w.FocusID(tc.max)
 			w.ToggleFullWidth()
 			w.FocusID(tc.focus)
 			c.applyAction(tc.action)
-			wantColumns(t, w, tc.want...)
+			wantBands(t, w, tc.want...)
 			wantFocus(t, c, "M", tc.focus)
-			if got := w.band(w.Focus); got != tc.band {
-				t.Fatalf("band %d, want %d", got, tc.band)
-			}
 			if !w.Columns[w.columnOf(tc.max)].FullWidth {
 				t.Fatal("maximization lost")
 			}
@@ -287,7 +294,8 @@ func TestCascadeMoveWindowStackedFirst(t *testing.T) {
 		t.Fatalf("stack %v, want [5 4]", got)
 	}
 	c.applyAction(ActionMoveWindowUp)
-	wantColumns(t, w, 5, 2, 3, 1)
+	// The full band above cannot take it, so it passes it.
+	wantBands(t, w, []WindowID{5}, []WindowID{1, 2, 3})
 	wantFocus(t, c, "M", 5)
 }
 

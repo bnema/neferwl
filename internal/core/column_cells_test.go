@@ -117,8 +117,6 @@ func TestGrowColumnNoop(t *testing.T) {
 	}{
 		{"cascade lone", OverflowCascade, 4, 1},
 		{"fixed lone", OverflowFixed, 4, 1},
-		{"cascade full band", OverflowCascade, 4, 4},
-		{"cascade full bands", OverflowCascade, 3, 6},
 		{"fixed full row", OverflowFixed, 4, 4},
 		{"fixed spiral", OverflowFixed, 2, 4},
 		{"max-columns 1", OverflowCascade, 1, 3},
@@ -287,10 +285,10 @@ func TestGrowColumnEdgeCases(t *testing.T) {
 		if got := cellsOf(w); !reflect.DeepEqual(got, []int{0, 0, 0, 0, 0, 0}) {
 			t.Fatalf("cells %v", got)
 		}
-		w.FocusID(1) // a full band
+		w.FocusID(1) // A full band pushes a neighbor down (cascade_cycle_test).
 		w.Apply(ActionCycleColumnWidth)
-		if got := cellsOf(w); !reflect.DeepEqual(got, make([]int, 6)) {
-			t.Fatalf("cells %v", got)
+		if got := cellsOf(w)[4:]; !reflect.DeepEqual(got, []int{0, 0}) {
+			t.Fatalf("other band changed: cells %v", cellsOf(w))
 		}
 	})
 }
