@@ -74,21 +74,29 @@ func TestOverviewStashInputNavigation(t *testing.T) {
 }
 
 // In a vertical overview, a focus-workspace bind over the unfolded stash
-// changes workspace: the carousel wraps round, so walking it would never
-// get there.
+// changes workspace, in its direction, wrapping round or not: the move
+// keys walk the cards.
 func TestOverviewWorkspaceBindLeavesCarousel(t *testing.T) {
-	m := pileMonitor()
-	w := m.Current()
-	m.Focus(1)
-	m.AddWindow(30)
-	m.Focus(0)
-	m.ToggleOverview()
-	m.OverviewMove(-1, 0)
-	if m.overviewAxis() != verticalAxis || m.cardAt(w) < 0 {
-		t.Fatal("setup: no card selected in a vertical overview")
-	}
-	m.overviewFocus(ActionFocusWorkspaceNext)
-	if m.Current() == w {
-		t.Fatal("focus-workspace-next over a card stayed on the workspace")
+	for _, n := range []int{2, 3} {
+		m := overviewMonitor()
+		w := m.Current()
+		for id := WindowID(5); id < WindowID(5+n); id++ {
+			w.AddWindow(id)
+			w.FocusID(id)
+			w.ToggleWindowStash()
+		}
+		w.FocusID(1)
+		m.Focus(1)
+		m.AddWindow(30)
+		m.Focus(0)
+		m.ToggleOverview()
+		m.OverviewMove(-1, 0)
+		if m.overviewAxis() != verticalAxis || m.cardAt(w) < 0 {
+			t.Fatalf("%d cards, setup: no card selected in a vertical overview", n)
+		}
+		m.overviewFocus(ActionFocusWorkspaceNext)
+		if m.Current() != m.Workspaces[1] || m.cardAt(w) >= 0 {
+			t.Fatalf("%d cards: focus-workspace-next went to workspace %d, card %d", n, indexOf(m.Workspaces, m.Current()), m.cardAt(w))
+		}
 	}
 }

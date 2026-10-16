@@ -328,3 +328,34 @@ func TestOverviewStashOnlyCarousel(t *testing.T) {
 		})
 	}
 }
+
+// A carousel that does not wrap round and is longer than the area stops at
+// its edges, like a wide row: the first card at the start of the area, the
+// selection inside it.
+func TestOverviewStashOnlyCarouselScrolls(t *testing.T) {
+	m := overviewMonitor()
+	m.Focus(1)
+	w := m.Current()
+	w.Overflow = OverflowCascade
+	w.ToggleWindowStash() // its own window
+	for id := WindowID(40); id < 52; id++ {
+		w.AddWindow(id)
+		w.FocusID(id)
+		w.ToggleWindowStash()
+	}
+	m.ToggleOverview()
+	if w.wrapsCards() || m.cardAt(w) < 0 {
+		t.Fatalf("setup: wraps %v, card %d", w.wrapsCards(), m.cardAt(w))
+	}
+	u := w.overviewArea()
+	m.selectCard(w, 0)
+	ps := m.Layout()
+	if r := previewOf(t, ps, w.Stash[0].ID).Rect; r.X != u.X {
+		t.Fatalf("first card at %d, area starts at %d", r.X, u.X)
+	}
+	m.selectCard(w, len(w.Stash)-1)
+	ps = m.Layout()
+	if r := previewOf(t, ps, w.Stash[len(w.Stash)-1].ID).Rect; r.X+r.W != u.X+u.W {
+		t.Fatalf("last card ends at %d, area at %d", r.X+r.W, u.X+u.W)
+	}
+}
