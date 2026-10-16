@@ -378,11 +378,11 @@ func (w *Workspace) isolateBand() {
 	left := slices.Clone(bands[b][:p])
 	right := slices.Clone(bands[b][p+1:])
 	c := bands[b][p]
-	// Earlier pushes (cycle-column-width) stay remembered and were nearer
-	// at first, so the new ones go past them: pushedUp ends nearest,
-	// pushedDown starts nearest.
-	c.pushedUp = append(columnIDs(left), c.pushedUp...)
-	c.pushedDown = append(c.pushedDown, columnIDs(right)...)
+	// Both lists keep the band's left-to-right order. Earlier pushes
+	// (cycle-column-width) took the far ends of the band, so the new ones
+	// were nearer the column.
+	c.pushedUp = append(c.pushedUp, columnIDs(left)...)
+	c.pushedDown = append(columnIDs(right), c.pushedDown...)
 	bands[b] = []Column{c}
 	if len(right) > 0 {
 		bands = w.sendBand(bands, b, 1, 0, right)
@@ -394,8 +394,9 @@ func (w *Workspace) isolateBand() {
 }
 
 // pushNeighbor makes room in the focused column's full cascade band for a
-// wider column: its right neighbor goes to the band below, or its left
-// one to the band above at the band's right end. The column remembers it.
+// wider column: the column at the far end of the band leaves it. The
+// rightmost goes to the band below; from the last column, the leftmost
+// goes to the band above, at its right end. The column remembers it.
 func (w *Workspace) pushNeighbor() {
 	first, last := w.bandBounds(w.band(w.Focus))
 	if first == last {
@@ -404,20 +405,21 @@ func (w *Workspace) pushNeighbor() {
 	id, _ := w.Focused()
 	c := &w.Columns[w.Focus]
 	if w.Focus < last {
-		c.pushedDown = append(c.pushedDown, columnIDs(w.Columns[w.Focus+1:w.Focus+2])...)
-		w.shiftBand(w.Focus+1, w.Focus+1, 1, 0)
+		c.pushedDown = append(c.pushedDown, columnIDs(w.Columns[last:last+1])...)
+		w.shiftBand(last, last, 1, 0)
 	} else {
-		c.pushedUp = append(columnIDs(w.Columns[w.Focus-1:w.Focus]), c.pushedUp...)
-		w.shiftBand(w.Focus-1, w.Focus-1, -1, max(w.MaxColumns, 1))
+		c.pushedUp = append(columnIDs(w.Columns[first:first+1]), c.pushedUp...)
+		w.shiftBand(first, first, -1, max(w.MaxColumns, 1))
 	}
 	w.Focus = w.columnOf(id)
 }
 
 // restoreBand brings back the columns isolateBand or pushNeighbor sent
 // away, those still in the adjacent band, as many as the band has room
-// for, nearest to the focused column first: the ones sent up before it,
-// the ones sent down after it. The others stay where they are. It reports
-// whether the column remembered any.
+// for, nearest to the focused column first: the ones sent up at the start
+// of the band, the ones sent down at its end, in their former order. The
+// others stay where they are. It reports whether the column remembered
+// any.
 func (w *Workspace) restoreBand() bool {
 	c := &w.Columns[w.Focus]
 	up, down := c.pushedUp, c.pushedDown
@@ -468,8 +470,7 @@ func (w *Workspace) restoreBand() bool {
 	}
 	above := take(b-1, up, true)
 	below := take(b+1, down, false)
-	p := slices.IndexFunc(bands[b], func(c Column) bool { return slices.Contains(c.Windows, id) })
-	bands[b] = slices.Concat(bands[b][:p], above, bands[b][p:p+1], below, bands[b][p+1:])
+	bands[b] = slices.Concat(above, bands[b], below)
 	w.setBands(bands, id)
 	return true
 }

@@ -5,23 +5,25 @@ import (
 	"testing"
 )
 
-// cycle-column-width in a full band pushes the right neighbor to the band
-// below, or the left one up from the last column; the end of the cycle
-// brings it back.
+// cycle-column-width in a full band pushes the column at the far end of
+// the band out: the rightmost down, or the leftmost up from the last
+// column; the end of the cycle brings it back.
 func TestCascadeCyclePushesNeighbor(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		n      int
+		n, k   int
 		focus  WindowID
 		pushed [][]WindowID
 	}{
-		{"middle pushes right down", 3, 2, [][]WindowID{{1, 2}, {3}}},
-		{"left pushes right down", 3, 1, [][]WindowID{{1, 3}, {2}}},
-		{"last pushes left up", 3, 3, [][]WindowID{{2}, {1, 3}}},
-		{"joins the band below", 5, 2, [][]WindowID{{1, 2}, {3, 4, 5}}},
+		{"middle pushes rightmost down", 3, 3, 2, [][]WindowID{{1, 2}, {3}}},
+		{"first pushes rightmost down", 3, 3, 1, [][]WindowID{{1, 2}, {3}}},
+		{"last pushes leftmost up", 3, 3, 3, [][]WindowID{{1}, {2, 3}}},
+		{"last of four pushes leftmost up", 4, 4, 4, [][]WindowID{{1}, {2, 3, 4}}},
+		{"second of four pushes rightmost down", 4, 4, 2, [][]WindowID{{1, 2, 3}, {4}}},
+		{"joins the band below", 5, 3, 2, [][]WindowID{{1, 2}, {3, 4, 5}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, w := cascadeMovesCore(t, tc.n, 3, false)
+			_, w := cascadeMovesCore(t, tc.n, tc.k, false)
 			w.FocusID(tc.focus)
 			before := bandIDs(w)
 			w.Apply(ActionCycleColumnWidth)
