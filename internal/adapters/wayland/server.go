@@ -292,7 +292,12 @@ type Server struct {
 	cursorQueued bool
 	cursorReady  chan struct{}
 	// Clipboard and primary selection (clipboard.go).
-	selections                                  [2]*clipSource
+	selections [2]*clipSource
+	// Drag and drop (dnd.go): the drag in progress, drops waiting for
+	// their finish, and each client's data devices.
+	dnd                                         *dndState
+	dndDrops                                    []*dndTarget
+	dataDevices                                 map[server.Client][]*wayland.DataDevice
 	clipDevices                                 []*clipDevice
 	dataSources, primarySources, controlSources map[*server.Resource]*clipSource
 	// Pointer constraints (constraints.go).
@@ -786,13 +791,16 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Only input/focus commands require an owner envelope. Config relay
 		// also produces SetKeymap and other epoch-independent commands.
 		switch cmd.(type) {
-		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey:
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey,
+			ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
 			return
 		}
 	}
 	switch c := cmd.(type) {
 	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey:
 		s.applyInput(c)
+	case ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
+		s.applyDrag(c)
 	case ports.ConfigurePopup:
 		if w := s.windows[c.ID]; w != nil && w.popup != nil {
 			w.popup.configure(c)

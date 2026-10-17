@@ -33,6 +33,8 @@ func (c *Core) syncSecurity() bool {
 	c.pressed, c.buttons, c.inputKeys = map[string]bool{}, map[uint32]bool{}, map[string]bool{}
 	c.pointer, c.grab, c.pointerOutput = 0, 0, ""
 	c.drag, c.swallow, c.mods, c.lastButton = nil, map[uint32]bool{}, 0, 0
+	// Wayland cancels its own drag when the epoch changes.
+	c.dataDrag = nil
 	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
 	c.constrained, c.constraint = ports.PointerConstrained{}, ports.PointerConstraint{}

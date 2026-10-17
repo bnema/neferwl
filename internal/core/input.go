@@ -26,6 +26,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	case ports.PointerAxis:
 		return c.pointerAxis(ctx, v)
 	case ports.SwipeBegin:
+		if c.dataDrag != nil && !forwardsSwipe(v.Fingers) {
+			// The drag owns the pointer: no navigation under it.
+			return nil
+		}
 		if forwardsSwipe(v.Fingers) {
 			return c.gestureBegin(ctx, ports.GestureSwipe, v.Fingers, v.Time)
 		}
@@ -98,6 +102,11 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 		// The dragged window and the others get no pointer events.
 		return c.dragMotion(ctx, v.Time)
 	}
+	if c.dataDrag != nil {
+		// A data drag goes to the surface under the pointer, by its own
+		// commands.
+		return c.dataDragMotion(ctx, v.Time)
+	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	// Layout changes are intentionally re-hit-tested only on motion.
 	if id != c.pointer {
@@ -122,6 +131,9 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		delete(c.swallow, v.Button)
 		delete(c.buttons, v.Button)
 		return nil
+	}
+	if c.dataDrag != nil {
+		return c.dataDragButton(ctx, v)
 	}
 	if d := c.drag; d != nil {
 		if !v.Pressed && v.Button == d.button {
@@ -160,8 +172,9 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			return err
 		}
 	}
+	grab := v.Pressed && c.held() == 0
 	if v.Pressed {
-		if c.held() == 0 {
+		if grab {
 			c.grab = id
 		}
 		c.buttons[v.Button] = true
@@ -170,7 +183,7 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		delete(c.buttons, v.Button)
 	}
 	if id != 0 {
-		if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Time: v.Time}); err != nil {
+		if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Grab: grab, Time: v.Time}); err != nil {
 			return err
 		}
 		// A click on an on-demand layer gives it the keyboard.
@@ -226,7 +239,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	}
 	// Scroll goes to the window under the pointer, which has the
 	// pointer focus even mid-drag. None during a window drag.
-	if c.pointer != 0 && c.drag == nil {
+	if c.pointer != 0 && c.drag == nil && c.dataDrag == nil {
 		if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 			return err
 		}
@@ -243,6 +256,12 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		if err := c.releaseSwitcher(ctx); err != nil {
 			return err
 		}
+	}
+	if c.dataDrag != nil && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the data drag first, even over the switcher;
+		// its release goes nowhere either.
+		c.pressed[heldKey(key)] = true
+		return c.cancelDataDrag(ctx)
 	}
 	if c.switching() && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the switcher; its release goes nowhere either.
@@ -372,7 +391,14 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 			return err
 		}
 	}
-	return c.publish(ctx)
+	if err := c.publish(ctx); err != nil {
+		return err
+	}
+	if c.dataDrag != nil {
+		// A data drag follows the layout under the still cursor.
+		return c.rehit(ctx)
+	}
+	return nil
 }
 
 // runSpawn starts the programs of a spawn effect of an action applied to w:

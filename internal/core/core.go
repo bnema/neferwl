@@ -101,7 +101,9 @@ type Core struct {
 	// buttons whose release no client must see. mods are the modifiers
 	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
 	// press a client saw, the one xdg_toplevel.move's serial names.
-	drag             *dragState
+	drag *dragState
+	// dataDrag is the client data drag in progress (datadrag.go).
+	dataDrag         *dataDragState
 	swallow          map[uint32]bool
 	lastButton       uint32
 	mods             ports.Mods
@@ -760,6 +762,10 @@ func (c *Core) slidFrame(ctx context.Context, shown bool, only *screen) error {
 // rehit points the pointer at what now lies under a still cursor, as
 // windows slide under it. A held button keeps its grab.
 func (c *Core) rehit(ctx context.Context) error {
+	if c.dataDrag != nil {
+		// The drag target follows the layout too.
+		return c.dataDragRetarget(ctx, c.motionTime)
+	}
 	if c.grab != 0 || c.drag != nil {
 		return nil
 	}

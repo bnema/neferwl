@@ -82,7 +82,8 @@ func (s *surface) resetInputEmission() {
 func (s *surface) emitInput() {
 	root := s.root()
 	id := root.windowID()
-	if id == 0 {
+	if id == 0 || root.kind == roleDragIcon {
+		// A drag icon takes no input.
 		return
 	}
 	all, rects := root.effectiveInput()

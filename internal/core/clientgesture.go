@@ -38,7 +38,7 @@ func (c *Core) gestureBegin(ctx context.Context, kind ports.GestureKind, fingers
 		return err
 	}
 	c.gesture = clientGesture{on: true, kind: kind, at: at}
-	if c.pointer == 0 || c.drag != nil {
+	if c.pointer == 0 || c.drag != nil || c.dataDrag != nil {
 		return nil
 	}
 	c.gesture.id = c.pointer
