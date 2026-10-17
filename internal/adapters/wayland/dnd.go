@@ -24,6 +24,8 @@ import (
 // did not cause: the source or the origin client died.
 
 // dndAllActions is every wl_data_device_manager.dnd_action bit.
+const actionAsk = uint32(wayland.DataDeviceManagerDndActionAsk)
+
 const dndAllActions = uint32(wayland.DataDeviceManagerDndActionCopy | wayland.DataDeviceManagerDndActionMove | wayland.DataDeviceManagerDndActionAsk)
 
 // dndState is the drag in progress.
@@ -61,9 +63,12 @@ type dndTarget struct {
 	accepted string
 	action   uint32
 	state    int
-	// legacy: no device speaks wl_data_offer v3, so the accepted MIME type
-	// alone allows the drop and nothing finishes it.
+	// legacy: no device speaks wl_data_offer v3: the target copies and
+	// nothing finishes it; destroying its offers does.
 	legacy bool
+	// ask: the drop came with the ask action; the target picks the final
+	// one after it.
+	ask bool
 }
 
 // dndOffer is a wl_data_offer of a drag.
@@ -143,7 +148,7 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 	}
 	client := r.Client()
 	valid := !s.protected() && s.dnd == nil && origin != nil && origin.Client() == client &&
-		s.seat.press != 0 && serial == s.seat.press && s.seat.pressClient == client
+		s.validGrab(origin, serial)
 	if cs != nil && (cs.used || !valid) {
 		// A used source is the selection, a drag source or already
 		// cancelled: only a source nobody holds is cancelled again.
@@ -169,6 +174,10 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 		iconSurf.role = func(bool) { s.dndIconRole(d, iconSurf) }
 	}
 	s.dnd = d
+	// Core consumes the releases of a drag: the buttons are not held for
+	// the next press.
+	clear(s.seat.pointerHeld)
+	s.seat.grabSerial = 0
 	s.log.Info().Uint64("icon", uint64(d.iconID)).Bool("source", cs != nil).Msg("data drag started")
 	s.emit(ports.DataDragStarted{Icon: d.iconID})
 	if iconSurf != nil && iconSurf.has {
@@ -177,6 +186,20 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 		iconSurf.redraw()
 		s.dndIconSend(d)
 	}
+}
+
+// validGrab reports whether serial is the press of the pointer button still
+// held, on the surface with pointer focus (or a subsurface of its tree).
+func (s *Server) validGrab(origin *wayland.Surface, serial uint32) bool {
+	if serial == 0 || serial != s.seat.grabSerial || len(s.seat.pointerHeld) == 0 {
+		return false
+	}
+	focus, _, _, _ := s.pointerSurface(s.seat.pointerFocus, 0, 0)
+	if focus == nil {
+		return false
+	}
+	o, f := s.surfaces[origin.Resource], s.surfaces[focus.Resource]
+	return o != nil && f != nil && o.root() == f.root()
 }
 
 // sourceBusy reports whether src is the selection, the source of the drag
@@ -314,12 +337,16 @@ func (s *Server) dndLeave(d *dndState) {
 	}
 	d.target = nil
 	t.state = targetDone
+	s.dndSendLeave(t)
+	s.dndResetSource(t)
+}
+
+func (s *Server) dndSendLeave(t *dndTarget) {
 	for _, dev := range t.devices {
 		if dev.Resource.Alive() {
 			dev.SendLeave()
 		}
 	}
-	s.dndResetSource(t)
 }
 
 // dndResetSource tells the source nothing accepts or acts any more.
@@ -338,41 +365,48 @@ func (s *Server) dndResetSource(t *dndTarget) {
 }
 
 // dndDrop handles the release of the drag button: a target that accepted
-// and agreed on an action gets drop; else the drag is cancelled.
+// and agreed on an action gets drop, then leave (its offers stay usable until
+// finish); else the drag is cancelled.
 func (s *Server) dndDrop(d *dndState) {
 	t := d.target
-	switch {
-	case t == nil:
+	if t == nil {
 		s.dndEnd(d, true, false)
-	case d.src == nil:
+		return
+	}
+	if d.src == nil {
 		// Internal drag: the origin client decides alone.
 		d.target = nil
 		t.state = targetDone
 		s.dndSendDrop(t)
+		s.dndSendLeave(t)
 		s.dndEnd(d, false, false)
-	case t.accepted == "" || t.action == 0 && !t.legacy:
-		s.dndEnd(d, true, false)
-	default:
-		d.target = nil
-		t.state = targetDropped
-		if t.legacy {
-			// A pre-v3 target copies and nothing finishes its transfer.
-			if t.action == 0 {
-				t.action = uint32(wayland.DataDeviceManagerDndActionCopy)
-				if d.src.alive() && d.src.res.Version() >= 3 {
-					d.src.res.SendAction(t.action)
-				}
-			}
-		} else {
-			s.dndDrops = append(s.dndDrops, t)
-		}
-		s.dndSendDrop(t)
-		if d.src.alive() && d.src.res.Version() >= 3 {
-			d.src.res.SendDndDropPerformed()
-		}
-		s.log.Info().Str("mime", t.accepted).Uint32("action", t.action).Msg("data drag dropped")
-		s.dndEnd(d, false, false)
+		return
 	}
+	if t.legacy {
+		// A pre-v3 target cannot negotiate: it copies.
+		action := chooseAction(uint32(wayland.DataDeviceManagerDndActionCopy)&d.src.srcActions(), 0)
+		if action != t.action {
+			t.action = action
+			if action != 0 && d.src.alive() && d.src.res.Version() >= 3 {
+				d.src.res.SendAction(action)
+			}
+		}
+	}
+	if t.accepted == "" || t.action == 0 {
+		s.dndEnd(d, true, false)
+		return
+	}
+	d.target = nil
+	t.state = targetDropped
+	t.ask = t.action == actionAsk
+	s.dndDrops = append(s.dndDrops, t)
+	s.dndSendDrop(t)
+	s.dndSendLeave(t)
+	if d.src.alive() && d.src.res.Version() >= 3 {
+		d.src.res.SendDndDropPerformed()
+	}
+	s.log.Info().Str("mime", t.accepted).Uint32("action", t.action).Msg("data drag dropped")
+	s.dndEnd(d, false, false)
 }
 
 func (s *Server) dndSendDrop(t *dndTarget) {
@@ -447,34 +481,47 @@ func (s *Server) dndCancelAll() {
 	}
 }
 
-// dndOfferGone runs when an offer of a drag is destroyed: a dropped target
-// whose offers are all gone without finish cancels the source.
+// dndOfferGone runs when an offer of a drag is destroyed. With none left on
+// a live target, nothing is accepted any more. With none left on a dropped
+// one the transfer is over: a pre-v3 target has finished, any other
+// cancelled it.
 func (s *Server) dndOfferGone(o *dndOffer) {
 	t := o.t
 	t.offers = slices.DeleteFunc(t.offers, func(x *dndOffer) bool { return x == o })
-	if t.state == targetDropped && !t.legacy && len(t.offers) == 0 {
+	if len(t.offers) != 0 {
+		return
+	}
+	switch t.state {
+	case targetActive:
+		s.dndResetSource(t)
+	case targetDropped:
 		if src := t.d.src; src != nil && src.alive() {
-			src.cancel()
+			if !t.legacy {
+				src.cancel()
+			} else if src.res.Version() >= 3 {
+				src.res.SendDndFinished()
+			}
 		}
 		s.dndDropDone(t)
 	}
 }
 
 // update recomputes the action after the target or the source changed
-// something, and tells both when it changed.
+// something, and tells both when it changed. After an ask drop the choice is
+// silent until finish.
 func (o *dndOffer) update() {
 	t, src := o.t, o.t.d.src
-	if t.state == targetDone || src == nil || !src.alive() {
+	if t.state == targetDone || t.state == targetDropped && !t.ask || src == nil || !src.alive() {
 		return
 	}
 	action := chooseAction(o.actions&src.srcActions(), o.preferred)
 	if action != t.action {
 		t.action = action
-		if src.res.Version() >= 3 {
+		if t.state == targetActive && src.res.Version() >= 3 {
 			src.res.SendAction(action)
 		}
 	}
-	if action != o.sent {
+	if t.state == targetActive && action != o.sent {
 		o.sent = action
 		if o.res.Version() >= 3 {
 			o.res.SendAction(action)
@@ -484,7 +531,7 @@ func (o *dndOffer) update() {
 
 func (o *dndOffer) Accept(_ *wayland.DataOffer, _ uint32, mime string) {
 	t := o.t
-	if t.state != targetActive || !t.d.src.alive() {
+	if t.state != targetActive && !(t.state == targetDropped && t.ask) || !t.d.src.alive() {
 		return
 	}
 	t.accepted = mime
@@ -513,12 +560,19 @@ func (o *dndOffer) Finish(r *wayland.DataOffer) {
 		r.PostError(uint32(wayland.DataOfferErrorInvalidFinish), "finish before the drop")
 		return
 	}
-	if t.action == 0 || t.action == uint32(wayland.DataDeviceManagerDndActionAsk) {
+	if t.action == 0 || t.action == actionAsk {
 		r.PostError(uint32(wayland.DataOfferErrorInvalidFinish), "finish without a final action")
+		return
+	}
+	if t.accepted == "" {
+		r.PostError(uint32(wayland.DataOfferErrorInvalidFinish), "finish without an accepted MIME type")
 		return
 	}
 	o.server.dndDropDone(t)
 	if src := t.d.src; src.alive() && src.res.Version() >= 3 {
+		if t.ask {
+			src.res.SendAction(t.action)
+		}
 		src.res.SendDndFinished()
 	}
 }
@@ -530,6 +584,10 @@ func (o *dndOffer) SetActions(r *wayland.DataOffer, actions, preferred uint32) {
 	}
 	if preferred != 0 && (preferred&(preferred-1) != 0 || preferred&actions == 0) {
 		r.PostError(uint32(wayland.DataOfferErrorInvalidAction), "invalid preferred action")
+		return
+	}
+	if t := o.t; t.state == targetDropped && t.ask && preferred != 0 && t.d.src != nil && preferred&t.d.src.srcActions() == 0 {
+		r.PostError(uint32(wayland.DataOfferErrorInvalidAction), "final action not allowed by the source")
 		return
 	}
 	o.actions, o.preferred = actions, preferred

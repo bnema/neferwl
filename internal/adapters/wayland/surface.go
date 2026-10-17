@@ -139,8 +139,9 @@ type pendingCommit struct {
 	// barrier and wait are fifo requests; at the commit timestamp.
 	barrier, wait bool
 	at            time.Time
-	// dx, dy accumulate the attach offsets and wl_surface.offset requests;
-	// only a drag icon uses them.
+	// dx, dy are the last attach offset or wl_surface.offset request since
+	// the commit (the latest replaces the earlier); only a drag icon uses
+	// them.
 	dx, dy int32
 	// damage is in surface (logical) pixels, bufDamage in buffer pixels.
 	damage, bufDamage []ports.Rect
@@ -360,7 +361,7 @@ func (s *surface) Attach(r *wayland.Surface, b *wayland.Buffer, dx, dy int32) {
 	s.next.buffer = b
 	s.next.attached = true
 	if r.Version() < 5 {
-		s.next.dx, s.next.dy = s.next.dx+dx, s.next.dy+dy
+		s.next.dx, s.next.dy = dx, dy
 	}
 }
 func (s *surface) Frame(r *wayland.Surface, id uint32) {
@@ -778,6 +779,6 @@ func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
 
 // Offset moves the next commit's surface (v5); only a drag icon uses it.
 func (s *surface) Offset(_ *wayland.Surface, dx, dy int32) {
-	s.next.dx, s.next.dy = s.next.dx+dx, s.next.dy+dy
+	s.next.dx, s.next.dy = dx, dy
 }
 func (*surface) GetRelease(*wayland.Surface, uint32) {}

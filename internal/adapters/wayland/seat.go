@@ -43,6 +43,11 @@ type seatState struct {
 	// pressClient: popup grabs must come from it.
 	press       uint32
 	pressClient server.Client
+	// pointerHeld are the pointer buttons held, and grabSerial the serial of
+	// the press that took the first one: the only serial start_drag accepts
+	// (wlr_seat_validate_pointer_grab_serial).
+	pointerHeld map[uint32]bool
+	grabSerial  uint32
 	// pressAt and focusAt date the last press and keyboard focus change,
 	// for xdg-activation tokens.
 	pressAt, focusAt time.Time
@@ -133,6 +138,18 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			if c.Pressed {
 				state = 1
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
+				if len(s.seat.pointerHeld) == 0 {
+					s.seat.grabSerial = s.serial
+				}
+				if s.seat.pointerHeld == nil {
+					s.seat.pointerHeld = make(map[uint32]bool)
+				}
+				s.seat.pointerHeld[c.Button] = true
+			} else {
+				delete(s.seat.pointerHeld, c.Button)
+				if len(s.seat.pointerHeld) == 0 {
+					s.seat.grabSerial = 0
+				}
 			}
 			for _, p := range pointers {
 				s.stampPointer(p, c.Time)

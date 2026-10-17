@@ -147,6 +147,8 @@ func (s *Server) resetProtectionInput() {
 	clear(s.seat.grabKeys)
 	s.seat.modState = ports.ModState{}
 	s.seat.press, s.seat.pressClient = 0, server.Client{}
+	clear(s.seat.pointerHeld)
+	s.seat.grabSerial = 0
 	s.seat.wheelRest, s.seat.wheelHeld = [2]int32{}, [2]float64{}
 	s.cursorSurface = nil
 }
