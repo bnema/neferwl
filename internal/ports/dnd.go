@@ -10,10 +10,12 @@ import "time"
 // everything at the cursor.
 
 // DataDragStarted carries wayland → core a client drag answering the
-// client's current press. Icon is the drag icon's ID (0: none); core
-// answers with DataDragCancel when it refuses the drag.
+// client's current press. Button is the button of that press, whose
+// release drops; Icon is the drag icon's ID (0: none). Core answers with
+// DataDragCancel when it refuses the drag.
 type DataDragStarted struct {
-	Icon WindowID
+	Button uint32
+	Icon   WindowID
 }
 
 func (DataDragStarted) clientEvent() {}

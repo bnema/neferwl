@@ -51,7 +51,7 @@ func dataDragCommands(cmds []ports.ClientCommand) []ports.ClientCommand {
 
 func (d *dndRig) start(t *testing.T, icon ports.WindowID) []ports.ClientCommand {
 	t.Helper()
-	d.client <- ports.DataDragStarted{Icon: icon}
+	d.client <- ports.DataDragStarted{Button: 0x110, Icon: icon}
 	d.settle(t)
 	return dataDragCommands(d.drain())
 }
@@ -108,7 +108,7 @@ func TestDataDragDropsOnRelease(t *testing.T) {
 	// The next press is an ordinary click.
 	d.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	d.settle(t)
-	wantCommands(t, dataDragCommands(d.drain()), ports.PointerButtonTo{ID: 2, Button: 0x110, Pressed: true})
+	wantCommands(t, dataDragCommands(d.drain()), ports.PointerButtonTo{ID: 2, Button: 0x110, Pressed: true, Grab: true})
 }
 
 func TestDataDragSendsNothingToClients(t *testing.T) {
@@ -231,7 +231,7 @@ func TestDataDragRefused(t *testing.T) {
 		r.press(t, 0x110, ports.ModSuper)
 		r.settle(t)
 		r.drain()
-		r.client <- ports.DataDragStarted{}
+		r.client <- ports.DataDragStarted{Button: 0x110}
 		r.settle(t)
 		wantCommands(t, r.drain(), ports.DataDragCancel{})
 		// The window drag goes on.
@@ -252,7 +252,7 @@ func TestDataDragRefused(t *testing.T) {
 		d.client <- ports.SessionLockChanged{State: locked}
 		d.settle(t)
 		d.drain()
-		d.client <- ports.DataDragStarted{}
+		d.client <- ports.DataDragStarted{Button: 0x110}
 		d.settle(t)
 		var got []ports.ClientCommand
 		for _, v := range d.drain() {
@@ -267,7 +267,7 @@ func TestDataDragRefused(t *testing.T) {
 
 func TestDataDragCommandsAreSecurityWrapped(t *testing.T) {
 	d := startDnd(t)
-	d.client <- ports.DataDragStarted{}
+	d.client <- ports.DataDragStarted{Button: 0x110}
 	d.settle(t)
 	n := 0
 	for {
@@ -446,7 +446,7 @@ func TestDataDragFocusScreenFollowsPointer(t *testing.T) {
 	}
 	r.in(ports.PointerButton{Button: 0x110, Pressed: true})
 	r.settle(t)
-	r.client <- ports.DataDragStarted{}
+	r.client <- ports.DataDragStarted{Button: 0x110}
 	r.moveTo(1500, 300, 3)
 	set = r.settle(t)
 	if w, _ := windowIn(set, "B", 3); !w.Focused {
@@ -489,6 +489,49 @@ func TestDataDragFollowsWorkspaceSwitchUnderStillCursor(t *testing.T) {
 		if f, ok := v.(ports.DataDragFocus); ok && f.ID != 0 {
 			t.Fatalf("hidden window targeted: %#v", got)
 		}
+	}
+}
+
+func TestDataDragTargetMovedUnderStillCursor(t *testing.T) {
+	d := startDnd(t)
+	d.start(t, 0)
+	// Over 2, focused by a click-free keyboard move, then cmd+f maximizes
+	// its column: still the target under the cursor, at another point.
+	d.moveTo(float64(d.two.X+d.two.W-20), float64(d.two.Y+30), 2)
+	d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: ports.ModSuper, Pressed: true})
+	d.in(ports.KeyEvent{Keysym: "l", Keycode: 38, Mods: ports.ModSuper})
+	d.settle(t)
+	d.drain()
+	d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper, Pressed: true})
+	d.in(ports.KeyEvent{Keysym: "f", Keycode: 33, Mods: ports.ModSuper})
+	set := d.settle(t)
+	wide := dragRect(t, set, dragOut.Name, 2)
+	if wide.X == d.two.X {
+		t.Fatalf("the column did not move: %v", wide)
+	}
+	x, y := float64(d.two.X+d.two.W-20-wide.X), float64(d.two.Y+30-wide.Y)
+	got := dataDragCommands(d.drain())
+	if !slices.Contains(got, ports.ClientCommand(ports.DataDragMotion{ID: 2, X: x, Y: y, Time: 2 * time.Millisecond})) {
+		t.Fatalf("no motion to %v,%v: %#v", x, y, got)
+	}
+}
+
+func TestDataDragDropsOnItsOwnButton(t *testing.T) {
+	d := startDnd(t)
+	// Right pressed after left: the drag is left's, the grab's.
+	d.in(ports.PointerButton{Button: 0x111, Pressed: true})
+	d.settle(t)
+	d.drain()
+	d.start(t, 0)
+	d.in(ports.PointerButton{Button: 0x111})
+	d.settle(t)
+	if got := dataDragCommands(d.drain()); slices.Contains(got, ports.ClientCommand(ports.DataDragDrop{})) {
+		t.Fatalf("right's release dropped: %#v", got)
+	}
+	d.in(ports.PointerButton{Button: 0x110})
+	d.settle(t)
+	if got := dataDragCommands(d.drain()); len(got) == 0 || got[0] != (ports.DataDragDrop{}) {
+		t.Fatalf("left's release did not drop: %#v", got)
 	}
 }
 

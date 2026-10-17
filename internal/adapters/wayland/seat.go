@@ -43,11 +43,13 @@ type seatState struct {
 	// pressClient: popup grabs must come from it.
 	press       uint32
 	pressClient server.Client
-	// pointerHeld are the pointer buttons held, and grabSerial the serial of
-	// the press that took the first one: the only serial start_drag accepts
-	// (wlr_seat_validate_pointer_grab_serial).
-	pointerHeld map[uint32]bool
-	grabSerial  uint32
+	// grabSerial is the serial of the press that started the implicit
+	// grab (core marks it), grabButton its button: the only serial
+	// start_drag accepts (wlr_seat_validate_pointer_grab_serial). The
+	// grab's release clears it; core may consume that release (a window
+	// drag), and then the next grab press replaces it.
+	grabSerial uint32
+	grabButton uint32
 	// pressAt and focusAt date the last press and keyboard focus change,
 	// for xdg-activation tokens.
 	pressAt, focusAt time.Time
@@ -132,23 +134,19 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		}
 	case ports.PointerButtonTo:
 		// Releases may target the implicit-grab window after focus has moved.
+		if c.Pressed && c.Grab || !c.Pressed && c.Button == s.seat.grabButton {
+			// A new grab, or the end of this one even when its window is
+			// gone.
+			s.seat.grabSerial, s.seat.grabButton = 0, 0
+		}
 		if client, pointers, ok := s.pointerTarget(c.ID); ok {
 			s.serial++
 			state := uint32(0)
 			if c.Pressed {
 				state = 1
 				s.seat.press, s.seat.pressClient, s.seat.pressAt = s.serial, client, time.Now()
-				if len(s.seat.pointerHeld) == 0 {
-					s.seat.grabSerial = s.serial
-				}
-				if s.seat.pointerHeld == nil {
-					s.seat.pointerHeld = make(map[uint32]bool)
-				}
-				s.seat.pointerHeld[c.Button] = true
-			} else {
-				delete(s.seat.pointerHeld, c.Button)
-				if len(s.seat.pointerHeld) == 0 {
-					s.seat.grabSerial = 0
+				if c.Grab {
+					s.seat.grabSerial, s.seat.grabButton = s.serial, c.Button
 				}
 			}
 			for _, p := range pointers {

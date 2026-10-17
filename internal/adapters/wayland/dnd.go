@@ -174,12 +174,11 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 		iconSurf.role = func(bool) { s.dndIconRole(d, iconSurf) }
 	}
 	s.dnd = d
-	// Core consumes the releases of a drag: the buttons are not held for
-	// the next press.
-	clear(s.seat.pointerHeld)
-	s.seat.grabSerial = 0
+	// Core consumes the releases of a drag: the grab ends here.
+	button := s.seat.grabButton
+	s.seat.grabSerial, s.seat.grabButton = 0, 0
 	s.log.Info().Uint64("icon", uint64(d.iconID)).Bool("source", cs != nil).Msg("data drag started")
-	s.emit(ports.DataDragStarted{Icon: d.iconID})
+	s.emit(ports.DataDragStarted{Button: button, Icon: d.iconID})
 	if iconSurf != nil && iconSurf.has {
 		// The icon was committed before the drag: show what it holds.
 		iconSurf.committed = damage{full: true}
@@ -188,10 +187,10 @@ func (s *Server) startDrag(r *wayland.DataDevice, srcRes *wayland.DataSource, or
 	}
 }
 
-// validGrab reports whether serial is the press of the pointer button still
+// validGrab reports whether serial is the press of the implicit grab still
 // held, on the surface with pointer focus (or a subsurface of its tree).
 func (s *Server) validGrab(origin *wayland.Surface, serial uint32) bool {
-	if serial == 0 || serial != s.seat.grabSerial || len(s.seat.pointerHeld) == 0 {
+	if serial == 0 || serial != s.seat.grabSerial {
 		return false
 	}
 	focus, _, _, _ := s.pointerSurface(s.seat.pointerFocus, 0, 0)

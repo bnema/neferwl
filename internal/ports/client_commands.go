@@ -178,6 +178,9 @@ type PointerButtonTo struct {
 	ID      WindowID
 	Button  uint32
 	Pressed bool
+	// Grab marks the press that starts the implicit grab: no other button
+	// was held. start_drag must name its serial.
+	Grab bool
 	// Time is the device timestamp (CLOCK_MONOTONIC).
 	Time time.Duration
 }

@@ -307,7 +307,7 @@ func TestPointerFocusAndGrab(t *testing.T) {
 		t.Fatal(v)
 	}
 	input <- ports.PointerButton{Button: 0x110, Pressed: true}
-	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true}) {
+	if v := command(t, commands); v != (ports.PointerButtonTo{ID: 1, Button: 0x110, Pressed: true, Grab: true}) {
 		t.Fatal(v)
 	}
 	scene(t, scenes)

@@ -31,8 +31,10 @@ import (
 type dataDragState struct {
 	// button is the pointer button that holds the drag.
 	button uint32
-	// target is the surface the drag was last routed to (0: none).
+	// target is the surface the drag was last routed to (0: none), at
+	// at in its coordinates.
 	target WindowID
+	at     [2]float64
 	icon   dataDragIcon
 }
 
@@ -47,7 +49,7 @@ type dataDragIcon struct {
 // pointer if a client holds a button, else cancels the drag. A drag
 // during a window drag or a locked session is refused.
 func (c *Core) startDataDrag(ctx context.Context, v ports.DataDragStarted) error {
-	button := c.lastButton
+	button := v.Button
 	if c.dataDrag != nil || c.drag != nil || c.security.Protected || c.grab == 0 || c.held() == 0 || !c.buttons[button] || c.swallow[button] {
 		return c.command(ctx, ports.DataDragCancel{})
 	}
@@ -81,6 +83,7 @@ func (c *Core) startDataDrag(ctx context.Context, v ports.DataDragStarted) error
 func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 	d := c.dataDrag
 	id, x, y := c.hit(c.cursorX, c.cursorY)
+	d.at = [2]float64{x, y}
 	switch {
 	case id != d.target:
 		d.target = id
@@ -91,10 +94,11 @@ func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 	return nil
 }
 
-// dataDragRetarget re-routes a still cursor: only a changed target is
-// told.
+// dataDragRetarget re-routes a still cursor: the target is told only when
+// it or the point in it changed.
 func (c *Core) dataDragRetarget(ctx context.Context, at time.Duration) error {
-	if id, _, _ := c.hit(c.cursorX, c.cursorY); id == c.dataDrag.target {
+	d := c.dataDrag
+	if id, x, y := c.hit(c.cursorX, c.cursorY); id == d.target && (id == 0 || d.at == [2]float64{x, y}) {
 		return nil
 	}
 	return c.dataDragRoute(ctx, at)

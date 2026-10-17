@@ -232,7 +232,7 @@ func (d *dndClient) source(t *testing.T, actions uint32, mimes ...string) uint32
 func (d *dndClient) press(t *testing.T, commands chan<- ports.ClientCommand) uint32 {
 	t.Helper()
 	commands <- ports.PointerFocus{ID: d.window, X: 1, Y: 1}
-	commands <- ports.PointerButtonTo{ID: d.window, Button: 0x110, Pressed: true, Time: time.Millisecond}
+	commands <- ports.PointerButtonTo{ID: d.window, Button: 0x110, Pressed: true, Grab: true, Time: time.Millisecond}
 	deadline := time.After(2 * time.Second)
 	for {
 		if err := d.c.Roundtrip(); err != nil {
@@ -652,7 +652,30 @@ func TestDataDragInvalidStart(t *testing.T) {
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, second)
 		p.a.expect(t, "cancelled")
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, first)
+		// Core is told the grab's button: its release drops.
+		if ev := dndNextEvent[ports.DataDragStarted](t, p.events); ev.Button != 0x110 {
+			t.Fatalf("drag button %#x, want the grab's", ev.Button)
+		}
+	})
+	t.Run("grab release consumed by core", func(t *testing.T) {
+		// A window drag consumes the release: the next grab press
+		// still makes the serial a drag can name.
+		p := newDndPair(t)
+		stale := p.a.press(t, p.commands)
+		serial := p.a.press(t, p.commands)
+		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, stale)
+		p.a.expect(t, "cancelled")
+		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
 		dndNextEvent[ports.DataDragStarted](t, p.events)
+	})
+	t.Run("grab release of a gone window", func(t *testing.T) {
+		p := newDndPair(t)
+		serial := p.a.press(t, p.commands)
+		p.commands <- ports.PointerButtonTo{ID: 9999, Button: 0x110, Time: 2 * time.Millisecond}
+		p.a.key(t, p.commands) // the release is applied once the key is seen
+		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
+		p.a.expect(t, "cancelled")
+		dndNoEvent[ports.DataDragStarted](t, p.events)
 	})
 	t.Run("used source", func(t *testing.T) {
 		p := newDndPair(t)

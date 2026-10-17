@@ -172,8 +172,9 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			return err
 		}
 	}
+	grab := v.Pressed && c.held() == 0
 	if v.Pressed {
-		if c.held() == 0 {
+		if grab {
 			c.grab = id
 		}
 		c.buttons[v.Button] = true
@@ -182,7 +183,7 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		delete(c.buttons, v.Button)
 	}
 	if id != 0 {
-		if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Time: v.Time}); err != nil {
+		if err := c.command(ctx, ports.PointerButtonTo{ID: id, Button: v.Button, Pressed: v.Pressed, Grab: grab, Time: v.Time}); err != nil {
 			return err
 		}
 		// A click on an on-demand layer gives it the keyboard.
