@@ -84,6 +84,24 @@ func (c *Core) clientEvent(ctx context.Context, ev ports.ClientEvent) (publish, 
 		if c.clientDrag(ctx, v) != nil {
 			return false, true
 		}
+	case ports.DataDragStarted:
+		if c.startDataDrag(ctx, v) != nil {
+			return false, true
+		}
+		return false, false
+	case ports.DataDragIcon:
+		if !c.setDataDragIcon(v) {
+			return false, false
+		}
+	case ports.DataDragEnded:
+		if c.dataDrag == nil {
+			return false, false
+		}
+		c.abortDataDrag()
+		if c.finishDataDrag(ctx) != nil {
+			return false, true
+		}
+		return false, false
 	case ports.WindowFullscreenRequest:
 		if c.fullscreenRequest(ctx, v) != nil {
 			return false, true
@@ -113,6 +131,9 @@ func (c *Core) unmapClient(ctx context.Context, v ports.WindowUnmapped) error {
 	c.windows.drop(v.ID)
 	if c.drag != nil && c.drag.id == v.ID {
 		c.abortDrag()
+	}
+	if err := c.dataDragGone(ctx, v.ID); err != nil {
+		return err
 	}
 	c.unmapWindow(v)
 	c.releaseSlots()

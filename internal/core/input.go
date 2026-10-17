@@ -98,6 +98,11 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 		// The dragged window and the others get no pointer events.
 		return c.dragMotion(ctx, v.Time)
 	}
+	if c.dataDrag != nil {
+		// A data drag goes to the surface under the pointer, by its own
+		// commands.
+		return c.dataDragMotion(ctx, v.Time)
+	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)
 	// Layout changes are intentionally re-hit-tested only on motion.
 	if id != c.pointer {
@@ -122,6 +127,9 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 		delete(c.swallow, v.Button)
 		delete(c.buttons, v.Button)
 		return nil
+	}
+	if c.dataDrag != nil {
+		return c.dataDragButton(ctx, v)
 	}
 	if d := c.drag; d != nil {
 		if !v.Pressed && v.Button == d.button {
@@ -226,7 +234,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	}
 	// Scroll goes to the window under the pointer, which has the
 	// pointer focus even mid-drag. None during a window drag.
-	if c.pointer != 0 && c.drag == nil {
+	if c.pointer != 0 && c.drag == nil && c.dataDrag == nil {
 		if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 			return err
 		}
@@ -248,6 +256,11 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		// Escape cancels the switcher; its release goes nowhere either.
 		c.pressed[heldKey(key)] = true
 		return c.abortSwitcher(ctx)
+	}
+	if c.dataDrag != nil && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the data drag; its release goes nowhere either.
+		c.pressed[heldKey(key)] = true
+		return c.cancelDataDrag(ctx)
 	}
 	if c.drag != nil && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the drag; its release goes nowhere either.

@@ -126,6 +126,10 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		}
 	}
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
+	if icon, ok := c.dataDragIconOn(i, sc); ok {
+		// The drag icon is over everything, popups and layers included.
+		scene.Windows = append(scene.Windows, icon)
+	}
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Capture = c.captureSceneFor(sc, capture)
 	// The springs of this frame are advanced: a scene shown while one still
