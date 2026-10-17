@@ -26,6 +26,8 @@ const (
 	roleCursor
 	roleInputPopup
 	roleSessionLock
+	// roleDragIcon is the icon of a data drag (dnd.go).
+	roleDragIcon
 )
 
 type surface struct {
@@ -137,6 +139,9 @@ type pendingCommit struct {
 	// barrier and wait are fifo requests; at the commit timestamp.
 	barrier, wait bool
 	at            time.Time
+	// dx, dy accumulate the attach offsets and wl_surface.offset requests;
+	// only a drag icon uses them.
+	dx, dy int32
 	// damage is in surface (logical) pixels, bufDamage in buffer pixels.
 	damage, bufDamage []ports.Rect
 	// feedback are wp_presentation feedbacks for this commit.
@@ -191,6 +196,9 @@ func (s *surface) windowID() ports.WindowID {
 	}
 	if s.lock != nil && s.lock.mapped {
 		return s.lock.id
+	}
+	if s.kind == roleDragIcon && s.server.dnd != nil && s.server.dnd.icon == s {
+		return s.server.dnd.iconID
 	}
 	return 0
 }
@@ -343,10 +351,17 @@ func (s *surface) Destroy(*wayland.Surface) {
 	if c := s.server.constraints[s]; c != nil {
 		s.server.dropConstraint(c)
 	}
+	s.server.dndSurfaceGone(s)
 }
-func (s *surface) Attach(_ *wayland.Surface, b *wayland.Buffer, _, _ int32) {
+
+// Attach: before wl_surface v5 the offset rides on attach; only a drag
+// icon uses it.
+func (s *surface) Attach(r *wayland.Surface, b *wayland.Buffer, dx, dy int32) {
 	s.next.buffer = b
 	s.next.attached = true
+	if r.Version() < 5 {
+		s.next.dx, s.next.dy = s.next.dx+dx, s.next.dy+dy
+	}
 }
 func (s *surface) Frame(r *wayland.Surface, id uint32) {
 	cb, err := wayland.NewCallback(r.Client(), 1, id, struct{}{})
@@ -544,6 +559,9 @@ func (s *surface) applyCommit(u *update) {
 	}
 	s.commitConstraint(u.cons, u.region, geometry)
 	s.emitInput()
+	if s.kind == roleDragIcon {
+		s.server.dndIconCommit(s, u.dx, u.dy)
+	}
 	if s.xdg != nil && s.xdg.window != nil {
 		s.xdg.window.afterCommit()
 	}
@@ -757,5 +775,9 @@ func (s *surface) SetBufferScale(r *wayland.Surface, v int32) {
 	}
 	s.next.scale = int(v)
 }
-func (*surface) Offset(*wayland.Surface, int32, int32) {}
-func (*surface) GetRelease(*wayland.Surface, uint32)   {}
+
+// Offset moves the next commit's surface (v5); only a drag icon uses it.
+func (s *surface) Offset(_ *wayland.Surface, dx, dy int32) {
+	s.next.dx, s.next.dy = s.next.dx+dx, s.next.dy+dy
+}
+func (*surface) GetRelease(*wayland.Surface, uint32) {}

@@ -13,7 +13,9 @@ import (
 // keyboard focus may set them and sees them; clipboard managers such as
 // cliphist and wl-clipboard use ext_data_control_v1, which sees and sets
 // both without focus. Like wlroots, any client may bind it. Pasting hands the reader's pipe to the source client:
-// the data never goes through neferwl. Drag and drop is not implemented.
+// the data never goes through neferwl. Drag and drop (wl_data_device
+// start_drag, dnd.go) is a drag core runs and wayland speaks to the source
+// and the target; the primary selection and ext_data_control have none.
 
 // protected is a defensive DISPLAY admission check, not lock ownership.
 func (s *Server) protected() bool {
@@ -35,6 +37,11 @@ type clipSource struct {
 	// used: the source was set, rejected or dragged; it cannot be set
 	// again and takes no more MIME types.
 	used bool
+	// res is the wl_data_source (nil for the other protocols); actions are
+	// its set_actions, for drag and drop only (dnd.go).
+	res        *wayland.DataSource
+	actions    uint32
+	actionsSet bool
 }
 
 // addMime records a MIME type offered before the source is used.
@@ -175,6 +182,7 @@ func (s *Server) addClipDevice(d *clipDevice) {
 
 // sourceGone clears the selections held by a destroyed source.
 func (s *Server) sourceGone(src *clipSource) {
+	s.dndSourceGone(src)
 	for kind := range s.selections {
 		if s.selections[kind] == src {
 			s.selections[kind] = nil
@@ -236,6 +244,7 @@ func (m dataManager) CreateDataSource(r *wayland.DataDeviceManager, id uint32) {
 	if err != nil {
 		return
 	}
+	src.res = res
 	src.send = func(mime string, fd int) { res.SendSend(mime, fd) }
 	src.cancel = res.SendCancelled
 	src.alive = res.Resource.Alive
@@ -251,6 +260,7 @@ func (m dataManager) GetDataDevice(r *wayland.DataDeviceManager, id uint32, _ *w
 	if err != nil {
 		return
 	}
+	s.addDataDevice(r.Client(), res)
 	s.addClipDevice(&clipDevice{client: r.Client(), kinds: [2]bool{selClipboard: true}, alive: res.Resource.Alive, offer: func(kind int, src *clipSource) {
 		if src == nil {
 			res.SendSelection(nil)
@@ -273,24 +283,26 @@ type dataSource struct{ src *clipSource }
 
 func (d dataSource) Offer(_ *wayland.DataSource, mime string) { d.src.addMime(mime) }
 func (dataSource) Destroy(*wayland.DataSource)                {}
-func (dataSource) SetActions(*wayland.DataSource, uint32)     {}
+
+// SetActions records the actions the source allows for a drag: once only,
+// before the drag.
+func (d dataSource) SetActions(r *wayland.DataSource, actions uint32) {
+	switch {
+	case actions&^dndAllActions != 0:
+		r.PostError(uint32(wayland.DataSourceErrorInvalidActionMask), "invalid action mask")
+	case d.src.actionsSet || d.src.used:
+		r.PostError(uint32(wayland.DataSourceErrorInvalidSource), "actions set twice or on a used source")
+	default:
+		d.src.actions, d.src.actionsSet = actions, true
+	}
+}
 
 type dataDevice struct{ server *Server }
 
-// StartDrag is not implemented: the drag is cancelled.
-func (d dataDevice) StartDrag(_ *wayland.DataDevice, src *wayland.DataSource, _, _ *wayland.Surface, _ uint32) {
-	if src == nil {
-		return
-	}
-	cs := d.server.dataSources[src.Resource]
-	if cs == nil || cs.used {
-		// A used source is the selection or already cancelled.
-		return
-	}
-	cs.used = true
-	if src.Resource.Alive() {
-		src.SendCancelled()
-	}
+// StartDrag starts a drag answering the client's current press (dnd.go);
+// anything else cancels the source.
+func (d dataDevice) StartDrag(r *wayland.DataDevice, src *wayland.DataSource, origin, icon *wayland.Surface, serial uint32) {
+	d.server.startDrag(r, src, origin, icon, serial)
 }
 func (d dataDevice) SetSelection(r *wayland.DataDevice, res *wayland.DataSource, _ uint32) {
 	s := d.server
@@ -298,6 +310,11 @@ func (d dataDevice) SetSelection(r *wayland.DataDevice, res *wayland.DataSource,
 	if res != nil {
 		src = s.dataSources[res.Resource]
 		if src == nil {
+			return
+		}
+		if src.actionsSet {
+			// Actions make a source drag-and-drop only.
+			res.PostError(uint32(wayland.DataSourceErrorInvalidSource), "source with dnd actions used as selection")
 			return
 		}
 	}

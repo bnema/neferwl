@@ -38,7 +38,7 @@ bind.cmd+v = spawn cliphist-pick
 cliphist list | fuzzel --dmenu | cliphist decode | wl-copy
 ```
 
-Drag and drop is not supported yet.
+Drag and drop works between clients: the surface under the pointer gets the offer, the drop and the chosen action (copy, move or ask, from the modifiers the clients read), and the drag icon follows the cursor. Escape, a refused drop, a dying source or the session lock cancel the drag.
 
 ## Input methods
 

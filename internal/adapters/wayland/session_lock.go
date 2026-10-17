@@ -138,6 +138,7 @@ func (l *sessionLock) orphan() {
 }
 
 func (s *Server) resetProtectionInput() {
+	s.dndCancelAll()
 	s.changeFocus(0)
 	s.changePointerFocus(0, 0, 0)
 	s.deactivateText()
