@@ -17,13 +17,15 @@ import (
 //     target, told to wayland as DataDragFocus and DataDragMotion;
 //   - releasing the drag button drops (DataDragDrop), Escape cancels
 //     (DataDragCancel); neither reaches a client;
-//   - scrolling and touchpad gestures go nowhere; the keyboard keeps its
+//   - scrolling and touchpad gestures go nowhere, compositor swipes
+//     included; binds still run, Escape cancels the drag before the
+//     switcher; the keyboard keeps its
 //     focus, clients read the modifiers that choose the action from it;
 //   - the drag icon, a client surface wayland measures (DataDragIcon), is
 //     drawn at the cursor over everything.
 //
-// Layout changes under a still cursor, like an unmapped target, are
-// resolved at the next motion.
+// Layout changes under a still cursor reroute the drag (rehit), and the
+// drop re-hits.
 
 // dataDragState is the data drag in progress.
 type dataDragState struct {
@@ -57,6 +59,11 @@ func (c *Core) startDataDrag(ctx context.Context, v ports.DataDragStarted) error
 		}
 	}
 	c.grab = 0
+	// A compositor swipe in progress lets go of what it moved.
+	if c.swipe != nil {
+		c.dropSwipe()
+		c.swipe = nil
+	}
 	// The origin gets its pointer leave, as the drag takes the pointer.
 	if c.pointer != 0 {
 		c.pointer = 0
@@ -84,6 +91,15 @@ func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 	return nil
 }
 
+// dataDragRetarget re-routes a still cursor: only a changed target is
+// told.
+func (c *Core) dataDragRetarget(ctx context.Context, at time.Duration) error {
+	if id, _, _ := c.hit(c.cursorX, c.cursorY); id == c.dataDrag.target {
+		return nil
+	}
+	return c.dataDragRoute(ctx, at)
+}
+
 // dataDragMotion follows the cursor: the target gets the motion and the
 // icon moves with it.
 func (c *Core) dataDragMotion(ctx context.Context, at time.Duration) error {
@@ -105,6 +121,11 @@ func (c *Core) dataDragButton(ctx context.Context, v ports.PointerButton) error 
 			return nil
 		}
 		delete(c.buttons, v.Button)
+		// A bind may have moved the layout under a still cursor: the
+		// drop goes to what lies there now.
+		if err := c.dataDragRetarget(ctx, v.Time); err != nil {
+			return err
+		}
 		c.dataDrag = nil
 		if err := c.command(ctx, ports.DataDragDrop{}); err != nil {
 			return err

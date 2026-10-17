@@ -26,6 +26,10 @@ func (c *Core) handleInput(ctx context.Context, ev ports.InputEvent) error {
 	case ports.PointerAxis:
 		return c.pointerAxis(ctx, v)
 	case ports.SwipeBegin:
+		if c.dataDrag != nil && !forwardsSwipe(v.Fingers) {
+			// The drag owns the pointer: no navigation under it.
+			return nil
+		}
 		if forwardsSwipe(v.Fingers) {
 			return c.gestureBegin(ctx, ports.GestureSwipe, v.Fingers, v.Time)
 		}
@@ -252,15 +256,16 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 			return err
 		}
 	}
+	if c.dataDrag != nil && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the data drag first, even over the switcher;
+		// its release goes nowhere either.
+		c.pressed[heldKey(key)] = true
+		return c.cancelDataDrag(ctx)
+	}
 	if c.switching() && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the switcher; its release goes nowhere either.
 		c.pressed[heldKey(key)] = true
 		return c.abortSwitcher(ctx)
-	}
-	if c.dataDrag != nil && key.Pressed && key.Keysym == "Escape" {
-		// Escape cancels the data drag; its release goes nowhere either.
-		c.pressed[heldKey(key)] = true
-		return c.cancelDataDrag(ctx)
 	}
 	if c.drag != nil && key.Pressed && key.Keysym == "Escape" {
 		// Escape cancels the drag; its release goes nowhere either.
@@ -385,7 +390,14 @@ func (c *Core) runBind(ctx context.Context, action Action) error {
 			return err
 		}
 	}
-	return c.publish(ctx)
+	if err := c.publish(ctx); err != nil {
+		return err
+	}
+	if c.dataDrag != nil {
+		// A data drag follows the layout under the still cursor.
+		return c.rehit(ctx)
+	}
+	return nil
 }
 
 // runSpawn starts the programs of a spawn effect of an action applied to w:

@@ -463,3 +463,72 @@ func TestDataDragFocusScreenFollowsPointer(t *testing.T) {
 		t.Fatalf("focus %+v", focus)
 	}
 }
+
+func TestDataDragFollowsWorkspaceSwitchUnderStillCursor(t *testing.T) {
+	d := startDnd(t)
+	d.start(t, 0)
+	d.moveTo(float64(d.two.X+5), float64(d.two.Y+6), 3)
+	d.settle(t)
+	d.drain()
+	// cmd+2 shows an empty workspace under the still cursor: the target
+	// leaves, and the release drops on nothing.
+	d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper, Pressed: true})
+	d.in(ports.KeyEvent{Keysym: "2", Keycode: 3, Mods: ports.ModSuper})
+	d.settle(t)
+	got := dataDragCommands(d.drain())
+	if !slices.Contains(got, ports.ClientCommand(ports.DataDragFocus{Time: 3 * time.Millisecond})) {
+		t.Fatalf("no leave after the switch: %#v", got)
+	}
+	d.in(ports.PointerButton{Button: 0x110, Time: 4 * time.Millisecond})
+	d.settle(t)
+	got = dataDragCommands(d.drain())
+	if len(got) == 0 || got[0] != (ports.DataDragDrop{}) {
+		t.Fatalf("commands %#v", got)
+	}
+	for _, v := range got {
+		if f, ok := v.(ports.DataDragFocus); ok && f.ID != 0 {
+			t.Fatalf("hidden window targeted: %#v", got)
+		}
+	}
+}
+
+func TestDataDragEscapeCancelsOverSwitcher(t *testing.T) {
+	d := startDnd(t)
+	d.start(t, 0)
+	d.in(ports.KeyEvent{Keysym: "Super_L", Keycode: 125, Mods: ports.ModSuper, Pressed: true})
+	d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: ports.ModSuper, Pressed: true})
+	d.in(ports.KeyEvent{Keysym: "Tab", Keycode: 15, Mods: ports.ModSuper})
+	d.settle(t)
+	d.drain()
+	d.in(ports.KeyEvent{Keysym: "Escape", Keycode: 1, Mods: ports.ModSuper, Pressed: true})
+	d.settle(t)
+	got := dataDragCommands(d.drain())
+	if len(got) == 0 || got[0] != (ports.DataDragCancel{}) {
+		t.Fatalf("Escape did not cancel the drag: %#v", got)
+	}
+	d.in(ports.PointerButton{Button: 0x110})
+	d.settle(t)
+	if slices.Contains(dataDragCommands(d.drain()), ports.ClientCommand(ports.DataDragDrop{})) {
+		t.Fatal("dropped after Escape")
+	}
+}
+
+func TestDataDragIgnoresCompositorSwipes(t *testing.T) {
+	d := startDnd(t)
+	d.start(t, 0)
+	before := d.settle(t)
+	// Flicks that page columns and workspaces, as navigation would.
+	for _, fingers := range []int{3, 4} {
+		at := time.Second
+		d.in(ports.SwipeBegin{Fingers: fingers, Time: at})
+		for range 10 {
+			at += 8 * time.Millisecond
+			d.in(ports.SwipeUpdate{DX: 60, AccelDX: 60, DY: 40, AccelDY: 40, Time: at})
+		}
+		d.in(ports.SwipeEnd{Time: at})
+	}
+	after := d.settle(t)
+	if !slices.Equal(before[0].Windows, after[0].Windows) {
+		t.Fatalf("a swipe moved windows during the drag:\n%#v\n%#v", before[0].Windows, after[0].Windows)
+	}
+}
