@@ -29,28 +29,25 @@ func TestInputOutputSwitchBackpressureKeepsAdmittedEpoch(t *testing.T) {
 	var state atomic.Value
 	state.Store(ports.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
-	entered := make(chan struct{}, 1)
 	var calls atomic.Int32
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
 		v := state.Load().(ports.SecurityState)
 		if calls.Add(1) == 2 {
-			entered <- struct{}{}
+			// The epoch changes right after the check that admits the command.
+			state.Store(ports.SecurityState{Generation: 2})
 		}
 		return v
 	})
 	c.opts.Security = gate
 	c.sent.outputs = ports.SetOutputs{Outputs: c.layout(), Focused: c.cur().name(), Off: c.offOutputs()}
-	commands := make(chan ports.ClientCommand)
+	commands := make(chan ports.ClientCommand, 8)
 	c.ch.Commands = commands
-	done := make(chan error, 1)
-	go func() { done <- c.handleInput(context.Background(), ports.PointerMotion{X: 350, Y: 30}) }()
-	reviewReceive(t, entered)
-	state.Store(ports.SecurityState{Generation: 2})
+	err := c.handleInput(context.Background(), ports.PointerMotion{X: 350, Y: 30})
 	cmd := reviewReceive(t, commands).(ports.SecurityCommand)
 	if cmd.State != (ports.SecurityState{}) {
 		t.Fatalf("old handler adopted new epoch: %+v", cmd)
 	}
-	if err := reviewReceive(t, done); !errors.Is(err, errSecurityChanged) {
+	if !errors.Is(err, errSecurityChanged) {
 		t.Fatalf("handler not aborted: %v", err)
 	}
 	if c.security != (ports.SecurityState{}) {
@@ -88,29 +85,26 @@ func TestSlotsPendingBackpressureSuppressesSpawnAndDefersSlots(t *testing.T) {
 	var state atomic.Value
 	state.Store(ports.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
-	checked := make(chan struct{}, 1)
 	var calls atomic.Int32
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
 		v := state.Load().(ports.SecurityState)
 		if calls.Add(1) == 2 {
-			checked <- struct{}{}
+			// The gate locks right after the check that admits the slot.
+			state.Store(ports.SecurityState{Generation: 1, Protected: true})
 		}
 		return v
 	})
 	c.opts.Security = gate
-	commands := make(chan ports.ClientCommand)
+	commands := make(chan ports.ClientCommand, 8)
 	c.ch.Commands = commands
 	spawn := make(chan ports.SpawnRequest, 2)
 	c.ch.Spawn = spawn
-	done := make(chan error, 1)
-	go func() { done <- c.spawnSlots(context.Background(), false) }()
-	reviewReceive(t, checked)
-	state.Store(ports.SecurityState{Generation: 1, Protected: true})
+	err := c.spawnSlots(context.Background(), false)
 	cmd := reviewReceive(t, commands).(ports.SecurityCommand)
 	if _, ok := cmd.Command.(ports.SlotsPending); !ok {
 		t.Fatal(cmd)
 	}
-	if err := reviewReceive(t, done); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(spawn) != 0 || len(c.toSpawn) != 1 || c.placement.slotPending(key) {
@@ -138,26 +132,23 @@ func TestTerminalPendingBackpressureSuppressesSpawnAndRestoresRetry(t *testing.T
 	var state atomic.Value
 	state.Store(ports.SecurityState{})
 	gate := portsmocks.NewMockSessionSecurity(t)
-	checked := make(chan struct{}, 1)
 	var calls atomic.Int32
 	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
 		v := state.Load().(ports.SecurityState)
 		if calls.Add(1) == 1 {
-			checked <- struct{}{}
+			// The gate locks right after the check that admits the spawn.
+			state.Store(ports.SecurityState{Generation: 1, Protected: true})
 		}
 		return v
 	})
 	c.opts.Security = gate
-	commands := make(chan ports.ClientCommand)
+	commands := make(chan ports.ClientCommand, 8)
 	c.ch.Commands = commands
 	spawn := make(chan ports.SpawnRequest, 1)
 	c.ch.Spawn = spawn
-	done := make(chan error, 1)
-	go func() { done <- c.spawnEmpty(context.Background()) }()
-	reviewReceive(t, checked)
-	state.Store(ports.SecurityState{Generation: 1, Protected: true})
+	err := c.spawnEmpty(context.Background())
 	reviewReceive(t, commands)
-	if err := reviewReceive(t, done); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(spawn) != 0 || c.placement.anyPending() {
