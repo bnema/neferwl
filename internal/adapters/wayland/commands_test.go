@@ -3,6 +3,7 @@ package wayland
 import (
 	"context"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,9 +79,9 @@ func TestCommandRingMergesWhenFull(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	var got []ports.ClientCommand
 	r := newCommandRing(s.display, func(q queuedCommand) { got = append(got, q.command()) })
-	release := make(chan struct{})
+	release := releaseOnce(t)
 	stalled := make(chan struct{})
-	s.display.Post(func() { close(stalled); <-release })
+	s.display.Post(func() { close(stalled); <-release.ch })
 	<-stalled
 	for i := range commandRingSize - 1 {
 		r.Push(queue(ports.PointerFocus{ID: ports.WindowID(i)}))
@@ -97,7 +98,7 @@ func TestCommandRingMergesWhenFull(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("motion push blocked on a full ring")
 	}
-	close(release)
+	release.do()
 	var last ports.ClientCommand
 	s.display.Do(func() { last = got[len(got)-1] })
 	if m, ok := last.(ports.PointerMotionTo); !ok || m.DX != 1000 {
@@ -119,9 +120,12 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 	go func() { done <- s.Run(ctx) }()
 	defer func() { cancel(); <-done }()
 
-	release := make(chan struct{})
+	// Deferred after the shutdown above, so it runs first: a failing
+	// assertion never leaves the display stalled while Run is joined.
+	release := releaseOnce(t)
+	defer release.do()
 	stalled := make(chan struct{})
-	s.display.Post(func() { close(stalled); <-release })
+	s.display.Post(func() { close(stalled); <-release.ch })
 	<-stalled
 
 	// Not mergeable: every command takes a slot.
@@ -155,7 +159,7 @@ func TestForwarderDrainsWhileDisplayBusy(t *testing.T) {
 		t.Fatal("sender finished although the ring is full")
 	default:
 	}
-	close(release)
+	release.do()
 	select {
 	case <-sent:
 	case <-time.After(5 * time.Second):
@@ -183,4 +187,21 @@ func TestCommandThroughput(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Fatalf("2000 motion commands took %v (%.0f/s); want well above 1000/s", d, 2000/d.Seconds())
 	}
+}
+
+// release unblocks a stalled display goroutine once, from the test or its
+// cleanup, so a failed assertion never hangs the server shutdown.
+type release struct {
+	ch   chan struct{}
+	once sync.Once
+}
+
+func (r *release) do() { r.once.Do(func() { close(r.ch) }) }
+
+// releaseOnce returns a release that the test cleanup also fires, before
+// the cleanups registered earlier (the server's).
+func releaseOnce(t *testing.T) *release {
+	r := &release{ch: make(chan struct{})}
+	t.Cleanup(r.do)
+	return r
 }
