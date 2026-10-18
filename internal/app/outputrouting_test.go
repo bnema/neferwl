@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -164,8 +165,21 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 		return nil, ret
 	}).Once()
 	attacher.EXPECT().DetachOutput(mock.Anything).Maybe()
-	started := make(chan bool)
-	go func() { started <- set.start(ctx, "B", idleRun) }()
+	releaseB := sync.OnceFunc(func() { close(release) })
+	wait := sync.OnceValue(set.wait)
+	started := make(chan bool, 1)
+	startDone := make(chan struct{})
+	go func() {
+		defer close(startDone)
+		started <- set.start(ctx, "B", idleRun)
+	}()
+	// A failed assertion still unblocks and joins B's start.
+	t.Cleanup(func() {
+		releaseB()
+		cancel()
+		<-startDone
+		_ = wait()
+	})
 	<-attaching
 	a := set.outs["A"]
 	deadline := time.After(2 * time.Second)
@@ -192,11 +206,11 @@ func TestBlockedStartDoesNotDelayRouting(t *testing.T) {
 	if got := <-a.cursor; got.Shape != "text" {
 		t.Fatalf("A cursor %+v", got)
 	}
-	close(release)
+	releaseB()
 	if !<-started {
 		t.Fatal("B did not start")
 	}
-	if err := set.wait(); err != nil {
+	if err := wait(); err != nil {
 		t.Fatal(err)
 	}
 }

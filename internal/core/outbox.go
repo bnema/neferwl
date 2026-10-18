@@ -25,7 +25,8 @@ type outbox struct {
 	// sending: a command pushed then must queue behind it.
 	busy bool
 	// pushed and sent count the entries queued and delivered (a merge adds
-	// none); progress is closed and replaced at each delivery, for flush.
+	// none); progress is signalled (never blocking) at each delivery, for
+	// flush. The owner is its only waiter, so one pending signal is enough.
 	pushed, sent uint64
 	progress     chan struct{}
 	// running is set while a sender (run) owns delivery.
@@ -63,7 +64,7 @@ func (o *outbox) backlog() uint64 {
 }
 
 func newOutbox() outbox {
-	return outbox{wake: make(chan struct{}, 1), progress: make(chan struct{})}
+	return outbox{wake: make(chan struct{}, 1), progress: make(chan struct{}, 1)}
 }
 
 // command returns what the sender delivers.
@@ -91,7 +92,10 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 	e := outCmd{cmd: v, state: state, secured: secured}
 	e.motion, e.isMotion = v.(ports.PointerMotionTo)
 	o.mu.Lock()
-	if !o.busy && len(o.queue) == 0 {
+	// A full channel would make the attempt fail after building the
+	// envelope; queue at once instead. The length is only a hint: queued
+	// delivery keeps the order either way.
+	if !o.busy && len(o.queue) == 0 && (cap(out) == 0 || len(out) < cap(out)) {
 		// A send that cannot block is safe under the lock.
 		select {
 		case out <- e.command():
@@ -135,7 +139,7 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq uint64) error {
 	for {
 		o.mu.Lock()
-		done, progress, running := o.sent >= seq, o.progress, o.running
+		done, running := o.sent >= seq, o.running
 		o.mu.Unlock()
 		if done {
 			return nil
@@ -149,8 +153,9 @@ func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq 
 			}
 			continue
 		}
+		// A signal left from an earlier delivery only costs a recheck.
 		select {
-		case <-progress:
+		case <-o.progress:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -178,10 +183,14 @@ func (o *outbox) recycle(batch []outCmd) {
 	o.busy = false
 	if n > 0 {
 		o.sent += n
-		close(o.progress)
-		o.progress = make(chan struct{})
 	}
 	o.mu.Unlock()
+	if n > 0 {
+		select {
+		case o.progress <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // start marks a sender as running; call it before starting run, so that a

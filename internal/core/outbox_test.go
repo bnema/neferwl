@@ -122,3 +122,34 @@ func TestOutboxIsBounded(t *testing.T) {
 		}
 	})
 }
+
+// Queuing a command and delivering it allocates nothing once warm: the
+// batches are recycled and flush's progress signal is reused.
+func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
+	o := newOutbox()
+	full := make(chan ports.ClientCommand, 1)
+	full <- ports.FocusWindow{}
+	sink := make(chan ports.ClientCommand, 8)
+	var cmd ports.ClientCommand = ports.FocusWindow{ID: 1}
+	var state ports.SecurityState
+	ctx := context.Background()
+	cycle := func() {
+		// full has no room: push queues, even for a secured command.
+		o.push(full, cmd, state, false)
+		o.push(full, cmd, state, true)
+		o.deliver(ctx, sink, o.take())
+		<-sink
+		<-sink
+		select {
+		case <-o.progress:
+		default:
+			t.Fatal("delivery left no progress signal")
+		}
+	}
+	cycle()
+	// The secured delivery boxes its envelope once; the failed direct send
+	// must not box another.
+	if n := testing.AllocsPerRun(100, cycle); n > 1 {
+		t.Fatalf("%v allocations per queued delivery, want at most 1", n)
+	}
+}
