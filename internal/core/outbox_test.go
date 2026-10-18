@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -152,4 +153,35 @@ func TestOutboxQueuedDeliveryAllocations(t *testing.T) {
 	if n := testing.AllocsPerRun(100, cycle); n > 1 {
 		t.Fatalf("%v allocations per queued delivery, want at most 1", n)
 	}
+}
+
+// The stats tell direct sends from queued ones, count merges, and time how
+// long the first queued command waited for the channel and core in flush.
+func TestOutboxStats(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		out := make(chan ports.ClientCommand, 1)
+		ctx := context.Background()
+		var none ports.SecurityState
+		o.push(out, ports.FocusWindow{ID: 1}, none, false) // direct: room
+		o.push(out, ports.PointerMotionTo{ID: 1, DX: 1}, none, false)
+		time.Sleep(5 * time.Millisecond)
+		seq := o.push(out, ports.PointerMotionTo{ID: 1, DX: 2}, none, false) // merges
+		time.Sleep(5 * time.Millisecond)
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			<-out
+		}()
+		if err := o.flush(ctx, out, seq); err != nil {
+			t.Fatal(err)
+		}
+		s := o.takeStats()
+		want := CommandStats{Direct: 1, Queued: 1, Merged: 1, MaxBacklog: 1, MaxQueueWait: 30 * time.Millisecond, MaxFlushWait: 20 * time.Millisecond}
+		if s != want {
+			t.Fatalf("stats %+v, want %+v", s, want)
+		}
+		if s := o.takeStats(); s != (CommandStats{}) {
+			t.Fatalf("not reset: %+v", s)
+		}
+	})
 }

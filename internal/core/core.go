@@ -1103,6 +1103,10 @@ func (c *Core) Ping(ctx context.Context) {
 	}
 }
 
+// CommandStats returns the command outbox counters since the last call.
+// Any goroutine may call it.
+func (c *Core) CommandStats() CommandStats { return c.out.takeStats() }
+
 func (c *Core) Run(ctx context.Context) error {
 	// The sender stops with Run, not only with ctx: Run also returns on
 	// quit and on errors. Run waits for it so nothing sends after Run.

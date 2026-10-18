@@ -2,6 +2,8 @@ package wayland
 
 import (
 	"context"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -156,5 +158,44 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("push blocked after the display stopped")
+	}
+}
+
+// A push that waits on a full ring reports how long, and a drain-side push
+// that finds room does not.
+func TestPostRingStatsPushBlock(t *testing.T) {
+	s, _, _, _, _, _ := presentServer(t)
+	r := newPostRing(s.display, 1, func(int) {})
+	release := make(chan struct{})
+	stalled := make(chan struct{})
+	s.display.Post(func() { close(stalled); <-release })
+	<-stalled
+	r.Push(1)
+	if st := r.takeStats(); st.maxLen != 1 || st.maxPushBlock != 0 {
+		t.Fatalf("stats = %+v, want maxLen 1 and no block", st)
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); r.Push(2) }() // full: waits for the drain
+	waitPushWaiting(t)
+	close(release)
+	<-done
+	if st := r.takeStats(); st.maxPushBlock <= 0 {
+		t.Fatalf("stats = %+v, want a recorded push block", st)
+	}
+}
+
+// waitPushWaiting returns once a goroutine waits inside postRing.Push, read
+// from the goroutine dump, so the test needs no sleep to know the push blocks.
+func waitPushWaiting(t *testing.T) {
+	t.Helper()
+	buf := make([]byte, 1<<20)
+	for {
+		dump := string(buf[:runtime.Stack(buf, true)])
+		for _, g := range strings.Split(dump, "\n\n") {
+			if strings.Contains(g, "[select") && strings.Contains(g, "postRing") && strings.Contains(g, ").Push(") {
+				return
+			}
+		}
+		runtime.Gosched()
 	}
 }

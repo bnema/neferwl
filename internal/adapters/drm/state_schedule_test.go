@@ -52,6 +52,9 @@ func TestDeferredCursorRidesOnFrame(t *testing.T) {
 	if v, _ := (*commits)[0].req.value(tCursor, 14); v != 7 || !o.stateAt.IsZero() {
 		t.Fatalf("frame cursor x %d, due %v", v, o.stateAt)
 	}
+	if s := o.takeFlipStats(); s.stateCarried != 1 || s.stateCommits != 0 {
+		t.Fatalf("carried %d, state commits %d, want 1, 0", s.stateCarried, s.stateCommits)
+	}
 }
 
 // With no frame, the deferred move commits alone once due, and a late
@@ -70,6 +73,9 @@ func TestDeferredCursorCommitsWhenDue(t *testing.T) {
 	}
 	if v, _ := (*commits)[0].req.value(tCursor, 14); v != 4 || !o.stateAt.IsZero() {
 		t.Fatalf("cursor x %d, due %v", v, o.stateAt)
+	}
+	if s := o.takeFlipStats(); s.stateCommits != 1 || s.stateCarried != 0 {
+		t.Fatalf("state commits %d, carried %d, want 1, 0", s.stateCommits, s.stateCarried)
 	}
 }
 

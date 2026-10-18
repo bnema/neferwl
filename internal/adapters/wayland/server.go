@@ -137,6 +137,7 @@ type Server struct {
 	castRing     *postRing[ports.CastCommand]
 	// commands carries core's client commands to the display goroutine.
 	commands      *postRing[queuedCommand]
+	commandStats  commandStats
 	castInvFn     func()
 	castInvPosted bool
 	castInvSent   bool
@@ -535,7 +536,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(13)
+	wg.Add(14)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -566,6 +567,7 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		}
 	}()
+	go func() { defer wg.Done(); s.logCommandStats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()

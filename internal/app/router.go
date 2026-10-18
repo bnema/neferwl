@@ -3,7 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
+	"time"
 
+	"github.com/bnema/zerowrap"
+
+	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/adapters/outputkit/capture"
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -31,6 +36,25 @@ type outputRouter struct {
 	in   outputRoutes
 	ops  chan routerOp
 	done chan struct{} // closed when run returns
+
+	log zerowrap.Logger
+	// stats counts since the last report; only run's goroutine touches it.
+	stats routerStats
+	// eventWait is the longest time (ns) the backend loop blocked sending an
+	// OutputEvent to core since the last report. The backend loop writes it,
+	// so it is atomic.
+	eventWait atomic.Int64
+}
+
+// routerStatsEvery is the period of the "routing stats" log entry.
+const routerStatsEvery = 10 * time.Second
+
+// routerStats tells whether outputs keep up: a scene or cursor replaced
+// unread means an output did not consume the previous one before the next.
+type routerStats struct {
+	scenes, scenesReplaced uint64
+	cursor, cursorReplaced uint64
+	capturesFull           uint64 // captures failed because the queue was full
 }
 
 // outputRoutes are the router's inputs: core's scenes, wayland's cursor and
@@ -67,16 +91,20 @@ type routerOp struct {
 }
 
 func newOutputRouter(ctx context.Context, captured chan<- ports.CaptureDone, in outputRoutes) *outputRouter {
-	return &outputRouter{outs: map[string]*mailbox{}, off: map[string]bool{}, captured: captured, ctx: ctx, in: in, ops: make(chan routerOp), done: make(chan struct{})}
+	return &outputRouter{outs: map[string]*mailbox{}, off: map[string]bool{}, captured: captured, ctx: ctx, in: in, ops: make(chan routerOp), done: make(chan struct{}), log: logging.For(ctx, "router")}
 }
 
 // run routes until ctx ends.
 func (r *outputRouter) run(ctx context.Context) {
 	defer close(r.done)
+	report := time.NewTicker(routerStatsEvery)
+	defer report.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-report.C:
+			r.report()
 		case op := <-r.ops:
 			r.apply(op)
 		case set := <-r.in.scenes:
@@ -85,6 +113,35 @@ func (r *outputRouter) run(ctx context.Context) {
 			r.setCursor(c)
 		case q := <-r.in.captures:
 			r.routeCapture(q)
+		}
+	}
+}
+
+// report logs and resets the counters; it stays quiet when nothing happened.
+func (r *outputRouter) report() {
+	st, wait := r.stats, time.Duration(r.eventWait.Swap(0))
+	r.stats = routerStats{}
+	if st == (routerStats{}) && wait == 0 {
+		return
+	}
+	r.log.Info().
+		Uint64("scenes", st.scenes).
+		Uint64("scenes_replaced", st.scenesReplaced).
+		Uint64("cursor", st.cursor).
+		Uint64("cursor_replaced", st.cursorReplaced).
+		Uint64("captures_full", st.capturesFull).
+		Float64("max_event_send_ms", float64(wait)/float64(time.Millisecond)).
+		Msg("routing stats")
+}
+
+// noteEventSend records how long the backend loop waited for core to take an
+// event. Backend loop only; lock-free so it never adds to the wait.
+func (r *outputRouter) noteEventSend(d time.Duration) {
+	n := int64(d)
+	for {
+		cur := r.eventWait.Load()
+		if n <= cur || r.eventWait.CompareAndSwap(cur, n) {
+			return
 		}
 	}
 }
@@ -116,8 +173,11 @@ func (r *outputRouter) unregister(name string, instance ports.OutputInstance) {
 // setCursor gives every output the latest cursor, replacing an unread one.
 func (r *outputRouter) setCursor(c ports.CursorChange) {
 	r.cursor = c
+	r.stats.cursor++
 	for _, m := range r.outs {
-		latest(m.cursor, c)
+		if latest(m.cursor, c) {
+			r.stats.cursorReplaced++
+		}
 	}
 }
 
@@ -130,7 +190,10 @@ func (r *outputRouter) scenes(set []ports.Scene) {
 			delete(r.off, sc.Output)
 		}
 		if m := r.outs[sc.Output]; m != nil {
-			latest(m.scenes, sc)
+			r.stats.scenes++
+			if latest(m.scenes, sc) {
+				r.stats.scenesReplaced++
+			}
 		}
 	}
 }
@@ -151,6 +214,7 @@ func (r *outputRouter) routeCapture(req ports.CaptureRequest) {
 	case <-m.ctx.Done():
 		capture.Fail(r.ctx, req, fmt.Errorf("output %q stopped", req.Output), r.captured)
 	default:
+		r.stats.capturesFull++
 		capture.Fail(r.ctx, req, fmt.Errorf("output %q capture queue full", req.Output), r.captured)
 	}
 }

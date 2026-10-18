@@ -347,10 +347,14 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	cards := map[string]*drmCard{}
 	outputs := map[string]*drm.Output{} // owner result, read only after done
 	send := func(ev ports.OutputEvent) {
+		// Only the select is timed: the router logs the longest wait, which
+		// tells whether core holds up the backend loop.
+		start := time.Now()
 		select {
 		case ch.events <- ev:
 		case <-ctx.Done():
 		}
+		set.router.noteEventSend(time.Since(start))
 	}
 	// stopping holds outputs asked to stop: true when they restart with a
 	// new mode (core keeps the screen), false when they are gone.

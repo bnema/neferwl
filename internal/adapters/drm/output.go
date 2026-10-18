@@ -730,6 +730,9 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.planeRect = rect
 	o.lastFrame, o.cursorHeld = time.Now(), false
 	// The frame carries every deferred state change.
+	if !o.stateAt.IsZero() {
+		o.flipStats.stateCarried++
+	}
 	o.stateAt = time.Time{}
 	f.frame, f.async = true, async
 	f.wantedAt, o.wantedAt = o.wantedAt, 0
@@ -857,6 +860,7 @@ func (o *Output) commitState(vrr bool) error {
 	}
 	o.setVRR(vrr)
 	o.contentValue = o.contentWanted
+	o.flipStats.stateCommits++
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
 }
@@ -1493,6 +1497,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			fs := o.takeFlipStats()
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
 			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
+			ev = ev.Int("state_commits", fs.stateCommits).Int("state_carried", fs.stateCarried)
 			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)

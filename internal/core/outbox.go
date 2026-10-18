@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -34,6 +35,34 @@ type outbox struct {
 	// sendMu is held by whoever takes and delivers a batch, so batches
 	// never interleave (the sender, or flush without one).
 	sendMu sync.Mutex
+	// stats are guarded by mu, reset by takeStats. Their times come from
+	// the system clock, not core's: they measure real waits, and the sender
+	// must not step a test clock.
+	stats CommandStats
+}
+
+// CommandStats tell whether the display holds up core's commands: how many
+// queued instead of going straight out, how long they waited, and how long
+// core itself waited (flush). They are reset when read.
+type CommandStats struct {
+	// Direct and Queued count the commands sent at once and queued; Merged
+	// counts motions folded into a queued one.
+	Direct, Queued, Merged int
+	// MaxBacklog is the longest queue seen.
+	MaxBacklog uint64
+	// MaxQueueWait is the longest time a queued command took to reach the
+	// channel; MaxFlushWait the longest time core waited in flush (a spawn's
+	// SlotsPending, or a full outbox).
+	MaxQueueWait, MaxFlushWait time.Duration
+}
+
+// takeStats returns the counters and starts over.
+func (o *outbox) takeStats() CommandStats {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	s := o.stats
+	o.stats = CommandStats{}
+	return s
 }
 
 // outCmd is a queued command. A pointer motion is kept unboxed so that a
@@ -48,6 +77,8 @@ type outCmd struct {
 	motion   ports.PointerMotionTo
 	isMotion bool
 	merged   bool
+	// at is when it queued; a merge keeps the first motion's.
+	at time.Time
 }
 
 // outboxLimit bounds the commands waiting for the display. Motion merges, so
@@ -101,12 +132,15 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 		case out <- e.command():
 			o.pushed++
 			o.sent = o.pushed
+			o.stats.Direct++
 			seq := o.pushed
 			o.mu.Unlock()
 			return seq
 		default:
 		}
 	}
+	// Only a queued command pays for the clock read.
+	e.at = time.Now()
 	if n := len(o.queue); n > 0 && e.isMotion {
 		last := &o.queue[n-1]
 		if last.isMotion && last.motion.ID == e.motion.ID && last.secured == secured && last.state == state {
@@ -115,7 +149,9 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 			e.motion.UnaccelDX += last.motion.UnaccelDX
 			e.motion.UnaccelDY += last.motion.UnaccelDY
 			e.merged = true
+			e.at = last.at
 			*last = e
+			o.stats.Merged++
 			seq := o.pushed
 			o.mu.Unlock()
 			return seq
@@ -123,6 +159,8 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 	}
 	o.queue = append(o.queue, e)
 	o.pushed++
+	o.stats.Queued++
+	o.stats.MaxBacklog = max(o.stats.MaxBacklog, o.pushed-o.sent)
 	seq := o.pushed
 	o.mu.Unlock()
 	select {
@@ -137,12 +175,24 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 // everything else never waits. Without a running sender (core driven
 // without Run), it delivers the queue itself, in order.
 func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq uint64) error {
+	var start time.Time
+	defer func() {
+		if !start.IsZero() {
+			w := time.Since(start)
+			o.mu.Lock()
+			o.stats.MaxFlushWait = max(o.stats.MaxFlushWait, w)
+			o.mu.Unlock()
+		}
+	}()
 	for {
 		o.mu.Lock()
 		done, running := o.sent >= seq, o.running
 		o.mu.Unlock()
 		if done {
 			return nil
+		}
+		if start.IsZero() {
+			start = time.Now()
 		}
 		if !running {
 			o.sendMu.Lock()
@@ -240,6 +290,15 @@ func (o *outbox) deliver(ctx context.Context, out chan<- ports.ClientCommand, ba
 			return false
 		}
 	}
+	// The batch's first entry waited longest: they queued in order, and a
+	// merge keeps the first time.
+	var wait time.Duration
+	if len(batch) > 0 {
+		wait = time.Since(batch[0].at)
+	}
+	o.mu.Lock()
+	o.stats.MaxQueueWait = max(o.stats.MaxQueueWait, wait)
+	o.mu.Unlock()
 	o.recycle(batch)
 	return true
 }

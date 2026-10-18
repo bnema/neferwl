@@ -225,6 +225,7 @@ func TestCommandForwardAllocations(t *testing.T) {
 	var wrapped ports.ClientCommand = ports.SecurityCommand{State: state, Command: ports.PointerMotionTo{ID: 1, DX: 1}}
 	ran := make(chan struct{}, 1)
 	marker := func() { ran <- struct{}{} }
+	var stats commandStats
 	cycle := func() {
 		r.Push(queue(button))
 		r.Push(queue(motion))
@@ -233,11 +234,15 @@ func TestCommandForwardAllocations(t *testing.T) {
 		r.Push(queue(wrapped)) // enveloped, same state: folded as well
 		s.display.Post(marker)
 		<-ran
+		// The latency stats path runs per command and per report.
+		stats.observe(time.Time{}, time.Now())
+		stats.take()
+		r.takeStats()
 	}
 	for range 4 {
 		cycle()
 	}
 	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
-		t.Errorf("command push + merge + drain: %.1f allocs, want 0", allocs)
+		t.Errorf("command push + merge + drain + stats: %.1f allocs, want 0", allocs)
 	}
 }

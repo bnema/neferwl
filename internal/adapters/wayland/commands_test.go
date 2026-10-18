@@ -3,12 +3,14 @@ package wayland
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
 	"github.com/bnema/neferwl/internal/ports"
+	"github.com/bnema/zerowrap"
 )
 
 // Adjacent motions for one window fold into the last queued command, summing
@@ -204,4 +206,87 @@ func releaseOnce(t *testing.T) *release {
 	r := &release{ch: make(chan struct{})}
 	t.Cleanup(r.do)
 	return r
+}
+
+// A merged motion keeps the push time of the first motion folded into it, so
+// the reported latency is the longest wait any of its motions had.
+func TestMergeMotionKeepsOldestPushTime(t *testing.T) {
+	t0 := time.Unix(100, 0)
+	first := queue(ports.PointerMotionTo{ID: 1, DX: 1})
+	first.at = t0
+	second := queue(ports.PointerMotionTo{ID: 1, DX: 2})
+	second.at = t0.Add(5 * time.Millisecond)
+	if !mergeMotion(&first, second) {
+		t.Fatal("adjacent motions did not merge")
+	}
+	if !first.at.Equal(t0) {
+		t.Fatalf("merged at = %v, want the oldest %v", first.at, t0)
+	}
+}
+
+// commandStats keeps the largest push-to-apply wait and the applied count,
+// and take resets both.
+func TestCommandStatsObserveAndTake(t *testing.T) {
+	var c commandStats
+	t0 := time.Unix(100, 0)
+	c.observe(t0, t0.Add(3*time.Millisecond))
+	c.observe(t0, t0.Add(9*time.Millisecond))
+	c.observe(t0, t0.Add(time.Millisecond))
+	if n, d := c.take(); n != 3 || d != 9*time.Millisecond {
+		t.Fatalf("take = %d, %v; want 3, 9ms", n, d)
+	}
+	if n, d := c.take(); n != 0 || d != 0 {
+		t.Fatalf("second take = %d, %v; want zeros", n, d)
+	}
+}
+
+// The ring counts the largest queued length and the folded pushes, and
+// takeStats returns then resets them.
+func TestCommandRingStats(t *testing.T) {
+	s, _, _, _, _, _ := presentServer(t)
+	r := newCommandRing(s.display, func(queuedCommand) {})
+	release := releaseOnce(t)
+	stalled := make(chan struct{})
+	s.display.Post(func() { close(stalled); <-release.ch })
+	<-stalled
+	r.Push(queue(ports.PointerFocus{ID: 1}))
+	r.Push(queue(ports.PointerMotionTo{ID: 1, DX: 1}))
+	r.Push(queue(ports.PointerMotionTo{ID: 1, DX: 1})) // folded
+	r.Push(queue(ports.PointerMotionTo{ID: 1, DX: 1})) // folded
+	r.Push(queue(ports.PointerFocus{ID: 2}))
+	st := r.takeStats()
+	if st.maxLen != 3 || st.merged != 2 || st.maxPushBlock != 0 {
+		t.Fatalf("stats = %+v, want maxLen 3, merged 2, no block", st)
+	}
+	if st := r.takeStats(); st != (ringStats{}) {
+		t.Fatalf("stats after take = %+v, want zero", st)
+	}
+	release.do()
+}
+
+// The report logs the period's figures and resets them; a period without
+// applied commands logs nothing.
+func TestReportCommandStats(t *testing.T) {
+	var out lockedBuffer
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland")
+	h := newAdmissionHarnessWith(t, 1, Options{}, log)
+	s := h.s
+	s.reportCommandStats()
+	if strings.Contains(out.String(), "command stats") {
+		t.Fatalf("idle period logged: %s", out.String())
+	}
+	t0 := time.Unix(100, 0)
+	s.commandStats.observe(t0, t0.Add(1500*time.Microsecond))
+	s.reportCommandStats()
+	got := out.String()
+	for _, want := range []string{`"message":"command stats"`, `"commands":1`, `"merged":0`, `"max_queued":0`, `"max_push_block_ms":0`, `"max_latency_ms":1.5`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log lacks %s: %s", want, got)
+		}
+	}
+	n := strings.Count(got, "command stats")
+	s.reportCommandStats()
+	if strings.Count(out.String(), "command stats") != n {
+		t.Fatalf("stats not reset: %s", out.String())
+	}
 }

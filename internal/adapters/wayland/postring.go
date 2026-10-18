@@ -2,6 +2,7 @@ package wayland
 
 import (
 	"sync"
+	"time"
 
 	"github.com/bnema/purego-libwayland/server"
 )
@@ -31,6 +32,25 @@ type postRing[T any] struct {
 	ring, spare []T
 	limit       int
 	pending     bool // a drain is posted and has not taken the ring yet
+	stats       ringStats
+}
+
+// ringStats is what a ring saw since the last takeStats. It lets a live log
+// tell a slow display goroutine (long queue, long push block) from a slow
+// producer.
+type ringStats struct {
+	maxLen       int           // largest queued length
+	merged       int           // pushes folded into a queued value
+	maxPushBlock time.Duration // longest wait of one Push on a full ring
+}
+
+// takeStats returns the counters and resets them.
+func (r *postRing[T]) takeStats() ringStats {
+	r.mu.Lock()
+	st := r.stats
+	r.stats = ringStats{}
+	r.mu.Unlock()
+	return st
 }
 
 // newPostRing returns a ring of limit values whose values apply runs on the
@@ -59,16 +79,21 @@ func newMergingPostRing[T any](d *server.Display, limit int, apply func(T), merg
 // the caller, which must not be the display goroutine, until a drain made
 // room; it reports false, with v dropped, once the display has stopped.
 func (r *postRing[T]) Push(v T) bool {
+	var blocked time.Duration // total wait of this push on a full ring
 	for {
 		r.mu.Lock()
 		// A non-empty ring always has its drain posted, so the last value is
 		// still queued: merging into it needs neither room nor a new post.
 		if n := len(r.ring); r.merge != nil && n > 0 && r.merge(&r.ring[n-1], v) {
+			r.stats.merged++
+			r.stats.maxPushBlock = max(r.stats.maxPushBlock, blocked)
 			r.mu.Unlock()
 			return true
 		}
 		if len(r.ring) < r.limit {
 			r.ring = append(r.ring, v)
+			r.stats.maxLen = max(r.stats.maxLen, len(r.ring))
+			r.stats.maxPushBlock = max(r.stats.maxPushBlock, blocked)
 			post := !r.pending
 			r.pending = true
 			room := len(r.ring) < r.limit
@@ -82,8 +107,11 @@ func (r *postRing[T]) Push(v T) bool {
 			return true
 		}
 		r.mu.Unlock()
+		// Only the blocking path reads the clock: the fast path stays free.
+		start := time.Now()
 		select {
 		case <-r.space:
+			blocked += time.Since(start)
 		case <-r.display.Stopped():
 			return false
 		}
