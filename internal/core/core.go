@@ -352,7 +352,12 @@ func (c *Core) apply(cfg ports.Config) error {
 // their windows can map.
 func (c *Core) publishPending(ctx context.Context) error {
 	if p := c.placement.anyPending(); p != c.sent.pending {
-		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
+		// Pending must be in wayland's queue before the spawn that follows.
+		send := c.command
+		if p {
+			send = c.commandFlushed
+		}
+		if err := send(ctx, ports.SlotsPending{Pending: p}); err != nil {
 			return err
 		}
 		c.sent.pending = p
@@ -448,24 +453,56 @@ func (c *Core) now() time.Time {
 // display must not stall keyboard, scenes or frame wakes. The sender
 // goroutine of Run delivers the queue in order.
 func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
-	if err := ctx.Err(); err != nil {
+	_, err := c.queue(ctx, v)
+	return err
+}
+
+// commandFlushed is command for a command that another channel depends on:
+// it returns once v is in the command channel. SlotsPending must reach
+// wayland before the spawn whose window it lets wayland claim; the spawn
+// goes on its own channel, so queue order alone does not keep them in order.
+func (c *Core) commandFlushed(ctx context.Context, v ports.ClientCommand) error {
+	seq, err := c.queue(ctx, v)
+	if err != nil || seq == 0 {
 		return err
 	}
-	if c.inputEpochChanged() {
-		return errSecurityChanged
+	if err := c.out.flush(ctx, c.ch.Commands, seq); err != nil {
+		return err
 	}
-	if c.ch.Commands == nil {
-		// Nobody receives: queueing would only grow without bound.
-		return nil
-	}
-	c.out.push(c.ch.Commands, v, c.security, c.opts.Security != nil)
-	// The queued command keeps the epoch it was made under, so a display
-	// that has moved on drops it. Report the change all the same: the rest
-	// of the event was decided under the old epoch and must not go on.
+	// As a blocked send did: the rest of the event must not go on under a
+	// new epoch.
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
 	return nil
+}
+
+// queue pushes v to the outbox and returns its sequence number (0: not
+// queued).
+func (c *Core) queue(ctx context.Context, v ports.ClientCommand) (uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if c.inputEpochChanged() {
+		return 0, errSecurityChanged
+	}
+	if c.ch.Commands == nil {
+		// Nobody receives: queueing would only grow without bound.
+		return 0, nil
+	}
+	seq := c.out.push(c.ch.Commands, v, c.security, c.opts.Security != nil)
+	if c.out.backlog() > outboxLimit {
+		if err := c.out.flush(ctx, c.ch.Commands, seq-outboxLimit); err != nil {
+			return seq, err
+		}
+	}
+	// The queued command keeps the epoch it was made under, so a display
+	// that has moved on drops it. Report the change all the same: the rest
+	// of the event was decided under the old epoch and must not go on.
+	if c.inputEpochChanged() {
+		return seq, errSecurityChanged
+	}
+	return seq, nil
 }
 
 // clientRect is the placement minus the border on its inset sides.
@@ -1071,6 +1108,9 @@ func (c *Core) Run(ctx context.Context) error {
 	// quit and on errors. Run waits for it so nothing sends after Run.
 	sendCtx, stopSender := context.WithCancel(ctx)
 	senderDone := make(chan struct{})
+	if c.ch.Commands != nil {
+		c.out.start()
+	}
 	go func() {
 		defer close(senderDone)
 		if c.ch.Commands != nil {

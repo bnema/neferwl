@@ -1,8 +1,10 @@
 package core
 
 import (
+	"context"
 	"slices"
 	"testing"
+	"testing/synctest"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -78,4 +80,45 @@ func TestOutboxSendsDirectlyWhileDisplayKeepsUp(t *testing.T) {
 	if got := o.take(); len(got) != 0 {
 		t.Fatalf("queued %d", len(got))
 	}
+}
+
+// A display that reads nothing for long fills the outbox to its limit, then
+// core waits for room: the queue never grows past it, nothing is dropped.
+func TestOutboxIsBounded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		out := make(chan ports.ClientCommand)
+		c := &Core{out: newOutbox(), ch: Channels{Commands: out}}
+		c.out.start()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go c.out.run(ctx, out)
+		done := make(chan error, 1)
+		go func() {
+			for i := range outboxLimit + 10 {
+				// Not mergeable: each takes a place.
+				if err := c.command(ctx, ports.FocusWindow{ID: WindowID(i)}); err != nil {
+					done <- err
+					return
+				}
+			}
+			done <- nil
+		}()
+		synctest.Wait()
+		if n := c.out.backlog(); n != outboxLimit+1 {
+			t.Fatalf("backlog %d, want the limit and the one waiting", n)
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("pushed past the limit: %v", err)
+		default:
+		}
+		for i := range outboxLimit + 10 {
+			if got := (<-out).(ports.FocusWindow); got.ID != WindowID(i) {
+				t.Fatalf("command %d is %+v", i, got)
+			}
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }

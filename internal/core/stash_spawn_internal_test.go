@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -39,29 +40,42 @@ func claimToken(req ports.SpawnRequest) string {
 	return strings.TrimPrefix(req.Env[0], ports.SlotEnv+"=")
 }
 
-// Wayland reads tokens only while slots are pending, so the flag is sent
-// before the spawn can reach the launcher. While the display keeps up the
-// flag is in the command channel when the spawn is handed over.
+// Wayland reads tokens only while slots are pending, so the flag is in the
+// command channel before the spawn can reach the launcher, also when the
+// display reads nothing: in a synctest bubble the sender is waited on until
+// it blocks on the unread channel, and the spawn channel must still be empty.
 func TestSpawnStashPublishesPendingBeforeSpawn(t *testing.T) {
-	now := claimBase
-	commands := make(chan ports.ClientCommand, 8)
-	spawn := make(chan ports.SpawnRequest, 1)
-	c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
-	spawned := make(chan struct{})
-	go func() {
-		<-spawn
-		if len(commands) != 1 {
-			t.Error("spawned before the pending flag was delivered")
+	synctest.Test(t, func(t *testing.T) {
+		now := claimBase
+		commands := make(chan ports.ClientCommand)
+		spawn := make(chan ports.SpawnRequest, 1)
+		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		c.out.start()
+		go c.out.run(ctx, commands)
+		done := make(chan error, 1)
+		go func() { done <- c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"firefox"}}, false) }()
+		synctest.Wait()
+		if len(spawn) != 0 {
+			t.Fatal("spawned before the pending flag was delivered")
 		}
-		close(spawned)
-	}()
-	if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
-		t.Fatal(err)
-	}
-	<-spawned
-	if p, ok := (<-commands).(ports.SlotsPending); !ok || !p.Pending {
-		t.Fatal("first command is not SlotsPending{true}")
-	}
+		select {
+		case err := <-done:
+			t.Fatalf("spawnStash returned before the flag was read: %v", err)
+		default:
+		}
+		if p, ok := (<-commands).(ports.SlotsPending); !ok || !p.Pending {
+			t.Fatal("first command is not SlotsPending{true}")
+		}
+		synctest.Wait()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if len(spawn) != 1 {
+			t.Fatal("no spawn after the flag")
+		}
+	})
 }
 
 // A send the launcher queue suppresses leaves no claim behind, and the
