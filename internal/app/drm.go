@@ -332,7 +332,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 	active := b.seat.Subscribe()
 	defer b.seat.Unsubscribe(active)
 	seatActive := true // openDRM waits for the first seat enable
-	set := newOutputSet(ctx, ch.captured)
+	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
 	protected := func() bool { return set.state.Protected || securitySnapshot(ch.security).Protected }
@@ -507,16 +507,15 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 					}
 				}()
 				o.NewCaptureRenderer = newRenderer
-				o.StartOff = set.off[name]
 				progress.started(name, source)
 				if cur := o.Cursor(); cur != nil {
 					curs.set(name, cur)
 				}
 				active := b.seat.Subscribe()
 				realtime := currentConfig.Performance.Realtime
-				started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan *ports.ContentBatch, rc ports.ContentReturn, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
+				started := set.start(ctx, name, func(octx context.Context, feed outputFeed) error {
 					defer b.seat.Unsubscribe(active)
-					o.Security, o.SecurityChanges, o.Instance = ch.security, secure, instance
+					o.Security, o.SecurityChanges, o.Instance, o.StartOff = ch.security, feed.Security, feed.Instance, feed.StartOff
 					return safe("output "+name, func() error {
 						defer o.Close()
 						b.addPreparer(o)
@@ -534,7 +533,7 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 								schedLog.Warn().Err(err).Msg("output scheduling")
 							}
 						}
-						return o.Run(octx, newRenderer, loadCursor, active, sc, cc, rc, cu, ch.presented, cap, ch.captured)
+						return o.Run(octx, newRenderer, loadCursor, active, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, ch.presented, feed.Captures, ch.captured)
 					})
 				}, &o.SecurityEvents)
 				if !started {
@@ -698,12 +697,6 @@ func (b *drmBackend) runOutputs(ctx context.Context, want func(ports.Config) drm
 			complete(progress.readyEvent(result.name, result.source, readySources[result.name], result.err))
 		case <-deadline:
 			complete(progress.timeout(op))
-		case s := <-ch.scenes:
-			set.scenes(s)
-		case q := <-ch.captures:
-			set.routeCapture(q)
-		case c := <-ch.cursorChanges:
-			set.setCursor(c)
 		case stopped := <-set.stopped:
 			if !set.stoppedCurrent(stopped) {
 				continue

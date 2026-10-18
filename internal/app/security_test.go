@@ -15,13 +15,14 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent)
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	set.setSecurity(ports.SecurityState{Generation: 7, Protected: true})
 	started := make(chan ports.OutputInstance, 1)
 	result := make(chan bool, 1)
 	go func() {
-		result <- set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		result <- set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
+			security, instance := feed.Security, feed.Instance
 			state := <-security
 			if state != (ports.SecurityState{Generation: 7, Protected: true}) {
 				return errors.New("missing startup protection")
@@ -65,9 +66,9 @@ func TestSecurityRegistrationBeforeStart(t *testing.T) {
 func TestSecurityReplacementAndStaleState(t *testing.T) {
 	ctx := context.Background()
 	events := make(chan ports.SecurityBackendEvent, 4)
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
-	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	run := func(ctx context.Context, feed outputFeed) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -163,11 +164,11 @@ func TestSecurityRevokesAllLeasesAndRetainsFailures(t *testing.T) {
 }
 
 func TestSecurityInstanceExhaustion(t *testing.T) {
-	set := newOutputSet(context.Background(), nil)
+	set := newOutputSet(context.Background(), nil, outputRoutes{})
 	events := make(chan ports.SecurityBackendEvent, 2)
 	set.wireSecurity(outputChannels{securityEvents: events})
 	set.nextInstance = ^ports.OutputInstance(0) - 1
-	run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	run := func(ctx context.Context, feed outputFeed) error {
 		<-ctx.Done()
 		return nil
 	}
@@ -200,11 +201,11 @@ func TestSecurityInstanceExhaustion(t *testing.T) {
 func TestSecurityFullEventsAllowLeaseBarrier(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	events := make(chan ports.SecurityBackendEvent, 1)
 	set.wireSecurity(outputChannels{securityEvents: events})
 	var ownerEvents chan<- ports.SecurityBackendEvent
-	set.start(ctx, "DP-1", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	set.start(ctx, "DP-1", func(ctx context.Context, feed outputFeed) error {
 		<-ctx.Done()
 		return nil
 	}, &ownerEvents)

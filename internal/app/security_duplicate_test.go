@@ -25,9 +25,9 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 				t.Fatal(err)
 			}
 			events := make(chan ports.SecurityBackendEvent, 4)
-			set := newOutputSet(context.Background(), nil)
+			set := newOutputSet(context.Background(), nil, outputRoutes{})
 			set.wireSecurity(outputChannels{security: gate, securityEvents: events})
-			run := func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+			run := func(ctx context.Context, feed outputFeed) error {
 				<-ctx.Done()
 				return nil
 			}
@@ -93,7 +93,7 @@ func TestSecurityDuplicatePhysicalLifetimeRequiresConfirmedInactive(t *testing.T
 
 func TestSecurityDiscardedLifetimeCounterExhaustion(t *testing.T) {
 	events := make(chan ports.SecurityBackendEvent, 2)
-	set := newOutputSet(context.Background(), nil)
+	set := newOutputSet(context.Background(), nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	set.nextInstance = ^ports.OutputInstance(0) - 1
 	instance, err := registerDiscardedOutput(set, "DP-1")
