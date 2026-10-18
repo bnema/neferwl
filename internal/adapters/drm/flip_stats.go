@@ -26,6 +26,10 @@ type flipStats struct {
 	// vblank the frame targeted (never under VRR). Fence times are only
 	// read while flip tracing is on.
 	lateFences int
+	// stateCommits counts state-only commits (cursor, VRR, content type);
+	// stateCarried counts deferred state changes a frame carried instead.
+	// Many state commits while a video plays point at a lost vblank each.
+	stateCommits, stateCarried int
 }
 
 // nominalPeriod is the time between two vblanks at the mode's refresh

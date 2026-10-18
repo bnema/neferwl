@@ -26,7 +26,7 @@ type headlessOptions struct {
 //
 // newRenderer is configured for virtual outputs by newVulkanRenderer.
 func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch outputChannels, curs *cursors, newRenderer func(w, h int) (ports.Renderer, error), log zerowrap.Logger) error {
-	set := newOutputSet(ctx, ch.captured)
+	set := newOutputSet(ctx, ch.captured, ch.routes())
 	set.attach = ch.content
 	set.wireSecurity(ch)
 	inventory := ports.OutputHeads{}
@@ -45,9 +45,9 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 		cur := &headless.Cursor{}
 		curs.set(name, cur)
 		opts := headless.Options{Cursor: cur, LoadCursor: loadCursor, Width: size[0], Height: size[1], ScreenshotDir: dir, HDR: o.hdr, RawHDR: o.raw, Formats: ch.formats, Log: log, NewRenderer: newRenderer, NewCaptureRenderer: newRenderer, Name: name, Presented: ch.presented, Frames: ch.frames, Captured: ch.captured}
-		started := set.start(ctx, name, func(octx context.Context, sc <-chan ports.Scene, cc <-chan *ports.ContentBatch, rc ports.ContentReturn, cu <-chan ports.CursorChange, cap <-chan ports.CaptureRequest, secure <-chan ports.SecurityState, instance ports.OutputInstance) error {
-			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, secure, instance
-			return headless.Run(octx, opts, sc, cc, rc, cu, cap)
+		started := set.start(ctx, name, func(octx context.Context, feed outputFeed) error {
+			opts.Security, opts.SecurityChanges, opts.Instance = ch.security, feed.Security, feed.Instance
+			return headless.Run(octx, opts, feed.Scenes, feed.Contents, feed.Returns, feed.Cursor, feed.Captures)
 		}, &opts.SecurityEvents)
 		if !started {
 			return set.wait()
@@ -90,12 +90,6 @@ func runHeadless(ctx context.Context, o headlessOptions, apply *outputApply, ch 
 			apply.replySent()
 		case heads <- headsNext:
 			apply.headsSent()
-		case s := <-ch.scenes:
-			set.scenes(s)
-		case q := <-ch.captures:
-			set.routeCapture(q)
-		case c := <-ch.cursorChanges:
-			set.setCursor(c)
 		case stopped := <-set.stopped:
 			if !set.stoppedCurrent(stopped) {
 				continue

@@ -30,3 +30,8 @@ type outputChannels struct {
 	requests   <-chan ports.OutputApply
 	replies    chan<- ports.OutputApplied
 }
+
+// routes are the inputs the output router feeds the outputs from.
+func (ch outputChannels) routes() outputRoutes {
+	return outputRoutes{scenes: ch.scenes, cursor: ch.cursorChanges, captures: ch.captures}
+}

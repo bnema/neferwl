@@ -40,10 +40,10 @@ func claimToken(req ports.SpawnRequest) string {
 	return strings.TrimPrefix(req.Env[0], ports.SlotEnv+"=")
 }
 
-// Wayland reads tokens only while slots are pending, so the flag is sent
-// before the spawn can reach the launcher. In a synctest bubble the worker
-// is waited on until it blocks sending the flag on the unread command
-// channel: the spawn channel must still be empty then.
+// Wayland reads tokens only while slots are pending, so the flag is in the
+// command channel before the spawn can reach the launcher, also when the
+// display reads nothing: in a synctest bubble the sender is waited on until
+// it blocks on the unread channel, and the spawn channel must still be empty.
 func TestSpawnStashPublishesPendingBeforeSpawn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := claimBase
@@ -52,6 +52,8 @@ func TestSpawnStashPublishesPendingBeforeSpawn(t *testing.T) {
 		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
+		c.out.start()
+		go c.out.run(ctx, commands)
 		done := make(chan error, 1)
 		go func() { done <- c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"firefox"}}, false) }()
 		synctest.Wait()

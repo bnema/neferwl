@@ -214,14 +214,16 @@ func renderNode(dev uint64) string {
 }
 
 // latest sends v without blocking and replaces a value the consumer has not
-// read yet: the newest wins. Only one goroutine may send on ch; consumers only
-// receive, so the retry after draining cannot find the buffer full again.
-func latest[T any](ch chan T, v T) {
+// read yet: the newest wins. It reports whether it dropped an unread value.
+// Only one goroutine may send on ch; consumers only receive, so the retry
+// after draining cannot find the buffer full again.
+func latest[T any](ch chan T, v T) (replaced bool) {
 	select {
 	case ch <- v:
 	default:
 		select {
 		case <-ch:
+			replaced = true
 		default:
 		}
 		select {
@@ -229,4 +231,5 @@ func latest[T any](ch chan T, v T) {
 		default:
 		}
 	}
+	return replaced
 }

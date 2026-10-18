@@ -45,7 +45,7 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent, 8)
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	defer func() {
 		if err := set.wait(); err != nil {
@@ -66,7 +66,8 @@ func TestSecurityHotplugLifetimeAndProofOrdering(t *testing.T) {
 		commands := make(chan []ports.SecurityBackendEvent, 1)
 		closed := make(chan bool, 1)
 		var ownerEvents chan<- ports.SecurityBackendEvent
-		if !set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		if !set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			security, instance := feed.Security, feed.Instance
 			defer func() { closed <- closeSuccess }()
 			state := <-security
 			proof := ports.SecurityOutputProof{Proof: ports.OutputProtection{Generation: state.Generation, Instance: instance, Kind: ports.ProtectionProtectedFrame}}
@@ -193,7 +194,7 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent) // block display after registration
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	defer func() {
 		if err := set.wait(); err != nil {
@@ -205,7 +206,8 @@ func securityOwnerFIFOSaturationDrainsOnNormalStop(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			instance := feed.Instance
 			for i := range 40 {
 				var event ports.SecurityBackendEvent = ports.SecurityOutputInvalidated{Generation: generation, Instance: instance}
 				if i%2 == 0 {
@@ -285,7 +287,7 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent)
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	defer func() {
 		if err := set.wait(); err != nil {
@@ -295,7 +297,8 @@ func TestSecurityOwnerBufferedEvidenceDrainsAfterFinish(t *testing.T) {
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			instance := feed.Instance
 			for i := range 16 {
 				event := ports.SecurityOutputInvalidated{Generation: ports.LockGeneration(i + 1), Instance: instance}
 				select {
@@ -343,14 +346,15 @@ func securityOwnerFIFOSaturationCancelReleasesOwnerAndForwarders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	events := make(chan ports.SecurityBackendEvent)
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	set.wireSecurity(outputChannels{securityEvents: events})
 	accepted := make(chan int, 40)
 	ownerDone := make(chan struct{})
 	startDone := make(chan bool, 1)
 	var ownerEvents chan<- ports.SecurityBackendEvent
 	go func() {
-		startDone <- set.start(ctx, "DP-1", func(octx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, instance ports.OutputInstance) error {
+		startDone <- set.start(ctx, "DP-1", func(octx context.Context, feed outputFeed) error {
+			instance := feed.Instance
 			defer close(ownerDone)
 			for i := range 40 {
 				select {

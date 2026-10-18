@@ -157,6 +157,11 @@ type Output struct {
 	// move waits for the next frame (see cursorWaits).
 	lastFrame  time.Time
 	cursorHeld bool
+	// stateAt is when a deferred state commit is due (zero: none);
+	// lastVblankAt is the kernel timestamp of the last vsynced flip, frame
+	// or state (CLOCK_MONOTONIC, 0: unknown). See state_schedule.go.
+	stateAt      time.Time
+	lastVblankAt time.Duration
 	// traceFlips logs every completion with its timing; lastFlipAt is
 	// the previous frame flip's kernel timestamp (always kept).
 	// flipStats are reported and reset with the periodic stats. wantedAt
@@ -455,6 +460,7 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	o.vrrOn, o.vrrGame, o.overlayOn, o.off = false, false, 0, !active
 	// The gap and the flip interval belonged to the old state.
 	o.flipGapUntil, o.flipGapAt, o.lastFlipAt = time.Time{}, 0, 0
+	o.stateAt, o.lastVblankAt = time.Time{}, 0
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.planeRect = fullPlaneRect(o.Width(), o.Height())
 	if o.cursor != nil {
@@ -494,6 +500,8 @@ func (o *Output) powerOff() error {
 	}
 	o.colorBypassed()
 	o.off, o.vrrGame = true, false
+	// No vblank to aim at: the modeset that turns it on commits the state.
+	o.stateAt, o.lastVblankAt = time.Time{}, 0
 	o.setVRR(false)
 	o.contentValue, o.contentWanted = o.contentValues[0], o.contentValues[0]
 	o.log.Info().Str("connector", o.conn.name).Msg("power off")
@@ -721,6 +729,11 @@ func (o *Output) commitWithRect(fb uint32, fence *os.File, async bool, vrr bool,
 	o.contentValue = o.contentWanted
 	o.planeRect = rect
 	o.lastFrame, o.cursorHeld = time.Now(), false
+	// The frame carries every deferred state change.
+	if !o.stateAt.IsZero() {
+		o.flipStats.stateCarried++
+	}
+	o.stateAt = time.Time{}
 	f.frame, f.async = true, async
 	f.wantedAt, o.wantedAt = o.wantedAt, 0
 	f.gapEnd, o.flipGapAt = o.flipGapAt, 0
@@ -773,6 +786,14 @@ func (o *Output) commitState(vrr bool) error {
 	o.observeSecurity()
 	if o.protected {
 		return errSecurityScene
+	}
+	if !o.stateChanged(vrr) {
+		// A change undone before its commit holds nothing.
+		o.stateAt, o.cursorHeld = time.Time{}, false
+		return nil
+	}
+	if !o.stateDue(time.Now(), monotonic()) {
+		return nil // a frame before then carries it; else the state timer
 	}
 	req := &o.stateReq
 	req.reset()
@@ -839,6 +860,7 @@ func (o *Output) commitState(vrr bool) error {
 	}
 	o.setVRR(vrr)
 	o.contentValue = o.contentWanted
+	o.flipStats.stateCommits++
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
 }
@@ -1097,6 +1119,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	retryTimer := time.NewTimer(time.Hour)
 	vrrTimer := time.NewTimer(time.Hour)
 	cursorTimer := time.NewTimer(time.Hour)
+	stateTimer := time.NewTimer(time.Hour)
+	stateTimer.Stop()
+	defer stateTimer.Stop()
 	protectTimer := time.NewTimer(time.Hour)
 	o.frame.startTimer()
 	gapTimer := time.NewTimer(time.Hour)
@@ -1266,6 +1291,14 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		} else {
 			cursorTimer.Stop()
 		}
+		// A deferred state change commits alone if no frame carried it.
+		var stateDue <-chan time.Time
+		if enabled && !o.protected && !o.off && !o.stateAt.IsZero() && !o.frame.pendingCommit() {
+			stateTimer.Reset(max(0, time.Until(o.stateAt)))
+			stateDue = stateTimer.C
+		} else {
+			stateTimer.Stop()
+		}
 		// A game frame waiting out the VRR flip gap commits when it ends.
 		var gapDue <-chan time.Time
 		if enabled && dirty && !o.frame.pendingCommit() && !o.flipGapUntil.IsZero() {
@@ -1337,6 +1370,8 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		case <-vrrOff:
 			stateDirty = true
 		case <-cursorDue:
+			stateDirty = true
+		case <-stateDue:
 			stateDirty = true
 		case <-cursorWake:
 			stateDirty = true
@@ -1462,6 +1497,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			fs := o.takeFlipStats()
 			ev = ev.Int("missed_vblanks", fs.missedVblanks).Float64("max_flip_interval_ms", ms(fs.maxInterval))
 			ev = ev.Float64("max_commit_delay_ms", ms(fs.maxCommitDelay)).Float64("max_flip_to_read_ms", ms(fs.maxFlipToRead))
+			ev = ev.Int("state_commits", fs.stateCommits).Int("state_carried", fs.stateCarried)
 			ev = ev.Int("redrawn_pixels", r.TakeRedrawn())
 			if o.traceFlips {
 				ev = ev.Int("late_fences", fs.lateFences)
@@ -1638,6 +1674,9 @@ func (o *Output) completed(ev flipEvent, seen map[ports.WindowID]uint64) bool {
 		return false
 	}
 	o.flipDone(ev, f, start, ours, trace, fenceAt)
+	if ours {
+		o.noteVblank(f, ev.when)
+	}
 	if o.cursor != nil {
 		o.cursor.landed()
 	}

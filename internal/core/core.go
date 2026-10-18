@@ -142,7 +142,9 @@ type Core struct {
 	// (clientgesture.go).
 	gesture clientGesture
 	// ping carries watchdog probes (Ping); Run answers each one.
-	ping       chan chan struct{}
+	ping chan chan struct{}
+	// out queues the commands for c.ch.Commands; Run's sender drains it.
+	out        outbox
 	frameC     <-chan time.Time
 	frameTimer ports.Timer
 	// shots is the snapshot of what the screens show before an action
@@ -350,7 +352,12 @@ func (c *Core) apply(cfg ports.Config) error {
 // their windows can map.
 func (c *Core) publishPending(ctx context.Context) error {
 	if p := c.placement.anyPending(); p != c.sent.pending {
-		if err := c.command(ctx, ports.SlotsPending{Pending: p}); err != nil {
+		// Pending must be in wayland's queue before the spawn that follows.
+		send := c.command
+		if p {
+			send = c.commandFlushed
+		}
+		if err := send(ctx, ports.SlotsPending{Pending: p}); err != nil {
 			return err
 		}
 		c.sent.pending = p
@@ -405,7 +412,7 @@ func New(cfg ports.Config, ch Channels, opts Options) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{})}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{}), out: newOutbox()}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err
@@ -442,22 +449,60 @@ func (c *Core) now() time.Time {
 	return time.Now()
 }
 
+// command queues v for the wayland goroutine and never blocks: a busy
+// display must not stall keyboard, scenes or frame wakes. The sender
+// goroutine of Run delivers the queue in order.
 func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
+	_, err := c.queue(ctx, v)
+	return err
+}
+
+// commandFlushed is command for a command that another channel depends on:
+// it returns once v is in the command channel. SlotsPending must reach
+// wayland before the spawn whose window it lets wayland claim; the spawn
+// goes on its own channel, so queue order alone does not keep them in order.
+func (c *Core) commandFlushed(ctx context.Context, v ports.ClientCommand) error {
+	seq, err := c.queue(ctx, v)
+	if err != nil || seq == 0 {
+		return err
+	}
+	if err := c.out.flush(ctx, c.ch.Commands, seq); err != nil {
+		return err
+	}
+	// As a blocked send did: the rest of the event must not go on under a
+	// new epoch.
 	if c.inputEpochChanged() {
 		return errSecurityChanged
 	}
-	if c.opts.Security != nil {
-		v = ports.SecurityCommand{State: c.security, Command: v}
+	return nil
+}
+
+// queue pushes v to the outbox and returns its sequence number (0: not
+// queued).
+func (c *Core) queue(ctx context.Context, v ports.ClientCommand) (uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case c.ch.Commands <- v:
-		if c.inputEpochChanged() {
-			return errSecurityChanged
+	if c.inputEpochChanged() {
+		return 0, errSecurityChanged
+	}
+	if c.ch.Commands == nil {
+		// Nobody receives: queueing would only grow without bound.
+		return 0, nil
+	}
+	seq := c.out.push(c.ch.Commands, v, c.security, c.opts.Security != nil)
+	if c.out.backlog() > outboxLimit {
+		if err := c.out.flush(ctx, c.ch.Commands, seq-outboxLimit); err != nil {
+			return seq, err
 		}
-		return nil
 	}
+	// The queued command keeps the epoch it was made under, so a display
+	// that has moved on drops it. Report the change all the same: the rest
+	// of the event was decided under the old epoch and must not go on.
+	if c.inputEpochChanged() {
+		return seq, errSecurityChanged
+	}
+	return seq, nil
 }
 
 // clientRect is the placement minus the border on its inset sides.
@@ -1058,7 +1103,28 @@ func (c *Core) Ping(ctx context.Context) {
 	}
 }
 
+// CommandStats returns the command outbox counters since the last call.
+// Any goroutine may call it.
+func (c *Core) CommandStats() CommandStats { return c.out.takeStats() }
+
 func (c *Core) Run(ctx context.Context) error {
+	// The sender stops with Run, not only with ctx: Run also returns on
+	// quit and on errors. Run waits for it so nothing sends after Run.
+	sendCtx, stopSender := context.WithCancel(ctx)
+	senderDone := make(chan struct{})
+	if c.ch.Commands != nil {
+		c.out.start()
+	}
+	go func() {
+		defer close(senderDone)
+		if c.ch.Commands != nil {
+			c.out.run(sendCtx, c.ch.Commands)
+		}
+	}()
+	defer func() {
+		stopSender()
+		<-senderDone
+	}()
 	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()

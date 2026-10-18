@@ -11,12 +11,12 @@ import (
 
 func TestCaptureUnknownOutputClosesFile(t *testing.T) {
 	replies := make(chan ports.CaptureDone, 1)
-	set := newOutputSet(context.Background(), replies)
+	router := newOutputRouter(context.Background(), replies, outputRoutes{})
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	set.routeCapture(ports.CaptureRequest{ID: 9, Output: "missing", Dst: ports.SHMBuffer{File: f}})
+	router.routeCapture(ports.CaptureRequest{ID: 9, Output: "missing", Dst: ports.SHMBuffer{File: f}})
 	select {
 	case result := <-replies:
 		if result.ID != 9 || result.Err == nil {
@@ -34,17 +34,17 @@ func TestCaptureFullOutputQueueDoesNotBlockRouting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	replies := make(chan ports.CaptureDone, 1)
-	set := newOutputSet(ctx, replies)
+	router := newOutputRouter(ctx, replies, outputRoutes{})
 	queued := make(chan ports.CaptureRequest, 1)
 	queued <- ports.CaptureRequest{ID: 1}
-	set.outs["test"] = &runningOutput{ctx: ctx, captures: queued, done: make(chan struct{}), stop: func() {}}
+	router.outs["test"] = &mailbox{ctx: ctx, captures: queued, done: make(chan struct{}), stop: func() {}}
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
 	routed := make(chan struct{})
 	go func() {
-		set.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: ports.SHMBuffer{File: f}})
+		router.routeCapture(ports.CaptureRequest{ID: 2, Output: "test", Dst: ports.SHMBuffer{File: f}})
 		close(routed)
 	}()
 	select {
@@ -71,13 +71,13 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 	outputCtx, stop := context.WithCancel(ctx)
 	stop()
 	replies := make(chan ports.CaptureDone, 1)
-	set := newOutputSet(ctx, replies)
-	set.outs["test"] = &runningOutput{ctx: outputCtx, captures: make(chan ports.CaptureRequest)}
+	router := newOutputRouter(ctx, replies, outputRoutes{})
+	router.outs["test"] = &mailbox{ctx: outputCtx, captures: make(chan ports.CaptureRequest)}
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
-	set.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: ports.SHMBuffer{File: f}})
+	router.routeCapture(ports.CaptureRequest{ID: 7, Output: "test", Dst: ports.SHMBuffer{File: f}})
 	select {
 	case result := <-replies:
 		if result.ID != 7 || result.Err == nil {
@@ -93,17 +93,14 @@ func TestStoppedOutputCaptureStillReplies(t *testing.T) {
 
 func TestFinishedOutputDrainsCapturesWithReplies(t *testing.T) {
 	ctx := context.Background()
-	outputCtx, stop := context.WithCancel(ctx)
-	stop()
 	replies := make(chan ports.CaptureDone, 1)
-	set := newOutputSet(ctx, replies)
 	queued := make(chan ports.CaptureRequest, 1)
 	f, err := os.CreateTemp(t.TempDir(), "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
 	queued <- ports.CaptureRequest{ID: 8, Dst: ports.SHMBuffer{File: f}}
-	set.failQueued(&runningOutput{ctx: outputCtx, captures: queued})
+	failQueued(ctx, &mailbox{captures: queued}, replies)
 	select {
 	case result := <-replies:
 		if result.ID != 8 || result.Err == nil {
@@ -143,16 +140,14 @@ func TestOutputStopWithFullReplies(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	replies := make(chan ports.CaptureDone, 1)
 	replies <- ports.CaptureDone{}
-	set := newOutputSet(ctx, replies)
-	set.start(ctx, "test", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, requests <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
-		<-ctx.Done()
-		return nil
-	})
+	captures := make(chan ports.CaptureRequest)
+	set := newOutputSet(ctx, replies, outputRoutes{captures: captures})
+	set.start(ctx, "test", idleRun)
 	f, err := os.CreateTemp(t.TempDir(), "queued")
 	if err != nil {
 		t.Fatal(err)
 	}
-	set.routeCapture(ports.CaptureRequest{Output: "test", Dst: ports.SHMBuffer{File: f}})
+	captures <- ports.CaptureRequest{Output: "test", Dst: ports.SHMBuffer{File: f}}
 	cancel()
 	done := make(chan struct{})
 	go func() { _ = set.wait(); close(done) }()

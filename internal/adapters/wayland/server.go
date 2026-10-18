@@ -131,10 +131,13 @@ type Server struct {
 	// Screencast (screencast.go): casts by the adapter's ID and by the ID
 	// core knows them by; castRing carries the adapter's commands to the
 	// display goroutine; the castInv fields coalesce inventory publication.
-	casts         ports.CastSink
-	castSessions  map[uint64]*castSession
-	castByCore    map[uint64]*castSession
-	castRing      *postRing[ports.CastCommand]
+	casts        ports.CastSink
+	castSessions map[uint64]*castSession
+	castByCore   map[uint64]*castSession
+	castRing     *postRing[ports.CastCommand]
+	// commands carries core's client commands to the display goroutine.
+	commands      *postRing[queuedCommand]
+	commandStats  commandStats
 	castInvFn     func()
 	castInvPosted bool
 	castInvSent   bool
@@ -389,6 +392,7 @@ func New(opts Options, ch Channels, log zerowrap.Logger) (*Server, error) {
 	s.casts = opts.Casts
 	s.castSessions, s.castByCore = map[uint64]*castSession{}, map[uint64]*castSession{}
 	s.castRing = newPostRing(d, castRingSize, s.applyCast)
+	s.commands = newCommandRing(d, s.applyQueued)
 	s.castInvFn = s.publishCastInventory
 	s.leaseDevices = map[string]*leaseDevice{}
 	s.pendingLeases = map[uint64]*leaseObject{}
@@ -532,7 +536,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.started = time.Now()
 	s.ctx = ctx
 	var wg sync.WaitGroup
-	wg.Add(13)
+	wg.Add(14)
 	go func() { defer wg.Done(); s.forwardBackendSecurity(ctx) }()
 	go func() { defer wg.Done(); s.forwardSecurityEvents(ctx) }()
 	go func() { defer wg.Done(); s.forwardLeases(ctx) }()
@@ -555,23 +559,15 @@ func (s *Server) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return
 				}
-				// One display round trip per batch: Do waits for the event
-				// loop, so a round trip per motion capped pointer events at
-				// ~150/s and let a backlog of stale motions build up.
-				batch, open := drainCommands(cmd, s.channels.Commands)
-				if !s.display.Do(func() {
-					for _, c := range batch {
-						if ctx.Err() != nil {
-							return
-						}
-						s.apply(c)
-					}
-				}) || !open {
+				// Never wait for the display goroutine: a busy display only
+				// fills the ring, and only then does this goroutine wait.
+				if !s.commands.Push(queue(cmd)) {
 					return
 				}
 			}
 		}
 	}()
+	go func() { defer wg.Done(); s.logCommandStats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputFormats(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputHeads(ctx) }()
 	go func() { defer wg.Done(); s.forwardOutputApplied(ctx) }()
@@ -744,41 +740,6 @@ func (s *Server) emitContent(c ports.SurfaceContent, d damage) {
 		s.flushLink(l)
 	}
 	s.castCommitted(c.ID)
-}
-
-// maxCommandBatch bounds how many queued commands one display round trip applies.
-const maxCommandBatch = 256
-
-// drainCommands returns first plus the commands already queued, with runs of
-// pointer motion for the same window collapsed into the latest one, their
-// relative deltas summed. open is
-// false once the channel is closed.
-func drainCommands(first ports.ClientCommand, cmds <-chan ports.ClientCommand) (batch []ports.ClientCommand, open bool) {
-	batch = append(batch, first)
-	for len(batch) < maxCommandBatch {
-		select {
-		case c, ok := <-cmds:
-			if !ok {
-				return batch, false
-			}
-			if m, isMotion := c.(ports.PointerMotionTo); isMotion {
-				if last, lastMotion := batch[len(batch)-1].(ports.PointerMotionTo); lastMotion && last.ID == m.ID {
-					// The position is the latest; relative deltas add up so
-					// locked pointers (games) lose no movement.
-					m.DX += last.DX
-					m.DY += last.DY
-					m.UnaccelDX += last.UnaccelDX
-					m.UnaccelDY += last.UnaccelDY
-					batch[len(batch)-1] = m
-					continue
-				}
-			}
-			batch = append(batch, c)
-		default:
-			return batch, true
-		}
-	}
-	return batch, true
 }
 
 func (s *Server) apply(cmd ports.ClientCommand) {

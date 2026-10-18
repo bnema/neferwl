@@ -17,7 +17,7 @@ import (
 func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	events := make(chan ports.SecurityBackendEvent, 4)
 	set.wireSecurity(outputChannels{securityEvents: events})
 	attacher := newMockcontentAttacher(t)
@@ -31,7 +31,8 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 		security ports.SecurityState
 	}
 	started := make(chan seen, 2)
-	run := func(ctx context.Context, _ <-chan ports.Scene, contents <-chan *ports.ContentBatch, returns ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, security <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	run := func(ctx context.Context, feed outputFeed) error {
+		contents, returns, security := feed.Contents, feed.Returns, feed.Security
 		started <- seen{contents, returns, <-security}
 		<-ctx.Done()
 		return nil
@@ -86,13 +87,13 @@ func TestOutputSetAttachesAndDetachesContents(t *testing.T) {
 func TestOutputSetWaitDetachesContents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(ctx, nil)
+	set := newOutputSet(ctx, nil, outputRoutes{})
 	attacher := newMockcontentAttacher(t)
 	set.attach = attacher
 	ret := portsmocks.NewMockContentReturn(t)
 	attacher.EXPECT().AttachOutput("A").Return(nil, ret).Once()
 	attacher.EXPECT().DetachOutput(ports.ContentReturn(ret)).Return().Once()
-	set.start(ctx, "A", func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, _ <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+	set.start(ctx, "A", func(ctx context.Context, feed outputFeed) error {
 		<-ctx.Done()
 		return nil
 	})

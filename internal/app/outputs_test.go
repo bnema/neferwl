@@ -12,12 +12,14 @@ import (
 func TestOutputSetCursor(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	set := newOutputSet(context.Background(), nil)
+	cursors := make(chan ports.CursorChange)
+	set := newOutputSet(context.Background(), nil, outputRoutes{cursor: cursors})
 	got := map[string]chan ports.CursorChange{}
 	run := func(name string) outputRun {
 		got[name] = make(chan ports.CursorChange, 8)
 		out := got[name]
-		return func(ctx context.Context, _ <-chan ports.Scene, _ <-chan *ports.ContentBatch, _ ports.ContentReturn, cursor <-chan ports.CursorChange, _ <-chan ports.CaptureRequest, _ <-chan ports.SecurityState, _ ports.OutputInstance) error {
+		return func(ctx context.Context, feed outputFeed) error {
+			cursor := feed.Cursor
 			for {
 				select {
 				case <-ctx.Done():
@@ -41,11 +43,11 @@ func TestOutputSetCursor(t *testing.T) {
 	}
 	set.start(ctx, "A", run("A"))
 	expect("A", ports.CursorChange{})
-	set.setCursor(ports.CursorChange{Shape: "text"})
+	cursors <- ports.CursorChange{Shape: "text"}
 	expect("A", ports.CursorChange{Shape: "text"})
 	set.start(ctx, "B", run("B"))
 	expect("B", ports.CursorChange{Shape: "text"})
-	set.setCursor(ports.CursorChange{Hidden: true})
+	cursors <- ports.CursorChange{Hidden: true}
 	expect("A", ports.CursorChange{Hidden: true})
 	expect("B", ports.CursorChange{Hidden: true})
 	if err := set.wait(); err != nil {

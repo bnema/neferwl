@@ -342,6 +342,8 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 	}()
 	go func() { defer workers.Done(); done <- child.Run(ctx, p.spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
+	workers.Add(1)
+	go func() { defer workers.Done(); logCommandStats(ctx, c, logging.For(ctx, "core")) }()
 	if xdisplay != nil {
 		workers.Add(1)
 		// X11 failing leaves the Wayland session running; Run logs why.
