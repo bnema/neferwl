@@ -208,3 +208,36 @@ func TestBufferContentAllocations(t *testing.T) {
 		t.Fatal("content from a truncated pool")
 	}
 }
+
+// Forwarding a command allocates nothing on the push path: queueing a
+// command, folding a motion into the queued one and draining the ring. (Only
+// applying a merged motion boxes the summed value again, once per merged run,
+// as the old batch coalescing did once per merge; that is excluded here.)
+func TestCommandForwardAllocations(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector makes the purego wake callback allocate")
+	}
+	s, _, _, _, _, _ := presentServer(t)
+	r := newCommandRing(s.display, func(queuedCommand) {})
+	var button ports.ClientCommand = ports.PointerButtonTo{ID: 1, Button: 272, Pressed: true}
+	var motion ports.ClientCommand = ports.PointerMotionTo{ID: 1, DX: 1}
+	state := ports.SecurityState{Generation: 2, Protected: true}
+	var wrapped ports.ClientCommand = ports.SecurityCommand{State: state, Command: ports.PointerMotionTo{ID: 1, DX: 1}}
+	ran := make(chan struct{}, 1)
+	marker := func() { ran <- struct{}{} }
+	cycle := func() {
+		r.Push(queue(button))
+		r.Push(queue(motion))
+		r.Push(queue(motion)) // folded into the previous one
+		r.Push(queue(wrapped))
+		r.Push(queue(wrapped)) // enveloped, same state: folded as well
+		s.display.Post(marker)
+		<-ran
+	}
+	for range 4 {
+		cycle()
+	}
+	if allocs := testing.AllocsPerRun(200, cycle); allocs != 0 {
+		t.Errorf("command push + merge + drain: %.1f allocs, want 0", allocs)
+	}
+}
