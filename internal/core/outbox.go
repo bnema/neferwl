@@ -283,18 +283,16 @@ func (o *outbox) run(ctx context.Context, out chan<- ports.ClientCommand) {
 // deliver sends batch to out in order and recycles it; false when ctx ended
 // first (the rest of the batch is dropped with the session).
 func (o *outbox) deliver(ctx context.Context, out chan<- ports.ClientCommand, batch []outCmd) bool {
+	// Each entry's wait ends with its own send: a send that blocks midway
+	// must not count against the entries already out.
+	var wait time.Duration
 	for i := range batch {
 		select {
 		case out <- batch[i].command():
 		case <-ctx.Done():
 			return false
 		}
-	}
-	// The batch's first entry waited longest: they queued in order, and a
-	// merge keeps the first time.
-	var wait time.Duration
-	if len(batch) > 0 {
-		wait = time.Since(batch[0].at)
+		wait = max(wait, time.Since(batch[i].at))
 	}
 	o.mu.Lock()
 	o.stats.MaxQueueWait = max(o.stats.MaxQueueWait, wait)

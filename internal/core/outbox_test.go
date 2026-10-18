@@ -185,3 +185,28 @@ func TestOutboxStats(t *testing.T) {
 		}
 	})
 }
+
+// A send that blocks midway through a batch counts against the entries still
+// waiting, not the ones already out: the wait is per entry.
+func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := newOutbox()
+		out := make(chan ports.ClientCommand)
+		var none ports.SecurityState
+		o.push(out, ports.FocusWindow{ID: 1}, none, false) // queued at 0
+		time.Sleep(9 * time.Millisecond)
+		o.push(out, ports.FocusWindow{ID: 2}, none, false) // queued at 9 ms
+		go func() {
+			time.Sleep(time.Millisecond)
+			<-out // first out at 10 ms
+			time.Sleep(10 * time.Millisecond)
+			<-out // second out at 20 ms
+		}()
+		if !o.deliver(context.Background(), out, o.take()) {
+			t.Fatal("deliver stopped")
+		}
+		if got := o.takeStats().MaxQueueWait; got != 11*time.Millisecond {
+			t.Fatalf("max queue wait %v, want 11ms (the second entry's)", got)
+		}
+	})
+}

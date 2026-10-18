@@ -113,7 +113,8 @@ const commandStatsInterval = 10 * time.Second
 
 // logCommandStats reports command path latency every interval until ctx or the
 // display ends, so a live log shows whether the display goroutine delays input.
-// A period without applied commands logs nothing.
+// Only a period with every counter at zero logs nothing: a stalled display
+// applies nothing but still fills the ring.
 func (s *Server) logCommandStats(ctx context.Context) {
 	t := time.NewTicker(commandStatsInterval)
 	defer t.Stop()
@@ -132,7 +133,7 @@ func (s *Server) logCommandStats(ctx context.Context) {
 func (s *Server) reportCommandStats() {
 	rs := s.commands.takeStats()
 	applied, latency := s.commandStats.take()
-	if applied == 0 {
+	if applied == 0 && latency == 0 && rs == (ringStats{}) {
 		return
 	}
 	s.log.Info().

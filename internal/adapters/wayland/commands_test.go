@@ -290,3 +290,22 @@ func TestReportCommandStats(t *testing.T) {
 		t.Fatalf("stats not reset: %s", out.String())
 	}
 }
+
+// A stalled display applies nothing but fills its ring: the period still
+// logs, so a long stall is not hidden.
+func TestReportCommandStatsDuringStall(t *testing.T) {
+	var out lockedBuffer
+	log := zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: &out}).WithField("component", "wayland")
+	h := newAdmissionHarnessWith(t, 1, Options{}, log)
+	s := h.s
+	s.commands.mu.Lock()
+	s.commands.stats.maxLen = 5
+	s.commands.mu.Unlock()
+	s.reportCommandStats()
+	got := out.String()
+	for _, want := range []string{`"message":"command stats"`, `"commands":0`, `"max_queued":5`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("log lacks %s: %s", want, got)
+		}
+	}
+}

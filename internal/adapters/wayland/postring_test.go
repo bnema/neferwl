@@ -166,9 +166,10 @@ func TestPostRingPushStopsWithDisplay(t *testing.T) {
 func TestPostRingStatsPushBlock(t *testing.T) {
 	s, _, _, _, _, _ := presentServer(t)
 	r := newPostRing(s.display, 1, func(int) {})
-	release := make(chan struct{})
+	// A failed assertion still frees the display before server shutdown.
+	release := releaseOnce(t)
 	stalled := make(chan struct{})
-	s.display.Post(func() { close(stalled); <-release })
+	s.display.Post(func() { close(stalled); <-release.ch })
 	<-stalled
 	r.Push(1)
 	if st := r.takeStats(); st.maxLen != 1 || st.maxPushBlock != 0 {
@@ -177,10 +178,13 @@ func TestPostRingStatsPushBlock(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); r.Push(2) }() // full: waits for the drain
 	waitPushWaiting(t)
-	close(release)
+	seen := time.Now()
+	time.Sleep(2 * time.Millisecond) // the block lasts at least this
+	held := time.Since(seen)
+	release.do()
 	<-done
-	if st := r.takeStats(); st.maxPushBlock <= 0 {
-		t.Fatalf("stats = %+v, want a recorded push block", st)
+	if st := r.takeStats(); st.maxPushBlock < held {
+		t.Fatalf("stats = %+v, want a push block of at least %v", st, held)
 	}
 }
 
@@ -189,7 +193,11 @@ func TestPostRingStatsPushBlock(t *testing.T) {
 func waitPushWaiting(t *testing.T) {
 	t.Helper()
 	buf := make([]byte, 1<<20)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("no goroutine waits in postRing.Push:\n%s", buf[:runtime.Stack(buf, true)])
+		}
 		dump := string(buf[:runtime.Stack(buf, true)])
 		for _, g := range strings.Split(dump, "\n\n") {
 			if strings.Contains(g, "[select") && strings.Contains(g, "postRing") && strings.Contains(g, ").Push(") {
