@@ -161,6 +161,20 @@ type Config struct {
 		FlashDuration time.Duration
 		FlashColor    string
 	}
+	// Hint configures keyboard hint mode (action hint).
+	Hint struct {
+		// Enable turns the experimental hint mode on (hint.enable). It is
+		// read at startup: a reload keeps the startup value.
+		Enable bool
+		// LinksOnly limits the targets to links and URLs; false also
+		// includes buttons (hint.targets = clickable).
+		LinksOnly bool
+		// TextClick are the modifiers held for a click on a link found by
+		// OCR (hint.text-click); zero sends a plain click.
+		TextClick              Mods
+		Size                   float64 // logical pixels; zero selects automatic density sizing
+		Background, Foreground string  // empty derives from Border.Active
+	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig
 	// Rules are the window rules (rule.<name>.* keys), in first-seen order.
