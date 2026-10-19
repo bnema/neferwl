@@ -77,6 +77,10 @@ See [examples/config](../examples/config) for every key with its default.
 
 `<output>` is a connector such as `DP-2`, or a monitor key (`make model serial`).
 
+The focus flash marks the window, column or output an action changes with a brief
+inner border. Workspace switches and mouse focus do not trigger a flash.
+It runs when `animations = on`.
+
 ## Window rules
 
 Rules place an app's windows when they first open.

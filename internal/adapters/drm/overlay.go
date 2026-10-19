@@ -66,6 +66,10 @@ type overlayWin struct {
 // kept is scanoutCandidate's: a window drawn from a withdrawn content is
 // composed, never put on the plane.
 func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(ports.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
+	// A hardware plane would bypass the compositor-owned flash border.
+	if s.Flash != nil {
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "focus_flash"
+	}
 	if s.Transform != 0 {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "output_transform"
 	}
@@ -93,8 +97,8 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// buffer, and so is a colour the plane cannot show (raw PQ values
 		// on an SDR output, SDR on HDR without a pipeline). A dimmed
 		// window (a peeking stashed one) needs the veil drawn over it, a
-		// fading one its translucency.
-		// lift; an overview preview is drawn smaller than its buffer.
+		// fading one its translucency; an overview preview is drawn smaller
+		// than its buffer.
 		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
 				pick, pickAt, mode = w, i, m

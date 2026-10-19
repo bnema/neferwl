@@ -90,6 +90,10 @@ func fullscreenShown(s *ports.Scene) bool {
 // closed and fades out): the client may already have its buffer back, so
 // it is never put on a plane (nil: none is).
 func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int, kept func(ports.WindowID) bool) (ports.SurfaceContent, string) {
+	// A hardware plane would bypass the compositor-owned flash border.
+	if s.Flash != nil {
+		return ports.SurfaceContent{}, "focus_flash"
+	}
 	if s.Transform != 0 {
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
 		return ports.SurfaceContent{}, "output_transform"

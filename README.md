@@ -325,6 +325,10 @@ bind.cmd+code:13 = scale-up
 bind.cmd+code:12 = scale-down
 ```
 
+The focus flash marks the window, column or output an action changes with a brief
+inner border. Workspace switches and mouse focus do not trigger a flash.
+It runs when `animations = on`.
+
 Per-output defaults (replace `<name>` with a connector such as `DP-1`):
 
 ```text

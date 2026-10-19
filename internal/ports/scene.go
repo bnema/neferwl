@@ -94,6 +94,9 @@ func (s Scene) SameAs(o Scene) bool {
 		s.WorkspaceClip != o.WorkspaceClip || s.TileInset != o.TileInset || s.Dim != o.Dim || s.DimBehind != o.DimBehind {
 		return false
 	}
+	if (s.Flash == nil) != (o.Flash == nil) || (s.Flash != nil && *s.Flash != *o.Flash) {
+		return false
+	}
 	if s.CaptureScene != nil || o.CaptureScene != nil {
 		return false
 	}

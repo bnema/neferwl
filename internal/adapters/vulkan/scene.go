@@ -58,9 +58,33 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.bounds = outputBounds
 	w.layers(true)
 	w.popups(true)
+	w.focusFlash()
 	w.captureIndicators()
 	r.scratchDraws = w.draws
 	return w.draws
+}
+
+// focusFlash draws an inner border in logical coordinates, above the scene
+// but below capture indicators. Restore alpha so later overlays stay opaque.
+func (w *sceneWalk) focusFlash() {
+	f := w.s.Flash
+	if f == nil || f.Alpha <= 0 || f.Rect.W <= 0 || f.Rect.H <= 0 {
+		return
+	}
+	alpha := w.alpha
+	w.alpha = float32(f.Alpha)
+	defer func() { w.alpha = alpha }()
+	t := f.Rect
+	col := parseColor(f.Color)
+	b := min(f.Width, t.W/2, t.H/2)
+	if b <= 0 {
+		w.fill(w.physRect(t.X, t.Y, t.W, t.H), col)
+		return
+	}
+	w.fill(w.physRect(t.X, t.Y, t.W, b), col)
+	w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
+	w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
+	w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
 }
 
 // captureIndicators draws the compositor's capture indicator over everything

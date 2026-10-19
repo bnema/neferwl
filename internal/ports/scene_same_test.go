@@ -23,6 +23,7 @@ func sameSceneBase() Scene {
 		Layers:       []SceneLayer{{ID: 9, Rect: Rect{W: 100, H: 5}}},
 		Capture:      &SceneCapture{Shown: 1, Excluded: []WindowID{3}},
 
+		Flash:             &FocusFlash{Rect: Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
 		CaptureIndicators: []CaptureIndicator{{Rect: Rect{W: 4, H: 4}}},
 	}
 }
@@ -36,6 +37,11 @@ func TestSceneSameAs(t *testing.T) {
 	assert.True(t, Scene{}.SameAs(Scene{Seq: 3}))
 
 	for name, edit := range map[string]func(*Scene){
+		"flash nil":         func(s *Scene) { s.Flash = nil },
+		"flash rect":        func(s *Scene) { s.Flash.Rect.X++ },
+		"flash width":       func(s *Scene) { s.Flash.Width++ },
+		"flash color":       func(s *Scene) { s.Flash.Color = "#ffffff" },
+		"flash alpha":       func(s *Scene) { s.Flash.Alpha = 0.2 },
 		"window rect":       func(s *Scene) { s.Windows[0].Rect.X++ },
 		"window fade":       func(s *Scene) { s.Windows[0].Fade = 0.5 },
 		"window zoom":       func(s *Scene) { s.Windows[0].Zoom = 0.9 },

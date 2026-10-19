@@ -8,6 +8,8 @@ WAYLAND_DISPLAY=<name from the log> foot
 ```
 
 - `latest.png` shows the current frame. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows.
+- `--size 640x360,640x360` creates two outputs, arranged left to right,
+  for testing `focus-monitor-left/right` and moving columns between outputs.
 - With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
 - `--timeout 5s` stops NeferWL after 5 seconds.
 - `grim` and recorders work too; see [Screen capture](capture.md).
