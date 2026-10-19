@@ -33,9 +33,15 @@ const (
 type hintTarget struct {
 	x, y   float64
 	window WindowID
+	source hintSourceGeom // source window and its request-time client geometry
 	label  string
 	rect   ports.Rect
 	text   bool // found by OCR
+}
+
+type hintSourceGeom struct {
+	id   WindowID
+	rect ports.Rect
 }
 
 type hintState struct {
@@ -161,10 +167,11 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 			// A layer surface, or a window of another output.
 			continue
 		}
-		if !c.hintOwned(sc, t, root) {
+		source, ok := c.hintSource(sc, t, root)
+		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, rect: t.Rect, text: t.Text})
+		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, text: t.Text})
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
@@ -188,22 +195,24 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 	return true
 }
 
-// hintOwned reports whether the window under a target is the one it was
-// scanned on. An accessibility target names its window; an OCR target only
-// counts over a window that was visible when the scan was requested and has
-// not moved or resized since.
-func (c *Core) hintOwned(sc *screen, t ports.HintTarget, root WindowID) bool {
-	if t.Window != 0 {
-		return root == t.Window
+// hintSource resolves the request-time source window only while its client
+// geometry is unchanged. This applies equally to accessibility and OCR targets.
+func (c *Core) hintSource(sc *screen, t ports.HintTarget, root WindowID) (hintSourceGeom, bool) {
+	if t.Window != 0 && root != t.Window {
+		return hintSourceGeom{}, false
 	}
 	for _, w := range c.hint.windows {
-		if w.ID != root {
-			continue
+		if w.ID == root && c.hintSourceUnchanged(sc, hintSourceGeom{id: w.ID, rect: w.Rect}) {
+			return hintSourceGeom{id: w.ID, rect: w.Rect}, true
 		}
-		for _, p := range sc.shownLayout() {
-			if p.ID == root {
-				return c.clientRect(p) == w.Rect
-			}
+	}
+	return hintSourceGeom{}, false
+}
+
+func (c *Core) hintSourceUnchanged(sc *screen, w hintSourceGeom) bool {
+	for _, p := range sc.shownLayout() {
+		if p.ID == w.id {
+			return c.clientRect(p) == w.rect
 		}
 	}
 	return false
@@ -340,7 +349,8 @@ func (c *Core) hintClickable(t hintTarget) bool {
 		return false
 	}
 	id, _, _ := c.hit(t.x, t.y)
-	return id == t.window
+	sc, _ := c.screenOf(t.source.id)
+	return id == t.window && sc != nil && c.hintSourceUnchanged(sc, t.source)
 }
 
 // hintLabels are the labels to draw on sc: those still matching what was

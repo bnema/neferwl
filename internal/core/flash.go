@@ -87,30 +87,9 @@ func (c *Core) flashTick() bool {
 		f.timerC, f.timerStop = newTimer(c.opts.Clock, wait)
 		return false
 	}
-	layout := sc.mon.Layout()
-	var rect Rect
-	if target.level == flashMonitor {
-		o := sc.mon.Output()
-		rect = Rect{W: o.W, H: o.H}
-	} else {
-		at := slices.IndexFunc(layout, func(p Placement) bool { return p.ID == target.window && !p.Hidden && p.Preview == 0 })
-		if at < 0 || layout[at].Fullscreen {
-			return false
-		}
-		rect = layout[at].Rect
-		if target.level == flashColumn {
-			w := sc.mon.Current()
-			col := w.columnOf(target.window)
-			if col < 0 {
-				return false
-			}
-			for _, p := range layout {
-				if p.Hidden || !slices.Contains(w.Columns[col].Windows, p.ID) {
-					continue
-				}
-				rect = union(rect, p.Rect)
-			}
-		}
+	rect, ok := c.flashRect(target, sc)
+	if !ok {
+		return false
 	}
 	if at, ok := f.lastStarts[target]; ok && now.Sub(at) < flashCooldown {
 		return false
@@ -139,7 +118,7 @@ func (c *Core) advanceFlash(only *screen) {
 		return
 	}
 	sc := c.screens[c.screenIndex(f.running.output)]
-	if !c.flashVisible(*f.running, sc) {
+	if rect, ok := c.flashRect(*f.running, sc); !ok || rect != f.rect {
 		c.stopFlash()
 		return
 	}
@@ -156,27 +135,50 @@ func (c *Core) advanceFlash(only *screen) {
 	f.value = c.cfg.Focus.FlashOpacity * (1 - float64(max(elapsed, 0))/float64(d))
 }
 
-// flashVisible checks the current layout, not leaving placements retained for
-// transitions: an old border must not outlive its target's visibility.
-func (c *Core) flashVisible(target flashTarget, sc *screen) bool {
+// flashRect resolves the current target, never retaining a border after its
+// visibility or geometry changes. stopFlash leaves the published sample intact
+// so the scene diff also damages the old border.
+func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, bool) {
 	if sc.mon.ov.open {
-		return false
+		return Rect{}, false
 	}
 	if target.level == flashMonitor {
-		return true
+		o := sc.mon.Output()
+		return Rect{W: o.W, H: o.H}, true
 	}
 	owner, _ := c.screenOf(target.window)
 	if owner != sc || c.windows.lookup(target.window).client.ID == 0 {
-		return false
+		return Rect{}, false
 	}
 	view := sc.mon.viewport()
 	c.flash.layout = sc.mon.layoutInto(c.flash.layout)
+	var rect Rect
+	found := false
 	for _, p := range c.flash.layout {
 		if p.ID == target.window {
-			return !p.Fullscreen && p.Preview == 0 && view.shows(p)
+			if p.Fullscreen || p.Preview != 0 || !view.shows(p) {
+				return Rect{}, false
+			}
+			rect, found = p.Rect, true
+			break
 		}
 	}
-	return false
+	if !found {
+		return Rect{}, false
+	}
+	if target.level == flashColumn {
+		w := sc.mon.Current()
+		col := w.columnOf(target.window)
+		if col < 0 {
+			return Rect{}, false
+		}
+		for _, p := range c.flash.layout {
+			if !p.Hidden && slices.Contains(w.Columns[col].Windows, p.ID) {
+				rect = union(rect, p.Rect)
+			}
+		}
+	}
+	return rect, true
 }
 
 func (c *Core) flashFor(sc *screen) *ports.FocusFlash {

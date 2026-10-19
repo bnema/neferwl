@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -312,4 +313,43 @@ func TestCloseReapsLateTransport(t *testing.T) {
 	require.Empty(t, targets)
 	require.Empty(t, covered)
 	require.NoError(t, s.Close()) // idempotent
+}
+
+func TestWalkWideTreeStaysWithinBudget(t *testing.T) {
+	tr := newMocktransport(t)
+	children := make([]ref, 4096)
+	for i := range children {
+		children[i] = ref{":1.5", fmt.Sprintf("/node%d", i)}
+	}
+	visited := 0
+	tr.EXPECT().Do(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(
+		func(_ time.Time, _ time.Duration, calls []call) []reply {
+			visited += len(calls) / 3
+			require.LessOrEqual(t, visited, maxWalkNodes)
+			rep := make([]reply, len(calls))
+			for i, c := range calls {
+				switch c.op {
+				case opChildren:
+					rep[i].refs = children
+				case opRole:
+					rep[i].u = roleLink
+				case opState:
+					rep[i].state = stShowing | 1<<stateVisible
+				}
+			}
+			return rep
+		}).Twice()
+	s := &Source{tr: tr}
+	// A full second level replies with another 4096 children each. There is
+	// no remaining budget, so none of those millions of refs may be copied.
+	var out []ref
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	out = s.walk(func(calls []call) []reply { return tr.Do(time.Time{}, time.Second, calls) }, ref{":1.5", "/frame"}, false)
+	runtime.ReadMemStats(&after)
+	require.Len(t, out, maxWalkNodes)
+	require.Equal(t, maxWalkNodes, visited)
+	// Normal replies and call batches take only a few MB; the old append-
+	// then-truncate path copied hundreds of MB for this tree.
+	require.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(32<<20))
 }

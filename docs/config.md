@@ -335,7 +335,8 @@ small or low-contrast text.
 
 ### Requirements
 
-- Accessibility: NeferWL turns it on at startup. Some apps need a flag:
+- Accessibility: NeferWL enables it lazily on the first hint scan that queries
+  app windows. Apps started before then may need restarting. Some apps need a flag:
   - Chromium: `--force-renderer-accessibility`
   - Electron: `ACCESSIBILITY_ENABLED=1`
   - Qt: `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`
