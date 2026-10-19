@@ -239,7 +239,12 @@ func (x *xdgSurface) GetToplevel(r *xdgshell.Surface, id uint32) {
 		} else if buffer && !w.mapped && x.acked {
 			w.mapped = true
 			w.gen++
-			slot := x.server.slotToken(r.Client())
+			// Placement claims are for a new toplevel, not later remaps.
+			// Ordinary commits, popups and remaps need no /proc lookup.
+			var slot string
+			if w.gen == 1 {
+				slot = x.server.slotToken(r.Client())
+			}
 			// Its size comes with the commit, in WindowResized (afterCommit).
 			w.floating = w.floats()
 			var parent ports.WindowID

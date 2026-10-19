@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	portsmocks "github.com/bnema/neferwl/internal/mocks/ports"
@@ -40,46 +39,23 @@ func claimToken(req ports.SpawnRequest) string {
 	return strings.TrimPrefix(req.Env[0], ports.SlotEnv+"=")
 }
 
-// Wayland reads tokens only while slots are pending, so the flag is in the
-// command channel before the spawn can reach the launcher, also when the
-// display reads nothing: in a synctest bubble the sender is waited on until
-// it blocks on the unread channel, and the spawn channel must still be empty.
-func TestSpawnStashPublishesPendingBeforeSpawn(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		now := claimBase
-		commands := make(chan ports.ClientCommand)
-		spawn := make(chan ports.SpawnRequest, 1)
-		c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
-		c.out.start()
-		go c.out.run(ctx, commands)
-		done := make(chan error, 1)
-		go func() { done <- c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"firefox"}}, false) }()
-		synctest.Wait()
-		if len(spawn) != 0 {
-			t.Fatal("spawned before the pending flag was delivered")
-		}
-		select {
-		case err := <-done:
-			t.Fatalf("spawnStash returned before the flag was read: %v", err)
-		default:
-		}
-		if p, ok := (<-commands).(ports.SlotsPending); !ok || !p.Pending {
-			t.Fatal("first command is not SlotsPending{true}")
-		}
-		synctest.Wait()
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
-		if len(spawn) != 1 {
-			t.Fatal("no spawn after the flag")
-		}
-	})
+// A stalled command transport must not delay a placement spawn.
+func TestSpawnStashIndependentOfCommandDrain(t *testing.T) {
+	now := claimBase
+	commands := make(chan ports.ClientCommand)
+	spawn := make(chan ports.SpawnRequest, 1)
+	c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
+	if err := c.spawnStash(context.Background(), c.cur().mon.Current(), [][]string{{"firefox"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	req := <-spawn
+	c.placement.place(c, ports.WindowMapped{ID: 5, Slot: claimToken(req)})
+	if w := c.cur().mon.Current(); len(w.Stash) != 1 || w.Stash[0].ID != 5 {
+		t.Fatal("placement lost while commands unread")
+	}
 }
 
-// A send the launcher queue suppresses leaves no claim behind, and the
-// pending flag falls again at the next publish.
+// A send the launcher queue suppresses leaves no claim behind.
 func TestSpawnStashSuppressedLeavesNoClaim(t *testing.T) {
 	now := claimBase
 	commands := make(chan ports.ClientCommand, 8)
@@ -89,15 +65,6 @@ func TestSpawnStashSuppressedLeavesNoClaim(t *testing.T) {
 	}
 	if c.placement.anyPending() {
 		t.Fatal("suppressed claims stayed pending")
-	}
-	if v := (<-commands).(ports.SlotsPending); !v.Pending {
-		t.Fatal("pending not announced")
-	}
-	if err := c.publishPending(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if v := (<-commands).(ports.SlotsPending); v.Pending {
-		t.Fatal("stale pending flag not republished")
 	}
 }
 
@@ -112,25 +79,17 @@ func TestSpawnStashCancelsClaimsFromFirstUnissued(t *testing.T) {
 		wantErr   error
 	}{
 		{"queue of one", 1, false, 1, nil},
-		{"publication fails", 4, true, 0, context.Canceled},
+		{"context cancelled", 4, true, 0, context.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			now := claimBase
-			commands := make(chan ports.ClientCommand) // unread: a send blocks until the context ends
+			commands := make(chan ports.ClientCommand) // unread: spawns are independent of command delivery
 			spawn := make(chan ports.SpawnRequest, tc.queue)
 			c := stashSpawnCore(t, commands, spawn, fixedClock(t, &now))
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			if tc.cancelled {
 				cancel()
-			} else {
-				// An unread unbuffered channel would block the flag: read it.
-				go func() {
-					select {
-					case <-commands:
-					case <-ctx.Done():
-					}
-				}()
 			}
 			err := c.spawnStash(ctx, c.cur().mon.Current(), [][]string{{"a"}, {"b"}}, false)
 			if !errors.Is(err, tc.wantErr) {

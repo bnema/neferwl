@@ -258,8 +258,8 @@ func TestCommandRingStats(t *testing.T) {
 	if st.maxLen != 3 || st.merged != 2 || st.maxPushBlock != 0 {
 		t.Fatalf("stats = %+v, want maxLen 3, merged 2, no block", st)
 	}
-	if st := r.takeStats(); st != (ringStats{}) {
-		t.Fatalf("stats after take = %+v, want zero", st)
+	if st := r.takeStats(); st != (ringStats{maxLen: 3}) {
+		t.Fatalf("stats after take = %+v, want current occupancy only", st)
 	}
 	release.do()
 }

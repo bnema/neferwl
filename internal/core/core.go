@@ -204,7 +204,6 @@ type sentCache struct {
 	outputs    ports.SetOutputs
 	state      ports.State
 	workspaces ports.Workspaces
-	pending    bool // spawn placement pending
 }
 
 func keyName(s string) string {
@@ -364,23 +363,6 @@ func (c *Core) apply(cfg ports.Config) error {
 	return nil
 }
 
-// publishPending tells wayland at once when slots start waiting, before
-// their windows can map.
-func (c *Core) publishPending(ctx context.Context) error {
-	if p := c.placement.anyPending(); p != c.sent.pending {
-		// Pending must be in wayland's queue before the spawn that follows.
-		send := c.command
-		if p {
-			send = c.commandFlushed
-		}
-		if err := send(ctx, ports.SlotsPending{Pending: p}); err != nil {
-			return err
-		}
-		c.sent.pending = p
-	}
-	return nil
-}
-
 // spawnSlots starts the slots queued by config. With shown set (the user
 // just switched to another workspace), it also refills the empty slots of
 // the workspace now on screen.
@@ -406,13 +388,11 @@ func (c *Core) spawnSlots(ctx context.Context, shown bool) error {
 		}
 		started[key] = true
 		req := c.spawnSlot(key)
-		// Wayland must read slot tokens before this window can map.
-		pendingErr := c.publishPending(ctx)
-		if pendingErr != nil || c.protectionRequested() {
+		if err := ctx.Err(); err != nil || c.protectionRequested() {
 			c.placement.dropSlot(key)
 			st.stale = false
 			c.toSpawn = append(c.toSpawn, keys[i:]...)
-			return pendingErr
+			return err
 		}
 		if !c.trySpawn(ctx, req) {
 			c.placement.dropSlot(key)
@@ -471,26 +451,6 @@ func (c *Core) now() time.Time {
 func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	_, err := c.queue(ctx, v)
 	return err
-}
-
-// commandFlushed is command for a command that another channel depends on:
-// it returns once v is in the command channel. SlotsPending must reach
-// wayland before the spawn whose window it lets wayland claim; the spawn
-// goes on its own channel, so queue order alone does not keep them in order.
-func (c *Core) commandFlushed(ctx context.Context, v ports.ClientCommand) error {
-	seq, err := c.queue(ctx, v)
-	if err != nil || seq == 0 {
-		return err
-	}
-	if err := c.out.flush(ctx, c.ch.Commands, seq); err != nil {
-		return err
-	}
-	// As a blocked send did: the rest of the event must not go on under a
-	// new epoch.
-	if c.inputEpochChanged() {
-		return errSecurityChanged
-	}
-	return nil
 }
 
 // queue pushes v to the outbox and returns its sequence number (0: not
@@ -687,9 +647,6 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	}
 	// Output layout must be known before an automatic terminal can map.
 	if err := c.spawnEmpty(ctx); err != nil {
-		return err
-	}
-	if err := c.publishPending(ctx); err != nil {
 		return err
 	}
 	focus := c.keyboardFocus()
@@ -1120,7 +1077,7 @@ func (c *Core) Run(ctx context.Context) error {
 		c.startup[i] = slices.Clone(argv)
 	}
 	c.spawnStartup(ctx)
-	if c.spawnSlots(ctx, false) != nil || c.publishPending(ctx) != nil {
+	if c.spawnSlots(ctx, false) != nil {
 		return nil
 	}
 	c.publishState()
@@ -1355,13 +1312,11 @@ func (c *Core) spawnEmpty(ctx context.Context) error {
 }
 
 // dispatch sends reqs to the launcher and reports how many it issued.
-// Wayland reads claim tokens only while it knows spawns are pending, so the
-// flag is published before the first send. From the first request that is
-// not issued (publication failed, or the gate suppressed the send), the
-// rest are not sent and their claims are cancelled.
+// From the first request that is not issued (context ended, or the gate
+// suppressed the send), the rest are not sent and their claims are cancelled.
 func (c *Core) dispatch(ctx context.Context, reqs []ports.SpawnRequest) (issued int, err error) {
-	err = c.publishPending(ctx)
 	for i, req := range reqs {
+		err = ctx.Err()
 		if err != nil || !c.trySpawn(ctx, req) {
 			for _, suppressed := range reqs[i:] {
 				c.cancelClaim(suppressed)

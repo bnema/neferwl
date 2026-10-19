@@ -51,8 +51,7 @@ type CommandStats struct {
 	// MaxBacklog is the longest queue seen.
 	MaxBacklog uint64
 	// MaxQueueWait is the longest time a queued command took to reach the
-	// channel; MaxFlushWait the longest time core waited in flush (a spawn's
-	// SlotsPending, or a full outbox).
+	// channel; MaxFlushWait the longest time core waited for outbox room.
 	MaxQueueWait, MaxFlushWait time.Duration
 }
 
@@ -61,6 +60,7 @@ func (o *outbox) takeStats() CommandStats {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	s := o.stats
+	s.MaxBacklog = max(s.MaxBacklog, o.pushed-o.sent)
 	o.stats = CommandStats{}
 	return s
 }
@@ -171,8 +171,7 @@ func (o *outbox) push(out chan<- ports.ClientCommand, v ports.ClientCommand, sta
 }
 
 // flush waits until the entry seq is in out, or ctx ends. It is for the
-// rare command another channel depends on (SlotsPending before a spawn);
-// everything else never waits. Without a running sender (core driven
+// bounded outbox backpressure. Without a running sender (core driven
 // without Run), it delivers the queue itself, in order.
 func (o *outbox) flush(ctx context.Context, out chan<- ports.ClientCommand, seq uint64) error {
 	var start time.Time

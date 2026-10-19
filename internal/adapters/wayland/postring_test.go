@@ -207,3 +207,37 @@ func waitPushWaiting(t *testing.T) {
 		runtime.Gosched()
 	}
 }
+
+func TestPostRingStatsSampleStalledOccupancy(t *testing.T) {
+	s, _, _, _, _, _ := presentServer(t)
+	release := make(chan struct{})
+	stalled := make(chan struct{})
+	s.display.Post(func() { close(stalled); <-release })
+	<-stalled
+	// Release even if an assertion fails, so server cleanup cannot deadlock.
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	r := newPostRing(s.display, 2, func(int) {})
+	for i := range 2 {
+		if !r.Push(i) {
+			t.Fatal("push refused")
+		}
+	}
+	for range 2 {
+		if got := r.takeStats().maxLen; got != 2 {
+			t.Fatalf("occupancy %d, want 2", got)
+		}
+	}
+	close(release)
+	released = true
+	if !s.display.Do(func() {}) {
+		t.Fatal("display stopped")
+	}
+	if got := r.takeStats().maxLen; got != 0 {
+		t.Fatalf("recovered occupancy %d", got)
+	}
+}

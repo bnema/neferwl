@@ -120,12 +120,6 @@ type SetOutputs struct {
 
 func (SetOutputs) clientCommand() {}
 
-// SlotsPending tells wayland whether a slot waits for its window. Only then
-// does it read the SlotEnv of mapping clients.
-type SlotsPending struct{ Pending bool }
-
-func (SlotsPending) clientCommand() {}
-
 // CloseWindow carries core → wayland close requests.
 type CloseWindow struct{ ID WindowID }
 

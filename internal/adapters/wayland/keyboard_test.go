@@ -129,12 +129,16 @@ type eventsProxy struct {
 	wlturbo.BaseProxy
 	opcodes []uint16
 	keymaps []string
-	locked  []uint32 // locked modifiers of each modifiers event
-	depress []uint32 // depressed modifiers of each modifiers event
+	locked  []uint32      // locked modifiers of each modifiers event
+	depress []uint32      // depressed modifiers of each modifiers event
+	repeat  chan struct{} // optional protocol barrier notification
 }
 
 func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
 	p.opcodes = append(p.opcodes, e.Opcode)
+	if e.Opcode == uint16(wayland.KeyboardEventRepeatInfo) && p.repeat != nil {
+		p.repeat <- struct{}{}
+	}
 	if e.Opcode == uint16(wayland.KeyboardEventModifiers) {
 		e.Uint32() // serial
 		p.depress = append(p.depress, e.Uint32())
@@ -267,30 +271,11 @@ func TestSetModifiersOverrideAndRestore(t *testing.T) {
 	set := make(chan struct{})
 	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; id = s.seat.focused; close(set) })
 	<-set
-	// A marker command applied on the display means every command sent before
-	// it was applied (they apply in order); the roundtrip then delivers the
-	// events they sent.
-	var pending bool
 	wait := func() {
 		t.Helper()
-		pending = !pending
-		commands <- ports.SlotsPending{Pending: pending}
-		deadline := time.Now().Add(2 * time.Second)
-		for {
-			var now bool
-			if !s.display.Do(func() { now = s.slotsPending }) {
-				t.Fatal("display stopped")
-			}
-			if now == pending {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("commands not applied")
-			}
-			time.Sleep(time.Millisecond)
-		}
-		roundtrip(t, target)
+		syncCommands(t, s, commands, target)
 	}
+
 	proxy.depress, proxy.locked = nil, nil
 	commands <- ports.SetModifiers{ID: id + 100, Mods: ports.ModCtrl}
 	wait()
@@ -339,5 +324,56 @@ func TestSetModifiersRestoreAdoptsCoreState(t *testing.T) {
 	roundtrip(t, target)
 	if !slices.Equal(proxy.locked, []uint32{capsLocked}) || !slices.Equal(proxy.depress, []uint32{0}) {
 		t.Fatalf("restore depressed %v locked %v", proxy.depress, proxy.locked)
+	}
+}
+
+// syncCommands observes an existing command through the real protocol. A
+// repeat_info emitted by SetKeymap means all preceding commands were applied;
+// merely emptying the channel or posting a display callback cannot prove that.
+func syncCommands(t *testing.T, s *Server, commands chan<- ports.ClientCommand, c *wlturbo.Display) {
+	t.Helper()
+	var needsKeymap bool
+	if !s.display.Do(func() { needsKeymap = s.seat.keymapFD < 0 }) {
+		t.Fatal("display stopped")
+	}
+	if needsKeymap {
+		keymap := keymapText(t)
+		if !s.display.Do(func() { s.setKeymap(ports.SetKeymap{Keymap: keymap}) }) {
+			t.Fatal("display stopped")
+		}
+	}
+	seat := bindVersion(t, c, "wl_seat", 4)
+	registerProtocol(t, c, seat)
+	id := c.AllocateID()
+	p := &eventsProxy{repeat: make(chan struct{}, 2)}
+	p.SetID(id)
+	registerWireProxy(c, p)
+	requestProtocol(t, c, seat, wayland.SeatRequestGetKeyboard, id)
+	roundtrip(t, c)
+	select {
+	case <-p.repeat:
+	default:
+		t.Fatal("missing initial repeat_info")
+	}
+	var rate, delay int
+	if !s.display.Do(func() { rate, delay = s.seat.repeatRate, s.seat.repeatDelay }) {
+		t.Fatal("display stopped")
+	}
+	commands <- ports.SetKeymap{RepeatRate: rate, RepeatDelay: delay}
+	// Dispatch blocks on the protocol socket; close it on timeout to bound
+	// failure without polling the display or sleeping for command delivery.
+	timeout := time.AfterFunc(2*time.Second, func() { _ = c.Close() })
+	defer timeout.Stop()
+	for {
+		select {
+		case <-p.repeat:
+			requestProtocol(t, c, id, wayland.KeyboardRequestRelease)
+			roundtrip(t, c)
+			return
+		default:
+		}
+		if err := c.Dispatch(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

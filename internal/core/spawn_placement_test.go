@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -32,15 +31,7 @@ func TestSlotClaimWithoutWorkspace(t *testing.T) {
 	if s, _ := c.screenOf(21); s == nil {
 		t.Fatal("window did not map normally")
 	}
-	// Claim status is also reflected on the client command port.
-	commands := make(chan ports.ClientCommand, 1)
-	c.ch.Commands = commands
-	if err := c.publishPending(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if got := (<-commands).(ports.SlotsPending); !got.Pending {
-		t.Fatal("pending claim was not retained")
-	}
+
 }
 
 func TestExpiredTerminalTokenMapsNormally(t *testing.T) {
