@@ -198,13 +198,13 @@ func (d *dndClient) expect(t *testing.T, name string) dndEvent {
 }
 
 // none checks that no event arrives.
-func (d *dndClient) none(t *testing.T) {
+func (d *dndClient) none(t *testing.T, commands chan<- ports.ClientCommand) {
 	t.Helper()
-	for range 2 {
-		if err := d.c.Roundtrip(); err != nil {
-			t.Fatal(err)
-		}
-		time.Sleep(30 * time.Millisecond)
+	// Observing a key sent through the command queue proves earlier
+	// compositor commands ran. The roundtrip then drains wire events.
+	d.key(t, commands)
+	if err := d.c.Roundtrip(); err != nil {
+		t.Fatal(err)
 	}
 	select {
 	case ev := <-d.log:
@@ -366,17 +366,26 @@ func dndNextEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientE
 }
 
 // dndNoEvent checks that no client event of type T is pending.
-func dndNoEvent[T ports.ClientEvent](t *testing.T, events <-chan ports.ClientEvent) {
+func dndNoEvent[T ports.ClientEvent](t *testing.T, s *Server, events <-chan ports.ClientEvent) {
 	t.Helper()
-	time.Sleep(50 * time.Millisecond)
+	// Callers have observed completion of the triggering request/command.
+	// Put a marker behind its emitted events, including the forwarding queue.
+	marker := ports.WindowResized{ID: ^ports.WindowID(0)}
+	if !s.display.Do(func() { s.emit(marker) }) {
+		t.Fatal("display stopped")
+	}
+	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case ev := <-events:
+			if v, ok := ev.(ports.WindowResized); ok && v.ID == marker.ID {
+				return
+			}
 			if _, ok := ev.(T); ok {
 				t.Fatalf("unexpected %T: %+v", ev, ev)
 			}
-		default:
-			return
+		case <-deadline:
+			t.Fatal("no event barrier")
 		}
 	}
 }
@@ -483,10 +492,10 @@ func TestDataDragBetweenClients(t *testing.T) {
 	requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestFinish)
 	p.a.expect(t, "finished")
 	requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestDestroy)
-	p.a.none(t)
-	p.b.none(t)
+	p.a.none(t, p.commands)
+	p.b.none(t, p.commands)
 	// core ended the drag: wayland does not echo it.
-	dndNoEvent[ports.DataDragEnded](t, p.events)
+	dndNoEvent[ports.DataDragEnded](t, p.s, p.events)
 }
 
 // The action follows wlroots: the preferred one if both allow it, else the
@@ -534,7 +543,7 @@ func TestDataDragRefusedDrop(t *testing.T) {
 		p.start(t, 0)
 		p.commands <- ports.DataDragDrop{}
 		p.a.expect(t, "cancelled")
-		p.b.none(t)
+		p.b.none(t, p.commands)
 	})
 	t.Run("not accepted", func(t *testing.T) {
 		p := newDndPair(t)
@@ -543,7 +552,7 @@ func TestDataDragRefusedDrop(t *testing.T) {
 		p.commands <- ports.DataDragDrop{}
 		p.b.expect(t, "leave")
 		p.a.expect(t, "cancelled")
-		p.b.none(t)
+		p.b.none(t, p.commands)
 	})
 	t.Run("escape", func(t *testing.T) {
 		p := newDndPair(t)
@@ -552,7 +561,7 @@ func TestDataDragRefusedDrop(t *testing.T) {
 		p.commands <- ports.DataDragCancel{}
 		p.b.expect(t, "leave")
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragEnded](t, p.events)
+		dndNoEvent[ports.DataDragEnded](t, p.s, p.events)
 	})
 }
 
@@ -587,7 +596,7 @@ func TestDataDragSourceDestroyed(t *testing.T) {
 	dndNextEvent[ports.DataDragEnded](t, p.events)
 	p.commands <- ports.DataDragMotion{ID: p.b.window, X: 9, Y: 9}
 	p.commands <- ports.DataDragDrop{}
-	p.b.none(t)
+	p.b.none(t, p.commands)
 }
 
 // A drag whose origin client dies ends the same way.
@@ -608,7 +617,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		serial := p.a.press(t, p.commands)
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial-1)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("other client's press", func(t *testing.T) {
 		p := newDndPair(t)
@@ -616,7 +625,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		serial := p.b.press(t, p.commands)
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("key serial", func(t *testing.T) {
 		p := newDndPair(t)
@@ -625,7 +634,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		serial := p.a.key(t, p.commands)
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("serial after the release", func(t *testing.T) {
 		p := newDndPair(t)
@@ -633,7 +642,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		p.a.release(t, p.commands)
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("other surface of the client", func(t *testing.T) {
 		p := newDndPair(t)
@@ -641,7 +650,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		other := p.a.surfaceNew(t)
 		p.a.startDragFrom(t, p.a.source(t, actCopy, "text/plain"), other, 0, serial)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("press of the first button", func(t *testing.T) {
 		// A second button does not make a new grab: only the first serial.
@@ -675,7 +684,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		p.a.key(t, p.commands) // the release is applied once the key is seen
 		p.a.startDrag(t, p.a.source(t, actCopy, "text/plain"), 0, serial)
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("used source", func(t *testing.T) {
 		p := newDndPair(t)
@@ -692,7 +701,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		other := p.a.source(t, actCopy, "text/plain")
 		p.a.startDrag(t, other, 0, p.a.press(t, p.commands))
 		p.a.expect(t, "cancelled")
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 	t.Run("icon with another role", func(t *testing.T) {
 		p := newDndPair(t)
@@ -701,7 +710,7 @@ func TestDataDragInvalidStart(t *testing.T) {
 		// The origin toplevel is a role already.
 		requestProtocol(t, p.a.c, p.a.device.ID(), wayland.DataDeviceRequestStartDrag, src, p.a.surf, p.a.surf, serial)
 		expectProtocolError(t, p.a.c, p.a.device.ID(), uint32(wayland.DataDeviceErrorRole))
-		dndNoEvent[ports.DataDragStarted](t, p.events)
+		dndNoEvent[ports.DataDragStarted](t, p.s, p.events)
 	})
 }
 
@@ -712,7 +721,7 @@ func TestDataDragWithoutSource(t *testing.T) {
 	p.a.startDrag(t, 0, 0, p.a.press(t, p.commands))
 	dndNextEvent[ports.DataDragStarted](t, p.events)
 	p.commands <- ports.DataDragFocus{ID: p.b.window, X: 1, Y: 1}
-	p.b.none(t)
+	p.b.none(t, p.commands)
 	p.commands <- ports.DataDragFocus{ID: p.a.window, X: 4, Y: 5}
 	if ev := p.a.expect(t, "enter"); ev.n != 0 || ev.x != 4 || ev.y != 5 {
 		t.Fatalf("enter %+v", ev)
@@ -837,7 +846,7 @@ func TestDataDragIcon(t *testing.T) {
 		t.Fatalf("icon %+v", got)
 	}
 	// The icon never takes input.
-	dndNoEvent[ports.InputRegionChanged](t, p.events)
+	dndNoEvent[ports.InputRegionChanged](t, p.s, p.events)
 
 	p.commands <- ports.DataDragCancel{}
 	p.a.expect(t, "cancelled")
@@ -1064,8 +1073,8 @@ func TestDataDragAsk(t *testing.T) {
 	requestProtocol(t, p.b.c, id, wayland.DataOfferRequestAccept, uint32(2), "text/plain")
 	requestProtocol(t, p.b.c, id, wayland.DataOfferRequestSetActions, actCopy|actMove, actMove)
 	p.a.expect(t, "target")
-	p.b.none(t) // no offer.action after the drop
-	p.a.none(t) // the final action waits for the finish
+	p.b.none(t, p.commands) // no offer.action after the drop
+	p.a.none(t, p.commands) // the final action waits for the finish
 	requestProtocol(t, p.b.c, id, wayland.DataOfferRequestFinish)
 	if ev := p.a.expect(t, "action"); ev.n != actMove {
 		t.Fatalf("action %+v", ev)
@@ -1104,8 +1113,7 @@ func TestDataDragLegacyTarget(t *testing.T) {
 		p.commands <- ports.DataDragFocus{ID: p.b.window, X: 1, Y: 1}
 		p.b.until(t, "enter")
 		id := p.b.lastOffer(t)
-		requestProtocol(t, p.b.c, id, wayland.DataOfferRequestAccept, uint32(1), "text/plain")
-		p.a.expect(t, "target")
+		// Legacy accept is feedback only: deliberately never send it.
 		return p, id
 	}
 	t.Run("move only", func(t *testing.T) {
@@ -1150,5 +1158,103 @@ func TestDataDragIconOffsetReplacedBeforeCommit(t *testing.T) {
 	}
 	if got := dndNextEvent[ports.DataDragIcon](t, p.events); got != (ports.DataDragIcon{ID: id, X: -5, Y: -7, W: 8, H: 6}) {
 		t.Fatalf("icon %+v", got)
+	}
+}
+
+func TestDataDragLastTargetDeviceReleased(t *testing.T) {
+	p := newDndPair(t)
+	p.start(t, 0)
+	offer := p.enter(t)
+	requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestAccept, uint32(1), "text/plain")
+	requestProtocol(t, p.b.c, offer, wayland.DataOfferRequestSetActions, actCopy, actCopy)
+	p.a.expect(t, "target")
+	p.a.expect(t, "action")
+	p.b.expect(t, "offer_action")
+	requestProtocol(t, p.b.c, p.b.device.ID(), wayland.DataDeviceRequestRelease)
+	if err := p.b.c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	p.commands <- ports.DataDragDrop{}
+	if ev := p.a.expect(t, "target"); ev.mime != "" {
+		t.Fatalf("target %+v", ev)
+	}
+	if ev := p.a.expect(t, "action"); ev.n != 0 {
+		t.Fatalf("action %+v", ev)
+	}
+	p.a.expect(t, "cancelled")
+	// The offer was deliberately kept alive; it must not keep a pending drop.
+	if !p.s.display.Do(func() {
+		if len(p.s.dndDrops) != 0 {
+			t.Error("pending drop without a device")
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+}
+
+func TestDataDragMultipleOffersShareAction(t *testing.T) {
+	for _, name := range []string{"finish", "acceptor destroyed"} {
+		t.Run(name, func(t *testing.T) {
+			p := newDndPair(t)
+			seat := bindVersion(t, p.b.c, "wl_seat", 8)
+			second := &dndDeviceEvents{c: p.b.c, log: make(chan dndEvent, 64)}
+			second.SetID(p.b.c.AllocateID())
+			registerWireProxy(p.b.c, second)
+			requestProtocol(t, p.b.c, p.b.manager, wayland.DataDeviceManagerRequestGetDataDevice, second.ID(), seat)
+			if err := p.b.c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			p.start(t, 0)
+			first := p.enter(t)
+			other := &dndClient{c: p.b.c, device: second, log: second.log}
+			other.until(t, "enter")
+			two := other.lastOffer(t)
+			requestProtocol(t, p.b.c, first, wayland.DataOfferRequestAccept, uint32(1), "text/plain")
+			requestProtocol(t, p.b.c, first, wayland.DataOfferRequestSetActions, actCopy|actMove, actCopy)
+			p.a.expect(t, "target")
+			p.a.expect(t, "action")
+			for _, d := range []*dndClient{p.b, other} {
+				if ev := d.expect(t, "offer_action"); ev.n != actCopy {
+					t.Fatalf("copy: %+v", ev)
+				}
+			}
+			requestProtocol(t, p.b.c, two, wayland.DataOfferRequestSetActions, actCopy|actMove, actMove)
+			if ev := p.a.expect(t, "action"); ev.n != actMove {
+				t.Fatalf("source action %+v", ev)
+			}
+			for _, d := range []*dndClient{p.b, other} {
+				if ev := d.expect(t, "offer_action"); ev.n != actMove {
+					t.Fatalf("move: %+v", ev)
+				}
+			}
+			if name == "finish" {
+				p.commands <- ports.DataDragDrop{}
+				for _, d := range []*dndClient{p.b, other} {
+					d.expect(t, "drop")
+					d.expect(t, "leave")
+				}
+				p.a.expect(t, "drop_performed")
+				// Either offer finishes the same negotiated move transfer.
+				requestProtocol(t, p.b.c, two, wayland.DataOfferRequestFinish)
+				p.a.expect(t, "finished")
+				return
+			}
+			requestProtocol(t, p.b.c, first, wayland.DataOfferRequestDestroy)
+			if err := p.b.c.Roundtrip(); err != nil {
+				t.Fatal(err)
+			}
+			if ev := p.a.expect(t, "target"); ev.mime != "" {
+				t.Fatalf("stale acceptance %+v", ev)
+			}
+			if ev := p.a.expect(t, "action"); ev.n != 0 {
+				t.Fatalf("stale action %+v", ev)
+			}
+			if ev := other.expect(t, "offer_action"); ev.n != 0 {
+				t.Fatalf("remaining offer %+v", ev)
+			}
+			p.commands <- ports.DataDragDrop{}
+			p.a.expect(t, "cancelled")
+			other.expect(t, "leave")
+		})
 	}
 }

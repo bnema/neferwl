@@ -94,6 +94,21 @@ func (c *Core) dataDragRoute(ctx context.Context, at time.Duration) error {
 	return nil
 }
 
+// dataDragHitChanged excludes notifications that only change metadata,
+// capture state or the drag icon. The type switch allocates nothing.
+func dataDragHitChanged(ev ports.ClientEvent) bool {
+	switch ev.(type) {
+	case ports.LayerChanged, ports.InputRegionChanged, ports.WindowMapped,
+		ports.WindowResized, ports.PopupRequest, ports.PopupMapped,
+		ports.OutputPower, ports.WindowParent, ports.WindowModal,
+		ports.WindowUnmapped, ports.PointerWarp, ports.WindowMoveRequest,
+		ports.WindowFullscreenRequest, ports.WorkspaceActivate, ports.WindowActivate:
+		return true
+	default:
+		return false
+	}
+}
+
 // dataDragRetarget re-routes a still cursor: the target is told only when
 // it or the point in it changed.
 func (c *Core) dataDragRetarget(ctx context.Context, at time.Duration) error {

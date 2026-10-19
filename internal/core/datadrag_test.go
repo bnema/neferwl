@@ -575,3 +575,15 @@ func TestDataDragIgnoresCompositorSwipes(t *testing.T) {
 		t.Fatalf("a swipe moved windows during the drag:\n%#v\n%#v", before[0].Windows, after[0].Windows)
 	}
 }
+
+func TestDataDragRehitsAfterInputRegionChange(t *testing.T) {
+	d := startDnd(t)
+	d.start(t, 0)
+	// The scene is settled and the cursor never moves after drag start.
+	d.client <- ports.InputRegionChanged{ID: 1}
+	d.settle(t)
+	wantCommands(t, dataDragCommands(d.drain()), ports.DataDragFocus{Time: time.Millisecond})
+	d.client <- ports.InputRegionChanged{ID: 1, All: true}
+	d.settle(t)
+	wantCommands(t, dataDragCommands(d.drain()), ports.DataDragFocus{ID: 1, X: 20, Y: 30, Time: time.Millisecond})
+}

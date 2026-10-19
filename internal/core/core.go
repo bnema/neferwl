@@ -1153,8 +1153,13 @@ func (c *Core) Run(ctx context.Context) error {
 			if stop {
 				return nil
 			}
-			if publish && c.publish(ctx) != nil {
-				return nil
+			if publish {
+				if c.publish(ctx) != nil {
+					return nil
+				}
+				if c.dataDrag != nil && dataDragHitChanged(ev) && c.dataDragRetarget(ctx, c.motionTime) != nil {
+					return nil
+				}
 			}
 		case f, ok := <-c.ch.Frames:
 			if c.securityCheckpoint(ctx) != nil {
