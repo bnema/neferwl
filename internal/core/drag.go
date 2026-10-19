@@ -90,7 +90,7 @@ func (c *Core) draggable(id WindowID) (*screen, *Workspace, bool) {
 // startDrag starts a cmd + button drag on the window under the pointer.
 // It reports whether it did: the press is then not forwarded.
 func (c *Core) startDrag(ctx context.Context, v ports.PointerButton) (bool, error) {
-	if !v.Pressed || c.drag != nil || c.held() != 0 || c.grab != 0 || c.cmdMod == 0 || c.mods&c.cmdMod == 0 {
+	if c.synthetic || !v.Pressed || c.drag != nil || c.held() != 0 || c.grab != 0 || c.cmdMod == 0 || c.mods&c.cmdMod == 0 {
 		return false, nil
 	}
 	if v.Button != btnLeft && v.Button != btnRight {

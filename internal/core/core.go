@@ -47,6 +47,12 @@ type Channels struct {
 	// animating scene (Scene.Animating): a running slide moves one step per
 	// report. Without them it moves on a timer.
 	Frames <-chan ports.OutputFrame
+	// HintScans, when set, receives the scan request of each hint action
+	// (capacity 1; core never waits: a full channel cancels the hint).
+	// Hints carries the results back. With HintScans nil the hint action
+	// does nothing.
+	HintScans chan<- ports.HintScanRequest
+	Hints     <-chan ports.HintScanResult
 }
 
 // Options are the services and policy core is constructed with.
@@ -57,6 +63,9 @@ type Options struct {
 	Clock ports.Clock
 	// Terminal enables automatic terminal opening according to terminal.auto-open.
 	Terminal bool
+	// HintDisabled, when set, is called the first time the hint action runs
+	// without a scanner (hint mode off). It must not block.
+	HintDisabled func()
 }
 
 // fullscreenGrace is how long after mapping a window's fullscreen request
@@ -157,6 +166,14 @@ type Core struct {
 	// capt is the capture state (capture.go, capindicator.go).
 	capt  captureState
 	flash focusFlash
+	// hint is keyboard hint mode (hint.go).
+	hint hintState
+	// keyState is the real modifier state of the latest key event, swallowed
+	// keys included.
+	keyState ports.ModState
+	// synthetic is set while a hint click runs through the pointer handlers:
+	// compositor modifier+button actions (window drag) do not apply to it.
+	synthetic bool
 	// switcher is the column switcher in progress: the screen it is on and
 	// the timer that shows its cards (switcher.go).
 	switcher struct {
@@ -275,7 +292,7 @@ func (c *Core) apply(cfg ports.Config) error {
 		}
 		switch Action(a) {
 		case "none", ActionSpawnTerminal, ActionFocusColumnLeft, ActionFocusColumnRight, ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveColumnLeft, ActionMoveColumnRight, ActionCycleColumnWidth, ActionMaximizeColumn, ActionToggleFullscreen, ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview, ActionCloseWindow, ActionQuit, ActionFocusWorkspacePrev, ActionFocusWorkspaceNext, ActionMoveColumnToWorkspacePrev, ActionMoveColumnToWorkspaceNext, ActionMoveWindowToWorkspacePrev, ActionMoveWindowToWorkspaceNext, ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown, ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown, ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight,
-			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev:
+			ActionMoveWindowUp, ActionMoveWindowDown, ActionMoveWorkspacePrev, ActionMoveWorkspaceNext, ActionToggleFloating, ActionSwitchColumnNext, ActionSwitchColumnPrev, ActionHint:
 		default:
 			return fmt.Errorf("invalid action %q", a)
 		}
@@ -634,6 +651,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return errSecurityChanged
 	}
 	c.syncSecurity()
+	c.hintValidate()
 	if c.security.Protected {
 		return c.publishProtected(ctx)
 	}
@@ -1206,6 +1224,17 @@ func (c *Core) Run(ctx context.Context) error {
 				return nil
 			}
 			continue
+		case res, ok := <-c.ch.Hints:
+			if !ok {
+				c.ch.Hints = nil
+				continue
+			}
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.hintResult(res) && c.publish(ctx) != nil {
+				return nil
+			}
 		case ev, ok := <-c.ch.Output:
 			if !ok {
 				c.ch.Output = nil

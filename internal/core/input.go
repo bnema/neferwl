@@ -124,6 +124,21 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 	return nil
 }
 
+// clickFocus focuses the window id and its output the way a click on it
+// does, unless it already has the keyboard.
+func (c *Core) clickFocus(ctx context.Context, id WindowID) error {
+	s, w := c.screenOf(id)
+	if s == nil || w != s.mon.Current() || (c.keyboard.sent == id && s == c.cur()) {
+		return nil
+	}
+	now := c.now()
+	before := c.snapshot(now)
+	w.Click(id)
+	c.focusScreen = c.screenIndex(s.name())
+	c.transition(before, now)
+	return c.publish(ctx)
+}
+
 func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 	// Buttons a drag took stay in c.buttons until released, so the
 	// security gate admits their release; no client sees it.
@@ -199,14 +214,8 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			}
 		}
 		// A click focuses the window and its output.
-		s, w := c.screenOf(id)
-		if v.Pressed && s != nil && w == s.mon.Current() && (c.keyboard.sent != id || s != c.cur()) {
-			now := c.now()
-			before := c.snapshot(now)
-			w.Click(id)
-			c.focusScreen = c.screenIndex(s.name())
-			c.transition(before, now)
-			if err := c.publish(ctx); err != nil {
+		if v.Pressed {
+			if err := c.clickFocus(ctx, id); err != nil {
 				return err
 			}
 		}
@@ -249,6 +258,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 
 func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 	c.mods = key.Mods
+	c.keyState = key.State
 	c.repeatKey(key)
 	// Releasing the command key commits the switcher; the release still
 	// goes on to the bind lookup and the clients.
@@ -276,6 +286,10 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 			return err
 		}
 		return c.rehit(ctx)
+	}
+	// Hint mode takes every key press before binds and windows.
+	if handled, err := c.hintKey(ctx, key); handled || err != nil {
+		return err
 	}
 	// The overview takes its keys before any window; others still
 	// run binds, and are not forwarded.
