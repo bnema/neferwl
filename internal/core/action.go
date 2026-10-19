@@ -209,10 +209,11 @@ type Effect struct {
 	Quit  bool
 }
 
-// applyAction runs a bind action. Monitor actions change the focused
-// screen; column focus past the edge column moves to the neighbor screen,
-// else along the layout's workspace axis; everything else applies to the
-// focused screen's monitor.
+// applyAction runs a bind action. Focus past a content edge visits an occupied
+// workspace, then a neighbor screen, then a trailing empty workspace. Vertical
+// edges do this only with a vertical workspace axis; cascade stays within bands.
+// Other actions apply to the focused screen's monitor unless explicitly moving
+// between screens. Screen changes request a flash on the destination output.
 func (c *Core) applyAction(a Action) Effect {
 	if !c.flashOn() {
 		return c.dispatchAction(a)
@@ -321,7 +322,7 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// the edge (see edgeFocus) and fullscreen stays.
 		if w.pinned() && !w.stashOverCover() {
 			if !w.FocusColumn(dir) {
-				c.edgeFocus(dir, d)
+				c.edgeFocus(horizontalAxis, dir, d)
 			}
 			return Effect{}
 		}
@@ -329,7 +330,21 @@ func (c *Core) dispatchAction(a Action) Effect {
 		// a native float leaves for the stash or the columns, and the stash
 		// keeps the focus at its ends.
 		edge := w.leavesBand(w.columnToward(dir)) && (!w.onFloat() || w.floatFocus && !w.canLeaveFloat())
-		if edge && c.edgeFocus(dir, d) {
+		if edge && c.edgeFocus(horizontalAxis, dir, d) {
+			return Effect{}
+		}
+	case ActionFocusWindowUp, ActionFocusWindowDown:
+		m := c.cur().mon
+		// Cascade's up/down navigation stays within its bands. Let Monitor
+		// handle it unchanged; only vertical workspace axes cross screens.
+		if m.Current().policy().workspace == verticalAxis {
+			dir, d := 1, dirDown
+			if a == ActionFocusWindowUp {
+				dir, d = -1, dirUp
+			}
+			if !m.Current().FocusWindow(dir) {
+				c.edgeFocus(verticalAxis, dir, d)
+			}
 			return Effect{}
 		}
 	case ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight:
@@ -388,13 +403,14 @@ func (c *Core) dispatchAction(a Action) Effect {
 	return c.cur().mon.Apply(a)
 }
 
-// edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
-// content edge, in order: to the occupied workspace on that side when the
-// workspace axis is horizontal; else to the neighbor monitor on that side;
-// else to the trailing empty workspace. It reports whether focus moved.
-func (c *Core) edgeFocus(dir int, d direction) bool {
+// edgeFocus moves focus past a content edge along axis (dir -1/1, toward d):
+// first to an occupied workspace when axis is the workspace axis, then to the
+// neighbor monitor, then to the trailing empty workspace. It reports whether
+// focus moved. Callers retain responsibility for local content navigation and
+// for restricting which layout axes may cross monitors.
+func (c *Core) edgeFocus(axis layoutAxis, dir int, d direction) bool {
 	m := c.cur().mon
-	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
+	if to := m.occupiedStep(axis, dir); to >= 0 {
 		m.Focus(to)
 		return true
 	}
@@ -402,10 +418,11 @@ func (c *Core) edgeFocus(dir int, d direction) bool {
 		c.focusScreen = i
 		return true
 	}
-	return m.stepWorkspace(horizontalAxis, dir)
+	return m.stepWorkspace(axis, dir)
 }
 
-// Apply runs a bind action on the monitor.
+// Apply runs a bind action on this monitor only. Vertical focus edges step
+// workspaces; Core dispatch adds neighboring-screen navigation for those edges.
 func (m *Monitor) Apply(a Action) Effect {
 	if e, ok := m.overviewAction(a); ok {
 		return e

@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"github.com/bnema/neferwl/internal/ports"
+	"testing"
+)
 
 // axisCore is a cascade core whose monitor "M" has three workspaces of five
 // windows (ids 11-15, 21-25, 31-35; bands of three) and a trailing empty
@@ -272,6 +275,70 @@ func TestColumnEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
 				t.Fatalf("screen %d, want neighbor %d", c.focusScreen, tc.neighbor)
 			}
 			wantActive(t, m, tc.next)
+		})
+	}
+}
+
+func TestVerticalEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
+	for _, overflow := range []Overflow{OverflowScroll, OverflowFixed} {
+		for _, tc := range []struct {
+			name                          string
+			screen, start, next, neighbor int
+			action                        Action
+		}{
+			{"up", 1, 1, 0, 0, ActionFocusWindowUp},
+			{"down", 0, 0, 1, 1, ActionFocusWindowDown},
+		} {
+			t.Run(string(overflow)+"/"+tc.name, func(t *testing.T) {
+				c := layoutCore(tc.screen, tile{"top", 0, 0, 900, 600}, tile{"bottom", 0, 600, 900, 600})
+				m := c.cur().mon
+				m.SetOverflow(overflow)
+				for ws := range 2 {
+					m.Focus(ws)
+					m.AddWindow(WindowID(ws + 1))
+				}
+				m.Focus(tc.start)
+				c.applyAction(tc.action)
+				if c.focusScreen != tc.screen {
+					t.Fatal("crossed screen before occupied workspace")
+				}
+				wantActive(t, m, tc.next)
+				c.applyAction(tc.action)
+				if c.focusScreen != tc.neighbor {
+					t.Fatalf("screen %d, want %d", c.focusScreen, tc.neighbor)
+				}
+				wantActive(t, m, tc.next)
+			})
+		}
+	}
+}
+
+func TestCascadeVerticalEdgeDoesNotCrossScreen(t *testing.T) {
+	c := layoutCore(1, tile{"top", 0, 0, 900, 600}, tile{"middle", 0, 600, 900, 600}, tile{"bottom", 0, 1200, 900, 600})
+	m := c.cur().mon
+	m.SetOverflow(OverflowCascade)
+	m.AddWindow(1)
+	for _, a := range []Action{ActionFocusWindowUp, ActionFocusWindowDown} {
+		c.applyAction(a)
+		wantFocus(t, c, "middle", 1)
+		wantActive(t, m, 0)
+	}
+}
+
+func TestVerticalEdgeFocusFlashesDestination(t *testing.T) {
+	for _, tc := range []struct {
+		a Action
+		y int
+	}{{ActionFocusWindowUp, -300}, {ActionFocusWindowDown, 300}} {
+		t.Run(string(tc.a), func(t *testing.T) {
+			c, _ := flashCore(t)
+			c.cur().mon.SetOverflow(OverflowScroll)
+			c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+			c.screens[1].x, c.screens[1].y = 0, tc.y
+			c.applyAction(tc.a)
+			if c.focusScreen != 1 || c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashMonitor, output: "B"}) {
+				t.Fatalf("screen %d, flash %+v", c.focusScreen, c.flash.pending)
+			}
 		})
 	}
 }
