@@ -389,17 +389,17 @@ func (c *Core) dispatchAction(a Action) Effect {
 }
 
 // edgeFocus moves focus-column-left/right (dir -1/1, toward d) past the
-// content edge, in order: to the neighbor monitor on that side; else to the
-// occupied workspace on that side when the workspace axis is horizontal;
+// content edge, in order: to the occupied workspace on that side when the
+// workspace axis is horizontal; else to the neighbor monitor on that side;
 // else to the trailing empty workspace. It reports whether focus moved.
 func (c *Core) edgeFocus(dir int, d direction) bool {
 	m := c.cur().mon
-	if i := c.neighbor(d); i >= 0 {
-		c.focusScreen = i
-		return true
-	}
 	if to := m.occupiedStep(horizontalAxis, dir); to >= 0 {
 		m.Focus(to)
+		return true
+	}
+	if i := c.neighbor(d); i >= 0 {
+		c.focusScreen = i
 		return true
 	}
 	return m.stepWorkspace(horizontalAxis, dir)

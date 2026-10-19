@@ -50,26 +50,22 @@ func TestCascadeFocusColumnStepsWorkspaceAtBandEdge(t *testing.T) {
 	}
 }
 
-// A monitor on that side wins over an occupied workspace, so the opposite
-// key brings focus back; the workspace is reached only with no monitor.
-func TestCascadeFocusColumnGoesToMonitorBeforeWorkspace(t *testing.T) {
+// Occupied workspaces win over monitors; monitors still precede trailing empties.
+func TestCascadeFocusColumnGoesToWorkspaceBeforeMonitor(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	m.Current().FocusID(23)
 	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "R", 0)
-	wantActive(t, m, 1)
-	// Back with the opposite key.
-	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "M", 23)
-	wantActive(t, m, 1)
-	// The first column of a band: the monitor on the left.
+	wantActive(t, m, 2)
+	if c.cur().mon != m {
+		t.Fatal("left monitor before workspace")
+	}
+	m.Focus(1)
 	m.Current().FocusID(24)
 	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "L", 0)
-	wantActive(t, m, 1)
-	// From the last occupied workspace: the monitor on the right, not the
-	// trailing empty workspace.
-	c.focusScreen = 1
+	wantActive(t, m, 0)
+	if c.cur().mon != m {
+		t.Fatal("left monitor before workspace")
+	}
 	m.Focus(2)
 	m.Current().FocusID(35)
 	c.applyAction(ActionFocusColumnRight)
@@ -93,8 +89,8 @@ func TestCascadeFocusColumnReachesTrailingWorkspaceWithoutMonitor(t *testing.T) 
 }
 
 // One monitor on the left only. Right steps to the next workspace; left
-// from its empty band leaves for that monitor, which comes first.
-func TestCascadeStepRightThenLeftLeavesForMonitor(t *testing.T) {
+// from its empty band returns to the occupied workspace before that monitor.
+func TestCascadeStepRightThenLeftReturnsToWorkspace(t *testing.T) {
 	c := layoutCore(1, tile{"L", 0, 0, 900, 600}, tile{"M", 900, 0, 900, 600})
 	m := c.cur().mon
 	m.SetOverflow(OverflowCascade)
@@ -104,8 +100,8 @@ func TestCascadeStepRightThenLeftLeavesForMonitor(t *testing.T) {
 	c.applyAction(ActionFocusColumnRight)
 	wantActive(t, m, 1)
 	c.applyAction(ActionFocusColumnLeft)
-	wantFocus(t, c, "L", 0)
-	wantActive(t, m, 1)
+	wantFocus(t, c, "M", 5)
+	wantActive(t, m, 0)
 }
 
 // AC3: up/down cross bands and stop at the last, with no workspace change.
@@ -189,15 +185,17 @@ func TestCascadeFullscreenBandEdgeStepsWorkspace(t *testing.T) {
 }
 
 // A covering fullscreen tile follows the same order: the monitor on that
-// side before the occupied workspace.
-func TestCascadeFullscreenGoesToMonitorBeforeWorkspace(t *testing.T) {
+// side after the occupied workspace.
+func TestCascadeFullscreenGoesToWorkspaceBeforeMonitor(t *testing.T) {
 	c, m := axisCore(t, true, OverflowCascade, 3)
 	w := m.Current()
 	w.FocusID(23)
 	w.ToggleFullscreen()
 	c.applyAction(ActionFocusColumnRight)
-	wantFocus(t, c, "R", 0)
-	wantActive(t, m, 1)
+	wantActive(t, m, 2)
+	if c.cur().mon != m {
+		t.Fatal("left monitor before workspace")
+	}
 	if w.fullscreen != 23 {
 		t.Fatalf("fullscreen %d, want 23", w.fullscreen)
 	}
@@ -242,5 +240,38 @@ func TestCascadeLoneFloatAndEmptyWorkspaceStepWorkspace(t *testing.T) {
 		}
 		c.applyAction(tc.a)
 		wantActive(t, m, tc.want)
+	}
+}
+
+// Column edges visit occupied workspaces before crossing outputs, in both directions.
+func TestColumnEdgeFocusWorkspaceBeforeScreen(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		screen, start, next, neighbor int
+		action                        Action
+	}{
+		{"left", 1, 1, 0, 0, ActionFocusColumnLeft},
+		{"right", 0, 0, 1, 1, ActionFocusColumnRight},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := layoutCore(tc.screen, tile{"laptop", 0, 0, 1920, 1080}, tile{"4K", 1920, 0, 3840, 2160})
+			m := c.cur().mon
+			m.SetOverflow(OverflowCascade)
+			for ws := range 2 {
+				m.Focus(ws)
+				m.AddWindow(WindowID(ws + 1))
+			}
+			m.Focus(tc.start)
+			c.applyAction(tc.action)
+			if c.focusScreen != tc.screen {
+				t.Fatalf("screen %d, want %d before crossing workspace", c.focusScreen, tc.screen)
+			}
+			wantActive(t, m, tc.next)
+			c.applyAction(tc.action)
+			if c.focusScreen != tc.neighbor {
+				t.Fatalf("screen %d, want neighbor %d", c.focusScreen, tc.neighbor)
+			}
+			wantActive(t, m, tc.next)
+		})
 	}
 }
