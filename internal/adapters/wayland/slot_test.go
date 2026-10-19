@@ -14,17 +14,15 @@ func TestWindowMappedCarriesSlot(t *testing.T) {
 	env.EXPECT().Lookup(os.Getpid(), ports.SlotEnv).Return("7", true).Once()
 	s, events, _, dir := keyboardServer(t, func(s *Server) { s.env = env })
 	mapWindow := toplevelMapper(t, protocolClient(t, s, dir), events)
-	// No slot pending: /proc is not read (the mock would fail on a call).
-	if w := mapWindow(); w.Slot != "" || w.PID != os.Getpid() {
+	// Hold the pending command outside the display until after mapping. The
+	// protocol connection must carry the token even when command application
+	// loses the race to this fast client's first window.
+	pending := ports.SlotsPending{Pending: true}
+	if w := mapWindow(); w.Slot != "7" || w.PID != os.Getpid() {
 		t.Fatalf("slot %q pid %d", w.Slot, w.PID)
 	}
-	// This tests environment lookup, not command transport. Apply the gate
-	// synchronously before mapping over the independent protocol connection.
-	if !s.display.Do(func() { s.apply(ports.SlotsPending{Pending: true}) }) {
-		t.Fatal("display stopped before applying SlotsPending")
-	}
-	if w := mapWindow(); w.Slot != "7" {
-		t.Fatalf("slot %q", w.Slot)
+	if !s.display.Do(func() { s.apply(pending) }) {
+		t.Fatal("display stopped before applying delayed command")
 	}
 }
 

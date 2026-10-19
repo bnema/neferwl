@@ -473,10 +473,9 @@ func (c *Core) command(ctx context.Context, v ports.ClientCommand) error {
 	return err
 }
 
-// commandFlushed is command for a command that another channel depends on:
-// it returns once v is in the command channel. SlotsPending must reach
-// wayland before the spawn whose window it lets wayland claim; the spawn
-// goes on its own channel, so queue order alone does not keep them in order.
+// commandFlushed returns once v is in the command channel, not once the
+// display has applied it. Pending publication retains this delivery barrier
+// and its security-epoch recheck, but token lookup must not depend on it.
 func (c *Core) commandFlushed(ctx context.Context, v ports.ClientCommand) error {
 	seq, err := c.queue(ctx, v)
 	if err != nil || seq == 0 {

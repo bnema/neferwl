@@ -37,12 +37,11 @@ func (linuxProcEnv) Lookup(pid int, key string) (string, bool) {
 }
 
 // slotToken returns the SlotEnv value of the client process, if any. It
-// reads /proc only while core waits for a slot window. There is no per-client
-// cache: libwayland may reuse a client address after a disconnect.
+// reads /proc once at toplevel mapping, independently of command application:
+// a spawned client can map before the display drains core's commands. Core
+// accepts only tokens for pending placements. There is no per-client cache:
+// libwayland may reuse a client address after a disconnect.
 func (s *Server) slotToken(c server.Client) string {
-	if !s.slotsPending {
-		return ""
-	}
 	v, _ := s.env.Lookup(c.PID(), ports.SlotEnv)
 	return v
 }
