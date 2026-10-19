@@ -58,9 +58,11 @@ type dndTarget struct {
 	surface *wayland.Surface
 	devices []*wayland.DataDevice
 	offers  []*dndOffer
-	// accepted is the MIME type the target accepted; action the action
-	// chosen for the source.
+	// accepted is the MIME type the target accepted, owned by acceptor.
+	// action is the shared result of the latest set_actions request,
+	// broadcast to every offer so drop and finish use the same result.
 	accepted string
+	acceptor *dndOffer
 	action   uint32
 	state    int
 	// legacy: no device speaks wl_data_offer v3: the target copies and
@@ -118,6 +120,9 @@ func (s *Server) addDataDevice(c server.Client, dev *wayland.DataDevice) {
 		list := slices.DeleteFunc(slices.Clone(s.dataDevices[c]), func(x *wayland.DataDevice) bool { return x == dev })
 		if len(list) == 0 {
 			delete(s.dataDevices, c)
+			if d := s.dnd; d != nil && d.target != nil && d.target.surface.Client() == c {
+				s.dndLeave(d)
+			}
 			// An internal drag has nobody left to tell.
 			if d := s.dnd; d != nil && d.client == c && d.src == nil {
 				s.dndEnd(d, false, true)
@@ -391,7 +396,7 @@ func (s *Server) dndDrop(d *dndState) {
 			}
 		}
 	}
-	if t.accepted == "" || t.action == 0 {
+	if !t.legacy && t.accepted == "" || t.action == 0 {
 		s.dndEnd(d, true, false)
 		return
 	}
@@ -487,6 +492,16 @@ func (s *Server) dndCancelAll() {
 func (s *Server) dndOfferGone(o *dndOffer) {
 	t := o.t
 	t.offers = slices.DeleteFunc(t.offers, func(x *dndOffer) bool { return x == o })
+	if t.state == targetActive && t.acceptor == o {
+		t.acceptor = nil
+		s.dndResetSource(t)
+		for _, offer := range t.offers {
+			if offer.sent != 0 && offer.res.Version() >= 3 {
+				offer.sent = 0
+				offer.res.SendAction(0)
+			}
+		}
+	}
 	if len(t.offers) != 0 {
 		return
 	}
@@ -520,10 +535,14 @@ func (o *dndOffer) update() {
 			src.res.SendAction(action)
 		}
 	}
-	if t.state == targetActive && action != o.sent {
-		o.sent = action
-		if o.res.Version() >= 3 {
-			o.res.SendAction(action)
+	if t.state == targetActive {
+		for _, offer := range t.offers {
+			if action != offer.sent {
+				offer.sent = action
+				if offer.res.Version() >= 3 {
+					offer.res.SendAction(action)
+				}
+			}
 		}
 	}
 }
@@ -534,6 +553,7 @@ func (o *dndOffer) Accept(_ *wayland.DataOffer, _ uint32, mime string) {
 		return
 	}
 	t.accepted = mime
+	t.acceptor = o
 	t.d.src.res.SendTarget(mime)
 }
 
