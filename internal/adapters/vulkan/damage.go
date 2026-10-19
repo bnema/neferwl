@@ -276,7 +276,6 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
 		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||
-		(old.Flash == nil) != (cur.Flash == nil) || (old.Flash != nil && *old.Flash != *cur.Flash) ||
 		len(old.Windows) != len(cur.Windows) {
 		return image.Rectangle{}, false
 	}
@@ -287,6 +286,14 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		return image.Rectangle{}, false
 	}
 	var area image.Rectangle
+	if (old.Flash == nil) != (cur.Flash == nil) || (old.Flash != nil && cur.Flash != nil && *old.Flash != *cur.Flash) {
+		if old.Flash != nil {
+			area = area.Union(phys(old.Flash.Rect))
+		}
+		if cur.Flash != nil {
+			area = area.Union(phys(cur.Flash.Rect))
+		}
+	}
 	for i := range old.Windows {
 		a, b := old.Windows[i], cur.Windows[i]
 		if a.ID != b.ID {

@@ -407,3 +407,35 @@ func TestDamageDeltaFadeAndLeavingEntry(t *testing.T) {
 	float.Windows[1].Floating, float.Windows[1].Fade = true, 0.1
 	assert.True(t, newDamage(held(gone), float, bounds).all())
 }
+
+func TestSceneDeltaFlashRectDamage(t *testing.T) {
+	a := &ports.FocusFlash{Rect: ports.Rect{X: 10, Y: 20, W: 100, H: 80}, Width: 3, Color: "#ff0000", Alpha: 1}
+	faded := *a
+	faded.Alpha = 0.5
+	moved := faded
+	moved.Rect.X = 150
+	phys := func(r ports.Rect) image.Rectangle { return image.Rect(r.X*2, r.Y*2, (r.X+r.W)*2, (r.Y+r.H)*2) }
+	for _, tc := range []struct {
+		name     string
+		old, cur *ports.FocusFlash
+		want     image.Rectangle
+	}{
+		{"appears", nil, a, phys(a.Rect)},
+		{"alpha", a, &faded, phys(a.Rect)},
+		{"moves", a, &moved, phys(a.Rect).Union(phys(moved.Rect))},
+		{"removed", a, nil, phys(a.Rect)},
+		{"idle identical", a, a, image.Rectangle{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			old, cur := deltaScene(1), deltaScene(2)
+			old.Flash, cur.Flash = tc.old, tc.cur
+			area, ok := sceneDelta(old, cur, phys, 1000000)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, area)
+		})
+	}
+	old, cur := deltaScene(1), deltaScene(2)
+	cur.Flash = a
+	_, ok := sceneDelta(old, cur, phys, 1)
+	require.False(t, ok, "large damage must retain full-redraw fallback")
+}

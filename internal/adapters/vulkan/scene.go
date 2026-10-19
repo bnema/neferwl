@@ -73,10 +73,12 @@ func (w *sceneWalk) focusFlash() {
 	}
 	alpha := w.alpha
 	w.alpha = float32(f.Alpha)
-	defer func() { w.alpha = alpha }()
-	t := f.Rect
-	col := parseColor(f.Color)
-	b := min(f.Width, t.W/2, t.H/2)
+	w.innerBorder(f.Rect, min(f.Width, f.Rect.W/2, f.Rect.H/2), parseColor(f.Color))
+	w.alpha = alpha
+}
+
+// innerBorder draws four non-overlapping strips, or fills a thin target.
+func (w *sceneWalk) innerBorder(t ports.Rect, b int, col [3]uint8) {
 	if b <= 0 {
 		w.fill(w.physRect(t.X, t.Y, t.W, t.H), col)
 		return
@@ -107,17 +109,7 @@ func (w *sceneWalk) captureIndicators() {
 			w.pill(w.physRect(t.X, t.Y, t.W, t.H), col)
 			continue
 		}
-		b := ports.CaptureBorderOf(t.W, t.H)
-		if b <= 0 {
-			// Too thin for a border (core inflates such marks, so this is a
-			// 1-pixel output): a listed mark always draws something.
-			w.fill(w.physRect(t.X, t.Y, t.W, t.H), col)
-			continue
-		}
-		w.fill(w.physRect(t.X, t.Y, t.W, b), col)
-		w.fill(w.physRect(t.X, t.Y+t.H-b, t.W, b), col)
-		w.fill(w.physRect(t.X, t.Y+b, b, t.H-2*b), col)
-		w.fill(w.physRect(t.X+t.W-b, t.Y+b, b, t.H-2*b), col)
+		w.innerBorder(t, ports.CaptureBorderOf(t.W, t.H), col)
 	}
 }
 
