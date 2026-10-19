@@ -953,3 +953,95 @@ func TestLoadRejectsFIFO(t *testing.T) {
 		t.Fatal("Load blocked on a FIFO")
 	}
 }
+
+func TestHintTargets(t *testing.T) {
+	if Defaults().Hint.LinksOnly {
+		t.Fatal("hint targets default must be clickable")
+	}
+	c, w := parseString(t, "hint.targets = links\n")
+	if !c.Hint.LinksOnly || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "hint.targets = clickable\n")
+	if c.Hint.LinksOnly || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	// An invalid value warns and keeps the default.
+	c, w = parseString(t, "hint.targets = buttons\n")
+	if c.Hint.LinksOnly || len(w) != 1 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "bind.cmd+g = hint\n")
+	if len(w) != 0 || c.Binds["Cmd+g"] != "hint" {
+		t.Fatal(c.Binds["Cmd+g"], w)
+	}
+}
+
+func TestHintStyleConfig(t *testing.T) {
+	c, warnings := parseString(t, "hint.size = 17.5\nhint.background = #89b4fa\nhint.foreground = #111111\n")
+	if len(warnings) != 0 || c.Hint.Size != 17.5 || c.Hint.Background != "#89b4fa" || c.Hint.Foreground != "#111111" {
+		t.Fatalf("style: %+v, warnings: %v", c.Hint, warnings)
+	}
+	c, warnings = parseString(t, "hint.size = auto\nhint.background =\nhint.foreground =\n")
+	if len(warnings) != 0 || c.Hint.Size != 0 || c.Hint.Background != "" || c.Hint.Foreground != "" {
+		t.Fatalf("automatic: %+v %v", c.Hint, warnings)
+	}
+	for _, line := range []string{"hint.size = 0", "hint.size = -1", "hint.size = NaN", "hint.size = Inf", "hint.size = huge", "hint.size = 5.9", "hint.size = 72.1", "hint.size = 1e9", "hint.background = red", "hint.foreground = #fff"} {
+		_, warnings := parseString(t, line+"\n")
+		if len(warnings) == 0 {
+			t.Errorf("expected validate-config warning for %s", line)
+		}
+	}
+}
+
+func TestHintSizeBounds(t *testing.T) {
+	for _, v := range []string{"6", "72", "13"} {
+		c, w := parseString(t, "hint.size = "+v+"\n")
+		if len(w) != 0 || c.Hint.Size == 0 {
+			t.Errorf("hint.size = %s: %+v %v", v, c.Hint, w)
+		}
+	}
+}
+
+func TestHintTextClick(t *testing.T) {
+	if got := Defaults().Hint.TextClick; got != ports.ModCtrl|ports.ModShift {
+		t.Fatalf("default %d", got)
+	}
+	for in, want := range map[string]ports.Mods{
+		"ctrl+shift":     ports.ModCtrl | ports.ModShift,
+		"Alt":            ports.ModAlt,
+		"super":          ports.ModSuper,
+		"cmd+shift":      ports.ModSuper | ports.ModShift,
+		"none":           0,
+		"shift+ctrl+alt": ports.ModShift | ports.ModCtrl | ports.ModAlt,
+	} {
+		c, w := parseString(t, "hint.text-click = "+in+"\n")
+		if c.Hint.TextClick != want || len(w) != 0 {
+			t.Errorf("%q: %d %v", in, c.Hint.TextClick, w)
+		}
+	}
+	for _, bad := range []string{"hyper", "ctrl+", "ctrl+ctrl", "ctrl+none", ""} {
+		c, w := parseString(t, "hint.text-click = "+bad+"\n")
+		if len(w) != 1 || c.Hint.TextClick != ports.ModCtrl|ports.ModShift {
+			t.Errorf("%q: %d %v", bad, c.Hint.TextClick, w)
+		}
+	}
+}
+
+func TestHintEnable(t *testing.T) {
+	if Defaults().Hint.Enable {
+		t.Fatal("hint mode must be off by default")
+	}
+	c, w := parseString(t, "hint.enable = on\n")
+	if !c.Hint.Enable || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "hint.enable = off\n")
+	if c.Hint.Enable || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "hint.enable = maybe\n")
+	if c.Hint.Enable || len(w) != 1 {
+		t.Fatal(c.Hint, w)
+	}
+}

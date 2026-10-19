@@ -114,6 +114,7 @@ var actions = map[string]bool{
 	"move-workspace-prev":             true,
 	"move-workspace-next":             true,
 	"toggle-floating":                 true,
+	"hint":                            true,
 }
 var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
@@ -163,6 +164,9 @@ func Defaults() ports.Config {
 		c.Terminal.Command = []string{"foot"}
 	}
 	c.Terminal.AutoOpen = "first"
+	// Hint mode is experimental: off unless the config turns it on.
+	c.Hint.Enable = false
+	c.Hint.TextClick = ports.ModCtrl | ports.ModShift
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
@@ -847,6 +851,46 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Focus.Flash = b
+	case "hint.enable":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Hint.Enable = b
+	case "hint.size":
+		if v == "auto" {
+			c.Hint.Size = 0
+			break
+		}
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(n) || n < 6 || n > 72 {
+			return fmt.Errorf("must be auto or a number from 6 to 72 (logical pixels)")
+		}
+		c.Hint.Size = n
+	case "hint.background", "hint.foreground":
+		if v != "" && !color.MatchString(v) {
+			return fmt.Errorf("must be #rrggbb or empty (derived)")
+		}
+		if key == "hint.background" {
+			c.Hint.Background = v
+		} else {
+			c.Hint.Foreground = v
+		}
+	case "hint.targets":
+		switch v {
+		case "clickable":
+			c.Hint.LinksOnly = false
+		case "links":
+			c.Hint.LinksOnly = true
+		default:
+			return fmt.Errorf("must be clickable or links")
+		}
+	case "hint.text-click":
+		m, err := parseTextClick(v)
+		if err != nil {
+			return err
+		}
+		c.Hint.TextClick = m
 	case "focus.flash-width":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 8 {
@@ -1268,6 +1312,36 @@ func checkAction(v string) error {
 		return fmt.Errorf(`unknown action %q (or "spawn <command>", "stash <command>", "workspace <name>")`, v)
 	}
 	return nil
+}
+
+// parseTextClick parses hint.text-click: `+`-separated modifier names as in
+// binds, or none. cmd is an alias of super here (it is not resolved through
+// keyboard.cmd, so the result does not depend on key order).
+func parseTextClick(v string) (ports.Mods, error) {
+	if strings.ToLower(v) == "none" {
+		return 0, nil
+	}
+	var mods ports.Mods
+	for _, p := range strings.Split(v, "+") {
+		var m ports.Mods
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "shift":
+			m = ports.ModShift
+		case "ctrl":
+			m = ports.ModCtrl
+		case "alt":
+			m = ports.ModAlt
+		case "super", "cmd":
+			m = ports.ModSuper
+		default:
+			return 0, fmt.Errorf("unknown modifier %q (use shift, ctrl, alt, super or cmd joined by +, or none)", p)
+		}
+		if mods&m != 0 {
+			return 0, fmt.Errorf("duplicate modifier %q", p)
+		}
+		mods |= m
+	}
+	return mods, nil
 }
 
 // parseCombo turns `ctrl+cmd+é` into the canonical `Cmd+Ctrl+eacute`:
