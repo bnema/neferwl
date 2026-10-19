@@ -94,6 +94,11 @@ focus.flash-width = 2
 focus.flash-opacity = 0.6
 focus.flash-duration = 200ms
 focus.flash-color =
+# Hint mode is experimental and off: turn it on here (restart required).
+# hint.enable = off
+# Hint mode labels the links, URLs and buttons on the focused screen:
+# clickable (links, URLs and buttons) or links (links and URLs only).
+# hint.targets = clickable
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.
@@ -195,6 +200,8 @@ bind.cmd+shift+f = toggle-fullscreen
 bind.cmd+s = toggle-stash-visible
 bind.cmd+shift+s = toggle-window-stash
 bind.cmd+o = toggle-overview
+# Label the links and buttons on screen and click one by typing its label.
+# bind.cmd+g = hint
 bind.cmd+q = close-window
 bind.ctrl+alt+backspace = quit
 bind.ctrl+cmd+space = spawn fuzzel
