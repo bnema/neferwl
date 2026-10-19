@@ -243,6 +243,7 @@ func (c *Core) endDrag(ctx context.Context) error {
 			now := c.now()
 			shots := c.snapshot(now)
 			c.drop(d.id, t)
+			c.requestFlash(flashWindow, d.id)
 			c.transition(shots, now)
 			// Slots and guests follow the windows, as after a bind.
 			if err := c.workspaceVisible(ctx, false); err != nil {

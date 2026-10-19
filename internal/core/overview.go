@@ -1476,6 +1476,7 @@ func (c *Core) overviewClick(ctx context.Context) (picked bool, err error) {
 	sc.mon.OverviewPick(id)
 	c.transition(shots, now)
 	c.focusScreen = i
+	c.requestFlash(flashWindow, id)
 	c.keyboard.takeBack()
 	if err := c.workspaceVisible(ctx, true); err != nil {
 		return true, err

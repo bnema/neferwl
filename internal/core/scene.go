@@ -121,6 +121,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// The drag icon is over everything, popups and layers included.
 		scene.Windows = append(scene.Windows, icon)
 	}
+	scene.Flash = c.flashFor(sc)
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.Capture = c.captureSceneFor(sc, capture)
 	// The springs of this frame are advanced: a scene shown while one still
@@ -137,7 +138,9 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	// while it draws the same, so an idle output is not recomposed.
 	withCapture := scene.Capture != nil && (sc == capture.hiddenScr || sc == capture.windowScr)
 	animating := scene.Animating && (only == nil || only == sc)
-	if !withCapture && !animating && sc.last.Animating == scene.Animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
+	// Ports' scene equality does not yet compare the phase-3 overlay.
+	flashSame := scene.Flash == nil && sc.last.Flash == nil || scene.Flash != nil && sc.last.Flash != nil && *scene.Flash == *sc.last.Flash
+	if !withCapture && !animating && flashSame && sc.last.Animating == scene.Animating && sc.last.Seq != 0 && scene.SameAs(sc.last) {
 		scene.Seq = sc.last.Seq
 	} else {
 		c.seq++

@@ -1,0 +1,185 @@
+package core
+
+import (
+	"slices"
+	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
+)
+
+type flashLevel uint8
+
+const (
+	flashWindow flashLevel = iota
+	flashColumn
+	flashMonitor
+	flashSettle   = 150 * time.Millisecond
+	flashRecheck  = 50 * time.Millisecond
+	flashCooldown = time.Second
+)
+
+type flashTarget struct {
+	level  flashLevel
+	window WindowID
+	output string
+}
+
+type focusFlash struct {
+	pending   *flashTarget
+	since     time.Time
+	timerC    <-chan time.Time
+	timerStop func() bool
+	running   *flashTarget
+	rect      Rect
+	start     time.Time
+	value     float64 // Retained between this output's own flips.
+	last      flashTarget
+	lastAt    time.Time
+}
+
+func (c *Core) flashOn() bool { return c.animOn() && c.cfg.Focus.Flash && !c.protectionRequested() }
+
+func (c *Core) requestFlash(level flashLevel, window WindowID) {
+	if !c.flashOn() {
+		return
+	}
+	c.stopFlash()
+	f := &c.flash
+	f.pending = &flashTarget{level: level, window: window, output: c.cur().name()}
+	f.since = c.now()
+	f.timerC, f.timerStop = newTimer(c.opts.Clock, flashSettle)
+}
+
+func (c *Core) flashTick() bool {
+	f := &c.flash
+	f.timerC, f.timerStop = nil, nil
+	if f.pending == nil {
+		return false
+	}
+	target := *f.pending
+	f.pending = nil
+	if !c.flashOn() {
+		return false
+	}
+	i := c.screenIndex(target.output)
+	if i < 0 {
+		return false
+	}
+	sc := c.screens[i]
+	if sc.mon.ov.open {
+		return false
+	}
+	now := c.now()
+	if target.level != flashMonitor {
+		owner, _ := c.screenOf(target.window)
+		record := c.windows.lookup(target.window)
+		if owner != sc || record.client.ID == 0 || f.since.Sub(record.mappedAt) < flashSettle {
+			return false
+		}
+	}
+	wait := flashSettle - now.Sub(f.since)
+	if wait > 0 || !sc.settled() {
+		if wait <= 0 {
+			wait = flashRecheck
+		}
+		f.pending = &target
+		f.timerC, f.timerStop = newTimer(c.opts.Clock, wait)
+		return false
+	}
+	layout := sc.mon.Layout()
+	var rect Rect
+	if target.level == flashMonitor {
+		o := sc.mon.Output()
+		rect = Rect{W: o.W, H: o.H}
+	} else {
+		at := slices.IndexFunc(layout, func(p Placement) bool { return p.ID == target.window && !p.Hidden && p.Preview == 0 })
+		if at < 0 || layout[at].Fullscreen {
+			return false
+		}
+		rect = layout[at].Rect
+		if target.level == flashColumn {
+			w := sc.mon.Current()
+			col := w.columnOf(target.window)
+			if col < 0 {
+				return false
+			}
+			for _, p := range layout {
+				if p.Hidden || !slices.Contains(w.Columns[col].Windows, p.ID) {
+					continue
+				}
+				x, y := min(rect.X, p.Rect.X), min(rect.Y, p.Rect.Y)
+				rect = Rect{X: x, Y: y, W: max(rect.X+rect.W, p.Rect.X+p.Rect.W) - x, H: max(rect.Y+rect.H, p.Rect.Y+p.Rect.H) - y}
+			}
+		}
+	}
+	if target == f.last && now.Sub(f.lastAt) < flashCooldown {
+		return false
+	}
+	f.running, f.rect, f.start, f.last, f.lastAt = &target, rect, now, target, now
+	f.value = c.cfg.Focus.FlashOpacity
+	return true
+}
+
+func (c *Core) advanceFlash(only *screen) {
+	f := &c.flash
+	if f.running == nil {
+		return
+	}
+	if !c.flashOn() || c.screenIndex(f.running.output) < 0 {
+		c.stopFlash()
+		return
+	}
+	if only != nil && only.name() != f.running.output {
+		return
+	}
+	d := c.cfg.Focus.FlashDuration
+	elapsed := c.now().Sub(f.start)
+	if d <= 0 || elapsed >= d {
+		f.running = nil
+		f.value = 0
+		return
+	}
+	f.value = c.cfg.Focus.FlashOpacity * (1 - float64(max(elapsed, 0))/float64(d))
+}
+
+func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
+	f := &c.flash
+	if !c.flashing(sc) {
+		return nil
+	}
+	color := c.cfg.Focus.FlashColor
+	if color == "" {
+		color = c.cfg.Border.Active
+	}
+	return &ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Color: color, Alpha: f.value}
+}
+
+func (c *Core) flashing(sc *screen) bool {
+	return c.flash.running != nil && c.flash.running.output == sc.name()
+}
+
+func (c *Core) stopFlashTimer() {
+	if c.flash.timerStop != nil {
+		c.flash.timerStop()
+	}
+	c.flash.timerC, c.flash.timerStop = nil, nil
+}
+
+func (c *Core) stopFlash() {
+	c.stopFlashTimer()
+	c.flash.pending, c.flash.running, c.flash.value = nil, nil, 0
+}
+
+func (m *Monitor) settled() bool {
+	if m.switchView.busy() {
+		return false
+	}
+	for w := range m.all() {
+		if w.view.busy() || w.stashView.busy() {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *screen) settled() bool { return s.mon.settled() && len(s.rects) == 0 }

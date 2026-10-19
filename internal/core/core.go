@@ -155,7 +155,8 @@ type Core struct {
 	motionTime time.Duration
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
-	capt captureState
+	capt  captureState
+	flash focusFlash
 	// switcher is the column switcher in progress: the screen it is on and
 	// the timer that shows its cards (switcher.go).
 	switcher struct {
@@ -674,6 +675,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
+	c.advanceFlash(only)
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
@@ -742,7 +744,7 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 // other than only.
 func (c *Core) animatingOther(only *screen) bool {
 	for _, sc := range c.screens {
-		if sc != only && sc.springing() {
+		if sc != only && (sc.springing() || c.flashing(sc)) {
 			return true
 		}
 	}
@@ -1090,6 +1092,7 @@ func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
+	defer c.stopFlashTimer()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1156,6 +1159,14 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
+				return nil
+			}
+			continue
+		case <-c.flash.timerC:
+			if c.securityCheckpoint(ctx) != nil {
+				return nil
+			}
+			if c.flashTick() && c.publish(ctx) != nil {
 				return nil
 			}
 			continue

@@ -287,6 +287,12 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 			shots = c.snapshot(now)
 		}
 		if key.Pressed && mon.overviewKey(key) {
+			if !mon.ov.open && keyName(key.Keysym) != "Escape" {
+				id, _ := mon.Focused()
+				if id != 0 {
+					c.requestFlash(flashWindow, id)
+				}
+			}
 			c.pressed[heldKey(key)] = true
 			if mon.ov.open && overviewRepeats(key) {
 				c.startRepeat(key, "")

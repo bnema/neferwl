@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -213,6 +214,76 @@ type Effect struct {
 // else along the layout's workspace axis; everything else applies to the
 // focused screen's monitor.
 func (c *Core) applyAction(a Action) Effect {
+	if !c.flashOn() {
+		return c.dispatchAction(a)
+	}
+	switch a {
+	case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
+		ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionToggleFloating,
+		ActionToggleWindowStash, ActionToggleStashVisible, ActionToggleOverview,
+		ActionFocusColumnLeft, ActionFocusColumnRight, ActionMoveColumnLeft, ActionMoveColumnRight,
+		ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
+		ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
+	default:
+		return c.dispatchAction(a)
+	}
+	// Compare the action's visible result, not publication-time focus: pointer,
+	// activation and mapping changes must never request a flash.
+	beforeScreen := c.cur()
+	beforeWS := beforeScreen.mon.Current()
+	beforeID, _ := beforeScreen.mon.Focused()
+	before := beforeScreen.mon.Layout()
+	wasOverview := beforeScreen.mon.ov.open
+	wasStashed := beforeWS.stashIndex(beforeID) >= 0
+	wasShown := beforeWS.stashShown()
+	defer func() {
+		sc := c.cur()
+		id, _ := sc.mon.Focused()
+		if sc.mon.ov.open {
+			return
+		}
+		if wasOverview {
+			if a == ActionToggleOverview && id != 0 {
+				c.requestFlash(flashWindow, id)
+			}
+			return
+		}
+		level := flashWindow
+		switch a {
+		case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
+			ActionConsumeOrExpelLeft, ActionConsumeOrExpelRight, ActionToggleFloating:
+		case ActionToggleWindowStash:
+			if !wasStashed {
+				return
+			}
+		case ActionToggleStashVisible:
+			if wasShown || !sc.mon.Current().stashShown() {
+				return
+			}
+		case ActionFocusColumnLeft, ActionFocusColumnRight, ActionMoveColumnLeft, ActionMoveColumnRight:
+			level = flashColumn
+		case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
+			ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
+			if sc == beforeScreen {
+				return
+			}
+			c.requestFlash(flashMonitor, 0)
+			return
+		default:
+			return
+		}
+		after := sc.mon.Layout()
+		changed := sc != beforeScreen || sc.mon.Current() != beforeWS || id != beforeID || !slices.EqualFunc(before, after, func(a, b Placement) bool {
+			return a.ID == b.ID && a.Rect == b.Rect && a.Focused == b.Focused && a.Hidden == b.Hidden && a.Floating == b.Floating
+		})
+		if changed && id != 0 {
+			c.requestFlash(level, id)
+		}
+	}()
+	return c.dispatchAction(a)
+}
+
+func (c *Core) dispatchAction(a Action) Effect {
 	if e, ok := c.cur().mon.overviewAction(a); ok {
 		return e
 	}

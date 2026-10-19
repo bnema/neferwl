@@ -315,12 +315,17 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 			if focus != w.Focus && w.policy().maximizeHides() {
 				w.unmaximize()
 			}
+			changed := w.Focus != focus
 			w.Focus = focus
 			w.View = view
 			// A column wider than the view aligns as focus moves align it.
 			w.scroll()
 			c.focusScreen = c.screenIndex(g.screen.name())
 			c.keyboard.takeBack()
+			if changed {
+				id, _ := w.Focused()
+				c.requestFlash(flashColumn, id)
+			}
 		}
 		w.view.off = shown - float64(w.View)
 		if c.animOn() {
@@ -399,10 +404,17 @@ func (c *Core) swipeEnd(e ports.SwipeEnd) (shown bool, spawn *Workspace) {
 		}
 		before := m.Current()
 		shots := c.snapshot(now)
+		closing := m.ov.open
 		m.ToggleOverview()
 		c.focusScreen = c.screenIndex(g.screen.name())
 		c.keyboard.takeBack()
 		c.transition(shots, now)
+		if closing {
+			id, _ := m.Focused()
+			if id != 0 {
+				c.requestFlash(flashWindow, id)
+			}
+		}
 		return m.Current() != before, nil
 	case swipeDiscrete:
 		step := g.snap.step(e.Cancelled, e.Time)
@@ -574,14 +586,17 @@ func (c *Core) animate(now time.Time, only *screen) {
 	}
 }
 
-// sliding reports whether a spring runs on the named output.
+// sliding reports whether a spring or focus flash runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && c.screens[i].springing()
+	return i >= 0 && (c.screens[i].springing() || c.flashing(c.screens[i]))
 }
 
-// animating reports whether a spring runs on any output.
+// animating reports whether a spring or focus flash runs on any output.
 func (c *Core) animating() bool {
+	if c.flash.running != nil {
+		return true
+	}
 	for _, sc := range c.screens {
 		if sc.springing() {
 			return true
@@ -607,7 +622,7 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && sc.springing() {
+		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.flashing(sc)) {
 			refresh = min(refresh, r)
 		}
 	}
