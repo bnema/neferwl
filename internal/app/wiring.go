@@ -46,10 +46,21 @@ type pipes struct {
 	// move running slides.
 	frames chan ports.OutputFrame
 
+	// Hint mode: core asks the hints adapter for a scan and gets the result.
+	hintScans   chan ports.HintScanRequest
+	hintResults chan ports.HintScanResult
+
 	captures chan ports.CaptureRequest
-	// Every admitted capture owns one reply slot until wayland consumes it.
-	// Keep this capacity tied to admission so output routing never waits.
-	captured chan ports.CaptureDone
+	// Every admitted capture owns one reply slot until routeCaptured takes
+	// it. Keep this capacity tied to admission so output routing never waits.
+	// With hint mode on, the outputs reply on capturedAll and routeCaptured splits the replies by
+	// ports.CaptureIDInternal into captured (the wayland consumer) and
+	// hintCaptured (internal consumers). With hint mode off, capturedAll is
+	// captured itself and there is no routeCaptured.
+	capturedAll chan ports.CaptureDone
+	captured    chan ports.CaptureDone
+	// hintCaptured carries internal capture replies to the hints adapter.
+	hintCaptured chan ports.CaptureDone
 
 	outputFormats chan ports.OutputFormats
 	outputHeads   chan ports.OutputHeads
@@ -69,7 +80,10 @@ type pipes struct {
 	castCommands chan ports.CastCommand
 }
 
-func newPipes(realSession bool) *pipes {
+// newPipes makes the channels. The hint channels exist only with hint set
+// (hint.enable = on): without them core's hint action is a no-op and nothing
+// of hint mode is allocated.
+func newPipes(realSession, hint bool) *pipes {
 	p := &pipes{
 		securityChanges: make(chan ports.SecurityState, 8),
 		securityEvents:  make(chan ports.SecurityBackendEvent, 64),
@@ -112,6 +126,15 @@ func newPipes(realSession bool) *pipes {
 
 		castCommands: make(chan ports.CastCommand, 64),
 	}
+	// Without hint mode every reply is for the wayland consumer: the outputs
+	// reply on its channel directly and nothing demultiplexes.
+	p.capturedAll = p.captured
+	if hint {
+		p.capturedAll = make(chan ports.CaptureDone, ports.MaxCaptureInflight)
+		p.hintScans = make(chan ports.HintScanRequest, 1)
+		p.hintResults = make(chan ports.HintScanResult, 1)
+		p.hintCaptured = make(chan ports.CaptureDone, 1)
+	}
 	if realSession {
 		p.scales = make(chan ports.ScaleChanged, 8)
 	}
@@ -136,8 +159,14 @@ func (p *pipes) core() core.Channels {
 		ConfigErrors: p.configErrors,
 		Scales:       p.scales,
 		Frames:       p.frames,
+		HintScans:    p.hintScans,
+		Hints:        p.hintResults,
 	}
 }
+
+// internalCaptured is the channel internal capture replies are routed to: the
+// hints adapter reads it.
+func (p *pipes) internalCaptured() chan<- ports.CaptureDone { return p.hintCaptured }
 
 // wayland is the wayland server's side.
 func (p *pipes) wayland() wayland.Channels {
@@ -175,7 +204,7 @@ func (p *pipes) outputs(security ports.SessionSecurity, presented ports.Presenta
 		content:         content,
 		frames:          p.frames,
 		captures:        p.captures,
-		captured:        p.captured,
+		captured:        p.capturedAll,
 		formats:         p.outputFormats,
 		heads:           p.outputHeads,
 		leaseRequests:   p.leaseRequests,

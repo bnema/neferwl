@@ -84,12 +84,19 @@ const busRetry = 2 * time.Second
 func relayConfig(ctx context.Context, cur ports.Config, in <-chan ports.ConfigChanged, out chan<- ports.ConfigChanged, keymaps chan *xkb.Keymap, deviceConfigs chan ports.InputDevicesConfig, curs *cursors, commands chan<- ports.ClientCommand, log zerowrap.Logger) {
 	kb := cur.Keyboard
 	devCfg := cur.InputDevicesConfig
+	hintOn := cur.Hint.Enable
 	for {
 		var ev ports.ConfigChanged
 		select {
 		case <-ctx.Done():
 			return
 		case ev = <-in:
+		}
+		// hint.enable is read at startup: nothing of hint mode starts or
+		// stops on a reload.
+		if ev.Config.Hint.Enable != hintOn {
+			log.Info().Bool("running", hintOn).Msg("hint.enable changes apply after restart")
+			ev.Config.Hint.Enable = hintOn
 		}
 		next := ev.Config.Keyboard
 		layoutChanged := next.Layout != kb.Layout || next.Variant != kb.Variant || next.Options != kb.Options
