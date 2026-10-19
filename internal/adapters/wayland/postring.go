@@ -48,6 +48,7 @@ type ringStats struct {
 func (r *postRing[T]) takeStats() ringStats {
 	r.mu.Lock()
 	st := r.stats
+	st.maxLen = max(st.maxLen, len(r.ring))
 	r.stats = ringStats{}
 	r.mu.Unlock()
 	return st

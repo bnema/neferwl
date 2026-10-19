@@ -61,6 +61,7 @@ func (o *outbox) takeStats() CommandStats {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	s := o.stats
+	s.MaxBacklog = max(s.MaxBacklog, o.pushed-o.sent)
 	o.stats = CommandStats{}
 	return s
 }

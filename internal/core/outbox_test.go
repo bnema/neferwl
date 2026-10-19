@@ -210,3 +210,23 @@ func TestOutboxQueueWaitIsPerEntry(t *testing.T) {
 		}
 	})
 }
+
+// A stalled sender must remain visible in every reporting period, including
+// when it has taken the queue into its private delivery batch.
+func TestOutboxStatsSampleOutstandingBacklog(t *testing.T) {
+	o := newOutbox()
+	out := make(chan ports.ClientCommand)
+	for range outboxLimit {
+		o.push(out, ports.FocusWindow{ID: 1}, ports.SecurityState{}, false)
+	}
+	batch := o.take()
+	for range 2 {
+		if got := o.takeStats().MaxBacklog; got != outboxLimit {
+			t.Fatalf("backlog %d, want %d", got, outboxLimit)
+		}
+	}
+	o.recycle(batch)
+	if got := o.takeStats().MaxBacklog; got != 0 {
+		t.Fatalf("recovered backlog %d", got)
+	}
+}
