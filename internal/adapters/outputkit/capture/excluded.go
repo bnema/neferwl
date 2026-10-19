@@ -10,7 +10,7 @@ import (
 
 // A request with Exclude leaves out the exclusion's HUD layers and popups;
 // every other capture shows them. No capture shows the capture indicator
-// (Scene.CaptureIndicators): a scene that carries it is never the source of a
+// (Scene.CaptureIndicators): a scene that carries it, or hint labels, is never the source of a
 // capture image. Requests of the displayed frame are then served from the
 // frame rendered without it first (SubmitPlain, ExcludedScene).
 
@@ -64,10 +64,10 @@ func excludedShown(s ports.Scene) bool {
 	return false
 }
 
-// plain returns s without its capture state and indicators, Seq 0 so the
+// plain returns s without its capture state, indicators and hint labels, Seq 0 so the
 // renderer redraws the whole target instead of reusing a displayed frame.
 func plain(s ports.Scene) ports.Scene {
-	s.Capture, s.CaptureIndicators, s.Seq = nil, nil, 0
+	s.Capture, s.CaptureIndicators, s.HintLabels, s.Seq = nil, nil, nil, 0
 	return s
 }
 
@@ -85,7 +85,7 @@ func plain(s ports.Scene) ports.Scene {
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
 func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
-	if len(normal) == 0 || len(s.CaptureIndicators) == 0 {
+	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && len(s.HintLabels) == 0 {
 		return false, nil, nil
 	}
 	done, err = r.Render(plain(s), surfaces)
@@ -164,7 +164,7 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 	}
 	clear(reqs[n:])
 	reqs = reqs[:n]
-	excl := excludedShown(s) || len(s.CaptureIndicators) > 0
+	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || len(s.HintLabels) > 0
 	group := func(q ports.CaptureRequest) int {
 		switch {
 		case q.OffScreen:

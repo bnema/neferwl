@@ -112,3 +112,43 @@ func TestSubmitPlainRejectsProtectedEpoch(t *testing.T) {
 	_, statErr := file.Stat()
 	require.ErrorIs(t, statErr, os.ErrClosed)
 }
+
+// Hint labels are never captured either: a scene with only labels is served
+// from the plain frame, and an Exclude request is ordered to the excluded scene.
+func TestSubmitPlainServesHintLabelScenesWithoutLabels(t *testing.T) {
+	replies := make(chan ports.CaptureDone, 1)
+	p := NewPipeline(context.Background(), replies)
+	r := portsmocks.NewMockRenderer(t)
+	frame := portsmocks.NewMockCaptureFrame(t)
+	frame.EXPECT().Done().Return((*os.File)(nil))
+	frame.EXPECT().Read(image.Rect(0, 0, 2, 2), mock.Anything, 8).Return(nil).Once()
+	var rendered []ports.Scene
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		rendered = append(rendered, s)
+		return nil, nil
+	}).Once()
+	r.EXPECT().BeginCapture().Return(frame, nil).Once()
+	r.EXPECT().EndCapture(frame).Return().Once()
+	s := excludedTestScene()
+	s.Capture = nil
+	s.HintLabels = []ports.HintLabel{{Text: "f"}}
+	reqs := []ports.CaptureRequest{pipelineRequest(t, 1)}
+	require.False(t, reqs[0].Indicate)
+	took, done, err := p.SubmitPlain(r, s, nil, reqs)
+	require.NoError(t, err)
+	require.Nil(t, done)
+	require.True(t, took)
+	require.Len(t, rendered, 1)
+	require.Nil(t, rendered[0].HintLabels)
+	require.Zero(t, rendered[0].Seq)
+	require.Equal(t, uint64(1), awaitCapture(t, replies).ID)
+	p.Close(r)
+	frame.Calls = nil
+
+	withSession := s
+	withSession.Capture = &ports.SceneCapture{Session: 7}
+	normal, excluded, _ := p.Split(withSession, []ports.CaptureRequest{{ID: 2, Exclude: true, Session: 7}})
+	require.Empty(t, normal)
+	require.Equal(t, []uint64{2}, ids(excluded), "labels force the Exclude request to the excluded scene")
+	require.Nil(t, p.ExcludedScene(s).HintLabels)
+}

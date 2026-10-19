@@ -60,6 +60,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.popups(true)
 	w.focusFlash()
 	w.captureIndicators()
+	w.hintLabels()
 	r.scratchDraws = w.draws
 	return w.draws
 }
@@ -331,14 +332,14 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 	for i := range content.Children {
 		if ch := &content.Children[i]; ch.Below {
 			cx, cy := at(ch)
-			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{id, ch.Surface}, ch.Version, covers, false)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, covers, false)
 		}
 	}
-	w.surface(content, ox, oy, clip, shmKey{id, content.Surface}, content.Version, covers, true)
+	w.surface(content, ox, oy, clip, shmKey{win: id, surface: content.Surface}, content.Version, covers, true)
 	for i := range content.Children {
 		if ch := &content.Children[i]; !ch.Below {
 			cx, cy := at(ch)
-			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{id, ch.Surface}, ch.Version, nil, false)
+			w.surface(&ch.SurfaceContent, cx, cy, clip, shmKey{win: id, surface: ch.Surface}, ch.Version, nil, false)
 		}
 	}
 }

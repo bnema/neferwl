@@ -94,6 +94,10 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if s.Flash != nil {
 		return ports.SurfaceContent{}, "focus_flash"
 	}
+	// Hint labels are composed over the window.
+	if len(s.HintLabels) > 0 {
+		return ports.SurfaceContent{}, "hint_labels"
+	}
 	if s.Transform != 0 {
 		// The scanout buffer would have to be pre-rotated: rotated outputs compose.
 		return ports.SurfaceContent{}, "output_transform"
