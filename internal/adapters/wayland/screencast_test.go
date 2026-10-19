@@ -76,7 +76,14 @@ func newCastHarness(t *testing.T, withSink bool) *castHarness {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("server did not stop")
+		}
+	})
 	return h
 }
 
@@ -104,6 +111,26 @@ func (h *castHarness) next(kind ports.CastEventKind) ports.CastEvent {
 	case <-time.After(3 * time.Second):
 		h.t.Fatalf("no cast event of kind %d", kind)
 		return ports.CastEvent{}
+	}
+}
+
+func (h *castHarness) nextCastFrameDone() ports.CastEvent {
+	h.t.Helper()
+	timer := time.NewTimer(3 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case ev := <-h.got:
+			if ev.Kind == ports.CastFrameDone {
+				return ev
+			}
+			if ev.Kind != ports.CastDamage {
+				h.t.Fatalf("unexpected event %+v", ev)
+			}
+		case <-timer.C:
+			h.t.Fatal("no frame completion")
+			return ports.CastEvent{}
+		}
 	}
 }
 
@@ -331,7 +358,13 @@ func TestCastOutputUnplugStops(t *testing.T) {
 	data := make([]byte, 64*32*4)
 	h.casts <- castFrame(1, 9, data, 64, 32)
 	req := h.request()
-	h.commands <- ports.SetOutputs{Outputs: castLayout[1:], Focused: "HEADLESS-2"}
+	// Apply on the owner before completing the capture. Posting a barrier
+	// does not fence the independent Commands forwarding goroutine.
+	if !h.s.display.Do(func() {
+		h.s.apply(ports.SetOutputs{Outputs: castLayout[1:], Focused: "HEADLESS-2"})
+	}) {
+		t.Fatal("display stopped")
+	}
 	h.none()
 	h.complete(req, nil)
 	if done := h.next(ports.CastFrameDone); done.ID != 1 || done.Buf != 9 || done.Err == nil {
@@ -615,6 +648,11 @@ func TestCastInventoryPublishedOncePerChange(t *testing.T) {
 		h.flip("HEADLESS-1")
 		h.casts <- castFrame(1, i%3, data, 64, 32)
 		h.complete(h.request(), nil)
+		// Flips may also publish damage; settle this buffer before lending
+		// the next one, independently of the reply-forwarding goroutine.
+		if ev := h.nextCastFrameDone(); ev.Err != nil {
+			t.Fatalf("frame %d: %+v", i, ev)
+		}
 	}
 	noInv()
 

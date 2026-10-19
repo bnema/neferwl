@@ -71,12 +71,11 @@ func testLog(out *logBuf) zerowrap.Logger {
 	return zerowrap.New(zerowrap.Config{Level: "debug", Format: "json", Output: out}).WithField("component", "screencast")
 }
 
-// peers is what the mocked peerResolver answers: the executable of every
-// peer, and a hook to hold Open.
+// peers is what the mocked peerResolver answers: the executable and pid
+// of every peer.
 type peers struct {
 	exe     atomic.Value // string
 	exeNow  func() string
-	openGo  chan struct{} // when set, Open waits for it
 	pid     atomic.Int64
 	openErr error
 	exePid  func(open int) int // pid Exe reports; the opened one when nil
@@ -118,9 +117,8 @@ type svcHarness struct {
 }
 
 type harnessOpts struct {
-	allow  *captureallow.Policy
-	noPW   bool
-	holdOp bool
+	allow *captureallow.Policy
+	noPW  bool
 	// drain overrides how long the stopping service waits for frames.
 	drain time.Duration
 	// iterate runs inside every PipeWire loop iteration, on the owner.
@@ -132,9 +130,6 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 	h := &svcHarness{t: t, cmds: make(chan ports.CastCommand, 64), peers: &peers{}, log: &logBuf{}, done: make(chan struct{}), closed: make(chan struct{}, 8)}
 	h.addr, h.killBus = startBus(t)
 	h.peers.exe.Store("/usr/bin/grim")
-	if o.holdOp {
-		h.peers.openGo = make(chan struct{})
-	}
 	allow := o.allow
 	if allow == nil {
 		allow = captureallow.Builtin()
@@ -147,9 +142,6 @@ func newSvcHarness(t *testing.T, o harnessOpts) *svcHarness {
 
 	res := newMockpeerResolver(t)
 	res.EXPECT().Open(mock.Anything).RunAndReturn(func(pid int) (*os.File, error) {
-		if h.peers.openGo != nil {
-			<-h.peers.openGo
-		}
 		if h.peers.openErr != nil {
 			return nil, h.peers.openErr
 		}
