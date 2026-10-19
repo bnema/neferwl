@@ -162,7 +162,6 @@ type Server struct {
 	securityLive atomic.Int32
 	display      *server.Display
 	env          procEnv
-	slotsPending bool // core waits for a slot window
 	name         string
 	cleanup      func()
 	log          zerowrap.Logger
@@ -809,8 +808,6 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		s.captureState(c)
 	case ports.UserActivity:
 		s.userActivity()
-	case ports.SlotsPending:
-		s.slotsPending = c.Pending
 	case ports.ShortcutsInhibitState:
 		s.setShortcutsInhibit(c)
 	case ports.CloseWindow:

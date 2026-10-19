@@ -120,12 +120,6 @@ type SetOutputs struct {
 
 func (SetOutputs) clientCommand() {}
 
-// SlotsPending reports whether core awaits a placement window. It is advisory:
-// mapping clients' SlotEnv must be read independently of command application.
-type SlotsPending struct{ Pending bool }
-
-func (SlotsPending) clientCommand() {}
-
 // CloseWindow carries core → wayland close requests.
 type CloseWindow struct{ ID WindowID }
 

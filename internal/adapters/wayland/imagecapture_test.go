@@ -242,37 +242,8 @@ func noSession(t *testing.T, cc *cclient, ev chan []uint32) {
 // client received what followed.
 func (h *captureHarness) settle(t *testing.T, cc *cclient) {
 	t.Helper()
-	// The command loop takes commands off the channel before it applies
-	// them on the display: an empty channel does not mean applied. Commands
-	// apply in order, so a marker (SlotsPending, a plain flag) seen on the
-	// display means every command sent before it was applied.
-	var was bool
-	if !h.s.display.Do(func() { was = h.s.slotsPending }) {
-		t.Fatal("display stopped")
-	}
-	h.applied(t, !was)
-	h.applied(t, was)
+	syncCommands(t, h.s, h.commands, cc.c)
 	cc.roundtrip(t)
-}
-
-// applied sends SlotsPending{pending} and waits until the display applied it.
-func (h *captureHarness) applied(t *testing.T, pending bool) {
-	t.Helper()
-	h.commands <- ports.SlotsPending{Pending: pending}
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		var now bool
-		if !h.s.display.Do(func() { now = h.s.slotsPending }) {
-			t.Fatal("display stopped")
-		}
-		if now == pending {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("commands not applied")
-		}
-		time.Sleep(time.Millisecond)
-	}
 }
 
 func (h *captureHarness) send(cmd ports.ClientCommand) { h.commands <- cmd }

@@ -647,9 +647,6 @@ func TestFirstTerminalFollowsSetOutputs(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("no output command or spawn")
 	}
-	if v, ok := receive(t, commands).(ports.SlotsPending); !ok || !v.Pending {
-		t.Fatalf("expected pending before spawn, got %v", v)
-	}
 	if req := receive(t, spawn); len(req.Argv) == 0 {
 		t.Fatal(req)
 	}

@@ -29,16 +29,6 @@ func slotToken(t *testing.T, req ports.SpawnRequest) string {
 	return req.Env[0][len(ports.SlotEnv)+1:]
 }
 
-// pendingSent drains the command queue and reports the last SlotsPending.
-func pendingSent(r *multiRig) (pending, sent bool) {
-	for len(r.commands) > 0 {
-		if v, ok := (<-r.commands).(ports.SlotsPending); ok {
-			pending, sent = v.Pending, true
-		}
-	}
-	return pending, sent
-}
-
 func sceneWindow(set []ports.Scene, id ports.WindowID) (ports.SceneWindow, bool) {
 	for _, s := range set {
 		for _, w := range s.Windows {
@@ -62,9 +52,6 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 		t.Fatalf("argv %v", req.Argv)
 	}
 	token := slotToken(t, req)
-	if pending, sent := pendingSent(r); !sent || !pending {
-		t.Fatal("SlotsPending{true} was not sent")
-	}
 	r.key(t, "Next", ports.ModAlt) // focus moves to workspace 2
 	r.client <- ports.WindowMapped{ID: 2, Slot: token}
 	set := receive(t, r.scenes)
@@ -78,9 +65,6 @@ func TestStashBindOpensWindowInStash(t *testing.T) {
 	}
 	if w1, _ := sceneWindow(set, 1); w1.Focused {
 		t.Fatal("tile kept the focus")
-	}
-	if pending, sent := pendingSent(r); !sent || pending {
-		t.Fatalf("pending flag not cleared: %v %v", pending, sent)
 	}
 	// Unstashing tiles it as a column of its own.
 	set = r.key(t, "s", ports.ModAlt|ports.ModShift)
@@ -112,9 +96,6 @@ func TestToggleEmptyStashOpensTerminal(t *testing.T) {
 		t.Fatalf("argv %v", req.Argv)
 	}
 	token := slotToken(t, req)
-	if pending, sent := pendingSent(r); !sent || !pending {
-		t.Fatal("SlotsPending{true} was not sent")
-	}
 	r.key(t, "s", ports.ModAlt)
 	if len(r.spawn) != 0 {
 		t.Fatal("second terminal while the first is awaited")
@@ -182,9 +163,6 @@ func TestFourFingerSwipeEmptyStashOpensTerminal(t *testing.T) {
 		t.Fatalf("argv %v", req.Argv)
 	}
 	token := slotToken(t, req)
-	if pending, sent := pendingSent(r.multiRig); !sent || !pending {
-		t.Fatal("SlotsPending{true} was not sent")
-	}
 	r.four(t, 0, 40, 10)
 	if len(r.spawn) != 0 {
 		t.Fatal("second terminal while the first is awaited")

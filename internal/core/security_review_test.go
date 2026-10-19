@@ -77,7 +77,7 @@ func TestExactEpochAdmissionPreservesProducerModifierState(t *testing.T) {
 	}
 }
 
-func TestSlotsPendingBackpressureSuppressesSpawnAndDefersSlots(t *testing.T) {
+func TestEpochChangeSuppressesSpawnAndDefersSlots(t *testing.T) {
 	c, _, _ := hiddenCaptureCommands(t)
 	key := slotKey{workspace: "dev", index: 1}
 	c.slots[key] = &slotState{argv: []string{"terminal"}}
@@ -100,10 +100,6 @@ func TestSlotsPendingBackpressureSuppressesSpawnAndDefersSlots(t *testing.T) {
 	spawn := make(chan ports.SpawnRequest, 2)
 	c.ch.Spawn = spawn
 	err := c.spawnSlots(context.Background(), false)
-	cmd := reviewReceive(t, commands).(ports.SecurityCommand)
-	if _, ok := cmd.Command.(ports.SlotsPending); !ok {
-		t.Fatal(cmd)
-	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +118,7 @@ func TestSlotsPendingBackpressureSuppressesSpawnAndDefersSlots(t *testing.T) {
 	}
 }
 
-func TestTerminalPendingBackpressureSuppressesSpawnAndRestoresRetry(t *testing.T) {
+func TestTerminalEpochChangeSuppressesSpawnAndRestoresRetry(t *testing.T) {
 	c, _, _ := hiddenCaptureCommands(t)
 	c.cur().mon.RemoveWindow(1)
 	c.cur().mon.RemoveWindow(2)
@@ -147,7 +143,6 @@ func TestTerminalPendingBackpressureSuppressesSpawnAndRestoresRetry(t *testing.T
 	spawn := make(chan ports.SpawnRequest, 1)
 	c.ch.Spawn = spawn
 	err := c.spawnEmpty(context.Background())
-	reviewReceive(t, commands)
 	if err != nil {
 		t.Fatal(err)
 	}
