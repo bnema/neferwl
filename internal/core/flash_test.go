@@ -397,3 +397,73 @@ func TestFlashNoImplicitFocusTriggers(t *testing.T) {
 		t.Fatal("pointer focus flashed")
 	}
 }
+
+func TestFlashCancelsStaleRunningTargets(t *testing.T) {
+	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+		for _, change := range []string{"overview", "output gone", "fullscreen", "unmapped", "hidden", "other output", "workspace changed"} {
+			t.Run(string(rune('0'+level))+"/"+change, func(t *testing.T) {
+				c, clock := flashCore(t)
+				a := c.cur()
+				c.addScreen(ports.OutputInfo{Name: "B", Width: 300, Height: 200})
+				b := c.screens[1]
+				startFlash(t, c, clock, level, 3)
+				if indicatorScene(t, c).Flash == nil {
+					t.Fatal("setup: no running flash")
+				}
+				switch change {
+				case "overview":
+					a.mon.ToggleOverview()
+				case "output gone":
+					c.screens = []*screen{b}
+					c.focusScreen = 0
+				case "fullscreen":
+					a.mon.ToggleFullscreen()
+				case "unmapped":
+					c.windows.drop(3)
+				case "hidden":
+					w := a.mon.Current()
+					w.ToggleWindowStash()
+					w.ToggleStashVisible()
+				case "other output":
+					a.mon.RemoveWindow(3)
+					b.mon.AddWindow(3)
+				case "workspace changed":
+					a.mon.Focus(a.mon.Active + 1)
+				}
+				// Cancellation must not wait for the target output's next flip.
+				scenes := stepScenes(t, c, b)
+				shouldCancel := level != flashMonitor || change == "overview" || change == "output gone"
+				if shouldCancel {
+					if scenes["A"].Flash != nil || c.flash.running != nil || c.animating() {
+						t.Fatalf("stale flash retained: %+v, animating=%v", scenes["A"].Flash, c.animating())
+					}
+				} else if scenes["A"].Flash == nil || !c.animating() {
+					t.Fatal("monitor flash cancelled for a window change")
+				}
+			})
+		}
+	}
+}
+
+func TestFlashCooldownRemembersEveryTarget(t *testing.T) {
+	c, clock := flashCore(t)
+	startFlash(t, c, clock, flashWindow, 3)
+	first := c.flash.start
+	startFlash(t, c, clock, flashWindow, 2)
+	c.requestFlash(flashWindow, 3)
+	clock.now = clock.now.Add(flashSettle)
+	if c.flashTick() || c.flash.running != nil {
+		t.Fatal("A flashed again after B within cooldown")
+	}
+	clock.now = first.Add(flashCooldown)
+	startFlash(t, c, clock, flashWindow, 3)
+	if c.flash.running.window != 3 {
+		t.Fatal("A did not flash after cooldown")
+	}
+	// Inserting after all previous starts expire prunes old target keys.
+	clock.now = clock.now.Add(flashCooldown)
+	startFlash(t, c, clock, flashMonitor, 0)
+	if len(c.flash.lastStarts) != 1 {
+		t.Fatalf("expired cooldown entries retained: %v", c.flash.lastStarts)
+	}
+}

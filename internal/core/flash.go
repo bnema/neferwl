@@ -25,16 +25,15 @@ type flashTarget struct {
 }
 
 type focusFlash struct {
-	pending   *flashTarget
-	since     time.Time
-	timerC    <-chan time.Time
-	timerStop func() bool
-	running   *flashTarget
-	rect      Rect
-	start     time.Time
-	value     float64 // Retained between this output's own flips.
-	last      flashTarget
-	lastAt    time.Time
+	pending    *flashTarget
+	since      time.Time
+	timerC     <-chan time.Time
+	timerStop  func() bool
+	running    *flashTarget
+	rect       Rect
+	start      time.Time
+	value      float64 // Retained between this output's own flips.
+	lastStarts map[flashTarget]time.Time
 }
 
 func (c *Core) flashOn() bool { return c.animOn() && c.cfg.Focus.Flash && !c.protectionRequested() }
@@ -112,10 +111,19 @@ func (c *Core) flashTick() bool {
 			}
 		}
 	}
-	if target == f.last && now.Sub(f.lastAt) < flashCooldown {
+	if at, ok := f.lastStarts[target]; ok && now.Sub(at) < flashCooldown {
 		return false
 	}
-	f.running, f.rect, f.start, f.last, f.lastAt = &target, rect, now, target, now
+	if f.lastStarts == nil {
+		f.lastStarts = make(map[flashTarget]time.Time)
+	}
+	for key, at := range f.lastStarts {
+		if now.Sub(at) >= flashCooldown {
+			delete(f.lastStarts, key)
+		}
+	}
+	f.lastStarts[target] = now
+	f.running, f.rect, f.start = &target, rect, now
 	f.value = c.cfg.Focus.FlashOpacity
 	return true
 }
@@ -126,6 +134,11 @@ func (c *Core) advanceFlash(only *screen) {
 		return
 	}
 	if !c.flashOn() || c.screenIndex(f.running.output) < 0 {
+		c.stopFlash()
+		return
+	}
+	sc := c.screens[c.screenIndex(f.running.output)]
+	if !c.flashVisible(*f.running, sc) {
 		c.stopFlash()
 		return
 	}
@@ -140,6 +153,28 @@ func (c *Core) advanceFlash(only *screen) {
 		return
 	}
 	f.value = c.cfg.Focus.FlashOpacity * (1 - float64(max(elapsed, 0))/float64(d))
+}
+
+// flashVisible checks the current layout, not leaving placements retained for
+// transitions: an old border must not outlive its target's visibility.
+func (c *Core) flashVisible(target flashTarget, sc *screen) bool {
+	if sc.mon.ov.open {
+		return false
+	}
+	if target.level == flashMonitor {
+		return true
+	}
+	owner, _ := c.screenOf(target.window)
+	if owner != sc || c.windows.lookup(target.window).client.ID == 0 {
+		return false
+	}
+	view := sc.mon.viewport()
+	for _, p := range sc.mon.Layout() {
+		if p.ID == target.window {
+			return !p.Fullscreen && p.Preview == 0 && view.shows(p)
+		}
+	}
+	return false
 }
 
 func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
