@@ -2,6 +2,7 @@ package hints
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/draw"
 	"image/png"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -234,5 +237,36 @@ func TestRecognizeCapsProcesses(t *testing.T) {
 		if j.err != nil {
 			t.Fatal(j.err)
 		}
+	}
+}
+
+func TestLanguageDiscoveryTimeout(t *testing.T) {
+	t.Setenv("TESSDATA_PREFIX", t.TempDir())
+	runner := newMocklanguageRunner(t)
+	parent := context.Background()
+	runner.EXPECT().Output(mock.Anything, "tesseract", []string{"--list-langs"}).RunAndReturn(
+		func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+			deadline, ok := ctx.Deadline()
+			if !ok || time.Until(deadline) > languageTimeout {
+				t.Fatal("language discovery has no bounded deadline")
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).Once()
+	lang, err := discoverLanguage(parent, "tesseract", runner, 0)
+	if lang != "" || !errors.Is(err, context.DeadlineExceeded) || parent.Err() != nil {
+		t.Fatalf("language=%q error=%v parent=%v", lang, err, parent.Err())
+	}
+}
+
+func TestLanguageDiscoveryFailureKeepsAccessibilityOnly(t *testing.T) {
+	w := &worker{ocr: ocrState{done: true, err: context.DeadlineExceeded}}
+	ar := atspiResult{targets: []ports.HintTarget{{Window: 1, Rect: ports.Rect{W: 20, H: 10}}}}
+	req := ports.HintScanRequest{Width: 100, Height: 100, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 100, H: 100}}}}
+	if w.needFrame(context.Background(), req, ar) {
+		t.Fatal("timed out discovery must not require an OCR capture")
+	}
+	if err := w.ocr.resolve(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("discovery failure was not retained: %v", err)
 	}
 }

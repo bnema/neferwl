@@ -670,3 +670,50 @@ func TestFlashSameScreenColumnFocusKeepsColumnLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestFlashCancelsOnGeometryChange(t *testing.T) {
+	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+		for _, change := range []string{"resize", "new window"} {
+			t.Run(string(rune('0'+level))+"/"+change, func(t *testing.T) {
+				c, clock := flashCore(t)
+				startFlash(t, c, clock, level, 3)
+				before := indicatorScene(t, c)
+				if before.Flash == nil {
+					t.Fatal("setup: no flash")
+				}
+				if level == flashMonitor {
+					c.cur().mon.SetOutput(400, 300)
+				} else if change == "resize" {
+					c.cur().mon.Current().Apply(ActionCycleColumnWidth)
+				} else {
+					c.cur().mon.AddWindow(4)
+					c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
+				}
+				after := indicatorScene(t, c)
+				if after.Flash != nil || c.flash.running != nil {
+					t.Fatal("stale geometry retained")
+				}
+				if before.Flash.Rect != c.flash.published.Rect {
+					t.Fatal("old flash sample mutated")
+				}
+			})
+		}
+	}
+}
+
+func TestFlashGeometryRevalidationAllocations(t *testing.T) {
+	for _, level := range []flashLevel{flashWindow, flashColumn, flashMonitor} {
+		t.Run(string(rune('0'+level)), func(t *testing.T) {
+			c, clock := flashCore(t)
+			startFlash(t, c, clock, level, 3)
+			// Measure production work, not the generated clock mock's call log.
+			c.opts.Clock = nil
+			c.flash.start = time.Now()
+			c.cfg.Focus.FlashDuration = time.Hour
+			c.advanceFlash(nil) // warm owner-owned layout scratch
+			if n := testing.AllocsPerRun(100, func() { c.advanceFlash(nil) }); n != 0 {
+				t.Fatalf("flash geometry validation allocates %v times per frame", n)
+			}
+		})
+	}
+}

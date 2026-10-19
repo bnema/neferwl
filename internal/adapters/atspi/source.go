@@ -459,7 +459,8 @@ func (s *Source) walk(do func([]call) []reply, root ref, linksOnly bool) []ref {
 				call{op: opState, name: n.name, path: n.path})
 		}
 		rep := do(calls)
-		var next []ref
+		room := max(0, maxWalkNodes-seen-len(level))
+		next := make([]ref, 0, room)
 		for i, n := range level {
 			ch, role, state := rep[3*i], rep[3*i+1], rep[3*i+2]
 			if state.err == nil && !hasState(state.state, stateShowing) {
@@ -469,13 +470,11 @@ func (s *Source) walk(do func([]call) []reply, root ref, linksOnly bool) []ref {
 				out = append(out, n)
 			}
 			if ch.err == nil {
-				next = append(next, ch.refs...)
+				take := min(len(ch.refs), room-len(next))
+				next = append(next, ch.refs[:take]...)
 			}
 		}
 		seen += len(level)
-		if room := maxWalkNodes - seen; len(next) > room {
-			next = next[:max(room, 0)]
-		}
 		level = next
 	}
 	return out

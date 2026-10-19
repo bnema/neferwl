@@ -832,3 +832,49 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 		t.Fatalf("disabled note ran %d times, want 1", got)
 	}
 }
+
+// Resizing window 1 leaves the old target centre inside it. Identity alone
+// therefore cannot protect either admission or the eventual synthetic click.
+func TestHintRejectsResizedSource(t *testing.T) {
+	for _, accessibility := range []bool{false, true} {
+		for _, beforeResult := range []bool{false, true} {
+			t.Run(fmt.Sprintf("accessibility=%v/beforeResult=%v", accessibility, beforeResult), func(t *testing.T) {
+				h := newHint(t, core.Options{})
+				tg := h.inside(0)
+				tg.Text = !accessibility
+				if accessibility {
+					tg.Window = 1
+				}
+				req := h.start()
+				if !beforeResult {
+					h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+					h.labelled(1, 0)
+				}
+				h.client <- ports.WindowMapped{ID: 2}
+				s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
+				var resized ports.Rect
+				for _, w := range s.Windows {
+					if w.ID == 1 {
+						resized = w.Rect
+					}
+				}
+				x, y := tg.Rect.X+tg.Rect.W/2, tg.Rect.Y+tg.Rect.H/2
+				if resized == h.win || x < resized.X || x >= resized.X+resized.W || y < resized.Y || y >= resized.Y+resized.H {
+					t.Fatalf("setup: old target %+v not inside resized window %+v (was %+v)", tg.Rect, resized, h.win)
+				}
+				if beforeResult {
+					h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
+					h.labelled(0, 0)
+				} else {
+					h.drain()
+					h.press("f", 0)
+					for _, cmd := range h.barrier() {
+						if _, ok := cmd.(ports.PointerButtonTo); ok {
+							t.Fatal("clicked resized source window")
+						}
+					}
+				}
+			})
+		}
+	}
+}

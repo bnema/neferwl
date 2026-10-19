@@ -41,7 +41,25 @@ type OCRWord struct {
 var languageWarning sync.Once
 var failureWarning sync.Once
 
+// languageRunner bounds the external language-discovery process independently
+// of recognition, which has not started yet when discovery runs.
+type languageRunner interface {
+	Output(context.Context, string, ...string) ([]byte, error)
+}
+
+type execLanguageRunner struct{}
+
+func (execLanguageRunner) Output(ctx context.Context, binary string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, binary, args...).Output()
+}
+
+const languageTimeout = 5 * time.Second
+
 func ocrLanguage(ctx context.Context, binary string) (string, error) {
+	return discoverLanguage(ctx, binary, execLanguageRunner{}, languageTimeout)
+}
+
+func discoverLanguage(ctx context.Context, binary string, runner languageRunner, timeout time.Duration) (string, error) {
 	dir := os.Getenv("TESSDATA_PREFIX")
 	if dir == "" {
 		dir = "/usr/share/tessdata"
@@ -49,7 +67,9 @@ func ocrLanguage(ctx context.Context, binary string) (string, error) {
 	if _, err := os.Stat(filepath.Join(dir, "eng.traineddata")); err == nil {
 		return "eng", nil
 	}
-	out, err := exec.CommandContext(ctx, binary, "--list-langs").Output()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	out, err := runner.Output(ctx, binary, "--list-langs")
 	if err != nil {
 		return "", err
 	}
