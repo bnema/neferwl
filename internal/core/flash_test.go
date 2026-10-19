@@ -140,7 +140,6 @@ func TestFlashSkipsIneligibleTargets(t *testing.T) {
 		{"overview", func(c *Core, _ *indicatorClock) { c.cur().mon.ToggleOverview() }},
 		{"fullscreen", func(c *Core, _ *indicatorClock) { c.cur().mon.ToggleFullscreen() }},
 		{"gone", func(c *Core, _ *indicatorClock) { c.cur().mon.RemoveWindow(3) }},
-		{"just mapped", func(c *Core, clock *indicatorClock) { c.windows.mapped(ports.WindowMapped{ID: 3}, clock.now) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c, clock := flashCore(t)
@@ -465,5 +464,137 @@ func TestFlashCooldownRemembersEveryTarget(t *testing.T) {
 	startFlash(t, c, clock, flashMonitor, 0)
 	if len(c.flash.lastStarts) != 1 {
 		t.Fatalf("expired cooldown entries retained: %v", c.flash.lastStarts)
+	}
+}
+
+// BenchmarkFlashSceneBuild includes revalidation and immutable scene creation.
+func BenchmarkFlashSceneBuild(b *testing.B) {
+	var cfg ports.Config
+	cfg.Layout.MaxColumns = 2
+	cfg.Keyboard.CmdKey = "super"
+	cfg.Animations.On = true
+	cfg.Focus.Flash = true
+	cfg.Focus.FlashOpacity = 0.8
+	cfg.Focus.FlashDuration = time.Hour
+	c, err := New(cfg, Channels{Scenes: make(chan []ports.Scene, 1)}, Options{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c.addScreen(ports.OutputInfo{Name: "A", Width: 1000, Height: 600})
+	c.windows.mapped(ports.WindowMapped{ID: 1}, time.Now())
+	c.cur().mon.AddWindow(1)
+	c.flash.running = &flashTarget{level: flashWindow, window: 1, output: "A"}
+	c.flash.start = time.Now()
+	c.flash.rect = Rect{W: 1000, H: 600}
+	c.refreshShown()
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		c.refreshShown()
+		c.advanceFlash(nil)
+		scene, err := c.sceneFor(ctx, 0, c.cur(), nil, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		c.cur().last = scene
+	}
+}
+
+func TestFlashEdgeWorkspaceSwitchDoesNotFlash(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		overflow Overflow
+		action   Action
+	}{
+		{"vertical", OverflowScroll, ActionFocusWindowDown},
+		{"horizontal", OverflowCascade, ActionFocusColumnRight},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := flashCore(t)
+			m := c.cur().mon
+			m.SetOverflow(tc.overflow)
+			before := m.Current()
+			m.Focus(1)
+			m.AddWindow(4)
+			m.Focus(0)
+			c.applyAction(tc.action)
+			if m.Current() == before {
+				t.Fatal("setup: edge did not switch workspace")
+			}
+			if id, _ := m.Focused(); id != 4 {
+				t.Fatalf("did not land on occupied workspace: %d", id)
+			}
+			if c.flash.pending != nil || c.flash.running != nil {
+				t.Fatal("workspace switch flashed")
+			}
+		})
+	}
+}
+
+func TestFlashExplicitActionOnFreshlyMappedWindow(t *testing.T) {
+	c, clock := flashCore(t)
+	c.clientEvent(context.Background(), ports.WindowMapped{ID: 4})
+	if c.flash.pending != nil {
+		t.Fatal("mapping requested flash")
+	}
+	c.applyAction(ActionToggleFloating)
+	if c.flash.pending == nil || c.flash.pending.window != 4 {
+		t.Fatal("explicit action did not request flash")
+	}
+	c.stopAnimations()
+	clock.now = clock.now.Add(flashSettle)
+	if !c.flashTick() {
+		t.Fatal("freshly mapped target rejected")
+	}
+}
+
+func TestFlashPendingTimerStopped(t *testing.T) {
+	for _, reason := range []string{"replacement", "security", "run exit"} {
+		t.Run(reason, func(t *testing.T) {
+			c, clock := flashCore(t)
+			timer := portsmocks.NewMockTimer(t)
+			timer.EXPECT().C().Return(make(chan time.Time)).Once()
+			timer.EXPECT().Stop().Return(true).Times(1)
+			strictClock := portsmocks.NewMockClock(t)
+			strictClock.EXPECT().Now().Return(clock.now).Maybe()
+			strictClock.EXPECT().NewTimer(flashSettle).Return(timer).Once()
+			c.opts.Clock = strictClock
+			c.requestFlash(flashWindow, 3)
+			// Only the pending flash timer belongs to the strict clock.
+			c.opts.Clock = nil
+			switch reason {
+			case "replacement":
+				c.requestFlash(flashWindow, 2)
+				c.stopFlash()
+			case "security":
+				gate := portsmocks.NewMockSessionSecurity(t)
+				gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+				c.opts.Security = gate
+				c.syncSecurity()
+			case "run exit":
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				if err := c.Run(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestFlashUnchangedSampleIsReused(t *testing.T) {
+	c, clock := flashCore(t)
+	startFlash(t, c, clock, flashWindow, 3)
+	first := indicatorScene(t, c).Flash
+	if first == nil {
+		t.Fatal("missing flash")
+	}
+	if next := indicatorScene(t, c).Flash; next != first {
+		t.Fatal("unchanged immutable sample not reused")
+	}
+	clock.now = clock.now.Add(time.Millisecond)
+	if next := indicatorScene(t, c).Flash; next == first || first.Alpha != c.cfg.Focus.FlashOpacity {
+		t.Fatal("changed sample mutated prior scene")
 	}
 }

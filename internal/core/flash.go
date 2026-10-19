@@ -34,6 +34,8 @@ type focusFlash struct {
 	start      time.Time
 	value      float64 // Retained between this output's own flips.
 	lastStarts map[flashTarget]time.Time
+	layout     []Placement       // Owner scratch, never shared with a published scene.
+	published  *ports.FocusFlash // Immutable last sample, reused when unchanged.
 }
 
 func (c *Core) flashOn() bool { return c.animOn() && c.cfg.Focus.Flash && !c.protectionRequested() }
@@ -72,7 +74,7 @@ func (c *Core) flashTick() bool {
 	if target.level != flashMonitor {
 		owner, _ := c.screenOf(target.window)
 		record := c.windows.lookup(target.window)
-		if owner != sc || record.client.ID == 0 || f.since.Sub(record.mappedAt) < flashSettle {
+		if owner != sc || record.client.ID == 0 {
 			return false
 		}
 	}
@@ -106,8 +108,7 @@ func (c *Core) flashTick() bool {
 				if p.Hidden || !slices.Contains(w.Columns[col].Windows, p.ID) {
 					continue
 				}
-				x, y := min(rect.X, p.Rect.X), min(rect.Y, p.Rect.Y)
-				rect = Rect{X: x, Y: y, W: max(rect.X+rect.W, p.Rect.X+p.Rect.W) - x, H: max(rect.Y+rect.H, p.Rect.Y+p.Rect.H) - y}
+				rect = union(rect, p.Rect)
 			}
 		}
 	}
@@ -169,7 +170,8 @@ func (c *Core) flashVisible(target flashTarget, sc *screen) bool {
 		return false
 	}
 	view := sc.mon.viewport()
-	for _, p := range sc.mon.Layout() {
+	c.flash.layout = sc.mon.layoutInto(c.flash.layout)
+	for _, p := range c.flash.layout {
 		if p.ID == target.window {
 			return !p.Fullscreen && p.Preview == 0 && view.shows(p)
 		}
@@ -186,7 +188,11 @@ func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
 	if color == "" {
 		color = c.cfg.Border.Active
 	}
-	return &ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Color: color, Alpha: f.value}
+	sample := ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Color: color, Alpha: f.value}
+	if f.published == nil || *f.published != sample {
+		f.published = &ports.FocusFlash{Rect: sample.Rect, Width: sample.Width, Color: sample.Color, Alpha: sample.Alpha}
+	}
+	return f.published
 }
 
 func (c *Core) flashing(sc *screen) bool {

@@ -272,6 +272,9 @@ func (c *Core) applyAction(a Action) Effect {
 		default:
 			return
 		}
+		if sc == beforeScreen && sc.mon.Current() != beforeWS {
+			return
+		}
 		after := sc.mon.Layout()
 		changed := sc != beforeScreen || sc.mon.Current() != beforeWS || id != beforeID || !slices.EqualFunc(before, after, func(a, b Placement) bool {
 			return a.ID == b.ID && a.Rect == b.Rect && a.Focused == b.Focused && a.Hidden == b.Hidden && a.Floating == b.Floating
