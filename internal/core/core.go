@@ -164,8 +164,9 @@ type Core struct {
 	motionTime time.Duration
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
-	capt  captureState
-	flash focusFlash
+	capt              captureState
+	flash             focusFlash
+	positionHintTimer positionHintTimer
 	// hint is keyboard hint mode (hint.go).
 	hint hintState
 	// keyState is the real modifier state of the latest key event, swallowed
@@ -611,6 +612,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return errSecurityChanged
 	}
 	c.syncSecurity()
+	c.updatePositionHints(only)
 	c.hintValidate()
 	if c.security.Protected {
 		return c.publishProtected(ctx)
@@ -719,7 +721,7 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 // other than only.
 func (c *Core) animatingOther(only *screen) bool {
 	for _, sc := range c.screens {
-		if sc != only && (sc.springing() || c.flashing(sc)) {
+		if sc != only && (sc.springing() || c.flashing(sc) || c.positionHintFading(sc)) {
 			return true
 		}
 	}
@@ -1068,6 +1070,7 @@ func (c *Core) Run(ctx context.Context) error {
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
 	defer c.stopFlashTimer()
+	defer c.stopPositionHintTimer()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1139,6 +1142,12 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
+				return nil
+			}
+			continue
+		case <-c.positionHintTimer.timerC:
+			c.positionHintTimer.timerC = nil
+			if c.securityCheckpoint(ctx) != nil || c.publish(ctx) != nil {
 				return nil
 			}
 			continue

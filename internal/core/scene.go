@@ -121,6 +121,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// The drag icon is over everything, popups and layers included.
 		scene.Windows = append(scene.Windows, icon)
 	}
+	scene.PositionHint = sc.positionHint.sample
 	scene.Flash = c.flashFor(sc)
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.HintLabels = c.hintLabels(sc)

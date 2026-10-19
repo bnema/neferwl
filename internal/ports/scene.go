@@ -77,6 +77,8 @@ type Scene struct {
 	// Flash is the focus flash drawn over everything of this output; nil
 	// draws nothing.
 	Flash *FocusFlash
+	// PositionHint is drawn on the physical output only, never in captures.
+	PositionHint PositionHint
 	// Animating is set by core when a spring or a focus flash runs on
 	// this output after this frame was computed: the output reports the
 	// flip of the scene to core (OutputFrame), which moves the animation to
@@ -92,7 +94,7 @@ type Scene struct {
 // is not compared). Add every new Scene field here;
 // TestSceneSameAsCoversEveryField fails until the field count is updated.
 func (s Scene) SameAs(o Scene) bool {
-	if s.Security != o.Security || s.Output != o.Output ||
+	if s.PositionHint != o.PositionHint || s.Security != o.Security || s.Output != o.Output ||
 		s.OutputWidth != o.OutputWidth || s.OutputHeight != o.OutputHeight ||
 		s.Scale != o.Scale || s.Transform != o.Transform || s.Off != o.Off ||
 		s.Background != o.Background || s.Border != o.Border ||

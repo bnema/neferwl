@@ -48,6 +48,10 @@ func (c *Core) syncSecurity() bool {
 	c.gesture = clientGesture{}
 	c.stopAnimations()
 	c.stopFlash()
+	c.stopPositionHintTimer()
+	for _, sc := range c.screens {
+		sc.positionHint = positionHintState{}
+	}
 	c.cancelSwitcher()
 	c.stopRepeat()
 	if state.Protected {

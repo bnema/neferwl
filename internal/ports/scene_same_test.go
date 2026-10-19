@@ -38,6 +38,7 @@ func TestSceneSameAs(t *testing.T) {
 	assert.True(t, Scene{}.SameAs(Scene{Seq: 3}))
 
 	for name, edit := range map[string]func(*Scene){
+		"position hint":     func(s *Scene) { s.PositionHint.Opacity = 1 },
 		"flash nil":         func(s *Scene) { s.Flash = nil },
 		"flash rect":        func(s *Scene) { s.Flash.Rect.X++ },
 		"flash width":       func(s *Scene) { s.Flash.Width++ },
@@ -93,7 +94,7 @@ func TestSceneSameAs(t *testing.T) {
 func TestSceneSameAsCoversEveryField(t *testing.T) {
 	// 25 with Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 25
+	const fields = 26
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

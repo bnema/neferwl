@@ -91,6 +91,9 @@ func fullscreenShown(s *ports.Scene) bool {
 // it is never put on a plane (nil: none is).
 func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, w, h int, kept func(ports.WindowID) bool) (ports.SurfaceContent, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
+	if s.PositionHint.Shown() {
+		return ports.SurfaceContent{}, "position_hint"
+	}
 	if s.Flash != nil {
 		return ports.SurfaceContent{}, "focus_flash"
 	}

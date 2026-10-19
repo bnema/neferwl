@@ -67,6 +67,9 @@ type overlayWin struct {
 // composed, never put on the plane.
 func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, hdrOn bool, pipeline *colorPipeline, kept func(ports.WindowID) bool) (ports.SceneWindow, ports.SurfaceContent, colorMode, string) {
 	// A hardware plane would bypass the compositor-owned flash border.
+	if s.PositionHint.Shown() {
+		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "position_hint"
+	}
 	if s.Flash != nil {
 		return ports.SceneWindow{}, ports.SurfaceContent{}, colorBypass, "focus_flash"
 	}

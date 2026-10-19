@@ -60,6 +60,7 @@ func (r *Renderer) draws(s ports.Scene, contents map[ports.WindowID]ports.Surfac
 	w.popups(true)
 	w.focusFlash()
 	w.captureIndicators()
+	w.positionHint()
 	w.hintLabels()
 	r.scratchDraws = w.draws
 	return w.draws

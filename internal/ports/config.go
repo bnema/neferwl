@@ -155,6 +155,7 @@ type Config struct {
 		// FlashOpacity the starting opacity (0.1 to 1), FlashDuration the fade
 		// (50ms to 1s, not scaled by Animations.Slowdown), FlashColor #rrggbb or
 		// empty for Border.Active.
+		PositionHint  bool
 		Flash         bool
 		FlashWidth    int
 		FlashOpacity  float64

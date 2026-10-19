@@ -1045,3 +1045,21 @@ func TestHintEnable(t *testing.T) {
 		t.Fatal(c.Hint, w)
 	}
 }
+
+func TestPositionHint(t *testing.T) {
+	if !Defaults().Focus.PositionHint {
+		t.Fatal("position hint default off")
+	}
+	for _, value := range []string{"on", "off", "invalid"} {
+		c, warnings := parseString(t, "focus.position-hint = "+value+"\n")
+		if value == "invalid" {
+			if len(warnings) == 0 {
+				t.Fatal("accepted invalid value")
+			}
+			continue
+		}
+		if len(warnings) != 0 || c.Focus.PositionHint != (value == "on") {
+			t.Fatalf("%s: %+v %v", value, c.Focus, warnings)
+		}
+	}
+}

@@ -195,3 +195,15 @@ func TestSplitWindowFailsClosed(t *testing.T) {
 		require.ErrorIs(t, awaitCapture(t, replies).Err, ErrWorkspaceMoved)
 	}
 }
+
+func TestPositionHintRemovedFromPlainCapture(t *testing.T) {
+	s := ports.Scene{PositionHint: ports.PositionHint{Opacity: 1, Columns: 1, Counts: [16]uint8{1}}}
+	require.True(t, s.PositionHint.Shown())
+	require.False(t, plain(s).PositionHint.Shown())
+	p := NewPipeline(context.Background(), make(chan ports.CaptureDone, 1))
+	defer p.Close(nil)
+	s.Capture = &ports.SceneCapture{Session: 7}
+	normal, excluded, _ := p.Split(s, []ports.CaptureRequest{{ID: 1, Exclude: true, Session: 7}})
+	require.Empty(t, normal)
+	require.Len(t, excluded, 1)
+}

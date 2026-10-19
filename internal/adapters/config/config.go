@@ -188,6 +188,7 @@ func Defaults() ports.Config {
 	// Animations are experimental: off unless the config turns them on.
 	c.Animations.On = false
 	c.Animations.Slowdown = normalSlowdown
+	c.Focus.PositionHint = true
 	c.Focus.Flash = true
 	c.Focus.FlashWidth = 2
 	c.Focus.FlashOpacity = 0.6
@@ -845,6 +846,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Focus.FollowMove = b
+	case "focus.position-hint":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Focus.PositionHint = b
 	case "focus.flash":
 		b, err := onOff(v)
 		if err != nil {

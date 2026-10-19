@@ -288,6 +288,14 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		return image.Rectangle{}, false
 	}
 	var area image.Rectangle
+	if old.PositionHint != cur.PositionHint {
+		if old.PositionHint.Shown() {
+			area = area.Union(phys(old.PositionHint.Bounds(old.OutputWidth, old.OutputHeight)))
+		}
+		if cur.PositionHint.Shown() {
+			area = area.Union(phys(cur.PositionHint.Bounds(cur.OutputWidth, cur.OutputHeight)))
+		}
+	}
 	if (old.Flash == nil) != (cur.Flash == nil) || (old.Flash != nil && cur.Flash != nil && *old.Flash != *cur.Flash) {
 		if old.Flash != nil {
 			area = area.Union(phys(old.Flash.Rect))

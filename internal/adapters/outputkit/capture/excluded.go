@@ -68,6 +68,7 @@ func excludedShown(s ports.Scene) bool {
 // renderer redraws the whole target instead of reusing a displayed frame.
 func plain(s ports.Scene) ports.Scene {
 	s.Capture, s.CaptureIndicators, s.HintLabels, s.Seq = nil, nil, nil, 0
+	s.PositionHint = ports.PositionHint{}
 	return s
 }
 
@@ -85,7 +86,7 @@ func plain(s ports.Scene) ports.Scene {
 // the plain render reads client buffers even when the requests are rejected,
 // so the caller owns it (hold or wait it) whatever happened, error included.
 func (p *Pipeline) SubmitPlain(r ports.Renderer, s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceContent, normal []ports.CaptureRequest) (took bool, done *os.File, err error) {
-	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && len(s.HintLabels) == 0 {
+	if len(normal) == 0 || len(s.CaptureIndicators) == 0 && len(s.HintLabels) == 0 && !s.PositionHint.Shown() {
 		return false, nil, nil
 	}
 	done, err = r.Render(plain(s), surfaces)
@@ -164,7 +165,7 @@ func (p *Pipeline) Split(s ports.Scene, reqs []ports.CaptureRequest) (normal, ex
 	}
 	clear(reqs[n:])
 	reqs = reqs[:n]
-	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || len(s.HintLabels) > 0
+	excl := excludedShown(s) || len(s.CaptureIndicators) > 0 || len(s.HintLabels) > 0 || s.PositionHint.Shown()
 	group := func(q ports.CaptureRequest) int {
 		switch {
 		case q.OffScreen:
