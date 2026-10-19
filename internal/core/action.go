@@ -248,6 +248,11 @@ func (c *Core) applyAction(a Action) Effect {
 			}
 			return
 		}
+		// Crossing outputs marks the destination itself, even if it is empty.
+		if sc != beforeScreen {
+			c.requestFlash(flashMonitor, 0)
+			return
+		}
 		level := flashWindow
 		switch a {
 		case ActionFocusWindowUp, ActionFocusWindowDown, ActionMoveWindowUp, ActionMoveWindowDown,
@@ -264,19 +269,15 @@ func (c *Core) applyAction(a Action) Effect {
 			level = flashColumn
 		case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown,
 			ActionMoveWorkspaceLeft, ActionMoveWorkspaceRight, ActionMoveWorkspaceToMonitorUp, ActionMoveWorkspaceToMonitorDown:
-			if sc == beforeScreen {
-				return
-			}
-			c.requestFlash(flashMonitor, 0)
 			return
 		default:
 			return
 		}
-		if sc == beforeScreen && sc.mon.Current() != beforeWS {
+		if sc.mon.Current() != beforeWS {
 			return
 		}
 		after := sc.mon.Layout()
-		changed := sc != beforeScreen || sc.mon.Current() != beforeWS || id != beforeID || !slices.EqualFunc(before, after, func(a, b Placement) bool {
+		changed := id != beforeID || !slices.EqualFunc(before, after, func(a, b Placement) bool {
 			return a.ID == b.ID && a.Rect == b.Rect && a.Focused == b.Focused && a.Hidden == b.Hidden && a.Floating == b.Floating
 		})
 		if changed && id != 0 {

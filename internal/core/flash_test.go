@@ -598,3 +598,75 @@ func TestFlashUnchangedSampleIsReused(t *testing.T) {
 		t.Fatal("changed sample mutated prior scene")
 	}
 }
+
+func TestFlashCrossScreenActionsMarkDestinationOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		action   Action
+		occupied bool
+	}{
+		{"column focus to empty", ActionFocusColumnRight, false},
+		{"column focus to occupied", ActionFocusColumnRight, true},
+		{"monitor focus to empty", ActionFocusMonitorRight, false},
+		{"column move to empty", ActionMoveColumnRight, false},
+		{"column move to occupied", ActionMoveColumnRight, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, clock := flashCore(t)
+			a := c.cur()
+			c.addScreen(ports.OutputInfo{Name: "B", Width: 400, Height: 300})
+			b := c.screens[1]
+			if tc.occupied {
+				c.windows.mapped(ports.WindowMapped{ID: 4}, clock.now)
+				b.mon.AddWindow(4)
+			}
+			c.applyAction(tc.action)
+			if c.cur() != b {
+				t.Fatal("action did not cross screens")
+			}
+			if c.flash.pending == nil || *c.flash.pending != (flashTarget{level: flashMonitor, output: "B"}) {
+				t.Fatalf("destination request %+v", c.flash.pending)
+			}
+			clock.now = clock.now.Add(flashSettle)
+			if !c.flashTick() {
+				t.Fatal("destination flash did not start")
+			}
+			scenes := stepScenes(t, c, b)
+			if scenes["A"].Flash != nil {
+				t.Fatal("source output flashed")
+			}
+			f := scenes["B"].Flash
+			if f == nil || f.Rect != (Rect{W: 400, H: 300}) || !scenes["B"].Animating {
+				t.Fatalf("destination scene flash %+v", f)
+			}
+			if !tc.occupied && tc.action != ActionMoveColumnRight && len(scenes["B"].Windows) != 0 {
+				t.Fatal("setup: destination is not empty")
+			}
+			clock.now = clock.now.Add(c.cfg.Focus.FlashDuration)
+			scenes = stepScenes(t, c, b)
+			if scenes["B"].Flash != nil || c.flashing(a) || c.animating() {
+				t.Fatal("destination flash did not end")
+			}
+		})
+	}
+}
+
+func TestFlashSameScreenColumnFocusKeepsColumnLevel(t *testing.T) {
+	c, clock := flashCore(t)
+	sc := c.cur()
+	c.cur().mon.Current().FocusID(1)
+	c.applyAction(ActionFocusColumnRight)
+	if c.cur() != sc || c.flash.pending == nil || c.flash.pending.level != flashColumn {
+		t.Fatalf("same-screen request %+v", c.flash.pending)
+	}
+	clock.now = clock.now.Add(flashSettle)
+	if !c.flashTick() {
+		t.Fatal("column flash did not start")
+	}
+	s := indicatorScene(t, c)
+	for _, w := range s.Windows {
+		if w.ID == c.flash.running.window && s.Flash.Rect != w.Rect {
+			t.Fatalf("column rect %+v want %+v", s.Flash.Rect, w.Rect)
+		}
+	}
+}

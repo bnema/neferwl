@@ -78,7 +78,9 @@ See [examples/config](../examples/config) for every key with its default.
 `<output>` is a connector such as `DP-2`, or a monitor key (`make model serial`).
 
 The focus flash marks the window, column or output an action changes with a brief
-inner border. Workspace switches and mouse focus do not trigger a flash.
+inner border. When a flash-triggering action crosses screens, it marks the whole
+destination output, even if that output has no windows. Same-screen workspace
+switches and mouse focus do not trigger a flash.
 It runs when `animations = on`.
 
 ## Window rules
