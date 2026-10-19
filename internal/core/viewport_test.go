@@ -184,20 +184,18 @@ func TestTileStopsAtPanel(t *testing.T) {
 	}
 }
 
-// Panels that leave no room draw no tile, a leaving one included, and the
-// focus pulse has nothing to show.
+// Panels that leave no room draw no tile, a leaving one included.
 func TestNoUsableAreaDrawsNoTile(t *testing.T) {
 	c, check := viewportCore(t, func(cfg *ports.Config) { cfg.Layout.MaxColumns = 1 }, Rect{})
 	c.cur().mon.AddWindow(1)
-	c.pulse.target = 1
 	scene := check(map[WindowID]bool{1: false})
-	if scene.Draws(scene.Windows[0]) || c.pulse.drawable {
-		t.Fatalf("tile drawn %v, pulse drawable %v with no usable area", scene.Draws(scene.Windows[0]), c.pulse.drawable)
+	if scene.Draws(scene.Windows[0]) {
+		t.Fatalf("tile drawn with no usable area")
 	}
 	sc := c.cur()
 	sc.shown = slices.Clone(sc.shownLayout())
 	sc.shown[0].Leaving = true
-	scene, _, err := c.sceneFor(context.Background(), 0, sc, nil, nil, 0)
+	scene, err := c.sceneFor(context.Background(), 0, sc, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

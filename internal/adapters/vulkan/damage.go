@@ -276,6 +276,7 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
 		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||
+		(old.Flash == nil) != (cur.Flash == nil) || (old.Flash != nil && *old.Flash != *cur.Flash) ||
 		len(old.Windows) != len(cur.Windows) {
 		return image.Rectangle{}, false
 	}

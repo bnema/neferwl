@@ -156,12 +156,6 @@ func TestOverlayCandidate(t *testing.T) {
 	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
 		t.Fatalf("zoomed window reason %q", reason)
 	}
-	// A window with the focus effect needs it composed.
-	s, _ = overlayScene()
-	s.Windows[len(s.Windows)-1].FocusEffect = 0.05
-	if _, _, _, reason := overlayCandidate(s, c, false, nil, nil); reason != "no_candidate" {
-		t.Fatalf("pulsing window reason %q", reason)
-	}
 	// An overview preview is drawn smaller than its buffer: composed.
 	s, _ = overlayScene()
 	s.Windows[len(s.Windows)-1].Preview = 0.5

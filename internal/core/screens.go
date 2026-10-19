@@ -56,10 +56,6 @@ type screen struct {
 // springing reports whether a camera or rect spring runs on the screen.
 func (s *screen) springing() bool { return s.mon.springing() || len(s.rects) > 0 }
 
-// settled reports whether nothing moves the screen's layout: no swipe,
-// no slide, no rect motion.
-func (s *screen) settled() bool { return s.mon.settled() && len(s.rects) == 0 }
-
 // stopRects drops the rect motions: the windows are drawn where they are.
 func (s *screen) stopRects() { clear(s.rects); s.rectsWS = nil }
 

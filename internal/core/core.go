@@ -156,8 +156,6 @@ type Core struct {
 	pointerAt  [2]float64
 	// capt is the capture state (capture.go, capindicator.go).
 	capt captureState
-	// pulse marks a window that just got the focus (pulse.go).
-	pulse focusPulse
 	// switcher is the column switcher in progress: the screen it is on and
 	// the timer that shows its cards (switcher.go).
 	switcher struct {
@@ -532,14 +530,6 @@ func (v viewport) area(p Placement) Rect {
 	return v.usable
 }
 
-// hasRoom reports whether p's area can show anything: panels can leave
-// tiles no room at all. Unlike shows, it ignores where p is, so a window
-// still sliding in counts.
-func hasRoom(v viewport, p Placement) bool {
-	a := v.area(p)
-	return a.W > 0 && a.H > 0
-}
-
 // shows reports whether the user sees p: not hidden, and overlapping its
 // area.
 func (v viewport) shows(p Placement) bool {
@@ -636,9 +626,8 @@ func (c *Core) setLayers(all []ports.LayerSurface) {
 func (c *Core) publish(ctx context.Context) error { return c.publishFrame(ctx, nil) }
 
 // publishFrame publishes the scenes. only is the screen whose page flip
-// moved the springs (nil: any, or none moved): the pulse advances with the
-// focused screen's flip, and only a flip's own screen gets a fresh Seq for
-// its animation, so another output keeps its Seq while it draws the same.
+// moved the springs (nil: any, or none moved): only a flip's own screen gets
+// a fresh Seq for its animation, so another output keeps its Seq while it draws the same.
 func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 	if c.inputEpochChanged() {
 		return errSecurityChanged
@@ -685,44 +674,17 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 		return err
 	}
 	focus := c.keyboardFocus()
-	window, _ := c.cur().mon.Focused()
-	c.pulseFocus(window, focus == window)
-	// The pulse runs on the focused output: a flip of another output reuses
-	// its value so the focused scene keeps its Seq.
-	if c.pulse.id == 0 {
-		c.pulse.value = 0
-	} else if only == nil || only == c.cur() {
-		c.pulse.value = c.advancePulse(c.now())
-	}
-	pulse := c.pulse.value
-	// drawable: the scene can show a pulse on the focused window.
-	drawable := false
 	scenes := make([]ports.Scene, 0, len(c.screens))
 	// Before the first output (and after the last is unplugged) the
 	// placeholder's scene has no output name: no renderer draws it.
 	for i, sc := range c.screens {
-		scene, shown, err := c.sceneFor(ctx, i, sc, only, capture, pulse)
+		scene, err := c.sceneFor(ctx, i, sc, only, capture)
 		if err != nil {
 			return err
 		}
-		drawable = drawable || shown
 		scenes = append(scenes, scene)
 	}
 	c.configures.prune()
-	// A pulse nothing shows (fullscreen, overview) asks for no frames.
-	if c.pulse.drawable = drawable; !drawable && c.pulse.id != 0 {
-		c.pulse.id = 0
-		// The focused scene was built as animating: publish it settled,
-		// or its flips would keep waking core. A scene that kept its Seq
-		// needs a fresh one, or outputs keep the animating one they show.
-		if i := slices.Index(c.screens, c.cur()); i >= 0 && scenes[i].Animating && !c.cur().springing() {
-			scenes[i].Animating = false
-			if scenes[i].Seq == c.cur().last.Seq {
-				c.seq++
-				scenes[i].Seq = c.seq
-			}
-		}
-	}
 	for i, sc := range c.screens {
 		sc.last = scenes[i]
 	}
@@ -776,11 +738,11 @@ func (c *Core) step(ctx context.Context, only *screen) error {
 	return c.slidFrame(ctx, false, only)
 }
 
-// animatingOther reports whether a spring or the pulse runs on a screen
+// animatingOther reports whether a spring runs on a screen
 // other than only.
 func (c *Core) animatingOther(only *screen) bool {
 	for _, sc := range c.screens {
-		if sc != only && (sc.springing() || c.pulsing(sc)) {
+		if sc != only && sc.springing() {
 			return true
 		}
 	}
@@ -1128,7 +1090,6 @@ func (c *Core) Run(ctx context.Context) error {
 	c.syncSecurity()
 	defer c.stopFrame()
 	defer c.stopCaptureTimer()
-	defer c.stopPulseTimer()
 	defer c.cancelSwitcher()
 	defer c.stopRepeat()
 	// Startup commands run once per session. Full launcher queues retain a
@@ -1195,14 +1156,6 @@ func (c *Core) Run(ctx context.Context) error {
 			}
 			c.frameC = nil
 			if c.step(ctx, nil) != nil {
-				return nil
-			}
-			continue
-		case <-c.pulse.timerC:
-			if c.securityCheckpoint(ctx) != nil {
-				return nil
-			}
-			if c.pulseTick() && c.publish(ctx) != nil {
 				return nil
 			}
 			continue

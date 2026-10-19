@@ -243,8 +243,6 @@ func headlessPointerClickFocus(t *testing.T, animated bool) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	cfg := config.Defaults()
 	cfg.Terminal.Command = []string{"foot", "-c", "/dev/null", "sh"}
-	// Pulse frames would fill the scene tap before the click.
-	cfg.Focus.Animation = ports.FocusAnimationOff
 	cfg.Animations.On = animated
 	// The tap drops a scene it has no room for: a collector keeps up with
 	// the animation frames.

@@ -184,9 +184,10 @@ func Defaults() ports.Config {
 	// Animations are experimental: off unless the config turns them on.
 	c.Animations.On = false
 	c.Animations.Slowdown = normalSlowdown
-	c.Focus.Animation = ports.FocusAnimationPulse
-	c.Focus.Effect = ports.FocusEffectScreen
-	c.Focus.Strength = 0.04
+	c.Focus.Flash = true
+	c.Focus.FlashWidth = 2
+	c.Focus.FlashOpacity = 0.6
+	c.Focus.FlashDuration = 200 * time.Millisecond
 	c.Binds = map[string]string{}
 	for _, b := range defaultBinds {
 		combos := []string{b.combo}
@@ -840,23 +841,35 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Focus.FollowMove = b
-	case "focus.animation":
-		if v != ports.FocusAnimationPulse && v != ports.FocusAnimationOff {
-			return fmt.Errorf("must be pulse or off")
+	case "focus.flash":
+		b, err := onOff(v)
+		if err != nil {
+			return err
 		}
-		c.Focus.Animation = v
-	case "focus.effect":
-		if v != ports.FocusEffectScreen {
-			return fmt.Errorf("must be screen")
+		c.Focus.Flash = b
+	case "focus.flash-width":
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 8 {
+			return fmt.Errorf("must be an integer between 1 and 8")
 		}
-		c.Focus.Effect = v
-	case "focus.strength":
-		// Capped low: the focus indicator must never flash.
+		c.Focus.FlashWidth = n
+	case "focus.flash-opacity":
 		f, err := strconv.ParseFloat(v, 64)
-		if err != nil || !(f >= 0.01 && f <= 0.2) {
-			return fmt.Errorf("must be between 0.01 and 0.2")
+		if err != nil || !(f >= 0.1 && f <= 1) {
+			return fmt.Errorf("must be between 0.1 and 1")
 		}
-		c.Focus.Strength = f
+		c.Focus.FlashOpacity = f
+	case "focus.flash-duration":
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 50*time.Millisecond || d > time.Second {
+			return fmt.Errorf("must be a duration between 50ms and 1s, e.g. 200ms")
+		}
+		c.Focus.FlashDuration = d
+	case "focus.flash-color":
+		if v != "" && !color.MatchString(v) {
+			return fmt.Errorf("must be #rrggbb or empty (border.active)")
+		}
+		c.Focus.FlashColor = v
 	case "render.direct-scanout":
 		b, err := onOff(v)
 		if err != nil {

@@ -85,12 +85,15 @@ focus.follow-move = off
 # (10x faster).
 animations = off
 animations.speed = normal
-# Focus indicator on the newly focused window: an animation (pulse or off)
-# of an effect (screen: a slight brightening), peaking at strength
-# (0.01 to 0.2; 0.04: black reaches about 10/255).
-focus.animation = pulse
-focus.effect = screen
-focus.strength = 0.04
+# Focus flash: a brief inner border on the window, column or output an
+# action just changed. Width in logical pixels (1 to 8), starting opacity
+# (0.1 to 1), fade duration (50ms to 1s, not scaled by animations.speed),
+# color #rrggbb (empty: border.active).
+focus.flash = on
+focus.flash-width = 2
+focus.flash-opacity = 0.6
+focus.flash-duration = 200ms
+focus.flash-color =
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.

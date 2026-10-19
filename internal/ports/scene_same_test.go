@@ -83,9 +83,9 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	// 22 with Animating, which SameAs intentionally does not compare: it
+	// 23 with Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 22
+	const fields = 23
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

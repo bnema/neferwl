@@ -22,7 +22,7 @@ func steppingClock(t *testing.T) *portsmocks.MockClock {
 		now = now.Add(time.Second)
 		return now
 	}).Maybe()
-	// Timers (the focus pulse) never fire: tests drive events only.
+	// Timers never fire: tests drive events only.
 	clock.EXPECT().NewTimer(mock.Anything).RunAndReturn(func(time.Duration) ports.Timer {
 		timer := portsmocks.NewMockTimer(t)
 		timer.EXPECT().C().Return(make(chan time.Time)).Maybe()

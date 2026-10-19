@@ -89,14 +89,6 @@ type OutputLayout struct {
 	LayoutRules
 }
 
-// Focus indicator: the animation (Config.Focus.Animation) shapes in time
-// the visual effect (Config.Focus.Effect) drawn on a newly focused window.
-const (
-	FocusAnimationOff   = "off"
-	FocusAnimationPulse = "pulse"
-	FocusEffectScreen   = "screen"
-)
-
 // Config is the parsed compositor configuration (see the config adapter for keys).
 type Config struct {
 	Keyboard struct {
@@ -148,7 +140,7 @@ type Config struct {
 	// motion; the next motion shows it. 0 never hides it.
 	Cursor struct{ HideAfter time.Duration }
 	// Animations: On enables motion (off lands everything instantly);
-	// Slowdown scales every spring's duration (not the focus pulse), 0.1 to
+	// Slowdown scales every spring's duration, 0.1 to
 	// 10 (the config's animations.speed maps to it).
 	Animations struct {
 		On       bool
@@ -158,11 +150,16 @@ type Config struct {
 		// FollowMove shows the target workspace after a column or window
 		// moves to it.
 		FollowMove bool
-		// Animation and Effect mark a window that just got the focus:
-		// FocusAnimation* (off disables it) and FocusEffect*. Strength is
-		// the effect's peak, 0.01 to 0.2.
-		Animation, Effect string
-		Strength          float64
+		// Flash briefly draws an inner border on the entity an action changed
+		// (window, column, output). FlashWidth is in logical pixels (1 to 8),
+		// FlashOpacity the starting opacity (0.1 to 1), FlashDuration the fade
+		// (50ms to 1s, not scaled by Animations.Slowdown), FlashColor #rrggbb or
+		// empty for Border.Active.
+		Flash         bool
+		FlashWidth    int
+		FlashOpacity  float64
+		FlashDuration time.Duration
+		FlashColor    string
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

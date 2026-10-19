@@ -20,9 +20,6 @@ type sceneWalk struct {
 	// zoom shrinks the surfaces of the window being placed: an overview
 	// preview (ports.SceneWindow.Preview); 1 otherwise.
 	zoom float64
-	// pulse is the focus effect of the window being placed
-	// (ports.SceneWindow.FocusEffect); 0 otherwise.
-	pulse float32
 	// alpha is the opacity of the window being drawn, 1 - its Fade
 	// (ports.SceneWindow.Fade): its fills, lines and surfaces are scaled by
 	// it (premultiplied); 1 otherwise.
@@ -251,9 +248,8 @@ func (w *sceneWalk) windows() {
 			} else if win.Preview > 0 {
 				w.zoom = win.Preview
 			}
-			w.pulse = float32(max(0, min(win.FocusEffect, 1)))
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
-			w.zoom, w.pulse = 1, 0
+			w.zoom = 1
 		}
 		if win.Floating {
 			w.separators(win.ID)
@@ -543,7 +539,6 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 		dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeImage, content.Opaque)
 		r.setContentColor(&dr, content)
 		dr.pc.color[3] *= w.alpha
-		dr.pc.mapy[2] = w.pulse
 		if im.yuv {
 			dr.pc.misc[1] |= flagYUV
 			if content.DMABuf.Format == fourcc('P', '0', '1', '0') {
@@ -590,7 +585,6 @@ func (w *sceneWalk) content(dst, full image.Rectangle, content *ports.SurfaceCon
 	dr := r.contentDraw(rect, full, content.Width, content.Height, content.Source, content.Transform, modeBuffer, content.Opaque)
 	r.setContentColor(&dr, content)
 	dr.pc.color[3] *= w.alpha
-	dr.pc.mapy[2] = w.pulse
 	dr.shm = c
 	dr.pc.buf = [4]uint32{0, uint32(content.Width), uint32(content.Height), 0}
 	w.draws = append(w.draws, dr)

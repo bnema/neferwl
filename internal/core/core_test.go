@@ -973,7 +973,6 @@ func TestFullscreenAtMapIgnored(t *testing.T) { both(t, fullscreenAtMapIgnored) 
 func fullscreenAtMapIgnored(t *testing.T, animated bool) {
 	cfg := scrollDefaults()
 	cfg.Layout.Overflow = "fixed"
-	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)
@@ -1063,7 +1062,6 @@ func TestExternalFullscreenAtMapApplies(t *testing.T) { both(t, externalFullscre
 
 func externalFullscreenAtMapApplies(t *testing.T, animated bool) {
 	cfg := scrollDefaults()
-	cfg.Focus.Animation = ports.FocusAnimationOff
 	client := make(chan ports.ClientEvent, 8)
 	output := make(chan ports.OutputEvent, 8)
 	commands := make(chan ports.ClientCommand, 64)

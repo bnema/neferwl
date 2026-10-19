@@ -8,8 +8,7 @@ import (
 )
 
 // sceneFor builds the scene of screen i and sends the configures it sizes.
-// drawable reports that it can show the focus pulse on the focused window.
-func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, capture *capView, pulse float64) (scene ports.Scene, drawable bool, err error) {
+func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, capture *capView) (scene ports.Scene, err error) {
 	o := sc.mon.Output()
 	// view.frame is the viewport of the workspace on screen: the whole
 	// output unless it has a size override (never in the overview).
@@ -68,8 +67,6 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)
 	}
-	// A window alone on screen needs no pulse to show it has the focus.
-	alone := i == c.focusScreen && c.pulse.target != 0 && visibleCount(layout, view) == 1
 	for k, p := range layout {
 		ps := settled[k]
 		// Only the focused output has an activated window.
@@ -97,12 +94,6 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 			continue
 		}
-		if focused && p.ID == c.pulse.target && !alone && !p.Fullscreen && !p.Hidden && p.Preview == 0 && !sc.mon.previewing() && hasRoom(view, p) {
-			drawable = true
-			if p.ID == c.pulse.id {
-				sw.FocusEffect = pulse
-			}
-		}
 		scene.Windows = append(scene.Windows, sw)
 		t := configureTarget{output: sc.name(), view: view, focused: focused, captured: capture != nil && capture.window == p.ID}
 		if !p.Hidden && p.Preview == 0 {
@@ -120,7 +111,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		cp, t := c.captureConfigure(sc, ps, t)
 		if v, send := c.configures.nextWithCapture(ps, t, cp); send {
 			if err := c.command(ctx, v); err != nil {
-				return ports.Scene{}, false, err
+				return ports.Scene{}, err
 			}
 			c.configures.mark(v)
 		}
@@ -160,5 +151,5 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			scene.CaptureScene = c.captureWindowScene(capture, scene.Seq)
 		}
 	}
-	return scene, drawable, nil
+	return scene, nil
 }

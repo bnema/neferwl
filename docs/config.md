@@ -50,8 +50,11 @@ See [examples/config](../examples/config) for every key with its default.
 | `animations` | `off` | **Experimental.** Animate layout changes and make swipes follow the fingers |
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
-| `focus.animation` | `pulse` | Brief brightening of a newly focused window, or `off`. Needs `animations = on` |
-| `focus.strength` | `0.04` | Strength of the focus pulse, `0.01` to `0.2` |
+| `focus.flash` | `on` | Briefly draw an inner border on the window, column or output an action changed |
+| `focus.flash-width` | `2` | Flash border width in logical pixels, `1` to `8` |
+| `focus.flash-opacity` | `0.6` | Starting opacity of the flash, `0.1` to `1` |
+| `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
+| `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
 | `workspace.<name>.monitor` | focused output | Home monitor of a named workspace |
 | `workspace.<name>.size` | `inherit` | [Smaller viewport](#workspace-size), e.g. `1920x1080` |
 | `workspace.<name>.max-columns`, `.overflow` | output values | Per-workspace layout |

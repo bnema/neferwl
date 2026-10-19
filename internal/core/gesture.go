@@ -577,14 +577,11 @@ func (c *Core) animate(now time.Time, only *screen) {
 // sliding reports whether a spring runs on the named output.
 func (c *Core) sliding(output string) bool {
 	i := c.screenIndex(output)
-	return i >= 0 && (c.screens[i].springing() || c.pulsing(c.screens[i]))
+	return i >= 0 && c.screens[i].springing()
 }
 
-// animating reports whether a spring or the focus pulse runs on any output.
+// animating reports whether a spring runs on any output.
 func (c *Core) animating() bool {
-	if c.pulse.id != 0 {
-		return true
-	}
 	for _, sc := range c.screens {
 		if sc.springing() {
 			return true
@@ -610,7 +607,7 @@ func (m *Monitor) springing() bool {
 func (c *Core) frameFallback() time.Duration {
 	refresh := 60000
 	for _, sc := range c.screens {
-		if r := sc.info.RefreshMilli; r > 0 && (sc.springing() || c.pulsing(sc)) {
+		if r := sc.info.RefreshMilli; r > 0 && sc.springing() {
 			refresh = min(refresh, r)
 		}
 	}

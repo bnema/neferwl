@@ -47,7 +47,6 @@ func (c *Core) syncSecurity() bool {
 	// protected epoch clears that focus.
 	c.gesture = clientGesture{}
 	c.stopAnimations()
-	c.stopPulse()
 	c.cancelSwitcher()
 	c.stopRepeat()
 	if state.Protected {

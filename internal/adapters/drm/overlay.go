@@ -93,9 +93,9 @@ func overlayCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 		// buffer, and so is a colour the plane cannot show (raw PQ values
 		// on an SDR output, SDR on HDR without a pipeline). A dimmed
 		// window (a peeking stashed one) needs the veil drawn over it, a
-		// fading one its translucency, and one with the focus effect its
+		// fading one its translucency.
 		// lift; an overview preview is drawn smaller than its buffer.
-		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.FocusEffect <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
+		if w.Dim <= 0 && w.Fade <= 0 && w.Zoom <= 0 && w.Preview <= 0 && c.DMABuf != nil && !isYUVFormat(c.DMABuf.Format) && c.Opaque && len(c.Children) == 0 && c.Transform == 0 && !cropped(c) && (kept == nil || !kept(w.ID)) {
 			if m, why := planeColor(c.Color, c.DMABuf.Format, c.Opaque, hdrOn, pipeline); why == "" {
 				pick, pickAt, mode = w, i, m
 				continue

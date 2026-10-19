@@ -110,20 +110,39 @@ func TestAnimations(t *testing.T) {
 	}
 }
 
-func TestFocusIndicator(t *testing.T) {
+func TestFocusFlash(t *testing.T) {
 	d := Defaults().Focus
-	if d.Animation != ports.FocusAnimationPulse || d.Effect != ports.FocusEffectScreen || d.Strength != 0.04 {
-		t.Fatal("focus indicator defaults", d)
+	if !d.Flash || d.FlashWidth != 2 || d.FlashOpacity != 0.6 || d.FlashDuration != 200*time.Millisecond || d.FlashColor != "" {
+		t.Fatal("focus flash defaults", d)
 	}
-	c, w := parseString(t, "focus.animation = off\nfocus.effect = screen\nfocus.strength = 0.08\n")
-	if c.Focus.Animation != ports.FocusAnimationOff || c.Focus.Effect != ports.FocusEffectScreen || c.Focus.Strength != 0.08 || len(w) != 0 {
+	c, w := parseString(t, "focus.flash = off\nfocus.flash-width = 8\nfocus.flash-opacity = 1\nfocus.flash-duration = 1s\nfocus.flash-color = #112233\n")
+	want := d
+	want.Flash, want.FlashWidth, want.FlashOpacity, want.FlashDuration, want.FlashColor = false, 8, 1, time.Second, "#112233"
+	if c.Focus != want || len(w) != 0 {
 		t.Fatal(c.Focus, w)
 	}
-	// Each rejected value warns and keeps its default.
-	for _, line := range []string{"focus.animation = blink", "focus.effect = glow", "focus.strength = 0", "focus.strength = 0.5", "focus.strength = x"} {
+	c, w = parseString(t, "focus.flash = on\nfocus.flash-width = 1\nfocus.flash-opacity = 0.1\nfocus.flash-duration = 50ms\nfocus.flash-color =\n")
+	want.Flash, want.FlashWidth, want.FlashOpacity, want.FlashDuration, want.FlashColor = true, 1, 0.1, 50*time.Millisecond, ""
+	if c.Focus != want || len(w) != 0 {
+		t.Fatal(c.Focus, w)
+	}
+	// Each rejected value warns and keeps its default; removed keys are unknown.
+	for _, line := range []string{
+		"focus.flash = maybe",
+		"focus.flash-width = 0", "focus.flash-width = 9", "focus.flash-width = x", "focus.flash-width = 1.5",
+		"focus.flash-opacity = 0.05", "focus.flash-opacity = 1.1", "focus.flash-opacity = x",
+		"focus.flash-duration = 10ms", "focus.flash-duration = 2s", "focus.flash-duration = x", "focus.flash-duration = 200",
+		"focus.flash-color = red", "focus.flash-color = #12345",
+		"focus.animation = pulse", "focus.effect = screen", "focus.strength = 0.04",
+	} {
 		c, w = parseString(t, line+"\n")
 		if c.Focus != d || len(w) != 1 {
 			t.Fatal(line, c.Focus, w)
+		}
+		if strings.HasPrefix(line, "focus.animation") || strings.HasPrefix(line, "focus.effect") || strings.HasPrefix(line, "focus.strength") {
+			if !strings.Contains(w[0].Msg, "unknown key") {
+				t.Fatal(line, w)
+			}
 		}
 	}
 }

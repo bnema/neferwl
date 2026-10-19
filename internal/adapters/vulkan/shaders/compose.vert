@@ -5,7 +5,7 @@
 struct Draw {
     ivec4 rect; // visible x0, y0, x1, y1 in target pixels
     vec4 map; // source texel = map.xy + fragment centre.x * map.zw
-    vec4 mapy; // + fragment centre.y * mapy.xy; mapy.z is the focus pulse
+    vec4 mapy; // + fragment centre.y * mapy.xy; mapy.z and w are unused
     vec4 color; // solid premultiplied RGBA; content opacity in alpha
     vec4 crop; // source crop bounds in buffer pixels
     uvec4 buf; // pixel-buffer first word, width, height; YUV metadata in w

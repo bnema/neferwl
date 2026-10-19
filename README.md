@@ -225,9 +225,10 @@ cursor.hide-after = 5s
 focus.follow-move = off
 animations = off
 animations.speed = normal
-focus.animation = pulse
-focus.effect = screen
-focus.strength = 0.04
+focus.flash = on
+focus.flash-width = 2
+focus.flash-opacity = 0.6
+focus.flash-duration = 200ms
 
 # Rendering and logging
 render.direct-scanout = on

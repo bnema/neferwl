@@ -13,7 +13,7 @@ func logTestScenes() []ports.Scene {
 		Output: "A", Seq: 7, OutputWidth: 1920, OutputHeight: 1080, Scale: 1,
 		Windows: []ports.SceneWindow{
 			{ID: 1, Rect: ports.Rect{X: 10, Y: 20, W: 300, H: 200}},
-			{ID: 2, Rect: ports.Rect{X: 5, Y: 6, W: 7, H: 8}, FocusEffect: 0.5},
+			{ID: 2, Rect: ports.Rect{X: 5, Y: 6, W: 7, H: 8}},
 		},
 	}, {Output: "B"}}
 }
@@ -40,7 +40,7 @@ func TestLogScenesDebug(t *testing.T) {
 	for _, want := range []string{
 		`"output":"A"`, `"seq":7`, `"out_w":1920`, `"out_h":1080`, `"scale":1`,
 		`"windows":["1:10,20 300x200","2:5,6 7x8"]`,
-		`"focus_effect_window":2`, `"focus_effect":0.5`, `"message":"scene"`,
+		`"message":"scene"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("debug log lacks %s: %s", want, got)

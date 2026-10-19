@@ -69,7 +69,10 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
-	// Animating is set by core when a spring or the focus pulse runs on
+	// Flash is the focus flash drawn over everything of this output; nil
+	// draws nothing.
+	Flash *FocusFlash
+	// Animating is set by core when a spring or a focus flash runs on
 	// this output after this frame was computed: the output reports the
 	// flip of the scene to core (OutputFrame), which moves the animation to
 	// the next frame. A scene of a settled output carries false, so a flip
@@ -176,6 +179,17 @@ type SceneLayer struct {
 	Rect  Rect
 }
 
+// FocusFlash is a brief inner border marking the entity an action just
+// changed: a window, a column or a whole output. Rect is in logical
+// pixels, Width the border width inside it, Color #rrggbb and Alpha its
+// opacity at this frame (0 to 1).
+type FocusFlash struct {
+	Rect  Rect
+	Width int
+	Color string
+	Alpha float64
+}
+
 // SceneWindow carries core → renderer window placement.
 type SceneWindow struct {
 	ID                          WindowID
@@ -195,16 +209,6 @@ type SceneWindow struct {
 	// or leaving animates it; a faded window is composed, never scanned
 	// out.
 	Fade float64
-	// FocusEffect, above 0, is the focus indicator's effect at this frame
-	// (focus.animation, focus.effect): the window's surfaces are lifted
-	// toward white by that fraction (screen blend). Renderers without the
-	// effect ignore it.
-	//
-	// Only focus.effect = screen exists, so the effect kind is not carried:
-	// core ignores Config.Focus.Effect and the shaders always apply screen
-	// (compose.frag, compose_hdr.frag, push constant mapy.z). A second effect
-	// needs its kind here and in the push constants (a misc flag).
-	FocusEffect float64
 	// Preview, above 0, draws the window's surfaces that much smaller in
 	// Rect (an overview thumbnail): the client keeps its size. A preview
 	// is a card: it never opens the floats.

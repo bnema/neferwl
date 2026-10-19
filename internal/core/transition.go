@@ -701,8 +701,7 @@ func (c *Core) snapshot(now time.Time) []viewShot {
 // while it shows on another) is animated on both screens: the destination's
 // windows slide in from where the source drew them (no workspace slide
 // there), the source slides to its next workspace. The focus-monitor-*
-// actions move nothing: no window changes place, so they are not animated
-// (the focus pulse marks the new focus).
+// actions move nothing: no window changes place, so they are not animated.
 func (c *Core) transition(before []viewShot, now time.Time) {
 	if !c.animOn() {
 		return

@@ -17,9 +17,9 @@ import (
 // TestSceneFieldCount fails when Scene gains or loses a field: sceneDelta
 // lists the fields that force a full redraw.
 func TestSceneFieldCount(t *testing.T) {
-	// 22 with Animating, which sceneDelta intentionally ignores: it only
+	// 23 with Animating, which sceneDelta intentionally ignores: it only
 	// schedules the next frame, it draws nothing.
-	const fields = 22
+	const fields = 23
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
@@ -28,7 +28,7 @@ func TestSceneFieldCount(t *testing.T) {
 // sceneDelta compares windows by struct equality, so a new field is covered
 // as long as it only changes where or how that window draws (inside Rect).
 func TestSceneWindowFieldCount(t *testing.T) {
-	const fields = 15
+	const fields = 14
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.SceneWindow{}))),
 		"SceneWindow fields changed: check sceneDelta (a field that draws outside Rect needs its own rule), then this count")
 }
@@ -75,7 +75,7 @@ func TestDamageDeltaAtScale(t *testing.T) {
 func TestDamageDeltaWindowFieldChange(t *testing.T) {
 	old := deltaScene(1, win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100))
 	cur := deltaScene(2, win(1, 0, 0, 100, 100), win(2, 100, 0, 100, 100))
-	cur.Windows[0].FocusEffect = 0.3
+	cur.Windows[0].Dim = 0.3
 	d := newDamage(held(old), cur, image.Rect(0, 0, 1000, 500))
 	require.False(t, d.all())
 	assert.Equal(t, image.Rect(0, 0, 100, 100), d.area)
