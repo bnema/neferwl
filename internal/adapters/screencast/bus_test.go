@@ -374,26 +374,44 @@ func TestNonOwnerIsDenied(t *testing.T) {
 // full, the next one gets LimitsExceeded, and the parked ones are answered
 // once the check ends.
 func TestPendingTableFull(t *testing.T) {
-	h := newSvcHarness(t, harnessOpts{holdOp: true})
-	c := h.client()
-	h.waitName(c, nameIntrospect)
-	serials := make([]uint32, 0, maxPending+1)
-	for range maxPending + 1 {
-		c.NewCall(nameIntrospect, pathIntrospect, ifaceIntrospect, "GetWindows", "")
-		serial, err := c.Send()
-		if err != nil {
-			t.Fatal(err)
-		}
-		serials = append(serials, serial)
-	}
-	m, err := c.ReadMessage()
+	// Drive admission on this goroutine, delaying the caller-check transition
+	// rather than blocking Open on the service owner. A PID reply may arrive
+	// before all calls do; blocking Open then prevents the owner filling the
+	// table or answering the overflow at all.
+	addr, _ := startBus(t)
+	c, err := zerobus.Dial(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Type != zerobus.TypeError || m.ReplySerial != serials[maxPending] || m.ErrorName != errLimits {
+	t.Cleanup(func() { _ = c.Close() })
+	server, err := zerobus.Dial(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+	s := New(captureallow.Builtin, nil, testLog(&logBuf{}))
+	s.conn = server
+	peer := &s.callers[0]
+	*peer = caller{state: callerPid, name: c.UniqueName()}
+	for i := range maxPending + 1 {
+		s.admit(&request{sender: c.UniqueName(), serial: uint32(i + 1), obj: objIntrospect, method: mGetWindows})
+	}
+	// Closing the real connection bounds reads without concurrently using its
+	// encoder/decoder. No reply means a failed test, not the CI-wide timeout.
+	timer := time.AfterFunc(5*time.Second, func() { _ = c.Close() })
+	defer timer.Stop()
+	m, err := c.ReadMessage()
+	for err == nil && m.Type == zerobus.TypeSignal {
+		m, err = c.ReadMessage()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Type != zerobus.TypeError || m.ReplySerial != maxPending+1 || m.ErrorName != errLimits {
 		t.Fatalf("17th request: type %d error %q reply %d", m.Type, m.ErrorName, m.ReplySerial)
 	}
-	close(h.peers.openGo)
+	peer.state, peer.exe = callerKnown, "/usr/bin/grim"
+	s.flush(peer)
 	for range maxPending {
 		m, err := c.ReadMessage()
 		if err != nil {
