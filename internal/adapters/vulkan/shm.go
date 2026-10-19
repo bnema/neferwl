@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/hintlabel"
 	"github.com/bnema/neferwl/internal/ports"
 	vk "github.com/bnema/purego-vulkan/vulkan"
 	"golang.org/x/sys/unix"
@@ -154,6 +155,13 @@ func (r *Renderer) freeGPUBuffer(b *gpuBuffer) {
 type shmKey struct {
 	win     ports.WindowID
 	surface uint64
+	// label, typed and scale name a compositor-drawn hint label (hint_labels.go)
+	// instead of a client surface: win and surface are 0 and label is never
+	// empty, so such a key cannot collide with a client's.
+	label string
+	typed int
+	scale float64
+	style hintlabel.Style
 }
 
 // shmState is what a GPU buffer holds: a w×h client buffer at a content

@@ -25,6 +25,7 @@ func sameSceneBase() Scene {
 
 		Flash:             &FocusFlash{Rect: Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
 		CaptureIndicators: []CaptureIndicator{{Rect: Rect{W: 4, H: 4}}},
+		HintLabels:        []HintLabel{{Rect: Rect{X: 3, Y: 4}, Text: "fj", Typed: 1}},
 	}
 }
 
@@ -61,6 +62,7 @@ func TestSceneSameAs(t *testing.T) {
 		"drop hint":         func(s *Scene) { s.DropHints[0].W++ },
 		"layer":             func(s *Scene) { s.Layers[0].Rect.H++ },
 		"indicator":         func(s *Scene) { s.CaptureIndicators[0].Pill = true },
+		"hint style":        func(s *Scene) { s.HintStyle.Size = 24 },
 		"excluded":          func(s *Scene) { s.Capture.Excluded[0] = 4 },
 		"transform":         func(s *Scene) { s.Transform = 1 },
 		"capture shown":     func(s *Scene) { s.Capture.Shown++ },
@@ -89,9 +91,9 @@ func TestSceneSameAs(t *testing.T) {
 // TestSceneSameAsCoversEveryField fails when Scene gains or loses a field:
 // update Scene.SameAs, then this count.
 func TestSceneSameAsCoversEveryField(t *testing.T) {
-	// 23 with Animating, which SameAs intentionally does not compare: it
+	// 25 with Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 23
+	const fields = 25
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

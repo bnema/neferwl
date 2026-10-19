@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/hintlabel"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
 
@@ -85,6 +86,8 @@ type Renderer struct {
 	// the bytes copied into them, for tests.
 	shm    map[shmKey]*shmSurface
 	copied int
+	// labels rasterizes the hint labels (hint_labels.go); the zero value works.
+	labels hintlabel.Raster
 	// shmRects is scratch for shmCopyFor.
 	shmRects []image.Rectangle
 	// marks date the frames for Trim's wall-clock eviction (trim.go).

@@ -238,9 +238,11 @@ func (tg *target) hold(s ports.Scene, d *damageRegion) {
 	tg.heldLayers = append(tg.heldLayers[:0], s.Layers...)
 	tg.heldHints = append(tg.heldHints[:0], s.DropHints...)
 	tg.heldIndicators = append(tg.heldIndicators[:0], s.CaptureIndicators...)
+	tg.heldLabels = append(tg.heldLabels[:0], s.HintLabels...)
 	tg.valid, tg.sceneSeq, tg.scene, tg.windows = true, s.Seq, s, d.drawn
 	tg.scene.Windows, tg.scene.Separators, tg.scene.Layers = tg.heldWindows, tg.heldSeparators, tg.heldLayers
 	tg.scene.DropHints, tg.scene.CaptureIndicators = tg.heldHints, tg.heldIndicators
+	tg.scene.HintLabels = tg.heldLabels
 	// Only whether they are set matters (any capture redraws everything):
 	// sentinels, so no pointer into the caller's capture state is kept.
 	tg.scene.Capture, tg.scene.CaptureScene = nil, nil
@@ -271,11 +273,11 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 	if old.Security != cur.Security || old.Output != cur.Output ||
 		old.OutputWidth != cur.OutputWidth || old.OutputHeight != cur.OutputHeight ||
 		old.Scale != cur.Scale || old.Transform != cur.Transform || old.Off != cur.Off ||
-		old.Background != cur.Background || old.Border != cur.Border ||
+		old.HintStyle != cur.HintStyle || old.Background != cur.Background || old.Border != cur.Border ||
 		old.WorkspaceClip != cur.WorkspaceClip || old.TileInset != cur.TileInset || old.Dim != cur.Dim || old.DimBehind != cur.DimBehind ||
 		old.Capture != nil || cur.Capture != nil || old.CaptureScene != nil || cur.CaptureScene != nil ||
 		!slices.Equal(old.Layers, cur.Layers) || !slices.Equal(old.DropHints, cur.DropHints) ||
-		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) ||
+		!slices.Equal(old.CaptureIndicators, cur.CaptureIndicators) || !slices.Equal(old.HintLabels, cur.HintLabels) ||
 		len(old.Windows) != len(cur.Windows) {
 		return image.Rectangle{}, false
 	}

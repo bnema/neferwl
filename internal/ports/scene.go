@@ -69,6 +69,11 @@ type Scene struct {
 	// drawn over everything; nil when none. Captures never hold them: the
 	// capture pipeline serves requests from a scene without them.
 	CaptureIndicators []CaptureIndicator
+	// HintLabels are the keyboard hint labels of this output, drawn over
+	// everything, after CaptureIndicators; nil when hint mode is not shown
+	// here. Captures never contain them.
+	HintLabels []HintLabel
+	HintStyle  HintStyle
 	// Flash is the focus flash drawn over everything of this output; nil
 	// draws nothing.
 	Flash *FocusFlash
@@ -112,7 +117,8 @@ func (s Scene) SameAs(o Scene) bool {
 	}
 	return slices.Equal(s.Windows, o.Windows) && slices.Equal(s.Separators, o.Separators) &&
 		slices.Equal(s.DropHints, o.DropHints) && slices.Equal(s.Layers, o.Layers) &&
-		slices.Equal(s.CaptureIndicators, o.CaptureIndicators)
+		slices.Equal(s.CaptureIndicators, o.CaptureIndicators) &&
+		s.HintStyle == o.HintStyle && slices.Equal(s.HintLabels, o.HintLabels)
 }
 
 // Shows reports whether the scene draws the surface of id: only its
@@ -232,4 +238,11 @@ type SceneWindow struct {
 // and popups are placed against the whole viewport.
 func (w SceneWindow) Tile() bool {
 	return !w.Floating && !w.Fullscreen && !w.Popup && w.Preview == 0
+}
+
+// HintStyle carries reloadable label settings and untransformed output density.
+type HintStyle struct {
+	Size                                float64
+	Background, Foreground              string
+	Width, Height, PhysicalW, PhysicalH int
 }

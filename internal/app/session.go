@@ -14,6 +14,7 @@ import (
 	"github.com/bnema/neferwl/internal/adapters/config"
 	"github.com/bnema/neferwl/internal/adapters/drm"
 	"github.com/bnema/neferwl/internal/adapters/headlessinput"
+	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/launcher"
 	"github.com/bnema/neferwl/internal/adapters/libinput"
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -51,6 +52,7 @@ type session struct {
 	km           *xkb.Keymap
 	core         *core.Core
 	dmabuf       ports.DMABufSupport
+	hintOpts     hints.Options
 	wsIDs        *workspaceid.IDs
 	captureAllow *captureallow.Store
 	cast         *screencast.Service // nil without the D-Bus services
@@ -90,16 +92,20 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 			return s, err
 		}
 	}
-	s.p = newPipes(s.hw != nil)
+	s.p = newPipes(s.hw != nil, opts.Config.Hint.Enable)
 	// core() carries channels only; the gate, clock and terminal flag are
 	// explicit core.Options.
-	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Terminal: !opts.NoTerminal}); err != nil {
+	if s.core, err = core.New(opts.Config, s.p.core(), core.Options{Security: s.security, Clock: s.clock, Terminal: !opts.NoTerminal, HintDisabled: hintDisabledNote(ctx)}); err != nil {
 		return s, err
 	}
 	if s.km, err = xkb.New(xkb.RMLVO{Layout: opts.Config.Keyboard.Layout, Variant: opts.Config.Keyboard.Variant, Options: opts.Config.Keyboard.Options}); err != nil {
 		return s, err
 	}
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	// Hint mode off: no accessibility connection, no debug env, nothing.
+	if opts.Config.Hint.Enable {
+		s.hintOpts = hintOptions(ctx)
+	}
 	// Every output renders on the same GPU: its formats are the clients'.
 	s.dmabuf = vulkan.Probe()
 	log.Info().Int("formats", len(s.dmabuf.Formats)).Msg("dmabuf")
@@ -340,6 +346,15 @@ func (s *session) run(ctx context.Context, inject func(chan<- ports.InputEvent))
 			log.Warn().Err(err).Msg("capture allowlist not watched, restart to apply changes")
 		}
 	}()
+	if p.hintScans != nil {
+		workers.Add(2)
+		go func() { defer workers.Done(); routeCaptured(ctx, p.capturedAll, p.captured, p.internalCaptured()) }()
+		go func() {
+			defer workers.Done()
+			// Run only returns when ctx is done: nothing to report.
+			_ = hints.Run(ctx, p.hintScans, p.captures, p.hintCaptured, p.hintResults, s.hintOpts)
+		}()
+	}
 	go func() { defer workers.Done(); done <- child.Run(ctx, p.spawn) }()
 	go func() { defer workers.Done(); done <- c.Run(ctx) }()
 	workers.Add(1)

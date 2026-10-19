@@ -63,6 +63,9 @@ const (
 	// command key is held (switcher.go).
 	ActionSwitchColumnNext Action = "switch-column-next"
 	ActionSwitchColumnPrev Action = "switch-column-prev"
+	// Show keyboard hint labels over the links and buttons of the focused
+	// output (hint.go).
+	ActionHint Action = "hint"
 )
 
 // monitorDirection returns the direction of the neighbor screen targeted by
@@ -303,6 +306,9 @@ func (c *Core) dispatchAction(a Action) Effect {
 		return Effect{}
 	}
 	switch a {
+	case ActionHint:
+		c.hintRequest()
+		return Effect{}
 	case ActionFocusMonitorLeft, ActionFocusMonitorRight, ActionFocusMonitorUp, ActionFocusMonitorDown:
 		if i := c.neighbor(monitorDirection(a)); i >= 0 {
 			c.focusScreen = i

@@ -55,6 +55,12 @@ See [examples/config](../examples/config) for every key with its default.
 | `focus.flash-opacity` | `0.6` | Starting opacity of the flash, `0.1` to `1` |
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
 | `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
+| `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
+| `hint.targets` | `clickable` | What [hint mode](#hint-mode) labels: `clickable` (links, URLs and buttons) or `links` (links and URLs only) |
+| `hint.text-click` | `ctrl+shift` | Modifiers held for clicks on links found by OCR (terminals open links on a modified click); `none` sends a plain click |
+| `hint.size` | `auto` | Label text size in logical pixels (6 to 72), or `auto` for screen pixel density |
+| `hint.background` | empty | Label background (`#rrggbb`); empty uses `border.active` |
+| `hint.foreground` | empty | Label text (`#rrggbb`); empty chooses a contrasting colour |
 | `workspace.<name>.monitor` | focused output | Home monitor of a named workspace |
 | `workspace.<name>.size` | `inherit` | [Smaller viewport](#workspace-size), e.g. `1920x1080` |
 | `workspace.<name>.max-columns`, `.overflow` | output values | Per-workspace layout |
@@ -191,6 +197,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `toggle-window-stash` | Move the focused window to the [stash](#stash), or back to its column |
 | `toggle-stash-visible` | Show or hide the stash |
 | `toggle-overview` | Open or close the [overview](#overview) |
+| `hint` | Label the links and buttons on the focused screen, then click the one you type ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
@@ -295,3 +302,46 @@ A workspace's stash shows as a pile of cards. Selecting the pile unfolds it into
 With `layout.overflow = cascade`, workspaces sit side by side, each band of columns is a lane, and the stash sits under the lanes. Down (or fingers down on the touchpad, with natural scroll off) moves to the lane below; past the last lane it unfolds the stash. Left/right walk the cards; where the carousel does not wrap round, they go to the neighbor workspace past either end. Up leaves the stash for the last lane, at the column you came from.
 
 Otherwise, left from the first column unfolds the stash. Up/down walk the cards, the focus-workspace binds change workspace, and right goes back to the columns.
+
+## Hint mode
+
+Hint mode is experimental and off by default: set `hint.enable = on` and restart NeferWL.
+While it is off, nothing of hint mode runs or uses memory, and the `hint` bind
+logs a notice once and does nothing. A reload does not change it.
+
+`hint` labels the links and buttons on the focused output. Type a label to
+click its target; BackSpace erases a letter, Escape cancels. No bind is set
+by default; for example `bind.cmd+g = hint`.
+
+Labels use the `border.active` colour with a contrasting text colour, and
+their size follows the screen's pixel density. Each label sits just outside
+the top-left corner of its target. Links found by OCR (terminal text) are
+clicked with the `hint.text-click` modifiers held, which is how terminals open
+a link; accessibility targets get a plain click.
+
+### Where targets come from
+
+| Source | Apps | Accuracy | Speed |
+|---|---|---|---|
+| Accessibility tree (AT-SPI) | Firefox, Chromium, GTK, Qt, Electron | Exact: the app reports its own links and buttons | A few milliseconds |
+| Text recognition (OCR) | Everything else: terminals, apps without accessibility | Best effort: URLs, domains and underlined text written on screen | 150 ms or more, more on large screens |
+
+NeferWL asks the accessibility tree first. Windows it does not cover are read
+with OCR, which finds visible URLs, domains, email addresses and underlined
+text. Underlined words get a plain click, and the words of one continuous
+underline form one target; URLs keep the `hint.text-click` modifiers. OCR
+cannot see a link whose address is hidden behind plain text, and it can misread
+small or low-contrast text.
+
+### Requirements
+
+- Accessibility: NeferWL turns it on at startup. Some apps need a flag:
+  - Chromium: `--force-renderer-accessibility`
+  - Electron: `ACCESSIBILITY_ENABLED=1`
+  - Qt: `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`
+- OCR: `tesseract` and `tesseract-data-eng`. Without tesseract, OCR is off
+  and hint mode labels only apps that expose the accessibility tree.
+
+### Debugging hint mode
+
+With `hint.enable = on` and `NEFERWL_HINT_DEBUG=1` set when NeferWL starts (for example `NEFERWL_HINT_DEBUG=1 make tty`, or the variable in the launch environment), every successful scan writes three files to `$XDG_STATE_HOME/neferwl/hints/` (`~/.local/state/neferwl/hints/` when unset): `<time>-<output>.png`, the frame as scanned; `<time>-<output>.annotated.png`, the same with each target outlined (OCR links green, accessibility targets magenta, OCR window crops grey); and `<time>-<output>.json`, the targets (with their `source`, `atspi` or `ocr`) and timings. NeferWL keeps the 50 most recent scans and logs a warning at startup. The files contain the screen in clear: delete them after use.

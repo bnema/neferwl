@@ -83,6 +83,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 			target = c.ID
 		case ports.ForwardKey:
 			target = c.ID
+		case ports.SetModifiers:
+			target = c.ID
 		}
 		if target != 0 && !s.lockInputTarget(target) {
 			return
@@ -177,6 +179,8 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 		if s.seat.focused != c.ID {
 			s.changeFocus(c.ID)
 		}
+	case ports.SetModifiers:
+		s.setModifiers(c)
 	case ports.ForwardKey:
 		if !(s.security != nil && s.security.Snapshot().Protected) && s.grabKey(c) {
 			return
@@ -216,6 +220,58 @@ func (s *Server) applyInput(cmd ports.ClientCommand) {
 				s.sendModifiers(k)
 			}
 		}
+	}
+}
+
+// xkb modifier masks of the default keymaps: Shift, Control, Mod1 (Alt) and
+// Mod4 (Super). The server does not parse the keymap for its modifier indices.
+const (
+	xkbShift   = 1 << 0
+	xkbControl = 1 << 2
+	xkbMod1    = 1 << 3
+	xkbMod4    = 1 << 6
+)
+
+// depressedMask maps core modifier flags to xkb depressed masks.
+func depressedMask(m ports.Mods) uint32 {
+	var d uint32
+	for _, f := range []struct {
+		flag ports.Mods
+		mask uint32
+	}{{ports.ModShift, xkbShift}, {ports.ModCtrl, xkbControl}, {ports.ModAlt, xkbMod1}, {ports.ModSuper, xkbMod4}} {
+		if m&f.flag != 0 {
+			d |= f.mask
+		}
+	}
+	return d
+}
+
+// setModifiers overrides, then restores, the modifiers the focused window's
+// keyboards (or the input method grab) see. The override replaces the
+// depressed modifiers and keeps latched, locked and group; the seat's real
+// modState is only replaced by a Restore, with the state core carries.
+func (s *Server) setModifiers(c ports.SetModifiers) {
+	_, keyboards := s.focusTarget(c.ID)
+	if c.ID != s.seat.focused || len(keyboards) == 0 {
+		s.log.Debug().Uint64("id", uint64(c.ID)).Msg("ignored set modifiers")
+		return
+	}
+	s.useKeymap(nil)
+	s.serial++
+	if c.Restore {
+		// Swallowed keys never reached the seat: core's snapshot is the
+		// real state.
+		s.seat.modState = c.State
+	}
+	m := s.seat.modState
+	if !c.Restore {
+		m.Depressed = depressedMask(c.Mods)
+	}
+	for _, k := range keyboards {
+		k.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
+	}
+	if g := s.grab(); g != nil {
+		g.res.SendModifiers(s.serial, m.Depressed, m.Latched, m.Locked, m.Group)
 	}
 }
 

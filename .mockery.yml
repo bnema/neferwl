@@ -111,6 +111,25 @@ packages:
           dir: internal/adapters/statefile
           pkgname: statefile
           filename: proc_tree_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/hints:
+    interfaces:
+      targetSource:
+        config:
+          dir: internal/adapters/hints
+          pkgname: hints
+          filename: target_source_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/atspi:
+    interfaces:
+      transport:
+        config:
+          dir: internal/adapters/atspi
+          pkgname: atspi
+          filename: transport_mock_test.go
+      connector:
+        config:
+          dir: internal/adapters/atspi
+          pkgname: atspi
+          filename: connector_mock_test.go
   github.com/bnema/neferwl/internal/adapters/screencast:
     interfaces:
       bus:

@@ -130,13 +130,14 @@ type eventsProxy struct {
 	opcodes []uint16
 	keymaps []string
 	locked  []uint32 // locked modifiers of each modifiers event
+	depress []uint32 // depressed modifiers of each modifiers event
 }
 
 func (p *eventsProxy) Dispatch(e *wlturbo.Event) {
 	p.opcodes = append(p.opcodes, e.Opcode)
 	if e.Opcode == uint16(wayland.KeyboardEventModifiers) {
 		e.Uint32() // serial
-		e.Uint32() // depressed
+		p.depress = append(p.depress, e.Uint32())
 		e.Uint32() // latched
 		p.locked = append(p.locked, e.Uint32())
 		return
@@ -252,5 +253,91 @@ func TestFootKeyboard(t *testing.T) {
 				return
 			}
 		}
+	}
+}
+
+// SetModifiers sends the requested depressed mask with the real latched and
+// locked state, and Restore sends the real state back; the seat's own state
+// is untouched. A window that is not focused is ignored.
+func TestSetModifiersOverrideAndRestore(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	const capsLocked = 2
+	var id ports.WindowID
+	set := make(chan struct{})
+	s.display.Do(func() { s.seat.modState = ports.ModState{Locked: capsLocked}; id = s.seat.focused; close(set) })
+	<-set
+	// A marker command applied on the display means every command sent before
+	// it was applied (they apply in order); the roundtrip then delivers the
+	// events they sent.
+	var pending bool
+	wait := func() {
+		t.Helper()
+		pending = !pending
+		commands <- ports.SlotsPending{Pending: pending}
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			var now bool
+			if !s.display.Do(func() { now = s.slotsPending }) {
+				t.Fatal("display stopped")
+			}
+			if now == pending {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("commands not applied")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		roundtrip(t, target)
+	}
+	proxy.depress, proxy.locked = nil, nil
+	commands <- ports.SetModifiers{ID: id + 100, Mods: ports.ModCtrl}
+	wait()
+	if len(proxy.depress) != 0 {
+		t.Fatalf("unfocused window got modifiers %v", proxy.depress)
+	}
+	commands <- ports.SetModifiers{ID: id, Mods: ports.ModCtrl | ports.ModShift}
+	wait()
+	if !slices.Equal(proxy.depress, []uint32{xkbControl | xkbShift}) || !slices.Equal(proxy.locked, []uint32{capsLocked}) {
+		t.Fatalf("override depressed %v locked %v", proxy.depress, proxy.locked)
+	}
+	done := make(chan ports.ModState, 1)
+	commands <- ports.SetModifiers{ID: id, Restore: true, State: ports.ModState{Locked: capsLocked}}
+	wait()
+	if !slices.Equal(proxy.depress, []uint32{xkbControl | xkbShift, 0}) || !slices.Equal(proxy.locked, []uint32{capsLocked, capsLocked}) {
+		t.Fatalf("restore depressed %v locked %v", proxy.depress, proxy.locked)
+	}
+	s.display.Do(func() { done <- s.seat.modState })
+	if m := <-done; m != (ports.ModState{Locked: capsLocked}) {
+		t.Fatalf("seat state changed: %+v", m)
+	}
+}
+
+// Restore carries the real state core saw, which swallowed keys (a latch a
+// hint label key consumed) never gave the seat: it is sent and adopted.
+func TestSetModifiersRestoreAdoptsCoreState(t *testing.T) {
+	s, events, commands, dir := keyboardServer(t)
+	target, proxy := focusedTarget(t, s, events, commands, dir)
+	const shiftLatched, capsLocked = 1, 2
+	var id ports.WindowID
+	set := make(chan struct{})
+	s.display.Do(func() { s.seat.modState = ports.ModState{Latched: shiftLatched}; id = s.seat.focused; close(set) })
+	<-set
+	proxy.depress, proxy.locked = nil, nil
+	want := ports.ModState{Locked: capsLocked} // the latch was consumed
+	commands <- ports.SetModifiers{ID: id, Restore: true, State: want}
+	var got ports.ModState
+	deadline := time.Now().Add(2 * time.Second)
+	for got != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("seat state %+v, want %+v", got, want)
+		}
+		s.display.Do(func() { got = s.seat.modState })
+		time.Sleep(time.Millisecond)
+	}
+	roundtrip(t, target)
+	if !slices.Equal(proxy.locked, []uint32{capsLocked}) || !slices.Equal(proxy.depress, []uint32{0}) {
+		t.Fatalf("restore depressed %v locked %v", proxy.depress, proxy.locked)
 	}
 }

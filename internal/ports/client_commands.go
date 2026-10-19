@@ -289,3 +289,17 @@ type SpawnRequest struct {
 	// Env adds KEY=value entries to the child environment.
 	Env []string
 }
+
+// SetModifiers carries core → wayland a temporary modifier override for the
+// focused window's keyboards: Mods are sent as depressed modifiers (mapped
+// to the current keymap's masks), latched/locked/group kept from the real
+// state. Mods 0 with Restore true sends the real modifier state again: State
+// is that state as core last saw it, which the seat adopts.
+type SetModifiers struct {
+	ID      WindowID
+	Mods    Mods
+	Restore bool
+	State   ModState
+}
+
+func (SetModifiers) clientCommand() {}
