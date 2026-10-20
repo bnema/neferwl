@@ -79,10 +79,10 @@ type Scene struct {
 	Flash *FocusFlash
 	// PositionHint is drawn on the physical output only, never in captures.
 	PositionHint PositionHint
-	// Animating is set by core when a spring or a focus flash runs on
-	// this output after this frame was computed: the output reports the
-	// flip of the scene to core (OutputFrame), which moves the animation to
-	// the next frame. A scene of a settled output carries false, so a flip
+	// Animating is set by core when a spring, a focus flash or a position
+	// hint fade runs on this output after this frame was computed: the
+	// output reports the flip of the scene to core (OutputFrame), which
+	// moves the animation to the next frame. A scene of a settled output carries false, so a flip
 	// of it wakes nobody. It describes scheduling, not drawing: SameAs and
 	// the renderer ignore it.
 	Animating bool

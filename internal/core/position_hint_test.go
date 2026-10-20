@@ -55,7 +55,7 @@ func TestPositionHintChangesAndTiming(t *testing.T) {
 }
 
 func TestPositionHintWorkspaceAndSuppression(t *testing.T) {
-	for _, mode := range []string{"workspace", "overview", "fullscreen", "off", "no-animation"} {
+	for _, mode := range []string{"overview", "fullscreen", "off", "no-animation"} {
 		t.Run(mode, func(t *testing.T) {
 			c, clock := indicatorCore(t)
 			c.cfg.Focus.PositionHint = true

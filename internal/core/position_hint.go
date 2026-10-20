@@ -41,6 +41,12 @@ func (c *Core) updatePositionHints(only *screen) {
 			h.live, h.sample = false, ports.PositionHint{}
 			continue
 		}
+		// Disabled hints skip the band walk; dropping the baseline keeps a
+		// later re-enable from announcing the position it finds.
+		if !c.cfg.Focus.PositionHint {
+			*h = positionHintState{}
+			continue
+		}
 		w := sc.mon.Current()
 		band := 0
 		if w.Overflow == OverflowCascade {
@@ -59,7 +65,7 @@ func (c *Core) updatePositionHints(only *screen) {
 			}
 		}
 		h.workspace, h.band, h.focused, h.initialized = w, band, focused, true
-		if !c.cfg.Focus.PositionHint || c.protectionRequested() || w.cover() != 0 {
+		if c.protectionRequested() || w.cover() != 0 {
 			h.live, h.sample = false, ports.PositionHint{}
 			continue
 		}
