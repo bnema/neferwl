@@ -5,7 +5,7 @@ const (
 	PositionHintMaxRows    = 16
 	PositionHintDiameter   = 8
 	// PositionHintActiveDiameter fits in the padding and gap around its cell.
-	PositionHintActiveDiameter = 12
+	PositionHintActiveDiameter = 10
 	PositionHintGap            = 10
 	PositionHintPadding        = 10
 	PositionHintBottom         = 48
