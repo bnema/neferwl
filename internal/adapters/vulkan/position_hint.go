@@ -16,20 +16,23 @@ func (w *sceneWalk) positionHint() {
 	alpha := w.alpha
 	w.alpha = h.Opacity * 0.8
 	w.hintRound(w.physRect(b.X, b.Y, b.W, b.H), w.phys(ports.PositionHintRadius), [3]uint8{30, 30, 38})
-	active := parseColor(w.s.Border.Active)
+	// The active dot is white, opaque and larger, whatever border.active is:
+	// a grey accent must not blend it into the other dots of its column.
 	for col := range min(int(h.Columns), ports.PositionHintMaxColumns) {
 		for row := range min(int(h.Counts[col]), ports.PositionHintMaxRows) {
-			color, opacity := [3]uint8{190, 190, 200}, float32(0.3)
+			color, opacity, d := [3]uint8{190, 190, 200}, float32(0.2), ports.PositionHintDiameter
 			if !h.Vertical && col == int(h.ActiveCol) {
-				opacity = 0.65
+				opacity = 0.45
 			}
 			if col == int(h.ActiveCol) && row == int(h.ActiveRow) {
-				color, opacity = active, 1
+				color, opacity, d = [3]uint8{255, 255, 255}, 1, ports.PositionHintActiveDiameter
 			}
 			w.alpha = h.Opacity * opacity
-			x := b.X + ports.PositionHintPadding + col*(ports.PositionHintDiameter+ports.PositionHintGap)
-			y := b.Y + ports.PositionHintPadding + row*(ports.PositionHintDiameter+ports.PositionHintGap)
-			w.hintRound(w.physRect(x, y, ports.PositionHintDiameter, ports.PositionHintDiameter), w.phys(ports.PositionHintDiameter)/2, color)
+			// Every dot is centered in its PositionHintDiameter cell.
+			inset := (ports.PositionHintDiameter - d) / 2
+			x := b.X + ports.PositionHintPadding + col*(ports.PositionHintDiameter+ports.PositionHintGap) + inset
+			y := b.Y + ports.PositionHintPadding + row*(ports.PositionHintDiameter+ports.PositionHintGap) + inset
+			w.hintRound(w.physRect(x, y, d, d), w.phys(d)/2, color)
 		}
 	}
 	w.alpha = alpha

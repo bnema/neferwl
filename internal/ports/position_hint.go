@@ -4,10 +4,12 @@ const (
 	PositionHintMaxColumns = 16
 	PositionHintMaxRows    = 16
 	PositionHintDiameter   = 8
-	PositionHintGap        = 10
-	PositionHintPadding    = 10
-	PositionHintBottom     = 48
-	PositionHintRadius     = 10
+	// PositionHintActiveDiameter fits in the padding and gap around its cell.
+	PositionHintActiveDiameter = 12
+	PositionHintGap            = 10
+	PositionHintPadding        = 10
+	PositionHintBottom         = 48
+	PositionHintRadius         = 10
 )
 
 // PositionHint is a bounded, comparable snapshot. Scenes copy it by value;
