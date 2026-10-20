@@ -135,6 +135,9 @@ func positionHintGrid(m *Monitor) ports.PositionHint {
 	return h
 }
 
+// positionHintFading drives fade frames through the shared scene publication,
+// like springs and the focus flash: each fade frame republishes the whole
+// scene, which allocates its slices. The hint state itself allocates nothing.
 func (c *Core) positionHintFading(sc *screen) bool {
 	return sc.positionHint.live && sc.positionHint.fading
 }
