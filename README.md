@@ -8,8 +8,8 @@
 
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
-<!-- demo: docs/media/demo.mp4 -->
-_Demo video coming soon._
+<p align="center"><a href="docs/media/demo.mp4"><img src="docs/media/demo.png" alt="NeferWL demo: tiling, stash and overview" width="800"></a></p>
+<p align="center"><sub>Stash, overview and animations, recorded on the headless backend at 1080p.</sub></p>
 
 > [!WARNING]
 > **Early alpha, but stable enough for daily use.** Developed and tested mostly on AMD CPUs and GPUs. NVIDIA support is incomplete and untested (contribs welcome). Expect bugs and breaking config changes.
