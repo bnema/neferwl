@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -52,7 +53,9 @@ func TestHeadlessSessionLockEndToEnd(t *testing.T) {
 		}
 		select {
 		case err := <-done:
-			if err != nil {
+			// We canceled Run above. Workers may report that cancellation
+			// during shutdown; it is not a failed session-lock assertion.
+			if err != nil && !errors.Is(err, context.Canceled) {
 				t.Errorf("Run: %v", err)
 			}
 		case <-time.After(3 * time.Second):
