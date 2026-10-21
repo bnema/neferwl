@@ -54,7 +54,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `animations.speed` | `normal` | `slow`, `normal`, `fast`, or a factor from `0.1` to `10` |
 | `focus.follow-move` | `off` | Follow a column moved to another workspace |
 | `focus.position-hint` | `on` | Show workspace/band dots near the output bottom for 600ms after a position change, then fade for 150ms (no fade with animations off); hidden in overview, fullscreen and session lock; never captured |
-| `focus.flash` | `on` | Briefly draw an inner border on the window, column or output an action changed |
+| `focus.flash` | `on` | Briefly draw an inner border, inside the window border, on the window, column or output an action changed |
 | `focus.flash-width` | `2` | Flash border width in logical pixels, `1` to `8` |
 | `focus.flash-opacity` | `0.6` | Starting opacity of the flash, `0.1` to `1` |
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |

@@ -717,3 +717,60 @@ func TestFlashGeometryRevalidationAllocations(t *testing.T) {
 		})
 	}
 }
+
+func TestFlashFollowsInnerBorderAndRadius(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		gaps   int
+		float  bool
+		level  flashLevel
+		radius int
+	}{
+		{"tile with gaps", 12, false, flashWindow, 11},
+		{"column with gaps", 12, false, flashColumn, 11},
+		{"tile without gaps", 0, false, flashWindow, 0},
+		{"float", 0, true, flashWindow, 11},
+		{"monitor", 12, false, flashMonitor, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, clock := flashCore(t)
+			c.cfg.Border.Width, c.cfg.Border.Radius = 3, 14
+			w := c.cur().mon.Current()
+			w.Gaps = test.gaps
+			if test.float {
+				c.applyAction(ActionToggleFloating)
+				c.stopFlash()
+				c.stopAnimations()
+			}
+			id := WindowID(3)
+			if f, ok := w.Focused(); ok && test.float {
+				id = f
+			}
+			startFlash(t, c, clock, test.level, id)
+			want := Rect{W: 300, H: 200}
+			if test.level != flashMonitor {
+				for _, p := range c.cur().mon.Layout() {
+					if p.ID == id {
+						want = p.Rect.Inset(p.Inset, 3)
+						if test.level == flashColumn {
+							want = c.flash.rect
+						}
+					}
+				}
+			}
+			if c.flash.rect != want || c.flash.radius != test.radius {
+				t.Fatalf("rect %+v radius %d, want %+v radius %d", c.flash.rect, c.flash.radius, want, test.radius)
+			}
+			if f := c.flashFor(c.cur()); f == nil || f.Radius != test.radius {
+				t.Fatalf("published %+v", f)
+			}
+			if test.level == flashWindow && test.gaps > 0 {
+				for _, p := range c.cur().mon.Layout() {
+					if p.ID == id && (p.Inset != ports.SideAll || c.flash.rect.W != p.Rect.W-6 || c.flash.rect.H != p.Rect.H-6) {
+						t.Fatalf("tile %+v not inset by 3 on all sides: %+v", p, c.flash.rect)
+					}
+				}
+			}
+		})
+	}
+}

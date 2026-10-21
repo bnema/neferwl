@@ -201,8 +201,11 @@ type SceneLayer struct {
 type FocusFlash struct {
 	Rect  Rect
 	Width int
-	Color string
-	Alpha float64
+	// Radius is the target's corner radius in logical pixels (0 = square),
+	// the same as SceneWindow.Radius; the border follows it.
+	Radius int
+	Color  string
+	Alpha  float64
 }
 
 // SceneWindow carries core → renderer window placement.

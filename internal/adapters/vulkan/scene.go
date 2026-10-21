@@ -79,8 +79,32 @@ func (w *sceneWalk) focusFlash() {
 	}
 	alpha := w.alpha
 	w.alpha = float32(f.Alpha)
-	w.innerBorder(f.Rect, min(f.Width, f.Rect.W/2, f.Rect.H/2), parseColor(f.Color))
+	b := min(f.Width, f.Rect.W/2, f.Rect.H/2)
+	if f.Radius > 0 && b > 0 {
+		w.roundedInnerBorder(f.Rect, b, f.Radius, parseColor(f.Color))
+	} else {
+		w.innerBorder(f.Rect, b, parseColor(f.Color))
+	}
 	w.alpha = alpha
+}
+
+// roundedInnerBorder draws the flash as one rounded ring: the target rect with
+// radius, minus a hole inset by b with radius max(radius-b, 0).
+func (w *sceneWalk) roundedInnerBorder(t ports.Rect, b, radius int, col [3]uint8) {
+	outer := w.physRect(t.X, t.Y, t.W, t.H)
+	n := len(w.draws)
+	w.fill(outer, col)
+	if len(w.draws) == n {
+		return
+	}
+	r := float32(math.Round(float64(radius) * w.scale))
+	dr := &w.draws[n]
+	roundedDraw(dr, outer, r)
+	dr.pc.misc[1] |= flagRing
+	hole := w.physRect(t.X+b, t.Y+b, t.W-2*b, t.H-2*b)
+	bPhys := min(hole.Min.X-outer.Min.X, hole.Min.Y-outer.Min.Y, outer.Max.X-hole.Max.X, outer.Max.Y-hole.Max.Y)
+	dr.roundInner = roundRect(hole)
+	dr.radii[1] = math.Float32bits(max(r-float32(max(bPhys, 0)), 0))
 }
 
 // innerBorder draws four non-overlapping strips, or fills a thin target.

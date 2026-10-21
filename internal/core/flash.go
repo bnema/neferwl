@@ -31,6 +31,7 @@ type focusFlash struct {
 	timerStop  func() bool
 	running    *flashTarget
 	rect       Rect
+	radius     int // Corner radius of the target, as SceneWindow.Radius.
 	start      time.Time
 	value      float64 // Retained between this output's own flips.
 	lastStarts map[flashTarget]time.Time
@@ -87,7 +88,7 @@ func (c *Core) flashTick() bool {
 		f.timerC, f.timerStop = newTimer(c.opts.Clock, wait)
 		return false
 	}
-	rect, ok := c.flashRect(target, sc)
+	rect, radius, ok := c.flashRect(target, sc)
 	if !ok {
 		return false
 	}
@@ -103,7 +104,7 @@ func (c *Core) flashTick() bool {
 		}
 	}
 	f.lastStarts[target] = now
-	f.running, f.rect, f.start = &target, rect, now
+	f.running, f.rect, f.radius, f.start = &target, rect, radius, now
 	f.value = c.cfg.Focus.FlashOpacity
 	return true
 }
@@ -118,7 +119,7 @@ func (c *Core) advanceFlash(only *screen) {
 		return
 	}
 	sc := c.screens[c.screenIndex(f.running.output)]
-	if rect, ok := c.flashRect(*f.running, sc); !ok || rect != f.rect {
+	if rect, radius, ok := c.flashRect(*f.running, sc); !ok || rect != f.rect || radius != f.radius {
 		c.stopFlash()
 		return
 	}
@@ -138,47 +139,50 @@ func (c *Core) advanceFlash(only *screen) {
 // flashRect resolves the current target, never retaining a border after its
 // visibility or geometry changes. stopFlash leaves the published sample intact
 // so the scene diff also damages the old border.
-func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, bool) {
+func (c *Core) flashRect(target flashTarget, sc *screen) (Rect, int, bool) {
 	if sc.mon.ov.open {
-		return Rect{}, false
+		return Rect{}, 0, false
 	}
 	if target.level == flashMonitor {
 		o := sc.mon.Output()
-		return Rect{W: o.W, H: o.H}, true
+		return Rect{W: o.W, H: o.H}, 0, true
 	}
 	owner, _ := c.screenOf(target.window)
 	if owner != sc || c.windows.lookup(target.window).client.ID == 0 {
-		return Rect{}, false
+		return Rect{}, 0, false
 	}
 	view := sc.mon.viewport()
 	c.flash.layout = sc.mon.layoutInto(c.flash.layout)
 	var rect Rect
+	radius := 0
 	found := false
 	for _, p := range c.flash.layout {
 		if p.ID == target.window {
 			if p.Fullscreen || p.Preview != 0 || !view.shows(p) {
-				return Rect{}, false
+				return Rect{}, 0, false
 			}
-			rect, found = p.Rect, true
+			// The flash sits inside the drawn border, hugging the body.
+			rect, found = c.clientRect(p), true
+			radius = max(windowRadius(p, sc.mon.Current().gap(), c.cfg.Border.Radius)-c.cfg.Border.Width, 0)
 			break
 		}
 	}
 	if !found {
-		return Rect{}, false
+		return Rect{}, 0, false
 	}
 	if target.level == flashColumn {
 		w := sc.mon.Current()
 		col := w.columnOf(target.window)
 		if col < 0 {
-			return Rect{}, false
+			return Rect{}, 0, false
 		}
 		for _, p := range c.flash.layout {
 			if !p.Hidden && slices.Contains(w.Columns[col].Windows, p.ID) {
-				rect = union(rect, p.Rect)
+				rect = union(rect, c.clientRect(p))
 			}
 		}
 	}
-	return rect, true
+	return rect, radius, true
 }
 
 func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
@@ -190,9 +194,9 @@ func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
 	if color == "" {
 		color = c.cfg.Border.Active
 	}
-	sample := ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Color: color, Alpha: f.value}
+	sample := ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Radius: f.radius, Color: color, Alpha: f.value}
 	if f.published == nil || *f.published != sample {
-		f.published = &ports.FocusFlash{Rect: sample.Rect, Width: sample.Width, Color: sample.Color, Alpha: sample.Alpha}
+		f.published = &sample
 	}
 	return f.published
 }
