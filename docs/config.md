@@ -62,6 +62,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
 | `hint.targets` | `clickable` | What [hint mode](#hint-mode) labels: `clickable` (links, URLs and buttons) or `links` (links and URLs only) |
 | `hint.text-click` | `ctrl+shift` | Modifiers held for clicks on links found by OCR (terminals open links on a modified click); `none` sends a plain click |
+| `hint.capture` | `off` | Show hint labels in captures requested by Wayland clients (screenshots, screencasts); the compositor's own hint scans never see them; applies on reload |
 | `hint.size` | `auto` | Label text size in logical pixels (6 to 72), or `auto` for screen pixel density |
 | `hint.background` | empty | Label background (`#rrggbb`); empty uses `border.active` |
 | `hint.foreground` | empty | Label text (`#rrggbb`); empty chooses a contrasting colour |
@@ -361,6 +362,12 @@ their size follows the screen's pixel density. Each label sits just outside
 the top-left corner of its target. Links found by OCR (terminal text) are
 clicked with the `hint.text-click` modifiers held, which is how terminals open
 a link; accessibility targets get a plain click.
+
+Labels are not part of screenshots and screencasts by default. With
+`hint.capture = on` they appear in the captures that Wayland clients request
+(including Exclude captures); NeferWL's own text recognition never sees them.
+The capture indicator and the position hint stay out of every capture.
+A reload applies `hint.capture` to the next frame.
 
 ### Where targets come from
 

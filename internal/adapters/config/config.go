@@ -870,6 +870,12 @@ func set(c *ports.Config, key, v string) error {
 			return err
 		}
 		c.Hint.Enable = b
+	case "hint.capture":
+		b, err := onOff(v)
+		if err != nil {
+			return err
+		}
+		c.Hint.Capture = b
 	case "hint.size":
 		if v == "auto" {
 			c.Hint.Size = 0

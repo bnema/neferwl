@@ -466,7 +466,9 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 				return fmt.Errorf("workspace frame fence: %w", err)
 			}
 		}
-		// Captures never show the capture indicator: their frame goes first.
+		// Captures never show the capture indicator or the position hint, and
+		// show hint labels only to clients with hint.capture: their frame goes
+		// first.
 		took, pdone, perr := pipeline.SubmitPlain(r, scene, drawn, normal)
 		if pdone != nil {
 			// The plain render reads client buffers even when its requests
@@ -490,6 +492,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 		if len(excluded) > 0 {
 			// Exclude requests: the frame without the excluded surfaces is
 			// drawn first (same renderer, queue order), then the displayed one.
+			// It has no indicator or position hint; it keeps hint labels with
+			// hint.capture (Split refuses internal requests there).
 			if opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				failRequests(capture.ErrEpochChanged)
 				continue

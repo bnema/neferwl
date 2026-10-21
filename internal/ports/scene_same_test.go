@@ -64,6 +64,7 @@ func TestSceneSameAs(t *testing.T) {
 		"layer":             func(s *Scene) { s.Layers[0].Rect.H++ },
 		"indicator":         func(s *Scene) { s.CaptureIndicators[0].Pill = true },
 		"hint style":        func(s *Scene) { s.HintStyle.Size = 24 },
+		"hint capture":      func(s *Scene) { s.HintStyle.Capture = true },
 		"excluded":          func(s *Scene) { s.Capture.Excluded[0] = 4 },
 		"transform":         func(s *Scene) { s.Transform = 1 },
 		"capture shown":     func(s *Scene) { s.Capture.Shown++ },

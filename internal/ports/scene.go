@@ -71,7 +71,8 @@ type Scene struct {
 	CaptureIndicators []CaptureIndicator
 	// HintLabels are the keyboard hint labels of this output, drawn over
 	// everything, after CaptureIndicators; nil when hint mode is not shown
-	// here. Captures never contain them.
+	// here. Captures never contain them unless HintStyle.Capture is set, and
+	// then only those of Wayland clients.
 	HintLabels []HintLabel
 	HintStyle  HintStyle
 	// Flash is the focus flash drawn over everything of this output; nil
@@ -254,6 +255,10 @@ func (w SceneWindow) Tile() bool {
 
 // HintStyle carries reloadable label settings and untransformed output density.
 type HintStyle struct {
+	// Capture (hint.capture) shows the labels in the captures requested by
+	// Wayland clients. Captures requested by the compositor itself
+	// (CaptureIDInternal) never contain them.
+	Capture                             bool
 	Size                                float64
 	Background, Foreground              string
 	Width, Height, PhysicalW, PhysicalH int

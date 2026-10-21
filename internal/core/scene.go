@@ -126,7 +126,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 	scene.Flash = c.flashFor(sc)
 	scene.CaptureIndicators = c.captureIndicators(sc)
 	scene.HintLabels = c.hintLabels(sc)
-	scene.HintStyle = ports.HintStyle{Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground, Width: sc.info.Width, Height: sc.info.Height, PhysicalW: sc.info.PhysicalW, PhysicalH: sc.info.PhysicalH}
+	scene.HintStyle = ports.HintStyle{Capture: c.cfg.Hint.Capture, Size: c.cfg.Hint.Size, Background: c.cfg.Hint.Background, Foreground: c.cfg.Hint.Foreground, Width: sc.info.Width, Height: sc.info.Height, PhysicalW: sc.info.PhysicalW, PhysicalH: sc.info.PhysicalH}
 	scene.Capture = c.captureSceneFor(sc, capture)
 	// The springs of this frame are advanced: a scene shown while one still
 	// runs wakes core when it flips; the one a spring settles on does not.

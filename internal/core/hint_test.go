@@ -36,8 +36,14 @@ func newHint(t *testing.T, opts core.Options) *hintHarness {
 // newHintMods is newHint with hint.text-click set to textClick.
 func newHintMods(t *testing.T, opts core.Options, textClick ports.Mods) *hintHarness {
 	t.Helper()
+	return newHintConfig(t, opts, func(cfg *ports.Config) { cfg.Hint.TextClick = textClick })
+}
+
+// newHintConfig is newHint with the config edited by edit.
+func newHintConfig(t *testing.T, opts core.Options, edit func(*ports.Config)) *hintHarness {
+	t.Helper()
 	cfg := scrollDefaults()
-	cfg.Hint.TextClick = textClick
+	edit(&cfg)
 	cfg.Border.Width = 0
 	cfg.Layout.Gaps = 20
 	cfg.Binds["Cmd+g"] = "hint"
@@ -875,6 +881,17 @@ func TestHintRejectsResizedSource(t *testing.T) {
 					}
 				}
 			})
+		}
+	}
+}
+
+// hint.capture reaches the scene next to the labels, off by default.
+func TestHintCaptureReachesScene(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		h := newHintConfig(t, core.Options{}, func(cfg *ports.Config) { cfg.Hint.Capture = on })
+		s := h.show(h.inside(0))
+		if s.HintStyle.Capture != on {
+			t.Errorf("hint.capture %v: scene has %v", on, s.HintStyle.Capture)
 		}
 	}
 }

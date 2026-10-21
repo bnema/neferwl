@@ -98,7 +98,7 @@ func TestCaptureLastFrameRegion(t *testing.T) {
 	r.EndCapture(cf) // idempotent
 }
 
-// Both slots leased: the third capture fails at once; returning one
+// Every slot leased: the next capture fails at once; returning one
 // frees it again once its copy finished.
 func TestCaptureSlotsBounded(t *testing.T) {
 	r, err := New(8, 8)
@@ -109,13 +109,18 @@ func TestCaptureSlotsBounded(t *testing.T) {
 	if err := render(r, ports.Scene{Background: "#ff0000"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	a := captureWait(t, r)
-	b := captureWait(t, r)
-	if _, err := r.BeginCapture(); !errors.Is(err, ports.ErrCaptureBusy) {
-		t.Fatalf("third capture: %v", err)
+	leaseAll := func() (leased []ports.CaptureFrame) {
+		for range captureSlots {
+			leased = append(leased, captureWait(t, r))
+		}
+		return leased
 	}
-	r.EndCapture(a)
-	// a's copy finished (waited above): its fence polls signalled.
+	leased := leaseAll()
+	if _, err := r.BeginCapture(); !errors.Is(err, ports.ErrCaptureBusy) {
+		t.Fatalf("capture past the last slot: %v", err)
+	}
+	r.EndCapture(leased[0])
+	// The first copy finished (waited above): its fence polls signalled.
 	c := captureWait(t, r)
 	dst := make([]byte, 4)
 	if err := c.Read(image.Rect(0, 0, 1, 1), dst, 4); err != nil {
@@ -124,15 +129,18 @@ func TestCaptureSlotsBounded(t *testing.T) {
 	if dst[2] != 255 || dst[1] != 0 || dst[0] != 0 {
 		t.Fatalf("pixel %v", dst)
 	}
-	r.EndCapture(b)
+	for _, f := range leased[1:] {
+		r.EndCapture(f)
+	}
 	r.EndCapture(c)
-	// Pixels never takes a leased slot: with both out it reports nil.
-	a, b = captureWait(t, r), captureWait(t, r)
+	// Pixels never takes a leased slot: with all out it reports nil.
+	leased = leaseAll()
 	if img := r.Pixels(); img != nil {
 		t.Fatal("Pixels stole a leased slot")
 	}
-	r.EndCapture(a)
-	r.EndCapture(b)
+	for _, f := range leased {
+		r.EndCapture(f)
+	}
 	if img := r.Pixels(); img == nil || img.RGBAAt(0, 0) != (color.RGBA{255, 0, 0, 255}) {
 		t.Fatalf("Pixels after release: %v", img)
 	}

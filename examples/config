@@ -101,6 +101,8 @@ focus.flash-color =
 # Hint mode labels the links, URLs and buttons on the focused screen:
 # clickable (links, URLs and buttons) or links (links and URLs only).
 # hint.targets = clickable
+# Show the labels in screenshots and screencasts taken by clients.
+# hint.capture = off
 
 # Named workspaces are outside the numbered list and require a bind. The bind
 # shows one; pressing it again returns to the previous workspace.

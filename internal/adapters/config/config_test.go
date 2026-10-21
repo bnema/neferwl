@@ -994,6 +994,24 @@ func TestHintStyleConfig(t *testing.T) {
 	}
 }
 
+func TestHintCapture(t *testing.T) {
+	if Defaults().Hint.Capture {
+		t.Fatal("hint.capture defaults to off")
+	}
+	c, w := parseString(t, "hint.capture = on\n")
+	if !c.Hint.Capture || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "hint.capture = off\n")
+	if c.Hint.Capture || len(w) != 0 {
+		t.Fatal(c.Hint, w)
+	}
+	c, w = parseString(t, "hint.capture = maybe\n")
+	if c.Hint.Capture || len(w) != 1 {
+		t.Fatal(c.Hint, w)
+	}
+}
+
 func TestHintSizeBounds(t *testing.T) {
 	for _, v := range []string{"6", "72", "13"} {
 		c, w := parseString(t, "hint.size = "+v+"\n")

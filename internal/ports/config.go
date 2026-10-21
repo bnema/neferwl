@@ -175,7 +175,10 @@ type Config struct {
 		LinksOnly bool
 		// TextClick are the modifiers held for a click on a link found by
 		// OCR (hint.text-click); zero sends a plain click.
-		TextClick              Mods
+		TextClick Mods
+		// Capture shows the labels in the captures requested by Wayland
+		// clients (hint.capture); the compositor's own scans never see them.
+		Capture                bool
 		Size                   float64 // logical pixels; zero selects automatic density sizing
 		Background, Foreground string  // empty derives from Border.Active
 	}

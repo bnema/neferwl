@@ -106,7 +106,8 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		}
 	}
 	r.UseTarget(o.back)
-	// Captures never show the capture indicator: their frame goes first.
+	// Captures never show the capture indicator or the position hint, and show
+	// hint labels only to clients with hint.capture: their frame goes first.
 	took, pdone, perr := pipeline.SubmitPlain(r, composed, surfaces, normal)
 	if perr != nil {
 		o.holdRead(pdone)
@@ -136,6 +137,8 @@ func (o *Output) submitFrame(ctx context.Context, r ports.Renderer, scene ports.
 		// The excluded frame goes first to the same target and is copied by
 		// the capture; the displayed frame is drawn over it in queue order.
 		// Cost: a second composition on frames with an excluded request.
+		// It has no indicator or position hint; it keeps hint labels with
+		// hint.capture (Split refuses internal requests there).
 		xdone, xerr := r.Render(pipeline.ExcludedScene(composed), surfaces)
 		if xerr != nil {
 			o.holdRead(xdone)
