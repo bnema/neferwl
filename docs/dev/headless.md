@@ -25,10 +25,12 @@ ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420
 For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
 
 ### Demo recording
-Run `tools/demo/record.sh` with Go 1.27, rootless Docker and ffmpeg installed.
-It builds an Arch app image and the host compositor, then records the 1080p README demo.
-Apps run in a disposable, offline container; only the headless Wayland socket is mounted.
-A FIFO synchronizes `input.txt` with app launches after container startup.
+Run `tools/demo/record.sh` with Go 1.27, rootless Docker, ffmpeg and network access installed.
+It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, then records the 1080p README demo.
+The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
+Firefox opens a live DuckDuckGo page, so the recording needs the network and its content varies.
+A FIFO feeds `input.txt` while the script launches the apps on the same clock.
+The hint step labels the page with `hint`, then `hint-click <word>` reads the scanned frame and types the label of the link showing that word.
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 

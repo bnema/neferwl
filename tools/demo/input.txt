@@ -40,4 +40,34 @@ sleep 1500ms
 key Up
 sleep 1s
 key Return
-sleep 4s
+sleep 2s
+# Back on workspace 1. Firefox builds its accessibility tree for page content
+# only after a few scans; a hint bind cancelled at once still runs its scan
+# without drawing labels, so these warm it up unseen.
+key Super+1
+sleep 2s
+key Super+g
+key Escape
+sleep 2s
+key Super+g
+key Escape
+sleep 2s
+key Super+g
+key Escape
+sleep 2s
+# Clear the terminal's listing (OCR would take file names for links) and print
+# a URL, which hint mode labels like Firefox's links. foot opens a URL only from
+# its own keyboard mode, so the terminal's label is shown, not clicked.
+move 400 600
+click
+type clear; echo https://github.com/bnema/neferwl
+key Return
+sleep 500ms
+move 1918 1078
+sleep 2s
+# Hint mode: Firefox's links come from the accessibility tree, the URL from OCR.
+key Super+g
+sleep 6s
+# Types the label of the Wikipedia result: Firefox opens it.
+hint-click Wikipedia
+sleep 26s

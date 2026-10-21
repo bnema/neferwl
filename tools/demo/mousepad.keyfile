@@ -1,0 +1,6 @@
+[org/xfce/mousepad/preferences/view]
+use-default-monospace-font=false
+font-name='JetBrainsMono Nerd Font 15'
+
+[org/xfce/mousepad/preferences/window]
+menubar-visible=false

@@ -11,12 +11,16 @@ terminal.auto-open = off
 stash.spawn-terminal = off
 stash.capture = off
 keyboard.layout = us
+hint.enable = on
+hint.targets = links
 
 # Columns fill a band; extra windows flow below.
 # Super+Up / Down travel between bands.
 # Super+Shift+s sets a window aside.
 # Super+s brings your stash into view.
 # Super+o opens the overview.
+# Super+g labels the links; type one to click it.
+bind.cmd+g = hint
 bind.cmd+code:3 = focus-workspace 2
 bind.cmd+code:2 = focus-workspace 1
 
