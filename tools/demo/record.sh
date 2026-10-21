@@ -9,16 +9,17 @@ for command in docker go ffmpeg; do
 done
 docker info >/dev/null 2>&1 || { echo 'Docker daemon unavailable; start rootless Docker first.' >&2; exit 1; }
 work=$(mktemp -d "${TMPDIR:-/tmp}/neferwl-demo.XXXXXX")
-printf 'Capture directory: %s\n' "$work"
-mkdir -p "$work/shots" docs/media
 compositor='' launcher='' feeder='' success=''
 container=neferwl-demo-$$
 cleanup() {
     local status=$?
     trap - EXIT
-    for pid in "$launcher" "$feeder" "$compositor"; do
-        if [[ -n $pid ]]; then kill "$pid" 2>/dev/null || true; fi
+    # launcher and feeder run with job control (set -m) in their own process
+    # groups, so killing the group also stops their sleep/docker exec children.
+    for pid in "$launcher" "$feeder"; do
+        if [[ -n $pid ]]; then kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
     done
+    if [[ -n $compositor ]]; then kill "$compositor" 2>/dev/null || true; fi
     docker rm -f "$container" >/dev/null 2>&1 || true
     for pid in "$launcher" "$feeder" "$compositor"; do
         if [[ -n $pid ]]; then wait "$pid" 2>/dev/null || true; fi
@@ -32,6 +33,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+printf 'Capture directory: %s\n' "$work"
+mkdir -p "$work/shots" docs/media
 docker build -t neferwl-demo -f tools/demo/Dockerfile tools/demo
 CGO_ENABLED=0 go build -o "$work/neferwl" ./cmd/neferwl
 state=$work/state
@@ -86,10 +89,12 @@ docker exec -d --user demo "$container" foot --title 'System / NeferWL' bash -c 
 # The first app is launched before t=0. FIFO input and shell launches now
 # share this epoch, independent of compositor/image/container startup time.
 SECONDS=0
+set -m
 { cat tools/demo/input.txt; printf '\nkey Ctrl+Alt+BackSpace\n'; } >&3 &
 feeder=$!
 launch_apps &
 launcher=$!
+set +m
 # --timeout exits nonzero; accept only its explicit timeout log entry.
 if ! wait "$compositor"; then
     grep -q '"reason":"timeout"' "$log" || exit 1
