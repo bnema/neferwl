@@ -107,3 +107,56 @@ func TestPositionHintRoundedOrient(t *testing.T) {
 		require.Equal(t, roundRect(image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))), d.round)
 	}
 }
+
+func TestHintRoundDraws(t *testing.T) {
+	bounds := image.Rect(0, 0, 100, 100)
+	for _, tc := range []struct {
+		name       string
+		rect       image.Rectangle
+		radius     int
+		wantDraws  int
+		wantRadius float32
+	}{
+		{"inside", image.Rect(10, 10, 50, 40), 6, 1, 6},
+		{"clipped fully off output", image.Rect(200, 200, 240, 230), 6, 0, 0},
+		{"clipped by bounds", image.Rect(90, 90, 130, 130), 6, 1, 6},
+		{"tiny pill clamps the radius", image.Rect(10, 10, 16, 14), 100, 1, 2},
+		{"zero radius is a plain fill", image.Rect(10, 10, 50, 40), 0, 1, 0},
+		{"negative radius is a plain fill", image.Rect(10, 10, 50, 40), -3, 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := sceneWalk{r: &Renderer{width: 100, height: 100}, alpha: 1, bounds: bounds}
+			w.hintRound(tc.rect, tc.radius, [3]uint8{1, 2, 3})
+			require.Len(t, w.draws, tc.wantDraws)
+			for _, d := range w.draws {
+				if tc.wantRadius == 0 {
+					require.Zero(t, d.pc.misc[1]&flagRounded)
+					continue
+				}
+				require.NotZero(t, d.pc.misc[1]&flagRounded)
+				require.Equal(t, roundRect(tc.rect), d.round, "the clip is the requested rect")
+				require.Equal(t, tc.wantRadius, math.Float32frombits(d.radii[0]))
+			}
+		})
+	}
+}
+
+func TestPositionHintRoundedRotatedOrient(t *testing.T) {
+	for transform := ports.BufferTransform(1); transform < 8; transform++ {
+		r := &Renderer{width: 640, height: 480}
+		sw, sh := r.sceneSize(transform)
+		s := ports.Scene{OutputWidth: sw, OutputHeight: sh, Scale: 1, Transform: transform, PositionHint: hintGrid(2, 2)}
+		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, sw, sh)))
+		require.Len(t, ds, 1+4)
+		sceneRects := make([]image.Rectangle, len(ds))
+		for i, d := range ds {
+			sceneRects[i] = image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))
+		}
+		r.orient(ds, transform)
+		for i, d := range ds {
+			want := transform.RectToBuffer(sceneRects[i], sw, sh)
+			require.Equal(t, roundRect(want), d.round, "transform %d draw %d", transform, i)
+			require.NotZero(t, d.pc.misc[1]&flagRounded)
+		}
+	}
+}
