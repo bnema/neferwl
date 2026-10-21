@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -287,5 +288,11 @@ func TestBorderGrabFullscreenPublish(t *testing.T) {
 	}
 	if c.buttons[btnRight] || c.swallow[btnRight] {
 		t.Fatal("release still held")
+	}
+}
+
+func TestBorderResizeHasNoUnusedStart(t *testing.T) {
+	if _, ok := reflect.TypeFor[borderResize]().FieldByName("start"); ok {
+		t.Fatal("borderResize retains unused start state")
 	}
 }

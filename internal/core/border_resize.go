@@ -15,11 +15,10 @@ type borderResize struct {
 	border border
 	btn    uint32
 	saved  []Column
-	start  [2]float64
 }
 
 func newBorderResize(c *Core, s *screen, w *Workspace, b border, button uint32) *borderResize {
-	g := &borderResize{core: c, screen: s, ws: w, border: b, btn: button, start: [2]float64{c.cursorX, c.cursorY}, saved: slices.Clone(w.Columns)}
+	g := &borderResize{core: c, screen: s, ws: w, border: b, btn: button, saved: slices.Clone(w.Columns)}
 	for i := range g.saved {
 		g.saved[i].Windows = slices.Clone(g.saved[i].Windows)
 		g.saved[i].Shares = slices.Clone(g.saved[i].Shares)
