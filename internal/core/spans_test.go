@@ -186,3 +186,18 @@ func TestSpanLaneIdentity(t *testing.T) {
 		})
 	}
 }
+
+// A column arriving from another workspace carries that workspace's stamp,
+// which may collide with a stamp issued here.
+func TestSpansForeignStampCleared(t *testing.T) {
+	w := spanWorkspace(OverflowScroll, 2)
+	stampSpans(w, 0, 1)
+	stamp := w.spanSeq
+	w.receive(Column{Windows: []WindowID{9}, Span: 3000, spanStamp: stamp}, -1)
+	w.dropStaleSpans()
+	for _, col := range w.Columns {
+		if col.Span != 0 || col.spanStamp != 0 {
+			t.Fatal("foreign stamp joined the lane", w.Columns)
+		}
+	}
+}

@@ -548,6 +548,8 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 // addColumn places a new column like a new window and focuses it.
 func (w *Workspace) addColumn(col Column) {
 	at := 0
+	// Stamp identities belong to the issuing workspace and complete lane.
+	col.Span, col.spanStamp = 0, 0
 	col.BandStart = false
 	if w.policy().wraps {
 		// After the focused band: it joins it when it has room, else it
