@@ -223,7 +223,8 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 		res.Err = err
 		return res
 	}
-	res.Targets = targetsOf(dets, req.Scale, req.Width, req.Height)
+	// Merge after rounding to logical pixels, on the union of all boxes.
+	res.Targets = mergeTargets(targetsOf(dets, req.Scale, req.Width, req.Height))
 	if w.dumpDir != "" {
 		// The dump reads the frame after the result is sent and releases it.
 		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, dets: dets, captureD: captureDur, detectD: detectDur}
