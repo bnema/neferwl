@@ -332,7 +332,9 @@ The window must appear within 5 seconds, otherwise it opens normally. Apps that 
 
 - `cmd` + left drag moves a window. Drop it on the top or bottom of another window to stack it there, or in the middle to swap.
 - `cmd` + right drag resizes a floating window.
-- `Escape` cancels the drag.
+- `cmd` + right drag on the line between two columns or two stacked windows resizes them.
+- `cmd` + double right-click on that line resets the lane's column widths or the column's row heights. Column widths reset when a column enters or leaves the lane.
+- `Escape` cancels the drag and restores the previous sizes.
 
 ### Overview
 
