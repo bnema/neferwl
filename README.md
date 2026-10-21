@@ -178,13 +178,9 @@ Reports from NVIDIA and Intel users are welcome.
 
 ## Documentation
 
-- [Documentation index](docs/index.md): start here.
-- [Architecture](docs/dev/architecture.md): concurrency, GC strategy and purego libraries.
-- [Configuration](docs/config.md): keys, actions, bindings and HDR.
-- [Desktop integration](docs/desktop.md): sessions, clipboard, input methods, X11 apps and scripting.
-- [Session locking](docs/desktop.md#session-locking): external lockers, recovery and security limits.
+- [Configuration](docs/config.md): keys, actions, bindings, layouts, overview, stash, hint mode and HDR.
+- [Desktop integration](docs/desktop.md): sessions, clipboard, input methods, X11 apps, session locking and scripting.
 - [Screen capture](docs/capture.md): protocols, indicator, executable allowlist and portals.
-- [Headless mode](docs/dev/headless.md): screenshots, input scripts and input-method testing without a screen.
 - [Performance](docs/performance.md): VRR and real-time priority.
 - [Developer documentation](docs/dev/index.md): architecture, headless testing, profiling and frame stats.
 
