@@ -134,7 +134,7 @@ func (w *Workspace) setBorder(b border, pos int) {
 	if !w.validSpans(first, last) {
 		used := 0
 		for i := first; i <= last; i++ {
-			w.Columns[i].Span = max((rs[i].W*10000+5000)/avail, 1)
+			w.Columns[i].Span = max((w.columnWidthFor(i, true)*10000+5000)/avail, 1)
 			w.Columns[i].spanLane = last - first + 1
 			used += w.Columns[i].Span
 		}

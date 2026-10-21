@@ -212,3 +212,19 @@ func TestBorderPixelRemainders(t *testing.T) {
 		}
 	}
 }
+
+func TestBorderStampIgnoresMaximizedWidth(t *testing.T) {
+	for _, mode := range []Overflow{OverflowScroll, OverflowFixed, OverflowCascade} {
+		t.Run(string(mode), func(t *testing.T) {
+			w := spanWorkspace(mode, 3)
+			normal := w.columnWidthFor(2, true)
+			w.Columns[2].FullWidth = true
+			rs := w.columnRects()
+			w.setBorder(border{kind: borderColumn, col: 0}, rs[0].X+rs[0].W+15)
+			w.Columns[2].FullWidth = false
+			if got := w.columnWidth(2); got != normal {
+				t.Fatalf("unmaximized width = %d, want %d", got, normal)
+			}
+		})
+	}
+}
