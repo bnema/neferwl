@@ -49,7 +49,7 @@ func TestCascadePartialLastBandWithGaps(t *testing.T) {
 	third, half := (1000-4*8)/3, (1000-3*8)/2
 	rects := w.columnRectsFor(false)
 	for i, want := range []struct{ x, w int }{
-		{8, third}, {8 + third + 8, third}, {8 + 2*(third+8), third},
+		{8, third}, {8 + third + 8, third}, {8 + 2*(third+8), 1000 - 4*8 - 2*third},
 		{8, half}, {8 + half + 8, half},
 	} {
 		if r := rects[i]; r.X != want.x || r.W != want.w {

@@ -178,17 +178,36 @@ func TestSetRowBorder(t *testing.T) {
 }
 
 func TestBorderPixelRemainders(t *testing.T) {
-	for width := 997; width <= 1003; width++ {
-		w := spanWorkspace(OverflowFixed, 3)
-		w.SetOutput(width, 800)
-		before := w.columnRects()
-		b := border{kind: borderColumn, col: 0}
-		for delta := -20; delta <= 20; delta++ {
-			pos := before[0].X + before[0].W + 5 + delta
-			w.setBorder(b, pos)
-			after := w.columnRects()
-			if after[2].X != before[2].X || after[0].X+after[0].W+5 != pos {
-				t.Fatal(width, delta, before, after)
+	for _, mode := range []Overflow{OverflowFixed, OverflowCascade} {
+		for n := 2; n <= 4; n++ {
+			for width := 997; width <= 1003; width++ {
+				for pair := 0; pair < n-1; pair++ {
+					w := spanWorkspace(mode, n)
+					w.SetMaxColumns(n)
+					for i := range w.Columns {
+						w.Columns[i].BandStart = false
+					}
+					w.SetOutput(width, 800)
+					before := w.columnRects()
+					b := border{kind: borderColumn, col: pair}
+					pos := before[pair].X + before[pair].W + 5
+					w.setBorder(b, pos)
+					if after := w.columnRects(); !slices.Equal(before, after) {
+						t.Fatalf("stamp changed geometry: mode=%v n=%d width=%d pair=%d before=%v after=%v", mode, n, width, pair, before, after)
+					}
+					for delta := -20; delta <= 20; delta++ {
+						w.setBorder(b, pos+delta)
+						after := w.columnRects()
+						for i := range before {
+							if i != pair && i != pair+1 && after[i] != before[i] {
+								t.Fatalf("untouched rect changed: mode=%v n=%d width=%d pair=%d delta=%d before=%v after=%v", mode, n, width, pair, delta, before, after)
+							}
+						}
+						if after[pair].X+after[pair].W+5 != pos+delta {
+							t.Fatal("border missed pointer", before, after)
+						}
+					}
+				}
 			}
 		}
 	}

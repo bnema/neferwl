@@ -141,7 +141,7 @@ func (w *Workspace) laneWeight(i, S, u int) int {
 
 // laneWidth is the width of column i of the lane first..last with the
 // stats of laneStats: the usable width after gaps, split by weight. The
-// remainder under one pixel per weight stays empty, as in equalShare.
+// last column receives the pixel remainder, just as for stamped spans.
 func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
 	if w.validSpans(first, last) {
 		avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
@@ -159,8 +159,18 @@ func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
 	}
 	avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
 	// floor(avail*weight/sum) without overflowing on a huge area.
-	weight := w.laneWeight(i, S, u)
-	return avail/sum*weight + avail%sum*weight/sum
+	width := func(j int) int {
+		weight := w.laneWeight(j, S, u)
+		return avail/sum*weight + avail%sum*weight/sum
+	}
+	if i == last {
+		used := 0
+		for j := first; j < last; j++ {
+			used += width(j)
+		}
+		return avail - used
+	}
+	return width(i)
 }
 
 // equalShare is the width of each of k columns sharing the usable width
