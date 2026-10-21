@@ -559,20 +559,21 @@ func (c *Core) edgeScroll(t time.Duration) bool {
 func (w *Workspace) scrollBy(dir int) bool {
 	g := w.gap()
 	n := len(w.Columns)
-	maxView := max(w.columnX(n-1)+w.columnWidth(n-1)+g-(w.Usable.X+w.Usable.W), 0)
+	xs, ws := w.columnEdges()
+	maxView := max(xs[n-1]+ws[n-1]+g-(w.Usable.X+w.Usable.W), 0)
 	view := w.View
 	if dir < 0 {
 		// The first column not fully on screen at the left.
 		for i := n - 1; i >= 0; i-- {
-			if w.columnX(i)-view < w.Usable.X+g {
-				view = w.columnX(i) - w.Usable.X - g
+			if xs[i]-view < w.Usable.X+g {
+				view = xs[i] - w.Usable.X - g
 				break
 			}
 		}
 	} else {
 		for i := range n {
-			if w.columnX(i)+w.columnWidth(i)-view > w.Usable.X+w.Usable.W-g {
-				view = w.columnX(i) + w.columnWidth(i) + g - w.Usable.X - w.Usable.W
+			if xs[i]+ws[i]-view > w.Usable.X+w.Usable.W-g {
+				view = xs[i] + ws[i] + g - w.Usable.X - w.Usable.W
 				break
 			}
 		}
