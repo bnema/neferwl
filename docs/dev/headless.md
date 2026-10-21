@@ -24,6 +24,10 @@ ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420
 
 For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
 
+### Demo recording
+Run `tools/demo/record.sh` to rebuild and record the 1080p README demo (Go 1.27, foot, bash, fastfetch, ffmpeg).
+The config and timed input live beside it; temporary captures are kept at the printed path.
+
 ## Input scripts
 
 `--input <file>`, or `--input -` for stdin, plays one command per line:

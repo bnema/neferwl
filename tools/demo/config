@@ -1,0 +1,10 @@
+animations = on
+terminal = foot -c /dev/null -o font=monospace:size=13 -o colors-dark.background=1a1b26 -o colors-dark.foreground=c0caf5 -e bash --noprofile --norc
+terminal.auto-open = first
+layout.gaps = 8
+border.width = 2
+border.active = #7aa2f7
+border.inactive = #414868
+background = #1a1b26
+layout.max-columns = 2
+keyboard.layout = us

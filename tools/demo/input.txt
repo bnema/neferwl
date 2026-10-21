@@ -1,0 +1,36 @@
+sleep 2s
+move 1918 1078
+type clear; fastfetch --logo small --structure OS:Kernel:WM:Terminal:Memory:Colors
+key Return
+sleep 3s
+key Super+Return
+sleep 1500ms
+type clear; ls -C --color=always /usr/share | head -18
+key Return
+sleep 3s
+key Super+Return
+sleep 1500ms
+type clear; printf '\033[1;34mNEFERWL / STASH\033[0m\n\nA window, set aside.\nReady when you are.\n'; seq 1 12
+key Return
+sleep 2500ms
+key Super+Shift+s
+sleep 1500ms
+key Super+s
+sleep 3s
+key Super+s
+sleep 1s
+key Super+Left
+sleep 1s
+key Super+Right
+sleep 1s
+key Super+o
+sleep 2s
+key Left
+sleep 1s
+key Up
+sleep 1s
+key Return
+sleep 500ms
+key Super+s
+sleep 2s
+key Ctrl+Alt+BackSpace
