@@ -133,8 +133,11 @@ Workspace IDs are `name:<name>` for named workspaces, stable across launches. Nu
 
 NeferWL writes its state as JSON to `$XDG_RUNTIME_DIR/neferwl/<wayland socket>.json`, also given to started programs as `$NEFERWL_STATE`. It lists outputs, workspaces, the focused window, and every window with its app ID, PID, workspace, column and row.
 
+The `workspaces` list holds every workspace with its `visible` flag, its columns and the windows in them, each with `x`, `y`, `width` and `height` in logical pixels of its output. The file is written at most once per second.
+
 ```sh
 neferwl state                        # the whole state
 neferwl state output-of "$PID"       # the output showing that process's window
 neferwl state | jq '[.windows[] | select(.hidden)] | length'   # windows in hidden stashes
+neferwl state | jq '.workspaces[] | select(.visible) | .columns[] | .width'   # column widths on screen
 ```
