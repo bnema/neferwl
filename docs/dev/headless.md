@@ -25,8 +25,11 @@ ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420
 For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
 
 ### Demo recording
-Run `tools/demo/record.sh` to rebuild and record the 1080p README demo (Go 1.27, foot, bash, fastfetch, ffmpeg).
-The config and timed input live beside it; temporary captures are kept at the printed path.
+Run `tools/demo/record.sh` with Go 1.27, rootless Docker and ffmpeg installed.
+It builds an Arch app image and the host compositor, then records the 1080p README demo.
+Apps run in a disposable, offline container; only the headless Wayland socket is mounted.
+The shell timeline launches apps, while `input.txt` drives keys; captures stay at the printed path.
+The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 
 ## Input scripts
 

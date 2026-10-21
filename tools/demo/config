@@ -1,10 +1,25 @@
+# NeferWL · a little space to think
 animations = on
-terminal = foot -c /dev/null -o font=monospace:size=16 -o colors-dark.background=1a1b26 -o colors-dark.foreground=c0caf5 -e bash --noprofile --norc
-terminal.auto-open = first
 layout.gaps = 8
+layout.max-columns = 2
+layout.overflow = cascade
 border.width = 2
 border.active = #7aa2f7
 border.inactive = #414868
 background = #1a1b26
-layout.max-columns = 2
+terminal.auto-open = off
+stash.spawn-terminal = off
+stash.capture = off
 keyboard.layout = us
+
+# Columns fill a band; extra windows flow below.
+# Super+Up / Down travel between bands.
+# Super+Shift+s sets a window aside.
+# Super+s brings your stash into view.
+# Super+o opens the overview.
+bind.cmd+code:3 = focus-workspace 2
+bind.cmd+code:2 = focus-workspace 1
+
+# Warm up btop off-screen before bringing its real samples into band 2.
+rule.monitor.app-id = demo-monitor
+rule.monitor.workspace = 2
