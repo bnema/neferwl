@@ -262,3 +262,30 @@ func TestPointerGrabValidityContract(t *testing.T) {
 		t.Fatal("grab survived output removal")
 	}
 }
+
+func TestBorderGrabFullscreenPublish(t *testing.T) {
+	c, w := borderCore(t, false)
+	w.Overflow = OverflowScroll
+	grabButton(t, c, btnRight, true, time.Second)
+	if c.pgrab == nil {
+		t.Fatal("grab not started")
+	}
+	grabCommands(c)
+	w.fullscreen = 1
+	if err := c.publish(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if c.pgrab != nil || !c.swallow[btnRight] {
+		t.Fatal("fullscreen did not abort grab and swallow release")
+	}
+	requireOverride(t, grabCommands(c), "")
+	grabButton(t, c, btnRight, false, 2*time.Second)
+	for _, cmd := range grabCommands(c) {
+		if _, ok := cmd.(ports.PointerButtonTo); ok {
+			t.Fatal("release forwarded")
+		}
+	}
+	if c.buttons[btnRight] || c.swallow[btnRight] {
+		t.Fatal("release still held")
+	}
+}

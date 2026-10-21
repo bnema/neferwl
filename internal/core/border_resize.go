@@ -38,7 +38,7 @@ func (g *borderResize) cursor() string {
 
 func (g *borderResize) valid() bool {
 	c, s, w := g.core, g.screen, g.ws
-	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.pinned() || len(w.Columns) != len(g.saved) {
+	if !slices.Contains(c.screens, s) || s.mon.Current() != w || s.mon.previewing() || s.mon.ov.open || w.pinned() || w.fullscreen != 0 || len(w.Columns) != len(g.saved) {
 		return false
 	}
 	for i, col := range w.Columns {
