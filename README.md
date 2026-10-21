@@ -23,9 +23,7 @@ _Demo video coming soon._
 - **Hint mode:** click links and buttons by typing their labels, without reaching for the mouse. Enable experimental `hint.enable` and add a bind; see [Hint mode](docs/config.md#hint-mode).
 - **Animations:** short, cheap and off by default. Opt in with experimental `animations = on`; see [Configuration](docs/config.md#keys).
 
-Go fits a compositor's independent event streams: each piece of state has one owner goroutine, connected to others by channels.<br>
-Hot paths reuse memory, client buffers stay off the Go heap, and runtime library calls use purego rather than cgo.<br>
-See [Architecture](docs/dev/architecture.md) for the concurrency model, GC strategy and reusable Go libraries.
+Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
 
 Small on purpose, and staying small: no blur, shadows, rounded corners or themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
 
