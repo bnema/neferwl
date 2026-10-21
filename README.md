@@ -8,7 +8,9 @@
 
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
-<p align="center"><a href="docs/media/demo.mp4"><img src="docs/media/demo.png" alt="NeferWL demo: tiling, stash and overview" width="800"></a></p>
+https://github.com/user-attachments/assets/54f25914-8335-4e66-b458-dabc5493d355
+
+
 <p align="center"><sub>Stash, overview and animations, recorded on the headless backend at 1080p.</sub></p>
 
 > [!WARNING]
