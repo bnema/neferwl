@@ -12,6 +12,8 @@ import (
 // (border_resize.go); planned: column move within a workspace, and edge-hold
 // transfer of a dragged column to the next workspace or the adjacent monitor.
 type pointerGrab interface {
+	// valid reports whether the grab still applies to the current layout; the core aborts it otherwise.
+	valid() bool
 	button() uint32
 	motion(ctx context.Context, at time.Duration) error
 	release(ctx context.Context) error

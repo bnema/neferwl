@@ -637,7 +637,7 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			sc.mon.Current().noteFocus()
 		}
 	}
-	if g, ok := c.pgrab.(*borderResize); ok && !g.valid() {
+	if c.pgrab != nil && !c.pgrab.valid() {
 		if err := c.abortPointerGrab(ctx); err != nil {
 			return err
 		}

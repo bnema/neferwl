@@ -250,3 +250,15 @@ func TestBorderGrabSecurityReset(t *testing.T) {
 		t.Fatal("security reset sent commands")
 	}
 }
+
+func TestPointerGrabValidityContract(t *testing.T) {
+	c, _ := borderCore(t, false)
+	grabButton(t, c, btnRight, true, time.Second)
+	if !c.pgrab.valid() {
+		t.Fatal("new grab is invalid")
+	}
+	c.screens = nil
+	if c.pgrab.valid() {
+		t.Fatal("grab survived output removal")
+	}
+}

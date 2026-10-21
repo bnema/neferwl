@@ -136,7 +136,7 @@ func (c *Core) unmapClient(ctx context.Context, v ports.WindowUnmapped) error {
 		return err
 	}
 	c.unmapWindow(v)
-	if g, ok := c.pgrab.(*borderResize); ok && !g.valid() {
+	if c.pgrab != nil && !c.pgrab.valid() {
 		if err := c.abortPointerGrab(ctx); err != nil {
 			return err
 		}
