@@ -18,10 +18,6 @@ type border struct {
 // The effective minimum also includes 5% of the lane and four border widths.
 const borderMinWidth = 48
 
-func borderContains(r Rect, x, y int) bool {
-	return x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H
-}
-
 func borderZone(a, b, pad int) (int, int) {
 	mid := (a + b) / 2
 	lo, hi := min(a, mid-pad), max(b, mid+pad)
@@ -29,13 +25,13 @@ func borderZone(a, b, pad int) (int, int) {
 }
 
 func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
-	if w.fullscreen != 0 || !borderContains(w.Usable, x, y) {
+	if w.fullscreen != 0 || !contains(w.Usable, x, y) {
 		return border{}, false
 	}
 	// Overview and preview are Monitor presentation, not Workspace state. Their
 	// caller must not ask for workspace borders while presenting those scenes.
 	for _, p := range w.Layout() {
-		if p.Floating && !p.Hidden && !p.Below && borderContains(p.Rect, x, y) {
+		if p.Floating && !p.Hidden && !p.Below && contains(p.Rect, x, y) {
 			return border{}, false
 		}
 	}
@@ -52,7 +48,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		for j := 0; j+1 < len(rows); j++ {
 			lo, size := borderZone(rows[j].Y+rows[j].H, rows[j+1].Y, pad)
 			b := border{kind: borderRow, col: i, row: j, rect: Rect{X: r.X, Y: lo, W: r.W, H: size}}
-			if borderContains(b.rect, x, y) {
+			if contains(b.rect, x, y) {
 				return b, true
 			}
 		}
@@ -66,7 +62,7 @@ func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
 		top, bottom := max(r.Y, next.Y), min(r.Y+r.H, next.Y+next.H)
 		lo, size := borderZone(r.X+r.W, next.X, pad)
 		b := border{kind: borderColumn, col: i, rect: Rect{X: lo, Y: top, W: size, H: max(bottom-top, 0)}}
-		if borderContains(b.rect, x, y) {
+		if contains(b.rect, x, y) {
 			return b, true
 		}
 	}
