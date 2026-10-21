@@ -443,7 +443,9 @@ func TestSyncobjProtocolErrors(t *testing.T) {
 		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorUnsupportedBuffer)},
 		{"surface destroyed", func(h *syncHarness) {
 			requestProtocol(t, h.c, h.surf, wayland.SurfaceRequestDestroy)
-			h.setPoints(1, 2)
+			// The first request already raises the error and the server
+			// then closes the connection: a second write could hit EPIPE.
+			requestProtocol(t, h.c, h.syncSurf, linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1RequestSetAcquirePoint, h.timeline, uint32(0), uint32(1))
 		}, func(h *syncHarness) uint32 { return h.syncSurf }, uint32(linuxdrmsyncobj.WpLinuxDrmSyncobjSurfaceV1ErrorNoSurface)},
 		{"surface exists", func(h *syncHarness) {
 			mgr := bindProtocol(t, h.c, "wp_linux_drm_syncobj_manager_v1")
