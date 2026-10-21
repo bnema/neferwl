@@ -464,3 +464,44 @@ func TestSecurityCompletionLeaseRecycledBeforeProtectionRenderFailure(t *testing
 	// don't let testify format that expired borrowed memory at cleanup.
 	frame.Calls = nil
 }
+
+func TestSecuritySkippedPNGHasNoFrameIndex(t *testing.T) {
+	dir := t.TempDir()
+	var state atomic.Value
+	state.Store(ports.SecurityState{})
+	protected := ports.SecurityState{Generation: 1, Protected: true}
+	gate := portsmocks.NewMockSessionSecurity(t)
+	gate.EXPECT().Snapshot().RunAndReturn(func() ports.SecurityState {
+		return state.Load().(ports.SecurityState)
+	})
+	r := portsmocks.NewMockRenderer(t)
+	black := make(chan struct{}, 1)
+	r.EXPECT().Render(mock.Anything, mock.Anything).RunAndReturn(func(s ports.Scene, _ map[ports.WindowID]ports.SurfaceContent) (*os.File, error) {
+		if s.Security.Protected {
+			black <- struct{}{}
+		}
+		return nil, nil
+	}).Twice()
+	r.EXPECT().Pixels().RunAndReturn(func() *image.RGBA {
+		state.Store(protected)
+		return image.NewRGBA(image.Rect(0, 0, 2, 2))
+	}).Once()
+	r.EXPECT().Close().Return().Once()
+	scenes := make(chan ports.Scene, 1)
+	scenes <- ports.Scene{Seq: 1}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Security: gate, Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+	}()
+	securityReceive(t, black)
+	cancel()
+	if err := securityReceive(t, done); err != nil {
+		t.Fatal(err)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("security-skipped frame produced PNG or index: %v (%v)", files, err)
+	}
+}

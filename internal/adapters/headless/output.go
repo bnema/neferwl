@@ -100,8 +100,14 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var index *os.File
 	var indexWriter *bufio.Writer
 	var lastShot time.Time
+	var lastShotName string
 	defer func() {
 		if index != nil {
+			// A following file makes concat honor the final held interval.
+			if !lastShot.IsZero() {
+				_, _ = fmt.Fprintf(indexWriter, "duration %.6f\nfile '%s'\n", time.Since(lastShot).Seconds(), lastShotName)
+				_ = indexWriter.Flush()
+			}
 			_ = index.Close()
 		}
 	}()
@@ -598,7 +604,7 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if err := indexWriter.Flush(); err != nil {
 				return fmt.Errorf("frame index: %w", err)
 			}
-			lastShot = now
+			lastShot, lastShotName = now, name
 			if opts.RawHDR && opts.HDR {
 				// No cursor on the raw image. Only a confirmed HDR output
 				// has a readable PQ target; else HDRPixels is nil.

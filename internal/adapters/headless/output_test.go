@@ -125,20 +125,23 @@ func TestRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(index)), "\n")
-	if len(lines) != 6 || lines[0] != "ffconcat version 1.0" {
+	if len(lines) != 8 || lines[0] != "ffconcat version 1.0" {
 		t.Fatalf("unexpected index: %s", index)
 	}
 	for i, want := range []string{"file 'frame-000001.png'", "file 'frame-000002.png'", "file 'frame-000003.png'"} {
 		if lines[1+2*i] != want {
 			t.Fatalf("frame %d: %s", i+1, lines[1+2*i])
 		}
-		if i < 2 {
+		if i < 3 {
 			line := lines[2+2*i]
 			value, err := strconv.ParseFloat(strings.TrimPrefix(line, "duration "), 64)
 			if !strings.HasPrefix(line, "duration ") || err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
 				t.Fatalf("invalid duration: %q", line)
 			}
 		}
+	}
+	if lines[7] != lines[5] {
+		t.Fatalf("missing final repeated frame: %s", index)
 	}
 }
 
@@ -528,5 +531,48 @@ func TestRunAppliesWholeBatch(t *testing.T) {
 	}
 	if len(contents.returned) != 0 {
 		t.Error("batch returned more than once")
+	}
+}
+
+func TestRunFinalizesLastFrameDuration(t *testing.T) {
+	dir := t.TempDir()
+	scenes := make(chan ports.Scene, 1)
+	scenes <- ports.Scene{Seq: 1}
+	r, _ := recordingRenderer(t, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(ctx, Options{Width: 2, Height: 2, ScreenshotDir: dir, NewRenderer: func(int, int) (ports.Renderer, error) { return r, nil }}, scenes, nil, nil, nil, nil)
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		data, _ := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+		if strings.Contains(string(data), "file 'frame-000001.png'") {
+			break
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatal("frame index not written")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 4 || lines[0] != "ffconcat version 1.0" || lines[1] != "file 'frame-000001.png'" || lines[3] != lines[1] {
+		t.Fatalf("unexpected finalized index: %s", data)
+	}
+	duration, err := strconv.ParseFloat(strings.TrimPrefix(lines[2], "duration "), 64)
+	if err != nil || duration < 0.05 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+		t.Fatalf("final duration: %q (%v)", lines[2], err)
 	}
 }
