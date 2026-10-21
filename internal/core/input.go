@@ -134,16 +134,23 @@ func (c *Core) clickFocus(ctx context.Context, id WindowID) error {
 	if s == nil || w != s.mon.Current() || (c.keyboard.sent == id && s == c.cur()) {
 		return nil
 	}
-	focused, _ := c.cur().mon.Focused()
 	now := c.now()
 	before := c.snapshot(now)
+	c.focusClick(s, w, id)
+	c.transition(before, now)
+	return c.publish(ctx)
+}
+
+// focusClick raises the clicked window and focuses its output. Modal dialogs
+// can take the parent's focus, so flash the resolved focus, not the click target.
+func (c *Core) focusClick(s *screen, w *Workspace, id WindowID) {
+	before, _ := c.cur().mon.Focused()
 	w.Click(id)
 	c.focusScreen = c.screenIndex(s.name())
-	c.transition(before, now)
-	if focused != id {
-		c.requestFlash(flashWindow, id)
+	after, _ := c.cur().mon.Focused()
+	if after != 0 && after != before {
+		c.requestFlash(flashWindow, after)
 	}
-	return c.publish(ctx)
 }
 
 func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {

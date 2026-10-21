@@ -812,3 +812,74 @@ func TestFlashClickFocus(t *testing.T) {
 		})
 	}
 }
+
+func TestFlashClickModalFocus(t *testing.T) {
+	for _, unchanged := range []bool{false, true} {
+		t.Run(map[bool]string{false: "changed", true: "unchanged"}[unchanged], func(t *testing.T) {
+			c, _ := flashCore(t)
+			w := c.cur().mon.Current()
+			c.windows.mapped(ports.WindowMapped{ID: 4}, c.now())
+			w.AddDialog(4, 1, 100, 80)
+			w.SetModal(4, true)
+			if !unchanged {
+				w.Click(2)
+			}
+			indicatorScene(t, c)
+			c.pointer = 1
+			if err := c.pointerButton(context.Background(), ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
+				t.Fatal(err)
+			}
+			if c.keyboardFocus() != 4 {
+				t.Fatalf("focus = %d, want modal 4", c.keyboardFocus())
+			}
+			if unchanged {
+				if c.flash.pending != nil {
+					t.Fatalf("unchanged modal flashed: %+v", c.flash.pending)
+				}
+			} else if c.flash.pending == nil || c.flash.pending.window != 4 {
+				t.Fatalf("want modal flash, got %+v", c.flash.pending)
+			}
+		})
+	}
+}
+
+func TestFlashModifierClickDrag(t *testing.T) {
+	for _, resize := range []bool{false, true} {
+		for _, mode := range []string{"changed", "unchanged", "disabled"} {
+			t.Run(map[bool]string{false: "move", true: "resize"}[resize]+"/"+mode, func(t *testing.T) {
+				c, clock := flashCore(t)
+				w := c.cur().mon.Current()
+				w.Click(1)
+				if resize {
+					w.Apply(ActionToggleFloating)
+				}
+				if mode != "unchanged" {
+					w.Click(3)
+				}
+				c.cfg.Focus.Flash = mode != "disabled"
+				indicatorScene(t, c)
+				c.pointer = 1
+				c.mods = c.cmdMod
+				button := uint32(btnLeft)
+				if resize {
+					button = btnRight
+				}
+				if err := c.pointerButton(context.Background(), ports.PointerButton{Button: button, Pressed: true}); err != nil {
+					t.Fatal(err)
+				}
+				if c.drag == nil || c.drag.id != 1 || c.drag.resize != resize {
+					t.Fatalf("drag not started: %+v", c.drag)
+				}
+				want := mode == "changed"
+				if (c.flash.pending != nil) != want {
+					t.Fatalf("flash = %+v, want %v", c.flash.pending, want)
+				}
+				clock.now = clock.now.Add(time.Second)
+				stepScenes(t, c, c.cur())
+				if c.flashTick() != want {
+					t.Fatalf("flash start: want %v", want)
+				}
+			})
+		}
+	}
+}
