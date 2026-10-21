@@ -112,9 +112,9 @@ func assembleSession(ctx context.Context, opts Options) (s *session, err error) 
 		return s, err
 	}
 	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	// Hint mode off: no accessibility connection, no debug env, nothing.
+	// Hint mode off: no detector, no debug env, nothing.
 	if opts.Config.Hint.Enable {
-		s.hintOpts = hintOptions(ctx)
+		s.hintOpts = hintOptions(ctx, opts.Config)
 	}
 	// Every output renders on the same GPU: its formats are the clients'.
 	s.dmabuf = vulkan.Probe()

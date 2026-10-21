@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/draw"
 	_ "image/png"
+	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,6 +38,13 @@ func startCapturing(t *testing.T, timeout time.Duration) *harness {
 
 func startWith(t *testing.T, timeout time.Duration, opts Options) *harness {
 	t.Helper()
+	if opts.detector == nil {
+		// Tests of the capture flow do not care what the detector finds.
+		det := newMockdetector(t)
+		det.EXPECT().Detect(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+		det.EXPECT().Close().Return(nil).Maybe()
+		opts.detector = det
+	}
 	h := &harness{
 		requests: make(chan ports.HintScanRequest, 1),
 		captures: make(chan ports.CaptureRequest, 4),
@@ -55,51 +61,67 @@ func startWith(t *testing.T, timeout time.Duration, opts Options) *harness {
 	return h
 }
 
-func loadBGRA(t *testing.T) (pix []byte, w, hgt int) {
-	t.Helper()
-	f, err := os.Open("testdata/browser.png")
-	require.NoError(t, err)
-	defer f.Close()
-	img, _, err := image.Decode(f)
-	require.NoError(t, err)
-	b := img.Bounds()
-	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-	draw.Draw(rgba, rgba.Bounds(), img, b.Min, draw.Src)
-	for i := 0; i < len(rgba.Pix); i += 4 {
-		rgba.Pix[i], rgba.Pix[i+2] = rgba.Pix[i+2], rgba.Pix[i]
-		rgba.Pix[i+3] = 0xff
-	}
-	return rgba.Pix, b.Dx(), b.Dy()
-}
-
 func TestHintScan(t *testing.T) {
-	if _, err := exec.LookPath("tesseract"); err != nil {
-		t.Skip("tesseract not on PATH")
-	}
-	pix, w, hgt := loadBGRA(t)
-	h := start(t, 5*time.Second)
-
-	// Plays the output owner.
+	det := newMockdetector(t)
+	det.EXPECT().Close().Return(nil).Once()
+	var got detFrame
+	det.EXPECT().Detect(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, f detFrame) ([]detection, error) {
+		got = f
+		return []detection{{x1: 10, y1: 20, x2: 110, y2: 60, score: 0.8}}, nil
+	}).Once()
+	h := startWith(t, 5*time.Second, Options{detector: det})
 	go func() {
 		creq := <-h.captures
-		copy(creq.Mapped, pix)
 		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 	}()
-
-	h.requests <- ports.HintScanRequest{Seq: 7, Output: "HEADLESS-1", Width: w, Height: hgt, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: w, H: hgt}}}}
+	h.requests <- ports.HintScanRequest{Seq: 7, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1}
 	res := <-h.results
 	require.NoError(t, res.Err)
 	require.Equal(t, uint64(7), res.Seq)
 	require.Equal(t, "HEADLESS-1", res.Output)
-	var links int
-	for _, tg := range res.Targets {
-		require.Positive(t, tg.Rect.W)
-		require.Positive(t, tg.Rect.H)
-		if tg.Kind == ports.HintLink {
-			links++
+	require.Equal(t, []ports.HintTarget{{Rect: ports.Rect{X: 10, Y: 20, W: 100, H: 40}, Score: 0.8}}, res.Targets)
+	require.Equal(t, 64, got.width)
+	require.Equal(t, 32, got.height)
+	require.Equal(t, 64*4, got.stride)
+}
+
+func TestTargetsOf(t *testing.T) {
+	got := targetsOf([]detection{
+		{x1: 11, y1: 21, x2: 100.2, y2: 61, score: 0.5}, // scale 2: x 5..51, y 10..31
+		{x1: 0, y1: 0, x2: 5, y2: 40, score: 0.9},       // 2.5 -> 3 logical wide: dropped
+		{x1: 0, y1: 0, x2: 40, y2: 5, score: 0.9},       // 3 logical high: dropped
+		{x1: 0, y1: 0, x2: 8, y2: 8, score: 0.4},        // exactly 4x4: kept
+		{x1: float32(math.NaN()), y1: 0, x2: 50, y2: 50},
+	}, 2)
+	require.Equal(t, []ports.HintTarget{
+		{Rect: ports.Rect{X: 5, Y: 10, W: 46, H: 21}, Score: 0.5},
+		{Rect: ports.Rect{X: 0, Y: 0, W: 4, H: 4}, Score: 0.4},
+	}, got)
+	// A zero scale reads as 1.
+	require.Len(t, targetsOf([]detection{{x2: 10, y2: 10}}, 0), 1)
+}
+
+// A detector error fails the scan; the worker goes on and the buffer is released.
+func TestHintDetectorErrorFailsScan(t *testing.T) {
+	boom := errors.New("detector gone")
+	det := newMockdetector(t)
+	det.EXPECT().Close().Return(nil).Once()
+	det.EXPECT().Detect(mock.Anything, mock.Anything).Return(nil, boom).Once()
+	det.EXPECT().Detect(mock.Anything, mock.Anything).Return(nil, nil).Once()
+	h := startWith(t, 5*time.Second, Options{detector: det})
+	for i, want := range []error{boom, nil} {
+		go func() {
+			creq := <-h.captures
+			h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
+		}()
+		h.requests <- ports.HintScanRequest{Seq: uint64(i + 1), Output: "o", Width: 16, Height: 16, Scale: 1}
+		res := <-h.results
+		if want != nil {
+			require.ErrorIs(t, res.Err, want)
+		} else {
+			require.NoError(t, res.Err)
 		}
 	}
-	require.GreaterOrEqual(t, links, 1)
 }
 
 func TestHintRequestShape(t *testing.T) {
@@ -166,19 +188,6 @@ func TestHintBadSize(t *testing.T) {
 	require.ErrorIs(t, res.Err, ErrBadRequest)
 }
 
-func scanOnce(t *testing.T, h *harness, pix []byte, w, hgt int, seq uint64) ports.HintScanResult {
-	t.Helper()
-	go func() {
-		creq := <-h.captures
-		copy(creq.Mapped, pix)
-		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
-	}()
-	h.requests <- ports.HintScanRequest{Seq: seq, Output: "HEADLESS-1", Width: w, Height: hgt, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: w, H: hgt}}}}
-	res := <-h.results
-	require.NoError(t, res.Err)
-	return res
-}
-
 // waitFiles waits for the dump the worker writes after sending the result.
 func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	t.Helper()
@@ -190,19 +199,32 @@ func waitFiles(t *testing.T, dir string, n int) []os.DirEntry {
 	return entries
 }
 
+// scanOnce runs one scan on a 64x32 frame and waits for its result.
+func scanOnce(t *testing.T, h *harness, seq uint64) ports.HintScanResult {
+	t.Helper()
+	go func() {
+		creq := <-h.captures
+		for i := 0; i < len(creq.Mapped); i += 4 {
+			creq.Mapped[i], creq.Mapped[i+1], creq.Mapped[i+2] = 10, 20, 30
+		}
+		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
+	}()
+	h.requests <- ports.HintScanRequest{Seq: seq, Output: "HEADLESS-1", Width: 64, Height: 32, Scale: 1}
+	res := <-h.results
+	require.NoError(t, res.Err)
+	return res
+}
+
 func TestHintDump(t *testing.T) {
-	if _, err := exec.LookPath("tesseract"); err != nil {
-		t.Skip("tesseract not on PATH")
-	}
-	pix, w, hgt := loadBGRA(t)
+	det := newMockdetector(t)
+	det.EXPECT().Close().Return(nil).Once()
+	det.EXPECT().Detect(mock.Anything, mock.Anything).Return([]detection{{x1: 8, y1: 4, x2: 40, y2: 20, score: 0.75}}, nil).Once()
 	dir := filepath.Join(t.TempDir(), "hints")
-	h := startWith(t, 5*time.Second, Options{DumpDir: dir})
-	res := scanOnce(t, h, pix, w, hgt, 1)
-	require.NotEmpty(t, res.Targets)
+	h := startWith(t, 5*time.Second, Options{DumpDir: dir, detector: det})
+	res := scanOnce(t, h, 1)
+	require.Len(t, res.Targets, 1)
 
 	entries := waitFiles(t, dir, 3)
-	// A second request is only served once the dump is written.
-	_ = scanOnceDone(t, h)
 	var png, ann, js string
 	for _, e := range entries {
 		info, err := e.Info()
@@ -228,61 +250,45 @@ func TestHintDump(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, js))
 	require.NoError(t, err)
 	var meta struct {
-		Output    string  `json:"output"`
-		Width     int     `json:"width"`
-		Height    int     `json:"height"`
-		Stride    int     `json:"stride"`
-		Scale     float64 `json:"scale"`
-		LinksOnly bool    `json:"links_only"`
-		Targets   []struct {
-			Kind string `json:"kind"`
-			Rect [4]int `json:"rect"`
+		Output   string  `json:"output"`
+		Width    int     `json:"width"`
+		Height   int     `json:"height"`
+		Stride   int     `json:"stride"`
+		Scale    float64 `json:"scale"`
+		DetectMS float64 `json:"detect_ms"`
+		TotalMS  float64 `json:"total_ms"`
+		Targets  []struct {
+			Rect  [4]int  `json:"rect"`
+			Score float32 `json:"score"`
 		} `json:"targets"`
 	}
 	require.NoError(t, json.Unmarshal(data, &meta))
 	require.Equal(t, "HEADLESS-1", meta.Output)
-	require.Equal(t, w, meta.Width)
-	require.Equal(t, hgt, meta.Height)
-	require.Equal(t, w*4, meta.Stride)
+	require.Equal(t, 64, meta.Width)
+	require.Equal(t, 32, meta.Height)
+	require.Equal(t, 64*4, meta.Stride)
 	require.Equal(t, 1.0, meta.Scale)
-	require.Len(t, meta.Targets, len(res.Targets))
-	for i, tg := range res.Targets {
-		require.Equal(t, [4]int{tg.Rect.X, tg.Rect.Y, tg.Rect.X + tg.Rect.W, tg.Rect.Y + tg.Rect.H}, meta.Targets[i].Rect)
-	}
+	require.GreaterOrEqual(t, meta.TotalMS, meta.DetectMS)
+	require.Len(t, meta.Targets, 1)
+	require.Equal(t, [4]int{8, 4, 40, 20}, meta.Targets[0].Rect)
+	require.Equal(t, float32(0.75), meta.Targets[0].Score)
 
 	f, err := os.Open(filepath.Join(dir, png))
 	require.NoError(t, err)
 	defer f.Close()
 	img, _, err := image.Decode(f)
 	require.NoError(t, err)
-	require.Equal(t, image.Rect(0, 0, w, hgt), img.Bounds())
+	require.Equal(t, image.Rect(0, 0, 64, 32), img.Bounds())
 	r, g, b, _ := img.At(0, 0).RGBA()
-	require.Equal(t, uint32(pix[2])*0x101, r)
-	require.Equal(t, uint32(pix[1])*0x101, g)
-	require.Equal(t, uint32(pix[0])*0x101, b)
-}
-
-// scanOnceDone sends a request that fails fast on a blank capture and waits
-// for its result, which proves the previous dump finished.
-func scanOnceDone(t *testing.T, h *harness) ports.HintScanResult {
-	t.Helper()
-	go func() {
-		creq := <-h.captures
-		h.captured <- ports.CaptureDone{ID: creq.ID, Err: errors.New("stop")}
-	}()
-	h.requests <- ports.HintScanRequest{Seq: 99, Output: "x", Width: 8, Height: 8, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 8, H: 8}}}}
-	return <-h.results
+	require.Equal(t, uint32(30)*0x101, r)
+	require.Equal(t, uint32(20)*0x101, g)
+	require.Equal(t, uint32(10)*0x101, b)
 }
 
 func TestHintDumpDisabled(t *testing.T) {
-	if _, err := exec.LookPath("tesseract"); err != nil {
-		t.Skip("tesseract not on PATH")
-	}
-	pix, w, hgt := loadBGRA(t)
 	dir := filepath.Join(t.TempDir(), "hints")
 	h := start(t, 5*time.Second)
-	scanOnce(t, h, pix, w, hgt, 1)
-	scanOnceDone(t, h)
+	scanOnce(t, h, 1)
 	_, err := os.Stat(dir)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
@@ -302,67 +308,25 @@ func TestHintDumpRetention(t *testing.T) {
 	require.Equal(t, "20260101-000000.010-o.annotated.png", entries[0].Name())
 }
 
-func TestScanMergesSource(t *testing.T) {
-	pix, w, hgt := loadBGRA(t)
-	src := newMocktargetSource(t)
-	src.EXPECT().Close().Return(nil).Once() // the worker closes its source on return
-	wins := []ports.HintWindow{{ID: 4, PID: 9, Rect: ports.Rect{X: 0, Y: 0, W: w, H: hgt}}}
-	at := []ports.HintTarget{{Rect: ports.Rect{X: 5, Y: 5, W: 30, H: 10}, Kind: ports.HintLink}}
-	src.EXPECT().Targets(mock.Anything, wins, false).Return(at, map[ports.WindowID]bool{4: true}, nil).Once()
-	h := startWith(t, 5*time.Second, Options{Source: src})
-	go func() {
-		creq := <-h.captures
-		copy(creq.Mapped, pix)
-		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
-	}()
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "HEADLESS-1", Width: w, Height: hgt, Scale: 1, Windows: wins}
-	res := <-h.results
-	require.NoError(t, res.Err)
-	// The whole frame is covered: only the accessibility target remains.
-	require.Equal(t, at, res.Targets)
-}
-
-func TestScanSourceErrorUsesOCR(t *testing.T) {
-	if _, err := exec.LookPath("tesseract"); err != nil {
-		t.Skip("tesseract not on PATH")
-	}
-	pix, w, hgt := loadBGRA(t)
-	src := newMocktargetSource(t)
-	src.EXPECT().Close().Return(nil).Once() // the worker closes its source on return
-	wins := []ports.HintWindow{{ID: 4, PID: 9, Rect: ports.Rect{W: w, H: hgt}}}
-	src.EXPECT().Targets(mock.Anything, wins, false).Return(nil, nil, errors.New("bus gone")).Once()
-	h := startWith(t, 5*time.Second, Options{Source: src})
-	go func() {
-		creq := <-h.captures
-		copy(creq.Mapped, pix)
-		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
-	}()
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "HEADLESS-1", Width: w, Height: hgt, Scale: 1, Windows: wins}
-	res := <-h.results
-	require.NoError(t, res.Err)
-	require.NotEmpty(t, res.Targets)
-}
-
 // The worker keeps no frame: the mapped buffer belongs to the scan, and to the
 // dump job until it is written; every mapping is released afterwards.
 func TestWorkerHoldsNoFrameAfterScan(t *testing.T) {
 	for _, dumpDir := range []string{"", filepath.Join(t.TempDir(), "hints")} {
-		// OCR is "installed" but its binary cannot run: only the memory matters.
-		w := &worker{dumpDir: dumpDir, ocr: ocrState{done: true, binary: "/nonexistent/tesseract", lang: "eng"}}
-		requests := make(chan ports.HintScanRequest)
+		det := newMockdetector(t)
+		det.EXPECT().Detect(mock.Anything, mock.Anything).Return(nil, nil).Once()
+		w := &worker{dumpDir: dumpDir, det: det}
 		captures := make(chan ports.CaptureRequest, 1)
 		captured := make(chan ports.CaptureDone, 1)
-		results := make(chan ports.HintScanResult, 1)
 		go func() {
 			creq := <-captures
 			captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
 		}()
-		req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 64, H: 32}}}}
-		res := w.serve(context.Background(), req, requests, captures, captured, results, 5*time.Second)
+		req := ports.HintScanRequest{Output: "o", Width: 64, Height: 32, Scale: 1}
+		res := w.serve(context.Background(), req, make(chan ports.HintScanRequest), captures, captured, make(chan ports.HintScanResult, 1), 5*time.Second)
 		require.NoError(t, res.Err)
 		if dumpDir == "" {
 			require.Nil(t, w.pending)
-			require.Zero(t, w.live, "frame and crops are released before the result")
+			require.Zero(t, w.live, "the frame is released before the result")
 		} else {
 			require.NotNil(t, w.pending)
 			require.Equal(t, 1, w.live, "only the frame, kept for the dump")
@@ -370,7 +334,6 @@ func TestWorkerHoldsNoFrameAfterScan(t *testing.T) {
 		w.dump(context.Background())
 		require.Nil(t, w.pending)
 		require.Zero(t, w.live)
-		require.Empty(t, w.cache) // OCR failed: nothing cached
 	}
 }
 
@@ -387,39 +350,6 @@ func TestTimedOutCaptureIsReleasedWhenDone(t *testing.T) {
 	creq.Mapped[0] = 1 // still valid: the output may write until CaptureDone
 	w.reap(creq.ID)
 	require.Zero(t, w.live)
-}
-
-// Without tesseract OCR is off for good: no capture, only accessibility targets.
-func TestNoTesseractSkipsCapture(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	button := ports.HintTarget{Kind: ports.HintButton, Rect: ports.Rect{W: 5, H: 5}}
-	covered := ports.HintTarget{Kind: ports.HintLink, Rect: ports.Rect{X: 30, W: 5, H: 5}}
-	wins := []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 20, H: 20}}, {ID: 2, Rect: ports.Rect{X: 20, W: 20, H: 20}}}
-	src := newMocktargetSource(t)
-	src.EXPECT().Close().Return(nil).Once() // the worker closes its source on return
-	src.EXPECT().Targets(mock.Anything, wins, false).Return([]ports.HintTarget{button, covered}, map[ports.WindowID]bool{2: true}, nil).Times(2)
-	h := startWith(t, time.Second, Options{Source: src})
-	for seq := uint64(1); seq <= 2; seq++ {
-		h.requests <- ports.HintScanRequest{Seq: seq, Output: "o", Width: 40, Height: 20, Scale: 1, Windows: wins}
-		res := <-h.results
-		require.NoError(t, res.Err)
-		require.Equal(t, []ports.HintTarget{button, covered}, res.Targets)
-	}
-	require.Empty(t, h.captures)
-}
-
-// With debug dumps on, the frame is still captured (for the dump only).
-func TestNoTesseractDumpStillCaptures(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	dir := filepath.Join(t.TempDir(), "hints")
-	h := startWith(t, 5*time.Second, Options{DumpDir: dir})
-	go func() {
-		creq := <-h.captures
-		h.captured <- ports.CaptureDone{ID: creq.ID, Output: creq.Output}
-	}()
-	h.requests <- ports.HintScanRequest{Seq: 1, Output: "o", Width: 40, Height: 20, Scale: 1, Windows: []ports.HintWindow{{ID: 1, Rect: ports.Rect{W: 40, H: 20}}}}
-	require.NoError(t, (<-h.results).Err)
-	waitFiles(t, dir, 3)
 }
 
 // A capture that completes after its scan timed out is released while the

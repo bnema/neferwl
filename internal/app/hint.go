@@ -5,21 +5,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bnema/neferwl/internal/adapters/atspi"
 	"github.com/bnema/neferwl/internal/adapters/hints"
 	"github.com/bnema/neferwl/internal/adapters/logging"
+	"github.com/bnema/neferwl/internal/ports"
 )
 
-// hintOptions builds the hint worker options: the accessibility source, and,
-// when NEFERWL_HINT_DEBUG is "1", the dump directory of scanned frames,
-// $XDG_STATE_HOME/neferwl/hints. The accessibility bus is only contacted
-// by the first scan; without it the worker reads windows with OCR only.
-func hintOptions(ctx context.Context) hints.Options {
+// hintOptions builds the hint worker options from the configuration (read at
+// startup) and, when NEFERWL_HINT_DEBUG is "1", the dump directory of scanned
+// frames, $XDG_STATE_HOME/neferwl/hints. The detector process only starts at
+// the first scan.
+func hintOptions(ctx context.Context, cfg ports.Config) hints.Options {
 	opts := hintDump(ctx)
-	// The source connects on its first scan, and again after a failure. The
-	// hints worker owns it and closes it when it returns.
-	src := atspi.New()
-	opts.Source = src
+	opts.Command, opts.ModelDir, opts.Threshold = cfg.Hint.Detector, cfg.Hint.Model, cfg.Hint.Threshold
 	return opts
 }
 

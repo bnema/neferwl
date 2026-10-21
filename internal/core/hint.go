@@ -36,7 +36,6 @@ type hintTarget struct {
 	source hintSourceGeom // source window and its request-time client geometry
 	label  string
 	rect   ports.Rect
-	text   bool // found by OCR
 }
 
 type hintSourceGeom struct {
@@ -52,7 +51,7 @@ type hintState struct {
 	// one on screen ends it.
 	ws      *Workspace
 	geom    hintGeom
-	windows []ports.HintWindow // visible windows at request time
+	windows []hintSourceGeom // visible windows and their client geometry at request time
 	targets []hintTarget
 	typed   string
 }
@@ -91,7 +90,7 @@ func (c *Core) hintRequest() {
 		return
 	}
 	wins := c.hintWindows(sc)
-	req := ports.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale, LinksOnly: c.cfg.Hint.LinksOnly, Windows: wins}
+	req := ports.HintScanRequest{Seq: c.hint.seq + 1, Output: sc.name(), Width: sc.info.Width, Height: sc.info.Height, Scale: sc.scale}
 	select {
 	case c.ch.HintScans <- req:
 	default:
@@ -101,10 +100,11 @@ func (c *Core) hintRequest() {
 }
 
 // hintWindows lists the windows drawn on sc, bottom to top, with their client
-// area (placements are output-local).
-func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
+// area (placements are output-local). A target is only clicked while the
+// geometry of its window is the one seen here.
+func (c *Core) hintWindows(sc *screen) []hintSourceGeom {
 	view := sc.mon.viewport()
-	var out []ports.HintWindow
+	var out []hintSourceGeom
 	for _, p := range sc.shownLayout() {
 		if p.Hidden || p.Preview > 0 || !view.shows(p) {
 			continue
@@ -113,10 +113,7 @@ func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
 		if r.W <= 0 || r.H <= 0 {
 			continue
 		}
-		w := ports.HintWindow{ID: p.ID, Rect: r, Focused: p.Focused}
-		rec := c.windows.lookup(p.ID)
-		w.PID, w.AppID = rec.client.PID, rec.client.AppID
-		out = append(out, w)
+		out = append(out, hintSourceGeom{id: p.ID, rect: r})
 	}
 	return out
 }
@@ -167,11 +164,11 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 			// A layer surface, or a window of another output.
 			continue
 		}
-		source, ok := c.hintSource(sc, t, root)
+		source, ok := c.hintSource(sc, root)
 		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, text: t.Text})
+		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect})
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
@@ -196,14 +193,11 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 }
 
 // hintSource resolves the request-time source window only while its client
-// geometry is unchanged. This applies equally to accessibility and OCR targets.
-func (c *Core) hintSource(sc *screen, t ports.HintTarget, root WindowID) (hintSourceGeom, bool) {
-	if t.Window != 0 && root != t.Window {
-		return hintSourceGeom{}, false
-	}
+// geometry is unchanged.
+func (c *Core) hintSource(sc *screen, root WindowID) (hintSourceGeom, bool) {
 	for _, w := range c.hint.windows {
-		if w.ID == root && c.hintSourceUnchanged(sc, hintSourceGeom{id: w.ID, rect: w.Rect}) {
-			return hintSourceGeom{id: w.ID, rect: w.Rect}, true
+		if w.id == root && c.hintSourceUnchanged(sc, w) {
+			return w, true
 		}
 	}
 	return hintSourceGeom{}, false
@@ -292,11 +286,8 @@ func (c *Core) hintKey(ctx context.Context, key ports.KeyEvent) (bool, error) {
 // synthetic: c.synthetic keeps the physical modifiers (the bind's Cmd may
 // still be down) from turning it into a window drag, without touching c.mods.
 //
-// A target found by OCR is clicked with hint.text-click held (terminals open
-// a link on a modified click). Every click gives the window the keyboard
-// first, then sends exactly the modifiers to hold (none for other targets),
-// and the real modifier state is always sent back afterwards.
-func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
+// The window gets the keyboard first.
+func (c *Core) hintClick(ctx context.Context, t hintTarget) error {
 	c.hintCancel()
 	if err := c.publish(ctx); err != nil {
 		return err
@@ -304,19 +295,9 @@ func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
 	if !c.hintClickable(t) {
 		return nil
 	}
-	// Every click states its modifiers (possibly none): the bind's Cmd may
-	// still be down and the client must not see it on a plain click.
 	if err := c.clickFocus(ctx, t.window); err != nil {
 		return err
 	}
-	if err := c.command(ctx, ports.SetModifiers{ID: t.window, Mods: c.hintMods(t)}); err != nil {
-		return err
-	}
-	defer func() {
-		if e := c.command(ctx, ports.SetModifiers{ID: t.window, Restore: true, State: c.keyState}); err == nil {
-			err = e
-		}
-	}()
 	c.synthetic = true
 	defer func() { c.synthetic = false }()
 	if err := c.pointerMotion(ctx, ports.PointerMotion{X: t.x, Y: t.y, Time: c.motionTime}); err != nil {
@@ -331,15 +312,6 @@ func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
 		return err
 	}
 	return c.pointerButton(ctx, ports.PointerButton{Button: btnLeft, Time: c.motionTime})
-}
-
-// hintMods are the modifiers to hold for a click on t, read at click time so
-// a reloaded configuration applies.
-func (c *Core) hintMods(t hintTarget) ports.Mods {
-	if !t.text {
-		return 0
-	}
-	return c.cfg.Hint.TextClick
 }
 
 // hintClickable reports whether a click on t may go out now: unprotected,

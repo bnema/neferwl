@@ -138,28 +138,11 @@ packages:
           filename: proc_tree_mock_test.go
   github.com/bnema/neferwl/internal/adapters/hints:
     interfaces:
-      languageRunner:
+      detector:
         config:
           dir: internal/adapters/hints
           pkgname: hints
-          filename: language_runner_mock_test.go
-      targetSource:
-        config:
-          dir: internal/adapters/hints
-          pkgname: hints
-          filename: target_source_mock_test.go
-  github.com/bnema/neferwl/internal/adapters/atspi:
-    interfaces:
-      transport:
-        config:
-          dir: internal/adapters/atspi
-          pkgname: atspi
-          filename: transport_mock_test.go
-      connector:
-        config:
-          dir: internal/adapters/atspi
-          pkgname: atspi
-          filename: connector_mock_test.go
+          filename: detector_mock_test.go
   github.com/bnema/neferwl/internal/adapters/screencast:
     interfaces:
       bus:

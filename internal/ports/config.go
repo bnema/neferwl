@@ -170,17 +170,18 @@ type Config struct {
 		// Enable turns the experimental hint mode on (hint.enable). It is
 		// read at startup: a reload keeps the startup value.
 		Enable bool
-		// LinksOnly limits the targets to links and URLs; false also
-		// includes buttons (hint.targets = clickable).
-		LinksOnly bool
-		// TextClick are the modifiers held for a click on a link found by
-		// OCR (hint.text-click); zero sends a plain click.
-		TextClick Mods
 		// Capture shows the labels in the captures requested by Wayland
 		// clients (hint.capture); the compositor's own scans never see them.
 		Capture                bool
 		Size                   float64 // logical pixels; zero selects automatic density sizing
 		Background, Foreground string  // empty derives from Border.Active
+		// Detector is the nefer-hints binary (hint.detector): a path, or a
+		// name looked up in PATH. Model is the directory of its model files
+		// (hint.model), with a leading ~/ already expanded. Threshold is the
+		// minimum detection score (hint.threshold, 0.01 to 0.99). All three
+		// are read at startup.
+		Detector, Model string
+		Threshold       float64
 	}
 	// Workspaces are declared with workspace.<name>.* keys, in first-seen order.
 	Workspaces []WorkspaceConfig

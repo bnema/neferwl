@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,78 +26,53 @@ const (
 
 // Options tunes Run.
 type Options struct {
+	// Command is the nefer-hints binary: a path, or a name looked up in PATH.
+	Command string
+	// ModelDir is the directory of the detector's model files.
+	ModelDir string
+	// Threshold is the minimum detection score, 0.01 to 0.99.
+	Threshold float64
 	// DumpDir, when not empty, receives the scanned frames (PNG, annotated
 	// PNG and JSON). They contain the screen in clear.
 	DumpDir string
-	// Source, when not nil, finds targets in the accessibility tree of the
-	// windows on screen; OCR reads the rest.
-	Source targetSource
+
+	// detector replaces the subprocess in tests.
+	detector detector
 }
 
 // dumpJob is one scan to write. pix is the capture buffer of the scan, owned
 // by the job: writeDump converts it in place.
 type dumpJob struct {
-	when    time.Time
-	req     ports.HintScanRequest
-	pix     []byte
-	m       *mapping // owns pix; released after the dump
-	stride  int
-	targets []ports.HintTarget
-	crops   []image.Rectangle
-	words   []OCRWord
-	// atspi is the number of leading targets that come from the
-	// accessibility tree; the others come from OCR.
-	atspi    int
+	when     time.Time
+	req      ports.HintScanRequest
+	pix      []byte
+	m        *mapping // owns pix; released after the dump
+	stride   int
+	targets  []ports.HintTarget
+	dets     []detection // detector boxes, physical pixels
 	captureD time.Duration
-	scanD    time.Duration
-	atspiD   time.Duration
+	detectD  time.Duration
 }
 
 type dumpTarget struct {
-	Kind   string `json:"kind"`
-	Source string `json:"source"`
-	Rect   [4]int `json:"rect"`
+	Rect  [4]int  `json:"rect"` // x1, y1, x2, y2, logical output-local
+	Score float32 `json:"score"`
 }
 
 type dumpMeta struct {
-	Output    string            `json:"output"`
-	Width     int               `json:"width"`
-	Height    int               `json:"height"`
-	Stride    int               `json:"stride"`
-	Scale     float64           `json:"scale"`
-	LinksOnly bool              `json:"links_only"`
-	CaptureMS float64           `json:"capture_ms"`
-	ScanMS    float64           `json:"scan_ms"`
-	AtspiMS   float64           `json:"atspi_ms"`
-	Crops     []image.Rectangle `json:"ocr_crops"`
-	Words     []OCRWord         `json:"words"`
-	Targets   []dumpTarget      `json:"targets"`
+	Output    string       `json:"output"`
+	Width     int          `json:"width"`
+	Height    int          `json:"height"`
+	Stride    int          `json:"stride"`
+	Scale     float64      `json:"scale"`
+	CaptureMS float64      `json:"capture_ms"`
+	DetectMS  float64      `json:"detect_ms"`
+	TotalMS   float64      `json:"total_ms"`
+	Targets   []dumpTarget `json:"targets"`
 }
 
-func kindName(k ports.HintKind) string {
-	switch k {
-	case ports.HintLink:
-		return "link"
-	case ports.HintButton:
-		return "button"
-	default:
-		return "text"
-	}
-}
-
-func kindColor(k ports.HintKind) color.RGBA {
-	switch k {
-	case ports.HintLink:
-		return color.RGBA{0x00, 0xc8, 0x53, 0xff}
-	case ports.HintButton:
-		return color.RGBA{0x29, 0x62, 0xff, 0xff}
-	default:
-		return color.RGBA{0x80, 0x80, 0x80, 0xff}
-	}
-}
-
-// atspiColor is the outline of targets found in the accessibility tree.
-var atspiColor = color.RGBA{0xff, 0x00, 0xff, 0xff}
+// boxColor is the outline of the detector boxes.
+var boxColor = color.RGBA{0x00, 0xc8, 0x53, 0xff}
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
@@ -121,21 +97,8 @@ func writeDump(dir string, j *dumpJob) error {
 		return err
 	}
 
-	scale := j.req.Scale
-	if scale <= 0 {
-		scale = 1
-	}
-	for _, r := range j.crops {
-		outline(img, r, color.RGBA{0x80, 0x80, 0x80, 0xff})
-	}
-	for i, t := range j.targets {
-		r := image.Rect(int(float64(t.Rect.X)*scale), int(float64(t.Rect.Y)*scale),
-			int(float64(t.Rect.X+t.Rect.W)*scale), int(float64(t.Rect.Y+t.Rect.H)*scale))
-		c := kindColor(t.Kind)
-		if i < j.atspi {
-			c = atspiColor
-		}
-		outline(img, r, c)
+	for _, d := range j.dets {
+		outline(img, image.Rect(int(d.x1), int(d.y1), int(math.Ceil(float64(d.x2))), int(math.Ceil(float64(d.y2)))), boxColor)
 	}
 	if err := writePNG(prefix+".annotated.png", img); err != nil {
 		return err
@@ -143,17 +106,12 @@ func writeDump(dir string, j *dumpJob) error {
 
 	meta := dumpMeta{
 		Output: j.req.Output, Width: j.req.Width, Height: j.req.Height, Stride: j.stride,
-		Scale: j.req.Scale, LinksOnly: j.req.LinksOnly,
-		CaptureMS: ms(j.captureD), ScanMS: ms(j.scanD), AtspiMS: ms(j.atspiD),
-		Crops: j.crops, Words: j.words,
+		Scale:     j.req.Scale,
+		CaptureMS: ms(j.captureD), DetectMS: ms(j.detectD), TotalMS: ms(j.captureD + j.detectD),
 		Targets: make([]dumpTarget, 0, len(j.targets)),
 	}
-	for i, t := range j.targets {
-		src := "ocr"
-		if i < j.atspi {
-			src = "atspi"
-		}
-		meta.Targets = append(meta.Targets, dumpTarget{Kind: kindName(t.Kind), Source: src, Rect: [4]int{t.Rect.X, t.Rect.Y, t.Rect.X + t.Rect.W, t.Rect.Y + t.Rect.H}})
+	for _, t := range j.targets {
+		meta.Targets = append(meta.Targets, dumpTarget{Rect: [4]int{t.Rect.X, t.Rect.Y, t.Rect.X + t.Rect.W, t.Rect.Y + t.Rect.H}, Score: t.Score})
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {

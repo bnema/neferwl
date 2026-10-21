@@ -45,7 +45,6 @@ func TestHintOffStartsNoHintGoroutine(t *testing.T) {
 	buf := make([]byte, 1<<20)
 	dump := string(buf[:runtime.Stack(buf, true)])
 	require.NotContains(t, dump, "adapters/hints.")
-	require.NotContains(t, dump, "adapters/atspi.")
 	require.NotContains(t, dump, "routeCaptured")
 	select {
 	case <-done:
@@ -64,5 +63,22 @@ func TestRelayConfigKeepsStartupHintEnable(t *testing.T) {
 	next := config.Defaults()
 	next.Hint.Enable = true
 	in <- ports.ConfigChanged{Config: next}
-	require.False(t, (<-out).Config.Hint.Enable)
+	got := (<-out).Config.Hint
+	require.False(t, got.Enable)
+}
+
+func TestRelayConfigKeepsStartupHintDetector(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cur := config.Defaults()
+	in := make(chan ports.ConfigChanged, 1)
+	out := make(chan ports.ConfigChanged, 1)
+	go relayConfig(ctx, cur, in, out, make(chan *xkb.Keymap, 1), make(chan ports.InputDevicesConfig, 1), newCursors(clock.System{}, 0), make(chan ports.ClientCommand, 1), logging.For(ctx, "config"))
+	next := config.Defaults()
+	next.Hint.Detector, next.Hint.Model, next.Hint.Threshold = "/other/nh", "/other/models", 0.5
+	in <- ports.ConfigChanged{Config: next}
+	got := (<-out).Config.Hint
+	require.Equal(t, cur.Hint.Detector, got.Detector)
+	require.Equal(t, cur.Hint.Model, got.Model)
+	require.Equal(t, cur.Hint.Threshold, got.Threshold)
 }

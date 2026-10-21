@@ -166,7 +166,9 @@ func Defaults() ports.Config {
 	c.Terminal.AutoOpen = "first"
 	// Hint mode is experimental: off unless the config turns it on.
 	c.Hint.Enable = false
-	c.Hint.TextClick = ports.ModCtrl | ports.ModShift
+	c.Hint.Detector = defaultHintDetector
+	c.Hint.Model = defaultHintModel()
+	c.Hint.Threshold = defaultHintThreshold
 	c.Xwayland = "xwayland-satellite"
 	c.Background.Color = "#111111"
 	c.Floating.Dim = 0.3
@@ -895,21 +897,23 @@ func set(c *ports.Config, key, v string) error {
 		} else {
 			c.Hint.Foreground = v
 		}
-	case "hint.targets":
-		switch v {
-		case "clickable":
-			c.Hint.LinksOnly = false
-		case "links":
-			c.Hint.LinksOnly = true
-		default:
-			return fmt.Errorf("must be clickable or links")
+	case "hint.detector":
+		if v == "" {
+			v = defaultHintDetector
 		}
-	case "hint.text-click":
-		m, err := parseTextClick(v)
-		if err != nil {
-			return err
+		c.Hint.Detector = expandHome(v)
+	case "hint.model":
+		if v == "" {
+			c.Hint.Model = defaultHintModel()
+			break
 		}
-		c.Hint.TextClick = m
+		c.Hint.Model = expandHome(v)
+	case "hint.threshold":
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil || math.IsNaN(n) || n < 0.01 || n > 0.99 {
+			return fmt.Errorf("must be a number from 0.01 to 0.99")
+		}
+		c.Hint.Threshold = n
 	case "focus.flash-width":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 8 {
@@ -1333,34 +1337,33 @@ func checkAction(v string) error {
 	return nil
 }
 
-// parseTextClick parses hint.text-click: `+`-separated modifier names as in
-// binds, or none. cmd is an alias of super here (it is not resolved through
-// keyboard.cmd, so the result does not depend on key order).
-func parseTextClick(v string) (ports.Mods, error) {
-	if strings.ToLower(v) == "none" {
-		return 0, nil
-	}
-	var mods ports.Mods
-	for _, p := range strings.Split(v, "+") {
-		var m ports.Mods
-		switch strings.ToLower(strings.TrimSpace(p)) {
-		case "shift":
-			m = ports.ModShift
-		case "ctrl":
-			m = ports.ModCtrl
-		case "alt":
-			m = ports.ModAlt
-		case "super", "cmd":
-			m = ports.ModSuper
-		default:
-			return 0, fmt.Errorf("unknown modifier %q (use shift, ctrl, alt, super or cmd joined by +, or none)", p)
+const (
+	defaultHintDetector  = "nefer-hints"
+	defaultHintThreshold = 0.05
+)
+
+// defaultHintModel is $XDG_DATA_HOME/nefer-hints/models, or
+// ~/.local/share/nefer-hints/models when XDG_DATA_HOME is unset.
+func defaultHintModel() string {
+	base := os.Getenv("XDG_DATA_HOME")
+	if base == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
 		}
-		if mods&m != 0 {
-			return 0, fmt.Errorf("duplicate modifier %q", p)
-		}
-		mods |= m
+		base = filepath.Join(home, ".local", "share")
 	}
-	return mods, nil
+	return filepath.Join(base, "nefer-hints", "models")
+}
+
+// expandHome replaces a leading ~/ with the home directory.
+func expandHome(p string) string {
+	if rest, ok := strings.CutPrefix(p, "~/"); ok {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, rest)
+		}
+	}
+	return p
 }
 
 // parseCombo turns `ctrl+cmd+é` into the canonical `Cmd+Ctrl+eacute`:

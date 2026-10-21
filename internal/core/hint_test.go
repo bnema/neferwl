@@ -30,13 +30,7 @@ type hintHarness struct {
 // newHint starts a core with one 1000x800 output "OUT-1" and window 1 mapped.
 func newHint(t *testing.T, opts core.Options) *hintHarness {
 	t.Helper()
-	return newHintMods(t, opts, 0)
-}
-
-// newHintMods is newHint with hint.text-click set to textClick.
-func newHintMods(t *testing.T, opts core.Options, textClick ports.Mods) *hintHarness {
-	t.Helper()
-	return newHintConfig(t, opts, func(cfg *ports.Config) { cfg.Hint.TextClick = textClick })
+	return newHintConfig(t, opts, func(*ports.Config) {})
 }
 
 // newHintConfig is newHint with the config edited by edit.
@@ -144,12 +138,8 @@ func (h *hintHarness) inside(i int) ports.HintTarget {
 func TestHintRequestOnBind(t *testing.T) {
 	h := newHint(t, core.Options{})
 	req := h.start()
-	if req.Output != "OUT-1" || req.Width != 1000 || req.Height != 800 || req.Scale != 1 || req.LinksOnly || req.Seq == 0 {
+	if req.Output != "OUT-1" || req.Width != 1000 || req.Height != 800 || req.Scale != 1 || req.Seq == 0 {
 		t.Fatalf("request %+v", req)
-	}
-	want := []ports.HintWindow{{ID: 1, PID: 4242, AppID: "org.test.app", Rect: h.win, Focused: true}}
-	if !slices.Equal(req.Windows, want) {
-		t.Fatalf("windows %+v, want %+v", req.Windows, want)
 	}
 	// A second bind while pending does not ask again; the pending phase
 	// cancels on any key.
@@ -593,12 +583,12 @@ func TestHintMappedWindowMovedAborts(t *testing.T) {
 }
 
 // commandsSent drains the commands up to a barrier, keeping the ones that
-// matter for a click: modifiers, focus, motion and buttons.
+// matter for a click: focus, motion and buttons.
 func (h *hintHarness) commandsSent() []ports.ClientCommand {
 	var out []ports.ClientCommand
 	for _, cmd := range h.barrier() {
 		switch cmd.(type) {
-		case ports.SetModifiers, ports.FocusWindow, ports.PointerMotionTo, ports.PointerButtonTo:
+		case ports.FocusWindow, ports.PointerMotionTo, ports.PointerButtonTo:
 			out = append(out, cmd)
 		}
 	}
@@ -609,12 +599,6 @@ func commandKinds(cmds []ports.ClientCommand) []string {
 	var out []string
 	for _, c := range cmds {
 		switch v := c.(type) {
-		case ports.SetModifiers:
-			if v.Restore {
-				out = append(out, "restore")
-			} else {
-				out = append(out, fmt.Sprintf("mods:%d", v.Mods))
-			}
 		case ports.FocusWindow:
 			out = append(out, fmt.Sprintf("focus:%d", v.ID))
 		case ports.PointerMotionTo:
@@ -630,97 +614,25 @@ func commandKinds(cmds []ports.ClientCommand) []string {
 	return out
 }
 
-// An OCR target is clicked with the configured modifiers held: they go out
-// before the motion and are restored after the release.
-func TestHintTextClickHoldsModifiers(t *testing.T) {
-	mods := ports.ModCtrl | ports.ModShift
-	h := newHintMods(t, core.Options{}, mods)
-	tg := h.inside(0)
-	tg.Text = true
-	h.show(tg)
+// A click on the focused window moves the pointer to the target and presses
+// and releases the left button; it states no modifiers.
+func TestHintClickSequence(t *testing.T) {
+	h := newHint(t, core.Options{})
+	h.show(h.inside(0))
 	h.drain()
 	h.press("f", 0)
 	got := commandKinds(h.commandsSent())
-	want := []string{fmt.Sprintf("mods:%d", mods), "motion", "press", "release", "restore"}
+	want := []string{"motion", "press", "release"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands %v, want %v", got, want)
 	}
 }
 
-// Without text targets or without modifiers the click states no modifiers
-// (depressed 0) rather than leave the held bind modifier to the client.
-func TestHintClickWithoutModifiers(t *testing.T) {
-	for name, c := range map[string]struct {
-		mods ports.Mods
-		text bool
-	}{"accessibility target": {ports.ModCtrl, false}, "none configured": {0, true}} {
-		t.Run(name, func(t *testing.T) {
-			h := newHintMods(t, core.Options{}, c.mods)
-			tg := h.inside(0)
-			tg.Text = c.text
-			h.show(tg)
-			h.drain()
-			h.press("f", 0)
-			got := commandKinds(h.commandsSent())
-			if want := []string{"mods:0", "motion", "press", "release", "restore"}; !slices.Equal(got, want) {
-				t.Fatalf("commands %v, want %v", got, want)
-			}
-		})
-	}
-}
-
-// The bind's Super is still physically held: an accessibility click states
-// depressed 0, and the restore carries the real state of the latest key,
-// swallowed ones included (a latch a label key consumed).
-func TestHintClickHeldBindModifierAndLatchRestore(t *testing.T) {
-	h := newHint(t, core.Options{})
-	tg := h.inside(0)
-	h.press("g", ports.ModSuper)
-	req := receive(t, h.scans)
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg, h.inside(1)}}
-	h.labelled(2, 0)
-	h.drain()
-	real := ports.ModState{Depressed: 64, Latched: 0, Locked: 2}
-	h.send(ports.KeyEvent{Keysym: "f", Base: "f", Mods: ports.ModSuper, Pressed: true, State: real})
-	cmds := h.commandsSent()
-	var restore *ports.SetModifiers
-	for i, c := range cmds {
-		if v, ok := c.(ports.SetModifiers); ok {
-			if i == 0 && (v.Restore || v.Mods != 0) {
-				t.Fatalf("first modifiers %+v, want depressed 0", v)
-			}
-			if v.Restore {
-				restore = &v
-			}
-		}
-	}
-	if restore == nil || restore.State != real {
-		t.Fatalf("restore %+v, want state %+v (commands %v)", restore, real, commandKinds(cmds))
-	}
-}
-
-// A result is kept only for the window it was scanned on.
-func TestHintResultWindowChecks(t *testing.T) {
-	h := newHint(t, core.Options{})
-	req := h.start()
-	// Accessibility target naming another window: dropped; naming window 1: kept.
-	ok := h.inside(1)
-	ok.Window = 1
-	bad := h.inside(0)
-	bad.Window = 7
-	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{bad, ok}}
-	s := h.labelled(1, 0)
-	if len(s.HintLabels) != 1 || s.HintLabels[0].Rect.Y != ok.Rect.Y {
-		t.Fatalf("labels %+v", s.HintLabels)
-	}
-}
-
-// A window that moved while the scan ran: an OCR target over it is dropped.
-func TestHintOCRResultDroppedWhenWindowMoved(t *testing.T) {
+// A window that moved while the scan ran: a target over it is dropped.
+func TestHintResultDroppedWhenWindowMoved(t *testing.T) {
 	h := newHint(t, core.Options{})
 	req := h.start()
 	tg := h.inside(0)
-	tg.Text = true
 	h.client <- ports.WindowMapped{ID: 2}
 	h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
 	h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}
@@ -731,12 +643,12 @@ func TestHintOCRResultDroppedWhenWindowMoved(t *testing.T) {
 }
 
 // A new window covering the target (not in the snapshot) drops it as well.
-func TestHintOCRResultDroppedForUnseenWindow(t *testing.T) {
+func TestHintResultDroppedForUnseenWindow(t *testing.T) {
 	h := newHint(t, core.Options{})
 	req := h.start()
 	h.client <- ports.WindowMapped{ID: 2}
 	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
-	tg := ports.HintTarget{Text: true}
+	var tg ports.HintTarget
 	for _, w := range s.Windows {
 		if w.ID == 2 {
 			tg.Rect = ports.Rect{X: w.Rect.X + 5, Y: w.Rect.Y + 5, W: 20, H: 10}
@@ -769,9 +681,9 @@ func TestHintCancelsWhenOutputChanges(t *testing.T) {
 	}
 }
 
-// A window that does not have the keyboard gets it before the modifiers.
-func TestHintTextClickFocusesWindowFirst(t *testing.T) {
-	h := newHintMods(t, core.Options{}, ports.ModCtrl)
+// A window that does not have the keyboard gets it before the click.
+func TestHintClickFocusesWindowFirst(t *testing.T) {
+	h := newHint(t, core.Options{})
 	h.client <- ports.WindowMapped{ID: 2}
 	s := h.until(func(s ports.Scene) bool { return len(s.Windows) == 2 })
 	var r ports.Rect
@@ -781,24 +693,20 @@ func TestHintTextClickFocusesWindowFirst(t *testing.T) {
 		}
 	}
 	h.win = r
-	tg := h.inside(0)
-	tg.Text = true
-	h.show(tg)
+	h.show(h.inside(0))
 	h.drain()
 	h.press("f", 0)
 	got := commandKinds(h.commandsSent())
-	want := []string{"focus:1", fmt.Sprintf("mods:%d", ports.ModCtrl), "motion", "press", "release", "restore"}
+	want := []string{"focus:1", "motion", "press", "release"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands %v, want %v", got, want)
 	}
 }
 
-// A click that is no longer allowed sends no modifiers at all.
-func TestHintTextClickNoModifiersWhenNotClickable(t *testing.T) {
-	h := newHintMods(t, core.Options{}, ports.ModCtrl)
-	tg := h.inside(0)
-	tg.Text = true
-	h.show(tg)
+// A click that is no longer allowed sends no command at all.
+func TestHintClickNothingWhenNotClickable(t *testing.T) {
+	h := newHint(t, core.Options{})
+	h.show(h.inside(0))
 	h.constrain(ports.ConstraintLock, ports.Rect{})
 	h.drain()
 	h.press("f", 0)
@@ -842,15 +750,11 @@ func TestHintDisabledNotesOnce(t *testing.T) {
 // Resizing window 1 leaves the old target centre inside it. Identity alone
 // therefore cannot protect either admission or the eventual synthetic click.
 func TestHintRejectsResizedSource(t *testing.T) {
-	for _, accessibility := range []bool{false, true} {
+	{
 		for _, beforeResult := range []bool{false, true} {
-			t.Run(fmt.Sprintf("accessibility=%v/beforeResult=%v", accessibility, beforeResult), func(t *testing.T) {
+			t.Run(fmt.Sprintf("beforeResult=%v", beforeResult), func(t *testing.T) {
 				h := newHint(t, core.Options{})
 				tg := h.inside(0)
-				tg.Text = !accessibility
-				if accessibility {
-					tg.Window = 1
-				}
 				req := h.start()
 				if !beforeResult {
 					h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: []ports.HintTarget{tg}}

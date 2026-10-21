@@ -954,26 +954,51 @@ func TestLoadRejectsFIFO(t *testing.T) {
 	}
 }
 
-func TestHintTargets(t *testing.T) {
-	if Defaults().Hint.LinksOnly {
-		t.Fatal("hint targets default must be clickable")
-	}
-	c, w := parseString(t, "hint.targets = links\n")
-	if !c.Hint.LinksOnly || len(w) != 0 {
-		t.Fatal(c.Hint, w)
-	}
-	c, w = parseString(t, "hint.targets = clickable\n")
-	if c.Hint.LinksOnly || len(w) != 0 {
-		t.Fatal(c.Hint, w)
-	}
-	// An invalid value warns and keeps the default.
-	c, w = parseString(t, "hint.targets = buttons\n")
-	if c.Hint.LinksOnly || len(w) != 1 {
-		t.Fatal(c.Hint, w)
-	}
-	c, w = parseString(t, "bind.cmd+g = hint\n")
+func TestHintBind(t *testing.T) {
+	c, w := parseString(t, "bind.cmd+g = hint\n")
 	if len(w) != 0 || c.Binds["Cmd+g"] != "hint" {
 		t.Fatal(c.Binds["Cmd+g"], w)
+	}
+}
+
+func TestHintRemovedKeysAreUnknown(t *testing.T) {
+	for _, line := range []string{"hint.targets = links", "hint.text-click = none"} {
+		_, w := parseString(t, line+"\n")
+		if len(w) != 1 {
+			t.Errorf("%q: %v", line, w)
+		}
+	}
+}
+
+func TestHintDetectorConfig(t *testing.T) {
+	t.Setenv("HOME", "/home/u")
+	t.Setenv("XDG_DATA_HOME", "")
+	d := Defaults().Hint
+	if d.Detector != "nefer-hints" || d.Model != "/home/u/.local/share/nefer-hints/models" || d.Threshold != 0.05 {
+		t.Fatalf("defaults: %+v", d)
+	}
+	t.Setenv("XDG_DATA_HOME", "/data")
+	if m := Defaults().Hint.Model; m != "/data/nefer-hints/models" {
+		t.Fatal(m)
+	}
+	c, w := parseString(t, "hint.detector = ~/bin/nh\nhint.model = ~/m\nhint.threshold = 0.3\n")
+	if len(w) != 0 || c.Hint.Detector != "/home/u/bin/nh" || c.Hint.Model != "/home/u/m" || c.Hint.Threshold != 0.3 {
+		t.Fatalf("%+v %v", c.Hint, w)
+	}
+	c, w = parseString(t, "hint.detector = /opt/nh\nhint.model = /opt/models\n")
+	if len(w) != 0 || c.Hint.Detector != "/opt/nh" || c.Hint.Model != "/opt/models" {
+		t.Fatalf("%+v %v", c.Hint, w)
+	}
+	for _, v := range []string{"0", "0.009", "1", "0.995", "NaN", "high", "-1"} {
+		c, w := parseString(t, "hint.threshold = "+v+"\n")
+		if len(w) != 1 || c.Hint.Threshold != 0.05 {
+			t.Errorf("hint.threshold = %s: %v %v", v, c.Hint.Threshold, w)
+		}
+	}
+	for _, v := range []string{"0.01", "0.99"} {
+		if c, w := parseString(t, "hint.threshold = "+v+"\n"); len(w) != 0 || c.Hint.Threshold == 0.05 {
+			t.Errorf("hint.threshold = %s: %v", v, w)
+		}
 	}
 }
 
@@ -1017,31 +1042,6 @@ func TestHintSizeBounds(t *testing.T) {
 		c, w := parseString(t, "hint.size = "+v+"\n")
 		if len(w) != 0 || c.Hint.Size == 0 {
 			t.Errorf("hint.size = %s: %+v %v", v, c.Hint, w)
-		}
-	}
-}
-
-func TestHintTextClick(t *testing.T) {
-	if got := Defaults().Hint.TextClick; got != ports.ModCtrl|ports.ModShift {
-		t.Fatalf("default %d", got)
-	}
-	for in, want := range map[string]ports.Mods{
-		"ctrl+shift":     ports.ModCtrl | ports.ModShift,
-		"Alt":            ports.ModAlt,
-		"super":          ports.ModSuper,
-		"cmd+shift":      ports.ModSuper | ports.ModShift,
-		"none":           0,
-		"shift+ctrl+alt": ports.ModShift | ports.ModCtrl | ports.ModAlt,
-	} {
-		c, w := parseString(t, "hint.text-click = "+in+"\n")
-		if c.Hint.TextClick != want || len(w) != 0 {
-			t.Errorf("%q: %d %v", in, c.Hint.TextClick, w)
-		}
-	}
-	for _, bad := range []string{"hyper", "ctrl+", "ctrl+ctrl", "ctrl+none", ""} {
-		c, w := parseString(t, "hint.text-click = "+bad+"\n")
-		if len(w) != 1 || c.Hint.TextClick != ports.ModCtrl|ports.ModShift {
-			t.Errorf("%q: %d %v", bad, c.Hint.TextClick, w)
 		}
 	}
 }
