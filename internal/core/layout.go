@@ -1649,7 +1649,24 @@ func (w *Workspace) columnWidthFor(i int, ignoreFullWidth bool) int {
 	if w.policy().wraps || w.laneRow() {
 		return w.cellWidth(i)
 	}
-	return w.scrollWidth(i)
+	return w.scrollWidth(i, w.scrollSpansValid())
+}
+
+// scrollSpansValid is the lane validity scrollWidth needs. It costs O(n):
+// loops over columns compute it once and pass it down.
+func (w *Workspace) scrollSpansValid() bool {
+	return !w.policy().equalCells && w.validSpans(0, len(w.Columns)-1)
+}
+
+// columnWidthWith is columnWidthFor with the scroll lane's validity given.
+func (w *Workspace) columnWidthWith(i int, ignoreFullWidth, spansValid bool) int {
+	if width, ok := w.specialWidth(i, ignoreFullWidth); ok {
+		return width
+	}
+	if w.policy().wraps || w.laneRow() {
+		return w.cellWidth(i)
+	}
+	return w.scrollWidth(i, spansValid)
 }
 
 // specialWidth is the width of a maximized or fullscreen column.
@@ -1673,13 +1690,13 @@ func (w *Workspace) laneRow() bool {
 // scrollWidth is the width of column i when it is sized on its own: auto
 // columns share the usable width as the visible ones would, the others take
 // their cells (at most MaxColumns) and the gaps between them.
-func (w *Workspace) scrollWidth(i int) int {
+func (w *Workspace) scrollWidth(i int, spansValid bool) int {
 	k := max(w.MaxColumns, 1)
 	if w.policy().equalCells {
 		// Fixed overflow past MaxColumns: the spiral's slots.
 		return w.equalShare(k)
 	}
-	if w.validSpans(0, len(w.Columns)-1) {
+	if spansValid {
 		return w.Columns[i].Span * max(w.Usable.W-2*w.gap(), 0) / 10000
 	}
 	c := w.Columns[i].Cells
@@ -1689,10 +1706,28 @@ func (w *Workspace) scrollWidth(i int) int {
 	c = min(c, k)
 	return max(c*w.equalShare(k)+(c-1)*w.gap(), 0)
 }
+
+// columnEdges returns the x and width of every column in one pass, the
+// prefix sums columnX(i) and columnWidth(i) would each recompute in O(i).
+// Both slices share one backing array.
+func (w *Workspace) columnEdges() (xs, widths []int) {
+	n := len(w.Columns)
+	buf := make([]int, 2*n)
+	xs, widths = buf[:n:n], buf[n:]
+	valid := w.scrollSpansValid()
+	x := w.Usable.X + w.gap()
+	for i := range w.Columns {
+		xs[i], widths[i] = x, w.columnWidthWith(i, false, valid)
+		x += widths[i] + w.gap()
+	}
+	return xs, widths
+}
+
 func (w *Workspace) columnX(i int) int {
+	valid := w.scrollSpansValid()
 	x := w.Usable.X + w.gap()
 	for j := 0; j < i; j++ {
-		x += w.columnWidth(j) + w.gap()
+		x += w.columnWidthWith(j, false, valid) + w.gap()
 	}
 	return x
 }
@@ -1756,8 +1791,9 @@ func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) [
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
 	view := w.View + shift
 	x := w.Usable.X + g
+	valid := w.scrollSpansValid()
 	for i := range w.Columns {
-		width := w.columnWidthFor(i, ignoreFullWidth)
+		width := w.columnWidthWith(i, ignoreFullWidth, valid)
 		rects[i] = Rect{X: x - view, Y: y, W: width, H: h}
 		x += width + g
 	}

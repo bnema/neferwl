@@ -80,8 +80,9 @@ func (w *Workspace) cellX(i int) int {
 	first, last := w.laneBounds(w.laneOf(i))
 	S, u, sum := w.laneStats(first, last)
 	x := w.gap()
+	valid := w.validSpans(first, last)
 	for j := first; j < i; j++ {
-		x += w.laneWidth(j, first, last, S, u, sum) + w.gap()
+		x += w.laneWidthWith(j, first, last, S, u, sum, valid) + w.gap()
 	}
 	return x
 }
@@ -143,7 +144,13 @@ func (w *Workspace) laneWeight(i, S, u int) int {
 // stats of laneStats: the usable width after gaps, split by weight. The
 // last column receives the pixel remainder, just as for stamped spans.
 func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
-	if w.validSpans(first, last) {
+	return w.laneWidthWith(i, first, last, S, u, sum, w.validSpans(first, last))
+}
+
+// laneWidthWith is laneWidth with the lane's validSpans given, so a loop
+// over the lane checks it once.
+func (w *Workspace) laneWidthWith(i, first, last, S, u, sum int, spansValid bool) int {
+	if spansValid {
 		avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
 		if i == last {
 			used := 0
@@ -205,8 +212,9 @@ func (w *Workspace) cascadeRectsAt(dst []Rect, ignoreFullWidth bool, shift int) 
 	w.walkBands(func(lane, first, last int) bool {
 		S, u, sum := w.laneStats(first, last)
 		x := g
+		valid := w.validSpans(first, last)
 		for i := first; i <= last; i++ {
-			cw := w.laneWidth(i, first, last, S, u, sum)
+			cw := w.laneWidthWith(i, first, last, S, u, sum, valid)
 			r := Rect{X: w.Usable.X + x, Y: w.Usable.Y + g + lane*w.Usable.H - view, W: cw, H: max(w.Usable.H-2*g, 0)}
 			if w.Columns[i].FullWidth && !ignoreFullWidth {
 				r.X = w.Usable.X + g

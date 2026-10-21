@@ -86,6 +86,29 @@ func (w *Workspace) validSpans(first, last int) bool {
 // validity before clearing any stamps, so shared identities cannot become
 // valid merely because an earlier invalid lane was cleared.
 func (w *Workspace) dropStaleSpans() {
+	stamped := false
+	for _, c := range w.Columns {
+		if c.Span != 0 || c.spanStamp != 0 {
+			stamped = true
+			break
+		}
+	}
+	if !stamped {
+		return
+	}
+	// The common case has only valid lanes: find out without allocating.
+	anyStale := false
+	for first := 0; first < len(w.Columns); {
+		_, last := w.laneBounds(w.laneOf(first))
+		if !w.validSpans(first, last) {
+			anyStale = true
+			break
+		}
+		first = last + 1
+	}
+	if !anyStale {
+		return
+	}
 	var stale []int
 	for first := 0; first < len(w.Columns); {
 		_, last := w.laneBounds(w.laneOf(first))

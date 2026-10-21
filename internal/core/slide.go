@@ -84,11 +84,12 @@ func (w *Workspace) snapPoints() []float64 {
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
 	last := len(w.Columns) - 1
-	lo := w.columnX(0) - minX
-	hi := max(w.columnX(last)+w.columnWidth(last)-maxX, lo)
+	xs, widths := w.columnEdges()
+	lo := xs[0] - minX
+	hi := max(xs[last]+widths[last]-maxX, lo)
 	views := make([]int, 0, 2*len(w.Columns))
 	for i := range w.Columns {
-		views = append(views, min(max(w.columnX(i)-minX, lo), hi), min(max(w.columnX(i)+w.columnWidth(i)-maxX, lo), hi))
+		views = append(views, min(max(xs[i]-minX, lo), hi), min(max(xs[i]+widths[i]-maxX, lo), hi))
 	}
 	slices.Sort(views)
 	minStep := float64(w.Usable.W) * snapSpacing
@@ -121,9 +122,10 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 	}
 	g := w.gap()
 	minX, maxX := w.Usable.X+g, w.Usable.X+w.Usable.W-g
+	xs, widths := w.columnEdges()
 	full := func(i int) bool {
-		x := w.columnX(i) - view
-		return x >= minX && x+w.columnWidth(i) <= maxX
+		x := xs[i] - view
+		return x >= minX && x+widths[i] <= maxX
 	}
 	if full(w.Focus) && view == w.View {
 		return w.Focus
@@ -138,7 +140,7 @@ func (w *Workspace) snapFocus(view int, forward bool) (focus int) {
 		// Columns wider than the view: the one at the left edge.
 		focus = 0
 		for i := range w.Columns {
-			if w.columnX(i)-view <= minX {
+			if xs[i]-view <= minX {
 				focus = i
 			}
 		}
