@@ -132,7 +132,7 @@ func (h *hintHarness) labelled(n, typed int) ports.Scene {
 
 // inside is a target of the given size inside window 1.
 func (h *hintHarness) inside(i int) ports.HintTarget {
-	return ports.HintTarget{Rect: ports.Rect{X: h.win.X + 10 + i, Y: h.win.Y + 10 + 12*i, W: 40, H: 10}}
+	return ports.HintTarget{Rect: ports.Rect{X: h.win.X + 10 + 100*(i%4), Y: h.win.Y + 10 + 40*(i/4), W: 40, H: 10}}
 }
 
 func TestHintRequestOnBind(t *testing.T) {
@@ -226,7 +226,7 @@ func TestHintTwoLetterLabels(t *testing.T) {
 	h := newHint(t, core.Options{})
 	var targets []ports.HintTarget
 	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5, Y: h.win.Y + 5 + 14*i, W: 30, H: 10}})
+		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 	}
 	s := h.show(targets...)
 	if len(s.HintLabels) != 27 {
@@ -264,7 +264,7 @@ func TestHintTypingFilters(t *testing.T) {
 	h := newHint(t, core.Options{})
 	var targets []ports.HintTarget
 	for i := 0; i < 27; i++ {
-		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5, Y: h.win.Y + 5 + 14*i, W: 30, H: 10}})
+		targets = append(targets, ports.HintTarget{Rect: ports.Rect{X: h.win.X + 5 + 100*(i%4), Y: h.win.Y + 5 + 40*(i/4), W: 30, H: 10}})
 	}
 	h.show(targets...)
 	h.press("f", 0)
@@ -815,6 +815,38 @@ func TestHintCaptureReachesScene(t *testing.T) {
 		s := h.show(h.inside(0))
 		if s.HintStyle.Capture != on {
 			t.Errorf("hint.capture %v: scene has %v", on, s.HintStyle.Capture)
+		}
+	}
+}
+
+// Labels hang off the targets' top-left corners: targets whose corners are
+// closer than a label drop, the lowest score first, whatever the input order.
+func TestHintOverlappingLabelsDropLowerScore(t *testing.T) {
+	at := func(h *hintHarness, dx, dy int, score float32) ports.HintTarget {
+		return ports.HintTarget{Rect: ports.Rect{X: h.win.X + 20 + dx, Y: h.win.Y + 20 + dy, W: 80, H: 30}, Score: score}
+	}
+	for _, rev := range []bool{false, true} {
+		h := newHint(t, core.Options{})
+		ts := []ports.HintTarget{
+			at(h, 0, 0, 0.4),    // clashes with the next one, loses
+			at(h, 3, 2, 0.9),    // wins
+			at(h, 300, 0, 0.1),  // far away: kept, whatever its score
+			at(h, 0, 200, 0.5),  // far below
+			at(h, 4, 200, 0.45), // clashes with the previous one
+		}
+		if rev {
+			slices.Reverse(ts)
+		}
+		req := h.start()
+		h.hints <- ports.HintScanResult{Seq: req.Seq, Output: req.Output, Targets: ts}
+		s := h.labelled(3, 0)
+		var got [][2]int
+		for _, l := range s.HintLabels {
+			got = append(got, [2]int{l.Rect.X - h.win.X - 20, l.Rect.Y - h.win.Y - 20})
+		}
+		want := [][2]int{{300, 0}, {3, 2}, {0, 200}} // sorted by Y, then X
+		if !slices.Equal(got, want) {
+			t.Fatalf("rev=%v: label corners %v, want %v", rev, got, want)
 		}
 	}
 }

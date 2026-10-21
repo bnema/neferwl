@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"math"
 	"slices"
 
 	"github.com/bnema/neferwl/internal/ports"
@@ -32,6 +33,7 @@ const (
 // coordinates of its centre.
 type hintTarget struct {
 	x, y   float64
+	score  float32
 	window WindowID
 	source hintSourceGeom // source window and its request-time client geometry
 	label  string
@@ -168,12 +170,13 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 		if !ok {
 			continue
 		}
-		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect})
+		kept = append(kept, hintTarget{x: x, y: y, window: id, source: source, rect: t.Rect, score: t.Score})
 	}
 	if len(kept) == 0 {
 		c.hintCancel()
 		return true
 	}
+	kept = c.hintSpread(sc, kept)
 	slices.SortStableFunc(kept, func(a, b hintTarget) int {
 		return cmp.Or(cmp.Compare(a.rect.Y, b.rect.Y), cmp.Compare(a.rect.X, b.rect.X))
 	})
@@ -190,6 +193,57 @@ func (c *Core) hintResult(res ports.HintScanResult) bool {
 	}
 	h.phase, h.targets, h.typed = hintShown, kept, ""
 	return true
+}
+
+// hintLabelSize estimates, in logical pixels, the box of a two-letter label on
+// sc: a monospace face (advance 0.6 em) plus padding and outline, rounded up.
+// The font size follows the renderer: hint.size, or the output's density when
+// it is automatic (same rules as hintlabel.FontPixels, which core cannot
+// import).
+func (c *Core) hintLabelSize(sc *screen) (w, h int) {
+	scale := sc.scale
+	if scale <= 0 {
+		scale = 1
+	}
+	font := c.cfg.Hint.Size // logical
+	if font <= 0 {
+		px := 13 * scale * math.Sqrt(math.Max(1, float64(sc.info.Height)/(1080*scale)))
+		if sc.info.Width > 0 && sc.info.Height > 0 && sc.info.PhysicalW > 0 && sc.info.PhysicalH > 0 {
+			ratio := (float64(sc.info.Width) / float64(sc.info.Height)) / (float64(sc.info.PhysicalW) / float64(sc.info.PhysicalH))
+			if math.Abs(ratio-1) <= .2 {
+				px = math.Min(math.Round(40*scale), math.Max(math.Round(13*scale), math.Round(3.2*float64(sc.info.Width)/float64(sc.info.PhysicalW))))
+			}
+		}
+		font = px / scale
+	}
+	return int(math.Ceil(2*0.6*font + 8)), int(math.Ceil(1.25*font + 4))
+}
+
+// hintSpread drops the targets whose labels would overlap another label. A
+// label hangs off its target's top-left corner, so two labels overlap when
+// the corners are closer than the label size on both axes. Targets are
+// considered by descending score (then top-left to bottom-right): the first
+// keeps its place, a later one that collides with a kept one is dropped.
+func (c *Core) hintSpread(sc *screen, ts []hintTarget) []hintTarget {
+	lw, lh := c.hintLabelSize(sc)
+	order := slices.Clone(ts)
+	slices.SortStableFunc(order, func(a, b hintTarget) int {
+		return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.rect.Y, b.rect.Y), cmp.Compare(a.rect.X, b.rect.X))
+	})
+	kept := order[:0:0]
+	for _, t := range order {
+		clash := false
+		for _, k := range kept {
+			if abs(t.rect.X-k.rect.X) < lw && abs(t.rect.Y-k.rect.Y) < lh {
+				clash = true
+				break
+			}
+		}
+		if !clash {
+			kept = append(kept, t)
+		}
+	}
+	return kept
 }
 
 // hintSource resolves the request-time source window only while its client
