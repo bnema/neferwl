@@ -23,6 +23,14 @@ func TestScript(t *testing.T) {
 		{"key Super+Return", []string{"Super_L", "Return", "Return", "Super_L"}, []uint32{125, 28, 28, 125}},
 		{"hold Super+h 20ms", []string{"Super_L", "h", "h", "Super_L"}, []uint32{125, 35, 35, 125}},
 		{"hold h", nil, nil},
+		{"press Super", []string{"Super_L"}, []uint32{125}},
+		{"release Super", []string{"Super_L"}, []uint32{125}},
+		{"press Shift", []string{"Shift_L"}, []uint32{42}},
+		{"press Ctrl", []string{"Control_L"}, []uint32{29}},
+		{"press Alt", []string{"Alt_L"}, []uint32{56}},
+		{"press", nil, nil},
+		{"release Super extra", nil, nil},
+		{"press unknown", nil, nil},
 	} {
 		t.Run(tt.line, func(t *testing.T) {
 			km, err := xkb.New(xkb.RMLVO{Layout: "us"})
@@ -58,6 +66,47 @@ func TestScript(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestModifierAcrossMouseActions(t *testing.T) {
+	km, err := xkb.New(xkb.RMLVO{Layout: "us"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := make(chan string, 8)
+	for _, line := range []string{"press Super", "move 500 100", "down right", "move 700 100", "up right", "release Super"} {
+		script <- line
+	}
+	close(script)
+	input := make(chan ports.InputEvent, 16)
+	if err := Run(context.Background(), km, nil, script, input, nil, nil, logging.For(context.Background(), "input")); err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != 6 {
+		t.Fatal(len(input))
+	}
+	press := (<-input).(ports.KeyEvent)
+	if !press.Pressed || press.Mods&ports.ModSuper == 0 {
+		t.Fatal(press)
+	}
+	if _, ok := (<-input).(ports.PointerMotion); !ok {
+		t.Fatal("missing motion")
+	}
+	down := (<-input).(ports.PointerButton)
+	if down.Button != 0x111 || !down.Pressed {
+		t.Fatal(down)
+	}
+	if _, ok := (<-input).(ports.PointerMotion); !ok {
+		t.Fatal("missing drag motion")
+	}
+	up := (<-input).(ports.PointerButton)
+	if up.Button != 0x111 || up.Pressed {
+		t.Fatal(up)
+	}
+	release := (<-input).(ports.KeyEvent)
+	if release.Pressed || release.Mods&ports.ModSuper != 0 {
+		t.Fatal(release)
 	}
 }
 
