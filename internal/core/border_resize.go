@@ -67,7 +67,9 @@ func (g *borderResize) motion(ctx context.Context, _ time.Duration) error {
 	if g.border.kind == borderRow {
 		pos = int(c.cursorY) - g.screen.y
 	}
-	g.ws.setBorder(g.border, pos)
+	if !g.ws.setBorder(g.border, pos) {
+		return nil
+	}
 	return c.publish(ctx)
 }
 

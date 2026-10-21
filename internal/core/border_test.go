@@ -3,6 +3,7 @@ package core
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestBorderAt(t *testing.T) {
@@ -226,5 +227,59 @@ func TestBorderStampIgnoresMaximizedWidth(t *testing.T) {
 				t.Fatalf("unmaximized width = %d, want %d", got, normal)
 			}
 		})
+	}
+}
+
+func TestSetBorderReportsChange(t *testing.T) {
+	for _, mode := range []Overflow{OverflowScroll, OverflowFixed} {
+		w := spanWorkspace(mode, 2)
+		b := border{kind: borderColumn, col: 0}
+		x := w.columnRects()[0]
+		pos := x.X + x.W + 5 + 40
+		if !w.setBorder(b, pos) {
+			t.Fatal(mode, "first move must report a change")
+		}
+		if w.setBorder(b, pos) {
+			t.Fatal(mode, "same position reported a change")
+		}
+		w.setBorder(b, -10000)
+		if w.setBorder(b, -20000) {
+			t.Fatal(mode, "clamped at the minimum reported a change")
+		}
+	}
+	w := spanWorkspace(OverflowFixed, 2)
+	w.Columns[0].Windows = []WindowID{1, 3}
+	b := border{kind: borderRow, col: 0}
+	r := w.columnRects()[0]
+	pos := rowRects(r, w.Columns[0], w.gap())[0].Y + 200
+	if !w.setBorder(b, pos) || w.setBorder(b, pos) {
+		t.Fatal("row border change reporting")
+	}
+	if w.setBorder(border{kind: borderColumn, col: 9}, 0) {
+		t.Fatal("invalid border reported a change")
+	}
+}
+
+func TestBorderMotionPublishesOnlyChanges(t *testing.T) {
+	c, w := borderCore(t, false)
+	grabButton(t, c, btnRight, true, time.Second)
+	grabCommands(c)
+	grabMove(t, c, c.cursorX+150, c.cursorY)
+	if len(grabCommands(c)) == 0 {
+		t.Fatal("a resizing motion must publish")
+	}
+	spans := []int{w.Columns[0].Span, w.Columns[1].Span}
+	grabMove(t, c, c.cursorX, c.cursorY)
+	if cmds := grabCommands(c); len(cmds) != 0 {
+		t.Fatalf("unchanged motion published %+v", cmds)
+	}
+	if spans[0] != w.Columns[0].Span || spans[1] != w.Columns[1].Span {
+		t.Fatal("spans changed")
+	}
+	grabMove(t, c, -10000, c.cursorY)
+	grabCommands(c)
+	grabMove(t, c, -20000, c.cursorY)
+	if cmds := grabCommands(c); len(cmds) != 0 {
+		t.Fatalf("motion clamped at the minimum published %+v", cmds)
 	}
 }

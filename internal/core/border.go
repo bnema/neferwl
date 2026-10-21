@@ -77,23 +77,26 @@ func pixelShare(pixels, total int) int {
 	return (pixels*10000 + total - 1) / total
 }
 
-func (w *Workspace) setBorder(b border, pos int) {
+// setBorder moves border b to pos and reports whether any span or share
+// changed (stamping a lane or a column's shares counts as a change).
+func (w *Workspace) setBorder(b border, pos int) bool {
 	if b.col < 0 || b.col >= len(w.Columns) || w.fullscreen != 0 {
-		return
+		return false
 	}
 	rs := w.columnRects()
 	r := rs[b.col]
 	if b.kind == borderRow {
 		c := &w.Columns[b.col]
 		if b.row < 0 || b.row+1 >= len(c.Windows) || len(c.Windows)*minShare > 10000 {
-			return
+			return false
 		}
 		rows := rowRects(r, *c, w.gap())
 		avail := max(r.H-(len(rows)-1)*w.gap(), 0)
 		if avail == 0 {
-			return
+			return false
 		}
-		if !validShares(*c) {
+		stamped := !validShares(*c)
+		if stamped {
 			c.Shares = make([]int, len(rows))
 			used := 0
 			for i := range rows {
@@ -106,18 +109,19 @@ func (w *Workspace) setBorder(b border, pos int) {
 		}
 		pair := c.Shares[b.row] + c.Shares[b.row+1]
 		if pair < 2*minShare {
-			return
+			return stamped
 		}
 		target := pixelShare(pos-w.gap()/2-rows[b.row].Y, avail)
 		target = min(max(target, minShare), pair-minShare)
 		if b.row+1 < len(rows)-1 {
 			target = pairPixelShare(target, pair, avail, rows[b.row].H+rows[b.row+1].H, minShare)
 		}
+		changed := stamped || c.Shares[b.row] != target
 		c.Shares[b.row], c.Shares[b.row+1] = target, pair-target
-		return
+		return changed
 	}
 	if b.kind != borderColumn || b.col+1 >= len(w.Columns) || w.laneOf(b.col) != w.laneOf(b.col+1) || w.Overflow == OverflowFixed && !w.laneRow() || w.Columns[b.col].FullWidth || w.Columns[b.col+1].FullWidth {
-		return
+		return false
 	}
 	first, last := w.laneBounds(w.laneOf(b.col))
 	avail := max(w.Usable.W-2*w.gap(), 0)
@@ -125,9 +129,10 @@ func (w *Workspace) setBorder(b border, pos int) {
 		avail = max(w.Usable.W-w.gap()*(last-first+2), 0)
 	}
 	if avail == 0 {
-		return
+		return false
 	}
-	if !w.validSpans(first, last) {
+	stamped := !w.validSpans(first, last)
+	if stamped {
 		w.spanSeq++
 		used := 0
 		for i := first; i <= last; i++ {
@@ -142,18 +147,22 @@ func (w *Workspace) setBorder(b border, pos int) {
 	minimum := pixelShare(max(avail/20, 4*w.border, borderMinWidth), avail)
 	target := pixelShare(pos-w.gap()/2-r.X, avail)
 	if !w.policy().equalCells {
-		w.Columns[b.col].Span = min(max(target, min(minimum, 10000)), 10000)
-		return
+		span := min(max(target, min(minimum, 10000)), 10000)
+		changed := stamped || w.Columns[b.col].Span != span
+		w.Columns[b.col].Span = span
+		return changed
 	}
 	pair := w.Columns[b.col].Span + w.Columns[b.col+1].Span
 	if pair < 2*minimum {
-		return
+		return stamped
 	}
 	target = min(max(target, minimum), pair-minimum)
 	if b.col+1 < last {
 		target = pairPixelShare(target, pair, avail, rs[b.col].W+rs[b.col+1].W, minimum)
 	}
+	changed := stamped || w.Columns[b.col].Span != target
 	w.Columns[b.col].Span, w.Columns[b.col+1].Span = target, pair-target
+	return changed
 }
 
 func (w *Workspace) resetBorder(b border) {
