@@ -11,3 +11,5 @@ user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
 user_pref("browser.toolbars.bookmarks.visibility", "never");
 user_pref("widget.gtk.overlay-scrollbars.enabled", true);
 user_pref("browser.tabs.warnOnClose", false);
+// Keep browser chrome neutral rather than Firefox's purple dark-theme tint.
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);

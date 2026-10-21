@@ -1,12 +1,12 @@
 # NeferWL · a little space to think
 animations = on
-layout.gaps = 8
+layout.gaps = 0
 layout.max-columns = 2
 layout.overflow = cascade
 border.width = 2
-border.active = #7aa2f7
-border.inactive = #414868
-background = #1a1b26
+border.active = #ffc799
+border.inactive = #282828
+background = #101010
 terminal.auto-open = off
 stash.spawn-terminal = off
 stash.capture = off

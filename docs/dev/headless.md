@@ -28,7 +28,8 @@ For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filter
 Run `tools/demo/record.sh` with Go 1.27, rootless Docker and ffmpeg installed.
 It builds an Arch app image and the host compositor, then records the 1080p README demo.
 Apps run in a disposable, offline container; only the headless Wayland socket is mounted.
-The shell timeline launches apps, while `input.txt` drives keys; captures stay at the printed path.
+A FIFO synchronizes `input.txt` with app launches after container startup.
+Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 
 ## Input scripts

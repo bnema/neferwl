@@ -3,7 +3,7 @@ FROM archlinux:latest
 RUN --mount=type=cache,target=/var/cache/pacman/pkg,sharing=locked \
     pacman -Sy --noconfirm archlinux-keyring \
     && pacman -Syu --noconfirm --needed \
-      firefox foot btop fastfetch eza bat mousepad \
+      firefox foot btop fastfetch eza mousepad \
       ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji dbus mesa vulkan-swrast
 # Arch's btop carries file capabilities that rootless Docker cannot grant.
 RUN install -m 0755 /usr/bin/btop /usr/local/bin/btop
@@ -11,8 +11,10 @@ RUN useradd -m -u 1000 demo \
     && mkdir -p /home/demo/firefox /home/demo/.config/btop /run/wl \
     && chmod 0700 /run/wl
 COPY firefox/user.js /home/demo/firefox/user.js
+COPY firefox/userChrome.css /home/demo/firefox/chrome/userChrome.css
 COPY foot.ini /home/demo/.config/foot/foot.ini
 COPY btop.conf /home/demo/.config/btop/btop.conf
+COPY btop-vesper.theme /home/demo/.config/btop/themes/vesper.theme
 COPY site /home/demo/site
 COPY config /home/demo/config
 RUN chown -R demo:demo /home/demo /run/wl

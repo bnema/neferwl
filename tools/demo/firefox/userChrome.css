@@ -1,0 +1,18 @@
+/* Vesper chrome: neutral near-black surfaces and one peach selection accent. */
+:root {
+  --toolbar-bgcolor: #161616 !important;
+  --toolbar-color: #ffffff !important;
+  --lwt-accent-color: #101010 !important;
+  --lwt-text-color: #ffffff !important;
+  --lwt-selected-tab-background-color: #282828 !important;
+  --toolbar-field-background-color: #101010 !important;
+  --toolbar-field-color: #ffffff !important;
+  --toolbar-field-focus-border-color: #ffc799 !important;
+}
+#navigator-toolbox, #TabsToolbar, #nav-bar {
+  background: #161616 !important;
+  background-image: none !important;
+  color: #ffffff !important;
+}
+.tab-background[selected] { background: #282828 !important; outline-color: #ffc799 !important; }
+#urlbar-background { background: #101010 !important; border-color: #282828 !important; }
