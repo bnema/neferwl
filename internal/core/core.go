@@ -110,7 +110,13 @@ type Core struct {
 	// buttons whose release no client must see. mods are the modifiers
 	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
 	// press a client saw, the one xdg_toplevel.move's serial names.
-	drag *dragState
+	drag            *dragState
+	pgrab           pointerGrab
+	lastBorderClick struct {
+		at time.Duration
+		ws *Workspace
+		b  border
+	}
 	// dataDrag is the client data drag in progress (datadrag.go).
 	dataDrag         *dataDragState
 	swallow          map[uint32]bool
@@ -631,6 +637,11 @@ func (c *Core) publishFrame(ctx context.Context, only *screen) error {
 			sc.mon.Current().noteFocus()
 		}
 	}
+	if g, ok := c.pgrab.(*borderResize); ok && !g.valid() {
+		if err := c.abortPointerGrab(ctx); err != nil {
+			return err
+		}
+	}
 	c.refreshShown()
 	c.captureExpire()
 	capture, err := c.captureEvaluate(ctx)
@@ -752,7 +763,7 @@ func (c *Core) rehit(ctx context.Context) error {
 		// The drag target follows the layout too.
 		return c.dataDragRetarget(ctx, c.motionTime)
 	}
-	if c.grab != 0 || c.drag != nil {
+	if c.grab != 0 || c.pointerBusy() {
 		return nil
 	}
 	id, x, y := c.hit(c.cursorX, c.cursorY)

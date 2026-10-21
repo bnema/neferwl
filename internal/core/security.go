@@ -35,6 +35,9 @@ func (c *Core) syncSecurity() bool {
 	c.drag, c.swallow, c.mods, c.lastButton = nil, map[uint32]bool{}, 0, 0
 	// Wayland cancels its own drag when the epoch changes.
 	c.dataDrag = nil
+	// The adapter clears cursor overrides when protection starts; send nothing.
+	c.pgrab = nil
+	c.lastBorderClick.ws = nil
 	c.pointerAt, c.motionTime = [2]float64{}, 0
 	c.keyboard = keyboard{}
 	c.constrained, c.constraint = ports.PointerConstrained{}, ports.PointerConstraint{}

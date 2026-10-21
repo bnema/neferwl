@@ -50,7 +50,7 @@ type dataDragIcon struct {
 // during a window drag or a locked session is refused.
 func (c *Core) startDataDrag(ctx context.Context, v ports.DataDragStarted) error {
 	button := v.Button
-	if c.dataDrag != nil || c.drag != nil || c.security.Protected || c.grab == 0 || c.held() == 0 || !c.buttons[button] || c.swallow[button] {
+	if c.dataDrag != nil || c.pointerBusy() || c.security.Protected || c.grab == 0 || c.held() == 0 || !c.buttons[button] || c.swallow[button] {
 		return c.command(ctx, ports.DataDragCancel{})
 	}
 	c.dataDrag = &dataDragState{button: button, icon: dataDragIcon{id: v.Icon}}

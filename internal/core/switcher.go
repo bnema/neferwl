@@ -239,7 +239,7 @@ func (c *Core) switchStep(dir int) {
 		// screen: start over.
 		c.cancelSwitcher()
 	}
-	if sc.mon.ov.open || c.drag != nil {
+	if sc.mon.ov.open || c.pointerBusy() {
 		return
 	}
 	m := sc.mon
