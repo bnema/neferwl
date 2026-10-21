@@ -7,6 +7,8 @@ neferwl --config <path>            # use another file
 neferwl validate-config [path]     # check a file
 ```
 
+Missing keys use defaults. Empty keyboard values use the system setting. No startup commands or named workspaces are configured by default. The log lists changed keys after a reload.
+
 ## Format
 
 - One `key = value` per line. `#` starts a comment.
@@ -96,6 +98,34 @@ inner border. When a flash-triggering action crosses screens, it marks the whole
 destination output, even if that output has no windows. Same-screen workspace
 switches and mouse focus do not trigger a flash.
 It runs when `animations = on`.
+
+## Automatic terminal
+
+The command comes from `terminal`, then `$TERMINAL`, then `foot`.
+
+| `terminal.auto-open` | Behaviour |
+| --- | --- |
+| `first` | Open once on the initial numbered workspace |
+| `all` | Open on each visible empty workspace without predefined slots |
+| `off` | Do not open automatically |
+
+`--no-terminal` disables automatic opening for one run; `spawn-terminal` still works. Launched programs inherit `$SHELL`, `$EDITOR` and `$VISUAL`.
+
+## Per-output defaults
+
+Per-output defaults (replace `<name>` with a connector such as `DP-1`):
+
+```text
+output.<name> = preferred
+output.<name>.scale = 1
+output.<name>.transform = normal
+output.<name>.primary = off
+output.<name>.offset = 0
+output.<name>.hdr = off
+output.<name>.sdr-brightness = 203
+```
+
+Outputs are arranged automatically unless `.right-of`, `.left-of`, `.above` or `.below` is set. Per-output layouts inherit `layout.*`; named workspaces inherit their output's layout and size, use the focused output unless `.monitor` is set, and have no predefined columns. Media keys have no default bindings.
 
 ## Window rules
 
