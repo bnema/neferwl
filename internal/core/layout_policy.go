@@ -96,19 +96,7 @@ func (w *Workspace) dropStaleSpans() {
 	if !stamped {
 		return
 	}
-	// The common case has only valid lanes: find out without allocating.
-	anyStale := false
-	for first := 0; first < len(w.Columns); {
-		_, last := w.laneBounds(w.laneOf(first))
-		if !w.validSpans(first, last) {
-			anyStale = true
-			break
-		}
-		first = last + 1
-	}
-	if !anyStale {
-		return
-	}
+	// A nil stale slice does not allocate, so valid lanes cost nothing here.
 	var stale []int
 	for first := 0; first < len(w.Columns); {
 		_, last := w.laneBounds(w.laneOf(first))
