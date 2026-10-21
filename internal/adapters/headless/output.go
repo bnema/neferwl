@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -583,7 +584,8 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if !written {
 				continue
 			}
-			written, err = writePNGSecureResult(filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security)
+			// latest.png is the frame just written, linked rather than encoded again.
+			written, err = linkPNGSecure(filepath.Join(opts.ScreenshotDir, name), filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security)
 			if err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
@@ -640,6 +642,21 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 	return err
 }
 
+// screenshotPNG encodes screenshot frames: encoding is by far the largest cost
+// of a headless frame, so it trades file size for speed. Its buffers are
+// reused between frames.
+var screenshotPNG = png.Encoder{CompressionLevel: png.BestSpeed, BufferPool: new(pngBuffers)}
+
+// pngBuffers is a png.EncoderBufferPool.
+type pngBuffers struct{ pool sync.Pool }
+
+func (p *pngBuffers) Get() *png.EncoderBuffer {
+	b, _ := p.pool.Get().(*png.EncoderBuffer)
+	return b
+}
+
+func (p *pngBuffers) Put(b *png.EncoderBuffer) { p.pool.Put(b) }
+
 // writePNGSecureResult distinguishes a security skip from a published PNG.
 func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
 	if security != nil && (state.Protected || security.Snapshot() != state) {
@@ -650,7 +667,7 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 		return false, err
 	}
 	defer os.Remove(f.Name())
-	if err := png.Encode(f, img); err != nil {
+	if err := screenshotPNG.Encode(f, img); err != nil {
 		_ = f.Close()
 		return false, err
 	}
@@ -661,6 +678,31 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 		return false, nil
 	}
 	if err := os.Rename(f.Name(), path); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// linkPNGSecure publishes the PNG already written at src as dst without
+// encoding it again: a hard link under a temporary name, renamed over dst, so
+// readers see the old or the new frame, never a partial one. Frame files are
+// never modified after they are published, which makes the shared file safe.
+// It gates on security like writePNGSecureResult, and falls back to encoding
+// img where the file system cannot link.
+func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
+	if security != nil && (state.Protected || security.Snapshot() != state) {
+		return false, nil
+	}
+	tmp := dst + ".tmp"
+	_ = os.Remove(tmp)
+	if err := os.Link(src, tmp); err != nil {
+		return writePNGSecureResult(dst, img, security, state)
+	}
+	defer os.Remove(tmp)
+	if security != nil && security.Snapshot() != state {
+		return false, nil
+	}
+	if err := os.Rename(tmp, dst); err != nil {
 		return false, err
 	}
 	return true, nil

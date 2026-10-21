@@ -269,6 +269,109 @@ func TestRunTrimsRendererOnTick(t *testing.T) {
 	}
 }
 
+// latest.png is the frame file linked, not encoded again: the same pixels,
+// published atomically, and nothing left behind.
+func TestLinkPNGSecure(t *testing.T) {
+	dir := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 3, 2))
+	for i := range img.Pix {
+		img.Pix[i] = byte(i * 7)
+	}
+	frame, latest := filepath.Join(dir, "frame-000001.png"), filepath.Join(dir, "latest.png")
+	if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
+		t.Fatal(err)
+	}
+	// An older latest.png is replaced.
+	if err := os.WriteFile(latest, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if written, err := linkPNGSecure(frame, latest, img, nil, ports.SecurityState{}); err != nil || !written {
+		t.Fatalf("link = %v, %v", written, err)
+	}
+	a, err := os.ReadFile(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(latest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Fatal("latest.png differs from the frame")
+	}
+	got, err := png.Decode(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for y := range 2 {
+		for x := range 3 {
+			if g, w := color.RGBAModel.Convert(got.At(x, y)), img.RGBAAt(x, y); g != color.Color(w) {
+				t.Errorf("(%d,%d) = %v, want %v", x, y, g, w)
+			}
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("leftover files: %v", entries)
+	}
+}
+
+// A frame that crossed a security change is not published as latest.png, and
+// a source that cannot be linked is encoded instead.
+func TestLinkPNGSecureSkipsAndFallsBack(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	good := ports.SecurityState{Generation: 1}
+	t.Run("protected", func(t *testing.T) {
+		dir := t.TempDir()
+		frame := filepath.Join(dir, "frame-000001.png")
+		if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
+			t.Fatal(err)
+		}
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 1, Protected: true})
+		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
+			t.Fatalf("link = %v, %v", written, err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Fatalf("latest.png or a temp file delivered: %v", entries)
+		}
+	})
+	t.Run("changed after the link", func(t *testing.T) {
+		dir := t.TempDir()
+		frame := filepath.Join(dir, "frame-000001.png")
+		if err := writePNGSecure(frame, img, nil, ports.SecurityState{}); err != nil {
+			t.Fatal(err)
+		}
+		gate := portsmocks.NewMockSessionSecurity(t)
+		gate.EXPECT().Snapshot().Return(good).Once()
+		gate.EXPECT().Snapshot().Return(ports.SecurityState{Generation: 2}).Once()
+		if written, err := linkPNGSecure(frame, filepath.Join(dir, "latest.png"), img, gate, good); err != nil || written {
+			t.Fatalf("link = %v, %v", written, err)
+		}
+		if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+			t.Fatalf("latest.png or a temp file delivered: %v", entries)
+		}
+	})
+	t.Run("no source file", func(t *testing.T) {
+		dir := t.TempDir()
+		latest := filepath.Join(dir, "latest.png")
+		if written, err := linkPNGSecure(filepath.Join(dir, "missing.png"), latest, img, nil, ports.SecurityState{}); err != nil || !written {
+			t.Fatalf("link = %v, %v", written, err)
+		}
+		f, err := os.Open(latest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := png.Decode(f); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestWritePNGAtomic(t *testing.T) {
 	dir := t.TempDir()
 	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
