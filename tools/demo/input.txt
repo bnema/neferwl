@@ -1,8 +1,17 @@
 move 1918 1078
-sleep 12s
+sleep 5s
+# Unseen warm-up while Firefox sits beside the terminal: a hint bind cancelled
+# at once still runs its scan, without drawing labels. It connects to the
+# accessibility bus early; more of them below (each right after a key press, in
+# an existing pause) let Firefox expose its page content by the end.
+key Super+g
+key Escape
+sleep 7s
 key Super+Up
 sleep 1500ms
 key Super+Down
+key Super+g
+key Escape
 sleep 1500ms
 key Super+Shift+s
 sleep 500ms
@@ -11,6 +20,8 @@ sleep 1500ms
 key Super+2
 key Super+Shift+1
 key Super+1
+key Super+g
+key Escape
 sleep 3s
 key Super+Shift+s
 sleep 500ms
@@ -18,8 +29,12 @@ key Super+s
 sleep 1500ms
 key Super+s
 key Super+Left
+key Super+g
+key Escape
 sleep 2s
 key Super+Right
+key Super+g
+key Escape
 sleep 2s
 key Super+Left
 sleep 1s
@@ -40,34 +55,20 @@ sleep 1500ms
 key Up
 sleep 1s
 key Return
-sleep 2s
-# Back on workspace 1. Firefox builds its accessibility tree for page content
-# only after a few scans; a hint bind cancelled at once still runs its scan
-# without drawing labels, so these warm it up unseen.
-key Super+1
-sleep 2s
+sleep 700ms
+# Back on workspace 1: focus Firefox and fullscreen it. Once the page is still,
+# read it, then hint mode starts and the label of the Wikipedia result
+# ("Wayland (protocol) - Wikipedia") is typed.
+key Super+Right
+sleep 600ms
+key Super+Shift+f
+sleep 900ms
+hint-read
+sleep 200ms
 key Super+g
-key Escape
-sleep 2s
-key Super+g
-key Escape
-sleep 2s
-key Super+g
-key Escape
-sleep 2s
-# Clear the terminal's listing (OCR would take file names for links) and print
-# a URL, which hint mode labels like Firefox's links. foot opens a URL only from
-# its own keyboard mode, so the terminal's label is shown, not clicked.
-move 400 600
-click
-type clear; echo https://github.com/bnema/neferwl
-key Return
-sleep 500ms
-move 1918 1078
-sleep 2s
-# Hint mode: Firefox's links come from the accessibility tree, the URL from OCR.
-key Super+g
-sleep 6s
-# Types the label of the Wikipedia result: Firefox opens it.
-hint-click Wikipedia
-sleep 26s
+sleep 1500ms
+hint-click wikipedia protocol
+# Firefox loads the page; the compositor writes no frame while it is still, so
+# a pointer move marks the end of the hold.
+sleep 4s
+move 1500 900

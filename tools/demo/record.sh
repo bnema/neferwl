@@ -53,7 +53,7 @@ docker run -d --name "$container" --hostname neferwl-demo "${gpu[@]}" \
     -e XDG_STATE_HOME=/work/state -e NEFERWL_HINT_DEBUG=1 \
     -v "$work:/work" -v "$work/neferwl:/usr/local/bin/neferwl:ro" neferwl-demo \
     --backend=headless --size 1920x1080 --config /root/config --no-xwayland \
-    --screenshot /work/shots --input /work/input --timeout 120s >/dev/null
+    --screenshot /work/shots --input /work/input --timeout 75s >/dev/null
 display=''
 for ((attempt = 0; attempt < 300; attempt++)); do
     [[ $(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null) == true ]] ||
@@ -90,11 +90,14 @@ launch_apps() {
 }
 feed() {
     # Forwards input.txt to the compositor in real time. `sleep` lines are
-    # served here (not forwarded), so a host-side step can sit between two compositor steps:
-    # `hint-click <word>...` types the label that hint mode gave the link
-    # showing one of the words, from the dump of the scan the last `hint` bind
-    # started (demo-hint-label reproduces the labelling of internal/core/hint.go).
-    local line cmd d mark label
+    # served here (not forwarded), so host-side steps can sit between two
+    # compositor steps:
+    #   hint-read              reads the still page with OCR, in the background
+    #   hint-click <word>...   types the label of the link that shows all the
+    #                          words, from the dump of the scan the last
+    #                          `hint` bind started (demo-hint-label reproduces
+    #                          the labelling of internal/core/hint.go)
+    local line cmd d mark label reader=''
     while IFS= read -r line || [[ -n $line ]]; do
         cmd=${line%% *}
         case $cmd in
@@ -103,9 +106,13 @@ feed() {
             d=${line#sleep }
             if [[ $d == *ms ]]; then d=$(printf '%d.%03d' $((${d%ms} / 1000)) $((${d%ms} % 1000))); fi
             sleep "$d" ;;
+        hint-read)
+            docker exec "$container" demo-hint-label ocr &
+            reader=$! ;;
         hint-click)
+            [[ -n $reader ]] && wait "$reader"
             # shellcheck disable=SC2086
-            label=$(docker exec "$container" demo-hint-label "$mark" ${line#hint-click }) ||
+            label=$(docker exec "$container" demo-hint-label label "$mark" ${line#hint-click }) ||
                 { echo "No hint label for: ${line#hint-click }" >&2; docker kill "$container" >/dev/null; return 1; }
             echo "Hint label for ${line#hint-click }: $label" >&2
             printf 'type %s\n' "$label" ;;
@@ -117,9 +124,7 @@ feed() {
     printf 'key Ctrl+Alt+BackSpace\n'
 }
 app foot --title 'System / NeferWL' bash -c \
-    'fastfetch --logo small --structure OS:Kernel:WM:Terminal:Memory:Colors; eza -la --no-user --icons --color=always /etc | head -24
-    # A bare shell for the end of input.txt: no prompt, no echo, no line editing.
-    stty -echo; exec env PS1= bash --norc --noediting'
+    'fastfetch --logo small --structure OS:Kernel:WM:Terminal:Memory:Colors; eza -la --no-user --icons --color=always /etc | head -24; exec sleep infinity'
 # The first app is launched before t=0. FIFO input and shell launches now
 # share this epoch, independent of compositor/image/container startup time.
 SECONDS=0
@@ -138,10 +143,10 @@ wait "$feeder" || { echo 'Scripted input failed.' >&2; exit 1; }
 feeder=
 wait "$launcher"
 launcher=
-# Hint mode needs both sources: the accessibility tree (Firefox) and OCR (terminal).
+# Firefox's links come from the accessibility tree; OCR (tesseract) must still load.
 if grep -qE 'OCR unavailable|English OCR data missing' "$log"; then echo 'tesseract is missing in the image.' >&2; exit 1; fi
-grep -qE '"targets":[1-9][0-9]*,.*"message":"hint scan"' "$log" ||
-    { echo 'No hint scan found targets:' >&2; grep -E '"component":"(hints|atspi)"' "$log" | cut -c1-300 >&2; exit 1; }
+grep -qE '"atspi_targets":[1-9][0-9]*,.*"message":"hint scan"' "$log" ||
+    { echo 'No hint scan found accessibility targets:' >&2; grep -E '"component":"(hints|atspi)"' "$log" | cut -c1-300 >&2; exit 1; }
 grep '"message":"hint scan"' "$log" | sed -E 's/.*"atspi_targets":([0-9]+).*"ocr_links":([0-9]+).*"targets":([0-9]+).*/hint scan: \1 accessibility + \2 OCR links = \3 targets/' | tail -3
 ffmpeg -hide_banner -loglevel warning -f concat -safe 0 \
     -i "$work/shots/frames.ffconcat" -vf 'fps=30,format=yuv420p' \

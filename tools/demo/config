@@ -19,6 +19,7 @@ hint.targets = links
 # Super+Shift+s sets a window aside.
 # Super+s brings your stash into view.
 # Super+o opens the overview.
+# Super+Shift+f makes a window fullscreen.
 # Super+g labels the links; type one to click it.
 bind.cmd+g = hint
 bind.cmd+code:3 = focus-workspace 2

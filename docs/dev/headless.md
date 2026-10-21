@@ -30,7 +30,7 @@ It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, th
 The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
 Firefox opens a live DuckDuckGo page, so the recording needs the network and its content varies.
 A FIFO feeds `input.txt` while the script launches the apps on the same clock.
-The hint step labels the page with `hint`, then `hint-click <word>` reads the scanned frame and types the label of the link showing that word.
+The hint step makes Firefox fullscreen and labels the page with `hint`; `hint-click <words>` then types the label of the link that shows those words, found from the scan's dump and an OCR read of the still page (`hint-read`).
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 
