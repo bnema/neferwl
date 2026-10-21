@@ -13,13 +13,21 @@ import (
 
 // Output images: the renderer targets frames alternate between.
 
-// imageKind is how output images are made, best first.
+// imageKind is how output images are made, best first. Each kind is tried
+// with GBM allocation first, then with images the renderer allocates and
+// exports.
 type imageKind int
 
 const (
-	imagesDriver      imageKind = iota // exported, modifier chosen by the driver (DCC planes allowed)
-	imagesSinglePlane                  // exported, driver modifier with one memory plane
-	imagesLinear                       // exported, linear
+	imagesDriver      imageKind = iota // modifier chosen by the driver (DCC planes allowed)
+	imagesSinglePlane                  // driver modifier with one memory plane
+	imagesLinear                       // linear
+)
+
+// Who allocated the output images (the "alloc" log field).
+const (
+	allocGBM    = "gbm"
+	allocVulkan = "vulkan"
 )
 
 // maxFBPlanes is the number of planes a KMS framebuffer holds (fbCmd2).
@@ -59,7 +67,7 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("HDR modeset unavailable; falling back to SDR")
 		o.hdr.failed = true
 		o.hdr.on = false
-		o.freeImages()
+		o.dropImages(r)
 		r.SetHDR(0)
 		_, _ = r.ExportTargets(0, nil, false)
 		// A failed test commit can leave the old HDR mode on screen;
@@ -76,8 +84,11 @@ func (o *Output) showImages(r ports.Renderer, kind imageKind, cause error) error
 }
 
 func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) error {
+	// skipGBM makes the next setup use renderer-allocated images for kind:
+	// GBM images of this kind were refused by the modeset test.
+	skipGBM := false
 	for {
-		got, err := o.setupImages(r, kind, cause)
+		got, err := o.setupImages(r, kind, cause, skipGBM)
 		if err != nil {
 			return err
 		}
@@ -97,19 +108,30 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 			// are fine; retry the protected modeset later.
 			return protectedCommitError{err}
 		}
-		if !refused(err) || got == imagesLinear {
-			o.freeImages()
+		if !refused(err) {
+			o.dropImages(r)
+			return err
+		}
+		if o.imageAlloc == allocGBM {
+			// The renderer's own images of this kind may still pass.
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Str("alloc", allocGBM).Msg("modeset refused the output images")
+			o.dropImages(r)
+			kind, cause, skipGBM = got, err, true
+			continue
+		}
+		if got == imagesLinear {
+			o.dropImages(r)
 			return err
 		}
 		if o.imageMod == 0 {
 			// The refused images were already linear: the later kinds
 			// would export the same ones again.
-			o.freeImages()
+			o.dropImages(r)
 			return err
 		}
-		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Msg("modeset refused the output images")
-		o.freeImages()
-		kind, cause = got+1, err
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Str("alloc", allocVulkan).Msg("modeset refused the output images")
+		o.dropImages(r)
+		kind, cause, skipGBM = got+1, err, false
 		if kind == imagesSinglePlane && o.planes == 1 {
 			// The refused images already had one plane: single-plane
 			// images would be the same ones.
@@ -119,11 +141,15 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 }
 
 // setupImages gives the output the two renderer images it flips between,
-// exported as dmabufs. There is no CPU fallback (ADR 014): a GPU that
-// cannot export a scanout-capable image cannot drive the output.
-func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (imageKind, error) {
+// as dmabufs: allocated with GBM and imported by the renderer, else
+// allocated and exported by the renderer, for each kind in turn. skipGBM
+// leaves GBM out for the first kind. There is no CPU fallback (ADR 014): a
+// GPU that cannot export a scanout-capable image cannot drive the output.
+func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error, skipGBM bool) (imageKind, error) {
 	err := cause
-	for ; kind <= imagesLinear; kind++ {
+	for first := true; kind <= imagesLinear; kind++ {
+		noGBM := first && skipGBM
+		first = false
 		if o.runContext != nil && o.runContext.Err() != nil {
 			return kind, o.runContext.Err()
 		}
@@ -159,10 +185,17 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error) (ima
 			// attempt was the single-plane one.
 			continue
 		}
+		if !noGBM && o.openAlloc != nil {
+			gerr := o.gbmImages(r, mods, kind == imagesSinglePlane)
+			if gerr == nil {
+				return kind, nil
+			}
+			o.log.Info().Err(gerr).Str("connector", o.conn.name).Int("kind", int(kind)).Str("alloc", allocGBM).Msg("output image allocation")
+		}
 		if err = o.exportImages(r, mods, kind == imagesSinglePlane); err == nil {
 			return kind, nil
 		}
-		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Msg("output image export")
+		o.log.Info().Err(err).Str("connector", o.conn.name).Int("kind", int(kind)).Str("alloc", allocVulkan).Msg("output image export")
 	}
 	return imagesLinear, fmt.Errorf("%s: GPU cannot export scanout images (ADR 014): %w", o.conn.name, err)
 }
@@ -189,6 +222,7 @@ func (o *Output) primaryModifiers(format uint32) []uint64 {
 
 // exportImages makes the renderer's exported targets the output images.
 func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool) error {
+	o.dropLive(r)
 	bufs, err := r.ExportTargets(len(o.fbs), mods, singlePlane)
 	if err != nil {
 		return err
@@ -207,12 +241,26 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 			p.File.Close()
 		}
 	}
-	// GPU memory starts undefined (old VRAM contents): clear both images
-	// before the modeset shows one.
+	if err == nil {
+		err = o.clearImages(r)
+	}
+	if err != nil {
+		o.dropImages(r)
+		_, _ = r.ExportTargets(0, nil, false)
+		return err
+	}
+	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
+	o.imageAlloc = allocVulkan
+	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Str("alloc", allocVulkan).Msg("zero-copy output")
+	return nil
+}
+
+// clearImages draws black into both output images and waits for the GPU.
+// GPU memory starts undefined (old VRAM contents): both are cleared before
+// the modeset shows one.
+func (o *Output) clearImages(r ports.Renderer) error {
+	var err error
 	for i := range o.fbs {
-		if err != nil {
-			break
-		}
 		r.UseTarget(i)
 		var done *os.File
 		if done, err = r.Render(ports.Scene{Background: "#000000"}, nil); done != nil {
@@ -224,18 +272,105 @@ func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool)
 			err = errors.Join(err, syncfile.Wait(waitCtx, done))
 			done.Close()
 		}
+		if err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		o.freeImages()
-		_, _ = r.ExportTargets(0, nil, false)
-		return err
-	}
-	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Msg("zero-copy output")
 	return nil
 }
 
-// freeImages removes the output images' framebuffers.
+// gbmImages allocates the output images with GBM, makes them the
+// renderer's targets and framebuffers, and clears them. The modifiers are
+// those the plane lists (mods, as for exportImages) that the renderer can
+// render into and import. On failure nothing is left allocated.
+func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (err error) {
+	o.dropLive(r)
+	if o.alloc == nil {
+		if o.allocErr != nil {
+			return o.allocErr
+		}
+		if o.alloc, o.allocErr = o.openAlloc(); o.allocErr != nil {
+			o.log.Info().Err(o.allocErr).Str("connector", o.conn.name).Str("alloc", allocGBM).Msg("GBM unavailable; the renderer allocates the output images")
+			return o.allocErr
+		}
+	}
+	usable := r.TargetModifiers(mods, singlePlane)
+	if len(usable) == 0 {
+		return errors.New("no modifier both the plane and the renderer accept for GBM images")
+	}
+	var bufs []ports.DMABuf
+	imported := false
+	defer func() {
+		for _, b := range bufs {
+			for _, p := range b.Planes {
+				p.File.Close()
+			}
+		}
+		if err != nil {
+			// A failed import leaves no renderer targets; a later failure
+			// leaves ones over the images about to be freed.
+			if imported {
+				o.dropImages(r)
+			} else {
+				o.freeImages()
+			}
+		}
+	}()
+	for range o.fbs {
+		img, cerr := o.alloc.create(o.Width(), o.Height(), o.imageFormat(), usable)
+		if cerr != nil {
+			return cerr
+		}
+		o.images = append(o.images, img)
+		b, derr := img.dmabuf()
+		if derr != nil {
+			return derr
+		}
+		bufs = append(bufs, b)
+	}
+	if err = r.ImportTargets(bufs); err != nil {
+		return err
+	}
+	imported = true
+	for i := range bufs {
+		if n := len(bufs[i].Planes); n == 0 || n > maxFBPlanes {
+			return fmt.Errorf("output image has %d planes", n)
+		}
+		if o.fbs[i], err = o.k.addFB(&bufs[i], o.imageFormat()); err != nil {
+			return err
+		}
+	}
+	if err = o.clearImages(r); err != nil {
+		return err
+	}
+	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
+	o.imageAlloc = allocGBM
+	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Str("alloc", allocGBM).Msg("zero-copy output")
+	return nil
+}
+
+// dropLive makes sure no image is left from an earlier setup: setup starts
+// from nothing, so what is still there is freed first.
+func (o *Output) dropLive(r ports.Renderer) {
+	if o.fbs != [2]uint32{} || len(o.images) > 0 {
+		o.dropImages(r)
+	}
+}
+
+// dropImages frees the output images with the renderer targets built over
+// the GBM ones: they would keep their memory (VRAM) alive after the
+// buffers are gone.
+func (o *Output) dropImages(r ports.Renderer) {
+	if len(o.images) > 0 {
+		_ = r.ImportTargets(nil)
+	}
+	o.freeImages()
+}
+
+// freeImages removes the output images' framebuffers and frees the images
+// GBM allocated. Callers that still have a renderer use dropImages: this
+// alone leaves the renderer's targets over the freed images (the renderer
+// drops them when it closes, before Close frees the output's images).
 func (o *Output) freeImages() {
 	o.front.forget()
 	o.forgetOverlayProbes()
@@ -245,4 +380,9 @@ func (o *Output) freeImages() {
 		}
 		o.fbs[i] = 0
 	}
+	for _, img := range o.images {
+		img.close()
+	}
+	o.images = nil
+	o.imageAlloc = ""
 }

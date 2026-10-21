@@ -407,6 +407,7 @@ func TestRunProtectedActivationRetriesWithoutStoppingOrEarlyProof(t *testing.T) 
 		}
 		return nil
 	})
+	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor = nil
 	var state atomic.Uint64
 	state.Store(3)

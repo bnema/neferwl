@@ -3,6 +3,7 @@ package vulkan
 import (
 	"image/color"
 	"math"
+	"os"
 	"slices"
 	"testing"
 
@@ -364,6 +365,82 @@ func TestProbedModifiersHaveNoDCCRetile(t *testing.T) {
 	for _, m := range append(slices.Clone(r.renderMods), r.hdrMods...) {
 		if retilesDCC(m) {
 			t.Fatalf("target modifier %#x retiles DCC", m)
+		}
+	}
+}
+
+// ImportTargets refuses images that do not fit the renderer (size, format,
+// plane count, modifier) before touching the driver, and a refusal leaves
+// no targets: frames go back to the renderer's own image.
+func TestImportTargetsRefusesMismatchedImages(t *testing.T) {
+	r, err := New(64, 32)
+	if err != nil {
+		t.Skipf("Vulkan unavailable: %v", err)
+	}
+	defer r.Close()
+	mods := r.TargetModifiers(nil, false)
+	if len(mods) == 0 {
+		t.Skip("no importable target modifier")
+	}
+	pipe := func() *os.File {
+		f, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
+		t.Cleanup(func() { f.Close() })
+		return f
+	}
+	good := func() ports.DMABuf {
+		return ports.DMABuf{Width: 64, Height: 32, Format: fourccXRGB, Modifier: mods[0], Planes: make([]ports.DMABufPlane, r.modPlanes[mods[0]])}
+	}
+	for name, mutate := range map[string]func(*ports.DMABuf){
+		"width":    func(b *ports.DMABuf) { b.Width = 65 },
+		"height":   func(b *ports.DMABuf) { b.Height = 31 },
+		"format":   func(b *ports.DMABuf) { b.Format = fourccXR30 },
+		"planes":   func(b *ports.DMABuf) { b.Planes = nil },
+		"modifier": func(b *ports.DMABuf) { b.Modifier = 0x1234567 },
+	} {
+		b := good()
+		for i := range b.Planes {
+			b.Planes[i].File = pipe()
+		}
+		mutate(&b)
+		if err := r.ImportTargets([]ports.DMABuf{b}); err == nil {
+			t.Errorf("%s: mismatched image imported", name)
+		}
+		if len(r.targets) != 0 {
+			t.Errorf("%s: %d targets left", name, len(r.targets))
+		}
+	}
+	// Planes in two different dmabufs: refused whatever the plane count.
+	if n := r.modPlanes[mods[0]]; n == 1 {
+		two := good()
+		two.Planes = []ports.DMABufPlane{{File: pipe()}, {File: pipe()}}
+		if err := r.ImportTargets([]ports.DMABuf{two}); err == nil {
+			t.Error("two-plane image imported for a one-plane modifier")
+		}
+	}
+	if err := sameDMABuf([]ports.DMABufPlane{{File: pipe()}, {File: pipe()}}); err == nil {
+		t.Error("planes in different files accepted")
+	}
+	same := pipe()
+	if err := sameDMABuf([]ports.DMABufPlane{{File: same}, {File: same}}); err != nil {
+		t.Errorf("planes in one file refused: %v", err)
+	}
+	if err := r.ImportTargets(nil); err != nil || len(r.targets) != 0 {
+		t.Errorf("dropping targets: %v, %d left", err, len(r.targets))
+	}
+	// A display list without the renderer's modifiers leaves nothing.
+	if got := r.TargetModifiers([]uint64{0x1234567}, false); len(got) != 0 {
+		t.Errorf("modifiers outside the display list: %#x", got)
+	}
+	if got := r.TargetModifiers(mods[:1], false); len(got) != 1 || got[0] != mods[0] {
+		t.Errorf("display list %#x gave %#x", mods[:1], got)
+	}
+	for _, m := range r.TargetModifiers(nil, true) {
+		if r.modPlanes[m] > 1 {
+			t.Errorf("single-plane list holds multi-plane modifier %#x", m)
 		}
 	}
 }

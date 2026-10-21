@@ -19,6 +19,7 @@ func TestSecurityRunWakePendingResumeAndOff(t *testing.T) {
 
 func securityRunWakePendingResumeAndOff(t *testing.T) {
 	o, k, commits, mu := testOutputMu(t)
+	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor, o.tearing = nil, false
 	var state atomic.Uint64
 	securityGate(t, o, &state)

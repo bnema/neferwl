@@ -20,9 +20,17 @@ About 35 channels connect them, all created in one place, so the full data flow 
 
 - **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
 - **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](../performance.md).
-- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
+- **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan, libinput and GBM are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
 - **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
 - **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.
+
+### Output images
+
+A DRM output flips between two images the renderer draws into, with no CPU copy.
+
+- **Allocation:** the images are allocated with GBM (`GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING`), the allocator of the display driver, with the modifiers the primary plane lists that the renderer can render into and import. The renderer imports them as Vulkan images, and KMS gets framebuffers made from the same dmabufs. NVIDIA shows images allocated by Vulkan corrupted, which is why every driver uses GBM.
+- **Fallback:** when libgbm is missing, GBM allocates nothing usable, or Vulkan or KMS refuses the images, the renderer allocates and exports them itself. Each kind (driver modifier, single-plane, linear) tries GBM, then the renderer. The log line `zero-copy output` names the allocator in its `alloc` field (`gbm` or `vulkan`).
+- **Sync:** nvidia-drm before 560.35.3 does not wait for `IN_FENCE_FD`. On it, the output waits for each frame's fence on the CPU and commits without one.
 
 I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
 

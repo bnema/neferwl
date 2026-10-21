@@ -504,6 +504,57 @@ func (_c *MockRenderer_HDRPixels_Call) RunAndReturn(run func() *image.RGBA64) *M
 	return _c
 }
 
+// ImportTargets provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) ImportTargets(bufs []ports.DMABuf) error {
+	ret := _mock.Called(bufs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ImportTargets")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func([]ports.DMABuf) error); ok {
+		r0 = returnFunc(bufs)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRenderer_ImportTargets_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ImportTargets'
+type MockRenderer_ImportTargets_Call struct {
+	*mock.Call
+}
+
+// ImportTargets is a helper method to define mock.On call
+//   - bufs []ports.DMABuf
+func (_e *MockRenderer_Expecter) ImportTargets(bufs any) *MockRenderer_ImportTargets_Call {
+	return &MockRenderer_ImportTargets_Call{Call: _e.mock.On("ImportTargets", bufs)}
+}
+
+func (_c *MockRenderer_ImportTargets_Call) Run(run func(bufs []ports.DMABuf)) *MockRenderer_ImportTargets_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []ports.DMABuf
+		if args[0] != nil {
+			arg0 = args[0].([]ports.DMABuf)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_ImportTargets_Call) Return(err error) *MockRenderer_ImportTargets_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRenderer_ImportTargets_Call) RunAndReturn(run func(bufs []ports.DMABuf) error) *MockRenderer_ImportTargets_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Pixels provides a mock function for the type MockRenderer
 func (_mock *MockRenderer) Pixels() *image.RGBA {
 	ret := _mock.Called()
@@ -698,6 +749,65 @@ func (_c *MockRenderer_TakeRedrawn_Call) Return(n int) *MockRenderer_TakeRedrawn
 }
 
 func (_c *MockRenderer_TakeRedrawn_Call) RunAndReturn(run func() int) *MockRenderer_TakeRedrawn_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// TargetModifiers provides a mock function for the type MockRenderer
+func (_mock *MockRenderer) TargetModifiers(display []uint64, singlePlane bool) []uint64 {
+	ret := _mock.Called(display, singlePlane)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TargetModifiers")
+	}
+
+	var r0 []uint64
+	if returnFunc, ok := ret.Get(0).(func([]uint64, bool) []uint64); ok {
+		r0 = returnFunc(display, singlePlane)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]uint64)
+		}
+	}
+	return r0
+}
+
+// MockRenderer_TargetModifiers_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TargetModifiers'
+type MockRenderer_TargetModifiers_Call struct {
+	*mock.Call
+}
+
+// TargetModifiers is a helper method to define mock.On call
+//   - display []uint64
+//   - singlePlane bool
+func (_e *MockRenderer_Expecter) TargetModifiers(display any, singlePlane any) *MockRenderer_TargetModifiers_Call {
+	return &MockRenderer_TargetModifiers_Call{Call: _e.mock.On("TargetModifiers", display, singlePlane)}
+}
+
+func (_c *MockRenderer_TargetModifiers_Call) Run(run func(display []uint64, singlePlane bool)) *MockRenderer_TargetModifiers_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []uint64
+		if args[0] != nil {
+			arg0 = args[0].([]uint64)
+		}
+		var arg1 bool
+		if args[1] != nil {
+			arg1 = args[1].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRenderer_TargetModifiers_Call) Return(uint64s []uint64) *MockRenderer_TargetModifiers_Call {
+	_c.Call.Return(uint64s)
+	return _c
+}
+
+func (_c *MockRenderer_TargetModifiers_Call) RunAndReturn(run func(display []uint64, singlePlane bool) []uint64) *MockRenderer_TargetModifiers_Call {
 	_c.Call.Return(run)
 	return _c
 }

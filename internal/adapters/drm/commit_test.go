@@ -284,6 +284,7 @@ func TestShowImagesNoCommonModifierFallsBackWithThePlanesList(t *testing.T) {
 // single-plane attempt KMS would refuse.
 func TestShowImagesLinearOnlyPlaneExportsLinearFirst(t *testing.T) {
 	o, k, commits := testOutput(t)
+	o.fbs = [2]uint32{} // the first setup of a run: no image yet
 	o.cursor = nil
 	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB, Modifier: 0}}
 	r := portsmocks.NewMockRenderer(t)

@@ -24,10 +24,11 @@ func (o *Output) probeAsync(r ports.Renderer) {
 	req.set(o.primary.id, o.primary.prop("FB_ID"), uint64(o.fbs[o.back]))
 	if done != nil {
 		defer done.Close()
-		req.set(o.primary.id, o.primary.prop("IN_FENCE_FD"), uint64(done.Fd()))
+		o.fenceProp(req, o.primary, done)
 	}
 	err = o.k.commit(req, atomicTestOnly|flipAsyncFlag, 0)
-	o.asyncFence = err == nil && done != nil
+	// With CPU waits no fence is in a commit, async or not.
+	o.asyncFence = err == nil && (done != nil || o.cpuFences)
 	o.log.Info().Err(err).Str("connector", o.conn.name).Bool("async_fence", o.asyncFence).Msg("tearing probe")
 }
 

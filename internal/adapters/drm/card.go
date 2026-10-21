@@ -38,6 +38,9 @@ type Card struct {
 	taken map[uint32]bool
 	// async is DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP.
 	async bool
+	// cpuFences: commits wait for fences on the CPU instead of IN_FENCE_FD
+	// (the driver mishandles it, see fencegate.go).
+	cpuFences bool
 	// serials numbers the commits of every output (event userData).
 	serials atomic.Uint64
 	// formats receives each output's direct scanout formats (nil: none
@@ -65,7 +68,7 @@ func OpenCard(fd int, path string, want Want, log, renderLog zerowrap.Logger) (*
 		flips[c] = make(chan flipEvent, 4)
 	}
 	k := kmsDevice{fd: fd, gemMu: &sync.Mutex{}, modifiers: hasCap(fd, capAddFB2Modifiers)}
-	return &Card{fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync)}, nil
+	return &Card{fd: fd, path: path, want: want, log: log, renderLog: renderLog, crtcs: crtcs, outputs: map[string]*Output{}, leasable: map[string]connector{}, leases: map[uint32]leaseRecord{}, flips: flips, k: k, taken: map[uint32]bool{}, async: hasCap(fd, capAtomicAsync), cpuFences: fenceGate(fd, log)}, nil
 }
 
 // Path is the device path, e.g. /dev/dri/card1.
