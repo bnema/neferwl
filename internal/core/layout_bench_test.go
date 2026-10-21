@@ -23,7 +23,6 @@ func benchLanes(b *testing.B, f func(b *testing.B, w *Workspace)) {
 			b.Run(fmt.Sprintf("cols=%d/stamped=%t", n, stamped), func(b *testing.B) {
 				w := benchLane(n, stamped)
 				b.ReportAllocs()
-				b.ResetTimer()
 				f(b, w)
 			})
 		}
@@ -94,7 +93,6 @@ func BenchmarkBorderMotion(b *testing.B) {
 			c.cursorY = 100
 			n := 0
 			b.ReportAllocs()
-			b.ResetTimer()
 			for b.Loop() {
 				c.cursorX = x
 				if mode == "moving" {
