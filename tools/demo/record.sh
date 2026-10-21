@@ -14,7 +14,7 @@ env -u NEFERWL_STATE -u NEFERWL_SLOT "$work/neferwl" \
 ffmpeg -hide_banner -loglevel warning -f concat -safe 0 \
     -i "$work/shots/frames.ffconcat" -vf 'fps=60,format=yuv420p' \
     -c:v libx264 -crf 23 -movflags +faststart docs/media/demo.mp4 -y
-ffmpeg -hide_banner -loglevel warning -ss 23 -i docs/media/demo.mp4 \
+ffmpeg -hide_banner -loglevel warning -ss 15.5 -i docs/media/demo.mp4 \
     -frames:v 1 -update 1 docs/media/demo.png -y
 # Keep the optional, smaller preview only when it fits the README asset budget.
 ffmpeg -hide_banner -loglevel warning -i docs/media/demo.mp4 \

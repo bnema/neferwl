@@ -1,5 +1,5 @@
 animations = on
-terminal = foot -c /dev/null -o font=monospace:size=13 -o colors-dark.background=1a1b26 -o colors-dark.foreground=c0caf5 -e bash --noprofile --norc
+terminal = foot -c /dev/null -o font=monospace:size=16 -o colors-dark.background=1a1b26 -o colors-dark.foreground=c0caf5 -e bash --noprofile --norc
 terminal.auto-open = first
 layout.gaps = 8
 border.width = 2
