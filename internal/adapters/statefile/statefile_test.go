@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
@@ -186,4 +187,68 @@ func TestWorkspaceGeometryFields(t *testing.T) {
 			t.Fatalf("%s missing %s", data, key)
 		}
 	}
+}
+
+// The file is written at most once per second: the first state and one after
+// a quiet second at once, a burst within the second as one trailing write of
+// the latest state.
+func TestRunRateLimit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "s", "wayland-9.json")
+		states := make(chan ports.State)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
+		output := func() string {
+			t.Helper()
+			synctest.Wait()
+			st, err := Read(path)
+			if err != nil {
+				return ""
+			}
+			return st.Output
+		}
+		send := func(name string) { states <- ports.State{Output: name} }
+
+		send("a")
+		if got := output(); got != "a" {
+			t.Fatalf("first state not written at once: %q", got)
+		}
+		// A burst within the second: nothing yet, then the latest only.
+		time.Sleep(200 * time.Millisecond)
+		send("b")
+		send("c")
+		send("d")
+		if got := output(); got != "a" {
+			t.Fatalf("written within the second: %q", got)
+		}
+		time.Sleep(799 * time.Millisecond)
+		if got := output(); got != "a" {
+			t.Fatalf("written before the second ended: %q", got)
+		}
+		time.Sleep(time.Millisecond)
+		if got := output(); got != "d" {
+			t.Fatalf("trailing write: %q, want d", got)
+		}
+		// Nothing more is pending: the file stays as it is.
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Second)
+		if got := output(); got != "" {
+			t.Fatalf("a write with no new state: %q", got)
+		}
+		// After a quiet period the next state is immediate.
+		send("e")
+		if got := output(); got != "e" {
+			t.Fatalf("state after a quiet period: %q", got)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("state file left behind", err)
+		}
+	})
 }

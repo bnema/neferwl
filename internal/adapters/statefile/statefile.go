@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/workspaceid"
 	"github.com/bnema/neferwl/internal/ports"
@@ -141,8 +142,13 @@ func window(w ports.WindowState, ids *workspaceid.IDs) Window {
 	return Window{ID: uint64(w.ID), AppID: w.AppID, PID: w.PID, Output: w.Output, Workspace: w.Workspace, WorkspaceID: ids.ID(w.WorkspaceID, w.WorkspaceName), Visible: w.Visible, Floating: w.Floating, StashIndex: w.StashIndex, StashCount: w.StashCount, Column: w.Column, Row: w.Row, Hidden: w.Hidden}
 }
 
-// Run writes every state it receives to path until ctx ends, then removes
-// the file: a stale state must not outlive the session.
+// writeInterval is the least time between two writes of the file.
+const writeInterval = time.Second
+
+// Run writes the states it receives to path until ctx ends, then removes
+// the file: a stale state must not outlive the session. It writes at most
+// once per writeInterval: a state after a quiet interval is written at once,
+// others are coalesced and the latest is written when the interval ends.
 func Run(ctx context.Context, path string, states <-chan ports.State, ids *workspaceid.IDs, log zerowrap.Logger) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -150,15 +156,44 @@ func Run(ctx context.Context, path string, states <-chan ports.State, ids *works
 	// A file left by a crashed session on this socket is not ours.
 	_ = os.Remove(path)
 	defer os.Remove(path)
+	flush := func(st ports.State) {
+		if err := write(path, fromPorts(st, ids)); err != nil {
+			// Scripts lose their state; the session goes on.
+			log.Warn().Err(err).Str("path", path).Msg("write state")
+		}
+	}
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	<-timer.C
+	var (
+		last    time.Time
+		pending ports.State
+		waiting bool
+	)
 	for {
+		var due <-chan time.Time
+		if waiting {
+			due = timer.C
+		}
 		select {
 		case <-ctx.Done():
 			return nil
 		case st := <-states:
-			if err := write(path, fromPorts(st, ids)); err != nil {
-				// Scripts lose their state; the session goes on.
-				log.Warn().Err(err).Str("path", path).Msg("write state")
+			if waiting {
+				pending = st
+				continue
 			}
+			if wait := writeInterval - time.Since(last); !last.IsZero() && wait > 0 {
+				pending, waiting = st, true
+				timer.Reset(wait)
+				continue
+			}
+			flush(st)
+			last = time.Now()
+		case <-due:
+			waiting = false
+			flush(pending)
+			last = time.Now()
 		}
 	}
 }
