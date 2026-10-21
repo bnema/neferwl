@@ -235,7 +235,7 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 		fr.m.unmap()
 	}
 	log.Info().Str("output", req.Output).Float64("capture_ms", ms(captureDur)).Float64("detect_ms", ms(detectDur)).
-		Int("boxes", len(dets)).Int("targets", len(res.Targets)).Msg("hint scan")
+		Int("regions", len(regions)).Int("raw_boxes", len(dets)).Int("targets", len(res.Targets)).Msg("hint scan")
 	return res
 }
 
