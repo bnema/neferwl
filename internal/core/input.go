@@ -134,11 +134,15 @@ func (c *Core) clickFocus(ctx context.Context, id WindowID) error {
 	if s == nil || w != s.mon.Current() || (c.keyboard.sent == id && s == c.cur()) {
 		return nil
 	}
+	focused, _ := c.cur().mon.Focused()
 	now := c.now()
 	before := c.snapshot(now)
 	w.Click(id)
 	c.focusScreen = c.screenIndex(s.name())
 	c.transition(before, now)
+	if focused != id {
+		c.requestFlash(flashWindow, id)
+	}
 	return c.publish(ctx)
 }
 

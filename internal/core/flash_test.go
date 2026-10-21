@@ -389,11 +389,8 @@ func TestFlashNoImplicitFocusTriggers(t *testing.T) {
 	if err := c.pointerMotion(ctx, ports.PointerMotion{X: 50, Y: 50}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.pointerButton(ctx, ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
-		t.Fatal(err)
-	}
 	if c.flash.pending != nil {
-		t.Fatal("pointer focus flashed")
+		t.Fatal("hover focus flashed")
 	}
 }
 
@@ -770,6 +767,47 @@ func TestFlashFollowsInnerBorderAndRadius(t *testing.T) {
 						t.Fatalf("tile %+v not inset by 3 on all sides: %+v", p, c.flash.rect)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestFlashClickFocus(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		target  WindowID
+		enabled bool
+		want    bool
+	}{
+		{"different window", 1, true, true},
+		{"already focused", 3, true, false},
+		{"disabled", 1, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, clock := flashCore(t)
+			c.cfg.Focus.Flash = test.enabled
+			indicatorScene(t, c)
+			if c.keyboardFocus() != 3 {
+				t.Fatal("setup: expected window 3 focused")
+			}
+			c.pointer = test.target
+			if err := c.pointerButton(context.Background(), ports.PointerButton{Button: btnLeft, Pressed: true}); err != nil {
+				t.Fatal(err)
+			}
+			if c.keyboardFocus() != test.target {
+				t.Fatalf("focus = %d, want %d", c.keyboardFocus(), test.target)
+			}
+			if (c.flash.pending != nil) != test.want {
+				t.Fatalf("flash request = %+v, want flash %v", c.flash.pending, test.want)
+			}
+			// Let the click's viewport transition settle before the flash.
+			clock.now = clock.now.Add(time.Second)
+			stepScenes(t, c, c.cur())
+			if c.flashTick() != test.want {
+				t.Fatalf("flash start: want %v", test.want)
+			}
+			if test.want && (c.flash.running.window != test.target || c.flash.running.level != flashWindow || c.flashFor(c.cur()) == nil) {
+				t.Fatalf("wrong running flash: %+v", c.flash.running)
 			}
 		})
 	}
