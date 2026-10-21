@@ -116,7 +116,7 @@ var actions = map[string]bool{
 	"toggle-floating":                 true,
 	"hint":                            true,
 }
-var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true}
+var components = map[string]bool{"core": true, "wayland": true, "input": true, "drm": true, "seat": true, "render": true, "sync": true, "config": true, "app": true, "hints": true}
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // columnStep is the +N or -N step of set-column-width, in cells, N from 1
