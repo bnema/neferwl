@@ -132,10 +132,11 @@ func (w *Workspace) setBorder(b border, pos int) {
 		return
 	}
 	if !w.validSpans(first, last) {
+		w.spanSeq++
 		used := 0
 		for i := first; i <= last; i++ {
 			w.Columns[i].Span = max((w.columnWidthFor(i, true)*10000+5000)/avail, 1)
-			w.Columns[i].spanLane = last - first + 1
+			w.Columns[i].spanStamp = w.spanSeq
 			used += w.Columns[i].Span
 		}
 		if w.policy().equalCells {

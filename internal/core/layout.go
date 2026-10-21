@@ -21,7 +21,7 @@ const maxCells = 16
 type Column struct {
 	// Span is a manually sized width in basis points; zero uses Cells.
 	Span      int
-	spanLane  int
+	spanStamp uint64
 	Windows   []WindowID
 	Cells     int
 	FullWidth bool
@@ -108,6 +108,8 @@ type Workspace struct {
 	overviewAfter *Workspace
 	Overflow      Overflow
 	Columns       []Column
+	// spanSeq issues workspace-local identities for complete lane stamps.
+	spanSeq uint64
 	// maximized remembers recently maximized columns by window ID, newest
 	// first; stack() filters removed windows at read time.
 	maximized []WindowID
@@ -1037,6 +1039,8 @@ func (w *Workspace) insertColumn(at int, col Column) {
 // insertAt inserts col at index at; in a cascade it joins the band of the
 // column it goes before.
 func (w *Workspace) insertAt(at int, col Column) {
+	// Stamp identities belong to the issuing workspace and complete lane.
+	col.Span, col.spanStamp = 0, 0
 	col.BandStart = false
 	if w.policy().wraps && at < len(w.Columns) && w.Columns[at].BandStart {
 		col.BandStart, w.Columns[at].BandStart = true, false

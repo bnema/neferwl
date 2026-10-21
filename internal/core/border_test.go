@@ -106,7 +106,7 @@ func TestSetColumnBorder(t *testing.T) {
 			}
 			w.resetBorder(b)
 			for _, c := range w.Columns {
-				if c.Span != 0 || c.spanLane != 0 {
+				if c.Span != 0 || c.spanStamp != 0 {
 					t.Fatal("reset")
 				}
 			}

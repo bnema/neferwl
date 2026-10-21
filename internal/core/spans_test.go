@@ -17,9 +17,10 @@ func spanWorkspace(mode Overflow, n int) *Workspace {
 }
 
 func stampSpans(w *Workspace, first, last int) {
+	w.spanSeq++
 	for i := first; i <= last; i++ {
 		w.Columns[i].Span = 10000 / (last - first + 1)
-		w.Columns[i].spanLane = last - first + 1
+		w.Columns[i].spanStamp = w.spanSeq
 	}
 	w.Columns[last].Span += 10000 % (last - first + 1)
 }
@@ -64,7 +65,7 @@ func TestSpansMutations(t *testing.T) {
 						if c.Span == 0 {
 							t.Fatal("swap discarded valid spans")
 						}
-					} else if c.Span != 0 || c.spanLane != 0 {
+					} else if c.Span != 0 || c.spanStamp != 0 {
 						t.Fatal("stale span", c)
 					}
 				}
@@ -134,9 +135,54 @@ func TestSpansDropIntoLane(t *testing.T) {
 			t.Fatal("not dropped", mode, w.Columns)
 		}
 		for _, col := range w.Columns {
-			if col.Span != 0 || col.spanLane != 0 {
+			if col.Span != 0 || col.spanStamp != 0 {
 				t.Fatal("drop retained stamp", mode, col)
 			}
 		}
+	}
+}
+
+func TestSpanLaneIdentity(t *testing.T) {
+	for _, action := range []string{"cross-drop", "within-drop", "within-keyboard"} {
+		t.Run(action, func(t *testing.T) {
+			w := spanWorkspace(OverflowCascade, 4)
+			w.SetMaxColumns(2)
+			for i := range w.Columns {
+				w.Columns[i].BandStart = i%2 == 0
+			}
+			for _, i := range []int{0, 2} {
+				rs := w.columnRects()
+				w.setBorder(border{kind: borderColumn, col: i}, rs[i].X+rs[i].W+5)
+			}
+			for _, col := range w.Columns {
+				if col.Span != 5000 {
+					t.Fatal("not stamped equally", w.Columns)
+				}
+			}
+			cross := action == "cross-drop"
+			if action == "cross-drop" || action == "within-drop" {
+				m := monitor()
+				m.Workspaces = []*Workspace{w}
+				sc := &screen{mon: m}
+				c := &Core{screens: []*screen{sc}}
+				to := 1
+				if cross {
+					to = 2
+				}
+				c.drop(w.Columns[0].Windows[0], dropTarget{kind: dropSwap, screen: sc, ws: w, anchor: w.Columns[to].Windows[0]})
+			} else {
+				w.Focus = 0
+				w.MoveColumn(1)
+			}
+			w.dropStaleSpans()
+			for _, col := range w.Columns {
+				if cross && col.Span != 0 {
+					t.Fatal("cross-band swap retained stamp", w.Columns)
+				}
+				if !cross && col.Span != 5000 {
+					t.Fatal("within-band swap discarded stamp", w.Columns)
+				}
+			}
+		})
 	}
 }

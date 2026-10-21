@@ -85,6 +85,6 @@ func (g *borderResize) cancel() {
 	}
 	for i, saved := range g.saved {
 		col := &g.ws.Columns[i]
-		col.Span, col.spanLane, col.Shares = saved.Span, saved.spanLane, slices.Clone(saved.Shares)
+		col.Span, col.spanStamp, col.Shares = saved.Span, saved.spanStamp, slices.Clone(saved.Shares)
 	}
 }

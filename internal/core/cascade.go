@@ -511,6 +511,8 @@ func (w *Workspace) spawnIndex() (at int, newBand bool) {
 
 // deleteColumn removes column i; a band it started keeps its start.
 func (w *Workspace) deleteColumn(i int) {
+	// A removed member cannot be detected by counting surviving stamp members.
+	w.clearSpans(i)
 	if w.policy().wraps && w.Columns[i].BandStart && i+1 < len(w.Columns) {
 		w.Columns[i+1].BandStart = true
 	}
