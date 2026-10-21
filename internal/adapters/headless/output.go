@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"image"
@@ -96,6 +97,14 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 	var scene ports.Scene
 	haveScene, dirty := false, false
 	frame := 0
+	var index *os.File
+	var indexWriter *bufio.Writer
+	var lastShot time.Time
+	defer func() {
+		if index != nil {
+			_ = index.Close()
+		}
+	}()
 	var requests capture.Requests
 	ctx, cancelCaptures := context.WithCancel(ctx)
 	requests.Init(ctx, opts.Captured)
@@ -556,12 +565,40 @@ func Run(ctx context.Context, opts Options, scenes <-chan ports.Scene, contents 
 			if opts.protected() || opts.Security != nil && opts.Security.Snapshot() != scene.Security {
 				continue
 			}
-			if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, fmt.Sprintf("frame-%06d.png", frame)), shot, opts.Security, scene.Security); err != nil {
+			name := fmt.Sprintf("frame-%06d.png", frame)
+			written, err := writePNGSecureResult(filepath.Join(opts.ScreenshotDir, name), shot, opts.Security, scene.Security)
+			if err != nil {
 				return fmt.Errorf("screenshot: %w", err)
 			}
-			if err := writePNGSecure(filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security); err != nil {
+			if !written {
+				continue
+			}
+			written, err = writePNGSecureResult(filepath.Join(opts.ScreenshotDir, "latest.png"), shot, opts.Security, scene.Security)
+			if err != nil {
 				return fmt.Errorf("latest screenshot: %w", err)
 			}
+			if !written {
+				continue
+			}
+			now := time.Now()
+			if index == nil {
+				index, err = os.OpenFile(filepath.Join(opts.ScreenshotDir, "frames.ffconcat"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0o600)
+				if err != nil {
+					return fmt.Errorf("frame index: %w", err)
+				}
+				indexWriter = bufio.NewWriter(index)
+				_, _ = fmt.Fprintln(indexWriter, "ffconcat version 1.0")
+			}
+			// Complete the previous frame's duration before starting this one.
+			// An idle scene leaves that frame displayed and adds no entries.
+			if !lastShot.IsZero() {
+				_, _ = fmt.Fprintf(indexWriter, "duration %.6f\n", now.Sub(lastShot).Seconds())
+			}
+			_, _ = fmt.Fprintf(indexWriter, "file '%s'\n", name)
+			if err := indexWriter.Flush(); err != nil {
+				return fmt.Errorf("frame index: %w", err)
+			}
+			lastShot = now
 			if opts.RawHDR && opts.HDR {
 				// No cursor on the raw image. Only a confirmed HDR output
 				// has a readable PQ target; else HDRPixels is nil.
@@ -589,25 +626,34 @@ func (opts Options) protected() bool {
 }
 
 func writePNGSecure(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) error {
+	_, err := writePNGSecureResult(path, img, security, state)
+	return err
+}
+
+// writePNGSecureResult distinguishes a security skip from a published PNG.
+func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
 	if security != nil && (state.Protected || security.Snapshot() != state) {
-		return nil
+		return false, nil
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".frame-*.png")
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer os.Remove(f.Name())
 	if err := png.Encode(f, img); err != nil {
 		_ = f.Close()
-		return err
+		return false, err
 	}
 	if err := f.Close(); err != nil {
-		return err
+		return false, err
 	}
 	if security != nil && security.Snapshot() != state {
-		return nil
+		return false, nil
 	}
-	return os.Rename(f.Name(), path)
+	if err := os.Rename(f.Name(), path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // report queues what the output read, with flip for a drawn frame, and

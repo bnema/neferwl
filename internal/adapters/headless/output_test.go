@@ -8,8 +8,10 @@ import (
 	"image/color"
 	"image/png"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -116,6 +118,26 @@ func TestRun(t *testing.T) {
 		_ = file.Close()
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+	index, err := os.ReadFile(filepath.Join(dir, "frames.ffconcat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(index)), "\n")
+	if len(lines) != 6 || lines[0] != "ffconcat version 1.0" {
+		t.Fatalf("unexpected index: %s", index)
+	}
+	for i, want := range []string{"file 'frame-000001.png'", "file 'frame-000002.png'", "file 'frame-000003.png'"} {
+		if lines[1+2*i] != want {
+			t.Fatalf("frame %d: %s", i+1, lines[1+2*i])
+		}
+		if i < 2 {
+			line := lines[2+2*i]
+			value, err := strconv.ParseFloat(strings.TrimPrefix(line, "duration "), 64)
+			if !strings.HasPrefix(line, "duration ") || err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+				t.Fatalf("invalid duration: %q", line)
+			}
 		}
 	}
 }

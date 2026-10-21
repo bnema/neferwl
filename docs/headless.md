@@ -7,12 +7,22 @@ neferwl --backend=headless --screenshot /tmp/neferwl-shots
 WAYLAND_DISPLAY=<name from the log> foot
 ```
 
-- `latest.png` shows the current frame. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows.
+- `latest.png` shows the current frame; `frames.ffconcat` records frame timing. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows.
 - `--size 640x360,640x360` creates two outputs, arranged left to right,
   for testing `focus-monitor-left/right` and moving columns between outputs.
 - With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
 - `--timeout 5s` stops NeferWL after 5 seconds.
 - `grim` and recorders work too; see [Screen capture](capture.md).
+
+## Recording a video
+
+Convert the screenshots and their real-time timing index into a video:
+
+```sh
+ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420p" -c:v libx264 -crf 18 demo.mp4
+```
+
+For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
 
 ## Input scripts
 
