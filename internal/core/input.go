@@ -98,6 +98,9 @@ func (c *Core) pointerMotion(ctx context.Context, v ports.PointerMotion) error {
 			}
 		}
 	}
+	if c.pgrab != nil {
+		return c.pgrab.motion(ctx, v.Time)
+	}
 	if c.drag != nil {
 		// The dragged window and the others get no pointer events.
 		return c.dragMotion(ctx, v.Time)
@@ -150,6 +153,16 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 	if c.dataDrag != nil {
 		return c.dataDragButton(ctx, v)
 	}
+	if g := c.pgrab; g != nil {
+		if !v.Pressed && v.Button == g.button() {
+			delete(c.buttons, v.Button)
+			return c.endPointerGrab(ctx)
+		}
+		if v.Pressed {
+			c.buttons[v.Button], c.swallow[v.Button] = true, true
+		}
+		return nil
+	}
 	if d := c.drag; d != nil {
 		if !v.Pressed && v.Button == d.button {
 			delete(c.buttons, v.Button)
@@ -167,7 +180,7 @@ func (c *Core) pointerButton(ctx context.Context, v ports.PointerButton) error {
 			return err
 		}
 	}
-	if started, err := c.startDrag(ctx, v); err != nil || started {
+	if started, err := c.startPointerGrab(ctx, v); err != nil || started {
 		return err
 	}
 	if v.Pressed && c.pointer == 0 && c.grab == 0 && c.held() == 0 {
@@ -248,7 +261,7 @@ func (c *Core) pointerAxis(ctx context.Context, v ports.PointerAxis) error {
 	}
 	// Scroll goes to the window under the pointer, which has the
 	// pointer focus even mid-drag. None during a window drag.
-	if c.pointer != 0 && c.drag == nil && c.dataDrag == nil {
+	if c.pointer != 0 && !c.pointerBusy() && c.dataDrag == nil {
 		if err := c.command(ctx, ports.PointerAxisTo{ID: c.pointer, Axis: v}); err != nil {
 			return err
 		}
@@ -278,9 +291,16 @@ func (c *Core) keyEvent(ctx context.Context, key ports.KeyEvent) error {
 		c.pressed[heldKey(key)] = true
 		return c.abortSwitcher(ctx)
 	}
-	if c.drag != nil && key.Pressed && key.Keysym == "Escape" {
-		// Escape cancels the drag; its release goes nowhere either.
-		c.cancelDrag()
+	if c.pointerBusy() && key.Pressed && key.Keysym == "Escape" {
+		// Escape cancels the grab; its release goes nowhere either.
+		if c.pgrab != nil {
+			c.pgrab.cancel()
+			if err := c.abortPointerGrab(ctx); err != nil {
+				return err
+			}
+		} else {
+			c.cancelDrag()
+		}
 		c.pressed[heldKey(key)] = true
 		if err := c.publish(ctx); err != nil {
 			return err

@@ -50,15 +50,19 @@ func TestLaneWidths(t *testing.T) {
 				t.Errorf("2,auto,auto: got %v want %v", got, want)
 			}
 			// No room for them: an auto column weighs one cell.
-			if got, want := cells(w, 3, 0, 0), []int{avail * 3 / 5, avail / 5, avail / 5}; !reflect.DeepEqual(got, want) {
+			if got, want := cells(w, 3, 0, 0), []int{avail * 3 / 5, avail / 5, avail - avail*3/5 - avail/5}; !reflect.DeepEqual(got, want) {
 				t.Errorf("3,auto,auto: got %v want %v", got, want)
 			}
-			// All auto: the equal share of n columns, pixel for pixel.
+			// All auto: equal shares, with remaining pixels in the last column.
 			for n := 1; n <= 4; n++ {
 				w := mk(n)
 				for i := range w.Columns {
-					if got := w.cellWidth(i); got != w.equalShare(n) {
-						t.Errorf("%d auto columns: width %d want %d", n, got, w.equalShare(n))
+					want := w.equalShare(n)
+					if i == n-1 {
+						want = 1000 - 8*(n+1) - (n-1)*want
+					}
+					if got := w.cellWidth(i); got != want {
+						t.Errorf("%d auto columns: width %d want %d", n, got, want)
 					}
 				}
 			}
@@ -510,7 +514,7 @@ func TestFixedGrowColumn(t *testing.T) {
 		check(t, w, map[WindowID]Rect{1: {W: 25, H: 80}, 2: {X: 25, W: 50, H: 80}, 3: {X: 75, W: 25, H: 80}})
 		// No donor is left: back to equal shares.
 		w.GrowColumn(true)
-		check(t, w, map[WindowID]Rect{1: {W: 33, H: 80}, 2: {X: 33, W: 33, H: 80}, 3: {X: 66, W: 33, H: 80}})
+		check(t, w, map[WindowID]Rect{1: {W: 33, H: 80}, 2: {X: 33, W: 33, H: 80}, 3: {X: 66, W: 34, H: 80}})
 	})
 	t.Run("with gaps", func(t *testing.T) {
 		w := fixedWorkspace(4, 4, 2)

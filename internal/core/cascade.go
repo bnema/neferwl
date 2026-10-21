@@ -141,15 +141,36 @@ func (w *Workspace) laneWeight(i, S, u int) int {
 
 // laneWidth is the width of column i of the lane first..last with the
 // stats of laneStats: the usable width after gaps, split by weight. The
-// remainder under one pixel per weight stays empty, as in equalShare.
+// last column receives the pixel remainder, just as for stamped spans.
 func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
+	if w.validSpans(first, last) {
+		avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
+		if i == last {
+			used := 0
+			for j := first; j < last; j++ {
+				used += avail * w.Columns[j].Span / 10000
+			}
+			return avail - used
+		}
+		return avail * w.Columns[i].Span / 10000
+	}
 	if sum <= 0 {
 		return 0
 	}
 	avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
 	// floor(avail*weight/sum) without overflowing on a huge area.
-	weight := w.laneWeight(i, S, u)
-	return avail/sum*weight + avail%sum*weight/sum
+	width := func(j int) int {
+		weight := w.laneWeight(j, S, u)
+		return avail/sum*weight + avail%sum*weight/sum
+	}
+	if i == last {
+		used := 0
+		for j := first; j < last; j++ {
+			used += width(j)
+		}
+		return avail - used
+	}
+	return width(i)
 }
 
 // equalShare is the width of each of k columns sharing the usable width
@@ -492,6 +513,8 @@ func (w *Workspace) spawnIndex() (at int, newBand bool) {
 
 // deleteColumn removes column i; a band it started keeps its start.
 func (w *Workspace) deleteColumn(i int) {
+	// A removed member cannot be detected by counting surviving stamp members.
+	w.clearSpans(i)
 	if w.policy().wraps && w.Columns[i].BandStart && i+1 < len(w.Columns) {
 		w.Columns[i+1].BandStart = true
 	}

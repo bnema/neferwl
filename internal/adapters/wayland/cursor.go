@@ -138,9 +138,33 @@ func (s *surface) cursorImage() ports.CursorChange {
 	return ports.CursorChange{Image: &img, Scale: scale}
 }
 
-// setCursor queues a cursor change; only the latest is delivered.
+// setCursor remembers the client cursor, forwarding it unless overridden.
 func (s *Server) setCursor(c ports.CursorChange) {
-	if s.protected() || s.channels.Cursors == nil {
+	if s.protected() {
+		return
+	}
+	s.cursorClient = c
+	if s.cursorOverride == "" {
+		s.queueCursor(c)
+	}
+}
+
+func (s *Server) setCursorOverride(shape string) {
+	if s.protected() || shape == s.cursorOverride {
+		return
+	}
+	s.cursorOverride = shape
+	s.log.Debug().Str("shape", shape).Msg("cursor override")
+	if shape == "" {
+		s.queueCursor(s.cursorClient)
+	} else {
+		s.queueCursor(ports.CursorChange{Shape: shape})
+	}
+}
+
+// queueCursor queues a cursor change; only the latest is delivered.
+func (s *Server) queueCursor(c ports.CursorChange) {
+	if s.channels.Cursors == nil {
 		return
 	}
 	s.cursorMu.Lock()

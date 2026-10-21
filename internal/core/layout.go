@@ -19,6 +19,9 @@ const maxCells = 16
 // max-columns-th of the usable width. Zero (auto) shares the width equally
 // with the other auto columns, up to MaxColumns visible at once.
 type Column struct {
+	// Span is a manually sized width in basis points; zero uses Cells.
+	Span      int
+	spanStamp uint64
 	Windows   []WindowID
 	Cells     int
 	FullWidth bool
@@ -26,9 +29,9 @@ type Column struct {
 	// Slot is the declared column number (workspace.<name>.column.N) of a
 	// slot window; 0 for normal columns.
 	Slot int
-	// Shares are the row heights set by set-window-height, in percent, in
+	// Shares are the row heights set by set-window-height, in basis points, in
 	// Windows order. They apply only while there is one per window and
-	// they sum to 100; otherwise the rows share the height equally.
+	// they sum to 10000; otherwise the rows share the height equally.
 	Shares []int
 	// BandStart marks the first column of a cascade band. It belongs to the
 	// position, not the column: swaps leave it in place. See cascade.go.
@@ -105,6 +108,8 @@ type Workspace struct {
 	overviewAfter *Workspace
 	Overflow      Overflow
 	Columns       []Column
+	// spanSeq issues workspace-local identities for complete lane stamps.
+	spanSeq uint64
 	// maximized remembers recently maximized columns by window ID, newest
 	// first; stack() filters removed windows at read time.
 	maximized []WindowID
@@ -534,6 +539,7 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 			at = min(w.Focus+1, len(w.Columns))
 		}
 		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells})
+		w.dropStaleSpans()
 		return
 	}
 	w.addColumn(Column{Windows: []WindowID{id}, Cells: cells})
@@ -542,6 +548,8 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 // addColumn places a new column like a new window and focuses it.
 func (w *Workspace) addColumn(col Column) {
 	at := 0
+	// Stamp identities belong to the issuing workspace and complete lane.
+	col.Span, col.spanStamp = 0, 0
 	col.BandStart = false
 	if w.policy().wraps {
 		// After the focused band: it joins it when it has room, else it
@@ -916,33 +924,33 @@ func (w *Workspace) MoveWindow(dir int) {
 	w.scroll()
 }
 
-// minShare is the smallest row height set-window-height leaves, percent.
-const minShare = 10
+// minShare is the smallest row height set-window-height leaves, in basis points.
+const minShare = 1000
 
 // ResizeRow changes the focused window's height share by pct percent; the
 // other rows of its column give or take it in proportion to their shares.
-// Every row keeps at least minShare percent.
+// Every row keeps at least minShare basis points.
 func (w *Workspace) ResizeRow(pct int) {
 	if w.onFloat() || len(w.Columns) == 0 || w.fullscreenHides() {
 		return
 	}
 	c := &w.Columns[w.Focus]
 	n := len(c.Windows)
-	if n < 2 || n*minShare > 100 {
+	if n < 2 || n*minShare > 10000 {
 		return
 	}
 	shares := c.Shares
 	if !validShares(*c) {
 		shares = make([]int, n)
 		for i := range shares {
-			shares[i] = 100 / n
+			shares[i] = 10000 / n
 		}
-		shares[n-1] += 100 % n
+		shares[n-1] += 10000 % n
 	} else {
 		shares = slices.Clone(shares)
 	}
 	f := c.Focus
-	target := min(max(shares[f]+pct, minShare), 100-minShare*(n-1))
+	target := min(max(shares[f]+pct*100, minShare), 10000-minShare*(n-1))
 	delta := target - shares[f]
 	if delta == 0 {
 		return
@@ -1033,6 +1041,8 @@ func (w *Workspace) insertColumn(at int, col Column) {
 // insertAt inserts col at index at; in a cascade it joins the band of the
 // column it goes before.
 func (w *Workspace) insertAt(at int, col Column) {
+	// Stamp identities belong to the issuing workspace and complete lane.
+	col.Span, col.spanStamp = 0, 0
 	col.BandStart = false
 	if w.policy().wraps && at < len(w.Columns) && w.Columns[at].BandStart {
 		col.BandStart, w.Columns[at].BandStart = true, false
@@ -1051,6 +1061,7 @@ func (w *Workspace) GrowColumn(cycle bool) {
 		return
 	}
 	defer w.scroll()
+	w.clearSpans(w.Focus)
 	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	}
@@ -1120,6 +1131,7 @@ func (w *Workspace) ShrinkColumn() {
 		return
 	}
 	defer w.scroll()
+	w.clearSpans(w.Focus)
 	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	}
@@ -1667,6 +1679,9 @@ func (w *Workspace) scrollWidth(i int) int {
 		// Fixed overflow past MaxColumns: the spiral's slots.
 		return w.equalShare(k)
 	}
+	if w.validSpans(0, len(w.Columns)-1) {
+		return w.Columns[i].Span * max(w.Usable.W-2*w.gap(), 0) / 10000
+	}
 	c := w.Columns[i].Cells
 	if c <= 0 {
 		return w.equalShare(min(len(w.Columns), k))
@@ -1682,6 +1697,7 @@ func (w *Workspace) columnX(i int) int {
 	return x
 }
 func (w *Workspace) scroll() {
+	w.dropStaleSpans()
 	before := w.View
 	defer func() { w.retarget(before) }()
 	if w.policy().wraps {
@@ -1810,7 +1826,7 @@ func rowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 	avail := max(r.H-(n-1)*gap, 0)
 	yy, bottom, used := r.Y, r.Y+r.H, 0
 	for i, share := range c.Shares {
-		hh := avail * share / 100
+		hh := avail * share / 10000
 		if i == n-1 {
 			hh = avail - used
 		}
@@ -1824,7 +1840,7 @@ func rowRectsInto(dst []Rect, r Rect, c Column, gap int) []Rect {
 }
 
 // validShares reports whether c.Shares has one share per window, each at
-// least 1, summing to 100.
+// least 1, summing to 10000.
 func validShares(c Column) bool {
 	if len(c.Shares) != len(c.Windows) || len(c.Shares) < 2 {
 		return false
@@ -1836,7 +1852,7 @@ func validShares(c Column) bool {
 		}
 		sum += v
 	}
-	return sum == 100
+	return sum == 10000
 }
 
 // split cuts r in two halves with a gap: top/bottom when vertical, else left/right.

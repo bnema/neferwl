@@ -39,7 +39,7 @@ func layoutVariants(t *testing.T) map[string]*Monitor {
 	m = base(OverflowScroll, 4)
 	w := m.Current()
 	w.Columns[0].Windows = []WindowID{1, 5, 6}
-	w.Columns[0].Shares = []int{50, 30, 20}
+	w.Columns[0].Shares = []int{5000, 3000, 2000}
 	m.AddWindow(5)
 	v["shares"] = m
 
@@ -204,7 +204,7 @@ func TestRectHelpersKeepAppendSemantics(t *testing.T) {
 	if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], stackRects(r, 3, 5)) {
 		t.Fatalf("stackRectsInto: %+v", got)
 	}
-	c := Column{Windows: []WindowID{1, 2, 3}, Shares: []int{50, 30, 20}}
+	c := Column{Windows: []WindowID{1, 2, 3}, Shares: []int{5000, 3000, 2000}}
 	got = rowRectsInto(slices.Clone(pre), r, c, 5)
 	if !slices.Equal(got[:2], pre) || !slices.Equal(got[2:], rowRects(r, c, 5)) {
 		t.Fatalf("rowRectsInto: %+v", got)

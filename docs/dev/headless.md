@@ -41,6 +41,7 @@ The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`
 | `type <text>` | Type text |
 | `key Super+Return` | Press a key, with optional Shift, Ctrl, Alt or Super |
 | `hold Super+h 1s` | Press a key like `key`, hold it, then release it |
+| `press Super`, `release Super` | Hold or release a modifier across mouse actions (`Super`, `Shift`, `Ctrl`, `Alt`) |
 | `sleep 1s` | Wait |
 | `move <x> <y>` | Move the pointer, in output coordinates |
 | `click [left\|right\|middle]`, `down <button>`, `up <button>` | Mouse buttons |

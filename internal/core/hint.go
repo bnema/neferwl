@@ -127,7 +127,7 @@ func (c *Core) hintWindows(sc *screen) []ports.HintWindow {
 // drag, or the column switcher.
 func (c *Core) hintPointerBusy() bool {
 	return c.constraint.Mode != ports.ConstraintNone || c.constrained.Mode != ports.ConstraintNone ||
-		c.grab != 0 || len(c.buttons) > 0 || c.drag != nil || c.dataDrag != nil || c.switching()
+		c.grab != 0 || len(c.buttons) > 0 || c.pointerBusy() || c.dataDrag != nil || c.switching()
 }
 
 // hintResult handles a scanner result and reports whether to publish.

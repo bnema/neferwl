@@ -56,11 +56,11 @@ func TestGrowColumnCycle(t *testing.T) {
 		}},
 		{"cascade three columns", OverflowCascade, 4, 3, 2, []step{
 			{[]int{1, 2, 1}, []int{200, 400, 200}},
-			{[]int{0, 0, 0}, []int{266, 266, 266}},
+			{[]int{0, 0, 0}, []int{266, 266, 268}},
 		}},
 		{"fixed three columns", OverflowFixed, 4, 3, 2, []step{
 			{[]int{1, 2, 1}, []int{200, 400, 200}},
-			{[]int{0, 0, 0}, []int{266, 266, 266}},
+			{[]int{0, 0, 0}, []int{266, 266, 268}},
 		}},
 		{"remainder goes to the focused column and is the step", OverflowCascade, 5, 3, 1, []step{
 			// 5 cells over 3 columns: 1 each and the 2 left to the focused one.

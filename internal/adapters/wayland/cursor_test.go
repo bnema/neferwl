@@ -83,6 +83,23 @@ func TestCursorShapeFollowsPointerFocus(t *testing.T) {
 	if got := nextCursor(t, cursors); got.Shape != "pointer" {
 		t.Fatalf("shape: %+v", got)
 	}
+	commands <- ports.CursorOverride{Shape: "ew-resize"}
+	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "ew-resize"}) {
+		t.Fatalf("override: %+v", got)
+	}
+	requestProtocol(t, c, device, cursorshape.WpCursorShapeDeviceV1RequestSetShape, uint32(3), uint32(cursorshape.WpCursorShapeDeviceV1ShapeText))
+	if err := c.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-cursors:
+		t.Fatalf("client cursor forwarded during override: %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	commands <- ports.CursorOverride{}
+	if got := nextCursor(t, cursors); got != (ports.CursorChange{Shape: "text"}) {
+		t.Fatalf("restored client cursor: %+v", got)
+	}
 	commands <- ports.PointerFocus{ID: 0}
 	if got := nextCursor(t, cursors); got != (ports.CursorChange{}) {
 		t.Fatalf("leave: %+v, want the arrow", got)
@@ -204,4 +221,35 @@ func TestSetCursorRoleError(t *testing.T) {
 	})
 	requestProtocol(t, c, pointer, wayland.PointerRequestSetCursor, uint32(1), surf, int32(0), int32(0))
 	expectProtocolError(t, c, pointer, uint32(wayland.PointerErrorRole))
+}
+
+func TestCursorOverrideProtection(t *testing.T) {
+	s, _, commands, cursors, _ := cursorServer(t)
+	state := installSecurity(t, s)
+	commands <- ports.CursorOverride{Shape: "ns-resize"}
+	if got := nextCursor(t, cursors); got.Shape != "ns-resize" {
+		t.Fatalf("override: %+v", got)
+	}
+	protect(t, s, state, 1, true)
+	if !s.display.Do(func() {
+		s.resetProtectionInput()
+		s.apply(ports.SecurityCommand{State: *state.Load(), Command: ports.CursorOverride{Shape: "ew-resize"}})
+		if s.cursorOverride != "" {
+			t.Errorf("protected override: %q", s.cursorOverride)
+		}
+	}) {
+		t.Fatal("display stopped")
+	}
+	select {
+	case got := <-cursors:
+		t.Fatalf("protected cursor forwarded: %+v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	protect(t, s, state, 2, false)
+	if !s.display.Do(func() { s.setCursor(ports.CursorChange{Hidden: true}) }) {
+		t.Fatal("display stopped")
+	}
+	if got := nextCursor(t, cursors); got != (ports.CursorChange{Hidden: true}) {
+		t.Fatalf("override survived protection: %+v", got)
+	}
 }

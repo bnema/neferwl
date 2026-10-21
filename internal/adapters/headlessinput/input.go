@@ -166,6 +166,30 @@ func RunSecure(ctx context.Context, km *xkb.Keymap, keymaps <-chan *xkb.Keymap, 
 				return 0
 			}
 			now := monotonic()
+			// Separate modifier edges allow mouse actions while a modifier is held.
+			if len(fields) > 0 && (fields[0] == "press" || fields[0] == "release") {
+				var code uint32
+				if len(fields) == 2 {
+					switch fields[1] {
+					case "Super":
+						code = 125
+					case "Shift":
+						code = 42
+					case "Ctrl":
+						code = 29
+					case "Alt":
+						code = 56
+					}
+				}
+				if code == 0 {
+					warnInput("line", line, "invalid modifier")
+					continue
+				}
+				if err := emit(code, fields[0] == "press"); err != nil {
+					return err
+				}
+				continue
+			}
 			if len(fields) > 0 && fields[0] == "move" {
 				if len(fields) == 3 {
 					x, ex := strconv.ParseFloat(fields[1], 64)
