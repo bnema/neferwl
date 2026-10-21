@@ -28,6 +28,16 @@ func TestWriteRequest(t *testing.T) {
 	require.Equal(t, want, buf.Bytes())
 }
 
+func TestWriteRequestRegions(t *testing.T) {
+	var buf bytes.Buffer
+	pix := []byte{1, 2, 3, 4}
+	f := detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: pix}, regions: []region{{0, 1, 2, 3}, {4, 5, 6, 7}}}
+	require.NoError(t, writeRequest(&buf, 1, f))
+	want := cat([]byte("NHRQ"), u32(1), u64(1), u32(1), u32(1), u32(4), u32(1), u32(2),
+		u32(0), u32(1), u32(2), u32(3), u32(4), u32(5), u32(6), u32(7), f32(0), pix)
+	require.Equal(t, want, buf.Bytes())
+}
+
 func TestReadHello(t *testing.T) {
 	dev, err := readHello(bytes.NewReader(cat([]byte("NHNT"), u32(1), u32(0), u32(6), []byte("Vulkan"), u32(1280))))
 	require.NoError(t, err)
@@ -52,10 +62,10 @@ func TestReadResponse(t *testing.T) {
 
 	ok := cat(head(5, 0), f32(12.5), u32(2),
 		f32(1), f32(2), f32(30), f32(40), f32(0.9), u32(0),
-		f32(5), f32(6), f32(7), f32(8), f32(0.25), u32(0))
+		f32(5), f32(6), f32(7), f32(8), f32(0.25), u32(3))
 	got, err := readResponse(bytes.NewReader(ok), 5)
 	require.NoError(t, err)
-	require.Equal(t, []detection{{1, 2, 30, 40, 0.9}, {5, 6, 7, 8, 0.25}}, got)
+	require.Equal(t, []detection{{x1: 1, y1: 2, x2: 30, y2: 40, score: 0.9}, {x1: 5, y1: 6, x2: 7, y2: 8, score: 0.25, region: 3}}, got)
 
 	got, err = readResponse(bytes.NewReader(cat(head(5, 0), f32(1), u32(0))), 5)
 	require.NoError(t, err)

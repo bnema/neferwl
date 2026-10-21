@@ -215,7 +215,8 @@ const minTarget = 4
 func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, captureDur time.Duration, res ports.HintScanResult) ports.HintScanResult {
 	log := logging.For(ctx, "hints")
 	t0 := time.Now()
-	dets, err := w.det.Detect(ctx, detFrame{width: req.Width, height: req.Height, stride: fr.stride, m: fr.m})
+	regions := tileRegions(req.Width, req.Height)
+	dets, err := w.det.Detect(ctx, detFrame{width: req.Width, height: req.Height, stride: fr.stride, m: fr.m, regions: regions})
 	detectDur := time.Since(t0)
 	if err != nil {
 		fr.m.unmap()
@@ -223,8 +224,10 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 		res.Err = err
 		return res
 	}
-	// Merge after rounding to logical pixels, on the union of all boxes.
-	res.Targets = mergeTargets(targetsOf(dets, req.Scale, req.Width, req.Height))
+	// Boxes cut by a tile's inner edge are dropped when a neighbour tile
+	// saw the element whole; then, on the union of all tiles and after
+	// rounding to logical pixels, duplicates and nested boxes are merged.
+	res.Targets = mergeTargets(targetsOf(dropCutBoxes(dets, regions), req.Scale, req.Width, req.Height))
 	if w.dumpDir != "" {
 		// The dump reads the frame after the result is sent and releases it.
 		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, dets: dets, captureD: captureDur, detectD: detectDur}

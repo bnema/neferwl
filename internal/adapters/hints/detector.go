@@ -26,11 +26,16 @@ import (
 type detFrame struct {
 	width, height, stride int
 	m                     *mapping
+	// regions are the crops detected independently; none means the whole
+	// frame.
+	regions []region
 }
 
 // detection is one box found by the detector, in frame (physical) pixels.
 type detection struct {
 	x1, y1, x2, y2, score float32
+	// region is the index of the request region the box comes from.
+	region int
 }
 
 // detector finds clickable elements in a frame. The worker goroutine is its
@@ -68,10 +73,10 @@ var (
 
 var le = binary.LittleEndian
 
-// writeRequest writes one whole-frame request (no region, default
-// confidence) followed by the pixels.
+// writeRequest writes one request (the regions of f, default confidence)
+// followed by the pixels.
 func writeRequest(w io.Writer, seq uint64, f detFrame) error {
-	var h [4 + 4 + 8 + 5*4 + 4]byte
+	var h [4 + 4 + 8 + 5*4]byte
 	copy(h[0:], magicRequest[:])
 	le.PutUint32(h[4:], protocolVersion)
 	le.PutUint64(h[8:], seq)
@@ -79,9 +84,23 @@ func writeRequest(w io.Writer, seq uint64, f detFrame) error {
 	le.PutUint32(h[20:], uint32(f.height))
 	le.PutUint32(h[24:], uint32(f.stride))
 	le.PutUint32(h[28:], formatXRGB8888)
-	le.PutUint32(h[32:], 0)                   // nregions
-	le.PutUint32(h[36:], math.Float32bits(0)) // confidence: startup default
+	le.PutUint32(h[32:], uint32(len(f.regions)))
 	if _, err := w.Write(h[:]); err != nil {
+		return err
+	}
+	var rec [16]byte
+	for _, r := range f.regions {
+		le.PutUint32(rec[0:], uint32(int32(r.x)))
+		le.PutUint32(rec[4:], uint32(int32(r.y)))
+		le.PutUint32(rec[8:], uint32(r.w))
+		le.PutUint32(rec[12:], uint32(r.h))
+		if _, err := w.Write(rec[:]); err != nil {
+			return err
+		}
+	}
+	var conf [4]byte // confidence: startup default
+	le.PutUint32(conf[:], math.Float32bits(0))
+	if _, err := w.Write(conf[:]); err != nil {
 		return err
 	}
 	_, err := w.Write(f.m.b[:f.height*f.stride])
@@ -184,7 +203,7 @@ func readResponse(r io.Reader, seq uint64) ([]detection, error) {
 			return nil, err
 		}
 		f := func(i int) float32 { return math.Float32frombits(le.Uint32(rec[i*4:])) }
-		out = append(out, detection{x1: f(0), y1: f(1), x2: f(2), y2: f(3), score: f(4)})
+		out = append(out, detection{x1: f(0), y1: f(1), x2: f(2), y2: f(3), score: f(4), region: int(le.Uint32(rec[20:]))})
 	}
 	return out, nil
 }
