@@ -1326,7 +1326,9 @@ const outlineLines = 4
 // across the pile; a selected card keeps its complete frame. The lines are
 // appended to dst, which the caller sizes for them (room for outlineLines
 // past its length) so the scene's separators are allocated once.
-func overviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.Separator {
+// overviewOutline uses a rounded ring only for uncut frames. Stash cuts retain
+// the square strips so the frame never draws across the cards.
+func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius int) ([]ports.Separator, *ports.SelectionOutline) {
 	sel := -1
 	for i, p := range layout {
 		if p.Preview > 0 && p.Focused && !p.Hidden && (sel < 0 || p.Card && !layout[sel].Card) {
@@ -1334,7 +1336,7 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.S
 		}
 	}
 	if sel < 0 {
-		return dst
+		return dst, nil
 	}
 	dst = slices.Grow(dst, outlineLines)
 	r := layout[sel].Rect
@@ -1354,10 +1356,13 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.S
 		}
 	}
 	if !cut {
+		if radius := windowRadius(layout[sel], gap, radius); radius > 0 {
+			return dst, &ports.SelectionOutline{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: r.H + 2*b}, Width: b, Radius: radius + b, Active: true}
+		}
 		for _, e := range edges {
 			dst = append(dst, ports.Separator{Rect: e, Active: true})
 		}
-		return dst
+		return dst, nil
 	}
 	// Stack buffers: the outline is rebuilt every overview frame.
 	var cardBuf [overviewCards]Rect
@@ -1373,7 +1378,7 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b int) []ports.S
 			dst = append(dst, ports.Separator{Rect: piece, Active: true})
 		}
 	}
-	return dst
+	return dst, nil
 }
 
 // subtractRects is what of r no rect of cuts covers, as rects. The edges of

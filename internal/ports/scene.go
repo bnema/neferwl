@@ -2,10 +2,20 @@ package ports
 
 import "slices"
 
+// SelectionOutline is a selection ring outside a preview. Rect and Radius
+// describe its outer edge; Radius zero denotes square corners.
+type SelectionOutline struct {
+	Rect   Rect
+	Width  int
+	Radius int
+	Active bool
+}
+
 // Scene carries core → renderer immutable snapshots with fresh Windows slices,
 // one per output. Rects and the output size are logical and local to the
 // output; the renderer multiplies by Scale.
 type Scene struct {
+	Outline *SelectionOutline
 	// Security is the owner epoch captured when this scene was published.
 	// Output owners reject stale scenes rather than showing a queued desktop
 	// or accepting old locker buffers across acquisition/release.
@@ -103,6 +113,9 @@ func (s Scene) SameAs(o Scene) bool {
 		return false
 	}
 	if (s.Flash == nil) != (o.Flash == nil) || (s.Flash != nil && *s.Flash != *o.Flash) {
+		return false
+	}
+	if (s.Outline == nil) != (o.Outline == nil) || (s.Outline != nil && *s.Outline != *o.Outline) {
 		return false
 	}
 	if s.CaptureScene != nil || o.CaptureScene != nil {

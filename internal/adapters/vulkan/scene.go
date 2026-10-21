@@ -362,6 +362,9 @@ func (w *sceneWalk) tileSeparators() {
 	b := w.bounds
 	w.bounds = w.tileBounds
 	w.separators(0)
+	if o := w.s.Outline; o != nil {
+		w.roundedInnerBorder(o.Rect, o.Width, o.Radius, parseColor(w.s.Border.Active))
+	}
 	w.bounds = b
 }
 

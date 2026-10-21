@@ -94,6 +94,9 @@ func scanoutCandidate(s ports.Scene, surfaces map[ports.WindowID]ports.SurfaceCo
 	if s.PositionHint.Shown() {
 		return ports.SurfaceContent{}, "position_hint"
 	}
+	if s.Outline != nil {
+		return ports.SurfaceContent{}, "selection_outline"
+	}
 	if s.Flash != nil {
 		return ports.SurfaceContent{}, "focus_flash"
 	}

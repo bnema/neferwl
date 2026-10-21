@@ -19,7 +19,7 @@ import (
 func TestSceneFieldCount(t *testing.T) {
 	// 25 with Animating, which sceneDelta intentionally ignores: it only
 	// schedules the next frame, it draws nothing.
-	const fields = 26
+	const fields = 27
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(ports.Scene{}))),
 		"Scene fields changed: check sceneDelta (a field it does not compare must force a full redraw or be covered), then this count")
 }
@@ -438,4 +438,26 @@ func TestSceneDeltaFlashRectDamage(t *testing.T) {
 	cur.Flash = a
 	_, ok := sceneDelta(old, cur, phys, 1)
 	require.False(t, ok, "large damage must retain full-redraw fallback")
+}
+
+func TestDamageSelectionOutlineDelta(t *testing.T) {
+	a := &ports.SelectionOutline{Rect: ports.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
+	b := *a
+	b.Rect.X = 60
+	for _, pair := range [][2]*ports.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, a}} {
+		old, cur := deltaScene(1), deltaScene(2)
+		old.Outline, cur.Outline = pair[0], pair[1]
+		area, ok := sceneDelta(old, cur, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
+		require.True(t, ok)
+		var want image.Rectangle
+		if pair[0] != pair[1] {
+			for _, o := range pair {
+				if o != nil {
+					r := o.Rect
+					want = want.Union(image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H))
+				}
+			}
+		}
+		require.Equal(t, want, area)
+	}
 }

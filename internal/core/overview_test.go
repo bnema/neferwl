@@ -508,7 +508,7 @@ func TestOverviewFixedOverflowGeometry(t *testing.T) {
 					t.Fatalf("%d not hit at %+v", id, p.Rect)
 				}
 			}
-			if len(overviewOutline(nil, ps, 2)) != 4 {
+			if len(squareOverviewOutline(nil, ps, 2)) != 4 {
 				t.Fatal("missing selection outline")
 			}
 			m.OverviewMove(-1, 0)

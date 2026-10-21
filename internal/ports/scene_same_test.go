@@ -23,6 +23,7 @@ func sameSceneBase() Scene {
 		Layers:       []SceneLayer{{ID: 9, Rect: Rect{W: 100, H: 5}}},
 		Capture:      &SceneCapture{Shown: 1, Excluded: []WindowID{3}},
 
+		Outline:           &SelectionOutline{Rect: Rect{W: 20, H: 10}, Width: 2, Radius: 8, Active: true},
 		Flash:             &FocusFlash{Rect: Rect{W: 20, H: 10}, Width: 2, Color: "#ff0000", Alpha: 0.6},
 		CaptureIndicators: []CaptureIndicator{{Rect: Rect{W: 4, H: 4}}},
 		HintLabels:        []HintLabel{{Rect: Rect{X: 3, Y: 4}, Text: "fj", Typed: 1}},
@@ -39,6 +40,11 @@ func TestSceneSameAs(t *testing.T) {
 
 	for name, edit := range map[string]func(*Scene){
 		"position hint":     func(s *Scene) { s.PositionHint.Opacity = 1 },
+		"outline nil":       func(s *Scene) { s.Outline = nil },
+		"outline rect":      func(s *Scene) { s.Outline.Rect.X++ },
+		"outline width":     func(s *Scene) { s.Outline.Width++ },
+		"outline radius":    func(s *Scene) { s.Outline.Radius++ },
+		"outline active":    func(s *Scene) { s.Outline.Active = false },
 		"flash nil":         func(s *Scene) { s.Flash = nil },
 		"flash rect":        func(s *Scene) { s.Flash.Rect.X++ },
 		"flash width":       func(s *Scene) { s.Flash.Width++ },
@@ -95,7 +101,7 @@ func TestSceneSameAs(t *testing.T) {
 func TestSceneSameAsCoversEveryField(t *testing.T) {
 	// 25 with Animating, which SameAs intentionally does not compare: it
 	// only schedules the next frame, it draws nothing.
-	const fields = 26
+	const fields = 27
 	assert.Equal(t, fields, len(reflect.VisibleFields(reflect.TypeOf(Scene{}))),
 		"Scene fields changed: update Scene.SameAs (and TestSceneSameAs), then this count")
 }

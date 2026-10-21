@@ -304,6 +304,14 @@ func sceneDelta(old, cur ports.Scene, phys func(ports.Rect) image.Rectangle, lim
 			area = area.Union(phys(cur.Flash.Rect))
 		}
 	}
+	if (old.Outline == nil) != (cur.Outline == nil) || (old.Outline != nil && cur.Outline != nil && *old.Outline != *cur.Outline) {
+		if old.Outline != nil {
+			area = area.Union(phys(old.Outline.Rect))
+		}
+		if cur.Outline != nil {
+			area = area.Union(phys(cur.Outline.Rect))
+		}
+	}
 	for i := range old.Windows {
 		a, b := old.Windows[i], cur.Windows[i]
 		if a.ID != b.ID {

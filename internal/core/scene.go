@@ -59,10 +59,10 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		if len(dividers) > 0 {
 			seps = append(make([]ports.Separator, 0, len(dividers)+outlineLines), dividers...)
 		}
-		scene.Separators = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2))
+		scene.Separators, scene.Outline = overviewOutline(seps, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().gap(), c.cfg.Border.Radius)
 	} else if sc.mon.switcherShown() {
 		// The switcher's cards: only the selection is framed.
-		scene.Separators = overviewOutline(nil, layout, max(c.cfg.Border.Width, 2))
+		scene.Separators, scene.Outline = overviewOutline(nil, layout, max(c.cfg.Border.Width, 2), sc.mon.Current().gap(), c.cfg.Border.Radius)
 	} else {
 		// Only the focused output lights the focused window's lines.
 		scene.Separators = separators(layout, c.cfg.Border.Width, sc.mon.Current().gap(), view, i == c.focusScreen)

@@ -1054,7 +1054,7 @@ func TestOverviewCascadeScroll(t *testing.T) {
 
 // outlineHits reports whether any outline line of ps covers a point of r.
 func outlineHits(ps []Placement, r Rect) bool {
-	for _, s := range overviewOutline(nil, ps, 2) {
+	for _, s := range squareOverviewOutline(nil, ps, 2) {
 		if s.Rect.Overlaps(r) {
 			return true
 		}
@@ -1126,7 +1126,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 	if framed(ps) != 1 || !previewOf(t, ps, 8).Focused {
 		t.Fatalf("lane selected: %d framed", framed(ps))
 	}
-	if len(overviewOutline(nil, ps, 2)) == 0 {
+	if len(squareOverviewOutline(nil, ps, 2)) == 0 {
 		t.Fatal("lane selected: no frame")
 	}
 	for _, id := range []WindowID{40, 41, 42} {
@@ -1155,7 +1155,7 @@ func TestOverviewCascadeOutlineAndPile(t *testing.T) {
 	if !card.Focused || !card.Card {
 		t.Fatalf("selected card not framed: %+v", card)
 	}
-	out := overviewOutline(nil, ps, 2)
+	out := squareOverviewOutline(nil, ps, 2)
 	if len(out) != 4 {
 		t.Fatalf("card frame is %d lines, want 4: %+v", len(out), out)
 	}
@@ -1189,7 +1189,7 @@ func TestOverviewOutlinePrefersCard(t *testing.T) {
 		{ID: 1, Rect: Rect{X: 0, Y: 0, W: 100, H: 100}, Preview: 0.5, Focused: true},
 		{ID: 2, Rect: Rect{X: 40, Y: 80, W: 30, H: 30}, Preview: 0.2, Focused: true, Card: true},
 	}
-	out := overviewOutline(nil, ps, 2)
+	out := squareOverviewOutline(nil, ps, 2)
 	if len(out) != 4 || out[0].Rect != (Rect{X: 38, Y: 78, W: 34, H: 2}) {
 		t.Fatalf("outline: %+v", out)
 	}
@@ -1207,10 +1207,10 @@ func TestOverviewOutlinePileAllocations(t *testing.T) {
 	for _, p := range ps {
 		card = card || p.Card && p.Preview > 0 && !p.Hidden
 	}
-	if !card || len(overviewOutline(nil, ps, 2)) == 0 {
+	if !card || len(squareOverviewOutline(nil, ps, 2)) == 0 {
 		t.Fatal("setup: no pile under a framed lane tile")
 	}
-	if n := testing.AllocsPerRun(50, func() { _ = overviewOutline(nil, ps, 2) }); n > 2 {
+	if n := testing.AllocsPerRun(50, func() { _ = squareOverviewOutline(nil, ps, 2) }); n > 2 {
 		t.Fatalf("overviewOutline allocs = %v, want <= 2", n)
 	}
 }
