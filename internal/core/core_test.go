@@ -124,7 +124,7 @@ func owner(t *testing.T, animated bool) {
 	client <- ports.WindowMapped{ID: 1}
 	s = l.one(scene(t, scenes))
 	// A single column fills the usable width.
-	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != 0 {
+	if len(s.Windows) != 1 || s.Windows[0].Rect.W != 84 || s.Windows[0].Inset != ports.SideAll {
 		t.Fatal(s)
 	}
 	if v := command(t, commands); v != (ports.ConfigureWindow{ID: 1, Width: 84, Height: 64, Activated: true, Output: "OUT-1", Visible: true}) {

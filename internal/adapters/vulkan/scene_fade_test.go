@@ -141,3 +141,29 @@ func TestSceneZoomedFloatOpensFloats(t *testing.T) {
 		t.Fatalf("card draws = %d, want 5 (lines after, no veil): %+v", len(ds), ds)
 	}
 }
+
+func TestRoundedWindowDraws(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
+		Windows:    []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: ports.SideAll, Radius: 10, Dim: 0.5}},
+		Separators: []ports.Separator{{Window: 1, Active: true}}}
+	ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
+	if len(ds) != 3 {
+		t.Fatalf("draws %d", len(ds))
+	}
+	for i, d := range ds {
+		if d.pc.misc[1]&flagRounded == 0 {
+			t.Fatalf("draw %d not rounded", i)
+		}
+	}
+	if ds[0].pc.misc[1]&flagRing == 0 || math.Float32frombits(ds[0].radii[0]) != 10 || math.Float32frombits(ds[0].radii[1]) != 6 {
+		t.Fatal("ring radii")
+	}
+	if ds[1].round != roundRect(image.Rect(11, 11, 45, 45)) {
+		t.Fatal("body clip")
+	}
+	var b composeBatch
+	if !b.add(ds[0], 64, 64) || b.instances[0].round != ds[0].round || b.instances[0].resource[1] != ds[0].radii[0] {
+		t.Fatal("batch loses clip")
+	}
+}

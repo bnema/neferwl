@@ -10,7 +10,9 @@ struct Draw {
     vec4 crop; // source crop bounds in buffer pixels
     uvec4 buf; // pixel-buffer first word, width, height; YUV metadata in w
     uvec4 misc; // mode, flags, target width, target height
-    uvec4 resourceIndex; // resource-table slot in x; remaining words padding
+    uvec4 resourceIndex; // slot, outer radius bits, inner radius bits, padding
+    vec4 round;
+    vec4 roundInner;
 };
 layout(std430, set = 0, binding = 3) readonly buffer Draws { Draw draws[]; };
 layout(location = 0) out Parameters {
@@ -21,6 +23,9 @@ layout(location = 0) out Parameters {
     flat uvec4 buf;
     flat uvec4 misc;
     flat uint resourceIndex;
+    flat vec4 round;
+    flat vec4 roundInner;
+    flat vec2 radii;
 } parameters;
 
 void main() {
@@ -36,4 +41,7 @@ void main() {
     parameters.buf = d.buf;
     parameters.misc = d.misc;
     parameters.resourceIndex = d.resourceIndex.x;
+    parameters.round = d.round;
+    parameters.roundInner = d.roundInner;
+    parameters.radii = uintBitsToFloat(d.resourceIndex.yz);
 }

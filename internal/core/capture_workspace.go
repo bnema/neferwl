@@ -153,13 +153,16 @@ func (c *Core) captureScene(seq uint64) *ports.Scene {
 		Security: c.security,
 		Output:   cw.sc.name(), Seq: seq, OutputWidth: f.W, OutputHeight: f.H, WorkspaceClip: Rect{W: f.W, H: f.H},
 		Scale: cw.sc.scale, Background: c.cfg.Background.Color,
-		Border:  ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
+		Border:  ports.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
 		Windows: make([]ports.SceneWindow, 0, len(cw.placements)),
 		Dim:     floatDim(cw.placements, view, c.cfg.Floating.Dim),
 	}
 	// A hidden workspace lights nothing: its focus is not shown.
 	for _, p := range cw.placements {
 		w := ports.SceneWindow{ID: p.ID, Focused: false, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview}
+		if !p.Fullscreen && (p.Floating || cw.ws.gap() > 0) {
+			w.Radius = c.cfg.Border.Radius
+		}
 		if !p.Hidden {
 			w.Rect = rebase(p.Rect)
 		}

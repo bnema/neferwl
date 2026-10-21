@@ -27,7 +27,7 @@ https://github.com/user-attachments/assets/54f25914-8335-4e66-b458-dabc5493d355
 
 Written in Go, without cgo. Each piece of state has one owner goroutine, connected to the others by channels; hot paths reuse memory and client buffers stay off the Go heap. See [Architecture](docs/dev/architecture.md) for the concurrency model, the GC strategy and the reusable Go libraries.
 
-Small on purpose, and staying small: no blur, shadows, rounded corners or themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
+Small on purpose, and staying small: no blur, shadows or themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
 
 ## Install
 

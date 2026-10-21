@@ -93,17 +93,17 @@ func TestWatch(t *testing.T) {
 				}
 			}
 			// An invalid value keeps the default for that key; other keys still apply.
-			write(path, "background = bad\nborder.width = 5\n")
+			write(path, "background = bad\nborder.width = 5\nborder.radius = 10\n")
 			select {
 			case c := <-out:
-				if c.Config.Background.Color != "#111111" || c.Config.Border.Width != 5 {
+				if c.Config.Background.Color != "#111111" || c.Config.Border.Width != 5 || c.Config.Border.Radius != 10 {
 					t.Fatalf("partial reload: %+v", c.Config)
 				}
 			case <-time.After(time.Second):
 				t.Fatal("no partial reload")
 			}
 			// Rewriting the same content sends nothing.
-			write(path, "background = bad\nborder.width = 5\n")
+			write(path, "background = bad\nborder.width = 5\nborder.radius = 10\n")
 			select {
 			case <-out:
 				t.Fatal("unchanged config sent")

@@ -401,3 +401,12 @@ func TestOverlayCarriesAcquireFence(t *testing.T) {
 		t.Fatal("duplicate left open")
 	}
 }
+
+func TestRoundedOverlayRejected(t *testing.T) {
+	s, contents := overlayScene()
+	s.Windows[1].Radius = 10
+	w, _, _, _ := overlayCandidate(s, contents, false, nil, nil)
+	if w.ID != 0 {
+		t.Fatal("rounded window on overlay")
+	}
+}

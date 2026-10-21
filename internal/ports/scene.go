@@ -170,13 +170,14 @@ func (s Scene) TileArea() (r Rect, ok bool) {
 // Border carries the window border style; colors are #rrggbb, "" skips
 // drawing. Width is in logical pixels.
 type Border struct {
+	Radius           int
 	Width            int
 	Active, Inactive string
 }
 
 // Separator is a line between windows, in logical pixels. Active lines
 // mark the focused window and use Border.Active, others Border.Inactive.
-// Window is the float whose border it is; 0 for lines between tiles.
+// Window owns the border (floats and tiles with gaps); 0 for shared tile lines.
 type Separator struct {
 	Rect   Rect
 	Active bool
@@ -203,6 +204,8 @@ type FocusFlash struct {
 
 // SceneWindow carries core → renderer window placement.
 type SceneWindow struct {
+	// Radius rounds the window corners in logical pixels; zero is square.
+	Radius                      int
 	ID                          WindowID
 	Rect                        Rect
 	Focused, Fullscreen, Hidden bool

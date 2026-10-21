@@ -11,6 +11,7 @@ import (
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
 // content into GPU buffers on the way. It lives for one frame.
 type sceneWalk struct {
+	rounded  bool
 	r        *Renderer
 	s        ports.Scene
 	contents map[ports.WindowID]ports.SurfaceContent
@@ -256,6 +257,36 @@ func (w *sceneWalk) windows() {
 		content := w.contents[win.ID]
 		// Damage counts only what is drawn: never the panel under a tile.
 		w.dmg.window(win.ID, content, w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H).Intersect(w.bounds))
+		w.rounded = win.Radius > 0
+		if win.Radius > 0 {
+			radius := float32(math.Round(float64(win.Radius) * w.scale))
+			innerRadius := max(radius-float32(math.Round(float64(b)*w.scale)), 0)
+			outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
+			col := ""
+			for _, sep := range w.s.Separators {
+				if sep.Window == win.ID {
+					if col == "" {
+						col = w.s.Border.Inactive
+					}
+					if sep.Active {
+						col = w.s.Border.Active
+						break
+					}
+				}
+			}
+			if col != "" && b > 0 {
+				n := len(w.draws)
+				w.fill(outer, parseColor(col))
+				if len(w.draws) > n {
+					dr := &w.draws[n]
+					roundedDraw(dr, outer, radius)
+					dr.pc.misc[1] |= flagRing
+					dr.roundInner = roundRect(body.Inset(1))
+					dr.radii[1] = math.Float32bits(max(innerRadius-1, 0))
+				}
+			}
+		}
+		start := len(w.draws)
 		// Until its first buffer, a window shows the background: no flash.
 		w.fill(body, parseColor(w.s.Background))
 		if !content.Empty() {
@@ -269,13 +300,26 @@ func (w *sceneWalk) windows() {
 			w.place(win.ID, &content, c.X, c.Y, c.W, c.H)
 			w.zoom = 1
 		}
-		if win.Floating {
+		if win.Radius > 0 {
+			radius := float32(math.Round(float64(win.Radius) * w.scale))
+			innerRadius := max(radius-float32(math.Round(float64(b)*w.scale)), 0)
+			for j := start; j < len(w.draws); j++ {
+				roundedDraw(&w.draws[j], body, innerRadius)
+			}
+		} else {
 			w.separators(win.ID)
 		}
+		dimStart := len(w.draws)
 		if win.Dim > 0 {
 			// A stashed window peeking in: dimmed with its border.
 			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
 		}
+		if win.Radius > 0 {
+			for j := dimStart; j < len(w.draws); j++ {
+				roundedDraw(&w.draws[j], w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), float32(math.Round(float64(win.Radius)*w.scale)))
+			}
+		}
+		w.rounded = false
 		w.alpha, w.bounds = 1, windowBounds
 	}
 	if !tileLines {
@@ -354,6 +398,9 @@ func (w *sceneWalk) place(id ports.WindowID, content *ports.SurfaceContent, x, y
 // dmabuf that fails to import (opaqueChildren pre-imports it) or an
 // unreadable shm buffer.
 func (w *sceneWalk) opaqueChildren(content *ports.SurfaceContent, ox, oy float64, clip image.Rectangle) []image.Rectangle {
+	if w.rounded {
+		return nil
+	}
 	covers := w.r.scratchCovers[:0]
 	for i := range content.Children {
 		ch := &content.Children[i]
@@ -639,4 +686,14 @@ func parseColor(s string) [3]uint8 {
 		c[i] = uint8(v)
 	}
 	return c
+}
+
+// Rounded bounds stay independent of scissor/damage clipping.
+func roundRect(r image.Rectangle) [4]float32 {
+	return [4]float32{float32(r.Min.X), float32(r.Min.Y), float32(r.Max.X), float32(r.Max.Y)}
+}
+func roundedDraw(d *draw, rect image.Rectangle, radius float32) {
+	d.pc.misc[1] |= flagRounded
+	d.round = roundRect(rect)
+	d.radii[0] = math.Float32bits(radius)
 }

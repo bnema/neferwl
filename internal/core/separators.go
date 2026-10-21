@@ -7,8 +7,8 @@ import "github.com/bnema/neferwl/internal/ports"
 // owned (and inset) by the left/top tile; focus lights only the adjacent
 // sides of the focused tile, including corners. With exactly two visible
 // tiles and no gaps, each lights its own half of the shared line (left/top
-// first). With gaps, each tile owns its neighbor-facing lines and lights
-// them whole. Hidden, scrolled-off, under-panel, other-workspace and
+// first). With gaps, each tile owns a full four-sided border and lights
+// it whole. Hidden, scrolled-off, under-panel, other-workspace and
 // other-output tiles do not count, nor do tiles that share no line. Lines
 // at the edges of the usable area (output or panels) are omitted. Floating windows differ from tmux tiles:
 // each gets its own full border, drawn with that window (Separator.Window),
@@ -39,7 +39,7 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 		}
 		r = Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 		var id WindowID
-		if p.Floating {
+		if p.Floating || gap > 0 {
 			id = p.ID
 		}
 		if out == nil {
@@ -56,6 +56,12 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 		// A leaving float keeps its own lines while it fades; a leaving
 		// tile's were shared with its neighbours, which re-flowed.
 		if p.Fullscreen || !(v.shows(*p) || p.Leaving && p.Floating && p.Rect.Overlaps(o)) {
+			continue
+		}
+		if gap > 0 {
+			for _, s := range sides {
+				add(p, strip(p.Rect, s, 0, width), p.Focused && lit)
+			}
 			continue
 		}
 		// Tiles sharing a line: Neighbors only counts tiles visible in

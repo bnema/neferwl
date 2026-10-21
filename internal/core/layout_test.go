@@ -151,7 +151,7 @@ func TestStackAndLayout(t *testing.T) {
 	}
 	w.FocusWindow(-1)
 	p := w.Layout()
-	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || p[0].Neighbors != ports.SideBottom || p[1].Inset != ports.SideTop {
+	if p[0].Rect != (Rect{X: 5, Y: 5, W: 90, H: 33}) || p[1].Rect != (Rect{X: 5, Y: 43, W: 90, H: 33}) || p[0].Neighbors != ports.SideBottom || p[1].Inset != ports.SideAll {
 		t.Fatal(p)
 	}
 	w.ToggleFullscreen()

@@ -52,7 +52,9 @@ const (
 	flagP010           = 32
 	// flagSmooth supersamples a buffer shrunk under half size (overview
 	// previews): four bilinear samples per pixel instead of one.
-	flagSmooth = 64
+	flagSmooth  = 64
+	flagRounded = 128
+	flagRing    = 256
 )
 
 // drawParameters is the parameter portion of the shaders' std430 Draw.
@@ -68,9 +70,11 @@ type drawParameters struct {
 
 // draw is one quad of a frame.
 type draw struct {
-	pc  drawParameters
-	shm *shmCopy
-	im  *imported // sampled client dmabuf, for ownership barriers
+	round, roundInner [4]float32
+	radii             [2]uint32
+	pc                drawParameters
+	shm               *shmCopy
+	im                *imported // sampled client dmabuf, for ownership barriers
 	// acquire is the content's explicit-sync fence (nil: implicit).
 	acquire *os.File
 }

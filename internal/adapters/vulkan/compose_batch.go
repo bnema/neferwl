@@ -11,10 +11,11 @@ import (
 // Bound descriptor-table work and memory even on devices with huge limits.
 const maxComposeResources = 64
 
-// instanceDraw matches Draw in compose.vert (std430, 128-byte stride).
+// instanceDraw matches Draw in compose.vert (std430, 160-byte stride).
 type instanceDraw struct {
-	pc       drawParameters
-	resource [4]uint32
+	pc                drawParameters
+	resource          [4]uint32
+	round, roundInner [4]float32
 }
 
 // resourceKey retains the Go identity as well as the Vulkan handles: a
@@ -64,7 +65,7 @@ func (b *composeBatch) add(dr draw, resources, maxDraws int) bool {
 			b.used++
 		}
 	}
-	b.instances = append(b.instances, instanceDraw{pc: dr.pc, resource: [4]uint32{uint32(index)}})
+	b.instances = append(b.instances, instanceDraw{pc: dr.pc, resource: [4]uint32{uint32(index), dr.radii[0], dr.radii[1]}, round: dr.round, roundInner: dr.roundInner})
 	return true
 }
 

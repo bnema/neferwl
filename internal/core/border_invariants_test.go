@@ -207,7 +207,7 @@ func checkBorderScene(t *testing.T, step, gap int, s ports.Scene) {
 			}
 		}
 	}
-	if tiles <= 1 {
+	if tiles <= 1 && gap == 0 {
 		for _, w := range s.Windows {
 			if !w.Floating && !w.Popup && !w.Hidden && w.Rect.Overlaps(o) && w.Inset != 0 {
 				t.Fatalf("step %d %s: lone tile reserves a border: %+v; scene %+v", step, s.Output, w, s)
@@ -222,7 +222,7 @@ func checkBorderScene(t *testing.T, step, gap int, s ports.Scene) {
 		if sep.Window != 0 {
 			found := false
 			for _, w := range s.Windows {
-				if w.ID == sep.Window && w.Floating && !w.Fullscreen && !w.Hidden && w.Rect.Overlaps(r) {
+				if w.ID == sep.Window && (w.Floating || gap > 0) && !w.Fullscreen && !w.Hidden && w.Rect.Overlaps(r) {
 					found = true
 				}
 			}
@@ -243,7 +243,7 @@ func checkBorderScene(t *testing.T, step, gap int, s ports.Scene) {
 	}
 	near := ports.Rect{X: focus.Rect.X - 2, Y: focus.Rect.Y - 2, W: focus.Rect.W + 4, H: focus.Rect.H + 4}
 	for _, sep := range s.Separators {
-		if sep.Active && sep.Window == 0 && sep.Rect.Overlaps(near) {
+		if sep.Active && (sep.Window == 0 || gap > 0 && sep.Window == focus.ID) && sep.Rect.Overlaps(near) {
 			return
 		}
 	}
@@ -276,9 +276,12 @@ func neighborSides(s ports.Scene, w ports.SceneWindow, gap int) ports.Sides {
 	return sides
 }
 
-// wantInset is the exact inset of a visible tile: every neighbor side with
-// gaps, only the right and bottom (shared-line owner) sides without.
+// wantInset is the exact inset of a visible tile: all sides with gaps,
+// only the right and bottom shared-line owner sides without.
 func wantInset(s ports.Scene, w ports.SceneWindow, gap int) ports.Sides {
+	if gap > 0 {
+		return ports.SideAll
+	}
 	sides := neighborSides(s, w, gap)
 	if gap == 0 {
 		sides &= ports.SideRight | ports.SideBottom
@@ -302,5 +305,43 @@ func TestBorderMoveBackAlone(t *testing.T) {
 		if got := shown(scenes); len(got["DP-1"]) != map[string]int{"Left": 1, "Right": 0}[sym] || len(got["DP-2"]) != map[string]int{"Left": 0, "Right": 1}[sym] {
 			t.Fatalf("%s: window did not move: %v", sym, got)
 		}
+	}
+}
+
+func TestBorderRadiusScene(t *testing.T) {
+	for _, gap := range []int{0, 8} {
+		t.Run(map[int]string{0: "flush", 8: "gaps"}[gap], func(t *testing.T) {
+			r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = gap; c.Border.Radius = 10 }, left, right)
+			scenes := r.mapWindow(t, 1)
+			for _, s := range scenes {
+				for _, w := range s.Windows {
+					if w.ID == 1 {
+						want := 0
+						if gap > 0 {
+							want = 10
+						}
+						if w.Radius != want || s.Border.Radius != 10 {
+							t.Fatalf("radius %d, style %d", w.Radius, s.Border.Radius)
+						}
+					}
+				}
+			}
+			for _, action := range []struct {
+				sym  string
+				mods ports.Mods
+				want int
+			}{
+				{"space", ports.ModAlt | ports.ModShift, 10},
+				{"f", ports.ModAlt | ports.ModShift, 0},
+			} {
+				for _, s := range r.key(t, action.sym, action.mods) {
+					for _, w := range s.Windows {
+						if w.ID == 1 && w.Radius != action.want {
+							t.Fatalf("%s radius %d, want %d", action.sym, w.Radius, action.want)
+						}
+					}
+				}
+			}
+		})
 	}
 }

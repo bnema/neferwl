@@ -330,3 +330,11 @@ func TestRendererSplitBoundKeepsRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestRoundedChildDoesNotCullRoot(t *testing.T) {
+	w := &sceneWalk{rounded: true}
+	content := ports.SurfaceContent{Children: []ports.Subsurface{{SurfaceContent: ports.SurfaceContent{Opaque: true}}}}
+	if covers := w.opaqueChildren(&content, 0, 0, image.Rect(0, 0, 20, 20)); len(covers) != 0 {
+		t.Fatal("rounded child occludes root")
+	}
+}

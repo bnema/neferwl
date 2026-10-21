@@ -16,6 +16,9 @@ layout(location = 0) in Parameters {
     flat uvec4 buf;
     flat uvec4 misc;
     flat uint resourceIndex;
+    flat vec4 round;
+    flat vec4 roundInner;
+    flat vec2 radii;
 } d;
 
 #ifdef SINGLE_RESOURCE
@@ -121,6 +124,15 @@ vec4 sampleBuffer(vec2 src, bool exact) {
     return mix(mix(texel(i), texel(i + ivec2(1, 0)), f.x), mix(texel(i + ivec2(0, 1)), texel(i + ivec2(1, 1)), f.x), f.y);
 }
 
+float coverage(vec4 rect, float radius) {
+    vec2 halfSize = (rect.zw - rect.xy) * 0.5;
+    radius = min(radius, min(halfSize.x, halfSize.y));
+    vec2 q = abs(gl_FragCoord.xy - (rect.xy + rect.zw) * 0.5) - halfSize + radius;
+    if ((q.x < 0.0 || q.y < 0.0) && max(q.x, q.y) <= radius - 0.5) return 1.0;
+    float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+    return clamp(0.5 - sd, 0.0, 1.0);
+}
+
 void main() {
     vec2 src = d.map.xy + gl_FragCoord.x * d.map.zw + gl_FragCoord.y * d.mapy.xy;
     bool exact = (d.misc.y & flagExact) != 0u;
@@ -149,6 +161,10 @@ void main() {
     if (d.misc.x != modeSolid) {
         // The surface's alpha modifier; premultiplied, it scales all four.
         c *= d.color.a;
+    }
+    if ((d.misc.y & 128u) != 0u) {
+        c *= coverage(d.round, d.radii.x);
+        if ((d.misc.y & 256u) != 0u) c *= 1.0 - coverage(d.roundInner, d.radii.y);
     }
     color = c;
 }

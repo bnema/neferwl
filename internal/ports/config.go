@@ -123,6 +123,7 @@ type Config struct {
 	}
 	// Border is drawn inside the window edge; Width 0 disables it.
 	Border struct {
+		Radius   int
 		Width    int
 		Active   string
 		Inactive string

@@ -43,6 +43,12 @@ func (r *Renderer) orient(ds []draw, t ports.BufferTransform) {
 		pc := &ds[i].pc
 		rect := t.RectToBuffer(image.Rect(int(pc.rect[0]), int(pc.rect[1]), int(pc.rect[2]), int(pc.rect[3])), sw, sh)
 		pc.rect = [4]int32{int32(rect.Min.X), int32(rect.Min.Y), int32(rect.Max.X), int32(rect.Max.Y)}
+		if pc.misc[1]&flagRounded != 0 {
+			for _, bounds := range []*[4]float32{&ds[i].round, &ds[i].roundInner} {
+				rect := t.RectToBuffer(image.Rect(int(bounds[0]), int(bounds[1]), int(bounds[2]), int(bounds[3])), sw, sh)
+				*bounds = roundRect(rect)
+			}
+		}
 		if pc.misc[0] == modeSolid {
 			continue
 		}

@@ -1988,6 +1988,8 @@ func setVisibleNeighbors(tiles []Placement, gap int, area Rect) {
 		a.Inset = a.Neighbors
 		if gap == 0 {
 			a.Inset &= ports.SideRight | ports.SideBottom
+		} else {
+			a.Inset = ports.SideAll
 		}
 	}
 }
