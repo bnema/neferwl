@@ -196,7 +196,10 @@ func (c *Core) flashFor(sc *screen) *ports.FocusFlash {
 	}
 	sample := ports.FocusFlash{Rect: f.rect, Width: c.cfg.Focus.FlashWidth, Radius: f.radius, Color: color, Alpha: f.value}
 	if f.published == nil || *f.published != sample {
-		f.published = &sample
+		// Allocate only for a changed sample; sample itself stays on the stack.
+		published := new(ports.FocusFlash)
+		*published = sample
+		f.published = published
 	}
 	return f.published
 }
