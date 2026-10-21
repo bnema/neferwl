@@ -223,7 +223,7 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 		res.Err = err
 		return res
 	}
-	res.Targets = targetsOf(dets, req.Scale)
+	res.Targets = targetsOf(dets, req.Scale, req.Width, req.Height)
 	if w.dumpDir != "" {
 		// The dump reads the frame after the result is sent and releases it.
 		w.pending = &dumpJob{when: time.Now(), req: req, pix: fr.pix, m: fr.m, stride: fr.stride, targets: res.Targets, dets: dets, captureD: captureDur, detectD: detectDur}
@@ -236,27 +236,34 @@ func (w *worker) scan(ctx context.Context, req ports.HintScanRequest, fr frame, 
 }
 
 // targetsOf converts boxes in physical pixels to logical output-local
-// targets, rounding outwards, and drops the ones under minTarget on a side.
-func targetsOf(dets []detection, scale float64) []ports.HintTarget {
+// targets. A box with a non-finite coordinate or score, a score outside
+// [0,1] or no area is dropped; the others are clamped to the width x height
+// frame (physical), rounded outwards to logical pixels, and dropped when
+// under minTarget on a side.
+func targetsOf(dets []detection, scale float64, width, height int) []ports.HintTarget {
 	if scale <= 0 {
 		scale = 1
 	}
+	fw, fh := float64(width), float64(height)
 	out := make([]ports.HintTarget, 0, len(dets))
 	for _, d := range dets {
 		v := [4]float64{float64(d.x1), float64(d.y1), float64(d.x2), float64(d.y2)}
-		ok := true
+		ok := d.score >= 0 && d.score <= 1 // false for NaN too
 		for _, f := range v {
 			ok = ok && !math.IsNaN(f) && !math.IsInf(f, 0)
 		}
-		if !ok {
+		if !ok || v[2] <= v[0] || v[3] <= v[1] {
 			continue
 		}
-		x1, y1 := int(math.Floor(v[0]/scale)), int(math.Floor(v[1]/scale))
-		x2, y2 := int(math.Ceil(v[2]/scale)), int(math.Ceil(v[3]/scale))
-		if x2-x1 < minTarget || y2-y1 < minTarget {
+		// Clamp before any int conversion: huge finite values stay safe.
+		x1, y1 := math.Max(0, math.Min(v[0], fw)), math.Max(0, math.Min(v[1], fh))
+		x2, y2 := math.Max(0, math.Min(v[2], fw)), math.Max(0, math.Min(v[3], fh))
+		lx1, ly1 := int(math.Floor(x1/scale)), int(math.Floor(y1/scale))
+		lx2, ly2 := int(math.Ceil(x2/scale)), int(math.Ceil(y2/scale))
+		if lx2-lx1 < minTarget || ly2-ly1 < minTarget {
 			continue
 		}
-		out = append(out, ports.HintTarget{Rect: ports.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, Score: d.score})
+		out = append(out, ports.HintTarget{Rect: ports.Rect{X: lx1, Y: ly1, W: lx2 - lx1, H: ly2 - ly1}, Score: d.score})
 	}
 	return out
 }

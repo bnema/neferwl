@@ -67,7 +67,7 @@ func TestHintScan(t *testing.T) {
 	var got detFrame
 	det.EXPECT().Detect(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, f detFrame) ([]detection, error) {
 		got = f
-		return []detection{{x1: 10, y1: 20, x2: 110, y2: 60, score: 0.8}}, nil
+		return []detection{{x1: 10, y1: 20, x2: 50, y2: 30, score: 0.8}}, nil
 	}).Once()
 	h := startWith(t, 5*time.Second, Options{detector: det})
 	go func() {
@@ -79,26 +79,58 @@ func TestHintScan(t *testing.T) {
 	require.NoError(t, res.Err)
 	require.Equal(t, uint64(7), res.Seq)
 	require.Equal(t, "HEADLESS-1", res.Output)
-	require.Equal(t, []ports.HintTarget{{Rect: ports.Rect{X: 10, Y: 20, W: 100, H: 40}, Score: 0.8}}, res.Targets)
+	require.Equal(t, []ports.HintTarget{{Rect: ports.Rect{X: 10, Y: 20, W: 40, H: 10}, Score: 0.8}}, res.Targets)
 	require.Equal(t, 64, got.width)
 	require.Equal(t, 32, got.height)
 	require.Equal(t, 64*4, got.stride)
 }
 
 func TestTargetsOf(t *testing.T) {
-	got := targetsOf([]detection{
-		{x1: 11, y1: 21, x2: 100.2, y2: 61, score: 0.5}, // scale 2: x 5..51, y 10..31
-		{x1: 0, y1: 0, x2: 5, y2: 40, score: 0.9},       // 2.5 -> 3 logical wide: dropped
-		{x1: 0, y1: 0, x2: 40, y2: 5, score: 0.9},       // 3 logical high: dropped
-		{x1: 0, y1: 0, x2: 8, y2: 8, score: 0.4},        // exactly 4x4: kept
-		{x1: float32(math.NaN()), y1: 0, x2: 50, y2: 50},
-	}, 2)
-	require.Equal(t, []ports.HintTarget{
-		{Rect: ports.Rect{X: 5, Y: 10, W: 46, H: 21}, Score: 0.5},
-		{Rect: ports.Rect{X: 0, Y: 0, W: 4, H: 4}, Score: 0.4},
-	}, got)
-	// A zero scale reads as 1.
-	require.Len(t, targetsOf([]detection{{x2: 10, y2: 10}}, 0), 1)
+	nan := float32(math.NaN())
+	inf := float32(math.Inf(1))
+	r := func(x, y, w, h int, score float32) []ports.HintTarget {
+		return []ports.HintTarget{{Rect: ports.Rect{X: x, Y: y, W: w, H: h}, Score: score}}
+	}
+	for _, tc := range []struct {
+		name  string
+		det   detection
+		scale float64
+		want  []ports.HintTarget
+	}{
+		{"inside", detection{10, 20, 50, 40, 0.5}, 1, r(10, 20, 40, 20, 0.5)},
+		{"scale 2 rounds outwards, clamped at 100", detection{11, 21, 100.2, 61, 0.5}, 2, r(5, 10, 45, 21, 0.5)},
+		{"zero scale reads as 1", detection{0, 0, 10, 10, 0.5}, 0, r(0, 0, 10, 10, 0.5)},
+		{"exactly 4x4 kept", detection{0, 0, 8, 8, 0.4}, 2, r(0, 0, 4, 4, 0.4)},
+		{"3 logical wide dropped", detection{0, 0, 5, 40, 0.9}, 2, nil},
+		{"3 logical high dropped", detection{0, 0, 40, 5, 0.9}, 2, nil},
+		{"fully outside", detection{200, 10, 300, 50, 0.5}, 1, nil},
+		{"fully before origin", detection{-50, -50, -10, -10, 0.5}, 1, nil},
+		{"partly outside is clamped", detection{-20, 70, 150, 120, 0.5}, 1, r(0, 70, 100, 30, 0.5)},
+		{"partly outside, scale 2", detection{-20, 70, 150, 120, 0.5}, 2, r(0, 35, 50, 15, 0.5)},
+		{"inverted x", detection{50, 10, 20, 40, 0.5}, 1, nil},
+		{"inverted y", detection{10, 40, 50, 10, 0.5}, 1, nil},
+		{"empty x", detection{10, 10, 10, 40, 0.5}, 1, nil},
+		{"empty y", detection{10, 10, 40, 10, 0.5}, 1, nil},
+		{"NaN coordinate", detection{nan, 0, 50, 50, 0.5}, 1, nil},
+		{"Inf coordinate", detection{0, 0, inf, 50, 0.5}, 1, nil},
+		{"NaN score", detection{0, 0, 50, 50, nan}, 1, nil},
+		{"Inf score", detection{0, 0, 50, 50, inf}, 1, nil},
+		{"score above 1", detection{0, 0, 50, 50, 1.5}, 1, nil},
+		{"negative score", detection{0, 0, 50, 50, -0.1}, 1, nil},
+		{"score 0 and 1 kept", detection{0, 0, 50, 50, 1}, 1, r(0, 0, 50, 50, 1)},
+		{"huge coordinates", detection{-1e30, -1e30, 1e30, 1e30, 0.5}, 1, r(0, 0, 100, 100, 0.5)},
+		{"huge positive only", detection{10, 10, 1e30, 1e30, 0.5}, 2, r(5, 5, 45, 45, 0.5)},
+		{"huge outside", detection{1e30, 1e30, 3e30, 3e30, 0.5}, 1, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := targetsOf([]detection{tc.det}, tc.scale, 100, 100)
+			if tc.want == nil {
+				require.Empty(t, got)
+				return
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // A detector error fails the scan; the worker goes on and the buffer is released.
