@@ -297,3 +297,10 @@ type SetModifiers struct {
 }
 
 func (SetModifiers) clientCommand() {}
+
+// CursorOverride carries core -> wayland the cursor a compositor pointer
+// interaction (border resize, future column move) shows instead of the
+// client's: a CSS cursor name; "" clears it.
+type CursorOverride struct{ Shape string }
+
+func (CursorOverride) clientCommand() {}
