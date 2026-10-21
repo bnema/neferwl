@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"os/exec"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bnema/neferwl/internal/adapters/logging"
@@ -203,48 +205,88 @@ func newProcDetector(command, model string, threshold float64) *procDetector {
 	return &procDetector{command: command, model: model, conf: threshold, helloTimeout: helloTimeout, reqTimeout: requestTimeout}
 }
 
-// process is one running child.
+// waitDelay bounds cmd.Wait once the child is dead: a descendant that kept
+// stderr open must not block the reaping.
+const (
+	waitDelay  = time.Second
+	closeGrace = time.Second
+)
+
+// process is one running child, alone in its process group. It keeps both
+// pipe ends so that closing them unblocks a pending read or write.
 type process struct {
-	cmd  *exec.Cmd
-	in   io.WriteCloser
-	out  *bufio.Reader
-	once sync.Once
+	cmd *exec.Cmd
+	in  *os.File // write end of the child's stdin
+	out *os.File // read end of the child's stdout
+	rd  *bufio.Reader
+
+	mu     sync.Mutex
+	reaped bool
+	once   sync.Once
 }
 
-// kill stops the child and reaps it; safe to call more than once.
+// interrupt kills the whole process group and closes our pipe ends, without
+// waiting: it unblocks a pending read or write from a timer or a context
+// callback. kill reaps the child afterwards.
+func (p *process) interrupt() {
+	p.mu.Lock()
+	if !p.reaped {
+		_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
+	}
+	p.mu.Unlock()
+	_ = p.out.Close()
+	_ = p.in.Close()
+}
+
+// kill stops the child and its descendants and reaps it; safe to call more
+// than once. Wait is bounded by cmd.WaitDelay.
 func (p *process) kill() {
+	p.interrupt()
+	p.wait()
+}
+
+// wait reaps the child (once); bounded by cmd.WaitDelay after its death.
+func (p *process) wait() {
 	p.once.Do(func() {
-		_ = p.cmd.Process.Kill()
-		_ = p.in.Close()
 		_ = p.cmd.Wait()
+		p.mu.Lock()
+		p.reaped = true
+		p.mu.Unlock()
 	})
 }
-
-// interrupt kills the child without waiting: it unblocks a pending read or
-// write from a timer or a context callback. kill reaps it afterwards.
-func (p *process) interrupt() { _ = p.cmd.Process.Kill() }
 
 func (d *procDetector) start(ctx context.Context) error {
 	log := logging.For(ctx, "hints")
 	cmd := exec.Command(d.command, "--model", d.model, "--imgsz", strconv.Itoa(imgsz),
 		"--conf", strconv.FormatFloat(d.conf, 'f', -1, 64), "--gpu", "auto")
 	cmd.Stderr = &lineLog{log: func(line string) { log.Debug().Str("detector", d.command).Msg(line) }}
-	in, err := cmd.StdinPipe()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.WaitDelay = waitDelay
+	inR, inW, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	out, err := cmd.StdoutPipe()
+	outR, outW, err := os.Pipe()
 	if err != nil {
+		_ = inR.Close()
+		_ = inW.Close()
 		return err
 	}
-	if err := cmd.Start(); err != nil {
+	cmd.Stdin, cmd.Stdout = inR, outW
+	err = cmd.Start()
+	// The child has its ends; ours are not needed any more.
+	_ = inR.Close()
+	_ = outW.Close()
+	if err != nil {
+		_ = inW.Close()
+		_ = outR.Close()
 		return fmt.Errorf("hints: start detector: %w", err)
 	}
-	p := &process{cmd: cmd, in: in, out: bufio.NewReaderSize(out, 1<<16)}
+	p := &process{cmd: cmd, in: inW, out: outR, rd: bufio.NewReaderSize(outR, 1<<16)}
 	t0 := time.Now()
 	timer := time.AfterFunc(d.helloTimeout, p.interrupt)
 	stop := context.AfterFunc(ctx, p.interrupt)
-	device, err := readHello(p.out)
+	device, err := readHello(p.rd)
 	stop()
 	timedOut := !timer.Stop()
 	if err != nil {
@@ -296,7 +338,7 @@ func (d *procDetector) roundTrip(p *process, f detFrame) ([]detection, error) {
 	if err := bw.Flush(); err != nil {
 		return nil, err
 	}
-	return readResponse(p.out, d.seq)
+	return readResponse(p.rd, d.seq)
 }
 
 // drop kills the current child: the next Detect starts a new one.
@@ -317,12 +359,15 @@ func (d *procDetector) Close() error {
 	}
 	_ = p.in.Close()
 	done := make(chan struct{})
-	go func() { _ = p.cmd.Wait(); close(done) }()
+	go func() { p.wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(time.Second):
-		_ = p.cmd.Process.Kill()
-		<-done
+	case <-time.After(closeGrace):
+		p.interrupt()
+		select {
+		case <-done:
+		case <-time.After(2 * waitDelay):
+		}
 	}
 	return nil
 }
