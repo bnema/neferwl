@@ -42,10 +42,5 @@ func (w *sceneWalk) positionHint() {
 // so alpha stays exact.
 func (w *sceneWalk) hintRound(r image.Rectangle, radius int, color [3]uint8) {
 	radius = min(radius, r.Dx()/2, r.Dy()/2)
-	n := len(w.draws)
-	w.fill(r, color)
-	if radius <= 0 || len(w.draws) == n {
-		return
-	}
-	roundedDraw(&w.draws[n], r, float32(radius))
+	w.fillRounded(r, color, float32(radius))
 }

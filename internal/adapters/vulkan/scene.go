@@ -92,14 +92,11 @@ func (w *sceneWalk) focusFlash() {
 // radius, minus a hole inset by b with radius max(radius-b, 0).
 func (w *sceneWalk) roundedInnerBorder(t ports.Rect, b, radius int, col [3]uint8) {
 	outer := w.physRect(t.X, t.Y, t.W, t.H)
-	n := len(w.draws)
-	w.fill(outer, col)
-	if len(w.draws) == n {
+	r := float32(math.Round(float64(radius) * w.scale))
+	dr := w.fillRounded(outer, col, r)
+	if dr == nil {
 		return
 	}
-	r := float32(math.Round(float64(radius) * w.scale))
-	dr := &w.draws[n]
-	roundedDraw(dr, outer, r)
 	dr.pc.misc[1] |= flagRing
 	hole := w.physRect(t.X+b, t.Y+b, t.W-2*b, t.H-2*b)
 	bPhys := min(hole.Min.X-outer.Min.X, hole.Min.Y-outer.Min.Y, outer.Max.X-hole.Max.X, outer.Max.Y-hole.Max.Y)
@@ -194,6 +191,20 @@ func (w *sceneWalk) fill(rect image.Rectangle, c [3]uint8) {
 		w.r.fadeSolid(&dr, w.alpha)
 	}
 	w.draws = append(w.draws, dr)
+}
+
+// fillRounded is fill with rounded corners of radius (physical pixels). It
+// returns the new draw, or nil when fill emitted nothing or radius <= 0 (the
+// plain fill is kept). The pointer is valid only until the next append.
+func (w *sceneWalk) fillRounded(r image.Rectangle, c [3]uint8, radius float32) *draw {
+	n := len(w.draws)
+	w.fill(r, c)
+	if len(w.draws) == n || radius <= 0 {
+		return nil
+	}
+	dr := &w.draws[n]
+	roundedDraw(dr, r, radius)
+	return dr
 }
 
 // dim paints a translucent black quad over rect (physical), clipped to the
@@ -293,11 +304,7 @@ func (w *sceneWalk) windows() {
 			bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
 			innerRadius = max(radius-float32(max(bPhys, 0)), 0)
 			if col := w.ringColor(win.ID); col != "" && b > 0 {
-				n := len(w.draws)
-				w.fill(outer, parseColor(col))
-				if len(w.draws) > n {
-					dr := &w.draws[n]
-					roundedDraw(dr, outer, radius)
+				if dr := w.fillRounded(outer, parseColor(col), radius); dr != nil {
 					dr.pc.misc[1] |= flagRing
 					// Opaque, the ring runs 1px under the body so no seam
 					// shows; faded, that overlap would double up: the hole
