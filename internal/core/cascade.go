@@ -143,6 +143,17 @@ func (w *Workspace) laneWeight(i, S, u int) int {
 // stats of laneStats: the usable width after gaps, split by weight. The
 // remainder under one pixel per weight stays empty, as in equalShare.
 func (w *Workspace) laneWidth(i, first, last, S, u, sum int) int {
+	if w.validSpans(first, last) {
+		avail := max(w.Usable.W-w.gap()*(last-first+2), 0)
+		if i == last {
+			used := 0
+			for j := first; j < last; j++ {
+				used += avail * w.Columns[j].Span / 10000
+			}
+			return avail - used
+		}
+		return avail * w.Columns[i].Span / 10000
+	}
 	if sum <= 0 {
 		return 0
 	}

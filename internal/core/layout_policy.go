@@ -53,3 +53,45 @@ func (w *Workspace) policy() layoutPolicy {
 	}
 	return layoutPolicy{content: horizontalAxis, workspace: verticalAxis}
 }
+
+// validSpans rejects partial stamps and stamps from a differently sized lane.
+func (w *Workspace) validSpans(first, last int) bool {
+	if first > last || w.Overflow == OverflowFixed && !w.laneRow() {
+		return false
+	}
+	total := 0
+	for i := first; i <= last; i++ {
+		c := w.Columns[i]
+		if c.Span <= 0 || c.spanLane != last-first+1 {
+			return false
+		}
+		total += c.Span
+	}
+	return !w.policy().equalCells || total == 10000
+}
+
+// dropStaleSpans runs before scroll measures mutated layout geometry. A band
+// is independent: invalidating one never discards another band's ratios.
+func (w *Workspace) dropStaleSpans() {
+	for first := 0; first < len(w.Columns); {
+		_, last := w.laneBounds(w.laneOf(first))
+		if !w.validSpans(first, last) {
+			for i := first; i <= last; i++ {
+				w.Columns[i].Span = 0
+				w.Columns[i].spanLane = 0
+			}
+		}
+		first = last + 1
+	}
+}
+
+func (w *Workspace) clearSpans(col int) {
+	if col < 0 || col >= len(w.Columns) {
+		return
+	}
+	first, last := w.laneBounds(w.laneOf(col))
+	for i := first; i <= last; i++ {
+		w.Columns[i].Span = 0
+		w.Columns[i].spanLane = 0
+	}
+}

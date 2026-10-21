@@ -19,6 +19,9 @@ const maxCells = 16
 // max-columns-th of the usable width. Zero (auto) shares the width equally
 // with the other auto columns, up to MaxColumns visible at once.
 type Column struct {
+	// Span is a manually sized width in basis points; zero uses Cells.
+	Span      int
+	spanLane  int
 	Windows   []WindowID
 	Cells     int
 	FullWidth bool
@@ -534,6 +537,7 @@ func (w *Workspace) addWindow(id WindowID, cells int) {
 			at = min(w.Focus+1, len(w.Columns))
 		}
 		w.Columns = slices.Insert(w.Columns, at, Column{Windows: []WindowID{id}, Cells: cells})
+		w.dropStaleSpans()
 		return
 	}
 	w.addColumn(Column{Windows: []WindowID{id}, Cells: cells})
@@ -1051,6 +1055,7 @@ func (w *Workspace) GrowColumn(cycle bool) {
 		return
 	}
 	defer w.scroll()
+	w.clearSpans(w.Focus)
 	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	}
@@ -1120,6 +1125,7 @@ func (w *Workspace) ShrinkColumn() {
 		return
 	}
 	defer w.scroll()
+	w.clearSpans(w.Focus)
 	if w.policy().wraps && w.Columns[w.Focus].FullWidth {
 		w.unmaximizeBand()
 	}
@@ -1667,6 +1673,9 @@ func (w *Workspace) scrollWidth(i int) int {
 		// Fixed overflow past MaxColumns: the spiral's slots.
 		return w.equalShare(k)
 	}
+	if w.validSpans(0, len(w.Columns)-1) {
+		return w.Columns[i].Span * max(w.Usable.W-2*w.gap(), 0) / 10000
+	}
 	c := w.Columns[i].Cells
 	if c <= 0 {
 		return w.equalShare(min(len(w.Columns), k))
@@ -1682,6 +1691,7 @@ func (w *Workspace) columnX(i int) int {
 	return x
 }
 func (w *Workspace) scroll() {
+	w.dropStaleSpans()
 	before := w.View
 	defer func() { w.retarget(before) }()
 	if w.policy().wraps {
