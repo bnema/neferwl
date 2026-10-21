@@ -133,6 +133,7 @@ func (w *Workspace) setBorder(b border, pos int) bool {
 	}
 	stamped := !w.validSpans(first, last)
 	if stamped {
+		// Mutates spans, so it must not cache validity across this loop.
 		w.spanSeq++
 		used := 0
 		for i := first; i <= last; i++ {
