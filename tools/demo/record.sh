@@ -16,12 +16,3 @@ ffmpeg -hide_banner -loglevel warning -f concat -safe 0 \
     -c:v libx264 -crf 23 -movflags +faststart docs/media/demo.mp4 -y
 ffmpeg -hide_banner -loglevel warning -ss 15.5 -i docs/media/demo.mp4 \
     -frames:v 1 -update 1 docs/media/demo.png -y
-# Keep the optional, smaller preview only when it fits the README asset budget.
-ffmpeg -hide_banner -loglevel warning -i docs/media/demo.mp4 \
-    -vf 'fps=10,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse' \
-    "$work/demo.gif" -y
-if (( $(wc -c < "$work/demo.gif") < 5000000 )); then
-    cp "$work/demo.gif" docs/media/demo.gif
-else
-    printf 'GIF exceeds 5 MB; skipped (candidate: %s/demo.gif).\n' "$work"
-fi

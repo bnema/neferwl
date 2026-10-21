@@ -7,10 +7,10 @@ clear
 case ${1:-} in
     system)
         fastfetch --logo small --structure OS:Kernel:WM:Terminal:Memory:Colors
-        ls -la --color=always /etc | head -24 || true
+        ls -lago --color=always /etc | head -24 || true
         ;;
     files)
-        ls -l --color=always /usr/share | head -34 || true
+        ls -lgo --color=always /usr/share | head -34 || true
         ;;
     stash)
         printf '\033[1;36m  NEFERWL / YOUR STASH\033[0m\n\n'
