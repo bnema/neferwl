@@ -68,6 +68,16 @@ func (r *captureRig) layer(id ports.WindowID, layer ports.Layer, keyboard uint32
 	return ports.LayerSurface{ID: id, Layer: layer, Anchor: ports.AnchorTop | ports.AnchorLeft, Width: 10, Height: 10, Output: "OUT-1", Keyboard: keyboard}
 }
 
+// drainCommands drops the commands already queued. Call it only once the
+// core is quiet (after receiving a scene, which is published after its
+// commands) and before sending the event under test: draining after the
+// send races with the core emitting the commands the test waits for.
+func (r *captureRig) drainCommands() {
+	for len(r.commands) > 0 {
+		<-r.commands
+	}
+}
+
 // excludedScene waits for a scene whose exclusion list has n entries.
 func (r *captureRig) excludedScene(t *testing.T, n int) ports.Scene {
 	t.Helper()
@@ -372,10 +382,8 @@ func TestCaptureExclusionKeyboardClamp(t *testing.T) {
 	r.client <- ports.CaptureExclusionBegin{Session: 1}
 	r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
 	r.excludedScene(t, 1)
+	r.drainCommands()
 	r.client <- ports.LayerChanged{Layers: []ports.LayerSurface{r.layer(10, ports.LayerOverlay, 1), r.layer(11, ports.LayerOverlay, 1)}}
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
 	scene(t, r.scenes)
 	for {
 		if f, ok := receive(t, r.commands).(ports.FocusWindow); ok {
@@ -396,9 +404,7 @@ func TestCaptureExclusionKeyboardNone(t *testing.T) {
 	r.client <- ports.CaptureExclusionBegin{Session: 1}
 	r.client <- ports.CaptureExclusionLayer{Session: 1, Layer: 10, Attached: true}
 	r.excludedScene(t, 1)
-	for len(r.commands) > 0 {
-		<-r.commands
-	}
+	r.drainCommands()
 	r.client <- ports.WindowMapped{ID: 1}
 	scene(t, r.scenes)
 	for len(r.commands) > 0 {
