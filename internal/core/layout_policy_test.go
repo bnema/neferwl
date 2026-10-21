@@ -90,7 +90,10 @@ func TestScrollWidthsMatchPerColumnValidation(t *testing.T) {
 
 func TestDropStaleSpansKeepsValidLanes(t *testing.T) {
 	w := spanWorkspace(OverflowScroll, 4)
-	w.dropStaleSpans()
+	// An unstamped workspace returns before any lane is measured.
+	if n := testing.AllocsPerRun(10, w.dropStaleSpans); n != 0 {
+		t.Fatalf("unstamped workspace allocates %v", n)
+	}
 	if w.Columns[0].Span != 0 || w.Columns[0].spanStamp != 0 {
 		t.Fatal("unstamped workspace changed")
 	}
@@ -108,5 +111,53 @@ func TestDropStaleSpansKeepsValidLanes(t *testing.T) {
 		if c.Span != 0 || c.spanStamp != 0 {
 			t.Fatal("stale lane kept", i)
 		}
+	}
+}
+
+// TestColumnEdgesMatchColumnRects checks columnEdges against columnRects, an
+// independent path that builds the same row with the view shift applied.
+func TestColumnEdgesMatchColumnRects(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mode  Overflow
+		setup func(w *Workspace)
+		// xs is compared where the rects keep the row's x (not cascade bands,
+		// nor the focused maximized column of fixed overflow).
+		xs bool
+	}{
+		{"scroll plain", OverflowScroll, func(w *Workspace) {}, true},
+		{"scroll stamped", OverflowScroll, func(w *Workspace) { stampSpans(w, 0, len(w.Columns)-1) }, true},
+		{"scroll full width", OverflowScroll, func(w *Workspace) { w.Columns[1].FullWidth = true }, true},
+		{"scroll fullscreen", OverflowScroll, func(w *Workspace) { w.SetFullscreen(w.Columns[2].Windows[0], true) }, true},
+		{"scroll viewed", OverflowScroll, func(w *Workspace) { w.View = 137 }, true},
+		{"fixed", OverflowFixed, func(w *Workspace) {}, true},
+		{"fixed full width", OverflowFixed, func(w *Workspace) { w.Columns[1].FullWidth = true; w.Focus = 0 }, true},
+		{"fixed focused full width", OverflowFixed, func(w *Workspace) { w.Columns[1].FullWidth = true; w.Focus = 1 }, false},
+		{"fixed fullscreen", OverflowFixed, func(w *Workspace) { w.SetFullscreen(w.Columns[2].Windows[0], true) }, true},
+		{"fixed stamped", OverflowFixed, func(w *Workspace) { stampSpans(w, 0, len(w.Columns)-1) }, true},
+		{"cascade", OverflowCascade, func(w *Workspace) {}, false},
+		{"cascade full width", OverflowCascade, func(w *Workspace) { w.Columns[1].FullWidth = true }, false},
+		{"cascade stamped", OverflowCascade, func(w *Workspace) { stampSpans(w, 0, len(w.Columns)-1) }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := spanWorkspace(tc.mode, 3)
+			tc.setup(w)
+			if tc.mode != OverflowScroll && w.scrollSpansValid() {
+				t.Fatal("equal-cell workspace must not take the scroll span path")
+			}
+			xs, ws := w.columnEdges()
+			rs := w.columnRectsAt(nil, false, 0)
+			if len(xs) != len(rs) || len(ws) != len(rs) {
+				t.Fatal("length", len(xs), len(ws), len(rs))
+			}
+			for i, r := range rs {
+				if ws[i] != r.W {
+					t.Errorf("column %d width %d, rect %d", i, ws[i], r.W)
+				}
+				if tc.xs && xs[i] != r.X+w.View {
+					t.Errorf("column %d x %d, rect %d + view %d", i, xs[i], r.X, w.View)
+				}
+			}
+		})
 	}
 }

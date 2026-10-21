@@ -283,3 +283,42 @@ func TestBorderMotionPublishesOnlyChanges(t *testing.T) {
 		t.Fatalf("motion clamped at the minimum published %+v", cmds)
 	}
 }
+
+func TestSetBorderUndersizedPairReportsStampOnce(t *testing.T) {
+	t.Run("row", func(t *testing.T) {
+		w := spanWorkspace(OverflowFixed, 1)
+		w.Columns[0].Windows = []WindowID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		// Ten rows is the most that fit; pixel rounding leaves the last pair
+		// just under twice the minimum share.
+		b := border{kind: borderRow, col: 0, row: 8}
+		rows := rowRects(w.columnRects()[0], w.Columns[0], w.gap())
+		pos := rows[8].Y + 1
+		if !w.setBorder(b, pos) {
+			t.Fatal("stamping an undersized row pair must report a change")
+		}
+		if c := w.Columns[0]; c.Shares[8]+c.Shares[9] >= 2*minShare {
+			t.Fatal("row pair not undersized", c.Shares)
+		}
+		if w.setBorder(b, pos) {
+			t.Fatal("repeat on an undersized row pair reported a change")
+		}
+	})
+	for _, mode := range []Overflow{OverflowFixed, OverflowCascade} {
+		t.Run(string(mode), func(t *testing.T) {
+			w := spanWorkspace(mode, 3)
+			w.border = 300
+			b := border{kind: borderColumn, col: 0}
+			pos := w.columnRects()[0].X + 100
+			if !w.setBorder(b, pos) {
+				t.Fatal("stamping an undersized column pair must report a change")
+			}
+			avail := w.Usable.W - w.gap()*4
+			if pair := w.Columns[0].Span + w.Columns[1].Span; pair >= 2*pixelShare(4*w.border, avail) {
+				t.Fatal("column pair not undersized", pair)
+			}
+			if w.setBorder(b, pos) {
+				t.Fatal("repeat on an undersized column pair reported a change")
+			}
+		})
+	}
+}
