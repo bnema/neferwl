@@ -288,6 +288,9 @@ type Server struct {
 	fractions         map[*surface]*fractionalscale.WpFractionalScaleV1
 	// cursorSurface is the wl_pointer.set_cursor surface in use.
 	cursorSurface *surface
+	// cursorClient and cursorOverride belong to the display goroutine.
+	cursorClient   ports.CursorChange
+	cursorOverride string
 	// cursorMu guards only the latest cursor change for forwardCursors.
 	cursorMu     sync.Mutex
 	cursorLatest ports.CursorChange
@@ -751,12 +754,14 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		// Only input/focus commands require an owner envelope. Config relay
 		// also produces SetKeymap and other epoch-independent commands.
 		switch cmd.(type) {
-		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers,
+		case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers, ports.CursorOverride,
 			ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
 			return
 		}
 	}
 	switch c := cmd.(type) {
+	case ports.CursorOverride:
+		s.setCursorOverride(c.Shape)
 	case ports.PointerFocus, ports.PointerMotionTo, ports.PointerButtonTo, ports.PointerAxisTo, ports.GestureBeginTo, ports.GestureUpdateTo, ports.GestureEndTo, ports.SetKeymap, ports.FocusWindow, ports.ForwardKey, ports.SetModifiers:
 		s.applyInput(c)
 	case ports.DataDragFocus, ports.DataDragMotion, ports.DataDragDrop, ports.DataDragCancel:
