@@ -60,8 +60,9 @@ See [examples/config](../examples/config) for every key with its default.
 | `focus.flash-duration` | `200ms` | Fade duration, `50ms` to `1s`; not scaled by `animations.speed` |
 | `focus.flash-color` | `border.active` | Flash color `#rrggbb`; empty uses `border.active` |
 | `hint.enable` | `off` | Turn on the experimental [hint mode](#hint-mode) (restart required) |
-| `hint.targets` | `clickable` | What [hint mode](#hint-mode) labels: `clickable` (links, URLs and buttons) or `links` (links and URLs only) |
-| `hint.text-click` | `ctrl+shift` | Modifiers held for clicks on links found by OCR (terminals open links on a modified click); `none` sends a plain click |
+| `hint.detector` | `nefer-hints` | The [hint mode](#hint-mode) detector binary: a path, or a name looked up in `PATH` (restart required) |
+| `hint.model` | `$XDG_DATA_HOME/nefer-hints/models` | Directory of the detector's model files; `~/.local/share/nefer-hints/models` when `XDG_DATA_HOME` is unset; a leading `~/` is expanded (restart required) |
+| `hint.threshold` | `0.05` | Minimum detection score, 0.01 to 0.99; lower finds more targets and more false ones (restart required) |
 | `hint.capture` | `off` | Show hint labels in captures requested by Wayland clients (screenshots, screencasts); the compositor's own hint scans never see them; applies on reload |
 | `hint.size` | `auto` | Label text size in logical pixels (6 to 72), or `auto` for screen pixel density |
 | `hint.background` | empty | Label background (`#rrggbb`); empty uses `border.active` |
@@ -248,7 +249,7 @@ bind.XF86MonBrightnessDown = spawn brightnessctl set 5%-
 | `toggle-window-stash` | Move the focused window to the [stash](#stash), or back to its column |
 | `toggle-stash-visible` | Show or hide the stash |
 | `toggle-overview` | Open or close the [overview](#overview) |
-| `hint` | Label the links and buttons on the focused screen, then click the one you type ([hint mode](#hint-mode)) |
+| `hint` | Label the clickable elements on the focused screen, then click the one you type ([hint mode](#hint-mode)) |
 | `switch-column-next` / `-prev` | Switch to the previously used column. Hold `cmd` and press again to go further back |
 | `maximize-column` | Toggle full width for the focused column |
 | `cycle-column-width` | Grow the focused column by one [cell](#column-widths), then back to equal widths |
@@ -368,46 +369,40 @@ Hint mode is experimental and off by default: set `hint.enable = on` and restart
 While it is off, nothing of hint mode runs or uses memory, and the `hint` bind
 logs a notice once and does nothing. A reload does not change it.
 
-`hint` labels the links and buttons on the focused output. Type a label to
-click its target; BackSpace erases a letter, Escape cancels. No bind is set
-by default; for example `bind.cmd+g = hint`.
+`hint` labels the clickable elements (buttons, links, icons, fields) on the
+focused output. Type a label to click its target; BackSpace erases a letter,
+Escape cancels. No bind is set by default; for example `bind.cmd+g = hint`.
 
 Labels use the `border.active` colour with a contrasting text colour, and
 their size follows the screen's pixel density. Each label sits just outside
-the top-left corner of its target. Links found by OCR (terminal text) are
-clicked with the `hint.text-click` modifiers held, which is how terminals open
-a link; accessibility targets get a plain click.
+the top-left corner of its target. The click is a plain left click.
 
 Labels are not part of screenshots and screencasts by default. With
 `hint.capture = on` they appear in the captures that Wayland clients request
-(including Exclude captures); NeferWL's own text recognition never sees them.
+(including Exclude captures); the detector never sees them.
 The capture indicator and the position hint stay out of every capture.
 A reload applies `hint.capture` to the next frame.
 
 ### Where targets come from
 
-| Source | Apps | Accuracy | Speed |
-|---|---|---|---|
-| Accessibility tree (AT-SPI) | Firefox, Chromium, GTK, Qt, Electron | Exact: the app reports its own links and buttons | A few milliseconds |
-| Text recognition (OCR) | Everything else: terminals, apps without accessibility | Best effort: URLs, domains and underlined text written on screen | 150 ms or more, more on large screens |
+Targets come from `nefer-hints`, a separate program that looks at the pixels of
+the whole output with a neural network and returns a box for each clickable
+element. It works the same for every app, toolkit and terminal. It sees what is
+drawn: it does not know what an element does, and it can miss or invent boxes
+(`hint.threshold` trades one for the other). Boxes under 4×4 logical pixels
+are dropped.
 
-NeferWL asks the accessibility tree first. Windows it does not cover are read
-with OCR, which finds visible URLs, domains, email addresses and underlined
-text. Underlined words get a plain click, and the words of one continuous
-underline form one target; URLs keep the `hint.text-click` modifiers. OCR
-cannot see a link whose address is hidden behind plain text, and it can misread
-small or low-contrast text.
+NeferWL starts `nefer-hints` at the first hint scan (loading takes about half a
+second), keeps it running, and stops it on exit. If it dies, fails or takes
+more than 2 seconds on a scan, that scan is cancelled and a new process starts
+at the next one. Its device (GPU or CPU) is logged at startup, at info level.
 
 ### Requirements
 
-- Accessibility: NeferWL enables it lazily on the first hint scan that queries
-  app windows. Apps started before then may need restarting. Some apps need a flag:
-  - Chromium: `--force-renderer-accessibility`
-  - Electron: `ACCESSIBILITY_ENABLED=1`
-  - Qt: `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`
-- OCR: `tesseract` and `tesseract-data-eng`. Without tesseract, OCR is off
-  and hint mode labels only apps that expose the accessibility tree.
+- The `nefer-hints` binary, found in `PATH` or named by `hint.detector`.
+- Its model files, in `hint.model`.
+- A Vulkan GPU for speed; without one the detector falls back to the CPU, which is slower.
 
 ### Debugging hint mode
 
-With `hint.enable = on` and `NEFERWL_HINT_DEBUG=1` set when NeferWL starts (for example `NEFERWL_HINT_DEBUG=1 make tty`, or the variable in the launch environment), every successful scan writes three files to `$XDG_STATE_HOME/neferwl/hints/` (`~/.local/state/neferwl/hints/` when unset): `<time>-<output>.png`, the frame as scanned; `<time>-<output>.annotated.png`, the same with each target outlined (OCR links green, accessibility targets magenta, OCR window crops grey); and `<time>-<output>.json`, the targets (with their `source`, `atspi` or `ocr`) and timings. NeferWL keeps the 50 most recent scans and logs a warning at startup. The files contain the screen in clear: delete them after use.
+With `hint.enable = on` and `NEFERWL_HINT_DEBUG=1` set when NeferWL starts (for example `NEFERWL_HINT_DEBUG=1 make tty`, or the variable in the launch environment), every successful scan writes three files to `$XDG_STATE_HOME/neferwl/hints/` (`~/.local/state/neferwl/hints/` when unset): `<time>-<output>.png`, the frame as scanned; `<time>-<output>.annotated.png`, the same with the detector boxes outlined; and `<time>-<output>.json`, the targets (rectangle and score) and the capture, detection and total timings. NeferWL keeps the 50 most recent scans and logs a warning at startup. The detector's own messages are logged at debug level (`log.debug = hints`). The files contain the screen in clear: delete them after use.

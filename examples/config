@@ -98,9 +98,10 @@ focus.flash-duration = 200ms
 focus.flash-color =
 # Hint mode is experimental and off: turn it on here (restart required).
 # hint.enable = off
-# Hint mode labels the links, URLs and buttons on the focused screen:
-# clickable (links, URLs and buttons) or links (links and URLs only).
-# hint.targets = clickable
+# Hint mode finds its targets with the nefer-hints detector (restart required).
+# hint.detector = nefer-hints
+# hint.model = ~/.local/share/nefer-hints/models
+# hint.threshold = 0.05
 # Show the labels in screenshots and screencasts taken by clients.
 # hint.capture = off
 
