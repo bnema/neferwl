@@ -287,7 +287,7 @@ func (c *Core) hintKey(ctx context.Context, key ports.KeyEvent) (bool, error) {
 // still be down) from turning it into a window drag, without touching c.mods.
 //
 // The window gets the keyboard first.
-func (c *Core) hintClick(ctx context.Context, t hintTarget) error {
+func (c *Core) hintClick(ctx context.Context, t hintTarget) (err error) {
 	c.hintCancel()
 	if err := c.publish(ctx); err != nil {
 		return err
@@ -298,6 +298,16 @@ func (c *Core) hintClick(ctx context.Context, t hintTarget) error {
 	if err := c.clickFocus(ctx, t.window); err != nil {
 		return err
 	}
+	// The physical modifiers (bind's Super, Ctrl, Shift) must not reach the
+	// client: state none, and always send the real state back afterwards.
+	if err := c.command(ctx, ports.SetModifiers{ID: t.window, Mods: 0}); err != nil {
+		return err
+	}
+	defer func() {
+		if e := c.command(ctx, ports.SetModifiers{ID: t.window, Restore: true, State: c.keyState}); err == nil {
+			err = e
+		}
+	}()
 	c.synthetic = true
 	defer func() { c.synthetic = false }()
 	if err := c.pointerMotion(ctx, ports.PointerMotion{X: t.x, Y: t.y, Time: c.motionTime}); err != nil {

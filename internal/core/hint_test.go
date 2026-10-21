@@ -462,7 +462,20 @@ func TestHintClickWithBindModifierHeld(t *testing.T) {
 	h.drain()
 	h.press("f", ports.ModSuper) // Super is still down
 	h.labelled(0, 0)
-	presses, releases := h.buttonsSent()
+	cmds := h.barrier()
+	if got, want := commandKinds(cmds), []string{"mods:0", "motion", "press", "release", "mods:restore"}; !slices.Equal(got, want) {
+		t.Fatalf("commands %v, want %v", got, want)
+	}
+	presses, releases := 0, 0
+	for _, c := range cmds {
+		if b, ok := c.(ports.PointerButtonTo); ok {
+			if b.Pressed {
+				presses++
+			} else {
+				releases++
+			}
+		}
+	}
 	if presses != 1 || releases != 1 {
 		t.Fatalf("client got %d presses, %d releases", presses, releases)
 	}
@@ -588,7 +601,7 @@ func (h *hintHarness) commandsSent() []ports.ClientCommand {
 	var out []ports.ClientCommand
 	for _, cmd := range h.barrier() {
 		switch cmd.(type) {
-		case ports.FocusWindow, ports.PointerMotionTo, ports.PointerButtonTo:
+		case ports.FocusWindow, ports.SetModifiers, ports.PointerMotionTo, ports.PointerButtonTo:
 			out = append(out, cmd)
 		}
 	}
@@ -601,6 +614,12 @@ func commandKinds(cmds []ports.ClientCommand) []string {
 		switch v := c.(type) {
 		case ports.FocusWindow:
 			out = append(out, fmt.Sprintf("focus:%d", v.ID))
+		case ports.SetModifiers:
+			if v.Restore {
+				out = append(out, "mods:restore")
+			} else {
+				out = append(out, fmt.Sprintf("mods:%d", v.Mods))
+			}
 		case ports.PointerMotionTo:
 			out = append(out, "motion")
 		case ports.PointerButtonTo:
@@ -622,7 +641,7 @@ func TestHintClickSequence(t *testing.T) {
 	h.drain()
 	h.press("f", 0)
 	got := commandKinds(h.commandsSent())
-	want := []string{"motion", "press", "release"}
+	want := []string{"mods:0", "motion", "press", "release", "mods:restore"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands %v, want %v", got, want)
 	}
@@ -697,7 +716,7 @@ func TestHintClickFocusesWindowFirst(t *testing.T) {
 	h.drain()
 	h.press("f", 0)
 	got := commandKinds(h.commandsSent())
-	want := []string{"focus:1", "motion", "press", "release"}
+	want := []string{"focus:1", "mods:0", "motion", "press", "release", "mods:restore"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("commands %v, want %v", got, want)
 	}
