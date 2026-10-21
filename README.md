@@ -16,7 +16,7 @@ _Demo video coming soon._
 
 ## Why NeferWL
 
-- **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo; about 40–80 MB of RAM with two 4K monitors. On 4K HDR video, GC takes under 9% of a process using 13% of a core; see [Architecture](docs/architecture.md#keeping-the-garbage-collector-out-of-the-way) and [Performance](docs/performance.md).
+- **Performance:** allocation-free hot paths, no wasted CPU passes and no cgo; about 40–80 MB of RAM with two 4K monitors. On 4K HDR video, GC takes under 9% of a process using 13% of a core; see [Architecture](docs/dev/architecture.md#keeping-the-garbage-collector-out-of-the-way) and [Performance](docs/performance.md).
 - **Games:** direct scanout, VRR, tearing, explicit sync and [HDR](docs/config.md#hdr) give games the whole GPU instead of spending it on composition; see [Performance](docs/performance.md).
 - **Overview:** `cmd+o` or a four-finger swipe up shows live workspace previews. Select a window with the keyboard, touchpad or mouse; see [Overview](docs/config.md#overview).
 - **Stash:** `cmd+s` toggles a floating strip of windows set aside for the current workspace; `cmd+shift+s` moves a window into or out of it. See [Stash](docs/config.md#stash).
@@ -25,7 +25,7 @@ _Demo video coming soon._
 
 Go fits a compositor's independent event streams: each piece of state has one owner goroutine, connected to others by channels.<br>
 Hot paths reuse memory, client buffers stay off the Go heap, and runtime library calls use purego rather than cgo.<br>
-See [Architecture](docs/architecture.md) for the concurrency model, GC strategy and reusable Go libraries.
+See [Architecture](docs/dev/architecture.md) for the concurrency model, GC strategy and reusable Go libraries.
 
 Small on purpose, and staying small: no blur, shadows, rounded corners or themes. No built-in bar or wallpaper either: bring your own, any layer-shell client works.
 
@@ -179,13 +179,14 @@ Reports from NVIDIA and Intel users are welcome.
 ## Documentation
 
 - [Documentation index](docs/index.md): start here.
-- [Architecture](docs/architecture.md): concurrency, GC strategy and purego libraries.
+- [Architecture](docs/dev/architecture.md): concurrency, GC strategy and purego libraries.
 - [Configuration](docs/config.md): keys, actions, bindings and HDR.
 - [Desktop integration](docs/desktop.md): sessions, clipboard, input methods, X11 apps and scripting.
-- [Session locking](docs/session-lock.md): external lockers, recovery and security limits.
+- [Session locking](docs/desktop.md#session-locking): external lockers, recovery and security limits.
 - [Screen capture](docs/capture.md): protocols, indicator, executable allowlist and portals.
-- [Headless mode](docs/headless.md): screenshots, input scripts and input-method testing without a screen.
-- [Performance](docs/performance.md): VRR, real-time priority, profiling and frame stats.
+- [Headless mode](docs/dev/headless.md): screenshots, input scripts and input-method testing without a screen.
+- [Performance](docs/performance.md): VRR and real-time priority.
+- [Developer documentation](docs/dev/index.md): architecture, headless testing, profiling and frame stats.
 
 ## Contributing
 

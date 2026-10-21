@@ -19,7 +19,7 @@ About 35 channels connect them, all created in one place, so the full data flow 
 ### Keeping the garbage collector out of the way
 
 - **The hot path does not allocate.** Frame callbacks, presentation reports, DRM flips, Vulkan submissions and surface updates reuse memory owned by the goroutine that handles them. `make check` runs allocation guards that fail the build when one of these paths starts allocating.
-- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](performance.md).
+- **The GC has almost nothing to collect.** Client buffers live in shared and GPU memory, not on the Go heap, so the live heap is a few megabytes. Playing a 4K HDR video with 65 tiled subsurfaces committing every frame, GC takes under 9 % of a process that itself takes 13 % of a core. See [Performance](../performance.md).
 - **No cgo.** NeferWL builds with `CGO_ENABLED=0`. libwayland, Vulkan and libinput are loaded at runtime through [purego](https://github.com/ebitengine/purego) with fixed-arity calls: no reflection, no allocation at the boundary.
 - **Work only when something changes.** Damage tracking redraws only what changed, surfaces hidden behind opaque ones are skipped, and an idle output does nothing.
 - **Tuned on real hardware.** Under VRR, cursor moves ride on the game's next frame instead of forcing their own refresh, and game frames keep a short gap after each flip so the panel does not fall back to its slowest rate.

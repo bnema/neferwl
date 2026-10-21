@@ -12,7 +12,7 @@ WAYLAND_DISPLAY=<name from the log> foot
   for testing `focus-monitor-left/right` and moving columns between outputs.
 - With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
 - `--timeout 5s` stops NeferWL after 5 seconds.
-- `grim` and recorders work too; see [Screen capture](capture.md).
+- `grim` and recorders work too; see [Screen capture](../capture.md).
 
 ## Input scripts
 
