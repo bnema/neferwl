@@ -1338,7 +1338,6 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius i
 	if sel < 0 {
 		return dst, nil
 	}
-	dst = slices.Grow(dst, outlineLines)
 	r := layout[sel].Rect
 	edges := [4]Rect{
 		{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: b},
@@ -1355,10 +1354,11 @@ func overviewOutline(dst []ports.Separator, layout []Placement, b, gap, radius i
 			}
 		}
 	}
+	if radius := windowRadius(layout[sel], gap, radius); !cut && radius > 0 {
+		return dst, &ports.SelectionOutline{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: r.H + 2*b}, Width: b, Radius: radius + b, Active: true}
+	}
+	dst = slices.Grow(dst, outlineLines)
 	if !cut {
-		if radius := windowRadius(layout[sel], gap, radius); radius > 0 {
-			return dst, &ports.SelectionOutline{Rect: Rect{X: r.X - b, Y: r.Y - b, W: r.W + 2*b, H: r.H + 2*b}, Width: b, Radius: radius + b, Active: true}
-		}
 		for _, e := range edges {
 			dst = append(dst, ports.Separator{Rect: e, Active: true})
 		}

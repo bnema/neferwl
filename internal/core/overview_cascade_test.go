@@ -1215,6 +1215,21 @@ func TestOverviewOutlinePileAllocations(t *testing.T) {
 	}
 }
 
+func TestOverviewOutlineRoundedAllocations(t *testing.T) {
+	ps := []Placement{{Rect: Rect{X: 20, Y: 20, W: 100, H: 80}, Preview: 0.5, Focused: true, Floating: true}}
+	// Keep the returned outline alive so its one snapshot allocation is counted.
+	var outline *ports.SelectionOutline
+	n := testing.AllocsPerRun(50, func() {
+		_, outline = overviewOutline(nil, ps, 2, 0, 12)
+	})
+	if outline == nil {
+		t.Fatal("setup: no rounded outline")
+	}
+	if n != 1 {
+		t.Fatalf("rounded overviewOutline allocs = %v, want 1 (outline only)", n)
+	}
+}
+
 func TestSubtractRects(t *testing.T) {
 	h := Rect{X: 0, Y: 10, W: 100, H: 2}
 	v := Rect{X: 10, Y: 0, W: 2, H: 100}

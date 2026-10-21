@@ -444,7 +444,10 @@ func TestDamageSelectionOutlineDelta(t *testing.T) {
 	a := &ports.SelectionOutline{Rect: ports.Rect{X: 10, Y: 10, W: 40, H: 30}, Width: 2, Radius: 10, Active: true}
 	b := *a
 	b.Rect.X = 60
-	for _, pair := range [][2]*ports.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, a}} {
+	wider, rounder := *a, *a
+	wider.Width++
+	rounder.Radius++
+	for _, pair := range [][2]*ports.SelectionOutline{{nil, a}, {a, nil}, {a, &b}, {a, &wider}, {a, &rounder}, {a, a}} {
 		old, cur := deltaScene(1), deltaScene(2)
 		old.Outline, cur.Outline = pair[0], pair[1]
 		area, ok := sceneDelta(old, cur, func(r ports.Rect) image.Rectangle { return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H) }, 500000)
