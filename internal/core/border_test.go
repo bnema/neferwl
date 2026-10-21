@@ -176,3 +176,20 @@ func TestSetRowBorder(t *testing.T) {
 		t.Fatal("reset")
 	}
 }
+
+func TestBorderPixelRemainders(t *testing.T) {
+	for width := 997; width <= 1003; width++ {
+		w := spanWorkspace(OverflowFixed, 3)
+		w.SetOutput(width, 800)
+		before := w.columnRects()
+		b := border{kind: borderColumn, col: 0}
+		for delta := -20; delta <= 20; delta++ {
+			pos := before[0].X + before[0].W + 5 + delta
+			w.setBorder(b, pos)
+			after := w.columnRects()
+			if after[2].X != before[2].X || after[0].X+after[0].W+5 != pos {
+				t.Fatal(width, delta, before, after)
+			}
+		}
+	}
+}

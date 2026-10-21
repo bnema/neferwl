@@ -29,7 +29,7 @@ func borderZone(a, b, pad int) (int, int) {
 }
 
 func (w *Workspace) borderAt(x, y, pad int) (border, bool) {
-	if w.fullscreen != 0 {
+	if w.fullscreen != 0 || !borderContains(w.Usable, x, y) {
 		return border{}, false
 	}
 	// Overview and preview are Monitor presentation, not Workspace state. Their
@@ -101,6 +101,8 @@ func (w *Workspace) setBorder(b border, pos int) {
 			c.Shares = make([]int, len(rows))
 			used := 0
 			for i := range rows {
+				// Stamp the middle of the pixel bucket, leaving room for
+				// pair-preserving rounding on subsequent resizes.
 				c.Shares[i] = (rows[i].H*10000 + 5000) / avail
 				used += c.Shares[i]
 			}
@@ -112,6 +114,9 @@ func (w *Workspace) setBorder(b border, pos int) {
 		}
 		target := pixelShare(pos-w.gap()/2-rows[b.row].Y, avail)
 		target = min(max(target, minShare), pair-minShare)
+		if b.row+1 < len(rows)-1 {
+			target = pairPixelShare(target, pair, avail, rows[b.row].H+rows[b.row+1].H, minShare)
+		}
 		c.Shares[b.row], c.Shares[b.row+1] = target, pair-target
 		return
 	}
@@ -129,7 +134,7 @@ func (w *Workspace) setBorder(b border, pos int) {
 	if !w.validSpans(first, last) {
 		used := 0
 		for i := first; i <= last; i++ {
-			w.Columns[i].Span = max(pixelShare(rs[i].W, avail), 1)
+			w.Columns[i].Span = max((rs[i].W*10000+5000)/avail, 1)
 			w.Columns[i].spanLane = last - first + 1
 			used += w.Columns[i].Span
 		}
@@ -148,6 +153,9 @@ func (w *Workspace) setBorder(b border, pos int) {
 		return
 	}
 	target = min(max(target, minimum), pair-minimum)
+	if b.col+1 < last {
+		target = pairPixelShare(target, pair, avail, rs[b.col].W+rs[b.col+1].W, minimum)
+	}
 	w.Columns[b.col].Span, w.Columns[b.col+1].Span = target, pair-target
 }
 
@@ -161,4 +169,18 @@ func (w *Workspace) resetBorder(b border) {
 	case borderRow:
 		w.Columns[b.col].Shares = nil
 	}
+}
+
+// pairPixelShare keeps the pair's combined integer width unchanged as well as
+// its basis-point sum. Independent floors can otherwise shift later tiles by
+// one pixel even when the sum of the two shares is constant.
+func pairPixelShare(target, pair, avail, pixels, minimum int) int {
+	left := avail * target / 10000
+	right := pixels - left
+	lo := max(pixelShare(left, avail), pair-pixelShare(right+1, avail)+1, minimum)
+	hi := min(pixelShare(left+1, avail)-1, pair-pixelShare(right, avail), pair-minimum)
+	if lo <= hi {
+		return min(max(target, lo), hi)
+	}
+	return target
 }
