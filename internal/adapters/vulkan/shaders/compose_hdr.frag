@@ -49,6 +49,8 @@ const uint flagP010 = 32u;
 // flagSmooth averages four samples a quarter of a target pixel around the
 // point: a thumbnail shrunk under half size keeps thin lines and text.
 const uint flagSmooth = 64u;
+const uint flagRounded = 128u;
+const uint flagRing = 256u;
 
 // The HDR composition target holds linear BT.709 in SDR-white units.
 vec3 decodeSRGB(vec3 v) {
@@ -161,9 +163,9 @@ void main() {
         // The surface's alpha modifier; premultiplied, it scales all four.
         c *= d.color.a;
     }
-    if ((d.misc.y & 128u) != 0u) {
+    if ((d.misc.y & flagRounded) != 0u) {
         c *= coverage(d.round, d.radii.x);
-        if ((d.misc.y & 256u) != 0u) c *= 1.0 - coverage(d.roundInner, d.radii.y);
+        if ((d.misc.y & flagRing) != 0u) c *= 1.0 - coverage(d.roundInner, d.radii.y);
     }
     color = c;
 }

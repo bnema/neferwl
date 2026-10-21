@@ -775,8 +775,8 @@ func set(c *ports.Config, key, v string) error {
 		c.Stash.SpawnTerminal = b
 	case "border.radius":
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 0 {
-			return fmt.Errorf("must be a non-negative integer")
+		if err != nil || n < 0 || n > 64 {
+			return fmt.Errorf("must be between 0 and 64")
 		}
 		c.Border.Radius = n
 	case "border.width":

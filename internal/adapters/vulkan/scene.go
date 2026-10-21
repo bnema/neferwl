@@ -11,7 +11,6 @@ import (
 // sceneWalk turns one scene into quads in paint order, copying new wl_shm
 // content into GPU buffers on the way. It lives for one frame.
 type sceneWalk struct {
-	rounded  bool
 	r        *Renderer
 	s        ports.Scene
 	contents map[ports.WindowID]ports.SurfaceContent
@@ -24,8 +23,12 @@ type sceneWalk struct {
 	// alpha is the opacity of the window being drawn, 1 - its Fade
 	// (ports.SceneWindow.Fade): its fills, lines and surfaces are scaled by
 	// it (premultiplied); 1 otherwise.
-	alpha  float32
-	bounds image.Rectangle
+	alpha float32
+	// rounded marks the window being drawn as rounded: it suppresses
+	// opaque-child culling (opaqueChildren), as the corners must show what
+	// is below.
+	rounded bool
+	bounds  image.Rectangle
 	// tileBounds is bounds cut to Scene.TileArea: where tiles and their
 	// lines draw.
 	tileBounds image.Rectangle
@@ -256,33 +259,31 @@ func (w *sceneWalk) windows() {
 		body := w.physRect(c.X, c.Y, c.W, c.H)
 		content := w.contents[win.ID]
 		// Damage counts only what is drawn: never the panel under a tile.
-		w.dmg.window(win.ID, content, w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H).Intersect(w.bounds))
+		outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
+		w.dmg.window(win.ID, content, outer.Intersect(w.bounds))
 		w.rounded = win.Radius > 0
+		var radius, innerRadius float32
 		if win.Radius > 0 {
-			radius := float32(math.Round(float64(win.Radius) * w.scale))
-			innerRadius := max(radius-float32(math.Round(float64(b)*w.scale)), 0)
-			outer := w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H)
-			col := ""
-			for _, sep := range w.s.Separators {
-				if sep.Window == win.ID {
-					if col == "" {
-						col = w.s.Border.Inactive
-					}
-					if sep.Active {
-						col = w.s.Border.Active
-						break
-					}
-				}
-			}
-			if col != "" && b > 0 {
+			radius = float32(math.Round(float64(win.Radius) * w.scale))
+			// The border's physical width, from the rects actually drawn.
+			bPhys := min(body.Min.X-outer.Min.X, body.Min.Y-outer.Min.Y, outer.Max.X-body.Max.X, outer.Max.Y-body.Max.Y)
+			innerRadius = max(radius-float32(max(bPhys, 0)), 0)
+			if col := w.ringColor(win.ID); col != "" && b > 0 {
 				n := len(w.draws)
 				w.fill(outer, parseColor(col))
 				if len(w.draws) > n {
 					dr := &w.draws[n]
 					roundedDraw(dr, outer, radius)
 					dr.pc.misc[1] |= flagRing
-					dr.roundInner = roundRect(body.Inset(1))
-					dr.radii[1] = math.Float32bits(max(innerRadius-1, 0))
+					// Opaque, the ring runs 1px under the body so no seam
+					// shows; faded, that overlap would double up: the hole
+					// is the body.
+					hole, holeRadius := body.Inset(1), max(innerRadius-1, 0)
+					if w.alpha < 1 {
+						hole, holeRadius = body, innerRadius
+					}
+					dr.roundInner = roundRect(hole)
+					dr.radii[1] = math.Float32bits(holeRadius)
 				}
 			}
 		}
@@ -301,8 +302,6 @@ func (w *sceneWalk) windows() {
 			w.zoom = 1
 		}
 		if win.Radius > 0 {
-			radius := float32(math.Round(float64(win.Radius) * w.scale))
-			innerRadius := max(radius-float32(math.Round(float64(b)*w.scale)), 0)
 			for j := start; j < len(w.draws); j++ {
 				roundedDraw(&w.draws[j], body, innerRadius)
 			}
@@ -312,11 +311,11 @@ func (w *sceneWalk) windows() {
 		dimStart := len(w.draws)
 		if win.Dim > 0 {
 			// A stashed window peeking in: dimmed with its border.
-			w.dim(w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), win.Dim)
+			w.dim(outer, win.Dim)
 		}
 		if win.Radius > 0 {
 			for j := dimStart; j < len(w.draws); j++ {
-				roundedDraw(&w.draws[j], w.physRect(win.Rect.X, win.Rect.Y, win.Rect.W, win.Rect.H), float32(math.Round(float64(win.Radius)*w.scale)))
+				roundedDraw(&w.draws[j], outer, radius)
 			}
 		}
 		w.rounded = false
@@ -333,6 +332,22 @@ func (w *sceneWalk) tileSeparators() {
 	w.bounds = w.tileBounds
 	w.separators(0)
 	w.bounds = b
+}
+
+// ringColor is the border color of the window id's lines: the inactive one,
+// or the active one when any of its lines is active; "" without lines.
+func (w *sceneWalk) ringColor(id ports.WindowID) string {
+	col := ""
+	for _, sep := range w.s.Separators {
+		if sep.Window != id {
+			continue
+		}
+		if sep.Active {
+			return w.s.Border.Active
+		}
+		col = w.s.Border.Inactive
+	}
+	return col
 }
 
 // separators draws a window's border lines in order, active lines over
@@ -688,10 +703,14 @@ func parseColor(s string) [3]uint8 {
 	return c
 }
 
-// Rounded bounds stay independent of scissor/damage clipping.
+// roundRect is r as float bounds for the shader's rounded coverage. Rounded
+// bounds stay independent of scissor/damage clipping.
 func roundRect(r image.Rectangle) [4]float32 {
 	return [4]float32{float32(r.Min.X), float32(r.Min.Y), float32(r.Max.X), float32(r.Max.Y)}
 }
+
+// roundedDraw makes d a rounded draw: the shader clips it to rect with
+// corners of radius (physical pixels).
 func roundedDraw(d *draw, rect image.Rectangle, radius float32) {
 	d.pc.misc[1] |= flagRounded
 	d.round = roundRect(rect)

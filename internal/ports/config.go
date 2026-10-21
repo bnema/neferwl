@@ -121,7 +121,9 @@ type Config struct {
 		Capture       bool
 		SpawnTerminal bool
 	}
-	// Border is drawn inside the window edge; Width 0 disables it.
+	// Border is drawn inside the window edge; Width 0 disables it. Radius is
+	// in logical pixels, >= 0 (at most 64 from the file): it rounds floats
+	// always and tiles when gaps > 0; the renderer uses SceneWindow.Radius.
 	Border struct {
 		Radius   int
 		Width    int

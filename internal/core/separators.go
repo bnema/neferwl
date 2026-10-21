@@ -2,17 +2,18 @@ package core
 
 import "github.com/bnema/neferwl/internal/ports"
 
-// Like tmux screen-redraw.c, lines separate visible panes, never outline a
-// lone tile or a fullscreen/zoomed tile. Adjacent tiles share one line,
-// owned (and inset) by the left/top tile; focus lights only the adjacent
-// sides of the focused tile, including corners. With exactly two visible
-// tiles and no gaps, each lights its own half of the shared line (left/top
-// first). With gaps, each tile owns a full four-sided border and lights
-// it whole. Hidden, scrolled-off, under-panel, other-workspace and
+// Two modes. Without gaps (gap 0), borders are tmux-style lines (like tmux
+// screen-redraw.c): lines separate visible panes, never outline a lone tile
+// or a fullscreen/zoomed tile. Adjacent tiles share one line, owned (and
+// inset) by the left/top tile; focus lights only the adjacent sides of the
+// focused tile, including corners. With exactly two visible tiles, each
+// lights its own half of the shared line (left/top first). With gaps, each
+// tile owns a full four-sided border, like a float, and lights it whole,
+// even when alone. Hidden, scrolled-off, under-panel, other-workspace and
 // other-output tiles do not count, nor do tiles that share no line. Lines
-// at the edges of the usable area (output or panels) are omitted. Floating windows differ from tmux tiles:
-// each gets its own full border, drawn with that window (Separator.Window),
-// even when it is the only visible window. Only the
+// at the edges of the usable area (output or panels) are omitted. Floating
+// windows also get their own full border, drawn with that window
+// (Separator.Window), even when it is the only visible window. Only the
 // focused output's focused window can light lines; keyboard grabs by popups
 // and layers do not change the underlying window's visual focus.
 
@@ -97,8 +98,8 @@ func separators(ps []Placement, width, gap int, v viewport, lit bool) []ports.Se
 			continue
 		}
 		line = closeCorners(line, *f, s, width)
-		// Two tiles share one line only without gaps.
-		if tiles == 2 && gap == 0 {
+		// With gaps the loop above continued, so two tiles share one line.
+		if tiles == 2 {
 			line = half(line, s)
 		}
 		add(f, line, true)
@@ -157,4 +158,13 @@ func half(r Rect, s ports.Sides) Rect {
 		r.X, r.W = r.X+r.W/2, r.W-r.W/2
 	}
 	return r
+}
+
+// windowRadius is the corner radius of p: floats always, tiles only with
+// gaps, never fullscreen windows.
+func windowRadius(p Placement, gap, radius int) int {
+	if !p.Fullscreen && (p.Floating || gap > 0) {
+		return radius
+	}
+	return 0
 }

@@ -168,8 +168,11 @@ func (s Scene) TileArea() (r Rect, ok bool) {
 }
 
 // Border carries the window border style; colors are #rrggbb, "" skips
-// drawing. Width is in logical pixels.
+// drawing. Width and Radius are in logical pixels.
 type Border struct {
+	// Radius is the corner radius in logical pixels, >= 0. It rounds
+	// floats always and tiles when gaps > 0; the renderer uses
+	// SceneWindow.Radius, which core sets per window.
 	Radius           int
 	Width            int
 	Active, Inactive string
@@ -205,6 +208,7 @@ type FocusFlash struct {
 // SceneWindow carries core → renderer window placement.
 type SceneWindow struct {
 	// Radius rounds the window corners in logical pixels; zero is square.
+	// Core sets Border.Radius here for floats and tiles with gaps.
 	Radius                      int
 	ID                          WindowID
 	Rect                        Rect

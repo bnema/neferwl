@@ -345,3 +345,22 @@ func TestBorderRadiusScene(t *testing.T) {
 		})
 	}
 }
+
+// A reload that only changes border.radius republishes the scene with the
+// new radius.
+func TestReloadBorderRadiusRepublishes(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) { c.Animations.On = false; c.Layout.Gaps = 8; c.Border.Radius = 4 }, left)
+	r.mapWindow(t, 1)
+	cfg := r.cfg
+	cfg.Border.Radius = 12
+	r.reload <- ports.ConfigChanged{Config: cfg}
+	s := scene(t, r.scenes)
+	if s.Border.Radius != 12 {
+		t.Fatalf("style radius %d, want 12", s.Border.Radius)
+	}
+	for _, w := range s.Windows {
+		if w.ID == 1 && w.Radius != 12 {
+			t.Fatalf("window radius %d, want 12", w.Radius)
+		}
+	}
+}

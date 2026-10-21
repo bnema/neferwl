@@ -1068,13 +1068,13 @@ func TestBorderRadius(t *testing.T) {
 	if Defaults().Border.Radius != 0 {
 		t.Fatal("nonzero default")
 	}
-	for _, v := range []string{"0", "10"} {
+	for _, v := range []string{"0", "10", "64"} {
 		c, w := parseString(t, "border.radius = "+v+"\n")
 		if len(w) != 0 || fmt.Sprint(c.Border.Radius) != v {
 			t.Fatalf("radius %s: %v %v", v, c.Border.Radius, w)
 		}
 	}
-	for _, v := range []string{"-1", "bad"} {
+	for _, v := range []string{"-1", "bad", "65"} {
 		_, w := parseString(t, "border.radius = "+v+"\n")
 		if len(w) == 0 {
 			t.Fatalf("accepted %s", v)

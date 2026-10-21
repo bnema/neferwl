@@ -30,6 +30,8 @@ background = #111111
 # The lines along the focused window use active; width 0 disables them,
 # empty inactive draws only the focused lines. Floats get a full border.
 border.width = 2
+# Corner radius in logical pixels (0 to 64): floats always, tiles only with gaps.
+border.radius = 0
 border.active = #808080
 border.inactive = #111111
 

@@ -53,7 +53,7 @@ func (c *Core) captureWindowScene(v *capView, seq uint64) *ports.Scene {
 		Security: c.security,
 		Output:   v.windowScr.name(), Seq: seq, OutputWidth: sz.W, OutputHeight: sz.H, WorkspaceClip: Rect{W: sz.W, H: sz.H},
 		Scale: v.windowScr.scale, Background: c.cfg.Background.Color,
-		Border:  ports.Border{Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
+		Border:  ports.Border{Radius: c.cfg.Border.Radius, Width: c.cfg.Border.Width, Active: c.cfg.Border.Active, Inactive: c.cfg.Border.Inactive},
 		Windows: []ports.SceneWindow{{ID: v.window, Rect: Rect{W: sz.W, H: sz.H}, Fullscreen: true}},
 	}
 	for _, id := range c.popupOrder {

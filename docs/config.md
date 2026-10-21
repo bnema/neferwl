@@ -29,7 +29,7 @@ See [examples/config](../examples/config) for every key with its default.
 | `startup` | none | Commands run at session start, separated by `;` |
 | `xwayland` | `xwayland-satellite` | X11 support; `off` disables it |
 | `background` | `#111111` | Background color |
-| `border.radius` | `0` | Corner radius in logical pixels, non-negative; floats always, tiles only with gaps |
+| `border.radius` | `0` | Corner radius in logical pixels, `0` to `64`; floats always, tiles only with gaps |
 | `border.width` | `2` | Border width in pixels; `0` hides borders |
 | `border.active` / `.inactive` | `#808080` / `#111111` | Border colors of the focused / other windows |
 | `floating.dim` | `0.3` | Darkening behind floating windows and the overview, 0 to 1 |
@@ -84,6 +84,8 @@ See [examples/config](../examples/config) for every key with its default.
 | `performance.realtime` | `on` | Real-time scheduling |
 | `log.level` / `log.debug` | `info` / empty | Log level / debug categories or `all` |
 | `bind.<keys>` | see [Default binds](#default-binds) | [Binds](#binds) |
+
+With `layout.gaps = 0`, borders are tmux-style lines between tiles. With gaps, every tile gets a full border, even alone. `border.radius` rounds floating windows always and tiles with gaps; fullscreen windows, popups and layers stay square.
 
 `<output>` is a connector such as `DP-2`, or a monitor key (`make model serial`).
 
@@ -385,5 +387,3 @@ small or low-contrast text.
 ### Debugging hint mode
 
 With `hint.enable = on` and `NEFERWL_HINT_DEBUG=1` set when NeferWL starts (for example `NEFERWL_HINT_DEBUG=1 make tty`, or the variable in the launch environment), every successful scan writes three files to `$XDG_STATE_HOME/neferwl/hints/` (`~/.local/state/neferwl/hints/` when unset): `<time>-<output>.png`, the frame as scanned; `<time>-<output>.annotated.png`, the same with each target outlined (OCR links green, accessibility targets magenta, OCR window crops grey); and `<time>-<output>.json`, the targets (with their `source`, `atspi` or `ocr`) and timings. NeferWL keeps the 50 most recent scans and logs a warning at startup. The files contain the screen in clear: delete them after use.
-
-With `layout.gaps = 0`, borders are tmux-style lines between tiles. With gaps, every tile gets a full border, even alone. `border.radius` rounds floating windows always and tiles with gaps; fullscreen windows, popups and layers stay square.

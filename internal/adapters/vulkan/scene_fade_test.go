@@ -167,3 +167,26 @@ func TestRoundedWindowDraws(t *testing.T) {
 		t.Fatal("batch loses clip")
 	}
 }
+
+// The ring's hole runs 1px under the body when the window is opaque; faded,
+// that overlap would show twice, so the hole is the body itself.
+func TestRoundedRingHoleFadedVersusOpaque(t *testing.T) {
+	r := &Renderer{width: 80, height: 60}
+	ring := func(fade float64) draw {
+		s := ports.Scene{Scale: 1, Background: "#ffffff", Border: ports.Border{Width: 3, Active: "#ff8800", Inactive: "#888888"},
+			Windows:    []ports.SceneWindow{{ID: 1, Rect: ports.Rect{X: 8, Y: 8, W: 40, H: 40}, Inset: ports.SideAll, Radius: 10, Fade: fade}},
+			Separators: []ports.Separator{{Window: 1, Active: true}}}
+		ds := r.draws(s, nil, newDamage(&target{}, s, image.Rect(0, 0, 80, 60)))
+		if len(ds) == 0 || ds[0].pc.misc[1]&flagRing == 0 {
+			t.Fatalf("fade %v: no ring: %+v", fade, ds)
+		}
+		return ds[0]
+	}
+	opaque, faded := ring(0), ring(0.5)
+	if opaque.roundInner != roundRect(image.Rect(12, 12, 44, 44)) || math.Float32frombits(opaque.radii[1]) != 6 {
+		t.Fatalf("opaque hole %v radius %v", opaque.roundInner, math.Float32frombits(opaque.radii[1]))
+	}
+	if faded.roundInner != roundRect(image.Rect(11, 11, 45, 45)) || math.Float32frombits(faded.radii[1]) != 7 {
+		t.Fatalf("faded hole %v radius %v", faded.roundInner, math.Float32frombits(faded.radii[1]))
+	}
+}

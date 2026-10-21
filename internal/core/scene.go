@@ -72,9 +72,7 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 		// Only the focused output has an activated window.
 		focused := p.Focused && i == c.focusScreen
 		sw := ports.SceneWindow{ID: p.ID, Rect: p.Rect, Focused: focused, Fullscreen: p.Fullscreen, Hidden: p.Hidden, Floating: p.Floating, Below: p.Below, Inset: p.Inset, Preview: p.Preview, Fade: p.Fade}
-		if !p.Fullscreen && (p.Floating || sc.mon.Current().gap() > 0) {
-			sw.Radius = c.cfg.Border.Radius
-		}
+		sw.Radius = windowRadius(p, sc.mon.Current().gap(), c.cfg.Border.Radius)
 		if p.Zoom > 0 && (p.Zoom < 1 || p.Preview > 0) {
 			// A scale motion: the content follows the drawn size. A
 			// card in flight drawn at its size still needs Zoom 1:

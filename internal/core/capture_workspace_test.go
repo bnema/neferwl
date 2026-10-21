@@ -270,3 +270,34 @@ func TestCapturedWorkspaceInOverviewKeepsRealSize(t *testing.T) {
 		}
 	}
 }
+
+// The workspace capture scene carries the corner radius like the live one:
+// a tile with gaps and a float are rounded.
+func TestCaptureSceneRadius(t *testing.T) {
+	c, ws := hiddenCapture(t)
+	c.cfg.Border.Radius = 9
+	ws.Gaps = 4
+	ws.AddFloating(3, 20, 20)
+	c.configures.cw.load(c.screens[0], ws)
+	s := c.captureScene(1)
+	if s == nil || s.Border.Radius != 9 {
+		t.Fatalf("scene %+v", s)
+	}
+	var tiles, floats int
+	for _, w := range s.Windows {
+		if w.Popup {
+			continue
+		}
+		if w.Radius != 9 {
+			t.Fatalf("window %d (floating %v) radius %d, want 9", w.ID, w.Floating, w.Radius)
+		}
+		if w.Floating {
+			floats++
+		} else {
+			tiles++
+		}
+	}
+	if tiles == 0 || floats == 0 {
+		t.Fatalf("tiles %d floats %d", tiles, floats)
+	}
+}

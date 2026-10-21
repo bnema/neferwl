@@ -60,8 +60,9 @@ type Placement struct {
 	// that much smaller in Rect, the client keeps its size. 0 otherwise.
 	Preview float64
 	// Neighbors are the sides touching a tile visible in the usable area.
-	// Inset reserves room for drawn lines: all sides of a float; for
-	// tiles without gaps, only the right and bottom shared sides.
+	// Inset reserves room for drawn lines: all sides of a float; all sides
+	// of a tile with gaps; only the right and bottom shared sides of a tile
+	// without gaps.
 	Neighbors, Inset ports.Sides
 	// Leaving marks a window that closed or hid but is still drawn while
 	// it fades out (transition.go). It stays Hidden, so input, focus,
