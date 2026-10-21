@@ -4,6 +4,7 @@ import (
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
 	"image"
+	"math"
 	"testing"
 )
 
@@ -68,4 +69,41 @@ func TestPositionHintDamageTransitions(t *testing.T) {
 		_, ok := sceneDelta(base, cur, phys, 640*480)
 		require.False(t, ok, "scale change requires full target redraw; geometry scaling is checked separately")
 	})
+}
+
+func TestPositionHintRoundedQuads(t *testing.T) {
+	for _, scale := range []float64{1, 2} {
+		r := &Renderer{width: int(640 * scale), height: int(480 * scale)}
+		h := hintGrid(3, 2)
+		s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: scale, PositionHint: h}
+		dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
+		draws := r.draws(s, nil, dmg)
+		require.Len(t, draws, 1+6)
+		w := sceneWalk{scale: scale}
+		b := h.Bounds(640, 480)
+		pill := w.physRect(b.X, b.Y, b.W, b.H)
+		for i, d := range draws {
+			require.NotZero(t, d.pc.misc[1]&flagRounded, "draw %d", i)
+			require.Zero(t, d.pc.misc[1]&flagRing)
+			require.Equal(t, roundRect(image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))), d.round)
+		}
+		require.Equal(t, pill, image.Rect(int(draws[0].pc.rect[0]), int(draws[0].pc.rect[1]), int(draws[0].pc.rect[2]), int(draws[0].pc.rect[3])))
+		require.Equal(t, float32(w.phys(ports.PositionHintRadius)), math.Float32frombits(draws[0].radii[0]))
+		// Active dot (col 1,row 1) is the larger one: radius = phys(active diameter)/2.
+		active := draws[1+1*2+1]
+		require.Equal(t, float32(w.phys(ports.PositionHintActiveDiameter)/2), math.Float32frombits(active.radii[0]))
+		other := draws[1]
+		require.Equal(t, float32(w.phys(ports.PositionHintDiameter)/2), math.Float32frombits(other.radii[0]))
+	}
+}
+
+func TestPositionHintRoundedOrient(t *testing.T) {
+	r := &Renderer{width: 640, height: 480}
+	s := ports.Scene{OutputWidth: 640, OutputHeight: 480, Scale: 1, PositionHint: hintGrid(2, 2)}
+	dmg := newDamage(&target{}, s, image.Rect(0, 0, r.width, r.height))
+	ds := r.draws(s, nil, dmg)
+	r.orient(ds, ports.BufferTransform(1))
+	for _, d := range ds {
+		require.Equal(t, roundRect(image.Rect(int(d.pc.rect[0]), int(d.pc.rect[1]), int(d.pc.rect[2]), int(d.pc.rect[3]))), d.round)
+	}
 }

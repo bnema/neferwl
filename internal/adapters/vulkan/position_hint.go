@@ -2,7 +2,6 @@ package vulkan
 
 import (
 	"image"
-	"math"
 
 	"github.com/bnema/neferwl/internal/ports"
 )
@@ -38,20 +37,15 @@ func (w *sceneWalk) positionHint() {
 	w.alpha = alpha
 }
 
-// Rounded fills use the existing solid instances and batching pipeline. Each
-// physical scanline is bounded by the scaled radius; no textures or per-frame
-// buffers are allocated. Non-overlapping strips preserve translucent alpha.
+// hintRound draws one rounded quad (SDF in the shader), so the pill and each
+// dot cost a single draw whatever the scale. Fills are one translucent draw,
+// so alpha stays exact.
 func (w *sceneWalk) hintRound(r image.Rectangle, radius int, color [3]uint8) {
 	radius = min(radius, r.Dx()/2, r.Dy()/2)
-	if radius <= 0 {
-		w.fill(r, color)
+	n := len(w.draws)
+	w.fill(r, color)
+	if radius <= 0 || len(w.draws) == n {
 		return
 	}
-	w.fill(image.Rect(r.Min.X, r.Min.Y+radius, r.Max.X, r.Max.Y-radius), color)
-	for y := range radius {
-		dy := float64(radius-y) - 0.5
-		inset := radius - int(math.Sqrt(float64(radius*radius)-dy*dy)+0.5)
-		w.fill(image.Rect(r.Min.X+inset, r.Min.Y+y, r.Max.X-inset, r.Min.Y+y+1), color)
-		w.fill(image.Rect(r.Min.X+inset, r.Max.Y-y-1, r.Max.X-inset, r.Max.Y-y), color)
-	}
+	roundedDraw(&w.draws[n], r, float32(radius))
 }
