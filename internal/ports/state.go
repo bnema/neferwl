@@ -9,6 +9,32 @@ type State struct {
 	// Window is the focused window, nil when none.
 	Window  *WindowState
 	Windows []WindowState
+	// Workspaces is every workspace of every output.
+	Workspaces []WorkspaceState
+}
+
+// WorkspaceState is one workspace and its tiled columns, left to right in
+// layout order. Rects are logical pixels in the output's coordinates.
+type WorkspaceState struct {
+	ID       uint64
+	Number   int    // numbered workspace, 0 for a hidden/named one
+	Name     string // configured name, "" if dynamic
+	Output   string
+	Visible  bool   // on screen on its output
+	Overflow string // "fixed", "scroll", "cascade"
+	Columns  []ColumnState
+}
+
+// ColumnState is one column and its tiled windows.
+type ColumnState struct {
+	Rect    Rect        // column area, view offset applied (may be off-screen)
+	Windows []TileState // top to bottom
+}
+
+// TileState is one tiled window and its settled rectangle.
+type TileState struct {
+	ID   WindowID
+	Rect Rect
 }
 
 // OutputState is one output: its workspace on screen and how many numbered

@@ -175,10 +175,12 @@ func (w *Workspace) focusBand(dir int) bool {
 	w.scroll()
 	return true
 }
-func (w *Workspace) cascadeRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
+
+// cascadeRectsAt is cascadeRectsInto with the view slide's shift given.
+func (w *Workspace) cascadeRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
 	g := w.gap()
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
-	view := w.View + w.shiftPixels()
+	view := w.View + shift
 	w.walkBands(func(lane, first, last int) bool {
 		S, u, sum := w.laneStats(first, last)
 		x := g

@@ -1726,13 +1726,19 @@ func (w *Workspace) columnRectsFor(ignoreFullWidth bool) []Rect {
 // when too small): the result aliases dst, so a caller passing a reused
 // buffer must be done with the previous result.
 func (w *Workspace) columnRectsInto(dst []Rect, ignoreFullWidth bool) []Rect {
+	return w.columnRectsAt(dst, ignoreFullWidth, w.shiftPixels())
+}
+
+// columnRectsAt is columnRectsInto with the view slide's shift given: 0 is
+// the settled geometry, without the animation's presentation offset.
+func (w *Workspace) columnRectsAt(dst []Rect, ignoreFullWidth bool, shift int) []Rect {
 	if w.policy().wraps {
-		return w.cascadeRectsInto(dst, ignoreFullWidth)
+		return w.cascadeRectsAt(dst, ignoreFullWidth, shift)
 	}
 	g := w.gap()
 	y, h := w.Usable.Y+g, max(w.Usable.H-2*g, 0)
 	rects := slices.Grow(dst[:0], len(w.Columns))[:len(w.Columns)]
-	view := w.View + w.shiftPixels()
+	view := w.View + shift
 	x := w.Usable.X + g
 	for i := range w.Columns {
 		width := w.columnWidthFor(i, ignoreFullWidth)

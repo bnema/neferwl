@@ -838,6 +838,12 @@ func TestStateSnapshot(t *testing.T) {
 				{ID: 2, AppID: "firefox", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 2, Visible: true, Column: 1, Row: 1},
 			},
 		}
+		want.Workspaces = []ports.WorkspaceState{
+			{ID: 1, Number: 1, Output: "DP-1", Visible: true, Overflow: "scroll", Columns: []ports.ColumnState{{Rect: ports.Rect{W: 200, H: 100}, Windows: []ports.TileState{{ID: 1, Rect: ports.Rect{W: 200, H: 100}}}}}},
+			{ID: 3, Number: 2, Output: "DP-1", Overflow: "scroll", Columns: []ports.ColumnState{}},
+			{ID: 2, Number: 1, Output: "DP-2", Visible: true, Overflow: "scroll", Columns: []ports.ColumnState{{Rect: ports.Rect{W: 400, H: 200}, Windows: []ports.TileState{{ID: 2, Rect: ports.Rect{W: 400, H: 200}}}}}},
+			{ID: 4, Number: 2, Output: "DP-2", Overflow: "scroll", Columns: []ports.ColumnState{}},
+		}
 		want.Window = &want.Windows[1]
 		if !reflect.DeepEqual(st, want) {
 			t.Fatalf("got  %+v\nwant %+v", st, want)

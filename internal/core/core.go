@@ -196,6 +196,8 @@ type publishScratch struct {
 	workspaces ports.Workspaces
 	shown      map[WindowID]bool
 	ids        []WindowID
+	rects      []Rect
+	rows       []Rect
 	layout     ports.Layout
 }
 

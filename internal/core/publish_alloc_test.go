@@ -447,7 +447,7 @@ func TestPublishSubscribersAllocations(t *testing.T) {
 		t.Error("the sent output layout shares the scratch")
 	}
 	// And a later change leaves them as they were.
-	want := ports.State{Output: st.Output, Outputs: slices.Clone(st.Outputs), Windows: slices.Clone(st.Windows)}
+	want := ports.State{Output: st.Output, Outputs: slices.Clone(st.Outputs), Windows: slices.Clone(st.Windows), Workspaces: cloneState(st).Workspaces}
 	w := *st.Window
 	want.Window = &w
 	c.windows.setIdleInhibit(st.Windows[0].ID, true)

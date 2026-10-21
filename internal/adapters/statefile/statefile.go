@@ -37,6 +37,40 @@ type State struct {
 	Outputs []Output `json:"outputs"`
 	Window  *Window  `json:"window"`
 	Windows []Window `json:"windows"`
+	// Workspaces lists every workspace of every output.
+	Workspaces []Workspace `json:"workspaces"`
+}
+
+// Workspace is one workspace and its tiled columns, left to right. ID is
+// the workspace_id string of Output. Number is 0 for a hidden workspace.
+// Visible means on screen on its output.
+type Workspace struct {
+	ID       string   `json:"id"`
+	Number   int      `json:"number"`
+	Name     string   `json:"name"`
+	Output   string   `json:"output"`
+	Visible  bool     `json:"visible"`
+	Overflow string   `json:"overflow"`
+	Columns  []Column `json:"columns"`
+}
+
+// Column is the area of one column in logical pixels of its output, view
+// offset applied (it may be off-screen), and its windows top to bottom.
+type Column struct {
+	X       int    `json:"x"`
+	Y       int    `json:"y"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Windows []Tile `json:"windows"`
+}
+
+// Tile is one tiled window and its rectangle.
+type Tile struct {
+	ID     uint64 `json:"id"`
+	X      int    `json:"x"`
+	Y      int    `json:"y"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
 
 // Output is one output: its active numbered workspace (0 while a hidden one
@@ -78,12 +112,23 @@ type Window struct {
 }
 
 func fromPorts(st ports.State, ids *workspaceid.IDs) State {
-	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows))}
+	out := State{Output: st.Output, Outputs: make([]Output, 0, len(st.Outputs)), Windows: make([]Window, 0, len(st.Windows)), Workspaces: make([]Workspace, 0, len(st.Workspaces))}
 	for _, o := range st.Outputs {
 		out.Outputs = append(out.Outputs, Output{Name: o.Name, Active: o.Active, Count: o.Count, Workspace: o.Workspace, WorkspaceID: ids.ID(o.WorkspaceID, o.Workspace)})
 	}
 	for _, w := range st.Windows {
 		out.Windows = append(out.Windows, window(w, ids))
+	}
+	for _, w := range st.Workspaces {
+		ws := Workspace{ID: ids.ID(w.ID, w.Name), Number: w.Number, Name: w.Name, Output: w.Output, Visible: w.Visible, Overflow: w.Overflow, Columns: make([]Column, 0, len(w.Columns))}
+		for _, c := range w.Columns {
+			col := Column{X: c.Rect.X, Y: c.Rect.Y, Width: c.Rect.W, Height: c.Rect.H, Windows: make([]Tile, 0, len(c.Windows))}
+			for _, t := range c.Windows {
+				col.Windows = append(col.Windows, Tile{ID: uint64(t.ID), X: t.Rect.X, Y: t.Rect.Y, Width: t.Rect.W, Height: t.Rect.H})
+			}
+			ws.Columns = append(ws.Columns, col)
+		}
+		out.Workspaces = append(out.Workspaces, ws)
 	}
 	if st.Window != nil {
 		w := window(*st.Window, ids)

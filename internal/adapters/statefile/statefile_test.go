@@ -41,7 +41,7 @@ func TestRunWritesAndRemoves(t *testing.T) {
 	go func() { done <- Run(ctx, path, states, workspaceid.WithPrefix("0a1b2c3d"), zerowrap.Default()) }()
 	focused := ports.WindowState{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: 9, Visible: true}
 	states <- ports.State{Output: "DP-2", Outputs: []ports.OutputState{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: 9}}, Window: &focused, Windows: []ports.WindowState{focused}}
-	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}}
+	want := State{Output: "DP-2", Outputs: []Output{{Name: "DP-2", Active: 1, Count: 1, WorkspaceID: "0a1b2c3d-9"}}, Window: &Window{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}, Windows: []Window{{ID: 2, AppID: "foot", PID: 200, Output: "DP-2", Workspace: 1, WorkspaceID: "0a1b2c3d-9", Visible: true}}, Workspaces: []Workspace{}}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if got, err := Read(path); err == nil && got.Output != "stale" {
@@ -156,5 +156,34 @@ func TestWorkspaceIDStrings(t *testing.T) {
 	data, err := json.Marshal(st.Windows[1])
 	if err != nil || !strings.Contains(string(data), `"workspace_id":"0a1b2c3d-8"`) {
 		t.Fatalf("%s %v", data, err)
+	}
+}
+
+// Workspaces reach the file with their script-facing names.
+func TestWorkspaceGeometryFields(t *testing.T) {
+	ids := workspaceid.WithPrefix("0a1b2c3d")
+	st := fromPorts(ports.State{Workspaces: []ports.WorkspaceState{
+		{ID: 7, Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []ports.ColumnState{
+			{Rect: ports.Rect{X: 10, Y: 20, W: 300, H: 400}, Windows: []ports.TileState{{ID: 5, Rect: ports.Rect{X: 11, Y: 21, W: 298, H: 198}}}},
+		}},
+		{ID: 8, Output: "DP-2"},
+	}}, ids)
+	want := []Workspace{
+		{ID: "name:web", Number: 2, Name: "web", Output: "DP-2", Visible: true, Overflow: "fixed", Columns: []Column{
+			{X: 10, Y: 20, Width: 300, Height: 400, Windows: []Tile{{ID: 5, X: 11, Y: 21, Width: 298, Height: 198}}},
+		}},
+		{ID: "0a1b2c3d-8", Output: "DP-2", Columns: []Column{}},
+	}
+	if !reflect.DeepEqual(st.Workspaces, want) {
+		t.Fatalf("%+v", st.Workspaces)
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"workspaces":[`, `"id":"name:web"`, `"number":2`, `"visible":true`, `"overflow":"fixed"`, `"columns":[{"x":10,"y":20,"width":300,"height":400,"windows":[{"id":5,"x":11,"y":21,"width":298,"height":198}]}]`} {
+		if !strings.Contains(string(data), key) {
+			t.Fatalf("%s missing %s", data, key)
+		}
 	}
 }
