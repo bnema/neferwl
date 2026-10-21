@@ -12,6 +12,7 @@ import (
 
 	"github.com/bnema/neferwl/internal/adapters/syncfile"
 	"github.com/bnema/zerowrap"
+	"golang.org/x/sys/unix"
 )
 
 // Old nvidia-drm drivers mishandle IN_FENCE_FD: the flip does not wait for
@@ -52,20 +53,19 @@ func driverName(fd int) (string, error) {
 }
 
 // parseVersion reads a dotted version such as "560.35.03" (missing parts
-// are 0).
+// are 0). Parts are plain digits: no sign.
 func parseVersion(s string) ([3]int, error) {
 	var v [3]int
 	parts := strings.Split(strings.TrimSpace(s), ".")
-	if len(parts) == 0 || len(parts) > 3 || parts[0] == "" {
+	if len(parts) > len(v) {
 		return v, fmt.Errorf("version %q", s)
 	}
 	for i, p := range parts {
-		// Digits only: Atoi would also take a sign.
-		n, err := strconv.Atoi(p)
-		if err != nil || p[0] < '0' || p[0] > '9' {
+		n, err := strconv.ParseUint(p, 10, 31)
+		if err != nil {
 			return v, fmt.Errorf("version %q", s)
 		}
-		v[i] = n
+		v[i] = int(n)
 	}
 	return v, nil
 }
@@ -110,7 +110,7 @@ func fenceGate(fd int, log zerowrap.Logger) bool {
 	if !brokenInFence(driver, version, verr) {
 		return false
 	}
-	log.Warn().Err(verr).Str("driver", driver).Str("version", strings.TrimSpace(version)).Msg("nvidia-drm before 560.35.3 mishandles IN_FENCE_FD: waiting for frame fences on the CPU")
+	log.Warn().Err(verr).Str("driver", driver).Str("version", strings.TrimSpace(version)).Msg("nvidia-drm version unknown or before 560.35.3 mishandles IN_FENCE_FD: waiting for frame fences on the CPU")
 	return true
 }
 
@@ -123,32 +123,63 @@ func (o *Output) fenceProp(req *atomicReq, p *plane, fence *os.File) {
 	req.set(p.id, p.prop("IN_FENCE_FD"), uint64(fence.Fd()))
 }
 
-// fenceWaitLimit bounds a CPU wait on a fence of our own render.
+// fenceWaitLimit bounds the CPU wait of one commit, whatever its number of
+// fences.
 const fenceWaitLimit = time.Second
+
+// fenceWarnEvery is the least time between two warnings about a fence wait
+// that hit fenceWaitLimit.
+const fenceWarnEvery = 10 * time.Second
+
+// fencePoll polls one fence without blocking. fn is built once, so polling
+// allocates nothing; the output goroutine owns it.
+type fencePoll struct {
+	fds   [1]unix.PollFd
+	ready bool
+	fn    func(fd uintptr)
+}
+
+func (p *fencePoll) init() {
+	p.fn = func(fd uintptr) {
+		p.fds[0] = unix.PollFd{Fd: int32(fd), Events: unix.POLLIN}
+		n, err := unix.Poll(p.fds[:], 0)
+		p.ready = err == nil && n > 0 && p.fds[0].Revents&unix.POLLIN != 0
+	}
+}
 
 // clientFenceReady reports whether a client's acquire fence lets its buffer
 // be shown by a plane this frame. Where fences are waited for on the CPU, a
 // client fence that has not signalled must not stall the output: the buffer
-// is composed instead (the renderer waits for it on the GPU). A nil or
-// unpollable fence counts as signalled, as in signalled.
+// is composed instead (the renderer waits for it on the GPU). Without CPU
+// waits, and for no fence, it is ready; with them, a fence that cannot be
+// polled is not ready.
 func (o *Output) clientFenceReady(acquire *os.File) bool {
 	if !o.cpuFences || acquire == nil {
 		return true
 	}
-	// Wayland may close its file at any time: poll a duplicate.
-	d := dupFence(acquire)
-	if d == nil {
-		return true
+	if o.fencePoll.fn == nil {
+		o.fencePoll.init()
 	}
-	defer d.Close()
-	return signalled([]*os.File{d})
+	raw, err := acquire.SyscallConn()
+	if err != nil {
+		return false
+	}
+	o.fencePoll.ready = false
+	// Control keeps the descriptor open for the call: Wayland closing its
+	// file meanwhile cannot hand us a reused number.
+	if raw.Control(o.fencePoll.fn) != nil {
+		return false
+	}
+	return o.fencePoll.ready
 }
 
-// waitFences blocks until our own render fences signalled when the driver
-// cannot wait for them in the commit, for at most fenceWaitLimit each, or
-// until the output stops. Client fences are not waited for here: planes take
-// only buffers whose fence signalled (clientFenceReady). A failed wait is not
-// fatal: the frame may then show early, as it would on any such driver.
+// waitFences blocks until the fences signalled when the driver cannot wait
+// for them in the commit, for at most fenceWaitLimit in all, or until the
+// output stops. A client fence passed here (direct scanout) already
+// signalled: planes take only such buffers (clientFenceReady), so it
+// returns at once. A failed or timed out wait is not fatal: the frame may
+// then show early, as it would on any such driver. A timeout is counted in
+// the stats and warned about at most every fenceWarnEvery.
 func (o *Output) waitFences(fences ...*os.File) {
 	if !o.cpuFences {
 		return
@@ -157,13 +188,26 @@ func (o *Output) waitFences(fences ...*os.File) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, fenceWaitLimit)
+	limit := o.fenceLimit
+	if limit == 0 {
+		limit = fenceWaitLimit
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	for _, f := range fences {
 		if f == nil {
 			continue
 		}
-		if err := syncfile.Wait(ctx, f); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		err := syncfile.Wait(ctx, f)
+		switch {
+		case err == nil || errors.Is(err, context.Canceled):
+		case errors.Is(err, context.DeadlineExceeded):
+			o.flipStats.fenceTimeouts++
+			if now := time.Now(); o.fenceWarnAt.IsZero() || now.Sub(o.fenceWarnAt) >= fenceWarnEvery {
+				o.fenceWarnAt = now
+				o.log.Warn().Str("connector", o.conn.name).Dur("limit", limit).Msg("frame fence did not signal in time; committing anyway")
+			}
+		default:
 			o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("wait for frame fence")
 		}
 	}

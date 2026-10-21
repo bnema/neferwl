@@ -41,7 +41,7 @@ type CaptureFrame interface {
 // (ADR 014: no CPU pass).
 type Renderer interface {
 	// SetHDR selects the HDR10 output transform (0 disables it).
-	// The DRM output calls this before ExportTargets.
+	// The DRM output calls this before ExportTargets or ImportTargets.
 	SetHDR(sdrNits float64)
 	// Render draws the scene. done is a sync file signalled when the GPU
 	// finished the frame (nil: already finished); the caller closes it.
@@ -62,13 +62,13 @@ type Renderer interface {
 	// cannot import dmabufs.
 	TargetModifiers(display []uint64, singlePlane bool) []uint64
 	// ImportTargets makes images allocated outside the renderer its
-	// targets, replacing the previous ones (no buffers: drops them). Each is
-	// one memory object (every plane file is the same dmabuf, the planes
-	// differing by offset; disjoint planes are refused) of the renderer's
-	// size and target format, with a modifier from TargetModifiers. The
-	// caller keeps its files and must
-	// keep the memory alive while the targets are in use. An error leaves
-	// the renderer without targets.
+	// targets, replacing the previous ones (no buffers: drops them). Each
+	// is one memory object of the renderer's size and target format, with
+	// a modifier from TargetModifiers: every plane file is the same
+	// dmabuf (the planes differ by offset), and disjoint planes are
+	// refused. The caller keeps its files and must keep the memory alive
+	// while the targets are in use. An error leaves the renderer without
+	// targets.
 	ImportTargets(bufs []DMABuf) error
 	// UseTarget selects the exported image the next Render draws into.
 	UseTarget(i int)

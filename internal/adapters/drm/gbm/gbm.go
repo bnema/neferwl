@@ -18,9 +18,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ErrUnavailable marks a missing or unusable libgbm.
-var ErrUnavailable = errors.New("gbm unavailable")
-
 // Usage is a set of GBM_BO_USE_* flags.
 type Usage uint32
 
@@ -29,8 +26,8 @@ const (
 	UseScanout Usage = 1 << 0
 	// UseRendering (GBM_BO_USE_RENDERING): a GPU can render into it.
 	UseRendering Usage = 1 << 2
-	// UseLinear (GBM_BO_USE_LINEAR): the layout is linear.
-	UseLinear Usage = 1 << 4
+	// useLinear (GBM_BO_USE_LINEAR): the layout is linear.
+	useLinear Usage = 1 << 4
 )
 
 const (
@@ -49,56 +46,42 @@ var (
 	createDevice         func(fd int32) uintptr
 	destroyDevice        func(dev uintptr)
 	createWithModifiers2 func(dev uintptr, w, h, format uint32, mods unsafe.Pointer, count uint32, flags uint32) uintptr
-	createWithModifiers  func(dev uintptr, w, h, format uint32, mods unsafe.Pointer, count uint32) uintptr
 	createPlain          func(dev uintptr, w, h, format uint32, flags uint32) uintptr
 	boModifier           func(bo uintptr) uint64
 	boPlaneCount         func(bo uintptr) int32
 	boFDForPlane         func(bo uintptr, plane int32) int32
-	boFD                 func(bo uintptr) int32
 	boStrideForPlane     func(bo uintptr, plane int32) uint32
 	boOffset             func(bo uintptr, plane int32) uint32
 	boDestroy            func(bo uintptr)
 )
 
-// load opens libgbm once. Without it (or with a lacking one) the allocator
-// is unavailable and callers fall back to another way to make images.
+// load opens libgbm once. Without it, or with one that lacks a function
+// below (gbm_bo_create_with_modifiers2 and gbm_bo_get_fd_for_plane came with
+// Mesa 21.1), the allocator is unavailable and callers fall back to another
+// way to make images.
 func load() error {
 	loadOnce.Do(func() {
 		lib, err := purego.Dlopen("libgbm.so.1", purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
-			loadErr = fmt.Errorf("%w: open libgbm.so.1: %v", ErrUnavailable, err)
+			loadErr = fmt.Errorf("open libgbm.so.1: %w", err)
 			return
 		}
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("%w: libgbm: %v", ErrUnavailable, r)
+				loadErr = fmt.Errorf("libgbm: %v", r)
 			}
 		}()
 		reg := func(fn any, name string) { purego.RegisterLibFunc(fn, lib, name) }
-		have := func(name string) bool { p, err := purego.Dlsym(lib, name); return err == nil && p != 0 }
 		reg(&createDevice, "gbm_create_device")
 		reg(&destroyDevice, "gbm_device_destroy")
+		reg(&createWithModifiers2, "gbm_bo_create_with_modifiers2")
 		reg(&createPlain, "gbm_bo_create")
 		reg(&boModifier, "gbm_bo_get_modifier")
 		reg(&boPlaneCount, "gbm_bo_get_plane_count")
-		if have("gbm_bo_get_fd_for_plane") {
-			reg(&boFDForPlane, "gbm_bo_get_fd_for_plane")
-		} else {
-			// Older libgbm: one fd for the whole object.
-			reg(&boFD, "gbm_bo_get_fd")
-		}
+		reg(&boFDForPlane, "gbm_bo_get_fd_for_plane")
 		reg(&boStrideForPlane, "gbm_bo_get_stride_for_plane")
 		reg(&boOffset, "gbm_bo_get_offset")
 		reg(&boDestroy, "gbm_bo_destroy")
-		if have("gbm_bo_create_with_modifiers2") {
-			reg(&createWithModifiers2, "gbm_bo_create_with_modifiers2")
-		}
-		if have("gbm_bo_create_with_modifiers") {
-			reg(&createWithModifiers, "gbm_bo_create_with_modifiers")
-		}
-		if createWithModifiers2 == nil && createWithModifiers == nil {
-			loadErr = fmt.Errorf("%w: libgbm lacks gbm_bo_create_with_modifiers", ErrUnavailable)
-		}
 	})
 	return loadErr
 }
@@ -141,13 +124,10 @@ func (d *Device) Close() {
 // object, kept alive for as long as the image is used.
 type Buffer struct {
 	bo            uintptr
-	Width, Height int
-	Format        uint32
-	Modifier      uint64
-	// Flagless: the buffer came from gbm_bo_create_with_modifiers, which
-	// takes no usage flags (libgbm before 21.1): scanout was not asked for.
-	Flagless bool
-	planes   []plane
+	width, height int
+	format        uint32
+	modifier      uint64
+	planes        []plane
 }
 
 type plane struct {
@@ -158,7 +138,7 @@ type plane struct {
 // Create allocates an image whose modifier is one of modifiers (a
 // non-empty list). A list holding only linear falls back to a plain
 // linear allocation when GBM refuses the modifier call, and accepts an
-// implicit layout (DRM_FORMAT_MOD_INVALID) as linear on either path. The
+// implicit layout (DRM_FORMAT_MOD_INVALID) as linear. The
 // result must be one memory object, because the renderer imports one
 // dmabuf for all planes.
 func (d *Device) Create(width, height int, format uint32, modifiers []uint64, usage Usage) (*Buffer, error) {
@@ -168,21 +148,11 @@ func (d *Device) Create(width, height int, format uint32, modifiers []uint64, us
 	if width <= 0 || height <= 0 || len(modifiers) == 0 {
 		return nil, fmt.Errorf("gbm: bad request %dx%d with %d modifiers", width, height, len(modifiers))
 	}
-	var bo uintptr
-	flagless := false
-	switch {
-	case createWithModifiers2 != nil:
-		bo = createWithModifiers2(d.dev, uint32(width), uint32(height), format, unsafe.Pointer(&modifiers[0]), uint32(len(modifiers)), uint32(usage))
-	case createWithModifiers != nil:
-		// This entry point cannot ask for scanout.
-		flagless = true
-		bo = createWithModifiers(d.dev, uint32(width), uint32(height), format, unsafe.Pointer(&modifiers[0]), uint32(len(modifiers)))
-	}
+	bo := createWithModifiers2(d.dev, uint32(width), uint32(height), format, unsafe.Pointer(&modifiers[0]), uint32(len(modifiers)), uint32(usage))
 	runtime.KeepAlive(modifiers)
 	onlyLinear := len(modifiers) == 1 && modifiers[0] == modLinear
 	if bo == 0 && onlyLinear {
-		bo = createPlain(d.dev, uint32(width), uint32(height), format, uint32(usage|UseLinear))
-		flagless = false
+		bo = createPlain(d.dev, uint32(width), uint32(height), format, uint32(usage|useLinear))
 	}
 	if bo == 0 {
 		return nil, fmt.Errorf("gbm: no %dx%d buffer of format %#x with modifiers %#x", width, height, format, modifiers)
@@ -192,10 +162,9 @@ func (d *Device) Create(width, height int, format uint32, modifiers []uint64, us
 		boDestroy(bo)
 		return nil, err
 	}
-	if onlyLinear && b.Modifier == modInvalid {
-		b.Modifier = modLinear
+	if onlyLinear && b.modifier == modInvalid {
+		b.modifier = modLinear
 	}
-	b.Flagless = flagless
 	return b, nil
 }
 
@@ -211,8 +180,8 @@ func acceptedModifiers(requested []uint64) []uint64 {
 // readBuffer reads the layout of bo and validates it against the request.
 // It does not destroy bo on error.
 func readBuffer(bo uintptr, width, height int, format uint32, modifiers []uint64) (*Buffer, error) {
-	b := &Buffer{bo: bo, Width: width, Height: height, Format: format, Modifier: boModifier(bo)}
-	if err := checkModifier(modifiers, b.Modifier); err != nil {
+	b := &Buffer{bo: bo, width: width, height: height, format: format, modifier: boModifier(bo)}
+	if err := checkModifier(modifiers, b.modifier); err != nil {
 		return nil, err
 	}
 	n := int(boPlaneCount(bo))
@@ -220,12 +189,7 @@ func readBuffer(bo uintptr, width, height int, format uint32, modifiers []uint64
 		return nil, fmt.Errorf("gbm: buffer has %d planes", n)
 	}
 	for i := range n {
-		var fd int32
-		if boFDForPlane != nil {
-			fd = boFDForPlane(bo, int32(i))
-		} else {
-			fd = boFD(bo)
-		}
+		fd := boFDForPlane(bo, int32(i))
 		if fd < 0 {
 			b.closeFDs()
 			return nil, fmt.Errorf("gbm: no fd for plane %d", i)
@@ -287,7 +251,7 @@ func (b *Buffer) DMABuf() (ports.DMABuf, error) {
 	if b == nil || b.bo == 0 {
 		return ports.DMABuf{}, errors.New("gbm buffer closed")
 	}
-	out := ports.DMABuf{Width: b.Width, Height: b.Height, Format: b.Format, Modifier: b.Modifier}
+	out := ports.DMABuf{Width: b.width, Height: b.height, Format: b.format, Modifier: b.modifier}
 	for _, p := range b.planes {
 		fd, err := unix.FcntlInt(uintptr(p.fd), unix.F_DUPFD_CLOEXEC, 0)
 		if err != nil {

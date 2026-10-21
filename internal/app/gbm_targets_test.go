@@ -12,6 +12,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// fourccXRGB8888 is DRM_FORMAT_XRGB8888.
+const fourccXRGB8888 = 'X' | 'R'<<8 | '2'<<16 | '4'<<24
+
 // renderNodeFor opens the render node of the GPU the renderer runs on.
 func renderNodeFor(t *testing.T, dev uint64) *os.File {
 	t.Helper()
@@ -63,7 +66,7 @@ func TestGBMImagesAreRenderTargets(t *testing.T) {
 	for _, usage := range []gbm.Usage{gbm.UseScanout | gbm.UseRendering, gbm.UseRendering} {
 		var cerr error
 		for i := range bufs {
-			if bufs[i], cerr = dev.Create(w, h, 'X'|'R'<<8|'2'<<16|'4'<<24, mods, usage); cerr != nil {
+			if bufs[i], cerr = dev.Create(w, h, fourccXRGB8888, mods, usage); cerr != nil {
 				break
 			}
 		}

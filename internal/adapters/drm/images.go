@@ -112,7 +112,8 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 			o.dropImages(r)
 			return err
 		}
-		if o.imageAlloc == allocGBM {
+		if len(o.images) > 0 {
+			// GBM images (the renderer imported them).
 			// The renderer's own images of this kind may still pass.
 			o.log.Warn().Err(err).Str("connector", o.conn.name).Int("kind", int(got)).Str("alloc", allocGBM).Msg("modeset refused the output images")
 			o.dropImages(r)
@@ -147,9 +148,9 @@ func (o *Output) showImageKind(r ports.Renderer, kind imageKind, cause error) er
 // GPU that cannot export a scanout-capable image cannot drive the output.
 func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error, skipGBM bool) (imageKind, error) {
 	err := cause
-	for first := true; kind <= imagesLinear; kind++ {
-		noGBM := first && skipGBM
-		first = false
+	start := kind
+	for ; kind <= imagesLinear; kind++ {
+		noGBM := skipGBM && kind == start
 		if o.runContext != nil && o.runContext.Err() != nil {
 			return kind, o.runContext.Err()
 		}
@@ -220,38 +221,52 @@ func (o *Output) primaryModifiers(format uint32) []uint64 {
 	return mods
 }
 
+// closeBufs closes every plane file of bufs. The callers own them: the
+// renderer and the framebuffers keep their own references to the memory.
+func closeBufs(bufs []ports.DMABuf) {
+	for _, b := range bufs {
+		for _, p := range b.Planes {
+			_ = p.File.Close()
+		}
+	}
+}
+
 // exportImages makes the renderer's exported targets the output images.
 func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool) error {
-	o.dropLive(r)
+	o.dropImages(r)
 	bufs, err := r.ExportTargets(len(o.fbs), mods, singlePlane)
 	if err != nil {
 		return err
 	}
-	o.planes, o.imageMod = 0, 0
-	for i := range bufs {
-		if len(bufs[i].Planes) == 0 || len(bufs[i].Planes) > maxFBPlanes {
-			err = errors.Join(err, fmt.Errorf("output image has %d planes", len(bufs[i].Planes)))
-		}
-		if err == nil {
-			o.fbs[i], err = o.k.addFB(&bufs[i], o.imageFormat())
-		}
-		// Every plane owns its file; the framebuffer keeps its own
-		// reference to the buffer.
-		for _, p := range bufs[i].Planes {
-			p.File.Close()
-		}
-	}
-	if err == nil {
-		err = o.clearImages(r)
-	}
-	if err != nil {
+	defer closeBufs(bufs)
+	if err = o.showBufs(r, bufs, allocVulkan); err != nil {
 		o.dropImages(r)
 		_, _ = r.ExportTargets(0, nil, false)
 		return err
 	}
+	return nil
+}
+
+// showBufs makes framebuffers of the output images bufs (already the
+// renderer's targets), clears them and records their layout. The caller
+// closes the plane files and drops the images on error.
+func (o *Output) showBufs(r ports.Renderer, bufs []ports.DMABuf, alloc string) error {
+	o.planes, o.imageMod = 0, 0
+	for i := range bufs {
+		if n := len(bufs[i].Planes); n == 0 || n > maxFBPlanes {
+			return fmt.Errorf("output image has %d planes", n)
+		}
+		fb, err := o.k.addFB(&bufs[i], o.imageFormat())
+		if err != nil {
+			return err
+		}
+		o.fbs[i] = fb
+	}
+	if err := o.clearImages(r); err != nil {
+		return err
+	}
 	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
-	o.imageAlloc = allocVulkan
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Str("alloc", allocVulkan).Msg("zero-copy output")
+	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", o.planes).Str("alloc", alloc).Msg("zero-copy output")
 	return nil
 }
 
@@ -284,7 +299,7 @@ func (o *Output) clearImages(r ports.Renderer) error {
 // those the plane lists (mods, as for exportImages) that the renderer can
 // render into and import. On failure nothing is left allocated.
 func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (err error) {
-	o.dropLive(r)
+	o.dropImages(r)
 	if o.alloc == nil {
 		if o.allocErr != nil {
 			return o.allocErr
@@ -299,21 +314,10 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 		return errors.New("no modifier both the plane and the renderer accept for GBM images")
 	}
 	var bufs []ports.DMABuf
-	imported := false
 	defer func() {
-		for _, b := range bufs {
-			for _, p := range b.Planes {
-				p.File.Close()
-			}
-		}
+		closeBufs(bufs)
 		if err != nil {
-			// A failed import leaves no renderer targets; a later failure
-			// leaves ones over the images about to be freed.
-			if imported {
-				o.dropImages(r)
-			} else {
-				o.freeImages()
-			}
+			o.dropImages(r)
 		}
 	}()
 	for range o.fbs {
@@ -331,35 +335,12 @@ func (o *Output) gbmImages(r ports.Renderer, mods []uint64, singlePlane bool) (e
 	if err = r.ImportTargets(bufs); err != nil {
 		return err
 	}
-	imported = true
-	for i := range bufs {
-		if n := len(bufs[i].Planes); n == 0 || n > maxFBPlanes {
-			return fmt.Errorf("output image has %d planes", n)
-		}
-		if o.fbs[i], err = o.k.addFB(&bufs[i], o.imageFormat()); err != nil {
-			return err
-		}
-	}
-	if err = o.clearImages(r); err != nil {
-		return err
-	}
-	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
-	o.imageAlloc = allocGBM
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", len(bufs[0].Planes)).Str("alloc", allocGBM).Msg("zero-copy output")
-	return nil
+	return o.showBufs(r, bufs, allocGBM)
 }
 
-// dropLive makes sure no image is left from an earlier setup: setup starts
-// from nothing, so what is still there is freed first.
-func (o *Output) dropLive(r ports.Renderer) {
-	if o.fbs != [2]uint32{} || len(o.images) > 0 {
-		o.dropImages(r)
-	}
-}
-
-// dropImages frees the output images with the renderer targets built over
-// the GBM ones: they would keep their memory (VRAM) alive after the
-// buffers are gone.
+// dropImages frees the output images: their framebuffers, the GBM buffers
+// and the renderer targets built over them (they would keep the memory
+// alive after the buffers are gone). It is a no-op when there are none.
 func (o *Output) dropImages(r ports.Renderer) {
 	if len(o.images) > 0 {
 		_ = r.ImportTargets(nil)
@@ -384,5 +365,4 @@ func (o *Output) freeImages() {
 		img.close()
 	}
 	o.images = nil
-	o.imageAlloc = ""
 }

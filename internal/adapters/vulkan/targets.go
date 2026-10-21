@@ -214,11 +214,28 @@ func (r *Renderer) probeModifiers(physical vk.PhysicalDevice, format vk.Format) 
 	return r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureExportableBit)
 }
 
+// importKey is what the importable modifiers of a target depend on: its
+// format and whether test readback adds the transfer-source requirement.
+type importKey struct {
+	format   vk.Format
+	readback bool
+}
+
 // probeImportModifiers lists the modifiers of format a target can be
 // imported with: probeModifiers with the importable bit, for images the
-// display allocator made.
+// display allocator made. The answer is probed once per key: it does not
+// change while the device lives.
 func (r *Renderer) probeImportModifiers(physical vk.PhysicalDevice, format vk.Format) []uint64 {
-	return r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
+	key := importKey{format, r.hdrReadback}
+	if mods, ok := r.importMods[key]; ok {
+		return mods
+	}
+	mods := r.probeTargetModifiers(physical, format, vk.ExternalMemoryFeatureImportableBit)
+	if r.importMods == nil {
+		r.importMods = make(map[importKey][]uint64)
+	}
+	r.importMods[key] = mods
+	return mods
 }
 
 func (r *Renderer) probeTargetModifiers(physical vk.PhysicalDevice, format vk.Format, feature vk.ExternalMemoryFeatureFlags) []uint64 {
@@ -425,6 +442,14 @@ func (r *Renderer) dropTargets() {
 	r.targets, r.current, r.lastHDRTarget = nil, 0, -1
 }
 
+// What ImportTargets refuses an image for, before asking the driver.
+var (
+	errImageGeometry = errors.New("image size or format does not match the target")
+	errImageModifier = errors.New("image modifier is not an importable target modifier")
+	errImagePlanes   = errors.New("image plane count does not match its modifier")
+	errImageDMABuf   = errors.New("image planes are not in one dmabuf")
+)
+
 // importTarget makes a target of an image allocated outside the renderer.
 // The target is shared with the display like an exported one: frames
 // acquire it from and release it to the foreign queue family.
@@ -432,15 +457,16 @@ func (r *Renderer) importTarget(b *ports.DMABuf) (*target, error) {
 	d := r.dd
 	format, fourcc := r.targetFormat()
 	n := len(b.Planes)
+	want, known := r.modPlanes[b.Modifier]
 	switch {
 	case b.Format != fourcc || b.Width != r.width || b.Height != r.height:
-		return nil, fmt.Errorf("image %dx%d format %#x does not match target %dx%d format %#x", b.Width, b.Height, b.Format, r.width, r.height, fourcc)
-	case n < 1 || n > maxModifierPlanes:
-		return nil, fmt.Errorf("image has %d planes", n)
-	case r.modPlanes[b.Modifier] != uint32(n):
-		return nil, fmt.Errorf("modifier %#x: image has %d planes, device expects %d", b.Modifier, n, r.modPlanes[b.Modifier])
+		return nil, fmt.Errorf("%w: image %dx%d format %#x, target %dx%d format %#x", errImageGeometry, b.Width, b.Height, b.Format, r.width, r.height, fourcc)
+	case !known:
+		return nil, fmt.Errorf("%w: %#x is not a target modifier of the device", errImageModifier, b.Modifier)
+	case n < 1 || n > maxModifierPlanes || want != uint32(n):
+		return nil, fmt.Errorf("%w: modifier %#x: image has %d planes, device expects %d", errImagePlanes, b.Modifier, n, want)
 	case !r.externalTarget(r.physical, format, b.Modifier, vk.ExternalMemoryFeatureImportableBit):
-		return nil, fmt.Errorf("modifier %#x cannot be imported as a target", b.Modifier)
+		return nil, fmt.Errorf("%w: %#x cannot be imported as a target", errImageModifier, b.Modifier)
 	}
 	if err := sameDMABuf(b.Planes); err != nil {
 		return nil, err
@@ -523,7 +549,7 @@ func sameDMABuf(planes []ports.DMABufPlane) error {
 		if i == 0 {
 			first = st
 		} else if st.Dev != first.Dev || st.Ino != first.Ino {
-			return fmt.Errorf("plane %d is not in the same dmabuf as plane 0", i)
+			return fmt.Errorf("%w: plane %d is not in the dmabuf of plane 0", errImageDMABuf, i)
 		}
 	}
 	return nil

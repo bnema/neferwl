@@ -22,19 +22,19 @@ func gbmBuf(planes int) ports.DMABuf {
 	return b
 }
 
-// gbmImages makes an allocator that hands out two images; each image
-// closes exactly once.
-func gbmImages(t *testing.T, planes int) (imageAllocator, *int) {
-	a := newMockimageAllocator(t)
-	closed := new(int)
-	a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
+// twoGBMImages makes an allocator that hands out two images of the given
+// plane count; each image closes exactly once, counted in closed.
+func twoGBMImages(t *testing.T, planes int) (a imageAllocator, closed *int) {
+	m := newMockimageAllocator(t)
+	closed = new(int)
+	m.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).RunAndReturn(func(int, int, uint32, []uint64) (imageBuffer, error) {
 		img := newMockimageBuffer(t)
 		img.EXPECT().dmabuf().RunAndReturn(func() (ports.DMABuf, error) { return gbmBuf(planes), nil })
 		img.EXPECT().close().Run(func() { *closed++ }).Once()
 		return img, nil
 	}).Twice()
-	a.EXPECT().close().Return().Maybe()
-	return a, closed
+	m.EXPECT().close().Return().Maybe()
+	return m, closed
 }
 
 func gbmRenderer(t *testing.T) *portsmocks.MockRenderer {
@@ -50,7 +50,7 @@ func gbmRenderer(t *testing.T) *portsmocks.MockRenderer {
 func TestShowImagesAllocatesWithGBMFirst(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
-	a, closed := gbmImages(t, 1)
+	a, closed := twoGBMImages(t, 1)
 	o.openAlloc = func() (imageAllocator, error) { return a, nil }
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64(nil), false).Return([]uint64{tiledMod}).Once()
@@ -62,69 +62,71 @@ func TestShowImagesAllocatesWithGBMFirst(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.imageAlloc != allocGBM || o.kind != imagesDriver || o.imageMod != tiledMod || len(o.images) != 2 || *closed != 0 {
-		t.Fatalf("alloc %q kind %d modifier %#x images %d closed %d", o.imageAlloc, o.kind, o.imageMod, len(o.images), *closed)
+	if o.kind != imagesDriver || o.imageMod != tiledMod || len(o.images) != 2 || *closed != 0 {
+		t.Fatalf("kind %d modifier %#x images %d closed %d", o.kind, o.imageMod, len(o.images), *closed)
 	}
-	o.freeImages()
-	if *closed != 2 || o.images != nil {
-		t.Fatalf("closed %d images, %d left", *closed, len(o.images))
+	r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
+	o.dropImages(r)
+	if *closed != 2 || o.images != nil || o.fbs != [2]uint32{} {
+		t.Fatalf("closed %d images, %d left, fbs %v", *closed, len(o.images), o.fbs)
 	}
 }
 
-// The plane's modifiers reach the renderer with the single-plane rule, and
-// a GBM failure falls back to the renderer's own images of the same kind.
+// A GBM failure at any step falls back to the renderer's own images of the same kind.
 func TestShowImagesFallsBackToVulkanWhenGBMFails(t *testing.T) {
 	for name, tc := range map[string]struct {
-		setup func(t *testing.T, o *Output, r *portsmocks.MockRenderer)
+		setup func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer)
 	}{
-		"gbm unavailable": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
+		"gbm unavailable": {func(_ *testing.T, o *Output, _ *mockkms, _ *portsmocks.MockRenderer) {
 			o.openAlloc = func() (imageAllocator, error) { return nil, errors.New("no libgbm") }
 		}},
-		"no common modifier": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
+		"no common modifier": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
 			a := newMockimageAllocator(t)
 			a.EXPECT().close().Return().Maybe()
 			o.openAlloc = func() (imageAllocator, error) { return a, nil }
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return(nil).Once()
 		}},
-		"allocation fails": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
+		"allocation fails": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
 			a := newMockimageAllocator(t)
 			a.EXPECT().close().Return().Maybe()
 			a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).Return(nil, errors.New("gbm: no buffer")).Once()
 			o.openAlloc = func() (imageAllocator, error) { return a, nil }
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 		}},
-		"second allocation fails": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
+		"second allocation fails": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
 			a := newMockimageAllocator(t)
 			a.EXPECT().close().Return().Maybe()
 			img := newMockimageBuffer(t)
 			img.EXPECT().dmabuf().Return(gbmBuf(1), nil).Once()
 			img.EXPECT().close().Return().Once() // freed with the failed attempt
+			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
 			a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).Return(img, nil).Once()
 			a.EXPECT().create(200, 100, uint32(fourccXRGB), []uint64{tiledMod}).Return(nil, errors.New("out of memory")).Once()
 			o.openAlloc = func() (imageAllocator, error) { return a, nil }
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 		}},
-		"import refused": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
-			a, closed := gbmImages(t, 1)
-			_ = closed
+		"import refused": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
+			a, _ := twoGBMImages(t, 1)
 			o.openAlloc = func() (imageAllocator, error) { return a, nil }
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 			r.EXPECT().ImportTargets(mock.Anything).Return(errors.New("explicit layout refused")).Once()
+			// The images made before the refusal go with a renderer drop.
+			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
 		}},
-		"framebuffer refused": {func(t *testing.T, o *Output, r *portsmocks.MockRenderer) {
-			a, _ := gbmImages(t, 1)
+		"framebuffer refused": {func(t *testing.T, o *Output, k *mockkms, r *portsmocks.MockRenderer) {
+			a, _ := twoGBMImages(t, 1)
 			o.openAlloc = func() (imageAllocator, error) { return a, nil }
 			r.EXPECT().TargetModifiers(mock.Anything, false).Return([]uint64{tiledMod}).Once()
 			r.EXPECT().ImportTargets(mock.Anything).Return(nil).Once()
 			r.EXPECT().ImportTargets([]ports.DMABuf(nil)).Return(nil).Once()
-			o.k.(*mockkms).EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(0, unix.EINVAL).Once()
+			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(0, unix.EINVAL).Once()
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			o, k, _ := testOutput(t)
 			o.cursor = nil
 			r := gbmRenderer(t)
-			tc.setup(t, o, r)
+			tc.setup(t, o, k, r)
 			r.EXPECT().ExportTargets(2, []uint64(nil), false).Return([]ports.DMABuf{gbmBuf(1), gbmBuf(1)}, nil).Once()
 			k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Maybe()
 			k.EXPECT().rmFB(mock.Anything).Return(nil).Maybe()
@@ -133,8 +135,9 @@ func TestShowImagesFallsBackToVulkanWhenGBMFails(t *testing.T) {
 			if err := o.showImages(r, imagesDriver, nil); err != nil {
 				t.Fatal(err)
 			}
-			if o.imageAlloc != allocVulkan || o.kind != imagesDriver || len(o.images) != 0 || o.fbs[0] == 0 || o.fbs[1] == 0 {
-				t.Fatalf("alloc %q kind %d images %d fbs %v", o.imageAlloc, o.kind, len(o.images), o.fbs)
+			// The renderer's own images: no GBM image is alive.
+			if o.kind != imagesDriver || len(o.images) != 0 || o.fbs[0] == 0 || o.fbs[1] == 0 {
+				t.Fatalf("kind %d images %d fbs %v", o.kind, len(o.images), o.fbs)
 			}
 		})
 	}
@@ -167,7 +170,7 @@ func TestGBMOpenFailureIsRemembered(t *testing.T) {
 func TestShowImagesRefusedGBMImagesTryVulkanOfTheSameKind(t *testing.T) {
 	o, k, commits := testOutput(t, unix.EINVAL)
 	o.cursor = nil
-	a, closed := gbmImages(t, 1)
+	a, closed := twoGBMImages(t, 1)
 	o.openAlloc = func() (imageAllocator, error) { return a, nil }
 	r := gbmRenderer(t)
 	r.EXPECT().TargetModifiers([]uint64(nil), false).Return([]uint64{tiledMod}).Once()
@@ -182,28 +185,33 @@ func TestShowImagesRefusedGBMImagesTryVulkanOfTheSameKind(t *testing.T) {
 	if err := o.showImages(r, imagesDriver, nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.imageAlloc != allocVulkan || o.kind != imagesDriver || *closed != 2 || len(o.images) != 0 || len(*commits) != 3 {
-		t.Fatalf("alloc %q kind %d closed %d images %d commits %d", o.imageAlloc, o.kind, *closed, len(o.images), len(*commits))
+	if o.kind != imagesDriver || *closed != 2 || len(o.images) != 0 || len(*commits) != 3 {
+		t.Fatalf("kind %d closed %d images %d commits %d", o.kind, *closed, len(o.images), len(*commits))
 	}
 }
 
-// Closing the output frees the GBM images and the allocator.
-func TestOutputFreeImagesClosesGBMImages(t *testing.T) {
+// Closing the output frees the GBM images and closes the allocator once.
+func TestOutputCloseFreesGBMImagesAndAllocator(t *testing.T) {
 	o, k, _ := testOutput(t)
+	o.cursor = nil
 	img := newMockimageBuffer(t)
 	img.EXPECT().close().Return().Twice()
+	alloc := newMockimageAllocator(t)
+	alloc.EXPECT().close().Return().Once()
 	o.images = []imageBuffer{img, img}
+	o.alloc = alloc
 	o.fbs = [2]uint32{70, 71}
-	k.EXPECT().rmFB(mock.Anything).Return(nil).Twice()
-	o.freeImages()
-	if o.images != nil || o.fbs != [2]uint32{} {
-		t.Fatalf("images %v fbs %v", o.images, o.fbs)
+	k.EXPECT().rmFB(uint32(70)).Return(nil).Once()
+	k.EXPECT().rmFB(uint32(71)).Return(nil).Once()
+	o.Close()
+	if o.images != nil || o.alloc != nil || o.fbs != [2]uint32{} {
+		t.Fatalf("images %v alloc %v fbs %v", o.images, o.alloc, o.fbs)
 	}
 }
 
 // A setup that finds images left over frees them first, with the renderer's
-// targets over GBM ones, and a refused modeset of GBM images (no fallback
-// left) drops the targets with the buffers.
+// targets over GBM ones: the renderer never keeps a target over a freed
+// image.
 func TestSetupStartsFromCleanState(t *testing.T) {
 	o, k, _ := testOutput(t)
 	o.cursor = nil
@@ -222,57 +230,5 @@ func TestSetupStartsFromCleanState(t *testing.T) {
 	}
 	if o.images != nil || o.fbs != [2]uint32{80, 80} {
 		t.Fatalf("images %v fbs %v", o.images, o.fbs)
-	}
-}
-
-// Without CPU fence waits every fence is ready; with them only a signalled
-// client fence is (a pipe stands in: readable means signalled).
-func TestClientFenceReady(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	defer w.Close()
-	o, _, _ := testOutput(t)
-	if !o.clientFenceReady(r) || !o.clientFenceReady(nil) {
-		t.Fatal("fence not ready without CPU waits")
-	}
-	o.cpuFences = true
-	if !o.clientFenceReady(nil) {
-		t.Fatal("no fence must be ready")
-	}
-	if o.clientFenceReady(r) {
-		t.Fatal("pending client fence ready")
-	}
-	_, _ = w.Write([]byte{1})
-	if !o.clientFenceReady(r) {
-		t.Fatal("signalled client fence not ready")
-	}
-}
-
-// With CPU waits a client buffer whose fence is pending is composed, not
-// scanned out and not put on the overlay: neither plane waits for it. Once
-// the fence signalled the same frame scans out.
-func TestPendingClientFenceComposes(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	defer w.Close()
-	o, k, _ := testOutput(t)
-	k.EXPECT().addFB(mock.Anything, mock.Anything).Return(60, nil).Maybe()
-	o.cpuFences = true
-	o.primary.formats = []ports.DMABufFormat{{Format: fourccXRGB}}
-	s := ports.Scene{OutputWidth: 200, OutputHeight: 100, Windows: []ports.SceneWindow{{ID: 1, Rect: ports.Rect{W: 200, H: 100}, Fullscreen: true}}}
-	c := ports.SurfaceContent{ID: 1, Width: 200, Height: 100, LogicalW: 200, LogicalH: 100, Opaque: true, Acquire: r, DMABuf: &ports.DMABuf{ID: 5, Format: fourccXRGB, Width: 200, Height: 100, Planes: []ports.DMABufPlane{{File: r}}}}
-	contents := map[ports.WindowID]ports.SurfaceContent{1: c}
-	if fb, _, _ := o.scanoutFrame(s, contents); fb != 0 || o.reason != "fence_pending" {
-		t.Fatalf("pending fence: fb %d reason %q", fb, o.reason)
-	}
-	_, _ = w.Write([]byte{1})
-	if fb, _, _ := o.scanoutFrame(s, contents); fb == 0 {
-		t.Fatalf("signalled fence: reason %q", o.reason)
 	}
 }

@@ -2,15 +2,15 @@ package gbm
 
 import (
 	"os"
-	"slices"
 	"strings"
 	"testing"
 
 	"golang.org/x/sys/unix"
 )
 
-// An allocator answer outside the requested list is refused, including an
-// implicit layout (DRM_FORMAT_MOD_INVALID) that Vulkan cannot import.
+// An allocator answer outside the request is refused, including an implicit
+// layout (DRM_FORMAT_MOD_INVALID) that Vulkan cannot import; only a
+// linear-only request takes it, as linear.
 func TestCheckModifier(t *testing.T) {
 	const tiled = 0x300000000606014
 	for _, tc := range []struct {
@@ -23,10 +23,15 @@ func TestCheckModifier(t *testing.T) {
 		{"linear listed", []uint64{tiled, 0}, 0, true},
 		{"not listed", []uint64{tiled}, 0, false},
 		{"other vendor", []uint64{tiled}, 0x200000000401b03, false},
-		{"invalid", []uint64{tiled, 0}, modInvalid, false},
 		{"empty list", nil, 0, false},
+		{"linear only takes linear", []uint64{0}, 0, true},
+		{"linear only takes invalid", []uint64{0}, modInvalid, true},
+		{"linear only refuses others", []uint64{0}, tiled, false},
+		{"tiled refuses invalid", []uint64{tiled}, modInvalid, false},
+		{"tiled or linear refuses invalid", []uint64{tiled, 0}, modInvalid, false},
+		{"0 and 5 refuses invalid", []uint64{0, 5}, modInvalid, false},
 	} {
-		if err := checkModifier(tc.requested, tc.got); (err == nil) != tc.ok {
+		if err := checkModifier(acceptedModifiers(tc.requested), tc.got); (err == nil) != tc.ok {
 			t.Errorf("%s: %v", tc.name, err)
 		}
 	}
@@ -78,18 +83,6 @@ func TestCreateRejectsBadRequests(t *testing.T) {
 	}{{0, 8, []uint64{0}}, {8, 0, []uint64{0}}, {8, 8, nil}} {
 		if _, err := d.Create(tc.w, tc.h, 0, tc.mods, UseRendering); err == nil {
 			t.Errorf("%dx%d with %d modifiers accepted", tc.w, tc.h, len(tc.mods))
-		}
-	}
-}
-
-// Only a linear-only request accepts an implicit layout, as linear.
-func TestAcceptedModifiers(t *testing.T) {
-	if got := acceptedModifiers([]uint64{0}); checkModifier(got, modInvalid) != nil || checkModifier(got, 0) != nil || checkModifier(got, 5) == nil {
-		t.Errorf("linear-only request accepts %#x", got)
-	}
-	for _, req := range [][]uint64{{5}, {0, 5}, {modInvalid}} {
-		if got := acceptedModifiers(req); checkModifier(got, modInvalid) == nil && !slices.Contains(req, modInvalid) {
-			t.Errorf("request %#x accepts an implicit layout", req)
 		}
 	}
 }

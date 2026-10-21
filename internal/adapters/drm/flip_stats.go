@@ -30,6 +30,9 @@ type flipStats struct {
 	// stateCarried counts deferred state changes a frame carried instead.
 	// Many state commits while a video plays point at a lost vblank each.
 	stateCommits, stateCarried int
+	// fenceTimeouts counts commits whose CPU fence wait hit its limit
+	// (fencegate.go).
+	fenceTimeouts int
 }
 
 // nominalPeriod is the time between two vblanks at the mode's refresh
