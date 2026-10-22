@@ -58,7 +58,7 @@ By default, X11 apps such as Steam run through [xwayland-satellite](https://gith
 xwayland = off   # no X11 support
 ```
 
-With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows with its own window manager.
+With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself. It does not manage X11 windows yet; use `satellite` for X11 apps.
 
 ## Session locking
 
