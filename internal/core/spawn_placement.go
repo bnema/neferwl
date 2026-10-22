@@ -143,7 +143,7 @@ func (p *spawnPlacement) place(c *Core, v ports.WindowMapped) {
 		eff, ok := c.ruleFor(v)
 		// A window mapping at an output's rect goes to that output unless a
 		// rule names a monitor or workspace.
-		if v.HasAt && !v.Remap && eff.monitor == "" {
+		if v.HasAt && !v.Remap && eff.monitor == "" && eff.workspace == "" && eff.number == 0 {
 			if i := c.screenAt(float64(v.AtX), float64(v.AtY)); i >= 0 && i != c.focusScreen {
 				eff.monitor, ok = c.screens[i].name(), true
 			}

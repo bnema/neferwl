@@ -122,10 +122,11 @@ func (s *Server) syncInhibitors() {
 			idle[in.window] = true
 		}
 	}
-	if id := s.xgrabWindow(); id != 0 {
-		shortcuts[id] = true
-	}
+	// syncKeyboardGrab compares against xgrabbed: it is only written here.
 	s.xgrabbed = s.xgrabWindow()
+	if s.xgrabbed != 0 {
+		shortcuts[s.xgrabbed] = true
+	}
 	for id, on := range diffSets(s.shortcutWindows, shortcuts) {
 		s.emit(ports.ShortcutsInhibit{Window: id, Active: on})
 	}

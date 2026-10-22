@@ -507,6 +507,16 @@ func TestMapAtOutputKeepsRuleMonitor(t *testing.T) {
 	}
 }
 
+func TestMapAtOutputKeepsRuleWorkspace(t *testing.T) {
+	r := startMulti(t, func(c *ports.Config) {
+		c.Rules = []ports.WindowRule{winRule("g", "game", func(r *ports.WindowRule) { r.Workspace = "1" })}
+	}, left, right)
+	r.client <- ports.WindowMapped{ID: 2, AppID: "game", HasAt: true, AtX: 200, AtY: 0}
+	if w := stWindow(r.stateWith(t, 2), 2); w.Output != "DP-1" {
+		t.Fatalf("rule workspace lost to the hint: %+v", w)
+	}
+}
+
 func TestRuleMatchesSteamAppClass(t *testing.T) {
 	r := startMulti(t, func(c *ports.Config) {
 		c.Rules = []ports.WindowRule{winRule("steam", `steam_app_\d+`, func(r *ports.WindowRule) { r.Floating = ruleOn() })}
