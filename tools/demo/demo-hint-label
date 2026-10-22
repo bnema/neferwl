@@ -33,7 +33,8 @@ def ocr():
         if text and float(row["conf"]) > 30:
             x, y, w, h = (int(row[k]) for k in ("left", "top", "width", "height"))
             words.append([text, x + w / 2, y + h / 2])
-    json.dump(words, open(WORDS, "w"))
+    with open(WORDS, "w") as f:
+        json.dump(words, f)
 
 
 def newest_dump(since):
@@ -47,8 +48,10 @@ def newest_dump(since):
 
 
 def label(since, wanted):
-    meta = json.load(open(newest_dump(since)))
-    words = json.load(open(WORDS))
+    with open(newest_dump(since)) as f:
+        meta = json.load(f)
+    with open(WORDS) as f:
+        words = json.load(f)
     # Core keeps the targets whose centre is on the output, then sorts them.
     width, height = meta["width"], meta["height"]
     targets = [t for t in meta["targets"]

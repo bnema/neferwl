@@ -16,7 +16,7 @@ COPY foot.ini /root/.config/foot/foot.ini
 COPY btop.conf /root/.config/btop/btop.conf
 COPY btop-vesper.theme /root/.config/btop/themes/vesper.theme
 COPY demo-entry demo-hint-label /usr/local/bin/
-COPY config /root/config
+# One config for both users: the compositor (root) reads it, Mousepad (demo) edits it.
 COPY config /home/demo/config
 COPY mousepad.keyfile /home/demo/.config/glib-2.0/settings/keyfile
 RUN chown -R demo:demo /home/demo
@@ -24,6 +24,7 @@ ENV HOME=/root XDG_RUNTIME_DIR=/run/wl WAYLAND_DISPLAY=wayland-0 \
     GTK_THEME=Adwaita:dark ADW_DEBUG_COLOR_SCHEME=prefer-dark \
     DBUS_SESSION_BUS_ADDRESS=unix:path=/run/wl/bus \
     MOZ_ENABLE_WAYLAND=1 LIBGL_ALWAYS_SOFTWARE=1 COLORTERM=truecolor
+# LIBGL_ALWAYS_SOFTWARE applies to the apps' OpenGL, not to the compositor (Vulkan).
 WORKDIR /root
 # Everything runs as the container's root, which rootless Docker maps to the
 # host user, so the bind-mounted work directory stays owned by the host user.

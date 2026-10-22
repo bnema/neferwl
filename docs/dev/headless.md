@@ -7,7 +7,7 @@ neferwl --backend=headless --screenshot /tmp/neferwl-shots
 WAYLAND_DISPLAY=<name from the log> foot
 ```
 
-- `latest.png` shows the current frame; `frames.ffconcat` records frame timing. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows.
+- `latest.png` shows the current frame; `frames.ffconcat` records frame timing. Every frame is also saved as `frame-NNNNNN.png`, so the directory grows. `latest.png` is a hard link to the newest frame, so replace it rather than editing it in place.
 - `--size 640x360,640x360` creates two outputs, arranged left to right,
   for testing `focus-monitor-left/right` and moving columns between outputs.
 - With several outputs, each writes to `<dir>/HEADLESS-<n>/`.
@@ -25,12 +25,14 @@ ffmpeg -f concat -safe 0 -i /tmp/shots/frames.ffconcat -vf "fps=60,format=yuv420
 For a GIF, convert `demo.mp4` with ffmpeg's `palettegen` and `paletteuse` filters.
 
 ### Demo recording
-Run `tools/demo/record.sh` with Go 1.27, rootless Docker, ffmpeg and network access installed.
+Run `tools/demo/record.sh`. It requires Go 1.27, rootless Docker, ffmpeg, network access and an AMD GPU.
 It builds the Arch image (apps, tesseract, AT-SPI) and the compositor binary, then records the 1080p README demo.
 The compositor runs headless inside a disposable container, with the binary and a work directory bind-mounted and `/dev/dri` passed for the GPU.
+The image only carries Mesa's radeon Vulkan driver, and hint scans need the sync files that a hardware driver exports; the script stops early without an AMD render node.
 Firefox opens a live DuckDuckGo page, so the recording needs the network and its content varies.
 A FIFO feeds `input.txt` while the script launches the apps on the same clock.
 The hint step makes Firefox fullscreen and labels the page with `hint`; `hint-click <words>` then types the label of the link that shows those words, found from the scan's dump and an OCR read of the still page (`hint-read`).
+The recording only counts if the compositor stops on the quit key that ends `input.txt`; reaching its `--timeout` first fails the run as truncated.
 Temporary captures are removed by default; set `KEEP_CAPTURE=1` to keep successful runs.
 The recording and poster replace `docs/media/demo.mp4` and `docs/media/demo.png`.
 

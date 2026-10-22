@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Requires Go 1.27, rootless Docker, bash, ffmpeg and network access.
+# Requires Go 1.27, rootless Docker, bash, ffmpeg, network access and an AMD GPU.
 # Run from any directory. The image holds the compositor's runtime (tesseract,
-# AT-SPI, a Mesa Vulkan driver) and the apps; the host builds the binary.
+# AT-SPI, Mesa's radeon Vulkan driver) and the apps; the host builds the binary.
+# The compositor renders on the host GPU through /dev/dri, and hint scans need
+# the sync files only a hardware driver exports. The image only carries
+# vulkan-radeon, so another GPU needs its Mesa driver in tools/demo/Dockerfile
+# and the vendor check below changed.
+# A recording only succeeds if the compositor stops on the quit key that ends
+# tools/demo/input.txt: hitting --timeout first means a truncated video.
 # KEEP_CAPTURE=1 preserves temporary captures on success; failures always clean up.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -10,6 +16,15 @@ for command in docker go ffmpeg; do
     command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 1; }
 done
 docker info >/dev/null 2>&1 || { echo 'Docker daemon unavailable; start rootless Docker first.' >&2; exit 1; }
+amd=''
+for vendor in /sys/class/drm/renderD*/device/vendor; do
+    if [[ -r $vendor && $(<"$vendor") == 0x1002 ]]; then amd=yes; fi
+done
+[[ -n $amd ]] || {
+    echo 'No AMD GPU render node (PCI vendor 0x1002) found: the demo image only carries the radeon Vulkan driver.' >&2
+    echo 'See the header of this script to use another GPU.' >&2
+    exit 1
+}
 work=$(mktemp -d "${TMPDIR:-/tmp}/neferwl-demo.XXXXXX")
 launcher='' feeder='' success=''
 container=neferwl-demo-$$
@@ -47,15 +62,14 @@ exec 3<>"$work/input"
 # it. Root in a rootless container is the host user: the bind-mounted work
 # directory (binary, FIFO, frames, log, hint dumps) stays owned by the host user.
 # The GPU render node gives the compositor the sync files that hint scans need.
-gpu=()
-if [[ -d /dev/dri ]]; then gpu=(--device /dev/dri); else echo 'No /dev/dri: hint scans will fail.' >&2; fi
-docker run -d --name "$container" --hostname neferwl-demo "${gpu[@]}" \
+docker run -d --name "$container" --hostname neferwl-demo --device /dev/dri \
     -e XDG_STATE_HOME=/work/state -e NEFERWL_HINT_DEBUG=1 \
     -v "$work:/work" -v "$work/neferwl:/usr/local/bin/neferwl:ro" neferwl-demo \
-    --backend=headless --size 1920x1080 --config /root/config --no-xwayland \
+    --backend=headless --size 1920x1080 --config /home/demo/config --no-xwayland \
     --screenshot /work/shots --input /work/input --timeout 75s >/dev/null
 display=''
-for ((attempt = 0; attempt < 300; attempt++)); do
+deadline=$((SECONDS + 30))
+while ((SECONDS < deadline)); do
     [[ $(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null) == true ]] ||
         { echo "Compositor exited before readiness; see $log" >&2; docker logs "$container" >&2 || true; exit 1; }
     if [[ -f $log ]]; then
@@ -64,7 +78,7 @@ for ((attempt = 0; attempt < 300; attempt++)); do
     fi
     sleep 0.1
 done
-[[ -n $display ]] || { echo "Timed out after 30s waiting for the compositor; see $log" >&2; exit 1; }
+[[ -n $display ]] || { echo "Timed out after 30s waiting for the compositor to listen; see $log" >&2; exit 1; }
 # Mousepad runs as another user (see launch_apps) and needs the socket.
 docker exec "$container" chmod 666 "/run/wl/${display##*/}"
 app() { docker exec -d -e "WAYLAND_DISPLAY=${display##*/}" "$container" "$@"; }
@@ -134,17 +148,24 @@ feeder=$!
 launch_apps &
 launcher=$!
 set +m
-# The compositor ends with the quit key at the end of input.txt, or at --timeout.
+# The compositor ends with the quit key at the end of input.txt. Hitting
+# --timeout first (a stalled timeline) leaves a truncated recording: that fails.
 status=$(docker wait "$container")
-if [[ $status != 0 ]]; then
-    grep -q '"reason":"timeout"' "$log" || { echo "Compositor failed (exit $status); see $log" >&2; docker logs "$container" >&2 || true; exit 1; }
+if grep -q '"reason":"timeout"' "$log"; then
+    echo 'The compositor hit --timeout before the quit key: the recording is truncated.' >&2
+    exit 1
 fi
+[[ $status == 0 ]] || { echo "Compositor failed (exit $status); see $log" >&2; docker logs "$container" >&2 || true; exit 1; }
 wait "$feeder" || { echo 'Scripted input failed.' >&2; exit 1; }
 feeder=
 wait "$launcher"
 launcher=
 # Firefox's links come from the accessibility tree; OCR (tesseract) must still load.
 if grep -qE 'OCR unavailable|English OCR data missing' "$log"; then echo 'tesseract is missing in the image.' >&2; exit 1; fi
+if grep -q 'capture needs sync file export' "$log"; then
+    echo 'Hint scans failed: the compositor is not on a hardware Vulkan driver (radeon); see the header of this script.' >&2
+    exit 1
+fi
 grep -qE '"atspi_targets":[1-9][0-9]*,.*"message":"hint scan"' "$log" ||
     { echo 'No hint scan found accessibility targets:' >&2; grep -E '"component":"(hints|atspi)"' "$log" | cut -c1-300 >&2; exit 1; }
 grep '"message":"hint scan"' "$log" | sed -E 's/.*"atspi_targets":([0-9]+).*"ocr_links":([0-9]+).*"targets":([0-9]+).*/hint scan: \1 accessibility + \2 OCR links = \3 targets/' | tail -3
