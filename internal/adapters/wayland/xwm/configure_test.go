@@ -359,7 +359,6 @@ func TestFocusActiveWindowWrittenOnlyOnChange(t *testing.T) {
 	settle(t, x, p)
 	require.Len(t, propsTo(p, n, peerRoot, "_NET_ACTIVE_WINDOW"), 1)
 
-	n = settle(t, x, p)
 	x.Focus(sb)
 	settle(t, x, p)
 	act, _ := p.prop(peerRoot, "_NET_ACTIVE_WINDOW")
@@ -372,10 +371,7 @@ func TestFocusActiveWindowWrittenOnlyOnChange(t *testing.T) {
 	n = settle(t, x, p)
 	x.Focus(0)
 	settle(t, x, p)
-	var none []xpeerReq
-	for _, r := range since(p, n, opSetInputFocus) {
-		none = append(none, r)
-	}
+	none := since(p, n, opSetInputFocus)
 	require.Len(t, none, 1)
 	require.Zero(t, none[0].u32(4), "focus None")
 	require.EqualValues(t, xproto.InputFocusNone, none[0].raw[1])
