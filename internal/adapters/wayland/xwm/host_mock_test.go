@@ -5,6 +5,8 @@
 package xwm
 
 import (
+	"time"
+
 	"github.com/bnema/neferwl/internal/ports"
 	mock "github.com/stretchr/testify/mock"
 )
@@ -43,6 +45,65 @@ type mockhost_Expecter struct {
 
 func (_m *mockhost) EXPECT() *mockhost_Expecter {
 	return &mockhost_Expecter{mock: &_m.Mock}
+}
+
+// After provides a mock function for the type mockhost
+func (_mock *mockhost) After(d time.Duration, fn func()) func() {
+	ret := _mock.Called(d, fn)
+
+	if len(ret) == 0 {
+		panic("no return value specified for After")
+	}
+
+	var r0 func()
+	if returnFunc, ok := ret.Get(0).(func(time.Duration, func()) func()); ok {
+		r0 = returnFunc(d, fn)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(func())
+		}
+	}
+	return r0
+}
+
+// mockhost_After_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'After'
+type mockhost_After_Call struct {
+	*mock.Call
+}
+
+// After is a helper method to define mock.On call
+//   - d time.Duration
+//   - fn func()
+func (_e *mockhost_Expecter) After(d any, fn any) *mockhost_After_Call {
+	return &mockhost_After_Call{Call: _e.mock.On("After", d, fn)}
+}
+
+func (_c *mockhost_After_Call) Run(run func(d time.Duration, fn func())) *mockhost_After_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 time.Duration
+		if args[0] != nil {
+			arg0 = args[0].(time.Duration)
+		}
+		var arg1 func()
+		if args[1] != nil {
+			arg1 = args[1].(func())
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_After_Call) Return(cancel func()) *mockhost_After_Call {
+	_c.Call.Return(cancel)
+	return _c
+}
+
+func (_c *mockhost_After_Call) RunAndReturn(run func(d time.Duration, fn func()) func()) *mockhost_After_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // AppID provides a mock function for the type mockhost

@@ -1,6 +1,10 @@
 package xwm
 
-import "github.com/bnema/neferwl/internal/ports"
+import (
+	"time"
+
+	"github.com/bnema/neferwl/internal/ports"
+)
 
 // Slot is the XWM's window slot: table index + 1, stable until the window is
 // destroyed. 0 means none.
@@ -58,6 +62,12 @@ type host interface {
 	// offers these MIME types, or none does any more (mimes nil). mimes is
 	// scratch: the host copies it.
 	SelectionOwned(kind int, mimes []string)
+
+	// After runs fn on the display goroutine once d has elapsed, unless the
+	// returned cancel ran first. cancel is idempotent and display goroutine
+	// only; fn may still run once after cancel when it was already queued,
+	// so callers guard with their own generation.
+	After(d time.Duration, fn func()) (cancel func())
 }
 
 // fdSource is the display's event source for the X socket (*server.Source).

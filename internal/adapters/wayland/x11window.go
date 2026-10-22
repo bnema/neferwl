@@ -1,6 +1,8 @@
 package wayland
 
 import (
+	"time"
+
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandshell"
 	"github.com/bnema/neferwl/internal/adapters/wayland/xwm"
@@ -375,6 +377,11 @@ func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
 // OverrideGone ends an override window: unmapped, or destroyed.
 func (h hostImpl) SelectionOwned(kind int, mimes []string) {
 	h.s.log.Debug().Int("kind", kind).Int("mimes", len(mimes)).Msg("X selection owner changed")
+}
+
+func (h hostImpl) After(d time.Duration, fn func()) func() {
+	t := h.s.clock.AfterFunc(d, func() { h.s.display.Post(fn) })
+	return func() { t.Stop() }
 }
 
 func (h hostImpl) OverrideGone(slot xwm.Slot) {
