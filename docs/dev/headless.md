@@ -67,7 +67,7 @@ WAYLAND_DISPLAY=<name> go run ./examples/testime -preedit nihon -commit 日本
 
 `make e2e-xwayland` runs the end-to-end test of the built-in window manager (`xwayland = builtin`). It is behind the `xwayland` build tag, so `go test ./...` and `make check` only compile it (`go vet -tags xwayland`). It needs `Xwayland` on `PATH` and a GPU, and skips without Xwayland.
 
-The test starts a headless NeferWL with a real `Xwayland` on the first free X display (a live session's `:0` stays untouched) and runs `internal/app/testdata/x11probe`, a small X11 client (`-class`, `-title`, `-size`, `-sleep`) that paints its window green, prints `mapped WxH` and `focus`, and exits 0 on `WM_DELETE_WINDOW`. With `-override` it also maps a magenta override-redirect window (`-override-at`, `-override-size`, `-override-type menu|tooltip`, `-override-for`, `-override-shape`, `-override-dismiss-on-focusout`) and prints `override mapped`, `override unmapped` or `dismissed`. It checks:
+The test starts a headless NeferWL with a real `Xwayland` on the first free X display (a live session's `:0` stays untouched) and runs `internal/app/testdata/x11probe`, a small X11 client (`-class`, `-title`, `-size`, `-sleep`, `-at X,Y`) that paints its window green, prints `mapped WxH` and `focus`, and exits 0 on `WM_DELETE_WINDOW`. With `-override` it also maps a magenta override-redirect window (`-override-at`, `-override-size`, `-override-type menu|tooltip`, `-override-for`, `-override-shape`, `-override-dismiss-on-focusout`) and prints `override mapped`, `override unmapped` or `dismissed`. `-fullscreen` (with `-fullscreen-delay`, `-fullscreen-off`) requests `_NET_WM_STATE_FULLSCREEN` by client message and prints `fullscreen WxH` / `fullscreen off WxH` when the window manager publishes the state; `-keyboard-grab` calls `XGrabKeyboard` and prints `grab`. `-at` also sends a ConfigureRequest with the window rect before the map, like games do. It checks:
 
 - the state lists one visible `X11Probe` window with the probe's pid, and the screenshot is mostly green inside its tile;
 - the probe receives focus;
@@ -75,7 +75,13 @@ The test starts a headless NeferWL with a real `Xwayland` on the first free X di
 - `key Super+q` closes the focused probe within 2 seconds and the state drops to one window;
 - an override-redirect menu is drawn magenta above the green toplevel at its X position, is not listed in the state, leaves focus on the toplevel and disappears from the screenshot once the probe unmaps it;
 - a menu is dismissed when its owner gets `FocusOut` because another X11 window took the focus;
-- a menu with an empty input shape is still drawn and still not a window.
+- a menu with an empty input shape is still drawn and still not a window;
+- a fullscreen request 1.5 s after the map fills the output (all green, no gap) and `Super+Shift+f` leaves it; the client can also leave it itself; a request at the map stays tiled (the 1 s grace);
+- with the keyboard grab, `Super+q` does not close a fullscreen focused client and works again once it leaves fullscreen; on a windowed client it closes it;
+- on two outputs, a window created at the second output's origin opens on `HEADLESS-2` and fullscreens there;
+- a window rule `rule.games.app-id = steam_app_\d+` floats an X11 window of class `steam_app_413150`, and not another class.
+
+Not covered headless: relative pointer lock (needs a real pointer device) and Xwayland output hotplug (`--size` is fixed); these are unit-tested in the `wayland` adapter.
 
 Run it by hand with `go test -tags xwayland -race ./internal/app -run TestXwayland -count=1 -v`.
 

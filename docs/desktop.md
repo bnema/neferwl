@@ -60,6 +60,15 @@ xwayland = off   # no X11 support
 
 With `xwayland = builtin` (experimental), neferwl starts `Xwayland` itself and manages X11 windows: they tile, take focus and close like Wayland windows. Menus, popups and tooltips of X11 apps are shown above their window and do not take the keyboard focus. Clipboard and XSETTINGS are not supported; use `satellite` if you need them.
 
+Games with `builtin`:
+
+- **Fullscreen:** an X11 window can ask for fullscreen (`_NET_WM_STATE_FULLSCREEN`) and leave it again; `toggle-fullscreen` works too. A request within 1 second of the window mapping is ignored, so a launcher that remembers a fullscreen size does not cover the windows it opens next. The app can ask again later.
+- **Output:** a window that opens exactly at one output's area opens on that output, and its fullscreen fills it.
+- **Keyboard grab:** an X11 app that grabs the keyboard inhibits the compositor binds only while it is focused and fullscreen; a windowed app cannot lock the binds. There is no escape bind, as with Wayland shortcut inhibitors; leave by unfullscreening from the app or switching away with the mouse.
+- **Pointer:** mouse-look works through relative pointer and pointer constraints.
+- **App ID:** Proton windows are named `steam_app_<id>`; match them with a [window rule](config.md#window-rules).
+- **Bypass hint:** `_NET_WM_BYPASS_COMPOSITOR` is read but changes nothing; direct scanout is chosen from the window state.
+
 ## Session locking
 
 NeferWL supports `ext-session-lock-v1` with an external locker such as swaylock or hyprlock. The locker checks the password; NeferWL hides the desktop and blocks input.

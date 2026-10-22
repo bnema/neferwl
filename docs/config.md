@@ -178,6 +178,7 @@ rule.calc.floating = on
 - A rule never moves your focus or view.
 - Proton games (X11) use `steam_app_<id>` as app ID, taken from `WM_CLASS`.
 - An X11 window that opens exactly on one output's area opens on that output, unless a rule sets `monitor`.
+- A rule can float a Proton game: `rule.games.app-id = steam_app_\d+` with `rule.games.floating = on`. Without a rule, X11 games tile until they ask for fullscreen.
 - To find an app ID: `neferwl state | jq '.windows[].app_id'`.
 
 ## Output placement
