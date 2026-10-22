@@ -28,7 +28,7 @@ type hdrPass struct {
 // remains owner-goroutine confined; all GPU objects are reused each frame.
 func (r *Renderer) SetHDR(nits float64) {
 	if nits != r.hdrNits {
-		r.cursorCache = cursorConversion{}
+		r.cursorCache.Reset()
 		if r.hdrNits > 0 && nits > 0 {
 			r.hdrOwn.valid = false
 		}
@@ -47,7 +47,7 @@ func (r *Renderer) SetHDR(nits float64) {
 	}
 	r.hdrNits = nits
 	if nits <= 0 {
-		r.cursorCache = cursorConversion{}
+		r.cursorCache.Reset()
 		r.hdrError = nil
 		return
 	}

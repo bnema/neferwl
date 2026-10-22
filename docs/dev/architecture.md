@@ -32,6 +32,13 @@ A DRM output flips between two images the renderer draws into, with no CPU copy.
 - **Fallback:** when libgbm is missing, GBM allocates nothing usable, or Vulkan or KMS refuses the images, the renderer allocates and exports them itself. Each kind (driver modifier, single-plane, linear) tries GBM, then the renderer. The log line `zero-copy output` names the allocator in its `alloc` field (`gbm` or `vulkan`), and is a warning for `vulkan`. This fallback is deprecated and goes away once GBM is validated on more setups (neferwl#23).
 - **Sync:** nvidia-drm before 560.35.3 does not wait for `IN_FENCE_FD`. On it, the output waits for each frame's fence on the CPU and commits without one. A client buffer whose fence is still pending is composed, not scanned out, while `IN_FENCE_FD` is unavailable.
 
+### Cursor images
+
+The cursor plane shows the hardware cursor from two ARGB8888 images that the CPU writes only when the cursor image changes, never on a move.
+
+- **Allocation:** the images are KMS dumb buffers, mapped for the CPU, with the pitch the driver picks. The output converts them to HDR10 when it is in HDR.
+- **Fallback:** when KMS cannot make dumb buffers, or the plane refuses them in a TEST_ONLY commit, the renderer's linear cursor images are used. When the plane refuses those too, the cursor is drawn into every frame (software cursor). The log line `hardware cursor` names the allocator in its `alloc` field (`dumb` or `vulkan`), and is a warning for `vulkan`.
+
 I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
 
 - [purego-libwayland](https://github.com/bnema/purego-libwayland): libwayland-server without cgo.

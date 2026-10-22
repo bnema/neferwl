@@ -113,6 +113,84 @@ func (_c *mockkms_addFB_Call) RunAndReturn(run func(b *ports.DMABuf, format uint
 	return _c
 }
 
+// addFBHandle provides a mock function for the type mockkms
+func (_mock *mockkms) addFBHandle(b dumbBuffer, width int, height int, format uint32) (uint32, error) {
+	ret := _mock.Called(b, width, height, format)
+
+	if len(ret) == 0 {
+		panic("no return value specified for addFBHandle")
+	}
+
+	var r0 uint32
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(dumbBuffer, int, int, uint32) (uint32, error)); ok {
+		return returnFunc(b, width, height, format)
+	}
+	if returnFunc, ok := ret.Get(0).(func(dumbBuffer, int, int, uint32) uint32); ok {
+		r0 = returnFunc(b, width, height, format)
+	} else {
+		r0 = ret.Get(0).(uint32)
+	}
+	if returnFunc, ok := ret.Get(1).(func(dumbBuffer, int, int, uint32) error); ok {
+		r1 = returnFunc(b, width, height, format)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_addFBHandle_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'addFBHandle'
+type mockkms_addFBHandle_Call struct {
+	*mock.Call
+}
+
+// addFBHandle is a helper method to define mock.On call
+//   - b dumbBuffer
+//   - width int
+//   - height int
+//   - format uint32
+func (_e *mockkms_Expecter) addFBHandle(b any, width any, height any, format any) *mockkms_addFBHandle_Call {
+	return &mockkms_addFBHandle_Call{Call: _e.mock.On("addFBHandle", b, width, height, format)}
+}
+
+func (_c *mockkms_addFBHandle_Call) Run(run func(b dumbBuffer, width int, height int, format uint32)) *mockkms_addFBHandle_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 dumbBuffer
+		if args[0] != nil {
+			arg0 = args[0].(dumbBuffer)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 uint32
+		if args[3] != nil {
+			arg3 = args[3].(uint32)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_addFBHandle_Call) Return(v uint32, err error) *mockkms_addFBHandle_Call {
+	_c.Call.Return(v, err)
+	return _c
+}
+
+func (_c *mockkms_addFBHandle_Call) RunAndReturn(run func(b dumbBuffer, width int, height int, format uint32) (uint32, error)) *mockkms_addFBHandle_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // commit provides a mock function for the type mockkms
 func (_mock *mockkms) commit(req *atomicReq, flags uint32, userData uint64) error {
 	ret := _mock.Called(req, flags, userData)
@@ -296,6 +374,72 @@ func (_c *mockkms_createBlob_Call) RunAndReturn(run func(data []byte) (uint32, e
 	return _c
 }
 
+// createDumb provides a mock function for the type mockkms
+func (_mock *mockkms) createDumb(width int, height int) (dumbBuffer, error) {
+	ret := _mock.Called(width, height)
+
+	if len(ret) == 0 {
+		panic("no return value specified for createDumb")
+	}
+
+	var r0 dumbBuffer
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(int, int) (dumbBuffer, error)); ok {
+		return returnFunc(width, height)
+	}
+	if returnFunc, ok := ret.Get(0).(func(int, int) dumbBuffer); ok {
+		r0 = returnFunc(width, height)
+	} else {
+		r0 = ret.Get(0).(dumbBuffer)
+	}
+	if returnFunc, ok := ret.Get(1).(func(int, int) error); ok {
+		r1 = returnFunc(width, height)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_createDumb_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'createDumb'
+type mockkms_createDumb_Call struct {
+	*mock.Call
+}
+
+// createDumb is a helper method to define mock.On call
+//   - width int
+//   - height int
+func (_e *mockkms_Expecter) createDumb(width any, height any) *mockkms_createDumb_Call {
+	return &mockkms_createDumb_Call{Call: _e.mock.On("createDumb", width, height)}
+}
+
+func (_c *mockkms_createDumb_Call) Run(run func(width int, height int)) *mockkms_createDumb_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_createDumb_Call) Return(dumbBufferMoqParam dumbBuffer, err error) *mockkms_createDumb_Call {
+	_c.Call.Return(dumbBufferMoqParam, err)
+	return _c
+}
+
+func (_c *mockkms_createDumb_Call) RunAndReturn(run func(width int, height int) (dumbBuffer, error)) *mockkms_createDumb_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // createLease provides a mock function for the type mockkms
 func (_mock *mockkms) createLease(objects []uint32) (*os.File, uint32, error) {
 	ret := _mock.Called(objects)
@@ -415,6 +559,57 @@ func (_c *mockkms_destroyBlob_Call) RunAndReturn(run func(id uint32) error) *moc
 	return _c
 }
 
+// destroyDumb provides a mock function for the type mockkms
+func (_mock *mockkms) destroyDumb(handle uint32) error {
+	ret := _mock.Called(handle)
+
+	if len(ret) == 0 {
+		panic("no return value specified for destroyDumb")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(uint32) error); ok {
+		r0 = returnFunc(handle)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// mockkms_destroyDumb_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'destroyDumb'
+type mockkms_destroyDumb_Call struct {
+	*mock.Call
+}
+
+// destroyDumb is a helper method to define mock.On call
+//   - handle uint32
+func (_e *mockkms_Expecter) destroyDumb(handle any) *mockkms_destroyDumb_Call {
+	return &mockkms_destroyDumb_Call{Call: _e.mock.On("destroyDumb", handle)}
+}
+
+func (_c *mockkms_destroyDumb_Call) Run(run func(handle uint32)) *mockkms_destroyDumb_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 uint32
+		if args[0] != nil {
+			arg0 = args[0].(uint32)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_destroyDumb_Call) Return(err error) *mockkms_destroyDumb_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *mockkms_destroyDumb_Call) RunAndReturn(run func(handle uint32) error) *mockkms_destroyDumb_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // getBlob provides a mock function for the type mockkms
 func (_mock *mockkms) getBlob(id uint32) ([]byte, error) {
 	ret := _mock.Called(id)
@@ -473,6 +668,68 @@ func (_c *mockkms_getBlob_Call) Return(bytes []byte, err error) *mockkms_getBlob
 }
 
 func (_c *mockkms_getBlob_Call) RunAndReturn(run func(id uint32) ([]byte, error)) *mockkms_getBlob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// mapDumb provides a mock function for the type mockkms
+func (_mock *mockkms) mapDumb(b dumbBuffer) ([]byte, error) {
+	ret := _mock.Called(b)
+
+	if len(ret) == 0 {
+		panic("no return value specified for mapDumb")
+	}
+
+	var r0 []byte
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(dumbBuffer) ([]byte, error)); ok {
+		return returnFunc(b)
+	}
+	if returnFunc, ok := ret.Get(0).(func(dumbBuffer) []byte); ok {
+		r0 = returnFunc(b)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(dumbBuffer) error); ok {
+		r1 = returnFunc(b)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// mockkms_mapDumb_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'mapDumb'
+type mockkms_mapDumb_Call struct {
+	*mock.Call
+}
+
+// mapDumb is a helper method to define mock.On call
+//   - b dumbBuffer
+func (_e *mockkms_Expecter) mapDumb(b any) *mockkms_mapDumb_Call {
+	return &mockkms_mapDumb_Call{Call: _e.mock.On("mapDumb", b)}
+}
+
+func (_c *mockkms_mapDumb_Call) Run(run func(b dumbBuffer)) *mockkms_mapDumb_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 dumbBuffer
+		if args[0] != nil {
+			arg0 = args[0].(dumbBuffer)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_mapDumb_Call) Return(bytes []byte, err error) *mockkms_mapDumb_Call {
+	_c.Call.Return(bytes, err)
+	return _c
+}
+
+func (_c *mockkms_mapDumb_Call) RunAndReturn(run func(b dumbBuffer) ([]byte, error)) *mockkms_mapDumb_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -895,6 +1152,57 @@ func (_c *mockkms_rmFB_Call) Return(err error) *mockkms_rmFB_Call {
 }
 
 func (_c *mockkms_rmFB_Call) RunAndReturn(run func(id uint32) error) *mockkms_rmFB_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// unmapDumb provides a mock function for the type mockkms
+func (_mock *mockkms) unmapDumb(mem []byte) error {
+	ret := _mock.Called(mem)
+
+	if len(ret) == 0 {
+		panic("no return value specified for unmapDumb")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func([]byte) error); ok {
+		r0 = returnFunc(mem)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// mockkms_unmapDumb_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'unmapDumb'
+type mockkms_unmapDumb_Call struct {
+	*mock.Call
+}
+
+// unmapDumb is a helper method to define mock.On call
+//   - mem []byte
+func (_e *mockkms_Expecter) unmapDumb(mem any) *mockkms_unmapDumb_Call {
+	return &mockkms_unmapDumb_Call{Call: _e.mock.On("unmapDumb", mem)}
+}
+
+func (_c *mockkms_unmapDumb_Call) Run(run func(mem []byte)) *mockkms_unmapDumb_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 []byte
+		if args[0] != nil {
+			arg0 = args[0].([]byte)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *mockkms_unmapDumb_Call) Return(err error) *mockkms_unmapDumb_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *mockkms_unmapDumb_Call) RunAndReturn(run func(mem []byte) error) *mockkms_unmapDumb_Call {
 	_c.Call.Return(run)
 	return _c
 }

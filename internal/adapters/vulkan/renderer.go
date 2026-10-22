@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"unsafe"
 
+	"github.com/bnema/neferwl/internal/adapters/hdrcursor"
 	"github.com/bnema/neferwl/internal/adapters/hintlabel"
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/bnema/zerowrap"
@@ -55,7 +56,7 @@ type Renderer struct {
 	virtual  bool
 	physical vk.PhysicalDevice
 	// One converted cursor image is kept; changes replace it in bounded memory.
-	cursorCache cursorConversion
+	cursorCache hdrcursor.Cache
 	// lastHDRTarget is the index in targets of the exported PQ target the
 	// last HDR frame rendered into; -1 when the current targets hold none.
 	lastHDRTarget int

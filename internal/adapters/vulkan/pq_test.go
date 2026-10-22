@@ -13,9 +13,4 @@ func TestPQMath(t *testing.T) {
 	if pqEncode(0) != 0 || math.Abs(pqEncode(10000)-1) > 1e-9 {
 		t.Fatal("PQ endpoints")
 	}
-	p := []byte{255, 255, 255, 255}
-	hdrCursorPixel(p, 203)
-	if p[3] != 255 || math.Abs(float64(p[0])-148) > 1 || p[0] != p[1] || p[1] != p[2] {
-		t.Fatalf("cursor white: %v", p)
-	}
 }

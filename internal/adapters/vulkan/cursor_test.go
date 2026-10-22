@@ -47,7 +47,7 @@ func TestCursorBuffersWriteCursor(t *testing.T) {
 	}
 }
 
-func TestHDRCursorCachesConversion(t *testing.T) {
+func TestHDRCursorWritesBothImagesAndInvalidates(t *testing.T) {
 	r, err := New(32, 16)
 	if err != nil {
 		t.Skipf("Vulkan unavailable: %v", err)
@@ -65,28 +65,6 @@ func TestHDRCursorCachesConversion(t *testing.T) {
 	if err := r.WriteCursor(0, px, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.cursorCache.pixels) != 4 {
-		t.Fatalf("cache size %d", len(r.cursorCache.pixels))
-	}
-	if err := r.WriteCursor(1, px, 1, 1); err != nil {
-		t.Fatal(err)
-	}
-	if len(r.cursorCache.pixels) != 4 {
-		t.Fatalf("cache grew on reselect: %d", len(r.cursorCache.pixels))
-	}
-	first := r.cursorCache.key
-	for i := 0; i < 12; i++ {
-		color := byte(i * 18)
-		if err := r.WriteCursor(1, []byte{color, color, color, 255}, 1, 1); err != nil {
-			t.Fatal(err)
-		}
-		if len(r.cursorCache.pixels) != 4 {
-			t.Fatalf("cache grew after image %d: %d", i, len(r.cursorCache.pixels))
-		}
-	}
-	if first == r.cursorCache.key {
-		t.Fatal("cursor conversion not replaced")
-	}
 	if err := r.WriteCursor(1, px, 1, 1); err != nil {
 		t.Fatal(err)
 	}
@@ -97,10 +75,13 @@ func TestHDRCursorCachesConversion(t *testing.T) {
 		}
 	}
 	r.SetHDR(0)
+	if r.cursorCache.Len() != 0 {
+		t.Fatal("SetHDR kept conversion")
+	}
 	if err := r.WriteCursor(0, px, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	if got := unsafe.Slice((*byte)(r.cursors[0].mapped), 4); got[0] != 255 || len(r.cursorCache.pixels) != 0 {
-		t.Fatalf("SDR cursor/cache: %v %d", got, len(r.cursorCache.pixels))
+	if got := unsafe.Slice((*byte)(r.cursors[0].mapped), 4); got[0] != 255 || r.cursorCache.Len() != 0 {
+		t.Fatalf("SDR cursor/cache: %v %d", got, r.cursorCache.Len())
 	}
 }

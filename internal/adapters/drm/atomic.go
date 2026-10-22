@@ -89,6 +89,15 @@ type kms interface {
 	// addFB imports a single-plane dmabuf as a framebuffer of format.
 	addFB(b *ports.DMABuf, format uint32) (uint32, error)
 	rmFB(id uint32) error
+	// createDumb allocates a width×height 32 bpp dumb buffer; mapDumb maps it
+	// for the CPU (read/write) and unmapDumb releases the mapping;
+	// addFBHandle makes a framebuffer of format from it; destroyDumb frees
+	// it. The framebuffer is removed with rmFB first.
+	createDumb(width, height int) (dumbBuffer, error)
+	mapDumb(b dumbBuffer) ([]byte, error)
+	unmapDumb(mem []byte) error
+	addFBHandle(b dumbBuffer, width, height int, format uint32) (uint32, error)
+	destroyDumb(handle uint32) error
 	createLease(objects []uint32) (*os.File, uint32, error)
 	revokeLease(id uint32) error
 	resources() ([]uint32, []uint32, error)
