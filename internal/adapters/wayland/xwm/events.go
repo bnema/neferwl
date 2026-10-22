@@ -34,6 +34,8 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		x.onCreateNotify(ev)
 	case xproto.KindDestroyNotify:
 		x.onDestroyNotify(ev)
+	case xproto.KindReparentNotify:
+		x.onReparentNotify(ev)
 	}
 	if x.host == nil {
 		if ev.Kind == xproto.KindMapRequest {
@@ -108,12 +110,11 @@ func (x *XWM) onError(e *xturbo.XError) {
 		if e.Code == xproto.BadAccess {
 			x.bootErr = ErrWMExists
 		}
-	case kindProp, kindGeom, kindConfigure, kindFocus:
-		if e.Code != xproto.BadWindow {
-			return
-		}
-		// The window died between request and reply; DestroyNotify follows.
-		_, rec := x.tab.live(e.Args[0])
+	case kindProp, kindGeom, kindClientIds, kindConfigure, kindFocus:
+		// Usually BadWindow: the window died between request and reply and
+		// DestroyNotify follows. Whatever the code, the awaited reply will
+		// never come, so the map must not wait for it.
+		s, rec := x.tab.live(e.Args[0])
 		if rec == nil {
 			x.stats.Stale++
 			return
@@ -123,6 +124,13 @@ func (x *XWM) onError(e *xturbo.XError) {
 			rec.pending &^= 1 << e.Args[1]
 		case kindGeom:
 			rec.pending &^= propGeom
+		case kindClientIds:
+			rec.pending &^= propClientIDs
+		default:
+			return
+		}
+		if e.Code != xproto.BadWindow { // a dead window is never announced
+			x.checkReady(s)
 		}
 	}
 }

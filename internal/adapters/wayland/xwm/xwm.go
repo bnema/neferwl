@@ -1,4 +1,4 @@
-//lint:file-ignore U1000 pairing, focus and stacking state is used by the flows that build on this skeleton
+//lint:file-ignore U1000 refocus and listsDirty are used by the focus and configure flows
 
 // Package xwm is the built-in X11 window manager for Xwayland: it speaks the
 // X protocol over the -wm socket with xturbo and reports managed windows to
@@ -66,6 +66,7 @@ type XWM struct {
 	posted, writable, closed bool
 	bootErr                  error
 	warnedRing, warnedFull   bool
+	warnedUnpaired           bool
 
 	scratch []byte // encode buffer for 32-bit property values, 4 bytes per slot
 

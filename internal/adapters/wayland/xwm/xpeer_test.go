@@ -18,6 +18,7 @@ const (
 	opChangeWindowAttributes = 2
 	opGetWindowAttributes    = 3
 	opMapWindow              = 8
+	opDeleteProperty         = 19
 	opConfigureWindow        = 12
 	opGetGeometry            = 14
 	opQueryTree              = 15
@@ -80,7 +81,13 @@ type xpeer struct {
 	geoms    map[uint32]xpeerGeom
 	attrs    map[uint32][2]byte // window -> {overrideRedirect, mapState}
 	children []uint32
-	denyRoot bool // answer the root event-mask request with BadAccess
+	denyRoot bool              // answer the root event-mask request with BadAccess
+	pids     map[uint32]uint32 // XRes QueryClientIds answers, by window
+	bad      map[uint32]bool   // windows whose GetProperty/GetGeometry fail with BadWindow
+	hold     bool              // keep replies until release
+	held     [][]byte
+	tap      []byte // everything written to the client, when recording
+	record   bool
 
 	gate atomic.Pointer[chan struct{}] // closed = reading allowed
 	done chan struct{}
@@ -108,12 +115,14 @@ func startXPeer(t *testing.T, exts map[string]xpeerExt) (int, *xpeer) {
 		t: t, f: os.NewFile(uintptr(fds[1]), "xpeer"),
 		exts: exts, atoms: map[string]uint32{}, nextAtom: 1000,
 		props: map[uint32]map[uint32]xpeerProp{}, geoms: map[uint32]xpeerGeom{}, attrs: map[uint32][2]byte{},
+		pids: map[uint32]uint32{}, bad: map[uint32]bool{},
 		done: make(chan struct{}),
 	}
 	open := make(chan struct{})
 	close(open)
 	p.gate.Store(&open)
 	t.Cleanup(func() {
+		p.resume() // a paused peer would never see the close
 		p.f.Close()
 		<-p.done
 	})
@@ -179,7 +188,12 @@ func (p *xpeer) serve() {
 }
 
 // write sends bytes to the client. The caller holds p.mu.
-func (p *xpeer) write(b []byte) { _, _ = p.f.Write(b) }
+func (p *xpeer) write(b []byte) {
+	if p.record {
+		p.tap = append(p.tap, b...)
+	}
+	_, _ = p.f.Write(b)
+}
 
 func (p *xpeer) reply(data uint8, body []byte) {
 	words := (max(len(body), 24) - 24 + 3) / 4
@@ -188,7 +202,29 @@ func (p *xpeer) reply(data uint8, body []byte) {
 	binary.LittleEndian.PutUint16(b[2:], p.seq)
 	binary.LittleEndian.PutUint32(b[4:], uint32(words))
 	copy(b[8:], body)
+	if p.hold {
+		p.held = append(p.held, b)
+		return
+	}
 	p.write(b)
+}
+
+// release sends the held replies, in request order as a real server does.
+func (p *xpeer) release() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.hold = false
+	for _, b := range p.held {
+		p.write(b)
+	}
+	p.held = nil
+}
+
+// holdReplies keeps the replies of the following requests back.
+func (p *xpeer) holdReplies() {
+	p.mu.Lock()
+	p.hold = true
+	p.mu.Unlock()
 }
 
 func (p *xpeer) errorPacket(code, major uint8, bad uint32) {
@@ -252,6 +288,8 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 		b[18] = a[1]          // map_state is byte 26 of the reply
 		b[19] = a[0]          // override_redirect, byte 27
 		p.reply(0, b)
+	case (r.major == opGetGeometry || r.major == opGetProperty) && p.bad[binary.LittleEndian.Uint32(body)]:
+		p.errorPacket(3, r.major, binary.LittleEndian.Uint32(body)) // BadWindow
 	case r.major == opGetGeometry:
 		g := p.geoms[binary.LittleEndian.Uint32(body)]
 		b := make([]byte, 24)
@@ -272,6 +310,8 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 			typ: binary.LittleEndian.Uint32(body[8:]), format: format,
 			data: append([]byte(nil), body[20:20+n*int(format)/8]...),
 		}
+	case r.major == opDeleteProperty:
+		delete(p.props[binary.LittleEndian.Uint32(body)], binary.LittleEndian.Uint32(body[4:]))
 	case r.major == opGetProperty:
 		win, prop := binary.LittleEndian.Uint32(body), binary.LittleEndian.Uint32(body[4:])
 		v, ok := p.props[win][prop]
@@ -300,8 +340,22 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 				p.reply(0, le32(5, 4))
 			}
 		case "X-Resource":
-			if r.minor == 0 {
+			switch r.minor {
+			case 0:
 				p.reply(0, []byte{1, 0, 2, 0})
+			case 4: // QueryClientIds: one spec, answered when a pid is scripted
+				pid, ok := p.pids[r.u32(8)]
+				if !ok {
+					p.reply(0, le32(0))
+					break
+				}
+				b := make([]byte, 40)
+				binary.LittleEndian.PutUint32(b[0:], 1)
+				binary.LittleEndian.PutUint32(b[24:], r.u32(8))
+				binary.LittleEndian.PutUint32(b[28:], 2) // LocalClientPID
+				binary.LittleEndian.PutUint32(b[32:], 4)
+				binary.LittleEndian.PutUint32(b[36:], pid)
+				p.reply(0, b)
 			}
 		}
 	}
@@ -408,4 +462,82 @@ func (p *xpeer) hangup() {
 	if rc, err := p.f.SyscallConn(); err == nil {
 		_ = rc.Control(func(fd uintptr) { _ = unix.Shutdown(int(fd), unix.SHUT_RDWR) })
 	}
+}
+
+// setProp scripts a window property for GetProperty.
+func (p *xpeer) setProp(win, atom, typ uint32, format uint8, data []byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.props[win] == nil {
+		p.props[win] = map[uint32]xpeerProp{}
+	}
+	p.props[win][atom] = xpeerProp{typ: typ, format: format, data: data}
+}
+
+func (p *xpeer) mapRequest(win uint32) {
+	p.event(20, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], peerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+	})
+}
+
+func (p *xpeer) mapNotify(win uint32) {
+	p.event(19, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], peerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+	})
+}
+
+func (p *xpeer) unmapNotify(win uint32, synthetic bool) {
+	p.event(18, func(b *[32]byte) {
+		if synthetic {
+			b[0] |= 0x80
+		}
+		binary.LittleEndian.PutUint32(b[4:], peerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+	})
+}
+
+func (p *xpeer) propertyNotify(win, atom uint32, deleted bool) {
+	p.event(28, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], win)
+		binary.LittleEndian.PutUint32(b[8:], atom)
+		if deleted {
+			b[16] = 1
+		}
+	})
+}
+
+func (p *xpeer) reparentNotify(win, parent uint32) {
+	p.event(21, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], peerRoot)
+		binary.LittleEndian.PutUint32(b[8:], win)
+		binary.LittleEndian.PutUint32(b[12:], parent)
+	})
+}
+
+func (p *xpeer) clientMessage(win, typ uint32, data ...uint32) {
+	p.event(33, func(b *[32]byte) {
+		b[1] = 32
+		binary.LittleEndian.PutUint32(b[4:], win)
+		binary.LittleEndian.PutUint32(b[8:], typ)
+		for i, d := range data {
+			binary.LittleEndian.PutUint32(b[12+4*i:], d)
+		}
+	})
+}
+
+func (p *xpeer) focusIn(win uint32) {
+	p.event(9, func(b *[32]byte) { binary.LittleEndian.PutUint32(b[4:], win) })
+}
+
+func (p *xpeer) configureNotify(win uint32) {
+	p.event(22, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[4:], win)
+		binary.LittleEndian.PutUint32(b[8:], win)
+		binary.LittleEndian.PutUint16(b[20:], 10)
+		binary.LittleEndian.PutUint16(b[22:], 20)
+		binary.LittleEndian.PutUint16(b[24:], 300)
+		binary.LittleEndian.PutUint16(b[26:], 200)
+	})
 }

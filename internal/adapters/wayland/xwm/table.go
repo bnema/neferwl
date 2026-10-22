@@ -1,4 +1,4 @@
-//lint:file-ignore U1000 the record fields below are filled by the map, property, configure and focus flows that build on this skeleton
+//lint:file-ignore U1000 pend, sent and stateSent are used by the configure flow
 
 package xwm
 
@@ -202,7 +202,9 @@ func (t *table) lookup(xid uint32) Slot {
 	}
 }
 
-// rec returns the record of s, or nil when s is out of range.
+// rec returns the record of s, or nil when s is out of range. The pointer is
+// valid only until the next insert, host call or anything else that can grow
+// the table or free s: never hold it across those, fetch it again with rec(s).
 func (t *table) rec(s Slot) *record {
 	if s == 0 || int(s) > len(t.recs) {
 		return nil
