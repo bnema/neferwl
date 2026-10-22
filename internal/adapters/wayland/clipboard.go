@@ -37,6 +37,8 @@ type clipSource struct {
 	// used: the source was set, rejected or dragged; it cannot be set
 	// again and takes no more MIME types.
 	used bool
+	// x11: the offer is an X client's selection (xSource), not a Wayland one.
+	x11 bool
 	// res is the wl_data_source (nil for the other protocols); actions are
 	// its set_actions, for drag and drop only (dnd.go).
 	res        *wayland.DataSource
@@ -105,6 +107,7 @@ func (s *Server) setSelection(kind int, src *clipSource) {
 		if src != nil && src != s.selections[kind] && src.alive() {
 			src.cancel()
 		}
+		s.exposeToX(kind, nil) // X clients must not read a protected selection
 		return
 	}
 	old := s.selections[kind]
@@ -116,6 +119,7 @@ func (s *Server) setSelection(kind int, src *clipSource) {
 		old.cancel()
 	}
 	s.announceAll(kind)
+	s.exposeToX(kind, src)
 }
 
 // announceAll sends the selection of kind to the focused client and to
@@ -187,6 +191,7 @@ func (s *Server) sourceGone(src *clipSource) {
 		if s.selections[kind] == src {
 			s.selections[kind] = nil
 			s.announceAll(kind)
+			s.exposeToX(kind, nil)
 		}
 	}
 }

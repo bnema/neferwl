@@ -671,6 +671,63 @@ func (_c *mockhost_SelectionOwned_Call) RunAndReturn(run func(kind int, mimes []
 	return _c
 }
 
+// SelectionRead provides a mock function for the type mockhost
+func (_mock *mockhost) SelectionRead(kind int, mime string) int {
+	ret := _mock.Called(kind, mime)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SelectionRead")
+	}
+
+	var r0 int
+	if returnFunc, ok := ret.Get(0).(func(int, string) int); ok {
+		r0 = returnFunc(kind, mime)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	return r0
+}
+
+// mockhost_SelectionRead_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SelectionRead'
+type mockhost_SelectionRead_Call struct {
+	*mock.Call
+}
+
+// SelectionRead is a helper method to define mock.On call
+//   - kind int
+//   - mime string
+func (_e *mockhost_Expecter) SelectionRead(kind any, mime any) *mockhost_SelectionRead_Call {
+	return &mockhost_SelectionRead_Call{Call: _e.mock.On("SelectionRead", kind, mime)}
+}
+
+func (_c *mockhost_SelectionRead_Call) Run(run func(kind int, mime string)) *mockhost_SelectionRead_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 int
+		if args[0] != nil {
+			arg0 = args[0].(int)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *mockhost_SelectionRead_Call) Return(fd int) *mockhost_SelectionRead_Call {
+	_c.Call.Return(fd)
+	return _c
+}
+
+func (_c *mockhost_SelectionRead_Call) RunAndReturn(run func(kind int, mime string) int) *mockhost_SelectionRead_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Title provides a mock function for the type mockhost
 func (_mock *mockhost) Title(slot Slot, title string) {
 	_mock.Called(slot, title)

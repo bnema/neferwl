@@ -63,6 +63,11 @@ type host interface {
 	// scratch: the host copies it.
 	SelectionOwned(kind int, mimes []string)
 
+	// SelectionRead asks for the data of the current Wayland selection kind
+	// as mime: it returns a non-blocking read end the XWM closes, or -1 when
+	// there is none, it is protected, or mime is not offered.
+	SelectionRead(kind int, mime string) (fd int)
+
 	// After runs fn on the display goroutine once d has elapsed, unless the
 	// returned cancel ran first. cancel is idempotent and display goroutine
 	// only; fn may still run once after cancel when it was already queued,

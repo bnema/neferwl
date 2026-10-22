@@ -320,6 +320,8 @@ xdgPublic, xdgPrivate *server.Global
 	cursorReady  chan struct{}
 	// Clipboard and primary selection (clipboard.go).
 	selections [2]*clipSource
+	xsel       [2]*clipSource // the current X-owned source per kind, if any
+	xwmSel     xwmSelection   // the XWM's clipboard side; nil without one
 	// Drag and drop (dnd.go): the drag in progress, drops waiting for
 	// their finish, and each client's data devices.
 	dnd                                         *dndState
@@ -617,6 +619,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.xwm != nil {
 		s.xwm.CloseConn()
 		s.xwm = nil
+		s.xwmSel = nil
 	}
 	s.forgetXwayland()
 	s.stopSecurityContexts()

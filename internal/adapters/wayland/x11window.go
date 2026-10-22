@@ -99,10 +99,11 @@ func (xwaylandSurface) Destroy(*xwaylandshell.XwaylandSurfaceV1) {}
 func (s *Server) installXWM(x *xwm.XWM) {
 	s.teardownXWM()
 	s.xwm = x
+	s.xwmSel = x
 	x.UseSpace(&s.xspace)
 	if err := x.Attach(s.display, hostImpl{s}); err != nil {
 		s.log.Warn().Err(err).Msg("X11 window management disabled")
-		s.xwm = nil
+		s.xwm, s.xwmSel = nil, nil
 		x.CloseConn()
 		return
 	}
@@ -112,13 +113,18 @@ func (s *Server) installXWM(x *xwm.XWM) {
 			x.SetSerial(surf.identity, surf.x11Serial)
 		}
 	}
+	for kind, src := range s.selections { // what Wayland offered before the XWM attached
+		if src != nil && src.alive() {
+			s.exposeToX(kind, src)
+		}
+	}
 	x.LayoutChanged(true)
 }
 
 // teardownXWM closes the window manager, dropping its windows. Idempotent.
 func (s *Server) teardownXWM() {
 	if x := s.xwm; x != nil {
-		s.xwm = nil
+		s.xwm, s.xwmSel = nil, nil
 		x.Close()
 	}
 }
@@ -377,6 +383,11 @@ func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
 // OverrideGone ends an override window: unmapped, or destroyed.
 func (h hostImpl) SelectionOwned(kind int, mimes []string) {
 	h.s.log.Debug().Int("kind", kind).Int("mimes", len(mimes)).Msg("X selection owner changed")
+	h.s.setXSelection(kind, mimes)
+}
+
+func (h hostImpl) SelectionRead(kind int, mime string) int {
+	return h.s.xSelectionRead(kind, mime)
 }
 
 func (h hostImpl) After(d time.Duration, fn func()) func() {

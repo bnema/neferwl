@@ -117,6 +117,9 @@ func (x *XWM) onPropertyNotify(ev *xturbo.Event) {
 		x.onSelProperty(ev)
 		return
 	}
+	if x.onRequestorProperty(e) {
+		return
+	}
 	s := x.tab.lookup(uint32(e.Window()))
 	if s == 0 {
 		return

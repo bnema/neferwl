@@ -422,3 +422,264 @@ func TestSelectionINCRChunkAllocations(t *testing.T) {
 	require.Zero(t, testing.AllocsPerRun(100, step))
 	require.Equal(t, inWaitIncr, x.sel.in[0].state)
 }
+
+// ---- Wayland -> X ----
+
+const reqWin = 0x500020
+
+func (p *xpeer) selectionRequest(owner, requestor, selection, target, property uint32) {
+	p.event(30, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[8:], owner)
+		binary.LittleEndian.PutUint32(b[12:], requestor)
+		binary.LittleEndian.PutUint32(b[16:], selection)
+		binary.LittleEndian.PutUint32(b[20:], target)
+		binary.LittleEndian.PutUint32(b[24:], property)
+	})
+}
+
+func (p *xpeer) selectionClear(owner, selection uint32) {
+	p.event(29, func(b *[32]byte) {
+		binary.LittleEndian.PutUint32(b[8:], owner)
+		binary.LittleEndian.PutUint32(b[12:], selection)
+	})
+}
+
+// sentNotify returns the property of the SelectionNotify SendEvent after skip.
+func sentNotify(t *testing.T, r *selRig) (property uint32) {
+	t.Helper()
+	req, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opSendEvent && q.raw[12] == 31 })
+	r.skip = n
+	require.EqualValues(t, reqWin, req.u32(4))
+	require.Equal(t, r.clip, binary.LittleEndian.Uint32(req.raw[12+12:]))
+	return binary.LittleEndian.Uint32(req.raw[12+20:])
+}
+
+// ownedByWayland attaches an XWM and gives CLIPBOARD to a Wayland client offering mimes.
+func ownedByWayland(t *testing.T, mimes ...string) *selRig {
+	t.Helper()
+	x, p, h, _, _ := attached(t)
+	r := &selRig{x: x, p: p, h: h, clip: p.atom("CLIPBOARD"), utf8: p.atom("UTF8_STRING"), data: p.atom("_NEFERWL_DATA")}
+	h.EXPECT().After(mock.Anything, mock.Anything).Run(func(_ time.Duration, fn func()) { r.timer = fn }).Return(func() {}).Maybe()
+	x.WaylandSelection(SelClipboard, mimes)
+	x.flush()
+	req, n := pumpReq(t, x, p, 0, func(q xpeerReq) bool { return q.major == opSetSelectionOwner && q.u32(8) == r.clip })
+	require.Equal(t, x.selWin, req.u32(4))
+	r.skip = n
+	return r
+}
+
+// serve queues a SelectionRequest; SelectionRead hands out the read end of a
+// pipe whose write end is returned.
+func (r *selRig) serve(t *testing.T, target uint32) (w *os.File) {
+	t.Helper()
+	fds := make([]int, 2)
+	require.NoError(t, unix.Pipe2(fds, unix.O_CLOEXEC|unix.O_NONBLOCK))
+	r.h.EXPECT().SelectionRead(SelClipboard, mock.Anything).Return(fds[0]).Once()
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, target, r.data)
+	w = os.NewFile(uintptr(fds[1]), "pipe-w")
+	t.Cleanup(func() { w.Close() })
+	return w
+}
+
+func TestSelectionWaylandToXTargets(t *testing.T) {
+	r := ownedByWayland(t, "text/plain")
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("TARGETS"), r.data)
+	require.Equal(t, r.data, sentNotify(t, r))
+	v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
+	require.True(t, ok)
+	require.Equal(t, []uint32{r.p.atom("TARGETS"), r.p.atom("STRING")}, atomsOf(v), "no UTF8 target for text/plain only")
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("image/png"), r.data)
+	require.Zero(t, sentNotify(t, r), "unknown target refused")
+	// UTF8_STRING is not offered by a text/plain-only source, but STRING reads it.
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.utf8, r.data)
+	require.Zero(t, sentNotify(t, r), "no UTF-8 text offered")
+}
+
+func TestSelectionWaylandToXSmall(t *testing.T) {
+	r := ownedByWayland(t, "text/plain;charset=utf-8")
+	w := r.serve(t, r.utf8)
+	data := pattern(4096)
+	_, err := w.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	require.Equal(t, r.data, sentNotify(t, r))
+	v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
+	require.True(t, ok)
+	require.Equal(t, r.utf8, v.typ)
+	require.True(t, bytes.Equal(data, v.data))
+	require.Equal(t, nXfer, r.x.sel.pool.n)
+}
+
+func TestSelectionWaylandToXINCR(t *testing.T) {
+	r := ownedByWayland(t, "text/plain;charset=utf-8")
+	src := newMockfdSource(t)
+	var onR func()
+	removes := 0
+	r.x.addFD = func(_ int, rd, _ func()) (fdSource, error) { onR = rd; return src, nil }
+	src.EXPECT().Remove().Run(func() { removes++ }).Return().Maybe()
+	const total = 1<<20 + 123
+	data := pattern(total)
+	w := r.serve(t, r.utf8)
+	require.NoError(t, unix.SetNonblock(int(w.Fd()), false))
+	go func() { _, _ = w.Write(data); w.Close() }()
+
+	// The first fill is a whole chunk: INCR is announced.
+	var got []byte
+	deadline := time.Now().Add(5 * time.Second)
+	for !r.x.sel.out[0].incr {
+		require.True(t, time.Now().Before(deadline), "INCR never announced")
+		r.x.onReadable()
+		if onR != nil && r.x.sel.out[0].state == outActive {
+			onR()
+		}
+		time.Sleep(time.Millisecond)
+	}
+	require.Equal(t, r.data, sentNotify(t, r))
+	v, _ := r.p.prop(reqWin, "_NEFERWL_DATA")
+	require.Equal(t, r.p.atom("INCR"), v.typ)
+	mask, _ := pumpReq(t, r.x, r.p, 0, func(q xpeerReq) bool {
+		return q.major == opChangeWindowAttributes && q.u32(4) == reqWin && q.u32(12) == uint32(xproto.EventMaskPropertyChange)
+	})
+	require.NotZero(t, mask.raw)
+
+	chunks := 0
+	for {
+		// The requestor deletes the property: the next chunk goes out.
+		r.p.propertyNotify(reqWin, r.data, true)
+		before := len(r.p.requests())
+		if onR != nil {
+			time.Sleep(time.Millisecond)
+		}
+		var cp xpeerProp
+		readUntil(t, r.x, func() bool {
+			if onR != nil && r.x.sel.out[0].state != outFree && r.x.sel.out[0].n < chunk && !r.x.sel.out[0].eof {
+				onR()
+			}
+			r.x.flush()
+			for _, q := range r.p.requests()[before:] {
+				if q.major == opChangeProperty && q.u32(4) == reqWin {
+					return true
+				}
+			}
+			return false
+		})
+		cp, _ = r.p.prop(reqWin, "_NEFERWL_DATA")
+		chunks++
+		if len(cp.data) == 0 {
+			break
+		}
+		require.Equal(t, r.utf8, cp.typ)
+		got = append(got, cp.data...)
+	}
+	require.True(t, bytes.Equal(data, got), "byte-exact: %d of %d", len(got), total)
+	require.Equal(t, total/chunk+2, chunks, "16 full chunks, the tail, then the empty terminator")
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outFree })
+	// The mask is removed at the end.
+	reqs := r.p.requests()
+	last := reqs[len(reqs)-1]
+	for i := len(reqs) - 1; i >= 0; i-- {
+		if reqs[i].major == opChangeWindowAttributes && reqs[i].u32(4) == reqWin {
+			last = reqs[i]
+			break
+		}
+	}
+	require.Zero(t, last.u32(12), "event mask dropped")
+	require.Equal(t, nXfer, r.x.sel.pool.n)
+}
+
+func TestSelectionWaylandToXTimeoutAndClear(t *testing.T) {
+	r := ownedByWayland(t, "text/plain;charset=utf-8")
+	src := newMockfdSource(t)
+	src.EXPECT().Remove().Return().Maybe()
+	r.x.addFD = func(_ int, _, _ func()) (fdSource, error) { return src, nil }
+	w := r.serve(t, r.utf8)
+	_, err := w.Write(pattern(chunk)) // a full chunk: INCR
+	require.NoError(t, err)
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].incr })
+	require.Equal(t, r.data, sentNotify(t, r))
+	require.NotNil(t, r.timer)
+	for i := 0; i < xIdleMax; i++ {
+		require.Equal(t, outActive, r.x.sel.out[0].state, i)
+		r.timer()
+	}
+	require.Equal(t, outFree, r.x.sel.out[0].state, "no Deleted for 10 s aborts")
+	pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opDeleteProperty && q.u32(4) == reqWin })
+
+	// SelectionClear aborts a running transfer and refuses further requests.
+	w2 := r.serve(t, r.utf8)
+	_, err = w2.Write(pattern(chunk))
+	require.NoError(t, err)
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outActive })
+	r.p.selectionClear(r.x.selWin, r.clip)
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].state == outFree })
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.utf8, r.data)
+	require.Equal(t, r.data, sentNotify(t, r), "INCR announcement of the aborted transfer")
+	require.Zero(t, sentNotify(t, r), "request after the clear is refused")
+}
+
+// Replacing the Wayland selection mid-transfer aborts it; nil releases X ownership.
+func TestSelectionClearAndRace(t *testing.T) {
+	r := ownedByWayland(t, "text/plain;charset=utf-8")
+	src := newMockfdSource(t)
+	src.EXPECT().Remove().Return().Maybe()
+	r.x.addFD = func(_ int, _, _ func()) (fdSource, error) { return src, nil }
+	w := r.serve(t, r.utf8)
+	_, err := w.Write(pattern(chunk))
+	require.NoError(t, err)
+	readUntil(t, r.x, func() bool { return r.x.sel.out[0].incr })
+	r.x.WaylandSelection(SelClipboard, []string{"text/plain"})
+	require.Equal(t, outFree, r.x.sel.out[0].state)
+	r.x.WaylandSelection(SelClipboard, nil) // protected or cleared
+	r.x.flush()
+	req, _ := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == opSetSelectionOwner && q.u32(4) == 0 })
+	require.Equal(t, r.clip, req.u32(8), "ownership released")
+	require.False(t, r.x.sel.st[SelClipboard].ours)
+}
+
+func TestSelectionCopyAllocationsWaylandToX(t *testing.T) {
+	r := ownedByWayland(t, "text/plain;charset=utf-8")
+	x := r.x
+	sinkPeer(t, x, r.p)
+	x.after = func(time.Duration, func()) func() { return func() {} }
+	x.sel.timerOn = true
+	data := pattern(4096)
+	var ev xturbo.Event
+	ev.Kind = xproto.KindSelectionRequest
+	binary.LittleEndian.PutUint32(ev.Raw[8:], x.selWin)
+	binary.LittleEndian.PutUint32(ev.Raw[12:], reqWin)
+	binary.LittleEndian.PutUint32(ev.Raw[16:], r.clip)
+	binary.LittleEndian.PutUint32(ev.Raw[20:], r.utf8)
+	binary.LittleEndian.PutUint32(ev.Raw[24:], r.data)
+	fds := make([]int, 2)
+	round := func() {
+		if unix.Pipe2(fds, unix.O_CLOEXEC|unix.O_NONBLOCK) != nil {
+			t.Fatal("pipe")
+		}
+		if _, err := unix.Write(fds[1], data); err != nil {
+			t.Fatal("write")
+		}
+		unix.Close(fds[1])
+		x.host.(*mockhost).ExpectedCalls = nil
+		x.onSelectionRequest(&ev)
+		x.posted = false
+		x.flush()
+	}
+	_ = round
+	// The host mock's matching is not allocation free, so the host call is replaced.
+	x.sel.st[SelClipboard].wlMime = [len(textMimes)]string{"text/plain;charset=utf-8"}
+	allocs := testing.AllocsPerRun(100, func() {
+		if unix.Pipe2(fds, unix.O_CLOEXEC|unix.O_NONBLOCK) != nil {
+			t.Fatal("pipe")
+		}
+		if _, err := unix.Write(fds[1], data); err != nil {
+			t.Fatal("write")
+		}
+		unix.Close(fds[1])
+		x.startOut(0, SelClipboard, reqWin, r.data, r.utf8, 0, fds[0])
+		x.posted = false
+		x.flush()
+	})
+	// Pipe2 itself does not allocate; the measured path is read + ChangeProperty + SendEvent.
+	require.Zero(t, allocs)
+	require.Equal(t, outFree, x.sel.out[0].state)
+}

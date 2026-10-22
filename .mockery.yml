@@ -107,6 +107,11 @@ packages:
           dir: internal/adapters/wayland
           pkgname: wayland
           filename: acquire_remover_mock_test.go
+      xwmSelection:
+        config:
+          dir: internal/adapters/wayland
+          pkgname: wayland
+          filename: xwm_selection_mock_test.go
       syncobjDevice:
         config:
           dir: internal/adapters/wayland

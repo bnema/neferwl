@@ -23,6 +23,7 @@ const (
 	kindOverrideType
 	kindSelTargets
 	kindSelData
+	kindSelOut
 )
 
 // onEvent dispatches an X event. Before Attach there is no host: only the
@@ -136,7 +137,7 @@ func (x *XWM) onError(e *xturbo.XError) {
 		return
 	}
 	switch e.Kind {
-	case kindSelTargets, kindSelData:
+	case kindSelTargets, kindSelData, kindSelOut:
 		x.onSelError(e)
 	case kindRootMask:
 		if e.Code == xproto.BadAccess {
