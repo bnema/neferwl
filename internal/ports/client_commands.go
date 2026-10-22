@@ -51,6 +51,16 @@ type ConfigureWindow struct {
 
 func (ConfigureWindow) clientCommand() {}
 
+// PlaceWindow carries core → wayland the position of a Positioned window's
+// client rect, in layout logical coordinates (output origin included). It
+// follows the ConfigureWindow of a frame and is sent once per change.
+type PlaceWindow struct {
+	ID   domain.WindowID
+	X, Y int
+}
+
+func (PlaceWindow) clientCommand() {}
+
 // SetOutputs carries core → wayland every output and the focused one (where
 // new surfaces start). It is sent when the list, a placement or the focus changes.
 type SetOutputs struct {

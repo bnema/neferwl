@@ -40,6 +40,10 @@ func command(t *testing.T, ch <-chan ports.ClientCommand) ports.ClientCommand {
 	for {
 		switch v := receive(t, ch); v.(type) {
 		case nil, ports.SetOutputs, ports.UserActivity:
+		case ports.PlaceWindow:
+			// Only Positioned (X11) windows are placed; every scenario
+			// using this helper maps xdg windows.
+			t.Fatalf("unexpected %+v", v)
 		default:
 			return v
 		}

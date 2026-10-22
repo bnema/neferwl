@@ -799,6 +799,8 @@ func (s *Server) apply(cmd ports.ClientCommand) {
 		if w := s.windows[c.ID]; w != nil && w.popup != nil {
 			w.popup.dismiss()
 		}
+	case ports.PlaceWindow:
+		// Consumed by the X11 host.
 	case ports.ConfigureWindow:
 		w := s.windows[c.ID]
 		if w == nil || !w.toplevelAlive() || !w.alive() {

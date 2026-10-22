@@ -116,6 +116,16 @@ func (c *Core) sceneFor(ctx context.Context, i int, sc *screen, only *screen, ca
 			}
 			c.configures.mark(v)
 		}
+		if !p.Hidden && p.Preview == 0 && c.windows.lookup(p.ID).client.Positioned {
+			cr := c.clientRect(ps)
+			at := Rect{X: sc.x + cr.X, Y: sc.y + cr.Y}
+			if old, ok := c.placed[p.ID]; !ok || old != at {
+				if err := c.command(ctx, ports.PlaceWindow{ID: p.ID, X: at.X, Y: at.Y}); err != nil {
+					return ports.Scene{}, err
+				}
+				c.placed[p.ID] = at
+			}
+		}
 	}
 	scene.Windows = append(scene.Windows, c.scenePopups(sc)...)
 	if icon, ok := c.dataDragIconOn(i, sc); ok {

@@ -118,6 +118,7 @@ type Core struct {
 	focusByPointer bool     // set while focusPointer publishes, so syncFocus does not arm the hold
 	grab           WindowID
 	buttons        map[uint32]bool
+	placed         map[WindowID]Rect
 	// drag is the pointer drag in progress (drag.go); swallow holds the
 	// buttons whose release no client must see. mods are the modifiers
 	// held, cmdMod the one keyboard.cmd names. lastButton is the latest
@@ -452,7 +453,7 @@ func New(cfg domain.Config, ch Channels, opts Options) (*Core, error) {
 		return nil, fmt.Errorf("scenes, layouts, constraints, state and workspaces must have capacity 1")
 	}
 	// A placeholder screen holds windows until the first output arrives.
-	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(opts.Tokens), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), ping: make(chan chan struct{}), out: newOutbox(opts.Clock)}
+	c := &Core{inputKeys: map[string]bool{}, slots: map[slotKey]*slotState{}, placement: newSpawnPlacement(opts.Tokens), windows: newWindowRegistry(), popups: map[WindowID]*popupState{}, ch: ch, opts: opts, pressed: map[string]bool{}, buttons: map[uint32]bool{}, swallow: map[uint32]bool{}, configures: newConfigures(), placed: map[WindowID]Rect{}, ping: make(chan chan struct{}), out: newOutbox(opts.Clock)}
 	c.screens = []*screen{{mon: newMonitorWithIDs("", "", &c.nextWorkspaceID), scale: 1, cfgScale: 1}}
 	if err := c.apply(cfg); err != nil {
 		return nil, err

@@ -476,6 +476,7 @@ func (c *Core) unmapWindow(v ports.WindowUnmapped) {
 	// The window is unmapped: a toplevel that maps again keeps its ID and
 	// must be configured from nothing (a leaving entry keeps no configure).
 	c.configures.forget(v.ID)
+	delete(c.placed, v.ID)
 	sc, w := c.screenOf(v.ID)
 	if sc == nil {
 		return

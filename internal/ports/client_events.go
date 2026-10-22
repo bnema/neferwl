@@ -31,6 +31,9 @@ type WindowMapped struct {
 	// xdg-foreign), 0 when none. A dialog of a fullscreen window shows over
 	// it.
 	Parent domain.WindowID
+	// Positioned windows are placed by core: it sends PlaceWindow with the
+	// client rect origin. Set only by the X11 host, false for xdg.
+	Positioned bool
 	// Remap is set when the toplevel mapped before and was unmapped (a tray
 	// app restored): window rules only place its first map.
 	Remap bool
