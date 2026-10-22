@@ -193,6 +193,9 @@ func (o *Output) setupImages(r ports.Renderer, kind imageKind, cause error, skip
 			}
 			o.log.Info().Err(gerr).Str("connector", o.conn.name).Int("kind", int(kind)).Str("alloc", allocGBM).Msg("output image allocation")
 		}
+		// Deprecated fallback (neferwl#23): renderer-exported images, kept
+		// while GBM is validated on few setups. Remove once no report shows
+		// "alloc":"vulkan" for a few releases.
 		if err = o.exportImages(r, mods, kind == imagesSinglePlane); err == nil {
 			return kind, nil
 		}
@@ -232,6 +235,9 @@ func closeBufs(bufs []ports.DMABuf) {
 }
 
 // exportImages makes the renderer's exported targets the output images.
+//
+// Deprecated fallback for gbmImages, to remove with neferwl#23. Exported
+// Vulkan images corrupt scanout on nvidia-drm.
 func (o *Output) exportImages(r ports.Renderer, mods []uint64, singlePlane bool) error {
 	o.dropImages(r)
 	bufs, err := r.ExportTargets(len(o.fbs), mods, singlePlane)
@@ -266,7 +272,12 @@ func (o *Output) showBufs(r ports.Renderer, bufs []ports.DMABuf, alloc string) e
 		return err
 	}
 	o.planes, o.imageMod = len(bufs[0].Planes), bufs[0].Modifier
-	o.log.Info().Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", o.planes).Str("alloc", alloc).Msg("zero-copy output")
+	ev := o.log.Info()
+	if alloc == allocVulkan {
+		// The deprecated fallback is in use: make it visible in reports.
+		ev = o.log.Warn()
+	}
+	ev.Str("connector", o.conn.name).Uint64("modifier", bufs[0].Modifier).Int("planes", o.planes).Str("alloc", alloc).Msg("zero-copy output")
 	return nil
 }
 

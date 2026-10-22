@@ -29,7 +29,7 @@ About 35 channels connect them, all created in one place, so the full data flow 
 A DRM output flips between two images the renderer draws into, with no CPU copy.
 
 - **Allocation:** the images are allocated with GBM (`GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING`), with the modifiers the primary plane lists that the renderer can render into and import. The renderer imports them as Vulkan images, and KMS gets framebuffers made from the same dmabufs. GBM is the display driver's own allocator, so the layouts it picks scan out correctly on every driver.
-- **Fallback:** when libgbm is missing, GBM allocates nothing usable, or Vulkan or KMS refuses the images, the renderer allocates and exports them itself. Each kind (driver modifier, single-plane, linear) tries GBM, then the renderer. The log line `zero-copy output` names the allocator in its `alloc` field (`gbm` or `vulkan`).
+- **Fallback:** when libgbm is missing, GBM allocates nothing usable, or Vulkan or KMS refuses the images, the renderer allocates and exports them itself. Each kind (driver modifier, single-plane, linear) tries GBM, then the renderer. The log line `zero-copy output` names the allocator in its `alloc` field (`gbm` or `vulkan`), and is a warning for `vulkan`. This fallback is deprecated and goes away once GBM is validated on more setups (neferwl#23).
 - **Sync:** nvidia-drm before 560.35.3 does not wait for `IN_FENCE_FD`. On it, the output waits for each frame's fence on the CPU and commits without one. A client buffer whose fence is still pending is composed, not scanned out, while `IN_FENCE_FD` is unavailable.
 
 I also like bringing more tools to the Go ecosystem. NeferWL grew its own libraries along the way, and other Go projects can use them:
