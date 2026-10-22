@@ -15,9 +15,19 @@
 // leave it that long after (prints "fullscreen off WxH"). -keyboard-grab
 // calls XGrabKeyboard on the window once it is mapped (prints "grab").
 // -at X,Y creates the window at that root position.
+//
+// Four more modes run without a window and exit when done.
+// -copy TEXT|@file owns -copy-sel (CLIPBOARD or PRIMARY) for
+// -copy-for, serving TARGETS and UTF8_STRING/STRING/TEXT, with INCR above
+// 64 KiB, and prints "copy owned". -paste SEL requests UTF8_STRING (INCR
+// aware) and prints `paste "<text>"`, `paste len=N sha256=H` above 4 KiB or
+// `paste none`. -xsettings prints the XSETTINGS owner's serial, Xft/DPI,
+// Gtk/CursorThemeName and Gtk/CursorThemeSize, or "xsettings none".
+// -root-cursor prints "cursor WxH" of the XFixes cursor image.
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -30,6 +40,7 @@ import (
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/shape"
+	"bnema.dev/xturbo/xfixes"
 	"bnema.dev/xturbo/xproto"
 )
 
@@ -62,7 +73,16 @@ func run() error {
 	fullscreenOff := flag.Duration("fullscreen-off", 0, "leave fullscreen this long after the request (0: never)")
 	keyboardGrab := flag.Bool("keyboard-grab", false, "XGrabKeyboard on the window once it is mapped")
 	at := flag.String("at", "0,0", "window position X,Y in root coordinates")
+	copyText := flag.String("copy", "", "own a selection with TEXT (or @file) and serve it, no window")
+	copySel := flag.String("copy-sel", "CLIPBOARD", "selection for -copy: CLIPBOARD or PRIMARY")
+	copyFor := flag.Duration("copy-for", 5*time.Second, "how long -copy serves the selection")
+	paste := flag.String("paste", "", "print the text of selection CLIPBOARD or PRIMARY, no window")
+	xsettings := flag.Bool("xsettings", false, "print the XSETTINGS values, no window")
+	rootCursor := flag.Bool("root-cursor", false, "print the size of the cursor shown over the root, no window")
 	flag.Parse()
+	if *copyText != "" || *paste != "" || *xsettings || *rootCursor {
+		return runTool(*copyText, *copySel, *copyFor, *paste, *xsettings, *rootCursor)
+	}
 	atX, atY, okAt := strings.Cut(*at, ",")
 	if !okAt {
 		return fmt.Errorf("bad -at %q", *at)
@@ -315,4 +335,342 @@ func parseSize(s string) (w, h int, ok bool) {
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)
 	return n
+}
+
+// tool is the connection of the windowless modes. Events read while waiting
+// for a reply are queued, so the code reads linearly.
+type tool struct {
+	c     *xturbo.Conn
+	b     *xturbo.Buf
+	win   xproto.Window
+	q     []xturbo.Event
+	reply []byte
+	h     xturbo.Handler
+	atoms map[string]xproto.Atom
+}
+
+const chunk = 65536
+
+func newTool() (*tool, error) {
+	c, err := xturbo.Dial("")
+	if err != nil {
+		return nil, err
+	}
+	t := &tool{c: c, b: c.Buf(), atoms: map[string]xproto.Atom{}}
+	t.h = xturbo.Handler{
+		OnEvent: func(ev *xturbo.Event) { t.q = append(t.q, *ev) },
+		OnReply: func(r *xturbo.Reply) { t.reply = append(t.reply[:0], r.Raw...) },
+		OnError: func(e *xturbo.XError) { fmt.Fprintln(os.Stderr, "x11probe:", e) },
+	}
+	names := []string{"CLIPBOARD", "PRIMARY", "TARGETS", "UTF8_STRING", "STRING", "TEXT", "INCR", "_PROBE_SEL",
+		"_XSETTINGS_S0", "_XSETTINGS_SETTINGS"}
+	ids := make([]uint32, len(names))
+	if err := c.InternAtoms(names, false, ids); err != nil {
+		return nil, err
+	}
+	for i, n := range names {
+		t.atoms[n] = xproto.Atom(ids[i])
+	}
+	xid, err := c.NewXID()
+	if err != nil {
+		return nil, err
+	}
+	t.win = xproto.Window(xid)
+	var v xproto.CreateWindowValues
+	v.SetEventMask(xproto.EventMaskPropertyChange)
+	xproto.CreateWindow(t.b, 0, t.win, xproto.Window(c.Root()), -10, -10, 1, 1, 0, xproto.WindowClassInputOnly, 0, &v)
+	return t, t.c.Sync(&t.h)
+}
+
+// rpc sends the queued requests and returns the reply of seq.
+func (t *tool) rpc(seq xturbo.Seq) ([]byte, error) {
+	t.reply = t.reply[:0]
+	if err := t.c.Expect(seq, 16, 0, 0, 0, 0); err != nil {
+		return nil, err
+	}
+	if err := t.c.Sync(&t.h); err != nil {
+		return nil, err
+	}
+	return t.reply, nil
+}
+
+// next returns the next event, or false at the deadline.
+func (t *tool) next(deadline time.Time) (xturbo.Event, bool, error) {
+	for len(t.q) == 0 {
+		events := int16(unix.POLLIN)
+		if err := t.c.Flush(); err == xturbo.ErrWouldBlock {
+			events |= unix.POLLOUT
+		} else if err != nil {
+			return xturbo.Event{}, false, err
+		}
+		ms := int(time.Until(deadline).Milliseconds()) + 1
+		if ms <= 0 {
+			return xturbo.Event{}, false, nil
+		}
+		fds := []unix.PollFd{{Fd: int32(t.c.Fd()), Events: events}}
+		if _, err := unix.Poll(fds, ms); err != nil && err != unix.EINTR {
+			return xturbo.Event{}, false, err
+		}
+		if err := t.c.Dispatch(&t.h); err != nil {
+			return xturbo.Event{}, false, err
+		}
+	}
+	ev := t.q[0]
+	t.q = t.q[1:]
+	return ev, true, nil
+}
+
+func (t *tool) selAtom(name string) (xproto.Atom, error) {
+	switch name {
+	case "CLIPBOARD", "PRIMARY":
+		return t.atoms[name], nil
+	}
+	return 0, fmt.Errorf("bad selection %q", name)
+}
+
+func runTool(copyText, copySel string, copyFor time.Duration, paste string, xsettings, rootCursor bool) error {
+	t, err := newTool()
+	if err != nil {
+		return err
+	}
+	defer t.c.Close()
+	switch {
+	case copyText != "":
+		return t.copyMode(copyText, copySel, copyFor)
+	case paste != "":
+		return t.pasteMode(paste)
+	case xsettings:
+		return t.xsettingsMode()
+	}
+	return t.cursorMode()
+}
+
+func (t *tool) copyMode(text, selName string, dur time.Duration) error {
+	data := []byte(text)
+	if f, ok := strings.CutPrefix(text, "@"); ok {
+		var err error
+		if data, err = os.ReadFile(f); err != nil {
+			return err
+		}
+	}
+	sel, err := t.selAtom(selName)
+	if err != nil {
+		return err
+	}
+	xproto.SetSelectionOwner(t.b, t.win, sel, 0)
+	raw, err := t.rpc(xproto.GetSelectionOwner(t.b, sel))
+	if err != nil {
+		return err
+	}
+	if r, ok := xproto.ParseGetSelectionOwnerReply(raw); !ok || r.Owner() != t.win {
+		return fmt.Errorf("selection %s not owned", selName)
+	}
+	fmt.Println("copy owned")
+	var (
+		incrReq           xproto.Window // requestor of the running INCR transfer
+		incrProp, incrTgt xproto.Atom
+		incrOff           int
+		incrLive          bool
+		notify            = func(req xproto.Window, selection, target, prop xproto.Atom, time xproto.Timestamp) {
+			var ev [32]byte
+			d := xproto.SelectionNotifyEventData{Time: time, Requestor: req, Selection: selection, Target: target, Property: prop}
+			d.Put(&ev)
+			xproto.SendEvent(t.b, false, req, 0, &ev)
+		}
+	)
+	deadline := time.Now().Add(dur)
+	for {
+		ev, ok, err := t.next(deadline)
+		if err != nil || !ok {
+			return err
+		}
+		switch ev.Kind {
+		case xproto.KindSelectionClear:
+			fmt.Println("copy lost")
+			return nil
+		case xproto.KindSelectionRequest:
+			e := xproto.SelectionRequestOf(&ev)
+			req, prop, tgt := e.Requestor(), e.Property(), e.Target()
+			if prop == 0 {
+				prop = tgt
+			}
+			switch tgt {
+			case t.atoms["TARGETS"]:
+				var l [16]byte
+				for i, n := range []string{"TARGETS", "UTF8_STRING", "STRING", "TEXT"} {
+					binary.LittleEndian.PutUint32(l[i*4:], uint32(t.atoms[n]))
+				}
+				xproto.ChangeProperty(t.b, xproto.PropModeReplace, req, prop, xproto.AtomAtom, 32, 4, l[:])
+			case t.atoms["UTF8_STRING"], t.atoms["STRING"], t.atoms["TEXT"]:
+				if len(data) <= chunk {
+					xproto.ChangeProperty(t.b, xproto.PropModeReplace, req, prop, tgt, 8, uint32(len(data)), data)
+					break
+				}
+				var cv xproto.ChangeWindowAttributesValues
+				cv.SetEventMask(xproto.EventMaskPropertyChange)
+				xproto.ChangeWindowAttributes(t.b, req, &cv)
+				var n [4]byte
+				binary.LittleEndian.PutUint32(n[:], uint32(len(data)))
+				xproto.ChangeProperty(t.b, xproto.PropModeReplace, req, prop, t.atoms["INCR"], 32, 1, n[:])
+				incrReq, incrProp, incrTgt, incrOff, incrLive = req, prop, tgt, 0, true
+			default:
+				prop = 0
+			}
+			notify(req, e.Selection(), tgt, prop, e.Time())
+		case xproto.KindPropertyNotify:
+			e := xproto.PropertyNotifyOf(&ev)
+			if !incrLive || e.Window() != incrReq || e.Atom() != incrProp || e.State() != xproto.PropertyDelete {
+				break
+			}
+			end := min(incrOff+chunk, len(data))
+			xproto.ChangeProperty(t.b, xproto.PropModeReplace, incrReq, incrProp, incrTgt, 8, uint32(end-incrOff), data[incrOff:end])
+			if end == incrOff {
+				incrLive = false
+			}
+			incrOff = end
+		}
+	}
+}
+
+func (t *tool) pasteMode(selName string) error {
+	sel, err := t.selAtom(selName)
+	if err != nil {
+		return err
+	}
+	prop := t.atoms["_PROBE_SEL"]
+	xproto.ConvertSelection(t.b, t.win, sel, t.atoms["UTF8_STRING"], prop, 0)
+	deadline := time.Now().Add(10 * time.Second)
+	var got []byte
+	incr := false
+	get := func() (value []byte, typ xproto.Atom, err error) {
+		raw, err := t.rpc(xproto.GetProperty(t.b, true, t.win, prop, xproto.AtomAny, 0, 1<<22))
+		if err != nil {
+			return nil, 0, err
+		}
+		r, ok := xproto.ParseGetPropertyReply(raw)
+		if !ok {
+			return nil, 0, fmt.Errorf("bad GetProperty reply")
+		}
+		return append([]byte(nil), r.Value()...), r.Type(), nil
+	}
+	for {
+		ev, ok, err := t.next(deadline)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("paste timed out")
+		}
+		switch ev.Kind {
+		case xproto.KindSelectionNotify:
+			if xproto.SelectionNotifyOf(&ev).Property() == 0 {
+				fmt.Println("paste none")
+				return nil
+			}
+			v, typ, err := get()
+			if err != nil {
+				return err
+			}
+			if typ != t.atoms["INCR"] {
+				return printPaste(v)
+			}
+			incr = true // reading and deleting the INCR property starts the transfer
+		case xproto.KindPropertyNotify:
+			e := xproto.PropertyNotifyOf(&ev)
+			if !incr || e.Window() != t.win || e.Atom() != prop || e.State() != xproto.PropertyNewValue {
+				break
+			}
+			v, _, err := get()
+			if err != nil {
+				return err
+			}
+			if len(v) == 0 {
+				return printPaste(got)
+			}
+			got = append(got, v...)
+		}
+		deadline = time.Now().Add(10 * time.Second)
+	}
+}
+
+func printPaste(v []byte) error {
+	if len(v) <= 4096 {
+		fmt.Printf("paste %q\n", v)
+	} else {
+		fmt.Printf("paste len=%d sha256=%x\n", len(v), sha256.Sum256(v))
+	}
+	return nil
+}
+
+func (t *tool) xsettingsMode() error {
+	raw, err := t.rpc(xproto.GetSelectionOwner(t.b, t.atoms["_XSETTINGS_S0"]))
+	if err != nil {
+		return err
+	}
+	r, ok := xproto.ParseGetSelectionOwnerReply(raw)
+	if !ok || r.Owner() == 0 {
+		fmt.Println("xsettings none")
+		return nil
+	}
+	raw, err = t.rpc(xproto.GetProperty(t.b, false, r.Owner(), t.atoms["_XSETTINGS_SETTINGS"], xproto.AtomAny, 0, 1<<16))
+	if err != nil {
+		return err
+	}
+	pr, ok := xproto.ParseGetPropertyReply(raw)
+	if !ok || len(pr.Value()) < 12 {
+		fmt.Println("xsettings none")
+		return nil
+	}
+	v := pr.Value()
+	if v[0] != 0 {
+		return fmt.Errorf("xsettings: big-endian data")
+	}
+	le := binary.LittleEndian
+	serial, n := le.Uint32(v[4:]), int(le.Uint32(v[8:]))
+	vals := map[string]string{}
+	p := v[12:]
+	pad := func(n int) int { return (n + 3) &^ 3 }
+	for i := 0; i < n; i++ {
+		if len(p) < 4 {
+			return fmt.Errorf("xsettings: truncated")
+		}
+		typ, nl := p[0], int(le.Uint16(p[2:]))
+		if len(p) < 4+pad(nl)+4 {
+			return fmt.Errorf("xsettings: truncated")
+		}
+		name := string(p[4 : 4+nl])
+		p = p[4+pad(nl)+4:] // name, last-change-serial
+		switch typ {
+		case 0:
+			vals[name] = strconv.Itoa(int(int32(le.Uint32(p))))
+			p = p[4:]
+		case 1:
+			sl := int(le.Uint32(p))
+			vals[name] = string(p[4 : 4+sl])
+			p = p[4+pad(sl):]
+		case 2:
+			p = p[8:]
+		default:
+			return fmt.Errorf("xsettings: type %d", typ)
+		}
+	}
+	fmt.Printf("xsettings serial=%d Xft/DPI=%s Gtk/CursorThemeName=%s Gtk/CursorThemeSize=%s\n",
+		serial, vals["Xft/DPI"], vals["Gtk/CursorThemeName"], vals["Gtk/CursorThemeSize"])
+	return nil
+}
+
+func (t *tool) cursorMode() error {
+	if _, err := t.rpc(xfixes.QueryVersion(t.b, 4, 0)); err != nil {
+		return err
+	}
+	raw, err := t.rpc(xfixes.GetCursorImage(t.b))
+	if err != nil {
+		return err
+	}
+	r, ok := xfixes.ParseGetCursorImageReply(raw)
+	if !ok {
+		return fmt.Errorf("bad GetCursorImage reply")
+	}
+	fmt.Printf("cursor %dx%d\n", r.Width(), r.Height())
+	return nil
 }

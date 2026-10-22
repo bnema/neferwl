@@ -8,6 +8,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -15,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,7 +82,7 @@ func startXwaylandWith(t *testing.T, sizes [][2]int, mutate func(*ports.Config))
 	logs := &lockedBuffer{}
 	ctx, cancel := context.WithCancel(zerowrap.WithCtx(context.Background(), zerowrap.New(zerowrap.Config{Level: "info", Format: "json", Output: logs})))
 	cfg := config.Defaults()
-	cfg.Xwayland = ports.XwaylandConfig{Backend: ports.XwaylandBuiltin, Binary: "Xwayland"}
+	cfg.Xwayland = ports.XwaylandConfig{Backend: ports.XwaylandBuiltin, Binary: "Xwayland", XSettings: true}
 	if mutate != nil {
 		mutate(&cfg)
 	}
@@ -574,4 +577,202 @@ func TestXwaylandClassRule(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// waylandEnv is the environment of a Wayland client of the headless
+// compositor: its socket, not the user's session.
+func waylandEnv() []string {
+	return append(envWithout("DISPLAY", "WAYLAND_DISPLAY", "NEFERWL_STATE", "NEFERWL_SLOT"), "WAYLAND_DISPLAY=wayland-1")
+}
+
+// runProbe runs a one-shot x11probe mode and returns its stdout.
+func runProbe(t *testing.T, e *xwaylandEnv, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), xwaylandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, e.bin, args...)
+	cmd.Env = append(envWithout("DISPLAY", "WAYLAND_DISPLAY", "NEFERWL_STATE", "NEFERWL_SLOT"), "DISPLAY="+e.display)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("x11probe %v: %v (stdout %q)", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// needWlClipboard skips the test without wl-copy and wl-paste.
+func needWlClipboard(t *testing.T) {
+	t.Helper()
+	for _, c := range []string{"wl-copy", "wl-paste"} {
+		if _, err := exec.LookPath(c); err != nil {
+			t.Skipf("%s not on PATH (wl-clipboard)", c)
+		}
+	}
+}
+
+// wlCopy starts wl-copy --foreground serving data on the headless
+// compositor's seat and stops it when the test ends.
+func wlCopy(t *testing.T, data string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("wl-copy", append([]string{"--foreground", "--type", "text/plain;charset=utf-8"}, args...)...)
+	cmd.Env = waylandEnv()
+	cmd.Stdin = strings.NewReader(data)
+	stderr := &lockedBuffer{}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waited) }()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-waited
+		if s := stderr.String(); s != "" {
+			t.Logf("wl-copy stderr: %s", s)
+		}
+	})
+}
+
+// wlPaste returns what wl-paste prints, and whether it succeeded.
+func wlPaste(args ...string) (string, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), xwaylandTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "wl-paste", append([]string{"--no-newline", "--type", "text/plain;charset=utf-8"}, args...)...)
+	cmd.Env = waylandEnv()
+	out, err := cmd.Output()
+	return string(out), err == nil
+}
+
+// payload is n bytes of printable text that differ along the way, so a
+// misplaced chunk is caught.
+func payload(n int) string {
+	var b strings.Builder
+	for i := 0; b.Len() < n; i++ {
+		fmt.Fprintf(&b, "line %d é\n", i)
+	}
+	return b.String()[:n]
+}
+
+// pasteLine is what x11probe -paste prints for want.
+func pasteLine(want string) string {
+	if len(want) <= 4096 {
+		return fmt.Sprintf("paste %q", want)
+	}
+	return fmt.Sprintf("paste len=%d sha256=%x", len(want), sha256.Sum256([]byte(want)))
+}
+
+// TestXwaylandClipboard: the clipboard and the primary selection cross the
+// X11/Wayland boundary in both directions, text only, small and INCR sized.
+func TestXwaylandClipboard(t *testing.T) {
+	needWlClipboard(t)
+	e := startXwayland(t)
+	startProbe(t, e.bin, e.display, "-title", "focus")
+	until(t, "probe focused", func() bool { st := readState(e.statePath); return st.Window != nil })
+
+	for _, sel := range []struct{ x, w string }{{"CLIPBOARD", ""}, {"PRIMARY", "--primary"}} {
+		for _, size := range []int{4 << 10, 1 << 20} {
+			name := fmt.Sprintf("%s/%dKiB", sel.x, size>>10)
+			text := payload(size)
+			t.Run("W2X/"+name, func(t *testing.T) {
+				var wargs []string
+				if sel.w != "" {
+					wargs = append(wargs, sel.w)
+				}
+				wlCopy(t, text, wargs...)
+				until(t, "x11probe pastes the Wayland copy", func() bool {
+					return runProbe(t, e, "-paste", sel.x) == pasteLine(text)
+				})
+			})
+			t.Run("X2W/"+name, func(t *testing.T) {
+				file := filepath.Join(t.TempDir(), "text")
+				if err := os.WriteFile(file, []byte(text), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				p := startProbe(t, e.bin, e.display, "-copy", "@"+file, "-copy-sel", sel.x, "-copy-for", "30s")
+				until(t, "copy owned", func() bool { return strings.Contains(p.out.String(), "copy owned") })
+				var wargs []string
+				if sel.w != "" {
+					wargs = append(wargs, sel.w)
+				}
+				var got string
+				until(t, "wl-paste returns the X copy", func() bool {
+					var ok bool
+					got, ok = wlPaste(wargs...)
+					return ok && got == text
+				})
+				if got != text {
+					t.Errorf("wl-paste differs: %d bytes", len(got))
+				}
+			})
+		}
+	}
+
+	t.Run("clear", func(t *testing.T) {
+		wlCopy(t, "to be cleared")
+		until(t, "paste before clear", func() bool { return runProbe(t, e, "-paste", "CLIPBOARD") == `paste "to be cleared"` })
+		cmd := exec.Command("wl-copy", "--clear")
+		cmd.Env = waylandEnv()
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("wl-copy --clear: %v: %s", err, out)
+		}
+		until(t, "paste none after clear", func() bool { return runProbe(t, e, "-paste", "CLIPBOARD") == "paste none" })
+	})
+}
+
+// cursorTheme installs a one-arrow Xcursor theme of the given size and
+// selects it through the XCURSOR_* environment.
+func cursorTheme(t *testing.T, size int) {
+	t.Helper()
+	dir := t.TempDir()
+	themeCursor(t, dir, "left_ptr", size, 1)
+	t.Setenv("XCURSOR_PATH", dir)
+	t.Setenv("XCURSOR_THEME", "theme")
+	t.Setenv("XCURSOR_SIZE", strconv.Itoa(size))
+}
+
+// TestXwaylandXSettings: the XSETTINGS manager publishes the cursor theme,
+// the cursor size and the DPI of the first output.
+func TestXwaylandXSettings(t *testing.T) {
+	cursorTheme(t, 32)
+	e := startXwayland(t)
+	want := "xsettings serial=1 Xft/DPI=98304 Gtk/CursorThemeName=theme Gtk/CursorThemeSize=32"
+	var got string
+	until(t, "XSETTINGS owner", func() bool { got = runProbe(t, e, "-xsettings"); return got != "xsettings none" })
+	if got != want {
+		t.Errorf("-xsettings = %q, want %q", got, want)
+	}
+}
+
+// TestXwaylandXSettingsScale2: the DPI follows the output scale.
+func TestXwaylandXSettingsScale2(t *testing.T) {
+	cursorTheme(t, 24)
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) {
+		c.Outputs = append(c.Outputs, ports.OutputConfig{Name: "HEADLESS-1", Scale: 2, ScaleOnly: true})
+	})
+	var got string
+	until(t, "Xft/DPI=196608", func() bool { got = runProbe(t, e, "-xsettings"); return strings.Contains(got, "Xft/DPI=196608") })
+	if !strings.Contains(got, "Gtk/CursorThemeSize=24") {
+		t.Errorf("-xsettings = %q, want Gtk/CursorThemeSize=24", got)
+	}
+}
+
+// TestXwaylandXSettingsOff: xwayland.xsettings = off leaves no manager.
+func TestXwaylandXSettingsOff(t *testing.T) {
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Xwayland.XSettings = false })
+	// A mapped window proves the XWM is up before the absence is checked.
+	p := startProbe(t, e.bin, e.display)
+	until(t, "probe mapped", func() bool { return strings.Contains(p.out.String(), "mapped ") })
+	if got := runProbe(t, e, "-xsettings"); got != "xsettings none" {
+		t.Errorf("-xsettings = %q, want none", got)
+	}
+}
+
+// TestXwaylandRootCursor: the X background shows the themed arrow, at the
+// theme size.
+func TestXwaylandRootCursor(t *testing.T) {
+	cursorTheme(t, 32)
+	e := startXwayland(t)
+	until(t, "XWM up", func() bool { return runProbe(t, e, "-xsettings") != "xsettings none" })
+	if got := runProbe(t, e, "-root-cursor"); got != "cursor 32x32" {
+		t.Errorf("-root-cursor = %q, want cursor 32x32", got)
+	}
 }
