@@ -8,8 +8,7 @@
 
 <p align="center">A Wayland compositor that spends its frames on your apps, not on itself.</p>
 
-https://github.com/user-attachments/assets/54f25914-8335-4e66-b458-dabc5493d355
-
+https://github.com/user-attachments/assets/1ff42ce5-47b3-4cf8-a3a7-5fc5abde4af1
 
 <p align="center"><sub>Stash, overview and animations, recorded on the headless backend at 1080p.</sub></p>
 
