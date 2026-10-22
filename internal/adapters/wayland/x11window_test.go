@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bnema/go-wayland-bindings/server/pointerconstraints"
+	"github.com/bnema/go-wayland-bindings/server/relativepointer"
 	"github.com/bnema/go-wayland-bindings/server/wayland"
 	"github.com/bnema/go-wayland-bindings/server/xdgshell"
 	"github.com/bnema/go-wayland-bindings/server/xwaylandkeyboardgrab"
@@ -34,6 +35,8 @@ type x11Rig struct {
 	stop     func()
 	shell    uint32
 	comp     uint32
+	// surfaceProxy, when set, observes the next paired wl_surface.
+	surfaceProxy func(id uint32) wlturbo.Proxy
 }
 
 func newX11Rig(t *testing.T) *x11Rig {
@@ -87,7 +90,11 @@ func (r *x11Rig) pair(win uint32, serial uint64) uint32 {
 	r.peer.clientMessage(win, "WL_SURFACE_SERIAL", uint32(serial), uint32(serial>>32))
 	surf, xs := r.xc.AllocateID(), r.xc.AllocateID()
 	requestProtocol(r.t, r.xc, r.comp, wayland.CompositorRequestCreateSurface, surf)
-	registerProtocol(r.t, r.xc, surf)
+	if r.surfaceProxy != nil {
+		registerWireProxy(r.xc, r.surfaceProxy(surf))
+	} else {
+		registerProtocol(r.t, r.xc, surf)
+	}
 	requestProtocol(r.t, r.xc, r.shell, xwaylandshell.XwaylandShellV1RequestGetXwaylandSurface, xs, surf)
 	registerProtocol(r.t, r.xc, xs)
 	requestProtocol(r.t, r.xc, xs, xwaylandshell.XwaylandSurfaceV1RequestSetSerial, uint32(serial), uint32(serial>>32))
@@ -412,5 +419,196 @@ func TestXwaylandKeyboardGrabThreeStates(t *testing.T) {
 	requestProtocol(t, r.xc, grab, xwaylandkeyboardgrab.ZwpXwaylandKeyboardGrabV1RequestDestroy)
 	if v := awaitEvent[ports.ShortcutsInhibit](t, r.events); v != (ports.ShortcutsInhibit{Window: w}) {
 		t.Fatal(v)
+	}
+}
+
+// x11Pointer gives the Xwayland client a wl_pointer and a relative pointer,
+// both with event logs.
+func (r *x11Rig) x11Pointer() (pointer uint32, ptrEvents, relEvents chan []float64) {
+	r.t.Helper()
+	seat := bindProtocol(r.t, r.xc, "wl_seat")
+	registerProtocol(r.t, r.xc, seat)
+	pointer = r.xc.AllocateID()
+	ptrEvents = logProxy(r.t, r.xc, pointer)
+	requestProtocol(r.t, r.xc, seat, wayland.SeatRequestGetPointer, pointer)
+	mgr := bindProtocol(r.t, r.xc, "zwp_relative_pointer_manager_v1")
+	rel := r.xc.AllocateID()
+	relEvents = logProxy(r.t, r.xc, rel)
+	requestProtocol(r.t, r.xc, mgr, relativepointer.ZwpRelativePointerManagerV1RequestGetRelativePointer, rel, pointer)
+	return pointer, ptrEvents, relEvents
+}
+
+// A lock on an X11 surface activates with pointer and keyboard focus, sends
+// relative motion to the Xwayland client and deactivates when a native
+// window takes the focus; it comes back with the X11 focus.
+func TestX11LockFollowsFocusAndRelativeMotion(t *testing.T) {
+	r := newX11Rig(t)
+	win := uint32(x11Win)
+	r.x11Window(win)
+	surf := r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+	pointer, _, relEvents := r.x11Pointer()
+	constraints := bindProtocol(t, r.xc, "zwp_pointer_constraints_v1")
+	lock := r.xc.AllocateID()
+	lockEvents := logProxy(t, r.xc, lock)
+	requestProtocol(t, r.xc, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestLockPointer, lock, surf, pointer, uint32(0), uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if len(lockEvents) > 0 {
+		t.Fatal("locked without focus")
+	}
+
+	r.commands <- ports.PointerFocus{ID: m.ID}
+	r.commands <- ports.FocusWindow{ID: m.ID}
+	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
+		t.Fatalf("lock event %v", ev)
+	}
+	if got := constrained(t, r.events); got.ID != m.ID || got.Mode != ports.ConstraintLock || got.Rect != (ports.Rect{}) {
+		t.Fatalf("constrained %+v", got)
+	}
+
+	r.commands <- ports.PointerMotionTo{ID: m.ID, X: 5, Y: 5, DX: 2.5, DY: -1, UnaccelDX: 4, UnaccelDY: -2}
+	if ev := next(t, r.xc, relEvents); len(ev) != 5 || ev[1] != 2.5 || ev[2] != -1 || ev[3] != 4 || ev[4] != -2 {
+		t.Fatalf("relative motion %v", ev)
+	}
+
+	// A native window takes the focus: the X11 lock ends and the XWM drops
+	// the X focus.
+	nc := protocolClient(t, r.s, r.dir)
+	nm, _, _ := surfaceMapper(t, nc, r.events)()
+	skip := len(r.peer.requests())
+	r.commands <- ports.FocusWindow{ID: nm.ID}
+	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventUnlocked) {
+		t.Fatalf("unlock event %v", ev)
+	}
+	if got := constrained(t, r.events); got.ID != 0 {
+		t.Fatalf("constrained %+v after native focus", got)
+	}
+	if f, _ := r.peer.waitReq(skip, func(q x11Req) bool { return q.major == x11OpSetInputFocus }); f.u32(4) == win {
+		t.Fatalf("X focus still on %#x", win)
+	}
+
+	r.commands <- ports.FocusWindow{ID: m.ID}
+	if ev := next(t, r.xc, lockEvents); ev[0] != float64(pointerconstraints.ZwpLockedPointerV1EventLocked) {
+		t.Fatalf("relock event %v", ev)
+	}
+}
+
+// A confine on an X11 surface reaches core with its region as given: an X11
+// window has no geometry offset.
+func TestX11ConfineRegionHasNoOffset(t *testing.T) {
+	r := newX11Rig(t)
+	win := uint32(x11Win)
+	r.x11Window(win)
+	surf := r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+	pointer, _, _ := r.x11Pointer()
+	region := r.xc.AllocateID()
+	registerProtocol(t, r.xc, region)
+	requestProtocol(t, r.xc, r.comp, wayland.CompositorRequestCreateRegion, region)
+	requestProtocol(t, r.xc, region, wayland.RegionRequestAdd, int32(5), int32(6), int32(20), int32(30))
+	constraints := bindProtocol(t, r.xc, "zwp_pointer_constraints_v1")
+	confine := r.xc.AllocateID()
+	confineEvents := logProxy(t, r.xc, confine)
+	requestProtocol(t, r.xc, constraints, pointerconstraints.ZwpPointerConstraintsV1RequestConfinePointer, confine, surf, pointer, region, uint32(pointerconstraints.ZwpPointerConstraintsV1LifetimePersistent))
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	r.state(func() {
+		if g := r.s.windows[m.ID].geometry(); g != (ports.Rect{}) {
+			t.Errorf("X11 geometry %+v, want zero", g)
+		}
+	})
+
+	r.commands <- ports.PointerFocus{ID: m.ID, X: 10, Y: 10}
+	r.commands <- ports.FocusWindow{ID: m.ID}
+	r.commands <- ports.PointerMotionTo{ID: m.ID, X: 10, Y: 10}
+	if ev := next(t, r.xc, confineEvents); ev[0] != float64(pointerconstraints.ZwpConfinedPointerV1EventConfined) {
+		t.Fatalf("confine event %v", ev)
+	}
+	want := ports.PointerConstrained{ID: m.ID, PointerConstraint: ports.PointerConstraint{Mode: ports.ConstraintConfine, Rect: ports.Rect{X: 5, Y: 6, W: 20, H: 30}}}
+	if got := constrained(t, r.events); got != want {
+		t.Fatalf("constrained %+v, want %+v", got, want)
+	}
+}
+
+// An X11 window is on one output only, even straddling two: a single
+// wl_surface.enter, and a leave only when its output changes.
+func TestX11WindowEntersOneOutput(t *testing.T) {
+	r := newX11Rig(t)
+	r.commands <- ports.SetOutputs{Outputs: ports.Layout{
+		{Info: ports.OutputInfo{Name: "A"}, X: 0, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+		{Info: ports.OutputInfo{Name: "B"}, X: 1920, Y: 0, Width: 1920, Height: 1080, Scale: 1},
+	}, Focused: "A"}
+	r.state(func() {}) // the layout is applied
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	outputs := 0
+	for _, g := range r.xc.Registry().GetGlobals() {
+		if g.Interface != "wl_output" {
+			continue
+		}
+		id, err := bindWireID(r.xc, g.Name, g.Interface, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		registerProtocol(t, r.xc, id)
+		outputs++
+	}
+	if outputs != 2 {
+		t.Fatalf("%d wl_output globals, want 2", outputs)
+	}
+
+	win := uint32(x11Win)
+	r.x11Window(win)
+	events := make(chan []float64, 64)
+	r.surfaceProxy = func(id uint32) wlturbo.Proxy {
+		p := &eventLog{events: events}
+		p.SetID(id)
+		return p
+	}
+	r.pair(win, x11Serial)
+	m := awaitEvent[ports.WindowMapped](t, r.events)
+
+	// Straddling both outputs, configured on A.
+	r.commands <- ports.PlaceWindow{ID: m.ID, X: 1900, Y: 0}
+	r.commands <- ports.ConfigureWindow{ID: m.ID, Width: 200, Height: 100, Visible: true, Output: "A"}
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	r.state(func() {})
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	count := func() (enters, leaves int) {
+		for len(events) > 0 {
+			switch ev := <-events; ev[0] {
+			case float64(wayland.SurfaceEventEnter):
+				enters++
+			case float64(wayland.SurfaceEventLeave):
+				leaves++
+			}
+		}
+		return
+	}
+	if e, l := count(); e != 1 || l != 0 {
+		t.Fatalf("straddling window: %d enters, %d leaves, want 1, 0", e, l)
+	}
+	r.state(func() {
+		if on := r.s.windows[m.ID].surf().on; on == nil || on.name() != "A" {
+			t.Errorf("surface on %v, want A", on)
+		}
+	})
+
+	// Moving to B leaves A and enters B once.
+	r.commands <- ports.ConfigureWindow{ID: m.ID, Width: 200, Height: 100, Visible: true, Output: "B"}
+	r.state(func() {})
+	if err := r.xc.Roundtrip(); err != nil {
+		t.Fatal(err)
+	}
+	if e, l := count(); e != 1 || l != 1 {
+		t.Fatalf("move to B: %d enters, %d leaves, want 1, 1", e, l)
 	}
 }
