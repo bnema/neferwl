@@ -411,6 +411,11 @@ func (c *Core) appearFrom(rm *rectMotion, p Placement, old *rectMotion, now time
 // client is configured once, to its final size.
 func (c *Core) mapWindow(v ports.WindowMapped) {
 	now := c.now()
+	if v.Fullscreen && v.Parent == 0 {
+		// Mapped fullscreen: a tile of its own, whatever size class the
+		// client reported (a fixed-size game is not a float).
+		v.Floating, v.Width, v.Height = false, 0, 0
+	}
 	c.windows.mapped(v, now)
 	if s, _ := c.screenOf(v.ID); s != nil || !c.animOn() || c.security.Protected {
 		// Mapped before (a re-map keeps its place), animations off or a

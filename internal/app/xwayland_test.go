@@ -458,8 +458,34 @@ func TestXwaylandFullscreenOff(t *testing.T) {
 	})
 }
 
-// TestXwaylandFullscreenGrace: a request made at once after the map stays
-// tiled (fullscreenGrace in core).
+// TestXwaylandInitialFullscreen: a fixed-size window that maps with
+// _NET_WM_STATE_FULLSCREEN already set (a Proton game) opens fullscreen in a
+// column of its own, focused, beside the tiled window already open. This is
+// the state it maps with, not a request: the grace does not apply.
+func TestXwaylandInitialFullscreen(t *testing.T) {
+	e := startXwaylandWith(t, [][2]int{{xwaylandW, xwaylandH}}, func(c *ports.Config) { c.Layout.Gaps = 20 })
+	shot := filepath.Join(e.shots, "latest.png")
+	first := startProbe(t, e.bin, e.display, "-class", "First", "-size", "200x100")
+	until(t, "first tiled", func() bool {
+		return strings.Contains(first.out.String(), "mapped ") && len(readState(e.statePath).Windows) == 1
+	})
+	p := startProbe(t, e.bin, e.display, "-class", "Game", "-initial-fullscreen", "-size", "640x360")
+	until(t, "game mapped", func() bool { return strings.Contains(p.out.String(), "mapped ") })
+	until(t, "game in its own column, fullscreen", func() bool {
+		st := readState(e.statePath)
+		for _, w := range st.Windows {
+			if w.AppID == "Game" {
+				return !w.Floating && w.Column == 2 && w.Row == 1
+			}
+		}
+		return false
+	})
+	until(t, "output all green", func() bool { return fullOutput(shot) >= 0.99 })
+	until(t, "game focused", func() bool { return strings.Contains(p.out.String(), "focus") })
+}
+
+// TestXwaylandFullscreenGrace: a request made at once after the map (not the
+// state it maps with) stays tiled (fullscreenGrace in core).
 func TestXwaylandFullscreenGrace(t *testing.T) {
 	e := startXwayland(t)
 	p := startProbe(t, e.bin, e.display, "-fullscreen")

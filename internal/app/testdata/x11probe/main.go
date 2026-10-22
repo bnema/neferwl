@@ -9,6 +9,7 @@
 // -override-for (prints "override unmapped"). With -override-dismiss-on-focusout
 // it unmaps it instead when the main window loses focus (prints "dismissed").
 //
+// With -initial-fullscreen the window maps already fullscreen and fixed-size.
 // With -fullscreen it asks the window manager for _NET_WM_STATE_FULLSCREEN
 // -fullscreen-delay after the window is mapped (0: right at the map) and
 // prints "fullscreen WxH" when the window is resized; -fullscreen-off asks to
@@ -71,6 +72,7 @@ func run() error {
 	fullscreen := flag.Bool("fullscreen", false, "request _NET_WM_STATE_FULLSCREEN after the window is mapped")
 	fullscreenDelay := flag.Duration("fullscreen-delay", 0, "delay between the map and the fullscreen request")
 	fullscreenOff := flag.Duration("fullscreen-off", 0, "leave fullscreen this long after the request (0: never)")
+	initialFullscreen := flag.Bool("initial-fullscreen", false, "set _NET_WM_STATE_FULLSCREEN and fixed-size WM_NORMAL_HINTS (min=max=size) before mapping")
 	keyboardGrab := flag.Bool("keyboard-grab", false, "XGrabKeyboard on the window once it is mapped")
 	at := flag.String("at", "0,0", "window position X,Y in root coordinates")
 	copyText := flag.String("copy", "", "own a selection with TEXT (or @file) and serve it, no window")
@@ -143,6 +145,20 @@ func run() error {
 		var cv xproto.ConfigureWindowValues
 		cv.SetX(int32(atoi(atX))).SetY(int32(atoi(atY))).SetWidth(uint32(w)).SetHeight(uint32(h))
 		xproto.ConfigureWindow(b, win, &cv)
+	}
+	if *initialFullscreen {
+		// Like a Proton game: fullscreen state and a fixed size, both set
+		// before the map.
+		var st [4]byte
+		binary.LittleEndian.PutUint32(st[:], netWMFullscreen)
+		xproto.ChangeProperty(b, xproto.PropModeReplace, win, xproto.Atom(netWMState), xproto.AtomAtom, 32, 1, st[:])
+		var nh [72]byte                              // WM_SIZE_HINTS: flags, x, y, w, h, min, max, ...
+		binary.LittleEndian.PutUint32(nh[0:], 16|32) // PMinSize|PMaxSize
+		for _, off := range []int{20, 28} {
+			binary.LittleEndian.PutUint32(nh[off:], uint32(w))
+			binary.LittleEndian.PutUint32(nh[off+4:], uint32(h))
+		}
+		xproto.ChangeProperty(b, xproto.PropModeReplace, win, xproto.AtomWmNormalHints, xproto.AtomWmSizeHints, 32, 18, nh[:])
 	}
 	xproto.MapWindow(b, win)
 
