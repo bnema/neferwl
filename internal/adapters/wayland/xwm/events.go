@@ -36,6 +36,12 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		return
 	}
 	switch ev.Kind {
+	case xproto.KindPropertyNotify:
+		x.noteTime(uint32(xproto.PropertyNotifyOf(ev).Time()))
+	case xproto.KindSelectionRequest:
+		x.noteTime(uint32(xproto.SelectionRequestOf(ev).Time()))
+	}
+	switch ev.Kind {
 	case xproto.KindCreateNotify:
 		x.onCreateNotify(ev)
 	case xproto.KindDestroyNotify:
@@ -290,5 +296,13 @@ func (x *XWM) onVersionReply(r *xturbo.Reply) {
 		if v, ok := res.ParseQueryVersionReply(r.Raw); ok {
 			x.log.Info().Uint16("major", v.ServerMajor()).Uint16("minor", v.ServerMinor()).Msg("X-Resource")
 		}
+	}
+}
+
+// noteTime records the server time of the latest timestamped event; 0 is
+// CurrentTime and carries none.
+func (x *XWM) noteTime(t uint32) {
+	if t != 0 {
+		x.lastTime = t
 	}
 }

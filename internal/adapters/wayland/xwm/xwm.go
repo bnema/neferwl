@@ -54,16 +54,17 @@ const unpairedCap = 64
 
 // XWM manages the windows of one Xwayland. Display goroutine only, after Boot.
 type XWM struct {
-	conn   *xturbo.Conn
-	log    zerowrap.Logger
-	root   uint32
-	wmWin  uint32
-	selWin uint32 // selection bridge window (selection.go)
-	sel    selBridge
-	atoms  [atomCount]uint32
-	tab    *table
-	h      xturbo.Handler
-	stats  Stats
+	conn     *xturbo.Conn
+	log      zerowrap.Logger
+	root     uint32
+	wmWin    uint32
+	selWin   uint32 // selection bridge window (selection.go)
+	lastTime uint32 // server time of the latest timestamped X event
+	sel      selBridge
+	atoms    [atomCount]uint32
+	tab      *table
+	h        xturbo.Handler
+	stats    Stats
 
 	// attachment
 	host    host

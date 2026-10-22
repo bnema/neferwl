@@ -487,7 +487,7 @@ func TestSelectionWaylandToXTargets(t *testing.T) {
 	require.Equal(t, r.data, sentNotify(t, r))
 	v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
 	require.True(t, ok)
-	require.Equal(t, []uint32{r.p.atom("TARGETS"), r.p.atom("STRING")}, atomsOf(v), "no UTF8 target for text/plain only")
+	require.Equal(t, []uint32{r.p.atom("TARGETS"), r.p.atom("TIMESTAMP"), r.p.atom("STRING")}, atomsOf(v), "no UTF8 target for text/plain only")
 	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("image/png"), r.data)
 	require.Zero(t, sentNotify(t, r), "unknown target refused")
 	// UTF8_STRING is not offered by a text/plain-only source, but STRING reads it.
@@ -783,4 +783,27 @@ func TestSelectionCloseDoesNotStartQueued(t *testing.T) {
 	_ = n
 	require.Equal(t, 1, cs)
 	require.False(t, r.x.sel.timerOn)
+}
+
+func TestSelectionWaylandToXTimestamp(t *testing.T) {
+	r := ownedByWayland(t, "text/plain")
+	r.p.selectionRequest(r.x.selWin, reqWin, r.clip, r.p.atom("TIMESTAMP"), r.data)
+	require.Equal(t, r.data, sentNotify(t, r))
+	v, ok := r.p.prop(reqWin, "_NEFERWL_DATA")
+	require.True(t, ok)
+	require.EqualValues(t, 32, v.format)
+	require.EqualValues(t, 19, v.typ, "INTEGER")
+	require.Len(t, v.data, 4)
+}
+
+func TestSelectionOwnershipTimeFromLastEvent(t *testing.T) {
+	x, p, _, _, _ := attached(t)
+	p.event(28, func(b *[32]byte) { // PropertyNotify
+		binary.LittleEndian.PutUint32(b[4:], x.selWin)
+		binary.LittleEndian.PutUint32(b[8:], 1)
+		binary.LittleEndian.PutUint32(b[12:], 4242)
+	})
+	readUntil(t, x, func() bool { return x.lastTime == 4242 })
+	x.WaylandSelection(SelClipboard, []string{"text/plain"})
+	require.EqualValues(t, 4242, x.sel.st[SelClipboard].ownTime)
 }

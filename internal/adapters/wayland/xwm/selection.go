@@ -30,11 +30,12 @@ var (
 
 // selState is one selection.
 type selState struct {
-	atom  uint32
-	gen   uint32 // bumped on every ownership change; stales TARGETS probes
-	probe uint32 // gen when the TARGETS ConvertSelection was issued
-	owner uint32 // X owner window other than selWin, 0 none
-	ours  bool   // selWin owns the selection (Wayland -> X)
+	atom    uint32
+	gen     uint32 // bumped on every ownership change; stales TARGETS probes
+	probe   uint32 // gen when the TARGETS ConvertSelection was issued
+	owner   uint32 // X owner window other than selWin, 0 none
+	ownTime uint32 // lastTime when selWin took ownership, answered for TIMESTAMP
+	ours    bool   // selWin owns the selection (Wayland -> X)
 	// wl is what the Wayland side offers while ours: raw text availability.
 	wlUTF8, wlPlain bool
 	wlMime          [len(textMimes)]string // offered text MIMEs, in textMimes order, "" absent
@@ -719,6 +720,7 @@ func (x *XWM) WaylandSelection(kind int, mimes []string) {
 		return
 	}
 	st.ours = true
+	st.ownTime = x.lastTime
 	st.gen++
 	st.owner = 0
 	xproto.SetSelectionOwner(b, xproto.Window(x.selWin), xproto.Atom(st.atom), 0)
@@ -771,9 +773,10 @@ func (x *XWM) onSelectionRequest(ev *xturbo.Event) {
 	st := &x.sel.st[k]
 	switch target {
 	case x.atoms[atomTargets]:
-		var list [5]uint32
+		var list [6]uint32
 		n := 0
 		list[n], n = x.atoms[atomTargets], n+1
+		list[n], n = x.atoms[atomTimestamp], n+1
 		if st.wlUTF8 {
 			list[n], n = x.atoms[atomUTF8String], n+1
 			list[n], n = x.atoms[atomText], n+1
@@ -781,6 +784,11 @@ func (x *XWM) onSelectionRequest(ev *xturbo.Event) {
 		list[n], n = x.atoms[atomString], n+1
 		xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(req), xproto.Atom(prop),
 			xproto.AtomAtom, 32, uint32(n), x.encode32(list[:n]))
+		x.notify(req, sel, target, prop, time)
+		return
+	case x.atoms[atomTimestamp]:
+		xproto.ChangeProperty(x.conn.Buf(), xproto.PropModeReplace, xproto.Window(req), xproto.Atom(prop),
+			xproto.AtomInteger, 32, 1, x.encode32([]uint32{st.ownTime}))
 		x.notify(req, sel, target, prop, time)
 		return
 	case x.atoms[atomUTF8String], x.atoms[atomText], x.atoms[atomString]:
