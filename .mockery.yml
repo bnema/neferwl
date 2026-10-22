@@ -271,3 +271,15 @@ packages:
           dir: internal/adapters/xwayland
           pkgname: xwayland
           filename: starter_mock_test.go
+  github.com/bnema/neferwl/internal/adapters/wayland/xwm:
+    interfaces:
+      host:
+        config:
+          dir: internal/adapters/wayland/xwm
+          pkgname: xwm
+          filename: host_mock_test.go
+      fdSource:
+        config:
+          dir: internal/adapters/wayland/xwm
+          pkgname: xwm
+          filename: fdsource_mock_test.go
