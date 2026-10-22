@@ -470,8 +470,8 @@ func TestLockSurfaceDestroyRetiresFencedChildDependencies(t *testing.T) {
 				if destroy == "surface" {
 					remaining, refs = 0, 1 // parent destruction detaches the child
 				}
-				if len(root.queue) != 0 || len(child.queue) != remaining || !dep.retired || !parent.retired || dep.refs != refs || parent.refs != 1 || !wait.cancelled.Load() || tl.uses != 0 {
-					t.Errorf("dependency teardown: child=%d dep refs=%d parent refs=%d uses=%d cancelled=%v", len(child.queue), dep.refs, parent.refs, tl.uses, wait.cancelled.Load())
+				if len(root.queue) != 0 || len(child.queue) != remaining || !dep.retired || !parent.retired || dep.refs != refs || parent.refs != 1 || !wait.done || wait.efd >= 0 || tl.uses != 0 {
+					t.Errorf("dependency teardown: child=%d dep refs=%d parent refs=%d uses=%d done=%v", len(child.queue), dep.refs, parent.refs, tl.uses, wait.done)
 				}
 				dep.applyGraph()
 				parent.applyGraph()
