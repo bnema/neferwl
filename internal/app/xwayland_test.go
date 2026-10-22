@@ -41,10 +41,17 @@ type probe struct {
 	waited chan error
 }
 
-// TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows
-// up in the state with its class and pid, is drawn, tiles next to a second
-// one, receives focus and is closed by the close-window bind.
-func TestXwaylandProbe(t *testing.T) {
+// xwaylandEnv is a running headless compositor with the built-in XWM.
+type xwaylandEnv struct {
+	bin, display, statePath, shots string
+	script                         *io.PipeWriter
+}
+
+// startXwayland runs the compositor on one headless output and waits for its
+// X11 display. It skips the test without Xwayland and stops everything when
+// the test ends.
+func startXwayland(t *testing.T) *xwaylandEnv {
+	t.Helper()
 	if _, err := exec.LookPath("Xwayland"); err != nil {
 		t.Skip("Xwayland not on PATH")
 	}
@@ -101,7 +108,15 @@ func TestXwaylandProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return &xwaylandEnv{bin: bin, display: display, statePath: statePath, shots: shots, script: scriptW}
+}
 
+// TestXwaylandProbe: an X11 client is managed by the built-in XWM. It shows
+// up in the state with its class and pid, is drawn, tiles next to a second
+// one, receives focus and is closed by the close-window bind.
+func TestXwaylandProbe(t *testing.T) {
+	e := startXwayland(t)
+	bin, display, statePath, shots, scriptW := e.bin, e.display, e.statePath, e.shots, e.script
 	first := startProbe(t, bin, display, "-title", "one")
 	until(t, "probe one mapped", func() bool { return strings.Contains(first.out.String(), "mapped ") })
 
@@ -279,4 +294,101 @@ func greenShare(path string, r image.Rectangle) float64 {
 		}
 	}
 	return float64(n) / float64(r.Dx()*r.Dy())
+}
+
+// magentaShare is the fraction of pixels of r in the PNG at path that are
+// clearly magenta; 0 when the image cannot be read yet.
+func magentaShare(path string, r image.Rectangle) float64 {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		return 0
+	}
+	r = r.Intersect(img.Bounds())
+	if r.Empty() {
+		return 0
+	}
+	n := 0
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			cr, cg, cb, _ := img.At(x, y).RGBA()
+			if cr>>8 > 200 && cg>>8 < 60 && cb>>8 > 200 {
+				n++
+			}
+		}
+	}
+	return float64(n) / float64(r.Dx()*r.Dy())
+}
+
+// TestXwaylandOverride: an override-redirect window (a menu) of an X11 client
+// is drawn above the toplevel at its X position, is not a window in the
+// state, leaves keyboard focus on the toplevel and vanishes when unmapped.
+func TestXwaylandOverride(t *testing.T) {
+	e := startXwayland(t)
+	// Probe unmaps the menu 3 s after mapping it; the first checks run well
+	// inside that window.
+	p := startProbe(t, e.bin, e.display, "-title", "menu", "-override", "-override-at", "100,50",
+		"-override-size", "120x80", "-override-for", "3s")
+	until(t, "override mapped", func() bool { return strings.Contains(p.out.String(), "override mapped") })
+	shot := filepath.Join(e.shots, "latest.png")
+	box := image.Rect(100, 50, 220, 130) // output-local: one output at the X origin
+	until(t, "magenta menu in latest.png", func() bool { return magentaShare(shot, box) >= 0.9 })
+
+	var st statefile.State
+	until(t, "focused X11Probe toplevel", func() bool {
+		st = readState(e.statePath)
+		return len(st.Windows) >= 1 && st.Window != nil
+	})
+	if len(st.Windows) != 1 || st.Windows[0].AppID != "X11Probe" {
+		t.Fatalf("state windows = %+v, want only the X11Probe toplevel", st.Windows)
+	}
+	id := st.Windows[0].ID
+	if st.Window.ID != id {
+		t.Errorf("focused window = %+v, want the toplevel %d", st.Window, id)
+	}
+	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
+
+	// The menu is above the toplevel: its box is magenta, not green.
+	if g := greenShare(shot, box); g > 0.1 {
+		t.Errorf("green share in menu box = %.2f, menu is not above the toplevel", g)
+	}
+	until(t, "override unmapped", func() bool { return strings.Contains(p.out.String(), "override unmapped") })
+	until(t, "menu gone from latest.png", func() bool {
+		return magentaShare(shot, box) == 0 && greenShare(shot, box) >= 0.9
+	})
+	if st := readState(e.statePath); st.Window == nil || st.Window.ID != id {
+		t.Errorf("focus after the menu closed = %+v, want %d", st.Window, id)
+	}
+}
+
+// TestXwaylandOverrideDismiss: the menu owner sees FocusOut on the toplevel
+// when core focuses another window, which is how toolkits close their menus.
+func TestXwaylandOverrideDismiss(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-title", "menu", "-override", "-override-dismiss-on-focusout")
+	until(t, "override mapped", func() bool { return strings.Contains(p.out.String(), "override mapped") })
+	until(t, "probe focus", func() bool { return strings.Contains(p.out.String(), "focus") })
+	// A second X11 window takes the focus away from the menu owner.
+	startProbe(t, e.bin, e.display, "-title", "other")
+	until(t, "menu dismissed on FocusOut", func() bool { return strings.Contains(p.out.String(), "dismissed") })
+	box := image.Rect(100, 50, 220, 130)
+	until(t, "menu gone from latest.png", func() bool {
+		return magentaShare(filepath.Join(e.shots, "latest.png"), box) == 0
+	})
+}
+
+// TestXwaylandOverrideShape: a menu with an empty input shape is still drawn
+// and still not a window.
+func TestXwaylandOverrideShape(t *testing.T) {
+	e := startXwayland(t)
+	p := startProbe(t, e.bin, e.display, "-title", "menu", "-override", "-override-shape", "-override-type", "tooltip")
+	until(t, "override mapped", func() bool { return strings.Contains(p.out.String(), "override mapped") })
+	until(t, "magenta tooltip in latest.png", func() bool {
+		return magentaShare(filepath.Join(e.shots, "latest.png"), image.Rect(100, 50, 220, 130)) >= 0.9
+	})
+	until(t, "only the toplevel in state", func() bool { return len(readState(e.statePath).Windows) == 1 })
 }
