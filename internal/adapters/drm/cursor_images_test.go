@@ -36,18 +36,26 @@ func dumbFree(k *mockkms) {
 	k.EXPECT().unmapDumb(mock.Anything).Return(nil).Twice()
 }
 
-func rendererBufs() [2]ports.DMABuf {
+func rendererBufs(t *testing.T) [2]ports.DMABuf {
 	var b [2]ports.DMABuf
 	for i := range b {
-		f, w, _ := os.Pipe()
-		w.Close()
+		f, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = f.Close(); _ = w.Close() })
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
 		b[i] = ports.DMABuf{Planes: []ports.DMABufPlane{{File: f}}}
 	}
 	return b
 }
 
-func rendererOK(k *mockkms, r *portsmocks.MockRenderer) {
-	r.EXPECT().CursorBuffers(tSide).Return(rendererBufs(), nil).Once()
+func rendererOK(t *testing.T, k *mockkms, r *portsmocks.MockRenderer) {
+	b := rendererBufs(t)
+	r.EXPECT().CursorBuffers(tSide).Return(b, nil).Once()
+	t.Cleanup(func() { assertPlanesClosed(t, b) })
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(80, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(81, nil).Once()
 }
@@ -108,7 +116,7 @@ func TestCursorSetupFallsBackToRenderer(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			k, r := newMockkms(t), portsmocks.NewMockRenderer(t)
 			fail(k)
-			rendererOK(k, r)
+			rendererOK(t, k, r)
 			c := newCursor(&plane{}, tSide)
 			dumbErr, err := c.setup(k, r)
 			if dumbErr == nil || err != nil {
@@ -139,12 +147,25 @@ func TestCursorSetupFailsWithoutAllocators(t *testing.T) {
 // A renderer image whose framebuffer fails is released.
 func TestRendererCursorReleasesOnFailure(t *testing.T) {
 	k, r := newMockkms(t), portsmocks.NewMockRenderer(t)
-	r.EXPECT().CursorBuffers(tSide).Return(rendererBufs(), nil).Once()
+	bufs := rendererBufs(t)
+	r.EXPECT().CursorBuffers(tSide).Return(bufs, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(80, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(0, unix.EINVAL).Once()
 	k.EXPECT().rmFB(uint32(80)).Return(nil).Once()
 	if _, err := newRendererCursor(k, r, tSide); err == nil {
 		t.Fatal("framebuffer failure not reported")
+	}
+	assertPlanesClosed(t, bufs)
+}
+
+func assertPlanesClosed(t *testing.T, bufs [2]ports.DMABuf) {
+	t.Helper()
+	for i, b := range bufs {
+		for j, p := range b.Planes {
+			if _, err := p.File.Stat(); !errors.Is(err, os.ErrClosed) {
+				t.Errorf("buffer %d plane %d: Stat = %v, want os.ErrClosed", i, j, err)
+			}
+		}
 	}
 }
 
@@ -168,7 +189,7 @@ func TestCursorDumbRefusedUsesRendererImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	dumbFree(k)
-	rendererOK(k, r)
+	rendererOK(t, k, r)
 	var written []int
 	r.EXPECT().WriteCursor(mock.Anything, px, 1, 1).RunAndReturn(func(i int, _ []byte, _, _ int) error {
 		written = append(written, i)
@@ -199,7 +220,7 @@ func TestCursorBothRefusedGoesOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	dumbFree(k)
-	rendererOK(k, r)
+	rendererOK(t, k, r)
 	if !o.testCursor() {
 		t.Fatal("no change reported")
 	}
@@ -217,24 +238,30 @@ func TestCursorBothRefusedGoesOff(t *testing.T) {
 
 // Dumb images the plane takes stay, with no second test.
 func TestCursorDumbAcceptedStays(t *testing.T) {
-	o, k, r, commits := cursorOutput(t)
-	dumbOK(k, tSide*4)
-	if _, err := o.cursor.setup(k, r); err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{{"accepted", nil}, {"non-refusal", unix.EIO}} {
+		t.Run(tc.name, func(t *testing.T) {
+			o, k, r, commits := cursorOutput(t, tc.err)
+			dumbOK(k, tSide*4)
+			if _, err := o.cursor.setup(k, r); err != nil {
+				t.Fatal(err)
+			}
+			if o.testCursor() || o.cursor.off || o.cursor.alloc != allocDumb || len(*commits) != 1 {
+				t.Fatalf("off %v alloc %q commits %d", o.cursor.off, o.cursor.alloc, len(*commits))
+			}
+			dumbFree(k)
+			o.cursor.free()
+		})
 	}
-	if o.testCursor() || o.cursor.off || o.cursor.alloc != allocDumb || len(*commits) != 1 {
-		t.Fatalf("off %v alloc %q commits %d", o.cursor.off, o.cursor.alloc, len(*commits))
-	}
-	// An error other than a refusal changes nothing.
-	dumbFree(k)
-	o.cursor.free()
 }
 
 // Renderer images refused while no dumb ones exist: off, no retry.
 func TestCursorRendererRefusedGoesOff(t *testing.T) {
 	o, k, r, commits := cursorOutput(t, unix.EINVAL)
 	k.EXPECT().createDumb(tSide, tSide).Return(dumbBuffer{}, unix.ENOSYS).Once()
-	rendererOK(k, r)
+	rendererOK(t, k, r)
 	if _, err := o.cursor.setup(k, r); err != nil {
 		t.Fatal(err)
 	}
@@ -278,13 +305,29 @@ func TestDumbCursorWritePitchCropClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { dumbFree(k); d.close() }()
-	big := bytes.Repeat([]byte{0xff}, 40*40*4)
+	big := make([]byte, 40*40*4)
+	for y := range 40 {
+		for x := range 40 {
+			copy(big[(y*40+x)*4:], []byte{byte(x), byte(y), byte(x + y), 255})
+		}
+	}
 	if err := d.write(1, big, 40, 40, 0); err != nil { // cropped to tSide
 		t.Fatal(err)
 	}
 	last := (tSide - 1) * pitch
-	if m := mem[1]; m[last+(tSide-1)*4] != 0xff || m[last+tSide*4] != 0 || m[pitch-1] != 0 {
-		t.Fatal("cropped image misplaced at the pitch")
+	for _, y := range []int{0, 1, 7, tSide - 1} {
+		for _, x := range []int{0, 3, tSide - 1} {
+			got := mem[1][y*pitch+x*4 : y*pitch+x*4+4]
+			want := big[(y*40+x)*4 : (y*40+x)*4+4]
+			if !bytes.Equal(got, want) {
+				t.Fatalf("pixel %d,%d: %v want %v", x, y, got, want)
+			}
+		}
+	}
+	for y := range tSide {
+		if !bytes.Equal(mem[1][y*pitch+tSide*4:(y+1)*pitch], make([]byte, pitch-tSide*4)) {
+			t.Fatalf("row %d padding written", y)
+		}
 	}
 	if err := d.write(1, []byte{1, 2, 3, 4}, 1, 1, 0); err != nil {
 		t.Fatal(err)
@@ -329,5 +372,120 @@ func TestDumbCursorWriteHDR(t *testing.T) {
 	}
 	if d.cache.Len() != 4 {
 		t.Fatalf("cache %d", d.cache.Len())
+	}
+}
+
+func TestCursorFallbackState(t *testing.T) {
+	for _, mode := range []string{"loaded", "queued", "hidden"} {
+		t.Run(mode, func(t *testing.T) {
+			o, k, r, commits := cursorOutput(t, unix.EINVAL)
+			dumbOK(k, tSide*4)
+			c := o.cursor
+			if _, err := c.setup(k, r); err != nil {
+				t.Fatal(err)
+			}
+			px := []byte{1, 2, 3, 4}
+			if err := c.setImage(px, 1, 1, 2, 3, 0); err != nil {
+				t.Fatal(err)
+			}
+			c.screen = 90
+			c.committed(cursorState{on: true, fb: 91, x: 8, y: 9})
+			want := []byte{1, 2, 3, 4}
+			if mode == "queued" {
+				px = []byte{5, 6, 7, 8}
+				want = bytes.Clone(px)
+				if err := c.setImage(px, 1, 1, 4, 5, 0); err != nil {
+					t.Fatal(err)
+				}
+				if c.later == nil {
+					t.Fatal("image not queued")
+				}
+			}
+			if mode == "hidden" {
+				if err := c.setImage(nil, 0, 0, 0, 0, 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			px[0] = 99 // Neither the loaded nor queued image may alias caller memory.
+			dumbFree(k)
+			rendererOK(t, k, r)
+			if mode != "hidden" {
+				r.EXPECT().WriteCursor(0, want, 1, 1).Return(nil).Once()
+			}
+			if !o.testCursor() {
+				t.Fatal("swap not reported")
+			}
+			if c.screen != 0 || c.flying || c.flight != (cursorState{}) || c.applied != (cursorState{}) || c.later != nil {
+				t.Fatalf("stale scanout state: screen %d flight %+v flying %v applied %+v", c.screen, c.flight, c.flying, c.applied)
+			}
+			c.landed()
+			if c.screen != 0 {
+				t.Fatal("old pending flight resurrected")
+			}
+			s := c.desired()
+			if mode == "hidden" {
+				if s.on || c.image {
+					t.Fatal("hidden cursor shown")
+				}
+			} else {
+				if !s.on || s.fb != 80 {
+					t.Fatalf("desired %+v", s)
+				}
+				if mode == "queued" && (c.hotX != 4 || c.hotY != 5) {
+					t.Fatal("queued hotspot lost")
+				}
+			}
+			req := &atomicReq{}
+			c.props(req, o.crtc, s)
+			if err := k.commit(req, 0, 0); err != nil {
+				t.Fatal(err)
+			}
+			wantFB := uint64(80)
+			if mode == "hidden" {
+				wantFB = 0
+			}
+			if fb, _ := (*commits)[2].req.value(tCursor, pFB); fb != wantFB {
+				t.Fatalf("next commit fb %d want %d", fb, wantFB)
+			}
+			c.committed(s)
+			c.landed()
+			if c.screen != uint32(wantFB) {
+				t.Fatalf("screen %d", c.screen)
+			}
+		})
+	}
+}
+
+func TestCursorFallbackFailureGoesOff(t *testing.T) {
+	for _, mode := range []string{"allocation", "rewrite"} {
+		t.Run(mode, func(t *testing.T) {
+			o, k, r, commits := cursorOutput(t, unix.EINVAL)
+			dumbOK(k, tSide*4)
+			c := o.cursor
+			if _, err := c.setup(k, r); err != nil {
+				t.Fatal(err)
+			}
+			px := []byte{1, 2, 3, 4}
+			if err := c.setImage(px, 1, 1, 0, 0, 0); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "allocation" {
+				r.EXPECT().CursorBuffers(tSide).Return([2]ports.DMABuf{}, errors.New("allocation failed")).Once()
+			} else {
+				dumbFree(k)
+				rendererOK(t, k, r)
+				r.EXPECT().WriteCursor(0, px, 1, 1).Return(errors.New("rewrite failed")).Once()
+			}
+			if !o.testCursor() || !c.off || c.desired().on || len(*commits) != 1 {
+				t.Fatalf("off %v desired %+v commits %d", c.off, c.desired(), len(*commits))
+			}
+			if mode == "allocation" {
+				dumbFree(k)
+			} else {
+				k.EXPECT().rmFB(uint32(80)).Return(nil).Once()
+				k.EXPECT().rmFB(uint32(81)).Return(nil).Once()
+			}
+			c.free()
+		})
 	}
 }

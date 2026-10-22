@@ -23,8 +23,10 @@ func TestDumbBuffersOnRealDevice(t *testing.T) {
 			t.Logf("%s: %v", path, err)
 			continue
 		}
-		done := dumbDeviceRoundTrip(t, path, kmsDevice{fd: int(f.Fd())})
-		f.Close()
+		done := func() bool {
+			defer f.Close()
+			return dumbDeviceRoundTrip(t, path, kmsDevice{fd: int(f.Fd())})
+		}()
 		if done {
 			return
 		}
