@@ -21,6 +21,9 @@ type frameLifecycle struct {
 	stuckAt                   time.Time
 	fenceWarned               bool
 	busySince, lastBusy       time.Time
+	nomemSince, lastNomem     time.Time
+	nomemBackoff              time.Duration
+	nomemAttempts             int
 	stuckTimer                *time.Timer
 }
 
@@ -66,8 +69,11 @@ const (
 )
 
 const (
-	stuckTimeout = time.Second
-	busyRetry    = 50 * time.Millisecond
+	stuckTimeout   = time.Second
+	busyRetry      = 50 * time.Millisecond
+	nomemRetryMin  = 16 * time.Millisecond
+	nomemRetryMax  = time.Second
+	nomemWarnAfter = 5 * time.Second
 )
 
 // stuckLimit returns the configured recovery deadline or its default.
@@ -106,6 +112,32 @@ func (l *frameLifecycle) pendingCommit() bool { return l.pending }
 func (l *frameLifecycle) resetAfterModeset() {
 	l.endPending()
 	l.busySince = time.Time{}
+	l.nomemRecovered(time.Time{})
+}
+
+// nomem records a refused pin, not a missing flip. The old frame still shows.
+func (l *frameLifecycle) nomem(now time.Time) (attempt int, newRun bool) {
+	l.endPending()
+	newRun = l.nomemSince.IsZero()
+	if newRun {
+		l.nomemSince = now
+	}
+	l.nomemBackoff = min(nomemRetryMax, max(nomemRetryMin, 2*l.nomemBackoff))
+	l.lastNomem = now
+	l.nomemAttempts++
+	l.pending, l.pendingSerial, l.flipStart = true, 0, now
+	l.stuckAt = now.Add(l.nomemBackoff)
+	return l.nomemAttempts, newRun
+}
+
+// nomemRecovered consumes the refusal run after an accepted commit.
+func (l *frameLifecycle) nomemRecovered(now time.Time) (attempts int, outage time.Duration) {
+	if !l.nomemSince.IsZero() {
+		attempts, outage = l.nomemAttempts, now.Sub(l.nomemSince)
+	}
+	l.nomemSince, l.lastNomem = time.Time{}, time.Time{}
+	l.nomemBackoff, l.nomemAttempts = 0, 0
+	return
 }
 
 // deadlineReached reports whether a pending commit is ready for recovery.
@@ -144,7 +176,7 @@ func (l *frameLifecycle) ours(user uint64) bool {
 // EBUSY there is no known serial, so any CRTC event ends that wait. The
 // returned start lets Output measure flip age after pending fences close.
 func (l *frameLifecycle) flip(user uint64) (pendingFrame, time.Time, bool) {
-	if !l.pending || l.pendingSerial != 0 && user>>userKindBits != l.pendingSerial {
+	if !l.pending || l.pendingSerial == 0 && !l.nomemSince.IsZero() || l.pendingSerial != 0 && user>>userKindBits != l.pendingSerial {
 		return pendingFrame{}, time.Time{}, false
 	}
 	f, start := l.pendingFrame, l.flipStart
@@ -182,6 +214,9 @@ func (l *frameLifecycle) timeout(now time.Time, fencesReady bool) timeoutResult 
 	l.endPending()
 	if l.pendingSerial != 0 {
 		return timeoutMissing
+	}
+	if !l.nomemSince.IsZero() {
+		return timeoutRetry
 	}
 	if l.busySince.IsZero() || now.Sub(l.busySince) < l.stuckLimit() {
 		return timeoutRetry

@@ -95,3 +95,32 @@ func TestFrameLifecycleTransitionsAllocations(t *testing.T) {
 		t.Fatalf("frame lifecycle: %.1f allocs, want 0", allocs)
 	}
 }
+
+func TestFrameLifecycleNoMemBackoffAndRecovery(t *testing.T) {
+	l := frameLifecycle{stuckAfter: time.Millisecond}
+	start := time.Unix(100, 0)
+	now := start
+	for i := range 20 {
+		attempt, fresh := l.nomem(now)
+		want := min(nomemRetryMax, nomemRetryMin*time.Duration(1<<min(i, 7)))
+		if attempt != i+1 || fresh != (i == 0) || l.nomemBackoff != want || l.stuckAt != now.Add(want) {
+			t.Fatalf("attempt %d fresh=%v backoff=%v deadline=%v", attempt, fresh, l.nomemBackoff, l.stuckAt)
+		}
+		if _, _, ok := l.flip(123 << userKindBits); ok {
+			t.Fatal("stale event bypassed memory backoff")
+		}
+		if got := l.timeout(l.stuckAt.Add(10*l.stuckLimit()), true); got != timeoutRetry {
+			t.Fatalf("ENOMEM escalated: %d", got)
+		}
+		now = l.stuckAt
+	}
+	attempts, outage := l.nomemRecovered(now)
+	if attempts != 20 || outage != now.Sub(start) || !l.nomemSince.IsZero() || !l.lastNomem.IsZero() || l.nomemBackoff != 0 || l.nomemAttempts != 0 {
+		t.Fatalf("recovery: %d %v %+v", attempts, outage, l)
+	}
+	l.nomem(now)
+	l.resetAfterModeset()
+	if !l.nomemSince.IsZero() || l.nomemAttempts != 0 || l.pending {
+		t.Fatal("modeset did not clear run")
+	}
+}

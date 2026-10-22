@@ -109,12 +109,14 @@ type Output struct {
 	readFences []*os.File
 	// Direct scanout: client framebuffers by DMABuf ID and the buffer on
 	// screen and queued (0: the composed image).
-	scanout       bool
-	clientFBs     map[uint64]*clientFB
-	shown, queued uint64
-	planeRect     planeRect
-	reason        string // why the last frame was composed ("" = scanout)
-	reports       presented.Queue
+	scanout            bool
+	clientFBs          map[uint64]*clientFB
+	shown, queued      uint64
+	planeRect          planeRect
+	reason             string // why the last frame was composed ("" = scanout)
+	scanoutPausedUntil time.Time
+	nomemModeset       bool // retry the refused modeset, not an ordinary frame
+	reports            presented.Queue
 	// Last immutable shows snapshot sent in a flip. Never mutate it: wayland
 	// may still be reading a prior report on another goroutine.
 	shows               surfaces.ShowsSnapshot
@@ -415,6 +417,8 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 		if err := o.disableProtected(); err != nil {
 			return err
 		}
+		o.commitRecovered()
+		o.nomemModeset = false
 		o.frame.resetAfterModeset()
 		o.forgetColor()
 		o.planeRect = fullPlaneRect(o.Width(), o.Height())
@@ -450,6 +454,9 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 		return errSecurityScene
 	}
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
+		if !o.protected && errors.Is(err, unix.ENOMEM) {
+			o.nomemModeset = true
+		}
 		_ = o.k.destroyBlob(blob)
 		if o.protected {
 			return protectedCommitError{fmt.Errorf("modeset: %w", err)}
@@ -458,6 +465,8 @@ func (o *Output) modesetImage(fb uint32, active bool) error {
 	}
 	// Only now is nothing of ours pending or on screen: on failure the
 	// previous buffers may still show.
+	o.commitRecovered()
+	o.nomemModeset = false
 	o.frame.resetAfterModeset()
 	// Plane scaling and colour pipeline capabilities may change after a
 	// modeset or VT resume; the planes' colour state is not assumed.
@@ -514,6 +523,8 @@ func (o *Output) powerOff() error {
 	if err := o.k.commit(req, atomicAllowModes, 0); err != nil {
 		return fmt.Errorf("power off: %w", err)
 	}
+	o.commitRecovered()
+	o.nomemModeset = false
 	o.colorBypassed()
 	o.off, o.vrrGame = true, false
 	// No vblank to aim at: the modeset that turns it on commits the state.
@@ -735,6 +746,10 @@ func (o *Output) commitRect(fb uint32, fence *os.File, async bool, vrr bool, f p
 				return nil
 			}
 		}
+		if o.protected && errors.Is(err, unix.ENOMEM) {
+			o.invalidateSecurity()
+			return protectedCommitError{err}
+		}
 		return err
 	}
 	if !async {
@@ -767,6 +782,7 @@ func (o *Output) commitRect(fb uint32, fence *os.File, async bool, vrr bool, f p
 		f.fenceReady = signalled(f.fences)
 	}
 	o.setAsync(async)
+	o.commitRecovered()
 	o.frame.begin(f, time.Now())
 	return nil
 }
@@ -884,6 +900,7 @@ func (o *Output) commitState(vrr bool) error {
 	o.setVRR(vrr)
 	o.contentValue = o.contentWanted
 	o.flipStats.stateCommits++
+	o.commitRecovered()
 	o.frame.begin(pendingFrame{}, time.Now())
 	return nil
 }
@@ -936,6 +953,12 @@ func (o *Output) commitScanoutRect(fb uint32, c ports.SurfaceContent, f pendingF
 		o.log.Debug().Err(err).Str("connector", o.conn.name).Msg("async flip refused")
 		cfb.noAsync = true
 		err = o.commitRect(fb, fence, false, vrr, f, overlayWin{}, rect, pc)
+	}
+	if errors.Is(err, unix.ENOMEM) && !retryableProtected(err) {
+		o.scanoutPausedUntil = time.Now().Add(nomemScanoutPause)
+		o.setScanoutReason("nomem")
+		o.renderLog.Info().Err(err).Str("connector", o.conn.name).Msg("scanout pin failed; composing")
+		return false, nil
 	}
 	if errors.Is(err, errColorRefused) {
 		// KMS takes the buffer without the pipeline: compose it; the
@@ -1102,13 +1125,13 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	// While switched away they are made on the first enable.
 	if enabled {
 		if err := o.showImages(r, imagesDriver, nil); err != nil {
-			// While protected, a recoverable KMS failure keeps the output
-			// registered and dark; the loop retries with bounded backoff.
-			if !o.protected || !o.commitFailed(err, &enabled) {
+			// Protected preparation and a memory-refused modeset keep the
+			// output registered; the loop retries with capped backoff.
+			if !o.protected && !o.nomemModeset || !o.commitFailed(err, &enabled) {
 				return err
 			}
 		}
-		if !o.protected {
+		if !o.protected && !o.frame.pendingCommit() {
 			o.probeAsync(r)
 		}
 	}
@@ -1557,7 +1580,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 		}
 		// Output power: off waits for no commit in flight; on is a modeset
 		// and a full frame.
-		if o.wantOff != o.off {
+		if o.wantOff != o.off || o.nomemModeset {
 			var err error
 			if o.wantOff {
 				err = o.powerOff()
@@ -1567,8 +1590,11 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 					o.probeAsync(r) // skipped while it started off
 				}
 			}
-			if err != nil && !o.commitFailed(err, &enabled) {
-				return err
+			if err != nil {
+				if !o.commitFailed(err, &enabled) {
+					return err
+				}
+				continue
 			}
 		}
 		if o.off {
@@ -1634,9 +1660,9 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 }
 
-// commitFailed handles a commit error that does not stop the output: a
-// commit still in flight (EBUSY, retried after its event) or DRM master
-// lost mid-switch (the seat disable follows).
+// commitFailed handles refusals that keep the output: busy or memory
+// pressure (retried), protected preparation, or DRM master lost mid-switch
+// (the seat disable follows).
 func (o *Output) commitFailed(err error, enabled *bool) bool {
 	switch {
 	case errors.Is(err, errSecurityScene), errors.Is(err, errProtectionPending):
@@ -1657,6 +1683,20 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 		o.deferProtection()
 		o.log.Warn().Err(err).Str("connector", o.conn.name).Dur("retry_in", o.protectBackoff).Msg("protected commit refused; output stays protected, retrying")
 		return true
+	case errors.Is(err, unix.ENOMEM):
+		now := time.Now()
+		previous := o.frame.lastNomem
+		attempt, newRun := o.frame.nomem(now)
+		age := now.Sub(o.frame.nomemSince)
+		switch {
+		case newRun:
+			o.log.Warn().Err(err).Str("connector", o.conn.name).Dur("retry_in", o.frame.nomemBackoff).Msg("commit refused for memory; keeping last frame, retrying")
+		case previous.Sub(o.frame.nomemSince) < nomemWarnAfter && age >= nomemWarnAfter:
+			o.log.Warn().Str("connector", o.conn.name).Int("attempts", attempt).Dur("age", age).Msg("commit still refused for memory; keeping last frame, retrying")
+		default:
+			o.log.Debug().Str("connector", o.conn.name).Int("attempts", attempt).Dur("age", age).Dur("retry_in", o.frame.nomemBackoff).Msg("commit refused for memory")
+		}
+		return true
 	case lostMaster(err):
 		o.observeSecurity()
 		if o.protected {
@@ -1668,6 +1708,13 @@ func (o *Output) commitFailed(err error, enabled *bool) bool {
 	}
 	o.log.Error().Err(err).Msg("commit")
 	return false
+}
+
+// commitRecovered reports only an accepted commit, never a refused frame.
+func (o *Output) commitRecovered() {
+	if attempts, outage := o.frame.nomemRecovered(time.Now()); attempts > 0 {
+		o.log.Info().Str("connector", o.conn.name).Int("attempts", attempts).Dur("outage", outage).Msg("commit recovered")
+	}
 }
 
 // flipDone times the completion ev of the commit f made at start: the
