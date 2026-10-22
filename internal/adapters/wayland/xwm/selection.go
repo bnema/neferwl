@@ -119,6 +119,7 @@ type selBridge struct {
 	// active is the transfer that owns the conversion property, -1 none.
 	active  int
 	timerOn bool
+	closing bool // selClose ran: no transfer may start
 	cancel  func()
 	tickFn  func()
 }
@@ -320,7 +321,7 @@ func (x *XWM) SelectionReceive(kind int, mime string, fd int) {
 // inStartNext starts the oldest queued transfer when none is converting.
 func (x *XWM) inStartNext() {
 	b := &x.sel
-	if b.active >= 0 {
+	if b.active >= 0 || b.closing {
 		return
 	}
 	best := -1
@@ -384,7 +385,10 @@ func (x *XWM) onDataNotify(e xproto.SelectionNotifyEvent) {
 		return
 	}
 	t := &x.sel.in[i]
-	if t.state != inConverting || uint32(e.Target()) != t.target {
+	if t.state != inConverting || uint32(e.Target()) != t.target || uint32(e.Selection()) != x.sel.st[t.kind].atom {
+		return
+	}
+	if p := uint32(e.Property()); p != 0 && p != x.atoms[atomNeferwlData] {
 		return
 	}
 	if e.Property() == 0 {
@@ -629,6 +633,7 @@ func (x *XWM) selTick() {
 
 // selClose aborts every transfer.
 func (x *XWM) selClose() {
+	x.sel.closing = true
 	for i := range x.sel.out {
 		if x.sel.out[i].state != outFree {
 			x.outAbort(i)
@@ -643,6 +648,7 @@ func (x *XWM) selClose() {
 		x.sel.cancel()
 		x.sel.cancel = nil
 	}
+	x.sel.timerOn = false
 }
 
 // ---- Wayland -> X ----

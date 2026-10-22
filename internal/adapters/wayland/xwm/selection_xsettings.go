@@ -3,6 +3,7 @@ package xwm
 import (
 	"encoding/binary"
 	"math"
+	"unicode/utf8"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/xproto"
@@ -53,7 +54,11 @@ func (x *XWM) cursorThemeName() string {
 		t = "default"
 	}
 	if len(t) > xsMaxString {
-		t = t[:xsMaxString]
+		n := xsMaxString
+		for n > 0 && !utf8.RuneStart(t[n]) { // back off to a rune boundary
+			n--
+		}
+		t = t[:n]
 	}
 	return t
 }

@@ -3,7 +3,9 @@ package xwm
 import (
 	"context"
 	"encoding/binary"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/bnema/neferwl/internal/ports"
 	"github.com/stretchr/testify/require"
@@ -216,4 +218,12 @@ func TestXSettingsWindowNotAdopted(t *testing.T) {
 	readUntil(t, x, func() bool { return x.Stats().Events > ev })
 	x.flush()
 	require.Zero(t, x.tab.lookup(x.xs.win))
+}
+
+func TestCursorThemeNameRuneBoundary(t *testing.T) {
+	x := &XWM{}
+	x.cfg.CursorTheme = strings.Repeat("a", xsMaxString-1) + "é" // é straddles the limit
+	got := x.cursorThemeName()
+	require.True(t, utf8.ValidString(got))
+	require.Equal(t, strings.Repeat("a", xsMaxString-1), got)
 }

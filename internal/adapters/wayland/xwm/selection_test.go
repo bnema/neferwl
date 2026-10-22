@@ -735,3 +735,52 @@ func newTimerLoop(t *testing.T) *mockloop {
 		func(time.Duration, func()) func() { return func() {} }).Maybe()
 	return l
 }
+
+// A late SelectionNotify of an aborted transfer (other selection or property)
+// is not taken by the next transfer.
+func TestSelectionLateReplyIgnored(t *testing.T) {
+	r := ownedRig(t)
+	_ = r.receive(t, 0)
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.skip = n
+	for i := 0; i < xIdleMax; i++ {
+		r.timer()
+	}
+	require.Equal(t, inFree, r.x.sel.in[0].state)
+	_ = r.receive(t, 0)
+	require.Equal(t, inConverting, r.x.sel.in[0].state)
+	prim := r.p.atom("PRIMARY")
+	r.p.selectionNotify(r.x.selWin, prim, r.utf8, r.data)
+	r.p.selectionNotify(r.x.selWin, r.clip, r.utf8, r.p.atom("_NEFERWL_TARGETS"))
+	ev := r.x.Stats().Events
+	readUntil(t, r.x, func() bool { return r.x.Stats().Events >= ev+2 })
+	require.Equal(t, inConverting, r.x.sel.in[0].state)
+}
+
+// CloseConn closes the fds of in-flight transfers.
+func TestSelectionCloseConnClosesFDs(t *testing.T) {
+	r := ownedRig(t)
+	f := r.receive(t, 0)
+	r.x.CloseConn()
+	_, err := f.Read(make([]byte, 8))
+	require.ErrorIs(t, err, io.EOF)
+}
+
+// Closing never starts a queued transfer's ConvertSelection.
+func TestSelectionCloseDoesNotStartQueued(t *testing.T) {
+	r := ownedRig(t)
+	_ = r.receive(t, 0)
+	_ = r.receive(t, 0)
+	_, n := pumpReq(t, r.x, r.p, r.skip, func(q xpeerReq) bool { return q.major == 24 })
+	r.x.selClose()
+	r.x.flush()
+	time.Sleep(50 * time.Millisecond)
+	cs := 0
+	for _, q := range since(r.p, r.skip, 24) {
+		cs++
+		_ = q
+	}
+	_ = n
+	require.Equal(t, 1, cs)
+	require.False(t, r.x.sel.timerOn)
+}

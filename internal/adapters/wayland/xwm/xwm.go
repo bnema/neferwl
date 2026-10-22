@@ -429,6 +429,7 @@ func (x *XWM) Close() {
 // CloseConn closes the connection of an XWM that was never attached.
 func (x *XWM) CloseConn() {
 	if !x.closed {
+		x.selClose()
 		x.closed = true
 		_ = x.conn.Close()
 	}
