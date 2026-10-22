@@ -145,7 +145,7 @@ func TestUnmanagedMoveAndLayoutChangeAndUnmap(t *testing.T) {
 	x.SetLayout(layoutOf(out(-100, 0, 100, 100), out(0, 0, 1920, 1080)))
 	x.flush()
 
-	h.EXPECT().OverrideGone(s, false).Once()
+	h.EXPECT().OverrideGone(s).Once()
 	x.feed(t, p, func() { p.unmapNotify(win, false) })
 	require.False(t, x.tab.rec(s).ovPaired)
 }
@@ -158,7 +158,7 @@ func TestUnmanagedDestroyReportsGone(t *testing.T) {
 	h.EXPECT().OverrideMapped(s, uint32(win), uint64(7), 30, 40, 100, 50, false).Once()
 	x.feed(t, p, func() { p.clientMessage(win, p.atom("WL_SURFACE_SERIAL"), 9, 0) })
 	readUntil(t, x, func() bool { return x.tab.rec(s).ovPaired })
-	h.EXPECT().OverrideGone(s, true).Once()
+	h.EXPECT().OverrideGone(s).Once()
 	x.feed(t, p, func() { p.destroyNotify(win) })
 	require.Zero(t, x.tab.lookup(win))
 }
@@ -204,7 +204,7 @@ func TestUnmanagedGeometryAllocations(t *testing.T) {
 	x.SetLayout(layoutOf(out(0, 0, 1920, 1080)))
 	s := x.insert(0x500009)
 	r := x.tab.rec(s)
-	r.kind, r.override, r.mapped, r.ready, r.ovPaired = kindUnmanaged, true, true, true, true
+	r.kind, r.mapped, r.ready, r.ovPaired = kindUnmanaged, true, true, true
 	r.x, r.y, r.w, r.h = 30, 40, 100, 50
 	r.ov = x.layoutRect(r)
 	sinkPeer(t, x, p)
@@ -235,4 +235,13 @@ func TestFocusInUnmanagedAllocations(t *testing.T) {
 	})
 	require.Zero(t, allocs)
 	require.False(t, x.refocus)
+}
+
+func TestDropWindowClearsQueuedOverride(t *testing.T) {
+	x, _, _, _, _ := attached(t)
+	s := x.insert(0x500009)
+	r := x.tab.rec(s)
+	r.kind, r.ovQueued = kindUnmanaged, true
+	x.dropWindow(s)
+	require.False(t, r.ovQueued)
 }

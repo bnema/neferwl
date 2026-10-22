@@ -1,18 +1,13 @@
 package xwm
 
-import (
-	"math"
-
-	"github.com/bnema/neferwl/internal/ports"
-)
+import "github.com/bnema/neferwl/internal/ports"
 
 const maxRegions = 16
 
 // Region is one output's part of the layout and where it is in X space.
-// X = X.Origin + (layout - Layout.Origin) * Scale. Scale is 1 in v1.
+// X = layout - Origin.
 type Region struct {
 	Layout, X ports.Rect // logical layout rect; X rect in X pixels
-	Scale     float64    // 1 in v1; reserved for native resolution
 }
 
 // Space maps layout coordinates (which may be negative) to X coordinates
@@ -20,14 +15,14 @@ type Region struct {
 type Space struct {
 	regions [maxRegions]Region
 	n       int
-	dropped int    // outputs beyond maxRegions in the last Set
-	ox, oy  int    // layout point that is X (0,0)
-	w, h    int    // X screen size: the extents
-	gen     uint32 // bumped on every change
+	dropped int // outputs beyond maxRegions in the last Set
+	ox, oy  int // layout point that is X (0,0)
+	w, h    int // X screen size: the extents
 }
 
-// Gen returns the change counter.
-func (s *Space) Gen() uint32 { return s.gen }
+// Origin is the layout point that is X (0,0): the top-left of the layout
+// extents.
+func (s *Space) Origin() (ox, oy int) { return s.ox, s.oy }
 
 // Dropped is how many outputs of the last Set did not fit.
 func (s *Space) Dropped() int { return s.dropped }
@@ -62,7 +57,6 @@ func (s *Space) Set(l ports.Layout) bool {
 		next.regions[i] = Region{
 			Layout: ports.Rect{X: o.X, Y: o.Y, W: o.Width, H: o.Height},
 			X:      ports.Rect{X: o.X - next.ox, Y: o.Y - next.oy, W: o.Width, H: o.Height},
-			Scale:  1,
 		}
 	}
 	next.w, next.h = maxX-next.ox, maxY-next.oy
@@ -71,7 +65,6 @@ func (s *Space) Set(l ports.Layout) bool {
 		s.dropped = next.dropped
 		return false
 	}
-	next.gen = s.gen + 1
 	*s = next
 	return true
 }
@@ -128,7 +121,7 @@ func (s *Space) ToX(lx, ly int) (x, y int) {
 		return lx, ly
 	}
 	r := &s.regions[i]
-	return r.X.X + scaled(lx-r.Layout.X, r.Scale), r.X.Y + scaled(ly-r.Layout.Y, r.Scale)
+	return r.X.X + lx - r.Layout.X, r.X.Y + ly - r.Layout.Y
 }
 
 // ToLayout converts an X point to layout coordinates.
@@ -138,30 +131,5 @@ func (s *Space) ToLayout(x, y int) (lx, ly int) {
 		return x, y
 	}
 	r := &s.regions[i]
-	return r.Layout.X + unscaled(x-r.X.X, r.Scale), r.Layout.Y + unscaled(y-r.X.Y, r.Scale)
-}
-
-// RegionAtLayout returns the region containing the layout point.
-func (s *Space) RegionAtLayout(lx, ly int) (Region, bool) {
-	for i := 0; i < s.n; i++ {
-		r := s.regions[i].Layout
-		if lx >= r.X && lx < r.X+r.W && ly >= r.Y && ly < r.Y+r.H {
-			return s.regions[i], true
-		}
-	}
-	return Region{}, false
-}
-
-func scaled(v int, sc float64) int {
-	if sc == 1 || sc == 0 {
-		return v
-	}
-	return int(math.Round(float64(v) * sc))
-}
-
-func unscaled(v int, sc float64) int {
-	if sc == 1 || sc == 0 {
-		return v
-	}
-	return int(math.Round(float64(v) / sc))
+	return r.Layout.X + x - r.X.X, r.Layout.Y + y - r.X.Y
 }

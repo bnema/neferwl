@@ -83,13 +83,13 @@ type XWM struct {
 	unpaired   [unpairedCap]struct{ serial, surface uint64 }
 	unpairedN  int
 
-	space       Space  // layout <-> X coordinates
+	space       *Space // layout <-> X coordinates, shared with the host
 	warnedSpace bool   // more outputs than the Space holds, logged once
 	ovDirty     []Slot // mapped unmanaged slots whose geometry changed, capacity == table size
 }
 
 func newXWM(conn *xturbo.Conn, log zerowrap.Logger) *XWM {
-	x := &XWM{conn: conn, log: log, root: conn.Root(), tab: newTable(initialSlots)}
+	x := &XWM{conn: conn, log: log, root: conn.Root(), tab: newTable(initialSlots), space: new(Space)}
 	x.h = xturbo.Handler{OnEvent: x.onEvent, OnReply: x.onReply, OnError: x.onError}
 	x.fit()
 	return x
@@ -362,7 +362,7 @@ func (x *XWM) Close() {
 				x.host.Dissociate(Slot(i+1), true)
 			case r.kind == kindUnmanaged && r.ovPaired:
 				r.ovPaired = false
-				x.host.OverrideGone(Slot(i+1), true)
+				x.host.OverrideGone(Slot(i + 1))
 			}
 		}
 	}

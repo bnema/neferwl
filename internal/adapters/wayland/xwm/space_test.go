@@ -47,32 +47,14 @@ func TestSpaceLayouts(t *testing.T) {
 	}
 }
 
-func TestSpaceHoleAndRegion(t *testing.T) {
-	var s Space
-	s.Set(ports.Layout{out(0, 0, 100, 100), out(300, 0, 100, 100)})
-	if _, ok := s.RegionAtLayout(200, 50); ok {
-		t.Fatal("hole must have no region")
-	}
-	r, ok := s.RegionAtLayout(350, 50)
-	if !ok || r.X.X != 300 {
-		t.Fatalf("region = %+v %v", r, ok)
-	}
-}
-
-func TestSpaceGenAndEmpty(t *testing.T) {
+func TestSpaceEmptyAndOrigin(t *testing.T) {
 	var s Space
 	if x, y := s.ToX(5, 6); x != 5 || y != 6 {
 		t.Fatalf("empty ToX = %d,%d", x, y)
 	}
-	s.Set(ports.Layout{out(0, 0, 10, 10)})
-	g := s.Gen()
-	s.Set(ports.Layout{out(0, 0, 10, 10)})
-	if s.Gen() != g {
-		t.Fatal("gen bumped without change")
-	}
-	s.Set(ports.Layout{out(5, 0, 10, 10)})
-	if s.Gen() == g {
-		t.Fatal("gen not bumped")
+	s.Set(ports.Layout{out(-640, -20, 640, 480), out(0, 0, 1920, 1080)})
+	if ox, oy := s.Origin(); ox != -640 || oy != -20 {
+		t.Fatalf("origin = %d,%d", ox, oy)
 	}
 }
 
@@ -102,7 +84,8 @@ func TestSpaceAllocations(t *testing.T) {
 		s.Set(l)
 		x, y := s.ToX(-600, 10)
 		x, y = s.ToLayout(x, y)
-		_, _ = s.RegionAtLayout(x, y)
+		_, _ = x, y
+		_, _ = s.Origin()
 		_, _ = s.Size()
 	})
 	if n != 0 {

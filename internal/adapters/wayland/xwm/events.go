@@ -173,9 +173,9 @@ func (x *XWM) onCreateNotify(ev *xturbo.Event) {
 		return
 	}
 	r := x.tab.rec(s)
-	r.override = e.OverrideRedirect()
+	override := e.OverrideRedirect()
 	r.x, r.y, r.w, r.h = int32(e.X()), int32(e.Y()), uint32(e.Width()), uint32(e.Height())
-	if r.override {
+	if override {
 		r.kind = kindUnmanaged
 		x.stats.UnmanagedSeen++
 		return
@@ -237,7 +237,6 @@ func (x *XWM) onAttrReply(rec *record, r *xturbo.Reply) {
 		return
 	}
 	if a.OverrideRedirect() {
-		rec.override = true
 		rec.kind = kindUnmanaged
 		rec.mapped = a.MapState() == xproto.MapStateViewable
 		x.stats.UnmanagedSeen++

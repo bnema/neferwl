@@ -68,7 +68,7 @@ func (x *XWM) overrideUnmapped(s Slot, rec *record) {
 	}
 	if rec.ovPaired {
 		rec.ovPaired = false
-		x.host.OverrideGone(s, false)
+		x.host.OverrideGone(s)
 	}
 }
 

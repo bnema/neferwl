@@ -97,6 +97,7 @@ func (xwaylandSurface) Destroy(*xwaylandshell.XwaylandSurfaceV1) {}
 func (s *Server) installXWM(x *xwm.XWM) {
 	s.teardownXWM()
 	s.xwm = x
+	x.UseSpace(&s.xspace)
 	if err := x.Attach(s.display, hostImpl{s}); err != nil {
 		s.log.Warn().Err(err).Msg("X11 window management disabled")
 		s.xwm = nil
@@ -109,7 +110,7 @@ func (s *Server) installXWM(x *xwm.XWM) {
 			x.SetSerial(surf.identity, surf.x11Serial)
 		}
 	}
-	x.SetLayout(s.outputPlaces)
+	x.LayoutChanged(true)
 }
 
 // teardownXWM closes the window manager, dropping its windows. Idempotent.
@@ -329,7 +330,7 @@ func (h hostImpl) OverrideMapped(slot xwm.Slot, xid uint32, surfaceID uint64, x,
 		return
 	}
 	if old := s.x11Slots[slot]; old != nil {
-		h.OverrideGone(slot, true)
+		h.OverrideGone(slot)
 	}
 	win := &window{id: s.nextWindow}
 	win.x11 = &x11Window{server: s, slot: slot, xid: xid, override: true, noInput: noInput, rect: ports.Rect{X: x, Y: y, W: w, H: h2}}
@@ -372,7 +373,7 @@ func (h hostImpl) OverrideMoved(slot xwm.Slot, x, y, w, h2 int) {
 }
 
 // OverrideGone ends an override window: unmapped, or destroyed.
-func (h hostImpl) OverrideGone(slot xwm.Slot, destroyed bool) {
+func (h hostImpl) OverrideGone(slot xwm.Slot) {
 	s := h.s
 	win := s.x11Slots[slot]
 	if win == nil || win.x11 == nil || !win.x11.override {

@@ -92,25 +92,10 @@ func (o *output) sendXDG(x *xdgoutput.ZxdgOutputV1, withName bool) {
 	}
 }
 
-// xOrigin is the layout point that is X (0,0): the top-left of the layout
-// extents, so every X coordinate is non-negative. A plain copy of the
-// xwm.Space rule at scale 1 until that type merges.
-func (s *Server) xOrigin() (ox, oy int) {
-	for i, p := range s.outputPlaces {
-		if i == 0 || p.X < ox {
-			ox = p.X
-		}
-		if i == 0 || p.Y < oy {
-			oy = p.Y
-		}
-	}
-	return ox, oy
-}
-
 // sendXDGX sends the private xdg-output state: the layout position moved to
 // X space and the logical size.
 func (o *output) sendXDGX(s *Server, x *xdgoutput.ZxdgOutputV1, withName bool) {
-	ox, oy := s.xOrigin()
+	ox, oy := s.xspace.Origin()
 	x.SendLogicalPosition(int32(o.place.X-ox), int32(o.place.Y-oy))
 	x.SendLogicalSize(int32(o.place.Width), int32(o.place.Height))
 	if withName && x.Version() >= 2 {
@@ -210,8 +195,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	changed := !slices.Equal(s.outputPlaces, c.Outputs)
 	focusChanged := s.focusedOutput != c.Focused
 	s.outputPlaces = append(domain.Layout(nil), c.Outputs...)
+	xChanged := s.xspace.Set(s.outputPlaces)
 	if s.xwm != nil {
-		s.xwm.SetLayout(s.outputPlaces)
+		s.xwm.LayoutChanged(xChanged)
 	}
 	defer func() {
 		if changed {

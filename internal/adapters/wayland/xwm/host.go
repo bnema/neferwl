@@ -46,8 +46,8 @@ type host interface {
 	OverrideMapped(slot Slot, xid uint32, surfaceID uint64, x, y, w, h int, noInput bool)
 	// OverrideMoved reports a changed layout rect of a mapped override window.
 	OverrideMoved(slot Slot, x, y, w, h int)
-	// OverrideGone ends a mapped override window: unmapped, or destroyed.
-	OverrideGone(slot Slot, destroyed bool)
+	// OverrideGone ends a mapped override window: unmapped or destroyed.
+	OverrideGone(slot Slot)
 }
 
 // fdSource is the display's event source for the X socket (*server.Source).

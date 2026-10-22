@@ -42,9 +42,9 @@ type record struct {
 	gen  uint16 // bumped on insert; stale Expect replies are told apart by it
 
 	// X state
-	override, mapped, mapping, ready bool
-	x, y                             int32
-	w, h                             uint32
+	mapped, mapping, ready bool
+	x, y                   int32
+	w, h                   uint32
 
 	// properties
 	pending                        uint16 // propMask bits still awaited

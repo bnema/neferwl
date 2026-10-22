@@ -256,9 +256,8 @@ func (x *XWM) onReparentNotify(ev *xturbo.Event) {
 		return
 	}
 	rec := x.tab.rec(s)
-	rec.override = e.OverrideRedirect()
 	rec.x, rec.y = int32(e.X()), int32(e.Y())
-	if rec.override {
+	if e.OverrideRedirect() {
 		rec.kind = kindUnmanaged
 		x.stats.UnmanagedSeen++
 		return
@@ -348,7 +347,7 @@ func (x *XWM) SurfaceGone(surfaceID uint64) {
 			r.surface = 0
 			if r.kind == kindUnmanaged && r.ovPaired {
 				r.ovPaired = false
-				x.host.OverrideGone(Slot(i+1), false)
+				x.host.OverrideGone(Slot(i + 1))
 			}
 		}
 	}

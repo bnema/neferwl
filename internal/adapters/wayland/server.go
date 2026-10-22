@@ -300,6 +300,7 @@ xdgPublic, xdgPrivate *server.Global
 	workspaceIDs      *workspaceid.IDs
 	outputHeads       domain.OutputHeads
 	outputPlaces      domain.Layout
+	xspace            xwm.Space // the one layout <-> X mapping, shared with the XWM
 	managementSerial  uint32
 	nextOutputApply   uint64
 	outputReplies     map[uint64]*outputConfiguration

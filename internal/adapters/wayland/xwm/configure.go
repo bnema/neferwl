@@ -106,7 +106,19 @@ func (x *XWM) SetLayout(l ports.Layout) {
 	if x.closed {
 		return
 	}
-	changed := x.space.Set(l)
+	x.LayoutChanged(x.space.Set(l))
+}
+
+// UseSpace makes sp the coordinate mapping, owned by the host, which calls
+// Set on it and then LayoutChanged. Call before Attach.
+func (x *XWM) UseSpace(sp *Space) { x.space = sp }
+
+// LayoutChanged repositions windows after the shared Space was set; changed
+// is Set's result. Display goroutine only.
+func (x *XWM) LayoutChanged(changed bool) {
+	if x.closed {
+		return
+	}
 	if n := x.space.Dropped(); n > 0 && !x.warnedSpace {
 		x.warnedSpace = true
 		x.log.Warn().Int("dropped", n).Int("max", maxRegions).Msg("more outputs than the X11 layout holds, extra outputs ignored")

@@ -158,6 +158,9 @@ func (x *XWM) removeClient(xid uint32) {
 // queue when it stops being mapped (unmap, destroy). It is idempotent.
 func (x *XWM) dropWindow(s Slot) {
 	r := x.tab.rec(s)
+	if r != nil {
+		r.ovQueued = false // a reused slot must not inherit a queued report
+	}
 	if r == nil || r.kind != kindManaged {
 		return
 	}
@@ -183,7 +186,7 @@ func (x *XWM) forgetWindow(s Slot) {
 	x.dropWindow(s)
 	if r.kind == kindUnmanaged && r.ovPaired && x.host != nil {
 		r.ovPaired = false
-		x.host.OverrideGone(s, true)
+		x.host.OverrideGone(s)
 	}
 	if r.kind == kindManaged && r.id != 0 && x.host != nil {
 		r.id = 0

@@ -132,3 +132,12 @@ func TestGlobalFilterAllocations(t *testing.T) {
 		t.Errorf("globalVisible: %.1f allocs, want 0", allocs)
 	}
 }
+
+// The X origin is derived by one Space, kept without a window manager.
+func TestXSpaceFollowsLayoutWithoutXWM(t *testing.T) {
+	r := newX11Rig(t)
+	applyOutputs(t, r.s, r.commands, twoOutputs(-1920))
+	if ox, oy := r.s.xspace.Origin(); ox != -1920 || oy != 0 {
+		t.Fatalf("origin %d,%d, want -1920,0", ox, oy)
+	}
+}
