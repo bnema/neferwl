@@ -28,6 +28,12 @@ func xwaylandRestricted(iface string) bool {
 // globalVisible is the display's global filter: the Xwayland-only globals
 // are visible to, and bindable by, the Xwayland client alone.
 func (s *Server) globalVisible(c server.Client, g *server.Global) bool {
+	if g == s.xdgPrivate {
+		return s.xwayland.client != (server.Client{}) && c == s.xwayland.client
+	}
+	if g == s.xdgPublic {
+		return c != s.xwayland.client
+	}
 	if xwaylandRestricted(g.Interface()) {
 		return s.xwayland.client != (server.Client{}) && c == s.xwayland.client
 	}

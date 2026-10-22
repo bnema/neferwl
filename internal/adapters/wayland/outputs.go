@@ -43,6 +43,8 @@ type output struct {
 	global     *server.Global
 	resources  []*wayland.Output
 	xdgOutputs []*xdgoutput.ZxdgOutputV1
+	// xdgOutputsX are the private xdg-outputs of the Xwayland client (X space).
+	xdgOutputsX []*xdgoutput.ZxdgOutputV1
 }
 
 func (o *output) name() string { return o.place.Info.Name }
@@ -87,6 +89,51 @@ func (o *output) sendXDG(x *xdgoutput.ZxdgOutputV1, withName bool) {
 	if withName && x.Version() >= 2 {
 		x.SendName(o.name())
 		x.SendDescription(o.description())
+	}
+}
+
+// xOrigin is the layout point that is X (0,0): the top-left of the layout
+// extents, so every X coordinate is non-negative. A plain copy of the
+// xwm.Space rule at scale 1 until that type merges.
+func (s *Server) xOrigin() (ox, oy int) {
+	for i, p := range s.outputPlaces {
+		if i == 0 || p.X < ox {
+			ox = p.X
+		}
+		if i == 0 || p.Y < oy {
+			oy = p.Y
+		}
+	}
+	return ox, oy
+}
+
+// sendXDGX sends the private xdg-output state: the layout position moved to
+// X space and the logical size.
+func (o *output) sendXDGX(s *Server, x *xdgoutput.ZxdgOutputV1, withName bool) {
+	ox, oy := s.xOrigin()
+	x.SendLogicalPosition(int32(o.place.X-ox), int32(o.place.Y-oy))
+	x.SendLogicalSize(int32(o.place.Width), int32(o.place.Height))
+	if withName && x.Version() >= 2 {
+		x.SendName(o.name())
+		x.SendDescription(o.description())
+	}
+}
+
+// republishXDGX resends every private xdg-output after a layout change, so
+// Xwayland resizes the root and its RandR outputs.
+func (s *Server) republishXDGX() {
+	for _, o := range s.outputs {
+		for _, x := range o.xdgOutputsX {
+			o.sendXDGX(s, x, false)
+			if x.Version() < 3 {
+				x.SendDone()
+			}
+		}
+		for _, r := range o.resources {
+			if r.Client() == s.xwayland.client && r.Version() >= 2 {
+				r.SendDone()
+			}
+		}
 	}
 }
 
@@ -245,6 +292,9 @@ func (s *Server) setOutputs(c ports.SetOutputs) {
 	for _, surf := range s.surfaces {
 		surf.sendScale()
 	}
+	if changed {
+		s.republishXDGX()
+	}
 	s.notifyColorFeedback()
 	// Layer surfaces sized from the output follow its new logical size.
 	adopted := false
@@ -280,10 +330,42 @@ type outputHandler struct{}
 
 func (outputHandler) Release(*wayland.Output) {}
 
+// registerXDGOutput registers the public zxdg_output_manager_v1 and a second,
+// private one for Xwayland whose outputs are in X space (see globalVisible).
 func registerXDGOutput(d *server.Display, s *Server) error {
-	return xdgoutput.NewZxdgOutputManagerV1Global(d, 3, func(c server.Client, v, id uint32) {
+	var err error
+	s.xdgPublic, err = d.AddGlobal(xdgoutput.ZxdgOutputManagerV1Interface, 3, func(c server.Client, v, id uint32) {
 		_, _ = xdgoutput.NewZxdgOutputManagerV1(c, int32(v), id, xdgOutputManager{s})
 	})
+	if err != nil {
+		return err
+	}
+	s.xdgPrivate, err = d.AddGlobal(xdgoutput.ZxdgOutputManagerV1Interface, 3, func(c server.Client, v, id uint32) {
+		_, _ = xdgoutput.NewZxdgOutputManagerV1(c, int32(v), id, xdgOutputManagerX{s})
+	})
+	return err
+}
+
+type xdgOutputManagerX struct{ server *Server }
+
+func (xdgOutputManagerX) Destroy(*xdgoutput.ZxdgOutputManagerV1) {}
+func (m xdgOutputManagerX) GetXdgOutput(r *xdgoutput.ZxdgOutputManagerV1, id uint32, wl *wayland.Output) {
+	x, err := xdgoutput.NewZxdgOutputV1(r.Client(), r.Version(), id, xdgOutput{})
+	if err != nil {
+		return
+	}
+	o := m.server.outputOf(wl)
+	if o == nil {
+		return
+	}
+	o.xdgOutputsX = append(o.xdgOutputsX, x)
+	x.OnDestroy = func() { o.xdgOutputsX = removeItem(o.xdgOutputsX, x) }
+	o.sendXDGX(m.server, x, true)
+	if r.Version() < 3 || wl.Version() < 2 {
+		x.SendDone()
+	} else {
+		wl.SendDone()
+	}
 }
 
 type xdgOutputManager struct{ server *Server }

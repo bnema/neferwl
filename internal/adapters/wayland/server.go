@@ -182,6 +182,7 @@ type Server struct {
 	xwayland        xwaylandClient
 	xwm             *xwm.XWM
 	x11Slots        map[xwm.Slot]*window
+xdgPublic, xdgPrivate *server.Global
 	// awaiting holds frame callbacks by output name, due at its next
 	// frame (frameDue, or its page flip).
 	awaiting    map[string][]*wayland.Callback
