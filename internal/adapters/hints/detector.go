@@ -283,6 +283,24 @@ func (d *procDetector) cmd() *exec.Cmd {
 	return exec.Command(d.command, args...)
 }
 
+// interruptOnDeadline binds both callbacks to this process only. Stopping joins
+// any callback that already started, so its result can never be accepted.
+func interruptOnDeadline(ctx context.Context, timeout time.Duration, p *process) func() (timedOut, canceled bool) {
+	timerDone, contextDone := make(chan struct{}), make(chan struct{})
+	timer := time.AfterFunc(timeout, func() { defer close(timerDone); p.interrupt() })
+	stop := context.AfterFunc(ctx, func() { defer close(contextDone); p.interrupt() })
+	return func() (bool, bool) {
+		timedOut, canceled := !timer.Stop(), !stop()
+		if timedOut {
+			<-timerDone
+		}
+		if canceled {
+			<-contextDone
+		}
+		return timedOut, canceled
+	}
+}
+
 func (d *procDetector) start(ctx context.Context) error {
 	log := logging.For(ctx, "hints")
 	cmd := d.cmd()
@@ -311,12 +329,10 @@ func (d *procDetector) start(ctx context.Context) error {
 	}
 	p := &process{cmd: cmd, in: inW, out: outR, rd: bufio.NewReaderSize(outR, 1<<16)}
 	t0 := time.Now()
-	timer := time.AfterFunc(d.helloTimeout, p.interrupt)
-	stop := context.AfterFunc(ctx, p.interrupt)
+	stop := interruptOnDeadline(ctx, d.helloTimeout, p)
 	device, err := readHello(p.rd)
-	stop()
-	timedOut := !timer.Stop()
-	if err != nil {
+	timedOut, canceled := stop()
+	if err != nil || timedOut || canceled {
 		p.kill()
 		if ctx.Err() != nil {
 			err = ctx.Err()
@@ -338,11 +354,16 @@ func (d *procDetector) Detect(ctx context.Context, f detFrame) ([]detection, err
 	}
 	p := d.proc
 	d.seq++
-	timer := time.AfterFunc(d.reqTimeout, p.interrupt)
-	stop := context.AfterFunc(ctx, p.interrupt)
+	stop := interruptOnDeadline(ctx, d.reqTimeout, p)
 	dets, err := d.roundTrip(p, f)
-	stop()
-	timedOut := !timer.Stop()
+	timedOut, canceled := stop()
+	if timedOut || canceled {
+		d.drop()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("hints: detector timed out after %s", d.reqTimeout)
+	}
 	if err == nil {
 		return dets, nil
 	}

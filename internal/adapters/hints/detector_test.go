@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -270,4 +271,65 @@ func TestDetectorCloseClosesOutput(t *testing.T) {
 	_, err = p.out.Read(make([]byte, 1))
 	require.ErrorIs(t, err, os.ErrClosed)
 	require.NoError(t, d.Close())
+}
+
+// A complete buffered response must not override an already launched context
+// callback, including a detector-reported error that normally keeps the child.
+func TestDetectorCanceledBufferedResponse(t *testing.T) {
+	for _, status := range []uint32{0, 1} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			d, l := childDetector(t, "close")
+			require.NoError(t, d.start(context.Background()))
+			conn, err := l.Accept()
+			require.NoError(t, err)
+			defer conn.Close()
+			p := d.proc
+			response := cat([]byte("NHRS"), u32(1), u64(1), u32(status))
+			if status == 0 {
+				response = cat(response, f32(0), u32(0))
+			} else {
+				response = cat(response, u32(3), []byte("bad"))
+			}
+			p.rd.Reset(bytes.NewReader(response))
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			_, err = d.Detect(ctx, detFrame{width: 1, height: 1, stride: 4, m: &mapping{b: make([]byte, 4)}})
+			require.ErrorIs(t, err, context.Canceled)
+			require.Nil(t, d.proc)
+			require.True(t, p.reaped)
+		})
+	}
+}
+
+func TestInterruptDeadlineBoundary(t *testing.T) {
+	for _, cancelContext := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancelContext), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				inR, inW, err := os.Pipe()
+				require.NoError(t, err)
+				defer inR.Close()
+				outR, outW, err := os.Pipe()
+				require.NoError(t, err)
+				defer outW.Close()
+				// Already reaped: only the real pipe endpoints remain to interrupt.
+				p := &process{in: inW, out: outR, reaped: true}
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				stop := interruptOnDeadline(ctx, time.Second, p)
+				if cancelContext {
+					cancel()
+				} else {
+					time.Sleep(time.Second)
+				}
+				synctest.Wait()
+				timedOut, canceled := stop()
+				require.Equal(t, !cancelContext, timedOut)
+				require.Equal(t, cancelContext, canceled)
+				_, err = inW.Write([]byte{1})
+				require.ErrorIs(t, err, os.ErrClosed)
+				_, err = outR.Read(make([]byte, 1))
+				require.ErrorIs(t, err, os.ErrClosed)
+			})
+		})
+	}
 }
