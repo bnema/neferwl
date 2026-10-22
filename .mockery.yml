@@ -44,6 +44,11 @@ packages:
           dir: internal/adapters/drm
           pkgname: drm
           filename: image_buffer_mock_test.go
+      cursorImages:
+        config:
+          dir: internal/adapters/drm
+          pkgname: drm
+          filename: cursor_images_mock_test.go
   github.com/bnema/neferwl/internal/adapters/seat:
     interfaces:
       disabler:

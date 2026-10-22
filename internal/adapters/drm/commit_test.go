@@ -55,9 +55,10 @@ func TestBusyFrameCommitsAfterEvent(t *testing.T) {
 func TestCursorImageNeverOverwritesScreen(t *testing.T) {
 	o, _, _ := testOutput(t)
 	c := o.cursor
-	r := portsmocks.NewMockRenderer(t)
+	imgs := newMockcursorImages(t)
+	c.imgs = imgs
 	var written []int
-	r.EXPECT().WriteCursor(mock.Anything, mock.Anything, 1, 1).RunAndReturn(func(i int, _ []byte, _, _ int) error {
+	imgs.EXPECT().write(mock.Anything, mock.Anything, 1, 1, float64(0)).RunAndReturn(func(i int, _ []byte, _, _ int, _ float64) error {
 		written = append(written, i)
 		return nil
 	})
@@ -65,7 +66,7 @@ func TestCursorImageNeverOverwritesScreen(t *testing.T) {
 	// Image 0 on screen: two changes before a commit both go to image 1.
 	c.screen, c.cur, c.image = 90, 0, true
 	for range 2 {
-		if err := c.setImage(r, px, 1, 1, 0, 0); err != nil {
+		if err := c.setImage(px, 1, 1, 0, 0, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -74,12 +75,12 @@ func TestCursorImageNeverOverwritesScreen(t *testing.T) {
 	}
 	// Image 1 in flight, image 0 on screen: nothing is free.
 	c.committed(cursorState{on: true, fb: 91})
-	if err := c.setImage(r, px, 1, 1, 0, 0); err != nil || len(written) != 2 || c.later == nil {
+	if err := c.setImage(px, 1, 1, 0, 0, 0); err != nil || len(written) != 2 || c.later == nil {
 		t.Fatalf("wrote a busy image: %v %v", err, written)
 	}
 	// The flip frees image 0.
 	c.landed()
-	if changed, err := c.flushLater(r); !changed || err != nil || len(written) != 3 || written[2] != 0 || c.cur != 0 {
+	if changed, err := c.flushLater(0); !changed || err != nil || len(written) != 3 || written[2] != 0 || c.cur != 0 {
 		t.Fatalf("after flip: %v %v %v cur %d", changed, err, written, c.cur)
 	}
 }
@@ -464,7 +465,7 @@ func TestCursorOffSkipsLoads(t *testing.T) {
 	o, _, _ := testOutput(t)
 	o.cursor.off = true
 	loaded := false
-	o.setCursor(nil, func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
+	o.setCursor(func(ports.CursorChange, float64, ports.BufferTransform, int) (ports.CursorImage, error) {
 		loaded = true
 		return ports.CursorImage{}, nil
 	}, ports.CursorChange{}, 1, 0)
@@ -497,6 +498,7 @@ func runReportsSeenAfterCursorCommit(t *testing.T) {
 	r.EXPECT().UseTarget(mock.Anything).Return()
 	r.EXPECT().Render(mock.Anything, mock.Anything).Return(nil, nil)
 	r.EXPECT().Close().Return().Once()
+	k.EXPECT().createDumb(64, 64).Return(dumbBuffer{}, unix.ENOSYS).Once() // renderer images
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(90, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccARGB)).Return(91, nil).Once()
 	k.EXPECT().addFB(mock.Anything, uint32(fourccXRGB)).Return(70, nil).Twice()

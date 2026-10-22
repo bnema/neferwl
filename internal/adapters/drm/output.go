@@ -579,18 +579,44 @@ func (o *Output) modeBlobFor(mode modeInfo) (uint32, error) {
 	return blob, nil
 }
 
-// testCursor turns the hardware cursor off when KMS refuses its images on
-// the cursor plane (e.g. a pitch the plane cannot scan out).
-func (o *Output) testCursor() {
+// testCursor asks KMS whether the cursor plane takes the cursor images.
+// Refused dumb images are replaced by the renderer's; when those are refused
+// too, or there are none, the hardware cursor goes off. It reports whether
+// the cursor changed (new images or off).
+func (o *Output) testCursor() (changed bool) {
 	c := o.cursor
 	if c == nil || c.off || c.fbs[0] == 0 {
-		return
+		return false
 	}
-	req := &atomicReq{}
-	c.props(req, o.crtc, cursorState{on: true, fb: c.fbs[0]})
-	if err := o.k.commit(req, atomicTestOnly, 0); refused(err) {
-		o.cursorOff(err)
+	for {
+		req := &atomicReq{}
+		c.props(req, o.crtc, cursorState{on: true, fb: c.fbs[0]})
+		err := o.k.commit(req, atomicTestOnly, 0)
+		if !refused(err) {
+			return changed
+		}
+		// Dumb images refused: the renderer's get one try.
+		if c.alloc != allocDumb {
+			o.cursorOff(err)
+			return true
+		}
+		ok, ferr := c.useFallback(o.cursorNits())
+		if !ok || ferr != nil {
+			o.cursorOff(errors.Join(err, ferr))
+			return true
+		}
+		changed = true
+		o.log.Warn().Err(err).Str("connector", o.conn.name).Str("alloc", allocVulkan).Int("size", c.size).Msg("cursor plane refused dumb images; hardware cursor uses renderer images")
 	}
+}
+
+// cursorNits is the SDR white the cursor images are converted for on an HDR
+// output (0: SDR).
+func (o *Output) cursorNits() float64 {
+	if !o.hdr.on {
+		return 0
+	}
+	return float64(o.hdr.settings.SDRBrightness)
 }
 
 // cursorOff stops using the cursor plane for the rest of the output's life.
@@ -797,11 +823,10 @@ func (o *Output) frameTest(fb uint32, fence *os.File, vrr bool, cur cursorState,
 }
 
 // cursorRefused reports, after a commit carrying the cursor failed with
-// EINVAL, whether the cursor plane was the cause; then the cursor is off
-// and the commit can be retried without it.
+// EINVAL, whether the cursor plane was the cause; then the cursor is off or
+// on other images, and the commit can be retried.
 func (o *Output) cursorRefused() bool {
-	o.testCursor()
-	return o.cursor.off
+	return o.testCursor()
 }
 
 // commitState commits a cursor or VRR change without a new frame.
@@ -1042,7 +1067,7 @@ func (o *Output) Close() {
 		o.ctmBlob = 0
 	}
 	if o.cursor != nil {
-		o.cursor.free(o.k)
+		o.cursor.free()
 	}
 	o.freeImages()
 	if o.alloc != nil {
@@ -1086,9 +1111,15 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 	}
 	defer r.Close()
 	if o.cursor != nil {
-		if err := o.cursor.setup(o.k, r); err != nil {
+		dumbErr, err := o.cursor.setup(o.k, r)
+		switch {
+		case err != nil:
 			o.cursor.off = true
-			o.log.Warn().Err(err).Str("connector", o.conn.name).Msg("no hardware cursor images; hardware cursor off")
+			o.log.Warn().Err(errors.Join(dumbErr, err)).Str("connector", o.conn.name).Msg("no hardware cursor images; hardware cursor off")
+		case dumbErr != nil:
+			o.log.Warn().Err(dumbErr).Str("connector", o.conn.name).Str("alloc", o.cursor.alloc).Int("size", o.cursor.size).Msg("hardware cursor")
+		default:
+			o.log.Info().Str("connector", o.conn.name).Str("alloc", o.cursor.alloc).Int("size", o.cursor.size).Msg("hardware cursor")
 		}
 	}
 	// The seat sends its state first; while switched away (e.g. a monitor
@@ -1463,7 +1494,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			stateDirty = true
 			if o.cursor != nil && !o.protected {
 				// An image that waited for a free slot loads now.
-				if _, err := o.cursor.flushLater(r); err != nil {
+				if _, err := o.cursor.flushLater(o.cursorNits()); err != nil {
 					o.log.Warn().Err(err).Msg("cursor")
 				}
 			}
@@ -1484,7 +1515,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			}
 			if !o.protected && o.cursor != nil && loadCursor != nil && (s.Scale != cursorScale || s.Transform != cursorTransform) {
 				cursorScale, cursorTransform = s.Scale, s.Transform
-				o.setCursor(r, loadCursor, want, s.Scale, s.Transform)
+				o.setCursor(loadCursor, want, s.Scale, s.Transform)
 				stateDirty = true
 			}
 			scene, haveScene, dirty = s, true, true
@@ -1499,7 +1530,7 @@ func (o *Output) Run(ctx context.Context, newRenderer func(w, h int) (ports.Rend
 			want = c
 			// Before the first scene the scale is unknown: loaded then.
 			if o.cursor != nil && loadCursor != nil && cursorScale > 0 {
-				o.setCursor(r, loadCursor, want, cursorScale, cursorTransform)
+				o.setCursor(loadCursor, want, cursorScale, cursorTransform)
 				stateDirty = true
 			}
 		case b := <-contents:
@@ -1736,14 +1767,14 @@ func (o *Output) wakeCore() { corewake.Send(o.Frames, o.conn.name) }
 
 // setCursor loads a cursor for scale and output transform t into the cursor
 // images.
-func (o *Output) setCursor(r ports.Renderer, load CursorLoader, c ports.CursorChange, scale float64, t ports.BufferTransform) {
+func (o *Output) setCursor(load CursorLoader, c ports.CursorChange, scale float64, t ports.BufferTransform) {
 	o.observeSecurity()
 	if o.protected || o.cursor.off {
 		return
 	}
 	img, err := load(c, scale, t, o.cursor.Limit())
 	if err == nil {
-		err = o.cursor.setImage(r, img.Pixels, img.W, img.H, img.HotX, img.HotY)
+		err = o.cursor.setImage(img.Pixels, img.W, img.H, img.HotX, img.HotY, o.cursorNits())
 	}
 	if err != nil {
 		o.log.Warn().Err(err).Float64("scale", scale).Int("transform", int(t)).Msg("cursor")

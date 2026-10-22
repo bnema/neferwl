@@ -31,14 +31,24 @@ type Cursor struct {
 	wake  chan struct{}
 
 	// Owned by the output goroutine.
-	plane      *plane
-	size       int
-	fbs        [2]uint32 // the two images; cur is on screen or next
+	plane *plane
+	size  int
+	// imgs are the two images (nil: none), alloc says who allocated them
+	// (allocDumb or allocVulkan) and fallback makes the renderer's images
+	// when KMS refuses the dumb ones. fbs mirrors their framebuffers; cur
+	// is on screen or next.
+	imgs       cursorImages
+	alloc      string
+	fallback   func() (cursorImages, error)
+	fbs        [2]uint32
 	cur        int
 	image      bool // an image is loaded
 	hotX, hotY int
-	applied    cursorState // what the last commit put on the plane
-	commits    int
+	// last is a copy of the loaded image, written again into new images
+	// when the allocator changes.
+	last    laterImage
+	applied cursorState // what the last commit put on the plane
+	commits int
 	// screen is the image the plane scans out (0: none); flight is what
 	// the pending commit puts on it when flying. An image is written only
 	// when it is neither, so the plane never shows a half-written image.
@@ -111,37 +121,70 @@ func (c *Cursor) poke() {
 	}
 }
 
-// setup allocates the two cursor images and their framebuffers.
-func (c *Cursor) setup(k kms, r ports.Renderer) error {
-	bufs, err := r.CursorBuffers(c.size)
+// setup allocates the two cursor images and their framebuffers: KMS dumb
+// buffers first, then the renderer's images. dumbErr is why the dumb buffers
+// were not used (nil when they are); err is set when no images exist.
+func (c *Cursor) setup(k kms, r ports.Renderer) (dumbErr, err error) {
+	c.fallback = func() (cursorImages, error) { return newRendererCursor(k, r, c.size) }
+	d, dumbErr := newDumbCursor(k, c.size)
+	if dumbErr == nil {
+		c.install(d, allocDumb)
+		return nil, nil
+	}
+	imgs, err := c.fallback()
 	if err != nil {
-		return err
+		return dumbErr, err
 	}
-	for i := range bufs {
-		if err == nil {
-			c.fbs[i], err = k.addFB(&bufs[i], fourccARGB)
-		}
-		for _, p := range bufs[i].Planes {
-			p.File.Close()
-		}
+	c.install(imgs, allocVulkan)
+	return dumbErr, nil
+}
+
+// install makes imgs the cursor images; none is on screen or in flight.
+func (c *Cursor) install(imgs cursorImages, alloc string) {
+	c.imgs, c.alloc = imgs, alloc
+	for i := range c.fbs {
+		c.fbs[i] = imgs.fb(i)
 	}
+	c.cur = 0
+	c.screen, c.flight, c.flying, c.applied = 0, cursorState{}, false, cursorState{}
+}
+
+// useFallback replaces refused dumb images with the renderer's and writes
+// the current image into them. It reports false when it cannot: no fallback,
+// already used, or no images either.
+func (c *Cursor) useFallback(hdrNits float64) (bool, error) {
+	if c.alloc != allocDumb || c.fallback == nil {
+		return false, nil
+	}
+	imgs, err := c.fallback()
 	if err != nil {
-		c.free(k)
+		return false, err
 	}
-	return err
+	c.imgs.close()
+	c.install(imgs, allocVulkan)
+	l := c.later
+	if l == nil && c.image {
+		l = &c.last
+	}
+	c.image, c.later = false, nil
+	if l == nil {
+		return true, nil
+	}
+	return true, c.setImage(l.pixels, l.w, l.h, l.hotX, l.hotY, hdrNits)
 }
 
 // setImage loads premultiplied ARGB8888 pixels into an image neither on
 // screen nor in flight; when there is none it waits for the next commit
 // event (flushLater). An empty image hides the cursor (a client asked for
 // none).
-func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int) error {
+// hdrNits is the SDR white of an HDR output (0: SDR).
+func (c *Cursor) setImage(pixels []byte, w, h, hotX, hotY int, hdrNits float64) error {
 	c.later = nil
 	if w <= 0 || h <= 0 || len(pixels) < w*h*4 {
 		c.image = false
 		return nil
 	}
-	if c.fbs[0] == 0 {
+	if c.imgs == nil {
 		return errors.New("no cursor images")
 	}
 	next := c.freeSlot()
@@ -149,10 +192,11 @@ func (c *Cursor) setImage(r ports.Renderer, pixels []byte, w, h, hotX, hotY int)
 		c.later = &laterImage{pixels: slices.Clone(pixels[:w*h*4]), w: w, h: h, hotX: hotX, hotY: hotY}
 		return nil
 	}
-	if err := r.WriteCursor(next, pixels, w, h); err != nil {
+	if err := c.imgs.write(next, pixels, w, h, hdrNits); err != nil {
 		return err
 	}
 	c.cur, c.image, c.hotX, c.hotY = next, true, hotX, hotY
+	c.last = laterImage{pixels: append(c.last.pixels[:0], pixels[:w*h*4]...), w: w, h: h, hotX: hotX, hotY: hotY}
 	return nil
 }
 
@@ -169,12 +213,12 @@ func (c *Cursor) freeSlot() int {
 
 // flushLater loads an image that waited for a free slot. It reports
 // whether the cursor changed.
-func (c *Cursor) flushLater(r ports.Renderer) (bool, error) {
+func (c *Cursor) flushLater(hdrNits float64) (bool, error) {
 	l := c.later
 	if l == nil || c.freeSlot() < 0 {
 		return false, nil
 	}
-	return true, c.setImage(r, l.pixels, l.w, l.h, l.hotX, l.hotY)
+	return true, c.setImage(l.pixels, l.w, l.h, l.hotX, l.hotY, hdrNits)
 }
 
 // committed records that a commit carrying state s is in flight.
@@ -229,13 +273,13 @@ func (c *Cursor) props(req *atomicReq, crtc uint32, s cursorState) {
 	req.set(p.id, p.prop("CRTC_H"), size)
 }
 
-func (c *Cursor) free(k kms) {
-	for i, fb := range c.fbs {
-		if fb != 0 {
-			_ = k.rmFB(fb)
-			c.fbs[i] = 0
-		}
+// free removes the framebuffers and releases the images.
+func (c *Cursor) free() {
+	if c.imgs != nil {
+		c.imgs.close()
+		c.imgs, c.alloc = nil, ""
 	}
+	c.fbs = [2]uint32{}
 	c.image, c.later = false, nil
 	c.screen, c.flying = 0, false
 }
