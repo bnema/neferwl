@@ -124,3 +124,40 @@ func TestFrameLifecycleNoMemBackoffAndRecovery(t *testing.T) {
 		t.Fatal("modeset did not clear run")
 	}
 }
+
+func TestFrameLifecycleNoMemThenBusyEvent(t *testing.T) {
+	l := frameLifecycle{}
+	start := time.Unix(100, 0)
+	l.nomem(start)
+	if got := l.timeout(l.stuckAt, true); got != timeoutRetry {
+		t.Fatalf("memory wait: %v", got)
+	}
+	l.busy(start.Add(nomemRetryMin))
+	if _, _, ok := l.flip(123 << userKindBits); !ok || l.pending || l.waitKind != waitNone {
+		t.Fatal("memory history prevented a CRTC event from ending EBUSY")
+	}
+	if l.nomemAttempts != 1 || l.nomemSince != start {
+		t.Fatal("busy event lost memory recovery summary")
+	}
+}
+
+func TestFrameLifecycleNoMemThenBusyLimit(t *testing.T) {
+	l := frameLifecycle{stuckAfter: 200 * time.Millisecond}
+	start := time.Unix(100, 0)
+	l.nomem(start)
+	l.timeout(l.stuckAt, true)
+	busyStart := start.Add(nomemRetryMin)
+	for i := range 4 {
+		l.busy(busyStart.Add(time.Duration(i) * busyRetry))
+		want := timeoutRetry
+		if i == 3 {
+			want = timeoutBusy
+		}
+		if got := l.timeout(l.stuckAt, true); got != want {
+			t.Fatalf("busy attempt %d: got %v want %v", i+1, got, want)
+		}
+	}
+	if l.nomemAttempts != 1 || l.nomemSince != start {
+		t.Fatal("busy timeout lost memory recovery summary")
+	}
+}
