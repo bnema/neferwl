@@ -642,9 +642,10 @@ func writePNGSecure(path string, img image.Image, security ports.SessionSecurity
 	return err
 }
 
-// screenshotPNG encodes screenshot frames: encoding is by far the largest cost
-// of a headless frame, so it trades file size for speed. Its buffers are
-// reused between frames.
+// screenshotPNG encodes the PNGs written by the headless output (frames, the
+// latest.png fallback, raw HDR latest-pq.png): encoding is by far the largest
+// cost of a headless frame, so it trades file size for speed. Its buffers are
+// reused between files.
 var screenshotPNG = png.Encoder{CompressionLevel: png.BestSpeed, BufferPool: new(pngBuffers)}
 
 // pngBuffers is a png.EncoderBufferPool.
@@ -657,9 +658,15 @@ func (p *pngBuffers) Get() *png.EncoderBuffer {
 
 func (p *pngBuffers) Put(b *png.EncoderBuffer) { p.pool.Put(b) }
 
+// gated reports whether a screenshot must not be published: the session is
+// protected, or its security state is no longer the one the frame was drawn in.
+func gated(security ports.SessionSecurity, state ports.SecurityState) bool {
+	return security != nil && (state.Protected || security.Snapshot() != state)
+}
+
 // writePNGSecureResult distinguishes a security skip from a published PNG.
 func writePNGSecureResult(path string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
-	if security != nil && (state.Protected || security.Snapshot() != state) {
+	if gated(security, state) {
 		return false, nil
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".frame-*.png")
@@ -674,7 +681,7 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 	if err := f.Close(); err != nil {
 		return false, err
 	}
-	if security != nil && security.Snapshot() != state {
+	if gated(security, state) {
 		return false, nil
 	}
 	if err := os.Rename(f.Name(), path); err != nil {
@@ -690,7 +697,7 @@ func writePNGSecureResult(path string, img image.Image, security ports.SessionSe
 // It gates on security like writePNGSecureResult, and falls back to encoding
 // img where the file system cannot link.
 func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecurity, state ports.SecurityState) (bool, error) {
-	if security != nil && (state.Protected || security.Snapshot() != state) {
+	if gated(security, state) {
 		return false, nil
 	}
 	tmp := dst + ".tmp"
@@ -699,7 +706,7 @@ func linkPNGSecure(src, dst string, img image.Image, security ports.SessionSecur
 		return writePNGSecureResult(dst, img, security, state)
 	}
 	defer os.Remove(tmp)
-	if security != nil && security.Snapshot() != state {
+	if gated(security, state) {
 		return false, nil
 	}
 	if err := os.Rename(tmp, dst); err != nil {
