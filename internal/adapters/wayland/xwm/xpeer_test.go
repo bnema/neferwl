@@ -320,8 +320,27 @@ func (p *xpeer) answer(r xpeerReq, body []byte) {
 		b[18] = a[1]          // map_state is byte 26 of the reply
 		b[19] = a[0]          // override_redirect, byte 27
 		p.reply(0, b)
-	case (r.major == opGetGeometry || r.major == opGetProperty) && p.bad[binary.LittleEndian.Uint32(body)]:
+	case r.major == opGetGeometry && p.bad[binary.LittleEndian.Uint32(body)]:
+		p.errorPacket(9, r.major, binary.LittleEndian.Uint32(body)) // BadDrawable
+	case r.major == opGetProperty && p.bad[binary.LittleEndian.Uint32(body)]:
 		p.errorPacket(3, r.major, binary.LittleEndian.Uint32(body)) // BadWindow
+	case r.major == opConfigureWindow:
+		g := p.geoms[binary.LittleEndian.Uint32(body)]
+		mask, vals := binary.LittleEndian.Uint16(body[4:]), body[8:]
+		for bit, dst := 0, []any{&g.x, &g.y, &g.w, &g.h, &g.border}; bit < 5; bit++ {
+			if mask&(1<<bit) == 0 {
+				continue
+			}
+			v := uint16(binary.LittleEndian.Uint32(vals))
+			vals = vals[4:]
+			switch d := dst[bit].(type) {
+			case *int16:
+				*d = int16(v)
+			case *uint16:
+				*d = v
+			}
+		}
+		p.geoms[binary.LittleEndian.Uint32(body)] = g
 	case r.major == opGetGeometry:
 		g := p.geoms[binary.LittleEndian.Uint32(body)]
 		b := make([]byte, 24)

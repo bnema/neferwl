@@ -3,6 +3,7 @@ package xwm
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/res"
@@ -113,6 +114,10 @@ func (x *XWM) onPropertyNotify(ev *xturbo.Event) {
 	}
 	if rec := x.tab.rec(s); rec.kind != kindManaged || !rec.mapping {
 		return
+	} else if rec.ready && x.propIndex(uint32(e.Atom())) == propState {
+		// The XWM owns _NET_WM_STATE of a mapped window: our own writes
+		// would feed back, and clients change it with ClientMessages.
+		return
 	}
 	idx := x.propIndex(uint32(e.Atom()))
 	if idx < 0 {
@@ -171,7 +176,11 @@ func (x *XWM) applyProp(s Slot, idx int, format uint8, val []byte) {
 		if rec.class == string(app) {
 			return
 		}
-		rec.class = string(app)
+		cls := strings.ToValidUTF8(string(app), "\uFFFD")
+		if rec.class == cls {
+			return
+		}
+		rec.class = cls
 		if rec.ready {
 			x.host.AppID(s, rec.class)
 		}
@@ -266,7 +275,11 @@ func (x *XWM) setTitle(s Slot, val []byte) {
 	if rec.title == string(val) {
 		return
 	}
-	rec.title = string(val)
+	t := strings.ToValidUTF8(string(val), "\uFFFD")
+	if rec.title == t {
+		return
+	}
+	rec.title = t
 	if rec.ready {
 		x.host.Title(s, rec.title)
 	}

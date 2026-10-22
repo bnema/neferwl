@@ -1,6 +1,8 @@
 package xwm
 
 import (
+	"math"
+
 	"bnema.dev/xturbo"
 	"bnema.dev/xturbo/xproto"
 	"github.com/bnema/neferwl/internal/ports"
@@ -14,13 +16,6 @@ const (
 	stateFullscreen uint8 = 1 << iota
 	stateFocused
 )
-
-// floats reports whether the window sizes itself: dialog-like windows are
-// floating and may resize through ConfigureRequest, tiled ones may not.
-func (r *record) floats() bool {
-	fixed := r.minW > 0 && r.minH > 0 && r.minW == r.maxW && r.minH == r.maxH
-	return r.floating || r.transient != 0 || fixed
-}
 
 // size is the size to send: the requested one, else the last known.
 func (r *record) size() (w, h uint32) {
@@ -132,6 +127,7 @@ func (x *XWM) sendPending(s Slot, r *record) {
 		bits |= stateFocused
 	}
 	r.sent.fullscreen, r.sent.activated = p.fullscreen, p.activated
+	r.fullscreen = p.fullscreen // ours now: the property is not read back
 	if bits != r.stateSent {
 		r.stateSent = bits
 		x.writeState(r)
@@ -162,7 +158,8 @@ func (x *XWM) sendConfigureNotify(r *record) {
 	var raw [32]byte
 	d := xproto.ConfigureNotifyEventData{
 		Event: xproto.Window(r.xid), Window: xproto.Window(r.xid),
-		X: int16(r.x), Y: int16(r.y), Width: uint16(r.w), Height: uint16(r.h),
+		X: int16(min(max(r.x, math.MinInt16), math.MaxInt16)), Y: int16(min(max(r.y, math.MinInt16), math.MaxInt16)),
+		Width: uint16(min(r.w, math.MaxUint16)), Height: uint16(min(r.h, math.MaxUint16)),
 	}
 	d.Put(&raw)
 	xproto.SendEvent(x.conn.Buf(), false, xproto.Window(r.xid), xproto.EventMaskStructureNotify, &raw)
@@ -203,7 +200,11 @@ func (x *XWM) onConfigureRequest(ev *xturbo.Event) {
 		xproto.ConfigureWindow(x.conn.Buf(), xproto.Window(xid), &v)
 		return
 	}
-	if r.floats() && mask&(xproto.ConfigWindowWidth|xproto.ConfigWindowHeight) != 0 {
+	if !r.ready {
+		x.configureBeforeReady(s, r, e)
+		return
+	}
+	if r.floating && mask&(xproto.ConfigWindowWidth|xproto.ConfigWindowHeight) != 0 {
 		w, h := r.w, r.h
 		if mask&xproto.ConfigWindowWidth != 0 {
 			w = uint32(min(max(int(e.Width()), 1), maxClientSize))
@@ -221,6 +222,34 @@ func (x *XWM) onConfigureRequest(ev *xturbo.Event) {
 			r.pend.w, r.pend.h = w, h
 			r.sent.w, r.sent.h = w, h
 		}
+	}
+	x.sendConfigureNotify(r)
+}
+
+// configureBeforeReady honours the geometry a window asks for before it is
+// ready (XMoveResize before XMapWindow), floating or not: core only sees the
+// window at Ready and the client must find the geometry it set.
+func (x *XWM) configureBeforeReady(s Slot, r *record, e xproto.ConfigureRequestEvent) {
+	mask := e.ValueMask()
+	var v xproto.ConfigureWindowValues
+	if mask&xproto.ConfigWindowX != 0 {
+		r.x = int32(e.X())
+		v.SetX(r.x)
+	}
+	if mask&xproto.ConfigWindowY != 0 {
+		r.y = int32(e.Y())
+		v.SetY(r.y)
+	}
+	if mask&xproto.ConfigWindowWidth != 0 {
+		r.w, r.sized = uint32(min(max(int(e.Width()), 1), maxClientSize)), true
+		v.SetWidth(r.w)
+	}
+	if mask&xproto.ConfigWindowHeight != 0 {
+		r.h, r.sized = uint32(min(max(int(e.Height()), 1), maxClientSize)), true
+		v.SetHeight(r.h)
+	}
+	if mask&(xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowWidth|xproto.ConfigWindowHeight) != 0 {
+		x.expect(xproto.ConfigureWindow(x.conn.Buf(), xproto.Window(r.xid), &v), kindConfigure, x.tab.tag(s), 0)
 	}
 	x.sendConfigureNotify(r)
 }

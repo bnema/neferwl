@@ -3,7 +3,6 @@ package xwm
 import (
 	"encoding/binary"
 	"testing"
-	"time"
 
 	"bnema.dev/xturbo/xproto"
 	"github.com/bnema/neferwl/internal/ports"
@@ -512,7 +511,6 @@ func sinkPeer(t *testing.T, x *XWM, p *xpeer) {
 	xproto.GetInputFocus(x.conn.Buf()) // served by the old loop iteration
 	require.NoError(t, x.conn.Flush())
 	p.waitReq(n, func(r xpeerReq) bool { return r.major == opGetInputFocus })
-	time.Sleep(50 * time.Millisecond)
 	x.src = nil // no source: write backpressure would not allocate either
 	x.post = func(func()) {}
 	x.warnedRing = true // the sink never answers: Expect slots stay used

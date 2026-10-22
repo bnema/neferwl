@@ -32,11 +32,9 @@ const (
 	atomNetWMStateModal
 	atomNetWMStateFullscreen
 	atomNetWMStateFocused
-	atomNetWMStateHidden
 	atomNetWMStateMaximizedVert
 	atomNetWMStateMaximizedHorz
 	atomNetActiveWindow
-	atomNetCloseWindow
 	atomNetClientList
 	atomNetClientListStacking
 	atomNetWMMoveresize
@@ -81,11 +79,9 @@ var atomNames = [atomCount]string{
 	atomNetWMStateModal:             "_NET_WM_STATE_MODAL",
 	atomNetWMStateFullscreen:        "_NET_WM_STATE_FULLSCREEN",
 	atomNetWMStateFocused:           "_NET_WM_STATE_FOCUSED",
-	atomNetWMStateHidden:            "_NET_WM_STATE_HIDDEN",
 	atomNetWMStateMaximizedVert:     "_NET_WM_STATE_MAXIMIZED_VERT",
 	atomNetWMStateMaximizedHorz:     "_NET_WM_STATE_MAXIMIZED_HORZ",
 	atomNetActiveWindow:             "_NET_ACTIVE_WINDOW",
-	atomNetCloseWindow:              "_NET_CLOSE_WINDOW",
 	atomNetClientList:               "_NET_CLIENT_LIST",
 	atomNetClientListStacking:       "_NET_CLIENT_LIST_STACKING",
 	atomNetWMMoveresize:             "_NET_WM_MOVERESIZE",

@@ -67,14 +67,19 @@ func (x *XWM) onUnmapNotify(ev *xturbo.Event) {
 		return
 	}
 	wasMapping := rec.mapping
-	rec.ready, rec.mapping, rec.pending = false, false, 0
+	rec.ready, rec.mapping, rec.pending, rec.sized = false, false, 0, false
+	rec.gen++ // replies still in flight for this map name a dead tag
+	if rec.gen == 0 {
+		rec.gen = 1
+	}
+	rec.pend.dirty = false
 	rec.serial, rec.surface = 0, 0
 	if wasMapping {
 		xid := rec.xid
 		x.setProp32Typed(xid, atomWMState, x.atoms[atomWMState], []uint32{wmStateWithdrawn, 0})
 		xproto.DeleteProperty(x.conn.Buf(), xproto.Window(xid), xproto.Atom(x.atoms[atomNetWMState]))
-		x.unlist(xid)
 	}
+	x.dropWindow(s)
 	if rec.id != 0 {
 		x.host.Dissociate(s, false)
 	}
@@ -92,6 +97,7 @@ func (x *XWM) checkReady(s Slot) {
 		return
 	}
 	rec.ready = true
+	x.classify(rec)
 	info := x.info(s)
 	xid := rec.xid
 
@@ -107,9 +113,7 @@ func (x *XWM) checkReady(s Slot) {
 	}
 	x.setProp32(xid, atomNetWMState, xproto.AtomAtom, state[:n])
 	x.setProp32Typed(xid, atomWMState, x.atoms[atomWMState], []uint32{wmStateNormal, 0})
-	x.clients = append(x.clients, xid)
-	x.stacking = append(x.stacking, xid)
-	x.publishLists()
+	x.addClient(xid)
 
 	x.host.Ready(s, info)
 	x.tryPair(s)
@@ -119,17 +123,16 @@ func (x *XWM) checkReady(s Slot) {
 func (x *XWM) info(s Slot) WindowInfo {
 	rec := x.tab.rec(s)
 	parent := x.managedSlot(rec.transient)
-	fixed := rec.minW > 0 && rec.minH > 0 && rec.minW == rec.maxW && rec.minH == rec.maxH
 	info := WindowInfo{
 		PID:        int(rec.pid),
-		Floating:   floatingType(rec.wtype) || parent != 0 || fixed,
+		Floating:   rec.floating,
 		Parent:     parent,
 		Modal:      rec.modal,
 		Fullscreen: rec.fullscreen,
 		Title:      rec.title,
 		AppID:      rec.class,
 	}
-	if info.Floating {
+	if info.Floating || rec.sized {
 		info.Width, info.Height = int(rec.w), int(rec.h)
 	}
 	return info
@@ -141,31 +144,6 @@ func (x *XWM) onGeomReply(s Slot, rec *record, r *xturbo.Reply) {
 	}
 	rec.pending &^= propGeom
 	x.checkReady(s)
-}
-
-// publishLists rewrites _NET_CLIENT_LIST and _NET_CLIENT_LIST_STACKING.
-func (x *XWM) publishLists() {
-	x.setProp32(x.root, atomNetClientList, xproto.AtomWindow, x.clients)
-	x.setProp32(x.root, atomNetClientListStacking, xproto.AtomWindow, x.stacking)
-}
-
-// unlist drops xid from both client lists and republishes them if it was in.
-func (x *XWM) unlist(xid uint32) {
-	was := len(x.clients)
-	x.clients = removeID(x.clients, xid)
-	x.stacking = removeID(x.stacking, xid)
-	if len(x.clients) != was {
-		x.publishLists()
-	}
-}
-
-func removeID(l []uint32, xid uint32) []uint32 {
-	for i, v := range l {
-		if v == xid {
-			return append(l[:i], l[i+1:]...)
-		}
-	}
-	return l
 }
 
 // onClientMessage handles WL_SURFACE_SERIAL (pairing), the legacy
@@ -253,7 +231,7 @@ func (x *XWM) onReparentNotify(ev *xturbo.Event) {
 	s := x.tab.lookup(xid)
 	if uint32(e.Parent()) != x.root {
 		if s != 0 {
-			x.dropWindow(s)
+			x.forgetWindow(s)
 		}
 		return
 	}
@@ -275,23 +253,6 @@ func (x *XWM) onReparentNotify(ev *xturbo.Event) {
 	if x.host != nil {
 		x.adopt(s)
 	}
-}
-
-// dropWindow forgets s: the host is told if it knew the window.
-func (x *XWM) dropWindow(s Slot) {
-	rec := x.tab.rec(s)
-	xid := rec.xid
-	if rec.kind == kindManaged {
-		x.unlist(xid)
-		if x.active == s {
-			x.active = 0
-		}
-		if rec.id != 0 && x.host != nil {
-			rec.id = 0
-			x.host.Dissociate(s, true)
-		}
-	}
-	x.tab.remove(s)
 }
 
 // tryPair links the window to the wl_surface carrying its serial, once both

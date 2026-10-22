@@ -390,17 +390,6 @@ func TestPropertyTransientChangeReachesHost(t *testing.T) {
 	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(bs).transient == a })
 }
 
-func TestPropertyFullscreenStateChangeReachesHost(t *testing.T) {
-	hs := newHarness(t, nil)
-	const win = 0x500001
-	hs.classic(win)
-	s := hs.mapAndWait(win)
-	hs.h.EXPECT().Fullscreen(s, true).Once()
-	hs.atoms(win, "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN")
-	hs.p.propertyNotify(win, hs.p.atom("_NET_WM_STATE"), false)
-	readUntil(t, hs.x, func() bool { return hs.x.tab.rec(s).fullscreen })
-}
-
 func TestPropertyInputProtocolsAndHints(t *testing.T) {
 	hs := newHarness(t, nil)
 	const win = 0x500001

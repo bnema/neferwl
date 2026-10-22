@@ -38,11 +38,7 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		x.onReparentNotify(ev)
 	}
 	if x.host == nil {
-		if ev.Kind == xproto.KindMapRequest {
-			if s := x.tab.lookup(uint32(xproto.MapRequestOf(ev).Window())); s != 0 {
-				x.tab.rec(s).mapping = true
-			}
-		}
+		x.onEventDetached(ev)
 		return
 	}
 	switch ev.Kind {
@@ -62,6 +58,27 @@ func (x *XWM) onEvent(ev *xturbo.Event) {
 		x.onClientMessage(ev)
 	case xproto.KindFocusIn:
 		x.onFocusIn(ev)
+	}
+}
+
+// onEventDetached keeps what Attach replays: windows asked to map, and those
+// withdrawn again, so Attach skips them; geometry requests are answered.
+func (x *XWM) onEventDetached(ev *xturbo.Event) {
+	switch ev.Kind {
+	case xproto.KindMapRequest:
+		if s := x.tab.lookup(uint32(xproto.MapRequestOf(ev).Window())); s != 0 {
+			x.tab.rec(s).mapping = true
+		}
+	case xproto.KindUnmapNotify:
+		if ev.SendEvent {
+			return
+		}
+		if s := x.tab.lookup(uint32(xproto.UnmapNotifyOf(ev).Window())); s != 0 {
+			r := x.tab.rec(s)
+			r.mapped, r.mapping = false, false
+		}
+	case xproto.KindConfigureRequest:
+		x.onConfigureRequest(ev)
 	}
 }
 
@@ -129,7 +146,7 @@ func (x *XWM) onError(e *xturbo.XError) {
 		default:
 			return
 		}
-		if e.Code != xproto.BadWindow { // a dead window is never announced
+		if e.Code != xproto.BadWindow && e.Code != xproto.BadDrawable { // a dead window is never announced
 			x.checkReady(s)
 		}
 	}

@@ -54,6 +54,7 @@ type record struct {
 	title, class                   string // owned, replaced only on change
 	hasNetName                     bool
 	floating                       bool // dialog-like type; set with the properties
+	sized                          bool // the client asked for its size before Ready
 
 	// pairing
 	serial  uint64

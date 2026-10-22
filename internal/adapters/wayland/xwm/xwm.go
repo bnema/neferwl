@@ -225,8 +225,8 @@ func (x *XWM) boot() error {
 	xproto.SetSelectionOwner(b, xproto.Window(x.wmWin), xproto.Atom(x.atoms[atomNetWMCMS0]), 0)
 
 	supported := [...]int{
-		atomNetWMState, atomNetActiveWindow, atomNetCloseWindow, atomNetWMStateFocused,
-		atomNetWMStateModal, atomNetWMStateFullscreen, atomNetWMStateHidden, atomNetClientList,
+		atomNetWMState, atomNetActiveWindow, atomNetWMStateFocused,
+		atomNetWMStateModal, atomNetWMStateFullscreen, atomNetClientList,
 		atomNetClientListStacking, atomNetSupportingWMCheck, atomNetWMName, atomNetWMPID,
 		atomNetWMWindowType,
 	}

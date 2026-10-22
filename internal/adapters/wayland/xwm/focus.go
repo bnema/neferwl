@@ -146,18 +146,44 @@ func (x *XWM) removeClient(xid uint32) {
 	x.wake()
 }
 
-// dropWindow forgets s in the lists and as the active window. It is idempotent
-// and runs when a window goes away (unmap, destroy).
+// dropWindow takes s out of the client lists, the focus and the configure
+// queue when it stops being mapped (unmap, destroy). It is idempotent.
 func (x *XWM) dropWindow(s Slot) {
+	r := x.tab.rec(s)
+	if r == nil || r.kind != kindManaged {
+		return
+	}
+	x.removeClient(r.xid)
+	r.pend.dirty = false // the queued slot is skipped at flush
+	// A remap starts from a clean _NET_WM_STATE, so Focus writes FOCUSED again.
+	r.pend.activated, r.sent.activated = false, false
+	r.sent.fullscreen, r.stateSent = false, 0
+	if x.active == s {
+		x.active = 0
+		x.refocus = false
+		x.setActive(0)
+	}
+}
+
+// forgetWindow ends the life of s (destroy, reparent away): it is dropped,
+// the host is told if it knew the window, and the record is freed.
+func (x *XWM) forgetWindow(s Slot) {
 	r := x.tab.rec(s)
 	if r == nil || r.kind == kindFree {
 		return
 	}
-	x.removeClient(r.xid)
-	if x.active == s {
-		x.active = 0
-		x.setActive(0)
+	x.dropWindow(s)
+	if r.kind == kindManaged && r.id != 0 && x.host != nil {
+		r.id = 0
+		x.host.Dissociate(s, true)
+		if x.active == s { // the host re-focused the window while dissociating it
+			x.active, x.refocus = 0, false
+			x.issueFocus(0, nil)
+			x.setActive(0)
+			x.wake()
+		}
 	}
+	x.tab.remove(s)
 }
 
 // flushFocus rewrites the client lists that changed and re-issues a denied
